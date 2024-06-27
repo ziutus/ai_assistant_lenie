@@ -88,7 +88,7 @@ python-dotenv==1.0.1
     # via -r requirements.piptools
 pytube==15.0.0
     # via -r requirements.piptools
-requests==2.31.0
+requests==2.32.2
     # via -r requirements.piptools
 s3transfer==0.10.1
     # via boto3
