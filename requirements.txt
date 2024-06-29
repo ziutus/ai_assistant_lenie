@@ -88,7 +88,7 @@ python-dotenv==1.0.1
     # via -r requirements.piptools
 pytube==15.0.0
     # via -r requirements.piptools
-requests==2.31.0
+requests==2.32.2
     # via -r requirements.piptools
 s3transfer==0.10.1
     # via boto3
@@ -108,7 +108,7 @@ tqdm==4.66.4
     #   openai
     #   pydantic
     #   pydantic-core
-urllib3==2.2.1
+urllib3==2.2.2
     # via
     #   -r requirements.piptools
     #   botocore

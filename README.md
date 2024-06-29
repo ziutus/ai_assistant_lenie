@@ -2,8 +2,9 @@
 
 Project Lenie, named after the enigmatic protagonist from Peter Watts' novel "Starfish," 
 offers advanced solutions for collecting, managing, and searching data using 
-Language Model Models (LLMs). Lenie enables users to:
+Language Model Models (LLMs). 
 
+Lenie enables users to:
 * collect and manage links, allowing easy searching of accumulated references using LLM,
 * download content from webpages and store it in a PostgreSQL database for later searching in a private archive,
 * transcribe YouTube videos and store them in a database, facilitating the search for interesting segments (given the ease of finding engaging videos compared to books or articles).
