@@ -258,7 +258,6 @@ def website_download_text_content():
         return {"status": "error",
                 "message": "Brakujące dane. Upewnij się, że dostarczasz 'url'"}, 400
 
-    # website: Website = download_context(url)
     logging.debug(f"DEBUG: downloading content of page: {url}")
     raw_html = download_raw_html(url)
     if not raw_html:
