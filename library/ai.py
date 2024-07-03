@@ -44,7 +44,7 @@ def ai_ask(query: str, model: str) -> AiResponse:
 
         ai_response.response_text = response
         return ai_response
-    if model in ["gpt-4", "gpt-4o"]:
+    if model in ["gpt-4", "gpt-4o", "gpt-4o-2024-05-13"]:
         response = library.api.openai.openai_my.OpenAIClient.get_completion(query, model)
 
         if isinstance(response, bytes):
