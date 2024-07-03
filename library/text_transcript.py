@@ -45,7 +45,7 @@ def chapters_text_to_list(chapters_string):
         if splitted_data:
             chapters_simple.append(splitted_data)
         else:
-            raise "ERROR in creating chapters list"
+            raise Exception("ERROR in creating chapters list")
     del chapter_list
 
     for i in range(len(chapters_simple)):

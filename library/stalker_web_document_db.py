@@ -33,7 +33,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                 elif id:
                     cur.execute("SELECT * FROM public.web_documents WHERE id = %s", (document_id,))
                 else:
-                    raise "One of url or id must be provided"
+                    raise Exception("One of url or id must be provided")
 
                 website_data = cur.fetchone()
                 if website_data:

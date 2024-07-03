@@ -22,7 +22,7 @@ def ai_model_need_translation_to_english(model: str) -> bool:
     elif model in ["gpt-4", "gpt-3.5-turbo"]:
         return True
     else:
-        raise f"DEBUG: Error, no model info for text {model}"
+        raise Exception(f"DEBUG: Error, no model info for text {model}")
 
 
 def ai_ask(query: str, model: str) -> AiResponse:
@@ -34,7 +34,7 @@ def ai_ask(query: str, model: str) -> AiResponse:
         elif len(str) < 16000:
             model = "gpt-3.5-turbo-16k"
         else:
-            raise "To long text for gpt-3.5 models"
+            raise Exception("To long text for gpt-3.5 models")
         ai_response.model = model
 
         response = library.api.openai.openai_my.OpenAIClient.get_completion(query, model)
@@ -47,4 +47,4 @@ def ai_ask(query: str, model: str) -> AiResponse:
         response = library.api.aws.bedrock_ask.query_aws_bedrock(query)
         ai_response.response_text = response
     else:
-        raise f"ERROR: Unknown model {model}"
+        raise Exception(f"ERROR: Unknown model {model}")

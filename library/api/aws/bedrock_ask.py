@@ -40,7 +40,7 @@ def query_aws_bedrock(query: str) -> str:
                      \nhttps://docs.aws.amazon.com/bedrock/latest/userguide/security-iam.html\x1b[0m\n")
 
         else:
-            raise error
+            raise Exception(error)
 
     if output_text.find('\n') != -1:
         answer = output_text[output_text.index('\n') + 1:]

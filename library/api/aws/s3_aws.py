@@ -17,10 +17,10 @@ def s3_file_exist(s3_bucket: str, filename: str) -> bool:
             return False
         else:
             print("Unexpected error: ", e)
-            raise "An error occurred"
+            raise Exception("An error occurred")
     except NoCredentialsError:
         print("S3 could not authenticate with AWS.")
-        raise "Authentication credentials were not provided."
+        raise Exception("Authentication credentials were not provided.")
     except Exception as e:
         print("An error occurred: ", str(e))
-        raise "An error occurred"
+        raise Exception("An error occurred")

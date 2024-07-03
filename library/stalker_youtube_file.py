@@ -13,7 +13,7 @@ class StalkerYoutubeFile:
 
         if media_type not in ["video"]:
             pprint(media_type)
-            raise f"Type {media_type} must be either video or audio (tbd)"
+            raise Exception(f"Type {media_type} must be either video or audio (tbd)")
 
         self.url: str = youtube_url
         parsed_url = urlparse(youtube_url)
@@ -91,7 +91,7 @@ class StalkerYoutubeFile:
     def download_video(self, force: bool = False) -> None:
 
         if not os.path.exists(self.directory):
-            raise f"Directory {self.directory} doesn't exist"
+            raise Exception(f"Directory {self.directory} doesn't exist")
 
         if not os.path.exists(f"{self.directory}/{self.filename}") or force:
             yt_stream = self._yt.streams.first()
@@ -103,7 +103,7 @@ class StalkerYoutubeFile:
             else:
                 self.valid = False
                 self.error = "Can't find stream for this youtube video"
-                raise "Can't find stream for this youtube video"
+                raise Exception("Can't find stream for this youtube video")
 
         # TODO: Write metadata for youtube file
         # if not os.path.exists(f"{self.directory}/{self.video_id}.json") or force:

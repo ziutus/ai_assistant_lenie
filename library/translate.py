@@ -32,4 +32,4 @@ def text_translate(text: str, target_language: str, source_language: str = "pl",
             cache_write('translation',key=text, data=result.translated_text, provider='aws')
         return result
     else:
-        raise "Wrong translate model: >{model}"
+        raise Exception("Wrong translate model: >{model}")
