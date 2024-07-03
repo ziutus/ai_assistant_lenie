@@ -428,7 +428,6 @@ def website_save():
     else:
         web_document = StalkerWebDocumentDB(url=url)
 
-    web_document.set_document_type(request.form.get('document_type'))
     web_document.set_document_state(request.form.get('document_state'))
 
     web_document.text = request.form.get('text')
