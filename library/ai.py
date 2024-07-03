@@ -38,13 +38,25 @@ def ai_ask(query: str, model: str) -> AiResponse:
         ai_response.model = model
 
         response = library.api.openai.openai_my.OpenAIClient.get_completion(query, model)
+
+        if isinstance(response, bytes):
+            response = response.decode('utf-8')
+
         ai_response.response_text = response
         return ai_response
     if model in ["gpt-4", "gpt-4o"]:
         response = library.api.openai.openai_my.OpenAIClient.get_completion(query, model)
+
+        if isinstance(response, bytes):
+            response = response.decode('utf-8')
+
         ai_response.response_text = response
     elif model == 'amazon.titan-tg1-large' or model == 'aws':
         response = library.api.aws.bedrock_ask.query_aws_bedrock(query)
+
+        if isinstance(response, bytes):
+            response = response.decode('utf-8')
+
         ai_response.response_text = response
     else:
         raise Exception(f"ERROR: Unknown model {model}")
