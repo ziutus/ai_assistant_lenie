@@ -51,6 +51,7 @@ def ai_ask(query: str, model: str) -> AiResponse:
             response = response.decode('utf-8')
 
         ai_response.response_text = response
+        return ai_response
     elif model == 'amazon.titan-tg1-large' or model == 'aws':
         response = library.api.aws.bedrock_ask.query_aws_bedrock(query)
 
@@ -58,5 +59,6 @@ def ai_ask(query: str, model: str) -> AiResponse:
             response = response.decode('utf-8')
 
         ai_response.response_text = response
+        return ai_response
     else:
         raise Exception(f"ERROR: Unknown model {model}")
