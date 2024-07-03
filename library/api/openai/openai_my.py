@@ -47,4 +47,4 @@ class OpenAIClient:
             return chat_completion.choices[0].message.content
 
         except Exception as e:
-            raise f"An error occurred: {e}"
+            raise Exception(f"An error occurred: {e}")
