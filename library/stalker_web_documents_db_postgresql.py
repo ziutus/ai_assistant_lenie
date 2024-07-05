@@ -30,7 +30,9 @@ class WebsitesDBPostgreSQL:
     def get_next_to_correct(self, website_id) -> int | str:
         with self.conn:
             with self.conn.cursor() as cur:
-                cur.execute(f"SELECT id FROM public.web_documents WHERE id > %s and document_state = '{StalkerDocumentStatus.NEED_MANUAL_REVIEW.name}' ORDER BY id LIMIT 1", (website_id,))
+                cur.execute(
+                    f"SELECT id FROM public.web_documents WHERE id > %s and document_state = '{StalkerDocumentStatus.NEED_MANUAL_REVIEW.name}' ORDER BY id LIMIT 1",
+                    (website_id,))
                 result = cur.fetchone()
                 if result is None:
                     return -1
@@ -113,15 +115,16 @@ class WebsitesDBPostgreSQL:
 
         return result
 
-    def get_ready_for_download(self) -> list[int|str]:
+    def get_ready_for_download(self) -> list[int | str]:
 
         cursor = self.conn.cursor()
-        cursor.execute(f"SELECT id, url, document_type FROM public.web_documents WHERE document_state = '{StalkerDocumentStatus.URL_ADDED.name}'")
+        cursor.execute(
+            f"SELECT id, url, document_type FROM public.web_documents WHERE document_state = '{StalkerDocumentStatus.URL_ADDED.name}'")
         website_data = cursor.fetchall()
 
         return website_data
 
-    def get_ready_for_embedding(self) -> list[int|str]:
+    def get_ready_for_embedding(self) -> list[int | str]:
 
         query = f"""
              SELECT id 
@@ -140,7 +143,7 @@ class WebsitesDBPostgreSQL:
 
         return result
 
-    def get_transcription_done(self) -> list[int|str]:
+    def get_transcription_done(self) -> list[int | str]:
 
         query = f"""
              SELECT id 
@@ -159,7 +162,7 @@ class WebsitesDBPostgreSQL:
 
         return result
 
-    def get_ready_for_translation(self) -> list[int|str]:
+    def get_ready_for_translation(self) -> list[int | str]:
 
         query = f"""
              SELECT id 
@@ -181,7 +184,8 @@ class WebsitesDBPostgreSQL:
     def get_youtube_just_added(self):
 
         cursor = self.conn.cursor()
-        cursor.execute(f"SELECT id, url, document_type, language, chapter_list, ai_summary_needed FROM public.web_documents WHERE document_type='youtube' and (document_state = '{StalkerDocumentStatus.URL_ADDED.name}' or document_state = '{StalkerDocumentStatus.NEED_TRANSCRIPTION.name}' )")
+        cursor.execute(
+            f"SELECT id, url, document_type, language, chapter_list, ai_summary_needed FROM public.web_documents WHERE document_type='youtube' and (document_state = '{StalkerDocumentStatus.URL_ADDED.name}' or document_state = '{StalkerDocumentStatus.NEED_TRANSCRIPTION.name}' )")
         website_data = cursor.fetchall()
 
         return website_data
