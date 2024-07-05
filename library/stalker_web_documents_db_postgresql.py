@@ -39,20 +39,21 @@ class WebsitesDBPostgreSQL:
     def close(self):
         self.conn.close()
 
-    def get_list(self) -> list[{str, str, str, str, str}]:
+    def get_list(self, limit: int = 100, offset: int = 0) -> list[{str, str, str, str, str}]:
         with self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, url, title, document_type, created_at  FROM public.web_documents order by created_at desc")
+                    f"SELECT id, url, title, document_type, created_at  FROM public.web_documents ORDER BY created_at DESC LIMIT {int(limit)} OFFSET {int(offset)}")
                 result = []
 
                 for line in cur.fetchall():
+                    dt = line[4]
                     result.append({
                         "id": line[0],
                         "url": line[1],
                         "title": line[2],
                         "document_type": line[3],
-                        "created_at": line[4]
+                        "created_at": dt.strftime('%Y-%m-%d %H:%M:%S')
                     })
 
                 return result
