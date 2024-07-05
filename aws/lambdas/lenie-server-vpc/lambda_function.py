@@ -66,11 +66,12 @@ def lambda_handler(event, context):
     # logging.info(f"all pages in database: {websites.get_count()}")
     # print(f"2: all pages in database: {websites.get_count()}")
 
-    # pprint(event)
-    pprint(event['path'])
+    if 'path' in event:
+        pprint(event['path'])
 
     if 'path' not in event:
-        return prepare_return('Missing path in request', 500)
+        print("Missing 'path' in event, please check if proxy is setup for this call")
+        return prepare_return('Missing path in request, check if proxy is setup for this call', 500)
 
     if event['path'] == '/website_list':
         # TODO: TypeError: Object of type datetime is not JSON serializable
@@ -215,7 +216,7 @@ def lambda_handler(event, context):
         }
         return response, 200
 
-    if event['path'] == '/save_website':
+    if event['path'] == '/website_save':
         parsed_dict = parse_qs(event['body'])
         pprint(type(parsed_dict))
 

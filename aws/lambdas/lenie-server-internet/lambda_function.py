@@ -4,7 +4,7 @@ from pprint import pprint
 import logging
 from urllib.parse import parse_qs
 
-from library.ai import ai_ask
+import library.ai
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_transcript import chapters_text_to_list
@@ -13,7 +13,7 @@ from library.website.website_download_context import download_raw_html, webpage_
 from library.website.website_paid import website_is_paid
 from library.text_functions import split_text_for_embedding
 
-logging.basicConfig(level=logging.DEBUG)  # Change level as per your need
+logging.basicConfig(level=logging.DEBUG)  # Change level as per you r need
 
 
 def fetch_env_var(var_name):
@@ -65,12 +65,12 @@ def lambda_handler(event, context):
     # logging.info(f"all pages in database: {websites.get_count()}")
     # print(f"2: all pages in database: {websites.get_count()}")
 
-    # pprint(event)
     if 'path' in event:
         pprint(event['path'])
 
     if 'path' not in event:
-        return prepare_return('Missing path in request', 500)
+        print("Missing 'path' in event, please check if proxy is setup for this call")
+        return prepare_return('Missing path in request, check if proxy is setup for this call', 500)
 
     if event['path'] == '/translate':
 
@@ -138,23 +138,36 @@ def lambda_handler(event, context):
 
         return prepare_return(response, 200)
 
-    if event['path'] == '/website_correct_using_ai':
-        print("Correcting text using AI")
+    if event['path'] == '/ai_ask':
+        print("ask AI - path /ai_ask")
         print(event['body'])
 
         parsed_dict = parse_qs(event['body'])
 
         text = parsed_dict['text'][0]
+        query = parsed_dict['query'][0]
+        model = parsed_dict['model'][0]
 
         if not text:
             print("Missing data. Make sure you provide 'text'")
             return prepare_return({"status": "error",
                     "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400)
 
-        query = f"Dla treści poniżej popraw błędy interpunkcyjne. Zwróć tylko poprawioną treść.   ---Treść--- {text}"
+        if not query:
+            print("Missing data. Make sure you provide 'query'")
+            return prepare_return({"status": "error",
+                    "message": "Brakujące dane. Upewnij się, że dostarczasz 'query'"}, 400)
+
+        if not model:
+            print("Missing data. Make sure you provide 'model'")
+            return prepare_return({"status": "error",
+                    "message": "Brakujące dane. Upewnij się, że dostarczasz 'model'"}, 400)
+
+        query = query.replace("{text}", text)
+        logging.debug(f"query: {query}")
 
         try:
-            llm_answer = ai_ask(query=query, model=llm_simple_jobs_model)
+            llm_answer = library.ai.ai_ask(query=query, model=llm_simple_jobs_model)
             print(llm_answer)
 
             response = {
