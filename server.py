@@ -409,7 +409,7 @@ def website_delete():
     return response, 200
 
 
-@app.route('/save_website', methods=['POST'])
+@app.route('/website_save', methods=['POST'])
 def website_save():
     logging.debug("Saving website (adding or updating)")
     logging.debug(request.form)
