@@ -12,5 +12,5 @@
 /Kubernetes/raw/lenie_server_secrets.yaml
 /Kubernetes/raw/ecs_registry_password.yaml
 /Kubernetes/raw/.dockerconfigjson
-/lambdas/*/lambda.zip
+/aws/lambdas/*/lambda.zip
 /docker_build.sh
