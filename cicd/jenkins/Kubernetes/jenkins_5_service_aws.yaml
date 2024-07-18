@@ -24,6 +24,8 @@ metadata:
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-west-1:850576968845:certificate/86da00eb-3685-41d2-8888-7fe75ab42c28
 spec:
   ingressClassName: alb
   rules:

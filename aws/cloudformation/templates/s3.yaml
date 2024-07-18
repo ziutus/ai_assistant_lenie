@@ -1,0 +1,20 @@
+Metadata:
+  License: Apache-2.0
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS S3 backups for Lenie applicaion'
+
+Parameters:
+  stage:
+    Default: dev
+    Description: Specify stage (dev, qas, prd)
+    Type: String
+    AllowedValues:
+      - dev
+      - qas
+      - prd
+
+Resources:
+  MyS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub lenie-${stage}-video-to-text
