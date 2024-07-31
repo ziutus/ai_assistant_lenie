@@ -12,7 +12,7 @@ def cache_get_webpage_raw_html(entry_id: str) -> str | False:
                 'S': entry_id,
             }
         },
-        TableName='stalker_webpage_raw_html',
+        TableName='lenie_webpage_raw_html',
     )
 
     if 'Item' in response:
@@ -31,5 +31,5 @@ def cache_write_webpage_raw_html(url: str, raw_html: str) -> None:
             'raw_html': {'S': raw_html},
         },
         ReturnConsumedCapacity='TOTAL',
-        TableName='stalker_webpage_raw_html',
+        TableName='lenie_webpage_raw_html',
     )

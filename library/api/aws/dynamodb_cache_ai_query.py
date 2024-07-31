@@ -14,7 +14,7 @@ def cache_get_query(entry_id: str, provider: str) -> None:
             'hash': {'S': entry_id},
             'provider': {'S': provider},
         },
-        TableName='stalker_cache_ai_query',
+        TableName='lenie_cache_ai_query',
     )
 
     if 'Item' in response:
@@ -35,5 +35,5 @@ def cache_write_query(query: str, response: str, provider: str) -> None:
             'response': {'S': response}
         },
         ReturnConsumedCapacity='TOTAL',
-        TableName='stalker_cache_ai_query',
+        TableName='lenie_cache_ai_query',
     )

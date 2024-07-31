@@ -18,7 +18,7 @@ def cache_get_translation(entry_id: str, provider: str) -> str | None:
                 'S': provider,
             }
         },
-        TableName='stalker_cache_translation',
+        TableName='lenie_cache_translation',
     )
 
     if 'Item' in response:
@@ -39,5 +39,5 @@ def cache_write_translation(query: str, response: str, provider: str) -> None:
             'response': {'S': response}
         },
         ReturnConsumedCapacity='TOTAL',
-        TableName='stalker_cache_translation',
+        TableName='lenie_cache_translation',
     )
