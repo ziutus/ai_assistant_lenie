@@ -38,6 +38,7 @@ if __name__ == '__main__':
     websites = WebsitesDBPostgreSQL()
     website_data = websites.get_youtube_just_added()
 
+    logging.info(f"Entries to analyze: {len(website_data)}")
     for movie in website_data:
         web_document = StalkerWebDocumentDB(document_id= int(movie[0]))
         youtube_file = StalkerYoutubeFile(youtube_url=web_document.url, media_type="video", cache_directory=cache_dir)
