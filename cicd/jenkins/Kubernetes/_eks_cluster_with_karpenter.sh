@@ -3,6 +3,14 @@
 set -e
 
 STEP=10
+export CLUSTER_NAME="jenkins-karpenter-poc2"
+export K8S_VERSION="1.30"
+export KARPENTER_VERSION="0.37.0"
+export AWS_DEFAULT_REGION="eu-west-1"
+export INSTANCE_TYPE="t2.medium"
+export AWS_PROFILE="odkrywca-dev1-Administrator"
+export AWS_PARTITION="aws" # if you are not using standard partitions, you may need to configure to aws-cn / aws-us-gov
+
 
 function usage() {
 
@@ -36,26 +44,15 @@ if [ "$ACTION" != "create" ] && [ "$ACTION" != "delete" ]; then
   exit 1
 fi
 
-
-exit 0
-
 ## The Karpenter installation follow: https://karpenter.sh/docs/getting-started/getting-started-with-karpenter/
 
 
 # The core-dns addons will report issue on web interface if number of nodes is smaller than 2
 
-export CLUSTER_NAME="jenkins-karpenter-poc2"
-export K8S_VERSION="1.30"
-export KARPENTER_VERSION="0.37.0"
-export AWS_DEFAULT_REGION="eu-west-1"
-export INSTANCE_TYPE="t2.medium"
-export AWS_PROFILE="odkrywca-dev1-Administrator"
 
 export KARPENTER_NAMESPACE="kube-system"
-
-export AWS_PARTITION="aws" # if you are not using standard partitions, you may need to configure to aws-cn / aws-us-gov
-export TEMPOUT="$(mktemp)"
-
+TEMPOUT="$(mktemp)"
+export TEMPOUT
 
 if [[ ${ACTION} == "create" ]] && [[ $STEP -le 1 ]]; then
 echo "STEP 1: Setup Karpenter permissions etc"
@@ -229,9 +226,6 @@ echo "You can now add your now cluster into your kubeconfig using command:"
 echo ""
 echo "aws eks update-kubeconfig --region ${AWS_DEFAULT_REGION} --name ${CLUSTER_NAME} --profile ${AWS_PROFILE}"
 echo ""
-
-
-
 
 if [[ ${ACTION} == "delete" ]]; then
   helm uninstall karpenter --namespace "${KARPENTER_NAMESPACE}"
