@@ -10,3 +10,5 @@ pytest
 botocore
 urllib3
 pytube
+youtube-transcript-api
+assemblyai
