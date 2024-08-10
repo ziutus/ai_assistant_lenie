@@ -263,6 +263,9 @@ def lambda_handler(event, context):
         if 'author' in parsed_dict.keys():
             web_document.author = parsed_dict['author'][0]
 
+        if 'note' in parsed_dict.keys():
+            web_document.note = parsed_dict['note'][0]
+
         web_document.analyze()
 
         try:

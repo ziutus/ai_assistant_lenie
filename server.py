@@ -454,6 +454,7 @@ def website_save():
     web_document.summary = request.form.get('summary')
     web_document.source = request.form.get('source')
     web_document.author = request.form.get('author')
+    web_document.note = request.form.get('note')
     web_document.analyze()
 
     try:

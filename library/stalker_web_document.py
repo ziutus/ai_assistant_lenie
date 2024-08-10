@@ -59,7 +59,9 @@ class StalkerWebDocument:
                  text_raw: str | None = None,
                  transcript_job_id: str | None = None,
                  ai_summary_needed: bool | None = None,
-                 author: str | None = None):
+                 author: str | None = None,
+                 note: str | None = None
+                 ):
 
         self.id: int | None = wb_id
         self.url: str | None = url
@@ -88,6 +90,7 @@ class StalkerWebDocument:
         self.transcript_job_id: str | None = transcript_job_id
         self.ai_summary_needed: bool | None = ai_summary_needed
         self.author: str | None = author
+        self.note: str | None = note
 
     def __str__(self):
         data = {
@@ -112,7 +115,8 @@ class StalkerWebDocument:
             "text_raw": self.text_raw,
             "transcript_job_id": self.transcript_job_id,
             "ai_summary_needed": self.ai_summary_needed,
-            "author": self.author
+            "author": self.author,
+            "note": self.note
         }
         result = json.dumps(data, indent=4)
 

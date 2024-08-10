@@ -19,8 +19,9 @@ def lambda_handler(event, context):
     target_url = url_data["url"]
     url_type = url_data["type"]
     source = url_data["source"]
+    note = url_data["note"]
 
-    message_body = {"url": target_url, "type": url_type, "source": source}
+    message_body = {"url": target_url, "type": url_type, "source": source, "note": note}
 
     response = sqs.send_message(
         QueueUrl=queue_url,

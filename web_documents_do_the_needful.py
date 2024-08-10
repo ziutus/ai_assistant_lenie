@@ -47,7 +47,7 @@ if __name__ == '__main__':
             if "source" not in link_data:
                 link_data["source"] = "own"
 
-            print("Link Data:  URL", link_data["url"], "type:", link_data["type"], " source:", link_data["source"])
+            print("Link Data:  URL", link_data["url"], "type:", link_data["type"], " source:", link_data["source"], "note:", link_data['note'])
             if 'chapterList' in link_data:
                 print(link_data["chapterList"])
 
@@ -69,6 +69,8 @@ if __name__ == '__main__':
                 web_doc.language = link_data["language"]
             if 'makeAISummary' in link_data:
                 web_doc.ai_summary_needed = link_data["makeAISummary"]
+            if 'note' in link_data:
+                web_doc.note = link_data["note"]
             web_doc.save()
             print("[DONE]")
 
