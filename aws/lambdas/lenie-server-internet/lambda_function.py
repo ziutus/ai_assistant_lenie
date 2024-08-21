@@ -12,6 +12,7 @@ from library.translate import text_translate
 from library.website.website_download_context import download_raw_html, webpage_raw_parse, WebPageParseResult
 from library.website.website_paid import website_is_paid
 from library.text_functions import split_text_for_embedding
+from library.embedding import get_embedding
 
 logging.basicConfig(level=logging.DEBUG)  # Change level as per you r need
 
@@ -90,7 +91,8 @@ def lambda_handler(event, context):
         if not text or not target_language:
             logging.debug("Missing data. Make sure you provide 'text' and 'target_language'")
             return prepare_return({"status": "error",
-                    "message": "Brakujące dane. Upewnij się, że dostarczasz 'text' i 'target_language'"}, 400)
+                                   "message": "Brakujące dane. Upewnij się, że dostarczasz 'text' i 'target_language'"},
+                                  400)
 
         result_t = text_translate(text=text, target_language=target_language, source_language=source_language)
         # logging.debug(result.text)
@@ -138,6 +140,45 @@ def lambda_handler(event, context):
 
         return prepare_return(response, 200)
 
+    if event['path'] == '/ai_embedding_get':
+        print("AI get embedding - path /ai_embedding_get")
+        print(event['body'])
+
+        # parsed_dict = parse_qs(event['body'])
+        # pprint(parsed_dict)
+
+        # parsed_dict = json.loads(event['body'])
+        parsed_dict = parse_qs(event['body'])
+
+        pprint(parsed_dict)
+
+        model = parsed_dict['model'][0]
+        text = parsed_dict['text'][0]
+
+        if not text:
+            print("Missing data. Make sure you provide 'text'")
+            return prepare_return({"status": "error",
+                                   "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400)
+
+        if not model:
+            print("Missing data. Make sure you provide 'model'")
+            return prepare_return({"status": "error",
+                                   "message": "Brakujące dane. Upewnij się, że dostarczasz 'model'"}, 400)
+
+        embedds = get_embedding(model, text=text)
+
+        pprint(embedds)
+
+        response = {
+            "status": "success",
+            "text": text,
+            "model": model,
+            "encoding": "utf8",
+            "embedds": embedds.embedding
+        }
+        print(response)
+        return prepare_return(response, 200)
+
     if event['path'] == '/ai_ask':
         print("ask AI - path /ai_ask")
         print(event['body'])
@@ -151,17 +192,17 @@ def lambda_handler(event, context):
         if not text:
             print("Missing data. Make sure you provide 'text'")
             return prepare_return({"status": "error",
-                    "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400)
+                                   "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400)
 
         if not query:
             print("Missing data. Make sure you provide 'query'")
             return prepare_return({"status": "error",
-                    "message": "Brakujące dane. Upewnij się, że dostarczasz 'query'"}, 400)
+                                   "message": "Brakujące dane. Upewnij się, że dostarczasz 'query'"}, 400)
 
         if not model:
             print("Missing data. Make sure you provide 'model'")
             return prepare_return({"status": "error",
-                    "message": "Brakujące dane. Upewnij się, że dostarczasz 'model'"}, 400)
+                                   "message": "Brakujące dane. Upewnij się, że dostarczasz 'model'"}, 400)
 
         query = query.replace("{text}", text)
         logging.debug(f"query: {query}")
