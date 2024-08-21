@@ -140,18 +140,15 @@ def lambda_handler(event, context):
     # event['path'] == '/translate' - in internet version - with access to others AWS services
 
     if event['path'] == '/website_similar':
-
         parsed_dict = parse_qs(event['body'])
-        text = parsed_dict['search'][0]
 
-        embedds = embedding.get_embedding(model=os.getenv("EMBEDDING_MODEL"), text=text)
+        embedds = '[' + ','.join(parsed_dict['embedds[]']) + ']'
+        model = parsed_dict['model'][0]
 
-        # pprint(embedds)
+        websites_list = websites.get_similar(embedds, model)
 
-        websites_list = websites.get_similar(embedds.embedding, os.getenv("EMBEDDING_MODEL"))
-
-        return prepare_return({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
-                "websites": websites_list}, 200)
+        return prepare_return({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8",
+                               "websites": websites_list}, 200)
 
     # if event['path'] == '/website_download_text_content' - in internet version - with access to others AWS services
 
@@ -168,7 +165,7 @@ def lambda_handler(event, context):
         if not text:
             logging.debug("Missing data. Make sure you provide 'text'")
             return prepare_return({"status": "error",
-                    "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400)
+                                   "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400)
 
         chapter_list_simple = []
 
