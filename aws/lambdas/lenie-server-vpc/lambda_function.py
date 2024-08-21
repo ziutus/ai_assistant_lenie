@@ -140,12 +140,23 @@ def lambda_handler(event, context):
     # event['path'] == '/translate' - in internet version - with access to others AWS services
 
     if event['path'] == '/website_similar':
+        # pprint(event['body'])
+
         parsed_dict = parse_qs(event['body'])
+
+        pprint(parsed_dict)
 
         embedds = '[' + ','.join(parsed_dict['embedds[]']) + ']'
         model = parsed_dict['model'][0]
+        limit = int(parsed_dict['limit'][0])
 
-        websites_list = websites.get_similar(embedds, model)
+        pprint(limit)
+
+        # embedds = embedding.get_embedding(model=os.getenv("EMBEDDING_MODEL"), text=text)
+
+        # print(type(embedds))
+
+        websites_list = websites.get_similar(embedds, model, 30)
 
         return prepare_return({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8",
                                "websites": websites_list}, 200)
