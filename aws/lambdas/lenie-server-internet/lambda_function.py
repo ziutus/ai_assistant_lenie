@@ -167,7 +167,11 @@ def lambda_handler(event, context):
 
         embedds = get_embedding(model, text=text)
 
-        pprint(embedds)
+        # pprint(embedds.embedding)
+
+        if not embedds.embedding:
+            return prepare_return({"status": "error",
+                                   "message": "Can't get embeeding"}, 400)
 
         response = {
             "status": "success",
