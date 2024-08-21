@@ -267,7 +267,8 @@ def lambda_handler(event, context):
 
         try:
             web_document.save()
-            return prepare_return({"status": "success", "message": f"Dane strony {web_document.id} zaktualizowane pomyślnie."}, 200)
+            return prepare_return(
+                {"status": "success", "message": f"Dane strony {web_document.id} zaktualizowane pomyślnie."}, 200)
         except Exception as e:
             logging.error(e)
             logging.debug(f"Error while saving new webpage: {e}")
