@@ -24,7 +24,9 @@ class StalkerWebDocumentDB(StalkerWebDocument):
             )
 
         self.next_id = None
+        self.next_type = None
         self.previous_id = None
+        self.previous_type = None
 
         with self.db_conn:
             with self.db_conn.cursor() as cur:
@@ -67,16 +69,18 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                         self.ai_summary_needed = False
 
                     if reach:
-                        cur.execute("SELECT id FROM public.web_documents WHERE id > %s ORDER BY id LIMIT 1", (self.id,))
+                        cur.execute("SELECT id, document_type FROM public.web_documents WHERE id > %s ORDER BY id LIMIT 1", (self.id,))
                         result = cur.fetchone()
                         if result is not None:
                             self.next_id = result[0]
+                            self.next_type = result[1]
 
-                        cur.execute("SELECT id FROM public.web_documents WHERE id < %s ORDER BY id DESC LIMIT 1",
+                        cur.execute("SELECT id, document_type FROM public.web_documents WHERE id < %s ORDER BY id DESC LIMIT 1",
                                     (self.id,))
                         result = cur.fetchone()
                         if result is not None:
                             self.previous_id = result[0]
+                            self.previous_type = result[1]
 
         if webpage_parse_result:
             self.text_raw = webpage_parse_result.text_raw
@@ -89,7 +93,9 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         result = {
             "id": self.id,
             "next_id": self.next_id,
+            "next_type": self.next_type,
             "previous_id": self.previous_id,
+            "previous_type": self.previous_type,
             "summary": self.summary,
             "url": self.url,
             "language": self.language,
@@ -186,7 +192,9 @@ class StalkerWebDocumentDB(StalkerWebDocument):
     def __clean_values(self):
         self.id = None
         self.next_id = None
+        self.next_type = None
         self.previous_id = None
+        self.previous_type = None
         self.summary = None
         self.url = None
         self.language = None

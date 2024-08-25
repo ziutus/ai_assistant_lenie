@@ -31,7 +31,7 @@ class WebsitesDBPostgreSQL:
         with self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT id FROM public.web_documents WHERE id > %s and document_state = '{StalkerDocumentStatus.NEED_MANUAL_REVIEW.name}' ORDER BY id LIMIT 1",
+                    f"SELECT id, document_type FROM public.web_documents WHERE id > %s and document_state = '{StalkerDocumentStatus.NEED_MANUAL_REVIEW.name}' ORDER BY id LIMIT 1",
                     (website_id,))
                 result = cur.fetchone()
                 if result is None:

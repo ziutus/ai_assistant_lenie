@@ -164,7 +164,7 @@ def website_get_by_id():
 
 @app.route('/website_get_next_to_correct', methods=['GET'])
 def website_get_next_to_correct():
-    logging.debug("Getting website by id")
+    logging.debug("Getting website by id, new style")
     logging.debug(request.args)
 
     link_id = request.args.get('id')
@@ -175,11 +175,15 @@ def website_get_next_to_correct():
         return {"status": "error",
                 "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
 
-    next_id = websites.get_next_to_correct(link_id)
+    next_data = websites.get_next_to_correct(link_id)
+    pprint(next_data)
+    next_id = next_data[0]
+    next_type = next_data[1]
     logging.info(next_id)
     response = {
         "status": "success",
-        "next_id": next_id
+        "next_id": next_id,
+        "next_type": next_type,
     }
 
     return response, 200
@@ -210,6 +214,28 @@ def translate():
     else:
         logging.error(result.error_message)
         return {"status": "error", "message": result.error_message}, 500
+
+
+@app.route('/ai_get_embedding', methods=['POST'])
+def ai_get_embedding():
+    if request.form:
+        logging.debug("Using form")
+        logging.debug(request.form)
+        text = request.form.get('search')
+    elif request.json:
+        logging.debug("Using json")
+        logging.debug(request.json)
+        text = request.json['search']
+    else:
+        logging.debug("Using args")
+        logging.debug(request.args)
+        text = request.args.get('search')
+
+    import library.embedding as embedding
+    embedds = embedding.get_embedding(model=os.getenv("EMBEDDING_MODEL"), text=text)
+
+    return {"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
+            "embedding": embedds}, 200
 
 
 @app.route('/website_similar', methods=['POST'])

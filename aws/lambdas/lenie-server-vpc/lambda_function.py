@@ -128,11 +128,15 @@ def lambda_handler(event, context):
             return prepare_return('Missing ID parameter', 500)
 
         document_id = event['queryStringParameters']['id']
-        next_id = websites.get_next_to_correct(document_id)
+        next_data = websites.get_next_to_correct(document_id)
+        # pprint(next_data)
+        next_id = next_data[0]
+        next_type = next_data[1]
         logging.info(next_id)
         response = {
             "status": "success",
-            "next_id": next_id
+            "next_id": next_id,
+            "next_type": next_type,
         }
 
         return prepare_return(response, 200)
