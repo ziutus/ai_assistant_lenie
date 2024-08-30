@@ -2,26 +2,67 @@ import json
 import os
 import sys
 import boto3
+import uuid
 from pprint import pprint
 
 
 def lambda_handler(event, context):
-    # TODO implement
     sqs = boto3.client('sqs')
+    s3 = boto3.client('s3')
     queue_url = os.getenv("AWS_QUEUE_URL_ADD")
-
-    # pprint(event)
-    # target_url = event['url']
-    # url_type = event['type']
+    bucket_name = "lenie-s3-tmp"
 
     pprint(event["body"])
     url_data = json.loads(event["body"])
-    target_url = url_data["url"]
-    url_type = url_data["type"]
-    source = url_data["source"]
-    note = url_data["note"]
 
-    message_body = {"url": target_url, "type": url_type, "source": source, "note": note}
+    # Pobierz wartości z url_data
+    target_url = url_data.get("url")
+    url_type = url_data.get("type")
+    source = url_data.get("source", "default_source")
+    note = url_data.get("note", "default_note")
+    text = url_data.get("text", "")
+
+    # Sprawdź, czy wartości wymagane są obecne
+    if not target_url or not url_type:
+        error_message = "Missing required parameter(s): 'url' or 'type'"
+        print(error_message)
+        return {
+            'statusCode': 500,
+            'body': json.dumps(error_message),
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': True,
+            },
+        }
+
+    # Generowanie losowego UID
+    uid = str(uuid.uuid4())
+
+    # Tworzenie pliku z wartością zmiennej 'text' i wysyłanie go do S3
+    file_name = f"{uid}.txt"
+    try:
+        s3.put_object(Bucket=bucket_name, Key=file_name, Body=text)
+        print(f"Successfully uploaded {file_name} to {bucket_name}")
+    except Exception as e:
+        error_message = f"Failed to upload {file_name} to {bucket_name}: {str(e)}"
+        print(error_message)
+        return {
+            'statusCode': 500,
+            'body': json.dumps(error_message),
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': True,
+            },
+        }
+
+    # Utwórz message_body bez 'text'
+    message_body = {
+        "url": target_url,
+        "type": url_type,
+        "source": source,
+        "note": note,
+        "uid": uid  # Dodanie UID do message_body
+    }
 
     response = sqs.send_message(
         QueueUrl=queue_url,
@@ -40,11 +81,11 @@ def lambda_handler(event, context):
             },
         }
 
-    print("Successfully sent message to SQS, messeage got ID: ", response["MessageId"])
+    print("Successfully sent message to SQS, message ID: ", response["MessageId"])
 
     return {
         'statusCode': 200,
-        'body': json.dumps(f'Successfully sent message to SQS, messeage got ID: {response["MessageId"]}'),
+        'body': json.dumps(f'Successfully sent message to SQS, message ID: {response["MessageId"]}'),
         'headers': {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Credentials': True,
