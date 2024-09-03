@@ -92,7 +92,7 @@ After starting the appliaction or container, you can access the Stalker applicat
 ### Docker
 
 ```powershell
-docker run --env-file ./.env stalker-server2
+docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenie-ai-server:0.2.6.1
 ```
 
 ### Docker compose
@@ -100,6 +100,23 @@ docker run --env-file ./.env stalker-server2
 ```shell
 docker-compose.exe create 
 docker-compose.exe start
+```
+
+## Working with API
+
+You can send example API request even from command line:
+
+```shell
+
+curl -X POST https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add \
+     -H "Content-Type: application/json" \
+     -H "x-api-key: XXXX" \
+     -d '{
+           "url": "https://tech.wp.pl/ukrainski-system-delta-zintegrowany-z-polskim-topazem-zadaje-rosjanom-wielkie-straty,7066814570990208a",
+           "type": "webpage",
+           "note": "Ciekawa integracja z polskim systemem obrazowania pola walki",
+           "text": "html strony z podanego URL"
+         }'
 ```
 
 ## Services which can use to get data
@@ -121,3 +138,7 @@ And:
 Psy przyszły po sąsiada o 6 rano
 
 As Poles, we perfectly understand the difference between an animal and the slang term for police officers, but you need to know the cultural context.
+
+Now we have Bielik (https://bielik.ai), which perfect understand magic of this sentence:
+
+![img.png](bielik_psy_pl.png)
