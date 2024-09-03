@@ -244,21 +244,24 @@ def search_similar():
         logging.debug("Using form")
         logging.debug(request.form)
         text = request.form.get('search')
+        limit = request.form.get('limit')
     elif request.json:
         logging.debug("Using json")
         logging.debug(request.json)
         text = request.json['search']
+        limit = request.json['limit']
     else:
         logging.debug("Using args")
         logging.debug(request.args)
         text = request.args.get('search')
+        limit = request.args.get('limit')
 
     import library.embedding as embedding
     embedds = embedding.get_embedding(model=os.getenv("EMBEDDING_MODEL"), text=text)
 
     # pprint(embedds)
 
-    websites_list = websites.get_similar(embedds.embedding, os.getenv("EMBEDDING_MODEL"))
+    websites_list = websites.get_similar(embedds.embedding, os.getenv("EMBEDDING_MODEL"), limit=limit)
 
     return {"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
             "websites": websites_list}, 200
