@@ -3,6 +3,7 @@ from typing import Any
 
 import psycopg2
 from psycopg2 import sql
+from pprint import pprint
 
 from library.stalker_web_document import StalkerWebDocument, StalkerDocumentStatus, StalkerDocumentType
 
@@ -27,7 +28,7 @@ class WebsitesDBPostgreSQL:
 
         self.embedding = os.getenv("EMBEDDING_MODEL")
 
-    def get_next_to_correct(self, website_id) -> int | str:
+    def get_next_to_correct(self, website_id) -> [int, str]:
         with self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(
@@ -36,7 +37,7 @@ class WebsitesDBPostgreSQL:
                 result = cur.fetchone()
                 if result is None:
                     return -1
-                return result[0]
+                return result
 
     def close(self):
         self.conn.close()
@@ -45,7 +46,7 @@ class WebsitesDBPostgreSQL:
         with self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT id, url, title, document_type, created_at  FROM public.web_documents ORDER BY created_at DESC LIMIT {int(limit)} OFFSET {int(offset)}")
+                    f"SELECT id, url, title, document_type, created_at, document_state, document_state_error, note  FROM public.web_documents ORDER BY created_at DESC LIMIT {int(limit)} OFFSET {int(offset)}")
                 result = []
 
                 for line in cur.fetchall():
@@ -55,7 +56,10 @@ class WebsitesDBPostgreSQL:
                         "url": line[1],
                         "title": line[2],
                         "document_type": line[3],
-                        "created_at": dt.strftime('%Y-%m-%d %H:%M:%S')
+                        "created_at": dt.strftime('%Y-%m-%d %H:%M:%S'),
+                        "document_state": line[5],
+                        "document_state_error": line[6],
+                        "note": line[7]
                     })
 
                 return result
