@@ -28,6 +28,9 @@ class WebsitesDBPostgreSQL:
 
         self.embedding = os.getenv("EMBEDDING_MODEL")
 
+    def is_connection_open(self) -> bool:
+        return self.conn.closed == 0
+
     def get_next_to_correct(self, website_id) -> [int, str]:
         with self.conn:
             with self.conn.cursor() as cur:
