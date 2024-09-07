@@ -42,11 +42,18 @@ class WebsitesDBPostgreSQL:
     def close(self):
         self.conn.close()
 
-    def get_list(self, limit: int = 100, offset: int = 0) -> list[{str, str, str, str, str}]:
+    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL") -> list[
+        dict[str, str, str, str, str]]:
+        offset = offset * limit
+
+        if document_type == "ALL":
+            query = f"SELECT id, url, title, document_type, created_at, document_state, document_state_error, note  FROM public.web_documents ORDER BY created_at DESC LIMIT {int(limit)} OFFSET {int(offset)}"
+        else:
+            query = f"SELECT id, url, title, document_type, created_at, document_state, document_state_error, note  FROM public.web_documents WHERE document_type = '{document_type}' ORDER BY created_at DESC LIMIT {int(limit)} OFFSET {int(offset)}"
+
         with self.conn:
             with self.conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT id, url, title, document_type, created_at, document_state, document_state_error, note  FROM public.web_documents ORDER BY created_at DESC LIMIT {int(limit)} OFFSET {int(offset)}")
+                cur.execute(query)
                 result = []
 
                 for line in cur.fetchall():
@@ -70,8 +77,8 @@ class WebsitesDBPostgreSQL:
                 cur.execute("SELECT count(id) FROM public.web_documents")
                 return cur.fetchone()[0]
 
-    def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30) \
-            -> list[dict[str, Any]] | None:
+    def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30) -> list[dict[
+        str, Any]] | None:
         if minimal_similarity is None:
             minimal_similarity = 0.30
         if embedding is None:
@@ -96,7 +103,6 @@ class WebsitesDBPostgreSQL:
              ORDER BY cosine_similarity desc
              LIMIT {limit}
              """
-        # print(query)
 
         cursor = self.conn.cursor()
         cursor.execute(query)
@@ -120,24 +126,19 @@ class WebsitesDBPostgreSQL:
         return result
 
     def get_ready_for_download(self) -> list[int | str]:
-
         cursor = self.conn.cursor()
         cursor.execute(
             f"SELECT id, url, document_type FROM public.web_documents WHERE document_state = '{StalkerDocumentStatus.URL_ADDED.name}'")
         website_data = cursor.fetchall()
-
         return website_data
 
     def get_ready_for_embedding(self) -> list[int | str]:
-
         query = f"""
              SELECT id 
              FROM public.web_documents
              WHERE public.web_documents.document_state = '{StalkerDocumentStatus.READY_FOR_EMBEDDING.name}'
              ORDER BY id
              """
-        # print(query)
-
         cursor = self.conn.cursor()
         cursor.execute(query)
 
@@ -148,34 +149,28 @@ class WebsitesDBPostgreSQL:
         return result
 
     def get_transcription_done(self) -> list[int | str]:
-
         query = f"""
              SELECT id 
              FROM public.web_documents
              WHERE public.web_documents.document_state = '{StalkerDocumentStatus.TRANSCRIPTION_DONE.name}'
              ORDER BY id
              """
-        # print(query)
-
         cursor = self.conn.cursor()
         cursor.execute(query)
 
         result = []
-        for r in cursor.fetchall():
+        for r in cursor.fetchall()):
             result.append(r[0])
 
         return result
 
     def get_ready_for_translation(self) -> list[int | str]:
-
         query = f"""
              SELECT id 
              FROM public.web_documents
              WHERE public.web_documents.document_state = '{StalkerDocumentStatus.READY_FOR_TRANSLATION.name}'
              ORDER BY id
              """
-        # print(query)
-
         cursor = self.conn.cursor()
         cursor.execute(query)
 
@@ -186,7 +181,6 @@ class WebsitesDBPostgreSQL:
         return result
 
     def get_youtube_just_added(self):
-
         cursor = self.conn.cursor()
         cursor.execute(
             f"SELECT id, url, document_type, language, chapter_list, ai_summary_needed FROM public.web_documents WHERE document_type='youtube' and (document_state = '{StalkerDocumentStatus.URL_ADDED.name}' or document_state = '{StalkerDocumentStatus.NEED_TRANSCRIPTION.name}' )")
@@ -198,11 +192,9 @@ class WebsitesDBPostgreSQL:
         cursor = self.conn.cursor()
         cursor.execute(
             "INSERT INTO public.websites_embeddings (website_id, langauge, text, embedding, model, text_original) "
-            "VALUES (%s,%s, %s, %s, "
-            "%s, %s)",
+            "VALUES (%s,%s, %s, %s, %s,%s)",
             (website_id, langauge, text, embedding, model, text_original)
         )
-
         self.conn.commit()
 
     def get_last_unknown_news(self) -> str:
@@ -211,7 +203,6 @@ class WebsitesDBPostgreSQL:
         FROM web_documents 
         WHERE document_type = '{StalkerDocumentType.link.name}' AND source = 'https://unknow.news/'
         """
-
         with self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(query)
