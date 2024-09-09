@@ -61,7 +61,7 @@ def lambda_handler(event, context):
         "type": url_type,
         "source": source,
         "note": note,
-        "uid": uid  # Dodanie UID do message_body
+        "s3_uuid": uid  # Dodanie UID do message_body
     }
 
     response = sqs.send_message(
