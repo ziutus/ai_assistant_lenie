@@ -21,6 +21,7 @@ def lambda_handler(event, context):
     source = url_data.get("source", "default_source")
     note = url_data.get("note", "default_note")
     text = url_data.get("text", "")
+    title = url_data.get("title", "")
 
     # Sprawdź, czy wartości wymagane są obecne
     if not target_url or not url_type:
@@ -61,6 +62,7 @@ def lambda_handler(event, context):
         "type": url_type,
         "source": source,
         "note": note,
+        "title": title,
         "s3_uuid": uid  # Dodanie UID do message_body
     }
 
