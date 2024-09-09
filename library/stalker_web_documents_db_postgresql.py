@@ -131,7 +131,7 @@ class WebsitesDBPostgreSQL:
     def get_ready_for_download(self) -> list[int | str]:
         cursor = self.conn.cursor()
         cursor.execute(
-            f"SELECT id, url, document_type FROM public.web_documents WHERE document_state = '{StalkerDocumentStatus.URL_ADDED.name}'")
+            f"SELECT id, url, document_type, s3_uuid FROM public.web_documents WHERE document_state = '{StalkerDocumentStatus.URL_ADDED.name}'")
         website_data = cursor.fetchall()
         return website_data
 
@@ -162,7 +162,7 @@ class WebsitesDBPostgreSQL:
         cursor.execute(query)
 
         result = []
-        for r in cursor.fetchall()):
+        for r in cursor.fetchall():
             result.append(r[0])
 
         return result

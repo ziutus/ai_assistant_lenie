@@ -64,6 +64,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                     self.ai_summary_needed = website_data[22]
                     self.author = website_data[23]
                     self.note = website_data[24]
+                    self.s3_uuid = website_data[25]
 
                     if self.ai_summary_needed is None:
                         self.ai_summary_needed = False
@@ -119,7 +120,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
             "transcript_job_id": self.transcript_job_id,
             "ai_summary_needed": self.ai_summary_needed,
             "author": self.author,
-            "note": self.note
+            "note": self.note,
+            "s3_uuid": self.s3_uuid
         }
         return result
 
@@ -131,8 +133,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                         "INSERT INTO {} (title, title_english, summary, summary_english, url, language, "
                         "tags, document_type, text, text_english, source, paywall, date_from, original_id,"
                         "document_length, document_state, document_state_error, text_raw, transcript_job_id, "
-                        "ai_summary_needed, author, note) "
-                        "VALUES (%s, %s,%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+                        "ai_summary_needed, author, note, s3_uuid) "
+                        "VALUES (%s, %s,%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
                     ).format(sql.Identifier('web_documents'))
 
                     cur.execute(
@@ -142,7 +144,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                          self.text_english, self.source, self.paywall, self.date_from, self.original_id,
                          self.document_length,
                          self.document_state.name, self.document_state_error.name, self.text_raw,
-                         self.transcript_job_id, self.ai_summary_needed, self.author, self.note)
+                         self.transcript_job_id, self.ai_summary_needed, self.author, self.note, self.s3_uuid)
                     )
                     self.id = cur.fetchone()[0]
 
@@ -171,7 +173,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                         ("transcript_job_id", self.transcript_job_id),
                         ("ai_summary_needed", self.ai_summary_needed),
                         ("author", self.author),
-                        ("note", self.note)
+                        ("note",  self.note),
+                        ("s3_uuid",  self.s3_uuid)
                     ]
                     set_clause = ", ".join(
                         f"{column} = %s" for column, value in columns if value is not None
@@ -219,6 +222,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         self.ai_summary_needed = False
         self.author = None
         self.note = None
+        self.s3_uuid = None
 
     def delete(self) -> bool:
         with self.db_conn:

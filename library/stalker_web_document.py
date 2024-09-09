@@ -60,7 +60,8 @@ class StalkerWebDocument:
                  transcript_job_id: str | None = None,
                  ai_summary_needed: bool | None = None,
                  author: str | None = None,
-                 note: str | None = None
+                 note: str | None = None,
+                 s3_uuid: str | None = None
                  ):
 
         self.id: int | None = wb_id
@@ -91,6 +92,7 @@ class StalkerWebDocument:
         self.ai_summary_needed: bool | None = ai_summary_needed
         self.author: str | None = author
         self.note: str | None = note
+        self.s3_uuid: str | None = note
 
     def __str__(self):
         data = {
@@ -116,7 +118,8 @@ class StalkerWebDocument:
             "transcript_job_id": self.transcript_job_id,
             "ai_summary_needed": self.ai_summary_needed,
             "author": self.author,
-            "note": self.note
+            "note": self.note,
+            "s3_uuid": self.s3_uuid
         }
         result = json.dumps(data, indent=4)
 
