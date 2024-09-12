@@ -5,6 +5,13 @@ import boto3
 import uuid
 from pprint import pprint
 
+import logging
+
+logger = logging.getLogger()
+logger.setLevel("INFO")
+
+
+# https://docs.aws.amazon.com/lambda/latest/dg/python-logging.html
 
 def lambda_handler(event, context):
     sqs = boto3.client('sqs')
@@ -12,8 +19,11 @@ def lambda_handler(event, context):
     queue_url = os.getenv("AWS_QUEUE_URL_ADD")
     bucket_name = "lenie-s3-tmp"
 
-    pprint(event["body"])
     url_data = json.loads(event["body"])
+    url_data_print = json.loads(event["body"])
+    url_data_print["text"] = url_data_print["text"][:50]
+
+    logger.info('data which came by API gateway', extra=url_data_print)
 
     # Pobierz wartości z url_data
     target_url = url_data.get("url")
@@ -22,6 +32,7 @@ def lambda_handler(event, context):
     note = url_data.get("note", "default_note")
     text = url_data.get("text", "")
     title = url_data.get("title", "")
+    language = url_data.get("language", "")
 
     # Sprawdź, czy wartości wymagane są obecne
     if not target_url or not url_type:
@@ -63,6 +74,7 @@ def lambda_handler(event, context):
         "source": source,
         "note": note,
         "title": title,
+        "language": language,
         "s3_uuid": uid  # Dodanie UID do message_body
     }
 
