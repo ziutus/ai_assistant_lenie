@@ -193,6 +193,10 @@ class StalkerWebDocument:
         if self.document_state == StalkerDocumentStatus.EMBEDDING_EXIST:
             return None
 
+        if not self.text_raw:
+            print("This is adding new entry, so raw text is equal to text")
+            self.text_raw = self.text
+
         if self.title and not self.language:
             print("Checking language for title", end="")
             self.language = text_language_detect(text=self.title)
