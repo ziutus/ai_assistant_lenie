@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 import re
 
 from library.text_functions import remove_before_regex, remove_last_occurrence_and_after, remove_text_regex
-from library.website.website_text_clean_regexp import  remove_before, remove_after, remove_string, remove_string_regexp
+from library.website.website_text_clean_regexp import  site_rules
 
 
 def download_raw_html(url: str) -> bytes | None:
@@ -67,39 +67,21 @@ def webpage_raw_parse(url: str, raw_html: bytes, analyze_content: bool = True) -
 
 def webpage_text_clean(url: str, content: str):
     content = re.sub('\xa0', " ", content)
-    content_length = len(content)
 
-    for url_path in remove_before:
+    for url_path in site_rules:
         if url.find(url_path) != -1:
-            for regex in remove_before[url_path]:
+            for regex in  site_rules[url_path]["remove_before"]:
                 content = remove_before_regex(content, regex)
-                content_length = len(content)
-
-    for url_path in remove_after:
-        if url.find(url_path) != -1:
-            if url_path in remove_after:  # Additional check
-                for regex in remove_after[url_path]:
-                    content = remove_last_occurrence_and_after(content, regex)
-                    content_length = len(content)
-
-    for url_path in remove_string:
-        if url.find(url_path) != -1:
-            if url_path in remove_string:  # Additional check
-                for data_string in remove_string[url_path]:
-                    content = content.replace(data_string, "")
-                    content_length = len(content)
-
-    for url_path in remove_string_regexp:
-        if url.find(url_path) != -1:
-            if url_path in remove_string_regexp:  # Additional check
-                for regex in remove_string_regexp[url_path]:
-                    content = remove_text_regex(content, regex)
-                    content_length = len(content)
+            for regex in site_rules[url_path]["remove_after"]:
+                content = remove_last_occurrence_and_after(content, regex)
+            for data_string in site_rules[url_path]["remove_string"]:
+                content = content.replace(data_string, "")
+            for regex in site_rules[url_path]["remove_string_regexp"]:
+                content = remove_text_regex(content, regex)
 
     content = re.sub(r'\n\s+\n', '\n\n', content)
     content = re.sub(r'\n\n+', '\n\n', content)
     content = re.sub(r'\n+$', '', content)
     content = re.sub(r'^\n+', '', content)
-    content_length = len(content)
 
     return content
