@@ -104,11 +104,11 @@ def webpage_raw_parse(url: str, raw_html: bytes, analyze_content: bool = True) -
             if index != -1:
                 content = content[:index] + '\n\n' + content[index:]
 
-        result.text = webpage_remove_regexp(url, content)
+        result.text = webpage_text_clean(url, content)
 
     return result
 
-def webpage_remove_regexp(url: str, content: str):
+def webpage_text_clean(url: str, content: str):
     content = re.sub('\xa0', " ", content)
     content_length = len(content)
 
