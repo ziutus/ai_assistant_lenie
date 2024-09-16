@@ -59,12 +59,12 @@ site_rules = {
         "remove_string" : [],
         "remove_string_regexp" : []
     },
-    # "": {
-    #     "remove_before" : [],
-    #     "remove_after" : [],
-    #     "remove_string" : [],
-    #     "remove_string_regexp" : []
-    # },
+    "https://biznesalert.pl/": {
+        "remove_before" : ["AUTOR"],
+        "remove_after" : ["WARTO PRZECZYTAĆ"],
+        "remove_string" : [],
+        "remove_string_regexp" : []
+    },
     # "": {
     #     "remove_before" : [],
     #     "remove_after" : [],

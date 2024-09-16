@@ -45,14 +45,32 @@ class WebsitesDBPostgreSQL:
     def close(self):
         self.conn.close()
 
-    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL") -> list[
+    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL") -> list[
         dict[str, str, str, str, str]]:
         offset = offset * limit
 
-        if document_type == "ALL":
-            query = f"SELECT id, url, title, document_type, created_at, document_state, document_state_error, note  FROM public.web_documents ORDER BY created_at DESC LIMIT {int(limit)} OFFSET {int(offset)}"
+        base_query = "SELECT id, url, title, document_type, created_at, document_state, document_state_error, note FROM public.web_documents"
+        order_by = "ORDER BY created_at DESC"
+        limit_offset = f"LIMIT {int(limit)} OFFSET {int(offset)}"
+
+        where_clauses = []
+
+        if document_type != "ALL":
+            where_clauses.append(f"document_type = '{document_type}'")
+
+        if document_state != "ALL":
+            where_clauses.append(f"document_state = '{document_state}'")
+
+        # Łączenie warunków zapytania
+        if where_clauses:
+            where_query = " WHERE " + " AND ".join(where_clauses)
         else:
-            query = f"SELECT id, url, title, document_type, created_at, document_state, document_state_error, note  FROM public.web_documents WHERE document_type = '{document_type}' ORDER BY created_at DESC LIMIT {int(limit)} OFFSET {int(offset)}"
+            where_query = ""
+
+        # Końcowe zapytanie
+        query = f"{base_query}{where_query} {order_by} {limit_offset}"
+
+        print(query)
 
         with self.conn:
             with self.conn.cursor() as cur:
