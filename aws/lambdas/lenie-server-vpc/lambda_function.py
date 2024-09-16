@@ -75,8 +75,9 @@ def lambda_handler(event, context):
 
     if event['path'] == '/website_list':
         query_params = event.get('queryStringParameters', {})
+        pprint(query_params)
         document_state = query_params.get('document_state', 'ALL')
-        document_type = query_params.get('document_type', 'ALL')
+        document_type = query_params.get('type', 'ALL')
 
         websites_list = websites.get_list(document_type=document_type, document_state=document_state)
 
