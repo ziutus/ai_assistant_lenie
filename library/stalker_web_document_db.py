@@ -274,11 +274,11 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                 self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION
                 return False
 
-            text_original = self.text.split("\n\n")
+            text_original = self.text.split("\n\n\n")
             if self.language == 'en':
-                text_english = self.text.split("\n\n")
+                text_english = self.text.split("\n\n\n")
             else:
-                text_english = self.text_english.split("\n\n")
+                text_english = self.text_english.split("\n\n\n")
 
             if len(text_original) != len(text_english):
                 self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
