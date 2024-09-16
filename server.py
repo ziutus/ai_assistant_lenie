@@ -11,7 +11,8 @@ from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_transcript import chapters_text_to_list
 from library.translate import text_translate
-from library.website.website_download_context import download_raw_html, webpage_raw_parse, WebPageParseResult
+from library.website.website_download_context import download_raw_html, webpage_raw_parse, WebPageParseResult, \
+    webpage_remove_regexp
 from library.website.website_paid import website_is_paid
 from library.text_functions import split_text_for_embedding
 
@@ -386,6 +387,45 @@ def ai_ask():
 
         logging.debug(response)
         return response, 500
+
+
+@app.route('/website_text_remove_not_needed', methods=['POST'])
+def website_text_remove_not_needed():
+    if request.form:
+        logging.debug("Using form")
+
+    logging.debug("website_text_remove_not_needed")
+    logging.debug(request.form)
+
+    text = request.form.get('text')
+    url = request.form.get('url')
+
+    debug_needed = False
+    if debug_needed:
+        with open('debug.txt', 'w', encoding='utf-8') as debug_file:
+            debug_file.write(f"text: {text}\n")
+            debug_file.write(f"url: {url}\n")
+            logging.info("Debug data written into file debug.txt")
+
+
+    if not text:
+        logging.debug("Missing data. Make sure you provide 'text'")
+        return {"status": "error",
+                "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
+
+    if not url:
+        logging.debug("Missing data. Make sure you provide 'url'")
+        return {"status": "error",
+                "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
+
+    response = {
+            "status": "success",
+            "text": webpage_remove_regexp(url, text),
+            "encoding": "utf8",
+            "message": "Text cleaned"
+        }
+    logging.debug(response)
+    return response, 200
 
 
 @app.route('/website_split_for_embedding', methods=['POST'])

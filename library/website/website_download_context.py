@@ -12,7 +12,7 @@ remove_before = {
                                       r"Pogoda\s+na\s+\d+\s+godzinPogoda\s+na\s+\d+\s+dni",
                                       r'Dzisiaj, \d{1,2} \w+ \(\d{2}:\d{2}\)\nLubię to\n\d+'],
     "https://wiadomosci.onet.pl/": [r"min\s+czytania\s+FACEBOOK\s+X\s+E-MAIL\s+KOPIUJ\s+LINK"],
-    "https://www.onet.pl/informacje/newsweek": [r"PremiumNewsweekŚwiat", r"PremiumNewsweekPsychologia"],
+    "https://www.onet.pl/informacje/newsweek": [r"PremiumNewsweekŚwiat", r"PremiumNewsweekPsychologia", r'\b([0-2]?[0-9]|3[0-1]) (stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia) (\d{4}), ([0-1]?[0-9]|2[0-3]):([0-5][0-9])\b,\s(\d+)\nLubię to'],
     "https://www.onet.pl/informacje/": [r"ięcej\stakich\shistorii\sznajdziesz\sna\sstronie\sgłównej\sOnetu"],
     "https://businessinsider.com.pl/": [r"min\sczytania\s+Udostępnij\sartykuł"]
 }
@@ -108,7 +108,6 @@ def webpage_raw_parse(url: str, raw_html: bytes, analyze_content: bool = True) -
 
     return result
 
-
 def webpage_remove_regexp(url: str, content: str):
     content = re.sub('\xa0', " ", content)
     content_length = len(content)
@@ -119,29 +118,26 @@ def webpage_remove_regexp(url: str, content: str):
                 content = remove_before_regex(content, regex)
                 content_length = len(content)
 
-
     for url_path in remove_after:
         if url.find(url_path) != -1:
-            print(url_path)
-            for regex in remove_after[url_path]:
-                content = remove_last_occurrence_and_after(content, regex)
-                content_length = len(content)
+            if url_path in remove_after:  # Additional check
+                for regex in remove_after[url_path]:
+                    content = remove_last_occurrence_and_after(content, regex)
+                    content_length = len(content)
 
     for url_path in remove_string:
         if url.find(url_path) != -1:
-            for data_string in remove_string[url_path]:
-                content = content.replace(data_string, "")
-                content_length = len(content)
+            if url_path in remove_string:  # Additional check
+                for data_string in remove_string[url_path]:
+                    content = content.replace(data_string, "")
+                    content_length = len(content)
 
     for url_path in remove_string_regexp:
-        pprint(url_path)
-        pprint(url.find(url_path))
-        if url_path in remove_after:
-            print(url_path)
-            pprint(remove_after[url_path])
-            for regex in remove_after[url_path]:
-                content = remove_text_regex(content, regex)
-                content_length = len(content)
+        if url.find(url_path) != -1:
+            if url_path in remove_string_regexp:  # Additional check
+                for regex in remove_string_regexp[url_path]:
+                    content = remove_text_regex(content, regex)
+                    content_length = len(content)
 
     content = re.sub(r'\n\s+\n', '\n\n', content)
     content = re.sub(r'\n\n+', '\n\n', content)
