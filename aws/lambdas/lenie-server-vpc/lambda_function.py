@@ -74,8 +74,11 @@ def lambda_handler(event, context):
         return prepare_return('Missing path in request, check if proxy is setup for this call', 500)
 
     if event['path'] == '/website_list':
-        # TODO: TypeError: Object of type datetime is not JSON serializable
-        websites_list = websites.get_list()
+        query_params = event.get('queryStringParameters', {})
+        document_state = query_params.get('document_state', 'ALL')
+        document_type = query_params.get('document_type', 'ALL')
+
+        websites_list = websites.get_list(document_type=document_type, document_state=document_state)
 
         response = {
             "status": "success",
