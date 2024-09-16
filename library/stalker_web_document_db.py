@@ -4,7 +4,8 @@ import psycopg2
 from psycopg2 import sql
 
 from library import embedding
-from library.stalker_web_document import StalkerWebDocument, StalkerDocumentStatus, StalkerDocumentType
+from library.stalker_web_document import StalkerWebDocument, StalkerDocumentStatus, StalkerDocumentType, \
+    StalkerDocumentStatusError
 from library.website.website_download_context import WebPageParseResult
 
 
@@ -233,13 +234,25 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                 return True
 
     def embedding_add(self, model) -> bool:
-        if self.language != 'en' and (not self.title_english or not self.summary_english):
-            self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-            return False
-
         if self.document_type == StalkerDocumentType.link:
-            if self.title is None or self.summary is None:
+            if self.title is None:
                 self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                self.document_state_error = StalkerDocumentStatusError.TITLE_MISSING
+                return False
+
+            if self.summary is None:
+                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                self.document_state_error = StalkerDocumentStatusError.LINK_SUMMARY_MISSING
+                return False
+
+            if self.language != 'en' and not self.title_english:
+                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                self.document_state_error = StalkerDocumentStatusError.TITLE_TRANSLATION_ERROR
+                return False
+
+            if self.language != 'en' and not self.summary_english:
+                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                self.document_state_error = StalkerDocumentStatusError.SUMMARY_TRANSLATION_ERROR
                 return False
 
             if self.language == 'en':
@@ -258,6 +271,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         elif self.document_type in [StalkerDocumentType.webpage, StalkerDocumentType.youtube]:
             if self.language != 'en' and not self.text_english:
                 self.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION
+                self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION
                 return False
 
             text_original = self.text.split("\n\n")
@@ -268,6 +282,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
 
             if len(text_original) != len(text_english):
                 self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR
                 return False
 
             self.__embedding_delete(model)

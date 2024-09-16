@@ -42,6 +42,8 @@ class StalkerDocumentStatusError(Enum):
     SUMMARY_TRANSLATION_ERROR = 8
     NO_URL_ERROR = 9
     EMBEDDING_ERROR = 10
+    MISSING_TRANSLATION = 11
+    TRANSLATION_ERROR = 12
 
 
 class StalkerWebDocument:
@@ -185,6 +187,11 @@ class StalkerWebDocument:
             self.document_state_error = StalkerDocumentStatusError.NO_URL_ERROR
         elif document_state_error == "EMBEDDING_ERROR":
             self.document_state_error = StalkerDocumentStatusError.EMBEDDING_ERROR
+        elif document_state_error == "MISSING_TRANSLATION":
+            self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION
+        elif document_state_error == "TRANSLATION_ERROR":
+            self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR
+
         else:
             raise ValueError(
                 f"document_state_error must be one of the valid StalkerDocumentStatusError values, not >{document_state_error}<")
