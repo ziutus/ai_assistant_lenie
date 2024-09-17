@@ -164,7 +164,7 @@ def lambda_handler(event, context):
 
         # print(type(embedds))
 
-        websites_list = websites.get_similar(embedds, model, 30)
+        websites_list = websites.get_similar(embedds, model, limit)
 
         return prepare_return({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8",
                                "websites": websites_list}, 200)
