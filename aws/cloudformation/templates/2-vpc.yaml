@@ -29,19 +29,19 @@ Parameters:
   PrivateSubnet1Cidr:
     Type: String
     Default: '10.0.3.0/24'
-    Description: 'CIDR block for the first public subnet'
+    Description: 'CIDR block for the first private subnet'
   PrivateSubnet2Cidr:
     Type: String
     Default: '10.0.4.0/24'
-    Description: 'CIDR block for the second public subnet'
+    Description: 'CIDR block for the second private subnet'
   PrivateDBSubnet1Cidr:
     Type: String
     Default: '10.0.5.0/24'
-    Description: 'CIDR block for the first public subnet'
+    Description: 'CIDR block for the first private DB subnet'
   PrivateDBSubnet2Cidr:
     Type: String
     Default: '10.0.6.0/24'
-    Description: 'CIDR block for the second public subnet'
+    Description: 'CIDR block for the second private DB subnet'
 
 Resources:
   LenieVPC:
@@ -52,7 +52,7 @@ Resources:
       EnableDnsHostnames: 'true'
       Tags:
         - Key: Name
-          Value: !Ref VpcName
+          Value: !Sub '${ProjectName}-${Environment}-VPC'
 
   PublicSubnet1:
     Type: 'AWS::EC2::Subnet'
@@ -63,7 +63,7 @@ Resources:
       MapPublicIpOnLaunch: 'true'
       Tags:
         - Key: Name
-          Value: PublicSubnet1
+          Value: !Sub '${ProjectName}-${Environment}-PublicSubnet1'
 
   PublicSubnet2:
     Type: 'AWS::EC2::Subnet'
@@ -74,7 +74,7 @@ Resources:
       MapPublicIpOnLaunch: 'true'
       Tags:
         - Key: Name
-          Value: PublicSubnet2
+          Value: !Sub '${ProjectName}-${Environment}-PublicSubnet2'
 
   PrivateSubnet1:
     Type: 'AWS::EC2::Subnet'
@@ -85,7 +85,7 @@ Resources:
       MapPublicIpOnLaunch: 'false'
       Tags:
         - Key: Name
-          Value: PublicSubnet1
+          Value: !Sub '${ProjectName}-${Environment}-PrivateSubnet1'
 
   PrivateSubnet2:
     Type: 'AWS::EC2::Subnet'
@@ -96,8 +96,7 @@ Resources:
       MapPublicIpOnLaunch: 'false'
       Tags:
         - Key: Name
-          Value: PublicSubnet2
-
+          Value: !Sub '${ProjectName}-${Environment}-PrivateSubnet2'
 
   PrivateDBSubnet1:
     Type: 'AWS::EC2::Subnet'
@@ -108,7 +107,7 @@ Resources:
       MapPublicIpOnLaunch: 'false'
       Tags:
         - Key: Name
-          Value: PublicSubnet1
+          Value: !Sub '${ProjectName}-${Environment}-PrivateDBSubnet1'
 
   PrivateDBSubnet2:
     Type: 'AWS::EC2::Subnet'
@@ -119,14 +118,14 @@ Resources:
       MapPublicIpOnLaunch: 'false'
       Tags:
         - Key: Name
-          Value: PublicSubnet2
+          Value: !Sub '${ProjectName}-${Environment}-PrivateDBSubnet2'
 
   MyInternetGateway:
     Type: 'AWS::EC2::InternetGateway'
     Properties:
       Tags:
         - Key: Name
-          Value: MyInternetGateway
+          Value: !Sub '${ProjectName}-${Environment}-InternetGateway'
 
   AttachGateway:
     Type: 'AWS::EC2::VPCGatewayAttachment'
@@ -140,7 +139,7 @@ Resources:
       VpcId: !Ref LenieVPC
       Tags:
         - Key: Name
-          Value: MyRouteTable
+          Value: !Sub '${ProjectName}-${Environment}-RouteTable'
 
   MyRoute:
     Type: 'AWS::EC2::Route'
