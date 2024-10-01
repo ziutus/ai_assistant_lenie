@@ -8,7 +8,7 @@ Parameters:
     Description: 'Nazwa VPC'
   ProjectName:
     Type: String
-    Default: 'Lenie'
+    Default: 'lenie'
     Description: 'Project Name'
   Environment:
     Type: String
@@ -165,9 +165,13 @@ Outputs:
   VpcId:
     Description: ID of the created VPC
     Value: !Ref LenieVPC
+    Export:
+      Name: !Sub ${ProjectName}-${Environment}-vpcId
   PublicSubnet1Id:
     Description: ID of the created PublicSubnet1
     Value: !Ref PublicSubnet1
+    Export:
+      Name: !Sub ${ProjectName}-${Environment}-publicSubnet1
   PublicSubnet2Id:
     Description: ID of the created PublicSubnet2
     Value: !Ref PublicSubnet2
