@@ -4,7 +4,8 @@ import psycopg2
 from psycopg2 import sql
 
 from library import embedding
-from library.stalker_web_document import StalkerWebDocument, StalkerDocumentStatus, StalkerDocumentType
+from library.stalker_web_document import StalkerWebDocument, StalkerDocumentStatus, StalkerDocumentType, \
+    StalkerDocumentStatusError
 from library.website.website_download_context import WebPageParseResult
 
 
@@ -24,7 +25,9 @@ class StalkerWebDocumentDB(StalkerWebDocument):
             )
 
         self.next_id = None
+        self.next_type = None
         self.previous_id = None
+        self.previous_type = None
 
         with self.db_conn:
             with self.db_conn.cursor() as cur:
@@ -61,21 +64,25 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                     self.transcript_job_id = website_data[21]
                     self.ai_summary_needed = website_data[22]
                     self.author = website_data[23]
+                    self.note = website_data[24]
+                    self.s3_uuid = website_data[25]
 
                     if self.ai_summary_needed is None:
                         self.ai_summary_needed = False
 
                     if reach:
-                        cur.execute("SELECT id FROM public.web_documents WHERE id > %s ORDER BY id LIMIT 1", (self.id,))
+                        cur.execute("SELECT id, document_type FROM public.web_documents WHERE id > %s ORDER BY id LIMIT 1", (self.id,))
                         result = cur.fetchone()
                         if result is not None:
                             self.next_id = result[0]
+                            self.next_type = result[1]
 
-                        cur.execute("SELECT id FROM public.web_documents WHERE id < %s ORDER BY id DESC LIMIT 1",
+                        cur.execute("SELECT id, document_type FROM public.web_documents WHERE id < %s ORDER BY id DESC LIMIT 1",
                                     (self.id,))
                         result = cur.fetchone()
                         if result is not None:
                             self.previous_id = result[0]
+                            self.previous_type = result[1]
 
         if webpage_parse_result:
             self.text_raw = webpage_parse_result.text_raw
@@ -88,7 +95,9 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         result = {
             "id": self.id,
             "next_id": self.next_id,
+            "next_type": self.next_type,
             "previous_id": self.previous_id,
+            "previous_type": self.previous_type,
             "summary": self.summary,
             "url": self.url,
             "language": self.language,
@@ -111,7 +120,9 @@ class StalkerWebDocumentDB(StalkerWebDocument):
             "text_raw": self.text_raw,
             "transcript_job_id": self.transcript_job_id,
             "ai_summary_needed": self.ai_summary_needed,
-            "author": self.author
+            "author": self.author,
+            "note": self.note,
+            "s3_uuid": self.s3_uuid
         }
         return result
 
@@ -123,8 +134,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                         "INSERT INTO {} (title, title_english, summary, summary_english, url, language, "
                         "tags, document_type, text, text_english, source, paywall, date_from, original_id,"
                         "document_length, document_state, document_state_error, text_raw, transcript_job_id, "
-                        "ai_summary_needed, author) "
-                        "VALUES (%s, %s,%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+                        "ai_summary_needed, author, note, s3_uuid) "
+                        "VALUES (%s, %s,%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
                     ).format(sql.Identifier('web_documents'))
 
                     cur.execute(
@@ -134,7 +145,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                          self.text_english, self.source, self.paywall, self.date_from, self.original_id,
                          self.document_length,
                          self.document_state.name, self.document_state_error.name, self.text_raw,
-                         self.transcript_job_id, self.ai_summary_needed, self.author)
+                         self.transcript_job_id, self.ai_summary_needed, self.author, self.note, self.s3_uuid)
                     )
                     self.id = cur.fetchone()[0]
 
@@ -162,7 +173,9 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                         ("text_raw", self.text_raw),
                         ("transcript_job_id", self.transcript_job_id),
                         ("ai_summary_needed", self.ai_summary_needed),
-                        ("author", self.author)
+                        ("author", self.author),
+                        ("note",  self.note),
+                        ("s3_uuid",  self.s3_uuid)
                     ]
                     set_clause = ", ".join(
                         f"{column} = %s" for column, value in columns if value is not None
@@ -183,7 +196,9 @@ class StalkerWebDocumentDB(StalkerWebDocument):
     def __clean_values(self):
         self.id = None
         self.next_id = None
+        self.next_type = None
         self.previous_id = None
+        self.previous_type = None
         self.summary = None
         self.url = None
         self.language = None
@@ -207,6 +222,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         self.transcript_job_id = None
         self.ai_summary_needed = False
         self.author = None
+        self.note = None
+        self.s3_uuid = None
 
     def delete(self) -> bool:
         with self.db_conn:
@@ -217,13 +234,25 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                 return True
 
     def embedding_add(self, model) -> bool:
-        if self.language != 'en' and (not self.title_english or not self.summary_english):
-            self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-            return False
-
         if self.document_type == StalkerDocumentType.link:
-            if self.title is None or self.summary is None:
+            if self.title is None:
                 self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                self.document_state_error = StalkerDocumentStatusError.TITLE_MISSING
+                return False
+
+            if self.summary is None:
+                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                self.document_state_error = StalkerDocumentStatusError.LINK_SUMMARY_MISSING
+                return False
+
+            if self.language != 'en' and not self.title_english:
+                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                self.document_state_error = StalkerDocumentStatusError.TITLE_TRANSLATION_ERROR
+                return False
+
+            if self.language != 'en' and not self.summary_english:
+                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                self.document_state_error = StalkerDocumentStatusError.SUMMARY_TRANSLATION_ERROR
                 return False
 
             if self.language == 'en':
@@ -242,16 +271,18 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         elif self.document_type in [StalkerDocumentType.webpage, StalkerDocumentType.youtube]:
             if self.language != 'en' and not self.text_english:
                 self.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION
+                self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION
                 return False
 
-            text_original = self.text.split("\n\n")
+            text_original = self.text.split("\n\n\n")
             if self.language == 'en':
-                text_english = self.text.split("\n\n")
+                text_english = self.text.split("\n\n\n")
             else:
-                text_english = self.text_english.split("\n\n")
+                text_english = self.text_english.split("\n\n\n")
 
             if len(text_original) != len(text_english):
                 self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR
                 return False
 
             self.__embedding_delete(model)

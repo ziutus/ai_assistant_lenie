@@ -15,6 +15,7 @@ load_dotenv()
 
 if __name__ == '__main__':
     model = os.getenv("EMBEDDING_MODEL")
+    s3_bucket = os.getenv("AWS_S3_WEBSITE_CONTENT")
     print(f"Using >{model}< for embedding")
 
     print("AWS REGION: ", os.getenv("AWS_REGION"))
@@ -47,7 +48,7 @@ if __name__ == '__main__':
             if "source" not in link_data:
                 link_data["source"] = "own"
 
-            print("Link Data:  URL", link_data["url"], "type:", link_data["type"], " source:", link_data["source"])
+            print("Link Data:  URL", link_data["url"], "type:", link_data["type"], " source:", link_data["source"], "note:", link_data['note'])
             if 'chapterList' in link_data:
                 print(link_data["chapterList"])
 
@@ -69,7 +70,15 @@ if __name__ == '__main__':
                 web_doc.language = link_data["language"]
             if 'makeAISummary' in link_data:
                 web_doc.ai_summary_needed = link_data["makeAISummary"]
-            web_doc.save()
+            if 'note' in link_data:
+                web_doc.note = link_data["note"]
+            if 's3_uuid' in link_data:
+                web_doc.s3_uuid = link_data["s3_uuid"]
+            if 'title' in link_data:
+                web_doc.title = link_data["title"]
+
+            id_added = web_doc.save()
+            print(f"Added to database with ID {id_added}")
             print("[DONE]")
 
             sqs.delete_message(
@@ -79,16 +88,19 @@ if __name__ == '__main__':
 
     websites = WebsitesDBPostgreSQL()
 
-    print("Step 2: Downloading websites and putting data into database")
+    print("Step 2: Downloading websites (or taking from S3) and putting data into database")
     website_data = websites.get_ready_for_download()
     websites_data_len = len(website_data)
     print(f"Number of pages and links to download: {websites_data_len}")
+
+    s3 = boto_session.client('s3')
 
     website_nb = 1
     for page_info in website_data:
         website_id = int(page_info[0])
         url = page_info[1]
         website_document_type = page_info[2]
+        s3_uuid = page_info[3]
         progress = round((website_nb / websites_data_len) * 100)
 
         print(f"Processing >{website_document_type}< {website_id} ({website_nb} from {websites_data_len} {progress})%:"
@@ -98,41 +110,65 @@ if __name__ == '__main__':
             print(f"Document type is not webpage or link: {website_document_type}, ignoring")
             continue
 
-        try:
-            print("* Downloading raw html from remote webpage", end=" ")
-            raw_html = download_raw_html(url)
-            if not raw_html:
-                print("empty response! [ERROR]")
+        if website_document_type == "webpage" and s3_uuid:
+            try:
+                print(f"* Reading text of article from S3 bucket and file: {s3_uuid}.txt", end=" ")
+                obj = s3.get_object(Bucket=s3_bucket, Key= f"{s3_uuid}.txt")
+                content = obj['Body'].read().decode('utf-8')
                 web_doc = StalkerWebDocumentDB(url)
-                web_doc.document_state = StalkerDocumentStatus.ERROR
-                web_doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD
-                web_doc.save()
-                continue
+                web_doc.text = content
+                print('[DONE]')
 
-            print(round(len(raw_html)/1024, 2), end="KB ")
-            print('[DONE]')
+                web_doc.analyze()
+                web_doc.validate()
 
-            parse_result = webpage_raw_parse(url, raw_html)
-
-            web_doc = StalkerWebDocumentDB(url, webpage_parse_result=parse_result)
-            print(f"DEBUG: url:{web_doc.url}")
-
-            web_doc.analyze()
-            web_doc.validate()
-            web_doc.save()
-
-            if web_doc.document_type == StalkerDocumentType.webpage:
-                print("* ALL DONE, updating state to NEED_MANUAL_REVIEW (cleaning of text is needed) as it is >webpage<", end=" ")
+                print("* ALL DONE, updating state to NEED_MANUAL_REVIEW (cleaning of text is needed) as it is >webpage<",
+                      end=" ")
                 web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
                 print("[DONE]")
                 web_doc.save()
 
-            website_nb += 1
+            except Exception as e:
+                print(f'An error occurred: {e}')
+                exit(1)
+        else:
+            try:
+                print("* Downloading raw html from remote webpage", end=" ")
+                raw_html = download_raw_html(url)
+                if not raw_html:
+                    print("empty response! [ERROR]")
+                    web_doc = StalkerWebDocumentDB(url)
+                    web_doc.document_state = StalkerDocumentStatus.ERROR
+                    web_doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD
+                    web_doc.save()
+                    continue
 
-        except Exception as e:
-            print(f"Error processing website {website_id}: {url}")
-            print(str(e))
-            exit(1)
+                print(round(len(raw_html)/1024, 2), end="KB ")
+                print('[DONE]')
+
+                parse_result = webpage_raw_parse(url, raw_html)
+
+                web_doc = StalkerWebDocumentDB(url, webpage_parse_result=parse_result)
+                print(f"DEBUG: url:{web_doc.url}")
+
+                web_doc.analyze()
+                web_doc.validate()
+                web_doc.save()
+
+
+            except Exception as e:
+                    print(f"Error processing website {website_id}: {url}")
+                    print(str(e))
+                    exit(1)
+
+            if web_doc.document_type == StalkerDocumentType.webpage:
+                print("* ALL DONE, updating state to NEED_MANUAL_REVIEW (cleaning of text is needed) as it is >webpage<",
+                      end=" ")
+                web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                print("[DONE]")
+                web_doc.save()
+
+        website_nb += 1
 
     print("Step 3: For youtube video setup status ready for translation if transcription is done")
     # StalkerDocumentStatus.TRANSCRIPTION_DONE

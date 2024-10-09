@@ -1,0 +1,14 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "lenie"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "SshKeyName",
+    "ParameterValue": "lenie-default"
+  }
+]

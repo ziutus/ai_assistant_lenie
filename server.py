@@ -11,7 +11,8 @@ from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_transcript import chapters_text_to_list
 from library.translate import text_translate
-from library.website.website_download_context import download_raw_html, webpage_raw_parse, WebPageParseResult
+from library.website.website_download_context import download_raw_html, webpage_raw_parse, WebPageParseResult, \
+    webpage_text_clean
 from library.website.website_paid import website_is_paid
 from library.text_functions import split_text_for_embedding
 
@@ -90,7 +91,11 @@ def website_list():
     logging.debug("Getting list of websites")
     logging.debug(request.form)
 
-    websites_list = websites.get_list()
+    type = request.args.get('type', 'ALL')
+    document_state = request.args.get('document_state', 'ALL')
+    logging.debug(type)
+
+    websites_list = websites.get_list(document_type = type, document_state = document_state)
     # pprint_debug(websites_list)
 
     response = {
@@ -164,7 +169,7 @@ def website_get_by_id():
 
 @app.route('/website_get_next_to_correct', methods=['GET'])
 def website_get_next_to_correct():
-    logging.debug("Getting website by id")
+    logging.debug("Getting website by id, new style")
     logging.debug(request.args)
 
     link_id = request.args.get('id')
@@ -175,11 +180,15 @@ def website_get_next_to_correct():
         return {"status": "error",
                 "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
 
-    next_id = websites.get_next_to_correct(link_id)
+    next_data = websites.get_next_to_correct(link_id)
+    pprint(next_data)
+    next_id = next_data[0]
+    next_type = next_data[1]
     logging.info(next_id)
     response = {
         "status": "success",
-        "next_id": next_id
+        "next_id": next_id,
+        "next_type": next_type,
     }
 
     return response, 200
@@ -212,8 +221,8 @@ def translate():
         return {"status": "error", "message": result.error_message}, 500
 
 
-@app.route('/website_similar', methods=['POST'])
-def search_similar():
+@app.route('/ai_get_embedding', methods=['POST'])
+def ai_get_embedding():
     if request.form:
         logging.debug("Using form")
         logging.debug(request.form)
@@ -230,9 +239,34 @@ def search_similar():
     import library.embedding as embedding
     embedds = embedding.get_embedding(model=os.getenv("EMBEDDING_MODEL"), text=text)
 
+    return {"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
+            "embedding": embedds}, 200
+
+
+@app.route('/website_similar', methods=['POST'])
+def search_similar():
+    if request.form:
+        logging.debug("Using form")
+        logging.debug(request.form)
+        text = request.form.get('search')
+        limit = request.form.get('limit')
+    elif request.json:
+        logging.debug("Using json")
+        logging.debug(request.json)
+        text = request.json['search']
+        limit = request.json['limit']
+    else:
+        logging.debug("Using args")
+        logging.debug(request.args)
+        text = request.args.get('search')
+        limit = request.args.get('limit')
+
+    import library.embedding as embedding
+    embedds = embedding.get_embedding(model=os.getenv("EMBEDDING_MODEL"), text=text)
+
     # pprint(embedds)
 
-    websites_list = websites.get_similar(embedds.embedding, os.getenv("EMBEDDING_MODEL"))
+    websites_list = websites.get_similar(embedds.embedding, os.getenv("EMBEDDING_MODEL"), limit=limit)
 
     return {"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
             "websites": websites_list}, 200
@@ -359,6 +393,45 @@ def ai_ask():
         return response, 500
 
 
+@app.route('/website_text_remove_not_needed', methods=['POST'])
+def website_text_remove_not_needed():
+    if request.form:
+        logging.debug("Using form")
+
+    logging.debug("website_text_remove_not_needed")
+    logging.debug(request.form)
+
+    text = request.form.get('text')
+    url = request.form.get('url')
+
+    debug_needed = False
+    if debug_needed:
+        with open('debug.txt', 'w', encoding='utf-8') as debug_file:
+            debug_file.write(f"text: {text}\n")
+            debug_file.write(f"url: {url}\n")
+            logging.info("Debug data written into file debug.txt")
+
+
+    if not text:
+        logging.debug("Missing data. Make sure you provide 'text'")
+        return {"status": "error",
+                "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
+
+    if not url:
+        logging.debug("Missing data. Make sure you provide 'url'")
+        return {"status": "error",
+                "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
+
+    response = {
+            "status": "success",
+            "text": webpage_text_clean(url, text),
+            "encoding": "utf8",
+            "message": "Text cleaned"
+        }
+    logging.debug(response)
+    return response, 200
+
+
 @app.route('/website_split_for_embedding', methods=['POST'])
 def website_split_for_embedding():
     if request.form:
@@ -454,6 +527,7 @@ def website_save():
     web_document.summary = request.form.get('summary')
     web_document.source = request.form.get('source')
     web_document.author = request.form.get('author')
+    web_document.note = request.form.get('note')
     web_document.analyze()
 
     try:

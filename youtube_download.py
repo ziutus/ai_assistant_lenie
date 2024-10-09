@@ -32,12 +32,27 @@ if __name__ == '__main__':
     llm_model = os.getenv("AI_MODEL_SUMMARY")
     interactive: bool = False
 
+    aws_xray_enabled = os.getenv("AWS_XRAY_ENABLED")
+    print(f"aws_xray_enabled: {aws_xray_enabled}")
+
+    if aws_xray_enabled:
+        from aws_xray_sdk.core import xray_recorder, patch_all
+        from aws_xray_sdk.core import patch
+
+        # Konfiguracja X-Ray
+        xray_recorder.configure(service='lenie_ai')
+        patch_all()  # Automatyczne łatanie wszystkich bibliotek
+
+    if aws_xray_enabled:
+       xray_recorder.begin_segment('MainSegment')  # Rozpoczęcie głównego segmentu
+
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
 
     websites = WebsitesDBPostgreSQL()
     website_data = websites.get_youtube_just_added()
 
+    logging.info(f"Entries to analyze: {len(website_data)}")
     for movie in website_data:
         web_document = StalkerWebDocumentDB(document_id= int(movie[0]))
         youtube_file = StalkerYoutubeFile(youtube_url=web_document.url, media_type="video", cache_directory=cache_dir)
@@ -98,7 +113,7 @@ if __name__ == '__main__':
                             web_document.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
                             web_document.save()
                         elif transcript_text:
-                            web_document.text = transcript_text
+                            web_document.text = youtube_titles_to_text(transcript_text)
                             web_document.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
                             web_document.save()
 
@@ -225,3 +240,7 @@ if __name__ == '__main__':
             logging.info(response)
             web_document.summary = response
             web_document.save()
+
+
+        if aws_xray_enabled:
+            xray_recorder.end_segment()  # Koniec głównego segmentu

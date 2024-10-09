@@ -74,8 +74,12 @@ def lambda_handler(event, context):
         return prepare_return('Missing path in request, check if proxy is setup for this call', 500)
 
     if event['path'] == '/website_list':
-        # TODO: TypeError: Object of type datetime is not JSON serializable
-        websites_list = websites.get_list()
+        query_params = event.get('queryStringParameters', {})
+        pprint(query_params)
+        document_state = query_params.get('document_state', 'ALL')
+        document_type = query_params.get('type', 'ALL')
+
+        websites_list = websites.get_list(document_type=document_type, document_state=document_state)
 
         response = {
             "status": "success",
@@ -128,11 +132,15 @@ def lambda_handler(event, context):
             return prepare_return('Missing ID parameter', 500)
 
         document_id = event['queryStringParameters']['id']
-        next_id = websites.get_next_to_correct(document_id)
+        next_data = websites.get_next_to_correct(document_id)
+        # pprint(next_data)
+        next_id = next_data[0]
+        next_type = next_data[1]
         logging.info(next_id)
         response = {
             "status": "success",
-            "next_id": next_id
+            "next_id": next_id,
+            "next_type": next_type,
         }
 
         return prepare_return(response, 200)
@@ -140,18 +148,26 @@ def lambda_handler(event, context):
     # event['path'] == '/translate' - in internet version - with access to others AWS services
 
     if event['path'] == '/website_similar':
+        # pprint(event['body'])
 
         parsed_dict = parse_qs(event['body'])
-        text = parsed_dict['search'][0]
 
-        embedds = embedding.get_embedding(model=os.getenv("EMBEDDING_MODEL"), text=text)
+        pprint(parsed_dict)
 
-        # pprint(embedds)
+        embedds = '[' + ','.join(parsed_dict['embedds[]']) + ']'
+        model = parsed_dict['model'][0]
+        limit = int(parsed_dict['limit'][0])
 
-        websites_list = websites.get_similar(embedds.embedding, os.getenv("EMBEDDING_MODEL"))
+        pprint(limit)
 
-        return prepare_return({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
-                "websites": websites_list}, 200)
+        # embedds = embedding.get_embedding(model=os.getenv("EMBEDDING_MODEL"), text=text)
+
+        # print(type(embedds))
+
+        websites_list = websites.get_similar(embedds, model, limit)
+
+        return prepare_return({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8",
+                               "websites": websites_list}, 200)
 
     # if event['path'] == '/website_download_text_content' - in internet version - with access to others AWS services
 
@@ -168,7 +184,7 @@ def lambda_handler(event, context):
         if not text:
             logging.debug("Missing data. Make sure you provide 'text'")
             return prepare_return({"status": "error",
-                    "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400)
+                                   "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400)
 
         chapter_list_simple = []
 
@@ -263,11 +279,15 @@ def lambda_handler(event, context):
         if 'author' in parsed_dict.keys():
             web_document.author = parsed_dict['author'][0]
 
+        if 'note' in parsed_dict.keys():
+            web_document.note = parsed_dict['note'][0]
+
         web_document.analyze()
 
         try:
             web_document.save()
-            return prepare_return({"status": "success", "message": f"Dane strony {web_document.id} zaktualizowane pomyślnie."}, 200)
+            return prepare_return(
+                {"status": "success", "message": f"Dane strony {web_document.id} zaktualizowane pomyślnie."}, 200)
         except Exception as e:
             logging.error(e)
             logging.debug(f"Error while saving new webpage: {e}")

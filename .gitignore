@@ -14,3 +14,4 @@
 /Kubernetes/raw/.dockerconfigjson
 /aws/lambdas/*/lambda.zip
 /docker_build.sh
+/debug.txt

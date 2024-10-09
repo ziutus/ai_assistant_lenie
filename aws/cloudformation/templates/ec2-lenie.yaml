@@ -1,0 +1,59 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Template to create an EC2 instance with Amazon Linux 2023 and assign an Elastic IP
+
+Resources:
+  EC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceType: t4g.micro
+      ImageId: !Ref LatestAmazonLinux2023AmiId
+      KeyName: !Ref SshKeyName
+      SecurityGroupIds:
+        - !Ref InstanceSecurityGroup
+      SubnetId: !ImportValue 'lenie-dev-publicSubnet1'
+      Tags:
+        - Key: Name
+          Value: lenie-EC2
+
+  InstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: 'Enable SSH access'
+      VpcId: !ImportValue 'lenie-dev-vpcId'  # Importowanie identyfikatora VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: 0.0.0.0/0  # otwartość na cały internet, dostosuj według potrzeb
+
+  ElasticIP:
+    Type: 'AWS::EC2::EIP'
+
+  EIPAssociation:
+    Type: 'AWS::EC2::EIPAssociation'
+    Properties:
+      InstanceId: !Ref EC2Instance
+      EIP: !Ref ElasticIP
+
+Parameters:
+  LatestAmazonLinux2023AmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64'
+    Description: Default Amazon Linux 2023 AMI ID
+  ProjectName:
+    Type: String
+    Description: 'Project Name'
+  Environment:
+    Type: String
+    Description: 'environment'
+  SshKeyName:
+    Type: String
+    Description: 'ssh key Name'
+
+Outputs:
+  InstanceId:
+    Description: 'The Instance ID'
+    Value: !Ref EC2Instance
+  PublicIP:
+    Description: 'The Public IP address of the instance'
+    Value: !Ref ElasticIP

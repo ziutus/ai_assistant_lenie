@@ -42,6 +42,8 @@ class StalkerDocumentStatusError(Enum):
     SUMMARY_TRANSLATION_ERROR = 8
     NO_URL_ERROR = 9
     EMBEDDING_ERROR = 10
+    MISSING_TRANSLATION = 11
+    TRANSLATION_ERROR = 12
 
 
 class StalkerWebDocument:
@@ -59,7 +61,10 @@ class StalkerWebDocument:
                  text_raw: str | None = None,
                  transcript_job_id: str | None = None,
                  ai_summary_needed: bool | None = None,
-                 author: str | None = None):
+                 author: str | None = None,
+                 note: str | None = None,
+                 s3_uuid: str | None = None
+                 ):
 
         self.id: int | None = wb_id
         self.url: str | None = url
@@ -88,6 +93,8 @@ class StalkerWebDocument:
         self.transcript_job_id: str | None = transcript_job_id
         self.ai_summary_needed: bool | None = ai_summary_needed
         self.author: str | None = author
+        self.note: str | None = note
+        self.s3_uuid: str | None = note
 
     def __str__(self):
         data = {
@@ -112,7 +119,9 @@ class StalkerWebDocument:
             "text_raw": self.text_raw,
             "transcript_job_id": self.transcript_job_id,
             "ai_summary_needed": self.ai_summary_needed,
-            "author": self.author
+            "author": self.author,
+            "note": self.note,
+            "s3_uuid": self.s3_uuid
         }
         result = json.dumps(data, indent=4)
 
@@ -178,6 +187,11 @@ class StalkerWebDocument:
             self.document_state_error = StalkerDocumentStatusError.NO_URL_ERROR
         elif document_state_error == "EMBEDDING_ERROR":
             self.document_state_error = StalkerDocumentStatusError.EMBEDDING_ERROR
+        elif document_state_error == "MISSING_TRANSLATION":
+            self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION
+        elif document_state_error == "TRANSLATION_ERROR":
+            self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR
+
         else:
             raise ValueError(
                 f"document_state_error must be one of the valid StalkerDocumentStatusError values, not >{document_state_error}<")
@@ -185,6 +199,10 @@ class StalkerWebDocument:
     def analyze(self) -> None:
         if self.document_state == StalkerDocumentStatus.EMBEDDING_EXIST:
             return None
+
+        if not self.text_raw:
+            print("This is adding new entry, so raw text is equal to text")
+            self.text_raw = self.text
 
         if self.title and not self.language:
             print("Checking language for title", end="")

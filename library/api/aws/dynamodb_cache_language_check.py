@@ -9,7 +9,7 @@ def cache_get_language(entry_id, provider) -> str | None:
     dynamodb = boto_session.client('dynamodb')
 
     response = dynamodb.get_item(
-        TableName='stalker_cache_language',
+        TableName='lenie_cache_language',
         Key={
             'hash': {
                 'S': entry_id,
@@ -39,5 +39,5 @@ def cache_write_language_check(text_input: str, translation: str, provider: str)
             'response': {'S': translation}
         },
         ReturnConsumedCapacity='TOTAL',
-        TableName='stalker_cache_language',
+        TableName='lenie_cache_language',
     )
