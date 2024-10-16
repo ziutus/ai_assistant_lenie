@@ -1,0 +1,17 @@
+./.idea
+.env
+/tmp/*
+.idea/
+.venv
+
+*/tmp/
+*/.idea/
+*/.vscode/
+
+/Kubernetes/raw/lenie_server_configmap.yaml
+/Kubernetes/raw/lenie_server_secrets.yaml
+/Kubernetes/raw/ecs_registry_password.yaml
+/Kubernetes/raw/.dockerconfigjson
+/aws/lambdas/*/lambda.zip
+/docker_build.sh
+/debug.txt

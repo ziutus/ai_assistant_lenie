@@ -1,93 +1,144 @@
-# lenie-server
+# Project Lenie: Personal AI Assistant
+
+Project Lenie, named after the enigmatic protagonist from Peter Watts' novel "Starfish," 
+offers advanced solutions for collecting, managing, and searching data using 
+Language Model Models (LLMs). 
+
+Lenie enables users to:
+* collect and manage links, allowing easy searching of accumulated references using LLM,
+* download content from webpages and store it in a PostgreSQL database for later searching in a private archive,
+* transcribe YouTube videos and store them in a database, facilitating the search for interesting segments (given the ease of finding engaging videos compared to books or articles).
+
+Lenie's functionalities represent an advanced integration of AI technology with users' daily needs, providing efficient data management and deeper content analysis and utilization. However, similar to the literary character who brings inevitable consequences of her existence, Lenie raises questions about the boundaries of technology and our own control over it. It is both a fascinating and daunting tool that requires a conscious approach and responsible usage to maximize benefits and minimize risks associated with the increasing role of artificial intelligence in our lives.
+
+This is side project, and I'm planning to have first version of this application on September 2024. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
+
+## Used technologies
+In this project I'm using:
+* Python as server backend
+* Postgresql as embedding database
+* React as web interface (during creation)
+* AWS as deploying platform (as I'm lazy and don't want to manage infrastructure)
+
+I'm also preparing few ways to deploy it:
+* docker image (to easy run application)
+* Kubernetes helm (to test scalability options)
+* lambda (to test Event Driver way of writing application)
+
+As I'm big fun on AWS you will also see deploy ways like:
+* Lambdas (to see Event Driver way of writing applications like that),
+* ECS (to see nice way of scalling docker images)
+* EKS (to learn more about costs of managing own Kubernetes cluster and application on it)
 
 
+## Python notes
 
-## Getting started
+### Using piptools to generate better requirement file
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
+```powershell
+C:\Users\ziutus\AppData\Local\Programs\Python\Python311\Scripts\pip-compile.exe requirements.piptools --upgrade
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/ziutus/lenie-server.git
-git branch -M main
-git push -uf origin main
+
+
+## Prerequisites
+Before running the Docker container with the Stalker application, make sure you have:
+
+* Docker installed on your computer. Installation instructions can be found in the official Docker documentation.
+
+To create a Docker image for the Stalker application, you need a Dockerfile in your project directory. Below is an example process of building the image.
+
+1. Open a terminal in the directory where the Dockerfile is located.
+
+2. Run the following command to build the Docker image:
+
+```bash
+docker build -t stalker-server2:latest .
 ```
 
-## Integrate with your tools
+* The -t flag is used to tag (name) the image, in this case stalker.
+* The dot . at the end indicates that the Dockerfile is in the current directory.
 
-- [ ] [Set up project integrations](https://gitlab.com/ziutus/lenie-server/-/settings/integrations)
+After the build process is complete, you can run the Docker container with the newly created image by using the command described in the section Running the Stalker Container.
 
-## Collaborate with your team
+## AWS
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+### Sending image to ECR
+```powershell
+(Get-ECRLoginCommand -ProfileName stalker-free-developer -Region us-east-1).Password | docker login --username AWS --password-stdin 234876388473.dkr.ecr.us-east-1.amazonaws.com
+```
 
-## Test and Deploy
+```powershell
+docker build -t stalker-server2 .
+```
+```powershell
+docker tag stalker-server2:latest ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/stalker-server2:latest
+```
 
-Use the built-in continuous integration in GitLab.
+```powershell
+docker push ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/stalker-server2:latest
+```
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
 
-***
+## Accessing the Application
 
-# Editing this README
+### Python
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+```python
+ 
+```
 
-## Suggestions for a good README
+After starting the appliaction or container, you can access the Stalker application by going to http://localhost:5000 in your web browser.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+### Docker
 
-## Name
-Choose a self-explaining name for your project.
+```powershell
+docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenie-ai-server:0.2.6.1
+```
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+### Docker compose
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+```shell
+docker-compose.exe create 
+docker-compose.exe start
+```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+## Working with API
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+You can send example API request even from command line:
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+```shell
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+curl -X POST https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add \
+     -H "Content-Type: application/json" \
+     -H "x-api-key: XXXX" \
+     -d '{
+           "url": "https://tech.wp.pl/ukrainski-system-delta-zintegrowany-z-polskim-topazem-zadaje-rosjanom-wielkie-straty,7066814570990208a",
+           "type": "webpage",
+           "note": "Ciekawa integracja z polskim systemem obrazowania pola walki",
+           "text": "html strony z podanego URL"
+         }'
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+## Services which can use to get data
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+| Service name | provider   | description | link |
+|-------------|------------|---|------|
+| Textract    | AWS        | PDF to text | https://aws.amazon.com/textract/     |
+| assemblyai  | assemblyai | speach to text (0,12$ per  hour) | https://www.assemblyai.com/ |
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+## Why do we need our own LLM?
+So far, available LLMs operate in English or implicitly translate to English, losing context or meaning.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+Let's translate two texts into English:
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+Sąsiad wyszedł z psem o 6 rano.
 
-## License
-For open source projects, say how it is licensed.
+And:
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Psy przyszły po sąsiada o 6 rano
+
+As Poles, we perfectly understand the difference between an animal and the slang term for police officers, but you need to know the cultural context.
+
+Now we have Bielik (https://bielik.ai), which perfect understand magic of this sentence:
+
+![img.png](bielik_psy_pl.png)

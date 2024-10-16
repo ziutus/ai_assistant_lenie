@@ -1,0 +1,42 @@
+Parameters:
+  Stage:
+    Description: The stage of the application deployment
+    Default: dev
+    Type: String
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+      - cob
+      - test
+      - feature
+
+Resources:
+  MyDB:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBName: !Sub 'lenie${Stage}'
+      Engine: postgres
+      MasterUsername: mojlogin
+      MasterUserPassword: !Ref RDSPassword
+      AllocatedStorage: '20'
+      DBInstanceClass: db.t3.micro
+      DBSnapshotIdentifier: arn:aws:rds:us-east-1:234876388473:snapshot:stalker2-test
+      VPCSecurityGroups:
+            - !Ref MyDatabaseSecurityGroup
+    DeletionPolicy: Snapshot
+  RDSPassword:
+    Type: 'AWS::SSM::Parameter'
+    Properties:
+      Name: !Sub '/${Stage}/rds'
+      Type: String
+      Value: DefaultValue
+  MyDatabaseSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Security Group for RDS DB Instance.
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '5432'
+          ToPort: '5432'
+          CidrIp: 0.0.0.0/0

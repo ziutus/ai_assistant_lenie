@@ -1,0 +1,14 @@
+requests
+beautifulsoup4
+flask
+flask-cors
+python-dotenv
+psycopg2-binary
+openai
+boto3
+pytest
+botocore
+urllib3
+pytube
+youtube-transcript-api
+assemblyai

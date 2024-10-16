@@ -1,0 +1,7 @@
+Resources:
+  MyHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: lenie-ai.eu.
+      HostedZoneConfig:
+        Comment: 'Hosted zone for Private AI assistance called Lenie'
