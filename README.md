@@ -126,6 +126,10 @@ curl -X POST https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add \
 | Textract    | AWS        | PDF to text | https://aws.amazon.com/textract/     |
 | assemblyai  | assemblyai | speach to text (0,12$ per  hour) | https://www.assemblyai.com/ |
 
+## security
+### pre-hook + trufflehog
+
+
 ## Why do we need our own LLM?
 So far, available LLMs operate in English or implicitly translate to English, losing context or meaning.
 

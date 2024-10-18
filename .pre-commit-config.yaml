@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: trufflehog
+        name: TruffleHog
+        description: Detect secrets in your data.
+        entry: 'C:\Users\ziutus\tools\trufflehog git file://. --only-verified --fail --since-commit HEAD'
+        language: system
+        stages: ["commit", "push"]
