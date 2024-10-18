@@ -12,3 +12,5 @@ urllib3
 pytube
 youtube-transcript-api
 assemblyai
+aws-xray-sdk
+pre-commit
