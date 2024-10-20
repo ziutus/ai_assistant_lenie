@@ -34,8 +34,6 @@ job_build:
   stage: build
   tags:
     - AWS
-  environment:
-    name: development
   script:
     - echo "Hello, $GITLAB_USER_LOGIN!"
     - echo "Building the project"
@@ -50,41 +48,10 @@ job_build:
     - dev
     - main
 
-# job_test_osv_scanner:
-#   stage: test
-#   tags:
-#     - AWS
-#   environment:
-#     name: development
-#   script:
-#     - echo "Now let's test it using osv-scanner"
-#     - ls -l
-#     - /usr/local/bin/osv-scanner scan --lockfile package-lock.json
-#   only:
-#     - dev
-
-
-job_publish:
-  stage: deploy
-  tags:
-    - AWS
-  environment:
-    name: development
-  script:
-    - echo "Now let's deploy it"
-    - ls
-    - aws s3 sync ./build/ s3://$S3_BUCKET_APP_WEB --delete
-    - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
-  only:
-    - dev
-    - main
-
 job-build-docker-image:
   stage: build-docker-image
   tags:
     - AWS
-  environment:
-    name: development
   script:
     - echo "Now let's build it"
     - docker build -t $DOCKER_REPO_OWNER/$CI_REGISTRY_IMAGE:$TAG_VERSION .
@@ -96,8 +63,6 @@ job-push-docker-image:
   stage: push-docker-image
   tags:
     - AWS
-  environment:
-    name: development
   services:
     - docker:dind
   before_script:
