@@ -8,7 +8,6 @@ variables:
 
 stages:
   - start-runner
-  - build
   - build-docker-image
   - push-docker-image
   - test
@@ -29,24 +28,6 @@ start_runner:
   script:
     - echo "Starting AWS EC2 runner instance..."
     - aws ec2 start-instances --instance-ids $INSTANCE_ID
-
-job_build:
-  stage: build
-  tags:
-    - AWS
-  script:
-    - echo "Hello, $GITLAB_USER_LOGIN!"
-    - echo "Building the project"
-    - ls
-    - yarn install
-    - yarn build
-    - ls
-  artifacts:
-    paths:
-      - build/
-  only:
-    - dev
-    - main
 
 job-build-docker-image:
   stage: build-docker-image
