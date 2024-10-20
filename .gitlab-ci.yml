@@ -1,13 +1,128 @@
-# You can override the included template(s) by including variable overrides
-# SAST customization: https://docs.gitlab.com/ee/user/application_security/sast/#customizing-the-sast-settings
-# Secret Detection customization: https://docs.gitlab.com/ee/user/application_security/secret_detection/pipeline/#customization
-# Dependency Scanning customization: https://docs.gitlab.com/ee/user/application_security/dependency_scanning/#customizing-the-dependency-scanning-settings
-# Container Scanning customization: https://docs.gitlab.com/ee/user/application_security/container_scanning/#customizing-the-container-scanning-settings
-# Note that environment variables can be set in several places
-# See https://docs.gitlab.com/ee/ci/variables/#cicd-variable-precedence
+variables:
+  CI: "false"
+  AWS_REGION: "us-east-1"
+  INSTANCE_ID: "i-03908d34c63fce042"
+  CI_REGISTRY_IMAGE: "lenie-ai-server"
+  TAG_VERSION: "0.2.9.0"
+  DOCKER_REPO_OWNER: "linuxexpertpl"
+
 stages:
-- test
-sast:
-  stage: test
-include:
-- template: Security/SAST.gitlab-ci.yml
+  - start-runner
+  - build
+  - build-docker-image
+  - push-docker-image
+  - test
+  - deploy
+  - stop-runner
+
+
+start_runner:
+  stage: start-runner
+  variables:
+    GIT_STRATEGY: none  # Zapobieganie klonowaniu repozytorium
+  before_script:
+    - apt-get update -y
+    - apt-get install -y awscli
+    - aws configure set aws_access_key_id $GITLAB_AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $GITLAB_AWS_SECRET_ACCESS_KEY
+    - aws configure set region $AWS_REGION
+  script:
+    - echo "Starting AWS EC2 runner instance..."
+    - aws ec2 start-instances --instance-ids $INSTANCE_ID
+
+job_build:
+  stage: build
+  tags:
+    - AWS
+  environment:
+    name: development
+  script:
+    - echo "Hello, $GITLAB_USER_LOGIN!"
+    - echo "Building the project"
+    - ls
+    - yarn install
+    - yarn build
+    - ls
+  artifacts:
+    paths:
+      - build/
+  only:
+    - dev
+    - main
+
+# job_test_osv_scanner:
+#   stage: test
+#   tags:
+#     - AWS
+#   environment:
+#     name: development
+#   script:
+#     - echo "Now let's test it using osv-scanner"
+#     - ls -l
+#     - /usr/local/bin/osv-scanner scan --lockfile package-lock.json
+#   only:
+#     - dev
+
+
+job_publish:
+  stage: deploy
+  tags:
+    - AWS
+  environment:
+    name: development
+  script:
+    - echo "Now let's deploy it"
+    - ls
+    - aws s3 sync ./build/ s3://$S3_BUCKET_APP_WEB --delete
+    - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
+  only:
+    - dev
+    - main
+
+job-build-docker-image:
+  stage: build-docker-image
+  tags:
+    - AWS
+  environment:
+    name: development
+  script:
+    - echo "Now let's build it"
+    - docker build -t $DOCKER_REPO_OWNER/$CI_REGISTRY_IMAGE:$TAG_VERSION .
+  only:
+    - dev
+    - main
+
+job-push-docker-image:
+  stage: push-docker-image
+  tags:
+    - AWS
+  environment:
+    name: development
+  services:
+    - docker:dind
+  before_script:
+    - docker info
+    - echo "$DOCKER_HUB_USERNAME:$DOCKER_HUB_TOKEN"
+    - docker login -u "$DOCKER_HUB_USERNAME" -p "$DOCKER_HUB_TOKEN"
+  script:
+    - echo "Now let's push it"
+    - docker push $DOCKER_REPO_OWNER/$CI_REGISTRY_IMAGE:$TAG_VERSION
+  only:
+    - dev
+    - main
+
+
+stop_runner:
+  stage: stop-runner
+  variables:
+    GIT_STRATEGY: none  # Zapobieganie klonowaniu repozytorium
+  before_script:
+    - apt-get update -y
+    - apt-get install -y awscli
+    - aws configure set aws_access_key_id $GITLAB_AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $GITLAB_AWS_SECRET_ACCESS_KEY
+    - aws configure set region $AWS_REGION
+  script:
+    - echo "Stopping AWS EC2 instance..."
+    - aws ec2 stop-instances --instance-ids $INSTANCE_ID
+  when: always
