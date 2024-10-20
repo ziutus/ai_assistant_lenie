@@ -1,43 +1,57 @@
 import os
 
 import boto3
+from aws_xray_sdk.core import xray_recorder, patch_all
 
 from library.text_functions import get_hash
-
+patch_all()
 
 def cache_get_translation(entry_id: str, provider: str) -> str | None:
     boto_session = boto3.session.Session(region_name=os.getenv("AWS_REGION"))
     dynamodb = boto_session.client('dynamodb')
 
-    response = dynamodb.get_item(
-        Key={
-            'hash': {
-                'S': entry_id,
-            },
-            'provider': {
-                'S': provider,
-            }
-        },
-        TableName='lenie_cache_translation',
-    )
+    with xray_recorder.in_subsegment('dynamoDB_get_translation') as subsegment:
 
-    if 'Item' in response:
-        return response['Item']
-    else:
-        return None
+        try:
+            response = dynamodb.get_item(
+                Key={
+                    'hash': {
+                        'S': entry_id,
+                    },
+                    'provider': {
+                        'S': provider,
+                    }
+                },
+                TableName='lenie_cache_translation',
+            )
 
+            subsegment.put_metadata('response', response)
+
+            if 'Item' in response:
+                return response['Item']
+            else:
+                return None
+
+        finally:
+            # End the segment
+            xray_recorder.end_segment()
 
 def cache_write_translation(query: str, response: str, provider: str) -> None:
     boto_session = boto3.session.Session(region_name=os.getenv("AWS_REGION"))
     dynamodb = boto_session.client('dynamodb')
 
-    dynamodb.put_item(
-        Item={
+    with xray_recorder.in_subsegment('dynamoDB_put_translation') as subsegment:
+        Item = {
             'hash': {'S': get_hash(query)},
             'provider': {'S': provider},
             'query': {'S': query},
             'response': {'S': response}
-        },
-        ReturnConsumedCapacity='TOTAL',
-        TableName='lenie_cache_translation',
-    )
+        }
+
+        subsegment.put_metadata('Item', Item)
+
+        dynamodb.put_item(
+            Item=Item,
+            ReturnConsumedCapacity='TOTAL',
+            TableName='lenie_cache_translation',
+        )

@@ -1,0 +1,26 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "lenie"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "RDSPasswordSecretArn",
+    "ParameterValue": "arn:aws:secretsmanager:us-east-1:008971653395:secret:/lenie/dev/rds/password-01s7Bp"
+  },
+  {
+    "ParameterKey": "VPCId",
+    "ParameterValue": "vpc-0eeb836a30c318273"
+  },
+  {
+    "ParameterKey": "DataSubnetA",
+    "ParameterValue": "/lenie/dev/data-subnet-a/subnet-id"
+  },
+  {
+    "ParameterKey": "DataSubnetB",
+    "ParameterValue": "/lenie/dev/data-subnet-b/subnet-id"
+  }
+]

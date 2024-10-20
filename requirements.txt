@@ -4,7 +4,7 @@
 #
 #    pip-compile requirements.piptools
 #
-pre-commit
+semgrep
 
 aws-xray-sdk
 

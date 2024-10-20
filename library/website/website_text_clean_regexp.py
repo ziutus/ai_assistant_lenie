@@ -65,6 +65,12 @@ site_rules = {
         "remove_string" : [],
         "remove_string_regexp" : []
     },
+    "https://zielona.interia.pl": {
+        "remove_before" : [r'Dzisiaj,\s+\d{2}:\d{2}\nLubię to\n\d+\nUdostępnij\n'],
+        "remove_after" : [],
+        "remove_string" : [],
+        "remove_string_regexp" : [r'Zobacz również:\n.*?\n\n']
+    },
     # "": {
     #     "remove_before" : [],
     #     "remove_after" : [],

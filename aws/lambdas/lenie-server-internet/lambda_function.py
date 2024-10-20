@@ -3,6 +3,8 @@ import os
 from pprint import pprint
 import logging
 from urllib.parse import parse_qs
+from aws_xray_sdk.core import xray_recorder, patch_all
+
 
 import library.ai
 from library.translate import text_translate
@@ -10,6 +12,8 @@ from library.website.website_download_context import download_raw_html, webpage_
 from library.embedding import get_embedding
 
 logging.basicConfig(level=logging.DEBUG)  # Change level as per you r need
+
+patch_all()
 
 
 def fetch_env_var(var_name):
@@ -61,12 +65,14 @@ def lambda_handler(event, context):
     # logging.info(f"all pages in database: {websites.get_count()}")
     # print(f"2: all pages in database: {websites.get_count()}")
 
-    if 'path' in event:
-        pprint(event['path'])
-
     if 'path' not in event:
         print("Missing 'path' in event, please check if proxy is setup for this call")
         return prepare_return('Missing path in request, check if proxy is setup for this call', 500)
+
+    subsegment = xray_recorder.begin_subsegment('checking_path')
+    pprint(event['path'])
+    subsegment.put_annotation('path', event['path'])
+    xray_recorder.end_subsegment()
 
     if event['path'] == '/translate':
 

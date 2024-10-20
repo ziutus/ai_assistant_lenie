@@ -1,5 +1,8 @@
 Parameters:
-  Stage:
+  VPCId:
+    Description: The VPC Id where the RDS instance will be deployed
+    Type: AWS::EC2::VPC::Id
+  Environment:
     Description: The stage of the application deployment
     Default: dev
     Type: String
@@ -10,31 +13,53 @@ Parameters:
       - cob
       - test
       - feature
+  ProjectName:
+    Type: String
+    Description: 'Project Name'
+  RDSPasswordSecretArn:
+    Type: String
+    Description: 'ARN of the Secret in AWS Secrets Manager that holds the RDS master user password'
+
+  DataSubnetA:
+    Description: Reference of the DataSubnetA from the SSM
+    Type: AWS::SSM::Parameter::Value<String>
+  DataSubnetB:
+    Description: Reference of the DataSubnetB from the SSM
+    Type: AWS::SSM::Parameter::Value<String>
 
 Resources:
   MyDB:
     Type: 'AWS::RDS::DBInstance'
     Properties:
-      DBName: !Sub 'lenie${Stage}'
+      DBName: !Sub 'lenieTmp${Environment}'
       Engine: postgres
-      MasterUsername: mojlogin
-      MasterUserPassword: !Ref RDSPassword
+      MasterUsername: !Sub '{{resolve:secretsmanager:${RDSPasswordSecretArn}:SecretString:username}}'
+      MasterUserPassword: !Sub '{{resolve:secretsmanager:${RDSPasswordSecretArn}:SecretString:password}}'
       AllocatedStorage: '20'
       DBInstanceClass: db.t3.micro
-      DBSnapshotIdentifier: arn:aws:rds:us-east-1:234876388473:snapshot:stalker2-test
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      AllowMajorVersionUpgrade: true
+      AutoMinorVersionUpgrade: true
+      PubliclyAccessible: false
+      MultiAZ: false
       VPCSecurityGroups:
-            - !Ref MyDatabaseSecurityGroup
-    DeletionPolicy: Snapshot
-  RDSPassword:
-    Type: 'AWS::SSM::Parameter'
+            - !GetAtt MyDatabaseSecurityGroup.GroupId
+#      DeletionPolicy: Snapshot
+
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
     Properties:
-      Name: !Sub '/${Stage}/rds'
-      Type: String
-      Value: DefaultValue
+      DBSubnetGroupDescription: !Sub Subnet group for ${ProjectName}-${Environment}-db instance
+      SubnetIds:
+        - !Ref DataSubnetA
+        - !Ref DataSubnetB
+
+
   MyDatabaseSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
       GroupDescription: Security Group for RDS DB Instance.
+      VpcId: !Ref VPCId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: '5432'

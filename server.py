@@ -16,7 +16,7 @@ from library.website.website_download_context import download_raw_html, webpage_
 from library.website.website_paid import website_is_paid
 from library.text_functions import split_text_for_embedding
 
-logging.basicConfig(level=logging.DEBUG)  # Change level as per your need
+logging.basicConfig(level=logging.INFO)  # Change level as per your need
 load_dotenv()
 
 
@@ -246,30 +246,41 @@ def ai_get_embedding():
 @app.route('/website_similar', methods=['POST'])
 def search_similar():
     if request.form:
+        print("Searching using form")
+        pprint(request.form)
         logging.debug("Using form")
         logging.debug(request.form)
         text = request.form.get('search')
         limit = request.form.get('limit')
     elif request.json:
+        print("Searching using json")
+        pprint(request.json)
         logging.debug("Using json")
         logging.debug(request.json)
         text = request.json['search']
         limit = request.json['limit']
     else:
+        print("Searching using args")
+        pprint(request.args)
         logging.debug("Using args")
         logging.debug(request.args)
         text = request.args.get('search')
         limit = request.args.get('limit')
 
+    logging.info(f"searching embedding for {text}")
+
     import library.embedding as embedding
     embedds = embedding.get_embedding(model=os.getenv("EMBEDDING_MODEL"), text=text)
 
-    # pprint(embedds)
+    if embedds.status != "success" or len(embedds.embedding) == 0:
+        return {"status": embedds.status, "message": "Error during getting embedding for text", "encoding": "utf8", "text": text,
+                "websites": []}, 500
 
     websites_list = websites.get_similar(embedds.embedding, os.getenv("EMBEDDING_MODEL"), limit=limit)
 
     return {"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
             "websites": websites_list}, 200
+
 
 
 @app.route('/website_download_text_content', methods=['POST'])

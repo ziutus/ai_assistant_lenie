@@ -1,9 +1,9 @@
-#repos:
-#  - repo: local
-#    hooks:
-#      - id: trufflehog
-#        name: TruffleHog
-#        description: Detect secrets in your data.
-#        entry: 'docker run --rm -it -v "${PWD}:/pwd" trufflesecurity/trufflehog git file://. --only-verified --fail --since-commit HEAD'
-#        language: system
-#        stages: ["pre-commit", "pre-push"]
+repos:
+  - repo: local
+    hooks:
+      - id: trufflehog
+        name: TruffleHog
+        description: Detect secrets in your data.
+        language: docker_image
+        entry: 'docker run --rm -it -v "${PWD}:/pwd" trufflesecurity/trufflehog git file://. --only-verified --fail --since-commit HEAD'
+        stages: ["pre-commit", "pre-push"]

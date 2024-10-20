@@ -25,6 +25,15 @@ import assemblyai as aai
 logging.basicConfig(level=logging.INFO)  # Change level as per your need
 load_dotenv()
 
+def compare_language(language_1: str, language_2: str):
+    if language_1 == language_2:
+        return True
+    if language_1 == 'pl-PL' and language_2 == 'pl':
+        return True
+    if language_1 == 'pl' and language_2 == 'pl-PL':
+        return True
+    return False
+
 if __name__ == '__main__':
     cache_dir = os.getenv("CACHE_DIR")
     s3_bucket = os.getenv("AWS_S3_TRANSCRIPT")
@@ -54,6 +63,7 @@ if __name__ == '__main__':
 
     logging.info(f"Entries to analyze: {len(website_data)}")
     for movie in website_data:
+        logging.info(f"Working on document ID: {movie[0]}")
         web_document = StalkerWebDocumentDB(document_id= int(movie[0]))
         youtube_file = StalkerYoutubeFile(youtube_url=web_document.url, media_type="video", cache_directory=cache_dir)
         youtube_file.chapters_string = web_document.chapter_list
@@ -89,9 +99,13 @@ if __name__ == '__main__':
         if web_document.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION:
             logging.info("Trying to use captions from youtube")
             try:
+                language= web_document.language
+                if language == 'pl-PL':
+                    language = 'pl'
+
                 transcript_list = YouTubeTranscriptApi.list_transcripts(youtube_file.video_id)
                 srt = YouTubeTranscriptApi.get_transcript(video_id=youtube_file.video_id,
-                                                          languages=[web_document.language])
+                                                          languages=[language],)
                 transcript_text = json.dumps(srt)
                 logging.info("Took transcription from YouTube")
 
@@ -101,7 +115,8 @@ if __name__ == '__main__':
                     language_detected = text_language_detect(sting_to_check[0:600])
                     logging.info(f"detected language: {language_detected}")
 
-                    if language_detected != web_document.language:
+                    # if language_detected != web_document.language:
+                    if not compare_language(language_detected, web_document.language):
                         logging.info(f"Language detected >{language_detected}< is different then setup >{web_document.language}<, need to make transcription")
                         web_document.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION
                         web_document.language = language_detected

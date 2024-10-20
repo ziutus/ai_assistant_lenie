@@ -13,7 +13,12 @@ Resources:
       SubnetId: !ImportValue 'lenie-dev-publicSubnet1'
       Tags:
         - Key: Name
-          Value: lenie-EC2
+          Value: !Sub ${ProjectName}-EC2-${Environment}
+        - Key: Stage
+          Value: !Ref Environment
+      IamInstanceProfile: !Ref InstanceProfile
+#      MetadataOptions:
+#        HttpTokens: optional  # Konfiguracja, aby IMDSv2 był opcjonalny https://github.com/aws-cloudformation/cloudformation-coverage-roadmap/issues/655
 
   InstanceSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
@@ -25,6 +30,14 @@ Resources:
           FromPort: '22'
           ToPort: '22'
           CidrIp: 0.0.0.0/0  # otwartość na cały internet, dostosuj według potrzeb
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0  # otwartość na cały internet, dostosuj według potrzeb
+        - IpProtocol: tcp
+          FromPort: '443'
+          ToPort: '443'
+          CidrIp: 0.0.0.0/0  # otwartość na cały internet, dostosuj według potrzeb
 
   ElasticIP:
     Type: 'AWS::EC2::EIP'
@@ -34,6 +47,28 @@ Resources:
     Properties:
       InstanceId: !Ref EC2Instance
       EIP: !Ref ElasticIP
+
+  InstanceRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: 'Allow'
+            Principal:
+              Service:
+                - 'ec2.amazonaws.com'
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+
+  InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: '/'
+      Roles:
+        - !Ref InstanceRole
 
 Parameters:
   LatestAmazonLinux2023AmiId:

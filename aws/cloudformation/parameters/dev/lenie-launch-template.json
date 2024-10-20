@@ -1,0 +1,22 @@
+[
+  {
+    "ParameterKey": "ProjectCode",
+    "ParameterValue": "lenie"
+  },
+  {
+    "ParameterKey": "Stage",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "Component",
+    "ParameterValue": "application"
+  },
+  {
+    "ParameterKey": "ImageId",
+    "ParameterValue": "ami-00e73ddc3a6fc7dfe"
+  },
+  {
+    "ParameterKey": "InstanceType",
+    "ParameterValue": "t2.micro"
+  }
+]

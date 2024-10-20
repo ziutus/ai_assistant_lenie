@@ -109,6 +109,17 @@ Resources:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-PrivateDBSubnet1'
 
+  DataSubnetBIdParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: !Sub Stores ${ProjectName}-${Environment}- DataSubnetA Id
+      Tier: Standard
+      Name: !Sub /${ProjectName}/${Environment}/data-subnet-a/subnet-id
+      Value: !Ref PrivateDBSubnet1
+      Tags:
+        Name: !Sub ${ProjectName}-${Environment}-data-subnet-a-id-param
+
   PrivateDBSubnet2:
     Type: 'AWS::EC2::Subnet'
     Properties:
@@ -119,6 +130,17 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-PrivateDBSubnet2'
+
+  DataSubnetBIdParam2:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: !Sub Stores ${ProjectName}-${Environment}- DataSubnetB Id
+      Tier: Standard
+      Name: !Sub /${ProjectName}/${Environment}/data-subnet-b/subnet-id
+      Value: !Ref PrivateDBSubnet2
+      Tags:
+        Name: !Sub ${ProjectName}-${Environment}-data-subnet-b-id-param
 
   MyInternetGateway:
     Type: 'AWS::EC2::InternetGateway'
@@ -181,3 +203,11 @@ Outputs:
   RouteTableId:
     Description: ID of the created Route Table
     Value: !Ref MyRouteTable
+#  dbSubnetsIds:
+#    Description: Database subnets IDs
+#    Value: !Join
+#      - ','
+#      - - !Ref PrivateDBSubnet1
+#        - !Ref PrivateDBSubnet2
+#    Export:
+#      Name: !Sub ${Stage}-dbSubnetsId

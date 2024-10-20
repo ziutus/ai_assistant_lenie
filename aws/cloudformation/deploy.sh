@@ -1,30 +1,46 @@
 #! /bin/bash
-set -x
+#set -x
+set -e
 
+OPTIND=1
 REGION="us-east-1"
 STAGE=""
 PWD=$(pwd)
-PREFIX="lenie"
+PROJECT_CODE=""
 EXECUTE_ROLE=""
+DATE=$(date '+%Y%m%d%H%M%S')
 
 TEMPLATES=()
 COMMON_TEMPLATES=()
+USE_LOGGER=0
+CHANGE_SET=false
+DELETE_COUNT=0
 
 command -v aws > /dev/null 2>&1 || { echo >&2 "aws cli not installed. Aborting..."; exit 1; }
 command -v jq  > /dev/null 2>&1 || { echo >&2 "jq not installed. Aborting..."; exit 1; }
-command -v sponge > /dev/null 2>&1 || { echo >&2 "sponge not installed. Aborting..."; exit 1; }
+command -v sponge > /dev/null 2>&1 || { echo >&2 "sponge not installed. For Debian use: apt install moreutils Aborting..."; exit 1; }
+#[ -e /dev/log ] || { echo >&2 "deploy.sh: can't use logger, pleas install syslog-ng or similar software"; exit 1;}
 
 show_help() {
    echo "Usage:
    $0 -r <aws_region>  [-h]
 
    -r aws-region - A AWS Region where stack should be created/updated/deleted (default: $REGION)
+   -p PROJECT_CODE - project code (for example: lenie)
    -s stage - Deployment stage (one of prod,cob,qa,dev,test,feature,staging) (default: $STAGE)
    -d - change default action from Create/Update to Delete
-   -t  - create change-sets instead of apply changes
+   -t  - create change-sets instead of apply changes (default: $CHANGE_SET)
 
 
    -h show this message
+
+  The configuration file is deploy.ini in current directory.
+
+  In Cloudformation you have main types of actions for stacks: create stack, update stack, delete stack.
+  This script can automatically choose action between create or update depends on existing stacks (it is checking names
+  of stacks)
+
+  This script can also works with changesets.
 
   Example usage:
    $0 -r us-east-1
@@ -33,11 +49,22 @@ show_help() {
    exit 1
 }
 
-parse_config() {
-  section_name_pattern="^\[\w*\]$"
-  value_pattern="^\w.*"
+log() {
+  local message=$*
 
-  while IFS=$'\r\n' read val
+  echo "$message"
+
+#  [ "${USE_LOGGER}" -eq 1 ] && logger -s $message
+
+}
+
+parse_config() {
+  local section_name_pattern="^\[\w*\]$"
+  local value_pattern="^\w.*"
+  local val
+  local section
+
+  while IFS=$'\r\n' read -r val
   do
     if [[ "${val}" =~ $section_name_pattern ]]; then
       section="${val}"
@@ -54,43 +81,116 @@ parse_config() {
 
 create_update_stack() {
   echo "creating or updating stack - inside function"
-  templates=("$@")
+  local templates=("$@")
+  local template
+
   for template in "${templates[@]}"
   do
     echo "Processing template ${template}"
-#    logger -s "Processing template ${template}"
+    log "Processing template ${template}"
+    local stack_name
+    local stack_count
+
     stack_name=$(get_stack_name "$template")
 
+    stack_count=$(aws --region "${REGION}" cloudformation describe-stacks --stack-name "${stack_name}" --query 'Stacks[*].StackName' --output text 2>/dev/null | wc -l)
+    cf_action="create"
+
+    if [ "${stack_count}" -eq "0" ]; then
+      log "Creating stack ${stack_name}"
+      cf_action="create"
+    else
+      log "Updating stack ${stack_name}"
+      cf_action="update"
+    fi
+
+    cf_execute "${cf_action}" "${stack_name}" "${template}"
   done
 }
 
 get_stack_name() {
-  template="$1"
-  stack_name="${PREFIX}-${STAGE}-$(get_file_name "${template}")"
+  local template="$1"
+  local stack_name
+  stack_name="${PROJECT_CODE}-${STAGE}-$(get_file_name "${template}")"
   echo "${stack_name}"
 }
 
 get_file_name() {
-  template="$1"
+  local template="$1"
+  local file_name
   file_name=${template##*/}
   file_name=${file_name%.*}
   echo "${file_name}"
 }
 
-cf_execute() {
-  action=$1
-  stack_name=$2
-  template=$3
+cf_waiter() {
+  local action=$1
+  local stack_name=$2
+  log "Waiting for stack ${stack_name}"
+  if ! aws --region "${REGION}" cloudformation wait stack-"${action}"-complete --stack-name "${stack_name}"; then
+    exit $?
+  fi
+}
 
-  create_section="--template-body file://${PWD}/${template} --capabilities CAPABILITY_NAMED_AIM --role-arn ${EXECUTE_ROLE}"
+cs_waiter() {
+  local change_set_name=$1
+  local stack_name=$2
+  log "Waiting for change set ${change_set_name} on ${stack_name}"
+  if ! aws --region "${REGION}" cloudformation wait change-set-create-complete --stack-name "${stack_name}" --change-set-name "${change_set_name}" 2>/dev/null; then
+    log "$(aws --region "${REGION}" cloudformation describe-change-set --change-set-name "${change_set_name}" --stack-name "${stack_name}" --query 'StatusReason' --output text)"
+    aws --region "${REGION}" cloudformation delete-change-set --stack-name "${stack_name}" --change-set-name "${change_set_name}"
+    return 1
+  else
+    return 0
+  fi
+}
+
+cs_details() {
+  local change_set_name=$1
+  local stack_name=$2
+
+  log "Details for changeset ${change_set_name} on ${stack_name}"
+  aws --region "${REGION}" cloudformation describe-change-set --change-set-name "${change_set_name}" --stack-name "${stack_name}" --query 'Changes[].{Type:Type,Action:ResourceChange.Action,LogicalId:ResourceChange.LogicalResourceId,PhysicalId:ResourceChange.PhysicalResourceId,Replacement:ResourceChange.Replacement,Scope:ResourceCHange.Scope[],Details:ResourceChange.Details[]}' --output table
+
+  printf "%s\n" "Do you wish to install execute change-set?"
+
+  timeout --foreground 60 bash -c '
+    select sel in "yes" "no"
+    do
+      echo "$REPLY"
+      break
+    done' | while read -r answer; do
+      echo ">>Got answer from user: $answer"
+      case "$answer" in
+        "yes") logger -s "Executing changeset ${change_set_name} on ${stack_name}"
+               aws --region "${REGION}" cloudformation execute-change-set --change-set-name "${change_set_name}" --stack-name "${stack_name}"
+               aws --region "${REGION}" cloudformation wait stack-update-complete --stack-name "${stack_name}"
+               break;;
+
+        "no" ) break;;
+      esac
+    done
+}
+
+cf_execute() {
+  local action=$1
+  local stack_name=$2
+  local template=$3
+  local create_section
+  local parameters_file
+  local parameters_file_full
+  local out
+
+  create_section="--template-body file://${PWD}/${template} --capabilities CAPABILITY_NAMED_IAM"
+  [ -n "$EXECUTE_ROLE"  ] && local creation_section="${creation_section} --role-arn ${EXECUTE_ROLE}"
 
   parameters_file=$(get_file_name "${template}").json
   parameters_file_full="${PWD}/parameters/${STAGE}/${parameters_file}"
 
-  if [ -f  $parameters_file_full ]; then
+  if [ -f  "$parameters_file_full" ]; then
     # update timestamp in parameters file
     jq '(.[] | select(.ParameterKey == "timestamp") | .ParameterValue) = '\"$(date +%s)\" $parameters_file_full | sponge $parameters_file_full
-    create_section="${create_section} --parameters file://${parameters_file}"
+    create_section="${create_section} --parameters file://${parameters_file_full}"
   fi
 
   if [ "${action}" == "delete" ]; then
@@ -101,34 +201,63 @@ cf_execute() {
   echo "${create_section}"
 
   if [ "${CHANGE_SET}" == true ]; then
-    change_set_name="changeSet${DATE}"
-    logger -s "Creating change Set ${change_set_name}"
-    if out=$(aws --region "$REGION" cloudformation create-change-set --stack-name "${stack_name}" ${create_section} --change-set-name "${change_set_name}" --role-arn "${EXECUTION_ROLE}" 2>&1);then
+    local change_set_name="changeSet${DATE}"
+    log "Creating change Set ${change_set_name}"
+#    if out=$(aws --region "$REGION" cloudformation create-change-set --stack-name "${stack_name}" ${create_section} --change-set-name "${change_set_name}" --role-arn "${EXECUTION_ROLE}" 2>&1);then
+    if out=$(aws --region "$REGION" cloudformation create-change-set --stack-name "${stack_name}" ${create_section} --change-set-name "${change_set_name}" 2>&1);then
       if cs_waiter "${change_set_name}" "${stack_name}"; then
         cs_details "${change_set_name}" "${stack_name}"
       fi
     else
-      logger -s "${out}"
+      log "${out}"
       exit $?
     fi
 
-  # TODO: 150 linia oryginalnie
   else
-    if out$(aws --region "${REGION}")
-
+    if out=$(aws --region "${REGION}" cloudformation ${action}-stack --stack-name "${stack_name}" ${create_section} 2>&1); then
+      cf_waiter "${action}" "${stack_name}"
+    else
+      if [[ "${out}" == "No updates are to be performed" ]]; then
+        log "Stack ${stack_name} is up to date"
+      else
+        log "${out}"
+        exit $?
+      fi
+    fi
   fi
 }
 
+delete_stack(){
+  local templates=("$@")
+  local idx
+
+  if [ -z "${DELETE_COUNT}" ] || (( DELETE_COUNT > ${#templates[@]} )); then
+    DELETE_COUNT=${#TEMPLATES[@]}
+  fi
+
+  for (( idx=${#templates[@]}-1 ; idx>=${#templates[@]}-${DELETE_COUNT}; idx-- )) ; do
+    log "Processing template ${templates[idx]} ($idx)"
+    stack_name=$(get_stack_name "${templates[idx]}")
+
+    cf_execute "delete" "${stack_name}"
+  done
+}
 
 # Parse parameters
-while getopts "h:s:r:" opt; do
+while getopts "h:s:r:dc:p:t" opt; do
   case "$opt" in
   h)
       show_help
       ;;
+  d) ACTION="delete"
+    ;;
+  p) PROJECT_CODE=$OPTARG
+    ;;
   r) REGION=$OPTARG
     ;;
   s) STAGE=$OPTARG
+    ;;
+  t) CHANGE_SET=true
     ;;
   *) echo "ERROR: Unknown option $opt"
     show_help
@@ -142,12 +271,31 @@ shift $((OPTIND-1))
 
 
 if [ -z "${REGION}" ]; then echo "aws-region is required"; show_help; fi
-#if [ -z "${PREFIX}" ]; then echo "prefix is required"; show_help; fi
+if [ -z "${PROJECT_CODE}" ]; then echo "PROJECT_CODE is required"; show_help; fi
 if [ -z "${STAGE}" ]; then echo "Stage is required"; show_help; fi
 
 parse_config
 
-#logger -s "Create stacks in ${REGION}"
-create_update_stack "${TEMPLATES[@]}"
+if [ "$ACTION" == "delete" ]; then
+  if [ -z "${DELETE_COUNT}" ]; then
+    read -p "Removing ALL stacks. Are you sure? (y/n)" -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 0
+    fi
+  fi
+  log "Deleting stacks in ${REGION}"
+  delete_stack "${TEMPLATES[@]}"
+else
+  log "Create stacks in ${REGION}"
+  if [ "${STAGE}" == "prod" ]; then
+    log "As STAGE is prod, I'm analyzing also COMMON templates"
+    temp_stage="${STAGE}"
+    STAGE="all"
+    create_update_stack "${COMMON_TEMPLATES[@]}"
+    STAGE="${temp_stage}"
+  fi
+  create_update_stack "${TEMPLATES[@]}"
+fi
 
 exit 0
