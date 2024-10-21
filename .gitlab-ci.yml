@@ -7,16 +7,14 @@ variables:
   DOCKER_REPO_OWNER: "linuxexpertpl"
 
 stages:
-  - start-runner
   - build-docker-image
   - push-docker-image
   - test
   - deploy
-  - stop-runner
 
 
 start_runner:
-  stage: start-runner
+  stage: .pre
   variables:
     GIT_STRATEGY: none  # Zapobieganie klonowaniu repozytorium
   before_script:
@@ -59,7 +57,7 @@ job-push-docker-image:
 
 
 stop_runner:
-  stage: stop-runner
+  stage: .post
   variables:
     GIT_STRATEGY: none  # Zapobieganie klonowaniu repozytorium
   before_script:
@@ -71,4 +69,3 @@ stop_runner:
   script:
     - echo "Stopping AWS EC2 instance..."
     - aws ec2 stop-instances --instance-ids $INSTANCE_ID
-  when: always
