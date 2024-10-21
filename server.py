@@ -82,7 +82,8 @@ CORS(app)  # This will enable CORS for all routes
 
 @app.before_request
 def before_request_func():
-    if request.method != 'OPTIONS':
+    exempt_paths = ['/startup', '/readiness', '/liveness']
+    if request.path not in exempt_paths and request.method != 'OPTIONS':
         check_auth_header()
 
 

@@ -3,7 +3,7 @@ variables:
   AWS_REGION: "us-east-1"
   INSTANCE_ID: "i-03908d34c63fce042"
   CI_REGISTRY_IMAGE: "lenie-ai-server"
-  TAG_VERSION: "0.2.9.0"
+  TAG_VERSION: "0.2.10.0"
   DOCKER_REPO_OWNER: "linuxexpertpl"
 
 stages:
