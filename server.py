@@ -37,7 +37,10 @@ env_data = fetch_env_var("ENV_DATA")
 
 llm_simple_jobs_model = fetch_env_var("AI_MODEL_SUMMARY")
 
-logging.info("APP VERSION=0.1.0 (2024.05.06 13:32)")
+APP_VERSION="0.2.11.0"
+BUILD_TIME="2024.09.50 09:50"
+
+logging.info(f"APP VERSION={APP_VERSION} (build time:{BUILD_TIME})")
 logging.info("ENV_DATA: " + os.getenv("ENV_DATA"))
 
 backend_type = fetch_env_var("BACKEND_TYPE")
@@ -82,7 +85,7 @@ CORS(app)  # This will enable CORS for all routes
 
 @app.before_request
 def before_request_func():
-    exempt_paths = ['/startup', '/readiness', '/liveness']
+    exempt_paths = ['/startup', '/readiness', '/liveness', '/version']
     if request.path not in exempt_paths and request.method != 'OPTIONS':
         check_auth_header()
 
@@ -583,6 +586,17 @@ def kubernetes_readiness():
 def kubernetes_liveness():
     # https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
     return {"status": "OK", "message": "Server is ready and will not be restarted"}, 200
+
+@app.route('/version', methods=['GET'])
+def app_version():
+    response = {
+            "status": "success",
+            "app_version": APP_VERSION,
+            "app_build_time": BUILD_TIME,
+            "encoding": "utf8"
+        }
+    logging.debug(response)
+    return response, 200
 
 
 if __name__ == '__main__':
