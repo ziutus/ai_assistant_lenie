@@ -33,6 +33,7 @@ job-build-docker-image:
   script:
     - echo "Now let's build it"
     - docker build -t $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION .
+    - docker tag $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
   only:
     - dev
     - main
@@ -50,6 +51,7 @@ job-push-docker-image:
   script:
     - echo "Now let's push it"
     - docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION
+    - docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
   only:
     - dev
     - main
