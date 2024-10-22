@@ -1,5 +1,5 @@
 # Use an official Python runtime as a parent image
-FROM python:3.11-slim AS build-stage
+FROM python:3.11-slim
 
 # Set the working directory in the container
 WORKDIR /app
@@ -16,12 +16,8 @@ COPY library /app/library/
 #COPY tests /app/tests/
 COPY server.py /app/
 
-FROM python:3.11-slim
-WORKDIR /app
-COPY --from=build-stage /app/* .
+# Expose port 5000 for the Flask application
+EXPOSE 5000
 
 # Define the command to run your application
 CMD ["python", "server.py"]
-
-# Expose port 5000 for the Flask application
-EXPOSE 5000
