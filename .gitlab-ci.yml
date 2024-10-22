@@ -3,8 +3,7 @@ variables:
   AWS_REGION: "us-east-1"
   INSTANCE_ID: "i-03908d34c63fce042"
   CI_REGISTRY_IMAGE: "lenie-ai-server"
-  TAG_VERSION: "0.2.10.1"
-  DOCKER_REPO_OWNER: "linuxexpertpl"
+  TAG_VERSION: "0.2.10.2"
 
 stages:
   - build-docker-image
@@ -50,7 +49,7 @@ job-push-docker-image:
     - docker login -u "$DOCKER_HUB_USERNAME" -p "$DOCKER_HUB_TOKEN"
   script:
     - echo "Now let's push it"
-    - docker push $DOCKER_REPO_OWNER/$CI_REGISTRY_IMAGE:$TAG_VERSION
+    - docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION
   only:
     - dev
     - main
