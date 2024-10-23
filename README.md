@@ -64,18 +64,18 @@ After the build process is complete, you can run the Docker container with the n
 
 ### Sending image to ECR
 ```powershell
-(Get-ECRLoginCommand -ProfileName stalker-free-developer -Region us-east-1).Password | docker login --username AWS --password-stdin 234876388473.dkr.ecr.us-east-1.amazonaws.com
+(Get-ECRLoginCommand -ProfileName stalker-free-developer -Region us-east-1).Password | docker login --username AWS --password-stdin ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
 ```
 
 ```powershell
-docker build -t stalker-server2 .
+docker build -t lenie-ai-server .
 ```
 ```powershell
-docker tag stalker-server2:latest ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/stalker-server2:latest
+docker tag lenie-ai-server:latest ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/lenie-ai-server:latest
 ```
 
 ```powershell
-docker push ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/stalker-server2:latest
+docker push ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/lenie-ai-server:latest
 ```
 
 
@@ -92,7 +92,7 @@ After starting the appliaction or container, you can access the Stalker applicat
 ### Docker
 
 ```powershell
-docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenie-ai-server:0.2.6.1
+docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenieai/lenie-ai-server:latest
 ```
 
 ### Docker compose
