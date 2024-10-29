@@ -1,14 +1,37 @@
 #!/bin/bash
 
-# Get a list of all Docker images
-images=$(docker images -q)
+# Initialize variable for remove name
+REMOVE_NAME=""
 
-# Check if the images list is not empty
-if [ -z "$images" ]; then
-  echo "No images to remove."
+# Parse command line options
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --remove-name)
+      REMOVE_NAME="$2"
+      shift
+      shift
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+
+if [ -z "$REMOVE_NAME" ]; then
+  echo "No --remove-name option provided. No images will be removed."
 else
-  echo "Removing all Docker images..."
-  docker image rm -f $images
+  # Get a list of all Docker images with names starting with the provided remove name
+  images=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "^${REMOVE_NAME}")
+
+  # Check if the images list is not empty
+  if [ -z "$images" ]; then
+    echo "No images to remove with names starting with '${REMOVE_NAME}'."
+  else
+    echo "Removing Docker images with names starting with '${REMOVE_NAME}'..."
+    for image in $images; do
+      docker image rm -f $image
+    done
+  fi
 fi
 
 # Prune system - this will remove:

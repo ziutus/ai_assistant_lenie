@@ -85,7 +85,7 @@ job-clean-docker-image:
   script:
     - echo "Now let's remove old images  from docker"
     - chmod +x infra/docker/docker_images_clean.sh
-    - infra/docker/docker_images_clean.sh
+    - infra/docker/docker_images_clean.sh --remove-name lenie
   only:
     - dev
     - main
