@@ -131,9 +131,19 @@ def lambda_handler(event, context):
         if 'id' not in event['queryStringParameters']:
             return prepare_return('Missing ID parameter', 500)
 
+        query_params = event.get('queryStringParameters', {})
+        pprint(query_params)
+        # pprint(event['queryStringParameters'])
         document_id = event['queryStringParameters']['id']
-        next_data = websites.get_next_to_correct(document_id)
-        # pprint(next_data)
+        document_type = query_params.get('document_type', 'ALL')
+        document_state = query_params.get('document_state', 'ALL')
+
+        next_data = websites.get_next_to_correct(document_id, document_type, document_state)
+        pprint(next_data)
+
+        if next_data == -1:
+            next_data = websites.get_next_to_correct(-1, document_type, document_state)
+
         next_id = next_data[0]
         next_type = next_data[1]
         logging.info(next_id)
@@ -206,7 +216,7 @@ def lambda_handler(event, context):
         return prepare_return(response, 200)
 
     if event['path'] == '/website_delete':
-        print("Deleting website")
+        print("Deleting document")
 
         if 'id' not in event['queryStringParameters']:
             return prepare_return('Missing document ID parameter', 500)
@@ -222,7 +232,7 @@ def lambda_handler(event, context):
                 "message": "Page doesn't exist in database",
                 "encoding": "utf8",
             }
-            return response, 200
+            return prepare_return(response, 200)
 
         web_document.delete()
         response = {
@@ -230,7 +240,7 @@ def lambda_handler(event, context):
             "message": "Page has been deleted from database",
             "encoding": "utf8",
         }
-        return response, 200
+        return prepare_return(response, 200)
 
     if event['path'] == '/website_save':
         parsed_dict = parse_qs(event['body'])

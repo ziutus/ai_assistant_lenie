@@ -31,12 +31,34 @@ class WebsitesDBPostgreSQL:
     def is_connection_open(self) -> bool:
         return self.conn.closed == 0
 
-    def get_next_to_correct(self, website_id) -> [int, str]:
+    def get_next_to_correct(self, website_id, document_type = "ALL", document_state = "ALL") -> [int, str]:
+        # "SELECT id, document_type FROM public.web_documents WHERE id > %s and document_state = '{StalkerDocumentStatus.NEED_MANUAL_REVIEW.name}' ORDER BY id LIMIT 1"
+
+        base_query = "SELECT id, document_type FROM public.web_documents"
+        order_by = "ORDER BY id"
+
+        where_clauses = []
+
+        if document_type != "ALL":
+            where_clauses.append(f"document_type = '{document_type}'")
+
+        if document_state != "ALL":
+            where_clauses.append(f"document_state = '{document_state}'")
+
+        # Łączenie warunków zapytania
+        if where_clauses:
+            where_query = " WHERE  id > %s AND " + " AND ".join(where_clauses)
+        else:
+            where_query = " WHERE  id > %s "
+
+        # Końcowe zapytanie
+        query = f"{base_query} {where_query} ORDER BY id LIMIT 1"
+
+        print(query)
+
         with self.conn:
             with self.conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT id, document_type FROM public.web_documents WHERE id > %s and document_state = '{StalkerDocumentStatus.NEED_MANUAL_REVIEW.name}' ORDER BY id LIMIT 1",
-                    (website_id,))
+                cur.execute(f"{base_query} {where_query} ORDER BY id LIMIT 1", (website_id,))
                 result = cur.fetchone()
                 if result is None:
                     return -1
