@@ -62,6 +62,8 @@ job-security-tool-trufflehog:
 
 job-security-tool-osv_scan:
   stage: security-checks
+  tags:
+    - AWS
   script:
     - /usr/local/bin/osv-scanner scan --lockfile requirements.txt
   artifacts:
