@@ -60,6 +60,16 @@ job-security-tool-trufflehog:
       - trufflehog.txt
       - trufflehog_errors.txt
 
+job-security-tool-osv_scan:
+  image: python:3.11
+  stage: security-checks
+  script:
+    - pip install osv-scanner
+    - osv-scanner --path .
+  artifacts:
+    paths:
+      - osv_scan_results.json
+
 job-push-docker-image:
   stage: deploy
   tags:
