@@ -70,6 +70,16 @@ job-security-tool-osv_scan:
     paths:
       - osv_scan_results.json
 
+job-style-tool-flake8-scan:
+  stage: security-checks
+  tags:
+    - AWS
+  script:
+    - flake8 --htmldir=flake_reports/ || true
+  artifacts:
+    paths:
+      - flake_reports/
+
 job-push-docker-image:
   stage: deploy
   tags:
