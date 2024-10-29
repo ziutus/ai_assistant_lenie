@@ -3,10 +3,11 @@ variables:
   AWS_REGION: "us-east-1"
   INSTANCE_ID: "i-03908d34c63fce042"
   CI_REGISTRY_IMAGE: "lenie-ai-server"
-  TAG_VERSION: "0.2.11.3"
+  TAG_VERSION: "0.2.11.4"
 
 stages:
   - build-docker-image
+  - clean-node
   - push-docker-image
   - test
   - deploy
@@ -55,6 +56,19 @@ job-push-docker-image:
   only:
     - dev
     - main
+
+job-clean-docker-image:
+  stage: clean-node
+  tags:
+    - AWS
+  script:
+    - echo "Now let's remove old images  from docker"
+    - chmod +x infra/docker/docker_images_clean.sh
+    - infra/docker/docker_images_clean.sh
+  only:
+    - dev
+    - main
+
 
 
 stop_runner:
