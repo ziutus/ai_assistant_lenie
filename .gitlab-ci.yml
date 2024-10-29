@@ -75,6 +75,7 @@ job-style-tool-flake8-scan:
   tags:
     - AWS
   script:
+    - mkdir flake_reports/
     - flake8 --htmldir=flake_reports/ || true
   artifacts:
     paths:
