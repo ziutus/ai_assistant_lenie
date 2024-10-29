@@ -39,8 +39,8 @@ fi
 # - all networks not used by at least one container
 # - all dangling images
 # - all build cache
-echo "Pruning Docker system..."
-docker system prune -a -f
+#echo "Pruning Docker system..."
+#docker system prune -a -f
 
 # Optionally, if you want to also remove all unused volumes, include the --volumes flag
 # docker system prune -a -f --volumes
