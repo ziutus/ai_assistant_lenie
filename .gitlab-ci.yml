@@ -61,11 +61,9 @@ job-security-tool-trufflehog:
       - trufflehog_errors.txt
 
 job-security-tool-osv_scan:
-  image: python:3.11
   stage: security-checks
   script:
-    - pip install osv-scanner
-    - osv-scanner --path .
+    - osv-scanner scan --lockfile requirements.txt
   artifacts:
     paths:
       - osv_scan_results.json
