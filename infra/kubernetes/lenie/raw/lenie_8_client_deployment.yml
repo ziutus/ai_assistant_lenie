@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lenie-ai-client-deployment
+  namespace: lenie-ai-dev
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: lenie-ai-client
+  template:
+    metadata:
+      labels:
+        app: lenie-ai-client
+    spec:
+      containers:
+      - name: lenie-react-interface
+        image: linuxexpertpl/lenie-react-interface:0.2.9
+        ports:
+        - containerPort: 3000
