@@ -9,8 +9,8 @@ stages:
   - build-docker-image
   - push-docker-image
   - test
-  - clean-node
   - deploy
+  - clean-node
 
 
 start_runner:
@@ -68,7 +68,6 @@ job-clean-docker-image:
   only:
     - dev
     - main
-
 
 
 stop_runner:
