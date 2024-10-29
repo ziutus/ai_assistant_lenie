@@ -6,8 +6,8 @@ variables:
   TAG_VERSION: "0.2.11.4"
 
 stages:
-  - build-docker-image
-  - push-docker-image
+  - security-checks
+  - build
   - test
   - deploy
   - clean-node
@@ -28,7 +28,7 @@ start_runner:
     - aws ec2 start-instances --instance-ids $INSTANCE_ID
 
 job-build-docker-image:
-  stage: build-docker-image
+  stage: build
   tags:
     - AWS
   script:
@@ -39,8 +39,18 @@ job-build-docker-image:
     - dev
     - main
 
+job-security-tool-semgrep:
+  stage: security-checks
+  tags:
+    - AWS
+  script:
+    - semgrep --config=auto --output semgrep-report.json
+  artifacts:
+    paths:
+      - semgrep-report.json
+
 job-push-docker-image:
-  stage: push-docker-image
+  stage: deploy
   tags:
     - AWS
   services:
