@@ -49,6 +49,17 @@ job-security-tool-semgrep:
     paths:
       - semgrep-report.json
 
+job-security-tool-trufflehog:
+  stage: security-checks
+  tags:
+    - AWS
+  script:
+    - docker run --rm --name trufflehog  trufflesecurity/trufflehog:latest git  file://. --only-verified --bare 2>trufflehog_errors.txt > trufflehog.txt
+  artifacts:
+    paths:
+      - trufflehog_errors.txt
+      - trufflehog.txt
+
 job-push-docker-image:
   stage: deploy
   tags:
