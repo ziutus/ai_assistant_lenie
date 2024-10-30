@@ -50,7 +50,9 @@ for entry in json_data:
         ignored += 1
         continue
 
-    if entry['url'].startswith("https://uw7.org/un") or entry['url'].startswith("http://uw7.org/un"):
+    #  noinspection HttpUrlsUsage
+    unsecure_address = "http://uw7.org/un"
+    if entry['url'].startswith("https://uw7.org/un") or entry['url'].startswith(unsecure_address):
         print("Will ignore as paid link: " + entry['url'])
         continue
 
