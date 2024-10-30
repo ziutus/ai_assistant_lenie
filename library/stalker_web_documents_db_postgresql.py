@@ -29,7 +29,7 @@ class WebsitesDBPostgreSQL:
     def is_connection_open(self) -> bool:
         return self.conn.closed == 0
 
-    def get_next_to_correct(self, website_id, document_type = "ALL", document_state = "ALL") -> [int, str]:
+    def get_next_to_correct(self, website_id, document_type="ALL", document_state="ALL") -> [int, str]:
         # "SELECT id, document_type FROM public.web_documents WHERE id > %s and document_state = '{StalkerDocumentStatus.NEED_MANUAL_REVIEW.name}' ORDER BY id LIMIT 1"
 
         base_query = "SELECT id, document_type FROM public.web_documents"
@@ -64,7 +64,8 @@ class WebsitesDBPostgreSQL:
     def close(self):
         self.conn.close()
 
-    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL") -> list[
+    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL") -> \
+    list[
         dict[str, str, str, str, str]]:
         offset = offset * limit
 
