@@ -255,7 +255,8 @@ def lambda_handler(event, _):
         if 'document_type' in parsed_dict.keys():
             try:
                 web_document.set_document_type(parsed_dict['document_type'][0])
-            except:
+            except Exception as e:
+                print(f"An error occurred: {e}")
                 return {"status": "error", "message": f"Wrong document type {parsed_dict['document_type'][0]}."}, 500
 
         if 'document_state' in parsed_dict.keys():
