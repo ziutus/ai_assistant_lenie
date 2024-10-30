@@ -6,7 +6,7 @@ site_rules = {
                              r"Masz newsa,\s+zdjęcie\s+lub\s+filmik\?\s+Prześlij\s+nam\s+przez\s+dziejesie\.wp\.pl\s+Oceń\s+jakość\s+naszego\s+artykułu"  # noqa
         ],
         "remove_string": ["Wyłączono komentarze", "Dalsza część artykułu pod materiałem wideo"],
-        "remove_string_regexp": [r"\n\s*Trwa\sładowanie\swpisu:\sfacebook\s*\n", r"\n\s*Rozwin\s*\n"]
+        "remove_string_regexp": [r"\n\s*Trwa\sładowanie\swpisu:\sfacebook\s*\n", r"\n\s*Rozwin\s*\n"] # noqa
     },
     "https://wydarzenia.interia.pl": {
         "remove_before": [
@@ -24,7 +24,7 @@ site_rules = {
         "remove_string": [],
         "remove_string_regexp": [
         r"Lubię toLubię to\d+Super\d+Hahaha\d+Szok\d+Smutny\d+Zły\d+Lubię toSuper(\d+|\d+,\d tys.)Udostępnij", r"REKLAMA\n", r"Treść zewnętrzna\n"]
-    },
+    }, # noqa
     "https://wiadomosci.onet.pl/": {
         "remove_before": [r"min\s+czytania\s+FACEBOOK\s+X\s+E-MAIL\s+KOPIUJ\s+LINK"],
         "remove_after": [r"Cieszymy\ssię,\sże\sjesteś\sz\snami.\sZapisz\ssię\sna\snewsletter\sOnetu"],
