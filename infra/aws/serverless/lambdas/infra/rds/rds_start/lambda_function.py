@@ -8,7 +8,7 @@ db_id = os.environ.get('DB_ID')
 
 def lambda_handler(event, context):
     try:
-        response = client.start_db_instance(DBInstanceIdentifier=db_id)
+        client.start_db_instance(DBInstanceIdentifier=db_id)
         return {
             'headers': {
                 'Access-Control-Allow-Origin': '*',
