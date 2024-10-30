@@ -1,11 +1,9 @@
 import os
-
 import boto3
 from aws_xray_sdk.core import xray_recorder, patch_all
+from library.text_functions import get_hash
 
 patch_all()
-
-from library.text_functions import get_hash
 
 
 def cache_get_query(entry_id: str, provider: str) -> str | None:
