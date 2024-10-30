@@ -82,10 +82,12 @@ class StalkerYoutubeFile:
 
     def save_in_local_cache(self, verbose=False) -> None:
         if len(self.text) > 3:
-            print("Writing text to file: {self.text_file}", end=" ")
+            if verbose:
+                print("Writing text to file: {self.text_file}", end=" ")
             with open(self.text_file, 'w', encoding="utf8") as file:
                 file.write(self.text)
-            print("[DONE]")
+            if verbose:
+                print("[DONE]")
 
     def download_video(self, force: bool = False) -> None:
 
