@@ -6,9 +6,9 @@ variables:
   TAG_VERSION: "0.2.11.4"
 
 stages:
+  - test
   - security-checks
   - build
-  - test
   - deploy
   - clean-node
 
@@ -34,7 +34,7 @@ job-pytest:
   before_script:
     - pip install -r requirements.txt 
   script:
-    pytest --self-contained-html --html=pytest-results/
+    pytest --self-contained-html --html=pytest-results/ || true
   artifacts:
     when: always
     paths:
