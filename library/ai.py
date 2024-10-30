@@ -1,11 +1,5 @@
-import library.api.openai.openai_my
-from library.api.aws.text_detect_language_aws import detect_text_language_aws
 import library.api.aws.bedrock_ask
-from library.stalker_cache import cache_get, cache_write
-from library.translate import text_translate
-from library.text_detect_language import text_language_detect
-
-import logging
+import library.api.openai.openai_my
 
 
 class AiResponse:
