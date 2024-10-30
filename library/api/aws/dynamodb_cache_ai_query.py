@@ -33,7 +33,7 @@ def cache_write_query(query: str, response: str, provider: str) -> None:
     boto_session = boto3.session.Session(region_name=os.getenv("AWS_REGION"))
     dynamodb = boto_session.client('dynamodb')
 
-    with xray_recorder.in_subsegment('dynamodb_ai_cache_write') as subsegment:
+    with xray_recorder.in_subsegment('dynamodb_ai_cache_write'):
         dynamodb.put_item(
             Item={
                 'hash': {'S': get_hash(query)},

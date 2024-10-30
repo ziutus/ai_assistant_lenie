@@ -29,7 +29,7 @@ def query_aws_bedrock(query: str) -> str:
     content_type = 'application/json'
     output_text = "\n"
 
-    with xray_recorder.in_subsegment('translate single test') as subsegment:
+    with xray_recorder.in_subsegment('translate single test'):
 
         try:
 

@@ -18,7 +18,7 @@ def aws_transcript(s3_bucket: str, s3_key: str, media_format: str, language_code
     boto_session = boto3.session.Session(region_name=os.getenv("AWS_REGION"))
     transcript_client = boto_session.client(service_name='transcribe', region_name=os.getenv("AWS_REGION"))
 
-    with xray_recorder.in_subsegment('transcript') as subsegment:
+    with xray_recorder.in_subsegment('transcript'):
         response = transcript_client.list_transcription_jobs(
             JobNameContains=job_name
         )

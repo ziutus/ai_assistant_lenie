@@ -9,7 +9,7 @@ def detect_text_language_aws(text: str) -> str:
     session = boto3.Session(region_name=os.getenv("AWS_REGION"))
     client = session.client('comprehend',region_name=os.getenv("AWS_REGION"))
 
-    with xray_recorder.in_subsegment('detect_dominant_language') as subsegment:
+    with xray_recorder.in_subsegment('detect_dominant_language'):
         response = client.detect_dominant_language(Text=text)
 
         language_code = response['Languages'][0]['LanguageCode']

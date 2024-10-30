@@ -11,7 +11,7 @@ def cache_get_language(entry_id, provider) -> str | None:
     boto_session = boto3.session.Session(region_name=os.getenv("AWS_REGION"))
     dynamodb = boto_session.client('dynamodb')
 
-    with xray_recorder.in_subsegment('bedrock_invoke_model') as subsegment:
+    with xray_recorder.in_subsegment('bedrock_invoke_model'):
         response = dynamodb.get_item(
             TableName='lenie_cache_language',
             Key={
@@ -35,7 +35,7 @@ def cache_write_language_check(text_input: str, translation: str, provider: str)
     boto_session = boto3.session.Session(region_name=os.getenv("AWS_REGION"))
     dynamodb = boto_session.client('dynamodb')
 
-    with xray_recorder.in_subsegment('bedrock_invoke_model') as subsegment:
+    with xray_recorder.in_subsegment('bedrock_invoke_model'):
         dynamodb.put_item(
             Item={
                 'hash': {'S': get_hash(text_input)},
