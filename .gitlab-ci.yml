@@ -27,6 +27,24 @@ start_runner:
     - echo "Starting AWS EC2 runner instance..."
     - aws ec2 start-instances --instance-ids $INSTANCE_ID
 
+qodana:
+  stage: security-checks
+  image:
+    name: jetbrains/qodana-python-community:2024.1
+    entrypoint: [""]
+  cache:
+    - key: qodana-2024.1-$CI_DEFAULT_BRANCH-$CI_COMMIT_REF_SLUG
+      fallback_keys:
+        - qodana-2024.1-$CI_DEFAULT_BRANCH-
+        - qodana-2024.1-
+      paths:
+        - .qodana/cache
+  variables:
+    QODANA_TOKEN: $QODANA_TOKEN
+    QODANA_ENDPOINT: "https://qodana.cloud"
+  script:
+    - qodana --cache-dir=$CI_PROJECT_DIR/.qodana/cache
+
 job-pytest:
   stage: test
   tags:
