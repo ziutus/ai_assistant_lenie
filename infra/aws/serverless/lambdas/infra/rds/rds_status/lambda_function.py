@@ -14,9 +14,9 @@ def lambda_handler(event, context):
 
         if len(response['DBInstances']) != 1:
             return {
-            'headers': {
-                'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Credentials': True,
+                'headers': {
+                    'Access-Control-Allow-Origin': '*',
+                    'Access-Control-Allow-Credentials': True,
                 },
                 'statusCode': 500,
                 'body': json.dumps(f'Error during checking status of database, wrong number of DB instances! >{len(response["DBInstances"])}')
