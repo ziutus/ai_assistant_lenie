@@ -1,11 +1,9 @@
 import json
-import os
-import sys
-import boto3
-import uuid
-from pprint import pprint
-
 import logging
+import os
+import uuid
+
+import boto3
 
 logger = logging.getLogger()
 logger.setLevel("INFO")

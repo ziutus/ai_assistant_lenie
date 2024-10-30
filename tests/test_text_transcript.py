@@ -1,5 +1,3 @@
-import pytest
-import re
 from library import text_transcript
 
 

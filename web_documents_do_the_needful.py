@@ -4,10 +4,10 @@ import os
 import boto3
 from dotenv import load_dotenv
 
+from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType, \
+    StalkerDocumentStatusError
 # Importacja własnych modułów
 from library.stalker_web_document_db import StalkerWebDocumentDB
-from library.stalker_web_document import StalkerWebDocument, StalkerDocumentStatus, StalkerDocumentType, \
-    StalkerDocumentStatusError
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.website.website_download_context import download_raw_html, webpage_raw_parse
 

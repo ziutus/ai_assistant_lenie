@@ -1,7 +1,7 @@
 import json
-import boto3
 import os
-from pprint import pprint
+
+import boto3
 
 client = boto3.client("rds")
 db_id = os.environ.get('DB_ID')

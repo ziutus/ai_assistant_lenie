@@ -1,18 +1,14 @@
 import json
+import logging
 import os
 from pprint import pprint
-import logging
 from urllib.parse import parse_qs
 
-from library.ai import ai_ask
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.text_transcript import chapters_text_to_list
-from library.translate import text_translate
-from library.website.website_download_context import download_raw_html, webpage_raw_parse, WebPageParseResult
-from library.website.website_paid import website_is_paid
 from library.text_functions import split_text_for_embedding
-import library.embedding as embedding
+from library.text_transcript import chapters_text_to_list
+from library.website.website_paid import website_is_paid
 
 logging.basicConfig(level=logging.DEBUG)  # Change level as per your need
 
@@ -62,7 +58,7 @@ def prepare_return(data, status_code: int):
     }
 
 
-def lambda_handler(event, context):
+def lambda_handler(event, _):
     # logging.info(f"all pages in database: {websites.get_count()}")
     # print(f"2: all pages in database: {websites.get_count()}")
 
@@ -122,8 +118,8 @@ def lambda_handler(event, context):
         if 'id' not in event['queryStringParameters']:
             return prepare_return('Missing ID parameter', 500)
 
-        id = event['queryStringParameters']['id']
-        web_document = StalkerWebDocumentDB(document_id=int(id), reach=True)
+        document_id = event['queryStringParameters']['id']
+        web_document = StalkerWebDocumentDB(document_id=int(document_id), reach=True)
 
         return prepare_return(web_document.dict(), 200)
 

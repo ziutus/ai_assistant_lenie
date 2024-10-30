@@ -46,7 +46,6 @@ if __name__ == '__main__':
 
     if aws_xray_enabled:
         from aws_xray_sdk.core import xray_recorder, patch_all
-        from aws_xray_sdk.core import patch
 
         # Konfiguracja X-Ray
         xray_recorder.configure(service='lenie_ai')
