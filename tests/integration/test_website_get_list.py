@@ -1,6 +1,5 @@
-import unittest
-import sys
 import os
+import unittest
 from server import app
 
 os.environ['DEBUG'] = 'false'
