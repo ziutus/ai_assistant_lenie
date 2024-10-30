@@ -33,7 +33,6 @@ class WebsitesDBPostgreSQL:
         # "SELECT id, document_type FROM public.web_documents WHERE id > %s and document_state = '{StalkerDocumentStatus.NEED_MANUAL_REVIEW.name}' ORDER BY id LIMIT 1"
 
         base_query = "SELECT id, document_type FROM public.web_documents"
-        order_by = "ORDER BY id"
 
         where_clauses = []
 
