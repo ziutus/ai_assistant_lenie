@@ -28,7 +28,7 @@ def text_language_detect(text: str, provider: str = "aws") -> str:
             raise ValueError("Unsupported provider for text detection")
 
         if use_cache:
-            cache_write('language',key=text, data=language, provider='aws')
+            cache_write('language', key=text, data=language, provider='aws')
 
     logger.info(f"Detected language is: {language}")
     return language
