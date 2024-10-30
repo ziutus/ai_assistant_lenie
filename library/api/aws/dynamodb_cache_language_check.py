@@ -6,7 +6,6 @@ from library.text_functions import get_hash
 patch_all()
 
 
-
 def cache_get_language(entry_id, provider) -> str | None:
     boto_session = boto3.session.Session(region_name=os.getenv("AWS_REGION"))
     dynamodb = boto_session.client('dynamodb')
