@@ -51,9 +51,9 @@ def translate_aws(text: str, target_language: str, source_language: str = "pl") 
 
                 with xray_recorder.in_subsegment(f'translate part {i} from {rows_nb}') as subsegment:
                     response = client.translate_text(
-                    Text=row,
-                    SourceLanguageCode=source_language,
-                    TargetLanguageCode=target_language
+                        Text=row,
+                        SourceLanguageCode=source_language,
+                        TargetLanguageCode=target_language
                     )
                     rows_english.append(response['TranslatedText'])
                     subsegment.put_metadata('response', response)
