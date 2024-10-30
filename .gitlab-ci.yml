@@ -6,9 +6,9 @@ variables:
   TAG_VERSION: "0.2.11.4"
 
 stages:
+  - test
   - security-checks
   - build
-  - test
   - deploy
   - clean-node
 
@@ -26,6 +26,37 @@ start_runner:
   script:
     - echo "Starting AWS EC2 runner instance..."
     - aws ec2 start-instances --instance-ids $INSTANCE_ID
+
+qodana:
+  stage: security-checks
+  image:
+    name: jetbrains/qodana-python-community:2024.1
+    entrypoint: [""]
+  cache:
+    - key: qodana-2024.1-$CI_DEFAULT_BRANCH-$CI_COMMIT_REF_SLUG
+      fallback_keys:
+        - qodana-2024.1-$CI_DEFAULT_BRANCH-
+        - qodana-2024.1-
+      paths:
+        - .qodana/cache
+  variables:
+    QODANA_TOKEN: $QODANA_TOKEN
+    QODANA_ENDPOINT: "https://qodana.cloud"
+  script:
+    - qodana --cache-dir=$CI_PROJECT_DIR/.qodana/cache
+
+job-pytest:
+  stage: test
+  tags:
+    - AWS
+  before_script:
+    - pip install -r requirements.txt 
+  script:
+    pytest --self-contained-html --html=pytest-results/ || true
+  artifacts:
+    when: always
+    paths:
+      - pytest-results/
 
 job-build-docker-image:
   stage: build
@@ -74,12 +105,13 @@ job-security-tool-osv_scan:
       - osv_scan_results.json
 
 job-style-tool-flake8-scan:
-  stage: security-checks
+  stage: test
   tags:
     - AWS
+  before_script:
+    - pip3 install flake8-html
   script:
-    - mkdir flake_reports/
-    - flake8 --format=html --htmldir=flake_reports/ || true
+    - flake8 --format=html --htmldir=flake_reports/
   artifacts:
     when: always
     paths:
