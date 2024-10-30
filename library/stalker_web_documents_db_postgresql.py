@@ -208,7 +208,7 @@ class WebsitesDBPostgreSQL:
 
     def get_ready_for_translation(self) -> list[int | str]:
         query = f"""
-            SELECT id 
+            SELECT id
             FROM public.web_documents
             WHERE public.web_documents.document_state = '{StalkerDocumentStatus.READY_FOR_TRANSLATION.name}'
             ORDER BY id
@@ -241,8 +241,8 @@ class WebsitesDBPostgreSQL:
 
     def get_last_unknown_news(self) -> str:
         query = f"""
-            SELECT MAX(date_from) AS latest_entry 
-            FROM web_documents 
+            SELECT MAX(date_from) AS latest_entry
+            FROM web_documents
             WHERE document_type = '{StalkerDocumentType.link.name}' AND source = 'https://unknow.news/'
         """
         with self.conn:
