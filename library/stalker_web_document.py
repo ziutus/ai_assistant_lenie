@@ -162,7 +162,7 @@ class StalkerWebDocument:
         elif document_state == "DOCUMENT_INTO_DATABASE":
             self.document_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE
         else:
-            raise ValueError(f"document_state must be one of the valid StalkerDocumentStatus values")
+            raise ValueError("document_state must be one of the valid StalkerDocumentStatus values")
 
     def set_document_state_error(self, document_state_error: str) -> None:
 
