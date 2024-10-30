@@ -20,7 +20,7 @@ def text_translate(text: str, target_language: str, source_language: str = "pl",
     if cache_status:
         logger.info(f"Translation found in cache: {cache_status}")
         result = TranslateResult(text=text, target_language=target_language,
-                                 source_language=source_language,translated_text=cache_status, cached=True)
+                                 source_language=source_language, translated_text=cache_status, cached=True)
         return result
 
     if model == "aws_translate":
@@ -29,7 +29,7 @@ def text_translate(text: str, target_language: str, source_language: str = "pl",
         logger.info(f"Translated query to English is:{result.translated_text}")
 
         if use_cache and target_language == "en":
-            cache_write('translation',key=text, data=result.translated_text, provider='aws')
+            cache_write('translation', key=text, data=result.translated_text, provider='aws')
         return result
     else:
         raise Exception("Wrong translate model: >{model}")
