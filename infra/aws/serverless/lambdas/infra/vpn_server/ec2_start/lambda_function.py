@@ -10,20 +10,20 @@ def lambda_handler(event, context):
     if not instance_id:
         return {
             'headers': {
-                  'Access-Control-Allow-Origin': '*',
-                  'Access-Control-Allow-Credentials': True,
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': True,
             },
             'statusCode': 400,
             'body': json.dumps('INSTANCE_ID environment variable is not set')
         }
 
     try:
-        response = ec2.start_instances(InstanceIds=[instance_id])
+        ec2.start_instances(InstanceIds=[instance_id])
         print(f'Successfully started instance {instance_id}')
         return {
             'headers': {
-                  'Access-Control-Allow-Origin': '*',
-                  'Access-Control-Allow-Credentials': True,
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': True,
             },
             'statusCode': 200,
             'body': json.dumps(f'Successfully started instance {instance_id}'),
@@ -32,8 +32,8 @@ def lambda_handler(event, context):
         print(f'Error starting instance {instance_id}: {str(e)}')
         return {
             'headers': {
-                  'Access-Control-Allow-Origin': '*',
-                  'Access-Control-Allow-Credentials': True,
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': True,
             },
             'statusCode': 500,
             'body': json.dumps(f'Error starting instance {instance_id}: {str(e)}')
