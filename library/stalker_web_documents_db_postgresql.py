@@ -126,16 +126,16 @@ class WebsitesDBPostgreSQL:
 
         query = f"""
              SELECT public.websites_embeddings.website_id, 
-              public.websites_embeddings.text, 
-              1 - (public.websites_embeddings.embedding <=> '{embedding}') AS cosine_similarity, 
-              public.websites_embeddings.id,
-              public.web_documents.url,
-              public.web_documents.language,
-              public.websites_embeddings.text_original,
-              LENGTH(public.web_documents.text) AS websites_text_length,
-              LENGTH(public.websites_embeddings.text) AS embeddings_text_length,
-              public.web_documents.title,
-              public.web_documents.document_type
+             public.websites_embeddings.text, 
+             1 - (public.websites_embeddings.embedding <=> '{embedding}') AS cosine_similarity, 
+             public.websites_embeddings.id,
+             public.web_documents.url,
+             public.web_documents.language,
+             public.websites_embeddings.text_original,
+             LENGTH(public.web_documents.text) AS websites_text_length,
+             LENGTH(public.websites_embeddings.text) AS embeddings_text_length,
+             public.web_documents.title,
+             public.web_documents.document_type
              FROM public.websites_embeddings
              left join public.web_documents on public.websites_embeddings.website_id = public.web_documents.id  
              WHERE public.websites_embeddings.model = '{model}' 
@@ -174,11 +174,11 @@ class WebsitesDBPostgreSQL:
 
     def get_ready_for_embedding(self) -> list[int | str]:
         query = f"""
-             SELECT id 
-             FROM public.web_documents
-             WHERE public.web_documents.document_state = '{StalkerDocumentStatus.READY_FOR_EMBEDDING.name}'
-             ORDER BY id
-             """
+            SELECT id 
+            FROM public.web_documents
+            WHERE public.web_documents.document_state = '{StalkerDocumentStatus.READY_FOR_EMBEDDING.name}'
+            ORDER BY id
+            """
         cursor = self.conn.cursor()
         cursor.execute(query)
 
@@ -190,11 +190,11 @@ class WebsitesDBPostgreSQL:
 
     def get_transcription_done(self) -> list[int | str]:
         query = f"""
-             SELECT id 
-             FROM public.web_documents
-             WHERE public.web_documents.document_state = '{StalkerDocumentStatus.TRANSCRIPTION_DONE.name}'
-             ORDER BY id
-             """
+            SELECT id 
+            FROM public.web_documents
+            WHERE public.web_documents.document_state = '{StalkerDocumentStatus.TRANSCRIPTION_DONE.name}'
+            ORDER BY id
+            """
         cursor = self.conn.cursor()
         cursor.execute(query)
 
@@ -206,11 +206,11 @@ class WebsitesDBPostgreSQL:
 
     def get_ready_for_translation(self) -> list[int | str]:
         query = f"""
-             SELECT id 
-             FROM public.web_documents
-             WHERE public.web_documents.document_state = '{StalkerDocumentStatus.READY_FOR_TRANSLATION.name}'
-             ORDER BY id
-             """
+            SELECT id 
+            FROM public.web_documents
+            WHERE public.web_documents.document_state = '{StalkerDocumentStatus.READY_FOR_TRANSLATION.name}'
+            ORDER BY id
+            """
         cursor = self.conn.cursor()
         cursor.execute(query)
 
@@ -239,9 +239,9 @@ class WebsitesDBPostgreSQL:
 
     def get_last_unknown_news(self) -> str:
         query = f"""
-        SELECT MAX(date_from) AS latest_entry 
-        FROM web_documents 
-        WHERE document_type = '{StalkerDocumentType.link.name}' AND source = 'https://unknow.news/'
+            SELECT MAX(date_from) AS latest_entry 
+            FROM web_documents 
+            WHERE document_type = '{StalkerDocumentType.link.name}' AND source = 'https://unknow.news/'
         """
         with self.conn:
             with self.conn.cursor() as cur:
