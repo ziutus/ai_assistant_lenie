@@ -1,17 +1,14 @@
 import logging
 import os
-
 import boto3
 from aws_xray_sdk.core import xray_recorder, patch_all
-
-patch_all()
-
 from library.translateResult import TranslateResult
 
+patch_all()
 logger = logging.getLogger(__name__)
 
 
-def translate_aws(text:str, target_language:str, source_language: str = "pl") -> TranslateResult:
+def translate_aws(text: str, target_language: str, source_language: str = "pl") -> TranslateResult:
 
     result = TranslateResult(text=text, target_language=target_language, source_language=source_language)
 
@@ -29,9 +26,9 @@ def translate_aws(text:str, target_language:str, source_language: str = "pl") ->
         if len(text.encode('utf-8')) < 10000:
             with xray_recorder.in_subsegment('translate single test') as subsegment:
                 response = client.translate_text(
-                Text=text,
-                SourceLanguageCode=source_language,
-                TargetLanguageCode=target_language
+                    Text=text,
+                    SourceLanguageCode=source_language,
+                    TargetLanguageCode=target_language
                 )
                 result.translated_text = response['TranslatedText']
 
@@ -40,7 +37,7 @@ def translate_aws(text:str, target_language:str, source_language: str = "pl") ->
         else:
             rows = text.split("\n\n")
             rows_english = []
-            i=1
+            i = 1
             rows_nb = len(rows)
             for row in rows:
                 logging.info(f"row len: {len(row)}")
