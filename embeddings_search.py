@@ -67,7 +67,7 @@ if __name__ == '__main__':
         logging.info("Your text is supposed to be in English.")
         langauge = "en"
     elif args.pl:
-        logging.info(f"Your text is supposed to be in Polish")
+        logging.info("Your text is supposed to be in Polish")
         langauge = "pl"
     else:
         logging.info("No language selection made, checking using AWS service")
