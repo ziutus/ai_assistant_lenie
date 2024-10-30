@@ -119,31 +119,32 @@ class WebsitesDBPostgreSQL:
                 return cur.fetchone()[0]
 
     def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30) -> list[dict[
-        str, Any]] | None:
+            str, Any]] | None:
+
         if minimal_similarity is None:
             minimal_similarity = 0.30
         if embedding is None:
             return None
 
         query = f"""
-             SELECT public.websites_embeddings.website_id, 
-             public.websites_embeddings.text, 
-             1 - (public.websites_embeddings.embedding <=> '{embedding}') AS cosine_similarity, 
-             public.websites_embeddings.id,
-             public.web_documents.url,
-             public.web_documents.language,
-             public.websites_embeddings.text_original,
-             LENGTH(public.web_documents.text) AS websites_text_length,
-             LENGTH(public.websites_embeddings.text) AS embeddings_text_length,
-             public.web_documents.title,
-             public.web_documents.document_type
-             FROM public.websites_embeddings
-             left join public.web_documents on public.websites_embeddings.website_id = public.web_documents.id  
-             WHERE public.websites_embeddings.model = '{model}' 
-             AND (1 - (public.websites_embeddings.embedding <=> '{embedding}')) > {minimal_similarity}
-             ORDER BY cosine_similarity desc
-             LIMIT {limit}
-             """
+            SELECT public.websites_embeddings.website_id, 
+            public.websites_embeddings.text, 
+            1 - (public.websites_embeddings.embedding <=> '{embedding}') AS cosine_similarity, 
+            public.websites_embeddings.id,
+            public.web_documents.url,
+            public.web_documents.language,
+            public.websites_embeddings.text_original,
+            LENGTH(public.web_documents.text) AS websites_text_length,
+            LENGTH(public.websites_embeddings.text) AS embeddings_text_length,
+            public.web_documents.title,
+            public.web_documents.document_type
+            FROM public.websites_embeddings
+            left join public.web_documents on public.websites_embeddings.website_id = public.web_documents.id  
+            WHERE public.websites_embeddings.model = '{model}' 
+            AND (1 - (public.websites_embeddings.embedding <=> '{embedding}')) > {minimal_similarity}
+            ORDER BY cosine_similarity desc
+            LIMIT {limit}
+            """
 
         cursor = self.conn.cursor()
         cursor.execute(query)
@@ -179,7 +180,7 @@ class WebsitesDBPostgreSQL:
             FROM public.web_documents
             WHERE public.web_documents.document_state = '{StalkerDocumentStatus.READY_FOR_EMBEDDING.name}'
             ORDER BY id
-            """
+           """
         cursor = self.conn.cursor()
         cursor.execute(query)
 
