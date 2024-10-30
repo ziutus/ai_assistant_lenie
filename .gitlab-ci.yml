@@ -87,7 +87,7 @@ job-security-tool-osv_scan:
       - osv_scan_results.json
 
 job-style-tool-flake8-scan:
-  stage: security-checks
+  stage: test
   tags:
     - AWS
   script:
