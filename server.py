@@ -95,11 +95,11 @@ def website_list():
     logging.debug("Getting list of websites")
     logging.debug(request.form)
 
-    type = request.args.get('type', 'ALL')
+    document_type = request.args.get('type', 'ALL')
     document_state = request.args.get('document_state', 'ALL')
-    logging.debug(type)
+    logging.debug(document_type)
 
-    websites_list = websites.get_list(document_type = type, document_state = document_state)
+    websites_list = websites.get_list(document_type = document_type, document_state = document_state)
     # pprint_debug(websites_list)
 
     response = {
