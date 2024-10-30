@@ -41,17 +41,17 @@ def cache_write_translation(query: str, response: str, provider: str) -> None:
     dynamodb = boto_session.client('dynamodb')
 
     with xray_recorder.in_subsegment('dynamoDB_put_translation') as subsegment:
-        Item = {
+        item = {
             'hash': {'S': get_hash(query)},
             'provider': {'S': provider},
             'query': {'S': query},
             'response': {'S': response}
         }
 
-        subsegment.put_metadata('Item', Item)
+        subsegment.put_metadata('Item', item)
 
         dynamodb.put_item(
-            Item=Item,
+            Item=item,
             ReturnConsumedCapacity='TOTAL',
             TableName='lenie_cache_translation',
         )
