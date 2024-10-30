@@ -33,6 +33,7 @@ def compare_language(language_1: str, language_2: str):
         return True
     return False
 
+
 if __name__ == '__main__':
     cache_dir = os.getenv("CACHE_DIR")
     s3_bucket = os.getenv("AWS_S3_TRANSCRIPT")
@@ -91,19 +92,20 @@ if __name__ == '__main__':
         # logging.info(f"DEBUG description: {description}")
 
         if not web_document.language:
-            logging.info(f"setup language to '{os.getenv('YOUTUBE_DEFAULT_LANGUAGE')}' as default for youtube documents")
+            logging.info(
+                f"setup language to '{os.getenv('YOUTUBE_DEFAULT_LANGUAGE')}' as default for youtube documents")
             web_document.language = os.getenv("YOUTUBE_DEFAULT_LANGUAGE")
 
         if web_document.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION:
             logging.info("Trying to use captions from youtube")
             try:
-                language= web_document.language
+                language = web_document.language
                 if language == 'pl-PL':
                     language = 'pl'
 
                 transcript_list = YouTubeTranscriptApi.list_transcripts(youtube_file.video_id)
                 srt = YouTubeTranscriptApi.get_transcript(video_id=youtube_file.video_id,
-                                                          languages=[language],)
+                                                          languages=[language], )
                 transcript_text = json.dumps(srt)
                 logging.info("Took transcription from YouTube")
 
@@ -115,7 +117,8 @@ if __name__ == '__main__':
 
                     # if language_detected != web_document.language:
                     if not compare_language(language_detected, web_document.language):
-                        logging.info(f"Language detected >{language_detected}< is different then setup >{web_document.language}<, need to make transcription")
+                        logging.info(
+                            f"Language detected >{language_detected}< is different then setup >{web_document.language}<, need to make transcription")
                         web_document.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION
                         web_document.language = language_detected
                         web_document.save()
@@ -148,7 +151,8 @@ if __name__ == '__main__':
                 logging.info(f"{provider}: {price}$")
 
             if web_document.transcript_job_id:
-                logging.info(f"DEBUG: transcription job >{web_document.transcript_job_id}< exist, downloading file not needed...")
+                logging.info(
+                    f"DEBUG: transcription job >{web_document.transcript_job_id}< exist, downloading file not needed...")
             else:
                 logging.info(f"Checking if local copy exists ({youtube_file.path})...")
                 if os.path.exists(youtube_file.path):
