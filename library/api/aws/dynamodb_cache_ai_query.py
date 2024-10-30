@@ -8,7 +8,7 @@ patch_all()
 from library.text_functions import get_hash
 
 
-def cache_get_query(entry_id: str, provider: str) -> None:
+def cache_get_query(entry_id: str, provider: str) -> str | None:
     boto_session = boto3.session.Session(region_name=os.getenv("AWS_REGION"))
     dynamodb = boto_session.client('dynamodb')
 
