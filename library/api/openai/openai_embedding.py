@@ -8,7 +8,7 @@ def get_embedding(text: str) -> EmbeddingResult:
 
     model_id = "text-embedding-ada-002"
 
-    result = EmbeddingResult(text=text, model_id=model_id )
+    result = EmbeddingResult(text=text, model_id=model_id)
 
     response = client.embeddings.create(
         input=text,

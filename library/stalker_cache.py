@@ -5,7 +5,7 @@ import library.api.aws.dynamodb_cache_translation
 from library.text_functions import get_hash
 
 
-def cache_get(cache_name: str, string: str, provider: str = 'aws') -> bool|str:
+def cache_get(cache_name: str, string: str, provider: str = 'aws') -> bool | str:
     string_hash = get_hash(string)
 
     if cache_name == "language":

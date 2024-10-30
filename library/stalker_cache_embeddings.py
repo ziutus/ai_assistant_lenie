@@ -24,7 +24,7 @@ class StalkerCacheEmbeddings:
     def embedding_cache_exist(self, text_hash):
         cursor = self.conn.cursor()
         cursor.execute(
-            "SELECT embedding FROM public.embeddings_cache WHERE text_hash = %s", (text_hash, )
+            "SELECT embedding FROM public.embeddings_cache WHERE text_hash = %s", (text_hash,)
         )
         embedding_data = cursor.fetchone()
 
@@ -39,7 +39,7 @@ class StalkerCacheEmbeddings:
 
     def embedding_cache_delete(self, emb_id):
         cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM public.embeddings_cache WHERE id = %s", (emb_id, ))
+        cursor.execute("DELETE FROM public.embeddings_cache WHERE id = %s", (emb_id,))
         self.conn.commit()
 
     def embedding_cache_add(self, embedding, text, text_hash, model):
