@@ -545,7 +545,8 @@ def website_save():
 
     try:
         web_document.set_document_type(request.form.get('document_type'))
-    except:
+    except Exception as e:
+        print(f"An error occurred: {e}")
         return {"status": "error", "message": f"Wrong document type: {request.form.get('document_type')}."}, 500
 
     try:
