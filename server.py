@@ -37,8 +37,8 @@ env_data = fetch_env_var("ENV_DATA")
 
 llm_simple_jobs_model = fetch_env_var("AI_MODEL_SUMMARY")
 
-APP_VERSION="0.2.11.0"
-BUILD_TIME="2024.09.50 09:50"
+APP_VERSION = "0.2.11.0"
+BUILD_TIME = "2024.09.50 09:50"
 
 logging.info(f"APP VERSION={APP_VERSION} (build time:{BUILD_TIME})")
 logging.info("ENV_DATA: " + os.getenv("ENV_DATA"))
@@ -99,7 +99,7 @@ def website_list():
     document_state = request.args.get('document_state', 'ALL')
     logging.debug(document_type)
 
-    websites_list = websites.get_list(document_type = document_type, document_state = document_state)
+    websites_list = websites.get_list(document_type=document_type, document_state=document_state)
     # pprint_debug(websites_list)
 
     response = {
@@ -286,7 +286,6 @@ def search_similar():
             "websites": websites_list}, 200
 
 
-
 @app.route('/website_download_text_content', methods=['POST'])
 def website_download_text_content():
     logging.debug("Downloading text content")
@@ -426,7 +425,6 @@ def website_text_remove_not_needed():
             debug_file.write(f"url: {url}\n")
             logging.info("Debug data written into file debug.txt")
 
-
     if not text:
         logging.debug("Missing data. Make sure you provide 'text'")
         return {"status": "error",
@@ -438,11 +436,11 @@ def website_text_remove_not_needed():
                 "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
 
     response = {
-            "status": "success",
-            "text": webpage_text_clean(url, text),
-            "encoding": "utf8",
-            "message": "Text cleaned"
-        }
+        "status": "success",
+        "text": webpage_text_clean(url, text),
+        "encoding": "utf8",
+        "message": "Text cleaned"
+    }
     logging.debug(response)
     return response, 200
 
@@ -472,11 +470,11 @@ def website_split_for_embedding():
                 "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
 
     response = {
-            "status": "success",
-            "text": split_text_for_embedding(text, chapter_list_simple),
-            "encoding": "utf8",
-            "message": "Text corrected"
-        }
+        "status": "success",
+        "text": split_text_for_embedding(text, chapter_list_simple),
+        "encoding": "utf8",
+        "message": "Text corrected"
+    }
     logging.debug(response)
     return response, 200
 
@@ -548,7 +546,7 @@ def website_save():
     try:
         web_document.set_document_type(request.form.get('document_type'))
     except:
-        return {"status": "error", "message": f"Wrong document type."}, 500
+        return {"status": "error", "message": f"Wrong document type: {request.form.get('document_type')}."}, 500
 
     try:
         web_document.save()
@@ -587,14 +585,15 @@ def kubernetes_liveness():
     # https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
     return {"status": "OK", "message": "Server is ready and will not be restarted"}, 200
 
+
 @app.route('/version', methods=['GET'])
 def app_version():
     response = {
-            "status": "success",
-            "app_version": APP_VERSION,
-            "app_build_time": BUILD_TIME,
-            "encoding": "utf8"
-        }
+        "status": "success",
+        "app_version": APP_VERSION,
+        "app_build_time": BUILD_TIME,
+        "encoding": "utf8"
+    }
     logging.debug(response)
     return response, 200
 
