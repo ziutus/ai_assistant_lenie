@@ -174,8 +174,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                         ("transcript_job_id", self.transcript_job_id),
                         ("ai_summary_needed", self.ai_summary_needed),
                         ("author", self.author),
-                        ("note",  self.note),
-                        ("s3_uuid",  self.s3_uuid)
+                        ("note", self.note),
+                        ("s3_uuid", self.s3_uuid)
                     ]
                     set_clause = ", ".join(
                         f"{column} = %s" for column, value in columns if value is not None
@@ -190,7 +190,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                     try:
                         cur.execute(query, values + [self.id])
                     except Exception as e:
-                        print(f"Error processing sql query...")
+                        print("Error processing sql query...")
                         print(str(e))
 
     def __clean_values(self):
