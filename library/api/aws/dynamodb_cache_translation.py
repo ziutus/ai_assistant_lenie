@@ -2,9 +2,10 @@ import os
 
 import boto3
 from aws_xray_sdk.core import xray_recorder, patch_all
-
 from library.text_functions import get_hash
+
 patch_all()
+
 
 def cache_get_translation(entry_id: str, provider: str) -> str | None:
     boto_session = boto3.session.Session(region_name=os.getenv("AWS_REGION"))
@@ -35,6 +36,7 @@ def cache_get_translation(entry_id: str, provider: str) -> str | None:
         finally:
             # End the segment
             xray_recorder.end_segment()
+
 
 def cache_write_translation(query: str, response: str, provider: str) -> None:
     boto_session = boto3.session.Session(region_name=os.getenv("AWS_REGION"))
