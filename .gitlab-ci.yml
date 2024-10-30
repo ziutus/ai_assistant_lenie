@@ -55,12 +55,12 @@ job-security-tool-trufflehog:
   tags:
     - AWS
   script:
-    - docker run --rm  --name trufflehog  trufflesecurity/trufflehog:latest git  file://. --only-verified --bare 2>trufflehog_errors.txt > trufflehog.txt
+    - docker run --rm  --name trufflehog  trufflesecurity/trufflehog:latest git  file://. --only-verified --bare2>&1 | tee trufflehog.txt
   artifacts:
     when: always
     paths:
       - trufflehog.txt
-      - trufflehog_errors.txt
+      # - trufflehog_errors.txt
 
 job-security-tool-osv_scan:
   stage: security-checks
