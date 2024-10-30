@@ -4,7 +4,7 @@ site_rules = {
         "remove_before": ["PomorskieWrocławKoronawirus", "PomorskieWrocławKoronawirus"],
         "remove_after": [r"Elementem\swspółczesnej\swojny\sjest\swojna\sinformacyjna",
                              r"Masz newsa,\s+zdjęcie\s+lub\s+filmik\?\s+Prześlij\s+nam\s+przez\s+dziejesie\.wp\.pl\s+Oceń\s+jakość\s+naszego\s+artykułu"  # noqa
-        ],
+        ], # noqa
         "remove_string": ["Wyłączono komentarze", "Dalsza część artykułu pod materiałem wideo"],# noqa
         "remove_string_regexp": [r"\n\s*Trwa\sładowanie\swpisu:\sfacebook\s*\n", r"\n\s*Rozwin\s*\n"] # noqa
     },
@@ -23,8 +23,8 @@ site_rules = {
         ],
         "remove_string": [],
         "remove_string_regexp": [
-        r"Lubię toLubię to\d+Super\d+Hahaha\d+Szok\d+Smutny\d+Zły\d+Lubię toSuper(\d+|\d+,\d tys.)Udostępnij", r"REKLAMA\n", r"Treść zewnętrzna\n"]
-    }, # noqa E122
+        r"Lubię toLubię to\d+Super\d+Hahaha\d+Szok\d+Smutny\d+Zły\d+Lubię toSuper(\d+|\d+,\d tys.)Udostępnij", r"REKLAMA\n", r"Treść zewnętrzna\n"] # noqa
+    }, # noqa
     "https://wiadomosci.onet.pl/": {
         "remove_before": [r"min\s+czytania\s+FACEBOOK\s+X\s+E-MAIL\s+KOPIUJ\s+LINK"],
         "remove_after": [r"Cieszymy\ssię,\sże\sjesteś\sz\snami.\sZapisz\ssię\sna\snewsletter\sOnetu"],
