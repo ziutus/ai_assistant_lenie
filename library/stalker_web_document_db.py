@@ -264,7 +264,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
 
             emb = embedding.get_embedding(model=model, text=text)
             self.__embedding_delete(model)
-            self.__embedding_add(embedding=emb.embedding, text=text, text_original=text_original, model=model)
+            self.__embedding_add(text_embedding=emb.embedding, text=text, text_original=text_original, model=model)
 
             self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
 
@@ -302,7 +302,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                     print(emb.error_message)
                     return False
 
-                self.__embedding_add(embedding=emb.embedding, text=row,
+                self.__embedding_add(text_embedding=emb.embedding, text=row,
                                      text_original=text_original[k],
                                      model=model)
                 k += 1
@@ -319,13 +319,13 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         )
         self.db_conn.commit()
 
-    def __embedding_add(self, embedding, text, text_original, model) -> None:
+    def __embedding_add(self, text_embedding, text, text_original, model) -> None:
         cursor = self.db_conn.cursor()
         cursor.execute(
             "INSERT INTO public.websites_embeddings (website_id, langauge, text, embedding, model, text_original) "
             "VALUES (%s,%s, %s, %s, "
             "%s, %s)",
-            (self.id, self.language, text, embedding, model, text_original)
+            (self.id, self.language, text, text_embedding, model, text_original)
         )
 
         self.db_conn.commit()
