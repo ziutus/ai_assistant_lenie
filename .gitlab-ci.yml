@@ -33,7 +33,6 @@ job-pytest:
     - AWS
   before_script:
     - pip install -r requirements.txt 
-    - mkdir pytest-results/
   script:
     pytest --self-contained-html --html=pytest-results/
   artifacts:
