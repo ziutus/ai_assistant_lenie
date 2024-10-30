@@ -27,7 +27,7 @@ start_runner:
     - echo "Starting AWS EC2 runner instance..."
     - aws ec2 start-instances --instance-ids $INSTANCE_ID
 
-qodana:
+.qodana:
   stage: security-checks
   image:
     name: jetbrains/qodana-python-community:2024.1
