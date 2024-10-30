@@ -13,6 +13,11 @@ transcript_prices_by_minute = {
 def transcript(transcript_file_local: str, media_format: str, language_code: str = None,
                transcript_file_remote: str = None,
                s3_bucket=None, provider: str = 'aws'):
+
+    if provider == 'local':
+        print(f"functionality to analyze local file: {transcript_file_local} should be implemented")
+        return None
+
     if provider == 'aws':
         return aws_transcript(s3_bucket=s3_bucket, s3_key=transcript_file_remote, language_code=language_code,
                               media_format=media_format)
