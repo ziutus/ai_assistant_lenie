@@ -3,7 +3,7 @@ import unittest
 from library.text_functions import split_text_for_embedding
 
 
-text="""Ogłoszenia
+text = """Ogłoszenia
  Dzień dobry Witam państwa bardzo
 serdecznie jest 23 Dhul Qadah 1445 roku po hidjri albo trto Primo ma Anno
 Domini bismilessimo Vigessimo quarto  Dziękuję państwu bardzo serdecznie za te
@@ -31,7 +31,6 @@ paragraph_titles = ["Ogłoszenia", "Wina Trumpa i co dalej", "Ukraina ma zgodę 
 
 
 class SplitForEmbeddingTestCase(unittest.TestCase):
-
 
     @staticmethod
     def test_hello_world():
