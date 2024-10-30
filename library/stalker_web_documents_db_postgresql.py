@@ -127,9 +127,9 @@ class WebsitesDBPostgreSQL:
             return None
 
         query = f"""
-            SELECT public.websites_embeddings.website_id, 
-            public.websites_embeddings.text, 
-            1 - (public.websites_embeddings.embedding <=> '{embedding}') AS cosine_similarity, 
+            SELECT public.websites_embeddings.website_id,
+            public.websites_embeddings.text,
+            1 - (public.websites_embeddings.embedding <=> '{embedding}') AS cosine_similarity,
             public.websites_embeddings.id,
             public.web_documents.url,
             public.web_documents.language,
@@ -139,8 +139,8 @@ class WebsitesDBPostgreSQL:
             public.web_documents.title,
             public.web_documents.document_type
             FROM public.websites_embeddings
-            left join public.web_documents on public.websites_embeddings.website_id = public.web_documents.id  
-            WHERE public.websites_embeddings.model = '{model}' 
+            left join public.web_documents on public.websites_embeddings.website_id = public.web_documents.id
+            WHERE public.websites_embeddings.model = '{model}'
             AND (1 - (public.websites_embeddings.embedding <=> '{embedding}')) > {minimal_similarity}
             ORDER BY cosine_similarity desc
             LIMIT {limit}
@@ -176,7 +176,7 @@ class WebsitesDBPostgreSQL:
 
     def get_ready_for_embedding(self) -> list[int | str]:
         query = f"""
-            SELECT id 
+            SELECT id
             FROM public.web_documents
             WHERE public.web_documents.document_state = '{StalkerDocumentStatus.READY_FOR_EMBEDDING.name}'
             ORDER BY id
@@ -192,7 +192,7 @@ class WebsitesDBPostgreSQL:
 
     def get_transcription_done(self) -> list[int | str]:
         query = f"""
-            SELECT id 
+            SELECT id
             FROM public.web_documents
             WHERE public.web_documents.document_state = '{StalkerDocumentStatus.TRANSCRIPTION_DONE.name}'
             ORDER BY id
