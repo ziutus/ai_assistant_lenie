@@ -11,19 +11,19 @@ def cache_get(cache_name: str, string: str, provider: str = 'aws') -> bool|str:
     if cache_name == "language":
         response = library.api.aws.dynamodb_cache_language_check.cache_get_language(string_hash, provider)
         if response:
-            return response['response']['S']
+            return str(response['response']['S'])
         else:
             return False
     elif cache_name == "translation":
         response = library.api.aws.dynamodb_cache_translation.cache_get_translation(string_hash, provider)
         if response:
-            return response['response']['S']
+            return str(response['response']['S'])
         else:
             return False
     elif cache_name == "query":
         response = library.api.aws.dynamodb_cache_ai_query.cache_get_query(string_hash, provider)
         if response:
-            return response['response']['S']
+            return str(response['response']['S'])
         else:
             return False
     else:
