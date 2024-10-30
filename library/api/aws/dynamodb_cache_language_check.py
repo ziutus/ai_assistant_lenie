@@ -1,10 +1,10 @@
 import boto3
 import os
 from aws_xray_sdk.core import xray_recorder, patch_all
+from library.text_functions import get_hash
 
 patch_all()
 
-from library.text_functions import get_hash
 
 
 def cache_get_language(entry_id, provider) -> str | None:
@@ -17,8 +17,7 @@ def cache_get_language(entry_id, provider) -> str | None:
             Key={
                 'hash': {
                     'S': entry_id,
-                }
-                ,
+                },
                 'provider': {
                     'S': provider,
                 },
