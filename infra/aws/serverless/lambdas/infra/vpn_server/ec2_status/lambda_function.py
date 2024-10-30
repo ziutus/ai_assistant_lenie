@@ -10,11 +10,11 @@ def lambda_handler(event, context):
     if not instance_id:
         return {
             'headers': {
-                  'Access-Control-Allow-Origin': '*',
-                  'Access-Control-Allow-Credentials': True,
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': True,
             },
             'statusCode': 400,
-            'body':  json.dumps('INSTANCE_ID environment variable is not set')
+            'body': json.dumps('INSTANCE_ID environment variable is not set')
         }
 
     try:
@@ -23,19 +23,19 @@ def lambda_handler(event, context):
         print(f'Instance {instance_id} is {state}')
         return {
             'headers': {
-                  'Access-Control-Allow-Origin': '*',
-                  'Access-Control-Allow-Credentials': True,
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': True,
             },
             'statusCode': 200,
-            'body':   json.dumps(f'{state}'),
+            'body': json.dumps(f'{state}'),
         }
     except Exception as e:
         print(f'Error checking status of instance {instance_id}: {str(e)}')
         return {
             'headers': {
-                  'Access-Control-Allow-Origin': '*',
-                  'Access-Control-Allow-Credentials': True,
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': True,
             },
             'statusCode': 500,
-            'body':  json.dumps(f'Error checking status of instance {instance_id}: {str(e)}')
+            'body': json.dumps(f'Error checking status of instance {instance_id}: {str(e)}')
         }
