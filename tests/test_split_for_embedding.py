@@ -33,7 +33,8 @@ paragraph_titles = ["Ogłoszenia", "Wina Trumpa i co dalej", "Ukraina ma zgodę 
 class SplitForEmbeddingTestCase(unittest.TestCase):
 
 
-    def test_hello_world(self):
+    @staticmethod
+    def test_hello_world():
         text_new = split_text_for_embedding(text, paragraph_titles)
         assert (text_new[0].find("AnnoDomini") < 0)
 
