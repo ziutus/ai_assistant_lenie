@@ -3,7 +3,7 @@ import library.api.openai.openai_my
 
 
 class AiResponse:
-    def __init__(self, query, model = None):
+    def __init__(self, query, model=None):
         self.cached = False
         self.query = query
         self.model = model
@@ -20,7 +20,7 @@ def ai_model_need_translation_to_english(model: str) -> bool:
 
 
 def ai_ask(query: str, model: str) -> AiResponse:
-    ai_response= AiResponse(query=query, model=model)
+    ai_response = AiResponse(query=query, model=model)
 
     if model in ["gpt-3.5-turbo", "gpt-3.5-turbo-16k"]:
         if len(str) < 8000:
