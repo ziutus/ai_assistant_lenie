@@ -93,7 +93,7 @@ class StalkerWebDocument:
         self.ai_summary_needed: bool | None = ai_summary_needed
         self.author: str | None = author
         self.note: str | None = note
-        self.s3_uuid: str | None = note
+        self.s3_uuid: str | None = s3_uuid
 
     def __str__(self):
         data = {
