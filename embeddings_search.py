@@ -37,6 +37,7 @@ if __name__ == '__main__':
     model_embedding = "amazon.titan-embed-text-v1"
     # model = "text-embedding-ada-002"
     knowledge_database_txt = ""
+    similar_results = None
 
     if args.question:
         question = args.question
@@ -57,7 +58,7 @@ if __name__ == '__main__':
         # question = "Jak Rosja straszy sąsiadów?"
         # question = "What is the best way to validate if python flask application is alive on AWS Fragate? I'm using ECS service and want to define Healthcheck"
 
-
+    language = language_default
     if args.nc:
         use_cache = False
         os.environ['USE_CACHE'] = 'False'
