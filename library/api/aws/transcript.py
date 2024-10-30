@@ -25,8 +25,7 @@ def aws_transcript(s3_bucket: str, s3_key: str, media_format: str, language_code
 
         for transcript_job in response['TranscriptionJobSummaries']:
             print(transcript_job["TranscriptionJobStatus"])
-            if (transcript_job["TranscriptionJobName"] == job_name
-                    and transcript_job["TranscriptionJobStatus"] in ["COMPLETED", "IN_PROGRESS"]):
+            if transcript_job["TranscriptionJobName"] == job_name and transcript_job["TranscriptionJobStatus"] in ["COMPLETED", "IN_PROGRESS"]: # noqa
                 transcript_job_needed = False
 
         uri_media_file = "s3://" + s3_bucket + "/" + job_name
