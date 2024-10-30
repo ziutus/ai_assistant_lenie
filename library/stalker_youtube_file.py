@@ -98,8 +98,8 @@ class StalkerYoutubeFile:
             yt_stream = self._yt.streams.first()
             if yt_stream:
                 self._yt.streams.first().download(max_retries=3, output_path=self.directory,
-                                                           filename=self.filename,
-                                                           skip_existing=False)
+                    filename=self.filename,
+                    skip_existing=False)
                 self.type = self._yt.streams.first().type
             else:
                 self.valid = False
