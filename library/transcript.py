@@ -3,17 +3,14 @@ import math
 
 transcript_prices_by_minute = {
     'AWS': 0.02400,
-    'OpenAI': 0.006,
-    'assemblyai': 0.002
+    'OpenAI': 0.006,  # https://openai.com/api/pricing/
+    'assemblyai': 0.002  # https://www.assemblyai.com/pricing
 }
 
-# https://www.assemblyai.com/pricing
-# https://openai.com/api/pricing/
 
 def transcript(transcript_file_local: str, media_format: str, language_code: str = None,
                transcript_file_remote: str = None,
                s3_bucket=None, provider: str = 'aws'):
-
     if provider == 'local':
         print(f"functionality to analyze local file: {transcript_file_local} should be implemented")
         return None
