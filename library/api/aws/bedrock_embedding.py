@@ -3,12 +3,9 @@ from botocore.exceptions import ClientError
 import json
 import os
 from aws_xray_sdk.core import xray_recorder, patch_all
-
-patch_all()
-
 from library.embedding_result import EmbeddingResult
 
-
+patch_all()
 # https://www.philschmid.de/amazon-titan-embeddings
 # https://www.youtube.com/watch?v=UsbAuGV4rkw
 
@@ -21,7 +18,7 @@ def get_embedding(text: str) -> EmbeddingResult:
     content_type = 'application/json'
     model_id = "amazon.titan-embed-text-v1"
 
-    result = EmbeddingResult(text=text, model_id= model_id )
+    result = EmbeddingResult(text=text, model_id=model_id)
 
     body = json.dumps({
         "inputText": text
@@ -59,7 +56,7 @@ def get_embedding2(text: str) -> EmbeddingResult:
         "inputText": text
     })
 
-    result = EmbeddingResult(text=text, model_id= model_id )
+    result = EmbeddingResult(text=text, model_id=model_id)
 
     with xray_recorder.in_subsegment('bedrock_invoke_model') as subsegment:
         try:
