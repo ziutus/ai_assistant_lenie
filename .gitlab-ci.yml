@@ -46,6 +46,7 @@ job-security-tool-semgrep:
   script:
     - semgrep --config=auto --output semgrep-report.json
   artifacts:
+    when: allways
     paths:
       - semgrep-report.json
 
@@ -54,11 +55,12 @@ job-security-tool-trufflehog:
   tags:
     - AWS
   script:
-    - docker run --rm  --name trufflehog  trufflesecurity/trufflehog:latest git  file://. --only-verified --bare
-#  artifacts:
-#    paths:
-#      - trufflehog.txt
-#      - trufflehog_errors.txt
+    - docker run --rm  --name trufflehog  trufflesecurity/trufflehog:latest git  file://. --only-verified --bare 2>trufflehog_errors.txt > trufflehog.txt
+  artifacts:
+    when: allways
+    paths:
+      - trufflehog.txt
+      - trufflehog_errors.txt
 
 job-security-tool-osv_scan:
   stage: security-checks
@@ -67,6 +69,7 @@ job-security-tool-osv_scan:
   script:
     - /usr/local/bin/osv-scanner scan --lockfile requirements.txt || true
   artifacts:
+    when: allways
     paths:
       - osv_scan_results.json
 
@@ -78,6 +81,7 @@ job-style-tool-flake8-scan:
     - mkdir flake_reports/
     - flake8 --format=html --htmldir=flake_reports/ || true
   artifacts:
+    when: allways
     paths:
       - flake_reports/
 
