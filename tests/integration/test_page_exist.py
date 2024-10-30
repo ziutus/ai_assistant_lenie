@@ -1,11 +1,8 @@
 import unittest
-import sys
 import os
+from server import app
 
 os.environ['DEBUG'] = 'false'
-
-sys.path.append("library")
-from server import app
 
 
 class TestWebsiteExist(unittest.TestCase):

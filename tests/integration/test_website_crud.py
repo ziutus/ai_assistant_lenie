@@ -1,14 +1,9 @@
 import unittest
-import sys
 import os
-# from pprint import pprint
 import uuid
+from server import app
 
 os.environ['DEBUG'] = 'false'
-# os.environ['DEBUG'] = 'true'
-
-sys.path.append("library")
-from server import app
 
 
 class TestWebsiteGetById(unittest.TestCase):
