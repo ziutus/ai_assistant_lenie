@@ -1,5 +1,5 @@
 class EmbeddingResult:
-    def __init__(self, text: str, model_id: str = None, embedding = None,
+    def __init__(self, text: str, model_id: str = None, embedding=None,
                  status: str = "success", error_message: str = None, input_text_token_count: int = None):
         self.text = text
         self.embedding = embedding
