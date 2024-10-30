@@ -1,13 +1,12 @@
 import json
+import logging
 import mimetypes
 import os
-from pprint import pprint
-import logging
 
+import assemblyai as aai
 import boto3
 import requests
 from dotenv import load_dotenv
-from pytube import YouTube
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 
 from library.ai import ai_ask
@@ -17,13 +16,13 @@ from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentT
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.stalker_youtube_file import StalkerYoutubeFile
+from library.text_detect_language import text_language_detect
 from library.text_transcript import youtube_titles_split_with_chapters, youtube_titles_to_text
 from library.transcript import transcript_price
-from library.text_detect_language import text_language_detect
-import assemblyai as aai
 
 logging.basicConfig(level=logging.INFO)  # Change level as per your need
 load_dotenv()
+
 
 def compare_language(language_1: str, language_2: str):
     if language_1 == language_2:
@@ -52,7 +51,7 @@ if __name__ == '__main__':
         patch_all()  # Automatyczne łatanie wszystkich bibliotek
 
     if aws_xray_enabled:
-       xray_recorder.begin_segment('MainSegment')  # Rozpoczęcie głównego segmentu
+        xray_recorder.begin_segment('MainSegment')  # Rozpoczęcie głównego segmentu
 
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
@@ -63,7 +62,7 @@ if __name__ == '__main__':
     logging.info(f"Entries to analyze: {len(website_data)}")
     for movie in website_data:
         logging.info(f"Working on document ID: {movie[0]}")
-        web_document = StalkerWebDocumentDB(document_id= int(movie[0]))
+        web_document = StalkerWebDocumentDB(document_id=int(movie[0]))
         youtube_file = StalkerYoutubeFile(youtube_url=web_document.url, media_type="video", cache_directory=cache_dir)
         youtube_file.chapters_string = web_document.chapter_list
 
@@ -254,7 +253,6 @@ if __name__ == '__main__':
             logging.info(response)
             web_document.summary = response
             web_document.save()
-
 
         if aws_xray_enabled:
             xray_recorder.end_segment()  # Koniec głównego segmentu
