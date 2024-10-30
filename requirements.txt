@@ -6,7 +6,7 @@
 #
 semgrep
 
-aws-xray-sdk
+aws-xray-sdk~=2.14.0
 
 annotated-types==0.7.0
     # via pydantic
@@ -22,7 +22,7 @@ blinker==1.8.2
     # via flask
 boto3==1.35.9
     # via -r requirements.piptools
-botocore==1.35.9
+botocore~=1.35.14
     # via
     #   -r requirements.piptools
     #   boto3
@@ -134,3 +134,5 @@ werkzeug==3.0.4
     # via flask
 youtube-transcript-api==0.6.2
     # via -r requirements.piptools
+
+PyPDF2~=3.0.1
