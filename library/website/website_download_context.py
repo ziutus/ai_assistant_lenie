@@ -21,7 +21,7 @@ class WebPageParseResult:
         self.text_raw = None
         self.text = None
         self.url = url
-        self.language : str | None= None
+        self.language: str | None = None
         self.title: str | None = None
         self.summary: str | None = None
 
@@ -64,12 +64,13 @@ def webpage_raw_parse(url: str, raw_html: bytes, analyze_content: bool = True) -
 
     return result
 
+
 def webpage_text_clean(url: str, content: str):
     content = re.sub('\xa0', " ", content)
 
     for url_path in site_rules:
         if url.find(url_path) != -1:
-            for regex in  site_rules[url_path]["remove_before"]:
+            for regex in site_rules[url_path]["remove_before"]:
                 content = remove_before_regex(content, regex)
             for regex in site_rules[url_path]["remove_after"]:
                 content = remove_last_occurrence_and_after(content, regex)
