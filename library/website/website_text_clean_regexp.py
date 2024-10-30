@@ -4,7 +4,7 @@ site_rules = {
         "remove_before": ["PomorskieWrocławKoronawirus", "PomorskieWrocławKoronawirus"],
         "remove_after": [r"Elementem\swspółczesnej\swojny\sjest\swojna\sinformacyjna",
                              r"Masz newsa,\s+zdjęcie\s+lub\s+filmik\?\s+Prześlij\s+nam\s+przez\s+dziejesie\.wp\.pl\s+Oceń\s+jakość\s+naszego\s+artykułu"  # noqa
-                            ],
+        ],
         "remove_string": ["Wyłączono komentarze", "Dalsza część artykułu pod materiałem wideo"],
         "remove_string_regexp": [r"\n\s*Trwa\sładowanie\swpisu:\sfacebook\s*\n", r"\n\s*Rozwin\s*\n"]
     },
@@ -35,8 +35,10 @@ site_rules = {
         "remove_before": [r"PremiumNewsweekŚwiat", r"PremiumNewsweekPsychologia", r'\b([0-2]?[0-9]|3[0-1]) (stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia) (\d{4}), ([0-1]?[0-9]|2[0-3]):([0-5][0-9])\b,\s(\d+)\nLubię to'],
         "remove_after": [],
         "remove_string": [],
-        "remove_string_regexp": [r"Tekst\sopublikowany\sw\samerykańskiej\sedycji\s\"Newsweeka\".",
-                                                r"Tytuł,\slead\si\sskróty\sod\sredakcji\s\"Newsweek\sPolska\""]
+        "remove_string_regexp": [
+            r"Tekst\sopublikowany\sw\samerykańskiej\sedycji\s\"Newsweeka\".",
+            r"Tytuł,\slead\si\sskróty\sod\sredakcji\s\"Newsweek\sPolska\""
+        ]
     },
     "https://www.onet.pl/styl-zycia/newsweek": {
         "remove_before": [r'\b([0-2]?[0-9]|3[0-1]) (stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia) (\d{4}), ([0-1]?[0-9]|2[0-3]):([0-5][0-9])\b,\s(\d+)\nLubię to'],
