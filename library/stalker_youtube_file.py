@@ -1,4 +1,3 @@
-import json
 import os
 from pprint import pprint
 from urllib.parse import urlparse

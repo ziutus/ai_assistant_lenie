@@ -1,11 +1,10 @@
-from pprint import pprint
+import re
 
 import requests
 from bs4 import BeautifulSoup
-import re
 
 from library.text_functions import remove_before_regex, remove_last_occurrence_and_after, remove_text_regex
-from library.website.website_text_clean_regexp import  site_rules
+from library.website.website_text_clean_regexp import site_rules
 
 
 def download_raw_html(url: str) -> bytes | None:

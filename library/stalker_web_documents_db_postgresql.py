@@ -2,10 +2,8 @@ import os
 from typing import Any
 
 import psycopg2
-from psycopg2 import sql
-from pprint import pprint
 
-from library.stalker_web_document import StalkerWebDocument, StalkerDocumentStatus, StalkerDocumentType
+from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType
 
 
 class WebsitesDBPostgreSQL:

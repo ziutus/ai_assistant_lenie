@@ -1,4 +1,4 @@
-from aws_xray_sdk.core import xray_recorder, patch_all
+from aws_xray_sdk.core import xray_recorder
 
 
 def validate_credentials(aws_boto_session):

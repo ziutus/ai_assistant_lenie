@@ -1,6 +1,7 @@
-import boto3
 import os
-from aws_xray_sdk.core import xray_recorder, patch_all
+
+import boto3
+from aws_xray_sdk.core import xray_recorder
 
 
 def aws_transcript(s3_bucket: str, s3_key: str, media_format: str, language_code: str | None = None,

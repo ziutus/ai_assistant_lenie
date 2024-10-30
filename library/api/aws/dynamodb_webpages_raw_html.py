@@ -1,6 +1,6 @@
 import os
+
 import boto3
-from aws_xray_sdk.core import xray_recorder, patch_all
 
 
 def cache_get_webpage_raw_html(entry_id: str) -> str | False:

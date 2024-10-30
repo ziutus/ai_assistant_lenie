@@ -3,7 +3,6 @@ from enum import Enum
 
 from library.text_detect_language import text_language_detect
 from library.translate import text_translate
-from library.translateResult import TranslateResult
 
 
 # This errors status are also defined in Postgresql table: document_types

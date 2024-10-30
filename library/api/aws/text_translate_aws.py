@@ -1,7 +1,6 @@
 import logging
 import os
-from itertools import count
-from pprint import pprint
+
 import boto3
 from aws_xray_sdk.core import xray_recorder, patch_all
 

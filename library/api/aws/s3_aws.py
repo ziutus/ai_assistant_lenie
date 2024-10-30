@@ -1,8 +1,8 @@
-import boto3
-from botocore.exceptions import ClientError, NoCredentialsError
 import os
-from pprint import pprint
+
+import boto3
 from aws_xray_sdk.core import xray_recorder, patch_all
+from botocore.exceptions import ClientError, NoCredentialsError
 
 patch_all()
 
