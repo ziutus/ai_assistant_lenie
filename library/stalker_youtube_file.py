@@ -97,7 +97,7 @@ class StalkerYoutubeFile:
         if not os.path.exists(f"{self.directory}/{self.filename}") or force:
             yt_stream = self._yt.streams.first()
             if yt_stream:
-                result = self._yt.streams.first().download(max_retries=3, output_path=self.directory,
+                self._yt.streams.first().download(max_retries=3, output_path=self.directory,
                                                            filename=self.filename,
                                                            skip_existing=False)
                 self.type = self._yt.streams.first().type
