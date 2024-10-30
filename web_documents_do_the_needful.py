@@ -27,7 +27,7 @@ if aws_xray_enabled:
 
 if __name__ == '__main__':
     if aws_xray_enabled:
-       xray_recorder.begin_segment('MainSegment')  # Rozpoczęcie głównego segmentu
+        xray_recorder.begin_segment('MainSegment')  # Rozpoczęcie głównego segmentu
 
     model = os.getenv("EMBEDDING_MODEL")
     s3_bucket = os.getenv("AWS_S3_WEBSITE_CONTENT")
@@ -114,7 +114,6 @@ if __name__ == '__main__':
                 if aws_xray_enabled:
                     xray_recorder.end_subsegment()  # Koniec podsegmentu
 
-
     print("Step 2: Downloading websites (or taking from S3) and putting data into database")
     websites = WebsitesDBPostgreSQL()
     website_data = websites.get_ready_for_download()
@@ -186,7 +185,6 @@ if __name__ == '__main__':
                     web_doc.analyze()
                     web_doc.validate()
                     web_doc.save()
-
 
                 except Exception as e:
                     print(f"Error processing website {website_id}: {url}")
