@@ -27,6 +27,20 @@ start_runner:
     - echo "Starting AWS EC2 runner instance..."
     - aws ec2 start-instances --instance-ids $INSTANCE_ID
 
+job-pytest:
+  stage: test
+  tags:
+    - AWS
+  before_script:
+    - pip install -r requirements.txt 
+    - mkdir pytest-results/
+  script:
+    pytest --self-contained-html --html=pytest-results/
+  artifacts:
+    when: always
+    paths:
+      - pytest-results/
+
 job-build-docker-image:
   stage: build
   tags:
