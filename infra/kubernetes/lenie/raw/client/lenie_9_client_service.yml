@@ -8,6 +8,7 @@ spec:
     app: lenie-ai-client
   ports:
     - protocol: TCP
+      name: http
       port: 80
       targetPort: 3000
   type: ClusterIP
