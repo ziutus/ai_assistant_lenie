@@ -57,3 +57,31 @@ spec:
     - secretRef:
         name: env-secret
 ```
+
+```text
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: lenie-ai-server-rs
+  namespace: lenie-ai-dev
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      pod-label: lenie-ai-server
+  template:
+    metadata:
+      labels:
+        pod-label: lenie-ai-server
+    spec:
+      containers:
+      - name: lenie-ai-server
+        image: linuxexpertpl/lenie-ai-server:0.2.6.1
+        ports:
+        - containerPort: 5000
+        envFrom:
+        - configMapRef:
+            name: env-config
+        - secretRef:
+            name: env-secret
+```
