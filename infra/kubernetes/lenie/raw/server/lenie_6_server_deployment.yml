@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: lenie-ai-server
-        image: lenieai/lenie-ai-server:0.2.11.0
+        image: lenieai/lenie-ai-server:latest
         ports:
         - containerPort: 5000
         envFrom:

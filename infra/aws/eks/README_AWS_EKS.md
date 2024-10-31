@@ -20,40 +20,46 @@ or better to create in VPC where is connected Database (you have to provide info
 ```shell
 eksctl create cluster --name lenie-ai --version 1.31 --nodegroup-name workers1 --node-type t2.medium --nodes 2 --nodes-min 2 --nodes-max 4 --spot --vpc-public-subnets subnet-066653bc5f645bf3b,subnet-065769ce9d50381e3 --region us-east-1 --asg-access --external-dns-access --full-ecr-access --alb-ingress-access --with-oidc
 ```
+
+If you have many consoles (for example powershell + wsl), you can update cluster configuration using command:
+```shell
+aws eks update-kubeconfig --name lenie-ai
+```
+
 ### Associate IAM OIDC provider
 
 Not needed if you created cluster with **--with-oidc**.
 
-```powershell
+```shell
 eksctl utils associate-iam-oidc-provider --region=us-east-1 --cluster=lenie-ai --approve
 ```
 
 ### collect logs in cloudwatch
 
-```powershell
-eksctl utils update-cluster-logging --enable-types=all --region=us-east-1 --cluster=lenie-ai
+```shell
+eksctl utils update-cluster-logging --enable-types=all --region=us-east-1 --cluster=lenie-ai --approve
 ```
 
 ### update addons
 
-```powershell
+```shell
 eksctl get addons --cluster lenie-ai
 ```
 
-```powershell
+```shell
 eksctl update addon --name vpc-cni --cluster lenie-ai --version latest --wait
 ```
 
-```powershell
+```shell
 eksctl update addon --name kube-proxy --cluster lenie-ai --version latest --wait
 ```
 
 ## setup EBS support
 
-```powershell
+```shell
 eksctl create iamserviceaccount --name ebs-csi-controller-sa --namespace kube-system --cluster lenie-ai --role-name AmazonEKS_EBS_CSI_DriverRole --role-only --attach-policy-arn arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy --approve
 ```
-result will be like:
+the result will be like:
 
 ``` powershell
 2024-10-23 15:37:20 [ℹ]  1 iamserviceaccount (kube-system/ebs-csi-controller-sa) was included (based on the include/exclude rules)
