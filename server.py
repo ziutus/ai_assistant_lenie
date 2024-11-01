@@ -97,9 +97,10 @@ def website_list():
 
     document_type = request.args.get('type', 'ALL')
     document_state = request.args.get('document_state', 'ALL')
+    search_in_documents = request.args.get('search_in_document', '')
     logging.debug(document_type)
 
-    websites_list = websites.get_list(document_type=document_type, document_state=document_state)
+    websites_list = websites.get_list(document_type=document_type, document_state=document_state, search_in_documents = search_in_documents)
     # pprint_debug(websites_list)
 
     response = {

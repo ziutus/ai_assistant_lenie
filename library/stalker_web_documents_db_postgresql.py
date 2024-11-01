@@ -64,7 +64,7 @@ class WebsitesDBPostgreSQL:
     def close(self):
         self.conn.close()
 
-    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL") -> \
+    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL", search_in_documents = None) -> \
             list[
                 dict[str, str, str, str, str]]:
         offset = offset * limit
@@ -80,6 +80,15 @@ class WebsitesDBPostgreSQL:
 
         if document_state != "ALL":
             where_clauses.append(f"document_state = '{document_state}'")
+
+        if search_in_documents:
+            search_clauses = [f"text LIKE '%{search_in_documents}%'",
+                            f"title LIKE '%{search_in_documents}%'",
+                            f"summary LIKE '%{search_in_documents}%'",
+                            f"chapter_list LIKE '%{search_in_documents}%'",
+                            f"summary_english LIKE '%{search_in_documents}%'",
+                            f"text_english LIKE '%{search_in_documents}%'"]
+            where_clauses.append(f"({' OR '.join(search_clauses)})")
 
         # Łączenie warunków zapytania
         if where_clauses:
