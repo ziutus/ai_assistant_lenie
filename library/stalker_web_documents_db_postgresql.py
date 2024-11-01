@@ -1,5 +1,6 @@
 import os
 from typing import Any
+from pprint import pprint
 
 import psycopg2
 
@@ -64,12 +65,19 @@ class WebsitesDBPostgreSQL:
     def close(self):
         self.conn.close()
 
-    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL", search_in_documents = None) -> \
+    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL", search_in_documents = None, count = False) -> \
             list[
                 dict[str, str, str, str, str]]:
         offset = offset * limit
 
-        base_query = "SELECT id, url, title, document_type, created_at, document_state, document_state_error, note FROM public.web_documents"
+        print(f"count: {count}")
+
+        if count:
+            base_query = "SELECT count(id) FROM public.web_documents"
+        else:
+            base_query = "SELECT id, url, title, document_type, created_at, document_state, document_state_error, note FROM public.web_documents"
+
+
         order_by = "ORDER BY created_at DESC"
         limit_offset = f"LIMIT {int(limit)} OFFSET {int(offset)}"
 
@@ -97,29 +105,37 @@ class WebsitesDBPostgreSQL:
             where_query = ""
 
         # Końcowe zapytanie
-        query = f"{base_query}{where_query} {order_by} {limit_offset}"
+        if count:
+            query = f"{base_query}{where_query}"
+        else:
+            query = f"{base_query}{where_query} {order_by} {limit_offset}"
 
         print(query)
 
         with self.conn:
             with self.conn.cursor() as cur:
                 cur.execute(query)
-                result = []
 
-                for line in cur.fetchall():
-                    dt = line[4]
-                    result.append({
-                        "id": line[0],
-                        "url": line[1],
-                        "title": line[2],
-                        "document_type": line[3],
-                        "created_at": dt.strftime('%Y-%m-%d %H:%M:%S'),
-                        "document_state": line[5],
-                        "document_state_error": line[6],
-                        "note": line[7]
-                    })
+                if count:
+                    result = cur.fetchone()[0]
+                    return result
+                else:
+                    result = []
 
-                return result
+                    for line in cur.fetchall():
+                        dt = line[4]
+                        result.append({
+                            "id": line[0],
+                            "url": line[1],
+                            "title": line[2],
+                            "document_type": line[3],
+                            "created_at": dt.strftime('%Y-%m-%d %H:%M:%S'),
+                            "document_state": line[5],
+                            "document_state_error": line[6],
+                            "note": line[7]
+                        })
+
+                    return result
 
     def get_count(self) -> tuple[Any, ...] | None:
         with self.conn:
