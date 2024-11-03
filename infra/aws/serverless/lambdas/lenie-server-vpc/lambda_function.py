@@ -74,8 +74,10 @@ def lambda_handler(event, _):
         pprint(query_params)
         document_state = query_params.get('document_state', 'ALL')
         document_type = query_params.get('type', 'ALL')
+        search_in_documents = query_params.get('search_in_document', '')
 
-        websites_list = websites.get_list(document_type=document_type, document_state=document_state)
+        websites_list = websites.get_list(document_type=document_type, document_state=document_state,
+                                          search_in_documents=search_in_documents)
 
         response = {
             "status": "success",
@@ -158,11 +160,18 @@ def lambda_handler(event, _):
 
         parsed_dict = parse_qs(event['body'])
 
-        pprint(parsed_dict)
+        if parsed_dict:
+            parsed_dict_tmp = parsed_dict
+            if "embedds" in parsed_dict_tmp:
+                parsed_dict_tmp = "truncted but extist"
+            pprint(parsed_dict_tmp)
 
         embedds = '[' + ','.join(parsed_dict['embedds[]']) + ']'
         model = parsed_dict['model'][0]
-        limit = int(parsed_dict['limit'][0])
+        if 'limit' in parsed_dict:
+            limit = int(parsed_dict['limit'][0])
+        else:
+            limit = 5
 
         pprint(limit)
 
