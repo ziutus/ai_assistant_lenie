@@ -98,7 +98,7 @@ job-security-tool-osv_scan:
   tags:
     - AWS
   script:
-    - /usr/local/bin/osv-scanner scan --lockfile requirements.txt || true
+    - /usr/local/bin/osv-scanner scan --lockfile requirements.txt
   artifacts:
     when: always
     paths:
