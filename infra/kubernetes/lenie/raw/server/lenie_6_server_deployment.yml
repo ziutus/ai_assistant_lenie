@@ -16,8 +16,12 @@ spec:
       labels:
         app: lenie-ai-server
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
       - name: lenie-ai-server
+        securityContext:
+          allowPrivilegeEscalation: false
         image: lenieai/lenie-ai-server:latest
         ports:
         - containerPort: 5000

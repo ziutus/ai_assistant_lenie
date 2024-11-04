@@ -13,8 +13,12 @@ spec:
       labels:
         app: lenie-ai-client
     spec:
+      securityContext:
+        runAsNonRoot: true
       containers:
       - name: lenie-react-interface
-        image: linuxexpertpl/lenie-react-interface:0.2.9
+        securityContext:
+          allowPrivilegeEscalation: false
+        image: lenieai/lenie-react-interface:latest
         ports:
         - containerPort: 3000

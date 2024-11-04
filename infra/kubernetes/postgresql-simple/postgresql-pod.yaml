@@ -3,8 +3,12 @@ kind: Pod
 metadata:
   name: postgres-4-1
 spec:
+  securityContext:
+    runAsNonRoot: true
   containers:
     - name: postgres
+      securityContext:
+        allowPrivilegeEscalation: false
       image: docker.io/postgres:15-bullseye
       env:
         - name: POSTGRES_PASSWORD
