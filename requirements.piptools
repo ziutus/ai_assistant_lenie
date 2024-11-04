@@ -15,4 +15,4 @@ assemblyai
 aws-xray-sdk
 pre-commit
 semgrep
-PyPDF2
+pypdf

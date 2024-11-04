@@ -135,4 +135,5 @@ werkzeug==3.0.4
 youtube-transcript-api==0.6.2
     # via -r requirements.piptools
 
-PyPDF2~=3.0.1
+
+pypdf~=5.1.0
