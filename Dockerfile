@@ -20,6 +20,12 @@ COPY library /app/library/
 #COPY tests /app/tests/
 COPY server.py /app/
 
+# Create a non-root user and change ownership of the app directory
+RUN useradd -m lenie-ai-server && chown -R lenie-ai-server:lenie-ai-server /app
+
+# Switch to the lenie-ai-server user
+USER lenie-ai-server
+
 # Expose port 5000 for the Flask application
 EXPOSE 5000
 
