@@ -422,12 +422,12 @@ def website_text_remove_not_needed():
     text = request.form.get('text')
     url = request.form.get('url')
 
-    debug_needed = False
-    if debug_needed:
-        with open('debug.txt', 'w', encoding='utf-8') as debug_file:
-            debug_file.write(f"text: {text}\n")
-            debug_file.write(f"url: {url}\n")
-            logging.info("Debug data written into file debug.txt")
+    # debug_needed = False
+    # if debug_needed:
+    #     with open('debug.txt', 'w', encoding='utf-8') as debug_file:
+    #         debug_file.write(f"text: {text}\n")
+    #         debug_file.write(f"url: {url}\n")
+    #         logging.info("Debug data written into file debug.txt")
 
     if not text:
         logging.debug("Missing data. Make sure you provide 'text'")
