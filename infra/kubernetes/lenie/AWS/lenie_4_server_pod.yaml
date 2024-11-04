@@ -4,6 +4,8 @@ metadata:
   name: lenie-ai-server
   namespace: lenie-ai-dev
 spec:
+  securityContext:
+    runAsNonRoot: true
   containers:
   - name: lenie-ai-server
     image: linuxexpertpl/lenie-ai-server:0.2.9
