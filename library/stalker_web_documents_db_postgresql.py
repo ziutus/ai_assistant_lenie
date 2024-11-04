@@ -143,7 +143,7 @@ class WebsitesDBPostgreSQL:
                 return cur.fetchone()[0]
 
     def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30) -> list[dict[
-        str, Any]] | None:
+            str, Any]] | None:
 
         if minimal_similarity is None:
             minimal_similarity = 0.30
