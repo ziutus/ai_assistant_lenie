@@ -606,7 +606,7 @@ def app_version():
 if __name__ == '__main__':
     if os.getenv("USE_SSL") == "true":
         logging.debug("Using SSL")
-        app.run(debug=True, host='0.0.0.0', port=os.getenv("PORT"), ssl_context='adhoc')
+        app.run(debug=os.getenv("DEBUG", "False").lower() == "true", host='0.0.0.0', port=os.getenv("PORT"), ssl_context='adhoc')
     else:
         logging.debug("Using HTTP")
-        app.run(debug=True, port=os.getenv("PORT"), host='0.0.0.0')
+        app.run(debug=os.getenv("DEBUG", "False").lower() == "true", port=os.getenv("PORT"), host='0.0.0.0')
