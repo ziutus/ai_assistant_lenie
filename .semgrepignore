@@ -1,0 +1,2 @@
+infra/kubernetes/jenkins/*
+infra/aws/eks/karpenter/*
