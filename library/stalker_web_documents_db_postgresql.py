@@ -1,6 +1,5 @@
 import os
 from typing import Any
-from pprint import pprint
 
 import psycopg2
 
@@ -65,7 +64,8 @@ class WebsitesDBPostgreSQL:
     def close(self):
         self.conn.close()
 
-    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL", search_in_documents = None, count = False) -> \
+    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL",
+                 search_in_documents=None, count=False) -> \
             list[
                 dict[str, str, str, str, str]]:
         offset = offset * limit
@@ -76,7 +76,6 @@ class WebsitesDBPostgreSQL:
             base_query = "SELECT count(id) FROM public.web_documents"
         else:
             base_query = "SELECT id, url, title, document_type, created_at, document_state, document_state_error, note FROM public.web_documents"
-
 
         order_by = "ORDER BY created_at DESC"
         limit_offset = f"LIMIT {int(limit)} OFFSET {int(offset)}"
@@ -91,11 +90,11 @@ class WebsitesDBPostgreSQL:
 
         if search_in_documents:
             search_clauses = [f"text LIKE '%{search_in_documents}%'",
-                            f"title LIKE '%{search_in_documents}%'",
-                            f"summary LIKE '%{search_in_documents}%'",
-                            f"chapter_list LIKE '%{search_in_documents}%'",
-                            f"summary_english LIKE '%{search_in_documents}%'",
-                            f"text_english LIKE '%{search_in_documents}%'"]
+                              f"title LIKE '%{search_in_documents}%'",
+                              f"summary LIKE '%{search_in_documents}%'",
+                              f"chapter_list LIKE '%{search_in_documents}%'",
+                              f"summary_english LIKE '%{search_in_documents}%'",
+                              f"text_english LIKE '%{search_in_documents}%'"]
             where_clauses.append(f"({' OR '.join(search_clauses)})")
 
         # Łączenie warunków zapytania
@@ -144,7 +143,7 @@ class WebsitesDBPostgreSQL:
                 return cur.fetchone()[0]
 
     def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30) -> list[dict[
-            str, Any]] | None:
+        str, Any]] | None:
 
         if minimal_similarity is None:
             minimal_similarity = 0.30

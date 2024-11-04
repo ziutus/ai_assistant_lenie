@@ -100,8 +100,8 @@ def website_list():
     search_in_documents = request.args.get('search_in_document', '')
     logging.debug(document_type)
 
-    websites_list = websites.get_list(document_type=document_type, document_state=document_state, search_in_documents = search_in_documents)
-    websites_list_count = websites.get_list(document_type=document_type, document_state=document_state, search_in_documents = search_in_documents, count=True)
+    websites_list = websites.get_list(document_type=document_type, document_state=document_state, search_in_documents=search_in_documents)
+    websites_list_count = websites.get_list(document_type=document_type, document_state=document_state, search_in_documents=search_in_documents, count=True)
     # pprint_debug(websites_list)
     print(f"website count: {websites_list_count}")
 
