@@ -4,6 +4,14 @@ pipeline {
         skipDefaultCheckout(true)
     }
     stages {
+         stage('Code checkout from GitHub') {
+            steps {
+                script {
+                    cleanWs()
+                    git credentialsId: 'github-token', url: 'https://github.com/ziutus/ai_assistant_lenie_server', branch: 'main'
+                }
+            }
+        }
         stage('Example') {
             steps {
                 echo 'Hello!'
