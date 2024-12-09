@@ -43,7 +43,7 @@ pprint(ai_answer.response_text)
 
 payload = {
     'username': 'tester',
-    'password': '574e112a',
+    'password': 'XYZ',
     'answer': int(ai_answer.response_text),  # Zakładamy, że odpowiedź jest liczbą
 }
 
