@@ -82,5 +82,11 @@ site_rules = {
     #     "remove_string" : [],
     #     "remove_string_regexp" : []
     # },
+    "": {
+        "remove_before" : ["Question:"],
+        "remove_after" : ["LoginForget password?"],
+        "remove_string" : [],
+        "remove_string_regexp" : []
+    },
 
 }
