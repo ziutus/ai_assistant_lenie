@@ -15,15 +15,15 @@ def query_aws_bedrock(query: str, model: str, temperature: float = 0.7, max_toke
     session = boto3.Session(region_name=os.getenv("AWS_REGION"))
 
     client_bedrock = session.client(service_name='bedrock-runtime', region_name=os.getenv("AWS_REGION"))
+
     ai_response = AiResponse(query=query, model=model)
     ai_response.model = model
     ai_response.temperature = temperature
     ai_response.max_token_count = max_token_count
     ai_response.top_p = top_p
 
-    prompt_data = f"""Command: Answer to query {query}"""
-
     if model == 'amazon.titan-tg1-large' or model == 'aws':
+        prompt_data = f"""Command: Answer to query {query}"""
 
         body = json.dumps({
             "inputText": prompt_data,
@@ -71,22 +71,20 @@ def query_aws_bedrock(query: str, model: str, temperature: float = 0.7, max_toke
 
         return ai_response
 
-    elif model == 'amazon.nova-micro':
+    elif model in ['amazon.nova-micro', 'amazon.nova-pro']:
 
-        # Ustawienia regionu AWS i identyfikator modelu
-        AWS_REGION = "us-east-1"
-        MODEL_ID = "amazon.nova-micro-v1:0"
+        if model == 'amazon.nova-micro':
+            MODEL_ID = "amazon.nova-micro-v1:0"
+        elif model == 'amazon.nova-pro':
+            MODEL_ID = "amazon.nova-pro-v1:0"
+        else:
+            raise Exception("Unknown model")
 
-        # Inicjalizacja klienta Bedrock
-        bedrock_runtime = boto3.client("bedrock-runtime", region_name=AWS_REGION)
-
-        # Definiowanie wiadomości do modelu
         messages = [
             {"role": "user", "content": [{"text": query}]}
         ]
 
-        # Wywołanie modelu
-        response = bedrock_runtime.converse(
+        response = client_bedrock.converse(
             modelId=MODEL_ID,
             messages=messages,
             inferenceConfig={"temperature": temperature}
