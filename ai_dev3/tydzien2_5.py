@@ -1,5 +1,8 @@
 import os
+from statistics import median
+
 import requests
+import re
 from markdownify import markdownify as md
 from bs4 import BeautifulSoup
 from library.ai import ai_describe_image
@@ -20,7 +23,6 @@ def create_txt_path(image_path):
     base_path, _ = os.path.splitext(image_path)  # Oddzielenie ścieżki bazowej od rozszerzenia
     return f"{base_path}.txt"
 
-
 def download_file(url, cache_dir, page_id, file_name, force=False) -> str:
     page_dir = f"{cache_dir}/{page_id}"
     os.makedirs(page_dir, exist_ok=True)
@@ -37,6 +39,43 @@ def download_file(url, cache_dir, page_id, file_name, force=False) -> str:
         print(f"Debug: skipping {full_link}")
 
     return file_name_full
+
+def replace_png_links_with_txt_content(md_file_path, base_dir):
+    """
+    Zamienia linki do plików PNG w pliku markdown na zawartość odpowiadających im plików .txt.
+
+    :param md_file_path: Ścieżka do pliku markdown.
+    :param base_dir: Katalog bazowy, w którym znajdują się pliki PNG i ich odpowiadające pliki TXT.
+    """
+    with open(md_file_path, 'r', encoding='utf-8') as file:
+        markdown_content = file.read()
+
+    # Wzorzec wyszukujący linki w formacie np. `![](i/rynek.png)`
+    media_pattern = r'\[.*?\]\((.*?\.(?:png|mp3))\)'
+    links = re.findall(media_pattern, markdown_content)
+
+    print(f"Znaleziono linki do plików PNG lub MP3: {links}")
+
+    for link in links:
+        # Tworzenie ścieżki do pliku .txt na podstawie ścieżki do PNG
+        media_file_path = os.path.join(base_dir, link)
+        txt_file_path = os.path.splitext(media_file_path)[0] + '.txt'
+
+        if os.path.exists(txt_file_path):
+            # Wczytanie zawartości pliku .txt
+            with open(txt_file_path, 'r', encoding='utf-8') as txt_file:
+                txt_content = txt_file.read().strip()
+
+            txt_content = f"-- opis treści pliku {txt_file_path}: --\n" + txt_content + " -- Koniec opisu pliku-- \n"
+            # Zamiana linku do obrazu na zawartość pliku .txt
+            markdown_content = markdown_content.replace(f"![]({link})", txt_content)
+        else:
+            print(f"UWAGA: Brak pliku tekstowego dla {media_file_path} -> oczekiwany {txt_file_path}")
+
+    # Nadpisanie pliku markdown zmienioną zawartością
+    with open(md_file_path, 'w', encoding='utf-8') as file:
+        file.write(markdown_content)
+    print(f"DEBUG: Plik markdown >{md_file_path}< został zaktualizowany.")
 
 
 cache_dir = "tmp/tydzien2_5"
@@ -74,7 +113,7 @@ mp3_links = [tag['href'] for tag in soup.find_all('a', href=True) if tag['href']
 multi_media_links = png_links + mp3_links
 
 # Wyświetlenie linków
-print("png files Links:", multi_media_links)
+print("media files Links:", multi_media_links)
 for link in png_links:
     full_link = f"{url_base}/{link}"
 
@@ -128,3 +167,6 @@ for link in mp3_links:
         with open(txt_path, "w", encoding="utf-8") as txt_file:
             txt_file.write(transcript_text)
 
+
+# Uruchomienie funkcji
+replace_png_links_with_txt_content(file_path_md, os.path.join(cache_dir, page_id))
