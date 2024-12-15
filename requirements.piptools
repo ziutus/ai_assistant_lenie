@@ -16,3 +16,5 @@ aws-xray-sdk
 pre-commit
 pypdf
 firecrawl-py
+filetype
+markdownify
