@@ -1,3 +1,4 @@
+from library.api.asemblyai.asemblyai_transcript import transcript_assemblyai
 from library.api.aws.transcript import aws_transcript
 import math
 
@@ -18,6 +19,9 @@ def transcript(transcript_file_local: str, media_format: str, language_code: str
     if provider == 'aws':
         return aws_transcript(s3_bucket=s3_bucket, s3_key=transcript_file_remote, language_code=language_code,
                               media_format=media_format)
+
+    if provider == 'assemblyai':
+        return transcript_assemblyai(transcript_file_local, language_code)
 
     return None
 
