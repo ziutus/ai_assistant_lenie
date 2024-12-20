@@ -5,16 +5,17 @@ from library.text_detect_language import text_language_detect
 from library.translate import text_translate
 
 
-# This errors status are also defined in Postgresql table: document_types
+# Those document types are also defined in Postgresql table: document_types
 class StalkerDocumentType(Enum):
     movie = 1
     youtube = 2
     link = 3
     webpage = 4
     text_message = 5
+    text = 6
 
 
-# This errors status are also defined in Postgresql table: document_status_types
+# Those errors status are also defined in Postgresql table: document_status_types
 class StalkerDocumentStatus(Enum):
     ERROR = 1
     URL_ADDED = 2
@@ -62,7 +63,8 @@ class StalkerWebDocument:
                  ai_summary_needed: bool | None = None,
                  author: str | None = None,
                  note: str | None = None,
-                 s3_uuid: str | None = None
+                 s3_uuid: str | None = None,
+                 project: str | None = None
                  ):
 
         self.id: int | None = wb_id
@@ -94,6 +96,7 @@ class StalkerWebDocument:
         self.author: str | None = author
         self.note: str | None = note
         self.s3_uuid: str | None = s3_uuid
+        self.project: str | None = project
 
     def __str__(self):
         data = {
@@ -120,7 +123,8 @@ class StalkerWebDocument:
             "ai_summary_needed": self.ai_summary_needed,
             "author": self.author,
             "note": self.note,
-            "s3_uuid": self.s3_uuid
+            "s3_uuid": self.s3_uuid,
+            "s3_project": self.project
         }
         result = json.dumps(data, indent=4)
 
@@ -137,8 +141,10 @@ class StalkerWebDocument:
             self.document_type = StalkerDocumentType.webpage
         elif document_type in ["sms", "text_message"]:
             self.document_type = StalkerDocumentType.text_message
+        elif document_type in ["text"]:
+            self.document_type = StalkerDocumentType.text
         else:
-            raise ValueError(f"document_type must be either 'movie', 'webpage', 'text_message' or 'link' not >{document_type}<")
+            raise ValueError(f"document_type must be either 'movie', 'webpage', 'text_message', 'text' or 'link' not >{document_type}<")
 
     def set_document_state(self, document_state: str) -> None:
         if document_state in ["ERROR_DOWNLOAD", "ERROR"]:

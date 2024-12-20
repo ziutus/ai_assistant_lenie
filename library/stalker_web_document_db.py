@@ -4,6 +4,7 @@ import psycopg2
 from psycopg2 import sql
 
 from library import embedding
+from library.embedding import embedding_need_translation
 from library.stalker_web_document import StalkerWebDocument, StalkerDocumentStatus, StalkerDocumentType, \
     StalkerDocumentStatusError
 from library.website.website_download_context import WebPageParseResult
@@ -66,6 +67,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                     self.author = website_data[23]
                     self.note = website_data[24]
                     self.s3_uuid = website_data[25]
+                    self.project = website_data[26]
 
                     if self.ai_summary_needed is None:
                         self.ai_summary_needed = False
@@ -122,7 +124,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
             "ai_summary_needed": self.ai_summary_needed,
             "author": self.author,
             "note": self.note,
-            "s3_uuid": self.s3_uuid
+            "s3_uuid": self.s3_uuid,
+            "project": self.project
         }
         return result
 
@@ -134,8 +137,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                         "INSERT INTO {} (title, title_english, summary, summary_english, url, language, "
                         "tags, document_type, text, text_english, source, paywall, date_from, original_id,"
                         "document_length, document_state, document_state_error, text_raw, transcript_job_id, "
-                        "ai_summary_needed, author, note, s3_uuid) "
-                        "VALUES (%s, %s,%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+                        "ai_summary_needed, author, note, s3_uuid, project) "
+                        "VALUES (%s, %s,%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
                     ).format(sql.Identifier('web_documents'))
 
                     cur.execute(
@@ -145,7 +148,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                          self.text_english, self.source, self.paywall, self.date_from, self.original_id,
                          self.document_length,
                          self.document_state.name, self.document_state_error.name, self.text_raw,
-                         self.transcript_job_id, self.ai_summary_needed, self.author, self.note, self.s3_uuid)
+                         self.transcript_job_id, self.ai_summary_needed, self.author, self.note, self.s3_uuid,
+                         self.project)
                     )
                     self.id = cur.fetchone()[0]
 
@@ -175,7 +179,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                         ("ai_summary_needed", self.ai_summary_needed),
                         ("author", self.author),
                         ("note", self.note),
-                        ("s3_uuid", self.s3_uuid)
+                        ("s3_uuid", self.s3_uuid),
+                        ("project", self.project),
                     ]
                     set_clause = ", ".join(
                         f"{column} = %s" for column, value in columns if value is not None
@@ -224,6 +229,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         self.author = None
         self.note = None
         self.s3_uuid = None
+        self.project = None
 
     def delete(self) -> bool:
         with self.db_conn:
@@ -234,6 +240,10 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                 return True
 
     def embedding_add(self, model) -> bool:
+
+        need_translation = embedding_need_translation(model)
+        print(f"DEBUG: model >{model}, need translation: {need_translation}<")
+
         if self.document_type == StalkerDocumentType.link:
             if self.title is None:
                 self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
@@ -245,12 +255,12 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                 self.document_state_error = StalkerDocumentStatusError.LINK_SUMMARY_MISSING
                 return False
 
-            if self.language != 'en' and not self.title_english:
+            if self.language != 'en' and need_translation and not self.title_english:
                 self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
                 self.document_state_error = StalkerDocumentStatusError.TITLE_TRANSLATION_ERROR
                 return False
 
-            if self.language != 'en' and not self.summary_english:
+            if self.language != 'en' and need_translation and not self.summary_english:
                 self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
                 self.document_state_error = StalkerDocumentStatusError.SUMMARY_TRANSLATION_ERROR
                 return False
@@ -268,28 +278,37 @@ class StalkerWebDocumentDB(StalkerWebDocument):
 
             self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
 
-        elif self.document_type in [StalkerDocumentType.webpage, StalkerDocumentType.youtube]:
-            if self.language != 'en' and not self.text_english:
+        elif self.document_type in [StalkerDocumentType.webpage, StalkerDocumentType.youtube, StalkerDocumentType.text,
+                                    StalkerDocumentType.text_message]:
+
+            if self.language != 'en'  and need_translation and not self.text_english:
                 self.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION
                 self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION
                 return False
 
             text_original = self.text.split("\n\n\n")
-            if self.language == 'en':
-                text_english = self.text.split("\n\n\n")
-            else:
-                text_english = self.text_english.split("\n\n\n")
 
-            if len(text_original) != len(text_english):
-                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-                self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR
-                return False
+            text_to_embed = ""
+            text_english = ""
+
+            if need_translation:
+                if self.language == 'en':
+                    text_to_embed = self.text.split("\n\n\n")
+                else:
+                    text_to_embed = self.text_to_embed.split("\n\n\n")
+
+                if len(text_original) != len(text_to_embed):
+                    self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                    self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR
+                    return False
+            else:
+                text_to_embed = self.text.split("\n\n\n")
 
             self.__embedding_delete(model)
 
             k = 0
-            text_max = len(text_english)
-            for row in text_english:
+            text_max = len(text_to_embed)
+            for row in text_to_embed:
                 print(f"* Getting embeddings: {k + 1} of {text_max}")
                 emb = embedding.get_embedding(model=model, text=row)
 

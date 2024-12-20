@@ -65,7 +65,7 @@ class WebsitesDBPostgreSQL:
         self.conn.close()
 
     def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL",
-                 search_in_documents=None, count=False) -> \
+                 search_in_documents=None, count=False, project=None) -> \
             list[
                 dict[str, str, str, str, str]]:
         offset = offset * limit
@@ -75,7 +75,7 @@ class WebsitesDBPostgreSQL:
         if count:
             base_query = "SELECT count(id) FROM public.web_documents"
         else:
-            base_query = "SELECT id, url, title, document_type, created_at, document_state, document_state_error, note FROM public.web_documents"
+            base_query = "SELECT id, url, title, document_type, created_at, document_state, document_state_error, note, project FROM public.web_documents"
 
         order_by = "ORDER BY created_at DESC"
         limit_offset = f"LIMIT {int(limit)} OFFSET {int(offset)}"
@@ -87,6 +87,10 @@ class WebsitesDBPostgreSQL:
 
         if document_state != "ALL":
             where_clauses.append(f"document_state = '{document_state}'")
+
+        if project:
+            where_clauses.append(f"document_state = '{project}'")
+
 
         if search_in_documents:
             search_clauses = [f"text LIKE '%{search_in_documents}%'",
@@ -131,7 +135,8 @@ class WebsitesDBPostgreSQL:
                             "created_at": dt.strftime('%Y-%m-%d %H:%M:%S'),
                             "document_state": line[5],
                             "document_state_error": line[6],
-                            "note": line[7]
+                            "note": line[7],
+                            "project": line[8]
                         })
 
                     return result
@@ -142,13 +147,18 @@ class WebsitesDBPostgreSQL:
                 cur.execute("SELECT count(id) FROM public.web_documents")
                 return cur.fetchone()[0]
 
-    def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30) -> list[dict[
+    def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30, project = None) -> list[dict[
             str, Any]] | None:
 
         if minimal_similarity is None:
             minimal_similarity = 0.30
         if embedding is None:
             return None
+
+        if project:
+            where_project = " AND public.web_documents.project = '" + project + "' "
+        else:
+            where_project = ""
 
         query = f"""
             SELECT public.websites_embeddings.website_id,
@@ -161,10 +171,11 @@ class WebsitesDBPostgreSQL:
             LENGTH(public.web_documents.text) AS websites_text_length,
             LENGTH(public.websites_embeddings.text) AS embeddings_text_length,
             public.web_documents.title,
-            public.web_documents.document_type
+            public.web_documents.document_type,
+            public.web_documents.project
             FROM public.websites_embeddings
             left join public.web_documents on public.websites_embeddings.website_id = public.web_documents.id
-            WHERE public.websites_embeddings.model = '{model}'
+            WHERE public.websites_embeddings.model = '{model}' {where_project}
             AND (1 - (public.websites_embeddings.embedding <=> '{embedding}')) > {minimal_similarity}
             ORDER BY cosine_similarity desc
             LIMIT {limit}
@@ -187,6 +198,7 @@ class WebsitesDBPostgreSQL:
                 "embeddings_text_length": r[8],
                 "title": r[9],
                 "document_type": r[10],
+                "project": r[11],
             })
 
         return result
