@@ -1,3 +1,8 @@
+import json
+import os
+
+import boto3
+
 import library.api.aws.bedrock_ask
 import library.api.openai.openai_my
 from library.ai_response import AiResponse
@@ -52,3 +57,15 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         return ai_response
     else:
         raise Exception(f"ERROR: Unknown model {model}")
+
+
+def ai_describe_image(base64_image, model_id="anthropic.claude-3-haiku-20240307-v1:0", max_tokens = 1000, media_type = "image/png", question="What's in this image?"):
+    if media_type not in ["image/png", "image/jpeg"]:
+        raise ValueError("Invalid media type. Supported types: image/png, image/jpeg")
+
+    if model_id == "anthropic.claude-3-haiku-20240307-v1:0":
+        response_text = library.api.aws.bedrock_ask.aws_bedrock_describe_image(base64_image, model_id, max_tokens, media_type, question)
+    else:
+        raise Exception("Unknown model")
+
+    return response_text

@@ -102,3 +102,66 @@ def query_aws_bedrock(query: str, model: str, temperature: float = 0.7, max_toke
     else:
         raise Exception("Unknown model")
 
+
+def aws_bedrock_describe_image(base64_image, model_id="anthropic.claude-3-haiku-20240307-v1:0", max_tokens = 1000, media_type = "image/png", question="What's in this image?") -> AiResponse:
+    if media_type not in ["image/png", "image/jpeg"]:
+        raise ValueError("Invalid media type. Supported types: image/png, image/jpeg")
+
+    ai_response = AiResponse(query=question, model=model_id)
+    ai_response.model = model_id
+    ai_response.max_token_count = max_tokens
+
+    # Inicjalizacja klienta Bedrock
+    session = boto3.Session()
+    client_bedrock = session.client(
+        service_name='bedrock-runtime',
+        region_name=os.getenv("AWS_REGION", "us-east-1")  # Ustaw domyślny region na `us-east-1` jeśli nie podany
+    )
+
+    # Przygotowanie payloadu
+    payload = {
+        "modelId": model_id,
+        "contentType": "application/json",
+        "accept": "application/json",
+        "body": json.dumps({
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": max_tokens,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": base64_image
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": question
+                        }
+                    ]
+                }
+            ]
+        })
+    }
+
+    response = client_bedrock.invoke_model(
+        modelId=payload["modelId"],
+        contentType=payload["contentType"],
+        accept=payload["accept"],
+        body=payload["body"]
+    )
+
+    response_body = json.loads(response['body'].read().decode('utf-8'))
+
+    ai_response.input_tokens = int(response_body['usage']['input_tokens'])
+    ai_response.output_tokens = int(response_body['usage']['output_tokens'])
+    ai_response.total_tokens = ai_response.input_tokens + ai_response.output_tokens
+
+
+    ai_response.response_text = response_body['content'][0]['text']
+
+    return ai_response
