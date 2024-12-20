@@ -3,9 +3,14 @@ import library.api.openai.openai_embedding as openai_embedding
 from library.embedding_result import EmbeddingResult
 
 
+embedding_models = {"amazon.titan-embed-text-v1", "amazon.titan-embed-text-v2:0", "text-embedding-ada-002"}
+
 def embedding_need_translation(model: str) -> bool:
+    if not model in embedding_models:
+        raise Exception(f"DEBUG: Error, no model info for text {model}")
+
     if model in ["amazon_bedrock", "amazon.titan-embed-text-v1"]:
-        return True
+        return False
     elif model in ["amazon.titan-embed-text-v2:0"]:
         return False
     elif model in ["openai_embedding", "text-embedding-ada-002"]:
@@ -15,6 +20,9 @@ def embedding_need_translation(model: str) -> bool:
 
 
 def get_embedding(model: str, text: str) -> EmbeddingResult:
+    if not model in embedding_models:
+        raise Exception(f"DEBUG: Error, no model info for text {model}")
+
     if model in ["amazon_bedrock", "amazon.titan-embed-text-v1"]:
         return amazon_bedrock.get_embedding(text)
     elif model in ["amazon.titan-embed-text-v2:0"]:
