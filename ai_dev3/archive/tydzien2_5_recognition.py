@@ -4,7 +4,7 @@ import boto3
 client = boto3.client('rekognition')
 
 # Ścieżka do pliku
-image_path = "tmp/tydzien2_5/arxiv-draft/fruit01.png"
+image_path = "../tmp/tydzien2_5/arxiv-draft/i/fruit01.png"
 
 # Otwieranie pliku obrazu
 with open(image_path, "rb") as image_file:

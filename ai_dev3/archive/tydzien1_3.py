@@ -10,7 +10,7 @@ from library.ai import ai_ask
 load_dotenv()
 
 # Read JSON file
-file_path = "tmp/json.json"
+file_path = "../tmp/json.json"
 
 API_KEY = os.environ.get('AI_DEV3_API_KEY')
 
@@ -92,7 +92,7 @@ for entry in data['test-data']:
 
 # pprint(json_target)
 
-output_file_path = "tmp/json_answer.json"
+output_file_path = "../tmp/json_answer.json"
 
 try:
     with open(output_file_path, "w") as output_file:

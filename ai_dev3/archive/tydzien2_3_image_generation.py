@@ -13,7 +13,7 @@ api_key = os.getenv('AI_DEV3_API_KEY')
 if not api_key:
     raise EnvironmentError("Environment variable 'AI_DEV3_API_KEY' is not set.")
 
-os.makedirs('tmp', exist_ok=True)
+os.makedirs('../tmp', exist_ok=True)
 
 # Construct the URL
 url = f"https://centrala.ag3nts.org/data/{api_key}/robotid.json"
@@ -26,7 +26,7 @@ if response.status_code != 200:
     raise Exception(f"Failed to fetch data: {response.status_code} - {response.text}")
 
 # Write the data to the file
-with open('tmp/robot_description.txt', 'w', encoding='utf-8') as file:
+with open('../tmp/robot_description.txt', 'w', encoding='utf-8') as file:
     file.write(response.text)
 
 robot_description_raw = response.text

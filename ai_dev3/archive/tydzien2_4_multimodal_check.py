@@ -91,11 +91,11 @@ def list_files_in_directory(root_dir):
                 files.append(os.path.join(dirpath, filename))
     return files
 
-files = list_files_in_directory("tmp/dane_z_fabryki")
+files = list_files_in_directory("../tmp/dane_z_fabryki")
 
 pprint(files)
 
-target_dir = "tmp/dane_z_fabryki_obrobione"
+target_dir = "../tmp/dane_z_fabryki_obrobione"
 
 text_files = []
 

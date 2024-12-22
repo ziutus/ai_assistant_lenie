@@ -52,25 +52,24 @@ def replace_png_links_with_txt_content(md_file_path, base_dir):
 
     # Wzorzec wyszukujący linki w formacie np. `![](i/rynek.png)`
     media_pattern = r'\[.*?\]\((.*?\.(?:png|mp3))\)'
-    links = re.findall(media_pattern, markdown_content)
 
-    print(f"Znaleziono linki do plików PNG lub MP3: {links}")
+    for match in re.finditer(media_pattern, markdown_content):
+        original_text = match.group(0)  # Cały dopasowany tekst, np. `[rafal_dyktafon.mp3](i/rafal_dyktafon.mp3)`
+        file_path = match.group(1)  # Ścieżka do pliku (z linku), np. `i/rafal_dyktafon.mp3`
 
-    for link in links:
-        # Tworzenie ścieżki do pliku .txt na podstawie ścieżki do PNG
-        media_file_path = os.path.join(base_dir, link)
-        txt_file_path = os.path.splitext(media_file_path)[0] + '.txt'
+        # Twórz ścieżkę do odpowiadającego pliku .txt
+        txt_file_path = base_dir + "/" + os.path.splitext(file_path)[0] + '.txt'
 
         if os.path.exists(txt_file_path):
             # Wczytanie zawartości pliku .txt
             with open(txt_file_path, 'r', encoding='utf-8') as txt_file:
                 txt_content = txt_file.read().strip()
 
-            txt_content = f"-- opis treści pliku {txt_file_path}: --\n" + txt_content + " -- Koniec opisu pliku-- \n"
+            txt_content = f"\n-- opis treści pliku {txt_file_path}: --\n" + txt_content + "\n -- Koniec opisu pliku -- \n"
             # Zamiana linku do obrazu na zawartość pliku .txt
-            markdown_content = markdown_content.replace(f"![]({link})", txt_content)
+            markdown_content = markdown_content.replace(original_text, txt_content)
         else:
-            print(f"UWAGA: Brak pliku tekstowego dla {media_file_path} -> oczekiwany {txt_file_path}")
+            print(f"UWAGA: Brak pliku tekstowego dla {file_path} -> oczekiwany {txt_file_path}")
 
     # Nadpisanie pliku markdown zmienioną zawartością
     with open(md_file_path, 'w', encoding='utf-8') as file:
@@ -78,7 +77,7 @@ def replace_png_links_with_txt_content(md_file_path, base_dir):
     print(f"DEBUG: Plik markdown >{md_file_path}< został zaktualizowany.")
 
 
-cache_dir = "tmp/tydzien2_5"
+cache_dir = "../tmp/tydzien2_5"
 page_id = "arxiv-draft"
 file_name = "arxiv-draft.html"
 

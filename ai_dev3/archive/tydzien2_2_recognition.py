@@ -21,7 +21,7 @@ def extract_text_from_image(image_path):
 
 if __name__ == "__main__":
     # Ścieżka do obrazu mapy
-    image_path = "tmp/mapa.jpeg"
+    image_path = "../tmp/mapa.jpeg"
 
     # Ekstrakcja tekstu
     result = extract_text_from_image(image_path)

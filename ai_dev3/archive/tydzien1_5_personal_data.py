@@ -12,7 +12,7 @@ import re
 # Load environment variables from a standard .env file
 load_dotenv()
 # Create directory if it doesn't exist
-os.makedirs('tmp', exist_ok=True)
+os.makedirs('../tmp', exist_ok=True)
 
 # Retrieve the API key from the environment variable
 api_key = os.getenv('AI_DEV3_API_KEY')
@@ -32,7 +32,7 @@ if response.status_code != 200:
     raise Exception(f"Failed to fetch data: {response.status_code} - {response.text}")
 
 # Write the data to the file
-with open('tmp/personal_data.txt', 'w', encoding='utf-8') as file:
+with open('../tmp/personal_data.txt', 'w', encoding='utf-8') as file:
     file.write(response.text)
 
 data_to_protect = response.text

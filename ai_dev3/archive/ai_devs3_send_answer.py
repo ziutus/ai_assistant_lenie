@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-file_for_check = 'tmp/json.json'
+file_for_check = '../tmp/json.json'
 
 with open(file_for_check, 'r', encoding='utf-8') as file:
     json_for_check = json.load(file)
@@ -16,7 +16,7 @@ with open(file_for_check, 'r', encoding='utf-8') as file:
 pprint(len(json_for_check["test-data"]))
 # pprint(json_for_check["test-data"])
 
-file_path = 'tmp/json_answer.json'
+file_path = '../tmp/json_answer.json'
 
 with open(file_path, 'r', encoding='utf-8') as file:
     json_answer = json.load(file)
