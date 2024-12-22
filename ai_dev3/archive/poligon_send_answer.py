@@ -14,7 +14,7 @@ json_data = {
 }
 
 
-file_path = 'tmp/poligon_dane.txt'
+file_path = '../tmp/poligon_dane.txt'
 
 
 
