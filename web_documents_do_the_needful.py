@@ -33,6 +33,10 @@ if __name__ == '__main__':
     s3_bucket = os.getenv("AWS_S3_WEBSITE_CONTENT")
     print(f"Using >{model}< for embedding")
 
+    if not s3_bucket:
+        print("The S3 bucket for text files is not set, exiting.")
+        exit(1)
+
     print("AWS REGION: ", os.getenv("AWS_REGION"))
     queue_url = os.getenv("AWS_QUEUE_URL_ADD")
 
@@ -142,7 +146,7 @@ if __name__ == '__main__':
 
             if website_document_type == "webpage" and s3_uuid:
                 try:
-                    print(f"* Reading text of article from S3 bucket and file: {s3_uuid}.txt", end=" ")
+                    print(f"* Reading text of article from S3 bucket >{s3_bucket}< and file: >{s3_uuid}.txt<", end=" ")
                     obj = s3.get_object(Bucket=s3_bucket, Key=f"{s3_uuid}.txt")
                     content = obj['Body'].read().decode('utf-8')
                     web_doc = StalkerWebDocumentDB(url)
