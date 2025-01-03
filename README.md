@@ -11,7 +11,7 @@ Lenie enables users to:
 
 Lenie's functionalities represent an advanced integration of AI technology with users' daily needs, providing efficient data management and deeper content analysis and utilization. However, similar to the literary character who brings inevitable consequences of her existence, Lenie raises questions about the boundaries of technology and our own control over it. It is both a fascinating and daunting tool that requires a conscious approach and responsible usage to maximize benefits and minimize risks associated with the increasing role of artificial intelligence in our lives.
 
-This is side project, and I'm planning to have first version of this application on September 2024. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
+This is side project, and I'm planning to have the first version of this application in May 2025. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
 
 ## Used technologies
 In this project I'm using:
