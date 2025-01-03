@@ -1,0 +1,14 @@
+Resources:
+  LenieAIDevelopersGroup:
+    Type: AWS::IdentityStore::Group
+    Properties:
+      DisplayName: "Lenie-Developers"
+      Description: "Group for persons who develop Lenie-ai solution"
+      IdentityStoreId: d-9067dcf0bd
+  ZiutusInDevelopersGroup:
+    Type: AWS::IdentityStore::GroupMembership
+    Properties:
+      GroupId: !GetAtt LenieAIDevelopersGroup.GroupId
+      IdentityStoreId: d-9067dcf0bd
+      MemberId:
+        UserId: 34a83478-30c1-7080-1653-d9d60d3d03a3

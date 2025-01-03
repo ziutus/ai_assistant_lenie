@@ -1,0 +1,60 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  DenyOutsideIrelandPolicy:
+    Type: 'AWS::Organizations::Policy'
+    Properties:
+      Content: |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "DenyOutsideIreland",
+              "Effect": "Deny",
+              "NotAction": [
+                "aws-portal:*",
+                "lightsail:*",
+                "iam:*",
+                "sts:*",
+                "health:*",
+                "support:*",
+                "budgets:*",
+                "cloudfront:*",
+                "organizations:*",
+                "trustedadvisor:*",
+                "shield:*",
+                "waf:*",
+                "waf-regional:*",
+                "cloudformation:*",
+                "route53:*",
+                "route53domains:*",
+                "tag:*",
+                "resource-groups:*",
+                "ssm:ListAssociations",
+                "s3:Get*",
+                "s3:List*",
+                "glacier:List*",
+                "glacier:Describe*",
+                "glacier:Get*",
+                "acm:*",
+                "aws-portal:*",
+                "budgets:*",
+                "ce:*",
+                "cur:*"
+              ],
+              "Resource": "*",
+              "Condition": {
+                "StringNotEquals": {
+                  "aws:RequestedRegion": [
+                    "eu-west-1",
+                    "eu-west-2",
+                    "eu-central-1",
+                    "us-east-1"
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      Description: "Deny actions outside the specified regions except for some services."
+      Name: "DenyOutsideIrelandPolicy"
+      Type: "SERVICE_CONTROL_POLICY"

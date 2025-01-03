@@ -1,0 +1,19 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Resources:
+  BlackAllScpPolicy:
+    Type: 'AWS::Organizations::Policy'
+    Properties:
+      Content: |
+        {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Deny",
+              "Action": "*",
+              "Resource": "*"
+            }
+          ]
+        }
+      Description: "Deny All actions for blocked accounts"
+      Name: "BlockAll"
+      Type: "SERVICE_CONTROL_POLICY"
