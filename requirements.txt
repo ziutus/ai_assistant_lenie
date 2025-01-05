@@ -23,9 +23,9 @@ beautifulsoup4==4.12.3
     #   markdownify
 blinker==1.9.0
     # via flask
-boto3==1.35.86
+boto3==1.35.91
     # via -r requirements.piptools
-botocore==1.35.86
+botocore==1.35.91
     # via
     #   -r requirements.piptools
     #   aws-xray-sdk
@@ -38,7 +38,7 @@ certifi==2024.12.14
     #   requests
 cfgv==3.4.0
     # via pre-commit
-charset-normalizer==3.4.0
+charset-normalizer==3.4.1
     # via requests
 click==8.1.8
     # via flask
@@ -57,7 +57,7 @@ filelock==3.16.1
     # via virtualenv
 filetype==1.2.0
     # via -r requirements.piptools
-firecrawl-py==1.6.8
+firecrawl-py==1.8.0
     # via -r requirements.piptools
 flask==3.1.0
     # via
@@ -74,7 +74,7 @@ httpx==0.28.1
     #   assemblyai
     #   langfuse
     #   openai
-identify==2.6.3
+identify==2.6.4
     # via pre-commit
 idna==3.10
     # via
@@ -94,7 +94,7 @@ jmespath==1.0.1
     # via
     #   boto3
     #   botocore
-langfuse==2.57.1
+langfuse==2.57.4
     # via -r requirements.piptools
 markdownify==0.14.1
     # via -r requirements.piptools
@@ -125,6 +125,7 @@ psycopg2-binary==2.9.10
 pydantic==2.10.4
     # via
     #   assemblyai
+    #   firecrawl-py
     #   langfuse
     #   openai
 pydantic-core==2.27.2
@@ -179,7 +180,7 @@ urllib3==2.3.0
     #   -r requirements.piptools
     #   botocore
     #   requests
-virtualenv==20.28.0
+virtualenv==20.28.1
     # via pre-commit
 websockets==14.1
     # via
