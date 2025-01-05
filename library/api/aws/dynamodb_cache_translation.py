@@ -26,7 +26,8 @@ def cache_get_translation(entry_id: str, provider: str) -> str | None:
                 TableName='lenie_cache_translation',
             )
 
-            subsegment.put_metadata('response', response)
+            if subsegment and response:
+                subsegment.put_metadata('response', response)
 
             if 'Item' in response:
                 return response['Item']
@@ -50,7 +51,8 @@ def cache_write_translation(query: str, response: str, provider: str) -> None:
             'response': {'S': response}
         }
 
-        subsegment.put_metadata('Item', item)
+        if subsegment and item:
+            subsegment.put_metadata('Item', item)
 
         dynamodb.put_item(
             Item=item,
