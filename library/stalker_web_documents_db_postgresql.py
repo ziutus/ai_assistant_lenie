@@ -67,7 +67,7 @@ class WebsitesDBPostgreSQL:
     def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL",
                  search_in_documents=None, count=False, project=None) -> \
             list[
-                dict[str, str, str, str, str]]:
+                dict[str, str, str, str, str, str, str, str, str]]:
         offset = offset * limit
 
         print(f"count: {count}")
@@ -75,7 +75,7 @@ class WebsitesDBPostgreSQL:
         if count:
             base_query = "SELECT count(id) FROM public.web_documents"
         else:
-            base_query = "SELECT id, url, title, document_type, created_at, document_state, document_state_error, note, project FROM public.web_documents"
+            base_query = "SELECT id, url, title, document_type, created_at, document_state, document_state_error, note, project, s3_uuid FROM public.web_documents"
 
         order_by = "ORDER BY created_at DESC"
         limit_offset = f"LIMIT {int(limit)} OFFSET {int(offset)}"
@@ -136,7 +136,8 @@ class WebsitesDBPostgreSQL:
                             "document_state": line[5],
                             "document_state_error": line[6],
                             "note": line[7],
-                            "project": line[8]
+                            "project": line[8],
+                            "s3_uuid": line[9],
                         })
 
                     return result
