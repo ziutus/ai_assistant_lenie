@@ -18,6 +18,7 @@ pypdf
 firecrawl-py
 filetype
 markdownify
+markitdown
 unidecode
 neo4j
 langfuse
