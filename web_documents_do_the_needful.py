@@ -134,7 +134,7 @@ if __name__ == '__main__':
         s3_uuid = page_info[3]
         progress = round((website_nb / websites_data_len) * 100)
 
-        print(f"Processing >{website_document_type}< {website_id} ({website_nb} from {websites_data_len} {progress})%:"
+        print(f"Processing >{website_document_type}< {website_id} ({website_nb} from {websites_data_len} {progress}%):"
               f" {url}")
 
         if aws_xray_enabled:
