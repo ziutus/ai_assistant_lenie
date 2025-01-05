@@ -1,12 +1,7 @@
-import json
-import os
-
-import boto3
-
 import library.api.aws.bedrock_ask
 import library.api.openai.openai_my
-from ai_dev3.tydzien3_5_answer import response
 from library.ai_response import AiResponse
+from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
 
 
 def ai_model_need_translation_to_english(model: str) -> bool:
@@ -14,6 +9,8 @@ def ai_model_need_translation_to_english(model: str) -> bool:
         return True
     elif model in ["gpt-4", "gpt-3.5-turbo"]:
         return True
+    elif model in ["Bielik-11B-v2.3-Instruct"]:
+        return False
     else:
         raise Exception(f"DEBUG: Error, no model info for text {model}")
 
@@ -67,6 +64,8 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
 
         # ai_response.response_text = response
         return ai_response
+    elif model in ["Bielik-11B-v2.3-Instruct"]:
+        return sherlock_get_completion(query, model=model)
     else:
         raise Exception(f"ERROR: Unknown model {model}")
 
