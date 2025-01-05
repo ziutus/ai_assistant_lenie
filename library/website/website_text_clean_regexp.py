@@ -41,13 +41,13 @@ site_rules = {
         ]
     },
     "https://www.onet.pl/styl-zycia/newsweek": {
-        "remove_before": [r'\b([0-2]?[0-9]|3[0-1]) (stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia) (\d{4}), ([0-1]?[0-9]|2[0-3]):([0-5][0-9])\b,\s(\d+)\nLubię to'],
+        "remove_before": [r'\b([0-2]?[0-9]|3[0-1]) (stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia) (\d{4}), ([0-1]?[0-9]|2[0-3]):([0-5][0-9])\b,\s(\d+)\nLubię to', r'(\d+)\smin\sczytania'],
         "remove_after": [r"Dziękujemy, że przeczytałaś/eś nasz artykuł do końca. Subskrybuj Onet Premium."],
         "remove_string": ["Dalszy ciąg materiału pod wideo"],
         "remove_string_regexp": []
     },
     "https://www.onet.pl/informacje/": {
-        "remove_before": [r"ięcej\stakich\shistorii\sznajdziesz\sna\sstronie\sgłównej\sOnetu", r"To jest treść premium dostępna w ramach pakietu"],
+        "remove_before": [r"ięcej\stakich\shistorii\sznajdziesz\sna\sstronie\sgłównej\sOnetu", r"To jest treść premium dostępna w ramach pakietu", r'Lubię to'],
         "remove_after": [r"Dziękujemy,\sże\sprzeczytałaś/eś\snasz\sartykuł\sdo\skońca"],
         "remove_string": ["reklamareklama", "Rozmowę można także obejrzeć w formie wideo:"],
         "remove_string_regexp": [r"reklama\s*\n"]
