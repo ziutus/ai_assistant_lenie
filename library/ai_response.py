@@ -10,3 +10,6 @@ class AiResponse:
         self.input_tokens = None
         self.output_tokens = None
         self.total_tokens = None
+        self.prompt_tokens = None
+        self.completion_tokens = None
+        self.id = None
