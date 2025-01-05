@@ -36,6 +36,15 @@ def remove_text_regex(text: str, regex: str) -> str:
     return re.sub(regex, "", text)
 
 
+def remove_matching_lines(input_text):
+    # Wyrażenie regularne dopasowujące podany format
+    pattern = r'^\*\s\[\*\*.*\*\*\]\(https?://[^\)]+\)$'
+    # Filtruj linie, które nie pasują do wzorca
+    cleaned_lines = [line for line in input_text.splitlines() if not re.match(pattern, line)]
+    # Połącz linie z powrotem w tekst
+    return '\n'.join(cleaned_lines)
+
+
 def split_text_for_embedding(text, paragraph_titles=[], max_words_in_line=300, max_characters_in_line=1000):
     sentences2 = []
     paragraphs = text.split("\n\n")
