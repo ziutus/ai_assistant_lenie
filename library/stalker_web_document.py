@@ -28,6 +28,8 @@ class StalkerDocumentStatus(Enum):
     READY_FOR_EMBEDDING = 9
     EMBEDDING_EXIST = 10
     DOCUMENT_INTO_DATABASE = 11
+    NEED_CLEAN_TEXT = 12
+    NEED_CLEAN_MD = 13
 
 
 # This errors status are also defined in Postgresql table: document_status_error_types
@@ -64,7 +66,8 @@ class StalkerWebDocument:
                  author: str | None = None,
                  note: str | None = None,
                  s3_uuid: str | None = None,
-                 project: str | None = None
+                 project: str | None = None,
+                 text_md: str | None = None
                  ):
 
         self.id: int | None = wb_id
@@ -97,6 +100,7 @@ class StalkerWebDocument:
         self.note: str | None = note
         self.s3_uuid: str | None = s3_uuid
         self.project: str | None = project
+        self.text_md: str | None = text_md
 
     def __str__(self):
         data = {
@@ -124,7 +128,8 @@ class StalkerWebDocument:
             "author": self.author,
             "note": self.note,
             "s3_uuid": self.s3_uuid,
-            "s3_project": self.project
+            "s3_project": self.project,
+            "text_md": self.text_md,
         }
         result = json.dumps(data, indent=4)
 
@@ -167,6 +172,10 @@ class StalkerWebDocument:
             self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
         elif document_state == "DOCUMENT_INTO_DATABASE":
             self.document_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE
+        elif document_state == "NEED_CLEAN_TEXT":
+            self.document_state = StalkerDocumentStatus.NEED_CLEAN_TEXT
+        elif document_state == "NEED_CLEAN_MD":
+            self.document_state = StalkerDocumentStatus.NEED_CLEAN_MD
         else:
             raise ValueError("document_state must be one of the valid StalkerDocumentStatus values")
 
