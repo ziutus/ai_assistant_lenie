@@ -1,6 +1,6 @@
 import json
 import os
-
+from markitdown import MarkItDown
 import boto3
 from dotenv import load_dotenv
 
@@ -9,7 +9,8 @@ from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentT
 # Importacja własnych modułów
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.website.website_download_context import download_raw_html, webpage_raw_parse
+from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
+from library.text_functions import remove_before_regex, remove_last_occurrence_and_after, remove_matching_lines
 
 # Ładowanie zmiennych środowiskowych
 load_dotenv()
@@ -153,6 +154,40 @@ if __name__ == '__main__':
                     web_doc.text = content
                     print('[DONE]')
 
+                    print(f"* Reading text of article from S3 bucket >{s3_bucket}< and file: >{s3_uuid}.html<", end=" ")
+                    obj = s3.get_object(Bucket=s3_bucket, Key=f"{s3_uuid}.html")
+                    content = obj['Body'].read().decode('utf-8')
+
+                    page_file = f"tmp/{s3_uuid}.html"
+                    with open(f"{page_file}", 'w', encoding="utf-8") as file:
+                        file.write(content)
+
+                    md = MarkItDown()
+                    result = md.convert(page_file)
+
+                    md_file = f"tmp/{s3_uuid}.md"
+                    with open(f"{md_file}", 'w', encoding="utf-8") as file:
+                        file.write(result.text_content)
+
+                    md_clean_file = f"tmp/{s3_uuid}_clean.md"
+                    md_cleaned = result.text_content
+
+                    md_cleaned = webpage_text_clean(url, md_cleaned)
+
+                    # md_cleaned = remove_before_regex(md_cleaned, r"min czytania")
+                    # md_cleaned = remove_before_regex(md_cleaned, r"Lubię to")
+                    # md_cleaned = remove_last_occurrence_and_after(md_cleaned,
+                    #                                               r"\*Dziękujemy, że przeczytałaś/eś nasz artykuł do końca.")
+                    #
+                    # md_cleaned = remove_matching_lines(md_cleaned)
+
+                    web_doc.text_md = md_cleaned
+
+                    with open(f"{md_clean_file}", 'w', encoding="utf-8") as file:
+                        file.write(md_cleaned)
+
+                    print('[DONE]')
+
                     web_doc.analyze()
                     web_doc.validate()
 
@@ -188,6 +223,10 @@ if __name__ == '__main__':
 
                     web_doc.analyze()
                     web_doc.validate()
+
+                    if web_doc.document_state == StalkerDocumentStatus.URL_ADDED and web_doc.document_type == StalkerDocumentType.link:
+                        web_doc.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION
+
                     web_doc.save()
 
                 except Exception as e:
@@ -208,7 +247,23 @@ if __name__ == '__main__':
 
         website_nb += 1
 
-    print("Step 3: For youtube video setup status ready for translation if transcription is done")
+    print("Step 3: Making correction of text and markdown entries")
+    markdown_correction_needed = websites.get_list(document_state='NEED_CLEAN_MD')
+    markdown_correction_needed_len = len(markdown_correction_needed)
+    document_nb = 1
+    print(f"entries to correct: {markdown_correction_needed_len}")
+    for document in markdown_correction_needed:
+        progress = round((document_nb / markdown_correction_needed_len) * 100)
+        web_doc = StalkerWebDocumentDB(document_id=document['id'])
+        print(f"Processing  {web_doc.id} {web_doc.document_type.name} ({document_nb} from {markdown_correction_needed_len} "
+              f"{progress}%): "
+              f"{web_doc.url}")
+        web_doc.text_md = webpage_text_clean(web_doc.url, web_doc.text_md)
+        web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+        web_doc.save()
+
+
+    print("Step 4: For youtube video setup status ready for translation if transcription is done")
     transcirption_done = websites.get_transcription_done()
     transcirption_done_len = len(transcirption_done)
     website_nb = 1
@@ -223,7 +278,7 @@ if __name__ == '__main__':
         web_doc.save()
         website_nb += 1
 
-    print("Step 4: TRANSLATION")
+    print("Step 5: TRANSLATION")
     translation_needed = websites.get_ready_for_translation()
     websites_data_len = len(translation_needed)
     print(f"entries to translation: {websites_data_len}")
@@ -240,7 +295,7 @@ if __name__ == '__main__':
         web_doc.save()
         website_nb += 1
 
-    print("Step 5: adding embedding")
+    print("Step 6: adding embedding")
     embedding_needed = websites.get_ready_for_embedding()
     website_nb = 1
     embedding_needed_len = len(embedding_needed)
