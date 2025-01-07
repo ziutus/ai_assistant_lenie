@@ -33,6 +33,17 @@ def compare_language(language_1: str, language_2: str):
         return True
     return False
 
+"""
+TODO: add limits for asemblay.ai upload files (check).
+      See: https://www.assemblyai.com/docs/concepts/faq 
+      
+      Currently, the maximum file size that can be submitted to the /v2/transcript endpoint for transcription is 5GB, and the maximum duration is 10 hours.
+
+The maximum file size for a local file uploaded to the API via the /v2/upload endpoint is 2.2GB.
+
+"""
+
+
 
 if __name__ == '__main__':
     cache_dir = os.getenv("CACHE_DIR")
@@ -51,7 +62,6 @@ if __name__ == '__main__':
         xray_recorder.configure(service='lenie_ai')
         patch_all()  # Automatyczne łatanie wszystkich bibliotek
 
-    if aws_xray_enabled:
         xray_recorder.begin_segment('MainSegment')  # Rozpoczęcie głównego segmentu
 
     if not os.path.exists(cache_dir):
@@ -76,13 +86,13 @@ if __name__ == '__main__':
             logging.error(youtube_file.error)
             continue
 
-        if web_document.document_state == StalkerDocumentStatus.URL_ADDED:
+        if web_document.document_state == StalkerDocumentStatus.URL_ADDED and youtube_file.can_pytube:
             logging.info("updating data in database about documents")
-            web_document.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION
             web_document.title = youtube_file.title
             web_document.url = youtube_file.url
             web_document.original_id = youtube_file.video_id
             web_document.text = youtube_file.text
+            web_document.text_raw = youtube_file.text
             web_document.document_type = StalkerDocumentType.youtube
             web_document.document_length = youtube_file.length_seconds
             web_document.save()
@@ -90,6 +100,10 @@ if __name__ == '__main__':
         logging.info(f"video ID: {youtube_file.video_id}")
         # description = youtube_file.description
         # logging.info(f"DEBUG description: {description}")
+
+        logging.info("Setup status NEED_TRANSCRIPTION")
+        web_document.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION
+        web_document.save()
 
         if not web_document.language:
             logging.info(
@@ -132,6 +146,9 @@ if __name__ == '__main__':
                             web_document.text = youtube_titles_to_text(transcript_text)
                             web_document.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
                             web_document.save()
+
+                    web_document.text_raw = web_document.text
+                    web_document.save()
 
             except TranscriptsDisabled:
                 logging.info(f"The video at {web_document.url} has its transcripts disabled.")

@@ -3,6 +3,7 @@ from pprint import pprint
 from urllib.parse import urlparse
 
 from pytube import YouTube
+from yt_dlp import YoutubeDL
 
 from library.text_transcript import text_split_with_chapters
 
@@ -21,6 +22,10 @@ class StalkerYoutubeFile:
 
         self.valid: bool = True
         self.error = None
+        self.private = False
+
+        self.can_pytube: bool = True
+        self.can_YoutubeDL: bool = True
 
         self._yt = YouTube(youtube_url)
 
@@ -32,13 +37,20 @@ class StalkerYoutubeFile:
         if media_type == "video":
             self.filename = f'{self._yt.video_id}.mp4'
 
-        self.title = f"{self._yt.title}"
+        if self._yt.vid_info['playabilityStatus']['status'] == 'LOGIN_REQUIRED':
+            # self.error = "ERROR: YouTube video is login protected"
+            self.can_pytube: bool = False
+            self.private = True
+
         self.text = None
-        self.author = f"{self._yt.author}"
-        self.description = f"{self._yt.description}"
         self.video_id = self._yt.video_id
-        self.length_seconds = self._yt.length
-        self.length_minutes = round(self._yt.length / 60, 2)
+
+        if self.can_pytube:
+            self.title = f"{self._yt.title}"
+            self.author = f"{self._yt.author}"
+            self.description = f"{self._yt.description}"
+            self.length_seconds = self._yt.length
+            self.length_minutes = round(self._yt.length / 60, 2)
 
         self.directory = cache_directory
         self.type = None
@@ -95,16 +107,29 @@ class StalkerYoutubeFile:
             raise Exception(f"Directory {self.directory} doesn't exist")
 
         if not os.path.exists(f"{self.directory}/{self.filename}") or force:
-            yt_stream = self._yt.streams.first()
-            if yt_stream:
-                self._yt.streams.first().download(max_retries=3, output_path=self.directory,
-                                                  filename=self.filename,
-                                                  skip_existing=False)
-                self.type = self._yt.streams.first().type
+            if self.can_pytube:
+                yt_stream = self._yt.streams.first()
+                if yt_stream:
+                    self._yt.streams.first().download(max_retries=3, output_path=self.directory,
+                                                      filename=self.filename,
+                                                      skip_existing=False)
+                    self.type = self._yt.streams.first().type
+                else:
+                    self.valid = False
+                    self.error = "Can't find stream for this youtube video"
+                    raise Exception("Can't find stream for this youtube video")
+            elif self.can_YoutubeDL:
+                ydl_opts = {
+                    'cookiefile': 'cookies.txt',
+                    'outtmpl': f"{self.directory}/{self.filename}",
+                }
+
+                with YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([self.url])
             else:
                 self.valid = False
-                self.error = "Can't find stream for this youtube video"
-                raise Exception("Can't find stream for this youtube video")
+                self.error = "Can't download youtube video"
+                raise Exception("Can't download youtube video")
 
         # TODO: Write metadata for youtube file
         # if not os.path.exists(f"{self.directory}/{self.video_id}.json") or force:
