@@ -19,3 +19,5 @@
 /infra/kubernetes/lenie/raw/server/lenie_3_server_secrets.yaml
 /pre-hool.log
 /cookies.txt
+/infra/aws/serverless/lambdas/*/package/
+/infra/aws/serverless/lambdas/*/*.zip
