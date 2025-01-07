@@ -4,15 +4,36 @@ from library.ai_response import AiResponse
 from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
 
 
+# https://huggingface.co/speakleash/Bielik-11B-v2.3-Instruct
+
+
+
+models = {
+    "amazon.titan-tg1-large" : {"max_tokens": 32000},
+    "gpt-4" : {},
+    "gpt-3.5-turbo-16k" : {"max_tokens": 16000},
+    "gpt-3.5-turbo" : {"max_tokens": 8000},
+    "gpt-4o" : {},
+    "gpt-4o-mini" : {},
+    "Bielik-11B-v2.3-Instruct" : {"need_translation": False},
+    "anthropic.claude-3-haiku-20240307-v1:0": {}
+}
+
+
+def get_all_models_info():
+    return {
+        "amazon.titan-tg1-large": {"need_translation": True},
+        "gpt-4": {"need_translation": True},
+        "gpt-3.5-turbo": {"need_translation": True},
+        "Bielik-11B-v2.3-Instruct": {"need_translation": False},
+    }
+
 def ai_model_need_translation_to_english(model: str) -> bool:
-    if model in ['amazon.titan-tg1-large']:
-        return True
-    elif model in ["gpt-4", "gpt-3.5-turbo"]:
-        return True
-    elif model in ["Bielik-11B-v2.3-Instruct"]:
-        return False
-    else:
-        raise Exception(f"DEBUG: Error, no model info for text {model}")
+    models_info = get_all_models_info()
+    if model in models_info:
+        return models_info[model]["need_translation"]
+
+    raise Exception(f"DEBUG: Error, no model info for text {model}")
 
 
 def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: int = 4096,
