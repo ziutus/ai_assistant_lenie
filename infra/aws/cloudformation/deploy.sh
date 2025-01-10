@@ -43,7 +43,7 @@ show_help() {
   This script can also works with changesets.
 
   Example usage:
-   $0 -r us-east-1
+   $0 -r us-east-1 -r us-east-1 -p lenie -s dev -t
 
    "
    exit 1
