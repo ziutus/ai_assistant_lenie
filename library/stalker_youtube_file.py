@@ -27,9 +27,28 @@ class StalkerYoutubeFile:
         self.can_pytube: bool = True
         self.can_YoutubeDL: bool = True
 
+        self.title = None
+        self.author = None
+        self.description = None
+        self.length_seconds = None
+        self.length_minutes = None
+
+
         self._yt = YouTube(youtube_url)
 
-        # self.video_details = self._yt.video_details
+        self.filename = None
+        self.type = None
+        self.directory = None
+        self.video_id = None
+        self.text = None
+        self.transcript_file = None
+        self.summary_filename = None
+        self.text_file = None
+        self.transcription_done: bool = False
+        self.transcript_string: str | None = None
+
+        self.directory = cache_directory
+        self.chapters_string = chapters_string
 
         if not self._yt:
             raise Exception("Wrong url")
@@ -63,13 +82,14 @@ class StalkerYoutubeFile:
         self.summary_filename = None
         self.text_file = None
 
-        self.path = self.directory + "/" + self.filename
+        self.path = f"{self.directory}/{self.filename}" if self.directory and self.filename else None
 
-        self.transcript_file = self.directory + "/" + self.video_id + "_transcription.json"
-        self.summary_filename = self.directory + "/" + self.video_id + "_summary.txt"
-        self.text_file = self.directory + "/" + self.video_id + "_text.txt"
+        if self.video_id:
+            self.transcript_file = self.directory + "/" + self.video_id + "_transcription.json"
+            self.summary_filename = self.directory + "/" + self.video_id + "_summary.txt"
+            self.text_file = self.directory + "/" + self.video_id + "_text.txt"
 
-        if os.path.exists(self.text_file):
+        if self.text_file and os.path.exists(self.text_file):
             with open(self.text_file, 'r', encoding='utf-8') as file:
                 self.text = file.read()
 
