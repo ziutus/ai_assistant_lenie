@@ -65,7 +65,7 @@ class WebsitesDBPostgreSQL:
         self.conn.close()
 
     def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL",
-                 search_in_documents=None, count=False, project=None) -> \
+                 search_in_documents=None, count=False, project=None, ai_summary_needed: bool=None, ai_correction_needed: bool=None) -> \
             list[
                 dict[str, str, str, str, str, str, str, str, str]]:
         offset = offset * limit
@@ -91,6 +91,11 @@ class WebsitesDBPostgreSQL:
         if project:
             where_clauses.append(f"document_state = '{project}'")
 
+        if ai_correction_needed:
+            where_clauses.append(f"ai_correction_needed = '{ai_correction_needed}'")
+
+        if ai_summary_needed:
+            where_clauses.append(f"ai_summary_needed = '{ai_summary_needed}'")
 
         if search_in_documents:
             search_clauses = [f"text LIKE '%{search_in_documents}%'",
