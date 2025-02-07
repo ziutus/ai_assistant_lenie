@@ -205,43 +205,44 @@ pipeline {
     //    }
     //}
 
+    stage('Python tests') {
+        parallel {
 
-    parallel {
-
-        stage('Run Pytest') {
-            agent {
-                label 'aws-ec2-runner' // Wskazanie runnera w Jenkins odpowiadającego GitLabowi (np. AWS)
-            }
-            steps {
-                script {
-                    // Instalacja wymaganych zależności Python
-                    echo 'Installing requirements...'
-                    sh """
-                    pip install -r requirements.txt
-                    """
-
-                    // Tworzenie katalogu na wyniki jeżeli nie istnieje
-                    echo 'Ensuring results directory exists...'
-                    sh """
-                    mkdir -p pytest-results
-                    """
-
-                    // Uruchomienie testów i generacja raportu w HTML
-                    echo 'Running Pytest...'
-                    sh """
-                    pytest --self-contained-html --html=pytest-results/report.html || true
-                    """
-
-
+            stage('Run Pytest') {
+                agent {
+                    label 'aws-ec2-runner' // Wskazanie runnera w Jenkins odpowiadającego GitLabowi (np. AWS)
                 }
+                steps {
+                    script {
+                        // Instalacja wymaganych zależności Python
+                        echo 'Installing requirements...'
+                        sh """
+                        pip install -r requirements.txt
+                        """
 
-                // Zrzucenie katalogu wyników do logów Jenkins
-                echo 'Archiving test results...'
-                archiveArtifacts artifacts: 'pytest-results/**/*', allowEmptyArchive: true
-            }
-            post {
-                always {
-                    echo 'Pytest stage completed. Results saved as artifacts.'
+                        // Tworzenie katalogu na wyniki jeżeli nie istnieje
+                        echo 'Ensuring results directory exists...'
+                        sh """
+                        mkdir -p pytest-results
+                        """
+
+                        // Uruchomienie testów i generacja raportu w HTML
+                        echo 'Running Pytest...'
+                        sh """
+                        pytest --self-contained-html --html=pytest-results/report.html || true
+                        """
+
+
+                    }
+
+                    // Zrzucenie katalogu wyników do logów Jenkins
+                    echo 'Archiving test results...'
+                    archiveArtifacts artifacts: 'pytest-results/**/*', allowEmptyArchive: true
+                }
+                post {
+                    always {
+                        echo 'Pytest stage completed. Results saved as artifacts.'
+                    }
                 }
             }
         }
