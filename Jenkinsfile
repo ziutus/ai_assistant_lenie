@@ -5,6 +5,7 @@ pipeline {
     }
     environment {
         INSTANCE_ID = "${params.INSTANCE_ID}" // Dla prostoty dostępu
+        AWS_REGION = 'us-east-1'
     }
 
     stages {
@@ -22,7 +23,8 @@ pipeline {
                             aws ec2 describe-instances \
                                 --instance-ids ${instanceID} \
                                 --query "Reservations[0].Instances[0].State.Name" \
-                                --output text
+                                --output text \
+                                --region ${env.AWS_REGION}
                             """,
                             returnStdout: true
                         ).trim()
@@ -34,10 +36,10 @@ pipeline {
                         } else if (instanceState != "running") {
                             echo "Starting AWS instance..."
                             sh """
-                            aws ec2 start-instances --instance-ids ${instanceID}
+                            aws ec2 start-instances --instance-ids ${instanceID} --region ${env.AWS_REGION}
                             """
                             sh """
-                            aws ec2 wait instance-running --instance-ids ${instanceID}
+                            aws ec2 wait instance-running --instance-ids ${instanceID} --region ${env.AWS_REGION}
                             """
                             echo "AWS instance ${instanceID} is now running."
                         } else {
@@ -167,10 +169,10 @@ pipeline {
                 try {
                     // Zatrzymaj instancję EC2
                     sh """
-                    aws ec2 stop-instances --instance-ids ${env.INSTANCE_ID}
+                    aws ec2 stop-instances --instance-ids ${env.INSTANCE_ID} --region ${env.AWS_REGION}
                     """
                     sh """
-                    aws ec2 wait instance-stopped --instance-ids ${env.INSTANCE_ID}
+                    aws ec2 wait instance-stopped --instance-ids ${env.INSTANCE_ID} --region ${env.AWS_REGION}
                     """
                     echo "AWS instance ${env.INSTANCE_ID} has been successfully stopped."
                 } catch (err) {
