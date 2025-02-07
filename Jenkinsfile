@@ -175,41 +175,6 @@ pipeline {
             }
     }
 
-
-
-    //stage('Run OSV Scanner') {
-    //    agent {
-    //        label 'aws-ec2-runner' // Agregat, który był używany w twoich innych zadaniach
-    //    }
-    //    steps {
-    //        script {
-    //            echo 'Running OSV Scanner'
-    //
-    //            // Tworzymy katalog na wyniki skanowania
-    //            sh 'mkdir -p results/'
-    //
-    //            // Uruchamiamy OSV Scanner z zależnościami określonymi w requirements.txt
-    //            sh '''
-    //                /usr/local/bin/osv-scanner scan --lockfile requirements.txt
-    //            '''
-    //        }
-    //    }
-    //    post {
-    //        always {
-    //            // Archiwizowanie wygenerowanego raportu OSV Scanner
-    //            echo 'Archiving OSV Scanner results'
-    //            archiveArtifacts artifacts: 'results/osv_scan_results.json', fingerprint: true
-    //        }
-    //        cleanup {
-    //            // Oczyszczanie przestrzeni roboczej po zakończeniu
-    //            echo 'Cleaning up workspace after OSV scan'
-    //            cleanWs()
-    //        }
-    //    }
-    //}
-
-
-
     stage('Run TruffleHog Scan') {
         agent {
             label 'aws-ec2-runner' // Wskazuje agenta Jenkins używanego do uruchomienia kroku
@@ -244,7 +209,73 @@ pipeline {
         }
     }
 
+    //    NIE DZIAŁA, trzeba sprawdzić
+    //stage('Run OSV Scanner') {
+    //    agent {
+    //        label 'aws-ec2-runner' // Agregat, który był używany w twoich innych zadaniach
+    //    }
+    //    steps {
+    //        script {
+    //            echo 'Running OSV Scanner'
+    //
+    //            // Tworzymy katalog na wyniki skanowania
+    //            sh 'mkdir -p results/'
+    //
+    //            // Uruchamiamy OSV Scanner z zależnościami określonymi w requirements.txt
+    //            sh '''
+    //                /usr/local/bin/osv-scanner scan --lockfile requirements.txt
+    //            '''
+    //        }
+    //    }
+    //    post {
+    //        always {
+    //            // Archiwizowanie wygenerowanego raportu OSV Scanner
+    //            echo 'Archiving OSV Scanner results'
+    //            archiveArtifacts artifacts: 'results/osv_scan_results.json', fingerprint: true
+    //        }
+    //        cleanup {
+    //            // Oczyszczanie przestrzeni roboczej po zakończeniu
+    //            echo 'Cleaning up workspace after OSV scan'
+    //            cleanWs()
+    //        }
+    //    }
+    //}
 
+    stage('Run Flake8 Style Check') {
+        agent {
+            label 'aws-ec2-runner' // Agent odpowiadający tagom w GitLab-CI
+        }
+        steps {
+            script {
+                echo 'Running Flake8 Style Check'
+
+                // Instalacja pakietu flake8-html
+                echo 'Installing flake8-html'
+                sh '''
+                    python3 -m pip install --upgrade pip
+                    pip3 install flake8-html
+                '''
+
+                // Uruchomienie Flake8 i zapis raportów HTML
+                echo 'Running Flake8 and generating HTML report'
+                sh '''
+                    mkdir -p flake_reports
+                    flake8 --format=html --htmldir=flake_reports/
+                '''
+            }
+        }
+        post {
+            always {
+                // Archiwizacja wyników Flake8 jako artefakt
+                echo 'Archiving Flake8 HTML Report'
+                archiveArtifacts artifacts: 'flake_reports/**', fingerprint: true
+            }
+            cleanup {
+                echo 'Cleaning up workspace after Flake8 scan'
+                cleanWs()
+            }
+        }
+    }
 
 
 
