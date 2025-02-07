@@ -1,0 +1,3 @@
+\d*Podziel\s*się:\d*Podziel\s*się:\s*
+(?P<article_text>.*?)\s*
+Oceń\ jakość\ naszego\ artykułu:Twoja\ opinia\ pozwala\ nam\ tworzyć\ lepsze\ treści

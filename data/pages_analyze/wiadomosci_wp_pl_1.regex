@@ -1,0 +1,4 @@
+\nZaloguj\n.*
+(?P<created>\d+\s\w+\s\d+,\s\d{1,2}:\d{2})\s*ZAPISZUDOSTĘPNIJ\d+
+(?P<article_text>.*?)
+\n\*\*Czytaj\stakże:\*\*\s*\n

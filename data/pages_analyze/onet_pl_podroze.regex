@@ -1,0 +1,3 @@
+\d+\s\w+\s\d+,\s\d+:\d*\d+\smin\sczytania.*?[\d\,]+\stys\..*?Lubię\sto
+(?P<article_text>.*)
+Chcesz\sporozmawiać\?\sMasz\sciekawą\shistorię\spodróżniczą\?\sNapisz\:

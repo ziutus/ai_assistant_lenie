@@ -1,0 +1,4 @@
+\d*Podziel\s*się:\d*Podziel\s*się:\s*
+(?P<article_text>.*?)\s*
+\*\*Masz\snewsa,\szdjęcie\slub\sfilmik\?\sPrześlij\snam\sprzez\s\[dziejesie\.wp\.pl\].*
+Oceń\ jakość\ naszego\ artykułu:Twoja\ opinia\ pozwala\ nam\ tworzyć\ lepsze\ treści

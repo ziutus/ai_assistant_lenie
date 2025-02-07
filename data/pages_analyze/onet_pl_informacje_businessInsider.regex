@@ -1,0 +1,5 @@
+Kliknij,\saby\szobaczyć\sskrót\sartykułu\sprzygotowany\sprzez\sOnet\sCzat\sz\sAI.\s+Done\s
+(?P<article_text>.*)
+\*Powyższy\stekst\sjest\stłumaczeniem.*
+\*Tłum\.:\s.*\*.*
+\*Dziękujemy,\sże\sprzeczytałaś\/eś\snasz\sartykuł\sdo\skońca.
