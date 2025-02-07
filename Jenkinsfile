@@ -186,21 +186,40 @@ pipeline {
 	// }
 
 
- //        stage('[trufflehog] scan') {
-	// 		steps {
-	// 			sh '''
-	// 				docker run --rm --name trufflehog  \
-	// 					trufflesecurity/trufflehog:latest \
-	// 					 git  file://. --only-verified --bare --json 2>trufflehog_errors.txt > /zap/wrk/results/trufflehog.json
+    stage('Run TruffleHog Scan') {
+        agent {
+            label 'aws-ec2-runner' // Wskazuje agenta Jenkins używanego do uruchomienia kroku
+        }
+        steps {
+            script {
+                echo 'Running TruffleHog Secret Detection'
 
-	// 			'''
-	// 			defectDojoPublisher(artifact: '/zap/wrk/results/trufflehog.json',
-	// 			    productName: 'Juice Shop',
-	// 			    scanType: 'Trufflehog Scan',
-	// 			    engagementName: 'krzysztof@odkrywca.eu')
+                // Tworzymy katalog na raporty
+                echo 'Ensuring results directory exists...'
+                sh 'mkdir -p results/'
 
-	// 		}
-	// }
+                // Uruchamiamy kontener TruffleHog i zapisujemy logi w pliku
+                sh '''
+                    docker run --rm --name trufflehog \
+                        trufflesecurity/trufflehog:latest git file://. \
+                        --only-verified --bare 2>&1 | tee results/trufflehog.txt
+                '''
+            }
+        }
+        post {
+            always {
+                // Archiwizowanie raportu jako artefakt
+                echo 'Archiving TruffleHog report'
+                archiveArtifacts artifacts: 'results/trufflehog.txt', fingerprint: true
+            }
+            cleanup {
+                // Czyszczenie workspace po wykonaniu kroku
+                echo 'Cleaning up workspace after TruffleHog scan'
+                cleanWs()
+            }
+        }
+    }
+
 
 
 
