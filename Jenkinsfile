@@ -168,11 +168,8 @@ pipeline {
 //     }
     post {
         always {
-            agent {
-                label 'built-in' // Wymuszenie wykonania na "Built-In Node"
-            }
-            steps {
-            script {
+
+            node('built-in') {
                 echo "Attempting to stop AWS EC2 instance..."
                 try {
                     // Zatrzymaj instancję EC2
@@ -187,7 +184,6 @@ pipeline {
                     echo "Failed to stop AWS instance ${env.INSTANCE_ID}: ${err.getMessage()}"
                 }
             }
-        }
         }
     }
 }
