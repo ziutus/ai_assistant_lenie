@@ -4,6 +4,45 @@ pipeline {
         skipDefaultCheckout(true)
     }
     stages {
+         stage('Check and Start AWS Machine') {
+                steps {
+                    script {
+                        // Używaj parametru INSTANCE_ID przekazywanego do joba
+                        def instanceID = params.INSTANCE_ID
+
+                        echo "Using instance ID: ${instanceID}"
+
+                        // Logika operacji AWS
+                        def instanceState = sh(
+                            script: """
+                            aws ec2 describe-instances \
+                                --instance-ids ${instanceID} \
+                                --query "Reservations[0].Instances[0].State.Name" \
+                                --output text
+                            """,
+                            returnStdout: true
+                        ).trim()
+
+                        echo "Current state of AWS instance ${instanceID}: ${instanceState}"
+
+                        if (instanceState == "terminated") {
+                            error "AWS instance ${instanceID} has been terminated. Cannot start it. Please recreate the instance."
+                        } else if (instanceState != "running") {
+                            echo "Starting AWS instance..."
+                            sh """
+                            aws ec2 start-instances --instance-ids ${instanceID}
+                            """
+                            sh """
+                            aws ec2 wait instance-running --instance-ids ${instanceID}
+                            """
+                            echo "AWS instance ${instanceID} is now running."
+                        } else {
+                            echo "AWS instance ${instanceID} is already running."
+                        }
+                    }
+                }
+         }
+
          stage('Code checkout from GitHub') {
             steps {
                 script {
