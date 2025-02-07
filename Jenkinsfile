@@ -190,8 +190,7 @@ pipeline {
 
                 // Uruchamiamy OSV Scanner z zależnościami określonymi w requirements.txt
                 sh '''
-                    /usr/local/bin/osv-scanner scan --lockfile requirements.txt \
-                    --output-file results/osv_scan_results.json
+                    /usr/local/bin/osv-scanner scan --lockfile requirements.txt
                 '''
             }
         }
