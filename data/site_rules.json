@@ -1,0 +1,8 @@
+{    "https://www.money.pl": {
+        "remove_before" : ["\\[Wróć na\\]\\(https://www\\.wp\\.pl/\\)", "\\[Przejdź na\\]\\(https://www\\.wp\\.pl/\\)"],
+        "remove_after" : ["Oceń jakość naszego artykułu:Twoja opinia pozwala nam tworzyć lepsze treści",
+          "\\*\\*Masz newsa, zdjęcie lub filmik\\? Prześlij nam przez"],
+        "remove_string" : [],
+        "remove_string_regexp" : ["\\d+Podziel się:\\d+Podziel się:", "\\*Dalsza część artykułu pod materiałem wideo\\*"]
+    }
+}
