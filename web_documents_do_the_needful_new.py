@@ -2,6 +2,7 @@ import json
 import logging
 import os
 from pprint import pprint
+import uuid
 
 from markitdown import MarkItDown
 import boto3
@@ -10,7 +11,6 @@ import mimetypes
 import assemblyai as aai
 import requests
 
-from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 
 # Ładowanie zmiennych środowiskowych
 load_dotenv()
@@ -18,10 +18,7 @@ load_dotenv()
 from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType, \
     StalkerDocumentStatusError
 # Importacja własnych modułów
-from library.stalker_web_document_db import StalkerWebDocumentDB
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
-from library.text_functions import remove_before_regex, remove_last_occurrence_and_after, remove_matching_lines
 
 from library.ai import ai_ask
 from library.api.aws.s3_aws import s3_file_exist
@@ -33,6 +30,8 @@ from library.stalker_youtube_file import StalkerYoutubeFile
 from library.text_detect_language import text_language_detect
 from library.text_transcript import youtube_titles_split_with_chapters, youtube_titles_to_text
 from library.transcript import transcript_price
+from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
+from library.embedding import embedding_need_translation
 
 logging.basicConfig(level=logging.INFO)  # Change level as per your need
 
@@ -73,7 +72,8 @@ if __name__ == '__main__':
     if aws_xray_enabled:
         xray_recorder.begin_segment('MainSegment')  # Rozpoczęcie głównego segmentu
 
-    model = os.getenv("EMBEDDING_MODEL")
+    # model = os.getenv("EMBEDDING_MODEL")
+    embedding_model = os.getenv("EMBEDDING_MODEL")
     cache_dir = os.getenv("CACHE_DIR")
     s3_bucket = os.getenv("AWS_S3_WEBSITE_CONTENT")
     s3_bucket_transcript = os.getenv("AWS_S3_TRANSCRIPT")
@@ -81,7 +81,7 @@ if __name__ == '__main__':
     llm_model = os.getenv("AI_MODEL_SUMMARY")
     interactive: bool = False
 
-    print(f"Using >{model}< for embedding")
+    print(f"Using >{embedding_model}< for embedding")
 
     if not s3_bucket:
         print("The S3 bucket for text and html files is not set, exiting.")
@@ -575,20 +575,23 @@ if __name__ == '__main__':
 
         progress = round((website_nb / websites_data_len) * 100)
 
-        print(f"Processing  {web_doc.id} {web_doc.document_type.name} ({website_nb} from {websites_data_len} "
-              f"{progress}%): "
-              f"{web_doc.url}")
-        web_doc.translate_to_english()
+        if embedding_need_translation(model=embedding_model):
+            print(f"Processing  {web_doc.id} {web_doc.document_type.name} ({website_nb} from {websites_data_len} "
+                  f"{progress}%): "
+                  f"{web_doc.url}")
+            web_doc.translate_to_english()
+        else:
+            web_doc.set_document_state("READY_FOR_EMBEDDING")
         web_doc.save()
         website_nb += 1
 
     print("Step 6: making AI tekst correction")
     ai_correction_needed = websites.get_list(ai_correction_needed=True)
-    pprint(ai_correction_needed)
+    # pprint(ai_correction_needed)
 
     print("Step 7: making AI tekst summary")
     ai_summary_needed = websites.get_list(ai_summary_needed=True)
-    pprint(ai_summary_needed)
+    # pprint(ai_summary_needed)
 
     print("Step 8: adding embedding")
     embedding_needed = websites.get_ready_for_embedding()
@@ -602,9 +605,110 @@ if __name__ == '__main__':
         print(f"Working on ID:{web_doc.id} ({website_nb} from {embedding_needed_len} {progress}%)"
               f" {web_doc.document_type}" f"url: {web_doc.url}")
         website_nb += 1
-
-        web_doc.embedding_add(model=model)
+        web_doc.embedding_add(model=embedding_model)
         web_doc.save()
+
+
+
+    print(f"Step 9: adding missing markdown entries")
+    # TODO: sprawdzić, dlaczego jest problem z pobraniem poniższych stron
+    problems = [38, 89, 150, 157, 191, 208, 220, 311, 371, 376, 396,
+                443, 456, 465, 470, 486, 497, 499, 503, 531, 553, 581, 592, 600, 601, 602, 611, 662,
+                664, 668, 686, 694, 1013, 6735, 6863, 6878, 6883, 6904, 6913, 6918, 6923, 6926, 6930, 7025]
+
+    # 611 certificate expired
+    # problems = []
+
+    document_id_start = max(problems) if len(problems) >0  else 0
+    md_needed = websites.get_documents_md_needed(min=document_id_start)
+    print(md_needed)
+
+    s3 = boto3.client('s3')
+
+
+    for document_id in md_needed:
+        web_doc = StalkerWebDocumentDB(document_id=document_id)
+
+        if web_doc.paywall:
+            print("Need manual download")
+            continue
+
+        if web_doc.id in problems:
+            print(f"Skipping problem on {document_id}")
+            continue
+
+        print(f"Downloading {web_doc.id} {web_doc.url}, md len({len(web_doc.text_md)})")
+
+        html = download_raw_html(url=web_doc.url)
+        if not html:
+            print("empty response! [ERROR]")
+            web_doc.document_state = StalkerDocumentStatus.ERROR
+            web_doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD
+            web_doc.save()
+            continue
+
+            # Detect encoding and handle invalid bytes
+        try:
+            html = html.decode("utf-8")
+        except UnicodeDecodeError:
+            import chardet
+
+            detected_encoding = chardet.detect(html)['encoding']
+            print(f"Detected encoding: {detected_encoding}")
+            if detected_encoding:
+                html = html.decode(detected_encoding, errors="replace")
+            else:
+                print("Encoding detection failed, using replacement characters.")
+                html = html.decode("latin-1", errors="replace")
+
+        s3_uuid = str(uuid.uuid4())
+        file_name = f"{s3_uuid}.html"
+
+        try:
+            s3.put_object(Bucket=s3_bucket, Key=file_name, Body=html)
+            print(f"Successfully uploaded {file_name} to {s3_bucket}")
+        except Exception as e:
+            error_message = f"Failed to upload {file_name} to {s3_bucket}: {str(e)}"
+            print(error_message)
+            exit(1)
+
+        page_file = f"tmp/{s3_uuid}.html"
+        with open(f"{page_file}", 'w', encoding="utf-8") as file:
+            file.write(html)
+
+        md = MarkItDown()
+        result = md.convert(page_file)
+
+        md_file = f"tmp/{s3_uuid}.md"
+        with open(f"{md_file}", 'w', encoding="utf-8") as file:
+            file.write(result.text_content)
+
+        md_clean_file = f"tmp/{s3_uuid}_clean.md"
+        md_cleaned = result.text_content
+
+        # md_cleaned = webpage_text_clean(web_doc.url, md_cleaned)
+        web_doc.text_md = md_cleaned
+        web_doc.s3_uuid = s3_uuid
+
+        web_doc.save()
+
+
+    # print(f"Step 10: adding missing embedding for model >{embedding_model}")
+    # embedding_needed = websites.get_embedding_missing(embedding_model)
+    # website_nb = 1
+    # embedding_needed_len = len(embedding_needed)
+    # print(f"entries to analyze: {embedding_needed_len}")
+    # for website_id in embedding_needed:
+    #     web_doc = StalkerWebDocumentDB(document_id=website_id)
+    #
+    #     progress = round((website_nb / embedding_needed_len) * 100)
+    #     print(f"Working on ID:{web_doc.id} ({website_nb} from {embedding_needed_len} {progress}%)"
+    #           f" {web_doc.document_type}" f"url: {web_doc.url}")
+    #     website_nb += 1
+    #     web_doc.embedding_add(model=embedding_model)
+    #     web_doc.save()
+
+    websites.close()
 
     if aws_xray_enabled:
         xray_recorder.end_segment()  # Koniec głównego segmentu
