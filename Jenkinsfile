@@ -98,43 +98,7 @@ pipeline {
             }
         }
 
-    stage('Run Pytest') {
-        agent {
-            label 'aws-ec2-runner' // Wskazanie runnera w Jenkins odpowiadającego GitLabowi (np. AWS)
-        }
-        steps {
-            script {
-                // Instalacja wymaganych zależności Python
-                echo 'Installing requirements...'
-                sh """
-                pip install -r requirements.txt
-                """
 
-                // Tworzenie katalogu na wyniki jeżeli nie istnieje
-                echo 'Ensuring results directory exists...'
-                sh """
-                mkdir -p pytest-results
-                """
-
-                // Uruchomienie testów i generacja raportu w HTML
-                echo 'Running Pytest...'
-                sh """
-                pytest --self-contained-html --html=pytest-results/report.html || true
-                """
-
-
-            }
-
-            // Zrzucenie katalogu wyników do logów Jenkins
-            echo 'Archiving test results...'
-            archiveArtifacts artifacts: 'pytest-results/**/*', allowEmptyArchive: true
-        }
-        post {
-            always {
-                echo 'Pytest stage completed. Results saved as artifacts.'
-            }
-        }
-    }
 
 
     stage('Run Semgrep Security Check') {
@@ -241,42 +205,84 @@ pipeline {
     //    }
     //}
 
-    stage('Run Flake8 Style Check') {
-        agent {
-            label 'aws-ec2-runner' // Agent odpowiadający tagom w GitLab-CI
-        }
-        steps {
-            script {
-                echo 'Running Flake8 Style Check'
 
-                // Instalacja pakietu flake8-html
-                echo 'Installing flake8-html'
-                sh '''
-                    python3 -m pip install --upgrade pip
-                    pip3 install flake8-html
-                '''
+    parallel {
 
-                // Uruchomienie Flake8 i zapis raportów HTML
-                echo 'Running Flake8 and generating HTML report'
-                sh '''
-                    mkdir -p flake_reports
-                    flake8 --format=html --htmldir=flake_reports/
-                '''
+        stage('Run Pytest') {
+            agent {
+                label 'aws-ec2-runner' // Wskazanie runnera w Jenkins odpowiadającego GitLabowi (np. AWS)
+            }
+            steps {
+                script {
+                    // Instalacja wymaganych zależności Python
+                    echo 'Installing requirements...'
+                    sh """
+                    pip install -r requirements.txt
+                    """
+
+                    // Tworzenie katalogu na wyniki jeżeli nie istnieje
+                    echo 'Ensuring results directory exists...'
+                    sh """
+                    mkdir -p pytest-results
+                    """
+
+                    // Uruchomienie testów i generacja raportu w HTML
+                    echo 'Running Pytest...'
+                    sh """
+                    pytest --self-contained-html --html=pytest-results/report.html || true
+                    """
+
+
+                }
+
+                // Zrzucenie katalogu wyników do logów Jenkins
+                echo 'Archiving test results...'
+                archiveArtifacts artifacts: 'pytest-results/**/*', allowEmptyArchive: true
+            }
+            post {
+                always {
+                    echo 'Pytest stage completed. Results saved as artifacts.'
+                }
             }
         }
-        post {
-            always {
-                // Archiwizacja wyników Flake8 jako artefakt
-                echo 'Archiving Flake8 HTML Report'
-                archiveArtifacts artifacts: 'flake_reports/**', fingerprint: true
+
+        stage('Run Flake8 Style Check') {
+            agent {
+                label 'aws-ec2-runner' // Agent odpowiadający tagom w GitLab-CI
             }
-            cleanup {
-                echo 'Cleaning up workspace after Flake8 scan'
-                cleanWs()
+            steps {
+                script {
+                    echo 'Running Flake8 Style Check'
+
+                    // Instalacja pakietu flake8-html
+                    echo 'Installing flake8-html'
+                    sh '''
+                        python3 -m pip install --upgrade pip
+                        pip3 install flake8-html
+                    '''
+
+                    // Uruchomienie Flake8 i zapis raportów HTML
+                    echo 'Running Flake8 and generating HTML report'
+                    sh '''
+                        mkdir -p flake_reports
+                        flake8 --format=html --htmldir=flake_reports/
+                    '''
+                }
+            }
+            post {
+                always {
+                    // Archiwizacja wyników Flake8 jako artefakt
+                    echo 'Archiving Flake8 HTML Report'
+                    archiveArtifacts artifacts: 'flake_reports/**', fingerprint: true
+                }
+                cleanup {
+                    echo 'Cleaning up workspace after Flake8 scan'
+                    cleanWs()
+                }
             }
         }
+
     }
-
 
 
 //          stage('[ZAP] Baseline passive-scan') {
