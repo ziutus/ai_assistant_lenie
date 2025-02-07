@@ -46,6 +46,7 @@ class StalkerDocumentStatusError(Enum):
     EMBEDDING_ERROR = 10
     MISSING_TRANSLATION = 11
     TRANSLATION_ERROR = 12
+    REGEX_ERROR = 13
 
 
 class StalkerWebDocument:
@@ -205,6 +206,8 @@ class StalkerWebDocument:
             self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION
         elif document_state_error == "TRANSLATION_ERROR":
             self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR
+        elif document_state_error == "REGEX_ERROR":
+            self.document_state_error = StalkerDocumentStatusError.REGEX_ERROR
 
         else:
             raise ValueError(

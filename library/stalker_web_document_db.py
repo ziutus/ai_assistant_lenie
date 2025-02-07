@@ -68,7 +68,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                     self.note = website_data[24]
                     self.s3_uuid = website_data[25]
                     self.project = website_data[26]
-                    self.text_md = website_data[27]
+                    self.text_md = website_data[27] if website_data[27] is not None else ""
 
                     if self.ai_summary_needed is None:
                         self.ai_summary_needed = False
@@ -334,6 +334,15 @@ class StalkerWebDocumentDB(StalkerWebDocument):
 
         elif self.document_type == StalkerDocumentType.movie:
             return False
+
+    def embedding_add_by_parts(self, model, parts):
+        self.__embedding_delete(model)
+
+        for part in parts:
+            emb = embedding.get_embedding(model=model, text=part)
+            self.__embedding_add(text_embedding=emb.embedding, text=part, text_original=part, model=model)
+
+        self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
 
     def __embedding_delete(self, model) -> None:
         cursor = self.db_conn.cursor()

@@ -65,7 +65,8 @@ class WebsitesDBPostgreSQL:
         self.conn.close()
 
     def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL",
-                 search_in_documents=None, count=False, project=None, ai_summary_needed: bool=None, ai_correction_needed: bool=None) -> \
+                 search_in_documents=None, count=False, project=None, ai_summary_needed: bool=None,
+                 ai_correction_needed: bool=None) -> \
             list[
                 dict[str, str, str, str, str, str, str, str, str]]:
         offset = offset * limit
@@ -291,3 +292,64 @@ class WebsitesDBPostgreSQL:
             with self.conn.cursor() as cur:
                 cur.execute(query)
                 return cur.fetchone()[0]
+
+    def get_embedding_missing(self, embedding_model: str) -> list[int | str]:
+        cursor = self.conn.cursor()
+
+        query = f"""
+            SELECT wd.id
+            FROM web_documents wd
+                     LEFT JOIN websites_embeddings we
+                               ON wd.id = we.website_id AND we.model = '{embedding_model}'
+            WHERE we.website_id IS NULL and wd.document_state = 'EMBEDDING_EXIST';
+        """
+
+        cursor.execute(query)
+
+        result = []
+        for r in cursor.fetchall():
+            result.append(r[0])
+
+        return result
+
+    def get_documents_md_needed(self, min: str = 0) -> list[int]:
+        """
+        Pobiera listę identyfikatorów dokumentów, które mają null w kolumnie `text_md` i wartość false w kolumnie `paywall`.
+        """
+        min = int(min)
+
+        query = f"""
+            SELECT id
+            FROM web_documents as wd
+            WHERE wd.text_md IS NULL AND (wd.paywall = false OR paywall IS NULL)  AND document_type='webpage'  AND wd.id > {min}
+            ORDER by wd.id
+        """
+
+        with self.conn:
+            with self.conn.cursor() as cur:
+                cur.execute(query)
+                result = cur.fetchall()
+                # Zwróć listę id
+                return [row[0] for row in result]
+
+    def get_documents_by_url(self, url: str, min: str = 0) -> list[int]:
+
+        """
+        Retrieves a list of document IDs where the URL starts with the specified prefix, the document type is 'webpage',
+        and the document ID is greater than the provided minimum value (`min`).
+        """
+        min = int(min)
+
+        query = f"""
+            SELECT id
+            FROM web_documents as wd
+            WHERE url like '{url}%'  AND document_type='webpage'  AND wd.id > {min} and document_state='NEED_MANUAL_REVIEW'
+            ORDER by wd.id
+        """
+
+        with self.conn:
+            with self.conn.cursor() as cur:
+                cur.execute(query)
+                result = cur.fetchall()
+                # Zwróć listę id
+                return [row[0] for row in result]
