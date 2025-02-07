@@ -245,7 +245,6 @@ pipeline {
                     }
                 }
             }
-        }
 
         stage('Run Flake8 Style Check') {
             agent {
