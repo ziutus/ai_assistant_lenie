@@ -177,13 +177,38 @@ pipeline {
 
 
 
- //        stage('[OSV-Scanner] scan') {
-	// 		steps {
-	// 			sh '''
-	// 			  osv-scanner scan --lockfile package-lock.json --output osv-scanner-output.txt || true
-	// 			'''
-	// 		}
-	// }
+    stage('Run OSV Scanner') {
+        agent {
+            label 'aws-ec2-runner' // Agregat, który był używany w twoich innych zadaniach
+        }
+        steps {
+            script {
+                echo 'Running OSV Scanner'
+
+                // Tworzymy katalog na wyniki skanowania
+                sh 'mkdir -p results/'
+
+                // Uruchamiamy OSV Scanner z zależnościami określonymi w requirements.txt
+                sh '''
+                    /usr/local/bin/osv-scanner scan --lockfile requirements.txt \
+                    --output-file results/osv_scan_results.json
+                '''
+            }
+        }
+        post {
+            always {
+                // Archiwizowanie wygenerowanego raportu OSV Scanner
+                echo 'Archiving OSV Scanner results'
+                archiveArtifacts artifacts: 'results/osv_scan_results.json', fingerprint: true
+            }
+            cleanup {
+                // Oczyszczanie przestrzeni roboczej po zakończeniu
+                echo 'Cleaning up workspace after OSV scan'
+                cleanWs()
+            }
+        }
+    }
+
 
 
     stage('Run TruffleHog Scan') {
