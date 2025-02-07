@@ -4,7 +4,12 @@ import requests
 from bs4 import BeautifulSoup
 
 from library.text_functions import remove_before_regex, remove_last_occurrence_and_after, remove_text_regex
-from library.website.website_text_clean_regexp import site_rules
+import json
+
+def load_site_rules(file_path: str) -> dict:
+    with open(file_path, 'r', encoding='utf-8') as file:
+        return json.load(file)
+
 
 
 def download_raw_html(url: str) -> bytes | None:
@@ -67,6 +72,8 @@ def webpage_raw_parse(url: str, raw_html: bytes, analyze_content: bool = True) -
 
 def webpage_text_clean(url: str, content: str):
     content = re.sub('\xa0', " ", content)
+
+    site_rules = load_site_rules('data/site_rules.json')
 
     for url_path in site_rules:
         if url.find(url_path) != -1:
