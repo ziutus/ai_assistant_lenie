@@ -10,8 +10,12 @@ pipeline {
 
     stages {
          stage('Check and Start AWS Machine') {
-                steps {
-                    script {
+             agent {
+                label 'built-in' // Wymuszenie wykonania na "Built-In Node"
+             }
+
+            steps {
+                script {
                         // Używaj parametru INSTANCE_ID przekazywanego do joba
                         def instanceID = env.INSTANCE_ID
 
@@ -164,6 +168,10 @@ pipeline {
 //     }
     post {
         always {
+            agent {
+                label 'built-in' // Wymuszenie wykonania na "Built-In Node"
+            }
+            steps {
             script {
                 echo "Attempting to stop AWS EC2 instance..."
                 try {
@@ -180,7 +188,6 @@ pipeline {
                 }
             }
         }
+        }
     }
-
-
 }
