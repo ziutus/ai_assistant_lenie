@@ -2,9 +2,13 @@ import os.path
 import re
 import json
 from markitdown import MarkItDown
+import markdown as md
+from bs4 import BeautifulSoup
+
 from dotenv import load_dotenv
 from pprint import pprint
 
+from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentStatusError
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.api.aws.s3_aws import s3_file_exist,s3_take_file
@@ -12,6 +16,18 @@ from library.api.aws.s3_aws import s3_file_exist,s3_take_file
 load_dotenv()
 
 S3_BUCKET_NAME = os.getenv("AWS_S3_WEBSITE_CONTENT")
+EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
+
+def markdown_to_text(markdown_string):
+    # Konwersja Markdown do HTML za pomocą biblioteki markdown
+    html = md.markdown(markdown_string)
+
+    # Użycie BeautifulSoup do wyciągnięcia czystego tekstu z HTML
+    soup = BeautifulSoup(html, 'html.parser')
+    plain_text = soup.get_text()
+
+    return plain_text
+
 
 def popraw_markdown(tekst):
     linie = tekst.splitlines()
@@ -43,6 +59,9 @@ def split_for_emb(part, split_limit=300, level=0):
     elif level == 3:
         delimiter = "\n**"
         splitter = "---split---\n**"
+    elif level == 4:
+        delimiter = "\n— **"
+        splitter = "---split---\n— **"
 
     else:
         return [part]
@@ -137,22 +156,36 @@ def process_markdown_and_extract_links(md_text):
 
     return md_text, output
 
-# documents = wb_db.get_documents_by_url("https://www.money.pl/")
-documents=[7534]
+wb_db = WebsitesDBPostgreSQL()
+documents = wb_db.get_documents_by_url("https://www.money.pl/")
+documents=[7530        ]
 page_url = " https://www.onet.pl/informacje/businessinsider/"
+online = True
+embedding_update = False
+ignore_regexp_issue = False
 
 page_regexp_map = {
     "https://www.money.pl": [
         "data/pages_analyze/money.regex",
         "data/pages_analyze/money2.regex",
-        "data/pages_analyze/money3.regex"
+        "data/pages_analyze/money3.regex",
+        "data/pages_analyze/money4.regex",
+        "data/pages_analyze/money5.regex"
     ],
     "https://wiadomosci.wp.pl/": [
-        "data/pages_analyze/wiadomosci_wp_pl_1.regex"
+        "data/pages_analyze/wiadomosci_wp_pl_1.regex",
+        "data/pages_analyze/wiadomosci_wp_pl_2.regex"
     ],
-    "https://www.onet.pl/informacje/onetwiadomosci": ["data/pages_analyze/onet_pl_informacje_wiadomosci.regex"],
-    "https://www.onet.pl/turystyka/onetpodroze": ["data/pages_analyze/onet_pl_podroze.regex"],
-    "https://www.onet.pl/informacje/businessinsider": ["data/pages_analyze/onet_pl_informacje_businessInsider.regex"]
+    "https://www.onet.pl/informacje/onetwiadomosci": [
+        "data/pages_analyze/onet_pl_informacje_wiadomosci.regex",
+        "data/pages_analyze/onet_pl_informacje_wiadomosci_2.regexp"
+    ],
+    "https://www.onet.pl/turystyka/onetpodroze": [
+        "data/pages_analyze/onet_pl_podroze.regex"
+    ],
+    "https://www.onet.pl/informacje/businessinsider": [
+        "data/pages_analyze/onet_pl_informacje_businessInsider.regex"
+    ],
     # "": []
 }
 
@@ -191,13 +224,25 @@ if __name__ == '__main__':
                         result = result.text_content
                     else:
                         print("Can't download file from S3 cache, exiting...")
-                        exit(3)
+                        continue
                 else:
                     print("I can't download file from S3 cache")
-                    exit(1)
+                    continue
             else:
                 print("Doesn't exist s3_uuid, exiting...")
-                exit(2)
+                continue
+
+        if online:
+            wb_db = WebsitesDBPostgreSQL()
+            web_doc = StalkerWebDocumentDB(document_id=document_id)
+            print("Taking URL from database")
+            page_url = web_doc.url
+
+            if web_doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR and not ignore_regexp_issue:
+                print("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
+                continue
+
+        print(f"URL: {page_url}\n")
 
         print("par 2: taking important content from markdown (ignoring portal links, disclaimers etc")
         found_rules = False
@@ -231,39 +276,23 @@ if __name__ == '__main__':
         with open(cache_file_output, 'w', encoding="utf-8") as file:
             file.write(extracted_text)
 
-        print("Part 3 - converting markdown to text and creating metadata part for links and images")
+        print("\nPart 3 - converting markdown to text and creating metadata part for links and images")
         print("DEBUG: extracting links with images from markdown")
         output_json = process_markdown_and_extract_links_with_images(extracted_text)
         metadata["links"] = output_json['links']
         markdown = output_json['markdown']
 
-        # with open(cache_file_output_2, 'w', encoding="utf-8") as file:
-        #     file.write(markdown)
-        # with open(f"tmp/markdown_output/{document_id}_2.json", 'w', encoding="utf-8") as file:
-        #     file.write(json.dumps(metadata, indent=4))
-
         print("DEBUG: extracting images from markdown")
         new_markdown, metadata["images"] = replace_images_in_markdown(markdown)
 
-        # with open(f"tmp/markdown_output/{document_id}_3.json", 'w', encoding="utf-8") as file:
-        #     file.write(json.dumps(metadata, indent=4))
-        #
-        # with open(f"tmp/markdown_output/{document_id}_3.md", 'w', encoding="utf-8") as file:
-        #     file.write(new_markdown)
-
         print("DEBUG: removing NBSP from markdown")
         new_markdown = new_markdown.replace(' ', ' ')
-        # with open(f"tmp/markdown_output/{document_id}_4.md", 'w', encoding="utf-8") as file:
-        #     file.write(new_markdown)
 
         print("DEBUG: Removing img from markdown")
         images_regex = r"img:\d+"
         new_markdown = re.sub(images_regex, '', new_markdown)
-        # with open(f"tmp/markdown_output/{document_id}_5.md", 'w', encoding="utf-8") as file:
-        #     file.write(new_markdown)
 
         print("DEBUG: removing info strings")
-        # *Dalsza część artykułu pod materiałem wideo*
         new_markdown = new_markdown.replace("*Dalsza część artykułu pod materiałem wideo*", "")
 
         print("DEBUG: formating text by removing multiple empty lines and spaces")
@@ -274,11 +303,10 @@ if __name__ == '__main__':
         print("DEBUG: removing links from markdown and adding into metadata part")
         new_markdown, metadata["links2"] = process_markdown_and_extract_links(new_markdown)
 
-        print("Part 3: cleaning text for each big portal from external links inside text (not needed for embedding)")
+        print("\nPart 4: cleaning text for each big portal from external links inside text (not needed for embedding)")
         if page_url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
             print("Using special rules for onet.pl informacje onetwiadomosci")
             new_markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", new_markdown, flags=re.MULTILINE)
-
 
         print("Final part: writing markdown and metadata files")
         print("DEBUG: writing final metadata file")
@@ -295,6 +323,12 @@ if __name__ == '__main__':
         markdown_text = re.sub(r'^\s+$', '\n', markdown_text)
         markdown_text = re.sub('\n+', '\n', markdown_text)
         markdown_text = re.sub('\*\*\n+\s*', '**\n', markdown_text)
+
+        if page_url.startswith("https://www.onet.pl/informacje/businessinsider"):
+            markdown_text = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown_text, flags=re.MULTILINE)
+        if page_url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
+            markdown_text = re.sub(r'^\s*Dalszy\sciąg\smateriału\spod\swideo\s*$', '', markdown_text, flags=re.MULTILINE)
+
         markdown_text = popraw_markdown(markdown_text)
         markdown_text = re.sub('\n{3,10}', '\n\n', markdown_text)
 
@@ -312,6 +346,17 @@ if __name__ == '__main__':
             print("part has words", len(part.split()))
             print(part)
 
+        if embedding_update:
+            parts_txt = []
+            for part in parts:
+                parts_txt.append(markdown_to_text(part))
 
+            wb_db = WebsitesDBPostgreSQL()
+            web_doc = StalkerWebDocumentDB(document_id=document_id)
+            web_doc.embedding_add_by_parts(model=EMBEDDING_MODEL, parts=parts_txt)
+            web_doc.text_md = markdown_text
+            web_doc.text = markdown_to_text(markdown_text)
+            web_doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
+            web_doc.save()
 
 exit(0)
