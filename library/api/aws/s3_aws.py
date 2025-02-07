@@ -30,3 +30,13 @@ def s3_file_exist(s3_bucket: str, filename: str) -> bool:
             subsegment.add_exception(e)
             print("An error occurred: ", str(e))
             raise Exception("An error occurred")
+
+def s3_take_file(s3_bucket: str, object_key: str, local_filename: str) -> bool:
+    session = boto3.Session(region_name=os.getenv("AWS_REGION"))
+    s3 = session.client(service_name='s3', region_name=os.getenv("AWS_REGION"))
+    try:
+        s3.download_file(s3_bucket, object_key, local_filename)
+        return True
+    except Exception as e:
+        print("An error occurred: ", str(e))
+        return False
