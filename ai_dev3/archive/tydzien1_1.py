@@ -56,6 +56,8 @@ print(f"Status Code: {response.status_code}")
 # Wyświetlanie treści odpowiedzi jako tekst
 print("Response Text:\n", response.text)
 
+exit(0)
+
 # Jeśli odpowiedź jest w formacie JSON
 try:
     json_response = response.json()
