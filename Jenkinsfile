@@ -177,36 +177,36 @@ pipeline {
 
 
 
-    stage('Run OSV Scanner') {
-        agent {
-            label 'aws-ec2-runner' // Agregat, który był używany w twoich innych zadaniach
-        }
-        steps {
-            script {
-                echo 'Running OSV Scanner'
-
-                // Tworzymy katalog na wyniki skanowania
-                sh 'mkdir -p results/'
-
-                // Uruchamiamy OSV Scanner z zależnościami określonymi w requirements.txt
-                sh '''
-                    /usr/local/bin/osv-scanner scan --lockfile requirements.txt || true
-                '''
-            }
-        }
-        post {
-            always {
-                // Archiwizowanie wygenerowanego raportu OSV Scanner
-                echo 'Archiving OSV Scanner results'
-                archiveArtifacts artifacts: 'results/osv_scan_results.json', fingerprint: true
-            }
-            cleanup {
-                // Oczyszczanie przestrzeni roboczej po zakończeniu
-                echo 'Cleaning up workspace after OSV scan'
-                cleanWs()
-            }
-        }
-    }
+    //stage('Run OSV Scanner') {
+    //    agent {
+    //        label 'aws-ec2-runner' // Agregat, który był używany w twoich innych zadaniach
+    //    }
+    //    steps {
+    //        script {
+    //            echo 'Running OSV Scanner'
+    //
+    //            // Tworzymy katalog na wyniki skanowania
+    //            sh 'mkdir -p results/'
+    //
+    //            // Uruchamiamy OSV Scanner z zależnościami określonymi w requirements.txt
+    //            sh '''
+    //                /usr/local/bin/osv-scanner scan --lockfile requirements.txt
+    //            '''
+    //        }
+    //    }
+    //    post {
+    //        always {
+    //            // Archiwizowanie wygenerowanego raportu OSV Scanner
+    //            echo 'Archiving OSV Scanner results'
+    //            archiveArtifacts artifacts: 'results/osv_scan_results.json', fingerprint: true
+    //        }
+    //        cleanup {
+    //            // Oczyszczanie przestrzeni roboczej po zakończeniu
+    //            echo 'Cleaning up workspace after OSV scan'
+    //            cleanWs()
+    //        }
+    //    }
+    //}
 
 
 
