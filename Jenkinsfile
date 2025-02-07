@@ -168,22 +168,24 @@ pipeline {
 //     }
     post {
         always {
-
-            node('built-in') {
-                echo "Attempting to stop AWS EC2 instance..."
-                try {
-                    // Zatrzymaj instancję EC2
-                    sh """
-                    aws ec2 stop-instances --instance-ids ${env.INSTANCE_ID} --region ${env.AWS_REGION}
-                    """
-                    sh """
-                    aws ec2 wait instance-stopped --instance-ids ${env.INSTANCE_ID} --region ${env.AWS_REGION}
-                    """
-                    echo "AWS instance ${env.INSTANCE_ID} has been successfully stopped."
-                } catch (err) {
-                    echo "Failed to stop AWS instance ${env.INSTANCE_ID}: ${err.getMessage()}"
+            // Zatrzymywanie instancji EC2 po zakończeniu pipeline
+            node('built-in') { // Wykonywane wyłącznie na "Built-In Node"
+                script {
+                    echo "Attempting to stop AWS EC2 instance..."
+                    try {
+                        sh """
+                        aws ec2 stop-instances --instance-ids ${env.INSTANCE_ID} --region ${env.AWS_REGION}
+                        """
+                        sh """
+                        aws ec2 wait instance-stopped --instance-ids ${env.INSTANCE_ID} --region ${env.AWS_REGION}
+                        """
+                        echo "AWS instance ${env.INSTANCE_ID} has been successfully stopped."
+                    } catch (err) {
+                        echo "Failed to stop AWS instance ${env.INSTANCE_ID}: ${err.getMessage()}"
+                    }
                 }
             }
         }
     }
+
 }
