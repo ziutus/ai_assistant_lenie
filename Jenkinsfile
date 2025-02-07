@@ -3,12 +3,16 @@ pipeline {
     options {
         skipDefaultCheckout(true)
     }
+    environment {
+        INSTANCE_ID = "${params.INSTANCE_ID}" // Dla prostoty dostępu
+    }
+
     stages {
          stage('Check and Start AWS Machine') {
                 steps {
                     script {
                         // Używaj parametru INSTANCE_ID przekazywanego do joba
-                        def instanceID = params.INSTANCE_ID
+                        def instanceID = env.INSTANCE_ID
 
                         echo "Using instance ID: ${instanceID}"
 
@@ -156,4 +160,25 @@ pipeline {
 		//     engagementName: 'krzysztof@odkrywca.eu')
 //        }
 //     }
+    post {
+        always {
+            script {
+                echo "Attempting to stop AWS EC2 instance..."
+                try {
+                    // Zatrzymaj instancję EC2
+                    sh """
+                    aws ec2 stop-instances --instance-ids ${env.INSTANCE_ID}
+                    """
+                    sh """
+                    aws ec2 wait instance-stopped --instance-ids ${env.INSTANCE_ID}
+                    """
+                    echo "AWS instance ${env.INSTANCE_ID} has been successfully stopped."
+                } catch (err) {
+                    echo "Failed to stop AWS instance ${env.INSTANCE_ID}: ${err.getMessage()}"
+                }
+            }
+        }
+    }
+
+
 }
