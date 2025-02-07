@@ -54,6 +54,9 @@ pipeline {
          }
 
          stage('Code checkout from GitHub') {
+             agent {
+                label 'aws-ec2-runner'
+             }
             steps {
                 script {
                     cleanWs()
@@ -62,6 +65,9 @@ pipeline {
             }
         }
         stage('Example') {
+             agent {
+                label 'aws-ec2-runner'
+             }
             steps {
                 echo 'Hello!'
                 sh 'ls -la'
@@ -74,12 +80,18 @@ pipeline {
 //             }
 //         }
         stage('report dir creation') {
+             agent {
+                label 'aws-ec2-runner'
+             }
             steps {
                 echo 'create directory for reports'
                 sh 'mkdir ${WORKSPACE}/results/'
             }
         }
         stage('check workspace') {
+             agent {
+                label 'aws-ec2-runner'
+             }
             steps {
                 echo 'checking if file exist'
                 sh 'ls -l "$WORKSPACE"'
