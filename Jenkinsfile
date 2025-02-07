@@ -254,29 +254,27 @@ pipeline {
                 }
             }
         }
+    }
+    post {
+        always {
+            node('built-in') {
 
-        post {
-                always {
-                    node('built-in') {
-
-                        script
-                        {
-                            echo"Attempting to stop AWS EC2 instance..."
-                            try {
-                                sh """
-                                aws ec2 stop-instances --instance-ids ${env.INSTANCE_ID} --region ${env.AWS_REGION}
-                                """
-                                sh """
-                                    aws ec2 wait instance-stopped --instance-ids ${env.INSTANCE_ID} --region ${env.AWS_REGION}
-                                """
-                                echo " AWS instance ${env.INSTANCE_ID} has been successfully stopped."
-                            } catch (err) {
-                            echo "Failed to stop instance ${env.INSTANCE_ID}: ${err.getMessage()}"
-                            }
-                        }
+                script
+                {
+                    echo"Attempting to stop AWS EC2 instance..."
+                    try {
+                        sh """
+                        aws ec2 stop-instances --instance-ids ${env.INSTANCE_ID} --region ${env.AWS_REGION}
+                        """
+                        sh """
+                            aws ec2 wait instance-stopped --instance-ids ${env.INSTANCE_ID} --region ${env.AWS_REGION}
+                        """
+                        echo " AWS instance ${env.INSTANCE_ID} has been successfully stopped."
+                    } catch (err) {
+                    echo "Failed to stop instance ${env.INSTANCE_ID}: ${err.getMessage()}"
                     }
                 }
-
+            }
         }
     }
 }
