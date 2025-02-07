@@ -137,14 +137,44 @@ pipeline {
     }
 
 
-        // stage('Semgrep Scan') {
-        //     steps {
-        //         echo 'Running Semgrep scan'
-        //         sh """
-        //             semgrep --config=auto --json --output /zap/wrk/results/semgrep-report.json
-        //             """
-        //     }
-        // }
+    stage('Run Semgrep Security Check') {
+            agent {
+                label 'aws-ec2-runner' // Wskazuje runner Jenkinsa komplementarny do tego w GitLab (np. AWS EC2)
+            }
+            steps {
+                script {
+                    echo 'Running Semgrep Security Check'
+
+                    // Instalacja Semgrep (np. w środowisku Python)
+                    sh '''
+                        pip install semgrep
+                    '''
+
+                    // Uruchomienie Semgrep z zapisem raportu
+                    sh '''
+                        semgrep --config=auto --output semgrep-report.json || true
+                    '''
+
+                    // Tworzenie i zapisywanie raportu jako artefaktu
+                    echo 'Storing Semgrep report as an artifact'
+                    sh '''
+                        mkdir -p ${WORKSPACE}/results/
+                        mv semgrep-report.json ${WORKSPACE}/results/
+                    '''
+                }
+            }
+            post {
+                always {
+                    echo 'Archiving Semgrep report'
+                    archiveArtifacts artifacts: 'results/semgrep-report.json', fingerprint: true
+                }
+                cleanup {
+                    echo 'Cleaning up workspace post Semgrep stage'
+                    cleanWs()
+                }
+            }
+    }
+
 
 
  //        stage('[OSV-Scanner] scan') {
