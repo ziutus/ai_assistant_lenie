@@ -104,10 +104,10 @@ pipeline {
                     echo 'Archiving Semgrep report'
                     archiveArtifacts artifacts: 'results/semgrep-report.json', fingerprint: true
                 }
-                cleanup {
-                    echo 'Cleaning up workspace post Semgrep stage'
-                    cleanWs()
-                }
+                //cleanup {
+                //    echo 'Cleaning up workspace post Semgrep stage'
+                //    cleanWs()
+                //}
             }
         }
 
@@ -137,11 +137,11 @@ pipeline {
                     echo 'Archiving TruffleHog report'
                     archiveArtifacts artifacts: 'results/trufflehog.txt', fingerprint: true
                 }
-                cleanup {
-                    // Czyszczenie workspace po wykonaniu kroku
-                    echo 'Cleaning up workspace after TruffleHog scan'
-                    cleanWs()
-                }
+                //cleanup {
+                //    // Czyszczenie workspace po wykonaniu kroku
+                //    echo 'Cleaning up workspace after TruffleHog scan'
+                //    cleanWs()
+                //}
             }
         }
 
@@ -248,10 +248,10 @@ pipeline {
                             echo 'Archiving Flake8 HTML Report'
                             archiveArtifacts artifacts: 'flake_reports/**', fingerprint: true
                         }
-                        cleanup {
-                            echo 'Cleaning up workspace after Flake8 scan'
-                            cleanWs()
-                        }
+                        //cleanup {
+                        //    echo 'Cleaning up workspace after Flake8 scan'
+                        //    cleanWs()
+                        //}
                     }
                 }
             }
