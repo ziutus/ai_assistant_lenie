@@ -14,3 +14,19 @@ curl -X POST   -H "Content-Type: application/json"   -d '{"key1":"value1", "key2
 ## Jenkins installation
 
 ## Pluggins
+
+## Jenkins updates
+
+### update SSL certificate
+
+```bash
+letsencrypt renew
+```
+
+```bash
+openssl pkcs12 -export   -in /etc/letsencrypt/live/jenkins.lenie-ai.eu/fullchain.pem   -inkey /etc/letsencrypt/live/jenkins.lenie-ai.eu/privkey.pem   -out jenkins.p12   -name jenkins   -CAfile /etc/letsencrypt/live/jenkins.lenie-ai.eu/chain.pem   -caname root
+```
+
+```bash
+ keytool -importkeystore   -deststorepass <twoje_haslo>   -destkeypass <twoje_haslo>   -destkeystore /var/lib/jenkins/jenkins.jks   -srckeystore jenkins.p12   -srcstoretype PKCS12   -srcstorepass <twoje_hasło_z_p12>   -alias jenkins
+```
