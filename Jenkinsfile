@@ -187,6 +187,7 @@ pipeline {
                         script {
                             // Instalacja wymaganych zależności Python
                             echo 'Installing requirements...'
+                            sh "pwd; ls -l"
                             sh """
                         pip install -r requirements.txt
                         """
