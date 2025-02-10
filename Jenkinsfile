@@ -60,7 +60,8 @@ pipeline {
             steps {
                 script {
                     cleanWs()
-                    git credentialsId: 'github-token', url: 'https://github.com/ziutus/ai_assistant_lenie_server', branch: 'main'
+                    git credentialsId: 'github-token', url: 'https://github.com/ziutus/ai_assistant_lenie_server', branch: "${env.BRANCH_NAME}"
+
                 }
             }
         }
@@ -187,6 +188,7 @@ pipeline {
                         script {
                             // Instalacja wymaganych zależności Python
                             echo 'Installing requirements...'
+                            sh "pwd; ls -l"
                             sh """
                         pip install -r requirements.txt
                         """
