@@ -5,7 +5,7 @@ pipeline {
     }
     environment {
         INSTANCE_ID = "${params.INSTANCE_ID}" // Dla prostoty dostępu
-        AWS_REGION = 'us-east-1'
+        AWS_REGION = "${params.AWS_REGION}"
     }
 
     stages {
