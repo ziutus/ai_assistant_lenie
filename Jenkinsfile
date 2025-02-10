@@ -6,7 +6,6 @@ pipeline {
     environment {
         INSTANCE_ID = "${params.INSTANCE_ID}" // Dla prostoty dostępu
         AWS_REGION = "${params.AWS_REGION}"
-        BRANCH = "${params.BRANCH}"
     }
 
     stages {
@@ -61,7 +60,8 @@ pipeline {
             steps {
                 script {
                     cleanWs()
-                    git credentialsId: 'github-token', url: 'https://github.com/ziutus/ai_assistant_lenie_server', branch: "${env.BRANCH}"
+                    git credentialsId: 'github-token', url: 'https://github.com/ziutus/ai_assistant_lenie_server', branch: "${env.BRANCH_NAME}"
+
                 }
             }
         }
