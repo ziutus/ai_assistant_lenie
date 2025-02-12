@@ -5,8 +5,9 @@ from library.embedding_result import EmbeddingResult
 
 embedding_models = {"amazon.titan-embed-text-v1", "amazon.titan-embed-text-v2:0", "text-embedding-ada-002"}
 
+
 def embedding_need_translation(model: str) -> bool:
-    if not model in embedding_models:
+    if model not in embedding_models:
         raise Exception(f"DEBUG: Error, no model info for text {model}")
 
     if model in ["amazon_bedrock", "amazon.titan-embed-text-v1"]:
@@ -20,7 +21,7 @@ def embedding_need_translation(model: str) -> bool:
 
 
 def get_embedding(model: str, text: str) -> EmbeddingResult:
-    if not model in embedding_models:
+    if model not in embedding_models:
         raise Exception(f"DEBUG: Error, no model info for text {model}")
 
     if model in ["amazon_bedrock", "amazon.titan-embed-text-v1"]:

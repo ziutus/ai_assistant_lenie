@@ -59,7 +59,7 @@ class OpenAIClient:
         return json.loads(response.choices[0].message.content)
 
     @observe()
-    def get_completion_image(prompt: str, image_urls=[], detail: str="auto", model: str="gpt-4o-mini",
+    def get_completion_image(prompt: str, image_urls = [], detail: str = "auto", model: str = "gpt-4o-mini",
                              max_tokens = 300) -> str:
         client = OpenAI()
 
@@ -74,7 +74,7 @@ class OpenAIClient:
                         "detail": detail
                     }
                 }
-        )
+            )
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",

@@ -1,5 +1,4 @@
 from library.ai import ai_ask
-from library.stalker_web_document_db import StalkerWebDocumentDB
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -8,8 +7,6 @@ with open("tmp/markdown_output/6713_manual.md", encoding="utf-8") as file:
     text_md = file.read()
 
 print(text_md)
-
-
 
 prompt = f"""
 Poniżej znajduje się wywiad dziennikarza i jego gościa.
@@ -43,8 +40,6 @@ Przykładowa odpowiedz:
 Wywiad:
 {text_md}
 """
-
-
 
 result = ai_ask(query=prompt, model="Bielik-11B-v2.3-Instruct", max_token_count=200000)
 # result = ai_ask(query=prompt, model="amazon.titan-tg1-large", max_token_count=8192)

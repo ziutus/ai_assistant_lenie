@@ -33,8 +33,8 @@ def ai_model_need_translation_to_english(model: str) -> bool:
     raise Exception(f"DEBUG: Error, no model info for text {model}")
 
 
-def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: int = 4096,
-                      top_p: float = 0.9) -> AiResponse:
+def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: int = 4096, top_p: float = 0.9) \
+        -> AiResponse:
 
     if model in ["gpt-3.5-turbo", "gpt-3.5-turbo-16k"]:
         if len(str) < 8000:
@@ -73,9 +73,11 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         ai_response.response_text = response
         return ai_response
 
-    elif model == 'amazon.titan-tg1-large' or model =='amazon.nova-micro' or model == "amazon.nova-pro" or model == 'aws':
+    elif (model == 'amazon.titan-tg1-large' or model == 'amazon.nova-micro' or model == "amazon.nova-pro"
+          or model == 'aws'):
+
         ai_response = library.api.aws.bedrock_ask.query_aws_bedrock(query, model, temperature=temperature,
-                                                                 max_token_count=max_token_count, top_p=top_p)
+                                                                    max_token_count=max_token_count, top_p=top_p)
 
         # if isinstance(response, bytes):
         #     response = response.decode('utf-8')
@@ -88,8 +90,8 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         raise Exception(f"ERROR: Unknown model {model}")
 
 
-def ai_describe_image(base64_image = None, image_urls: [] = None, model_id = "anthropic.claude-3-haiku-20240307-v1:0",
-                      max_tokens = 1000, media_type = "image/png", question = "What's in this image?"):
+def ai_describe_image(base64_image=None, image_urls: [] = None, model_id="anthropic.claude-3-haiku-20240307-v1:0",
+                      max_tokens=1000, media_type="image/png", question="What's in this image?"):
 
     if image_urls is None:
         image_urls = []
