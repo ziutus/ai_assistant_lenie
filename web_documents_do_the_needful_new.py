@@ -31,7 +31,6 @@ load_dotenv()
 
 logging.basicConfig(level=logging.INFO)  # Change level as per your need
 
-
 aws_xray_enabled = os.getenv("AWS_XRAY_ENABLED")
 print(f"aws_xray_enabled: {aws_xray_enabled}")
 
@@ -56,11 +55,10 @@ def compare_language(language_1: str, language_2: str):
 
 """
 TODO: add limits for asemblay.ai upload files (check), see: https://www.assemblyai.com/docs/concepts/faq
-Currently, the maximum file size that can be submitted to the /v2/transcript endpoint for transcription is 5GB, 
+Currently, the maximum file size that can be submitted to the /v2/transcript endpoint for transcription is 5GB,
 and the maximum duration is 10 hours.
 The maximum file size for a local file uploaded to the API via the /v2/upload endpoint is 2.2GB.
 """
-
 
 if __name__ == '__main__':
     if aws_xray_enabled:
@@ -361,7 +359,8 @@ if __name__ == '__main__':
                     logging.info("[DONE]")
 
                 logging.info("Making transcription...")
-                response = aws_transcript(s3_bucket=s3_bucket_transcript, s3_key=youtube_file.filename, media_format=media_format)
+                response = aws_transcript(s3_bucket=s3_bucket_transcript, s3_key=youtube_file.filename,
+                                          media_format=media_format)
 
                 if response['status'] == "COMPLETED" or response['status'] == "success":
                     remote_file = response['remote_file']
@@ -534,9 +533,10 @@ if __name__ == '__main__':
     for document in markdown_correction_needed:
         progress = round((document_nb / markdown_correction_needed_len) * 100)
         web_doc = StalkerWebDocumentDB(document_id=document['id'])
-        print(f"Processing  {web_doc.id} {web_doc.document_type.name} ({document_nb} from {markdown_correction_needed_len} "
-              f"{progress}%): "
-              f"{web_doc.url}")
+        print(
+            f"Processing  {web_doc.id} {web_doc.document_type.name} ({document_nb} from {markdown_correction_needed_len} "
+            f"{progress}%): "
+            f"{web_doc.url}")
         web_doc.text_md = webpage_text_clean(web_doc.url, web_doc.text_md)
         web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
         web_doc.save()
