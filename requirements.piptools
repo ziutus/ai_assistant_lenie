@@ -9,7 +9,6 @@ pytest
 pytube
 youtube-transcript-api
 assemblyai
-aws-xray-sdk
 pre-commit
 pypdf
 firecrawl-py
