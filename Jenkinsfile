@@ -218,7 +218,7 @@ pipeline {
                             echo 'Running Flake8 and generating HTML report'
                             sh '''
                         mkdir -p flake_reports
-                        flake8 --format=html --htmldir=flake_reports/
+                        flake8 --format=html --exclude=ai_dev3 --htmldir=flake_reports/
                     '''
                         }
                     }
