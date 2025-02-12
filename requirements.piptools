@@ -7,7 +7,6 @@ psycopg2-binary
 openai
 boto3
 pytest
-botocore
 pytube
 youtube-transcript-api
 assemblyai
