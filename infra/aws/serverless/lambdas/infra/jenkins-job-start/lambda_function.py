@@ -9,7 +9,6 @@ logger.setLevel(logging.INFO)
 # Configuration and constants will be loaded dynamically inside lambda_handler
 
 
-
 def lambda_handler(event, context):
     # Load environment variables
     jenkins_url = os.getenv("JENKINS_URL")

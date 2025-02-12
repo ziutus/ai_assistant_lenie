@@ -3,7 +3,6 @@ import json
 
 from openai import OpenAI
 from langfuse.decorators import observe
-from langfuse.openai import openai
 
 
 class OpenAIClient:
@@ -24,20 +23,6 @@ class OpenAIClient:
         :param model: OpenAI model to use.
         :return: Completion response or None if request fails.
         """
-
-        # :param max_tokens: Maximum tokens in the response.
-        # :param temperature: Sampling temperature.
-
-        # messages = [{"role": "user", "content": prompt}]
-        # data = {
-        #     # "model": model,
-        #     # "messages": messages,
-        #     "model": model,
-        #     "max_tokens": max_tokens,
-        #     # "n": 1,
-        #     "temperature": temperature,
-        #     "prompt": prompt
-        # }
 
         messages = [{"role": "user", "content": prompt}]
         try:
@@ -74,7 +59,8 @@ class OpenAIClient:
         return json.loads(response.choices[0].message.content)
 
     @observe()
-    def get_completion_image(prompt: str, image_urls=[], detail: str = "auto", model: str = "gpt-4o-mini", max_tokens = 300) -> str:
+    def get_completion_image(prompt: str, image_urls=[], detail: str="auto", model: str="gpt-4o-mini",
+                             max_tokens = 300) -> str:
         client = OpenAI()
 
         content = [{"type": "text", "text": prompt}]

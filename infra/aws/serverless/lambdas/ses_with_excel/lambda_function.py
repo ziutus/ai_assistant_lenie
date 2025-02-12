@@ -17,6 +17,7 @@ S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
 ses_client = boto3.client('ses', region_name='us-east-1')  # Region SES
 s3_client = boto3.client('s3', region_name='us-east-1')  # Region S3
 
+
 # Funkcja do pobrania pliku z S3
 def pobierz_plik_z_s3(bucket_name, object_key, lokalna_sciezka):
     try:
@@ -26,6 +27,7 @@ def pobierz_plik_z_s3(bucket_name, object_key, lokalna_sciezka):
     except Exception as e:
         print(f"Błąd podczas pobierania pliku z S3: {str(e)}")
         raise
+
 
 def wyslij_email_html_z_zalacznikiem_z_s3(
         nadawca: str,
@@ -129,7 +131,6 @@ def lambda_handler(event, context):
 
     # Wywołanie funkcji
     wyslij_email_html_z_zalacznikiem_z_s3(nadawca, odbiorca, temat, tresc_html, S3_BUCKET_NAME, s3_object_key)
-
 
     return {
         'headers': {

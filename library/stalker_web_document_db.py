@@ -285,7 +285,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         elif self.document_type in [StalkerDocumentType.webpage, StalkerDocumentType.youtube, StalkerDocumentType.text,
                                     StalkerDocumentType.text_message]:
 
-            if self.language != 'en'  and need_translation and not self.text_english:
+            if self.language != 'en' and need_translation and not self.text_english:
                 self.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION
                 self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION
                 return False
@@ -293,7 +293,6 @@ class StalkerWebDocumentDB(StalkerWebDocument):
             text_original = self.text.split("\n\n\n")
 
             text_to_embed = ""
-            text_english = ""
 
             if need_translation:
                 if self.language == 'en':

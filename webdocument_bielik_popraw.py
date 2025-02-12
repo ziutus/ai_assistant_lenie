@@ -5,8 +5,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-document_id=7476
-action="make_summary"
+document_id = 7476
+action = "make_summary"
 
 web_doc = StalkerWebDocumentDB(document_id=document_id)
 
@@ -14,13 +14,12 @@ web_doc = StalkerWebDocumentDB(document_id=document_id)
 if action == "correct_text":
     prompt = f"""
     Popraw interpunkcję i składnę tekstu poniżej:
-    
+
     {web_doc.text}
     """
 
     print(len(prompt))
     print(web_doc.text)
-
 
     result = ai_ask(query=prompt, model="Bielik-11B-v2.3-Instruct", max_token_count=200000)
     # result = ai_ask(query=prompt, model="amazon.titan-tg1-large", max_token_count=200000)

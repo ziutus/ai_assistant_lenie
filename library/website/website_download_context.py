@@ -6,10 +6,10 @@ from bs4 import BeautifulSoup
 from library.text_functions import remove_before_regex, remove_last_occurrence_and_after, remove_text_regex
 import json
 
+
 def load_site_rules(file_path: str) -> dict:
     with open(file_path, 'r', encoding='utf-8') as file:
         return json.load(file)
-
 
 
 def download_raw_html(url: str) -> bytes | None:

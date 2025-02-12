@@ -6,17 +6,18 @@ import markdown as md
 from bs4 import BeautifulSoup
 
 from dotenv import load_dotenv
-from pprint import pprint
+# from pprint import pprint
 
 from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentStatusError
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.api.aws.s3_aws import s3_file_exist,s3_take_file
+from library.api.aws.s3_aws import s3_file_exist, s3_take_file
 
 load_dotenv()
 
 S3_BUCKET_NAME = os.getenv("AWS_S3_WEBSITE_CONTENT")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
+
 
 def markdown_to_text(markdown_string):
     # Konwersja Markdown do HTML za pomocą biblioteki markdown
@@ -44,6 +45,7 @@ def popraw_markdown(tekst):
         else:
             wynik.append(linia)
     return "\n".join(wynik)
+
 
 def split_for_emb(part, split_limit=300, level=0):
     parts = []
@@ -73,9 +75,10 @@ def split_for_emb(part, split_limit=300, level=0):
     parts_tmp = part.replace(delimiter, splitter)
     parts_tmp = parts_tmp.split("---split---")
     for part in parts_tmp:
-        result = split_for_emb(part, split_limit, level+1)
+        result = split_for_emb(part, split_limit, level + 1)
         parts.extend(result)
     return parts
+
 
 def process_markdown_and_extract_links_with_images(markdown_text):
     # Regex dla wyszukiwania linków z obrazkami w Markdown
@@ -113,6 +116,7 @@ def process_markdown_and_extract_links_with_images(markdown_text):
         "markdown": updated_text,
         "links": result
     }
+
 
 def replace_images_in_markdown(markdown_text):
     images_regex = r'(\!\[(.*?)\]\((.*?)\))'
@@ -156,9 +160,10 @@ def process_markdown_and_extract_links(md_text):
 
     return md_text, output
 
+
 wb_db = WebsitesDBPostgreSQL()
-documents = wb_db.get_documents_by_url("https://www.money.pl/")
-documents=[7530        ]
+# documents = wb_db.get_documents_by_url("https://www.money.pl/")
+documents = [7530]
 page_url = " https://www.onet.pl/informacje/businessinsider/"
 online = True
 embedding_update = False
@@ -202,7 +207,6 @@ if __name__ == '__main__':
         cache_file_html = f"tmp/markdown/{document_id}.html"
         cache_file_output = f"tmp/markdown_output/{document_id}.md"
         cache_file_output_2 = f"tmp/markdown_output/{document_id}_2.md"
-
 
         print("Taking markdown content from local cache or from remote cache (S3)")
         if os.path.isfile(cache_file_md):
@@ -318,11 +322,11 @@ if __name__ == '__main__':
             file.write(new_markdown)
 
         print("Extra part: cleaning markdown document")
-        markdown_text = re.sub('\r\n', '\n', new_markdown)
+        markdown_text = re.sub(r'\r\n', '\n', new_markdown)
 
         markdown_text = re.sub(r'^\s+$', '\n', markdown_text)
-        markdown_text = re.sub('\n+', '\n', markdown_text)
-        markdown_text = re.sub('\*\*\n+\s*', '**\n', markdown_text)
+        markdown_text = re.sub(r'\n+', '\n', markdown_text)
+        markdown_text = re.sub(r'\*\*\n+\s*', '**\n', markdown_text)
 
         if page_url.startswith("https://www.onet.pl/informacje/businessinsider"):
             markdown_text = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown_text, flags=re.MULTILINE)

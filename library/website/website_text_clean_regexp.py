@@ -3,7 +3,7 @@ site_rules = {
     "https://wiadomosci.wp.pl/": {
         "remove_before": ["PomorskieWrocławKoronawirus", "PomorskieWrocławKoronawirus"],
         "remove_after": [r"Elementem\swspółczesnej\swojny\sjest\swojna\sinformacyjna",
-                             r"Masz newsa,\s+zdjęcie\s+lub\s+filmik\?\s+Prześlij\s+nam\s+przez\s+dziejesie\.wp\.pl\s+Oceń\s+jakość\s+naszego\s+artykułu",
+                             r"Masz newsa,\s+zdjęcie\s+lub\s+filmik\?\s+Prześlij\s+nam\s+przez\s+dziejesie\.wp\.pl\s+Oceń\s+jakość\s+naszego\s+artykułu",# noqa
                          r"### Wybrane dla Ciebie"# noqa
         ], # noqa
         "remove_string": ["Wyłączono komentarze", "Dalsza część artykułu pod materiałem wideo"],# noqa
@@ -84,10 +84,10 @@ site_rules = {
     #     "remove_string_regexp" : []
     # },
     "https://www.money.pl": {
-        "remove_before" : [r"\[Wróć na\]\(https://www\.wp\.pl/\)"],
-        "remove_after" : [r"Oceń jakość naszego artykułu:Twoja opinia pozwala nam tworzyć lepsze treści"],
-        "remove_string" : [],
-        "remove_string_regexp" : []
+        "remove_before": [r"\[Wróć na\]\(https://www\.wp\.pl/\)"],
+        "remove_after": [r"Oceń jakość naszego artykułu:Twoja opinia pozwala nam tworzyć lepsze treści"],
+        "remove_string": [],
+        "remove_string_regexp": []
     },
 
 }

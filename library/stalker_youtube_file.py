@@ -33,7 +33,6 @@ class StalkerYoutubeFile:
         self.length_seconds = None
         self.length_minutes = None
 
-
         self._yt = YouTube(youtube_url)
 
         self.filename = None

@@ -21,7 +21,7 @@ for document_id in documents:
     filname_json = f"{cache_directory}/{document_id}.json"
 
     if os.path.exists(f"{cache_directory}/{document_id}_manual.md"):
-        print(f"Manual correction exist, using it")
+        print("Manual correction exist, using it")
         filename_md = f"{cache_directory}/{document_id}_manual.md"
     elif os.path.exists(f"{cache_directory}/{document_id}.md"):
         filename_md = f"{cache_directory}/{document_id}.md"
@@ -35,7 +35,6 @@ for document_id in documents:
     text = markdown_to_text(markdown_text)
     with open(f"{cache_directory}/{document_id}.txt", "w", encoding="utf-8") as file:
         file.write(text)
-
 
     len_text = len(markdown_text)
     len_words = len(markdown_text.split())

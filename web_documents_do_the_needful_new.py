@@ -47,6 +47,7 @@ if aws_xray_enabled:
     xray_recorder.configure(service='lenie_ai')
     patch_all()  # Automatyczne łatanie wszystkich bibliotek
 
+
 def compare_language(language_1: str, language_2: str):
     if language_1 == language_2:
         return True
@@ -59,9 +60,9 @@ def compare_language(language_1: str, language_2: str):
 
 """
 TODO: add limits for asemblay.ai upload files (check).
-      See: https://www.assemblyai.com/docs/concepts/faq 
+See: https://www.assemblyai.com/docs/concepts/faq 
 
-      Currently, the maximum file size that can be submitted to the /v2/transcript endpoint for transcription is 5GB, and the maximum duration is 10 hours.
+Currently, the maximum file size that can be submitted to the /v2/transcript endpoint for transcription is 5GB, and the maximum duration is 10 hours.
 
 The maximum file size for a local file uploaded to the API via the /v2/upload endpoint is 2.2GB.
 
@@ -405,8 +406,6 @@ if __name__ == '__main__':
             web_document.summary = response
             web_document.save()
 
-
-
     print("Step 2 b: Downloading websites (or taking from S3) and putting data into database")
     website_data = websites.get_ready_for_download()
     websites_data_len = len(website_data)
@@ -549,7 +548,6 @@ if __name__ == '__main__':
         web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
         web_doc.save()
 
-
     print("Step 4: For youtube video setup status ready for translation if transcription is done")
     transcirption_done = websites.get_transcription_done()
     transcirption_done_len = len(transcirption_done)
@@ -608,8 +606,6 @@ if __name__ == '__main__':
         web_doc.embedding_add(model=embedding_model)
         web_doc.save()
 
-
-
     print(f"Step 9: adding missing markdown entries")
     # TODO: sprawdzić, dlaczego jest problem z pobraniem poniższych stron
     problems = [38, 89, 150, 157, 191, 208, 220, 311, 371, 376, 396,
@@ -619,12 +615,11 @@ if __name__ == '__main__':
     # 611 certificate expired
     # problems = []
 
-    document_id_start = max(problems) if len(problems) >0  else 0
+    document_id_start = max(problems) if len(problems) > 0 else 0
     md_needed = websites.get_documents_md_needed(min=document_id_start)
     print(md_needed)
 
     s3 = boto3.client('s3')
-
 
     for document_id in md_needed:
         web_doc = StalkerWebDocumentDB(document_id=document_id)
@@ -691,7 +686,6 @@ if __name__ == '__main__':
         web_doc.s3_uuid = s3_uuid
 
         web_doc.save()
-
 
     # print(f"Step 10: adding missing embedding for model >{embedding_model}")
     # embedding_needed = websites.get_embedding_missing(embedding_model)

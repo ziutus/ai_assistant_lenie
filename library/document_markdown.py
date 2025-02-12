@@ -1,5 +1,6 @@
 import re
 
+
 class DocumentMarkDown:
     def __init__(self):
         self.url = ""
@@ -76,4 +77,3 @@ class DocumentMarkDown:
         self.links = references_replaced
 
         return True
-

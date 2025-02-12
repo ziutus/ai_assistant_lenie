@@ -1,4 +1,4 @@
-from pprint import pprint
+# from pprint import pprint
 
 import boto3
 import json
@@ -103,7 +103,8 @@ def query_aws_bedrock(query: str, model: str, temperature: float = 0.7, max_toke
         raise Exception("Unknown model")
 
 
-def aws_bedrock_describe_image(base64_image, model_id="anthropic.claude-3-haiku-20240307-v1:0", max_tokens = 1000, media_type = "image/png", question="What's in this image?") -> AiResponse:
+def aws_bedrock_describe_image(base64_image, model_id="anthropic.claude-3-haiku-20240307-v1:0", max_tokens=1000,
+                               media_type="image/png", question="What's in this image?") -> AiResponse:
     if media_type not in ["image/png", "image/jpeg"]:
         raise ValueError("Invalid media type. Supported types: image/png, image/jpeg")
 
@@ -160,7 +161,6 @@ def aws_bedrock_describe_image(base64_image, model_id="anthropic.claude-3-haiku-
     ai_response.input_tokens = int(response_body['usage']['input_tokens'])
     ai_response.output_tokens = int(response_body['usage']['output_tokens'])
     ai_response.total_tokens = ai_response.input_tokens + ai_response.output_tokens
-
 
     ai_response.response_text = response_body['content'][0]['text']
 

@@ -65,8 +65,8 @@ class WebsitesDBPostgreSQL:
         self.conn.close()
 
     def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL",
-                 search_in_documents=None, count=False, project=None, ai_summary_needed: bool=None,
-                 ai_correction_needed: bool=None) -> \
+                 search_in_documents = None, count = False, project = None, ai_summary_needed: bool = None,
+                 ai_correction_needed: bool = None) -> \
             list[
                 dict[str, str, str, str, str, str, str, str, str]]:
         offset = offset * limit
