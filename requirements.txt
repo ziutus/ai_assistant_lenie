@@ -11,28 +11,36 @@ anyio==4.8.0
     #   httpx
     #   langfuse
     #   openai
-assemblyai==0.36.0
+assemblyai==0.37.0
     # via -r requirements.piptools
 aws-xray-sdk==2.14.0
     # via -r requirements.piptools
+azure-ai-documentintelligence==1.0.0
+    # via markitdown
+azure-core==1.32.0
+    # via
+    #   azure-ai-documentintelligence
+    #   azure-identity
+azure-identity==1.20.0
+    # via markitdown
 backoff==2.2.1
     # via langfuse
-beautifulsoup4==4.12.3
+beautifulsoup4==4.13.3
     # via
     #   -r requirements.piptools
     #   markdownify
     #   markitdown
 blinker==1.9.0
     # via flask
-boto3==1.36.5
+boto3==1.36.18
     # via -r requirements.piptools
-botocore==1.36.5
+botocore==1.36.18
     # via
     #   -r requirements.piptools
     #   aws-xray-sdk
     #   boto3
     #   s3transfer
-certifi==2024.12.14
+certifi==2025.1.31
     # via
     #   httpcore
     #   httpx
@@ -57,8 +65,12 @@ colorama==0.4.6
     #   click
     #   pytest
     #   tqdm
-cryptography==44.0.0
-    # via pdfminer-six
+cryptography==44.0.1
+    # via
+    #   azure-identity
+    #   msal
+    #   pdfminer-six
+    #   pyjwt
 defusedxml==0.7.1
     # via youtube-transcript-api
 distlib==0.3.9
@@ -71,7 +83,7 @@ filelock==3.17.0
     # via virtualenv
 filetype==1.2.0
     # via -r requirements.piptools
-firecrawl-py==1.10.2
+firecrawl-py==1.11.1
     # via -r requirements.piptools
 flask==3.1.0
     # via
@@ -88,7 +100,7 @@ httpx==0.28.1
     #   assemblyai
     #   langfuse
     #   openai
-identify==2.6.6
+identify==2.6.7
     # via pre-commit
 idna==3.10
     # via
@@ -98,6 +110,8 @@ idna==3.10
     #   requests
 iniconfig==2.0.0
     # via pytest
+isodate==0.7.2
+    # via azure-ai-documentintelligence
 itsdangerous==2.2.0
     # via flask
 jinja2==3.1.5
@@ -108,9 +122,9 @@ jmespath==1.0.1
     # via
     #   boto3
     #   botocore
-langfuse==2.57.12
+langfuse==2.59.2
     # via -r requirements.piptools
-lxml==5.3.0
+lxml==5.3.1
     # via python-pptx
 mammoth==1.9.0
     # via markitdown
@@ -118,13 +132,19 @@ markdownify==0.14.1
     # via
     #   -r requirements.piptools
     #   markitdown
-markitdown==0.0.1a3
+markitdown==0.0.1a4
     # via -r requirements.piptools
 markupsafe==3.0.2
     # via
     #   jinja2
     #   werkzeug
-neo4j==5.27.0
+msal==1.31.1
+    # via
+    #   azure-identity
+    #   msal-extensions
+msal-extensions==1.2.0
+    # via azure-identity
+neo4j==5.28.1
     # via -r requirements.piptools
 nest-asyncio==1.6.0
     # via firecrawl-py
@@ -134,7 +154,9 @@ numpy==2.2.2
     # via
     #   markitdown
     #   pandas
-openai==1.60.0
+olefile==0.47
+    # via markitdown
+openai==1.62.0
     # via
     #   -r requirements.piptools
     #   markitdown
@@ -156,6 +178,8 @@ platformdirs==4.3.6
     # via virtualenv
 pluggy==1.5.0
     # via pytest
+portalocker==2.10.1
+    # via msal-extensions
 pre-commit==4.1.0
     # via -r requirements.piptools
 psycopg2-binary==2.9.10
@@ -174,7 +198,9 @@ pydantic-core==2.27.2
     # via pydantic
 pydub==0.25.1
     # via markitdown
-pypdf==5.1.0
+pyjwt[crypto]==2.10.1
+    # via msal
+pypdf==5.3.0
     # via -r requirements.piptools
 pytest==8.3.4
     # via -r requirements.piptools
@@ -190,23 +216,28 @@ python-pptx==1.0.2
     # via markitdown
 pytube==15.0.0
     # via -r requirements.piptools
-pytz==2024.2
+pytz==2025.1
     # via
     #   neo4j
     #   pandas
+pywin32==308
+    # via portalocker
 pyyaml==6.0.2
     # via pre-commit
 requests==2.32.3
     # via
     #   -r requirements.piptools
+    #   azure-core
     #   firecrawl-py
     #   langfuse
     #   markitdown
+    #   msal
     #   youtube-transcript-api
 s3transfer==0.11.2
     # via boto3
 six==1.17.0
     # via
+    #   azure-core
     #   markdownify
     #   python-dateutil
 sniffio==1.3.1
@@ -215,7 +246,7 @@ sniffio==1.3.1
     #   openai
 soupsieve==2.6
     # via beautifulsoup4
-speechrecognition==3.14.0
+speechrecognition==3.14.1
     # via markitdown
 tqdm==4.67.1
     # via openai
@@ -223,6 +254,10 @@ typing-extensions==4.12.2
     # via
     #   anyio
     #   assemblyai
+    #   azure-ai-documentintelligence
+    #   azure-core
+    #   azure-identity
+    #   beautifulsoup4
     #   openai
     #   pydantic
     #   pydantic-core
@@ -237,7 +272,7 @@ urllib3==2.3.0
     #   -r requirements.piptools
     #   botocore
     #   requests
-virtualenv==20.29.1
+virtualenv==20.29.2
     # via pre-commit
 websockets==14.2
     # via
@@ -249,7 +284,9 @@ wrapt==1.17.2
     # via
     #   aws-xray-sdk
     #   langfuse
-xlsxwriter==3.2.1
+xlrd==2.0.1
+    # via markitdown
+xlsxwriter==3.2.2
     # via python-pptx
 youtube-transcript-api==0.6.3
     # via
