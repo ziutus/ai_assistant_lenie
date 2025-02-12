@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-from pprint import pprint
 import uuid
 
 from markitdown import MarkItDown
@@ -11,19 +10,13 @@ import mimetypes
 import assemblyai as aai
 import requests
 
-
-# Ładowanie zmiennych środowiskowych
-load_dotenv()
-
-from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType, \
-    StalkerDocumentStatusError
 # Importacja własnych modułów
 from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
 
 from library.ai import ai_ask
 from library.api.aws.s3_aws import s3_file_exist
 from library.api.aws.transcript import aws_transcript
-from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType
+from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType, StalkerDocumentStatusError
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.stalker_youtube_file import StalkerYoutubeFile
@@ -32,6 +25,9 @@ from library.text_transcript import youtube_titles_split_with_chapters, youtube_
 from library.transcript import transcript_price
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 from library.embedding import embedding_need_translation
+
+# Ładowanie zmiennych środowiskowych
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO)  # Change level as per your need
 
@@ -59,13 +55,10 @@ def compare_language(language_1: str, language_2: str):
 
 
 """
-TODO: add limits for asemblay.ai upload files (check).
-See: https://www.assemblyai.com/docs/concepts/faq 
-
-Currently, the maximum file size that can be submitted to the /v2/transcript endpoint for transcription is 5GB, and the maximum duration is 10 hours.
-
+TODO: add limits for asemblay.ai upload files (check), see: https://www.assemblyai.com/docs/concepts/faq
+Currently, the maximum file size that can be submitted to the /v2/transcript endpoint for transcription is 5GB, 
+and the maximum duration is 10 hours.
 The maximum file size for a local file uploaded to the API via the /v2/upload endpoint is 2.2GB.
-
 """
 
 
@@ -606,7 +599,7 @@ if __name__ == '__main__':
         web_doc.embedding_add(model=embedding_model)
         web_doc.save()
 
-    print(f"Step 9: adding missing markdown entries")
+    print("Step 9: adding missing markdown entries")
     # TODO: sprawdzić, dlaczego jest problem z pobraniem poniższych stron
     problems = [38, 89, 150, 157, 191, 208, 220, 311, 371, 376, 396,
                 443, 456, 465, 470, 486, 497, 499, 503, 531, 553, 581, 592, 600, 601, 602, 611, 662,

@@ -154,7 +154,7 @@ class WebsitesDBPostgreSQL:
                 cur.execute("SELECT count(id) FROM public.web_documents")
                 return cur.fetchone()[0]
 
-    def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30, project = None) -> list[dict[
+    def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30, project=None) -> list[dict[
             str, Any]] | None:
 
         if minimal_similarity is None:

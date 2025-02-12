@@ -34,7 +34,7 @@ Przykładowa odpowiedz:
     "Nazwisko": "Łukasicz"
     "notka_biograficzna": "Paweł Łukasicz to dyrektor prywatnej firmy 'Najlepsza firma' od 1997 roku.",
     "fragment": "Paweł Łukasicz został zatrudniony na etacie w 'Najlepsza firma' w 1997 roku i do teraz tam pracuje."
-  }}    
+  }} 
 }}
 
 Wywiad:

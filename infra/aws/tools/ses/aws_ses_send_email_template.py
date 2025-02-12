@@ -14,6 +14,7 @@ template_data = """
 }
 """
 
+
 def send_email_with_template():
     try:
         # Utwórz klienta SES

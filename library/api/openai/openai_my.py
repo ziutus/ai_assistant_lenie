@@ -59,8 +59,8 @@ class OpenAIClient:
         return json.loads(response.choices[0].message.content)
 
     @observe()
-    def get_completion_image(prompt: str, image_urls = [], detail: str = "auto", model: str = "gpt-4o-mini",
-                             max_tokens = 300) -> str:
+    def get_completion_image(prompt: str, image_urls=[], detail: str = "auto", model: str = "gpt-4o-mini",
+                             max_tokens=300) -> str:
         client = OpenAI()
 
         content = [{"type": "text", "text": prompt}]
@@ -84,7 +84,7 @@ class OpenAIClient:
                     "content": content,
                 }
             ],
-            max_tokens= max_tokens,
+            max_tokens=max_tokens,
         )
 
         return response.choices[0].message.content
