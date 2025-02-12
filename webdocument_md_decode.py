@@ -221,8 +221,8 @@ if __name__ == '__main__':
                 if s3_file_exist(S3_BUCKET_NAME, web_doc.s3_uuid + ".html"):
                     print("I can download file from S3 cache")
                     if s3_take_file(S3_BUCKET_NAME, web_doc.s3_uuid + ".html", cache_file_html):
-                        md = MarkItDown()
-                        result = md.convert(cache_file_html)
+                        mdit = MarkItDown()
+                        result = mdit.convert(cache_file_html)
                         with open(cache_file_md, 'w', encoding="utf-8") as file:
                             file.write(result.text_content)
                         result = result.text_content
