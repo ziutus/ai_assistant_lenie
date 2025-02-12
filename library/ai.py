@@ -73,9 +73,7 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         ai_response.response_text = response
         return ai_response
 
-    elif (model == 'amazon.titan-tg1-large' or model == 'amazon.nova-micro' or model == "amazon.nova-pro" or
-          model == 'aws'):
-
+    elif model in ('amazon.titan-tg1-large', 'amazon.nova-micro', 'amazon.nova-pro', 'aws'):
         ai_response = library.api.aws.bedrock_ask.query_aws_bedrock(query, model, temperature=temperature,
                                                                     max_token_count=max_token_count, top_p=top_p)
 
