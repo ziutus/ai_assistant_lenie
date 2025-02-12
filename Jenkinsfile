@@ -61,7 +61,7 @@ pipeline {
                 script {
                     cleanWs()
                     git credentialsId: 'github-token', url: 'https://github.com/ziutus/ai_assistant_lenie_server', branch: "${env.BRANCH_NAME}"
-
+                    sh "ls -l ${WORKSPACE}"
                 }
             }
         }
