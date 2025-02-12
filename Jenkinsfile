@@ -4,24 +4,22 @@ pipeline {
         skipDefaultCheckout(true)
     }
     environment {
-        INSTANCE_ID = "${params.INSTANCE_ID}" // Dla prostoty dostępu
+        INSTANCE_ID = "${params.INSTANCE_ID}"
         AWS_REGION = "${params.AWS_REGION}"
     }
 
     stages {
         stage('Check and Start AWS Machine') {
             agent {
-                label 'built-in' // Wymuszenie wykonania na "Built-In Node"
+                label 'built-in'
             }
 
             steps {
                 script {
-                    // Używaj parametru INSTANCE_ID przekazywanego do joba
                     def instanceID = env.INSTANCE_ID
 
                     echo "Using instance ID: ${instanceID}"
 
-                    // Logika operacji AWS
                     def instanceState = sh(
                         script: """
                             aws ec2 describe-instances \
@@ -78,7 +76,7 @@ pipeline {
 
         stage('Run Semgrep Security Check') {
             agent {
-                label 'aws-ec2-runner' // Wskazuje runner Jenkinsa komplementarny do tego w GitLab (np. AWS EC2)
+                label 'aws-ec2-runner'
             }
             steps {
                 script {
@@ -104,26 +102,20 @@ pipeline {
                     echo 'Archiving Semgrep report'
                     archiveArtifacts artifacts: 'results/semgrep-report.json', fingerprint: true
                 }
-                //cleanup {
-                //    echo 'Cleaning up workspace post Semgrep stage'
-                //    cleanWs()
-                //}
             }
         }
 
         stage('Run TruffleHog Scan') {
             agent {
-                label 'aws-ec2-runner' // Wskazuje agenta Jenkins używanego do uruchomienia kroku
+                label 'aws-ec2-runner'
             }
             steps {
                 script {
                     echo 'Running TruffleHog Secret Detection'
 
-                    // Tworzymy katalog na raporty
                     echo 'Ensuring results directory exists...'
                     sh 'mkdir -p results/'
 
-                    // Uruchamiamy kontener TruffleHog i zapisujemy logi w pliku
                     sh '''
                     docker run --rm --name trufflehog \
                         trufflesecurity/trufflehog:latest git file://. \
@@ -133,15 +125,9 @@ pipeline {
             }
             post {
                 always {
-                    // Archiwizowanie raportu jako artefakt
                     echo 'Archiving TruffleHog report'
                     archiveArtifacts artifacts: 'results/trufflehog.txt', fingerprint: true
                 }
-                //cleanup {
-                //    // Czyszczenie workspace po wykonaniu kroku
-                //    echo 'Cleaning up workspace after TruffleHog scan'
-                //    cleanWs()
-                //}
             }
         }
 
@@ -182,24 +168,21 @@ pipeline {
 
                 stage('Run Pytest') {
                     agent {
-                        label 'aws-ec2-runner' // Wskazanie runnera w Jenkins odpowiadającego GitLabowi (np. AWS)
+                        label 'aws-ec2-runner'
                     }
                     steps {
                         script {
-                            // Instalacja wymaganych zależności Python
                             echo 'Installing requirements...'
                             sh "pwd; ls -l"
                             sh """
                         pip install -r requirements.txt
                         """
 
-                            // Tworzenie katalogu na wyniki jeżeli nie istnieje
                             echo 'Ensuring results directory exists...'
                             sh """
                         mkdir -p pytest-results
                         """
 
-                            // Uruchomienie testów i generacja raportu w HTML
                             echo 'Running Pytest...'
                             sh """
                         pytest --self-contained-html --html=pytest-results/report.html || true
@@ -208,7 +191,6 @@ pipeline {
 
                         }
 
-                        // Zrzucenie katalogu wyników do logów Jenkins
                         echo 'Archiving test results...'
                         archiveArtifacts artifacts: 'pytest-results/**/*', allowEmptyArchive: true
                     }
@@ -221,20 +203,18 @@ pipeline {
 
                 stage('Run Flake8 Style Check') {
                     agent {
-                        label 'aws-ec2-runner' // Agent odpowiadający tagom w GitLab-CI
+                        label 'aws-ec2-runner'
                     }
                     steps {
                         script {
                             echo 'Running Flake8 Style Check'
 
-                            // Instalacja pakietu flake8-html
                             echo 'Installing flake8-html'
                             sh '''
                         python3 -m pip install --upgrade pip
                         pip3 install flake8-html
                     '''
 
-                            // Uruchomienie Flake8 i zapis raportów HTML
                             echo 'Running Flake8 and generating HTML report'
                             sh '''
                         mkdir -p flake_reports
@@ -244,14 +224,9 @@ pipeline {
                     }
                     post {
                         always {
-                            // Archiwizacja wyników Flake8 jako artefakt
                             echo 'Archiving Flake8 HTML Report'
                             archiveArtifacts artifacts: 'flake_reports/**', fingerprint: true
                         }
-                        //cleanup {
-                        //    echo 'Cleaning up workspace after Flake8 scan'
-                        //    cleanWs()
-                        //}
                     }
                 }
             }
