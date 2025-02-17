@@ -1,0 +1,23 @@
+#!/bin/bash
+set -e
+
+PROFILE="lenie-ai-admin"
+FUNCTION_NAME="lenie-sqs-to-db"
+
+
+
+#cp -r ../../../../../library/ .
+mkdir library
+cp ../../../../../library/stalker_web_document_db.py library/
+cp ../../../../../library/stalker_web_document.py library/
+cp ../../../../../library/webpage_parse_result.py library/
+
+
+zip -r lambda.zip lambda_function.py library/
+
+aws lambda update-function-code --function-name ${FUNCTION_NAME}  --zip-file fileb://lambda.zip --profile ${PROFILE}
+
+rm -rf library/
+rm lambda.zip
+
+exit 0
