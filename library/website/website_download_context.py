@@ -6,6 +6,8 @@ from bs4 import BeautifulSoup
 from library.text_functions import remove_before_regex, remove_last_occurrence_and_after, remove_text_regex
 import json
 
+from library.webpage_parse_result import WebPageParseResult
+
 
 def load_site_rules(file_path: str) -> dict:
     with open(file_path, 'r', encoding='utf-8') as file:
@@ -19,16 +21,6 @@ def download_raw_html(url: str) -> bytes | None:
         return response.content
     else:
         return None
-
-
-class WebPageParseResult:
-    def __init__(self, url: str) -> None:
-        self.text_raw = None
-        self.text = None
-        self.url = url
-        self.language: str | None = None
-        self.title: str | None = None
-        self.summary: str | None = None
 
 
 def webpage_raw_parse(url: str, raw_html: bytes, analyze_content: bool = True) -> WebPageParseResult:
