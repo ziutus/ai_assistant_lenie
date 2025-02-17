@@ -8,7 +8,8 @@ from aws_xray_sdk.core import xray_recorder, patch_all
 
 import library.ai
 from library.translate import text_translate
-from library.website.website_download_context import download_raw_html, webpage_raw_parse, WebPageParseResult
+from library.website.website_download_context import download_raw_html, webpage_raw_parse
+from library.webpage_parse_result import WebPageParseResult
 from library.embedding import get_embedding
 
 logging.basicConfig(level=logging.DEBUG)  # Change level as per you r need
