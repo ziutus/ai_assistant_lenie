@@ -11,8 +11,8 @@ from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_transcript import chapters_text_to_list
 from library.translate import text_translate
-from library.website.website_download_context import download_raw_html, webpage_raw_parse, WebPageParseResult, \
-    webpage_text_clean
+from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
+from library.webpage_parse_result import WebPageParseResult
 from library.website.website_paid import website_is_paid
 from library.text_functions import split_text_for_embedding
 
