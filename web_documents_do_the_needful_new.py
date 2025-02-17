@@ -567,10 +567,11 @@ if __name__ == '__main__':
         progress = round((website_nb / websites_data_len) * 100)
 
         if embedding_need_translation(model=embedding_model):
-            print(f"Processing  {web_doc.id} {web_doc.document_type.name} ({website_nb} from {websites_data_len} "
-                  f"{progress}%): "
-                  f"{web_doc.url}")
-            web_doc.translate_to_english()
+            raise("Need translation implemented back")
+            # print(f"Processing  {web_doc.id} {web_doc.document_type.name} ({website_nb} from {websites_data_len} "
+            #       f"{progress}%): "
+            #       f"{web_doc.url}")
+            # web_doc.translate_to_english()
         else:
             web_doc.set_document_state("READY_FOR_EMBEDDING")
         web_doc.save()
@@ -584,20 +585,20 @@ if __name__ == '__main__':
     ai_summary_needed = websites.get_list(ai_summary_needed=True)
     # pprint(ai_summary_needed)
 
-    print("Step 8: adding embedding")
-    embedding_needed = websites.get_ready_for_embedding()
-    website_nb = 1
-    embedding_needed_len = len(embedding_needed)
-    print(f"entries to analyze: {embedding_needed_len}")
-    for website_id in embedding_needed:
-        web_doc = StalkerWebDocumentDB(document_id=website_id)
-
-        progress = round((website_nb / embedding_needed_len) * 100)
-        print(f"Working on ID:{web_doc.id} ({website_nb} from {embedding_needed_len} {progress}%)"
-              f" {web_doc.document_type}" f"url: {web_doc.url}")
-        website_nb += 1
-        web_doc.embedding_add(model=embedding_model)
-        web_doc.save()
+    # print("Step 8: adding embedding")
+    # embedding_needed = websites.get_ready_for_embedding()
+    # website_nb = 1
+    # embedding_needed_len = len(embedding_needed)
+    # print(f"entries to analyze: {embedding_needed_len}")
+    # for website_id in embedding_needed:
+    #     web_doc = StalkerWebDocumentDB(document_id=website_id)
+    #
+    #     progress = round((website_nb / embedding_needed_len) * 100)
+    #     print(f"Working on ID:{web_doc.id} ({website_nb} from {embedding_needed_len} {progress}%)"
+    #           f" {web_doc.document_type}" f"url: {web_doc.url}")
+    #     website_nb += 1
+    #     web_doc.embedding_add(model=embedding_model)
+    #     web_doc.save()
 
     print("Step 9: adding missing markdown entries")
     # TODO: sprawdzić, dlaczego jest problem z pobraniem poniższych stron
