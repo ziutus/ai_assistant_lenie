@@ -1,0 +1,14 @@
+[
+  {
+    "ParameterKey": "ProjectName",
+    "ParameterValue": "lenie"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "qa2"
+  },
+  {
+    "ParameterKey": "HostedZoneId",
+    "ParameterValue": "Z07906713RCJHAZLQEP4C"
+  }
+]
