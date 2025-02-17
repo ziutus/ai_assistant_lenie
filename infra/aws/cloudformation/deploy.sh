@@ -43,7 +43,7 @@ show_help() {
   This script can also works with changesets.
 
   Example usage:
-   $0 -r us-east-1 -r us-east-1 -p lenie -s dev -t
+   $0 -r us-east-1 -p lenie -s dev -t
 
    "
    exit 1
@@ -82,6 +82,7 @@ parse_config() {
 create_update_stack() {
   echo "creating or updating stack - inside function"
   local templates=("$@")
+
   local template
 
   for template in "${templates[@]}"
@@ -181,6 +182,8 @@ cf_execute() {
   local parameters_file_full
   local out
 
+  echo "action: ${action}"
+
   create_section="--template-body file://${PWD}/${template} --capabilities CAPABILITY_NAMED_IAM"
   [ -n "$EXECUTE_ROLE"  ] && local creation_section="${creation_section} --role-arn ${EXECUTE_ROLE}"
 
@@ -214,6 +217,7 @@ cf_execute() {
     fi
 
   else
+    echo "Calling: aws --region \"${REGION}\" cloudformation ${action}-stack --stack-name \"${stack_name}\" ${create_section}"
     if out=$(aws --region "${REGION}" cloudformation ${action}-stack --stack-name "${stack_name}" ${create_section} 2>&1); then
       cf_waiter "${action}" "${stack_name}"
     else
