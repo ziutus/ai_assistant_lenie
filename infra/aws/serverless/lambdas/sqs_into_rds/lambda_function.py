@@ -10,17 +10,14 @@ from pprint import pprint
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-sqs = boto3.client('sqs')
-
 def lambda_handler(event, context):
-    queue_url = os.getenv("AWS_QUEUE_URL_ADD")
 
     logger.info(event)
     print(type(event))
     message = event
 
     # try:
-    link_data = event["Body"]
+    link_data = json.loads(event["Body"])
     pprint(link_data)
 
     if "source" not in link_data:
@@ -29,17 +26,12 @@ def lambda_handler(event, context):
     web_doc = StalkerWebDocumentDB(link_data["url"])
     if web_doc.id:
         print(f"This Url exist in with {web_doc.id}, ignoring ")
-        sqs.delete_message(
-            QueueUrl=queue_url,
-            ReceiptHandle=message['ReceiptHandle']
-        )
-        print("Message deleted from SQS queue")
+        print("Message should be now deleted from SQS queue")
         return {
             'statusCode': 200,
-            'body': json.dumps(message['ReceiptHandle'])
+            'body': message['ReceiptHandle']
         }
 
-    # logger.info("Adding Web Document")
     web_doc.set_document_type(link_data["type"])
     web_doc.source = link_data["source"]
     if 'chapterList' in link_data:
@@ -68,15 +60,8 @@ def lambda_handler(event, context):
     id_added = web_doc.save()
     # print(f"Added to database with ID {id_added}")
 
-    sqs.delete_message(
-        QueueUrl=queue_url,
-        ReceiptHandle=message['ReceiptHandle']
-    )
-    # except Exception as e:
-    #     print(f'An error occurred: {e}')
-
     # TODO implement
     return {
         'statusCode': 200,
-        'body': json.dumps('Hello from Lambda!')
+        'body': message['ReceiptHandle']
     }
