@@ -3,11 +3,9 @@ import os
 import psycopg2
 from psycopg2 import sql
 
-from library import embedding
-from library.embedding import embedding_need_translation
-from library.stalker_web_document import StalkerWebDocument, StalkerDocumentStatus, StalkerDocumentType, \
-    StalkerDocumentStatusError
-from library.website.website_download_context import WebPageParseResult
+# from library import embedding
+from library.stalker_web_document import StalkerWebDocument, StalkerDocumentStatus
+from library.webpage_parse_result import WebPageParseResult
 
 
 class StalkerWebDocumentDB(StalkerWebDocument):
@@ -243,105 +241,14 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                 self.__clean_values()
                 return True
 
-    def embedding_add(self, model) -> bool:
-
-        need_translation = embedding_need_translation(model)
-        print(f"DEBUG: model >{model}, need translation: {need_translation}<")
-
-        if self.document_type == StalkerDocumentType.link:
-            if self.title is None:
-                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-                self.document_state_error = StalkerDocumentStatusError.TITLE_MISSING
-                return False
-
-            if self.summary is None:
-                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-                self.document_state_error = StalkerDocumentStatusError.LINK_SUMMARY_MISSING
-                return False
-
-            if self.language != 'en' and need_translation and not self.title_english:
-                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-                self.document_state_error = StalkerDocumentStatusError.TITLE_TRANSLATION_ERROR
-                return False
-
-            if self.language != 'en' and need_translation and not self.summary_english:
-                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-                self.document_state_error = StalkerDocumentStatusError.SUMMARY_TRANSLATION_ERROR
-                return False
-
-            if self.language == 'en':
-                text = self.title + " " + self.summary
-                text_original = self.title + " " + self.summary
-            else:
-                text = self.title_english + " " + self.summary_english
-                text_original = self.title + " " + self.summary
-
-            emb = embedding.get_embedding(model=model, text=text)
-            self.__embedding_delete(model)
-            self.__embedding_add(text_embedding=emb.embedding, text=text, text_original=text_original, model=model)
-
-            self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
-
-        elif self.document_type in [StalkerDocumentType.webpage, StalkerDocumentType.youtube, StalkerDocumentType.text,
-                                    StalkerDocumentType.text_message]:
-
-            if self.language != 'en' and need_translation and not self.text_english:
-                self.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION
-                self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION
-                return False
-
-            text_original = self.text.split("\n\n\n")
-
-            text_to_embed = ""
-
-            if need_translation:
-                if self.language == 'en':
-                    text_to_embed = self.text.split("\n\n\n")
-                else:
-                    text_to_embed = self.text_to_embed.split("\n\n\n")
-
-                if len(text_original) != len(text_to_embed):
-                    self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-                    self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR
-                    return False
-            else:
-                text_to_embed = self.text.split("\n\n\n")
-
-            self.__embedding_delete(model)
-
-            k = 0
-            text_max = len(text_to_embed)
-            for row in text_to_embed:
-                print(f"* Getting embeddings: {k + 1} of {text_max}")
-                emb = embedding.get_embedding(model=model, text=row)
-
-                if not emb:
-                    print("ERROR during getting embeddings")
-                    return False
-
-                if emb.status != "success":
-                    print("ERROR during getting embeddings")
-                    print(emb.error_message)
-                    return False
-
-                self.__embedding_add(text_embedding=emb.embedding, text=row,
-                                     text_original=text_original[k],
-                                     model=model)
-                k += 1
-
-            self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
-
-        elif self.document_type == StalkerDocumentType.movie:
-            return False
-
-    def embedding_add_by_parts(self, model, parts):
-        self.__embedding_delete(model)
-
-        for part in parts:
-            emb = embedding.get_embedding(model=model, text=part)
-            self.__embedding_add(text_embedding=emb.embedding, text=part, text_original=part, model=model)
-
-        self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
+    # def embedding_add_by_parts(self, model, parts):
+    #     self.__embedding_delete(model)
+    #
+    #     for part in parts:
+    #         emb = embedding.get_embedding(model=model, text=part)
+    #         self.__embedding_add(text_embedding=emb.embedding, text=part, text_original=part, model=model)
+    #
+    #     self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
 
     def __embedding_delete(self, model) -> None:
         cursor = self.db_conn.cursor()
