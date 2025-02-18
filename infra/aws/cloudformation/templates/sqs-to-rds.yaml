@@ -6,6 +6,13 @@ Parameters:
   Environment:
     Type: String
     Description: 'environment'
+  DbInstanceIdentifier:
+    Type: String
+    Description: 'RDS Instance Identifier'
+  QueueUrl:
+    Type: String
+  ScheduleExpression:
+    Type: String
 
 Resources:
   StateMachineRole:
@@ -268,21 +275,21 @@ Resources:
   EventBridgeScheduler:
     Type: "AWS::Scheduler::Schedule"
     Properties:
-#      Name: "lenie-dev-sqs-to-rds"
       Name:  !Sub ${ProjectName}-${Environment}-sqs-to-rds
-      Description: "Clean SQS every day at 6:00 AM UTC"
-      ScheduleExpression: "cron(0 4 * * ? *)" # Codziennie, o godzinie 6:00 UTC
+      ScheduleExpression: !Sub ${ScheduleExpression}
       FlexibleTimeWindow:
-        Mode: "FLEXIBLE"
-        MaximumWindowInMinutes: 15
-
+        Mode: "OFF"
       Target:
-        Arn: "arn:aws:states:us-east-1:008971653395:stateMachine:SQSCleanPutIntoRDS"
+        Arn: !GetAtt MyStateMachine.Arn
         RoleArn: !GetAtt StepFunctionInvokerRole.Arn # Rola dozwalająca uruchamianie Step Functions
-        Input: "{}" # Opcjonalne dane wejściowe dla funkcji
-        RetryPolicy:
-          MaximumEventAgeInSeconds: 86400 # Maksymalny czas przetwarzania zdarzenia (24 godziny)
-          MaximumRetryAttempts: 3 # Maksymalna liczba ponownych prób w przypadku błędu
+        DeadLetterConfig:
+          Arn: !ImportValue lenie-problems-dlq-arn
+        Input: !Sub |
+          {
+            "QueueUrl": "${QueueUrl}",
+            "DbInstanceIdentifier": "${DbInstanceIdentifier}",
+            "StopDatabase": "no"
+          }
 
   StepFunctionInvokerRole:
     Type: "AWS::IAM::Role"
@@ -301,4 +308,4 @@ Resources:
             Statement:
               - Effect: "Allow"
                 Action: "states:StartExecution"
-                Resource: "arn:aws:states:us-east-1:008971653395:stateMachine:SQSCleanPutIntoRDS"
+                Resource: !GetAtt MyStateMachine.Arn
