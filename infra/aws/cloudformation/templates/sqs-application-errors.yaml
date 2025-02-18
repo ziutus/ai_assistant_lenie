@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Template do utworzenia kolejki SQS DLQ'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: 'Project Name'
+  Environment:
+    Type: String
+    Description: 'environment'
+
+Resources:
+  LenieDevProblemsDLQ:
+    Type: 'AWS::SQS::Queue'
+    Properties:
+      QueueName: !Sub ${ProjectName}-${Environment}-problems-dlq
+      MessageRetentionPeriod: 1209600
+      VisibilityTimeout: 30
+
+  LenieDevProblemsTopic:
+    Type: 'AWS::SNS::Topic'
+    Properties:
+      TopicName: !Sub ${ProjectName}-${Environment}-problems
+
+  EmailSubscription:
+    Type: 'AWS::SNS::Subscription'
+    Properties:
+      Protocol: email
+      Endpoint: krzysztof@lenie-ai.eu
+      TopicArn: !Ref LenieDevProblemsTopic
+
+Outputs:
+  SqsApplicationErrorsQueueURL:
+    Description: 'URL queue for default DLQ application'
+    Value: !Ref LenieDevProblemsDLQ
+  SqsApplicationErrorsQueueARN:
+    Description: 'ARN queue for default DLQ application'
+    Value: !GetAtt LenieDevProblemsDLQ.Arn
+    Export:
+      Name: !Sub ${ProjectName}-problems-dlq-arn
