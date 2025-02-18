@@ -1,0 +1,18 @@
+Metadata:
+  License: Apache-2.0
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS S3 for cloudformation code for Lenie application'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: 'Project Name'
+  Environment:
+    Type: String
+    Description: 'environment'
+
+Resources:
+  MyS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${ProjectName}-${Environment}-cloudformation
