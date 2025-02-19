@@ -39,14 +39,55 @@ Resources:
                   - sqs:GetQueueAttributes
                   - rds:DescribeDBInstances
                   - rds:StartDBInstance
+                  - rds:StopDBInstance
                   - lambda:InvokeFunction
                 Resource: "*"
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:GetLogEvents
+                  - logs:GetLogRecord
+                  - logs:GetLogGroupFields
+                  - logs:GetQueryResults
+                Resource:
+                  - !GetAtt StateMachineLogGroup.Arn
+                  - !Sub "${StateMachineLogGroup.Arn}:*"
+
+  StateMachineLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/states/${ProjectName}-${Environment}-sqs-to-rds"
+      RetentionInDays: 14  # Możesz dostosować okres przechowywania logów
 
   MyStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
       StateMachineName: !Sub ${ProjectName}-${Environment}-sqs-to-rds
       RoleArn: !GetAtt StateMachineRole.Arn
+      LoggingConfiguration:
+        Level: "ERROR"  # Możliwe wartości: ALL, ERROR, FATAL, OFF
+        IncludeExecutionData: true
+        Destinations:
+          - CloudWatchLogsLogGroup:
+              LogGroupArn: !GetAtt StateMachineLogGroup.Arn
+
+
       DefinitionString: >
         {
           "Comment": "A description of my state machine",
@@ -288,7 +329,7 @@ Resources:
           {
             "QueueUrl": "${QueueUrl}",
             "DbInstanceIdentifier": "${DbInstanceIdentifier}",
-            "StopDatabase": "no"
+            "StopDatabase": "yes"
           }
 
   StepFunctionInvokerRole:
@@ -309,3 +350,15 @@ Resources:
               - Effect: "Allow"
                 Action: "states:StartExecution"
                 Resource: !GetAtt MyStateMachine.Arn
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogDelivery
+                  - logs:GetLogDelivery
+                  - logs:UpdateLogDelivery
+                  - logs:DeleteLogDelivery
+                  - logs:ListLogDeliveries
+                  - logs:PutLogEvents
+                  - logs:PutResourcePolicy
+                  - logs:DescribeResourcePolicies
+                  - logs:DescribeLogGroups
+                Resource: "*"
