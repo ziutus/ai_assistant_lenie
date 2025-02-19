@@ -91,25 +91,48 @@ Resources:
       DefinitionString: >
         {
           "Comment": "A description of my state machine",
-          "StartAt": "Show Variables",
+          "StartAt": "Save Variables",
           "States": {
-            "Show Variables": {
+            "Save Variables": {
               "Type": "Pass",
-              "Next": "ReceiveMessage",
+              "Next": "SQS-GetNumberOfMessages",
               "Assign": {
                 "QueueUrl.$": "$.QueueUrl",
                 "DbInstanceIdentifier.$": "$.DbInstanceIdentifier",
                 "StopDatabase.$": "$.StopDatabase"
               }
             },
+            "SQS-GetNumberOfMessages": {
+              "Type": "Task",
+              "Parameters": {
+                "AttributeNames": [
+                  "ApproximateNumberOfMessages"
+                ],
+                "QueueUrl.$": "$.QueueUrl"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:sqs:getQueueAttributes",
+              "Next": "AreMessagesInQueue",
+              "OutputPath": "$.Attributes.ApproximateNumberOfMessages"
+            },
             "ReceiveMessage": {
               "Type": "Task",
               "Resource": "arn:aws:states:::aws-sdk:sqs:receiveMessage",
               "Parameters": {
-                "QueueUrl.$": "$.QueueUrl",
+                "QueueUrl.$": "$QueueUrl",
                 "MaxNumberOfMessages": 10
               },
               "Next": "CheckIfMessagesExist"
+            },
+            "AreMessagesInQueue": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$",
+                  "StringGreaterThan": "0",
+                  "Next": "DescribeDBInstances"
+                }
+              ],
+              "Default": "NoMessages"
             },
             "CheckIfMessagesExist": {
               "Type": "Choice",
@@ -120,11 +143,11 @@ Resources:
                   "Next": "Save message into variable"
                 }
               ],
-              "Default": "NoMessages"
+              "Default": "Database Should be stopped?"
             },
             "Save message into variable": {
               "Type": "Pass",
-              "Next": "DescribeDBInstances",
+              "Next": "Get messages from variables",
               "Assign": {
                 "Messages.$": "$.Messages"
               }
@@ -148,7 +171,7 @@ Resources:
                 {
                   "Variable": "$",
                   "StringEquals": "available",
-                  "Next": "Get messages from variables"
+                  "Next": "ReceiveMessage"
                 },
                 {
                   "Or": [
@@ -271,7 +294,30 @@ Resources:
                   }
                 }
               },
-              "Next": "Database Should be stopped?"
+              "Next": "GetQueueAttributesAgain"
+            },
+            "GetQueueAttributesAgain": {
+              "Type": "Task",
+              "Parameters": {
+                "AttributeNames": [
+                  "ApproximateNumberOfMessages"
+                ],
+                "QueueUrl.$": "$QueueUrl"
+              },
+              "Resource": "arn:aws:states:::aws-sdk:sqs:getQueueAttributes",
+              "Next": "AreStillMessagesInQueue",
+              "OutputPath": "$.Attributes.ApproximateNumberOfMessages"
+            },
+            "AreStillMessagesInQueue": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$",
+                  "StringGreaterThan": "0",
+                  "Next": "ReceiveMessage"
+                }
+              ],
+              "Default": "Database Should be stopped?"
             },
             "Database Should be stopped?": {
               "Type": "Choice",
@@ -311,26 +357,6 @@ Resources:
             }
           }
         }
-
-
-  EventBridgeScheduler:
-    Type: "AWS::Scheduler::Schedule"
-    Properties:
-      Name:  !Sub ${ProjectName}-${Environment}-sqs-to-rds
-      ScheduleExpression: !Sub ${ScheduleExpression}
-      FlexibleTimeWindow:
-        Mode: "OFF"
-      Target:
-        Arn: !GetAtt MyStateMachine.Arn
-        RoleArn: !GetAtt StepFunctionInvokerRole.Arn # Rola dozwalająca uruchamianie Step Functions
-        DeadLetterConfig:
-          Arn: !ImportValue lenie-problems-dlq-arn
-        Input: !Sub |
-          {
-            "QueueUrl": "${QueueUrl}",
-            "DbInstanceIdentifier": "${DbInstanceIdentifier}",
-            "StopDatabase": "yes"
-          }
 
   StepFunctionInvokerRole:
     Type: "AWS::IAM::Role"
