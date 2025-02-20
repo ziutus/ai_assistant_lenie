@@ -90,7 +90,7 @@ Resources:
 
       DefinitionString: >
         {
-          "Comment": "A description of my state machine",
+          "Comment": "Put SQS messages into RDS database",
           "StartAt": "Save Variables",
           "States": {
             "Save Variables": {
