@@ -17,6 +17,6 @@
   },
   {
     "ParameterKey": "ScheduleExpression",
-    "ParameterValue": "cron(30 6 * * ? *)"
+    "ParameterValue": "cron(30 4 * * ? *)"
   }
 ]
