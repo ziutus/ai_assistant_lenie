@@ -1,35 +1,25 @@
 import json
-import boto3
-import os
 from library.stalker_web_document_db import StalkerWebDocumentDB
-import os
 import logging
-from pprint import pprint
 
-# Set up logging
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
+
 def lambda_handler(event, context):
-
-    logger.info(event)
-    print(type(event))
-    message = event
-
-    # try:
     link_data = json.loads(event["Body"])
-    pprint(link_data)
+    logger.info("Event received", extra={"Body": link_data})
 
     if "source" not in link_data:
         link_data["source"] = "own"
 
     web_doc = StalkerWebDocumentDB(link_data["url"])
     if web_doc.id:
-        print(f"This Url exist in with {web_doc.id}, ignoring ")
-        print("Message should be now deleted from SQS queue")
+        logger.info(f"This Url exist in with >{web_doc.id}<, ignoring ")
+
         return {
             'statusCode': 200,
-            'body': message['ReceiptHandle']
+            'body': event['ReceiptHandle']
         }
 
     web_doc.set_document_type(link_data["type"])
@@ -58,10 +48,9 @@ def lambda_handler(event, context):
         web_doc.source = link_data["source"]
 
     id_added = web_doc.save()
-    # print(f"Added to database with ID {id_added}")
 
     # TODO implement
     return {
         'statusCode': 200,
-        'body': message['ReceiptHandle']
+        'body': event['ReceiptHandle']
     }

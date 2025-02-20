@@ -2,7 +2,7 @@
 set -e
 
 PROFILE="lenie-ai-admin"
-FUNCTION_NAME="sqs-to-db"
+FUNCTION_NAME="lenie-sqs-to-db"
 PROJECT="lenie"
 STAGE="dev"
 
@@ -13,9 +13,10 @@ cp ../../../../../library/stalker_web_document.py library/
 cp ../../../../../library/webpage_parse_result.py library/
 zip -r lambda.zip lambda_function.py library/
 
-#aws lambda update-function-code --function-name ${FUNCTION_NAME}  --zip-file fileb://lambda.zip --profile ${PROFILE}
+aws lambda update-function-code --function-name ${FUNCTION_NAME}  --zip-file fileb://lambda.zip --profile ${PROFILE}
 
-aws s3 cp lambda.zip s3://${PROJECT}-${STAGE}-cloudformation/${PROJECT}-${STAGE}-${FUNCTION_NAME}.zip --profile ${PROFILE}
+#aws s3 cp lambda.zip s3://${PROJECT}-${STAGE}-cloudformation/${PROJECT}-${STAGE}-${FUNCTION_NAME}.zip --profile ${PROFILE}
+
 rm -rf library/
 rm lambda.zip
 
