@@ -95,83 +95,76 @@ Resources:
           "States": {
             "Save Variables": {
               "Type": "Pass",
-              "Next": "SQS-GetNumberOfMessages",
+              "Next": "SQS Get Number Of Messages",
               "Assign": {
                 "QueueUrl.$": "$.QueueUrl",
                 "DbInstanceIdentifier.$": "$.DbInstanceIdentifier",
                 "StopDatabase.$": "$.StopDatabase"
               }
             },
-            "SQS-GetNumberOfMessages": {
+            "SQS Get Number Of Messages": {
               "Type": "Task",
               "Parameters": {
                 "AttributeNames": [
                   "ApproximateNumberOfMessages"
                 ],
-                "QueueUrl.$": "$.QueueUrl"
+                "QueueUrl.$": "$QueueUrl"
               },
               "Resource": "arn:aws:states:::aws-sdk:sqs:getQueueAttributes",
-              "Next": "AreMessagesInQueue",
+              "Next": "Are Messages In Queue?",
               "OutputPath": "$.Attributes.ApproximateNumberOfMessages"
             },
-            "ReceiveMessage": {
+            "Receive Message from SQS Queue": {
               "Type": "Task",
               "Resource": "arn:aws:states:::aws-sdk:sqs:receiveMessage",
               "Parameters": {
                 "QueueUrl.$": "$QueueUrl",
                 "MaxNumberOfMessages": 10
               },
-              "Next": "CheckIfMessagesExist"
+              "Next": "Safe Check - is message in body?"
             },
-            "AreMessagesInQueue": {
+            "Are Messages In Queue?": {
               "Type": "Choice",
               "Choices": [
                 {
                   "Variable": "$",
                   "StringGreaterThan": "0",
-                  "Next": "DescribeDBInstances"
+                  "Next": "Get status of Database"
                 }
               ],
               "Default": "NoMessages"
             },
-            "CheckIfMessagesExist": {
+            "Safe Check - is message in body?": {
               "Type": "Choice",
               "Choices": [
                 {
                   "Variable": "$.Messages",
                   "IsPresent": true,
-                  "Next": "Save message into variable"
+                  "Next": "Map - work on messages"
                 }
               ],
               "Default": "Database Should be stopped?"
             },
-            "Save message into variable": {
-              "Type": "Pass",
-              "Next": "Get messages from variables",
-              "Assign": {
-                "Messages.$": "$.Messages"
-              }
-            },
-            "DescribeDBInstances": {
+            "Get status of Database": {
               "Type": "Task",
               "Parameters": {
                 "DbInstanceIdentifier.$": "$DbInstanceIdentifier"
               },
               "Resource": "arn:aws:states:::aws-sdk:rds:describeDBInstances",
-              "Next": "GetRdsStatus"
+              "Next": "Get Rds Status - clean output"
             },
-            "GetRdsStatus": {
+            "Get Rds Status - clean output": {
               "Type": "Pass",
-              "Next": "choise by database state",
+              "Next": "Should be DB started?",
               "InputPath": "$.DbInstances[0].DbInstanceStatus"
             },
-            "choise by database state": {
+            "Should be DB started?": {
               "Type": "Choice",
               "Choices": [
                 {
                   "Variable": "$",
                   "StringEquals": "available",
-                  "Next": "ReceiveMessage"
+                  "Next": "Receive Message from SQS Queue"
                 },
                 {
                   "Or": [
@@ -216,16 +209,6 @@ Resources:
               ],
               "Default": "Fail - not supported database state"
             },
-            "Get messages from variables": {
-              "Type": "Pass",
-              "Next": "Map - Each message",
-              "Assign": {
-                "Messages.$": "$Messages"
-              },
-              "Parameters": {
-                "Messages.$": "$Messages"
-              }
-            },
             "Fail - not supported database state": {
               "Type": "Fail"
             },
@@ -239,10 +222,10 @@ Resources:
             },
             "Wait for database": {
               "Type": "Wait",
-              "Next": "DescribeDBInstances",
+              "Next": "Get status of Database",
               "SecondsPath": "$waitSeconds"
             },
-            "Map - Each message": {
+            "Map - work on messages": {
               "Type": "Map",
               "ItemsPath": "$.Messages",
               "ItemProcessor": {
@@ -254,7 +237,7 @@ Resources:
                   "Put Document into RDS": {
                     "Type": "Task",
                     "Resource": "arn:aws:states:::lambda:invoke",
-                    "OutputPath": "$.Payload",
+                    "OutputPath": "$.Payload.body",
                     "Parameters": {
                       "FunctionName": "lenie-sqs-to-db",
                       "Payload.$": "$"
@@ -273,30 +256,22 @@ Resources:
                         "JitterStrategy": "FULL"
                       }
                     ],
-                    "Next": "ExtractReceiptHandle - sqs message ID"
-                  },
-                  "ExtractReceiptHandle - sqs message ID": {
-                    "Type": "Pass",
-                    "Next": "Delete Document from SQS",
-                    "Parameters": {
-                      "QueueUrl.$": "$QueueUrl",
-                      "ReceiptHandle.$": "$.body"
-                    }
+                    "Next": "Delete Document from SQS"
                   },
                   "Delete Document from SQS": {
                     "Type": "Task",
                     "Resource": "arn:aws:states:::aws-sdk:sqs:deleteMessage",
                     "Parameters": {
                       "QueueUrl.$": "$QueueUrl",
-                      "ReceiptHandle.$": "$.ReceiptHandle"
+                      "ReceiptHandle.$": "$"
                     },
                     "End": true
                   }
                 }
               },
-              "Next": "GetQueueAttributesAgain"
+              "Next": "Get number of messages in Queue"
             },
-            "GetQueueAttributesAgain": {
+            "Get number of messages in Queue": {
               "Type": "Task",
               "Parameters": {
                 "AttributeNames": [
@@ -305,16 +280,16 @@ Resources:
                 "QueueUrl.$": "$QueueUrl"
               },
               "Resource": "arn:aws:states:::aws-sdk:sqs:getQueueAttributes",
-              "Next": "AreStillMessagesInQueue",
+              "Next": "Are Still Messages In Queue?",
               "OutputPath": "$.Attributes.ApproximateNumberOfMessages"
             },
-            "AreStillMessagesInQueue": {
+            "Are Still Messages In Queue?": {
               "Type": "Choice",
               "Choices": [
                 {
                   "Variable": "$",
                   "StringGreaterThan": "0",
-                  "Next": "ReceiveMessage"
+                  "Next": "Receive Message from SQS Queue"
                 }
               ],
               "Default": "Database Should be stopped?"
@@ -325,7 +300,7 @@ Resources:
                 {
                   "Variable": "$StopDatabase",
                   "StringEquals": "yes",
-                  "Next": "StopDBInstance",
+                  "Next": "Stop DB Instance",
                   "Assign": {
                     "StopDatabase.$": "$StopDatabase"
                   }
@@ -336,7 +311,7 @@ Resources:
             "Success without database stop": {
               "Type": "Succeed"
             },
-            "StopDBInstance": {
+            "Stop DB Instance": {
               "Type": "Task",
               "Parameters": {
                 "DbInstanceIdentifier.$": "$DbInstanceIdentifier"
@@ -357,7 +332,6 @@ Resources:
             }
           }
         }
-
   StepFunctionInvokerRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -388,3 +362,22 @@ Resources:
                   - logs:DescribeResourcePolicies
                   - logs:DescribeLogGroups
                 Resource: "*"
+
+  EventBridgeScheduler:
+    Type: "AWS::Scheduler::Schedule"
+    Properties:
+      Name:  !Sub ${ProjectName}-${Environment}-sqs-to-rds
+      ScheduleExpression: !Sub ${ScheduleExpression}
+      FlexibleTimeWindow:
+        Mode: "OFF"
+      Target:
+        Arn: !GetAtt MyStateMachine.Arn
+        RoleArn: !GetAtt StepFunctionInvokerRole.Arn # Rola dozwalająca uruchamianie Step Functions
+        DeadLetterConfig:
+          Arn: !ImportValue lenie-problems-dlq-arn
+        Input: !Sub |
+          {
+            "QueueUrl": "${QueueUrl}",
+            "DbInstanceIdentifier": "${DbInstanceIdentifier}",
+            "StopDatabase": "yes"
+          }
