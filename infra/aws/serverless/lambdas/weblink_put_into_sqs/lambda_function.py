@@ -12,10 +12,36 @@ logger.setLevel("INFO")
 # https://docs.aws.amazon.com/lambda/latest/dg/python-logging.html
 
 def lambda_handler(event, context):
-    sqs = boto3.client('sqs')
-    s3 = boto3.client('s3')
+
     queue_url = os.getenv("AWS_QUEUE_URL_ADD")
     bucket_name = os.getenv("BUCKET_NAME")
+
+    if bucket_name is None:
+        error_message = "BUCKET_NAME environment variable is not set"
+        logger.error(error_message)
+        return {
+            'statusCode': 500,
+            'body': json.dumps(error_message),
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': True,
+            },
+        }
+
+    if queue_url is None:
+        error_message = "AWS_QUEUE_URL_ADD environment variable is not set"
+        logger.error(error_message)
+        return {
+            'statusCode': 500,
+            'body': json.dumps(error_message),
+            'headers': {
+                'Access-Control-Allow-Origin': '*',
+                'Access-Control-Allow-Credentials': True,
+            },
+        }
+
+    sqs = boto3.client('sqs')
+    s3 = boto3.client('s3')
 
     url_data = json.loads(event["body"])
     url_data_print = json.loads(event["body"])
@@ -132,6 +158,7 @@ def lambda_handler(event, context):
         }
 
     logger.info(f"Successfully sent message to SQS, message ID: {response['MessageId']}")
+
     return {
         'statusCode': 200,
         'body': json.dumps(f'Successfully sent message to SQS, message ID: {response["MessageId"]}'),
