@@ -132,7 +132,6 @@ def lambda_handler(event, context):
         }
 
     logger.info(f"Successfully sent message to SQS, message ID: {response['MessageId']}")
-
     return {
         'statusCode': 200,
         'body': json.dumps(f'Successfully sent message to SQS, message ID: {response["MessageId"]}'),
