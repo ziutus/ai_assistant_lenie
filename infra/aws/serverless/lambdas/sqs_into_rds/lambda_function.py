@@ -15,7 +15,7 @@ def lambda_handler(event, context):
 
     web_doc = StalkerWebDocumentDB(link_data["url"])
     if web_doc.id:
-        logger.info(f"This Url exist in with >{web_doc.id}<, ignoring ")
+        logger.info(f"This Url exist in with >{web_doc.id}<, ignoring")
 
         return {
             'statusCode': 200,
@@ -48,6 +48,7 @@ def lambda_handler(event, context):
         web_doc.source = link_data["source"]
 
     id_added = web_doc.save()
+    logger.info(f"This Url added into database with ID >{id_added}<")
 
     # TODO implement
     return {
