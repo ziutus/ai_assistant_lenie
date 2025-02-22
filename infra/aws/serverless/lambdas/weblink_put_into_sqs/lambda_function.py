@@ -43,8 +43,9 @@ def lambda_handler(event, context):
     sqs = boto3.client('sqs')
     s3 = boto3.client('s3')
 
-    url_data = json.loads(event["body"])
-    url_data_print = json.loads(event["body"])
+    url_data = json.loads(event["body"]) if isinstance(event["body"], str) else event["body"]
+    url_data_print = url_data
+
     url_data_print["text"] = url_data_print["text"][:50]
     url_data_print["html"] = url_data_print["html"][:50]
 
