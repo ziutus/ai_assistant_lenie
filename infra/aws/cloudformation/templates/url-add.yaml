@@ -8,6 +8,10 @@ Resources:
       FunctionName: 'lenie-dev-url-add'
       Handler: 'lambda_function.lambda_handler'
       Role: !GetAtt LambdaExecutionRole.Arn
+      LoggingConfig:
+        LogFormat: 'JSON'
+        ApplicationLogLevel: 'INFO'
+        SystemLogLevel: 'INFO'
       Layers:
         - arn:aws:lambda:us-east-1:017000801446:layer:AWSLambdaPowertoolsPythonV3-python311-x86_64:6
       Code:
@@ -23,6 +27,11 @@ Resources:
           AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites
           BUCKET_NAME: lenie-s3-tmp
 
+  LenineUrlAddLogGroup:
+    Type: 'AWS::Logs::LogGroup'
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${LenineUrlAddLambdaFunction}'
+      RetentionInDays: 7
 
   LambdaExecutionRole:
     Type: 'AWS::IAM::Role'
@@ -37,7 +46,7 @@ Resources:
             Action:
               - 'sts:AssumeRole'
       Policies:
-        - PolicyName: LambdaBasicExecution
+        - PolicyName: LambdaBasicExecution2
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
