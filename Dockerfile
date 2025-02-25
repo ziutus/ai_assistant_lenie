@@ -5,7 +5,7 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Copy the current directory contents into the container at /app
-COPY requirements.txt /app/requirements.txt
+COPY requirements_docker.txt /app/requirements.txt
 
 # Update package list and install curl, then clean up apt cache
 RUN apt-get update && \
