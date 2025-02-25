@@ -6,7 +6,7 @@ Language Model Models (LLMs).
 
 Lenie enables users to:
 * collect and manage links, allowing easy searching of accumulated references using LLM,
-* download content from webpages and store it in a PostgreSQL database for later searching in a private archive,
+* download content from webpages and store it in a PostgreSQL database for later search in a private archive,
 * transcribe YouTube videos and store them in a database, facilitating the search for interesting segments (given the ease of finding engaging videos compared to books or articles).
 
 Lenie's functionalities represent an advanced integration of AI technology with users' daily needs, providing efficient data management and deeper content analysis and utilization. However, similar to the literary character who brings inevitable consequences of her existence, Lenie raises questions about the boundaries of technology and our own control over it. It is both a fascinating and daunting tool that requires a conscious approach and responsible usage to maximize benefits and minimize risks associated with the increasing role of artificial intelligence in our lives.
@@ -18,17 +18,17 @@ In this project I'm using:
 * Python as server backend
 * Postgresql as embedding database
 * React as web interface (during creation)
-* AWS as deploying platform (as I'm lazy and don't want to manage infrastructure)
+* AWS as deploying a platform (as I'm lazy and don't want to manage infrastructure)
 
-I'm also preparing few ways to deploy it:
+I'm also preparing a few ways to deploy it:
 * docker image (to easy run application)
 * Kubernetes helm (to test scalability options)
 * lambda (to test Event Driver way of writing application)
 
-As I'm big fun on AWS you will also see deploy ways like:
+As I'm big fun on AWS, you will also see deploy ways like:
 * Lambdas (to see Event Driver way of writing applications like that),
 * ECS (to see nice way of scalling docker images)
-* EKS (to learn more about costs of managing own Kubernetes cluster and application on it)
+* EKS (to learn more about the costs of managing own Kubernetes cluster and application on it)
 
 
 ## Python notes
@@ -90,6 +90,13 @@ docker push ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/lenie-ai-server:latest
 After starting the appliaction or container, you can access the Stalker application by going to http://localhost:5000 in your web browser.
 
 ### Docker
+
+Running from local image:
+```bash
+docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenie-ai-server:latest
+```
+
+Running from remote image:
 
 ```powershell
 docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenieai/lenie-ai-server:latest
