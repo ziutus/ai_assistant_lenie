@@ -13,6 +13,8 @@ anyio==4.8.0
     #   openai
 assemblyai==0.37.0
     # via -r requirements.piptools
+aws-xray-sdk==2.14.0
+    # via -r requirements.piptools
 backoff==2.2.1
     # via langfuse
 beautifulsoup4==4.13.3
@@ -21,6 +23,13 @@ beautifulsoup4==4.13.3
     #   markdownify
 blinker==1.9.0
     # via flask
+boto3==1.37.1
+    # via -r requirements.piptools
+botocore==1.37.1
+    # via
+    #   aws-xray-sdk
+    #   boto3
+    #   s3transfer
 certifi==2025.1.31
     # via
     #   httpcore
@@ -49,13 +58,13 @@ filelock==3.17.0
     # via virtualenv
 filetype==1.2.0
     # via -r requirements.piptools
-firecrawl-py==1.11.1
+firecrawl-py==1.12.0
     # via -r requirements.piptools
 flask==3.1.0
     # via
     #   -r requirements.piptools
     #   flask-cors
-flask-cors==5.0.0
+flask-cors==5.0.1
     # via -r requirements.piptools
 h11==0.14.0
     # via httpcore
@@ -66,7 +75,7 @@ httpx==0.28.1
     #   assemblyai
     #   langfuse
     #   openai
-identify==2.6.7
+identify==2.6.8
     # via pre-commit
 idna==3.10
     # via
@@ -82,9 +91,13 @@ jinja2==3.1.5
     # via flask
 jiter==0.8.2
     # via openai
-langfuse==2.59.2
+jmespath==1.0.1
+    # via
+    #   boto3
+    #   botocore
+langfuse==2.59.5
     # via -r requirements.piptools
-markdownify==0.14.1
+markdownify==1.0.0
     # via -r requirements.piptools
 markupsafe==3.0.2
     # via
@@ -96,7 +109,7 @@ nest-asyncio==1.6.0
     # via firecrawl-py
 nodeenv==1.9.1
     # via pre-commit
-openai==1.62.0
+openai==1.64.0
     # via -r requirements.piptools
 packaging==24.2
     # via
@@ -122,6 +135,8 @@ pypdf==5.3.0
     # via -r requirements.piptools
 pytest==8.3.4
     # via -r requirements.piptools
+python-dateutil==2.9.0.post0
+    # via botocore
 python-dotenv==1.0.1
     # via
     #   -r requirements.piptools
@@ -138,8 +153,12 @@ requests==2.32.3
     #   firecrawl-py
     #   langfuse
     #   youtube-transcript-api
+s3transfer==0.11.2
+    # via boto3
 six==1.17.0
-    # via markdownify
+    # via
+    #   markdownify
+    #   python-dateutil
 sniffio==1.3.1
     # via
     #   anyio
@@ -159,16 +178,22 @@ typing-extensions==4.12.2
 unidecode==1.3.8
     # via -r requirements.piptools
 urllib3==2.3.0
-    # via requests
+    # via
+    #   botocore
+    #   requests
 virtualenv==20.29.2
     # via pre-commit
-websockets==14.2
+websockets==15.0
     # via
     #   assemblyai
     #   firecrawl-py
 werkzeug==3.1.3
-    # via flask
+    # via
+    #   flask
+    #   flask-cors
 wrapt==1.17.2
-    # via langfuse
+    # via
+    #   aws-xray-sdk
+    #   langfuse
 youtube-transcript-api==0.6.3
     # via -r requirements.piptools
