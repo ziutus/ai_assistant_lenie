@@ -1,2 +1,2 @@
-(?P<article_text>.*)
-\*Dziękujemy,\sże\sprzeczytałaś\/eś\snasz\sartykuł\sdo\skońca.
+Skróć\sartykuł(?P<article_text>.*)
+_Dziękujemy,\sże\sprzeczytałaś\/eś\snasz\sartykuł\sdo\skońca
