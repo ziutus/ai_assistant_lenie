@@ -8,6 +8,10 @@ from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 # from pprint import pprint
 
+from html2markdown import convert
+import html2text
+
+
 from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentStatusError
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
@@ -139,6 +143,7 @@ def load_regex_from_file(file_path):
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Plik z regułami nie został znaleziony: {file_path}")
     with open(file_path, "r", encoding="utf-8") as f:
+        print("DEBUG: lead_regx_from_file: reading file: ", file_path)
         return f.read().strip()
 
 
@@ -163,7 +168,7 @@ def process_markdown_and_extract_links(md_text):
 
 wb_db = WebsitesDBPostgreSQL()
 # documents = wb_db.get_documents_by_url("https://www.money.pl/")
-documents = [7530]
+documents = [7789]
 page_url = " https://www.onet.pl/informacje/businessinsider/"
 online = True
 embedding_update = False
@@ -185,6 +190,9 @@ page_regexp_map = {
         "data/pages_analyze/onet_pl_informacje_wiadomosci.regex",
         "data/pages_analyze/onet_pl_informacje_wiadomosci_2.regexp"
     ],
+    "https://www.onet.pl/informacje/ppo": [
+        "data/pages_analyze/onet_pl_informacje_ppo.regex",
+    ],
     "https://www.onet.pl/turystyka/onetpodroze": [
         "data/pages_analyze/onet_pl_podroze.regex"
     ],
@@ -200,13 +208,20 @@ page_rules_map = {
 
 if __name__ == '__main__':
 
+    if not os.path.exists("tmp/markdown_output"):
+        os.makedirs("tmp/markdown_output")
+    if not os.path.exists("tmp/markdown"):
+        os.makedirs("tmp/markdown")
+
     for document_id in documents:
         print(f"DEBUG: Working on document_id {document_id}")
         metadata = {}
-        cache_file_md = f"tmp/markdown/{document_id}.md"
         cache_file_html = f"tmp/markdown/{document_id}.html"
-        cache_file_output = f"tmp/markdown_output/{document_id}.md"
-        cache_file_output_2 = f"tmp/markdown_output/{document_id}_2.md"
+        cache_file_md = f"tmp/markdown/{document_id}_raw.md"
+        cache_file_output = f"tmp/markdown/{document_id}.md"
+        cache_file_output_2 = f"tmp/markdown/{document_id}_2.md"
+        cache_file_output_manual = f"tmp/markdown/{document_id}_manual.md"
+        cache_file_json = f"tmp/markdown/{document_id}.json"
 
         print("Taking markdown content from local cache or from remote cache (S3)")
         if os.path.isfile(cache_file_md):
@@ -222,10 +237,7 @@ if __name__ == '__main__':
                     print("I can download file from S3 cache")
                     if s3_take_file(S3_BUCKET_NAME, web_doc.s3_uuid + ".html", cache_file_html):
                         mdit = MarkItDown()
-                        result = mdit.convert(cache_file_html)
-                        with open(cache_file_md, 'w', encoding="utf-8") as file:
-                            file.write(result.text_content)
-                        result = result.text_content
+                        result = mdit.convert(cache_file_html).text_content
                     else:
                         print("Can't download file from S3 cache, exiting...")
                         continue
@@ -235,6 +247,60 @@ if __name__ == '__main__':
             else:
                 print("Doesn't exist s3_uuid, exiting...")
                 continue
+
+        md_size = len(result)
+        html_size = os.path.getsize(cache_file_html)
+
+        print(f"Rozmiar HTML: {html_size} bajtów")
+
+        reduction_percentage = ((html_size - md_size) / html_size) * 100
+        print(f"MarkItDown reduction: {reduction_percentage:.2f}%")
+
+        with open(cache_file_html, "r", encoding="utf-8") as f:
+            html = f.read()
+
+            markdown = convert(html)
+            md_size_2 = len(markdown)
+            reduction_markdown_percentage = ((html_size - md_size_2) / html_size) * 100
+            print(f"Markdown reduction: {reduction_markdown_percentage:.2f}%")
+
+            h = html2text.HTML2Text()
+            h.ignore_links = False
+            h.ignore_images = False
+            markdown_content = h.handle(html)
+
+            # print(markdown_content)
+            # print(len(markdown_content))
+
+            markdown_size = len(markdown_content)
+            reduction_html2text_percentage = ((html_size - markdown_size) / html_size) * 100
+
+            # print(f"Rozmiar Markdown: {markdown_size} bajtów")
+            print(f"html2Text reduction: {reduction_html2text_percentage:.2f}%")
+
+        wartosci = [
+            ('markitdown', reduction_percentage),
+            ('markdown', reduction_markdown_percentage),
+            ('html2text', reduction_html2text_percentage)
+        ]
+        md_method, reduction_max = max(wartosci, key=lambda x: x[1])
+
+        print(f"Maksymalna redukcja: {reduction_max}")
+        print(f"Nazwa metody: {md_method}")
+
+        if reduction_max < 30:
+            print("ERROR: Something wrong with traformation to markdown, exiting...")
+            exit(2)
+
+        if md_method == 'markitdown':
+            markdown_text = result
+        elif md_method == 'markdown':
+            markdown_text = markdown
+        else:
+            markdown_text = markdown_content
+
+        with open(cache_file_md, 'w', encoding="utf-8") as file:
+            file.write(markdown_text)
 
         if online:
             wb_db = WebsitesDBPostgreSQL()
@@ -258,12 +324,14 @@ if __name__ == '__main__':
                 # pprint(page_regexp_map[page_rules])
 
                 for rules_file in page_regexp_map[page_rules]:
+                    print(f"DEBUG: checking file: {rules_file}")
                     regexp_page = load_regex_from_file(rules_file)
-                    match = re.search(regexp_page, result, re.VERBOSE | re.DOTALL)
+                    # print(f"TRACE: regexp_page: {regexp_page}")
+                    match = re.search(regexp_page, markdown_text, re.VERBOSE | re.DOTALL)
 
                     if match:
-                        extracted_text = match.group('article_text').strip() if match else "Nie znaleziono treści"
                         print(f"DEBUG: Regex defined in {rules_file} for finding article body is working.")
+                        extracted_text = match.group('article_text').strip() if match else "Nie znaleziono treści"
                         found_rules = True
                         regexp_rules_file = rules_file
                         break
@@ -314,11 +382,11 @@ if __name__ == '__main__':
 
         print("Final part: writing markdown and metadata files")
         print("DEBUG: writing final metadata file")
-        with open(f"tmp/markdown_output/{document_id}.json", 'w', encoding="utf-8") as file:
+        with open(cache_file_json, 'w', encoding="utf-8") as file:
             file.write(json.dumps(metadata, indent=4))
 
         print("DEBUG: writing final markdown file")
-        with open(f"tmp/markdown_output/{document_id}.md", 'w', encoding="utf-8") as file:
+        with open(cache_file_output_2, 'w', encoding="utf-8") as file:
             file.write(new_markdown)
 
         print("Extra part: cleaning markdown document")
@@ -336,7 +404,7 @@ if __name__ == '__main__':
         markdown_text = popraw_markdown(markdown_text)
         markdown_text = re.sub('\n{3,10}', '\n\n', markdown_text)
 
-        with open(f"tmp/markdown_output/{document_id}_manual_test.md", "w", encoding="utf-8") as f:
+        with open(cache_file_output_manual, "w", encoding="utf-8") as f:
             f.write(markdown_text)
 
         split_limit = 300
@@ -350,17 +418,17 @@ if __name__ == '__main__':
             print("part has words", len(part.split()))
             print(part)
 
-        if embedding_update:
-            parts_txt = []
-            for part in parts:
-                parts_txt.append(markdown_to_text(part))
-
-            wb_db = WebsitesDBPostgreSQL()
-            web_doc = StalkerWebDocumentDB(document_id=document_id)
-            web_doc.embedding_add_by_parts(model=EMBEDDING_MODEL, parts=parts_txt)
-            web_doc.text_md = markdown_text
-            web_doc.text = markdown_to_text(markdown_text)
-            web_doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
-            web_doc.save()
+        # if embedding_update:
+        #     parts_txt = []
+        #     for part in parts:
+        #         parts_txt.append(markdown_to_text(part))
+        #
+        #     wb_db = WebsitesDBPostgreSQL()
+        #     web_doc = StalkerWebDocumentDB(document_id=document_id)
+        #     web_doc.embedding_add_by_parts(model=EMBEDDING_MODEL, parts=parts_txt)
+        #     web_doc.text_md = markdown_text
+        #     web_doc.text = markdown_to_text(markdown_text)
+        #     web_doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
+        #     web_doc.save()
 
 exit(0)
