@@ -39,5 +39,7 @@ def s3_take_file(s3_bucket: str, object_key: str, local_filename: str) -> bool:
         s3.download_file(s3_bucket, object_key, local_filename)
         return True
     except Exception as e:
-        print("An error occurred: ", str(e))
+        print(f"Function s3_take_file: An error occurred: {str(e)}")
+        print(f"Attempted path: {os.path.abspath(local_filename)}")
+        print(f"Directory exists: {os.path.exists(os.path.dirname(local_filename))}")
         return False
