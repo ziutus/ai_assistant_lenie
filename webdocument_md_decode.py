@@ -2,8 +2,6 @@ import os.path
 import re
 import json
 from markitdown import MarkItDown
-import markdown as md
-from bs4 import BeautifulSoup
 
 from dotenv import load_dotenv
 # from pprint import pprint
@@ -21,17 +19,6 @@ load_dotenv()
 
 S3_BUCKET_NAME = os.getenv("AWS_S3_WEBSITE_CONTENT")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
-
-
-def markdown_to_text(markdown_string):
-    # Konwersja Markdown do HTML za pomocą biblioteki markdown
-    html = md.markdown(markdown_string)
-
-    # Użycie BeautifulSoup do wyciągnięcia czystego tekstu z HTML
-    soup = BeautifulSoup(html, 'html.parser')
-    plain_text = soup.get_text()
-
-    return plain_text
 
 
 def popraw_markdown(tekst):
