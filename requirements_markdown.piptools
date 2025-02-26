@@ -1,5 +1,4 @@
 markitdown
-markdown
 psycopg2-binary
 dotenv
 boto3
