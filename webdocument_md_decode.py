@@ -357,21 +357,25 @@ if __name__ == '__main__':
         logger.debug("Removing links from markdown and adding into metadata part")
         new_markdown, metadata["links2"] = process_markdown_and_extract_links(new_markdown)
 
+        with open(f"{cache_dir}/{document_id}_step_3.md", 'w', encoding="utf-8") as file:
+            logger.debug("Writing markdown to file from step 3")
+            file.write(new_markdown)
+
         logger.info("\nStep 4: cleaning text for each big portal from external links inside text (not needed for embedding)")
         if page_url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
             logger.debug("Using special rules for onet.pl informacje onetwiadomosci")
             new_markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", new_markdown, flags=re.MULTILINE)
 
-        logger.info("Step 5: writing markdown and metadata files")
+        with open(f"{cache_dir}/{document_id}_step_4.md", 'w', encoding="utf-8") as file:
+            logger.debug("Writing markdown to file from step 4")
+            file.write(new_markdown)
+
         logger.debug("Writing final metadata file")
         with open(f"{cache_dir}/{document_id}.json", 'w', encoding="utf-8") as file:
             file.write(json.dumps(metadata, indent=4))
 
-        with open(f"{cache_dir}/{document_id}_step_5.md", 'w', encoding="utf-8") as file:
-            logger.debug("Writing markdown to file from step 5")
-            file.write(new_markdown)
 
-        logger.debug("Step 6: cleaning markdown document")
+        logger.debug("Step 5: cleaning markdown document")
         markdown_text = re.sub(r'\r\n', '\n', new_markdown)
 
         markdown_text = re.sub(r'^\s+$', '\n', markdown_text)
@@ -386,7 +390,7 @@ if __name__ == '__main__':
         markdown_text = popraw_markdown(markdown_text)
         markdown_text = re.sub('\n{3,10}', '\n\n', markdown_text)
 
-        with open(f"{cache_dir}/{document_id}_step_6.md", "w", encoding="utf-8") as f:
+        with open(f"{cache_dir}/{document_id}_step_5.md", "w", encoding="utf-8") as f:
             f.write(markdown_text)
 
         logger.info(f"Raw text has {len(markdown_text.split())} words")
