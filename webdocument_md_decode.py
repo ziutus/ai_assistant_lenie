@@ -195,13 +195,12 @@ page_rules_map = {
 
 if __name__ == '__main__':
 
-    if not os.path.exists("tmp/markdown_output"):
-        os.makedirs("tmp/markdown_output")
     if not os.path.exists("tmp/markdown"):
         os.makedirs("tmp/markdown")
 
     for document_id in documents:
         print(f"DEBUG: Working on document_id {document_id}")
+        print("Step 1: preparing markdown from HTML file")
         metadata = {}
         cache_file_html = f"tmp/markdown/{document_id}.html"
         cache_file_md = f"tmp/markdown/{document_id}_raw.md"
@@ -215,25 +214,30 @@ if __name__ == '__main__':
             print("DEBUG: 1. Taking raw markdown file from cache")
             with open(cache_file_md, "r", encoding="utf-8") as f:
                 result = f.read()
+        # elif os.path.isfile(cache_file_html):
+        #     print("DEBUG: 1b. Taking raw html file from cache")
         else:
             print("DEBUG: 1a. Taking raw markdown from Amazon S3")
             wb_db = WebsitesDBPostgreSQL()
             web_doc = StalkerWebDocumentDB(document_id=document_id)
-            if web_doc.s3_uuid:
-                if s3_file_exist(S3_BUCKET_NAME, web_doc.s3_uuid + ".html"):
-                    print("I can download file from S3 cache")
-                    if s3_take_file(S3_BUCKET_NAME, web_doc.s3_uuid + ".html", cache_file_html):
-                        mdit = MarkItDown()
-                        result = mdit.convert(cache_file_html).text_content
-                    else:
-                        print("Can't download file from S3 cache, exiting...")
-                        continue
-                else:
-                    print("I can't download file from S3 cache")
-                    continue
-            else:
+
+            if not web_doc.s3_uuid:
                 print("Doesn't exist s3_uuid, exiting...")
                 continue
+
+            if not s3_file_exist(S3_BUCKET_NAME, web_doc.s3_uuid + ".html"):
+                print("I can't find file in S3 cache")
+                continue
+
+            print("the HTML file exist in S3 cache")
+            if s3_take_file(S3_BUCKET_NAME, web_doc.s3_uuid + ".html", cache_file_html):
+                print("The HTML file has been copy to local cache")
+            else:
+                print("Can't download file from S3 cache, exiting...")
+                continue
+
+            mdit = MarkItDown()
+            result = mdit.convert(cache_file_html).text_content
 
         md_size = len(result)
         html_size = os.path.getsize(cache_file_html)
@@ -276,7 +280,7 @@ if __name__ == '__main__':
         print(f"Nazwa metody: {md_method}")
 
         if reduction_max < 30:
-            print("ERROR: Something wrong with traformation to markdown, exiting...")
+            print("ERROR: Something wrong with transformation to markdown, exiting...")
             exit(2)
 
         if md_method == 'markitdown':
@@ -301,7 +305,7 @@ if __name__ == '__main__':
 
         print(f"URL: {page_url}\n")
 
-        print("par 2: taking important content from markdown (ignoring portal links, disclaimers etc")
+        print("Step 2: taking important content from markdown (ignoring portal links, disclaimers etc")
         found_rules = False
         regexp_rules_file = None
         extracted_text: str = ""
@@ -335,7 +339,7 @@ if __name__ == '__main__':
         with open(cache_file_output, 'w', encoding="utf-8") as file:
             file.write(extracted_text)
 
-        print("\nPart 3 - converting markdown to text and creating metadata part for links and images")
+        print("\nStep 3 - converting markdown to text and creating metadata part for links and images")
         print("DEBUG: extracting links with images from markdown")
         output_json = process_markdown_and_extract_links_with_images(extracted_text)
         metadata["links"] = output_json['links']
@@ -362,7 +366,7 @@ if __name__ == '__main__':
         print("DEBUG: removing links from markdown and adding into metadata part")
         new_markdown, metadata["links2"] = process_markdown_and_extract_links(new_markdown)
 
-        print("\nPart 4: cleaning text for each big portal from external links inside text (not needed for embedding)")
+        print("\nStep 4: cleaning text for each big portal from external links inside text (not needed for embedding)")
         if page_url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
             print("Using special rules for onet.pl informacje onetwiadomosci")
             new_markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", new_markdown, flags=re.MULTILINE)
