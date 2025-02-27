@@ -208,18 +208,16 @@ if __name__ == '__main__':
 
     for document_id in documents:
         logger.info(f"Working on document_id {document_id}")
-        logger.info("Step 1: preparing markdown from HTML file")
         metadata = {}
         cache_file_html = f"{cache_dir}/{document_id}.html"
-        cache_file_md = f"{cache_dir}/{document_id}_raw.md"
+        cache_file_md = f"{cache_dir}/{document_id}_step_1_all.md"
         cache_file_output = f"{cache_dir}/{document_id}.md"
-        cache_file_output_2 = f"{cache_dir}/{document_id}_2.md"
-        cache_file_output_manual = f"{cache_dir}/{document_id}_manual.md"
-        cache_file_json = f"{cache_dir}/{document_id}.json"
 
+        logger.info("Step 1: preparing markdown from HTML file")
         logger.debug("Taking markdown content from local cache or from remote cache (S3)")
+
         if os.path.isfile(cache_file_md):
-            logger.debug("DEBUG: 1. Taking raw markdown file from cache")
+            logger.debug("DEBUG: 1a. Taking raw markdown file from cache")
             with open(cache_file_md, "r", encoding="utf-8") as f:
                 result = f.read()
         elif os.path.isfile(cache_file_html):
@@ -228,7 +226,7 @@ if __name__ == '__main__':
             result = mdit.convert(cache_file_html).text_content
 
         else:
-            logger.debug("DEBUG: 1a. Taking raw markdown from Amazon S3")
+            logger.debug("DEBUG: 1c. Taking raw markdown from Amazon S3")
             web_doc = StalkerWebDocumentDB(document_id=document_id)
 
             if not web_doc.s3_uuid:
@@ -254,66 +252,52 @@ if __name__ == '__main__':
 
         logger.debug(f"Rozmiar HTML: {html_size} bajtów")
 
-
         reduction_percentage = calculate_reduction(html_size, md_size)
         logger.debug(f"MarkItDown reduction: {reduction_percentage:.2f}%")
+        markdown_text = result
 
-        with open(cache_file_html, "r", encoding="utf-8") as f:
-            html = f.read()
+        if reduction_percentage < 30:
+            logger.debug("Looks like MarkItDown didn't converted to markdown, choosing next metod: html2text")
+            with open(cache_file_html, "r", encoding="utf-8") as f:
+                html = f.read()
 
-            markdown = convert(html)
-            md_size_2 = len(markdown)
-            reduction_markdown_percentage = calculate_reduction(html_size, md_size_2)
-            logger.debug(f"Markdown reduction: {reduction_markdown_percentage:.2f}%")
+                markdown = convert(html)
+                md_size_2 = len(markdown)
 
-            h = html2text.HTML2Text()
-            h.ignore_links = False
-            h.ignore_images = False
-            markdown_content = h.handle(html)
+                reduction_markdown_percentage = calculate_reduction(html_size, md_size_2)
+                logger.debug(f"Markdown reduction: {reduction_markdown_percentage:.2f}%")
+                markdown_text = markdown
 
-            # print(markdown_content)
-            # print(len(markdown_content))
+                if reduction_markdown_percentage < 30:
 
-            markdown_size = len(markdown_content)
-            reduction_html2text_percentage = calculate_reduction(html_size, markdown_size)
+                    h = html2text.HTML2Text()
+                    h.ignore_links = False
+                    h.ignore_images = False
+                    markdown_content = h.handle(html)
 
-            # print(f"Rozmiar Markdown: {markdown_size} bajtów")
-            logger.debug(f"html2Text reduction: {reduction_html2text_percentage:.2f}%")
+                    markdown_size = len(markdown_content)
+                    reduction_html2text_percentage = calculate_reduction(html_size, markdown_size)
 
-        wartosci = [
-            ('markitdown', reduction_percentage),
-            ('markdown', reduction_markdown_percentage),
-            ('html2text', reduction_html2text_percentage)
-        ]
-        md_method, reduction_max = max(wartosci, key=lambda x: x[1])
+                    logger.debug(f"html2Text reduction: {reduction_html2text_percentage:.2f}%")
 
-        logger.debug(f"Maksymalna redukcja: {reduction_max}")
-        logger.debug(f"Nazwa metody: {md_method}")
+                    markdown_text = markdown_content
 
-        if reduction_max < 30:
-            logger.error("ERROR: Something wrong with transformation to markdown, exiting...")
-            exit(2)
-
-        if md_method == 'markitdown':
-            markdown_text = result
-        elif md_method == 'markdown':
-            markdown_text = markdown
-        else:
-            markdown_text = markdown_content
+                    if reduction_html2text_percentage < 30:
+                        logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
+                        continue
 
         with open(cache_file_md, 'w', encoding="utf-8") as file:
             file.write(markdown_text)
 
-        if online:
-            web_doc = StalkerWebDocumentDB(document_id=document_id)
-            logger.debug("Taking URL from database")
-            page_url = web_doc.url
-
-            if web_doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR and not ignore_regexp_issue:
-                logger.debug("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
-                continue
-
+        web_doc = StalkerWebDocumentDB(document_id=document_id)
+        logger.debug("Taking URL from database")
+        page_url = web_doc.url
         logger.debug(f"URL: {page_url}\n")
+
+        if web_doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR and not ignore_regexp_issue:
+            logger.debug("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
+            continue
+
 
         logger.info("Step 2: taking important content from markdown (ignoring portal links, disclaimers etc")
         found_rules = False
@@ -383,11 +367,11 @@ if __name__ == '__main__':
 
         logger.info("Final part: writing markdown and metadata files")
         logger.debug("Writing final metadata file")
-        with open(cache_file_json, 'w', encoding="utf-8") as file:
+        with open(f"{cache_dir}/{document_id}.json", 'w', encoding="utf-8") as file:
             file.write(json.dumps(metadata, indent=4))
 
         logger.debug("Writing final markdown file")
-        with open(cache_file_output_2, 'w', encoding="utf-8") as file:
+        with open(f"{cache_dir}/{document_id}_final_automatic.md", 'w', encoding="utf-8") as file:
             file.write(new_markdown)
 
         logger.debug("Extra part: cleaning markdown document")
@@ -405,7 +389,7 @@ if __name__ == '__main__':
         markdown_text = popraw_markdown(markdown_text)
         markdown_text = re.sub('\n{3,10}', '\n\n', markdown_text)
 
-        with open(cache_file_output_manual, "w", encoding="utf-8") as f:
+        with open(f"{cache_dir}/{document_id}_final_manual.md", "w", encoding="utf-8") as f:
             f.write(markdown_text)
 
         logger.info(f"Raw text has {len(markdown_text.split())} words")
