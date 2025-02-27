@@ -134,7 +134,7 @@ def load_regex_from_file(file_path):
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Plik z regułami nie został znaleziony: {file_path}")
     with open(file_path, "r", encoding="utf-8") as f:
-        logger.debug("Lead_regx_from_file: reading file: ", file_path)
+        logger.debug(f"Lead_regx_from_file: reading file: {file_path} ")
         return f.read().strip()
 
 
@@ -165,6 +165,7 @@ online = True
 embedding_update = False
 ignore_regexp_issue = False
 cache_dir = "tmp/markdown"
+split_limit = 300
 
 page_regexp_map = {
     "https://www.money.pl": [
@@ -407,15 +408,16 @@ if __name__ == '__main__':
         with open(cache_file_output_manual, "w", encoding="utf-8") as f:
             f.write(markdown_text)
 
-        split_limit = 300
         logger.info(f"Raw text has {len(markdown_text.split())} words")
 
         parts = split_for_emb(markdown_text)
+        parts_nb  = len(parts)
+        logger.info(f"Text has been split into {parts_nb} parts")
 
         print("\n>FINAL DATA<\n")
-        for part in parts:
+        for i, part in enumerate(parts):
             print("----")
-            print("part has words", len(part.split()))
+            print(f"part {i+1} has {len(part.split())} words")
             print(part)
 
         # if embedding_update:
