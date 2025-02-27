@@ -1,25 +1,29 @@
 import os.path
 import re
 import json
-from markitdown import MarkItDown
-
+import logging
 from dotenv import load_dotenv
-# from pprint import pprint
 
+from markitdown import MarkItDown
 from html2markdown import convert
 import html2text
-
 
 from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentStatusError
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.api.aws.s3_aws import s3_file_exist, s3_take_file
 
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 
 S3_BUCKET_NAME = os.getenv("AWS_S3_WEBSITE_CONTENT")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
 
+
+def calculate_reduction(html_size, markdown_size):
+    return ((html_size - markdown_size) / html_size) * 100
 
 def popraw_markdown(tekst):
     linie = tekst.splitlines()
@@ -130,7 +134,7 @@ def load_regex_from_file(file_path):
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Plik z regułami nie został znaleziony: {file_path}")
     with open(file_path, "r", encoding="utf-8") as f:
-        print("DEBUG: lead_regx_from_file: reading file: ", file_path)
+        logger.debug("Lead_regx_from_file: reading file: ", file_path)
         return f.read().strip()
 
 
@@ -160,6 +164,7 @@ page_url = " https://www.onet.pl/informacje/businessinsider/"
 online = True
 embedding_update = False
 ignore_regexp_issue = False
+cache_dir = "tmp/markdown"
 
 page_regexp_map = {
     "https://www.money.pl": [
@@ -195,45 +200,49 @@ page_rules_map = {
 
 if __name__ == '__main__':
 
-    if not os.path.exists("tmp/markdown"):
-        os.makedirs("tmp/markdown")
+
+    if not os.path.exists(cache_dir):
+        logger.debug(f"Creating cache directory {cache_dir}")
+        os.makedirs(cache_dir)
 
     for document_id in documents:
-        print(f"DEBUG: Working on document_id {document_id}")
-        print("Step 1: preparing markdown from HTML file")
+        logger.info(f"Working on document_id {document_id}")
+        logger.info("Step 1: preparing markdown from HTML file")
         metadata = {}
-        cache_file_html = f"tmp/markdown/{document_id}.html"
-        cache_file_md = f"tmp/markdown/{document_id}_raw.md"
-        cache_file_output = f"tmp/markdown/{document_id}.md"
-        cache_file_output_2 = f"tmp/markdown/{document_id}_2.md"
-        cache_file_output_manual = f"tmp/markdown/{document_id}_manual.md"
-        cache_file_json = f"tmp/markdown/{document_id}.json"
+        cache_file_html = f"{cache_dir}/{document_id}.html"
+        cache_file_md = f"{cache_dir}/{document_id}_raw.md"
+        cache_file_output = f"{cache_dir}/{document_id}.md"
+        cache_file_output_2 = f"{cache_dir}/{document_id}_2.md"
+        cache_file_output_manual = f"{cache_dir}/{document_id}_manual.md"
+        cache_file_json = f"{cache_dir}/{document_id}.json"
 
-        print("Taking markdown content from local cache or from remote cache (S3)")
+        logger.debug("Taking markdown content from local cache or from remote cache (S3)")
         if os.path.isfile(cache_file_md):
-            print("DEBUG: 1. Taking raw markdown file from cache")
+            logger.debug("DEBUG: 1. Taking raw markdown file from cache")
             with open(cache_file_md, "r", encoding="utf-8") as f:
                 result = f.read()
-        # elif os.path.isfile(cache_file_html):
-        #     print("DEBUG: 1b. Taking raw html file from cache")
+        elif os.path.isfile(cache_file_html):
+            logger.debug("DEBUG: 1b. Taking raw html file from cache")
+            mdit = MarkItDown()
+            result = mdit.convert(cache_file_html).text_content
+
         else:
-            print("DEBUG: 1a. Taking raw markdown from Amazon S3")
-            wb_db = WebsitesDBPostgreSQL()
+            logger.debug("DEBUG: 1a. Taking raw markdown from Amazon S3")
             web_doc = StalkerWebDocumentDB(document_id=document_id)
 
             if not web_doc.s3_uuid:
-                print("Doesn't exist s3_uuid, exiting...")
+                logger.debug("Doesn't exist s3_uuid, exiting...")
                 continue
 
             if not s3_file_exist(S3_BUCKET_NAME, web_doc.s3_uuid + ".html"):
-                print("I can't find file in S3 cache")
+                logger.debug("I can't find file in S3 cache")
                 continue
 
-            print("the HTML file exist in S3 cache")
+            logger.debug("the HTML file exist in S3 cache")
             if s3_take_file(S3_BUCKET_NAME, web_doc.s3_uuid + ".html", cache_file_html):
-                print("The HTML file has been copy to local cache")
+                logger.debug("The HTML file has been copy to local cache")
             else:
-                print("Can't download file from S3 cache, exiting...")
+                logger.debug("Can't download file from S3 cache, exiting...")
                 continue
 
             mdit = MarkItDown()
@@ -242,18 +251,19 @@ if __name__ == '__main__':
         md_size = len(result)
         html_size = os.path.getsize(cache_file_html)
 
-        print(f"Rozmiar HTML: {html_size} bajtów")
+        logger.debug(f"Rozmiar HTML: {html_size} bajtów")
 
-        reduction_percentage = ((html_size - md_size) / html_size) * 100
-        print(f"MarkItDown reduction: {reduction_percentage:.2f}%")
+
+        reduction_percentage = calculate_reduction(html_size, md_size)
+        logger.debug(f"MarkItDown reduction: {reduction_percentage:.2f}%")
 
         with open(cache_file_html, "r", encoding="utf-8") as f:
             html = f.read()
 
             markdown = convert(html)
             md_size_2 = len(markdown)
-            reduction_markdown_percentage = ((html_size - md_size_2) / html_size) * 100
-            print(f"Markdown reduction: {reduction_markdown_percentage:.2f}%")
+            reduction_markdown_percentage = calculate_reduction(html_size, md_size_2)
+            logger.debug(f"Markdown reduction: {reduction_markdown_percentage:.2f}%")
 
             h = html2text.HTML2Text()
             h.ignore_links = False
@@ -264,10 +274,10 @@ if __name__ == '__main__':
             # print(len(markdown_content))
 
             markdown_size = len(markdown_content)
-            reduction_html2text_percentage = ((html_size - markdown_size) / html_size) * 100
+            reduction_html2text_percentage = calculate_reduction(html_size, markdown_size)
 
             # print(f"Rozmiar Markdown: {markdown_size} bajtów")
-            print(f"html2Text reduction: {reduction_html2text_percentage:.2f}%")
+            logger.debug(f"html2Text reduction: {reduction_html2text_percentage:.2f}%")
 
         wartosci = [
             ('markitdown', reduction_percentage),
@@ -276,11 +286,11 @@ if __name__ == '__main__':
         ]
         md_method, reduction_max = max(wartosci, key=lambda x: x[1])
 
-        print(f"Maksymalna redukcja: {reduction_max}")
-        print(f"Nazwa metody: {md_method}")
+        logger.debug(f"Maksymalna redukcja: {reduction_max}")
+        logger.debug(f"Nazwa metody: {md_method}")
 
         if reduction_max < 30:
-            print("ERROR: Something wrong with transformation to markdown, exiting...")
+            logger.error("ERROR: Something wrong with transformation to markdown, exiting...")
             exit(2)
 
         if md_method == 'markitdown':
@@ -294,93 +304,92 @@ if __name__ == '__main__':
             file.write(markdown_text)
 
         if online:
-            wb_db = WebsitesDBPostgreSQL()
             web_doc = StalkerWebDocumentDB(document_id=document_id)
-            print("Taking URL from database")
+            logger.debug("Taking URL from database")
             page_url = web_doc.url
 
             if web_doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR and not ignore_regexp_issue:
-                print("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
+                logger.debug("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
                 continue
 
-        print(f"URL: {page_url}\n")
+        logger.debug(f"URL: {page_url}\n")
 
-        print("Step 2: taking important content from markdown (ignoring portal links, disclaimers etc")
+        logger.info("Step 2: taking important content from markdown (ignoring portal links, disclaimers etc")
         found_rules = False
         regexp_rules_file = None
         extracted_text: str = ""
         for page_rules in page_regexp_map:
             if page_url.find(page_rules) != -1:
-                print("DEBUG: I found rules for this page, let's check if they are working")
+                logger.debug("I found rules for this page, let's check if they are working")
                 # pprint(page_regexp_map[page_rules])
 
                 for rules_file in page_regexp_map[page_rules]:
-                    print(f"DEBUG: checking file: {rules_file}")
+                    logger.debug(f"Checking file: {rules_file}")
                     regexp_page = load_regex_from_file(rules_file)
                     # print(f"TRACE: regexp_page: {regexp_page}")
                     match = re.search(regexp_page, markdown_text, re.VERBOSE | re.DOTALL)
 
                     if match:
-                        print(f"DEBUG: Regex defined in {rules_file} for finding article body is working.")
+                        logger.debug(f"Regex defined in {rules_file} for finding article body is working.")
                         extracted_text = match.group('article_text').strip() if match else "Nie znaleziono treści"
                         found_rules = True
                         regexp_rules_file = rules_file
                         break
                     else:
-                        print(f"Nie znaleziono dopasowania z regułami z pliku {rules_file}.")
+                        logger.debug(f"Nie znaleziono dopasowania z regułami z pliku {rules_file}.")
                         continue
 
         if not found_rules:
-            print(f"ERROR: Can't find rules to analyze page {page_url}, time to check next one...")
+            logger.error(f"Can't find rules to analyze page {page_url}, time to check next one...")
             continue
 
-        print(f"DEBUG: will use regex rule file: {regexp_rules_file}")
+        logger.debug(f"DEBUG: will use regex rule file: {regexp_rules_file}")
 
         with open(cache_file_output, 'w', encoding="utf-8") as file:
             file.write(extracted_text)
 
-        print("\nStep 3 - converting markdown to text and creating metadata part for links and images")
-        print("DEBUG: extracting links with images from markdown")
+        logger.info("\nStep 3 - converting markdown to text and creating metadata part for links and images")
+        logger.debug("Extracting links with images from markdown")
         output_json = process_markdown_and_extract_links_with_images(extracted_text)
         metadata["links"] = output_json['links']
         markdown = output_json['markdown']
 
-        print("DEBUG: extracting images from markdown")
+        logger.debug("Extracting images from markdown")
         new_markdown, metadata["images"] = replace_images_in_markdown(markdown)
 
-        print("DEBUG: removing NBSP from markdown")
+        logger.debug("Removing NBSP from markdown")
         new_markdown = new_markdown.replace(' ', ' ')
 
-        print("DEBUG: Removing img from markdown")
+        logger.debug("Removing img from markdown")
         images_regex = r"img:\d+"
         new_markdown = re.sub(images_regex, '', new_markdown)
 
-        print("DEBUG: removing info strings")
+        logger.debug("Removing info strings")
         new_markdown = new_markdown.replace("*Dalsza część artykułu pod materiałem wideo*", "")
 
-        print("DEBUG: formating text by removing multiple empty lines and spaces")
+        logger.debug("Formating text by removing multiple empty lines and spaces")
         new_markdown = re.sub('\n+', '\n', new_markdown)
         new_markdown = re.sub(' +', ' ', new_markdown)
         new_markdown = re.sub(r'\n*##', '\n\n##', new_markdown)
 
-        print("DEBUG: removing links from markdown and adding into metadata part")
+        logger.debug("Removing links from markdown and adding into metadata part")
         new_markdown, metadata["links2"] = process_markdown_and_extract_links(new_markdown)
 
-        print("\nStep 4: cleaning text for each big portal from external links inside text (not needed for embedding)")
+        logger.info("\nStep 4: cleaning text for each big portal from external links inside text (not needed for embedding)")
         if page_url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
-            print("Using special rules for onet.pl informacje onetwiadomosci")
+            logger.debug("Using special rules for onet.pl informacje onetwiadomosci")
             new_markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", new_markdown, flags=re.MULTILINE)
 
-        print("Final part: writing markdown and metadata files")
-        print("DEBUG: writing final metadata file")
+        logger.info("Final part: writing markdown and metadata files")
+        logger.debug("Writing final metadata file")
         with open(cache_file_json, 'w', encoding="utf-8") as file:
             file.write(json.dumps(metadata, indent=4))
 
-        print("DEBUG: writing final markdown file")
+        logger.debug("Writing final markdown file")
         with open(cache_file_output_2, 'w', encoding="utf-8") as file:
             file.write(new_markdown)
 
-        print("Extra part: cleaning markdown document")
+        logger.debug("Extra part: cleaning markdown document")
         markdown_text = re.sub(r'\r\n', '\n', new_markdown)
 
         markdown_text = re.sub(r'^\s+$', '\n', markdown_text)
@@ -399,7 +408,7 @@ if __name__ == '__main__':
             f.write(markdown_text)
 
         split_limit = 300
-        print("Raw text has ", len(markdown_text.split()), " words")
+        logger.info(f"Raw text has {len(markdown_text.split())} words")
 
         parts = split_for_emb(markdown_text)
 
