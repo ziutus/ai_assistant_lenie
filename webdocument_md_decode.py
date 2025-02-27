@@ -207,27 +207,20 @@ if __name__ == '__main__':
         os.makedirs(cache_dir)
 
     for document_id in documents:
+
+        web_doc = StalkerWebDocumentDB(document_id=document_id)
+
         logger.info(f"Working on document_id {document_id}")
         metadata = {}
         cache_file_html = f"{cache_dir}/{document_id}.html"
-        cache_file_md = f"{cache_dir}/{document_id}_step_1_all.md"
-        cache_file_output = f"{cache_dir}/{document_id}.md"
+        cache_file_step_1_md = f"{cache_dir}/{document_id}_step_1.md"
+        cache_file_step_2_md = f"{cache_dir}/{document_id}_step_2.md"
 
         logger.info("Step 1: preparing markdown from HTML file")
         logger.debug("Taking markdown content from local cache or from remote cache (S3)")
 
-        if os.path.isfile(cache_file_md):
-            logger.debug("DEBUG: 1a. Taking raw markdown file from cache")
-            with open(cache_file_md, "r", encoding="utf-8") as f:
-                result = f.read()
-        elif os.path.isfile(cache_file_html):
-            logger.debug("DEBUG: 1b. Taking raw html file from cache")
-            mdit = MarkItDown()
-            result = mdit.convert(cache_file_html).text_content
-
-        else:
-            logger.debug("DEBUG: 1c. Taking raw markdown from Amazon S3")
-            web_doc = StalkerWebDocumentDB(document_id=document_id)
+        if not os.path.isfile(cache_file_step_1_md) and not os.path.isfile(cache_file_html):
+            logger.debug("Taking raw html file from cache in Amazon S3")
 
             if not web_doc.s3_uuid:
                 logger.debug("Doesn't exist s3_uuid, exiting...")
@@ -244,6 +237,12 @@ if __name__ == '__main__':
                 logger.debug("Can't download file from S3 cache, exiting...")
                 continue
 
+        if os.path.isfile(cache_file_step_1_md):
+            logger.debug("DEBUG: 1a. Taking raw markdown file from cache")
+            with open(cache_file_step_1_md, "r", encoding="utf-8") as f:
+                result = f.read()
+        else:
+            logger.debug("DEBUG: 1b. Taking raw html file from cache")
             mdit = MarkItDown()
             result = mdit.convert(cache_file_html).text_content
 
@@ -286,20 +285,18 @@ if __name__ == '__main__':
                         logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
                         continue
 
-        with open(cache_file_md, 'w', encoding="utf-8") as file:
+        with open(cache_file_step_1_md, 'w', encoding="utf-8") as file:
             file.write(markdown_text)
 
-        web_doc = StalkerWebDocumentDB(document_id=document_id)
+        logger.info("Step 2: taking article content from markdown (ignoring portal links, disclaimers, user comments etc")
         logger.debug("Taking URL from database")
         page_url = web_doc.url
         logger.debug(f"URL: {page_url}\n")
 
         if web_doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR and not ignore_regexp_issue:
-            logger.debug("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
+            logger.info("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
             continue
 
-
-        logger.info("Step 2: taking important content from markdown (ignoring portal links, disclaimers etc")
         found_rules = False
         regexp_rules_file = None
         extracted_text: str = ""
@@ -330,7 +327,7 @@ if __name__ == '__main__':
 
         logger.debug(f"DEBUG: will use regex rule file: {regexp_rules_file}")
 
-        with open(cache_file_output, 'w', encoding="utf-8") as file:
+        with open(cache_file_step_2_md, 'w', encoding="utf-8") as file:
             file.write(extracted_text)
 
         logger.info("\nStep 3 - converting markdown to text and creating metadata part for links and images")
@@ -365,16 +362,16 @@ if __name__ == '__main__':
             logger.debug("Using special rules for onet.pl informacje onetwiadomosci")
             new_markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", new_markdown, flags=re.MULTILINE)
 
-        logger.info("Final part: writing markdown and metadata files")
+        logger.info("Step 5: writing markdown and metadata files")
         logger.debug("Writing final metadata file")
         with open(f"{cache_dir}/{document_id}.json", 'w', encoding="utf-8") as file:
             file.write(json.dumps(metadata, indent=4))
 
-        logger.debug("Writing final markdown file")
-        with open(f"{cache_dir}/{document_id}_final_automatic.md", 'w', encoding="utf-8") as file:
+        with open(f"{cache_dir}/{document_id}_step_5.md", 'w', encoding="utf-8") as file:
+            logger.debug("Writing markdown to file from step 5")
             file.write(new_markdown)
 
-        logger.debug("Extra part: cleaning markdown document")
+        logger.debug("Step 6: cleaning markdown document")
         markdown_text = re.sub(r'\r\n', '\n', new_markdown)
 
         markdown_text = re.sub(r'^\s+$', '\n', markdown_text)
@@ -389,14 +386,12 @@ if __name__ == '__main__':
         markdown_text = popraw_markdown(markdown_text)
         markdown_text = re.sub('\n{3,10}', '\n\n', markdown_text)
 
-        with open(f"{cache_dir}/{document_id}_final_manual.md", "w", encoding="utf-8") as f:
+        with open(f"{cache_dir}/{document_id}_step_6.md", "w", encoding="utf-8") as f:
             f.write(markdown_text)
 
         logger.info(f"Raw text has {len(markdown_text.split())} words")
-
         parts = split_for_emb(markdown_text)
-        parts_nb  = len(parts)
-        logger.info(f"Text has been split into {parts_nb} parts")
+        logger.info(f"Text has been split into {len(parts)} parts")
 
         print("\n>FINAL DATA<\n")
         for i, part in enumerate(parts):
