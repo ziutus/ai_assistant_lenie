@@ -28,3 +28,7 @@ variable "environment" {
 variable "vpc_cidr" {
   type = string
 }
+
+variable "admin_ip" {
+  type = string
+}
