@@ -1,7 +1,7 @@
 resource "aws_security_group" "public_sg" {
   name = "public_sg"
   description = "Security group for public access"
-  vpc_id            = var.admin_ip
+  vpc_id            = var.vpc_id
 }
 
 resource "aws_security_group_rule" "public_ssh_access" {
