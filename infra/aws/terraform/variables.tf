@@ -14,3 +14,17 @@ variable "AWS_ACCESS_KEY_ID" {
   type = string
   default = "none"
 }
+
+variable "project" {
+  type = string
+  description = "Project name"
+}
+
+variable "environment" {
+  description = "Environment name (prod, dev, test etc)"
+  type = string
+}
+
+variable "vpc_cidr" {
+  type = string
+}
