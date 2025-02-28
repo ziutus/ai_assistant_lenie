@@ -1,5 +1,5 @@
 module "ec2-nat-gateway" {
-  source = "modules/ec2-nat-gateway"
+  source = "./modules/ec2-nat-gateway"
   vpc_id = aws_vpc.lenie_vpc.id
   subnet_id = aws_subnet.subnet-public[0].id
   environment = var.environment
