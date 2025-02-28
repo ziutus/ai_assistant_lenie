@@ -9,5 +9,5 @@ module "ec2-nat-gateway" {
   instance_type = "t2.micro"
   ssh_key_name = aws_key_pair.lenie_ai_key.id
 
-  count = var.environment == "prod" ? 1 : 0
+  # count = var.environment == "prod" ? 1 : 0
 }
