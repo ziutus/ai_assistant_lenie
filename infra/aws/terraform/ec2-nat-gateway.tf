@@ -7,5 +7,5 @@ module "ec2-nat-gateway" {
   ami = data.aws_ami.al2023-ami.id
   name = "${var.project}-${lower(var.environment)}-nat-gateway"
   instance_type = "t2.micro"
-  ssh_key_name = aws_key_pair.lenie_ai_key
+  ssh_key_name = aws_key_pair.lenie_ai_key.id
 }

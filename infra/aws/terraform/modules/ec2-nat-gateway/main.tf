@@ -36,7 +36,6 @@ resource "aws_instance" "bastion_host" {
     ami = var.ami
     key_name = var.ssh_key_name
     vpc_security_group_ids = [ aws_security_group.public_sg.id ]
-    # subnet_id = aws_subnet.subnet-public[0].id
     subnet_id = var.subnet_id
     root_block_device {
       volume_size = "8"
