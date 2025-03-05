@@ -11,10 +11,10 @@ Lenie enables users to:
 
 Lenie's functionalities represent an advanced integration of AI technology with users' daily needs, providing efficient data management and deeper content analysis and utilization. However, similar to the literary character who brings inevitable consequences of her existence, Lenie raises questions about the boundaries of technology and our own control over it. It is both a fascinating and daunting tool that requires a conscious approach and responsible usage to maximize benefits and minimize risks associated with the increasing role of artificial intelligence in our lives.
 
-This is side project, and I'm planning to have the first version of this application in May 2025. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
+This is a side project, and I'm planning to have the first version of this application in May 2025. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
 
 ## Used technologies
-In this project I'm using:
+In this project, I'm using:
 * Python as server backend
 * Postgresql as embedding database
 * React as web interface (during creation)
@@ -33,10 +33,17 @@ As I'm big fun on AWS, you will also see deploy ways like:
 
 ## Python notes
 
-### Using piptools to generate better requirement file
+### Using piptools to generate a better requirement file
+
+
+### The markdown script
 
 ```powershell
-C:\Users\ziutus\AppData\Local\Programs\Python\Python311\Scripts\pip-compile.exe requirements.piptools --upgrade
+C:\Users\ziutus\AppData\Local\Programs\Python\Python311\Scripts\pip-compile.exe --upgrade requirements_markdown.piptools --output-file requirements_markdown.txt
+```
+
+```powershell
+pip install -r requirements_markdown.txt
 ```
 
 
@@ -81,15 +88,26 @@ docker push ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/lenie-ai-server:latest
 
 ## Accessing the Application
 
-### Python
-
-```python
- 
-```
-
 After starting the appliaction or container, you can access the Stalker application by going to http://localhost:5000 in your web browser.
 
 ### Docker
+
+#### Preparing local environment
+
+```bash
+docker pull pgvector/pgvector:pg17
+```
+
+```bash
+docker run -d --name lenie-ai-db -e POSTGRES_PASSWORD=postgres -p 5432:5432 pgvector/pgvector:pg17
+```
+
+```sql
+CREATE EXTENSION vector
+```
+
+
+#### Running application
 
 Running from local image:
 ```bash
@@ -150,6 +168,8 @@ Psy przyszły po sąsiada o 6 rano
 
 As Poles, we perfectly understand the difference between an animal and the slang term for police officers, but you need to know the cultural context.
 
-Now we have Bielik (https://bielik.ai), which perfect understand magic of this sentence:
+Now we have Bielik (https://bielik.ai), which perfectly understands the magic of this sentence:
 
 ![img.png](bielik_psy_pl.png)
+
+You can use Bielik on [ClouFerro.com](https://sherlock.cloudferro.com/#pricing)
