@@ -153,8 +153,8 @@ if __name__ == '__main__':
         logger.info(f"Working on document_id {document_id}")
         metadata = {}
         cache_file_html = f"{cache_dir}/{document_id}.html"
-        cache_file_step_1_md = f"{cache_dir}/{document_id}_step_1.md"
-        cache_file_step_2_md = f"{cache_dir}/{document_id}_step_2.md"
+        cache_file_step_1_md = f"{cache_dir}/{document_id}_step_1_all.md"
+        cache_file_step_2_md = f"{cache_dir}/{document_id}_step_2_article.md"
 
         logger.info("Step 1: preparing markdown from HTML file")
         logger.debug("Taking markdown content from local cache or from remote cache (S3)")
@@ -276,19 +276,19 @@ if __name__ == '__main__':
 
         logger.debug(" Putting links into one line")
         markdown = links_correct(markdown)
-        with open(f"{cache_dir}/{document_id}_step_3.md", 'w', encoding="utf-8") as file:
+        with open(f"{cache_dir}/{document_id}_step_3_1_linke_one_line.md", 'w', encoding="utf-8") as file:
             file.write(markdown)
 
         logger.debug(" Putting square brackets into one line")
         markdown = md_square_brackets_in_one_line(markdown)
-        with open(f"{cache_dir}/{document_id}_step_3_1.md", 'w', encoding="utf-8") as file:
+        with open(f"{cache_dir}/{document_id}_step_3_2_square_brackets_one_line.md", 'w', encoding="utf-8") as file:
             file.write(markdown)
 
         logger.info("\nStep 4 - converting markdown to text and creating metadata part for links and images")
         logger.debug("4.1 Extracting images from markdown")
         markdown, metadata["images_step4"] = get_images_with_links_md(markdown)
 
-        with open(f"{cache_dir}/{document_id}_step_4_1.md", 'w', encoding="utf-8") as file:
+        with open(f"{cache_dir}/{document_id}_step_4_1_without_images.md", 'w', encoding="utf-8") as file:
             file.write(markdown)
 
         logger.debug("Removing NBSP from markdown")
@@ -324,7 +324,7 @@ if __name__ == '__main__':
             logger.debug("Using special rules for onet.pl informacje onetwiadomosci")
             markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
 
-        with open(f"{cache_dir}/{document_id}_step_5.md", 'w', encoding="utf-8") as file:
+        with open(f"{cache_dir}/{document_id}_step_5_without_portal_addings.md", 'w', encoding="utf-8") as file:
             logger.debug("Writing markdown to file from step 5")
             file.write(markdown)
 
