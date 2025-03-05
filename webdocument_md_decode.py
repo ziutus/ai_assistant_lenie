@@ -8,7 +8,8 @@ from markitdown import MarkItDown
 from html2markdown import convert
 import html2text
 
-from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentStatusError
+from library.lenie_markdown import get_images_with_links_md, links_correct, process_markdown_and_extract_links, md_square_brackets_in_one_line
+from library.stalker_web_document import StalkerDocumentStatusError
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.api.aws.s3_aws import s3_file_exist, s3_take_file
@@ -75,7 +76,7 @@ def split_for_emb(part, split_limit=300, level=0):
     return parts
 
 
-def process_markdown_and_extract_links_with_images(markdown_text):
+def onet_see_also_process_markdown_and_extract_links_with_images(markdown_text):
     # Regex dla wyszukiwania linków z obrazkami w Markdown
     image_links_regex = r'\[\!\[\]\((.*?)\)\]\((.*?)\)'
     description_regex = r'Zobacz także:\[(.*?)\]'
@@ -112,21 +113,6 @@ def process_markdown_and_extract_links_with_images(markdown_text):
         "links": result
     }
 
-
-def replace_images_in_markdown(markdown_text):
-    images_regex = r'(\!\[(.*?)\]\((.*?)\))'
-
-    matches = re.findall(images_regex, markdown_text)
-
-    images = [{"alt_text": alt_text, "image_url": url} for _, alt_text, url in matches]
-
-    for i, match in enumerate(matches):
-        full_match, _, _ = match
-        markdown_text = markdown_text.replace(full_match, f' img:{i} ', 1)
-
-    return markdown_text, images
-
-
 def load_regex_from_file(file_path):
     """
     Funkcja wczytująca wyrażenie regularne z zewnętrznego pliku.
@@ -141,20 +127,6 @@ def load_regex_from_file(file_path):
 def generate_links_regex(links):
     patterns = [re.escape(f'[{link["description"]}]({link["url"]})') for link in links]
     return '|'.join(patterns)
-
-
-def process_markdown_and_extract_links(md_text):
-    # Wyrażenie regularne do wyszukiwania linków
-    pattern = re.compile(r'\[(.*?)\]\((.*?)\)')
-
-    links = pattern.findall(md_text)
-    output = [{"text": text, "link": url} for text, url in links]
-
-    # Zastąpienie linków tekstami link:ID
-    for i in range(len(links)):
-        md_text = md_text.replace(f'[{links[i][0]}]({links[i][1]})', f'{output[i]["text"]}')
-
-    return md_text, output
 
 
 wb_db = WebsitesDBPostgreSQL()
@@ -330,71 +302,89 @@ if __name__ == '__main__':
         with open(cache_file_step_2_md, 'w', encoding="utf-8") as file:
             file.write(extracted_text)
 
-        logger.info("\nStep 3 - converting markdown to text and creating metadata part for links and images")
-        logger.debug("Extracting links with images from markdown")
-        output_json = process_markdown_and_extract_links_with_images(extracted_text)
-        metadata["links"] = output_json['links']
-        markdown = output_json['markdown']
+        markdown = extracted_text
 
-        logger.debug("Extracting images from markdown")
-        new_markdown, metadata["images"] = replace_images_in_markdown(markdown)
+        logger.info("\nStep 3 - correcting links multiline issue")
+
+        logger.debug(" Putting links into one line")
+        markdown = links_correct(markdown)
+        with open(f"{cache_dir}/{document_id}_step_3.md", 'w', encoding="utf-8") as file:
+            file.write(markdown)
+
+        logger.debug(" Putting squre brackets into one line")
+        markdown = md_square_brackets_in_one_line(markdown)
+        with open(f"{cache_dir}/{document_id}_step_3_1.md", 'w', encoding="utf-8") as file:
+            file.write(markdown)
+
+        logger.info("\nStep 4 - converting markdown to text and creating metadata part for links and images")
+        logger.debug("4.1 Extracting images from markdown")
+        markdown, metadata["images_step4"] = get_images_with_links_md(markdown)
+
+        with open(f"{cache_dir}/{document_id}_step_4_1.md", 'w', encoding="utf-8") as file:
+            file.write(markdown)
 
         logger.debug("Removing NBSP from markdown")
-        new_markdown = new_markdown.replace(' ', ' ')
+        markdown = markdown.replace(' ', ' ')
 
         logger.debug("Removing img from markdown")
         images_regex = r"img:\d+"
-        new_markdown = re.sub(images_regex, '', new_markdown)
+        markdown = re.sub(images_regex, '', markdown)
 
         logger.debug("Removing info strings")
-        new_markdown = new_markdown.replace("*Dalsza część artykułu pod materiałem wideo*", "")
+        markdown = markdown.replace("*Dalsza część artykułu pod materiałem wideo*", "")
 
         logger.debug("Formating text by removing multiple empty lines and spaces")
-        new_markdown = re.sub('\n+', '\n', new_markdown)
-        new_markdown = re.sub(' +', ' ', new_markdown)
-        new_markdown = re.sub(r'\n*##', '\n\n##', new_markdown)
+        # new_markdown = re.sub('\n+', '\n', new_markdown)
+        markdown = re.sub(' +', ' ', markdown)
+        markdown = re.sub(r'\n*##', '\n\n##', markdown)
 
         logger.debug("Removing links from markdown and adding into metadata part")
-        new_markdown, metadata["links2"] = process_markdown_and_extract_links(new_markdown)
+        markdown, metadata["links2"] = process_markdown_and_extract_links(markdown)
 
-        with open(f"{cache_dir}/{document_id}_step_3.md", 'w', encoding="utf-8") as file:
-            logger.debug("Writing markdown to file from step 3")
-            file.write(new_markdown)
+        with open(f"{cache_dir}/{document_id}_step_4_2_without_links.md", 'w', encoding="utf-8") as file:
+            logger.debug("Writing markdown to file from step 4")
+            file.write(markdown)
 
-        logger.info("\nStep 4: cleaning text for each big portal from external links inside text (not needed for embedding)")
+        logger.info("\nStep 5: cleaning text for each big portal from external links inside text (not needed for embedding)")
+
+        logger.debug("Onet: Extracting links with images from markdown")
+        output_json = onet_see_also_process_markdown_and_extract_links_with_images(markdown)
+        metadata["links"] = output_json['links']
+        markdown = output_json['markdown']
+
         if page_url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
             logger.debug("Using special rules for onet.pl informacje onetwiadomosci")
-            new_markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", new_markdown, flags=re.MULTILINE)
+            markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
 
-        with open(f"{cache_dir}/{document_id}_step_4.md", 'w', encoding="utf-8") as file:
-            logger.debug("Writing markdown to file from step 4")
-            file.write(new_markdown)
+        with open(f"{cache_dir}/{document_id}_step_5.md", 'w', encoding="utf-8") as file:
+            logger.debug("Writing markdown to file from step 5")
+            file.write(markdown)
 
         logger.debug("Writing final metadata file")
         with open(f"{cache_dir}/{document_id}.json", 'w', encoding="utf-8") as file:
             file.write(json.dumps(metadata, indent=4))
 
 
-        logger.debug("Step 5: cleaning markdown document")
-        markdown_text = re.sub(r'\r\n', '\n', new_markdown)
+        logger.debug("Step 6: cleaning markdown document")
+        markdown = re.sub(r'\r\n', '\n', markdown)
 
-        markdown_text = re.sub(r'^\s+$', '\n', markdown_text)
-        markdown_text = re.sub(r'\n+', '\n', markdown_text)
-        markdown_text = re.sub(r'\*\*\n+\s*', '**\n', markdown_text)
+        markdown = re.sub(r'^\s+$', '\n', markdown)
+        # markdown_text = re.sub(r'\n+', '\n', markdown_text)
+        markdown = re.sub(r'\*\*\n+\s*', '**\n', markdown)
 
         if page_url.startswith("https://www.onet.pl/informacje/businessinsider"):
-            markdown_text = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown_text, flags=re.MULTILINE)
+            markdown = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown, flags=re.MULTILINE)
         if page_url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
-            markdown_text = re.sub(r'^\s*Dalszy\sciąg\smateriału\spod\swideo\s*$', '', markdown_text, flags=re.MULTILINE)
+            markdown = re.sub(r'^\s*Dalszy\sciąg\smateriału\spod\swideo\s*$', '', markdown, flags=re.MULTILINE)
 
-        markdown_text = popraw_markdown(markdown_text)
-        markdown_text = re.sub('\n{3,10}', '\n\n', markdown_text)
+        markdown = popraw_markdown(markdown)
+        markdown = re.sub('\n{3,10}', '\n\n', markdown)
 
-        with open(f"{cache_dir}/{document_id}_step_5.md", "w", encoding="utf-8") as f:
-            f.write(markdown_text)
+        with open(f"{cache_dir}/{document_id}_step_6.md", "w", encoding="utf-8") as f:
+            f.write(markdown)
 
-        logger.info(f"Raw text has {len(markdown_text.split())} words")
-        parts = split_for_emb(markdown_text)
+        logger.info(f"Raw text has {len(markdown.split())} words")
+        parts = split_for_emb(markdown)
         logger.info(f"Text has been split into {len(parts)} parts")
 
         print("\n>FINAL DATA<\n")
