@@ -148,9 +148,13 @@ if __name__ == '__main__':
 
     for document_id in documents:
 
+        logger.info(f"Working on document_id {document_id}")
         web_doc = StalkerWebDocumentDB(document_id=document_id)
 
-        logger.info(f"Working on document_id {document_id}")
+        if web_doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR and not ignore_regexp_issue:
+            logger.info("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
+            continue
+
         metadata = {}
         cache_file_html = f"{cache_dir}/{document_id}.html"
         cache_file_step_1_md = f"{cache_dir}/{document_id}_step_1_all.md"
@@ -230,18 +234,13 @@ if __name__ == '__main__':
 
         logger.info("Step 2: taking article content from markdown (ignoring portal links, disclaimers, user comments etc")
         logger.debug("Taking URL from database")
-        page_url = web_doc.url
-        logger.debug(f"URL: {page_url}\n")
-
-        if web_doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR and not ignore_regexp_issue:
-            logger.info("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
-            continue
+        logger.debug(f"URL: {web_doc.url}\n")
 
         found_rules = False
         regexp_rules_file = None
         extracted_text: str = ""
         for page_rules in page_regexp_map:
-            if page_url.find(page_rules) != -1:
+            if web_doc.url.find(page_rules) != -1:
                 logger.debug("I found rules for this page, let's check if they are working")
                 # pprint(page_regexp_map[page_rules])
 
@@ -262,7 +261,7 @@ if __name__ == '__main__':
                         continue
 
         if not found_rules:
-            logger.error(f"Can't find rules to analyze page {page_url}, time to check next one...")
+            logger.error(f"Can't find rules to analyze page {web_doc.url}, time to check next one...")
             continue
 
         logger.debug(f"DEBUG: will use regex rule file: {regexp_rules_file}")
@@ -276,7 +275,7 @@ if __name__ == '__main__':
 
         logger.debug(" Putting links into one line")
         markdown = links_correct(markdown)
-        with open(f"{cache_dir}/{document_id}_step_3_1_linke_one_line.md", 'w', encoding="utf-8") as file:
+        with open(f"{cache_dir}/{document_id}_step_3_1_links_one_line.md", 'w', encoding="utf-8") as file:
             file.write(markdown)
 
         logger.debug(" Putting square brackets into one line")
@@ -320,11 +319,11 @@ if __name__ == '__main__':
         metadata["links"] = output_json['links']
         markdown = output_json['markdown']
 
-        if page_url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
+        if web_doc.url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
             logger.debug("Using special rules for onet.pl informacje onetwiadomosci")
             markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
 
-        with open(f"{cache_dir}/{document_id}_step_5_without_portal_addings.md", 'w', encoding="utf-8") as file:
+        with open(f"{cache_dir}/{document_id}_step_5_without_portal_adding.md", 'w', encoding="utf-8") as file:
             logger.debug("Writing markdown to file from step 5")
             file.write(markdown)
 
@@ -340,9 +339,9 @@ if __name__ == '__main__':
         # markdown_text = re.sub(r'\n+', '\n', markdown_text)
         markdown = re.sub(r'\*\*\n+\s*', '**\n', markdown)
 
-        if page_url.startswith("https://www.onet.pl/informacje/businessinsider"):
+        if web_doc.url.startswith("https://www.onet.pl/informacje/businessinsider"):
             markdown = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown, flags=re.MULTILINE)
-        if page_url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
+        if web_doc.url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
             markdown = re.sub(r'^\s*Dalszy\sciąg\smateriału\spod\swideo\s*$', '', markdown, flags=re.MULTILINE)
 
         markdown = popraw_markdown(markdown)
