@@ -141,3 +141,36 @@ def md_square_brackets_in_one_line(text):
             text_new += char
 
     return text_new
+
+
+def md_split_for_emb(part, split_limit=300, level=0):
+    parts = []
+    if level == 0:
+        delimiter = "\n# "
+        splitter = "---split---\n# "
+    elif level == 1:
+        delimiter = "\n## "
+        splitter = "---split---\n## "
+    elif level == 2:
+        delimiter = "\n### "
+        splitter = "---split---\n### "
+    elif level == 3:
+        delimiter = "\n**"
+        splitter = "---split---\n**"
+    elif level == 4:
+        delimiter = "\n— **"
+        splitter = "---split---\n— **"
+
+    else:
+        return [part]
+
+    word_count = len(part.split())
+    if word_count < split_limit:
+        return [part]
+
+    parts_tmp = part.replace(delimiter, splitter)
+    parts_tmp = parts_tmp.split("---split---")
+    for part in parts_tmp:
+        result = md_split_for_emb(part, split_limit, level + 1)
+        parts.extend(result)
+    return parts

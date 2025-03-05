@@ -8,7 +8,8 @@ from markitdown import MarkItDown
 from html2markdown import convert
 import html2text
 
-from library.lenie_markdown import get_images_with_links_md, links_correct, process_markdown_and_extract_links, md_square_brackets_in_one_line
+from library.lenie_markdown import get_images_with_links_md, links_correct, process_markdown_and_extract_links, \
+    md_square_brackets_in_one_line, md_split_for_emb
 from library.stalker_web_document import StalkerDocumentStatusError
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
@@ -41,39 +42,6 @@ def popraw_markdown(tekst):
         else:
             wynik.append(linia)
     return "\n".join(wynik)
-
-
-def split_for_emb(part, split_limit=300, level=0):
-    parts = []
-    if level == 0:
-        delimiter = "\n# "
-        splitter = "---split---\n# "
-    elif level == 1:
-        delimiter = "\n## "
-        splitter = "---split---\n## "
-    elif level == 2:
-        delimiter = "\n### "
-        splitter = "---split---\n### "
-    elif level == 3:
-        delimiter = "\n**"
-        splitter = "---split---\n**"
-    elif level == 4:
-        delimiter = "\n— **"
-        splitter = "---split---\n— **"
-
-    else:
-        return [part]
-
-    word_count = len(part.split())
-    if word_count < split_limit:
-        return [part]
-
-    parts_tmp = part.replace(delimiter, splitter)
-    parts_tmp = parts_tmp.split("---split---")
-    for part in parts_tmp:
-        result = split_for_emb(part, split_limit, level + 1)
-        parts.extend(result)
-    return parts
 
 
 def onet_see_also_process_markdown_and_extract_links_with_images(markdown_text):
@@ -384,7 +352,7 @@ if __name__ == '__main__':
             f.write(markdown)
 
         logger.info(f"Raw text has {len(markdown.split())} words")
-        parts = split_for_emb(markdown)
+        parts = md_split_for_emb(markdown)
         logger.info(f"Text has been split into {len(parts)} parts")
 
         print("\n>FINAL DATA<\n")
