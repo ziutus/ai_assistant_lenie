@@ -271,6 +271,12 @@ if __name__ == '__main__':
 
         markdown = extracted_text
 
+        logger.info("Changing windows line breaks to linux")
+        markdown = re.sub(r'\r\n', '\n', markdown)
+
+        with open(f"{cache_dir}/{document_id}_step_2_2_linux_eol.md", 'w', encoding="utf-8") as file:
+            file.write(markdown)
+
         logger.info("\nStep 3 - correcting links multiline issue")
 
         logger.debug(" Putting links into one line")
@@ -293,13 +299,6 @@ if __name__ == '__main__':
         logger.debug("Removing NBSP from markdown")
         markdown = markdown.replace(' ', ' ')
 
-        logger.debug("Removing img from markdown")
-        images_regex = r"img:\d+"
-        markdown = re.sub(images_regex, '', markdown)
-
-        logger.debug("Removing info strings")
-        markdown = markdown.replace("*Dalsza część artykułu pod materiałem wideo*", "")
-
         logger.debug("Formating text by removing multiple empty lines and spaces")
         # new_markdown = re.sub('\n+', '\n', new_markdown)
         markdown = re.sub(' +', ' ', markdown)
@@ -319,30 +318,35 @@ if __name__ == '__main__':
         metadata["links"] = output_json['links']
         markdown = output_json['markdown']
 
+        logger.debug("Removing info strings")
+        markdown = markdown.replace("*Dalsza część artykułu pod materiałem wideo*", "")
+
         if web_doc.url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
             logger.debug("Using special rules for onet.pl informacje onetwiadomosci")
             markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
+
+        if web_doc.url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
+            markdown = re.sub(r'^\s*Dalszy\sciąg\smateriału\spod\swideo\s*$', '', markdown, flags=re.MULTILINE)
+
+        if web_doc.url.startswith("https://www.onet.pl/informacje/businessinsider"):
+            markdown = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown, flags=re.MULTILINE)
 
         with open(f"{cache_dir}/{document_id}_step_5_without_portal_adding.md", 'w', encoding="utf-8") as file:
             logger.debug("Writing markdown to file from step 5")
             file.write(markdown)
 
         logger.debug("Writing final metadata file")
-        with open(f"{cache_dir}/{document_id}.json", 'w', encoding="utf-8") as file:
+        with open(f"{cache_dir}/{document_id}_metadata.json", 'w', encoding="utf-8") as file:
             file.write(json.dumps(metadata, indent=4))
 
 
-        logger.debug("Step 6: cleaning markdown document")
-        markdown = re.sub(r'\r\n', '\n', markdown)
+        logger.debug("Step 6: cleaning markdown document for embedding")
+
+        logger.debug("Removing img from markdown")
+        markdown = re.sub(r"img:\d+", '', markdown)
 
         markdown = re.sub(r'^\s+$', '\n', markdown)
-        # markdown_text = re.sub(r'\n+', '\n', markdown_text)
         markdown = re.sub(r'\*\*\n+\s*', '**\n', markdown)
-
-        if web_doc.url.startswith("https://www.onet.pl/informacje/businessinsider"):
-            markdown = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown, flags=re.MULTILINE)
-        if web_doc.url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
-            markdown = re.sub(r'^\s*Dalszy\sciąg\smateriału\spod\swideo\s*$', '', markdown, flags=re.MULTILINE)
 
         markdown = popraw_markdown(markdown)
         markdown = re.sub('\n{3,10}', '\n\n', markdown)
