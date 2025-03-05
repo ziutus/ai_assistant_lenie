@@ -279,7 +279,7 @@ if __name__ == '__main__':
         with open(f"{cache_dir}/{document_id}_step_3.md", 'w', encoding="utf-8") as file:
             file.write(markdown)
 
-        logger.debug(" Putting squre brackets into one line")
+        logger.debug(" Putting square brackets into one line")
         markdown = md_square_brackets_in_one_line(markdown)
         with open(f"{cache_dir}/{document_id}_step_3_1.md", 'w', encoding="utf-8") as file:
             file.write(markdown)
