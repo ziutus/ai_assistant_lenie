@@ -9,20 +9,20 @@ load_dotenv()
 # query = "Jakie plany wobec Grenlandii ma Trump"
 # query = "Jakie działania podejmuje Rosja na morzach europejskich"
 # query = "Gzie w Europie znajdują się złoża litu?"
-
-query = "Jakie są problemy Trumpa w Iraku?"
+query = "Jakie problemy ma USA?"
 
 model_embedding = os.getenv("EMBEDDING_MODEL")
 print(f"I'm searching using embedding model >{model_embedding}")
-
 question_embedding = embedding.get_embedding(model=model_embedding, text=query)
 
-if not question_embedding.status:
-    print("Problem with embedding, exiting")
-    exit(1)
+# if not question_embedding.status:
+#     print("Problem with embedding, exiting")
+#     exit(1)
+
+emb = question_embedding.embedding
 
 websites = WebsitesDBPostgreSQL()
-similar_results = websites.get_similar(model=model_embedding, embedding=question_embedding.embedding, limit=30,
+similar_results = websites.get_similar(model=model_embedding, embedding=emb, limit=30,
                                        minimal_similarity=0.30)
 
 pprint(similar_results)
