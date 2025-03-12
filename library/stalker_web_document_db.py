@@ -241,29 +241,19 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                 self.__clean_values()
                 return True
 
-    # def embedding_add_by_parts(self, model, parts):
-    #     self.__embedding_delete(model)
-    #
-    #     for part in parts:
-    #         emb = embedding.get_embedding(model=model, text=part)
-    #         self.__embedding_add(text_embedding=emb.embedding, text=part, text_original=part, model=model)
-    #
-    #     self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
-
-    def __embedding_delete(self, model) -> None:
+    def embedding_delete(self, model) -> None:
         cursor = self.db_conn.cursor()
         cursor.execute(
             "DELETE FROM public.websites_embeddings WHERE website_id = %s and model = %s", (self.id, model)
         )
         self.db_conn.commit()
 
-    def __embedding_add(self, text_embedding, text, text_original, model) -> None:
+    def embedding_add_simple(self, model, embedding, text) -> None:
         cursor = self.db_conn.cursor()
         cursor.execute(
-            "INSERT INTO public.websites_embeddings (website_id, langauge, text, embedding, model, text_original) "
-            "VALUES (%s,%s, %s, %s, "
-            "%s, %s)",
-            (self.id, self.language, text, text_embedding, model, text_original)
+            "INSERT INTO public.websites_embeddings (website_id, langauge, text, embedding, model) "
+            "VALUES (%s,%s, %s, %s, %s)",
+            (self.id, self.language, text, embedding, model)
         )
 
         self.db_conn.commit()
