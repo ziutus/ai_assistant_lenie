@@ -2,7 +2,7 @@ import os
 import json
 
 from openai import OpenAI
-from langfuse.decorators import observe
+# from langfuse.decorators import observe
 
 
 class OpenAIClient:
@@ -11,7 +11,7 @@ class OpenAIClient:
     Provides a method to obtain completions.
     """
 
-    @observe()
+    # @observe()
     @staticmethod
     # model="gpt-4"
     # model="gpt-3.5-turbo"
@@ -38,7 +38,7 @@ class OpenAIClient:
         except Exception as e:
             raise Exception(f"An error occurred: {e}")
 
-    @observe()
+    # @observe()
     def get_completion2(prompt: str, model: str = "gpt-4o-mini") -> str:
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -58,7 +58,7 @@ class OpenAIClient:
 
         return json.loads(response.choices[0].message.content)
 
-    @observe()
+    # @observe()
     def get_completion_image(prompt: str, image_urls=[], detail: str = "auto", model: str = "gpt-4o-mini",
                              max_tokens=300) -> str:
         client = OpenAI()
