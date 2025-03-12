@@ -30,5 +30,31 @@ class TestMdSquareBracketsInOneLine(unittest.TestCase):
         self.assertEqual(md_square_brackets_in_one_line(text), expected)
 
 
+    def test_real_1(self):
+        text = """
+przed tym [nad
+tym ](https://onet), [Francji
+Emmanuel] Macron
+"""
+
+        expected = """
+przed tym [nad tym ](https://onet), [Francji Emmanuel] Macron
+"""
+
+        self.assertEqual(md_square_brackets_in_one_line(text), expected)
+
+    def test_real_2(self):
+        text = """
+[![](https://test.pl)Ma
+pra](https://test2.pl)
+"""
+
+        expected = """
+[![](https://test.pl)Ma pra](https://test2.pl)
+"""
+
+        self.assertEqual(md_square_brackets_in_one_line(text), expected)
+
+
 if __name__ == "__main__":
     unittest.main()
