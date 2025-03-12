@@ -3,13 +3,15 @@ import re
 import json
 import logging
 from dotenv import load_dotenv
+from pprint import pprint
 
 from markitdown import MarkItDown
 from html2markdown import convert
 import html2text
 
+from library.api.cloudferro.sherlock.sherlock_embedding import sherlock_create_embeddings
 from library.lenie_markdown import get_images_with_links_md, links_correct, process_markdown_and_extract_links, \
-    md_square_brackets_in_one_line, md_split_for_emb
+    md_square_brackets_in_one_line, md_split_for_emb, md_get_images_as_links, md_remove_markdown
 from library.stalker_web_document import StalkerDocumentStatusError
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
@@ -26,22 +28,6 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
 
 def calculate_reduction(html_size, markdown_size):
     return ((html_size - markdown_size) / html_size) * 100
-
-def popraw_markdown(tekst):
-    linie = tekst.splitlines()
-    wynik = []
-    for linia in linie:
-        if linia.startswith("**") and linia.endswith("**"):
-            if wynik and wynik[-1] != '\n':
-                wynik.append("")
-            wynik.append(linia)
-        elif linia.startswith("## "):
-            if wynik and wynik[-1] != '\n':
-                wynik.append("")
-            wynik.append(linia)
-        else:
-            wynik.append(linia)
-    return "\n".join(wynik)
 
 
 def onet_see_also_process_markdown_and_extract_links_with_images(markdown_text):
@@ -98,14 +84,20 @@ def generate_links_regex(links):
 
 
 wb_db = WebsitesDBPostgreSQL()
-# documents = wb_db.get_documents_by_url("https://www.money.pl/")
-documents = [7789]
-page_url = " https://www.onet.pl/informacje/businessinsider/"
+
+# interactive = True
+documents = wb_db.get_documents_by_url("https://wiadomosci.onet.pl/")
+# documents = [7305]
+interactive = False
+find_problems = True
+
 online = True
 embedding_update = False
 ignore_regexp_issue = False
-cache_dir = "tmp/markdown"
-split_limit = 300
+# cache_dir_base = "tmp/markdown"
+cache_dir_base = r"C:\Users\ziutus\tmp\markdown"
+split_limit = 200
+
 
 page_regexp_map = {
     "https://www.money.pl": [
@@ -124,13 +116,31 @@ page_regexp_map = {
         "data/pages_analyze/onet_pl_informacje_wiadomosci_2.regexp"
     ],
     "https://www.onet.pl/informacje/ppo": [
-        "data/pages_analyze/onet_pl_informacje_ppo.regex",
+        "data/pages_analyze/onet_pl_informacje_ppo.regex"
     ],
     "https://www.onet.pl/turystyka/onetpodroze": [
         "data/pages_analyze/onet_pl_podroze.regex"
     ],
     "https://www.onet.pl/informacje/businessinsider": [
         "data/pages_analyze/onet_pl_informacje_businessInsider.regex"
+    ],
+
+    "https://wiadomosci.onet.pl/": [
+        "data/pages_analyze/wiadomosci_onet_pl_7776.regex",
+        "data/pages_analyze/wiadomosci_onet_pl_7635.regex",
+        "data/pages_analyze/wiadomosci_onet_pl_7516.regex",
+        "data/pages_analyze/wiadomosci_onet_pl_7147.regex",
+        "data/pages_analyze/wiadomosci_onet_pl_7305.regex",
+    ],
+
+    "https://www.onet.pl/informacje/": [
+        "data/pages_analyze/onet_pl_informacje_all.regex",
+        "data/pages_analyze/onet_pl_informacje_all_2.regex",
+    ],
+    "https://www.onet.pl/": [
+        "data/pages_analyze/onet_pl_informacje_7756.regex",
+        "data/pages_analyze/onet_pl_informacje_7752.regex",
+        "data/pages_analyze/onet_pl_informacje_7746.regex",
     ],
     # "": []
 }
@@ -142,11 +152,15 @@ page_rules_map = {
 if __name__ == '__main__':
 
 
-    if not os.path.exists(cache_dir):
-        logger.debug(f"Creating cache directory {cache_dir}")
-        os.makedirs(cache_dir)
+    if not os.path.exists(cache_dir_base):
+        logger.debug(f"Creating cache directory {cache_dir_base}")
+        os.makedirs(cache_dir_base)
 
     for document_id in documents:
+        cache_dir = f"{cache_dir_base}/{document_id}"
+        if not os.path.exists(cache_dir):
+            logger.debug(f"Creating cache directory {cache_dir}")
+            os.makedirs(cache_dir)
 
         logger.info(f"Working on document_id {document_id}")
         web_doc = StalkerWebDocumentDB(document_id=document_id)
@@ -155,10 +169,10 @@ if __name__ == '__main__':
             logger.info("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
             continue
 
-        metadata = {}
+        metadata = {"document_id": document_id}
         cache_file_html = f"{cache_dir}/{document_id}.html"
         cache_file_step_1_md = f"{cache_dir}/{document_id}_step_1_all.md"
-        cache_file_step_2_md = f"{cache_dir}/{document_id}_step_2_article.md"
+        cache_file_step_2_md = f"{cache_dir}/{document_id}_step_2_1_article.md"
 
         logger.info("Step 1: preparing markdown from HTML file")
         logger.debug("Taking markdown content from local cache or from remote cache (S3)")
@@ -236,6 +250,8 @@ if __name__ == '__main__':
         logger.debug("Taking URL from database")
         logger.debug(f"URL: {web_doc.url}\n")
 
+        metadata["url"] = web_doc.url
+
         found_rules = False
         regexp_rules_file = None
         extracted_text: str = ""
@@ -262,9 +278,18 @@ if __name__ == '__main__':
 
         if not found_rules:
             logger.error(f"Can't find rules to analyze page {web_doc.url}, time to check next one...")
+
+            if find_problems:
+                exit(1)
+
+            if interactive:
+                print("Naciśnij Enter, aby zakończyć program...")
+                input()
+
             continue
 
         logger.debug(f"DEBUG: will use regex rule file: {regexp_rules_file}")
+        metadata["regexp_rules_file"] = regexp_rules_file
 
         with open(cache_file_step_2_md, 'w', encoding="utf-8") as file:
             file.write(extracted_text)
@@ -290,8 +315,14 @@ if __name__ == '__main__':
             file.write(markdown)
 
         logger.info("\nStep 4 - converting markdown to text and creating metadata part for links and images")
+
+        markdown, metadata["images_links"], metadata["links_as_images"] = md_get_images_as_links(markdown)
+        logger.debug("4.0 Extracting images as links from markdown")
+        with open(f"{cache_dir}/{document_id}_step_4_0_without_links_as_images.md", 'w', encoding="utf-8") as file:
+            file.write(markdown)
+
         logger.debug("4.1 Extracting images from markdown")
-        markdown, metadata["images_step4"] = get_images_with_links_md(markdown)
+        markdown, metadata["images"] = get_images_with_links_md(markdown)
 
         with open(f"{cache_dir}/{document_id}_step_4_1_without_images.md", 'w', encoding="utf-8") as file:
             file.write(markdown)
@@ -305,7 +336,7 @@ if __name__ == '__main__':
         markdown = re.sub(r'\n*##', '\n\n##', markdown)
 
         logger.debug("Removing links from markdown and adding into metadata part")
-        markdown, metadata["links2"] = process_markdown_and_extract_links(markdown)
+        markdown, metadata["links"] = process_markdown_and_extract_links(markdown)
 
         with open(f"{cache_dir}/{document_id}_step_4_2_without_links.md", 'w', encoding="utf-8") as file:
             logger.debug("Writing markdown to file from step 4")
@@ -315,20 +346,68 @@ if __name__ == '__main__':
 
         logger.debug("Onet: Extracting links with images from markdown")
         output_json = onet_see_also_process_markdown_and_extract_links_with_images(markdown)
-        metadata["links"] = output_json['links']
+        metadata["links_onet"] = output_json['links']
         markdown = output_json['markdown']
 
         logger.debug("Removing info strings")
         markdown = markdown.replace("*Dalsza część artykułu pod materiałem wideo*", "")
 
-        if web_doc.url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
-            logger.debug("Using special rules for onet.pl informacje onetwiadomosci")
+        if web_doc.url.startswith("https://www.onet.pl/") or web_doc.url.startswith("https://wiadomosci.onet.pl/"):
+            logger.info("Removing info strings for onet.pl")
+
+            markdown = re.sub(r"^\s+\*\s+\*\*Tekst\spublikujemy\sdzięki\suprzejmości\sserwisu.*$", "", markdown, flags=re.MULTILINE)
+
+            linie = markdown.splitlines()
+            wynik = []
+            for linia in linie:
+                if linia.startswith("**") and linia.endswith("**"):
+                    if wynik and wynik[-1] != '\n':
+                        wynik.append("")
+                    wynik.append(linia)
+                elif linia.startswith("## "):
+                    if wynik and wynik[-1] != '\n':
+                        wynik.append("")
+                    wynik.append(linia)
+                else:
+                    wynik.append(linia)
+            markdown = "\n".join(wynik)
+
+            # wiadomosci.onet.pl
+            markdown = re.sub(r'^\*\*CZYTAJ\sWIĘCEJ:.*$', '', markdown, flags=re.MULTILINE)
+            markdown = re.sub(r'^Kontynuuj\sczytanie\sod\smiejsca,\sw\sktórym\sskończyłeś\.$', '', markdown, flags=re.MULTILINE)
+            #  ;)  ;)  ‹ wróć
+            # markdown = re.sub(r'^.*;\).*;\).*\s+‹\swróć\s*$', '', markdown, flags=re.MULTILINE)
+            # match = re.search(r'^(.*);\)(.*);\)(.*)\s+‹\swróć\s*$', markdown, re.MULTILINE)
+            # if match:
+            #     print("wiadomosci.onet.pl, match:")
+            #     print(f">{match.group(1)}<")
+            #     print(f">{match.group(2)}<")
+            #     print(f">{match.group(3)}<")
+
+            markdown = re.sub(r'^\s\*\s\*\*Przeczytaj:\*\*.*$', '', markdown, flags=re.MULTILINE)
+            markdown = re.sub(r'^\s\*\s\*\*Przeczytaj\stakże:\*\*.*$', '', markdown, flags=re.MULTILINE)
+
+            markdown = re.sub(r'^\s\*\s\*\*Czytaj\swięcej:\*\*.*$', '', markdown, flags=re.MULTILINE)
+
+            markdown = re.sub(r'^\s\*\s\*\*Zobacz:\*\*.*$', '', markdown, flags=re.MULTILINE)
+            markdown = re.sub(r'^\s\*\s\*\*Zobacz\stakże:\*\*.*$', '', markdown, flags=re.MULTILINE)
+            markdown = re.sub(r'^\s\*\s\*\*Zobacz\srównież:\*\*.*$', '', markdown, flags=re.MULTILINE)
+            markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
+            markdown = re.sub(r"^##\sZobacz\srównież$", "", markdown, flags=re.MULTILINE)
+            markdown = re.sub(r"^\s\*\sDużo\sczytania,\sa\smało\sczasu\?\sSprawdź\sskrót\sartykułu\s*$", "", markdown, flags=re.MULTILINE)
+
+            markdown = re.sub(r"^\s*reklama\s*\n", "", markdown, flags=re.MULTILINE | re.DOTALL)
+
+
+            markdown = re.sub(r"s*reklama$", "", markdown)
+
+
+            markdown = re.sub(r"^\s+\* link\[\d+\]:.*$", "", markdown, flags=re.MULTILINE)
+
             markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
 
-        if web_doc.url.startswith("https://www.onet.pl/informacje/onetwiadomosci"):
             markdown = re.sub(r'^\s*Dalszy\sciąg\smateriału\spod\swideo\s*$', '', markdown, flags=re.MULTILINE)
 
-        if web_doc.url.startswith("https://www.onet.pl/informacje/businessinsider"):
             markdown = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown, flags=re.MULTILINE)
 
         with open(f"{cache_dir}/{document_id}_step_5_without_portal_adding.md", 'w', encoding="utf-8") as file:
@@ -343,12 +422,29 @@ if __name__ == '__main__':
         logger.debug("Step 6: cleaning markdown document for embedding")
 
         logger.debug("Removing img from markdown")
-        markdown = re.sub(r"img:\d+", '', markdown)
+        markdown = re.sub(r"picture\(\d+\):.*", '', markdown)
+
+        logger.debug("Removing links from markdown")
+        markdown = re.sub(r"link\[\d+]:", '', markdown)
+
+        markdown = re.sub(r'\*\*', '', markdown)
+
 
         markdown = re.sub(r'^\s+$', '\n', markdown)
+
+        # from unknown reason below code doesnt' work
+        markdown = re.sub(r'^>\s', '', markdown, re.MULTILINE)
+        # TODO: repalce with better code:
+        lines = markdown.splitlines()
+        lines2 = []
+        for line in lines:
+            if line.startswith("> "):
+                line = line.replace("> ", "")
+            lines2.append(line)
+        markdown = "\n".join(lines2)
+
         markdown = re.sub(r'\*\*\n+\s*', '**\n', markdown)
 
-        markdown = popraw_markdown(markdown)
         markdown = re.sub('\n{3,10}', '\n\n', markdown)
 
         with open(f"{cache_dir}/{document_id}_step_6.md", "w", encoding="utf-8") as f:
@@ -359,16 +455,32 @@ if __name__ == '__main__':
         logger.info(f"Text has been split into {len(parts)} parts")
 
         print("\n>FINAL DATA<\n")
+        print(f"used a regule file: {regexp_rules_file}")
+        parts_embeddings = []
         for i, part in enumerate(parts):
-            print("----")
+            print("\n####")
             print(f"part {i+1} has {len(part.split())} words")
+            print(">Tekst before cleaning:")
             print(part)
+            print(">Tekst after cleaning:")
+            part = md_remove_markdown(part).strip()
+            print(part)
+            parts_embeddings.append(part)
 
-        # if embedding_update:
-        #     parts_txt = []
-        #     for part in parts:
-        #         parts_txt.append(markdown_to_text(part))
-        #
+        if interactive:
+            print("Naciśnij Enter, aby zakończyć program...")
+            input()
+
+        if embedding_update:
+            embedds = sherlock_create_embeddings(parts_embeddings)
+            logger.info(f"Status code from embedding function: {embedds.status_code}")
+
+            if not web_doc.language:
+                web_doc.language = 'pl'
+
+            for embedd in embedds.embedding:
+                web_doc.embedding_add_simple("BAAI/bge-multilingual-gemma2", embedd["embedding"], parts[embedd["index"]])
+
         #     wb_db = WebsitesDBPostgreSQL()
         #     web_doc = StalkerWebDocumentDB(document_id=document_id)
         #     web_doc.embedding_add_by_parts(model=EMBEDDING_MODEL, parts=parts_txt)

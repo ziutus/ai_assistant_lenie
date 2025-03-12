@@ -90,6 +90,35 @@ def links_correct(text):
     return text_new
 
 
+def md_get_images_as_links(md_text, clean_markdown=True):
+    lines = md_text.split("\n")
+    extracted_links = []
+    extracted_images = []
+    for line in lines:
+        links_with_images = re.findall(r'\[\!\[(.*?)\]\((.*?)\)\]\((.*?)\)', line)
+        if len(links_with_images) > 0:
+            print("Found image as link")
+            for link_with_image in links_with_images:
+                link = {
+                    "image_alt_text": link_with_image[0],
+                    "image_url": link_with_image[1],
+                    "url": link_with_image[2]
+                }
+                image = {
+                    "alt_text": link_with_image[0],
+                    "url": link_with_image[1]
+                }
+                extracted_links.append(link)
+                extracted_images.append(image)
+                replace_me = f"[![{link['image_alt_text']}]({link['image_url']})]({link['url']})"
+                line = line.replace(replace_me, "")
+
+                if clean_markdown:
+                    md_text = md_text.replace(replace_me, "")
+
+    return md_text, extracted_links, extracted_images
+
+
 def process_markdown_and_extract_links(md_text):
 
     lines = md_text.split("\n")
@@ -101,22 +130,8 @@ def process_markdown_and_extract_links(md_text):
             # md_text = remove_new_line_only_in_string(md_text, link[0])
             link_desc = link[0].replace("\n", " ")
             replace_text = f"[{link_desc}]({link[1]})"
-            md_text = md_text.replace(replace_text, f"link[{len(extracted_links)}]:\"{link[0]}\"", 1)
+            md_text = md_text.replace(replace_text, f"link[{len(extracted_links)}]:{link[0]}", 1)
             extracted_links.append({"text": link_desc, "link": link[1]})
-
-    return md_text, extracted_links
-
-
-def process_markdown_and_extract_links_old(md_text):
-    # Wyrażenie regularne do wyszukiwania linków
-    pattern = re.compile(r'\[(.*?)\]\((.*?)\)')
-
-    links = pattern.findall(md_text)
-    extracted_links = [{"text": text, "link": url} for text, url in links]
-
-    # Zastąpienie linków tekstami link:ID
-    for i in range(len(links)):
-        md_text = md_text.replace(f'[{links[i][0]}]({links[i][1]})', f'{extracted_links[i]["text"]}')
 
     return md_text, extracted_links
 
@@ -124,17 +139,21 @@ def process_markdown_and_extract_links_old(md_text):
 def md_square_brackets_in_one_line(text):
     is_in_brackets = False
     text_new = ""
+    level = 0
 
     for i, char in enumerate(text):
         if char == '[':
             is_in_brackets = True
             text_new += char
+            level += 1
             continue
         elif char == ']':
-            is_in_brackets = False
             text_new += char
+            level -= 1
+            if level == 0:
+                is_in_brackets = False
             continue
-        elif char == "\n" and is_in_brackets:
+        elif char == "\n" and is_in_brackets and level > 0:
             text_new += " "
             continue
         else:
@@ -143,8 +162,13 @@ def md_square_brackets_in_one_line(text):
     return text_new
 
 
-def md_split_for_emb(part, split_limit=300, level=0):
+def md_split_for_emb(part, split_limit=200, level=0):
     parts = []
+
+    if level == 5:
+        parts = split_text_by_paragraphs(part, split_limit)
+        return parts
+
     if level == 0:
         delimiter = "\n# "
         splitter = "---split---\n# "
@@ -160,7 +184,6 @@ def md_split_for_emb(part, split_limit=300, level=0):
     elif level == 4:
         delimiter = "\n— **"
         splitter = "---split---\n— **"
-
     else:
         return [part]
 
@@ -174,3 +197,69 @@ def md_split_for_emb(part, split_limit=300, level=0):
         result = md_split_for_emb(part, split_limit, level + 1)
         parts.extend(result)
     return parts
+
+
+def split_text_by_sentences(text, max_words=200):
+    separatory = ['. ', '! ', '? ']
+    wzorzec = '|'.join(map(re.escape, separatory))
+
+    # Dzielimy tekst
+    fragmenty = re.split(wzorzec, text)
+
+    # Usuwamy puste elementy
+    fragmenty = [fragment for fragment in fragmenty if fragment]
+
+    for fragment in fragmenty:
+        if len(fragment.split()) > max_words:
+            raise "Please corect text first, there is no possiblity to split text by sentences"
+
+    return fragmenty
+
+
+def split_text_by_paragraphs(text, max_words=200):
+    word_count = len(text.split())
+
+    # If text is short enough, return it as a single-element list
+    if word_count <= max_words:
+        return [text]
+
+    # Try to split text into paragraphs
+    paragraphs = [p for p in text.split('\n\n') if p.strip()]
+
+    parts = []
+    part = ""
+    for paragraph in paragraphs:
+        if len(paragraph.split()) > max_words:
+            parts_tmp = split_text_by_sentences(paragraph, max_words)
+            parts.extend(parts_tmp)
+            continue
+
+        if len(part.split()) + len(paragraph.split()) > max_words:
+            parts.append(part)
+            part = paragraph
+            continue
+
+        part += paragraph + "\n"
+
+    parts.append(part)
+
+    return parts
+
+def md_remove_markdown(text):
+    lines2 = []
+
+    for line in text.splitlines():
+        if line.startswith("# "):
+            line = line.replace("# ", "")
+        if line.startswith("## "):
+            line = line.replace("## ", "")
+        if line.startswith("### "):
+            line = line.replace("### ", "")
+        if line.startswith("#### "):
+            line = line.replace("#### ", "")
+        if line.startswith("##### "):
+            line = line.replace("##### ", "")
+        lines2.append(line)
+    text = "\n".join(lines2)
+
+    return text

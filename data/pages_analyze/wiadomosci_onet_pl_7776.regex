@@ -1,0 +1,14 @@
+\d+\smin\sczytania\s+
+\[\sFACEBOOK\s\]\(javascript:void\\\(0\\\);\)\s+
+\[\sX\s\]\(javascript:void\\\(0\\\);\)\s+
+\[\sE-MAIL\s\]\(mailto:\?body=(?P<link>.*?)\)\s+
+\[\sKOPIUJ\sLINK\s\]\(javascript:void\\\(0\\\);\)\s+
+(?P<article_text>.*)
+_Dziękujemy,\sże\sprzeczytałaś/eś\snasz\sartykuł\sdo\skońca._*\s+
+_Bądź\sna\s+
+bieżąco!_\s+
+\[\s_Obserwuj_\s+\]\(https://news\.google\.com/publications/\S+\?[\S=:&]+\)\s+
+_nas\sw\sWiadomościach\sGoogle._\s*
+.*
+Źródło:\s(.*?)\s+
+Data\sutworzenia:\s+\d{1,2}\s+(?:stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia)\s+\d{4}\s+\d{2}:\d{2}\s

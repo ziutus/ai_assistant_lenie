@@ -1,0 +1,3 @@
+Skróć\sartykuł\s+
+(?P<article_text>.*)
+_Dziękujemy,\sże\sprzeczytałaś/eś\snasz\sartykuł\sdo\skońca\.\s

@@ -1,0 +1,13 @@
+(:?wyszukiwania\sprzez\swyszukiwarki\sinternetowe.\s*)?
+\[Wróć\]\(\/\)
+.*?
+\d{1,2}\s+(?:stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia)\s+\d{4},\s+\d{2}:\d{2}
+(?P<article_text>.*)
+!\[]\(https://ocdn.eu/onetmobilemainpage/emotion/svg/\d+(_v\d+)?.svg\)\s+\d+(?:,\d+)?\s+(?:\s*tys\.)?\s+
+!\[]\(https://ocdn.eu/onetmobilemainpage/emotion/svg/\d+(_v\d+)?.svg\)\s+\d+\s+
+!\[]\(https://ocdn.eu/onetmobilemainpage/emotion/svg/\d+(_v\d+)?.svg\)\s+\d+\s+
+!\[]\(https://ocdn.eu/onetmobilemainpage/emotion/svg/\d+(_v\d+)?.svg\)\s+\d+\s+
+!\[]\(https://ocdn.eu/onetmobilemainpage/emotion/svg/\d+(_v\d+)?.svg\)\s+\d+\s+
+!\[]\(https://ocdn.eu/onetmobilemainpage/emotion/svg/\d+(_v\d+)?.svg\)\s+\d+\s+
+!\[]\(https://ocdn.eu/onetmobilemainpage/emotion/svg/\d+(_v\d+)?.svg\)\s+\d+\s+
+Lubię\sto\s+
