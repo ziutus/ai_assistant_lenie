@@ -12,7 +12,7 @@ import html2text
 from library.api.cloudferro.sherlock.sherlock_embedding import sherlock_create_embeddings
 from library.lenie_markdown import get_images_with_links_md, links_correct, process_markdown_and_extract_links, \
     md_square_brackets_in_one_line, md_split_for_emb, md_get_images_as_links, md_remove_markdown
-from library.stalker_web_document import StalkerDocumentStatusError
+from library.stalker_web_document import StalkerDocumentStatusError, StalkerDocumentStatus
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.api.aws.s3_aws import s3_file_exist, s3_take_file
@@ -86,14 +86,17 @@ def generate_links_regex(links):
 wb_db = WebsitesDBPostgreSQL()
 
 # interactive = True
-documents = wb_db.get_documents_by_url("https://wiadomosci.onet.pl/")
-# documents = [7305]
+documents = wb_db.get_documents_by_url("https://wiadomosci.wp.pl/%")
+# documents = [ 7779 ]
+# documents = wb_db.get_list(document_type="webpage", document_state="DOCUMENT_INTO_DATABASE")
+# documents = wb_db.get_list(document_type="webpage", limit=700)
 interactive = False
-find_problems = True
+find_problems = False
 
+text_to_md_check_only = False
 online = True
 embedding_update = False
-ignore_regexp_issue = False
+ignore_regexp_issue = True
 # cache_dir_base = "tmp/markdown"
 cache_dir_base = r"C:\Users\ziutus\tmp\markdown"
 split_limit = 200
@@ -105,11 +108,13 @@ page_regexp_map = {
         "data/pages_analyze/money2.regex",
         "data/pages_analyze/money3.regex",
         "data/pages_analyze/money4.regex",
-        "data/pages_analyze/money5.regex"
+        "data/pages_analyze/money5.regex",
+        "data/pages_analyze/money_2025_1.regex"
     ],
     "https://wiadomosci.wp.pl/": [
         "data/pages_analyze/wiadomosci_wp_pl_1.regex",
-        "data/pages_analyze/wiadomosci_wp_pl_2.regex"
+        "data/pages_analyze/wiadomosci_wp_pl_2.regex",
+        "data/pages_analyze/wiadomosci_wp_pl_2025_1.regex"
     ],
     "https://www.onet.pl/informacje/onetwiadomosci": [
         "data/pages_analyze/onet_pl_informacje_wiadomosci.regex",
@@ -156,14 +161,27 @@ if __name__ == '__main__':
         logger.debug(f"Creating cache directory {cache_dir_base}")
         os.makedirs(cache_dir_base)
 
-    for document_id in documents:
+    print(f"Documents to analyze: {len(documents)}")
+
+    for document_tmp in documents:
+        if type(document_tmp) is dict:
+            document_id = document_tmp["id"]
+        else:
+            document_id = document_tmp
+
+        logger.info(f"Working on document_id {document_id}")
+        web_doc = StalkerWebDocumentDB(document_id=document_id)
+
+        if web_doc.document_state == StalkerDocumentStatus.ERROR and web_doc.document_state_error == StalkerDocumentStatusError.ERROR_DOWNLOAD:
+            logger.info("Ignoring document as is error is ERROR_DOWNLOAD...")
+            continue
+
         cache_dir = f"{cache_dir_base}/{document_id}"
         if not os.path.exists(cache_dir):
             logger.debug(f"Creating cache directory {cache_dir}")
             os.makedirs(cache_dir)
 
-        logger.info(f"Working on document_id {document_id}")
-        web_doc = StalkerWebDocumentDB(document_id=document_id)
+
 
         if web_doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR and not ignore_regexp_issue:
             logger.info("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
@@ -239,12 +257,19 @@ if __name__ == '__main__':
 
                     markdown_text = markdown_content
 
-                    if reduction_html2text_percentage < 30:
+                    if reduction_html2text_percentage < 30 or reduction_markdown_percentage >= 98:
                         logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
+                        web_doc.set_document_state("ERROR")
+                        web_doc.set_document_state_error("TEXT_TO_MD_ERROR")
+                        web_doc.save()
                         continue
 
         with open(cache_file_step_1_md, 'w', encoding="utf-8") as file:
             file.write(markdown_text)
+            logger.info("Transformation from text to markdown completed")
+
+        web_doc.set_document_state("TEXT_TO_MD_DONE")
+        web_doc.save()
 
         logger.info("Step 2: taking article content from markdown (ignoring portal links, disclaimers, user comments etc")
         logger.debug("Taking URL from database")
@@ -274,6 +299,9 @@ if __name__ == '__main__':
                         break
                     else:
                         logger.debug(f"Nie znaleziono dopasowania z regułami z pliku {rules_file}.")
+                        web_doc.set_document_state("ERROR")
+                        web_doc.set_document_state_error("REGEX_ERROR")
+                        web_doc.save()
                         continue
 
         if not found_rules:
@@ -286,6 +314,9 @@ if __name__ == '__main__':
                 print("Naciśnij Enter, aby zakończyć program...")
                 input()
 
+            web_doc.set_document_state("ERROR")
+            web_doc.set_document_state_error("REGEX_ERROR")
+            web_doc.save()
             continue
 
         logger.debug(f"DEBUG: will use regex rule file: {regexp_rules_file}")
@@ -293,6 +324,12 @@ if __name__ == '__main__':
 
         with open(cache_file_step_2_md, 'w', encoding="utf-8") as file:
             file.write(extracted_text)
+
+        web_doc.set_document_state("MD_SIMPLIFIED")
+        web_doc.save()
+
+        if text_to_md_check_only:
+            continue
 
         markdown = extracted_text
 
