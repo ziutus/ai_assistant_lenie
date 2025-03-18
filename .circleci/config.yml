@@ -41,9 +41,8 @@ jobs:
             pip install -r requirements_server.txt || echo "No requirements_server.txt file found"
             echo "Wirtualne środowisko Python 3.11 utworzone i aktywowane"
             python --version
-      - run:
-          python -m pytest --self-contained-html --html=pytest-results/ || true
-
+            python -m pytest --self-contained-html --html=pytest-results/ || true
+  
 
   stop-ec2:
     docker:
