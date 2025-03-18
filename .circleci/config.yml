@@ -63,6 +63,9 @@ jobs:
             whoami
             groups
             ls -la /var/run/docker.sock
+            cat /etc/group | grep docker
+            id
+            env
 
       - run:
           name: "Execute job on EC2"
