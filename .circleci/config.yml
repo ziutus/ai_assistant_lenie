@@ -47,9 +47,10 @@ jobs:
             pip install -r requirements_server.txt || echo "No requirements_server.txt file found"
             echo "Wirtualne środowisko Python 3.11 utworzone i aktywowane"
             python --version
-            python -m pytest --self-contained-html --html=pytest-results/ --junitxml=pytest-results/results.xml || true
+            mkdir -p test-results
+            python -m pytest --junitxml=test-results/results.xml || true
       - store_test_results:
-          path: pytest-results/results.xml
+          path: test-results/results.xml
 
 
   run-job-on-ec2-docker:
