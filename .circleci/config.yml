@@ -42,7 +42,7 @@ jobs:
             echo "Wirtualne środowisko Python 3.11 utworzone i aktywowane"
             python --version
       - run:
-            pytest --self-contained-html --html=pytest-results/ || true
+          python -m pytest --self-contained-html --html=pytest-results/ || true
 
 
   stop-ec2:
