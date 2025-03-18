@@ -30,6 +30,8 @@ class StalkerDocumentStatus(Enum):
     DOCUMENT_INTO_DATABASE = 11
     NEED_CLEAN_TEXT = 12
     NEED_CLEAN_MD = 13
+    TEXT_TO_MD_DONE = 14
+    MD_SIMPLIFIED = 15
 
 
 # This errors status are also defined in Postgresql table: document_status_error_types
@@ -47,6 +49,7 @@ class StalkerDocumentStatusError(Enum):
     MISSING_TRANSLATION = 11
     TRANSLATION_ERROR = 12
     REGEX_ERROR = 13
+    TEXT_TO_MD_ERROR = 14
 
 
 class StalkerWebDocument:
@@ -177,6 +180,10 @@ class StalkerWebDocument:
             self.document_state = StalkerDocumentStatus.NEED_CLEAN_TEXT
         elif document_state == "NEED_CLEAN_MD":
             self.document_state = StalkerDocumentStatus.NEED_CLEAN_MD
+        elif document_state == "TEXT_TO_MD_DONE":
+            self.document_state = StalkerDocumentStatus.NEED_CLEAN_MD
+        elif document_state == "MD_SIMPLIFIED":
+            self.document_state = StalkerDocumentStatus.MD_SIMPLIFIED
         else:
             raise ValueError("document_state must be one of the valid StalkerDocumentStatus values")
 
@@ -208,6 +215,8 @@ class StalkerWebDocument:
             self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR
         elif document_state_error == "REGEX_ERROR":
             self.document_state_error = StalkerDocumentStatusError.REGEX_ERROR
+        elif document_state_error == "TEXT_TO_MD_ERROR":
+            self.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR
 
         else:
             raise ValueError(

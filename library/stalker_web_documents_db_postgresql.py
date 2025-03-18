@@ -66,7 +66,7 @@ class WebsitesDBPostgreSQL:
 
     def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL",
                  search_in_documents = None, count = False, project = None, ai_summary_needed: bool = None,# noqa
-                 ai_correction_needed: bool = None) -> \
+                 ai_correction_needed: bool = None, start_id = None) -> \
             list[
                 dict[str, str, str, str, str, str, str, str, str]]:
         offset = offset * limit
@@ -77,6 +77,7 @@ class WebsitesDBPostgreSQL:
             base_query = "SELECT count(id) FROM public.web_documents"
         else:
             base_query = "SELECT id, url, title, document_type, created_at, document_state, document_state_error, note, project, s3_uuid FROM public.web_documents"
+
 
         order_by = "ORDER BY created_at DESC"
         limit_offset = f"LIMIT {int(limit)} OFFSET {int(offset)}"
@@ -97,6 +98,11 @@ class WebsitesDBPostgreSQL:
 
         if ai_summary_needed:
             where_clauses.append(f"ai_summary_needed = '{ai_summary_needed}'")
+
+        if start_id:
+            start_id = int(start_id)
+            where_clauses.append(f"id >= {start_id} ")
+
 
         if search_in_documents:
             search_clauses = [f"text LIKE '%{search_in_documents}%'",
@@ -340,12 +346,21 @@ class WebsitesDBPostgreSQL:
         """
         min = int(min)
 
+        # query = f"""
+        #     SELECT id
+        #     FROM web_documents as wd
+        #     WHERE url like '{url}%'  AND document_type='webpage'  AND wd.id > {min} and document_state='NEED_MANUAL_REVIEW'
+        #     ORDER by wd.id
+        # """
+
         query = f"""
             SELECT id
             FROM web_documents as wd
-            WHERE url like '{url}%'  AND document_type='webpage'  AND wd.id > {min} and document_state='NEED_MANUAL_REVIEW'
+            WHERE url like '{url}%'  AND document_type='webpage'  AND wd.id > {min} and document_state='ERROR' and document_state_error='REGEX_ERROR'
             ORDER by wd.id
         """
+
+        print(query)
 
         with self.conn:
             with self.conn.cursor() as cur:
