@@ -45,6 +45,17 @@ jobs:
 #      - store_test_results:
 #          path: pytest-results/
 
+
+  run-job-on-ec2-docker:
+    machine: true
+    resource_class: itsnap/itsnap-runner
+    steps:
+      - run:
+          name: "Execute job on EC2"
+          command: |
+            docker build -t lenie-ai-server:latest .
+    
+
   stop-ec2:
     docker:
       - image: cimg/python:3.11
@@ -62,10 +73,14 @@ workflows:
       - run-job-on-ec2:
           requires:
             - start-ec2
-      - Hold-for-Approval:
-          type: approval
+#      - Hold-for-Approval:
+#          type: approval
+#          requires:
+#            - run-job-on-ec2
+      - run-job-on-ec2-docker:
           requires:
             - run-job-on-ec2
       - stop-ec2:
           requires:
-            - run-job-on-ec2
+            - run-job-on-ec2-docker
+          when: always
