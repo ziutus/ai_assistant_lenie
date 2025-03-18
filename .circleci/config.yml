@@ -58,6 +58,13 @@ jobs:
     steps:
       - checkout
       - run:
+          name: "Debugowanie uprawnień Docker"
+          command: |
+            whoami
+            groups
+            ls -la /var/run/docker.sock
+
+      - run:
           name: "Execute job on EC2"
           command: |
             docker build -t lenie-ai-server:latest .
