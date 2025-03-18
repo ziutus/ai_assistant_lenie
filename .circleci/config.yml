@@ -9,7 +9,7 @@ executors:
       - image: cimg/python:3.11
   machine-executor:
     machine: true
-
+    docker_layer_caching: true
 
 jobs:
   start-ec2:
