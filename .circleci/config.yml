@@ -29,8 +29,16 @@ jobs:
           command: |
             python3.11 -m venv venv
             . venv/bin/activate
+
+            # Sprawdzenie, czy venv jest aktywny
+            echo "Sprawdzanie aktywacji wirtualnego środowiska:"
+            echo "VIRTUAL_ENV=$VIRTUAL_ENV"
+            which python
+            python -c "import sys; print(f'Interpreter Pythona: {sys.executable}')"
+            python -c "import sys; print(f'Ścieżki systemowe: {sys.path}')"
+                        
             python -m pip install --upgrade pip
-            pip install -r requirements.txt || echo "No requirements.txt file found"
+            pip install -r requirements_server.txt || echo "No requirements_server.txt file found"
             echo "Wirtualne środowisko Python 3.11 utworzone i aktywowane"
             python --version
 
