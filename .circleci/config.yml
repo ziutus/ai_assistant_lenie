@@ -13,10 +13,7 @@ jobs:
       - run:
           name: "Start EC2 instances"
           command: |
-            aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
-            aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
-            aws configure set region $AWS_REGION            
-            aws ec2 wait start-instances --instance-ids $INSTANCE_ID
+            aws ec2 start-instances --instance-ids $INSTANCE_ID
 
   run-job-on-ec2:
     machine: true
@@ -36,10 +33,7 @@ jobs:
       - aws-cli/setup
       - run:
           name: "Start EC2 instances"
-          command: |
-            aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
-            aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
-            aws configure set region $AWS_REGION            
+          command: |     
             aws ec2 stop-instances --instance-ids $INSTANCE_ID
 
 workflows:
