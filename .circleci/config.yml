@@ -3,11 +3,17 @@ version: 2.1
 orbs:
   aws-cli: circleci/aws-cli@3.1
 
+executors:
+  python-executor:
+    docker:
+      - image: cimg/python:3.11
+  machine-executor:
+    machine: true
+
 
 jobs:
   start-ec2:
-    docker:
-      - image: cimg/python:3.11
+    executor: python-executor
     steps:
       - aws-cli/setup
       - run:
@@ -16,7 +22,7 @@ jobs:
             aws ec2 start-instances --instance-ids $INSTANCE_ID
 
   run-job-on-ec2:
-    machine: true
+    executor: machine-executor
     resource_class: itsnap/itsnap-runner
     steps:
       - checkout
@@ -36,34 +42,33 @@ jobs:
             which python
             python -c "import sys; print(f'Interpreter Pythona: {sys.executable}')"
             python -c "import sys; print(f'Ścieżki systemowe: {sys.path}')"
-                        
+            
             python -m pip install --upgrade pip
             pip install -r requirements_server.txt || echo "No requirements_server.txt file found"
             echo "Wirtualne środowisko Python 3.11 utworzone i aktywowane"
             python --version
             python -m pytest --self-contained-html --html=pytest-results/ || true
-#      - store_test_results:
-#          path: pytest-results/
+  #      - store_test_results:
+  #          path: pytest-results/
 
 
   run-job-on-ec2-docker:
-    machine: true
+    executor: machine-executor
     resource_class: itsnap/itsnap-runner
     steps:
       - run:
           name: "Execute job on EC2"
           command: |
             docker build -t lenie-ai-server:latest .
-    
+  
 
   stop-ec2:
-    docker:
-      - image: cimg/python:3.11
+    executor: python-executor
     steps:
       - aws-cli/setup
       - run:
           name: "Start EC2 instances"
-          command: |     
+          command: |
             aws ec2 stop-instances --instance-ids $INSTANCE_ID
 
 workflows:
