@@ -42,8 +42,8 @@ jobs:
             echo "Wirtualne środowisko Python 3.11 utworzone i aktywowane"
             python --version
             python -m pytest --self-contained-html --html=pytest-results/ || true
-      - store_test_results:
-          path: pytest-results/
+#      - store_test_results:
+#          path: pytest-results/
 
   stop-ec2:
     docker:
@@ -62,6 +62,10 @@ workflows:
       - run-job-on-ec2:
           requires:
             - start-ec2
+      - Hold-for-Approval:
+          type: approval
+          requires:
+            - run-job-on-ec2
       - stop-ec2:
           requires:
             - run-job-on-ec2
