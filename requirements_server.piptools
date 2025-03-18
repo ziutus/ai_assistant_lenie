@@ -6,6 +6,7 @@ python-dotenv
 psycopg2-binary
 openai
 pytest
+pytest-html
 pytube
 youtube-transcript-api
 assemblyai
