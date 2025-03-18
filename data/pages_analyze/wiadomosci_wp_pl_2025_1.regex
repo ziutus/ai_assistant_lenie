@@ -1,0 +1,4 @@
+\d{1,2}\s+(?:stycznia|lutego|marca|kwietnia|maja|czerwca|lipca|sierpnia|września|października|listopada|grudnia)\s+\d{4}\s+
+ZAPISZ\s*UDOSTĘPNIJ\s*
+(?P<article_text>.*?)
+\#\#\#\sWybrane\sdla\sCiebie

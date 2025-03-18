@@ -1,0 +1,7 @@
+\[Strona\sgłówna\]\(/\)
+.*?
+\d+\s+Podziel\ssię:\s+
+\d+\s+Podziel\ssię:\s+
+(?P<article_text>.*?)\s*
+\*\*Masz\snewsa,\szdjęcie\slub\sfilmik\?\sPrześlij\snam\sprzez\[\s*
+dziejesie\.wp\.pl]\(https://dziejesie\.wp\.pl/\)\*\*
