@@ -88,4 +88,4 @@ workflows:
       - stop-ec2:
           requires:
             - run-job-on-ec2-docker
-          when: always
+#          when: always
