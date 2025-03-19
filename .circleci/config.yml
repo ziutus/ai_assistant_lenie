@@ -27,10 +27,6 @@ jobs:
     steps:
       - checkout
       - run:
-          name: "Execute job on EC2"
-          command: |
-            ls -l
-      - run:
           name: "Tworzenie wirtualnego środowiska Python 3.11"
           command: |
             python3.11 -m venv venv
