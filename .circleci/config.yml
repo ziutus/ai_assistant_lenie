@@ -149,4 +149,3 @@ workflows:
                 - dev
             tags:
               only: /^\d+\.\d+\.\d+.*/
-          when: always
