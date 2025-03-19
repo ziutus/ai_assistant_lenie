@@ -86,6 +86,9 @@ jobs:
 
 workflows:
   ec2-workflow:
+    filters:
+      branches:
+        only: main
     jobs:
       - start-ec2
       - run-job-on-ec2:
