@@ -60,6 +60,17 @@ jobs:
     steps:
       - checkout
       - run:
+          name: "Sprawdź czy istnieje tag"
+          command: |
+            if [ -z "$CIRCLE_TAG" ]; then
+              echo "Błąd: Ten job wymaga tagu Git!"
+              echo "Aktualny commit nie posiada tagu."
+              exit 1
+            else
+              echo "Tag istnieje: $CIRCLE_TAG"
+              echo "Kontynuujemy proces..."
+            fi
+      - run:
           name: "Debugowanie uprawnień Docker"
           command: |
             whoami
@@ -90,13 +101,17 @@ workflows:
       - start-ec2:
           filters:
             branches:
-              only: main
+              only:
+                - main
+                - dev
       - run-job-on-ec2:
           requires:
             - start-ec2
           filters:
             branches:
-              only: main
+              only:
+                - main
+                - dev
 #      - Hold-for-Approval:
 #          type: approval
 #          requires:
@@ -106,11 +121,15 @@ workflows:
             - run-job-on-ec2
           filters:
             branches:
-              only: main
+              only:
+                - main
+                - dev
       - stop-ec2:
           requires:
             - run-job-on-ec2-docker
           filters:
             branches:
-              only: main
+              only:
+                - main
+                - dev
 #          when: always
