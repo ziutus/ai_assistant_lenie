@@ -47,6 +47,9 @@ jobs:
             pip install -r requirements_server.txt || echo "No requirements_server.txt file found"
             echo "Wirtualne środowisko Python 3.11 utworzone i aktywowane"
             python --version
+      - run:
+          name: "Run tests"
+          command: |
             mkdir -p test-results
             python -m pytest tests/unit --junitxml=test-results/results.xml || true
       - store_test_results:
