@@ -112,6 +112,8 @@ workflows:
               only:
                 - main
                 - dev
+            tags:
+              only: /^\d+\.\d+\.\d+.*/
       - run-job-on-ec2:
           requires:
             - start-ec2
@@ -120,6 +122,8 @@ workflows:
               only:
                 - main
                 - dev
+            tags:
+              only: /^\d+\.\d+\.\d+.*/
 #      - Hold-for-Approval:
 #          type: approval
 #          requires:
@@ -143,4 +147,6 @@ workflows:
               only:
                 - main
                 - dev
-#          when: always
+            tags:
+              only: /^\d+\.\d+\.\d+.*/
+          when: always
