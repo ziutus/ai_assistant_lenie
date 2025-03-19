@@ -43,6 +43,10 @@ C:\Users\ziutus\AppData\Local\Programs\Python\Python311\Scripts\pip-compile.exe 
 ```
 
 ```powershell
+C:\Users\ziutus\AppData\Local\Programs\Python\Python311\Scripts\pip-compile.exe --upgrade requirements_server.piptools --output-file requirements_server.txt
+```
+
+```powershell
 pip install -r requirements_markdown.txt
 ```
 
