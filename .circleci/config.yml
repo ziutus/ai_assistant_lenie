@@ -86,14 +86,17 @@ jobs:
 
 workflows:
   ec2-workflow:
-    filters:
-      branches:
-        only: main
     jobs:
-      - start-ec2
+      - start-ec2:
+          filters:
+            branches:
+              only: main
       - run-job-on-ec2:
           requires:
             - start-ec2
+          filters:
+            branches:
+              only: main
 #      - Hold-for-Approval:
 #          type: approval
 #          requires:
@@ -101,7 +104,13 @@ workflows:
       - run-job-on-ec2-docker:
           requires:
             - run-job-on-ec2
+          filters:
+            branches:
+              only: main
       - stop-ec2:
           requires:
             - run-job-on-ec2-docker
+          filters:
+            branches:
+              only: main
 #          when: always
