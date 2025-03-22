@@ -86,8 +86,12 @@ def generate_links_regex(links):
 wb_db = WebsitesDBPostgreSQL()
 
 # interactive = True
-documents = wb_db.get_documents_by_url("https://www.money.pl/%")
-# documents = [ 7431 ]
+documents = wb_db.get_documents_by_url("https://geekweek.interia.pl/")
+# TODO: 7683 - need to correct related liks (//gospodarka/place-w-polsce-sa-duzo-nizsze-niz-na-zachodzie-a-ceny-takie-same-to-bzdura-analiza-7126921300134720a.html)
+# TODO: 7741 - udostępnij artykuł - linki do ustąpienia do regexp: businessinsider_com_pl_2025_1.regex
+# TODO: 7732 - lepszy podział na części do embeddingu
+# TODO: 7687 - poprawić regexp geekweek_interia_pl_7687.regex
+# documents = [ 7687 ]
 # documents = wb_db.get_list(document_type="webpage", document_state="DOCUMENT_INTO_DATABASE")
 # documents = wb_db.get_list(document_type="webpage", limit=700)
 interactive = False
@@ -109,7 +113,10 @@ page_regexp_map = {
         "data/pages_analyze/money3.regex",
         "data/pages_analyze/money4.regex",
         "data/pages_analyze/money5.regex",
-        "data/pages_analyze/money_2025_1.regex"
+        "data/pages_analyze/money_2025_1.regex",
+        "data/pages_analyze/money_2025_6710.regex",
+        "data/pages_analyze/money_2025_7728.regex",
+        "data/pages_analyze/money_2025_7683.regex",
     ],
     "https://wiadomosci.wp.pl/": [
         "data/pages_analyze/wiadomosci_wp_pl_1.regex",
@@ -158,7 +165,23 @@ page_regexp_map = {
     ],
     "https://www.onet.pl/motoryzacja/": [
         "data/pages_analyze/onet_pl_motoryzacja.regex"
-    ]
+    ],
+    "https://businessinsider.com.pl/": [
+        "data/pages_analyze/businessinsider_com_pl_2025_1.regex",
+        "data/pages_analyze/businessinsider_com_pl_2025_2.regex"
+    ],
+    "https://wydarzenia.interia.pl/": [
+        "data/pages_analyze/interia_pl_7732.regex",
+        "data/pages_analyze/interia_pl_7553.regex",
+        "data/pages_analyze/interia_pl_7510.regex",
+        "data/pages_analyze/interia_pl_7504.regex",
+        "data/pages_analyze/interia_pl_7496.regex",
+    ],
+    "https://geekweek.interia.pl": [
+        "data/pages_analyze/geekweek_interia_pl_6837.regex",
+        "data/pages_analyze/geekweek_interia_pl_7785.regex",
+        "data/pages_analyze/geekweek_interia_pl_7687.regex",
+    ],
     # "": []
 }
 
@@ -256,11 +279,11 @@ if __name__ == '__main__':
                 markdown = convert(html)
                 md_size_2 = len(markdown)
 
-                reduction_markdown_percentage = calculate_reduction(html_size, md_size_2)
-                logger.debug(f"Markdown reduction: {reduction_markdown_percentage:.2f}%")
+                reduction_percentage = calculate_reduction(html_size, md_size_2)
+                logger.debug(f"Markdown reduction: {reduction_percentage:.2f}%")
                 markdown_text = markdown
 
-                if reduction_markdown_percentage < 30:
+                if reduction_percentage < 30:
 
                     h = html2text.HTML2Text()
                     h.ignore_links = False
@@ -274,16 +297,16 @@ if __name__ == '__main__':
 
                     markdown_text = markdown_content
 
-                    if reduction_html2text_percentage < 30 or reduction_markdown_percentage >= 98:
-                        logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
-                        web_doc.set_document_state("ERROR")
-                        web_doc.set_document_state_error("TEXT_TO_MD_ERROR")
-                        web_doc.save()
-                        continue
-
         with open(cache_file_step_1_md, 'w', encoding="utf-8") as file:
             file.write(markdown_text)
             logger.info("Transformation from text to markdown completed")
+
+        if reduction_percentage < 30 or reduction_percentage >= 98:
+            logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
+            web_doc.set_document_state("ERROR")
+            web_doc.set_document_state_error("TEXT_TO_MD_ERROR")
+            web_doc.save()
+            continue
 
         web_doc.set_document_state("TEXT_TO_MD_DONE")
         web_doc.save()
@@ -310,9 +333,24 @@ if __name__ == '__main__':
 
                     if match:
                         logger.debug(f"Regex defined in {rules_file} for finding article body is working.")
+                        groups = match.groupdict()
+
+                        if 'before' in groups:
+                            pprint(match.group('before'))
+
+                        if 'author' in groups and match.group('author'):
+                            print("autor:>" + match.group('author').strip() + "<")
+                        if 'created' in groups and match.group('created'):
+                            print("created:" + match.group('created'))
+                        if 'updated' in groups and match.group('updated'):
+                            print("aktualizacja:" + match.group('updated'))
+                        if 'title' in groups and match.group('title'):
+                            print("tytuł:" + match.group('title'))
+
                         extracted_text = match.group('article_text').strip() if match else "Nie znaleziono treści"
                         found_rules = True
                         regexp_rules_file = rules_file
+                        # exit(0)
                         break
                     else:
                         logger.debug(f"Nie znaleziono dopasowania z regułami z pliku {rules_file}.")
