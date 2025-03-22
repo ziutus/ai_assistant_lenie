@@ -86,8 +86,8 @@ def generate_links_regex(links):
 wb_db = WebsitesDBPostgreSQL()
 
 # interactive = True
-documents = wb_db.get_documents_by_url("https://wiadomosci.wp.pl/%")
-# documents = [ 7779 ]
+documents = wb_db.get_documents_by_url("https://www.money.pl/%")
+# documents = [ 7431 ]
 # documents = wb_db.get_list(document_type="webpage", document_state="DOCUMENT_INTO_DATABASE")
 # documents = wb_db.get_list(document_type="webpage", limit=700)
 interactive = False

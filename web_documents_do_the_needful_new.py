@@ -34,13 +34,6 @@ logging.basicConfig(level=logging.INFO)  # Change level as per your need
 aws_xray_enabled = os.getenv("AWS_XRAY_ENABLED")
 print(f"aws_xray_enabled: {aws_xray_enabled}")
 
-if aws_xray_enabled:
-    from aws_xray_sdk.core import xray_recorder, patch_all
-    from aws_xray_sdk.core import patch
-
-    # Konfiguracja X-Ray
-    xray_recorder.configure(service='lenie_ai')
-    patch_all()  # Automatyczne łatanie wszystkich bibliotek
 
 
 def compare_language(language_1: str, language_2: str):
@@ -61,8 +54,6 @@ The maximum file size for a local file uploaded to the API via the /v2/upload en
 """
 
 if __name__ == '__main__':
-    if aws_xray_enabled:
-        xray_recorder.begin_segment('MainSegment')  # Rozpoczęcie głównego segmentu
 
     # model = os.getenv("EMBEDDING_MODEL")
     embedding_model = os.getenv("EMBEDDING_MODEL")
@@ -96,10 +87,6 @@ if __name__ == '__main__':
         region_name=os.getenv("AWS_REGION")
     )
 
-    # Łatanie klienta boto3
-    if aws_xray_enabled:
-        patch(['boto3'])
-
     sqs = boto_session.client('sqs')
 
     while True:
@@ -114,8 +101,6 @@ if __name__ == '__main__':
             break
 
         for message in response['Messages']:
-            if aws_xray_enabled:
-                xray_recorder.begin_subsegment('ProcessMessage')  # Rozpoczęcie podsegmentu
             try:
                 print('Message: ', message['Body'])
 
@@ -173,9 +158,6 @@ if __name__ == '__main__':
                 )
             except Exception as e:
                 print(f'An error occurred: {e}')
-            finally:
-                if aws_xray_enabled:
-                    xray_recorder.end_subsegment()  # Koniec podsegmentu
 
     websites = WebsitesDBPostgreSQL()
 
@@ -416,8 +398,6 @@ if __name__ == '__main__':
         print(f"Processing >{website_document_type}< {website_id} ({website_nb} from {websites_data_len} {progress}%):"
               f" {url}")
 
-        if aws_xray_enabled:
-            xray_recorder.begin_subsegment('ProcessPage')  # Rozpoczęcie podsegmentu
         try:
             if website_document_type not in ["webpage", "link"]:
                 print(f"Document type is not webpage or link: {website_document_type}, ignoring")
@@ -520,8 +500,7 @@ if __name__ == '__main__':
                     print("[DONE]")
                     web_doc.save()
         finally:
-            if aws_xray_enabled:
-                xray_recorder.end_subsegment()  # Koniec podsegmentu
+            print(".")
 
         website_nb += 1
 
@@ -697,6 +676,3 @@ if __name__ == '__main__':
     #     web_doc.save()
 
     websites.close()
-
-    if aws_xray_enabled:
-        xray_recorder.end_segment()  # Koniec głównego segmentu

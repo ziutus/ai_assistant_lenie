@@ -20,4 +20,3 @@ neo4j
 langfuse
 chardet
 boto3
-aws_xray_sdk

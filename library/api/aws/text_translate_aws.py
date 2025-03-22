@@ -1,7 +1,6 @@
 import logging
 import os
 import boto3
-from aws_xray_sdk.core import xray_recorder, patch_all
 from library.translateResult import TranslateResult
 
 patch_all()
@@ -24,16 +23,14 @@ def translate_aws(text: str, target_language: str, source_language: str = "pl") 
         # https://docs.aws.amazon.com/translate/latest/APIReference/API_TranslateText.html
         logger.info(f"text len: {len(text)}, in bytes: {len(text.encode('utf-8'))}")
         if len(text.encode('utf-8')) < 10000:
-            with xray_recorder.in_subsegment('translate single test') as subsegment:
-                response = client.translate_text(
-                    Text=text,
-                    SourceLanguageCode=source_language,
-                    TargetLanguageCode=target_language
-                )
-                result.translated_text = response['TranslatedText']
+            response = client.translate_text(
+                Text=text,
+                SourceLanguageCode=source_language,
+                TargetLanguageCode=target_language
+            )
+            result.translated_text = response['TranslatedText']
 
-                subsegment.put_metadata('response', response)
-                return result
+            return result
         else:
             rows = text.split("\n\n")
             rows_english = []
@@ -49,14 +46,12 @@ def translate_aws(text: str, target_language: str, source_language: str = "pl") 
                 if (len(row)) == 0:
                     continue
 
-                with xray_recorder.in_subsegment(f'translate part {i} from {rows_nb}') as subsegment:
-                    response = client.translate_text(
-                        Text=row,
-                        SourceLanguageCode=source_language,
-                        TargetLanguageCode=target_language
-                    )
-                    rows_english.append(response['TranslatedText'])
-                    subsegment.put_metadata('response', response)
+                response = client.translate_text(
+                    Text=row,
+                    SourceLanguageCode=source_language,
+                    TargetLanguageCode=target_language
+                )
+                rows_english.append(response['TranslatedText'])
 
                 i += 1
 
