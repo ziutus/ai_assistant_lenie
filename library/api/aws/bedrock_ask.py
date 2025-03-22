@@ -4,10 +4,7 @@ import boto3
 import json
 import os
 import botocore.exceptions
-from aws_xray_sdk.core import xray_recorder, patch_all
 from library.ai_response import AiResponse
-
-patch_all()
 
 
 def query_aws_bedrock(query: str, model: str, temperature: float = 0.7, max_token_count: int = 4096,
@@ -40,24 +37,22 @@ def query_aws_bedrock(query: str, model: str, temperature: float = 0.7, max_toke
         content_type = 'application/json'
         output_text = "\n"
 
-        with xray_recorder.in_subsegment('translate single test'):
+        try:
 
-            try:
+            response = client_bedrock.invoke_model(body=body, modelId=model_id, accept=accept, contentType=content_type)
+            response_body = json.loads(response.get('body').read())
+            output_text = response_body.get('results')[0].get('outputText')
 
-                response = client_bedrock.invoke_model(body=body, modelId=model_id, accept=accept, contentType=content_type)
-                response_body = json.loads(response.get('body').read())
-                output_text = response_body.get('results')[0].get('outputText')
+        except botocore.exceptions.ClientError as error:
 
-            except botocore.exceptions.ClientError as error:
+            if error.response['Error']['Code'] == 'AccessDeniedException':
+                print(f"\x1b[41m{error.response['Error']['Message']}\
+                        \nTo troubeshoot this issue please refer to the following resources.\
+                         \nhttps://docs.aws.amazon.com/IAM/latest/UserGuide/troubleshoot_access-denied.html\
+                         \nhttps://docs.aws.amazon.com/bedrock/latest/userguide/security-iam.html\x1b[0m\n")
 
-                if error.response['Error']['Code'] == 'AccessDeniedException':
-                    print(f"\x1b[41m{error.response['Error']['Message']}\
-                            \nTo troubeshoot this issue please refer to the following resources.\
-                             \nhttps://docs.aws.amazon.com/IAM/latest/UserGuide/troubleshoot_access-denied.html\
-                             \nhttps://docs.aws.amazon.com/bedrock/latest/userguide/security-iam.html\x1b[0m\n")
-
-                else:
-                    raise Exception(error)
+            else:
+                raise Exception(error)
 
         if output_text.find('\n') != -1:
             answer = output_text[output_text.index('\n') + 1:]
