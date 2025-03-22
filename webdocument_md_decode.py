@@ -114,14 +114,19 @@ page_regexp_map = {
     "https://wiadomosci.wp.pl/": [
         "data/pages_analyze/wiadomosci_wp_pl_1.regex",
         "data/pages_analyze/wiadomosci_wp_pl_2.regex",
-        "data/pages_analyze/wiadomosci_wp_pl_2025_1.regex"
+        "data/pages_analyze/wiadomosci_wp_pl_2025_1.regex",
+        "data/pages_analyze/wiadomosci_wp_pl_2025_2.regex"
+    ],
+    "https://tech.wp.pl/": [
+        "data/pages_analyze/wiadomosci_wp_pl_1.regex",
+        "data/pages_analyze/wiadomosci_wp_pl_2.regex",
+        "data/pages_analyze/wiadomosci_wp_pl_2025_1.regex",
+        "data/pages_analyze/wiadomosci_wp_pl_2025_2.regex",
+        "data/pages_analyze/tech_wp_pl_2025_1.regex"
     ],
     "https://www.onet.pl/informacje/onetwiadomosci": [
         "data/pages_analyze/onet_pl_informacje_wiadomosci.regex",
         "data/pages_analyze/onet_pl_informacje_wiadomosci_2.regexp"
-    ],
-    "https://www.onet.pl/informacje/ppo": [
-        "data/pages_analyze/onet_pl_informacje_ppo.regex"
     ],
     "https://www.onet.pl/turystyka/onetpodroze": [
         "data/pages_analyze/onet_pl_podroze.regex"
@@ -141,12 +146,19 @@ page_regexp_map = {
     "https://www.onet.pl/informacje/": [
         "data/pages_analyze/onet_pl_informacje_all.regex",
         "data/pages_analyze/onet_pl_informacje_all_2.regex",
+        "data/pages_analyze/onet_pl_informacje_7411.regex",
     ],
     "https://www.onet.pl/": [
         "data/pages_analyze/onet_pl_informacje_7756.regex",
         "data/pages_analyze/onet_pl_informacje_7752.regex",
         "data/pages_analyze/onet_pl_informacje_7746.regex",
+        "data/pages_analyze/onet_pl_informacje_7320.regex",
+        "data/pages_analyze/onet_pl_informacje_ppo.regex",
+        "data/pages_analyze/onet_pl_premium.regex",
     ],
+    "https://www.onet.pl/motoryzacja/": [
+        "data/pages_analyze/onet_pl_motoryzacja.regex"
+    ]
     # "": []
 }
 
@@ -175,6 +187,11 @@ if __name__ == '__main__':
         if web_doc.document_state == StalkerDocumentStatus.ERROR and web_doc.document_state_error == StalkerDocumentStatusError.ERROR_DOWNLOAD:
             logger.info("Ignoring document as is error is ERROR_DOWNLOAD...")
             continue
+
+        # if web_doc.document_state == StalkerDocumentStatus.MD_SIMPLIFIED:
+        #     logger.info("Ignoring document as is MD_SIMPLIFIED")
+        #     continue
+
 
         cache_dir = f"{cache_dir_base}/{document_id}"
         if not os.path.exists(cache_dir):
