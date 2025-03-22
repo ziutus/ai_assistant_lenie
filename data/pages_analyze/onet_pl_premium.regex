@@ -1,0 +1,4 @@
+\[Onet\s+Premium\]\(/premium\)\[Onet\]\(/\)\[Wiadomości\]\(https://wiadomosci\.onet\.pl/\)\[Świat\]\(https://wiadomosci\.onet\.pl/swiat\)
+\s*
+(?P<article_text>.*)
+(?:\*|\s\_)Dziękujemy,\sże\sprzeczytałaś\/eś\snasz\sartykuł\sdo\skońca.

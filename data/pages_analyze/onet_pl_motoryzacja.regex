@@ -1,3 +1,3 @@
-(?:\[Wróć\]\(/\)|Skróć\sartykuł)\s*
+\!\[\]\(https://ocdn\.eu/onet-instant/auto-swiat-logo\.svg\)\s*
 (?P<article_text>.*)
 (?:\*|\s\_)Dziękujemy,\sże\sprzeczytałaś\/eś\snasz\sartykuł\sdo\skońca.
