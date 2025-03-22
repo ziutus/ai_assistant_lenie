@@ -59,24 +59,24 @@ jobs:
     resource_class: itsnap/itsnap-runner
     steps:
       - checkout
-      - run:
-          name: "Sprawdź czy istnieje tag i ma poprawny format"
-          command: |
-            if [ -z "$CIRCLE_TAG" ]; then
-              echo "Błąd: Ten job wymaga tagu Git!"
-              echo "Aktualny commit nie posiada tagu."
-              exit 1
-            else
-              # Sprawdzenie formatu tagu za pomocą wyrażenia regularnego
-              if [[ ! "$CIRCLE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+.* ]]; then
-                echo "Błąd: Tag musi być w formacie X.Y.Z (opcjonalnie z przyrostkiem)"
-                echo "Aktualny tag: $CIRCLE_TAG nie spełnia wymagań."
-                exit 1
-              else
-                echo "Tag istnieje i ma poprawny format: $CIRCLE_TAG"
-                echo "Kontynuujemy proces..."
-              fi
-            fi
+#      - run:
+#          name: "Sprawdź czy istnieje tag i ma poprawny format"
+#          command: |
+#            if [ -z "$CIRCLE_TAG" ]; then
+#              echo "Błąd: Ten job wymaga tagu Git!"
+#              echo "Aktualny commit nie posiada tagu."
+#              exit 1
+#            else
+#              # Sprawdzenie formatu tagu za pomocą wyrażenia regularnego
+#              if [[ ! "$CIRCLE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+.* ]]; then
+#                echo "Błąd: Tag musi być w formacie X.Y.Z (opcjonalnie z przyrostkiem)"
+#                echo "Aktualny tag: $CIRCLE_TAG nie spełnia wymagań."
+#                exit 1
+#              else
+#                echo "Tag istnieje i ma poprawny format: $CIRCLE_TAG"
+#                echo "Kontynuujemy proces..."
+#              fi
+#            fi
 
       - run:
           name: "Debugowanie uprawnień Docker"
@@ -112,8 +112,8 @@ workflows:
               only:
                 - main
                 - dev
-            tags:
-              only: /^\d+\.\d+\.\d+.*/
+#            tags:
+#              only: /^\d+\.\d+\.\d+.*/
       - run-job-on-ec2:
           requires:
             - start-ec2
@@ -122,8 +122,8 @@ workflows:
               only:
                 - main
                 - dev
-            tags:
-              only: /^\d+\.\d+\.\d+.*/
+#            tags:
+#              only: /^\d+\.\d+\.\d+.*/
 #      - Hold-for-Approval:
 #          type: approval
 #          requires:
@@ -136,8 +136,8 @@ workflows:
               only:
                 - main
                 - dev
-            tags:
-              only: /^\d+\.\d+\.\d+.*/
+#            tags:
+#              only: /^\d+\.\d+\.\d+.*/
 
       - stop-ec2:
           requires:
@@ -147,5 +147,5 @@ workflows:
               only:
                 - main
                 - dev
-            tags:
-              only: /^\d+\.\d+\.\d+.*/
+#            tags:
+#              only: /^\d+\.\d+\.\d+.*/
