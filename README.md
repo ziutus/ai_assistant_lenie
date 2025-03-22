@@ -71,6 +71,30 @@ docker build -t stalker-server2:latest .
 
 After the build process is complete, you can run the Docker container with the newly created image by using the command described in the section Running the Stalker Container.
 
+## Virtual Linux Machine
+
+### Debian machine
+```bash
+useradd lenie-ai
+mkdir /home/lenie-ai
+chown lenie-ai:lenie-ai /home/lenie-ai/
+
+apt-get install git
+apt install python3.11-venv
+apt install python3-pip
+
+```
+
+Installation of postgresql database
+
+```bash
+
+```
+
+```bash
+python3 server.py
+```
+
 ## AWS
 
 ### Sending image to ECR
