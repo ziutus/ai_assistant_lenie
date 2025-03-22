@@ -3,7 +3,6 @@ import os
 import boto3
 from library.translateResult import TranslateResult
 
-patch_all()
 logger = logging.getLogger(__name__)
 
 
