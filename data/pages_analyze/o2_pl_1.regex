@@ -1,0 +1,6 @@
+poczta\.o2\.pl
+.*
+\s+\*{0,1}\sZaloguj\sZaloguj\s+
+(?P<article_text>.*?)\s*
+\*\*Masz\snewsa,\szdjęcie\slub\sfilmik\?\sPrześlij\snam\s+
+przez\[\s*dziejesie\.wp\.pl]\(https://dziejesie\.wp\.pl/\)\*\*
