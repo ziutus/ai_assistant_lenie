@@ -59,3 +59,4 @@ override.tf.json
 # Ignore CLI configuration files
 .terraformrc
 terraform.rc
+/infra/gcloud/.terraform/
