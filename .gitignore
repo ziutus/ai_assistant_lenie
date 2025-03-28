@@ -60,3 +60,4 @@ override.tf.json
 .terraformrc
 terraform.rc
 /infra/gcloud/.terraform/
+/infra/gcloud/.terraform.lock.hcl
