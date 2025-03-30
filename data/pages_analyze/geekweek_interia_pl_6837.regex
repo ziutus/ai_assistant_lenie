@@ -1,7 +1,7 @@
-\s1\.\s\[Interia\]\(https://www.interia.pl\)\s+
-\s2\.\s\[geekweek\]\(/\)\s+
-\s3\.\s\[Militaria\]\(/militaria\)\s+
+\s+1\.\s\[Interia\]\(https://www.interia.pl\)\s+
+\s+2\.\s\[geekweek\]\(/\)\s+
+\s+3\.\s\[\w+]\(/\w+\)\s+
 (?P<article_text>.*)
-\*\*Bądź\sna\sbieżąco\*\*\si\szostań\sjednym\sz\s90\stys.\sobserwujących\snasz\sfanpage\s-\s+
-polub\*\*\[_Geekweek\sna\sFacebooku_\]\(https://www\.facebook\.com/geekweek\)\s\*\*i\s+
+\*\*Bądź\sna\sbieżąco\*\*\si\szostań\sjednym\sz\s\d+\stys.\sobserwujących\snasz\sfanpage\s-\s+
+polub\*\*\[_Geekweek\sna\sFacebooku_\]\(https://www\.facebook\.com/geekweek\)\s*\*\*\s*i\s+
 komentuj\stam\snasze\sartykuły!

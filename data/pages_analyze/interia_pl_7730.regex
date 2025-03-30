@@ -1,0 +1,5 @@
+[\w\s]+\s+!\[\w+\]\(https://js\.iplsc\.com/inpl\.emotion/(?:latest|\d+\.\d+\.\d+)/\w+\.svg\)\s*\d*\s+
+Udostępnij\s+
+(?P<article_text>.*)
+Lubię\sto\s+
+[\w\s]+\s+!\[\w+\]\(https://js\.iplsc\.com/inpl\.emotion/(?:latest|\d+\.\d+\.\d+)/\w+\.svg\)\s*\d*\s+

@@ -1,0 +1,12 @@
+\[\sInteria\s\]\(http://www\.interia\.pl\)\s+
+\[\sBiznes\s\]\(/\)\s+
+\[\sGospodarka\s\]\(/gospodarka\)\s+
+(?P<title>.*)
+gospodarka\s+
+.*?
+Udostępnij\s+
+(?P<article_text>.*)
+Udostępnij\s+
+Masz\ssugestie,\suwagi\salbo\swidzisz\sna\sstronie\sbłąd\?Napisz\sdo\snas\s+
+Dołącz\sdo\snas\s+
+na:\[\]\(https://www\.facebook\.com/InteriaBiznes\)\[\]\(https://twitter\.com/BiznesINTERIAPL\)
