@@ -61,3 +61,5 @@ override.tf.json
 terraform.rc
 /infra/gcloud/.terraform/
 /infra/gcloud/.terraform.lock.hcl
+/infra/gcloud/plan.txt
+/infra/gcloud/plan_destroy.txt

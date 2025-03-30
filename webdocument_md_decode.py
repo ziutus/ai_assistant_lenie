@@ -86,12 +86,12 @@ def generate_links_regex(links):
 wb_db = WebsitesDBPostgreSQL()
 
 # interactive = True
-documents = wb_db.get_documents_by_url("https://geekweek.interia.pl/")
+documents = wb_db.get_documents_by_url("https://biznes.interia.pl/")
+# documents = [ 7456 ]
 # TODO: 7683 - need to correct related liks (//gospodarka/place-w-polsce-sa-duzo-nizsze-niz-na-zachodzie-a-ceny-takie-same-to-bzdura-analiza-7126921300134720a.html)
 # TODO: 7741 - udostępnij artykuł - linki do ustąpienia do regexp: businessinsider_com_pl_2025_1.regex
 # TODO: 7732 - lepszy podział na części do embeddingu
 # TODO: 7687 - poprawić regexp geekweek_interia_pl_7687.regex
-# documents = [ 7687 ]
 # documents = wb_db.get_list(document_type="webpage", document_state="DOCUMENT_INTO_DATABASE")
 # documents = wb_db.get_list(document_type="webpage", limit=700)
 interactive = False
@@ -177,11 +177,20 @@ page_regexp_map = {
         "data/pages_analyze/interia_pl_7504.regex",
         "data/pages_analyze/interia_pl_7496.regex",
     ],
+    "https://biznes.interia.pl/": [
+        "data/pages_analyze/interia_pl_7730.regex",
+        "data/pages_analyze/interia_pl_7456.regex",
+    ],
     "https://geekweek.interia.pl": [
         "data/pages_analyze/geekweek_interia_pl_6837.regex",
         "data/pages_analyze/geekweek_interia_pl_7785.regex",
         "data/pages_analyze/geekweek_interia_pl_7687.regex",
     ],
+     "https://www.o2.pl/": [
+         "data/pages_analyze/o2_pl_1.regex",
+         "data/pages_analyze/o2_pl_2.regex",
+         "data/pages_analyze/o2_pl_3.regex",
+     ]
     # "": []
 }
 
