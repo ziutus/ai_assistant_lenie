@@ -9,7 +9,7 @@ terraform {
 
   # google cloud storage
   backend "gcs" {
-    bucket = var.bucket_terraform_state
+    bucket = "lenie-ai-terraform"
     prefix = "terraform/state"
 }
 
