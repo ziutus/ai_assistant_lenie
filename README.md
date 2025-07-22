@@ -11,13 +11,14 @@ Lenie enables users to:
 
 Lenie's functionalities represent an advanced integration of AI technology with users' daily needs, providing efficient data management and deeper content analysis and utilization. However, similar to the literary character who brings inevitable consequences of her existence, Lenie raises questions about the boundaries of technology and our own control over it. It is both a fascinating and daunting tool that requires a conscious approach and responsible usage to maximize benefits and minimize risks associated with the increasing role of artificial intelligence in our lives.
 
-This is a side project, and I'm planning to have the first version of this application in May 2025. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
+This is a side project, and I'm planning to have the first version of this application in September 2025. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
 
 ## Used technologies
 In this project, I'm using:
 * Python as server backend
 * Postgresql as embedding database
 * React as web interface (during creation)
+* Hashicorp Vault for secrets (for local and kubernetes environment) 
 * AWS as deploying a platform (as I'm lazy and don't want to manage infrastructure)
 
 I'm also preparing a few ways to deploy it:
@@ -43,11 +44,15 @@ C:\Users\ziutus\AppData\Local\Programs\Python\Python311\Scripts\pip-compile.exe 
 ```
 
 ```powershell
+pip install -r requirements_markdown.txt
+```
+
+```powershell
 C:\Users\ziutus\AppData\Local\Programs\Python\Python311\Scripts\pip-compile.exe --upgrade requirements_server.piptools --output-file requirements_server.txt
 ```
 
 ```powershell
-pip install -r requirements_markdown.txt
+pip install -r requirements_server.txt
 ```
 
 
@@ -121,6 +126,17 @@ After starting the appliaction or container, you can access the Stalker applicat
 ### Docker
 
 #### Preparing local environment
+
+Install vault binary from: https://developer.hashicorp.com/vault/install
+
+```bash
+docker volume create vault_secrets_dev
+docker volume create vault_logs_dev
+ 
+ docker run -d --name=vault_dev --cap-add=IPC_LOCK -e 'VAULT_LOCAL_CONFIG={"storage": {"file": {"path":
+ "/vault/file"}}, "listener": [{"tcp": { "address": "0.0.0.0:8200", "tls_disable": true}}], "default_lease_ttl": "168h", "max_lease_ttl":
+"720h", "ui": true}' -v vault_secrets_dev:/vault/file -v vault_logs_dev:/vault/logs -p 8200:8200 hashicorp/vault server
+```
 
 ```bash
 docker pull pgvector/pgvector:pg17
