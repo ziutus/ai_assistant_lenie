@@ -8,8 +8,8 @@ load_dotenv()
 
 # Konfiguracja z pliku .env
 HOSTED_ZONE_ID = os.getenv("AWS_HOSTED_ZONE_ID")
-DOMAIN_NAME = os.getenv("OPENVPN_DOMAIN_NAME")
-INSTANCE_ID = os.getenv("OPENVPN_AWS_INSTANCE_ID")
+DOMAIN_NAME = os.getenv("OPENVPN_OWN_DOMAIN_NAME")
+INSTANCE_ID = os.getenv("OPENVPN_OWN_AWS_INSTANCE_ID")
 
 
 def start_ec2_instance(instance_id):
@@ -72,7 +72,7 @@ if __name__ == "__main__":
     # Upewnienie się, że wymagane zmienne środowiskowe są załadowane
     if not all([INSTANCE_ID, HOSTED_ZONE_ID, DOMAIN_NAME]):
         raise ValueError(
-            "Proszę upewnij się, że zmienne INSTANCE_ID, HOSTED_ZONE_ID i DOMAIN_NAME są ustawione w pliku .env")
+            "Proszę upewnij się, że zmienne OPENVPN_OWN_DOMAIN_NAME, HOSTED_ZONE_ID i OPENVPN_OWN_AWS_INSTANCE_ID są ustawione w pliku .env")
 
     # Krok 1: Uruchomienie instancji EC2
     start_ec2_instance(INSTANCE_ID)
