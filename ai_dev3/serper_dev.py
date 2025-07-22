@@ -7,7 +7,11 @@ import hashlib
 
 load_dotenv()
 
-query="Tomasz Smolarek Chipy"
+query="+48 791 033 055"
+
+query = query.replace("+48", "").replace(" ", "").strip()
+print(f"Will search {query}")
+
 query_md5 = hashlib.md5(query.encode()).hexdigest()
 cache_dir = "tmp/serper_dev"
 cache_filename = f"{cache_dir}/{query_md5}.json"
@@ -46,4 +50,3 @@ for item in data["organic"]:
   print(item["snippet"])
   print(item["link"])
   # pprint(item)
-
