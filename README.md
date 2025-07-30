@@ -11,7 +11,58 @@ Lenie enables users to:
 
 Lenie's functionalities represent an advanced integration of AI technology with users' daily needs, providing efficient data management and deeper content analysis and utilization. However, similar to the literary character who brings inevitable consequences of her existence, Lenie raises questions about the boundaries of technology and our own control over it. It is both a fascinating and daunting tool that requires a conscious approach and responsible usage to maximize benefits and minimize risks associated with the increasing role of artificial intelligence in our lives.
 
-This is a side project, and I'm planning to have the first version of this application in September 2025. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
+This is a side project, and I'm planning to have the first version of this application in December 2025. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
+
+## Komponenty 
+
+* Webowy interfejs do przeglądania zawartości bazy danych
+* Wtyczka do Chrome i Kiwi Browser
+* Backed napisany w Python
+
+## Wspierane platformy
+
+Platforma | Wsparcie |
+|---|---|
+|Windows | Chrome + wtyczka |
+| Android | Kiwi Browser i wtyczka |
+| MacOS | Brak |
+
+## Różnice w porównaniu do firmowych baz wiedzy
+W firmowych bazach wiedzy nie zakładamy, że mamy kłamliwe, niewłaściwe lub propagandowe artykuły.
+Każdy artykuł jest uważany za równoważny.
+
+W przypadku tematów drażliwych, politycznych lub związanych z pieniędzmi możemy spotkać:
+* propagandę państwową (szczególnie w tematach geopolitycznych i politycznych)
+* propagandą tematyczną partii (zła Unia, uchodźcy i imigranci, szczepionki itp.)
+* działaniami Public Relation firm  (np. to nie prawda, że Tesla została z tyłu w rozwoju aut autonomicznych i elektrycznych)
+* działalność oszustów internetowych
+* amatorskie teksty udające eksperckie (np. tutoriale mówiące, aby wyłączyć wszystkie mechanizmy bezpieczeństwa Linkusa, bo przeszkadzają)
+* działalność troli internetowych
+* masowe treści bez wartości generowane przez AI, by zdobyć pozycję w indeksach google,
+
+W związku z tym jest potrzeba zbudowania mechanizmu oceny wiarygodności źródła (np. strony internetowej albo filmu na youtube) oraz autora.
+
+Potrzebna jest również możliwość wybrania tylko określonych źródeł (z wszystkich posiadanych) oraz jawnego wskazywania w wypowiedzi źródeł danych.
+
+## Problemy, które należy rozwiązać podczas budowy takiego rozwiązania
+
+W przypadku posiadania firmowych dokumentów najczęstszym problemem będzie przygotowanie konwersji firmowej wiki, notion czy dokumentów word do formatu wygodnego dla LLmów.
+
+W przypadku korzystania ze źródeł internetowych problemy są inne:
+* dostęp do treści jest za paywall-em (rozwiązaniem stosowanym u mnie jest wtyczka do przeglądarki),
+* brak możliwości łatwego importowania danych ze stron takich jak linkedin, Facebook itp. (chronią się przed łatwą kradzieżą treści),
+* potrzeba napisania analizatorów treści stron pobarnych wtyczką by obniżyć koszty (patrz niżej)
+* jakość napisów tworzonych przez automatyczne tłumaczenia youtube,
+* cena konwersji (i jakość) audio do tekstu
+
+Przykładowe wielkości dokumentów
+* Oryginalny dokument HTML będący zapisaną kopią artykułu z Onet.pl: 300 KB,
+* Przekonwertowany do formatu markdown: 15 KB,
+* Sama treść artykułu: 3000 słów,
+
+Duże modele językowe, np. te od OpenAI, doskonale radzą sobie z analizą treści całej strony artykułu w formacie markdown, 
+ale generuje to duże koszty w porównaniu z analizą samego tekstu artykułu.
+
 
 ## Used technologies
 In this project, I'm using:
@@ -24,7 +75,7 @@ In this project, I'm using:
 I'm also preparing a few ways to deploy it:
 * docker image (to easy run application)
 * Kubernetes helm (to test scalability options)
-* lambda (to test Event Driver way of writing application)
+* AWS lambda (to test Event Driver way of writing application)
 
 As I'm big fun on AWS, you will also see deploy ways like:
 * Lambdas (to see Event Driver way of writing applications like that),
