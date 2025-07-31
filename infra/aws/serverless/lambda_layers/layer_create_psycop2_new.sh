@@ -2,7 +2,7 @@
 set -e
 set -x
 
-source ./env.sh
+source ../env.sh
 
 TMP_DIR="tmp/psycopg2_new"
 
