@@ -280,6 +280,10 @@ curl -X POST https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add \
 ### pre-hook + trufflehog
 
 
+# Planned improvements
+* add checker which any lambda does not use AWS Lambda Layers anymore
+
+
 ## Why do we need our own LLM?
 So far, available LLMs operate in English or implicitly translate to English, losing context or meaning.
 
