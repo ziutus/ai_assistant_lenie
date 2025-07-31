@@ -4,10 +4,12 @@ set -x
 
 source ./env.sh
 
-rm -rf tmp/lenie_${PYTHON_VERSION_NICE}
-mkdir tmp/lenie_${PYTHON_VERSION_NICE}
+TMP_DIR="tmp/lenie_${PYTHON_VERSION_NICE}"
 
-cd tmp/lenie_${PYTHON_VERSION_NICE}
+rm -rf $TMP_DIR
+mkdir $TMP_DIR
+
+cd $TMP_DIR
 pwd
 
 mkdir python
@@ -18,4 +20,4 @@ zip -r lenie_${PYTHON_VERSION_NICE} python
 
 aws lambda publish-layer-version --layer-name lenie_all_layer --zip-file fileb://./lenie_${PYTHON_VERSION_NICE}.zip --compatible-runtimes python${PYTHON_VERSION} --profile ${PROFILE}
 
-rm -rf tmp/lenie_${PYTHON_VERSION_NICE}
+rm -rf $TMP_DIR
