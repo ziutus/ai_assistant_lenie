@@ -2,3 +2,7 @@ PYTHON_VERSION=3.11
 PYTHON_VERSION_NICE=3_11
 PROFILE="lenie-ai-2025-admin"
 PLATFORM="manylinux2014_x86_64"
+PROJECT_NAME="lenie"
+ENVIRONMENT="dev"
+AWS_ACCOUNT_ID="049706517731"
+AWS_LAMBDA_DEFAULT_ROLE="arn:aws:iam::049706517731:role/service-role/test-lambda-role-nskevmou"
