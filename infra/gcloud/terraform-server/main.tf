@@ -9,7 +9,7 @@ terraform {
 
   # google cloud storage
   backend "gcs" {
-    bucket = "lenie-ai-terraform"
+    bucket = "lenie-ai-dev-2025-03-terraform"
     prefix = "terraform/state"
 }
 
@@ -19,7 +19,7 @@ provider "google" {
   region = var.region
 }
 
-module "lenie-ai-server" {
-  source = "./modules/lenie-ai-server-compute"
-  zone = var.zone
-}
+# module "lenie-ai-server" {
+#   source = "./modules/lenie-ai-server-compute"
+#   zone = var.zone
+# }
