@@ -1,6 +1,5 @@
 #! /bin/bash
-#set -x
-set -e
+set -eu${DEBUG}o pipefail
 
 OPTIND=1
 REGION="us-east-1"
@@ -15,6 +14,7 @@ COMMON_TEMPLATES=()
 USE_LOGGER=0
 CHANGE_SET=false
 DELETE_COUNT=0
+ACTION=""
 
 command -v aws > /dev/null 2>&1 || { echo >&2 "aws cli not installed. Aborting..."; exit 1; }
 command -v jq  > /dev/null 2>&1 || { echo >&2 "jq not installed. Aborting..."; exit 1; }
@@ -93,6 +93,7 @@ create_update_stack() {
     local stack_count
 
     stack_name=$(get_stack_name "$template")
+    echo "Stack name: ${stack_name}"
 
     stack_count=$(aws --region "${REGION}" cloudformation describe-stacks --stack-name "${stack_name}" --query 'Stacks[*].StackName' --output text 2>/dev/null | wc -l)
     cf_action="create"
@@ -280,6 +281,12 @@ if [ -z "${STAGE}" ]; then echo "Stage is required"; show_help; fi
 
 parse_config
 
+if [ ${#TEMPLATES[@]} -eq 0 ] && [ ${#COMMON_TEMPLATES[@]} -eq 0 ]; then
+    echo "Błąd: Nie znaleziono żadnych templates do przetworzenia dla stage '${STAGE}'"
+    echo "Sprawdź plik deploy.ini i upewnij się, że sekcja [${STAGE}] lub [common] zawiera templates"
+    exit 1
+fi
+
 if [ "$ACTION" == "delete" ]; then
   if [ -z "${DELETE_COUNT}" ]; then
     read -p "Removing ALL stacks. Are you sure? (y/n)" -n 1 -r
@@ -294,11 +301,13 @@ else
   log "Create stacks in ${REGION}"
   if [ "${STAGE}" == "prod" ]; then
     log "As STAGE is prod, I'm analyzing also COMMON templates"
+    echo "Liczba elementów w COMMON_TEMPLATES: ${#COMMON_TEMPLATES[@]}"
     temp_stage="${STAGE}"
     STAGE="all"
     create_update_stack "${COMMON_TEMPLATES[@]}"
     STAGE="${temp_stage}"
   fi
+  echo "Liczba elementów w TEMPLATES: ${#TEMPLATES[@]}"
   create_update_stack "${TEMPLATES[@]}"
 fi
 
