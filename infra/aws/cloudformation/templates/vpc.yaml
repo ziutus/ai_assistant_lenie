@@ -54,6 +54,18 @@ Resources:
         - Key: Name
           Value: !Sub '${ProjectName}-${Environment}-VPC'
 
+  LenieVPCParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Type: String
+      Description: !Sub Stores ${ProjectName}-${Environment}- DataSubnetB Id
+      Tier: Standard
+      Name: !Sub /${ProjectName}/${Environment}/vpc-id
+      Value: !Ref LenieVPC
+      Tags:
+        Name: !Sub ${ProjectName}-${Environment}-vpc-id
+
+
   PublicSubnet1:
     Type: 'AWS::EC2::Subnet'
     Properties:
