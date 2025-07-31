@@ -21,6 +21,7 @@
 /cookies.txt
 /infra/aws/serverless/lambdas/*/package/
 /infra/aws/serverless/lambdas/*/*.zip
+infra/aws/serverless/lambda_layers/tmp
 
 # Local .terraform directories
 **/.terraform/*
