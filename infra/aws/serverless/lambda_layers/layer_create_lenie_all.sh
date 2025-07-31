@@ -2,21 +2,20 @@
 set -e
 set -x
 
-PYTHON_VERSION=3.11
-PROFILE="lenie-ai-admin"
+source ./env.sh
 
-rm -rf tmp/lenie_3_11
-mkdir tmp/lenie_3_11
+rm -rf tmp/lenie_${PYTHON_VERSION_NICE}
+mkdir tmp/lenie_${PYTHON_VERSION_NICE}
 
-cd tmp/lenie_3_11
+cd tmp/lenie_${PYTHON_VERSION_NICE}
 pwd
 
 mkdir python
 
-pip install pytube urllib3 requests beautifulsoup4  --platform manylinux2014_x86_64 --python-version $PYTHON_VERSION --only-binary=:all: -t ./python
+pip install pytube urllib3 requests beautifulsoup4  --platform ${PLATFORM} --python-version $PYTHON_VERSION --only-binary=:all: -t ./python
 
-zip -r lenie_3_11 python
+zip -r lenie_${PYTHON_VERSION_NICE} python
 
-aws lambda publish-layer-version --layer-name lenie_all_layer --zip-file fileb://./lenie_3_11.zip --compatible-runtimes python${PYTHON_VERSION} --profile ${PROFILE}
+aws lambda publish-layer-version --layer-name lenie_all_layer --zip-file fileb://./lenie_${PYTHON_VERSION_NICE}.zip --compatible-runtimes python${PYTHON_VERSION} --profile ${PROFILE}
 
-rm -rf tmp/lenie_3_11
+rm -rf tmp/lenie_${PYTHON_VERSION_NICE}
