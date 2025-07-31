@@ -63,6 +63,36 @@ Przykładowe wielkości dokumentów
 Duże modele językowe, np. te od OpenAI, doskonale radzą sobie z analizą treści całej strony artykułu w formacie markdown, 
 ale generuje to duże koszty w porównaniu z analizą samego tekstu artykułu.
 
+Źródła danych dla asystenta osobistego:
+* SMS-y, czyli wiadomości wielkośći do 120 znaków (od jakiegoś czasu Google Play blokuje aplikacje mające dostęp do SMS-ów, należy zainstalować "własną" aplikację, np. make),
+* emaile (format HTML), kilkaset słów,
+* dokumenty PDF (np faktury) i DOC (np. wymagania na stanowisko pracy),
+* ebooki (kilkaset tysięcy słów, potrzebny podział na kawałki przed embeddingiem)
+* obrazki (np zdjęcia stron książek, faktury, zdjęcia z istotnym kontentem)
+* czaty whats up, messanger, itp
+* dostęp do kalendarza,
+* historia przeglądanych stron (dostęp do slqlite np. w Chromie),
+* dostęp do płatnego API serwisu Meetup (graphQL) by mieć informacje kogo możesz spotkać i na kogo uwazać,
+* dostęp do płatnych API przeglądających KRS (by wiedzieć czy rozmówca ma własną firmę, fundację itp.)
+
+
+## Skalowalność i niezawodność rozwiązania
+Dla jednego użytkownika wystarczy baza danych Postgersql z odpowiednimi rozszerzeniami.
+
+Jeżeli chcemy, aby pojedyńczy użytkownik mógł działać z różnych urządzeń, należy umożliwić
+mu pracę z zewnętrznym serwerem działającym 24h/7. 
+Wtedy musimy zadbać o:
+* dostępność rozwiązania z dowolnego miejsca na świecie,
+* bezpieczeństwo rozwiązania (potrzeba aktualizacji bezpieczeństwa, ochrona przed DDOS itp),
+* niskie koszty.
+* mało czasu potrzebnego na utrzymanie
+
+
+
+W przypadku większej ilości użytkowników należy rozważyć 2 rzeczy:
+* koszty skalowania infrastruktury (np. bazy danych)
+* wydajność rozwiązania (można dostawiać kontenery albo iść w rozwiązania serverless i kolejki)
+* bezpieczeństwo izolacji danych każdego klienta,
 
 ## Used technologies
 In this project, I'm using:
