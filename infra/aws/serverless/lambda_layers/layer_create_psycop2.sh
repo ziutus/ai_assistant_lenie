@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
+source ./env.sh
+
 # Utworzenie katalogu layers/psycopg2_2 jeżeli nie istnieje
 if [ ! -d "layers/psycopg2_2" ]; then
     mkdir -p layers/psycopg2_2
@@ -23,4 +25,4 @@ cp -R ../../psycopg2_binary.libs* ./python
 zip -r psycopg2_layer.zip .
 
 # Teraz możemy wgrać naszą warstwę do AWS Lambda
-aws lambda publish-layer-version --layer-name psycopg2_layer --zip-file fileb://./psycopg2_layer.zip --compatible-runtimes python3.11 --profile lenie-ai-2025-admin
+aws lambda publish-layer-version --layer-name psycopg2_layer --zip-file fileb://./psycopg2_layer.zip --compatible-runtimes $PYTHON_VERSION --profile $PROFILE
