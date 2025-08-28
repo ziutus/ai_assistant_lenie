@@ -53,10 +53,15 @@ Czynności na starym koncie
 
 Kolejność tworzenia ustawień na nowym koncie
 
+* włączenie cost explorer by móc podłączyć soft do analizy kosztów konta,
+* stworzenie budzetów by dostawać ostrzeżenia w postaci emaili,
+
 * tworzenie VPC (vpc.yaml),
 * tworzenie haseł, by RDS miał wartości typu użytkownik i hasło,
 * zmiana domyślnego hasła utworzonego w poprzednim kroku,
 * zmiana w parameters vpc_id dla rds.json (do poprawy w przyszłości)
 * zmiana w parameters dla rds.json informacji o lokazliacji hasła (account ID jest na sztywno)
 * stworzenie klucza KMS by móc skopiować backup RDS-a między kontami
+* stworzenie kolejki sqs-application-errors by móc być informowanym o problemach
+* stworzenie warstw dla lambd
 * 
