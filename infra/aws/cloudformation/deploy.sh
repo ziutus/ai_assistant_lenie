@@ -95,7 +95,9 @@ create_update_stack() {
     stack_name=$(get_stack_name "$template")
     echo "Stack name: ${stack_name}"
 
+    set +e
     stack_count=$(aws --region "${REGION}" cloudformation describe-stacks --stack-name "${stack_name}" --query 'Stacks[*].StackName' --output text 2>/dev/null | wc -l)
+    set -e
     cf_action="create"
 
     if [ "${stack_count}" -eq "0" ]; then

@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "ProjectCode",
+    "ParameterValue": "lenie"
+  },
+  {
+    "ParameterKey": "Stage",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "BudgetAmount",
+    "ParameterValue": "15"
+  },
+  {
+    "ParameterKey": "AlertEmail",
+    "ParameterValue": "krzysztof+lenie-ai@itsnap.eu"
+  }
+]
