@@ -1,0 +1,42 @@
+.inputWrapper {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 5px;
+}
+
+.inputWrapper label {
+    font-size: 13px;
+    margin-bottom: 3px;
+}
+
+.inputWrapper textarea,
+.inputWrapper input {
+    padding: 5px 10px;
+    font-size: 14px;
+    border: 1px solid black;
+    border-radius: 4px;
+    color: black;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.inputWrapper textarea:focus,
+.inputWrapper input:focus {
+    border-color: #1a73e8;
+    box-shadow: 0 0 3px rgba(0, 122, 255, 0.5);
+    outline: none;
+}
+.inputWrapper textarea:disabled,
+.inputWrapper input:disabled {
+    border: 1px solid rgba(0, 0, 0, 0.45);
+    background: rgba(0, 0, 0, 0.07);
+    color: rgba(0, 0, 0, 0.42);
+}
+
+.apiTypeSelect {
+    width: 150px;
+}
+
+.inputWrapper textarea{
+    max-width: 100%;
+    min-height: 200px;
+}

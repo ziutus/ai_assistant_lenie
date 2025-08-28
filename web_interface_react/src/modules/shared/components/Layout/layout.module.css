@@ -1,0 +1,114 @@
+.sideNavigation{
+    transition: transform 0.3s ease-in-out;
+    position: fixed;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: 200px;
+    background: whitesmoke;
+    z-index: 1000; /* High z-index to ensure it overlays other content */
+    overflow-y: auto; /* Enable scrolling if content overflows */
+    transform: translateX(-250px); /* Initially hidden */
+    border-right: 1px solid rgb(179, 179, 179);
+    box-shadow: 5px 0 10px rgba(0, 0, 0, 0.051);
+}
+
+
+.menuOpen {
+    transform: translateX(0);
+}
+
+.menuClosed {
+    transform: translateX(-250px);
+}
+
+.hamburger {
+    font-size: 30px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    z-index: 1001; /* Higher than the menu to ensure it is clickable */
+    /* Add desired styles */
+}
+
+.logo{
+    margin-left: 50px;
+    padding: 20px ;
+    border-bottom: 1px solid rgb(179, 179, 179);
+    display: flex;
+    align-items: baseline;
+}
+
+.logo h1{
+    font-size: 24px;
+}
+
+.logo span{
+    font-size: 14px;
+    margin-left: 5px;
+}
+
+.linksContent{
+    display: flex;
+    flex-direction: column;
+    padding: 20px 10px;
+}
+.link{
+    cursor: pointer;
+    text-align: left;
+    background: none;
+    outline: none;
+    border: none;
+    text-decoration: none;
+    color: black;
+    transition: all ease 0.4s;
+    margin-bottom: 10px;
+    display: block;
+    border-radius: 4px;
+    padding: 7px 10px;
+    font-size: 18px;
+}
+.link:hover{
+    color: rgba(0, 122, 255);
+}
+.activeLink{
+    font-size: 18px;
+    margin-bottom: 10px;
+    display: block;
+    border-radius: 4px;
+    padding: 7px 10px;
+    background-color: rgb(220, 231, 243);
+    text-decoration: none;
+    color: rgba(0, 122, 255);
+}
+.subLinkBox{
+    margin-top: -5px;
+    margin-bottom: 10px;
+    padding-left: 10px;
+    margin-left: 10px;
+    border-left: 1px solid rgba(179, 179, 179, 0.5);
+}
+.subLink{
+    font-size: 16px;
+    margin-bottom: 5px;
+    display: block;
+    border-radius: 4px;
+    padding: 4px 10px;
+    text-decoration: none;
+}
+/*.content{*/
+/*    margin-left: 50px;*/
+/*    padding: 20px 20px 20px 240px;*/
+/*}*/
+.content {
+    /* Adjust your layout to make space for the sideNav */
+    transition: margin-left 0.3s ease-in-out;
+    margin-left: 50px; /* Adjust this as necessary */
+}
+
+.menuOpen + .content {
+    margin-left: 250px; /* When menu is open */
+}

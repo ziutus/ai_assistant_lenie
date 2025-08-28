@@ -1,0 +1,102 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+*{
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  font-size: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+  sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+ul{
+  list-style: none;
+}
+
+.button{
+  cursor: pointer;
+  font-size: 16px;
+  background: rgba(0, 122, 255);
+  border: none;
+  color: white;
+  font-weight: 500;
+  outline: none;
+  border-radius: 4px;
+  padding: 5px;
+  transition: all ease-in-out 0.2s;
+  text-decoration: none;
+}
+.button:hover{
+  background: rgb(72, 163, 255);
+}
+.button:disabled,
+.button.disabled{
+  pointer-events: none;
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.loader {
+  margin: 0 5px;
+  width: 20px;
+  height: 20px;
+  padding: 3px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: rgba(0, 122, 255);
+  --_m:
+          conic-gradient(#0000 10%,#000),
+          linear-gradient(#000 0 0) content-box;
+  -webkit-mask: var(--_m);
+  mask: var(--_m);
+  -webkit-mask-composite: source-out;
+  mask-composite: subtract;
+  animation: l3 1s infinite linear;
+}
+@keyframes l3 {to{transform: rotate(1turn)}}
+
+.errorText{
+  color: #ec4949;
+  margin-bottom: 10px;
+}
+.flexBox{
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+.flex-grow{
+  flex: 1;
+}
+
+input[type="file"] {
+  padding: 5px 10px;
+  font-size: 14px;
+  border: 1px solid black;
+  border-radius: 4px;
+  color: black;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+input[type="file"]:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 3px rgba(0, 122, 255, 0.5);
+  outline: none;
+}
+input[type="file"]:disabled {
+  border: 1px solid rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.07);
+  color: rgba(0, 0, 0, 0.42);
+}
