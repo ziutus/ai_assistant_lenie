@@ -89,6 +89,14 @@ Resources:
               name: "x-api-key"
               in: "header"
 
+  # API Gateway Deployment - musi być przed Usage Plan
+  LenieApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref LenieApiGateway
+      StageName: !Ref stage
+      Description: !Sub "Deployment for ${stage} stage"
+
   # API Key
   LenieApiKey:
     Type: AWS::ApiGateway::ApiKey
@@ -97,9 +105,10 @@ Resources:
       Description: "API Key for Lenie Chrome Extension"
       Enabled: true
 
-  # Usage Plan
+  # Usage Plan - teraz z poprawną zależnością
   LenieUsagePlan:
     Type: AWS::ApiGateway::UsagePlan
+    DependsOn: LenieApiDeployment
     Properties:
       UsagePlanName: !Sub "lenie-${stage}-usage-plan"
       Description: "Usage plan for Lenie API"
@@ -121,14 +130,6 @@ Resources:
       KeyType: API_KEY
       UsagePlanId: !Ref LenieUsagePlan
 
-  # API Gateway Deployment
-  LenieApiDeployment:
-    Type: AWS::ApiGateway::Deployment
-    Properties:
-      RestApiId: !Ref LenieApiGateway
-      StageName: !Ref stage
-      Description: !Sub "Deployment for ${stage} stage"
-
   # Lambda Permission for API Gateway
   LambdaInvokePermission:
     Type: AWS::Lambda::Permission
@@ -137,7 +138,6 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApiGateway}/*/*"
-
 
 Outputs:
   ApiGatewayUrl:
