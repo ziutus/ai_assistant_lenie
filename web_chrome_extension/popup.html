@@ -7,104 +7,133 @@
 
   <!-- Bootstrap CSS -->
   <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .nav-tabs .nav-link { cursor: pointer; }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+  </style>
 </head>
 <body>
 <div class="container mt-3 mb-3" style="width: 500px">
-  <h3>Konfiguracja</h3>
-  <div class="form-group">
-    <label for="apiKey">Klucz API:</label>
-    <input type="text" id="apiKey" class="form-control" placeholder="Wprowadź klucz API">
-  </div>
+  <ul class="nav nav-tabs" id="popupTabs" role="tablist">
+    <li class="nav-item">
+      <a class="nav-link active" data-tab="add" aria-selected="true">Dodaj</a>
+    </li>
+    <li class="nav-item">
+      <a class="nav-link" data-tab="settings" aria-selected="false">Ustawienia</a>
+    </li>
+  </ul>
 
-  <div class="form-group">
-    <label for="serverUrl">Adres serwera:</label>
-    <input type="text" id="serverUrl" class="form-control" value="https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add" placeholder="https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add">
-  </div>
-    <label>Tytuł strony</label>
-    <div class="form-group">
+  <!-- Dodawanie strony -->
+  <div id="tab-add" class="tab-pane active" role="tabpanel" aria-labelledby="tab-add-link">
+    <div class="mt-3">
+      <label>Tytuł strony</label>
+      <div class="form-group">
         <input type="text" id="pageTitle" class="form-control" placeholder="Ładowanie tytułu...">
-    </div>
-  <div class="form-group">
-      <label for="pageDescription"> Opis strony</label>
-    <textarea id="pageDescription" class="form-control" rows="4" placeholder="Opis strony w metadanych"></textarea>
-  </div>
-  <label>Notatka</label>
-  <div class="form-group">
-    <textarea id="note" class="form-control" rows="4" placeholder="Wpisz swoją notatkę"></textarea>
-  </div>
+      </div>
 
-  <div class="form-group d-flex align-items-center">
-    <label for="type" class="mr-2">Type:</label>
-          <select id="type" class="form-control" style="flex: 1;">
+      <div class="form-group">
+        <label for="pageDescription"> Opis strony</label>
+        <textarea id="pageDescription" class="form-control" rows="4" placeholder="Opis strony w metadanych"></textarea>
+      </div>
+
+      <label>Notatka</label>
+      <div class="form-group">
+        <textarea id="note" class="form-control" rows="4" placeholder="Wpisz swoją notatkę"></textarea>
+      </div>
+
+      <div class="form-group d-flex align-items-center">
+        <label for="type" class="mr-2">Type:</label>
+        <select id="type" class="form-control" style="flex: 1;">
           <option value="webpage">Webpage</option>
           <option value="link">Link</option>
           <option value="youtube">YouTube</option>
           <option value="movie">Movie</option>
         </select>
+      </div>
+
+      <div class="form-group d-flex align-items-center">
+        <label for="source" class="mr-2">Source:</label>
+        <select id="source" class="form-control" style="flex: 1;">
+          <option value="own">Own</option>
+          <option value="Maruda">Maruda</option>
+          <option value="Tomasz_Szer">Tomasz Szer</option>
+          <option value="Rafal_Skonieczko">Rafał Skonieczko</option>
+        </select>
+      </div>
+
+      <div class="form-group mb-1">
+        <label>Paywall:</label>
+        <div class="form-check form-check-inline">
+          <input type="radio" id="paywallTrue" name="paywall" value="true">
+          <label for="paywallTrue" class="form-check-label">Tak</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input type="radio" id="paywallFalse" name="paywall" value="false" checked>
+          <label for="paywallFalse" class="form-check-label">Nie</label>
+        </div>
+      </div>
+
+      <div class="form-group d-flex align-items-center">
+        <label for="pageLanguage" class="mr-2">Język strony</label>
+        <input type="text" id="pageLanguage" style="flex: 1;" placeholder="Język strony">
+      </div>
+
+      <div class="form-group mb-1">
+        <label>Need AI summary:</label>
+        <div class="form-check form-check-inline">
+          <input type="radio" id="ai_summary_true" name="ai_summary" value="true">
+          <label for="ai_summary_true" class="form-check-label">Tak</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input type="radio" id="ai_summary_false" name="ai_summary" value="false" checked>
+          <label for="ai_summary_false" class="form-check-label">Nie</label>
+        </div>
+      </div>
+
+      <div class="form-group mb-1">
+        <label>Need AI correction:</label>
+        <div class="form-check form-check-inline">
+          <input type="radio" id="ai_correction_true" name="ai_correction" value="true">
+          <label for="ai_correction_true" class="form-check-label">Tak</label>
+        </div>
+        <div class="form-check form-check-inline">
+          <input type="radio" id="ai_correction_false" name="ai_correction" value="false" checked>
+          <label for="ai_correction_false" class="form-check-label">Nie</label>
+        </div>
+      </div>
+
+      <div id="chapterListContainer">
+        <label>Lista rozdziałów</label>
+        <div class="form-group">
+          <textarea id="chapter_list" class="form-control" rows="4" placeholder="Wpis listę rozdziałów"></textarea>
+        </div>
+      </div>
+
+      <button id="sendButton" class="btn btn-primary btn-block">Wyślij</button>
+    </div>
   </div>
 
-<div class="form-group d-flex align-items-center">
-    <label for="source" class="mr-2">Source:</label>
-    <select id="source" class="form-control" style="flex: 1;">
-        <option value="own">Own</option>
-        <option value="Maruda">Maruda</option>
-        <option value="Tomasz_Szer">Tomasz Szer</option>
-        <option value="Rafal_Skonieczko">Rafał Skonieczko</option>
-    </select>
-</div>
+  <!-- Ustawienia -->
+  <div id="tab-settings" class="tab-pane" role="tabpanel" aria-labelledby="tab-settings-link">
+    <div class="mt-3">
+      <h5>Konfiguracja</h5>
+      <div class="form-group">
+        <label for="apiKey">Klucz API:</label>
+        <input type="text" id="apiKey" class="form-control" placeholder="Wprowadź klucz API">
+      </div>
 
-<div class="form-group mb-1">
-    <label>Paywall:</label>
-    <div class="form-check form-check-inline">
-        <input type="radio" id="paywallTrue" name="paywall" value="true">
-        <label for="paywallTrue" class="form-check-label">Tak</label>
+      <div class="form-group">
+        <label for="serverUrl">Adres serwera:</label>
+        <input type="text" id="serverUrl" class="form-control" value="https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add" placeholder="https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add">
+      </div>
     </div>
-    <div class="form-check form-check-inline">
-        <input type="radio" id="paywallFalse" name="paywall" value="false" checked>
-        <label for="paywallFalse" class="form-check-label">Nie</label>
-    </div>
-</div>
+  </div>
 
-<div class="form-group d-flex align-items-center">
-<label for="pageLanguage" class="mr-2">Język strony</label>
-    <input type="text" id="pageLanguage"  style="flex: 1;" placeholder="Język strony">
+  <div class="mt-3">
+    Wersja <a href="https://github.com/ziutus/lenie-ai-server/blob/master/CHANGELOG.md" target="_blank">1.0.18</a>
+  </div>
 </div>
-
-<div class="form-group mb-1">
-<label>Need AI summary:</label>
-<div class="form-check form-check-inline">
-    <input type="radio" id="ai_summary_true" name="ai_summary" value="true">
-    <label for="ai_summary_true" class="form-check-label">Tak</label>
-</div>
-<div class="form-check form-check-inline">
-    <input type="radio" id="ai_summary_false" name="ai_summary" value="false" checked>
-    <label for="ai_summary_false" class="form-check-label">Nie</label>
-</div>
-</div>
-
-<div class="form-group mb-1">
-    <label>Need AI correction:</label>
-    <div class="form-check form-check-inline">
-        <input type="radio" id="ai_correction_true" name="ai_correction" value="true">
-        <label for="ai_correction_true" class="form-check-label">Tak</label>
-    </div>
-    <div class="form-check form-check-inline">
-        <input type="radio" id="ai_correction_false" name="ai_correction" value="false" checked>
-        <label for="ai_correction_false" class="form-check-label">Nie</label>
-    </div>
-</div>
-
-<div id="chapterListContainer">
-    <label>Lista rozdziałów</label>
-    <div class="form-group">
-        <textarea id="chapter_list" class="form-control" rows="4" placeholder="Wpis listę rozdziałów"></textarea>
-    </div>
-</div>
-
-
-  <button id="sendButton" class="btn btn-primary btn-block">Wyślij</button>
-</div>
-Wersja <a href="https://github.com/ziutus/lenie-ai-chrome-extension/blob/master/CHANGELOG.md" target="_blank">1.0.17</a>
 <script src="popup.js"></script>
 </body>
 </html>
