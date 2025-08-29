@@ -6,7 +6,7 @@ import base64
 
 # https://community.aws/content/2gYbjrz8gMwChbnT9Cuv7Y69joB/sending-images-to-claude-3-using-amazon-bedrock
 
-dotenv.load_dotenv(".env", override=True)
+dotenv.load_dotenv("../.env", override=True)
 
 AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')

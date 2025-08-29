@@ -32,12 +32,7 @@ def sprawdz_dostepnosc_vault(url, timeout=2):
         print(f"Błąd podczas sprawdzania dostępności serwera: {e}")
         return False, None
 
-
-
-
 load_dotenv()
-
-
 
 def get_vault_client(vault_url, token=None, role_id=None, secret_id=None):
     """
