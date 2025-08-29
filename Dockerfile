@@ -1,4 +1,5 @@
-# Use an official Python runtime as a parent image
+# syntax=docker/dockerfile:1.7
+
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1
