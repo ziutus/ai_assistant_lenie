@@ -20,3 +20,4 @@ neo4j
 langfuse
 chardet
 boto3
+hvac

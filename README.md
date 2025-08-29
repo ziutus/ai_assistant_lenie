@@ -11,19 +11,101 @@ Lenie enables users to:
 
 Lenie's functionalities represent an advanced integration of AI technology with users' daily needs, providing efficient data management and deeper content analysis and utilization. However, similar to the literary character who brings inevitable consequences of her existence, Lenie raises questions about the boundaries of technology and our own control over it. It is both a fascinating and daunting tool that requires a conscious approach and responsible usage to maximize benefits and minimize risks associated with the increasing role of artificial intelligence in our lives.
 
-This is a side project, and I'm planning to have the first version of this application in May 2025. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
+This is a side project, and I'm planning to have the first version of this application in December 2025. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
+
+## Komponenty 
+
+* Webowy interfejs do przeglądania zawartości bazy danych
+* Wtyczka do Chrome i Kiwi Browser
+* Backed napisany w Python
+
+## Wspierane platformy
+
+Platforma | Wsparcie |
+|---|---|
+|Windows | Chrome + wtyczka |
+| Android | Kiwi Browser i wtyczka |
+| MacOS | Brak |
+
+## Różnice w porównaniu do firmowych baz wiedzy
+W firmowych bazach wiedzy nie zakładamy, że mamy kłamliwe, niewłaściwe lub propagandowe artykuły.
+Każdy artykuł jest uważany za równoważny.
+
+W przypadku tematów drażliwych, politycznych lub związanych z pieniędzmi możemy spotkać:
+* propagandę państwową (szczególnie w tematach geopolitycznych i politycznych)
+* propagandą tematyczną partii (zła Unia, uchodźcy i imigranci, szczepionki itp.)
+* działaniami Public Relation firm  (np. to nie prawda, że Tesla została z tyłu w rozwoju aut autonomicznych i elektrycznych)
+* działalność oszustów internetowych
+* amatorskie teksty udające eksperckie (np. tutoriale mówiące, aby wyłączyć wszystkie mechanizmy bezpieczeństwa Linkusa, bo przeszkadzają)
+* działalność troli internetowych
+* masowe treści bez wartości generowane przez AI, by zdobyć pozycję w indeksach google,
+
+W związku z tym jest potrzeba zbudowania mechanizmu oceny wiarygodności źródła (np. strony internetowej albo filmu na youtube) oraz autora.
+
+Potrzebna jest również możliwość wybrania tylko określonych źródeł (z wszystkich posiadanych) oraz jawnego wskazywania w wypowiedzi źródeł danych.
+
+## Problemy, które należy rozwiązać podczas budowy takiego rozwiązania
+
+W przypadku posiadania firmowych dokumentów najczęstszym problemem będzie przygotowanie konwersji firmowej wiki, notion czy dokumentów word do formatu wygodnego dla LLmów.
+
+W przypadku korzystania ze źródeł internetowych problemy są inne:
+* dostęp do treści jest za paywall-em (rozwiązaniem stosowanym u mnie jest wtyczka do przeglądarki),
+* brak możliwości łatwego importowania danych ze stron takich jak linkedin, Facebook itp. (chronią się przed łatwą kradzieżą treści),
+* potrzeba napisania analizatorów treści stron pobarnych wtyczką by obniżyć koszty (patrz niżej)
+* jakość napisów tworzonych przez automatyczne tłumaczenia youtube,
+* cena konwersji (i jakość) audio do tekstu
+
+Przykładowe wielkości dokumentów
+* Oryginalny dokument HTML będący zapisaną kopią artykułu z Onet.pl: 300 KB,
+* Przekonwertowany do formatu markdown: 15 KB,
+* Sama treść artykułu: 3000 słów,
+
+Duże modele językowe, np. te od OpenAI, doskonale radzą sobie z analizą treści całej strony artykułu w formacie markdown, 
+ale generuje to duże koszty w porównaniu z analizą samego tekstu artykułu.
+
+Źródła danych dla asystenta osobistego:
+* SMS-y, czyli wiadomości wielkośći do 120 znaków (od jakiegoś czasu Google Play blokuje aplikacje mające dostęp do SMS-ów, należy zainstalować "własną" aplikację, np. make),
+* emaile (format HTML), kilkaset słów,
+* dokumenty PDF (np faktury) i DOC (np. wymagania na stanowisko pracy),
+* ebooki (kilkaset tysięcy słów, potrzebny podział na kawałki przed embeddingiem)
+* obrazki (np zdjęcia stron książek, faktury, zdjęcia z istotnym kontentem)
+* czaty whats up, messanger, itp
+* dostęp do kalendarza,
+* historia przeglądanych stron (dostęp do slqlite np. w Chromie),
+* dostęp do płatnego API serwisu Meetup (graphQL) by mieć informacje kogo możesz spotkać i na kogo uwazać,
+* dostęp do płatnych API przeglądających KRS (by wiedzieć czy rozmówca ma własną firmę, fundację itp.)
+
+
+## Skalowalność i niezawodność rozwiązania
+Dla jednego użytkownika wystarczy baza danych Postgersql z odpowiednimi rozszerzeniami.
+
+Jeżeli chcemy, aby pojedyńczy użytkownik mógł działać z różnych urządzeń, należy umożliwić
+mu pracę z zewnętrznym serwerem działającym 24h/7. 
+Wtedy musimy zadbać o:
+* dostępność rozwiązania z dowolnego miejsca na świecie,
+* bezpieczeństwo rozwiązania (potrzeba aktualizacji bezpieczeństwa, ochrona przed DDOS itp),
+* niskie koszty.
+* mało czasu potrzebnego na utrzymanie
+
+
+
+W przypadku większej ilości użytkowników należy rozważyć 2 rzeczy:
+* koszty skalowania infrastruktury (np. bazy danych)
+* wydajność rozwiązania (można dostawiać kontenery albo iść w rozwiązania serverless i kolejki)
+* bezpieczeństwo izolacji danych każdego klienta,
 
 ## Used technologies
 In this project, I'm using:
 * Python as server backend
 * Postgresql as embedding database
 * React as web interface (during creation)
+* Hashicorp Vault for secrets (for local and kubernetes environment) 
 * AWS as deploying a platform (as I'm lazy and don't want to manage infrastructure)
 
 I'm also preparing a few ways to deploy it:
 * docker image (to easy run application)
 * Kubernetes helm (to test scalability options)
-* lambda (to test Event Driver way of writing application)
+* AWS lambda (to test Event Driver way of writing application)
 
 As I'm big fun on AWS, you will also see deploy ways like:
 * Lambdas (to see Event Driver way of writing applications like that),
@@ -43,11 +125,15 @@ C:\Users\ziutus\AppData\Local\Programs\Python\Python311\Scripts\pip-compile.exe 
 ```
 
 ```powershell
+pip install -r requirements_markdown.txt
+```
+
+```powershell
 C:\Users\ziutus\AppData\Local\Programs\Python\Python311\Scripts\pip-compile.exe --upgrade requirements_server.piptools --output-file requirements_server.txt
 ```
 
 ```powershell
-pip install -r requirements_markdown.txt
+pip install -r requirements_server.txt
 ```
 
 
@@ -122,6 +208,17 @@ After starting the appliaction or container, you can access the Stalker applicat
 
 #### Preparing local environment
 
+Install vault binary from: https://developer.hashicorp.com/vault/install
+
+```bash
+docker volume create vault_secrets_dev
+docker volume create vault_logs_dev
+ 
+ docker run -d --name=vault_dev --cap-add=IPC_LOCK -e 'VAULT_LOCAL_CONFIG={"storage": {"file": {"path":
+ "/vault/file"}}, "listener": [{"tcp": { "address": "0.0.0.0:8200", "tls_disable": true}}], "default_lease_ttl": "168h", "max_lease_ttl":
+"720h", "ui": true}' -v vault_secrets_dev:/vault/file -v vault_logs_dev:/vault/logs -p 8200:8200 hashicorp/vault server
+```
+
 ```bash
 docker pull pgvector/pgvector:pg17
 ```
@@ -181,6 +278,10 @@ curl -X POST https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add \
 
 ## security
 ### pre-hook + trufflehog
+
+
+# Planned improvements
+* add checker which any lambda does not use AWS Lambda Layers anymore
 
 
 ## Why do we need our own LLM?

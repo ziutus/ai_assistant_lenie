@@ -21,6 +21,7 @@
 /cookies.txt
 /infra/aws/serverless/lambdas/*/package/
 /infra/aws/serverless/lambdas/*/*.zip
+infra/aws/serverless/lambda_layers/tmp
 
 # Local .terraform directories
 **/.terraform/*
@@ -63,3 +64,12 @@ terraform.rc
 /infra/gcloud/.terraform.lock.hcl
 /infra/gcloud/plan.txt
 /infra/gcloud/plan_destroy.txt
+/infra/gcloud/terraform-server/.terraform.lock.hcl
+/Dockerfile.bak
+/Dockerfile.bak.bak
+/infra/vault/log.log
+/infra/gcloud/terraform-server/plan.txt
+/infra/gcloud/terraform-server/plan_destroy.txt
+/README.md.bak
+/infra/aws/cloudformation/apigw/lenie_dev_add_from_chrome_extension-v1-oas30-apigateway.json
+/infra/aws/serverless/lambdas/tmp/lambda_function.py

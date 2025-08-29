@@ -1,7 +1,7 @@
 Parameters:
   VPCId:
     Description: The VPC Id where the RDS instance will be deployed
-    Type: AWS::EC2::VPC::Id
+    Type: AWS::SSM::Parameter::Value<String>
   Environment:
     Description: The stage of the application deployment
     Default: dev
@@ -26,12 +26,27 @@ Parameters:
   DataSubnetB:
     Description: Reference of the DataSubnetB from the SSM
     Type: AWS::SSM::Parameter::Value<String>
+  SnapshotIdentifier:
+    Type: String
+    Description: 'ARN of the DB snapshot (optional)'
+    Default: ''
+
+Conditions:
+  HasSnapshot: !Not [!Equals [!Ref SnapshotIdentifier, '']]
+
 
 Resources:
   MyDB:
     Type: 'AWS::RDS::DBInstance'
     Properties:
-      DBName: !Sub 'lenieTmp${Environment}'
+      DBName: !If
+        - HasSnapshot
+        - !Ref AWS::NoValue
+        - !Sub 'lenieTmp${Environment}'
+      DBSnapshotIdentifier: !If
+        - HasSnapshot
+        - !Ref SnapshotIdentifier
+        - !Ref AWS::NoValue
       Engine: postgres
       MasterUsername: !Sub '{{resolve:secretsmanager:${RDSPasswordSecretArn}:SecretString:username}}'
       MasterUserPassword: !Sub '{{resolve:secretsmanager:${RDSPasswordSecretArn}:SecretString:password}}'

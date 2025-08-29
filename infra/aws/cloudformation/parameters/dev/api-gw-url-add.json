@@ -1,0 +1,10 @@
+[
+  {
+    "ParameterKey": "stage",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "LambdaFunctionName",
+    "ParameterValue": "lenie-dev-url-add"
+  }
+]

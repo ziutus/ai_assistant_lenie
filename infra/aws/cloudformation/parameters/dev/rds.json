@@ -9,11 +9,11 @@
   },
   {
     "ParameterKey": "RDSPasswordSecretArn",
-    "ParameterValue": "arn:aws:secretsmanager:us-east-1:008971653395:secret:/lenie/dev/rds/password-01s7Bp"
+    "ParameterValue": "arn:aws:secretsmanager:us-east-1:049706517731:secret:/lenie/dev/rds/password-rs54LR"
   },
   {
     "ParameterKey": "VPCId",
-    "ParameterValue": "vpc-0eeb836a30c318273"
+    "ParameterValue": "/lenie/dev/vpc-id"
   },
   {
     "ParameterKey": "DataSubnetA",

@@ -1,0 +1,36 @@
+.authorizationBox{
+    font-size: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid  rgb(179, 179, 179);;
+    margin-bottom: 20px;
+}
+.authorizationBox h4 {
+    margin-bottom: 12px;
+}
+.grid{
+     display: grid;
+     grid-template-columns: repeat(3, 1fr);
+     grid-gap: 30px;
+ }
+.dbStatus{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+}
+.sqsSize{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+}
+.unknown{
+    color: #e6c231;
+}
+.available{
+
+    color: #19e677;
+}
+.stopped{
+    color: #ea1b55;
+}

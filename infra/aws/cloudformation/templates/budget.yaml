@@ -1,0 +1,177 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Budżet z alertami dla środowiska dev'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+  Stage:
+    Type: String
+    Default: dev
+  BudgetAmount:
+    Type: Number
+    Default: 20
+  AlertEmail:
+    Type: String
+    Description: Email do otrzymywania alertów budżetowych
+
+Resources:
+#  # Główny budżet miesięczny z filtrem tagów
+#  MonthlyBudget:
+#    Type: AWS::Budgets::Budget
+#    Properties:
+#      Budget:
+#        BudgetName: !Sub "${ProjectCode}-${Stage}-monthly-budget"
+#        BudgetLimit:
+#          Amount: !Ref BudgetAmount
+#          Unit: USD
+#        TimeUnit: MONTHLY
+#        BudgetType: COST
+#        CostFilters:
+#          # Poprawny format TagKeyValue: "key$value"
+#          TagKeyValue:
+#            - !Sub "Project$${ProjectCode}"
+#            - !Sub "Stage$${Stage}"
+#      NotificationsWithSubscribers:
+#        # Alert przy 50% budżetu
+#        - Notification:
+#            NotificationType: ACTUAL
+#            ComparisonOperator: GREATER_THAN
+#            Threshold: 50
+#            ThresholdType: PERCENTAGE
+#          Subscribers:
+#            - SubscriptionType: EMAIL
+#              Address: !Ref AlertEmail
+#        # Alert przy 80% budżetu
+#        - Notification:
+#            NotificationType: ACTUAL
+#            ComparisonOperator: GREATER_THAN
+#            Threshold: 80
+#            ThresholdType: PERCENTAGE
+#          Subscribers:
+#            - SubscriptionType: EMAIL
+#              Address: !Ref AlertEmail
+#        # Alert przy prognozowanym przekroczeniu 100%
+#        - Notification:
+#            NotificationType: FORECASTED
+#            ComparisonOperator: GREATER_THAN
+#            Threshold: 100
+#            ThresholdType: PERCENTAGE
+#          Subscribers:
+#            - SubscriptionType: EMAIL
+#              Address: !Ref AlertEmail
+
+#  # Budżet dla konkretnych usług EC2
+#  EC2Budget:
+#    Type: AWS::Budgets::Budget
+#    Properties:
+#      Budget:
+#        BudgetName: !Sub "${ProjectCode}-${Stage}-ec2-budget"
+#        BudgetLimit:
+#          Amount: 50
+#          Unit: USD
+#        TimeUnit: MONTHLY
+#        BudgetType: COST
+#        CostFilters:
+#          Service:
+#            - Amazon Elastic Compute Cloud - Compute
+#          TagKeyValue:
+#            - !Sub "Project$${ProjectCode}"
+#      NotificationsWithSubscribers:
+#        - Notification:
+#            NotificationType: ACTUAL
+#            ComparisonOperator: GREATER_THAN
+#            Threshold: 80
+#            ThresholdType: PERCENTAGE
+#          Subscribers:
+#            - SubscriptionType: EMAIL
+#              Address: !Ref AlertEmail
+
+  # Budżet dla całego konta (bez filtrów)
+  AccountBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: !Sub "${ProjectCode}-${Stage}-account-budget"
+        BudgetLimit:
+          Amount: !Ref BudgetAmount
+          Unit: USD
+        TimeUnit: MONTHLY
+        BudgetType: COST
+        # Brak CostFilters - monitoruje całe konto
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 50
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+#  # Budżet tylko dla usług (bez tagów)
+#  ServicesBudget:
+#    Type: AWS::Budgets::Budget
+#    Properties:
+#      Budget:
+#        BudgetName: !Sub "${ProjectCode}-${Stage}-services-budget"
+#        BudgetLimit:
+#          Amount: 75
+#          Unit: USD
+#        TimeUnit: MONTHLY
+#        BudgetType: COST
+#        CostFilters:
+#          Service:
+#            - Amazon Elastic Compute Cloud - Compute
+#            - Amazon Relational Database Service
+#            - Amazon Simple Storage Service
+#      NotificationsWithSubscribers:
+#        - Notification:
+#            NotificationType: ACTUAL
+#            ComparisonOperator: GREATER_THAN
+#            Threshold: 80
+#            ThresholdType: PERCENTAGE
+#          Subscribers:
+#            - SubscriptionType: EMAIL
+#              Address: !Ref AlertEmail
+#
+#Outputs:
+#  MonthlyBudgetName:
+#    Description: Nazwa głównego budżetu miesięcznego
+#    Value: !Ref MonthlyBudget
+#    Export:
+#      Name: !Sub "${AWS::StackName}-MonthlyBudget"
+#
+#  EC2BudgetName:
+#    Description: Nazwa budżetu dla EC2
+#    Value: !Ref EC2Budget
+#    Export:
+#      Name: !Sub "${AWS::StackName}-EC2Budget"
+#
+#  AccountBudgetName:
+#    Description: Nazwa budżetu dla całego konta
+#    Value: !Ref AccountBudget
+#    Export:
+#      Name: !Sub "${AWS::StackName}-AccountBudget"
+#
+#  ServicesBudgetName:
+#    Description: Nazwa budżetu dla głównych usług
+#    Value: !Ref ServicesBudget
+#    Export:
+#      Name: !Sub "${AWS::StackName}-ServicesBudget"
