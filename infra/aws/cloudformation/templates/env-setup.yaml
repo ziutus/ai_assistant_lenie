@@ -1,0 +1,21 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'App Version setup'
+
+Parameters:
+  stage:
+    Default: dev
+    Description: Specify stage (dev, qas, prd)
+    Type: String
+    AllowedValues:
+      - dev
+      - qas
+      - prd
+
+Resources:
+  CloudFormationSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/lenie/${stage}/python/lambda-runtime-version'
+      Type: String
+      Value: 'python3.11'
+      Description: 'Python runtime version'

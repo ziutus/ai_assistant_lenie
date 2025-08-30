@@ -11,4 +11,7 @@ unzip awscliv2.zip
 sudo ./aws/install
 ln -s /mnt/c/Users/ziutus/.aws/ .aws
 
+sudo apt install jq more-utils
+
+
 

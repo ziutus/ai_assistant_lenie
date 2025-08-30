@@ -16,3 +16,11 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub ${ProjectName}-2025-${Environment}-cloudformation
+
+  CloudFormationSSMParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/lenie/${Environment}/s3/cloudformation/name'
+      Type: String
+      Value: !Sub ${ProjectName}-2025-${Environment}-cloudformation
+      Description: 'Bucket for cloudformation code'

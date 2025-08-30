@@ -80,3 +80,14 @@ Resources:
           FromPort: '5432'
           ToPort: '5432'
           CidrIp: 0.0.0.0/0
+
+#  DatabaseNameParameter:
+#    Type: AWS::SSM::Parameter
+#    Properties:
+#      Name: !Sub '/lenie/${Environment}/database/name'
+#      Type: String
+#      Value: !If
+#        - HasSnapshot
+#        - !Ref MyDB
+#        - !Sub 'lenieTmp${Environment}'
+#      Description: !Sub 'Database name for ${ProjectName} in ${Environment} environment'

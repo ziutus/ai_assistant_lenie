@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Lambda function for RDS database start operations'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Description: 'Project Name'
+    Default: lenie
+
+  Environment:
+    Description: The stage of the application deployment
+    Default: dev
+    Type: String
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+      - cob
+      - test
+      - feature
+
+Resources:
+  # IAM Role for Lambda function
+  RDSStartLambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${AWS::StackName}-rds-start-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: RDSStartPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'rds:StopDBInstance'
+                  - 'rds:StartDBInstance'
+                  - 'rds:DescribeDBInstances'
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/lenie/${Environment}/database/name'
+
+  # Lambda function
+  RDSStartLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-rds-start-function'
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt RDSStartLambdaRole.Arn
+      Code:
+        S3Bucket: lenie-2025-dev-cloudformation
+        S3Key: !Sub '${ProjectName}-${Environment}-rds-start.zip'
+      Runtime: python3.11
+      Timeout: 60
+      Environment:
+        Variables:
+          DB_ID: !Sub '{{resolve:ssm:/lenie/${Environment}/database/name}}'
+
+Outputs:
+  LambdaFunctionArn:
+    Description: 'ARN of the RDS Stop Lambda function'
+    Value: !GetAtt RDSStartLambdaFunction.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-lambda-arn'
+
+  LambdaRoleArn:
+    Description: 'ARN of the Lambda execution role'
+    Value: !GetAtt RDSStartLambdaRole.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-lambda-role-arn'

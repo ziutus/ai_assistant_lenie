@@ -8,14 +8,6 @@
     "ParameterValue": "dev"
   },
   {
-    "ParameterKey": "DbInstanceIdentifier",
-    "ParameterValue": "lenie-dev"
-  },
-  {
-    "ParameterKey": "QueueUrl",
-    "ParameterValue": "https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites"
-  },
-  {
     "ParameterKey": "ScheduleExpression",
     "ParameterValue": "cron(30 4 * * ? *)"
   }

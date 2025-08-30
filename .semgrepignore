@@ -1,3 +1,2 @@
 infra/kubernetes/jenkins/*
 infra/aws/eks/karpenter/*
-ai_dev3/*
