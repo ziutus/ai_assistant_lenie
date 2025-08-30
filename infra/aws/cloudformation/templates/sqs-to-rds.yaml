@@ -6,11 +6,6 @@ Parameters:
   Environment:
     Type: String
     Description: 'environment'
-  DbInstanceIdentifier:
-    Type: String
-    Description: 'RDS Instance Identifier'
-  QueueUrl:
-    Type: String
   ScheduleExpression:
     Type: String
 
@@ -377,7 +372,7 @@ Resources:
           Arn: !ImportValue lenie-problems-dlq-arn
         Input: !Sub |
           {
-            "QueueUrl": "${QueueUrl}",
-            "DbInstanceIdentifier": "${DbInstanceIdentifier}",
+            "QueueUrl": "{{resolve:ssm:/lenie/${Environment}/sqs/documents/url}}",
+            "DbInstanceIdentifier": "{{resolve:ssm:/lenie/${Environment}/database/name}}",
             "StopDatabase": "yes"
           }

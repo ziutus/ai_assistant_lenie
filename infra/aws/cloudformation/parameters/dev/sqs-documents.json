@@ -6,9 +6,5 @@
   {
     "ParameterKey": "Environment",
     "ParameterValue": "dev"
-  },
-  {
-    "ParameterKey": "ScheduleExpression",
-    "ParameterValue": "cron(30 4 * * ? *)"
   }
 ]

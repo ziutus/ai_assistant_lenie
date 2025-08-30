@@ -31,6 +31,8 @@ document.addEventListener('DOMContentLoaded', function () {
   const pageLanguageInput = document.getElementById('pageLanguage');
   const pageDescriptionInput = document.getElementById('pageDescription');
   const pageTitleInput = document.getElementById('pageTitle');
+  const toggleApiKeyVisibilityBtn = document.getElementById('toggleApiKeyVisibility');
+  const apiKeyEye = document.getElementById('apiKeyEye');
 
   function toggleChapterListVisibility() {
     chapterListContainer.style.display = (typeSelect.value === 'youtube') ? 'block' : 'none';
@@ -43,6 +45,17 @@ document.addEventListener('DOMContentLoaded', function () {
   chrome.storage.sync.get(['apiKey', 'serverUrl'], function (data) {
     if (data.apiKey) apiKeyInput.value = data.apiKey;
     if (data.serverUrl) serverUrlInput.value = data.serverUrl;
+  });
+
+  // Toggle API key visibility
+  toggleApiKeyVisibilityBtn?.addEventListener('click', function () {
+    if (!apiKeyInput) return;
+    const isPassword = apiKeyInput.type === 'password';
+    apiKeyInput.type = isPassword ? 'text' : 'password';
+    // Optional: change icon/text
+    if (apiKeyEye) {
+      apiKeyEye.textContent = isPassword ? '🙈' : '👁️';
+    }
   });
 
   // Persist settings
