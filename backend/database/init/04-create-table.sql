@@ -26,4 +26,4 @@ CREATE INDEX IF NOT EXISTS idx_websites_embeddings_model ON public.websites_embe
 CREATE INDEX IF NOT EXISTS idx_websites_embeddings_vector ON public.websites_embeddings USING ivfflat (embedding vector_cosine_ops);
 
 -- Potwierdzenie utworzenia tabel
-SELECT 'Table created successfully in lenie-ai database' as status;
+SELECT 'Table websites_embeddings created successfully in lenie-ai database' as status;
