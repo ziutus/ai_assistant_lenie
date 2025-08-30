@@ -1,7 +1,6 @@
 services:
   lenie-ai-server:
-    build:
-      context: .
+    build: ./backend
     ports:
       - "5000:5000"
     restart: unless-stopped
