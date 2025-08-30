@@ -4,7 +4,7 @@ import boto3
 import json
 import os
 import botocore.exceptions
-from library.ai_response import AiResponse
+from library.models.ai_response import AiResponse
 
 
 def query_aws_bedrock(query: str, model: str, temperature: float = 0.7, max_token_count: int = 4096,

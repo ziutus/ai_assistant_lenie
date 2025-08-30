@@ -1,6 +1,6 @@
 import library.api.aws.bedrock_ask
 import library.api.openai.openai_my
-from library.ai_response import AiResponse
+from library.models.ai_response import AiResponse
 from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
 
 # https://huggingface.co/speakleash/Bielik-11B-v2.3-Instruct

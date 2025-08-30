@@ -1,7 +1,7 @@
 import library.api.aws.bedrock_embedding as amazon_bedrock
 import library.api.openai.openai_embedding as openai_embedding
 from library.api.cloudferro.sherlock.sherlock_embedding import sherlock_create_embedding
-from library.embedding_result import EmbeddingResult
+from library.models.embedding_result import EmbeddingResult
 
 
 embedding_models = {"amazon.titan-embed-text-v1", "amazon.titan-embed-text-v2:0", "text-embedding-ada-002",
