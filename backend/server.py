@@ -10,7 +10,6 @@ import library.ai
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_transcript import chapters_text_to_list
-from library.translate import text_translate
 from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
 from library.webpage_parse_result import WebPageParseResult
 from library.website.website_paid import website_is_paid
@@ -37,8 +36,8 @@ env_data = fetch_env_var("ENV_DATA")
 
 llm_simple_jobs_model = fetch_env_var("AI_MODEL_SUMMARY")
 
-APP_VERSION = "0.2.11.0"
-BUILD_TIME = "2024.09.50 09:50"
+APP_VERSION = "0.3.11.0"
+BUILD_TIME = "2025.08.30 16:17"
 
 logging.info(f"APP VERSION={APP_VERSION} (build time:{BUILD_TIME})")
 logging.info("ENV_DATA: " + os.getenv("ENV_DATA"))
@@ -200,34 +199,6 @@ def website_get_next_to_correct():
     }
 
     return response, 200
-
-
-@app.route('/translate', methods=['POST'])
-def translate():
-    logging.debug("Translating")
-    logging.debug(request.form)
-
-    text = request.form.get('text')
-    target_language = request.form.get('target_language')
-    source_language = request.form.get('source_language')
-
-    logging.debug(text)
-    logging.debug(target_language)
-    logging.debug(source_language)
-
-    if not text or not target_language:
-        logging.debug("Missing data. Make sure you provide 'text' and 'target_language'")
-        return {"status": "error",
-                "message": "Brakujące dane. Upewnij się, że dostarczasz 'text' i 'target_language'"}, 400
-
-    result = text_translate(text=text, target_language=target_language, source_language=source_language)
-    # logging.debug(result.text)
-    if result.status == "success":
-        return {"status": "success", "message": result.translated_text}, 200
-    else:
-        logging.error(result.error_message)
-        return {"status": "error", "message": result.error_message}, 500
-
 
 @app.route('/ai_get_embedding', methods=['POST'])
 def ai_get_embedding():
