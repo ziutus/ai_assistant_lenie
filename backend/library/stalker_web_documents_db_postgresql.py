@@ -3,7 +3,8 @@ from typing import Any
 
 import psycopg2
 
-from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType
+from library.models.stalker_document_status import StalkerDocumentStatus
+from library.models.stalker_document_type import StalkerDocumentType
 
 
 class WebsitesDBPostgreSQL:

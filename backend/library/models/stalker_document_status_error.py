@@ -1,4 +1,5 @@
 # This errors status are also defined in Postgresql table: document_status_error_types
+from enum import Enum
 
 class StalkerDocumentStatusError(Enum):
     NONE = 1
