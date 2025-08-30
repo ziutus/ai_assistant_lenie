@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     depends_on:
       - lenie-ai-db
-    # env_file: ./.env  # Uncomment if .env file exists
+    env_file: .env
   lenie-ai-db:
     image: pgvector/pgvector:pg17
     environment:
@@ -17,13 +17,13 @@ services:
       - "5432:5432"
     volumes:
       - lenie-ai-db-data:/var/lib/postgresql/data
+      - ./backend/database/init:/docker-entrypoint-initdb.d
     restart: unless-stopped
   lenie-ai-fronted:
     build: ./web_interface_react
     ports:
       - "3000:3000"
     restart: unless-stopped
-    # env_file: ./.env  # Uncomment if .env file exists
 
 volumes:
   lenie-ai-db-data:
