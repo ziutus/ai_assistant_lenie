@@ -1,16 +1,8 @@
 import json
-from enum import Enum
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.models.stalker_document_type import StalkerDocumentType
-
-
-# from library.text_detect_language import text_language_detect
-# from library.translate import text_translate
-
-
-
 
 
 class StalkerWebDocument:
