@@ -9,6 +9,8 @@ services:
     depends_on:
       - lenie-ai-db
     env_file: .env
+    volumes:
+      - lenie-ai-data:/app/data
   lenie-ai-db:
     image: pgvector/pgvector:pg17
     environment:
@@ -27,6 +29,8 @@ services:
 
 volumes:
   lenie-ai-db-data:
+    driver: local
+  lenie-ai-data:
     driver: local
 networks:
   default:

@@ -5,13 +5,14 @@ from dotenv import load_dotenv
 from flask import Flask, request, abort
 from flask_cors import CORS
 import logging
+import uuid
 
 import library.ai
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_transcript import chapters_text_to_list
 from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
-from library.webpage_parse_result import WebPageParseResult
+from library.models.webpage_parse_result import WebPageParseResult
 from library.website.website_paid import website_is_paid
 from library.text_functions import split_text_for_embedding
 
@@ -87,6 +88,211 @@ def before_request_func():
     exempt_paths = ['/startup', '/readiness', '/liveness', '/version']
     if request.path not in exempt_paths and request.method != 'OPTIONS':
         check_auth_header()
+
+@app.route('/', methods=['GET', 'OPTIONS'])
+def root():
+    """
+    Główna trasa aplikacji - endpoint informacyjny
+    """
+    response = {
+        "status": "success",
+        "message": "Stalker Web Documents API",
+        "app_version": APP_VERSION,
+        "app_build_time": BUILD_TIME,
+        "encoding": "utf8"
+    }
+    return response, 200
+
+
+@app.route('/url_add', methods=['POST', 'OPTIONS'])
+def url_add():
+    """
+    Dodaje nowy URL do systemu z zapisywaniem treści HTML do S3 i danych do bazy
+    Funkcjonalność analogiczna do lambda_handler w lambda_function.py
+    """
+
+    if request.method == 'OPTIONS':
+        response = {
+            'status': 'OK',
+            'message': 'CORS preflight'
+        }
+        return response, 200
+
+    # Pobranie zmiennych środowiskowych
+    bucket_name = os.getenv("AWS_S3_WEBSITE_CONTENT")
+
+    use_aws_s3 = True
+    if bucket_name is None:
+        use_aws_s3 = False
+
+    logging.info(f"Using AWS S3: {use_aws_s3}")
+
+    try:
+        # Pobranie danych z requestu
+        url_data = request.get_json()
+
+        if not url_data:
+            return {
+                'status': 'error',
+                'message': 'No JSON data provided'
+            }, 400
+
+        # Logowanie danych (z ograniczeniem dla długich treści)
+        url_data_print = url_data.copy()
+        if 'text' in url_data_print:
+            url_data_print['text'] = url_data_print['text'][:50]
+        if 'html' in url_data_print:
+            url_data_print['html'] = url_data_print['html'][:50]
+
+        logging.info('Data received by API', extra={"body": url_data_print})
+
+        # Pobranie parametrów
+        target_url = url_data.get("url")
+        url_type = url_data.get("type")
+        note = url_data.get("note", "default_note")
+        text = url_data.get("text", "")
+        html = url_data.get("html", "")
+        title = url_data.get("title", "")
+        language = url_data.get("language", "")
+        paywall = url_data.get("paywall", False)
+        source = url_data.get("source", "own")
+        ai_summary = url_data.get("ai_summary", False)
+        ai_correction = url_data.get("ai_correction", False)
+        chapter_list = url_data.get("chapter_list", False)
+
+        if not target_url or not url_type:
+            error_message = "Missing required parameter(s): 'url' or 'type'"
+            logging.error(error_message)
+            return {
+                'status': 'error',
+                'message': error_message
+            }, 400
+
+        s3_uuid = None
+
+        if use_aws_s3:
+            # Inicjalizacja klienta S3
+            # Import biblioteki AWS (analogicznie do lambda)
+            import boto3
+            s3 = boto3.client('s3')
+
+
+        if url_type == 'webpage':
+            # Generowanie UUID i zapis do S3
+            uid = str(uuid.uuid4())
+            s3_uuid = uid
+
+            # Zapis tekstu do S3
+            if text:
+                file_name = f"{uid}.txt"
+
+                if use_aws_s3:
+                    try:
+                        s3.put_object(Bucket=bucket_name, Key=file_name, Body=text)
+                        logging.info(f"Successfully uploaded {file_name} to {bucket_name}")
+                    except Exception as e:
+                        error_message = f"Failed to upload {file_name} to {bucket_name}: {str(e)}"
+                        logging.error(error_message)
+                        return {
+                            'status': 'error',
+                            'message': error_message
+                        }, 500
+                else:
+                    # Zapis lokalny
+                    try:
+                        os.makedirs('/app/data', exist_ok=True)
+                        local_file_path = f"/app/data/{file_name}"
+                        with open(local_file_path, 'w', encoding='utf-8') as f:
+                            f.write(text)
+                        logging.info(f"Successfully saved {file_name} to /app/data/")
+                    except Exception as e:
+                        error_message = f"Failed to save {file_name} to /app/data/: {str(e)}"
+                        logging.error(error_message)
+                        return {
+                            'status': 'error',
+                            'message': error_message
+                        }, 500
+
+
+
+            # Zapis HTML do S3
+            if html:
+                file_name = f"{uid}.html"
+
+                if use_aws_s3:
+                    try:
+                        s3.put_object(Bucket=bucket_name, Key=file_name, Body=html)
+                        logging.info(f"Successfully uploaded {file_name} to {bucket_name}")
+                    except Exception as e:
+                        error_message = f"Failed to upload {file_name} to {bucket_name}: {str(e)}"
+                        logging.error(error_message)
+                        return {
+                            'status': 'error',
+                            'message': error_message
+                        }, 500
+                else:
+                    # Zapis lokalny
+                    try:
+                        os.makedirs('/app/data', exist_ok=True)
+                        local_file_path = f"/app/data/{file_name}"
+                        with open(local_file_path, 'w', encoding='utf-8') as f:
+                            f.write(html)
+                        logging.info(f"Successfully saved {file_name} to /app/data/")
+                    except Exception as e:
+                        error_message = f"Failed to save {file_name} to /app/data/: {str(e)}"
+                        logging.error(error_message)
+                        return {
+                            'status': 'error',
+                            'message': error_message
+                        }, 500
+
+            else:
+                logging.info("Missing HTML part!")
+
+        # Zapis do bazy danych
+        try:
+            web_doc = StalkerWebDocumentDB()
+            web_doc.url = target_url
+            web_doc.set_document_type(url_type)
+            web_doc.note = note
+            web_doc.title = title
+            web_doc.language = language
+            web_doc.paywall = paywall
+            web_doc.source = source
+            web_doc.ai_summary_needed = ai_summary
+            web_doc.ai_correction_needed = ai_correction
+            web_doc.chapter_list = chapter_list
+            web_doc.s3_uuid = s3_uuid
+
+            # Ustawienie stanu dokumentu
+            web_doc.set_document_state("URL_ADDED")
+
+            # Zapis do bazy
+            web_doc.save()
+
+            logging.info(f"Successfully saved document to database with ID: {web_doc.id}")
+
+            return {
+                'status': 'success',
+                'message': f'Successfully saved document with ID: {web_doc.id}',
+                'document_id': web_doc.id
+            }, 200
+
+        except Exception as e:
+            error_message = f"Failed to save to database: {str(e)}"
+            logging.error(error_message)
+            return {
+                'status': 'error',
+                'message': error_message
+            }, 500
+
+    except Exception as e:
+        error_message = f"Unexpected error: {str(e)}"
+        logging.error(error_message)
+        return {
+            'status': 'error',
+            'message': error_message
+        }, 500
 
 
 @app.route('/website_list', methods=['GET'])

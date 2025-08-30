@@ -28,6 +28,7 @@ COPY server.py .
 # Create a non-root user with specific UID and GID, and change ownership of the app directory
 RUN groupadd -g 1000 lenie-ai-client && \
     useradd -u 1000 -g lenie-ai-client -m lenie-ai-client && \
+    mkdir -p /app/data && \
     chown -R 1000:1000 /app
 
 # Switch to the lenie-ai-client user
