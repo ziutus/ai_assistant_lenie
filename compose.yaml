@@ -1,3 +1,5 @@
+name: lenie-ai
+
 services:
   lenie-ai-server:
     build: ./backend
