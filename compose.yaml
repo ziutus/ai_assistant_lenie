@@ -16,6 +16,13 @@ services:
     volumes:
       - lenie-ai-db-data:/var/lib/postgresql/data
     restart: unless-stopped
+  lenie-ai-fronted:
+    build: ./web_interface_react
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    # env_file: ./.env  # Uncomment if .env file exists
+
 volumes:
   lenie-ai-db-data:
     driver: local
