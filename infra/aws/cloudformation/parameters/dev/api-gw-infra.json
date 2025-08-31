@@ -6,5 +6,9 @@
   {
     "ParameterKey": "stage",
     "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "OpenvpnEC2Name",
+    "ParameterValue": "/lenie/dev/openvpn-server/ec2-name"
   }
 ]
