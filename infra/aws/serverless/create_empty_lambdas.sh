@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
-source ../env.sh
+source ./env.sh
 
-FUNCTION_LIST=$(cat ../function_list.txt)
+FUNCTION_LIST=$(cat ./function_list.txt)
 
 TMP_DIR="tmp"
 mkdir -p $TMP_DIR
