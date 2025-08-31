@@ -7,5 +7,5 @@ ec2-stop
 sqs-into-rds
 sqs-size
 sqs-weblink-put-into
-lenie-server-internet
-lenie-server-vpc
+app-server-internet
+app-server-db
