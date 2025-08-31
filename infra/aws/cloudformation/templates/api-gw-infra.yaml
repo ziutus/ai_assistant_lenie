@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'API Gateway for Lenie main application'
+Description: 'API Gateway for APP infrastructure management'
 
 Parameters:
   ProjectCode:
