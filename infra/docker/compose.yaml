@@ -2,10 +2,10 @@ name: lenie-ai
 
 services:
   lenie-ai-server:
-    build: ./backend
+    build: ../../backend
     ports:
       - "5000:5000"
-    restart: unless-stopped
+    restart: no
     depends_on:
       - lenie-ai-db
     env_file: .env
@@ -14,18 +14,18 @@ services:
   lenie-ai-db:
     image: pgvector/pgvector:pg17
     environment:
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
       - lenie-ai-db-data:/var/lib/postgresql/data
-      - ./backend/database/init:/docker-entrypoint-initdb.d
+      - ../../backend/database/init:/docker-entrypoint-initdb.d
     restart: unless-stopped
   lenie-ai-fronted:
-    build: ./web_interface_react
+    build: ../../web_interface_react
     ports:
       - "3000:3000"
-    restart: unless-stopped
+    restart: no
 
 volumes:
   lenie-ai-db-data:
