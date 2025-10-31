@@ -59,6 +59,10 @@ Resources:
       Environment:
         Variables:
           DEPLOYMENT_TIMESTAMP: !Ref DeploymentTimestamp
+      Layers:
+        - arn:aws:lambda:us-east-1:049706517731:layer:lenie_all_layer:1
+        - arn:aws:lambda:us-east-1:049706517731:layer:psycopg2_new_layer:1
+        - arn:aws:lambda:us-east-1:049706517731:layer:lenie_openai:1
 
 
   AppInternetFunction:
