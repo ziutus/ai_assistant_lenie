@@ -269,6 +269,14 @@ curl -X POST https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add \
          }'
 ```
 
+If we have enabled port forward, we can use to validate our API request:
+
+```
+curl -H "x-api-key: XXX" -X GET "http://localhost:5000/website_list?type=ALL&
+document_state=ALL&search_in_document="
+```
+
+
 ## Services which can use to get data
 
 | Service name | provider   | description | link |
