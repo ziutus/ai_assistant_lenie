@@ -20,30 +20,36 @@ logging.basicConfig(level=logging.INFO)  # Change level as per your need
 load_dotenv()
 
 
-def fetch_env_var(var_name):
+def fetch_env_var(var_name, default_value=None):
     """
   Utility method to fetch and validate environment variable
   """
     var = os.getenv(var_name)
     if var is None:
-        logging.error(f"ERROR: missing OS variables {var_name}, exiting... ")
-        exit(1)
+        if default_value is not None:
+            var = default_value
+        else:
+            logging.error(f"ERROR: missing OS variables {var_name}, exiting... ")
+            exit(1)
     return var
 
-
-openai_organization = fetch_env_var("OPENAI_ORGANIZATION")
-openai_api_key = fetch_env_var("OPENAI_API_KEY")
 env_data = fetch_env_var("ENV_DATA")
 
-llm_simple_jobs_model = fetch_env_var("AI_MODEL_SUMMARY")
-
-APP_VERSION = "0.3.11.0"
-BUILD_TIME = "2025.08.30 16:17"
+APP_VERSION = "0.3.12.0"
+BUILD_TIME = "2025.10.02 06:13"
 
 logging.info(f"APP VERSION={APP_VERSION} (build time:{BUILD_TIME})")
 logging.info("ENV_DATA: " + os.getenv("ENV_DATA"))
 
-backend_type = fetch_env_var("BACKEND_TYPE")
+llm_provider = fetch_env_var("LLM_PROVIDER")
+
+if llm_provider == "openai":
+    openai_organization = fetch_env_var("OPENAI_ORGANIZATION")
+    openai_api_key = fetch_env_var("OPENAI_API_KEY")
+
+llm_simple_jobs_model = fetch_env_var("AI_MODEL_SUMMARY")
+
+backend_type = fetch_env_var("BACKEND_TYPE", "postgresql")
 
 if os.getenv("BACKEND_TYPE") == "postgresql":
     if not os.getenv("POSTGRESQL_HOST") or not os.getenv("POSTGRESQL_DATABASE") or not os.getenv("POSTGRESQL_USER") \
