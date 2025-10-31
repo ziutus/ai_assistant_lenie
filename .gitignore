@@ -15,8 +15,8 @@
 /infra/aws/serverless/lambdas/*/lambda.zip
 /docker_build.sh
 /debug.txt
-/infra/kubernetes/lenie/raw/server/lenie_2_server_configmap.yaml
-/infra/kubernetes/lenie/raw/server/lenie_3_server_secrets.yaml
+/infra/kubernetes/lenie/kustomize/server/lenie_2_server_configmap.yaml
+/infra/kubernetes/lenie/kustomize/server/lenie_3_server_secrets.yaml
 /pre-hool.log
 /cookies.txt
 /infra/aws/serverless/lambdas/*/package/
