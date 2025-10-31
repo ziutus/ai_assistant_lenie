@@ -7,5 +7,3 @@ ec2-stop
 sqs-into-rds
 sqs-size
 sqs-weblink-put-into
-app-server-internet
-app-server-db
