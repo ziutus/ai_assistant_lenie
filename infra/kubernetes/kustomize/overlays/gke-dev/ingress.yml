@@ -1,8 +1,7 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: lenie-ai-client-ingress
-  namespace: lenie-ai-dev
+  name: lenie-ai-ingress
   annotations:
     kubernetes.io/ingress.class: "gce"
     # Opcjonalne dodatkowe adnotacje:

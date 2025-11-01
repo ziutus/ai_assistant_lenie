@@ -6,3 +6,7 @@ resources:
   - database
   - server
   - client
+
+
+
+namePrefix: lenie-ai-

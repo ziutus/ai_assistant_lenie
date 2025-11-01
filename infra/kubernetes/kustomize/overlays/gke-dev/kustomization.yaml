@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+#  - ingress.yml
+  - server_secrets.yaml
+  - server_configmap.yaml
+  - db_secret.yml
+
+
+nameSuffix: -dev
+namespace: lenie-ai-dev
+
+commonAnnotations:
+  envBuildDate: "2025-11-01 06:37"
+
+patches:
+- path: db-service-patch.yaml
+  target:
+    kind: Service
+    name: db
+- path: db-statefulset-patch.yaml
+  target:
+    kind: StatefulSet # lub Deployment
+    name: db

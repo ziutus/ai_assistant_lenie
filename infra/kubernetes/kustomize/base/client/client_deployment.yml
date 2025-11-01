@@ -1,8 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: lenie-ai-client-deployment
-  namespace: lenie-ai-dev
+  name: deployment
 spec:
   replicas: 1
   selector:
