@@ -1,8 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: lenie-ai-server-deployment
-  namespace: lenie-ai-dev
+  name: server
   annotations:
     configmap.reloader.stakater.com/reload: "env-config"
     reloader.stakater.com/auto: "true"
@@ -10,11 +9,11 @@ spec:
   replicas: 1
   selector:
     matchLabels:
-      app: lenie-ai-server
+      app: server
   template:
     metadata:
       labels:
-        app: lenie-ai-server
+        app: server
     spec:
       securityContext:
         runAsNonRoot: true
@@ -38,9 +37,9 @@ spec:
               key: username
         envFrom:
         - configMapRef:
-            name: env-config
+            name: lenie-ai-server-config
         - secretRef:
-            name: env-secret
+            name: lenie-ai-server-secret
 
         readinessProbe:
           httpGet:

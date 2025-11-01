@@ -4,3 +4,6 @@ kind: Kustomization
 resources:
   - client_deployment.yml
   - client_service.yml
+
+namePrefix: client-
+namespace: lenie-ai-dev

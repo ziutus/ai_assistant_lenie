@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: StatefulSet # lub Deployment
+metadata:
+  name: db # Nazwa musi pasować do zasobu bazowego
+spec:
+  selector:
+    matchLabels:
+      app: lenie-ai-db-dev # Zmieniamy selektor
+  template:
+    metadata:
+      labels:
+        app: lenie-ai-db-dev # Zmieniamy etykietę w szablonie Poda

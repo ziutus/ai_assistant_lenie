@@ -3,6 +3,4 @@ kind: Kustomization
 
 resources:
   - server_service.yml
-  - server_configmap.yaml
-  - server_secrets.yaml
   - server_deployment.yml

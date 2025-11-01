@@ -2,18 +2,17 @@
 apiVersion: apps/v1
 kind: StatefulSet  # StatefulSet jest lepszy dla baz danych niż Deployment
 metadata:
-  name: lenie-ai-db
-  namespace: lenie-ai-dev
+  name: db
 spec:
-  serviceName: lenie-ai-db
+  serviceName: db
   replicas: 1
   selector:
     matchLabels:
-      app: lenie-ai-db
+      app: db
   template:
     metadata:
       labels:
-        app: lenie-ai-db
+        app: db
     spec:
       containers:
       - name: lenie-ai-db
