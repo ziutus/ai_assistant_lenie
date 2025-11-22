@@ -88,7 +88,7 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
     elif model in ["Bielik-11B-v2.3-Instruct"]:
         return sherlock_get_completion(query, model=model)
     elif model in ['gemini-2.0-flash-lite-001']:
-        return
+        return google_vertexai.connect_to_google_llm_with_role(query, model)
 
     else:
         raise Exception(f"ERROR: Unknown model {model}")

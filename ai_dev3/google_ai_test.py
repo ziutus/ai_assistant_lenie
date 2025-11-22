@@ -1,6 +1,6 @@
 from dotenv import load_dotenv
 
-import library.api.google.google_vertexai as google_vertexai
+from library.ai import ai_ask
 
 load_dotenv()
 
@@ -9,11 +9,7 @@ if __name__ == "__main__":
     model_id = "gemini-2.0-flash-lite-001"
 
     try:
-        model_response = google_vertexai.connect_to_google_llm_with_role(
-            prompt=user_prompt,
-            model_id=model_id
-        )
-
-        print(f"\nResponse from model: {model_response}")
+        response = ai_ask(user_prompt, model_id)
+        print(f"\nResponse from model: {response.response_text}")
     except Exception as e:
         print(f"\nError: {e}")
