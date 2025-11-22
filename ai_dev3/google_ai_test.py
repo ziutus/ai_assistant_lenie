@@ -1,7 +1,6 @@
-import logging
 from dotenv import load_dotenv
 
-import backend.library.api.google.google_vertexai as google_vertexai
+import library.api.google.google_vertexai as google_vertexai
 
 load_dotenv()
 
