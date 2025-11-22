@@ -2,6 +2,7 @@ import library.api.aws.bedrock_ask
 import library.api.openai.openai_my
 from library.models.ai_response import AiResponse
 from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
+import library.api.google.google_vertexai as google_vertexai
 
 # https://huggingface.co/speakleash/Bielik-11B-v2.3-Instruct
 models = {
@@ -12,7 +13,8 @@ models = {
     "gpt-4o": {},
     "gpt-4o-mini": {},
     "Bielik-11B-v2.3-Instruct": {"need_translation": False},
-    "anthropic.claude-3-haiku-20240307-v1:0": {}
+    "anthropic.claude-3-haiku-20240307-v1:0": {},
+    "gemini-2.0-flash-lite-001": {}
 }
 
 
@@ -22,6 +24,7 @@ def get_all_models_info():
         "gpt-4": {"need_translation": True},
         "gpt-3.5-turbo": {"need_translation": True},
         "Bielik-11B-v2.3-Instruct": {"need_translation": False},
+        "gemini-2.0-flash-lite-001": {"need_translation": False},
     }
 
 
@@ -84,6 +87,9 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         return ai_response
     elif model in ["Bielik-11B-v2.3-Instruct"]:
         return sherlock_get_completion(query, model=model)
+    elif model in ['gemini-2.0-flash-lite-001']:
+        return
+
     else:
         raise Exception(f"ERROR: Unknown model {model}")
 
