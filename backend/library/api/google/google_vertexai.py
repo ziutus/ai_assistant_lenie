@@ -2,7 +2,7 @@ import vertexai
 from vertexai.generative_models import GenerativeModel
 import logging
 import os
-
+from library.models.ai_response import AiResponse
 
 # Configure logging
 logging.basicConfig(
@@ -16,7 +16,7 @@ def connect_to_google_llm_with_role(
     model_id: str,
     project_id: str = None,
     location: str = None
-) -> str:
+) -> AiResponse:
 
     if not project_id or not project_id.strip():
         project_id = os.getenv("GCP_PROJECT_ID")
@@ -33,6 +33,8 @@ def connect_to_google_llm_with_role(
         raise ValueError("prompt cannot be empty")
     if not model_id or not model_id.strip():
         raise ValueError("model_id cannot be empty")
+
+    ai_response = AiResponse(query=prompt, model=model_id)
 
     try:
         logger.info(f"Initializing Vertex AI for project {project_id} in region {location}")
@@ -53,7 +55,8 @@ def connect_to_google_llm_with_role(
             raise ValueError("Model returned empty response")
 
         logger.info("Received response from model")
-        return response.text
+        ai_response.response_text = response.text
+        return ai_response
 
     except ValueError:
         # Re-raise validation errors
