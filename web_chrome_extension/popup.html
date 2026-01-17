@@ -27,7 +27,7 @@
   <!-- Dodawanie strony -->
   <div id="tab-add" class="tab-pane active" role="tabpanel" aria-labelledby="tab-add-link">
     <div class="mt-3">
-      <label>Tytuł strony</label>
+      <label for="pageTitle">Tytuł strony</label>
       <div class="form-group">
         <input type="text" id="pageTitle" class="form-control" placeholder="Ładowanie tytułu...">
       </div>
@@ -37,7 +37,7 @@
         <textarea id="pageDescription" class="form-control" rows="4" placeholder="Opis strony w metadanych"></textarea>
       </div>
 
-      <label>Notatka</label>
+      <label for="note">Notatka</label>
       <div class="form-group">
         <textarea id="note" class="form-control" rows="4" placeholder="Wpisz swoją notatkę"></textarea>
       </div>
@@ -63,14 +63,14 @@
       </div>
 
       <div class="form-group mb-1">
-        <label>Paywall:</label>
+        <label id="paywallLabel">Paywall:</label>
         <div class="form-check form-check-inline">
-          <input type="radio" id="paywallTrue" name="paywall" value="true">
-          <label for="paywallTrue" class="form-check-label">Tak</label>
+          <input type="radio" id="paywallTrue" name="paywall" value="true" aria-labelledby="paywallLabel paywallTrueLabel">
+          <label for="paywallTrue" id="paywallTrueLabel" class="form-check-label">Tak</label>
         </div>
         <div class="form-check form-check-inline">
-          <input type="radio" id="paywallFalse" name="paywall" value="false" checked>
-          <label for="paywallFalse" class="form-check-label">Nie</label>
+          <input type="radio" id="paywallFalse" name="paywall" value="false" checked aria-labelledby="paywallLabel paywallFalseLabel">
+          <label for="paywallFalse" id="paywallFalseLabel" class="form-check-label">Nie</label>
         </div>
       </div>
 
@@ -80,7 +80,7 @@
       </div>
 
       <div id="chapterListContainer">
-        <label>Lista rozdziałów</label>
+        <label for="chapter_list">Lista rozdziałów</label>
         <div class="form-group">
           <textarea id="chapter_list" class="form-control" rows="4" placeholder="Wpis listę rozdziałów"></textarea>
         </div>
