@@ -4,6 +4,14 @@ Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).
 
+## [1.0.22] - 2025-08-29
+### Zmienione
+- usunięto pola do AI summary i AI correction. To będzie robionie automatycznie w backend.
+
+## [1.0.21] - 2025-08-29
+### Zmienione
+- Zaktualizowano adres API GW endpoint
+
 ## [ 1.0.20] - 2025-08-29
 ### Zmienione
 - Pole token pozwala podejrzeć wartość tokena, jesteś wstanie sprawdzić czy jest poprawny
