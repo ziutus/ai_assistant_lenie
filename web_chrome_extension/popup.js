@@ -24,8 +24,6 @@ document.addEventListener('DOMContentLoaded', function () {
   const paywallInputs = document.getElementsByName('paywall');
   const typeSelect = document.getElementById('type');
   const sourceSelect = document.getElementById('source');
-  const ai_summary = document.getElementsByName('ai_summary');
-  const ai_correction = document.getElementsByName('ai_correction');
   const chapter_list = document.getElementById('chapter_list');
   const chapterListContainer = document.getElementById('chapterListContainer');
   const pageLanguageInput = document.getElementById('pageLanguage');
@@ -148,8 +146,6 @@ document.addEventListener('DOMContentLoaded', function () {
             language: language,
             paywall: paywall,
             source: sourceSelect.value,
-            ai_summary: Array.from(ai_summary).find(radio => radio.checked)?.value || null,
-            ai_correction: Array.from(ai_correction).find(radio => radio.checked)?.value || null,
             chapter_list: chapter_list.value
           };
 
