@@ -137,13 +137,105 @@ for document_id in documents:
         web_doc_db.save()
 
     pre_match = re.search(MONEY_ARTICLE_REGEX_PRE, markdown_text)
+
     if not pre_match:
         logger.warning(f"document_id: {document_id} Money.pl regex PRE did not match the markdown content")
-        continue
 
     post_match = re.search(MONEY_ARTICLE_REGEX_POST, markdown_text[pre_match.end():])
     if not post_match:
         logger.warning(f"document_id: {document_id} Money.pl regex POST did not match the markdown content")
+
+    if not pre_match or not post_match:
+        try:
+            with open(cache_file_text, "r", encoding="utf-8") as f:
+                cache_text = f.read().strip()
+        except OSError as exc:
+            logger.warning(f"document_id: {document_id} Failed to read cache_file_text: {exc}")
+            continue
+
+        if not cache_text:
+            logger.warning(f"document_id: {document_id} cache_file_text is empty")
+            continue
+
+        # Find first line
+        first_line = next((line.strip() for line in cache_text.splitlines() if line.strip()), "")
+        if not first_line:
+            logger.warning(f"document_id: {document_id} cache_file_text has no non-empty lines")
+            continue
+
+        match_source = "first_line"
+        match_text = first_line
+        match_index = markdown_text.find(match_text)
+
+        # Find last line
+        last_line = next((line.strip() for line in reversed(cache_text.splitlines()) if line.strip()), "")
+        if not last_line:
+            logger.warning(f"document_id: {document_id} cache_file_text has no last line")
+            continue
+
+        match_end_text = last_line
+        match_end_index = markdown_text.find(match_end_text)
+        match_end = match_end_index + len(match_end_text) if match_end_index != -1 else -1
+
+        if match_index == -1 and match_text:
+            underscored = f"_{match_text}_"
+            match_index = markdown_text.find(underscored)
+            if match_index != -1:
+                match_source = "underscored"
+                match_text = underscored
+                match_end = match_index + len(match_text)
+
+        if match_index == -1 and cache_text:
+            words = [w for w in cache_text.split() if w]
+            if words:
+                whitespace_pattern = r"\s+".join(re.escape(w) for w in words)
+                soft_pattern = rf"_?{whitespace_pattern}_?"
+                soft_match = re.search(soft_pattern, markdown_text, flags=re.MULTILINE)
+                if soft_match:
+                    match_source = "soft_regex"
+                    match_text = soft_match.group(0)
+                    match_index = soft_match.start()
+                    match_end = soft_match.end()
+
+        if match_index == -1:
+            logger.warning(f"document_id: {document_id} cache_file_text not found in markdown")
+            continue
+
+        logger.info(
+            "document_id: %s cache_file_text match source=%s length=%s start=%s end=%s",
+            document_id,
+            match_source,
+            len(match_text),
+            match_index,
+            match_end,
+        )
+
+        markdown_lines = markdown_text.splitlines()
+        line_start = markdown_text.count("\n", 0, match_index)
+        line_end = markdown_text.count("\n", 0, match_end if match_end != -1 else match_index)
+
+        start = max(0, line_start - 10)
+        end = min(len(markdown_lines), line_start + 10 + 1)
+        start_context = "\n".join(f"{i + 1:04d}: {markdown_lines[i]}" for i in range(start, end))
+        logger.info(
+            "document_id: %s Markdown context around start of cache_file_text (lines %s..%s):\n%s",
+            document_id,
+            start + 1,
+            end,
+            start_context,
+        )
+
+        end_start = max(0, line_end - 10)
+        end_end = min(len(markdown_lines), line_end + 10 + 1)
+        end_context = "\n".join(f"{i + 1:04d}: {markdown_lines[i]}" for i in range(end_start, end_end))
+        logger.info(
+            "document_id: %s Markdown context around end of cache_file_text (lines %s..%s):\n%s",
+            document_id,
+            end_start + 1,
+            end_end,
+            end_context,
+        )
+
         continue
 
     article_chunk = markdown_text[pre_match.end():pre_match.end() + post_match.start()]
