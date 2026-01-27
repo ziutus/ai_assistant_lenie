@@ -281,6 +281,20 @@ if [ -z "${REGION}" ]; then echo "aws-region is required"; show_help; fi
 if [ -z "${PROJECT_CODE}" ]; then echo "PROJECT_CODE is required"; show_help; fi
 if [ -z "${STAGE}" ]; then echo "Stage is required"; show_help; fi
 
+# Display AWS account information
+log "=== AWS Account Information ==="
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "Unable to retrieve")
+AWS_USER_ARN=$(aws sts get-caller-identity --query Arn --output text 2>/dev/null || echo "Unable to retrieve")
+AWS_USER_ID=$(aws sts get-caller-identity --query UserId --output text 2>/dev/null || echo "Unable to retrieve")
+log "Account ID: ${AWS_ACCOUNT_ID}"
+log "User/Role ARN: ${AWS_USER_ARN}"
+log "User ID: ${AWS_USER_ID}"
+log "Region: ${REGION}"
+log "Project: ${PROJECT_CODE}"
+log "Stage: ${STAGE}"
+log "==============================="
+log ""
+
 parse_config
 
 if [ ${#TEMPLATES[@]} -eq 0 ] && [ ${#COMMON_TEMPLATES[@]} -eq 0 ]; then
