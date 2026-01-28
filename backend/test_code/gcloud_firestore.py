@@ -6,7 +6,7 @@ from google.cloud import firestore
 from dotenv import load_dotenv
 load_dotenv()
 
-def _build_doc_data(payload: dict) -> dict:
+def _build_storytel_doc_data(payload: dict) -> dict:
     return {
         "title": payload.get("name"),
         "author": payload.get("author"),
@@ -26,7 +26,7 @@ def _build_doc_data(payload: dict) -> dict:
 project_id = os.environ.get("GCP_FIRESTORE_PROJECT_ID")
 database = os.environ.get("GCP_FIRESTORE_DATABASE")
 
-def main() -> None:
+def main_storytel() -> None:
     if not project_id or not database:
         raise ValueError("Missing required environment variables: GCP_FIRESTORE_PROJECT_ID or GCP_FIRESTORE_DATABASE")
 
@@ -54,10 +54,10 @@ def main() -> None:
             print(f"Skip existing: {title}")
             continue
 
-        data_payload = _build_doc_data(payload)
+        data_payload = _build_storytel_doc_data(payload)
         doc_ref.set(data_payload)
         print(f"Added: {title}")
 
 
 if __name__ == "__main__":
-    main()
+    main_storytel()
