@@ -1,10 +1,61 @@
 import json
 import os
 from pathlib import Path
+from datetime import datetime, timedelta
+from typing import Optional
 
+import boto3
+from boto3.dynamodb.conditions import Key
 from google.cloud import firestore
+from google.cloud import resourcemanager_v3
 from dotenv import load_dotenv
+
 load_dotenv()
+
+
+# Configuration
+project_id = os.environ.get("GCP_FIRESTORE_PROJECT_ID")
+database = os.environ.get("GCP_FIRESTORE_DATABASE")
+
+
+def get_gcp_project_info(project_id: str) -> dict:
+    """Pobiera informacje o projekcie GCP, w tym organizację."""
+    try:
+        client = resourcemanager_v3.ProjectsClient()
+        project_name = f"projects/{project_id}"
+        project = client.get_project(name=project_name)
+
+        info = {
+            "project_id": project_id,
+            "display_name": project.display_name,
+            "organization": None,
+            "folder": None
+        }
+
+        # Sprawdź czy projekt należy do organizacji
+        if project.parent and project.parent.startswith("organizations/"):
+            org_id = project.parent.split("/")[1]
+            info["organization"] = org_id
+
+            # Opcjonalnie: pobierz nazwę organizacji
+            try:
+                org_client = resourcemanager_v3.OrganizationsClient()
+                org = org_client.get_organization(name=f"organizations/{org_id}")
+                info["organization_name"] = org.display_name
+            except Exception:
+                pass
+
+        # Sprawdź czy projekt należy do folderu
+        elif project.parent and project.parent.startswith("folders/"):
+            info["folder"] = project.parent.split("/")[1]
+
+        return info
+    except Exception as e:
+        return {
+            "project_id": project_id,
+            "error": str(e)
+        }
+
 
 def _build_storytel_doc_data(payload: dict) -> dict:
     return {
@@ -21,10 +72,260 @@ def _build_storytel_doc_data(payload: dict) -> dict:
     }
 
 
+def convert_dynamodb_to_firestore(item: dict) -> dict:
+    """Konwertuje wpis z DynamoDB do formatu Firestore."""
+
+    # Parsuj timestamp
+    created_at_str = item.get('created_at', '')
+    created_at = None
+    if created_at_str:
+        try:
+            created_at = datetime.fromisoformat(created_at_str)
+        except (ValueError, TypeError):
+            print(f"Warning: Could not parse created_at: {created_at_str}")
+
+    return {
+        "title": item.get('title', ''),
+        "url": item.get('url', ''),
+        "type": item.get('type', ''),
+        "language": item.get('language', ''),
+        "source": item.get('source', ''),
+        "created_at": created_at,
+        "created_date": item.get('created_date', ''),
+        "paywall": item.get('paywall', False),
+        "note": item.get('note', ''),
+        "chapter_list": item.get('chapter_list', ''),
+        "s3_uuid": item.get('s3_uuid', ''),
+        "document_id": item.get('document_id', ''),
+        # Dodatkowe pola
+        "tags": [],
+        "read_status": "unread",
+        "rating": None
+    }
 
 
-project_id = os.environ.get("GCP_FIRESTORE_PROJECT_ID")
-database = os.environ.get("GCP_FIRESTORE_DATABASE")
+def migrate_articles(table_name: str = 'lenie_dev_documents') -> None:
+    """Migruje artykuły z DynamoDB do Firestore."""
+
+    if not project_id or not database:
+        raise ValueError("Missing required environment variables: GCP_FIRESTORE_PROJECT_ID or GCP_FIRESTORE_DATABASE")
+
+    # Połączenie z DynamoDB
+    dynamodb = boto3.resource('dynamodb')
+    table = dynamodb.Table(table_name)
+
+    # Połączenie z Firestore
+    db = firestore.Client(project=project_id, database=database)
+
+    # Pobierz wszystkie dokumenty z DynamoDB
+    print("Pobieranie danych z DynamoDB...")
+    response = table.query(
+        KeyConditionExpression=Key('pk').eq('DOCUMENT'),
+        ScanIndexForward=False
+    )
+
+    items = response['Items']
+
+    # Obsługa paginacji (jeśli jest więcej niż 1MB danych)
+    while 'LastEvaluatedKey' in response:
+        response = table.query(
+            KeyConditionExpression=Key('pk').eq('DOCUMENT'),
+            ScanIndexForward=False,
+            ExclusiveStartKey=response['LastEvaluatedKey']
+        )
+        items.extend(response['Items'])
+
+    print(f"Znaleziono {len(items)} artykułów do migracji")
+
+    # Migracja do Firestore
+    batch = db.batch()
+    batch_count = 0
+    migrated_count = 0
+    skipped_count = 0
+
+    for item in items:
+        document_id = item.get('document_id')
+        if not document_id:
+            print(f"Pominięto dokument bez ID: {item.get('title', 'unknown')}")
+            skipped_count += 1
+            continue
+
+        # Sprawdź czy dokument już istnieje
+        doc_ref = db.collection('articles').document(document_id)
+        if doc_ref.get().exists:
+            print(f"Dokument już istnieje: {document_id}")
+            skipped_count += 1
+            continue
+
+        # Konwertuj i dodaj do batch
+        firestore_data = convert_dynamodb_to_firestore(item)
+        batch.set(doc_ref, firestore_data)
+        batch_count += 1
+
+        # Firestore limit: 500 operacji na batch
+        if batch_count >= 500:
+            batch.commit()
+            migrated_count += batch_count
+            print(f"Zmigrowano {migrated_count} artykułów...")
+            batch = db.batch()
+            batch_count = 0
+
+    # Commit pozostałych dokumentów
+    if batch_count > 0:
+        batch.commit()
+        migrated_count += batch_count
+
+    print(f"\n✅ Migracja zakończona!")
+    print(f"   Zmigrowano: {migrated_count} artykułów")
+    print(f"   Pominięto: {skipped_count} artykułów")
+
+
+def get_today_articles(db: Optional[firestore.Client] = None):
+    """Artykuły z dzisiaj."""
+    if db is None:
+        if not project_id or not database:
+            raise ValueError("Missing required environment variables")
+        db = firestore.Client(project=project_id, database=database)
+
+    today = datetime.now().strftime('%Y-%m-%d')
+
+    docs = db.collection('articles')\
+        .where('created_date', '==', today)\
+        .order_by('created_at', direction=firestore.Query.DESCENDING)\
+        .stream()
+
+    articles = [doc.to_dict() for doc in docs]
+    print(f"Dzisiaj: {len(articles)} artykułów")
+    return articles
+
+
+def get_last_7_days_articles(db: Optional[firestore.Client] = None):
+    """Artykuły z ostatnich 7 dni."""
+    if db is None:
+        if not project_id or not database:
+            raise ValueError("Missing required environment variables")
+        db = firestore.Client(project=project_id, database=database)
+
+    date_7_days_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+
+    docs = db.collection('articles')\
+        .where('created_date', '>=', date_7_days_ago)\
+        .order_by('created_date', direction=firestore.Query.DESCENDING)\
+        .order_by('created_at', direction=firestore.Query.DESCENDING)\
+        .stream()
+
+    articles = [doc.to_dict() for doc in docs]
+    print(f"Ostatnie 7 dni: {len(articles)} artykułów")
+    return articles
+
+
+def get_latest_articles(limit: int = 50, db: Optional[firestore.Client] = None):
+    """Ostatnie N artykułów."""
+    if db is None:
+        if not project_id or not database:
+            raise ValueError("Missing required environment variables")
+        db = firestore.Client(project=project_id, database=database)
+
+    docs = db.collection('articles')\
+        .order_by('created_at', direction=firestore.Query.DESCENDING)\
+        .limit(limit)\
+        .stream()
+
+    articles = [doc.to_dict() for doc in docs]
+    print(f"Ostatnie {limit} artykułów")
+    return articles
+
+
+def get_articles_by_source(source: str = 'own', limit: int = 100, db: Optional[firestore.Client] = None):
+    """Artykuły z określonego źródła."""
+    if db is None:
+        if not project_id or not database:
+            raise ValueError("Missing required environment variables")
+        db = firestore.Client(project=project_id, database=database)
+
+    docs = db.collection('articles')\
+        .where('source', '==', source)\
+        .order_by('created_at', direction=firestore.Query.DESCENDING)\
+        .limit(limit)\
+        .stream()
+
+    return [doc.to_dict() for doc in docs]
+
+
+def get_paywall_articles(db: Optional[firestore.Client] = None):
+    """Artykuły za paywallem."""
+    if db is None:
+        if not project_id or not database:
+            raise ValueError("Missing required environment variables")
+        db = firestore.Client(project=project_id, database=database)
+
+    docs = db.collection('articles')\
+        .where('paywall', '==', True)\
+        .order_by('created_at', direction=firestore.Query.DESCENDING)\
+        .stream()
+
+    return [doc.to_dict() for doc in docs]
+
+
+class FirestoreCostMonitor:
+    """Monitoruje koszty operacji Firestore."""
+
+    def __init__(self):
+        self.reads = 0
+        self.writes = 0
+        self.deletes = 0
+
+    def track_query(self, query_result):
+        """Śledzi liczbę odczytów w zapytaniu."""
+        count = len(list(query_result))
+        self.reads += count
+        return count
+
+    def track_write(self):
+        """Śledzi zapis."""
+        self.writes += 1
+
+    def track_delete(self):
+        """Śledzi usunięcie."""
+        self.deletes += 1
+
+    def get_costs(self):
+        """Oblicza szacunkowe koszty."""
+        # Ceny po przekroczeniu free tier
+        read_cost = max(0, self.reads - 50000) * 0.06 / 100000
+        write_cost = max(0, self.writes - 20000) * 0.18 / 100000
+        delete_cost = max(0, self.deletes - 20000) * 0.02 / 100000
+
+        total = read_cost + write_cost + delete_cost
+
+        return {
+            "reads": self.reads,
+            "writes": self.writes,
+            "deletes": self.deletes,
+            "read_cost_usd": round(read_cost, 4),
+            "write_cost_usd": round(write_cost, 4),
+            "delete_cost_usd": round(delete_cost, 4),
+            "total_cost_usd": round(total, 4),
+            "total_cost_pln": round(total * 4, 2)  # ~4 PLN/USD
+        }
+
+    def print_report(self):
+        """Wyświetla raport kosztów."""
+        costs = self.get_costs()
+        print("\n" + "="*50)
+        print("📊 RAPORT KOSZTÓW FIRESTORE")
+        print("="*50)
+        print(f"Odczyty:     {costs['reads']:,} (darmowe: 50,000/dzień)")
+        print(f"Zapisy:      {costs['writes']:,} (darmowe: 20,000/dzień)")
+        print(f"Usunięcia:   {costs['deletes']:,} (darmowe: 20,000/dzień)")
+        print("-"*50)
+        print(f"Koszt odczytów:   ${costs['read_cost_usd']}")
+        print(f"Koszt zapisów:    ${costs['write_cost_usd']}")
+        print(f"Koszt usunięć:    ${costs['delete_cost_usd']}")
+        print("-"*50)
+        print(f"💰 RAZEM:         ${costs['total_cost_usd']} (~{costs['total_cost_pln']} PLN)")
+        print("="*50 + "\n")
+
 
 def main_storytel() -> None:
     if not project_id or not database:
@@ -60,4 +361,51 @@ def main_storytel() -> None:
 
 
 if __name__ == "__main__":
-    main_storytel()
+    # Wyświetl informacje o połączeniu GCloud
+    print("=" * 60)
+    print("🔐 POŁĄCZENIE Z GOOGLE CLOUD")
+    print("=" * 60)
+
+    if project_id:
+        gcp_info = get_gcp_project_info(project_id)
+        if "error" in gcp_info:
+            print(f"⚠️  Nie można pobrać informacji o projekcie: {gcp_info['error']}")
+            print(f"Project ID:   {project_id}")
+        else:
+            if gcp_info.get("organization_name"):
+                print(f"Organization: {gcp_info['organization_name']} (ID: {gcp_info['organization']})")
+            elif gcp_info.get("organization"):
+                print(f"Organization: {gcp_info['organization']}")
+
+            if gcp_info.get("display_name"):
+                print(f"Project:      {gcp_info['display_name']}")
+            print(f"Project ID:   {gcp_info['project_id']}")
+
+            if gcp_info.get("folder"):
+                print(f"Folder ID:    {gcp_info['folder']}")
+    else:
+        print("⚠️  Brak GCP_FIRESTORE_PROJECT_ID")
+
+    print(f"Database:     {database}")
+    print("=" * 60)
+    print()
+
+    # Przykłady użycia:
+
+    # 1. Migracja artykułów z DynamoDB do Firestore
+    #migrate_articles()
+
+    # 2. Zapytania o artykuły
+    # get_today_articles()
+    # get_last_7_days_articles()
+    # get_latest_articles(limit=10)
+
+    # 3. Monitorowanie kosztów
+    # db = firestore.Client(project=project_id, database=database)
+    # monitor = FirestoreCostMonitor()
+    # docs = db.collection('articles').limit(10).stream()
+    # monitor.track_query(docs)
+    # monitor.print_report()
+
+    # 4. Storytel (oryginalna funkcjonalność)
+    #main_storytel()
