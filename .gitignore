@@ -74,3 +74,4 @@ terraform.rc
 /infra/aws/cloudformation/apigw/lenie_dev_add_from_chrome_extension-v1-oas30-apigateway.json
 /infra/aws/serverless/lambdas/tmp/lambda_function.py
 /infra/aws/serverless/tmp/
+/backend/test_code/tmp/*
