@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DynamoDB table for Lenie documents storage'
+
+Parameters:
+  ProjectCode:
+    Type: String
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - qa2
+      - qa3
+      - prod
+    Description: Environment name
+
+Conditions:
+  IsProduction: !Or
+    - !Equals [!Ref Environment, prod]
+    - !Equals [!Ref Environment, qa]
+    - !Equals [!Ref Environment, qa2]
+    - !Equals [!Ref Environment, qa3]
+
+Resources:
+  LenieDocumentsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub '${ProjectCode}_${Environment}_documents'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: created_date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: DateIndex
+          KeySchema:
+            - AttributeName: created_date
+              KeyType: HASH
+            - AttributeName: sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: lenie
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+
+Outputs:
+  TableName:
+    Description: Name of the DynamoDB table
+    Value: !Ref LenieDocumentsTable
+    Export:
+      Name: !Sub '${AWS::StackName}-TableName'
+
+  TableArn:
+    Description: ARN of the DynamoDB table
+    Value: !GetAtt LenieDocumentsTable.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-TableArn'
