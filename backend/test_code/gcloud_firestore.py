@@ -95,7 +95,7 @@ def convert_dynamodb_to_firestore(item: dict) -> dict:
         "paywall": item.get('paywall', False),
         "note": item.get('note', ''),
         "chapter_list": item.get('chapter_list', ''),
-        "s3_uuid": item.get('s3_uuid', ''),
+        "storage_uuid": item.get('storage_uuid', ''),
         "document_id": item.get('document_id', ''),
         # Dodatkowe pola
         "tags": [],
@@ -360,8 +360,125 @@ def main_storytel() -> None:
         print(f"Added: {title}")
 
 
-if __name__ == "__main__":
-    # Wyświetl informacje o połączeniu GCloud
+def migrate_s3_uuid_to_storage_uuid(db: Optional[firestore.Client] = None, dry_run: bool = True):
+    """Zamienia pole s3_uuid na storage_uuid w istniejących artykułach."""
+    if db is None:
+        if not project_id or not database:
+            raise ValueError("Missing required environment variables")
+        db = firestore.Client(project=project_id, database=database)
+
+    print("Pobieranie artykułów z Firestore...")
+    docs = db.collection('articles').stream()
+
+    batch = db.batch()
+    batch_count = 0
+    updated_count = 0
+    total_count = 0
+
+    for doc in docs:
+        total_count += 1
+        doc_data = doc.to_dict()
+
+        # Sprawdź czy dokument ma pole s3_uuid
+        if 's3_uuid' in doc_data:
+            s3_uuid_value = doc_data['s3_uuid']
+
+            if dry_run:
+                print(f"[DRY RUN] Zamieniono by s3_uuid na storage_uuid w dokumencie: {doc.id} (wartość: {s3_uuid_value})")
+            else:
+                # Usuń stare pole i dodaj nowe
+                update_data = {
+                    's3_uuid': firestore.DELETE_FIELD,
+                    'storage_uuid': s3_uuid_value
+                }
+                batch.update(doc.reference, update_data)
+                batch_count += 1
+                updated_count += 1
+
+                # Firestore limit: 500 operacji na batch
+                if batch_count >= 500:
+                    batch.commit()
+                    print(f"Zaktualizowano {updated_count} artykułów...")
+                    batch = db.batch()
+                    batch_count = 0
+
+    # Commit pozostałych dokumentów
+    if batch_count > 0 and not dry_run:
+        batch.commit()
+
+    print(f"\n✅ Operacja zakończona!")
+    print(f"   Sprawdzono: {total_count} artykułów")
+    print(f"   {'Zostałoby zaktualizowanych' if dry_run else 'Zaktualizowano'}: {updated_count} artykułów")
+    if dry_run:
+        print(f"\n⚠️  To był tryb TEST (dry_run=True). Aby faktycznie zmienić pola, uruchom z dry_run=False")
+
+    return updated_count
+
+
+def clean_empty_fields(db: Optional[firestore.Client] = None, dry_run: bool = True):
+    """Usuwa puste pola chapter_list i tags z istniejących artykułów."""
+    if db is None:
+        if not project_id or not database:
+            raise ValueError("Missing required environment variables")
+        db = firestore.Client(project=project_id, database=database)
+
+    # Pobierz wszystkie artykuły
+    print("Pobieranie artykułów z Firestore...")
+    docs = db.collection('articles').stream()
+
+    batch = db.batch()
+    batch_count = 0
+    updated_count = 0
+    total_count = 0
+
+    for doc in docs:
+        total_count += 1
+        doc_data = doc.to_dict()
+        fields_to_delete = []
+
+        # Sprawdź chapter_list
+        chapter_list = doc_data.get('chapter_list', None)
+        if chapter_list is not None and (chapter_list == '' or chapter_list == [] or chapter_list == {}):
+            fields_to_delete.append('chapter_list')
+
+        # Sprawdź tags
+        tags = doc_data.get('tags', None)
+        if tags is not None and (tags == '' or tags == [] or tags == {}):
+            fields_to_delete.append('tags')
+
+        # Jeśli są pola do usunięcia
+        if fields_to_delete:
+            if dry_run:
+                print(f"[DRY RUN] Usunięto by pola {fields_to_delete} z dokumentu: {doc.id}")
+            else:
+                # Użyj FieldPath.delete() do usunięcia pól
+                update_data = {field: firestore.DELETE_FIELD for field in fields_to_delete}
+                batch.update(doc.reference, update_data)
+                batch_count += 1
+                updated_count += 1
+
+                # Firestore limit: 500 operacji na batch
+                if batch_count >= 500:
+                    batch.commit()
+                    print(f"Zaktualizowano {updated_count} artykułów...")
+                    batch = db.batch()
+                    batch_count = 0
+
+    # Commit pozostałych dokumentów
+    if batch_count > 0 and not dry_run:
+        batch.commit()
+
+    print(f"\n✅ Operacja zakończona!")
+    print(f"   Sprawdzono: {total_count} artykułów")
+    print(f"   {'Zostałoby zaktualizowanych' if dry_run else 'Zaktualizowano'}: {updated_count} artykułów")
+    if dry_run:
+        print(f"\n⚠️  To był tryb TEST (dry_run=True). Aby faktycznie usunąć pola, uruchom z dry_run=False")
+
+    return updated_count
+
+
+def print_gcp_connection_info():
+    """Wyświetla informacje o połączeniu z Google Cloud."""
     print("=" * 60)
     print("🔐 POŁĄCZENIE Z GOOGLE CLOUD")
     print("=" * 60)
@@ -390,22 +507,39 @@ if __name__ == "__main__":
     print("=" * 60)
     print()
 
+
+if __name__ == "__main__":
+    # Wyświetl informacje o połączeniu GCloud (opcjonalnie)
+    # print_gcp_connection_info()
+
     # Przykłady użycia:
 
     # 1. Migracja artykułów z DynamoDB do Firestore
-    #migrate_articles()
+    migrate_articles()
 
-    # 2. Zapytania o artykuły
+    # 2. Migracja s3_uuid -> storage_uuid
+    # Najpierw uruchom w trybie test (dry_run=True)
+    # migrate_s3_uuid_to_storage_uuid(dry_run=True)
+    # Po sprawdzeniu wyników uruchom faktyczną migrację (dry_run=False)
+    # migrate_s3_uuid_to_storage_uuid(dry_run=False)
+
+    # 3. Czyszczenie pustych pól
+    # Najpierw uruchom w trybie test (dry_run=True)
+    # clean_empty_fields(dry_run=True)
+    # Po sprawdzeniu wyników uruchom faktyczne usuwanie (dry_run=False)
+    # clean_empty_fields(dry_run=False)
+
+    # 4. Zapytania o artykuły
     # get_today_articles()
     # get_last_7_days_articles()
     # get_latest_articles(limit=10)
 
-    # 3. Monitorowanie kosztów
+    # 5. Monitorowanie kosztów
     # db = firestore.Client(project=project_id, database=database)
     # monitor = FirestoreCostMonitor()
     # docs = db.collection('articles').limit(10).stream()
     # monitor.track_query(docs)
     # monitor.print_report()
 
-    # 4. Storytel (oryginalna funkcjonalność)
-    #main_storytel()
+    # 6. Storytel (oryginalna funkcjonalność)
+    main_storytel()
