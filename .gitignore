@@ -75,3 +75,5 @@ terraform.rc
 /infra/aws/serverless/lambdas/tmp/lambda_function.py
 /infra/aws/serverless/tmp/
 /backend/test_code/tmp/*
+*/client_secret*.apps.googleusercontent.com.json
+client_secret*.apps.googleusercontent.com.json
