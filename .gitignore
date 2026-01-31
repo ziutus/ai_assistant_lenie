@@ -77,3 +77,5 @@ terraform.rc
 /backend/test_code/tmp/*
 */client_secret*.apps.googleusercontent.com.json
 client_secret*.apps.googleusercontent.com.json
+credentials.json
+*/credentials.json
