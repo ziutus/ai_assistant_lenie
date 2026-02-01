@@ -1,0 +1,103 @@
+[project]
+name = "lenie-server"
+version = "0.3.13.0"
+description = "Personal AI assistant for collecting, managing, and searching data using LLMs"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Lenie AI Team" }
+]
+
+dependencies = [
+    "requests",
+    "beautifulsoup4",
+    "flask",
+    "flask-cors",
+    "python-dotenv",
+    "psycopg2-binary",
+    "openai",
+    "pytest",
+    "pytest-html",
+    "pytube",
+    "youtube-transcript-api",
+    "assemblyai",
+    "pre-commit",
+    "pypdf",
+    "firecrawl-py",
+    "filetype",
+    "markdownify",
+    "unidecode",
+    "neo4j",
+    "langfuse",
+    "chardet",
+    "boto3",
+    "hvac",
+    "dateparser",
+]
+
+[project.optional-dependencies]
+markdown = [
+    "markitdown",
+    "psycopg2-binary",
+    "python-dotenv",
+    "boto3",
+    "html2markdown",
+    "html2text",
+]
+
+all = [
+    "requests",
+    "beautifulsoup4",
+    "flask",
+    "flask-cors",
+    "python-dotenv",
+    "psycopg2-binary",
+    "openai",
+    "boto3",
+    "pytest",
+    "botocore",
+    "urllib3",
+    "pytube",
+    "youtube-transcript-api",
+    "assemblyai",
+    "aws-xray-sdk",
+    "pre-commit",
+    "pypdf",
+    "firecrawl-py",
+    "filetype",
+    "markdownify",
+    "markitdown",
+    "unidecode",
+    "neo4j",
+    "langfuse",
+    "chardet",
+    "llm",
+    "dateparser",
+    "google-api-python-client",
+    "google-auth-httplib2",
+    "google-auth-oauthlib",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-html",
+    "pre-commit",
+]
+
+[tool.uv.sources]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.flake8]
+max-line-length = 120
+exclude = [".git", "__pycache__", "venv", ".venv", "node_modules"]
