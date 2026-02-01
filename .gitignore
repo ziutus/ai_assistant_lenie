@@ -79,3 +79,5 @@ terraform.rc
 client_secret*.apps.googleusercontent.com.json
 credentials.json
 */credentials.json
+*/token.json
+token.json
