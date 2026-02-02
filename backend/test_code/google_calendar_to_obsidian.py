@@ -7,12 +7,16 @@ Prerequisites:
 2. Create OAuth 2.0 credentials (Desktop application)
 3. Download credentials.json and place in this directory
 4. Install required packages:
-   pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib
+   pip install -r ../requirements_all.txt
+   (or: pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib)
 
 Usage:
     python google_calendar_to_obsidian.py                    # Today's events
     python google_calendar_to_obsidian.py 2025-01-29         # Specific date
     python google_calendar_to_obsidian.py 2025-01-29 --auto  # Auto-approve (no confirmation)
+
+Note:
+    This script uses the reusable Google authentication module from backend/library/google_auth.py
 """
 import os
 import sys
@@ -21,10 +25,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from library.google_auth import get_google_service
 from googleapiclient.errors import HttpError
 
 # Configuration
@@ -49,37 +53,14 @@ def get_calendar_service():
     Authenticate and return Google Calendar service.
     On first run, opens browser for OAuth consent.
     """
-    creds = None
-
-    # Load existing token
-    if TOKEN_FILE.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
-
-    # Refresh or get new credentials
-    if not creds or not creds.valid:
-        if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        else:
-            if not CREDENTIALS_FILE.exists():
-                print(f"Error: Credentials file not found: {CREDENTIALS_FILE}")
-                print("\nTo set up Google Calendar API:")
-                print("1. Go to https://console.cloud.google.com/")
-                print("2. Create a project or select existing one")
-                print("3. Enable 'Google Calendar API'")
-                print("4. Create OAuth 2.0 credentials (Desktop application)")
-                print(f"5. Download and save as: {CREDENTIALS_FILE}")
-                sys.exit(1)
-
-            flow = InstalledAppFlow.from_client_secrets_file(
-                str(CREDENTIALS_FILE), SCOPES
-            )
-            creds = flow.run_local_server(port=0)
-
-        # Save token for future runs
-        TOKEN_FILE.write_text(creds.to_json())
-        print(f"Token saved to: {TOKEN_FILE}")
-
-    return build("calendar", "v3", credentials=creds)
+    return get_google_service(
+        service_name="calendar",
+        version="v3",
+        scopes=SCOPES,
+        credentials_file=CREDENTIALS_FILE,
+        token_file=TOKEN_FILE,
+        api_display_name="Google Calendar API"
+    )
 
 
 def get_events_for_date(service, target_date: datetime) -> list[dict]:
