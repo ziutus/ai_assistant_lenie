@@ -1,5 +1,9 @@
 import json
 import os
+import sys
+import time
+import subprocess
+import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
@@ -8,6 +12,10 @@ import boto3
 from boto3.dynamodb.conditions import Key
 from google.cloud import firestore
 from google.cloud import resourcemanager_v3
+from google.api_core import exceptions as gcp_exceptions
+from google.api_core.exceptions import RetryError
+from google.auth import default
+from google.auth.exceptions import DefaultCredentialsError
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,6 +24,125 @@ load_dotenv()
 # Configuration
 project_id = os.environ.get("GCP_FIRESTORE_PROJECT_ID")
 database = os.environ.get("GCP_FIRESTORE_DATABASE")
+
+
+def check_gcp_authentication(auto_login: bool = False) -> bool:
+    """Sprawdza czy użytkownik jest zalogowany do GCP.
+
+    Args:
+        auto_login: Czy automatycznie próbować zalogować jeśli brak autoryzacji
+
+    Returns:
+        True jeśli jest zalogowany, False w przeciwnym razie
+    """
+    print("\n" + "="*70)
+    print("🔐 SPRAWDZANIE AUTORYZACJI GOOGLE CLOUD")
+    print("="*70)
+
+    try:
+        credentials, project = default()
+        print(f"✅ Autoryzacja OK")
+        print(f"   Project: {project or 'nie wykryto (użyje GCP_FIRESTORE_PROJECT_ID)'}")
+        print(f"   Credentials type: {type(credentials).__name__}")
+        print("="*70 + "\n")
+        return True
+    except DefaultCredentialsError as e:
+        print(f"❌ BRAK AUTORYZACJI!")
+        print(f"   Błąd: {str(e)}")
+
+        if auto_login:
+            print("\n" + "="*70)
+            print("⚠️  Próba automatycznego logowania...")
+            print("="*70)
+
+            if not auto_login_gcp():
+                print("\n❌ Nie udało się zalogować.")
+                print("\n📋 Spróbuj ręcznie:")
+                print("   gcloud auth application-default login")
+                print("="*70 + "\n")
+                return False
+
+            # Sprawdź ponownie po logowaniu
+            print("\n🔄 Sprawdzanie autoryzacji po logowaniu...")
+            try:
+                credentials, project = default()
+                print(f"✅ Autoryzacja OK!")
+                print(f"   Project: {project or 'nie wykryto (użyje GCP_FIRESTORE_PROJECT_ID)'}")
+                print(f"   Credentials type: {type(credentials).__name__}")
+                print("="*70 + "\n")
+                return True
+            except Exception as retry_error:
+                print(f"❌ Autoryzacja nadal nie działa: {str(retry_error)}")
+                print("="*70 + "\n")
+                return False
+        else:
+            print("\n" + "="*70)
+            print("📋 ABY SIĘ ZALOGOWAĆ, WYKONAJ:")
+            print("="*70)
+            print("   gcloud auth application-default login")
+            print("\nLub ustaw zmienną środowiskową:")
+            print("   GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json")
+            print("="*70 + "\n")
+            return False
+    except Exception as e:
+        print(f"⚠️  Nieoczekiwany błąd podczas sprawdzania autoryzacji:")
+        print(f"   {type(e).__name__}: {str(e)}")
+        print("="*70 + "\n")
+        return False
+
+
+def auto_login_gcp() -> bool:
+    """Próbuje automatycznie zalogować użytkownika do GCP.
+
+    Returns:
+        True jeśli logowanie się powiodło, False w przeciwnym razie
+    """
+    print("\n🔄 Próba automatycznego logowania...")
+    print("   Otworzy się okno przeglądarki do autoryzacji Google\n")
+
+    # Lista możliwych lokalizacji gcloud (Windows)
+    gcloud_commands = [
+        "gcloud",  # Standardowa ścieżka (jeśli jest w PATH)
+        "gcloud.cmd",  # Windows CMD wrapper
+        shutil.which("gcloud"),  # Znajdź pełną ścieżkę
+    ]
+
+    # Usuń None z listy
+    gcloud_commands = [cmd for cmd in gcloud_commands if cmd]
+
+    last_error = None
+
+    for gcloud_cmd in gcloud_commands:
+        try:
+            result = subprocess.run(
+                [gcloud_cmd, "auth", "application-default", "login"],
+                capture_output=False,
+                text=True,
+                check=True,
+                shell=False
+            )
+
+            print("\n✅ Logowanie zakończone!")
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"\n❌ Błąd podczas logowania: {e}")
+            return False
+        except FileNotFoundError as e:
+            last_error = e
+            continue  # Spróbuj następnej wersji polecenia
+
+    # Jeśli żadne polecenie nie zadziałało
+    print("\n❌ Nie znaleziono polecenia 'gcloud'")
+    print(f"   Szczegóły: {last_error}")
+    print("\n📋 Sprawdź:")
+    print("   1. Czy Google Cloud SDK jest zainstalowane:")
+    print("      https://cloud.google.com/sdk/docs/install")
+    print("   2. Czy gcloud jest w PATH:")
+    print("      W terminalu uruchom: gcloud version")
+    print("   3. Jeśli gcloud działa w terminalu ale nie w skrypcie,")
+    print("      spróbuj ręcznie:")
+    print("      gcloud auth application-default login")
+    return False
 
 
 def get_gcp_project_info(project_id: str) -> dict:
@@ -104,18 +231,45 @@ def convert_dynamodb_to_firestore(item: dict) -> dict:
     }
 
 
-def migrate_articles(table_name: str = 'lenie_dev_documents') -> None:
-    """Migruje artykuły z DynamoDB do Firestore."""
+def migrate_articles(table_name: str = 'lenie_dev_documents', timeout_seconds: int = 10, auto_login: bool = True) -> None:
+    """Migruje artykuły z DynamoDB do Firestore.
+
+    Args:
+        table_name: Nazwa tabeli DynamoDB
+        timeout_seconds: Timeout dla pojedynczych operacji Firestore (domyślnie 10s)
+        auto_login: Czy automatycznie próbować zalogować jeśli brak autoryzacji
+    """
 
     if not project_id or not database:
         raise ValueError("Missing required environment variables: GCP_FIRESTORE_PROJECT_ID or GCP_FIRESTORE_DATABASE")
 
+    # Sprawdź autoryzację GCP (z automatycznym logowaniem jeśli auto_login=True)
+    if not check_gcp_authentication(auto_login=auto_login):
+        print("\n❌ Wymagana autoryzacja GCP. Przerwano migrację.")
+        sys.exit(1)
+
+    print("\n" + "="*70)
+    print("⚠️  MOŻLIWE PRZYCZYNY POWOLNEJ MIGRACJI:")
+    print("="*70)
+    print("1. Połączenie sieciowe - Firestore API może być wolne z Twojej lokalizacji")
+    print("2. Firestore .get() robi synchroniczne zapytanie do Google Cloud")
+    print("3. Brak indeksów w Firestore (pierwsze zapytanie może trwać dłużej)")
+    print("4. Quota limits - Google może throttlować zapytania")
+    print("5. Firewall/VPN - może blokować lub spowalniać połączenia do GCP")
+    print("="*70)
+    print()
+
     # Połączenie z DynamoDB
+    print("🔌 Łączenie z DynamoDB...")
     dynamodb = boto3.resource('dynamodb')
     table = dynamodb.Table(table_name)
 
     # Połączenie z Firestore
+    print("🔌 Łączenie z Firestore...")
+    start_time = time.time()
     db = firestore.Client(project=project_id, database=database)
+    connection_time = time.time() - start_time
+    print(f"✅ Połączono z Firestore w {connection_time:.2f}s")
 
     # Pobierz wszystkie dokumenty z DynamoDB
     print("Pobieranie danych z DynamoDB...")
@@ -143,41 +297,140 @@ def migrate_articles(table_name: str = 'lenie_dev_documents') -> None:
     migrated_count = 0
     skipped_count = 0
 
-    for item in items:
+    for idx, item in enumerate(items, 1):
         document_id = item.get('document_id')
         if not document_id:
-            print(f"Pominięto dokument bez ID: {item.get('title', 'unknown')}")
+            print(f"[{idx}/{len(items)}] ⚠️  Pominięto dokument bez ID: {item.get('title', 'unknown')}")
             skipped_count += 1
             continue
 
+        print(f"\n[{idx}/{len(items)}] Sprawdzanie dokumentu: {document_id[:30]}... ({item.get('title', 'unknown')[:50]})")
+
         # Sprawdź czy dokument już istnieje
         doc_ref = db.collection('articles').document(document_id)
-        if doc_ref.get().exists:
-            print(f"Dokument już istnieje: {document_id}")
+        print(f"  → Sprawdzanie czy istnieje w Firestore (może trwać 5-30s)...")
+
+        try:
+            check_start = time.time()
+            doc_exists = doc_ref.get(timeout=timeout_seconds).exists
+            check_time = time.time() - check_start
+
+            print(f"  ⏱️  Sprawdzono w {check_time:.2f}s")
+
+            if check_time > 5:
+                print(f"  ⚠️  UWAGA: Zapytanie trwało {check_time:.2f}s - połączenie może być wolne!")
+
+            if doc_exists:
+                print(f"  ✓ Dokument już istnieje, pomijam")
+                skipped_count += 1
+                continue
+
+        except gcp_exceptions.DeadlineExceeded:
+            print(f"  ❌ TIMEOUT po {timeout_seconds}s - pomijam dokument")
+            print(f"     Możliwe przyczyny: wolne połączenie, throttling, firewall")
+            skipped_count += 1
+            continue
+        except RetryError as e:
+            # Sprawdź czy to błąd autoryzacji
+            error_msg = str(e)
+            if "Reauthentication is needed" in error_msg or "Getting metadata from plugin failed" in error_msg:
+                print(f"\n  ❌ BŁĄD AUTORYZACJI: Token wygasł podczas operacji")
+                print(f"     Próba automatycznego ponownego logowania...")
+
+                if not auto_login_gcp():
+                    print(f"\n     ❌ Nie udało się zalogować.")
+                    print(f"     📋 Spróbuj ręcznie: gcloud auth application-default login")
+                    print(f"     Przerywam migrację.")
+                    sys.exit(1)
+
+                print(f"\n     ✅ Zalogowano ponownie!")
+                print(f"     ℹ️  Dokumenty już zmigrowane zostaną pominięte.")
+                print(f"     🔄 Uruchom skrypt ponownie aby kontynuować migrację.")
+                print(f"\n     Przerywam migrację - uruchom skrypt ponownie.")
+                sys.exit(0)
+            else:
+                print(f"  ❌ BŁĄD RETRY: {error_msg}")
+                print(f"     Pomijam dokument")
+                skipped_count += 1
+                continue
+        except Exception as e:
+            # Ogólne sprawdzenie autoryzacji w innych błędach
+            error_msg = str(e)
+            if "Reauthentication is needed" in error_msg or "Getting metadata from plugin failed" in error_msg:
+                print(f"\n  ❌ BŁĄD AUTORYZACJI: Token wygasł podczas operacji")
+                print(f"     Próba automatycznego ponownego logowania...")
+
+                if not auto_login_gcp():
+                    print(f"\n     ❌ Nie udało się zalogować.")
+                    print(f"     📋 Spróbuj ręcznie: gcloud auth application-default login")
+                    print(f"     Przerywam migrację.")
+                    sys.exit(1)
+
+                print(f"\n     ✅ Zalogowano ponownie!")
+                print(f"     ℹ️  Dokumenty już zmigrowane zostaną pominięte.")
+                print(f"     🔄 Uruchom skrypt ponownie aby kontynuować migrację.")
+                print(f"\n     Przerywam migrację - uruchom skrypt ponownie.")
+                sys.exit(0)
+            print(f"  ❌ BŁĄD: {type(e).__name__}: {str(e)}")
+            print(f"     Pomijam dokument")
             skipped_count += 1
             continue
 
         # Konwertuj i dodaj do batch
+        print(f"  → Konwertowanie danych...")
         firestore_data = convert_dynamodb_to_firestore(item)
+        print(f"  → Dodawanie do batch...")
         batch.set(doc_ref, firestore_data)
         batch_count += 1
 
         # Firestore limit: 500 operacji na batch
         if batch_count >= 500:
-            batch.commit()
-            migrated_count += batch_count
-            print(f"Zmigrowano {migrated_count} artykułów...")
-            batch = db.batch()
-            batch_count = 0
+            print(f"  → Wysyłanie batch ({batch_count} dokumentów)...")
+            commit_start = time.time()
+            try:
+                batch.commit(timeout=timeout_seconds * 2)
+                commit_time = time.time() - commit_start
+                migrated_count += batch_count
+                print(f"✅ Zmigrowano łącznie {migrated_count} artykułów w {commit_time:.2f}s")
+                batch = db.batch()
+                batch_count = 0
+            except gcp_exceptions.DeadlineExceeded:
+                print(f"  ❌ TIMEOUT przy commit batch po {timeout_seconds * 2}s")
+                print(f"     Batch nie został zapisany - spróbuj ponownie lub zwiększ timeout")
+                batch = db.batch()
+                batch_count = 0
+            except Exception as e:
+                print(f"  ❌ BŁĄD przy commit: {type(e).__name__}: {str(e)}")
+                batch = db.batch()
+                batch_count = 0
+        else:
+            print(f"  ✓ Dodano do batch ({batch_count}/500)")
 
     # Commit pozostałych dokumentów
     if batch_count > 0:
-        batch.commit()
-        migrated_count += batch_count
+        print(f"\n→ Wysyłanie ostatniego batch ({batch_count} dokumentów)...")
+        commit_start = time.time()
+        try:
+            batch.commit(timeout=timeout_seconds * 2)
+            commit_time = time.time() - commit_start
+            migrated_count += batch_count
+            print(f"✅ Ostatni batch zapisany w {commit_time:.2f}s")
+        except gcp_exceptions.DeadlineExceeded:
+            print(f"❌ TIMEOUT przy ostatnim commit po {timeout_seconds * 2}s")
+            print(f"   {batch_count} dokumentów nie zostało zapisanych")
+        except Exception as e:
+            print(f"❌ BŁĄD przy ostatnim commit: {type(e).__name__}: {str(e)}")
 
-    print(f"\n✅ Migracja zakończona!")
+    total_time = time.time() - start_time
+    print(f"\n" + "="*70)
+    print(f"✅ Migracja zakończona w {total_time:.2f}s ({total_time/60:.1f} min)")
+    print(f"="*70)
     print(f"   Zmigrowano: {migrated_count} artykułów")
     print(f"   Pominięto: {skipped_count} artykułów")
+    if migrated_count > 0:
+        avg_time = total_time / (migrated_count + skipped_count)
+        print(f"   Średni czas na dokument: {avg_time:.2f}s")
+    print(f"="*70)
 
 
 def get_today_articles(db: Optional[firestore.Client] = None):
@@ -477,8 +730,12 @@ def clean_empty_fields(db: Optional[firestore.Client] = None, dry_run: bool = Tr
     return updated_count
 
 
-def print_gcp_connection_info():
-    """Wyświetla informacje o połączeniu z Google Cloud."""
+def print_gcp_connection_info(auto_login: bool = True):
+    """Wyświetla informacje o połączeniu z Google Cloud.
+
+    Args:
+        auto_login: Czy automatycznie próbować zalogować jeśli wykryto błąd autoryzacji
+    """
     print("=" * 60)
     print("🔐 POŁĄCZENIE Z GOOGLE CLOUD")
     print("=" * 60)
@@ -486,8 +743,41 @@ def print_gcp_connection_info():
     if project_id:
         gcp_info = get_gcp_project_info(project_id)
         if "error" in gcp_info:
-            print(f"⚠️  Nie można pobrać informacji o projekcie: {gcp_info['error']}")
+            error_msg = gcp_info['error']
+            print(f"⚠️  Nie można pobrać informacji o projekcie: {error_msg}")
             print(f"Project ID:   {project_id}")
+
+            # Sprawdź czy to błąd autoryzacji
+            if "Reauthentication is needed" in error_msg or "Getting metadata from plugin failed" in error_msg:
+                print("=" * 60)
+                print()
+                print("❌ BŁĄD AUTORYZACJI: Token wygasł")
+
+                if auto_login:
+                    print("⚠️  Próba automatycznego logowania...")
+                    if not auto_login_gcp():
+                        print("\n❌ Nie udało się zalogować.")
+                        print("📋 Spróbuj ręcznie: gcloud auth application-default login")
+                        print("Przerwano.")
+                        sys.exit(1)
+
+                    # Sprawdź ponownie po logowaniu
+                    print("\n🔄 Sprawdzanie połączenia po logowaniu...")
+                    gcp_info = get_gcp_project_info(project_id)
+                    if "error" in gcp_info:
+                        print(f"❌ Autoryzacja nadal nie działa: {gcp_info['error']}")
+                        print("   Przerwano.")
+                        sys.exit(1)
+
+                    # Jeśli udało się, wyświetl informacje o projekcie
+                    print("✅ Autoryzacja OK!")
+                    if gcp_info.get("display_name"):
+                        print(f"Project:      {gcp_info['display_name']}")
+                    print(f"Project ID:   {gcp_info['project_id']}")
+                else:
+                    print("   Uruchom ponownie: gcloud auth application-default login")
+                    print()
+                    sys.exit(1)
         else:
             if gcp_info.get("organization_name"):
                 print(f"Organization: {gcp_info['organization_name']} (ID: {gcp_info['organization']})")
@@ -510,7 +800,7 @@ def print_gcp_connection_info():
 
 if __name__ == "__main__":
     # Wyświetl informacje o połączeniu GCloud (opcjonalnie)
-    # print_gcp_connection_info()
+    print_gcp_connection_info()
 
     # Przykłady użycia:
 
