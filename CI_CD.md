@@ -4,6 +4,17 @@ Ten dokument stanowi **bazę wiedzy dla agenta AI** do tworzenia nowych pipeline
 
 > **Uwaga:** Ten dokument nie opisuje aktywnego pipeline'u. Służy jako referencja do budowy nowych konfiguracji CI/CD.
 
+## Kontekst projektu
+
+**Projekt hobbystyczny** - infrastruktura nie działa 24/7. Maszyny wirtualne są uruchamiane tylko gdy są potrzebne, w celu obniżenia kosztów.
+
+**Dynamiczne adresy IP** - ze względów oszczędnościowych adresy IP nie są rezerwowane (Elastic IP), lecz przypisywane dynamicznie przy starcie instancji. Dlatego skrypty startowe zawierają aktualizację rekordów DNS (np. Route 53).
+
+**Historia i kierunek rozwoju:**
+- **Początki (AWS)** - projekt pierwotnie był tworzony jako serverless w AWS, aby poznać możliwości tej platformy
+- **Obecny kierunek (GCP)** - autor pracuje zawodowo w Google Cloud Platform, więc projekt będzie migrowany do GCP
+- **Kubernetes** - opcja wdrożenia na Kubernetes jest wspierana ze względu na chęć pogłębienia wiedzy w tym obszarze
+
 ## Cel dokumentu
 
 Agent AI powinien wykorzystać tę dokumentację do:
@@ -14,22 +25,23 @@ Agent AI powinien wykorzystać tę dokumentację do:
 
 ## Spis treści
 
-1. [Przegląd pipeline'u](#przegląd-pipelineu)
-2. [Wzorzec CircleCI](#wzorzec-circleci)
-3. [Infrastruktura AWS](#infrastruktura-aws)
+1. [Kontekst projektu](#kontekst-projektu)
+2. [Przegląd pipeline'u](#przegląd-pipelineu)
+3. [Wzorzec CircleCI](#wzorzec-circleci)
+4. [Infrastruktura AWS](#infrastruktura-aws)
    - [Skrypty do uruchamiania instancji z aktualizacją DNS](#skrypty-do-ręcznego-uruchamiania-instancji-z-aktualizacją-dns)
-4. [Przygotowanie Self-hosted Runner EC2](#przygotowanie-self-hosted-runner-ec2)
-5. [Self-hosted Jenkins na EC2](#self-hosted-jenkins-na-ec2)
-6. [Etapy pipeline'u](#etapy-pipelineu)
-7. [Narzędzia bezpieczeństwa](#narzędzia-bezpieczeństwa)
+5. [Przygotowanie Self-hosted Runner EC2](#przygotowanie-self-hosted-runner-ec2)
+6. [Self-hosted Jenkins na EC2](#self-hosted-jenkins-na-ec2)
+7. [Etapy pipeline'u](#etapy-pipelineu)
+8. [Narzędzia bezpieczeństwa](#narzędzia-bezpieczeństwa)
    - [Semgrep](#semgrep---analiza-statyczna-kodu)
    - [TruffleHog](#trufflehog---wykrywanie-sekretów)
    - [OSV Scanner](#osv-scanner---skanowanie-podatności-zależności)
    - [Qodana](#qodana---analiza-kodu-jetbrains)
-8. [Testy i jakość kodu](#testy-i-jakość-kodu)
-9. [Build i deploy Docker](#build-i-deploy-docker)
-10. [Zmienne środowiskowe](#zmienne-środowiskowe)
-11. [Artefakty](#artefakty)
+9. [Testy i jakość kodu](#testy-i-jakość-kodu)
+10. [Build i deploy Docker](#build-i-deploy-docker)
+11. [Zmienne środowiskowe](#zmienne-środowiskowe)
+12. [Artefakty](#artefakty)
 
 ---
 
