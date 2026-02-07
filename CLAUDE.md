@@ -25,16 +25,18 @@ python server.py    # Requires .env file with all environment variables
 
 ### Dependencies (uv)
 ```bash
-# Compile requirements from .piptools files
-make compile
+# Install base dependencies
+make install         # or: cd backend && uv sync
 
-# Install dependencies
-make install
+# Install all dependencies (including optional)
+make install-all     # or: cd backend && uv sync --all-extras
 
-# Or manually:
-cd backend
-uv pip compile requirements_server.piptools -o requirements_server.txt
-uv pip install -r requirements_server.txt
+# Install specific extras
+make install-docker  # or: cd backend && uv sync --extra docker
+make install-markdown # or: cd backend && uv sync --extra markdown
+
+# Update lock file after changing pyproject.toml
+make lock            # or: cd backend && uv lock
 ```
 
 ### Testing
@@ -54,7 +56,7 @@ pytest backend/tests/unit/test_split_for_embedding.py
 
 ### Code Quality
 ```bash
-flake8 backend/     # Linting (max-line-length=120)
+ruff check backend/ # Linting (line-length=120)
 pre-commit run      # Run pre-commit hooks (includes TruffleHog secret detection)
 ```
 
