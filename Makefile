@@ -67,6 +67,24 @@ security-bandit: ## Run bandit Python security linter
 security-safety: ## Check dependencies with safety
 	cd backend && uvx safety scan
 
+# Docker Hub (requires .env with DOCKER_HUB_USERNAME, DOCKER_HUB_TOKEN, CI_REGISTRY_IMAGE, TAG_VERSION)
+docker-image:   ## Build and tag Docker image (version + latest)
+	docker build -t $(DOCKER_HUB_USERNAME)/$(CI_REGISTRY_IMAGE):$(TAG_VERSION) .
+	docker tag $(DOCKER_HUB_USERNAME)/$(CI_REGISTRY_IMAGE):$(TAG_VERSION) $(DOCKER_HUB_USERNAME)/$(CI_REGISTRY_IMAGE):latest
+
+docker-push:    ## Push Docker image to Docker Hub (version + latest)
+	docker login -u "$(DOCKER_HUB_USERNAME)" -p "$(DOCKER_HUB_TOKEN)"
+	docker push $(DOCKER_HUB_USERNAME)/$(CI_REGISTRY_IMAGE):$(TAG_VERSION)
+	docker push $(DOCKER_HUB_USERNAME)/$(CI_REGISTRY_IMAGE):latest
+
+docker-release: ## Build, tag and push Docker image to Docker Hub
+	$(MAKE) docker-image
+	$(MAKE) docker-push
+
+docker-clean:   ## Remove old Docker images matching 'lenie'
+	chmod +x infra/docker/docker_images_clean.sh
+	infra/docker/docker_images_clean.sh --remove-name lenie
+
 # AWS operations (requires .env with AWS variables)
 aws-start-openvpn:  ## Start OpenVPN EC2 and update Route53 DNS
 	python infra/aws/tools/aws_ec2_route53.py --instance-id $(OPENVPN_OWN_AWS_INSTANCE_ID) --hosted-zone-id $(AWS_HOSTED_ZONE_ID) --domain-name $(OPENVPN_OWN_DOMAIN_NAME)
