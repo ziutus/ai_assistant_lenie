@@ -490,6 +490,16 @@ export PATH="$HOME/.cargo/bin:$PATH"
 
 ## Self-hosted Jenkins on EC2
 
+> **Note:** Jenkins is currently not in use. The `aws-start-jenkins` Makefile target has been removed.
+> To restore it, add the following to the root `Makefile` (in the AWS operations section):
+>
+> ```makefile
+> aws-start-jenkins:  ## Start Jenkins EC2 and update Route53 DNS
+> 	python infra/aws/tools/aws_ec2_route53.py --instance-id $(JENKINS_AWS_INSTANCE_ID) --hosted-zone-id $(AWS_HOSTED_ZONE_ID) --domain-name $(JENKINS_DOMAIN_NAME)
+> ```
+>
+> Required `.env` variables: `JENKINS_AWS_INSTANCE_ID`, `AWS_HOSTED_ZONE_ID`, `JENKINS_DOMAIN_NAME`
+
 Additional configurations for self-hosted Jenkins on an EC2 instance.
 
 ### Automatic Security Group Configuration at Startup
