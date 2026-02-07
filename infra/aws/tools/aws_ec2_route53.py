@@ -1,5 +1,9 @@
-import boto3
+import argparse
+import os
+import sys
 import time
+
+import boto3
 
 
 def start_ec2_instance(instance_id):
@@ -60,3 +64,18 @@ def start_instance_and_update_dns(instance_id, hosted_zone_id, domain_name):
     start_ec2_instance(instance_id)
     public_ip = get_instance_public_ip(instance_id)
     update_route53_record(hosted_zone_id, domain_name, public_ip)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Start EC2 instance and update Route53 DNS")
+    parser.add_argument("--instance-id", default=os.getenv("INSTANCE_ID"), help="EC2 instance ID (or INSTANCE_ID env var)")
+    parser.add_argument("--hosted-zone-id", default=os.getenv("AWS_HOSTED_ZONE_ID"), help="Route53 hosted zone ID (or AWS_HOSTED_ZONE_ID env var)")
+    parser.add_argument("--domain-name", default=os.getenv("DOMAIN_NAME"), help="Domain name to update (or DOMAIN_NAME env var)")
+    args = parser.parse_args()
+
+    if not all([args.instance_id, args.hosted_zone_id, args.domain_name]):
+        parser.print_help()
+        print("\nError: --instance-id, --hosted-zone-id and --domain-name are required (via args or env vars)")
+        sys.exit(1)
+
+    start_instance_and_update_dns(args.instance_id, args.hosted_zone_id, args.domain_name)

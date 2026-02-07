@@ -22,8 +22,7 @@ aws/
 ├── terraform/                  # Terraform configuration (VPC + bastion)
 │   └── CLAUDE.md
 └── tools/                      # Operational helper scripts
-    ├── jenkins_start.py        # Start Jenkins EC2 + update Route53 DNS
-    └── openvpn_own_start.py    # Start OpenVPN EC2 + update Route53 DNS
+    └── aws_ec2_route53.py      # Start EC2 instance + update Route53 DNS (CLI tool)
 ```
 
 ## Subdirectories
@@ -41,12 +40,14 @@ EKS cluster configurations. Main cluster `lenie-ai` (K8s 1.31, spot instances, u
 Terraform configuration (AWS provider ~> 5.0) covering VPC with 4 subnets (2 public + 2 private) and an EC2 bastion host module. Exists primarily for IaC comparison purposes. See `terraform/CLAUDE.md` for details.
 
 ### tools/
-Python helper scripts for starting EC2 instances and updating Route53 DNS records. Both scripts follow the same pattern: start EC2 instance, wait for running state, get public IP, upsert Route53 A record. Configuration via `.env` file.
+Single CLI script `aws_ec2_route53.py` that starts an EC2 instance, waits for it to be running, retrieves its public IP, and upserts a Route53 A record. Accepts `--instance-id`, `--hosted-zone-id`, `--domain-name` arguments (with env var fallback).
 
-| Script | Purpose | Env vars |
-|--------|---------|----------|
-| `jenkins_start.py` | Start Jenkins server | `JENKINS_AWS_INSTANCE_ID`, `AWS_HOSTED_ZONE_ID`, `JENKINS_DOMAIN_NAME` |
-| `openvpn_own_start.py` | Start OpenVPN server | `OPENVPN_OWN_AWS_INSTANCE_ID`, `AWS_HOSTED_ZONE_ID`, `OPENVPN_OWN_DOMAIN_NAME` |
+Invoked via Makefile targets from the project root (variables loaded from `.env`):
+
+```bash
+make aws-start-jenkins    # Start Jenkins EC2 and update DNS
+make aws-start-openvpn    # Start OpenVPN EC2 and update DNS
+```
 
 ## Environment Setup
 
