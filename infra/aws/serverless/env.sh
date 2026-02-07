@@ -1,9 +1,9 @@
 PYTHON_VERSION=3.11
 PYTHON_VERSION_NICE=3_11
-PROFILE="lenie-ai-2025-admin"
+PROFILE="default"
 PLATFORM="manylinux2014_x86_64"
 PROJECT_NAME="lenie"
 ENVIRONMENT="dev"
-AWS_ACCOUNT_ID="049706517731"
-AWS_LAMBDA_DEFAULT_ROLE="arn:aws:iam::049706517731:role/service-role/test-lambda-role-nskevmou"
-AWS_S3_BUCKET_NAME="${PROJECT_NAME}-2025-${ENVIRONMENT}-cloudformation"
+AWS_ACCOUNT_ID="008971653395"
+AWS_LAMBDA_DEFAULT_ROLE="arn:aws:iam::008971653395:role/service-role/test-lambda-role-nskevmou"
+AWS_S3_BUCKET_NAME="${PROJECT_NAME}-${ENVIRONMENT}-cloudformation"

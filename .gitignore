@@ -15,8 +15,8 @@
 /infra/aws/serverless/lambdas/*/lambda.zip
 /docker_build.sh
 /debug.txt
-/infra/kubernetes/lenie/raw/server/lenie_2_server_configmap.yaml
-/infra/kubernetes/lenie/raw/server/lenie_3_server_secrets.yaml
+/infra/kubernetes/lenie/kustomize/server/lenie_2_server_configmap.yaml
+/infra/kubernetes/lenie/kustomize/server/lenie_3_server_secrets.yaml
 /pre-hool.log
 /cookies.txt
 /infra/aws/serverless/lambdas/*/package/
@@ -74,3 +74,12 @@ terraform.rc
 /infra/aws/cloudformation/apigw/lenie_dev_add_from_chrome_extension-v1-oas30-apigateway.json
 /infra/aws/serverless/lambdas/tmp/lambda_function.py
 /infra/aws/serverless/tmp/
+/backend/test_code/tmp/*
+*/client_secret*.apps.googleusercontent.com.json
+client_secret*.apps.googleusercontent.com.json
+credentials.json
+*/credentials.json
+*/token.json
+token.json
+/infra/aws/serverless/env_lenie_2025.sh
+/infra/kubernetes/kustomize/overlays/gke-dev/server_secrets.yaml

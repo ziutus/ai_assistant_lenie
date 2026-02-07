@@ -1,7 +1,7 @@
 from openai import OpenAI
 import os
 from dotenv import load_dotenv
-from library.ai_response import AiResponse
+from library.models.ai_response import AiResponse
 
 
 load_dotenv()

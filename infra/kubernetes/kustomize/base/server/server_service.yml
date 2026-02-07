@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: lenie-ai-server
+spec:
+  selector:
+    app: lenie-ai-server
+  ports:
+    - protocol: TCP
+      port: 80
+      name: lenie-ai-server
+      targetPort: 5000
+  type: ClusterIP

@@ -1,6 +1,21 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'CloudFormation template for lenie-dev-url-add Lambda function'
 
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code
+
+  Environment:
+    Type: String
+    Default: dev
+    Description: Environment (dev, qa, prod, etc.)
+
+  timestamp:
+    Type: String
+    Description: Timestamp to force Lambda function update
+
 Resources:
   LenineUrlAddLambdaFunction:
     Type: 'AWS::Lambda::Function'
@@ -26,6 +41,8 @@ Resources:
           LOG_LEVEL: 'INFO'
           AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites
           BUCKET_NAME: lenie-s3-tmp
+          DYNAMODB_TABLE_NAME: lenie_dev_documents
+          TIMESTAMP: !Ref timestamp
 
   LenineUrlAddLogGroup:
     Type: 'AWS::Logs::LogGroup'
@@ -74,6 +91,17 @@ Resources:
                   - s3:GetObject
                 Resource:
                   - "arn:aws:s3:::lenie-s3-tmp/*"
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - Fn::ImportValue: !Sub "${ProjectCode}-${Environment}-dynamodb-documents-TableArn"
 
   UrlAddApi:
     Type: 'AWS::ApiGateway::RestApi'
@@ -182,6 +210,7 @@ Resources:
       FunctionName: !Ref LenineUrlAddLambdaFunction
       Principal: 'apigateway.amazonaws.com'
       SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${UrlAddApi}/*/*/*'
+
 
 Outputs:
   ApiEndpoint:

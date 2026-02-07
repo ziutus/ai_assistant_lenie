@@ -2,7 +2,7 @@ import boto3
 from botocore.exceptions import ClientError
 import json
 import os
-from library.embedding_result import EmbeddingResult
+from library.models.embedding_result import EmbeddingResult
 
 # https://www.philschmid.de/amazon-titan-embeddings
 # https://www.youtube.com/watch?v=UsbAuGV4rkw

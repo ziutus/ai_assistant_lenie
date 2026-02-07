@@ -1,20 +1,24 @@
+import logging
 import os
 from typing import Any
 
 import psycopg2
 
-from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType
+from library.models.stalker_document_status import StalkerDocumentStatus
+from library.models.stalker_document_type import StalkerDocumentType
 
 
 class WebsitesDBPostgreSQL:
     def __init__(self):
-        # if os.getenv("DEBUG"):
-        #     print("Connecting to PostgreSQL database...")
-        #     print("POSTGRESQL_HOST: " + os.getenv("POSTGRESQL_HOST"))
-        #     print("POSTGRESQL_DATABASE: " + os.getenv("POSTGRESQL_DATABASE"))
-        #     print("POSTGRESQL_USER: " + os.getenv("POSTGRESQL_USER"))
-        #     print("POSTGRESQL_PASSWORD: " + os.getenv("POSTGRESQL_PASSWORD"))
-        #     print("POSTGRESQL_PORT: " + os.getenv("POSTGRESQL_PORT"))
+        if os.getenv("DEBUG", "").lower() == "true":
+            logging.info(
+                "Connecting to PostgreSQL host=%s db=%s user=%s port=%s password_set=%s",
+                os.getenv("POSTGRESQL_HOST"),
+                os.getenv("POSTGRESQL_DATABASE"),
+                os.getenv("POSTGRESQL_USER"),
+                os.getenv("POSTGRESQL_PORT"),
+                bool(os.getenv("POSTGRESQL_PASSWORD")),
+            )
 
         self.conn = psycopg2.connect(
             host=os.getenv("POSTGRESQL_HOST"),
@@ -356,7 +360,7 @@ class WebsitesDBPostgreSQL:
         query = f"""
             SELECT id
             FROM web_documents as wd
-            WHERE url like '{url}%'  AND document_type='webpage'  AND wd.id > {min} and document_state='ERROR' and document_state_error='REGEX_ERROR'
+            WHERE url like '{url}%'  AND document_type='webpage'  AND wd.id > {min} and ((document_state='ERROR' and document_state_error='REGEX_ERROR') OR document_state='URL_ADDED') 
             ORDER by wd.id
         """
 

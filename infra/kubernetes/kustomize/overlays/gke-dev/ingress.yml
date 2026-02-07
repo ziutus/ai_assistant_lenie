@@ -1,0 +1,27 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lenie-ai-ingress
+  annotations:
+    kubernetes.io/ingress.class: "gce"
+    # Opcjonalne dodatkowe adnotacje:
+    # networking.gke.io/managed-certificates: "nazwa-certyfikatu" # jeśli używasz zarządzanych certyfikatów
+    # kubernetes.io/ingress.global-static-ip-name: "nazwa-statycznego-ip" # jeśli używasz statycznego IP
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Exact
+            backend:
+              service:
+                name: lenie-ai-client-service
+                port:
+                  number: 80
+          - path: /*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: lenie-ai-client-service
+                port:
+                  number: 80

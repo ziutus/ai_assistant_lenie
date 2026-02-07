@@ -1,0 +1,1 @@
+1. Powinienna być zmienna środowiskowa pozwalająca na określenie czy interface pracuje jako strona web z cloudfront, jako kontener w dokerze czy jako pod na klastrze kubernetes. Wtedy moźnaby pewne rzeczy ustawiać automatycznie i np. chować menu dotyczące infrastruktury w AWS.

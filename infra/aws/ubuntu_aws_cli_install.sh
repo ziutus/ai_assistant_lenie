@@ -13,5 +13,10 @@ ln -s /mnt/c/Users/ziutus/.aws/ .aws
 
 sudo apt install jq more-utils
 
+echo "installing python3-pip as it is needed for building lambda layers"
+sudo apt install python3-pip
+
+echo "Installing mc for easy play in console (for example checking lamda zip files"
+sudo apt install mc
 
 

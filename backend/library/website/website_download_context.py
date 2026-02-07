@@ -6,7 +6,7 @@ from bs4 import BeautifulSoup
 from library.text_functions import remove_before_regex, remove_last_occurrence_and_after, remove_text_regex
 import json
 
-from library.webpage_parse_result import WebPageParseResult
+from library.models.webpage_parse_result import WebPageParseResult
 
 
 def load_site_rules(file_path: str) -> dict:

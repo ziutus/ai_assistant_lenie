@@ -1,4 +1,9 @@
 rds-start
 rds-status
 rds-stop
-
+ec2-start
+ec2-status
+ec2-stop
+sqs-into-rds
+sqs-size
+sqs-weblink-put-into
