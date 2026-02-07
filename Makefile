@@ -1,5 +1,7 @@
 CONTAINER_NAME=lenie
 
+-include .env
+export
 
 # Add the following 'help' target to your Makefile
 # And add help text after each target name starting with '\#\#'
@@ -64,6 +66,13 @@ security-bandit: ## Run bandit Python security linter
 
 security-safety: ## Check dependencies with safety
 	cd backend && uvx safety scan
+
+# AWS operations (requires .env with AWS variables)
+aws-start-jenkins:  ## Start Jenkins EC2 and update Route53 DNS
+	python infra/aws/tools/aws_ec2_route53.py --instance-id $(JENKINS_AWS_INSTANCE_ID) --hosted-zone-id $(AWS_HOSTED_ZONE_ID) --domain-name $(JENKINS_DOMAIN_NAME)
+
+aws-start-openvpn:  ## Start OpenVPN EC2 and update Route53 DNS
+	python infra/aws/tools/aws_ec2_route53.py --instance-id $(OPENVPN_OWN_AWS_INSTANCE_ID) --hosted-zone-id $(AWS_HOSTED_ZONE_ID) --domain-name $(OPENVPN_OWN_DOMAIN_NAME)
 
 security-all:   ## Run all security checks
 	@echo "=== Running Semgrep ==="
