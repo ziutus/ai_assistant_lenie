@@ -48,7 +48,7 @@ Invoked via Makefile targets from the project root (variables loaded from `.env`
 make aws-start-openvpn    # Start OpenVPN EC2 and update DNS
 ```
 
-Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently in use. See `CI_CD.md` for restoration instructions.
+Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently in use. See `docs/Jenkins.md` for restoration instructions.
 
 ## Environment Setup
 
