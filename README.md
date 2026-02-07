@@ -111,186 +111,6 @@ As I'm a big fan of AWS, you will also see deployment approaches like:
 * ECS (to explore a convenient way of scaling Docker images),
 * EKS (to learn more about the costs of managing your own Kubernetes cluster and applications on it)
 
-
-## Python Notes
-
-### Using uv to manage dependencies
-
-Install uv:
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-or on Windows:
-```
-pip install uv
-```
-
-Quick start with Makefile:
-```bash
-make install          # Install base dependencies
-make install-all      # Install all dependencies (including optional)
-make install-docker   # Install docker dependencies only
-make lock             # Update uv.lock after changing pyproject.toml
-```
-
-Manual usage:
-```bash
-cd backend
-uv sync                    # Install base dependencies
-uv sync --all-extras       # Install all optional dependencies
-uv sync --extra docker     # Install specific extra
-uv lock                    # Update lock file
-```
-
-### Project Configuration
-
-Dependencies are managed via `backend/pyproject.toml` with optional dependency groups:
-- Base dependencies (server)
-- `[docker]` - Minimal dependencies for Docker image
-- `[markdown]` - Markdown processing tools
-- `[all]` - All dependencies including Google APIs, AWS tools, etc.
-
-
-## Prerequisites
-Before running the Docker container with the Lenie application, make sure you have:
-
-* Docker installed on your computer. Installation instructions can be found in the official Docker documentation.
-
-To create a Docker image for the Lenie application, you need a Dockerfile in your project directory. Below is an example process of building the image.
-
-1. Open a terminal in the directory where the Dockerfile is located.
-
-2. Run the following command to build the Docker image:
-
-```bash
-docker build -t stalker-server2:latest .
-```
-
-* The `-t` flag is used to tag (name) the image, in this case stalker.
-* The dot `.` at the end indicates that the Dockerfile is in the current directory.
-
-After the build process is complete, you can run the Docker container with the newly created image by using the command described in the section Running the Container.
-
-## Virtual Linux Machine
-
-### Debian machine
-```bash
-useradd lenie-ai
-mkdir /home/lenie-ai
-chown lenie-ai:lenie-ai /home/lenie-ai/
-
-apt-get install git
-apt install python3.11-venv
-apt install python3-pip
-
-```
-
-Installation of PostgreSQL database
-
-```bash
-
-```
-
-```bash
-python3 server.py
-```
-
-## AWS
-
-### Pushing Image to ECR
-```powershell
-(Get-ECRLoginCommand -ProfileName stalker-free-developer -Region us-east-1).Password | docker login --username AWS --password-stdin ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
-```
-
-```powershell
-docker build -t lenie-ai-server .
-```
-```powershell
-docker tag lenie-ai-server:latest ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/lenie-ai-server:latest
-```
-
-```powershell
-docker push ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/lenie-ai-server:latest
-```
-
-
-## Accessing the Application
-
-After starting the application or container, you can access the Lenie application by going to http://localhost:5000 in your web browser.
-
-### Docker
-
-#### Preparing Local Environment
-
-Install the Vault binary from: https://developer.hashicorp.com/vault/install
-
-```bash
-docker volume create vault_secrets_dev
-docker volume create vault_logs_dev
-
- docker run -d --name=vault_dev --cap-add=IPC_LOCK -e 'VAULT_LOCAL_CONFIG={"storage": {"file": {"path":
- "/vault/file"}}, "listener": [{"tcp": { "address": "0.0.0.0:8200", "tls_disable": true}}], "default_lease_ttl": "168h", "max_lease_ttl":
-"720h", "ui": true}' -v vault_secrets_dev:/vault/file -v vault_logs_dev:/vault/logs -p 8200:8200 hashicorp/vault server
-```
-
-```bash
-docker pull pgvector/pgvector:pg17
-```
-
-```bash
-docker run -d --name lenie-ai-db -e POSTGRES_PASSWORD=postgres -p 5432:5432 pgvector/pgvector:pg17
-```
-
-```sql
-CREATE EXTENSION vector
-```
-
-
-#### Running the Application
-
-Running from a local image:
-```bash
-docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenie-ai-server:latest
-```
-
-Running from a remote image:
-
-```powershell
-docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenieai/lenie-ai-server:latest
-```
-
-### Docker Compose
-
-```shell
-docker-compose.exe create
-docker-compose.exe start
-```
-
-## Working with the API
-
-You can send an example API request from the command line:
-
-```shell
-
-curl -X POST https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add \
-     -H "Content-Type: application/json" \
-     -H "x-api-key: XXXX" \
-     -d '{
-           "url": "https://tech.wp.pl/ukrainski-system-delta-zintegrowany-z-polskim-topazem-zadaje-rosjanom-wielkie-straty,7066814570990208a",
-           "type": "webpage",
-           "note": "Interesting integration with the Polish battlefield imaging system",
-           "text": "HTML of the page from the given URL"
-         }'
-```
-
-If port forwarding is enabled, you can use this to validate your API request:
-
-```
-curl -H "x-api-key: XXX" -X GET "http://localhost:5000/website_list?type=ALL&
-document_state=ALL&search_in_document="
-```
-
-
 ## Services That Can Be Used to Get Data
 
 | Service name | Provider   | Description | Link |
@@ -298,37 +118,18 @@ document_state=ALL&search_in_document="
 | Textract    | AWS        | PDF to text | https://aws.amazon.com/textract/     |
 | AssemblyAI  | AssemblyAI | Speech to text ($0.12 per hour) | https://www.assemblyai.com/ |
 
-## Code Quality & Security
+## Documentation
 
-### Linting and Formatting (ruff)
-```bash
-make lint         # Run ruff linter
-make lint-fix     # Run ruff with auto-fix
-make format       # Format code with ruff
-make format-check # Check formatting (for CI)
-```
-
-### Security Scanning
-All security tools are run via `uvx` (uv tool runner) to avoid adding heavy dependencies to the project venv.
-
-```bash
-make security        # Run semgrep static analysis
-make security-deps   # Check dependencies for vulnerabilities (pip-audit)
-make security-bandit # Run bandit Python security linter
-make security-safety # Check dependencies with safety
-make security-all    # Run all security checks
-```
-
-| Tool | Purpose |
-|------|---------|
-| Semgrep | Static code analysis, security vulnerabilities |
-| pip-audit | Dependency vulnerability scanning (PyPI advisory DB) |
-| Bandit | Python-specific security linter |
-| Safety | Dependency vulnerability check (requires free account) |
-
-### Pre-commit Hooks (TruffleHog)
-Pre-commit hooks include TruffleHog for secret detection. See `.pre-commit-config.yaml`.
-
+| Document | Description |
+|----------|-------------|
+| [CLAUDE.md](CLAUDE.md) | Full architecture reference |
+| [docs/Python_Dependencies.md](docs/Python_Dependencies.md) | Dependency management with uv |
+| [docs/Docker_Local.md](docs/Docker_Local.md) | Docker development and deployment |
+| [docs/VM_Setup.md](docs/VM_Setup.md) | Virtual machine setup |
+| [docs/AWS_Infrastructure.md](docs/AWS_Infrastructure.md) | AWS infrastructure |
+| [docs/Code_Quality.md](docs/Code_Quality.md) | Linting and security scanning |
+| [docs/API_Usage.md](docs/API_Usage.md) | API request examples |
+| [docs/CI_CD.md](docs/CI_CD.md) | CI/CD pipelines |
 
 # Planned Improvements
 * Add a checker to verify that no Lambda uses AWS Lambda Layers anymore

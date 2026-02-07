@@ -164,3 +164,20 @@ python ec2_start_with_dns.py
 ```
 
 > **Note:** The actual implementation is in `infra/aws/tools/aws_ec2_route53.py` and can be invoked via `make aws-start-openvpn`. The script above is a reference pattern for CI/CD documentation purposes.
+
+## Pushing Image to ECR
+
+```powershell
+(Get-ECRLoginCommand -ProfileName stalker-free-developer -Region us-east-1).Password | docker login --username AWS --password-stdin ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+```
+
+```powershell
+docker build -t lenie-ai-server .
+```
+```powershell
+docker tag lenie-ai-server:latest ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/lenie-ai-server:latest
+```
+
+```powershell
+docker push ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/lenie-ai-server:latest
+```
