@@ -1,8 +1,8 @@
 # Project Lenie: Personal AI Assistant
 
-Project Lenie, named after the enigmatic protagonist from Peter Watts' novel "Starfish," 
-offers advanced solutions for collecting, managing, and searching data using 
-Language Model Models (LLMs). 
+Project Lenie, named after the enigmatic protagonist from Peter Watts' novel "Starfish,"
+offers advanced solutions for collecting, managing, and searching data using
+Large Language Models (LLMs).
 
 Lenie enables users to:
 * collect and manage links, allowing easy searching of accumulated references using LLM,
@@ -11,109 +11,108 @@ Lenie enables users to:
 
 Lenie's functionalities represent an advanced integration of AI technology with users' daily needs, providing efficient data management and deeper content analysis and utilization. However, similar to the literary character who brings inevitable consequences of her existence, Lenie raises questions about the boundaries of technology and our own control over it. It is both a fascinating and daunting tool that requires a conscious approach and responsible usage to maximize benefits and minimize risks associated with the increasing role of artificial intelligence in our lives.
 
-This is a side project. Please be aware that code is during refactoring and correcting as I'm still learning Python and LLMs.
+This is a side project. Please be aware that the code is under active refactoring and correction as I'm still learning Python and LLMs.
 
-## Komponenty 
+## Components
 
-* Webowy interfejs do przeglądania zawartości bazy danych
-* Wtyczka do Chrome i Kiwi Browser
-* Backed napisany w Python
+* Web interface for browsing database contents
+* Chrome and Kiwi Browser extension
+* Backend written in Python
 
-## Wspierane platformy
+## Supported Platforms
 
-Platforma | Wsparcie |
+| Platform | Support |
 |---|---|
-|Windows | Chrome + wtyczka |
-| Android | Kiwi Browser i wtyczka |
-| MacOS | Brak |
+| Windows | Chrome + extension |
+| Android | Kiwi Browser + extension |
+| MacOS | None |
 
-## Różnice w porównaniu do firmowych baz wiedzy
-W firmowych bazach wiedzy nie zakładamy, że mamy kłamliwe, niewłaściwe lub propagandowe artykuły.
-Każdy artykuł jest uważany za równoważny.
+## Differences Compared to Corporate Knowledge Bases
+In corporate knowledge bases, we don't assume that we have misleading, inappropriate, or propaganda-driven articles.
+Every article is considered equally valid.
 
-W przypadku tematów drażliwych, politycznych lub związanych z pieniędzmi możemy spotkać:
-* propagandę państwową (szczególnie w tematach geopolitycznych i politycznych)
-* propagandą tematyczną partii (zła Unia, uchodźcy i imigranci, szczepionki itp.)
-* działaniami Public Relation firm  (np. to nie prawda, że Tesla została z tyłu w rozwoju aut autonomicznych i elektrycznych)
-* działalność oszustów internetowych
-* amatorskie teksty udające eksperckie (np. tutoriale mówiące, aby wyłączyć wszystkie mechanizmy bezpieczeństwa Linkusa, bo przeszkadzają)
-* działalność troli internetowych
-* masowe treści bez wartości generowane przez AI, by zdobyć pozycję w indeksach google,
+When dealing with sensitive, political, or money-related topics, we may encounter:
+* state propaganda (especially on geopolitical and political topics)
+* party-driven thematic propaganda (anti-EU, refugees and immigrants, vaccines, etc.)
+* corporate Public Relations campaigns (e.g., "it's not true that Tesla fell behind in autonomous and electric vehicle development")
+* online scammers
+* amateur texts posing as expert content (e.g., tutorials advising to disable all Linux security mechanisms because they're "inconvenient")
+* internet trolls
+* mass AI-generated content with no real value, created to gain Google search rankings
 
-W związku z tym jest potrzeba zbudowania mechanizmu oceny wiarygodności źródła (np. strony internetowej albo filmu na youtube) oraz autora.
+Therefore, there is a need to build a mechanism for assessing the credibility of sources (e.g., websites or YouTube videos) and authors.
 
-Potrzebna jest również możliwość wybrania tylko określonych źródeł (z wszystkich posiadanych) oraz jawnego wskazywania w wypowiedzi źródeł danych.
+It is also necessary to provide the ability to select only specific sources (from all available ones) and to explicitly cite data sources in responses.
 
-## Problemy, które należy rozwiązać podczas budowy takiego rozwiązania
+## Challenges to Solve When Building Such a Solution
 
-W przypadku posiadania firmowych dokumentów najczęstszym problemem będzie przygotowanie konwersji firmowej wiki, notion czy dokumentów word do formatu wygodnego dla LLmów.
+When working with corporate documents, the most common challenge is converting corporate wikis, Notion pages, or Word documents into a format suitable for LLMs.
 
-W przypadku korzystania ze źródeł internetowych problemy są inne:
-* dostęp do treści jest za paywall-em (rozwiązaniem stosowanym u mnie jest wtyczka do przeglądarki),
-* brak możliwości łatwego importowania danych ze stron takich jak linkedin, Facebook itp. (chronią się przed łatwą kradzieżą treści),
-* potrzeba napisania analizatorów treści stron pobarnych wtyczką by obniżyć koszty (patrz niżej)
-* jakość napisów tworzonych przez automatyczne tłumaczenia youtube,
-* cena konwersji (i jakość) audio do tekstu
+When working with internet sources, the challenges are different:
+* content is behind a paywall (the solution I use is a browser extension),
+* difficulty importing data from platforms like LinkedIn, Facebook, etc. (they protect against easy content scraping),
+* need to write content analyzers for pages captured by the extension to reduce costs (see below),
+* quality of subtitles generated by YouTube's automatic translation,
+* cost (and quality) of audio-to-text conversion
 
-Przykładowe wielkości dokumentów
-* Oryginalny dokument HTML będący zapisaną kopią artykułu z Onet.pl: 300 KB,
-* Przekonwertowany do formatu markdown: 15 KB,
-* Sama treść artykułu: 3000 słów,
+Example document sizes:
+* Original HTML document, a saved copy of an article from Onet.pl: 300 KB,
+* Converted to markdown format: 15 KB,
+* Article text only: 3000 words,
 
-Duże modele językowe, np. te od OpenAI, doskonale radzą sobie z analizą treści całej strony artykułu w formacie markdown, 
-ale generuje to duże koszty w porównaniu z analizą samego tekstu artykułu.
+Large language models, such as those from OpenAI, handle the analysis of an entire article page in markdown format very well, but this generates significant costs compared to analyzing just the article text.
 
-Źródła danych dla asystenta osobistego:
-* SMS-y, czyli wiadomości wielkośći do 120 znaków (od jakiegoś czasu Google Play blokuje aplikacje mające dostęp do SMS-ów, należy zainstalować "własną" aplikację, np. make),
-* emaile (format HTML), kilkaset słów,
-* dokumenty PDF (np faktury) i DOC (np. wymagania na stanowisko pracy),
-* ebooki (kilkaset tysięcy słów, potrzebny podział na kawałki przed embeddingiem)
-* obrazki (np zdjęcia stron książek, faktury, zdjęcia z istotnym kontentem)
-* czaty whats up, messanger, itp
-* dostęp do kalendarza,
-* historia przeglądanych stron (dostęp do slqlite np. w Chromie),
-* dostęp do płatnego API serwisu Meetup (graphQL) by mieć informacje kogo możesz spotkać i na kogo uwazać,
-* dostęp do płatnych API przeglądających KRS (by wiedzieć czy rozmówca ma własną firmę, fundację itp.)
-
-
-## Skalowalność i niezawodność rozwiązania
-Dla jednego użytkownika wystarczy baza danych Postgersql z odpowiednimi rozszerzeniami.
-
-Jeżeli chcemy, aby pojedyńczy użytkownik mógł działać z różnych urządzeń, należy umożliwić
-mu pracę z zewnętrznym serwerem działającym 24h/7. 
-Wtedy musimy zadbać o:
-* dostępność rozwiązania z dowolnego miejsca na świecie,
-* bezpieczeństwo rozwiązania (potrzeba aktualizacji bezpieczeństwa, ochrona przed DDOS itp),
-* niskie koszty.
-* mało czasu potrzebnego na utrzymanie
+Data sources for a personal assistant:
+* SMS messages, i.e., messages up to 120 characters (Google Play has been blocking apps with SMS access for some time; you need to install a "custom" app, e.g., Make),
+* emails (HTML format), several hundred words,
+* PDF documents (e.g., invoices) and DOC files (e.g., job requirements),
+* ebooks (hundreds of thousands of words, need to be split into chunks before embedding),
+* images (e.g., photos of book pages, invoices, photos with significant content),
+* WhatsApp chats, Messenger, etc.,
+* calendar access,
+* browsing history (access to SQLite, e.g., in Chrome),
+* access to the paid Meetup API (GraphQL) to know who you might meet and who to be cautious of,
+* access to paid APIs for querying the Polish National Court Register (KRS) (to know if a contact has their own company, foundation, etc.)
 
 
+## Scalability and Reliability
+For a single user, a PostgreSQL database with appropriate extensions is sufficient.
 
-W przypadku większej ilości użytkowników należy rozważyć 2 rzeczy:
-* koszty skalowania infrastruktury (np. bazy danych)
-* wydajność rozwiązania (można dostawiać kontenery albo iść w rozwiązania serverless i kolejki)
-* bezpieczeństwo izolacji danych każdego klienta,
+If we want a single user to be able to work from different devices, we need to enable
+them to work with an external server running 24/7.
+In that case, we must ensure:
+* availability of the solution from anywhere in the world,
+* security of the solution (need for security updates, DDoS protection, etc.),
+* low costs,
+* minimal maintenance time required.
 
-## Used technologies
+
+
+For a larger number of users, we need to consider:
+* infrastructure scaling costs (e.g., database),
+* solution performance (we can add containers or go with serverless solutions and queues),
+* security of data isolation for each client.
+
+## Used Technologies
 In this project, I'm using:
-* Python as server backend
-* Postgresql as embedding database
-* React as web interface (during creation)
-* Hashicorp Vault for secrets (for local and kubernetes environment) 
-* AWS as deploying a platform (as I'm lazy and don't want to manage infrastructure)
+* Python as the server backend
+* PostgreSQL as the embedding database
+* React as the web interface (under development)
+* HashiCorp Vault for secrets (for local and Kubernetes environments)
+* AWS as the deployment platform (as I'm lazy and don't want to manage infrastructure)
 
-I'm also preparing a few ways to deploy it:
-* docker image (to easy run application)
-* Kubernetes helm (to test scalability options)
-* AWS lambda (to test Event Driver way of writing application)
+I'm also preparing several deployment methods:
+* Docker image (for easy application deployment)
+* Kubernetes Helm (to test scalability options)
+* AWS Lambda (to test the Event-Driven way of writing applications)
 
-As I'm big fun on AWS, you will also see deploy ways like:
-* Lambdas (to see Event Driver way of writing applications like that),
-* ECS (to see nice way of scalling docker images)
-* EKS (to learn more about the costs of managing own Kubernetes cluster and application on it)
+As I'm a big fan of AWS, you will also see deployment approaches like:
+* Lambdas (to explore the Event-Driven way of writing applications like this),
+* ECS (to explore a convenient way of scaling Docker images),
+* EKS (to learn more about the costs of managing your own Kubernetes cluster and applications on it)
 
 
-## Python notes
+## Python Notes
 
 ### Using uv to manage dependencies
 
@@ -121,7 +120,7 @@ Install uv:
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
-or on Windows
+or on Windows:
 ```
 pip install uv
 ```
@@ -143,7 +142,7 @@ uv sync --extra docker     # Install specific extra
 uv lock                    # Update lock file
 ```
 
-### Project configuration
+### Project Configuration
 
 Dependencies are managed via `backend/pyproject.toml` with optional dependency groups:
 - Base dependencies (server)
@@ -153,11 +152,11 @@ Dependencies are managed via `backend/pyproject.toml` with optional dependency g
 
 
 ## Prerequisites
-Before running the Docker container with the Stalker application, make sure you have:
+Before running the Docker container with the Lenie application, make sure you have:
 
 * Docker installed on your computer. Installation instructions can be found in the official Docker documentation.
 
-To create a Docker image for the Stalker application, you need a Dockerfile in your project directory. Below is an example process of building the image.
+To create a Docker image for the Lenie application, you need a Dockerfile in your project directory. Below is an example process of building the image.
 
 1. Open a terminal in the directory where the Dockerfile is located.
 
@@ -167,10 +166,10 @@ To create a Docker image for the Stalker application, you need a Dockerfile in y
 docker build -t stalker-server2:latest .
 ```
 
-* The -t flag is used to tag (name) the image, in this case stalker.
-* The dot . at the end indicates that the Dockerfile is in the current directory.
+* The `-t` flag is used to tag (name) the image, in this case stalker.
+* The dot `.` at the end indicates that the Dockerfile is in the current directory.
 
-After the build process is complete, you can run the Docker container with the newly created image by using the command described in the section Running the Stalker Container.
+After the build process is complete, you can run the Docker container with the newly created image by using the command described in the section Running the Container.
 
 ## Virtual Linux Machine
 
@@ -186,7 +185,7 @@ apt install python3-pip
 
 ```
 
-Installation of postgresql database
+Installation of PostgreSQL database
 
 ```bash
 
@@ -198,7 +197,7 @@ python3 server.py
 
 ## AWS
 
-### Sending image to ECR
+### Pushing Image to ECR
 ```powershell
 (Get-ECRLoginCommand -ProfileName stalker-free-developer -Region us-east-1).Password | docker login --username AWS --password-stdin ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
 ```
@@ -217,18 +216,18 @@ docker push ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/lenie-ai-server:latest
 
 ## Accessing the Application
 
-After starting the appliaction or container, you can access the Stalker application by going to http://localhost:5000 in your web browser.
+After starting the application or container, you can access the Lenie application by going to http://localhost:5000 in your web browser.
 
 ### Docker
 
-#### Preparing local environment
+#### Preparing Local Environment
 
-Install vault binary from: https://developer.hashicorp.com/vault/install
+Install the Vault binary from: https://developer.hashicorp.com/vault/install
 
 ```bash
 docker volume create vault_secrets_dev
 docker volume create vault_logs_dev
- 
+
  docker run -d --name=vault_dev --cap-add=IPC_LOCK -e 'VAULT_LOCAL_CONFIG={"storage": {"file": {"path":
  "/vault/file"}}, "listener": [{"tcp": { "address": "0.0.0.0:8200", "tls_disable": true}}], "default_lease_ttl": "168h", "max_lease_ttl":
 "720h", "ui": true}' -v vault_secrets_dev:/vault/file -v vault_logs_dev:/vault/logs -p 8200:8200 hashicorp/vault server
@@ -247,29 +246,29 @@ CREATE EXTENSION vector
 ```
 
 
-#### Running application
+#### Running the Application
 
-Running from local image:
+Running from a local image:
 ```bash
 docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenie-ai-server:latest
 ```
 
-Running from remote image:
+Running from a remote image:
 
 ```powershell
 docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenieai/lenie-ai-server:latest
 ```
 
-### Docker compose
+### Docker Compose
 
 ```shell
-docker-compose.exe create 
+docker-compose.exe create
 docker-compose.exe start
 ```
 
-## Working with API
+## Working with the API
 
-You can send example API request even from command line:
+You can send an example API request from the command line:
 
 ```shell
 
@@ -279,12 +278,12 @@ curl -X POST https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add \
      -d '{
            "url": "https://tech.wp.pl/ukrainski-system-delta-zintegrowany-z-polskim-topazem-zadaje-rosjanom-wielkie-straty,7066814570990208a",
            "type": "webpage",
-           "note": "Ciekawa integracja z polskim systemem obrazowania pola walki",
-           "text": "html strony z podanego URL"
+           "note": "Interesting integration with the Polish battlefield imaging system",
+           "text": "HTML of the page from the given URL"
          }'
 ```
 
-If we have enabled port forward, we can use to validate our API request:
+If port forwarding is enabled, you can use this to validate your API request:
 
 ```
 curl -H "x-api-key: XXX" -X GET "http://localhost:5000/website_list?type=ALL&
@@ -292,16 +291,16 @@ document_state=ALL&search_in_document="
 ```
 
 
-## Services which can use to get data
+## Services That Can Be Used to Get Data
 
-| Service name | provider   | description | link |
+| Service name | Provider   | Description | Link |
 |-------------|------------|---|------|
 | Textract    | AWS        | PDF to text | https://aws.amazon.com/textract/     |
-| assemblyai  | assemblyai | speach to text (0,12$ per  hour) | https://www.assemblyai.com/ |
+| AssemblyAI  | AssemblyAI | Speech to text ($0.12 per hour) | https://www.assemblyai.com/ |
 
-## Code quality & security
+## Code Quality & Security
 
-### Linting and formatting (ruff)
+### Linting and Formatting (ruff)
 ```bash
 make lint         # Run ruff linter
 make lint-fix     # Run ruff with auto-fix
@@ -309,7 +308,7 @@ make format       # Format code with ruff
 make format-check # Check formatting (for CI)
 ```
 
-### Security scanning
+### Security Scanning
 All security tools are run via `uvx` (uv tool runner) to avoid adding heavy dependencies to the project venv.
 
 ```bash
@@ -327,29 +326,31 @@ make security-all    # Run all security checks
 | Bandit | Python-specific security linter |
 | Safety | Dependency vulnerability check (requires free account) |
 
-### Pre-commit hooks (trufflehog)
+### Pre-commit Hooks (TruffleHog)
 Pre-commit hooks include TruffleHog for secret detection. See `.pre-commit-config.yaml`.
 
 
-# Planned improvements
-* add checker which any lambda does not use AWS Lambda Layers anymore
+# Planned Improvements
+* Add a checker to verify that no Lambda uses AWS Lambda Layers anymore
 
 
-## Why do we need our own LLM?
+## Why Do We Need Our Own LLM?
 So far, available LLMs operate in English or implicitly translate to English, losing context or meaning.
 
 Let's translate two texts into English:
 
-Sąsiad wyszedł z psem o 6 rano.
+Sasiad wyszedl z psem o 6 rano.
+(The neighbor went out with a dog at 6 AM.)
 
 And:
 
-Psy przyszły po sąsiada o 6 rano
+Psy przyszly po sasiada o 6 rano.
+(The "dogs" came for the neighbor at 6 AM.)
 
-As Poles, we perfectly understand the difference between an animal and the slang term for police officers, but you need to know the cultural context.
+As Poles, we perfectly understand the difference between an animal and the slang term for police officers ("psy" literally means "dogs" but is slang for "cops"), but you need to know the cultural context.
 
 Now we have Bielik (https://bielik.ai), which perfectly understands the magic of this sentence:
 
 ![img.png](bielik_psy_pl.png)
 
-You can use Bielik on [ClouFerro.com](https://sherlock.cloudferro.com/#pricing)
+You can use Bielik on [CloudFerro.com](https://sherlock.cloudferro.com/#pricing)
