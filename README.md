@@ -11,7 +11,7 @@ Lenie enables users to:
 
 Lenie's functionalities represent an advanced integration of AI technology with users' daily needs, providing efficient data management and deeper content analysis and utilization. However, similar to the literary character who brings inevitable consequences of her existence, Lenie raises questions about the boundaries of technology and our own control over it. It is both a fascinating and daunting tool that requires a conscious approach and responsible usage to maximize benefits and minimize risks associated with the increasing role of artificial intelligence in our lives.
 
-This is a side project, and I'm planning to have the first version of this application in December 2025. Before that date please be aware, that code is during refactoring and correcting  as I'm still learning Python and LLMs.
+This is a side project. Please be aware that code is during refactoring and correcting as I'm still learning Python and LLMs.
 
 ## Komponenty 
 
@@ -115,26 +115,41 @@ As I'm big fun on AWS, you will also see deploy ways like:
 
 ## Python notes
 
-### Using piptools to generate a better requirement file
+### Using uv to manage dependencies
 
-
-### The markdown script
-
-```powershell
-C:\Users\ziutus\AppData\Local\Programs\Python\Python311\Scripts\pip-compile.exe --upgrade requirements_markdown.piptools --output-file requirements_markdown.txt
+Install uv:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+or on Windows
+```
+pip install uv
 ```
 
-```powershell
-pip install -r requirements_markdown.txt
+Quick start with Makefile:
+```bash
+make install          # Install base dependencies
+make install-all      # Install all dependencies (including optional)
+make install-docker   # Install docker dependencies only
+make lock             # Update uv.lock after changing pyproject.toml
 ```
 
-```powershell
-C:\Users\ziutus\AppData\Local\Programs\Python\Python311\Scripts\pip-compile.exe --upgrade requirements_server.piptools --output-file requirements_server.txt
+Manual usage:
+```bash
+cd backend
+uv sync                    # Install base dependencies
+uv sync --all-extras       # Install all optional dependencies
+uv sync --extra docker     # Install specific extra
+uv lock                    # Update lock file
 ```
 
-```powershell
-pip install -r requirements_server.txt
-```
+### Project configuration
+
+Dependencies are managed via `backend/pyproject.toml` with optional dependency groups:
+- Base dependencies (server)
+- `[docker]` - Minimal dependencies for Docker image
+- `[markdown]` - Markdown processing tools
+- `[all]` - All dependencies including Google APIs, AWS tools, etc.
 
 
 ## Prerequisites
@@ -284,8 +299,36 @@ document_state=ALL&search_in_document="
 | Textract    | AWS        | PDF to text | https://aws.amazon.com/textract/     |
 | assemblyai  | assemblyai | speach to text (0,12$ per  hour) | https://www.assemblyai.com/ |
 
-## security
-### pre-hook + trufflehog
+## Code quality & security
+
+### Linting and formatting (ruff)
+```bash
+make lint         # Run ruff linter
+make lint-fix     # Run ruff with auto-fix
+make format       # Format code with ruff
+make format-check # Check formatting (for CI)
+```
+
+### Security scanning
+All security tools are run via `uvx` (uv tool runner) to avoid adding heavy dependencies to the project venv.
+
+```bash
+make security        # Run semgrep static analysis
+make security-deps   # Check dependencies for vulnerabilities (pip-audit)
+make security-bandit # Run bandit Python security linter
+make security-safety # Check dependencies with safety
+make security-all    # Run all security checks
+```
+
+| Tool | Purpose |
+|------|---------|
+| Semgrep | Static code analysis, security vulnerabilities |
+| pip-audit | Dependency vulnerability scanning (PyPI advisory DB) |
+| Bandit | Python-specific security linter |
+| Safety | Dependency vulnerability check (requires free account) |
+
+### Pre-commit hooks (trufflehog)
+Pre-commit hooks include TruffleHog for secret detection. See `.pre-commit-config.yaml`.
 
 
 # Planned improvements
