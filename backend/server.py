@@ -35,8 +35,8 @@ def fetch_env_var(var_name, default_value=None):
 
 env_data = fetch_env_var("ENV_DATA")
 
-APP_VERSION = "0.3.12.0"
-BUILD_TIME = "2025.10.02 06:13"
+APP_VERSION = "0.3.13.0"
+BUILD_TIME = "2026.01.23 04:04"
 
 logging.info(f"APP VERSION={APP_VERSION} (build time:{BUILD_TIME})")
 logging.info("ENV_DATA: " + os.getenv("ENV_DATA"))
