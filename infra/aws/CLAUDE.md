@@ -45,9 +45,10 @@ Single CLI script `aws_ec2_route53.py` that starts an EC2 instance, waits for it
 Invoked via Makefile targets from the project root (variables loaded from `.env`):
 
 ```bash
-make aws-start-jenkins    # Start Jenkins EC2 and update DNS
 make aws-start-openvpn    # Start OpenVPN EC2 and update DNS
 ```
+
+Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently in use. See `CI_CD.md` for restoration instructions.
 
 ## Environment Setup
 
