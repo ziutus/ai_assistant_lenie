@@ -3,9 +3,8 @@ import os
 import psycopg2
 from psycopg2 import sql
 
-# from library import embedding
-from library.stalker_web_document import StalkerWebDocument, StalkerDocumentStatus
-from library.webpage_parse_result import WebPageParseResult
+from library.stalker_web_document import StalkerWebDocument
+from library.models.webpage_parse_result import WebPageParseResult
 
 
 class StalkerWebDocumentDB(StalkerWebDocument):

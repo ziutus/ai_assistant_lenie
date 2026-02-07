@@ -1,0 +1,50 @@
+# StatefulSet dla PGVector
+apiVersion: apps/v1
+kind: StatefulSet  # StatefulSet jest lepszy dla baz danych niż Deployment
+metadata:
+  name: db
+spec:
+  serviceName: db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      containers:
+      - name: lenie-ai-db
+        image: lenieai/lenie-ai-db:latest  # Dokładnie ten obraz, który chcesz użyć
+        ports:
+        - containerPort: 5432
+          name: postgres
+        env:
+        - name: POSTGRES_DB
+          value: lenie-ai
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets  # Należy utworzyć ten Secret
+              key: username
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets  # Należy utworzyć ten Secret
+              key: password
+        volumeMounts:
+        - name: lenie-ai-db-storage
+          mountPath: /var/lib/postgresql/data
+          subPath: pgdata  # Używamy subPath, aby uniknąć problemów z uprawnieniami
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "800m"
+      volumes:
+      - name: lenie-ai-db-storage
+        persistentVolumeClaim:
+          claimName: lenie-ai-db-pvc

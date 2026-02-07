@@ -1,64 +1,27 @@
 import json
-from enum import Enum
 
-# from library.text_detect_language import text_language_detect
-# from library.translate import text_translate
-
-
-# Those document types are also defined in Postgresql table: document_types
-class StalkerDocumentType(Enum):
-    movie = 1
-    youtube = 2
-    link = 3
-    webpage = 4
-    text_message = 5
-    text = 6
-
-
-# Those errors status are also defined in Postgresql table: document_status_types
-class StalkerDocumentStatus(Enum):
-    ERROR = 1
-    URL_ADDED = 2
-    NEED_TRANSCRIPTION = 3
-    TRANSCRIPTION_IN_PROGRESS = 4
-    TRANSCRIPTION_DONE = 5
-    TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS = 6
-    NEED_MANUAL_REVIEW = 7
-    READY_FOR_TRANSLATION = 8
-    READY_FOR_EMBEDDING = 9
-    EMBEDDING_EXIST = 10
-    DOCUMENT_INTO_DATABASE = 11
-    NEED_CLEAN_TEXT = 12
-    NEED_CLEAN_MD = 13
-    TEXT_TO_MD_DONE = 14
-    MD_SIMPLIFIED = 15
-
-
-# This errors status are also defined in Postgresql table: document_status_error_types
-class StalkerDocumentStatusError(Enum):
-    NONE = 1
-    ERROR_DOWNLOAD = 2
-    LINK_SUMMARY_MISSING = 3
-    TITLE_MISSING = 4
-    TITLE_TRANSLATION_ERROR = 5
-    TEXT_MISSING = 6
-    TEXT_TRANSLATION_ERROR = 7
-    SUMMARY_TRANSLATION_ERROR = 8
-    NO_URL_ERROR = 9
-    EMBEDDING_ERROR = 10
-    MISSING_TRANSLATION = 11
-    TRANSLATION_ERROR = 12
-    REGEX_ERROR = 13
-    TEXT_TO_MD_ERROR = 14
+from library.models.stalker_document_status import StalkerDocumentStatus
+from library.models.stalker_document_status_error import StalkerDocumentStatusError
+from library.models.stalker_document_type import StalkerDocumentType
 
 
 class StalkerWebDocument:
-    def __init__(self, url, wb_id: int | None = None, summary: str | None = None, language: str | None = None,
-                 tags: str | None = None, text: str | None = None, paywall: bool | None = None,
-                 title: str | None = None, created_at=None, updated_at=None, document_type: StalkerDocumentType = None,
+    def __init__(self,
+                 url: str | None = None,
+                 wb_id: int | None = None,
+                 summary: str | None = None,
+                 language: str | None = None,
+                 tags: str | None = None,
+                 text: str | None = None,
+                 paywall: bool | None = None,
+                 title: str | None = None,
+                 created_at=None,
+                 updated_at=None,
+                 document_type: StalkerDocumentType = None,
                  text_english: str | None = None,
                  source: str | None = "own",
-                 title_english: str | None = None, summary_english: str | None = None,
+                 title_english: str | None = None,
+                 summary_english: str | None = None,
                  date_from: str | None = None, original_id: str | None = None,
                  document_length: int | None = None,
                  chapter_list: str | None = None,

@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Lenie AI assistant",
-  "version": "1.0.21",
+  "version": "1.0.22",
   "description": "Wtyczka do komunikacji z API lenie-ai.eu",
   "permissions": ["storage", "activeTab", "tabs", "scripting"],
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; style-src 'self' 'unsafe-inline' https://stackpath.bootstrapcdn.com; object-src 'self'"
+     "extension_pages": "script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'self'"
   },
 
   "action": {

@@ -1,0 +1,556 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'API Gateway for APP infrastructure management'
+
+Parameters:
+  ProjectCode:
+    Type: String
+  stage:
+    Description: Specify stage (dev, qas, prd)
+    Type: String
+    AllowedValues:
+      - dev
+      - qas
+      - prd
+  OpenvpnEC2Name:
+    Description: The VPC Id where the RDS instance will be deployed
+    Type: AWS::SSM::Parameter::Value<String>
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaBasicExecution2
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  SqsSizeFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub ${ProjectCode}-${stage}-sqs-size
+      Handler: 'lambda_function.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      LoggingConfig:
+        LogFormat: 'JSON'
+        ApplicationLogLevel: 'INFO'
+        SystemLogLevel: 'INFO'
+      Code:
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${stage}-sqs-size.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          LOG_LEVEL: 'INFO'
+          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/database/name}}'
+
+
+  RdsStartFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub ${ProjectCode}-${stage}-rds-start
+      Handler: 'lambda_function.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      LoggingConfig:
+        LogFormat: 'JSON'
+        ApplicationLogLevel: 'INFO'
+        SystemLogLevel: 'INFO'
+      Code:
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${stage}-rds-start.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          LOG_LEVEL: 'INFO'
+          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/database/name}}'
+
+  RdsStopFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub ${ProjectCode}-${stage}-rds-stop
+      Handler: 'lambda_function.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      LoggingConfig:
+        LogFormat: 'JSON'
+        ApplicationLogLevel: 'INFO'
+        SystemLogLevel: 'INFO'
+      Code:
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
+        S3Key: !Sub lenie-${stage}-rds-stop.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          LOG_LEVEL: 'INFO'
+          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/database/name}}'
+
+  RdsStatusFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub ${ProjectCode}-${stage}-rds-status
+      Handler: 'lambda_function.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      LoggingConfig:
+        LogFormat: 'JSON'
+        ApplicationLogLevel: 'INFO'
+        SystemLogLevel: 'INFO'
+      Code:
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${stage}-rds-status.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          LOG_LEVEL: 'INFO'
+          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/database/name}}'
+
+  Ec2StatusFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub ${ProjectCode}-${stage}-ec2-status
+      Handler: 'lambda_function.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      LoggingConfig:
+        LogFormat: 'JSON'
+        ApplicationLogLevel: 'INFO'
+        SystemLogLevel: 'INFO'
+      Code:
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${stage}-ec2-status.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          LOG_LEVEL: 'INFO'
+          INSTANCE_ID: !Sub '${OpenvpnEC2Name}'
+
+  Ec2StatusStart:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub ${ProjectCode}-${stage}-ec2-start
+      Handler: 'lambda_function.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      LoggingConfig:
+        LogFormat: 'JSON'
+        ApplicationLogLevel: 'INFO'
+        SystemLogLevel: 'INFO'
+      Code:
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${stage}-ec2-start.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          LOG_LEVEL: 'INFO'
+          INSTANCE_ID: !Sub '${OpenvpnEC2Name}'
+
+  Ec2StatusStop:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub ${ProjectCode}-${stage}-ec2-stop
+      Handler: 'lambda_function.lambda_handler'
+      Role: !GetAtt LambdaExecutionRole.Arn
+      LoggingConfig:
+        LogFormat: 'JSON'
+        ApplicationLogLevel: 'INFO'
+        SystemLogLevel: 'INFO'
+      Code:
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${stage}-ec2-stop.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          LOG_LEVEL: 'INFO'
+          INSTANCE_ID: !Sub '${OpenvpnEC2Name}'
+
+  LenieApi:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: !Sub "${ProjectCode}_${stage}_infra"
+      Description: !Sub "${ProjectCode} AWS Infra management"
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Body:
+        openapi: "3.0.1"
+        info:
+          title: !Sub "${ProjectCode}_${stage}_infra"
+          description: !Sub "Infrastructure management API"
+          version: "2025-02-21T10:52:31Z"
+        paths:
+          /sqs/size:
+            post:
+              responses:
+                "200":
+                  description: "200 response"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              security:
+                - api_key: []
+              x-amazon-apigateway-integration:
+                type: "aws_proxy"
+                httpMethod: "POST"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-sqs-size/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                contentHandling: "CONVERT_TO_TEXT"
+            options:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "mock"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: "when_no_match"
+
+
+          /vpn-server/start:
+            post:
+              responses:
+                "200":
+                  description: "200 response"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              security:
+                - api_key: []
+              x-amazon-apigateway-integration:
+                type: "aws_proxy"
+                httpMethod: "POST"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-ec2-start/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                contentHandling: "CONVERT_TO_TEXT"
+            options:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "mock"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: "when_no_match"
+          /vpn-server/stop:
+            post:
+              responses:
+                "200":
+                  description: "200 response"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              security:
+                - api_key: []
+              x-amazon-apigateway-integration:
+                type: "aws_proxy"
+                httpMethod: "POST"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-ec2-stop/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                contentHandling: "CONVERT_TO_TEXT"
+            options:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "mock"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: "when_no_match"
+          /vpn-server/status:
+            post:
+              responses:
+                "200":
+                  description: "200 response"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              security:
+                - api_key: []
+              x-amazon-apigateway-integration:
+                type: "aws_proxy"
+                httpMethod: "POST"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-ec2-status/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                contentHandling: "CONVERT_TO_TEXT"
+            options:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "mock"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: "when_no_match"
+
+
+          /database/start:
+            post:
+              responses:
+                "200":
+                  description: "200 response"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              security:
+                - api_key: []
+              x-amazon-apigateway-integration:
+                type: "aws_proxy"
+                httpMethod: "POST"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-rds-start/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                contentHandling: "CONVERT_TO_TEXT"
+            options:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "mock"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: "when_no_match"
+          /database/stop:
+            post:
+              responses:
+                "200":
+                  description: "200 response"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              security:
+                - api_key: []
+              x-amazon-apigateway-integration:
+                type: "aws_proxy"
+                httpMethod: "POST"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-rds-stop/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                contentHandling: "CONVERT_TO_TEXT"
+            options:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "mock"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: "when_no_match"
+          /database/status:
+            post:
+              responses:
+                "200":
+                  description: "200 response"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              security:
+                - api_key: []
+              x-amazon-apigateway-integration:
+                type: "aws_proxy"
+                httpMethod: "POST"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-rds-status/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                contentHandling: "CONVERT_TO_TEXT"
+            options:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "mock"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: "when_no_match"
+        components:
+          schemas:
+            Empty:
+              title: "Empty Schema"
+              type: "object"
+          securitySchemes:
+            api_key:
+              type: "apiKey"
+              name: "x-api-key"
+              in: "header"
+
+
+  ApiStage:
+    Type: 'AWS::ApiGateway::Stage'
+    Properties:
+      DeploymentId: !Ref ApiDeployment
+      RestApiId: !Ref LenieApi
+      StageName: 'v1'
+
+  ApiDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+#    DependsOn:
+#      - UrlAddMethod
+#      - UrlAddOptionsMethod
+    Properties:
+      RestApiId: !Ref LenieApi
+
+  LambdaInvokePermissionRdsStart:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RdsStartFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"

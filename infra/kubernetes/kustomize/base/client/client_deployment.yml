@@ -1,0 +1,23 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: lenie-ai-client
+  template:
+    metadata:
+      labels:
+        app: lenie-ai-client
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+      - name: lenie-react-interface
+        securityContext:
+          allowPrivilegeEscalation: false
+        image: lenieai/lenie-react-interface:latest
+        ports:
+        - containerPort: 3000

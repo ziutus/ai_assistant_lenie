@@ -2,7 +2,8 @@
 set -e
 set -x
 
-source ../env.sh
+source ./env.sh
+
 
 TMP_DIR="tmp/lenie_${PYTHON_VERSION_NICE}"
 

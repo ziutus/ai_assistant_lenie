@@ -1,4 +1,4 @@
-FROM node:18.0 AS build-stage
+FROM node:24.0 AS build-stage
 LABEL authors="ziutus"
 
 # Ustawiamy katalog roboczy w kontenerze
@@ -13,7 +13,7 @@ RUN yarn install
 # Kopiujemy resztę kodu aplikacji do katalogu roboczego kontenera
 COPY . .
 
-FROM node:18.0-slim
+FROM node:24.0-slim
 WORKDIR /app
 COPY --from=build-stage /app .
 

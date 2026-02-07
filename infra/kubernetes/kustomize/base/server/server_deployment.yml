@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: server
+  annotations:
+    configmap.reloader.stakater.com/reload: "env-config"
+    reloader.stakater.com/auto: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: server
+  template:
+    metadata:
+      labels:
+        app: server
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+      - name: lenie-ai-server
+        securityContext:
+          allowPrivilegeEscalation: false
+        image: lenieai/lenie-ai-server:latest
+        ports:
+        - containerPort: 5000
+        env:
+        - name: POSTGRESQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: password
+        - name: POSTGRESQL_USER
+          valueFrom:
+            secretKeyRef:
+              name: db-secrets
+              key: username
+        envFrom:
+        - configMapRef:
+            name: lenie-ai-server-config
+        - secretRef:
+            name: lenie-ai-server-secret
+
+        readinessProbe:
+          httpGet:
+            path: /readiness
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /liveness
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        startupProbe:
+          httpGet:
+            path: /startup
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 10
