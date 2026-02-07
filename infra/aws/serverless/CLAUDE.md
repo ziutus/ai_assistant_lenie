@@ -155,6 +155,51 @@ cd lambdas/rds-start/
 
 This zips just the `lambda_function.py` and updates the function directly.
 
+## Flask Server vs Lambda Split
+
+### Why Two Lambdas?
+
+The Flask backend (`backend/server.py`) is the unified server used in Docker and Kubernetes deployments. In AWS serverless, the endpoints are split into two Lambda functions due to **VPC networking constraints**:
+
+- **`app-server-db`** runs **inside VPC** to access RDS (PostgreSQL). It cannot make outbound internet calls because there is **no NAT Gateway** (cost optimization for a hobby project).
+- **`app-server-internet`** runs **outside VPC** with internet access for downloading web pages, calling LLM APIs (OpenAI), and computing embeddings.
+
+The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-put-into` Lambda, which stores data in S3 + DynamoDB and sends a message to SQS (processed later by `sqs-into-rds` when RDS is available).
+
+### Endpoint Mapping: server.py vs Lambdas
+
+| `server.py` endpoint | Lambda | Notes |
+|---|---|---|
+| `/` (GET) | - | Info endpoint, server.py only |
+| `/url_add` (POST) | `sqs-weblink-put-into` | Different architecture: S3+DynamoDB+SQS instead of direct DB write |
+| `/website_list` (GET) | `app-server-db` | Lambda does not return `all_results_count` |
+| `/website_is_paid` (POST) | `app-server-db` | Functionally equivalent |
+| `/website_get` (GET) | `app-server-db` | Functionally equivalent |
+| `/website_get_next_to_correct` (GET) | `app-server-db` | Lambda accepts extra params: `document_type`, `document_state` |
+| `/website_similar` (POST) | `app-server-db` | Lambda receives pre-computed embeddings; server.py computes them internally |
+| `/website_split_for_embedding` (POST) | `app-server-db` | Functionally equivalent |
+| `/website_delete` (GET) | `app-server-db` | Functionally equivalent |
+| `/website_save` (POST) | `app-server-db` | Functionally equivalent |
+| `/ai_get_embedding` (POST) | `app-server-internet` | **Different endpoint name in Lambda: `/ai_embedding_get`** |
+| `/website_download_text_content` (POST) | `app-server-internet` | Functionally equivalent |
+| `/ai_ask` (POST) | `app-server-internet` | Lambda ignores `model` from request, always uses `llm_simple_jobs_model` env var |
+| `/website_text_remove_not_needed` (POST) | - | server.py only, not implemented in Lambda |
+| - | `app-server-internet` `/translate` | Lambda only, not implemented in server.py |
+| `/healthz`, `/startup`, `/readiness`, `/liveness` (GET) | - | Kubernetes health probes, not needed in Lambda |
+| `/version` (GET) | - | server.py only |
+| `/metrics` (GET) | - | Prometheus metrics stub, server.py only |
+
+### Known Differences Between Implementations
+
+1. **Endpoint naming inconsistency**: `/ai_get_embedding` (server.py) vs `/ai_embedding_get` (Lambda Internet)
+2. **`/ai_ask` model handling**: server.py uses `model` from the request body; Lambda always uses `llm_simple_jobs_model` from env vars
+3. **`/website_similar` flow**: In server.py, embeddings are computed server-side. In Lambda, the frontend must call `/ai_embedding_get` first (Lambda Internet) and then pass the result to `/website_similar` (Lambda DB) — because one Lambda cannot do both DB access and internet calls.
+4. **`/website_list` response**: server.py returns `all_results_count` field; Lambda does not
+5. **`/website_get_next_to_correct`**: Lambda version accepts `document_type` and `document_state` filter params; server.py only accepts `id`
+6. **Authentication**: server.py validates `x-api-key` header via `before_request` hook; Lambda functions rely on API Gateway for auth (API key or IAM)
+7. **`/website_text_remove_not_needed`**: Missing from Lambda — text cleaning is not available in serverless deployment
+8. **`/translate`**: Missing from server.py — translation is only available in AWS Lambda (uses AWS Translate or similar)
+
 ## Related Components
 
 - **CloudFormation templates**: `cloudformation/templates/` - Lambda function and API Gateway infrastructure definitions
