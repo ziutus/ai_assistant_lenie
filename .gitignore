@@ -81,3 +81,4 @@ credentials.json
 */credentials.json
 */token.json
 token.json
+/infra/aws/serverless/env_lenie_2025.sh
