@@ -1,58 +1,60 @@
 # CI/CD Reference Documentation
 
-Ten dokument stanowi **bazę wiedzy dla agenta AI** do tworzenia nowych pipeline'ów CI/CD. Zawiera sprawdzone wzorce, komendy i konfiguracje zebrane z poprzednich implementacji (GitLab CI, Jenkins, CircleCI).
+This document serves as a **knowledge base for the AI agent** for creating new CI/CD pipelines. It contains proven patterns, commands, and configurations gathered from previous implementations (GitLab CI, Jenkins, CircleCI).
 
-> **Uwaga:** Ten dokument nie opisuje aktywnego pipeline'u. Służy jako referencja do budowy nowych konfiguracji CI/CD.
+> **Note:** This document does not describe an active pipeline. It serves as a reference for building new CI/CD configurations.
 
-## Kontekst projektu
+## Project Context
 
-**Projekt hobbystyczny** - infrastruktura nie działa 24/7. Maszyny wirtualne są uruchamiane tylko gdy są potrzebne, w celu obniżenia kosztów.
+**Hobby project** - infrastructure does not run 24/7. Virtual machines are started only when needed to reduce costs.
 
-**Dynamiczne adresy IP** - ze względów oszczędnościowych adresy IP nie są rezerwowane (Elastic IP), lecz przypisywane dynamicznie przy starcie instancji. Dlatego skrypty startowe zawierają aktualizację rekordów DNS (np. Route 53).
+**Dynamic IP addresses** - to save costs, IP addresses are not reserved (Elastic IP) but assigned dynamically when instances start. Therefore, startup scripts include DNS record updates (e.g., Route 53).
 
-**Historia i kierunek rozwoju:**
-- **Początki (AWS)** - projekt pierwotnie był tworzony jako serverless w AWS, aby poznać możliwości tej platformy
-- **Obecny kierunek (GCP)** - autor pracuje zawodowo w Google Cloud Platform, więc projekt będzie migrowany do GCP
-- **Kubernetes** - opcja wdrożenia na Kubernetes jest wspierana ze względu na chęć pogłębienia wiedzy w tym obszarze
+**Self-hosted runners** - to reduce costs, pipelines use self-hosted runners instead of those provided by CI/CD vendors (e.g., CircleCI, GitLab). This allows leveraging the AWS or Google Cloud free tier for compute resources, rather than paying for CI/CD provider's build minutes.
 
-## Cel dokumentu
+**History and development direction:**
+- **Beginnings (AWS)** - the project was originally created as serverless on AWS to explore the platform's capabilities
+- **Current direction (GCP)** - the author works professionally with Google Cloud Platform, so the project will be migrated to GCP
+- **Kubernetes** - Kubernetes deployment option is supported due to the desire to deepen knowledge in this area
 
-Agent AI powinien wykorzystać tę dokumentację do:
-- Tworzenia nowych pipeline'ów CI/CD dla dowolnej platformy
-- Wyboru odpowiednich narzędzi bezpieczeństwa i testowania
-- Konfiguracji infrastruktury AWS (EC2 runner)
-- Implementacji buildów i deploymentu Docker
+## Document Purpose
 
-## Spis treści
+The AI agent should use this documentation to:
+- Create new CI/CD pipelines for any platform
+- Select appropriate security and testing tools
+- Configure AWS infrastructure (EC2 runner)
+- Implement Docker builds and deployment
 
-1. [Kontekst projektu](#kontekst-projektu)
-2. [Przegląd pipeline'u](#przegląd-pipelineu)
-3. [Wzorzec CircleCI](#wzorzec-circleci)
-4. [Infrastruktura AWS](#infrastruktura-aws)
-   - [Skrypty do uruchamiania instancji z aktualizacją DNS](#skrypty-do-ręcznego-uruchamiania-instancji-z-aktualizacją-dns)
-5. [Przygotowanie Self-hosted Runner EC2](#przygotowanie-self-hosted-runner-ec2)
-6. [Self-hosted Jenkins na EC2](#self-hosted-jenkins-na-ec2)
-7. [Etapy pipeline'u](#etapy-pipelineu)
-8. [Narzędzia bezpieczeństwa](#narzędzia-bezpieczeństwa)
-   - [Semgrep](#semgrep---analiza-statyczna-kodu)
-   - [TruffleHog](#trufflehog---wykrywanie-sekretów)
-   - [OSV Scanner](#osv-scanner---skanowanie-podatności-zależności)
-   - [Qodana](#qodana---analiza-kodu-jetbrains)
-9. [Testy i jakość kodu](#testy-i-jakość-kodu)
-10. [Build i deploy Docker](#build-i-deploy-docker)
-11. [Zmienne środowiskowe](#zmienne-środowiskowe)
-12. [Artefakty](#artefakty)
+## Table of Contents
+
+1. [Project Context](#project-context)
+2. [Pipeline Overview](#pipeline-overview)
+3. [CircleCI Pattern](#circleci-pattern)
+4. [AWS Infrastructure](#aws-infrastructure)
+   - [Scripts for Starting Instances with DNS Update](#scripts-for-manually-starting-instances-with-dns-update)
+5. [Preparing Self-hosted EC2 Runner](#preparing-self-hosted-ec2-runner)
+6. [Self-hosted Jenkins on EC2](#self-hosted-jenkins-on-ec2)
+7. [Pipeline Stages](#pipeline-stages)
+8. [Security Tools](#security-tools)
+   - [Semgrep](#semgrep---static-code-analysis)
+   - [TruffleHog](#trufflehog---secret-detection)
+   - [OSV Scanner](#osv-scanner---dependency-vulnerability-scanning)
+   - [Qodana](#qodana---jetbrains-code-analysis)
+9. [Tests and Code Quality](#tests-and-code-quality)
+10. [Docker Build and Deploy](#docker-build-and-deploy)
+11. [Environment Variables](#environment-variables)
+12. [Artifacts](#artifacts)
 
 ---
 
-## Przegląd pipeline'u
+## Pipeline Overview
 
-Pipeline CI/CD składa się z następujących głównych etapów:
+The CI/CD pipeline consists of the following main stages:
 
 ```
 .pre (start_runner)
     ↓
-test + security-checks (równolegle)
+test + security-checks (parallel)
     ↓
 build
     ↓
@@ -63,42 +65,42 @@ clean-node
 .post (stop_runner)
 ```
 
-## Wzorzec CircleCI
+## CircleCI Pattern
 
-Przykładowa konfiguracja CircleCI z self-hosted runnerem na EC2.
+Example CircleCI configuration with a self-hosted runner on EC2.
 
-### Architektura
+### Architecture
 
 ```
 start-ec2
     ↓
-run-job-on-ec2 (testy)
+run-job-on-ec2 (tests)
     ↓
 run-job-on-ec2-docker (build)
     ↓
 stop-ec2
 ```
 
-### Orbs i Executors
+### Orbs and Executors
 
 ```yaml
 orbs:
-  aws-cli: circleci/aws-cli@3.1    # Integracja z AWS CLI
+  aws-cli: circleci/aws-cli@3.1    # AWS CLI integration
 
 executors:
-  python-executor:                  # Lekki kontener Python
+  python-executor:                  # Lightweight Python container
     docker:
       - image: cimg/python:3.11
 
-  machine-executor:                 # Maszyna z Docker
+  machine-executor:                 # Machine with Docker
     machine:
-      docker_layer_caching: true    # Cache warstw Docker
+      docker_layer_caching: true    # Docker layer cache
 ```
 
 ### Jobs
 
 #### 1. start-ec2
-Uruchamia instancję EC2 przed rozpoczęciem testów.
+Starts the EC2 instance before running tests.
 
 ```yaml
 jobs:
@@ -113,7 +115,7 @@ jobs:
 ```
 
 #### 2. run-job-on-ec2
-Instaluje zależności i uruchamia testy na self-hosted runner EC2.
+Installs dependencies and runs tests on the self-hosted EC2 runner.
 
 ```yaml
 run-job-on-ec2:
@@ -139,13 +141,13 @@ run-job-on-ec2:
         path: test-results/results.xml
 ```
 
-**Uwagi:**
-- Używa `uv venv` zamiast `--system` (izolowane środowisko)
-- Generuje raport w formacie JUnit XML
-- Testy tylko jednostkowe (`tests/unit`)
+**Notes:**
+- Uses `uv venv` instead of `--system` (isolated environment)
+- Generates report in JUnit XML format
+- Unit tests only (`tests/unit`)
 
 #### 3. run-job-on-ec2-docker
-Buduje obraz Docker na self-hosted runner.
+Builds Docker image on the self-hosted runner.
 
 ```yaml
 run-job-on-ec2-docker:
@@ -160,7 +162,7 @@ run-job-on-ec2-docker:
 ```
 
 #### 4. stop-ec2
-Zatrzymuje instancję EC2 po zakończeniu pipeline'u.
+Stops the EC2 instance after the pipeline completes.
 
 ```yaml
 stop-ec2:
@@ -202,39 +204,39 @@ workflows:
 
 ### Self-hosted Runner
 
-CircleCI używa self-hosted runnera na EC2:
+CircleCI uses a self-hosted runner on EC2:
 - **Resource class:** `itsnap/itsnap-runner`
-- Runner musi być zainstalowany na instancji EC2
-- Dokumentacja: https://circleci.com/docs/runner-overview/
+- Runner must be installed on the EC2 instance
+- Documentation: https://circleci.com/docs/runner-overview/
 
-### Przechowywanie wyników testów
+### Storing Test Results
 
 ```yaml
 - store_test_results:
     path: test-results/results.xml
 ```
 
-CircleCI automatycznie parsuje format JUnit XML i wyświetla wyniki w UI.
+CircleCI automatically parses JUnit XML format and displays results in the UI.
 
-## Infrastruktura AWS
+## AWS Infrastructure
 
-### Automatyczne zarządzanie instancją EC2
+### Automatic EC2 Instance Management
 
-Pipeline automatycznie zarządza instancją EC2 AWS, która służy jako runner:
+The pipeline automatically manages the AWS EC2 instance that serves as the runner:
 
-**Uruchomienie instancji (przed pipeline'em):**
+**Starting instance (before pipeline):**
 ```bash
 aws ec2 start-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
 aws ec2 wait instance-running --instance-ids $INSTANCE_ID --region $AWS_REGION
 ```
 
-**Zatrzymanie instancji (po pipeline'ie):**
+**Stopping instance (after pipeline):**
 ```bash
 aws ec2 stop-instances --instance-ids $INSTANCE_ID --region $AWS_REGION
 aws ec2 wait instance-stopped --instance-ids $INSTANCE_ID --region $AWS_REGION
 ```
 
-**Sprawdzenie stanu instancji (Jenkins):**
+**Checking instance state (Jenkins):**
 ```bash
 aws ec2 describe-instances \
     --instance-ids $INSTANCE_ID \
@@ -243,7 +245,7 @@ aws ec2 describe-instances \
     --region $AWS_REGION
 ```
 
-### Konfiguracja AWS CLI
+### AWS CLI Configuration
 
 ```bash
 aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
@@ -251,11 +253,11 @@ aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
 aws configure set region $AWS_REGION
 ```
 
-### Skrypty do ręcznego uruchamiania instancji z aktualizacją DNS
+### Scripts for Manually Starting Instances with DNS Update
 
-Przy wyłączaniu infrastruktury AWS w celach oszczędnościowych, po ponownym uruchomieniu instancji EC2 zmienia się jej publiczne IP. Poniższy wzorzec automatycznie aktualizuje rekord DNS w Route 53.
+When shutting down AWS infrastructure to save costs, after restarting the EC2 instance, its public IP changes. The following pattern automatically updates the DNS record in Route 53.
 
-**Wzorzec skryptu Python (`ec2_start_with_dns.py`):**
+**Python script pattern (`ec2_start_with_dns.py`):**
 
 ```python
 import boto3
@@ -265,43 +267,43 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Konfiguracja z pliku .env
+# Configuration from .env file
 INSTANCE_ID = os.getenv("AWS_INSTANCE_ID")
 HOSTED_ZONE_ID = os.getenv("AWS_HOSTED_ZONE_ID")
 DOMAIN_NAME = os.getenv("DOMAIN_NAME")
 
 
 def start_ec2_instance(instance_id):
-    """Uruchamia instancję EC2"""
+    """Starts the EC2 instance"""
     ec2 = boto3.client("ec2")
-    print(f"Uruchamiam instancję EC2 o ID: {instance_id}")
+    print(f"Starting EC2 instance with ID: {instance_id}")
     ec2.start_instances(InstanceIds=[instance_id])
 
-    print("Czekam na uruchomienie instancji...")
+    print("Waiting for instance to start...")
     waiter = ec2.get_waiter("instance_running")
     waiter.wait(InstanceIds=[instance_id])
-    print("Instancja EC2 została uruchomiona!")
+    print("EC2 instance has been started!")
 
 
 def get_instance_public_ip(instance_id):
-    """Pobiera publiczny adres IP instancji EC2"""
+    """Gets the public IP address of the EC2 instance"""
     ec2 = boto3.client("ec2")
     response = ec2.describe_instances(InstanceIds=[instance_id])
 
     public_ip = response["Reservations"][0]["Instances"][0].get("PublicIpAddress")
     if not public_ip:
-        print("Publiczny adres IP nie jest jeszcze dostępny. Czekam...")
+        print("Public IP address is not yet available. Waiting...")
         time.sleep(10)
         return get_instance_public_ip(instance_id)
 
-    print(f"Publiczny adres IP instancji: {public_ip}")
+    print(f"Instance public IP address: {public_ip}")
     return public_ip
 
 
 def update_route53_record(hosted_zone_id, domain_name, public_ip):
-    """Aktualizuje rekord A w Route 53"""
+    """Updates the A record in Route 53"""
     route53 = boto3.client("route53")
-    print(f"Aktualizuję rekord A w Route 53 dla domeny: {domain_name}")
+    print(f"Updating A record in Route 53 for domain: {domain_name}")
 
     response = route53.change_resource_record_sets(
         HostedZoneId=hosted_zone_id,
@@ -319,39 +321,39 @@ def update_route53_record(hosted_zone_id, domain_name, public_ip):
             ]
         },
     )
-    print(f"Rekord A zaktualizowany! Status: {response['ChangeInfo']['Status']}")
+    print(f"A record updated! Status: {response['ChangeInfo']['Status']}")
 
 
 if __name__ == "__main__":
     if not all([INSTANCE_ID, HOSTED_ZONE_ID, DOMAIN_NAME]):
-        raise ValueError("Ustaw zmienne INSTANCE_ID, HOSTED_ZONE_ID i DOMAIN_NAME w .env")
+        raise ValueError("Set INSTANCE_ID, HOSTED_ZONE_ID, and DOMAIN_NAME variables in .env")
 
-    # 1. Uruchomienie instancji EC2
+    # 1. Start EC2 instance
     start_ec2_instance(INSTANCE_ID)
 
-    # 2. Pobranie publicznego adresu IP
+    # 2. Get public IP address
     public_ip = get_instance_public_ip(INSTANCE_ID)
 
-    # 3. Aktualizacja rekordu Route 53
+    # 3. Update Route 53 record
     update_route53_record(HOSTED_ZONE_ID, DOMAIN_NAME, public_ip)
 ```
 
-**Wymagane zmienne w `.env`:**
+**Required variables in `.env`:**
 
 ```bash
-# Dla Jenkins
+# For Jenkins
 JENKINS_AWS_INSTANCE_ID=i-0123456789abcdef0
 JENKINS_DOMAIN_NAME=jenkins.example.com
 
-# Dla OpenVPN
+# For OpenVPN
 OPENVPN_OWN_AWS_INSTANCE_ID=i-0987654321fedcba0
 OPENVPN_OWN_DOMAIN_NAME=vpn.example.com
 
-# Wspólne
+# Common
 AWS_HOSTED_ZONE_ID=Z0123456789ABCDEFGHIJ
 ```
 
-**Wymagane uprawnienia IAM:**
+**Required IAM permissions:**
 
 ```json
 {
@@ -376,72 +378,72 @@ AWS_HOSTED_ZONE_ID=Z0123456789ABCDEFGHIJ
 }
 ```
 
-**Użycie:**
+**Usage:**
 
 ```bash
-# Instalacja zależności
+# Install dependencies
 pip install boto3 python-dotenv
 
-# Uruchomienie
+# Run
 python ec2_start_with_dns.py
 ```
 
-## Przygotowanie Self-hosted Runner EC2
+## Preparing Self-hosted EC2 Runner
 
-Instrukcja przygotowania instancji EC2 jako self-hosted runnera CI/CD (Amazon Linux 2023).
+Instructions for preparing an EC2 instance as a self-hosted CI/CD runner (Amazon Linux 2023).
 
-### 1. Instalacja Python 3.11
+### 1. Installing Python 3.11
 
-Projekt wymaga Python 3.11. Instalacja i ustawienie jako domyślna wersja:
+The project requires Python 3.11. Installation and setting as default version:
 
 ```bash
-# Instalacja Python 3.11 (jeśli nie jest zainstalowany)
+# Install Python 3.11 (if not installed)
 sudo dnf install python3.11 -y
 
-# Ustawienie Python 3.11 jako domyślny
+# Set Python 3.11 as default
 sudo alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 sudo alternatives --config python3
 
-# Weryfikacja
+# Verification
 python3 --version
 # Python 3.11.6
 ```
 
-### 2. Instalacja pip
+### 2. Installing pip
 
 ```bash
 sudo dnf install python3-pip -y
 ```
 
-### 3. Instalacja Go (dla osv-scanner)
+### 3. Installing Go (for osv-scanner)
 
 ```bash
 sudo dnf update -y
 sudo dnf install -y golang
 
-# Weryfikacja
+# Verification
 go version
 ```
 
-### 4. Instalacja narzędzi testowych
+### 4. Installing Testing Tools
 
-**Flake8 z raportami HTML:**
+**Flake8 with HTML reports:**
 ```bash
 pip3 install flake8-html
 ```
 
-**Pytest z raportami HTML:**
+**Pytest with HTML reports:**
 ```bash
 pip3 install pytest-html
 ```
 
-### 5. Instalacja narzędzi bezpieczeństwa
+### 5. Installing Security Tools
 
 **Semgrep:**
 ```bash
 python3 -m pip install semgrep
 
-# Jeśli występują konflikty zależności:
+# If there are dependency conflicts:
 python3 -m pip install --ignore-installed semgrep
 ```
 
@@ -449,59 +451,59 @@ python3 -m pip install --ignore-installed semgrep
 ```bash
 go install github.com/google/osv-scanner/cmd/osv-scanner@v1
 
-# Binarka zostanie zainstalowana w ~/go/bin/
-# Dodaj do PATH lub skopiuj do /usr/local/bin/
+# Binary will be installed in ~/go/bin/
+# Add to PATH or copy to /usr/local/bin/
 sudo cp ~/go/bin/osv-scanner /usr/local/bin/
 ```
 
-### 6. Instalacja Docker (opcjonalnie)
+### 6. Installing Docker (optional)
 
 ```bash
 sudo dnf install docker -y
 sudo systemctl start docker
 sudo systemctl enable docker
 
-# Dodanie użytkownika do grupy docker
+# Add user to docker group
 sudo usermod -aG docker $USER
 ```
 
-### 7. Instalacja uv (szybki menedżer pakietów)
+### 7. Installing uv (fast package manager)
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-### Podsumowanie zainstalowanych narzędzi
+### Summary of Installed Tools
 
-| Narzędzie | Komenda | Opis |
-|-----------|---------|------|
-| Python 3.11 | `python3` | Interpreter Python |
-| pip | `pip3` | Menedżer pakietów Python |
-| Go | `go` | Kompilator Go |
-| Flake8 | `flake8` | Linter stylu kodu |
-| Pytest | `pytest` | Framework testowy |
-| Semgrep | `semgrep` | Analiza statyczna bezpieczeństwa |
-| OSV Scanner | `osv-scanner` | Skanowanie podatności |
-| Docker | `docker` | Konteneryzacja |
-| uv | `uv` | Szybki menedżer pakietów Python |
+| Tool | Command | Description |
+|------|---------|-------------|
+| Python 3.11 | `python3` | Python interpreter |
+| pip | `pip3` | Python package manager |
+| Go | `go` | Go compiler |
+| Flake8 | `flake8` | Code style linter |
+| Pytest | `pytest` | Testing framework |
+| Semgrep | `semgrep` | Security static analysis |
+| OSV Scanner | `osv-scanner` | Vulnerability scanning |
+| Docker | `docker` | Containerization |
+| uv | `uv` | Fast Python package manager |
 
-## Self-hosted Jenkins na EC2
+## Self-hosted Jenkins on EC2
 
-Dodatkowe konfiguracje dla self-hosted Jenkins na instancji EC2.
+Additional configurations for self-hosted Jenkins on an EC2 instance.
 
-### Automatyczna konfiguracja Security Group przy starcie
+### Automatic Security Group Configuration at Startup
 
-Skrypt uruchamiany przy starcie instancji EC2, który automatycznie dodaje publiczne IP workera do Security Group Jenkins, umożliwiając połączenie.
+Script run at EC2 instance startup that automatically adds the worker's public IP to the Jenkins Security Group, enabling connection.
 
-**Skrypt startowy (`/usr/local/bin/aws_jenkins_worker_start.sh`):**
+**Startup script (`/usr/local/bin/aws_jenkins_worker_start.sh`):**
 
 ```bash
 #!/bin/bash
 
 REGION="us-east-1"
 
-# Pobranie tokena IMDSv2
+# Get IMDSv2 token
 TOKEN=$(curl -s -X PUT "http://169.254.169.254/latest/api/token" \
     -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
 
@@ -510,14 +512,14 @@ if [ -z "$TOKEN" ]; then
     exit 1
 fi
 
-# Pobranie publicznego IP instancji
+# Get instance public IP
 IP_ADDRESS=$(curl -s -H "X-aws-ec2-metadata-token: $TOKEN" \
     http://169.254.169.254/latest/meta-data/public-ipv4)
 
-# Ustawienie Python 3.11 jako domyślny
+# Set Python 3.11 as default
 alternatives --set python3 /usr/bin/python3.11
 
-# Dodanie reguły do Security Group
+# Add rule to Security Group
 aws ec2 authorize-security-group-ingress \
     --region $REGION \
     --group-id sg-XXXXXXXXX \
@@ -528,12 +530,12 @@ aws ec2 authorize-security-group-ingress \
 exit 0
 ```
 
-**Uwagi:**
-- Używa IMDSv2 (Instance Metadata Service v2) dla bezpieczeństwa
-- Wymaga uprawnień IAM: `ec2:AuthorizeSecurityGroupIngress`
-- Zmień `sg-XXXXXXXXX` na ID swojej Security Group
+**Notes:**
+- Uses IMDSv2 (Instance Metadata Service v2) for security
+- Requires IAM permissions: `ec2:AuthorizeSecurityGroupIngress`
+- Change `sg-XXXXXXXXX` to your Security Group ID
 
-**Plik systemd (`/etc/systemd/system/jenkins_worker.service`):**
+**Systemd file (`/etc/systemd/system/jenkins_worker.service`):**
 
 ```ini
 [Unit]
@@ -549,33 +551,33 @@ RemainAfterExit=true
 WantedBy=multi-user.target
 ```
 
-**Instalacja serwisu:**
+**Service installation:**
 
 ```bash
-# Skopiuj skrypt
+# Copy script
 sudo cp aws_jenkins_worker_start.sh /usr/local/bin/
 sudo chmod +x /usr/local/bin/aws_jenkins_worker_start.sh
 
-# Skopiuj plik serwisu
+# Copy service file
 sudo cp jenkins_worker.service /etc/systemd/system/
 
-# Włącz i uruchom serwis
+# Enable and start service
 sudo systemctl daemon-reload
 sudo systemctl enable jenkins_worker.service
 sudo systemctl start jenkins_worker.service
 ```
 
-### Certyfikaty SSL (Let's Encrypt)
+### SSL Certificates (Let's Encrypt)
 
-Jenkins może używać certyfikatów SSL z Let's Encrypt.
+Jenkins can use SSL certificates from Let's Encrypt.
 
-**Odnowienie certyfikatu:**
+**Certificate renewal:**
 
 ```bash
 letsencrypt renew
 ```
 
-**Konwersja do formatu PKCS12:**
+**Conversion to PKCS12 format:**
 
 ```bash
 openssl pkcs12 -export \
@@ -587,22 +589,22 @@ openssl pkcs12 -export \
     -caname root
 ```
 
-**Import do Java KeyStore:**
+**Import to Java KeyStore:**
 
 ```bash
 keytool -importkeystore \
-    -deststorepass <haslo_keystore> \
-    -destkeypass <haslo_klucza> \
+    -deststorepass <keystore_password> \
+    -destkeypass <key_password> \
     -destkeystore /var/lib/jenkins/jenkins.jks \
     -srckeystore jenkins.p12 \
     -srcstoretype PKCS12 \
-    -srcstorepass <haslo_p12> \
+    -srcstorepass <p12_password> \
     -alias jenkins
 ```
 
 ### GitHub Webhooks
 
-Testowanie webhooków GitHub:
+Testing GitHub webhooks:
 
 ```bash
 curl -X POST \
@@ -611,31 +613,31 @@ curl -X POST \
     https://your-api-gateway.execute-api.us-east-1.amazonaws.com/v1/infra/git-webhooks
 ```
 
-## Etapy pipeline'u
+## Pipeline Stages
 
-### 1. Przygotowanie środowiska
+### 1. Environment Preparation
 
-**Instalacja uv (szybki menedżer pakietów Python):**
+**Installing uv (fast Python package manager):**
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
-**Instalacja zależności:**
+**Installing dependencies:**
 ```bash
 uv pip install --system -r backend/requirements_server.txt
 ```
 
-### 2. Checkout kodu
+### 2. Code Checkout
 
-**Jenkins (z GitHub):**
+**Jenkins (from GitHub):**
 ```groovy
 git credentialsId: 'github-token',
     url: 'https://github.com/ziutus/ai_assistant_lenie_server',
     branch: "${env.BRANCH_NAME}"
 ```
 
-### 3. Tworzenie katalogów na raporty
+### 3. Creating Report Directories
 
 ```bash
 mkdir -p results/
@@ -643,25 +645,49 @@ mkdir -p pytest-results/
 mkdir -p flake_reports/
 ```
 
-## Narzędzia bezpieczeństwa
+## Security Tools
 
-### Semgrep - Analiza statyczna kodu
+### Local Development - Quick Security Checks
 
-Semgrep wykrywa potencjalne luki bezpieczeństwa w kodzie.
+For local development, all security tools can be run via `uvx` (uv tool runner) without installing to project venv:
 
 ```bash
-# Instalacja
-uv pip install --system semgrep
+make security        # Semgrep static analysis
+make security-deps   # pip-audit - dependency vulnerabilities
+make security-bandit # Bandit - Python security linter
+make security-safety # Safety - dependency check
+make security-all    # Run all checks
+```
 
-# Uruchomienie z automatyczną konfiguracją
+| Tool | Command | Purpose |
+|------|---------|---------|
+| Semgrep | `uvx semgrep --config=auto backend/` | Static code analysis |
+| pip-audit | `uvx pip-audit` | PyPI advisory database check |
+| Bandit | `uvx bandit -r backend/` | Python security linter |
+| Safety | `uvx safety scan` | Dependency vulnerability check (requires free account) |
+
+### Semgrep - Static Code Analysis
+
+Semgrep detects potential security vulnerabilities in code.
+
+```bash
+# CI - Installation and run
+uv pip install --system semgrep
 semgrep --config=auto --output semgrep-report.json
 ```
 
-**Artefakt:** `semgrep-report.json`
+**Local development:** Use `uvx` to run semgrep without installing to project venv:
+```bash
+make security
+# or directly:
+uvx semgrep --config=auto backend/
+```
 
-### TruffleHog - Wykrywanie sekretów
+**Artifact:** `semgrep-report.json`
 
-TruffleHog skanuje repozytorium w poszukiwaniu przypadkowo commitowanych sekretów (API keys, hasła, tokeny).
+### TruffleHog - Secret Detection
+
+TruffleHog scans the repository for accidentally committed secrets (API keys, passwords, tokens).
 
 ```bash
 docker run --rm --name trufflehog \
@@ -669,37 +695,37 @@ docker run --rm --name trufflehog \
     --only-verified --bare 2>&1 | tee trufflehog.txt
 ```
 
-**Flagi:**
-- `--only-verified` - raportuje tylko zweryfikowane sekrety
-- `--bare` - minimalistyczny output
+**Flags:**
+- `--only-verified` - reports only verified secrets
+- `--bare` - minimalistic output
 
-**Artefakt:** `trufflehog.txt`
+**Artifact:** `trufflehog.txt`
 
-### OSV Scanner - Skanowanie podatności zależności
+### OSV Scanner - Dependency Vulnerability Scanning
 
-OSV Scanner sprawdza zależności pod kątem znanych podatności.
+OSV Scanner checks dependencies for known vulnerabilities.
 
 ```bash
 /usr/local/bin/osv-scanner scan --lockfile requirements.txt
 ```
 
-**Uwaga:** Ten etap może wymagać dodatkowej konfiguracji.
+**Note:** This stage may require additional configuration.
 
-**Artefakt:** `osv_scan_results.json`
+**Artifact:** `osv_scan_results.json`
 
-### Qodana - Analiza kodu JetBrains
+### Qodana - JetBrains Code Analysis
 
-Qodana to narzędzie JetBrains do statycznej analizy kodu, integrujące inspekcje z PyCharm/IntelliJ.
+Qodana is a JetBrains tool for static code analysis, integrating inspections from PyCharm/IntelliJ.
 
-#### Konfiguracja (`qodana.yaml`)
+#### Configuration (`qodana.yaml`)
 
 ```yaml
 version: "1.0"
 profile:
-  name: qodana.starter           # Profil inspekcji (starter/recommended/all)
-linter: jetbrains/qodana-python:latest  # Linter dla Pythona
+  name: qodana.starter           # Inspection profile (starter/recommended/all)
+linter: jetbrains/qodana-python:latest  # Python linter
 
-# Opcjonalne - włączenie/wyłączenie inspekcji
+# Optional - enable/disable inspections
 # include:
 #   - name: PyUnusedLocalInspection
 # exclude:
@@ -708,7 +734,7 @@ linter: jetbrains/qodana-python:latest  # Linter dla Pythona
 #       - legacy/
 ```
 
-#### Uruchomienie w CI/CD
+#### Running in CI/CD
 
 **GitLab CI:**
 ```yaml
@@ -724,7 +750,7 @@ script:
   - qodana --cache-dir=$CI_PROJECT_DIR/.qodana/cache
 ```
 
-**Lokalnie (Docker):**
+**Locally (Docker):**
 ```bash
 docker run --rm -it \
   -v $(pwd):/data/project/ \
@@ -732,20 +758,20 @@ docker run --rm -it \
   jetbrains/qodana-python:latest
 ```
 
-#### Wykrywane problemy (inspekcje Python)
+#### Detected Issues (Python Inspections)
 
-| Inspekcja | Opis | Priorytet |
-|-----------|------|-----------|
-| `PyArgumentListInspection` | Brakujące/nadmiarowe argumenty funkcji | WARNING |
-| `PyBroadExceptionInspection` | Zbyt ogólne przechwytywanie wyjątków (`except Exception`) | WARNING |
-| `PyDefaultArgumentInspection` | Mutowalny argument domyślny (np. `def f(x=[])`) | WARNING |
-| `PyTypeCheckerInspection` | Niezgodność typów (type hints) | WARNING |
-| `PyUnusedLocalInspection` | Nieużywane zmienne lokalne | WARNING |
-| `PyUnresolvedReferencesInspection` | Nierozpoznane referencje/importy | ERROR |
+| Inspection | Description | Priority |
+|------------|-------------|----------|
+| `PyArgumentListInspection` | Missing/extra function arguments | WARNING |
+| `PyBroadExceptionInspection` | Too broad exception catching (`except Exception`) | WARNING |
+| `PyDefaultArgumentInspection` | Mutable default argument (e.g., `def f(x=[])`) | WARNING |
+| `PyTypeCheckerInspection` | Type mismatch (type hints) | WARNING |
+| `PyUnusedLocalInspection` | Unused local variables | WARNING |
+| `PyUnresolvedReferencesInspection` | Unresolved references/imports | ERROR |
 
-#### Format raportu SARIF
+#### SARIF Report Format
 
-Qodana generuje raport w formacie SARIF (Static Analysis Results Interchange Format):
+Qodana generates a report in SARIF format (Static Analysis Results Interchange Format):
 
 ```json
 {
@@ -773,128 +799,128 @@ Qodana generuje raport w formacie SARIF (Static Analysis Results Interchange For
 }
 ```
 
-**Artefakty:**
-- `qodana.sarif.json` - szczegółowy raport wyników
-- `.qodana/` - cache i dodatkowe raporty
+**Artifacts:**
+- `qodana.sarif.json` - detailed results report
+- `.qodana/` - cache and additional reports
 
-**Wymaga:** Token `QODANA_TOKEN` i konto na qodana.cloud (opcjonalnie dla lokalnego użycia)
+**Requires:** `QODANA_TOKEN` token and qodana.cloud account (optional for local use)
 
-## Testy i jakość kodu
+## Tests and Code Quality
 
-### Pytest - Testy jednostkowe i integracyjne
+### Pytest - Unit and Integration Tests
 
 ```bash
-# Uruchomienie z raportem HTML
+# Run with HTML report
 pytest --self-contained-html --html=pytest-results/report.html
 ```
 
-**Flagi:**
-- `--self-contained-html` - generuje samodzielny plik HTML (bez zewnętrznych zasobów)
-- `--html=pytest-results/report.html` - ścieżka do raportu
+**Flags:**
+- `--self-contained-html` - generates a standalone HTML file (without external resources)
+- `--html=pytest-results/report.html` - path to report
 
-**Artefakt:** `pytest-results/` (cały katalog)
+**Artifact:** `pytest-results/` (entire directory)
 
-### Flake8 - Sprawdzanie stylu kodu
+### Flake8 - Code Style Checking
 
 ```bash
-# Instalacja
+# Installation
 uv pip install --system flake8-html
 
-# Uruchomienie z raportem HTML
+# Run with HTML report
 flake8 --format=html --htmldir=flake_reports/
 
-# Z wykluczeniem katalogów
+# With directory exclusion
 flake8 --format=html --exclude=ai_dev3 --htmldir=flake_reports/
 ```
 
-**Artefakt:** `flake_reports/` (cały katalog)
+**Artifact:** `flake_reports/` (entire directory)
 
-## Build i deploy Docker
+## Docker Build and Deploy
 
-### Build obrazu Docker
+### Building Docker Image
 
 ```bash
-# Build z tagiem wersji
+# Build with version tag
 docker build -t $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION .
 
-# Tagowanie jako latest
+# Tag as latest
 docker tag $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION \
            $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
 ```
 
-### Push do Docker Hub
+### Push to Docker Hub
 
 ```bash
-# Logowanie
+# Login
 docker login -u "$DOCKER_HUB_USERNAME" -p "$DOCKER_HUB_TOKEN"
 
-# Push obu tagów
+# Push both tags
 docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION
 docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
 ```
 
-### Czyszczenie starych obrazów
+### Cleaning Old Images
 
 ```bash
 chmod +x infra/docker/docker_images_clean.sh
 infra/docker/docker_images_clean.sh --remove-name lenie
 ```
 
-## Zmienne środowiskowe
+## Environment Variables
 
-### Wymagane zmienne
+### Required Variables
 
-| Zmienna | Opis | Przykład |
-|---------|------|----------|
-| `AWS_REGION` | Region AWS | `us-east-1` |
-| `INSTANCE_ID` | ID instancji EC2 runner'a | `i-03908d34c63fce042` |
-| `CI_REGISTRY_IMAGE` | Nazwa obrazu Docker | `lenie-ai-server` |
-| `TAG_VERSION` | Wersja tagu Docker | `0.2.11.6` |
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `AWS_REGION` | AWS region | `us-east-1` |
+| `INSTANCE_ID` | EC2 runner instance ID | `i-03908d34c63fce042` |
+| `CI_REGISTRY_IMAGE` | Docker image name | `lenie-ai-server` |
+| `TAG_VERSION` | Docker tag version | `0.2.11.6` |
 
-### Sekrety (przechowywane w CI/CD)
+### Secrets (stored in CI/CD)
 
-| Sekret | Opis |
-|--------|------|
-| `AWS_ACCESS_KEY_ID` | Klucz dostępu AWS (GitLab: `GITLAB_AWS_ACCESS_KEY_ID`) |
-| `AWS_SECRET_ACCESS_KEY` | Sekretny klucz AWS (GitLab: `GITLAB_AWS_SECRET_ACCESS_KEY`) |
-| `DOCKER_HUB_USERNAME` | Nazwa użytkownika Docker Hub |
-| `DOCKER_HUB_TOKEN` | Token dostępu Docker Hub |
-| `QODANA_TOKEN` | Token Qodana (opcjonalnie) |
+| Secret | Description |
+|--------|-------------|
+| `AWS_ACCESS_KEY_ID` | AWS access key (GitLab: `GITLAB_AWS_ACCESS_KEY_ID`) |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key (GitLab: `GITLAB_AWS_SECRET_ACCESS_KEY`) |
+| `DOCKER_HUB_USERNAME` | Docker Hub username |
+| `DOCKER_HUB_TOKEN` | Docker Hub access token |
+| `QODANA_TOKEN` | Qodana token (optional) |
 
-## Artefakty
+## Artifacts
 
-### Lista artefaktów generowanych przez pipeline
+### List of Artifacts Generated by the Pipeline
 
-| Artefakt | Etap | Opis |
-|----------|------|------|
-| `semgrep-report.json` | security-checks | Raport analizy statycznej Semgrep |
-| `trufflehog.txt` | security-checks | Raport wykrytych sekretów |
-| `osv_scan_results.json` | security-checks | Raport podatności zależności |
-| `qodana.sarif.json` | security-checks | Raport Qodana w formacie SARIF |
-| `pytest-results/` | test | Raporty testów pytest (HTML) |
-| `flake_reports/` | test | Raporty stylu kodu Flake8 (HTML) |
+| Artifact | Stage | Description |
+|----------|-------|-------------|
+| `semgrep-report.json` | security-checks | Semgrep static analysis report |
+| `trufflehog.txt` | security-checks | Detected secrets report |
+| `osv_scan_results.json` | security-checks | Dependency vulnerability report |
+| `qodana.sarif.json` | security-checks | Qodana report in SARIF format |
+| `pytest-results/` | test | Pytest test reports (HTML) |
+| `flake_reports/` | test | Flake8 code style reports (HTML) |
 
-### Archiwizacja artefaktów (Jenkins)
+### Archiving Artifacts (Jenkins)
 
 ```groovy
 archiveArtifacts artifacts: 'results/semgrep-report.json', fingerprint: true
 archiveArtifacts artifacts: 'pytest-results/**/*', allowEmptyArchive: true
 ```
 
-## Triggery pipeline'u
+## Pipeline Triggers
 
-Pipeline uruchamia się dla gałęzi:
+The pipeline runs for branches:
 - `dev`
 - `main`
 
-Etapy build i deploy wykonują się tylko dla tych gałęzi.
+Build and deploy stages execute only for these branches.
 
-## Równoległe wykonywanie
+## Parallel Execution
 
-Niektóre etapy mogą być wykonywane równolegle:
+Some stages can be executed in parallel:
 
 **GitLab CI:**
-- `job-pytest` i `job-style-tool-flake8-scan` (stage: test)
+- `job-pytest` and `job-style-tool-flake8-scan` (stage: test)
 - `job-security-tool-semgrep`, `job-security-tool-trufflehog`, `job-security-tool-osv_scan` (stage: security-checks)
 
 **Jenkins:**
@@ -909,17 +935,17 @@ stage('Python tests') {
 
 ---
 
-## Jak używać tej dokumentacji
+## How to Use This Documentation
 
-Przy tworzeniu nowego pipeline'u CI/CD:
+When creating a new CI/CD pipeline:
 
-1. **Wybierz platformę** (GitHub Actions, GitLab CI, CircleCI, Jenkins, etc.)
-2. **Określ etapy** - wykorzystaj [Przegląd pipeline'u](#przegląd-pipelineu) jako szablon
-3. **Skonfiguruj infrastrukturę** - jeśli używasz self-hosted runnera, patrz [Infrastruktura AWS](#infrastruktura-aws)
-4. **Dodaj narzędzia bezpieczeństwa** - wybierz z sekcji [Narzędzia bezpieczeństwa](#narzędzia-bezpieczeństwa)
-5. **Skonfiguruj testy** - patrz [Testy i jakość kodu](#testy-i-jakość-kodu)
-6. **Ustaw zmienne** - lista w [Zmienne środowiskowe](#zmienne-środowiskowe)
+1. **Choose a platform** (GitHub Actions, GitLab CI, CircleCI, Jenkins, etc.)
+2. **Define stages** - use [Pipeline Overview](#pipeline-overview) as a template
+3. **Configure infrastructure** - if using a self-hosted runner, see [AWS Infrastructure](#aws-infrastructure)
+4. **Add security tools** - choose from [Security Tools](#security-tools) section
+5. **Configure tests** - see [Tests and Code Quality](#tests-and-code-quality)
+6. **Set variables** - list in [Environment Variables](#environment-variables)
 
 ---
 
-*Dokumentacja referencyjna wygenerowana na podstawie historycznych konfiguracji: CircleCI, GitLab CI, Jenkins (worker scripts, SSL), Qodana, README_RUNNER.md*
+*Reference documentation generated from historical configurations: CircleCI, GitLab CI, Jenkins (worker scripts, SSL), Qodana, README_RUNNER.md*
