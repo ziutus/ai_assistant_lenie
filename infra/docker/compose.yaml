@@ -15,11 +15,11 @@ services:
 #    image: pgvector/pgvector:pg17
     image: lenie-ai-db:latest
     environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
-      - lenie-ai-db-data-2:/var/lib/postgresql/data
+      - lenie-ai-db-data-3:/var/lib/postgresql/data
 #      - ../../backend/database/init:/docker-entrypoint-initdb.d
     restart: unless-stopped
   lenie-ai-fronted:
@@ -29,7 +29,7 @@ services:
     restart: no
 
 volumes:
-  lenie-ai-db-data-2:
+  lenie-ai-db-data-3:
     driver: local
   lenie-ai-data:
     driver: local
