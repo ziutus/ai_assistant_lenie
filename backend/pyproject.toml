@@ -46,6 +46,24 @@ markdown = [
     "html2text",
 ]
 
+docker = [
+    "requests",
+    "beautifulsoup4",
+    "flask",
+    "flask-cors",
+    "python-dotenv",
+    "psycopg2-binary",
+    "openai",
+    "pytest",
+    "pytube",
+    "youtube-transcript-api",
+    "assemblyai",
+    "unidecode",
+    "boto3",
+    "aws-xray-sdk",
+    "langfuse",
+]
+
 all = [
     "requests",
     "beautifulsoup4",
@@ -74,6 +92,7 @@ all = [
     "chardet",
     "llm",
     "dateparser",
+    "hvac",
     "google-api-python-client",
     "google-auth-httplib2",
     "google-auth-oauthlib",
@@ -88,16 +107,21 @@ dev = [
     "pytest",
     "pytest-html",
     "pre-commit",
+    "ruff",
 ]
 
 [tool.uv.sources]
 
 [tool.pytest.ini_options]
-testpaths = ["backend/tests"]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 
-[tool.flake8]
-max-line-length = 120
+[tool.ruff]
+line-length = 120
 exclude = [".git", "__pycache__", "venv", ".venv", "node_modules"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
