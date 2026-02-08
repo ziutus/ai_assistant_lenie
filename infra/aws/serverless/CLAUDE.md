@@ -28,7 +28,6 @@ serverless/
 │   ├── app-server-db/         # Main app Lambda - DB operations (uses backend/library)
 │   ├── app-server-internet/   # Main app Lambda - internet operations (uses backend/library)
 │   ├── jenkins-job-start/     # Trigger Jenkins job via API
-│   ├── ses-with-excel/        # Send email with Excel attachment via SES
 │   └── tmp/                   # Empty Lambda placeholder
 └── lambda_layers/             # Lambda layer build scripts
     ├── layer_create_psycop2_new.sh  # psycopg2-binary layer
@@ -96,8 +95,13 @@ Both app functions use path-based routing (`event['path']`) via API Gateway prox
 | Function | Description |
 |----------|-------------|
 | `jenkins-job-start` | Triggers a Jenkins job via HTTP API with CSRF crumb authentication. Env vars: `JENKINS_URL`, `JENKINS_USER`, `JENKINS_PASSWORD`, `JENKINS_JOB_NAME` |
-| `ses-with-excel` | Generates an Excel file (openpyxl), uploads to S3, sends via SES as email attachment. Env var: `S3_BUCKET_NAME` |
 | `rds-reports` | Diagnostic script for listing RDS instances and their tags (can run locally) |
+
+### Archived Functions
+
+| Function | Archived | Git Tag | Description |
+|----------|----------|---------|-------------|
+| `ses-with-excel` | 2026-02 | `archive/ses-with-excel` | Generated Excel (openpyxl), uploaded to S3, sent via SES. Prototype with hardcoded test data. Restore: `git checkout archive/ses-with-excel -- infra/aws/serverless/lambdas/ses-with-excel/` |
 
 ## Lambda Layers
 

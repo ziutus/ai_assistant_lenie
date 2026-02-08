@@ -22,7 +22,7 @@ infra/aws/
 | Category              | Count | Details                                      |
 |-----------------------|-------|----------------------------------------------|
 | CloudFormation Stacks | 27    | Templates in `cloudformation/templates/`     |
-| Lambda Functions      | 14    | Python 3.11 runtime                          |
+| Lambda Functions      | 13    | Python 3.11 runtime                          |
 | API Gateway APIs      | 3     | app, infra, chrome-extension                 |
 | API Endpoints         | 20+   | REST (REGIONAL)                              |
 | SQS Queues            | 2     | documents, problems-dlq                      |
@@ -437,7 +437,7 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 
 ## 14. Serverless Lambda Functions (`serverless/`)
 
-Source code for all 14 Lambda functions deployed via CloudFormation, plus 3 shared Lambda layers.
+Source code for all 13 Lambda functions deployed via CloudFormation, plus 3 shared Lambda layers.
 
 ### Directory Structure
 
@@ -454,7 +454,6 @@ serverless/
 │   ├── rds-start/               # RDS instance start
 │   ├── rds-status/              # RDS instance status
 │   ├── rds-stop/                # RDS instance stop
-│   ├── ses-with-excel/          # Email with Excel attachment
 │   ├── sqs-into-rds/            # SQS → PostgreSQL processor
 │   ├── sqs-size/                # SQS queue message count
 │   ├── sqs-weblink-put-into/    # URL ingestion → S3 + DynamoDB + SQS
@@ -482,7 +481,6 @@ serverless/
 | ec2-status | Infrastructure | EC2 | INSTANCE_ID | No |
 | sqs-size | Infrastructure | SQS, SSM | AWS_REGION | No |
 | jenkins-job-start | Utility | HTTP (Jenkins API) | JENKINS_URL, JENKINS_USER, JENKINS_PASSWORD, JENKINS_JOB_NAME | No |
-| ses-with-excel | Utility | S3, SES | S3_BUCKET_NAME | No |
 
 ### 14.1 Application Functions
 
@@ -566,10 +564,6 @@ Returns approximate message count in SQS queue. Reads queue URL from SSM Paramet
 #### jenkins-job-start
 
 Triggers Jenkins job via HTTP API with Basic Auth. Fetches CSRF crumb, then POSTs to `/job/{name}/buildWithParameters`. Passes INSTANCE_ID and AWS_REGION as parameters.
-
-#### ses-with-excel
-
-Generates Excel files (openpyxl), uploads to S3, and sends via SES as email attachment (MIME multipart). Currently has hardcoded test data.
 
 ### 14.5 Lambda Layers
 
