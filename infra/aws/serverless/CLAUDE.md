@@ -18,7 +18,6 @@ serverless/
 │   ├── rds-start/             # Start RDS instance
 │   ├── rds-stop/              # Stop RDS instance
 │   ├── rds-status/            # Check RDS instance status
-│   ├── rds-reports/           # RDS reporting/diagnostics
 │   ├── ec2-start/             # Start EC2 instance
 │   ├── ec2-stop/              # Stop EC2 instance
 │   ├── ec2-status/            # Check EC2 instance status
@@ -88,12 +87,6 @@ Common variables:
 | `app-server-internet` | `/translate`, `/website_download_text_content`, `/ai_embedding_get`, `/ai_ask` | Internet-facing operations (downloads, AI calls, embeddings). Requires `OPENAI_*`, `AI_MODEL_SUMMARY`, `EMBEDDING_MODEL`. |
 
 Both app functions use path-based routing (`event['path']`) via API Gateway proxy integration.
-
-#### Utility (simple)
-
-| Function | Description |
-|----------|-------------|
-| `rds-reports` | Diagnostic script for listing RDS instances and their tags (can run locally) |
 
 ### Archived Functions
 

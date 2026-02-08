@@ -22,7 +22,7 @@ infra/aws/
 | Category              | Count | Details                                      |
 |-----------------------|-------|----------------------------------------------|
 | CloudFormation Stacks | 27    | Templates in `cloudformation/templates/`     |
-| Lambda Functions      | 12    | Python 3.11 runtime                          |
+| Lambda Functions      | 11    | Python 3.11 runtime                          |
 | API Gateway APIs      | 3     | app, infra, chrome-extension                 |
 | API Endpoints         | 20+   | REST (REGIONAL)                              |
 | SQS Queues            | 2     | documents, problems-dlq                      |
@@ -437,7 +437,7 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 
 ## 14. Serverless Lambda Functions (`serverless/`)
 
-Source code for all 12 Lambda functions deployed via CloudFormation, plus 3 shared Lambda layers.
+Source code for all 11 Lambda functions deployed via CloudFormation, plus 3 shared Lambda layers.
 
 ### Directory Structure
 
@@ -449,7 +449,6 @@ serverless/
 │   ├── ec2-start/               # EC2 instance start
 │   ├── ec2-status/              # EC2 instance status
 │   ├── ec2-stop/                # EC2 instance stop
-│   ├── rds-reports/             # RDS diagnostics
 │   ├── rds-start/               # RDS instance start
 │   ├── rds-status/              # RDS instance status
 │   ├── rds-stop/                # RDS instance stop
@@ -474,7 +473,6 @@ serverless/
 | rds-start | Infrastructure | RDS | DB_ID | No |
 | rds-stop | Infrastructure | RDS | DB_ID | No |
 | rds-status | Infrastructure | RDS | DB_ID | No |
-| rds-reports | Infrastructure | RDS | - | No |
 | ec2-start | Infrastructure | EC2 | INSTANCE_ID | No |
 | ec2-stop | Infrastructure | EC2 | INSTANCE_ID | No |
 | ec2-status | Infrastructure | EC2 | INSTANCE_ID | No |
@@ -541,10 +539,6 @@ RDS instance lifecycle management. Each uses `DB_ID` env var to identify the tar
 - **rds-start**: `rds.start_db_instance()`
 - **rds-stop**: `rds.stop_db_instance()`
 - **rds-status**: `rds.describe_db_instances()` → returns `DBInstanceStatus`
-
-#### rds-reports
-
-Diagnostic utility listing all RDS instances and their tags. Can run locally (`__main__`).
 
 #### ec2-start / ec2-stop / ec2-status
 
