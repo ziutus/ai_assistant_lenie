@@ -27,7 +27,6 @@ serverless/
 │   ├── sqs-weblink-put-into/  # Put web links into SQS queue
 │   ├── app-server-db/         # Main app Lambda - DB operations (uses backend/library)
 │   ├── app-server-internet/   # Main app Lambda - internet operations (uses backend/library)
-│   ├── jenkins-job-start/     # Trigger Jenkins job via API
 │   └── tmp/                   # Empty Lambda placeholder
 └── lambda_layers/             # Lambda layer build scripts
     ├── layer_create_psycop2_new.sh  # psycopg2-binary layer
@@ -94,7 +93,6 @@ Both app functions use path-based routing (`event['path']`) via API Gateway prox
 
 | Function | Description |
 |----------|-------------|
-| `jenkins-job-start` | Triggers a Jenkins job via HTTP API with CSRF crumb authentication. Env vars: `JENKINS_URL`, `JENKINS_USER`, `JENKINS_PASSWORD`, `JENKINS_JOB_NAME` |
 | `rds-reports` | Diagnostic script for listing RDS instances and their tags (can run locally) |
 
 ### Archived Functions
@@ -102,6 +100,7 @@ Both app functions use path-based routing (`event['path']`) via API Gateway prox
 | Function | Archived | Git Tag | Description |
 |----------|----------|---------|-------------|
 | `ses-with-excel` | 2026-02 | `archive/ses-with-excel` | Generated Excel (openpyxl), uploaded to S3, sent via SES. Prototype with hardcoded test data. Restore: `git checkout archive/ses-with-excel -- infra/aws/serverless/lambdas/ses-with-excel/` |
+| `jenkins-job-start` | 2026-02 | `archive/jenkins-job-start` | Triggered Jenkins job via HTTP API with CSRF crumb auth. Jenkins not in use. Restore: `git checkout archive/jenkins-job-start -- infra/aws/serverless/lambdas/jenkins-job-start/` |
 
 ## Lambda Layers
 

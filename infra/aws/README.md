@@ -22,7 +22,7 @@ infra/aws/
 | Category              | Count | Details                                      |
 |-----------------------|-------|----------------------------------------------|
 | CloudFormation Stacks | 27    | Templates in `cloudformation/templates/`     |
-| Lambda Functions      | 13    | Python 3.11 runtime                          |
+| Lambda Functions      | 12    | Python 3.11 runtime                          |
 | API Gateway APIs      | 3     | app, infra, chrome-extension                 |
 | API Endpoints         | 20+   | REST (REGIONAL)                              |
 | SQS Queues            | 2     | documents, problems-dlq                      |
@@ -437,7 +437,7 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 
 ## 14. Serverless Lambda Functions (`serverless/`)
 
-Source code for all 13 Lambda functions deployed via CloudFormation, plus 3 shared Lambda layers.
+Source code for all 12 Lambda functions deployed via CloudFormation, plus 3 shared Lambda layers.
 
 ### Directory Structure
 
@@ -449,7 +449,6 @@ serverless/
 │   ├── ec2-start/               # EC2 instance start
 │   ├── ec2-status/              # EC2 instance status
 │   ├── ec2-stop/                # EC2 instance stop
-│   ├── jenkins-job-start/       # Jenkins job trigger
 │   ├── rds-reports/             # RDS diagnostics
 │   ├── rds-start/               # RDS instance start
 │   ├── rds-status/              # RDS instance status
@@ -480,7 +479,6 @@ serverless/
 | ec2-stop | Infrastructure | EC2 | INSTANCE_ID | No |
 | ec2-status | Infrastructure | EC2 | INSTANCE_ID | No |
 | sqs-size | Infrastructure | SQS, SSM | AWS_REGION | No |
-| jenkins-job-start | Utility | HTTP (Jenkins API) | JENKINS_URL, JENKINS_USER, JENKINS_PASSWORD, JENKINS_JOB_NAME | No |
 
 ### 14.1 Application Functions
 
@@ -559,13 +557,7 @@ EC2 instance lifecycle management. Each uses `INSTANCE_ID` env var.
 
 Returns approximate message count in SQS queue. Reads queue URL from SSM Parameter Store (`/lenie/dev/sqs_queue/new_links`), then queries `ApproximateNumberOfMessages` attribute.
 
-### 14.4 Utility Functions
-
-#### jenkins-job-start
-
-Triggers Jenkins job via HTTP API with Basic Auth. Fetches CSRF crumb, then POSTs to `/job/{name}/buildWithParameters`. Passes INSTANCE_ID and AWS_REGION as parameters.
-
-### 14.5 Lambda Layers
+### 14.4 Lambda Layers
 
 | Layer | Packages | Used By |
 |---|---|---|
