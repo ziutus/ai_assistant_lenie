@@ -7,6 +7,24 @@ AWS infrastructure for Project Lenie. As a hobby project, three IaC approaches a
 
 Cost optimization is a priority. DynamoDB is used for data that doesn't need complex queries (cache for new entries before they reach RDS, cross-environment metadata). RDS is started/stopped on demand via Step Functions and Lambda.
 
+## Architecture Design Principles
+
+### API Gateway as Security Boundary
+
+AWS API Gateway is the entry point to the cloud solution. As a fully managed service, it handles TLS termination, request throttling, and DDoS protection — reducing the operational burden of securing internet-facing endpoints. Access is secured via API keys, which allows focusing on application development rather than maintaining and patching exposed services.
+
+### Scalable Asynchronous Ingestion via SQS
+
+Individual document uploads can be several hundred KB to 1 MB (full webpage content including HTML/JavaScript), and SQS decouples ingestion from processing. Incoming documents are placed in an SQS queue and processed in batches when RDS is started. This pattern serves two purposes: cost optimization (RDS runs only when needed) and learning how to build scalable, decoupled architectures.
+
+### DynamoDB for Cloud-Local Synchronization
+
+DynamoDB serves as a persistent, always-available store for document metadata. Data sent from mobile devices (phone, tablet) via the Chrome extension lands in DynamoDB immediately, regardless of whether the PostgreSQL database is running. This enables the local database to be synchronized with cloud data at any time — the cloud acts as a continuously available buffer that the local environment can pull from.
+
+### Cost Optimization
+
+No NAT Gateway (saves ~$30/month), RDS started/stopped on demand via Step Functions, DynamoDB PAY_PER_REQUEST billing, budget alerts at $20/month.
+
 ## Directory Structure
 
 ```

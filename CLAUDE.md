@@ -98,6 +98,8 @@ Kustomize-based deployment with base configurations and GKE dev overlay.
 - CloudFormation templates for DynamoDB, RDS, SQS, Lambda, API Gateway
 - Serverless Lambda functions
 
+**Architecture overview**: AWS API Gateway serves as the managed, secure entry point — access is controlled via API keys, eliminating the need to maintain and patch internet-facing services. Incoming documents flow through SQS for asynchronous processing (the database runs only when needed to optimize costs). DynamoDB provides always-available metadata storage, enabling synchronization between cloud (receiving data from mobile devices) and local environments.
+
 **Flask server vs Lambda split**: The Flask `server.py` is the unified backend used in Docker/K8s deployments. For AWS serverless, the same logic is split into two Lambda functions due to VPC networking constraints (no NAT Gateway to save costs):
 - **`app-server-db`** - endpoints requiring PostgreSQL (runs inside VPC): `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding`
 - **`app-server-internet`** - endpoints requiring internet access (runs outside VPC): `/translate`, `/website_download_text_content`, `/ai_embedding_get`, `/ai_ask`

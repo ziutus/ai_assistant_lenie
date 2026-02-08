@@ -160,7 +160,7 @@ The Flask backend (`backend/server.py`) is the unified server used in Docker and
 - **`app-server-db`** runs **inside VPC** to access RDS (PostgreSQL). It cannot make outbound internet calls because there is **no NAT Gateway** (cost optimization for a hobby project).
 - **`app-server-internet`** runs **outside VPC** with internet access for downloading web pages, calling LLM APIs (OpenAI), and computing embeddings.
 
-The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-put-into` Lambda, which stores data in S3 + DynamoDB and sends a message to SQS (processed later by `sqs-into-rds` when RDS is available).
+The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-put-into` Lambda, which stores data in S3 + DynamoDB and sends a message to SQS (processed later by `sqs-into-rds` when RDS is available). This asynchronous pattern decouples data ingestion from database availability — documents uploaded from mobile devices (phone, tablet) are immediately stored in DynamoDB and S3, and can be synced to the local PostgreSQL database at any time.
 
 ### Endpoint Mapping: server.py vs Lambdas
 
