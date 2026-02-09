@@ -57,7 +57,12 @@ pytest backend/tests/unit/test_split_for_embedding.py
 ### Code Quality
 ```bash
 ruff check backend/ # Linting (line-length=120)
+make lint           # Run ruff linter (via Makefile)
+make lint-fix       # Run ruff with auto-fix
+make format         # Format code with ruff
+make format-check   # Check formatting (for CI)
 pre-commit run      # Run pre-commit hooks (includes TruffleHog secret detection)
+make security-all   # Run all security checks (semgrep, pip-audit, bandit, safety)
 ```
 
 ## Architecture
