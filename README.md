@@ -114,41 +114,11 @@ As I'm a big fan of AWS, you will also see deployment approaches like:
 
 ## Python Notes
 
-### Using uv to manage dependencies
+### Dependencies
 
-Install uv:
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-or on Windows:
-```
-pip install uv
-```
+Dependencies are managed via [uv](https://github.com/astral-sh/uv) package manager and configured in `backend/pyproject.toml` with optional dependency groups (`docker`, `markdown`, `all`).
 
-Quick start with Makefile:
-```bash
-make install          # Install base dependencies
-make install-all      # Install all dependencies (including optional)
-make install-docker   # Install docker dependencies only
-make lock             # Update uv.lock after changing pyproject.toml
-```
-
-Manual usage:
-```bash
-cd backend
-uv sync                    # Install base dependencies
-uv sync --all-extras       # Install all optional dependencies
-uv sync --extra docker     # Install specific extra
-uv lock                    # Update lock file
-```
-
-### Project Configuration
-
-Dependencies are managed via `backend/pyproject.toml` with optional dependency groups:
-- Base dependencies (server)
-- `[docker]` - Minimal dependencies for Docker image
-- `[markdown]` - Markdown processing tools
-- `[all]` - All dependencies including Google APIs, AWS tools, etc.
+See [CLAUDE.md](CLAUDE.md) for detailed dependency installation commands (`make install`, `uv sync`, etc.).
 
 
 ## Prerequisites
@@ -291,22 +261,9 @@ document_state=ALL&search_in_document="
 ```
 
 
-## Services That Can Be Used to Get Data
-
-| Service name | Provider   | Description | Link |
-|-------------|------------|---|------|
-| Textract    | AWS        | PDF to text | https://aws.amazon.com/textract/     |
-| AssemblyAI  | AssemblyAI | Speech to text ($0.12 per hour) | https://www.assemblyai.com/ |
-
 ## Code Quality & Security
 
-### Linting and Formatting (ruff)
-```bash
-make lint         # Run ruff linter
-make lint-fix     # Run ruff with auto-fix
-make format       # Format code with ruff
-make format-check # Check formatting (for CI)
-```
+For linting, formatting, and testing commands, see [CLAUDE.md](CLAUDE.md).
 
 ### Security Scanning
 All security tools are run via `uvx` (uv tool runner) to avoid adding heavy dependencies to the project venv.

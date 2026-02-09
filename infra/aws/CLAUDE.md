@@ -7,6 +7,8 @@ AWS infrastructure for Project Lenie. As a hobby project, three IaC approaches a
 
 Cost optimization is a priority. DynamoDB is used for data that doesn't need complex queries (cache for new entries before they reach RDS, cross-environment metadata). RDS is started/stopped on demand via Step Functions and Lambda.
 
+See [README.md](README.md) for a detailed inventory of all AWS resources (CloudFormation stacks, Lambda functions, API Gateway endpoints, parameters, and architecture diagram).
+
 ## Directory Structure
 
 ```
