@@ -601,36 +601,28 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 | `lenie_cache_language` | Cache for language detection results | PAY_PER_REQUEST |
 | `lenie_cache_translation` | Cache for translation results | PAY_PER_REQUEST |
 
-### 15.5 SQS Queues
-
-No unmanaged SQS queues remain.
-
-### 15.6 SNS Topics
+### 15.5 SNS Topics
 
 | Topic | Purpose |
 |-------|---------|
 | `rds-monitor-sns` | RDS monitoring notifications |
 | `ses-monitoring` | SES delivery/bounce monitoring |
 
-### 15.7 API Gateway
+### 15.6 API Gateway
 
 | API ID | Name | Notes |
 |--------|------|-------|
 | `1bkc3kz7c9` | `lenie_split` | Undocumented, candidate for review |
 | `pir31ejsf2` | `lenie_chrome_extension` | Older version, replaced by CF-managed `lenie_dev_add_from_chrome_extension` |
 
-### 15.8 Step Functions
-
-No unmanaged Step Functions remain.
-
-### 15.9 SES Email Identities
+### 15.7 SES Email Identities
 
 | Identity | Notes |
 |----------|-------|
 | `lenie-ai.eu` | Root domain (CF template `ses.yaml` covers only `dev.lenie-ai.eu`) |
 | `krzysztof@itsnap.eu` | Personal email identity |
 
-### 15.10 Lambda Layers
+### 15.8 Lambda Layers
 
 | Layer | Packages | Notes |
 |-------|----------|-------|
@@ -638,18 +630,16 @@ No unmanaged Step Functions remain.
 | `lenie_openai` | openai SDK | Deployed via `zip_to_s3.sh` |
 | `psycopg2_new_layer` | psycopg2-binary 2.9.10 | Deployed via `zip_to_s3.sh` |
 
-### 15.11 Summary
+### 15.9 Summary
 
 | Resource Type | Without CF Template | With CF Template |
 |---------------|--------------------:|:----------------:|
 | S3 Buckets | 4 | 3 |
 | CloudFront Distributions | 2 | 1 |
-| Lambda Functions | 7 | 11 |
+| Lambda Functions | 3 | 11 |
 | DynamoDB Tables | 3 | 1 |
-| SQS Queues | 0 | 2 |
 | SNS Topics | 2 | 1 |
 | API Gateway | 2 | 3 |
-| Step Functions | 1 | 1 |
 | SES Identities | 2 | 1 |
 | Lambda Layers | 3 | 0 |
-| **Total** | **~26** | **~24** |
+| **Total** | **~19** | **~24** |
