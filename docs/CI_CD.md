@@ -28,43 +28,250 @@ The AI agent should use this documentation to:
 ## Table of Contents
 
 1. [Project Context](#project-context)
-2. [Pipeline Overview](#pipeline-overview)
-3. [CircleCI Pattern](#circleci-pattern) → [CircleCI.md](CircleCI.md)
+2. [Target Pipeline Specification](#target-pipeline-specification)
+3. [Platform-specific Patterns](#platform-specific-patterns)
 4. [AWS Infrastructure](#aws-infrastructure) → [AWS_Infrastructure.md](AWS_Infrastructure.md)
 5. [Preparing Self-hosted EC2 Runner](#preparing-self-hosted-ec2-runner) → [AWS_EC2_Runner_Setup.md](AWS_EC2_Runner_Setup.md)
 6. [Self-hosted Jenkins on EC2](#self-hosted-jenkins-on-ec2) → [Jenkins.md](Jenkins.md)
-7. [Pipeline Stages](#pipeline-stages) — tools detail in [CI_CD_Tools.md](CI_CD_Tools.md)
-8. [Security Tools](#security-tools)
-9. [Tests and Code Quality](#tests-and-code-quality)
-10. [Docker — Local Development and Deployment](#docker--local-development-and-deployment) → [Docker_Local.md](Docker_Local.md)
-11. [Environment Variables](#environment-variables)
-12. [Artifacts](#artifacts)
+7. [Tools Reference](#tools-reference) → [CI_CD_Tools.md](CI_CD_Tools.md)
+8. [Environment Variables](#environment-variables)
+9. [Artifacts](#artifacts)
 
 ---
 
-## Pipeline Overview
+## Target Pipeline Specification
 
-The CI/CD pipeline consists of the following main stages:
+This section defines the **canonical pipeline** that should be implemented on any CI/CD platform. When generating a new pipeline configuration, follow this specification and adapt it to the platform's syntax.
+
+### Pipeline Flow
 
 ```
-.pre (start_runner)
-    ↓
-test + security-checks (parallel)
-    ↓
-build
-    ↓
-deploy
-    ↓
-clean-node
-    ↓
-.post (stop_runner)
+1. INFRA-START        Start self-hosted runner (EC2)
+       ↓
+2. VALIDATE           Version validation (only for releases to main)
+       ↓
+3. TEST               Unit tests + code style checks + Helm lint     ← parallel
+   SECURITY-CODE      Static analysis + secret detection + dep scan  ← parallel
+       ↓
+4. BUILD-DOCKER       Build Docker image, tag with version + latest
+       ↓
+5. SECURITY-DOCKER    Scan built Docker image for vulnerabilities
+   BUILD-HELM         Package Helm chart with correct version        ← parallel
+       ↓
+6. DEPLOY             Push Docker image to registry + publish Helm chart to S3
+       ↓
+7. CLEANUP            Remove old Docker images from runner
+       ↓
+8. INFRA-STOP         Stop self-hosted runner (EC2)
 ```
 
-## CircleCI Pattern
+### Stage 1: INFRA-START
 
-Self-hosted runner on EC2 with workflow: start-ec2 → run tests → build Docker → stop-ec2. Uses `itsnap/itsnap-runner` resource class, `uv` for dependency management, JUnit XML test results.
+**Purpose:** Start the self-hosted EC2 runner to save costs (instance runs only during pipeline).
 
-> **Full configuration:** [CircleCI.md](CircleCI.md)
+| Parameter | Value |
+|-----------|-------|
+| AWS Region | `us-east-1` |
+| Instance ID | `$INSTANCE_ID` (CI/CD variable) |
+| Requires | AWS CLI, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` |
+| Git checkout | Not needed (`GIT_STRATEGY: none`) |
+
+**Command:**
+```bash
+aws ec2 start-instances --instance-ids $INSTANCE_ID
+```
+
+### Stage 2: VALIDATE
+
+**Purpose:** Ensure releases to `main` have a valid, incrementing semver version.
+
+**Trigger:** Only on merge/pull requests targeting `main`.
+
+**Logic:**
+1. Check that the MR/PR has a label/tag matching `^[0-9]+\.[0-9]+\.[0-9]+$`
+2. Fetch all existing git tags
+3. Verify that the new version is strictly greater than the latest existing tag
+4. Export `NEW_VERSION` for downstream stages
+
+**Output:** `NEW_VERSION` environment variable (via dotenv artifact or equivalent).
+
+### Stage 3: TEST + SECURITY-CODE (parallel)
+
+All jobs in this stage run in **parallel** on the self-hosted runner.
+
+#### 3a. Unit Tests (pytest)
+
+| Parameter | Value |
+|-----------|-------|
+| Dependencies | `uv sync` or `pip install -r requirements.txt` |
+| Command | `pytest --self-contained-html --html=pytest-results/` |
+| Report format | HTML (self-contained) |
+| Artifact | `pytest-results/` |
+| Failure policy | Non-blocking (`|| true`) during development |
+
+#### 3b. Code Style (flake8)
+
+| Parameter | Value |
+|-----------|-------|
+| Dependencies | `flake8-html` |
+| Command | `flake8 --format=html --htmldir=flake_reports/` |
+| Artifact | `flake_reports/` |
+
+#### 3c. Helm Lint
+
+| Parameter | Value |
+|-----------|-------|
+| Command | `helm lint infra/kubernetes/lenie/helm/lenie-ai-server` |
+| Condition | Only if Helm charts exist |
+
+#### 3d. Semgrep (SAST)
+
+| Parameter | Value |
+|-----------|-------|
+| Command | `semgrep --config=auto --output semgrep-report.json` |
+| Artifact | `semgrep-report.json` |
+
+#### 3e. TruffleHog (secret detection)
+
+| Parameter | Value |
+|-----------|-------|
+| Command | `docker run --rm trufflesecurity/trufflehog:latest git file://. --only-verified --bare` |
+| Artifact | `trufflehog.txt` |
+
+#### 3f. OSV Scanner (dependency vulnerabilities)
+
+| Parameter | Value |
+|-----------|-------|
+| Command | `osv-scanner scan --lockfile requirements.txt` |
+| Artifact | `osv_scan_results.json` |
+
+#### 3g. Qodana (optional, JetBrains static analysis)
+
+| Parameter | Value |
+|-----------|-------|
+| Image | `jetbrains/qodana-python-community:2024.1` |
+| Command | `qodana --cache-dir=$CI_PROJECT_DIR/.qodana/cache` |
+| Requires | `QODANA_TOKEN` |
+| Status | Optional — disabled by default |
+
+### Stage 4: BUILD-DOCKER
+
+**Purpose:** Build Docker image for the backend server.
+
+| Parameter | Value |
+|-----------|-------|
+| Image name | `$DOCKER_HUB_USERNAME/lenie-ai-server` |
+| Version tag | `$NEW_VERSION` (from VALIDATE) or fallback `$TAG_VERSION` |
+| Additional tag | `latest` |
+| Depends on | VALIDATE stage |
+| Trigger | MR to `main`, or push to `dev`/`main` |
+
+**Commands:**
+```bash
+docker build -t $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$VERSION .
+docker tag $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$VERSION $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
+```
+
+**Output:** `VERSION` and `HELM_VERSION` environment variables for downstream stages.
+
+### Stage 5: SECURITY-DOCKER + BUILD-HELM (parallel)
+
+#### 5a. Trivy (Docker image scan)
+
+| Parameter | Value |
+|-----------|-------|
+| Command | `trivy image $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$VERSION` |
+| Artifact | `trivy-report.json` |
+| Depends on | BUILD-DOCKER |
+
+#### 5b. Helm Package
+
+| Parameter | Value |
+|-----------|-------|
+| Chart path | `infra/kubernetes/lenie/helm/lenie-ai-server` |
+| Version update | Set `version` in `Chart.yaml` to `$HELM_VERSION` |
+| Command | `helm package infra/kubernetes/lenie/helm/lenie-ai-server` |
+| Artifact | `lenie-ai-server-$HELM_VERSION.tgz` |
+| Depends on | BUILD-DOCKER (for version) |
+
+### Stage 6: DEPLOY
+
+#### 6a. Push Docker Image
+
+| Parameter | Value |
+|-----------|-------|
+| Registry | Docker Hub |
+| Requires | `DOCKER_HUB_USERNAME`, `DOCKER_HUB_TOKEN` |
+| Depends on | BUILD-DOCKER |
+
+**Commands:**
+```bash
+docker login -u "$DOCKER_HUB_USERNAME" -p "$DOCKER_HUB_TOKEN"
+docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$VERSION
+docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
+```
+
+#### 6b. Publish Helm Chart
+
+| Parameter | Value |
+|-----------|-------|
+| Target | S3 bucket `lenie-helm` |
+| Depends on | BUILD-HELM |
+
+**Commands:**
+```bash
+mkdir helm-repository
+cp lenie-ai-server-*.tgz helm-repository/
+aws s3 sync s3://lenie-helm/ helm-repository
+helm repo index helm-repository/
+aws s3 sync helm-repository s3://lenie-helm/
+```
+
+### Stage 7: CLEANUP
+
+**Purpose:** Remove old Docker images from the runner to free disk space.
+
+**Command:**
+```bash
+infra/docker/docker_images_clean.sh --remove-name lenie
+```
+
+### Stage 8: INFRA-STOP
+
+**Purpose:** Stop the EC2 runner instance to save costs. Mirrors INFRA-START.
+
+**Command:**
+```bash
+aws ec2 stop-instances --instance-ids $INSTANCE_ID
+```
+
+**Important:** This stage should run **always** (even if previous stages failed) to avoid leaving the instance running.
+
+---
+
+## Pipeline Triggers
+
+| Trigger | Stages executed |
+|---------|-----------------|
+| Push to `dev` | All stages (VALIDATE exports fallback version) |
+| Push to `main` | All stages |
+| MR/PR targeting `main` | All stages (VALIDATE enforces semver label) |
+
+---
+
+## Platform-specific Patterns
+
+Detailed configurations for each CI/CD platform:
+
+| Platform | Status | Documentation |
+|----------|--------|---------------|
+| **GitLab CI** | Archived | [GitLabCI.md](GitLabCI.md) |
+| **CircleCI** | Archived (minimal) | [CircleCI.md](CircleCI.md) |
+| **Jenkins** | Archived | [Jenkins.md](Jenkins.md) |
+
+When creating a new pipeline, use the [Target Pipeline Specification](#target-pipeline-specification) above and translate it to the platform's syntax.
+
+---
 
 ## AWS Infrastructure
 
@@ -84,45 +291,13 @@ Jenkins is currently not in use. Documentation covers: Makefile target restorati
 
 > **Full instructions:** [Jenkins.md](Jenkins.md)
 
-## Pipeline Stages
+## Tools Reference
 
-1. Environment preparation (uv, dependencies)
-2. Creating report directories
-3. Security checks + tests (parallel)
-4. Docker build and deploy
+Installation, configuration, and invocation instructions for all tools used in the pipeline.
 
 > **Detailed setup commands:** [CI_CD_Tools.md](CI_CD_Tools.md)
 
-## Security Tools
-
-| Tool | Purpose | Artifact |
-|------|---------|----------|
-| Semgrep | Static code analysis (vulnerability detection) | `semgrep-report.json` |
-| TruffleHog | Secret detection in repository history | `trufflehog.txt` |
-| OSV Scanner | Dependency vulnerability scanning | `osv_scan_results.json` |
-| Qodana | JetBrains static analysis (PyCharm inspections, SARIF format) | `qodana.sarif.json` |
-| pip-audit | PyPI advisory database check | — |
-| Bandit | Python security linter | — |
-| Safety | Dependency vulnerability check | — |
-
-Local development: all tools available via `make security-all` (uses `uvx`, no install needed).
-
-> **Installation, configuration, invocation:** [CI_CD_Tools.md](CI_CD_Tools.md)
-
-## Tests and Code Quality
-
-| Tool | Purpose | Artifact |
-|------|---------|----------|
-| Pytest | Unit and integration tests (HTML report) | `pytest-results/` |
-| Flake8 | Code style checking (HTML report) | `flake_reports/` |
-
-> **Commands and flags:** [CI_CD_Tools.md](CI_CD_Tools.md)
-
-## Docker — Local Development and Deployment
-
-Docker Compose for local dev (build/dev/down), Docker Hub image build/push workflow, image cleanup.
-
-> **Full details:** [Docker_Local.md](Docker_Local.md)
+---
 
 ## Environment Variables
 
@@ -133,14 +308,14 @@ Docker Compose for local dev (build/dev/down), Docker Hub image build/push workf
 | `AWS_REGION` | AWS region | `us-east-1` |
 | `INSTANCE_ID` | EC2 runner instance ID | `i-03908d34c63fce042` |
 | `CI_REGISTRY_IMAGE` | Docker image name | `lenie-ai-server` |
-| `TAG_VERSION` | Docker tag version | `0.2.11.6` |
+| `TAG_VERSION` | Fallback Docker tag version | `0.2.11.6` |
 
-### Secrets (stored in CI/CD)
+### Secrets (stored in CI/CD platform)
 
 | Secret | Description |
 |--------|-------------|
-| `AWS_ACCESS_KEY_ID` | AWS access key (GitLab: `GITLAB_AWS_ACCESS_KEY_ID`) |
-| `AWS_SECRET_ACCESS_KEY` | AWS secret key (GitLab: `GITLAB_AWS_SECRET_ACCESS_KEY`) |
+| `AWS_ACCESS_KEY_ID` | AWS access key (GitLab variant: `GITLAB_AWS_ACCESS_KEY_ID`) |
+| `AWS_SECRET_ACCESS_KEY` | AWS secret key (GitLab variant: `GITLAB_AWS_SECRET_ACCESS_KEY`) |
 | `DOCKER_HUB_USERNAME` | Docker Hub username |
 | `DOCKER_HUB_TOKEN` | Docker Hub access token |
 | `QODANA_TOKEN` | Qodana token (optional) |
@@ -151,30 +326,13 @@ Docker Compose for local dev (build/dev/down), Docker Hub image build/push workf
 
 | Artifact | Stage | Description |
 |----------|-------|-------------|
-| `semgrep-report.json` | security-checks | Semgrep static analysis report |
-| `trufflehog.txt` | security-checks | Detected secrets report |
-| `osv_scan_results.json` | security-checks | Dependency vulnerability report |
-| `qodana.sarif.json` | security-checks | Qodana report in SARIF format |
-| `pytest-results/` | test | Pytest test reports (HTML) |
-| `flake_reports/` | test | Flake8 code style reports (HTML) |
-
-## Pipeline Triggers
-
-The pipeline runs for branches:
-- `dev`
-- `main`
-
-Build and deploy stages execute only for these branches.
-
-## Parallel Execution
-
-Some stages can be executed in parallel:
-
-**GitLab CI:**
-- `job-pytest` and `job-style-tool-flake8-scan` (stage: test)
-- `job-security-tool-semgrep`, `job-security-tool-trufflehog`, `job-security-tool-osv_scan` (stage: security-checks)
-
-**Jenkins / CircleCI:** See [Jenkins.md](Jenkins.md) and [CircleCI.md](CircleCI.md) for platform-specific parallel execution patterns.
+| `semgrep-report.json` | SECURITY-CODE | Semgrep static analysis report |
+| `trufflehog.txt` | SECURITY-CODE | Detected secrets report |
+| `osv_scan_results.json` | SECURITY-CODE | Dependency vulnerability report |
+| `trivy-report.json` | SECURITY-DOCKER | Docker image vulnerability report |
+| `pytest-results/` | TEST | Pytest test reports (HTML) |
+| `flake_reports/` | TEST | Flake8 code style reports (HTML) |
+| `lenie-ai-server-*.tgz` | BUILD-HELM | Helm chart package |
 
 ---
 
@@ -183,12 +341,12 @@ Some stages can be executed in parallel:
 When creating a new CI/CD pipeline:
 
 1. **Choose a platform** (GitHub Actions, GitLab CI, CircleCI, Jenkins, etc.)
-2. **Define stages** - use [Pipeline Overview](#pipeline-overview) as a template
-3. **Configure infrastructure** - if using a self-hosted runner, see [AWS Infrastructure](#aws-infrastructure)
-4. **Add security tools** - choose from [Security Tools](#security-tools) section
-5. **Configure tests** - see [Tests and Code Quality](#tests-and-code-quality)
-6. **Set variables** - list in [Environment Variables](#environment-variables)
+2. **Follow the [Target Pipeline Specification](#target-pipeline-specification)** — implement each stage in the platform's syntax
+3. **Configure infrastructure** — if using a self-hosted runner, see [AWS Infrastructure](#aws-infrastructure)
+4. **Install tools on runner** — see [AWS_EC2_Runner_Setup.md](AWS_EC2_Runner_Setup.md)
+5. **Set variables and secrets** — list in [Environment Variables](#environment-variables)
+6. **Review platform examples** — check [Platform-specific Patterns](#platform-specific-patterns) for reference
 
 ---
 
-*Reference documentation generated from historical configurations: CircleCI, GitLab CI, Jenkins (worker scripts, SSL), Qodana, README_RUNNER.md*
+*Reference documentation generated from historical configurations: GitLab CI, CircleCI, Jenkins*
