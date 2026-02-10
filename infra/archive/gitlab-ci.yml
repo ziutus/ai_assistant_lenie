@@ -1,0 +1,320 @@
+variables:
+  CI: "false"
+  AWS_REGION: "us-east-1"
+  INSTANCE_ID: "i-03908d34c63fce042"
+  CI_REGISTRY_IMAGE: "lenie-ai-server"
+  GIT_STRATEGY: clone
+  TAG_VERSION: "0.2.11.6"
+
+stages:
+  - validate-main
+  - test
+  - security-checks
+  - build
+  - build-helm
+  - security-checks-docker
+  - deploy
+  - clean-node
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+validate_merge_request:
+  stage: validate-main
+  script: |
+    if [[ "$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" == "main" ]]; then
+      # Sprawdź czy istnieją tagi
+      if [[ -z "$CI_MERGE_REQUEST_LABELS" ]]; then
+        echo "❌ Merge Request musi posiadać tag!"
+        exit 1
+      fi
+      
+      # Znajdź najnowszy tag w formacie x.y.z
+      IFS=',' read -ra LABELS <<< "$CI_MERGE_REQUEST_LABELS"
+      NEW_VERSION=""
+      
+      for LABEL in "${LABELS[@]}"; do
+        # Usuń białe znaki
+        LABEL=$(echo "$LABEL" | tr -d '[:space:]')
+        
+        # Sprawdź czy tag pasuje do formatu x.y.z
+        if [[ $LABEL =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          NEW_VERSION="$LABEL"
+          echo "✅ Znaleziono tag w formacie x.y.z: $NEW_VERSION"
+          break
+        fi
+      done
+      
+      if [ -z "$NEW_VERSION" ]; then
+        echo "❌ Nie znaleziono tagu w wymaganym formacie x.y.z (np. 1.2.3)"
+        exit 1
+      fi
+      
+      # Pobierz wszystkie tagi z repozytorium
+      git fetch --tags
+      
+      # Znajdź najwyższy istniejący tag
+      LATEST_VERSION=$(git tag -l | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+      
+      if [ -n "$LATEST_VERSION" ]; then
+        # Rozdziel wersje na komponenty
+        IFS='.' read -ra NEW_PARTS <<< "$NEW_VERSION"
+        IFS='.' read -ra OLD_PARTS <<< "$LATEST_VERSION"
+        
+        # Konwertuj stringi na liczby i porównaj
+        NEW_NUM=$((${NEW_PARTS[0]} * 1000000 + ${NEW_PARTS[1]} * 1000 + ${NEW_PARTS[2]}))
+        OLD_NUM=$((${OLD_PARTS[0]} * 1000000 + ${OLD_PARTS[1]} * 1000 + ${OLD_PARTS[2]}))
+        
+        if [ $NEW_NUM -le $OLD_NUM ]; then
+          echo "❌ Nowy tag ($NEW_VERSION) musi być większy niż aktualny tag ($LATEST_VERSION)"
+          exit 1
+        fi
+        
+        echo "✅ Nowy tag ($NEW_VERSION) jest większy niż aktualny tag ($LATEST_VERSION)"
+      else
+        echo "ℹ️ Brak wcześniejszych tagów. Akceptuję pierwszy tag: $NEW_VERSION"
+      fi
+      # Eksportuj NEW_VERSION jako zmienną środowiskową dla kolejnych jobów
+      echo "NEW_VERSION=$NEW_VERSION" >> build.env
+    fi
+  artifacts:
+    reports:
+      dotenv: build.env
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+start_runner:
+  stage: .pre
+  variables:
+    GIT_STRATEGY: none  # Zapobieganie klonowaniu repozytorium
+  before_script:
+    - apt-get update -y
+    - apt-get install -y awscli
+    - aws configure set aws_access_key_id $GITLAB_AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $GITLAB_AWS_SECRET_ACCESS_KEY
+    - aws configure set region $AWS_REGION
+  script:
+    - echo Starting AWS EC2 runner instance...
+    - aws ec2 start-instances --instance-ids $INSTANCE_ID
+
+.qodana:
+  stage: security-checks
+  image:
+    name: jetbrains/qodana-python-community:2024.1
+    entrypoint: [""]
+  cache:
+    - key: qodana-2024.1-$CI_DEFAULT_BRANCH-$CI_COMMIT_REF_SLUG
+      fallback_keys:
+        - qodana-2024.1-$CI_DEFAULT_BRANCH-
+        - qodana-2024.1-
+      paths:
+        - .qodana/cache
+  variables:
+    QODANA_TOKEN: $QODANA_TOKEN
+    QODANA_ENDPOINT: "https://qodana.cloud"
+  script:
+    - qodana --cache-dir=$CI_PROJECT_DIR/.qodana/cache
+
+job-pytest:
+  stage: test
+  tags:
+    - AWS
+  before_script:
+    - pip install -r requirements.txt
+  script:
+    pytest --self-contained-html --html=pytest-results/ || true
+  artifacts:
+    when: always
+    paths:
+      - pytest-results/
+
+job-helm-lint:
+  stage: test
+  tags:
+    - AWS
+  script:
+    - helm lint infra/kubernetes/lenie/helm/lenie-ai-server
+
+job-build-docker-image:
+  stage: build
+  tags:
+    - AWS
+  needs:
+    - validate_merge_request
+  script:
+    - echo Now lets build it
+    - |
+      if [ ! -z "$NEW_VERSION" ]; then
+        echo Using NEW_VERSION ${NEW_VERSION}
+        docker build -t $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$NEW_VERSION .
+        docker tag $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$NEW_VERSION $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
+        echo "VERSION=$NEW_VERSION" >> build.env
+        echo "HELM_VERSION=$NEW_VERSION" >> build.env
+      else
+        echo Using TAG_VERSION ${TAG_VERSION}
+        docker build -t $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION .
+        docker tag $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
+        echo "VERSION=$TAG_VERSION" >> build.env
+        echo "HELM_VERSION=$TAG_VERSION" >> build.env
+      fi
+  artifacts:
+    reports:
+      dotenv: build.env
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+job-build-helm:
+  stage: build-helm
+  tags:
+    - AWS
+  needs:
+    - job-build-docker-image
+  script:
+    - echo "Debug - List current directory:"
+    - ls -la
+    - echo "Debug - Check environment variables:"
+    - env | grep VERSION
+    - echo "Using HELM_VERSION=${HELM_VERSION}"
+    - 'sed -i "s/version: .*/version: ${HELM_VERSION}/" infra/kubernetes/lenie/helm/lenie-ai-server/Chart.yaml'
+    - helm package infra/kubernetes/lenie/helm/lenie-ai-server
+  artifacts:
+    when: always
+    paths:
+      - lenie-ai-server-${HELM_VERSION}.tgz
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+job-publish-helm:
+  stage: deploy
+  tags:
+    - AWS
+  needs:
+    - job-build-helm
+  script:
+    - mkdir helm-repository
+    - cp lenie-ai-server-*.tgz helm-repository/
+    - aws s3 sync s3://lenie-helm/  helm-repository
+    - helm repo index helm-repository/
+    - aws s3 sync helm-repository  s3://lenie-helm/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+job-security-tool-trivy:
+  stage: security-checks-docker
+  tags:
+    - AWS
+  needs:
+    - job-build-docker-image
+  script:
+    - echo Using version ${VERSION}
+    - /usr/local/bin/trivy image $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$VERSION > trivy-report.json || true
+  artifacts:
+    when: always
+    paths:
+      - trivy-report.json
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+job-security-tool-semgrep:
+  stage: security-checks
+  tags:
+    - AWS
+  script:
+    - semgrep --config=auto --output semgrep-report.json
+  artifacts:
+    when: always
+    paths:
+      - semgrep-report.json
+
+job-security-tool-trufflehog:
+  stage: security-checks
+  tags:
+    - AWS
+  script:
+    - docker run --rm --name trufflehog trufflesecurity/trufflehog:latest git file://. --only-verified --bare 2>&1 | tee trufflehog.txt
+  artifacts:
+    when: always
+    paths:
+      - trufflehog.txt
+
+job-security-tool-osv_scan:
+  stage: security-checks
+  tags:
+    - AWS
+  script:
+    - /usr/local/bin/osv-scanner scan --lockfile requirements.txt
+  artifacts:
+    when: always
+    paths:
+      - osv_scan_results.json
+
+job-style-tool-flake8-scan:
+  stage: test
+  tags:
+    - AWS
+  before_script:
+    - pip3 install flake8-html
+  script:
+    - flake8 --format=html --htmldir=flake_reports/
+  artifacts:
+    when: always
+    paths:
+      - flake_reports/
+
+job-push-docker-image:
+  stage: deploy
+  tags:
+    - AWS
+  needs:
+    - job-build-docker-image
+  services:
+    - docker:dind
+  before_script:
+    - docker info
+    - docker login -u "$DOCKER_HUB_USERNAME" -p "$DOCKER_HUB_TOKEN"
+  script:
+    - echo "Debug - Current environment:"
+    - env | grep VERSION
+    - echo "Using VERSION=${VERSION}"
+    - docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$VERSION
+    - docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+job-clean-docker-image:
+  stage: clean-node
+  tags:
+    - AWS
+  script:
+    - echo Now lets remove old images from docker
+    - chmod +x infra/docker/docker_images_clean.sh
+    - infra/docker/docker_images_clean.sh --remove-name lenie
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TARGET_BRANCH_NAME == "main"
+    - if: $CI_COMMIT_BRANCH == "dev"
+    - if: $CI_COMMIT_BRANCH == "main"
+
+stop_runner:
+  stage: .post
+  variables:
+    GIT_STRATEGY: none  # Zapobieganie klonowaniu repozytorium
+  before_script:
+    - apt-get update -y
+    - apt-get install -y awscli
+    - aws configure set aws_access_key_id $GITLAB_AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $GITLAB_AWS_SECRET_ACCESS_KEY
+    - aws configure set region $AWS_REGION
+  script:
+    - echo Stopping AWS EC2 instance...
+    - aws ec2 stop-instances --instance-ids $INSTANCE_ID
