@@ -125,6 +125,8 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 |----------|-----------|-------------|
 | `s3.yaml` | S3 Bucket | Video transcription bucket (`lenie-{stage}-video-to-text`) |
 | `s3-cloudformation.yaml` | S3 Bucket, SSM | Lambda code and CF artifacts bucket |
+| `s3-helm.yaml` | S3 Bucket, Bucket Policy, CloudFront OAI | Helm chart repository bucket with OAI for CloudFront access |
+| `cloudfront-helm.yaml` | CloudFront Distribution | CDN for Helm chart repository (`helm.{env}.lenie-ai.eu`) |
 
 ### Compute
 

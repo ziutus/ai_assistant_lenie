@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFront distribution for Helm chart repository'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: lenie
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+  DomainName:
+    Type: String
+    Default: helm.dev.lenie-ai.eu
+    Description: Custom domain name for CloudFront distribution
+  AcmCertificateArn:
+    Type: String
+    Description: ACM certificate ARN (must be in us-east-1)
+  HelmBucketDomainName:
+    Type: String
+    Description: S3 bucket domain name (e.g. lenie-dev-helm.s3.amazonaws.com)
+  CloudFrontOAIId:
+    Type: String
+    Description: CloudFront Origin Access Identity ID
+
+Resources:
+  HelmDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub "${ProjectName}-${Environment} Helm chart repository"
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        HttpVersion: http1.1
+        IPV6: true
+        Aliases:
+          - !Ref DomainName
+        Origins:
+          - Id: S3Origin
+            DomainName: !Ref HelmBucketDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub "origin-access-identity/cloudfront/${CloudFrontOAIId}"
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          MinTTL: 0
+          DefaultTTL: 86400
+          MaxTTL: 31536000
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: none
+
+Outputs:
+  DistributionId:
+    Description: CloudFront distribution ID
+    Value: !Ref HelmDistribution
+    Export:
+      Name: !Sub "${AWS::StackName}-DistributionId"
+
+  DistributionDomainName:
+    Description: CloudFront distribution domain name
+    Value: !GetAtt HelmDistribution.DomainName
+    Export:
+      Name: !Sub "${AWS::StackName}-DomainName"
