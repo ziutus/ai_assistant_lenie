@@ -571,24 +571,16 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 
 | Bucket | Purpose | Notes |
 |--------|---------|-------|
-| `lenie-ai-logs` | Centralized logging | Deleted from AWS (2026-02) |
 | `lenie-dev-app-web` | React frontend static files | CloudFront origin for `app.dev.lenie-ai.eu` |
-| `lenie-dev-emails` | Email storage | Deleted from AWS (2026-02) |
-| `lenie-dev-excel-reports` | Excel report files | Deleted from AWS (2026-02) |
-| `lenie-dev-helm` | Helm chart hosting (DEV) | Deleted from AWS (2026-02). CF template: `s3-helm.yaml`. Chart saved to `infra/kubernetes/helm/` |
-| `lenie-prod-helm` | Helm chart hosting (PROD) | Deleted from AWS (2026-02). Charts saved to `infra/kubernetes/helm/` |
-| `lenie-dev-web` | Web content | Deleted from AWS (2026-02) |
 | `lenie-gitlab-test` | GitLab CI testing | Candidate for cleanup |
 | `lenie-s3-tmp` | Temporary storage | Candidate for cleanup |
 | `lenie-s3-web-test` | Web test | CloudFront origin, candidate for cleanup |
-| `lenie-prod-video-to-text` | Video transcriptions (PROD) | Deleted from AWS (2026-02) |
 
 ### 15.2 CloudFront Distributions
 
 | ID | Domain Alias | S3 Origin | Notes |
 |----|-------------|-----------|-------|
 | `ETIQTXICZBECA` | `app.dev.lenie-ai.eu` | lenie-dev-app-web | DEV frontend |
-| `E2ZLSEEB8OVYOM` | `helm.dev.lenie-ai.eu` | lenie-dev-helm | Deleted from AWS (2026-02). CF template: `cloudfront-helm.yaml` |
 | `E19SWSRXVWFGJQ` | *(none)* | lenie-s3-web-test | Test distribution, candidate for cleanup |
 
 ### 15.3 Lambda Functions
@@ -615,8 +607,6 @@ These 4 functions formed a pipeline for backing up EC2 instances running Lenie a
 | `jenkins-start-job` | Start Jenkins jobs | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
 | `git-webhooks` | Trigger Jenkins pipeline via Step Function on Git push | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
 | `ses_s3_send_email` | Send HTML email with S3 attachment via SES | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
-| `auditor_review_ec2` | EC2 audit review | Deleted from AWS (2026-02), code was not in repo |
-| `rds-start-reporter-sns` | SNS notification on RDS start | Deleted from AWS (2026-02), code was not in repo |
 | `step-function-test` | Step Functions testing | Test artifact |
 
 ### 15.4 DynamoDB Tables
@@ -629,10 +619,7 @@ These 4 functions formed a pipeline for backing up EC2 instances running Lenie a
 
 ### 15.5 SQS Queues
 
-| Queue | Purpose |
-|-------|---------|
-| `lenie-dev-sqs-to-rds-dlq` | Dead Letter Queue for sqs-to-rds processing | Deleted from AWS (2026-02) |
-| `rds-monitor-sqs` | RDS monitoring events | Deleted from AWS (2026-02) |
+No unmanaged SQS queues remain.
 
 ### 15.6 SNS Topics
 
@@ -673,14 +660,14 @@ These 4 functions formed a pipeline for backing up EC2 instances running Lenie a
 
 | Resource Type | Without CF Template | With CF Template |
 |---------------|--------------------:|:----------------:|
-| S3 Buckets | 10 | 3 |
-| CloudFront Distributions | 3 | 1 |
-| Lambda Functions | 14 | 11 |
+| S3 Buckets | 4 | 3 |
+| CloudFront Distributions | 2 | 1 |
+| Lambda Functions | 7 | 11 |
 | DynamoDB Tables | 3 | 1 |
-| SQS Queues | 2 | 2 |
+| SQS Queues | 0 | 2 |
 | SNS Topics | 2 | 1 |
 | API Gateway | 2 | 3 |
 | Step Functions | 1 | 1 |
 | SES Identities | 2 | 1 |
 | Lambda Layers | 3 | 0 |
-| **Total** | **~42** | **~24** |
+| **Total** | **~26** | **~24** |
