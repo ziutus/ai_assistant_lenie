@@ -654,7 +654,7 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 
 | State Machine | Purpose | Notes |
 |---------------|---------|-------|
-| `jenkins-start-run-job` | Jenkins job orchestration | Jenkins archived, candidate for cleanup |
+| `jenkins-start-run-job` | Jenkins job orchestration | Archived: definition downloaded from AWS, see `serverless/CLAUDE.md` |
 
 ### 15.9 SES Email Identities
 
