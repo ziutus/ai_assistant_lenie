@@ -560,3 +560,137 @@ Returns approximate message count in SQS queue. Reads queue URL from SSM Paramet
 | lenie_openai | openai SDK | app-server-internet |
 
 All layers built with `manylinux2014_x86_64` platform for Lambda compatibility.
+
+---
+
+## 15. Resources Without CloudFormation Templates
+
+The following AWS resources related to Project Lenie exist in the account (us-east-1) but are **not managed by any CloudFormation template**. They were created manually, via scripts, or through other tools.
+
+### 15.1 S3 Buckets
+
+| Bucket | Purpose | Notes |
+|--------|---------|-------|
+| `lenie-ai-logs` | Centralized logging | |
+| `lenie-dev-app-web` | React frontend static files | CloudFront origin for `app.dev.lenie-ai.eu` |
+| `lenie-dev-emails` | Email storage | |
+| `lenie-dev-excel-reports` | Excel report files | |
+| `lenie-dev-helm` | Helm chart hosting (DEV) | CloudFront origin for `helm.dev.lenie-ai.eu` |
+| `lenie-dev-web` | Web content | |
+| `lenie-gitlab-test` | GitLab CI testing | Candidate for cleanup |
+| `lenie-s3-tmp` | Temporary storage | Candidate for cleanup |
+| `lenie-s3-web-test` | Web test | CloudFront origin, candidate for cleanup |
+| `lenie-prod-video-to-text` | Video transcriptions (PROD) | |
+
+### 15.2 CloudFront Distributions
+
+| ID | Domain Alias | S3 Origin | Notes |
+|----|-------------|-----------|-------|
+| `ETIQTXICZBECA` | `app.dev.lenie-ai.eu` | lenie-dev-app-web | DEV frontend |
+| `E2ZLSEEB8OVYOM` | `helm.dev.lenie-ai.eu` | lenie-dev-helm | DEV Helm charts |
+| `E19SWSRXVWFGJQ` | *(none)* | lenie-s3-web-test | Test distribution, candidate for cleanup |
+
+### 15.3 Lambda Functions
+
+**Operational / infrastructure tools:**
+
+| Function | Purpose |
+|----------|---------|
+| `infra-allow-ip-in-secrutity-group` | Add/remove IPs in Security Groups |
+| `rds-start-reporter-sns` | SNS notification on RDS start |
+| `ses_s3_send_email` | Send emails via SES with S3 content |
+| `git-webhooks` | Handle Git webhook events |
+| `auditor_review_ec2` | EC2 audit review |
+
+**AMI management pipeline:**
+
+| Function | Purpose |
+|----------|---------|
+| `createImageLambda` | Create AMI from EC2 instance |
+| `getImageStateLambda` | Check AMI creation status |
+| `copyImageLambda` | Copy AMI across regions |
+| `setSsmParamLambda` | Store AMI ID in SSM Parameter Store |
+
+**Legacy / candidates for cleanup:**
+
+| Function | Purpose | Notes |
+|----------|---------|-------|
+| `lenie_2_internet_tmp` | Temp version of app-server-internet | Should be removed |
+| `lenie-url-add` | Older version of url-add | Replaced by `lenie-dev-url-add` (CF-managed) |
+| `lenie_ses_excel_summary` | Generate and send Excel summary via SES | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
+| `jenkins-start-job` | Start Jenkins jobs | Jenkins archived, see `docs/Jenkins.md` |
+| `step-function-test` | Step Functions testing | Test artifact |
+
+### 15.4 DynamoDB Tables
+
+| Table | Purpose | Notes |
+|-------|---------|-------|
+| `lenie_cache_ai_query` | Cache for AI/LLM query results | PAY_PER_REQUEST |
+| `lenie_cache_language` | Cache for language detection results | PAY_PER_REQUEST |
+| `lenie_cache_translation` | Cache for translation results | PAY_PER_REQUEST |
+
+### 15.5 SQS Queues
+
+| Queue | Purpose |
+|-------|---------|
+| `lenie-dev-sqs-to-rds-dlq` | Dead Letter Queue for sqs-to-rds processing |
+| `rds-monitor-sqs` | RDS monitoring events |
+
+### 15.6 SNS Topics
+
+| Topic | Purpose |
+|-------|---------|
+| `rds-monitor-sns` | RDS monitoring notifications |
+| `ses-monitoring` | SES delivery/bounce monitoring |
+
+### 15.7 API Gateway
+
+| API ID | Name | Notes |
+|--------|------|-------|
+| `1bkc3kz7c9` | `lenie_split` | Undocumented, candidate for review |
+| `pir31ejsf2` | `lenie_chrome_extension` | Older version, replaced by CF-managed `lenie_dev_add_from_chrome_extension` |
+
+### 15.8 Step Functions
+
+| State Machine | Purpose | Notes |
+|---------------|---------|-------|
+| `jenkins-start-run-job` | Jenkins job orchestration | Jenkins archived, candidate for cleanup |
+
+### 15.9 SES Email Identities
+
+| Identity | Notes |
+|----------|-------|
+| `lenie-ai.eu` | Root domain (CF template `ses.yaml` covers only `dev.lenie-ai.eu`) |
+| `krzysztof@itsnap.eu` | Personal email identity |
+
+### 15.10 Lambda Layers
+
+| Layer | Packages | Notes |
+|-------|----------|-------|
+| `lenie_all_layer` | pytube, urllib3, requests, beautifulsoup4 | Deployed via `zip_to_s3.sh` |
+| `lenie_openai` | openai SDK | Deployed via `zip_to_s3.sh` |
+| `psycopg2_new_layer` | psycopg2-binary 2.9.10 | Deployed via `zip_to_s3.sh` |
+
+### 15.11 Budget (Discrepancy)
+
+| Actual | Documented (budget.yaml) |
+|--------|--------------------------|
+| "My Monthly Cost Budget", $8/month | "AccountBudget", $20/month |
+
+The deployed budget differs from the template — either the template was not used for deployment, or the budget was manually modified.
+
+### 15.12 Summary
+
+| Resource Type | Without CF Template | With CF Template |
+|---------------|--------------------:|:----------------:|
+| S3 Buckets | 10 | 3 |
+| CloudFront Distributions | 3 | 1 |
+| Lambda Functions | 14 | 11 |
+| DynamoDB Tables | 3 | 1 |
+| SQS Queues | 2 | 2 |
+| SNS Topics | 2 | 1 |
+| API Gateway | 2 | 3 |
+| Step Functions | 1 | 1 |
+| SES Identities | 2 | 1 |
+| Lambda Layers | 3 | 0 |
+| **Total** | **~42** | **~24** |

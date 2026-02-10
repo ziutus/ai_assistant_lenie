@@ -94,6 +94,7 @@ Both app functions use path-based routing (`event['path']`) via API Gateway prox
 |----------|----------|---------|-------------|
 | `ses-with-excel` | 2026-02 | `archive/ses-with-excel` | Generated Excel (openpyxl), uploaded to S3, sent via SES. Prototype with hardcoded test data. Restore: `git checkout archive/ses-with-excel -- infra/aws/serverless/lambdas/ses-with-excel/` |
 | `jenkins-job-start` | 2026-02 | `archive/jenkins-job-start` | Triggered Jenkins job via HTTP API with CSRF crumb auth. Jenkins not in use. Restore: `git checkout archive/jenkins-job-start -- infra/aws/serverless/lambdas/jenkins-job-start/` |
+| `ses-excel-summary` | 2026-02 | `archive/ses-excel-summary` | AWS Lambda `lenie_ses_excel_summary`. Generated Excel report (openpyxl), uploaded to S3 (`lenie-dev-excel-reports`), sent as email attachment via SES. Prototype with hardcoded test data and email addresses. Runtime: python3.11, bundled openpyxl 3.1.5. Downloaded from AWS (code not previously in repo). Restore: `git checkout archive/ses-excel-summary -- infra/aws/serverless/lambdas/ses-excel-summary/` |
 
 ## Lambda Layers
 
