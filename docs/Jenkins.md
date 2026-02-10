@@ -10,6 +10,12 @@
 >
 > Required `.env` variables: `JENKINS_AWS_INSTANCE_ID`, `AWS_HOSTED_ZONE_ID`, `JENKINS_DOMAIN_NAME`
 
+> **Archived Lambda:** The `jenkins-job-start` Lambda function (triggered Jenkins jobs via HTTP API with CSRF crumb auth) has been archived and removed from the codebase. Code is preserved in git tag `archive/jenkins-job-start`.
+> Restore with:
+> ```bash
+> git checkout archive/jenkins-job-start -- infra/aws/serverless/lambdas/jenkins-job-start/
+> ```
+
 > **Parent document:** [CI_CD.md](CI_CD.md) — general CI/CD pipeline rules and conventions.
 
 ## Automatic Security Group Configuration at Startup
