@@ -621,9 +621,7 @@ No unmanaged SQS queues remain.
 
 ### 15.8 Step Functions
 
-| State Machine | Purpose | Notes |
-|---------------|---------|-------|
-| `jenkins-start-run-job` | Jenkins job orchestration | Archived: definition downloaded from AWS, see `serverless/CLAUDE.md` |
+No unmanaged Step Functions remain.
 
 ### 15.9 SES Email Identities
 
