@@ -1,0 +1,70 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'S3 buckets for Helm chart repository'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: lenie
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - qa
+      - prod
+
+Resources:
+  HelmBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-${Environment}-helm"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  HelmBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref HelmBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontOAIAccess
+            Effect: Allow
+            Principal:
+              CanonicalUser: !GetAtt CloudFrontOAI.S3CanonicalUserId
+            Action: s3:GetObject
+            Resource: !Sub "${HelmBucket.Arn}/*"
+
+  CloudFrontOAI:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub "OAI for ${ProjectName}-${Environment}-helm"
+
+Outputs:
+  HelmBucketName:
+    Description: Helm chart S3 bucket name
+    Value: !Ref HelmBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketName"
+
+  HelmBucketArn:
+    Description: Helm chart S3 bucket ARN
+    Value: !GetAtt HelmBucket.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-BucketArn"
+
+  CloudFrontOAIId:
+    Description: CloudFront Origin Access Identity ID
+    Value: !Ref CloudFrontOAI
+    Export:
+      Name: !Sub "${AWS::StackName}-OAIId"
+
+  CloudFrontOAICanonicalUser:
+    Description: CloudFront OAI S3 Canonical User ID
+    Value: !GetAtt CloudFrontOAI.S3CanonicalUserId
+    Export:
+      Name: !Sub "${AWS::StackName}-OAICanonicalUser"

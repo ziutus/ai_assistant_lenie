@@ -575,7 +575,8 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 | `lenie-dev-app-web` | React frontend static files | CloudFront origin for `app.dev.lenie-ai.eu` |
 | `lenie-dev-emails` | Email storage | Deleted from AWS (2026-02) |
 | `lenie-dev-excel-reports` | Excel report files | Deleted from AWS (2026-02) |
-| `lenie-dev-helm` | Helm chart hosting (DEV) | CloudFront origin for `helm.dev.lenie-ai.eu` |
+| `lenie-dev-helm` | Helm chart hosting (DEV) | Deleted from AWS (2026-02). CF template: `s3-helm.yaml`. Chart saved to `infra/kubernetes/helm/` |
+| `lenie-prod-helm` | Helm chart hosting (PROD) | Deleted from AWS (2026-02). Charts saved to `infra/kubernetes/helm/` |
 | `lenie-dev-web` | Web content | Deleted from AWS (2026-02) |
 | `lenie-gitlab-test` | GitLab CI testing | Candidate for cleanup |
 | `lenie-s3-tmp` | Temporary storage | Candidate for cleanup |
@@ -587,7 +588,7 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 | ID | Domain Alias | S3 Origin | Notes |
 |----|-------------|-----------|-------|
 | `ETIQTXICZBECA` | `app.dev.lenie-ai.eu` | lenie-dev-app-web | DEV frontend |
-| `E2ZLSEEB8OVYOM` | `helm.dev.lenie-ai.eu` | lenie-dev-helm | DEV Helm charts |
+| `E2ZLSEEB8OVYOM` | `helm.dev.lenie-ai.eu` | lenie-dev-helm | Deleted from AWS (2026-02). CF template: `cloudfront-helm.yaml` |
 | `E19SWSRXVWFGJQ` | *(none)* | lenie-s3-web-test | Test distribution, candidate for cleanup |
 
 ### 15.3 Lambda Functions
