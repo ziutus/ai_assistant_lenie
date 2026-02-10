@@ -596,7 +596,6 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 
 | Function | Purpose |
 |----------|---------|
-| `infra-allow-ip-in-secrutity-group` | Add/remove IPs in Security Groups |
 | `rds-start-reporter-sns` | SNS notification on RDS start |
 | `ses_s3_send_email` | Send emails via SES with S3 content |
 | `git-webhooks` | Handle Git webhook events |
@@ -615,6 +614,7 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 
 | Function | Purpose | Notes |
 |----------|---------|-------|
+| `infra-allow-ip-in-secrutity-group` | Add caller IP to Security Group (RDP 3389) | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
 | `lenie_2_internet_tmp` | Temp version of app-server-internet | Should be removed |
 | `lenie-url-add` | Older version of url-add | Replaced by `lenie-dev-url-add` (CF-managed) |
 | `lenie_ses_excel_summary` | Generate and send Excel summary via SES | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
