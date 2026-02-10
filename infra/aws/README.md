@@ -618,7 +618,7 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 | `lenie_2_internet_tmp` | Temp version of app-server-internet | Should be removed |
 | `lenie-url-add` | Older version of url-add | Replaced by `lenie-dev-url-add` (CF-managed) |
 | `lenie_ses_excel_summary` | Generate and send Excel summary via SES | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
-| `jenkins-start-job` | Start Jenkins jobs | Jenkins archived, see `docs/Jenkins.md` |
+| `jenkins-start-job` | Start Jenkins jobs | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
 | `step-function-test` | Step Functions testing | Test artifact |
 
 ### 15.4 DynamoDB Tables
