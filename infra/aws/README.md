@@ -571,16 +571,16 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 
 | Bucket | Purpose | Notes |
 |--------|---------|-------|
-| `lenie-ai-logs` | Centralized logging | |
+| `lenie-ai-logs` | Centralized logging | Deleted from AWS (2026-02) |
 | `lenie-dev-app-web` | React frontend static files | CloudFront origin for `app.dev.lenie-ai.eu` |
-| `lenie-dev-emails` | Email storage | |
-| `lenie-dev-excel-reports` | Excel report files | |
+| `lenie-dev-emails` | Email storage | Deleted from AWS (2026-02) |
+| `lenie-dev-excel-reports` | Excel report files | Deleted from AWS (2026-02) |
 | `lenie-dev-helm` | Helm chart hosting (DEV) | CloudFront origin for `helm.dev.lenie-ai.eu` |
-| `lenie-dev-web` | Web content | |
+| `lenie-dev-web` | Web content | Deleted from AWS (2026-02) |
 | `lenie-gitlab-test` | GitLab CI testing | Candidate for cleanup |
 | `lenie-s3-tmp` | Temporary storage | Candidate for cleanup |
 | `lenie-s3-web-test` | Web test | CloudFront origin, candidate for cleanup |
-| `lenie-prod-video-to-text` | Video transcriptions (PROD) | |
+| `lenie-prod-video-to-text` | Video transcriptions (PROD) | Deleted from AWS (2026-02) |
 
 ### 15.2 CloudFront Distributions
 
