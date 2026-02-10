@@ -23,7 +23,7 @@ DynamoDB serves as a persistent, always-available store for document metadata. D
 
 ### Cost Optimization
 
-No NAT Gateway (saves ~$30/month), RDS started/stopped on demand via Step Functions, DynamoDB PAY_PER_REQUEST billing, budget alerts at $20/month.
+No NAT Gateway (saves ~$30/month), RDS started/stopped on demand via Step Functions, DynamoDB PAY_PER_REQUEST billing, budget alerts at $8/month.
 
 ## Directory Structure
 
@@ -94,5 +94,5 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 | Secrets Manager | Database credentials |
 | SSM Parameter Store | Cross-stack value sharing |
 | CloudWatch | Logging, Step Function execution monitoring |
-| Budgets | Cost alerts ($20/month threshold) |
+| Budgets | Cost alerts ($8/month threshold) |
 | Organizations + SCPs | Multi-account governance, region restrictions |
