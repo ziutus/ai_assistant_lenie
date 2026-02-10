@@ -631,7 +631,7 @@ These 4 functions formed a pipeline for backing up EC2 instances running Lenie a
 | Queue | Purpose |
 |-------|---------|
 | `lenie-dev-sqs-to-rds-dlq` | Dead Letter Queue for sqs-to-rds processing |
-| `rds-monitor-sqs` | RDS monitoring events |
+| `rds-monitor-sqs` | RDS monitoring events | Deleted from AWS (2026-02) |
 
 ### 15.6 SNS Topics
 
