@@ -96,3 +96,8 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 | CloudWatch | Logging, Step Function execution monitoring |
 | Budgets | Cost alerts ($8/month threshold) |
 | Organizations + SCPs | Multi-account governance, region restrictions |
+| Amplify | Frontend hosting (React SPA) with auto-deploy from GitHub |
+
+## Frontend Hosting (Historical Context)
+
+The React frontend was originally deployed via a **GitLab CI pipeline** that synced built static files to S3 and invalidated a CloudFront distribution. This has been replaced by **AWS Amplify**, which provides managed hosting, CI/CD, HTTPS, and custom domains out of the box. See `docs/AWS_Amplify_Deployment.md` for details. The archived pipeline is in `infra/archive/gitlab-ci-frontend.yml`.

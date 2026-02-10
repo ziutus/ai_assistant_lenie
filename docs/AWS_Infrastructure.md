@@ -165,6 +165,17 @@ python ec2_start_with_dns.py
 
 > **Note:** The actual implementation is in `infra/aws/tools/aws_ec2_route53.py` and can be invoked via `make aws-start-openvpn`. The script above is a reference pattern for CI/CD documentation purposes.
 
+## Frontend Deployment to S3 + CloudFront (Historical)
+
+Previously, the React frontend was deployed to AWS using a GitLab CI pipeline that:
+1. Built the React app (`yarn build`)
+2. Synced static files to an S3 bucket (`aws s3 sync ./build/ s3://$S3_BUCKET_APP_WEB --delete`)
+3. Invalidated the CloudFront cache (`aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths "/*"`)
+
+This approach has been replaced by **AWS Amplify**, which handles build, hosting, CDN, and custom domains as a managed service. See [AWS_Amplify_Deployment.md](AWS_Amplify_Deployment.md) for the current setup.
+
+> **Archived pipeline:** `infra/archive/gitlab-ci-frontend.yml` | **Documentation:** [GitLabCI.md](GitLabCI.md) (Frontend Pipeline section)
+
 ## Pushing Image to ECR
 
 ```powershell

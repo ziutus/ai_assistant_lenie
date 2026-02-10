@@ -8,6 +8,8 @@ The Lenie web interfaces can be deployed publicly using [AWS Amplify](https://aw
 
 This is the recommended approach for making the frontend publicly accessible — no servers to manage, built-in HTTPS, custom domains, and CI/CD out of the box.
 
+> **Historical note:** Previously, the frontend was deployed via a GitLab CI pipeline that synced static files to S3 and invalidated CloudFront. See `infra/archive/gitlab-ci-frontend.yml` and [GitLabCI.md](GitLabCI.md) for the archived approach.
+
 ## What Can Be Deployed
 
 | Application | Directory | Framework | Amplify Platform |
