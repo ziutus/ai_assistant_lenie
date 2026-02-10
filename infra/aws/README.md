@@ -597,7 +597,6 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 | Function | Purpose |
 |----------|---------|
 | `rds-start-reporter-sns` | SNS notification on RDS start |
-| `ses_s3_send_email` | Send emails via SES with S3 content |
 | `auditor_review_ec2` | EC2 audit review |
 
 **AMI management pipeline (archived — VM-based distribution approach shelved):**
@@ -621,6 +620,7 @@ These 4 functions formed a pipeline for backing up EC2 instances running Lenie a
 | `lenie_ses_excel_summary` | Generate and send Excel summary via SES | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
 | `jenkins-start-job` | Start Jenkins jobs | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
 | `git-webhooks` | Trigger Jenkins pipeline via Step Function on Git push | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
+| `ses_s3_send_email` | Send HTML email with S3 attachment via SES | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
 | `step-function-test` | Step Functions testing | Test artifact |
 
 ### 15.4 DynamoDB Tables
