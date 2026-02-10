@@ -589,13 +589,8 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 
 | Function | Purpose | Notes |
 |----------|---------|-------|
-| `infra-allow-ip-in-secrutity-group` | Add caller IP to Security Group (RDP 3389) | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
 | `lenie_2_internet_tmp` | Temp version of app-server-internet | Should be removed |
 | `lenie-url-add` | Older version of url-add | Replaced by `lenie-dev-url-add` (CF-managed) |
-| `lenie_ses_excel_summary` | Generate and send Excel summary via SES | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
-| `jenkins-start-job` | Start Jenkins jobs | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
-| `git-webhooks` | Trigger Jenkins pipeline via Step Function on Git push | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
-| `ses_s3_send_email` | Send HTML email with S3 attachment via SES | Archived: code downloaded from AWS, see `serverless/CLAUDE.md` |
 | `step-function-test` | Step Functions testing | Test artifact |
 
 ### 15.4 DynamoDB Tables
