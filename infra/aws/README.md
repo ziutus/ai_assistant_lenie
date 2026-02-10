@@ -572,7 +572,6 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 | Bucket | Purpose | Notes |
 |--------|---------|-------|
 | `lenie-dev-app-web` | React frontend static files | CloudFront origin for `app.dev.lenie-ai.eu` |
-| `lenie-gitlab-test` | GitLab CI testing | Candidate for cleanup |
 | `lenie-s3-tmp` | Temporary storage | Candidate for cleanup |
 | `lenie-s3-web-test` | Web test | CloudFront origin, candidate for cleanup |
 
