@@ -1,10 +1,12 @@
 # GitLab CI Pattern
 
-Example GitLab CI configuration with a self-hosted runner on EC2.
+Example GitLab CI configurations with a self-hosted runner on EC2.
 
 > **Parent document:** [CI_CD.md](CI_CD.md) — general CI/CD pipeline rules and conventions.
 
-> **Source file:** `infra/old_gitlab_config.yaml` (archived — GitLab CI is no longer active)
+> **Source files (archived — GitLab CI is no longer active):**
+> - Backend: `infra/archive/gitlab-ci.yml`
+> - Frontend: `infra/archive/gitlab-ci-frontend.yml`
 
 ## Architecture
 
@@ -241,3 +243,106 @@ All jobs tagged `AWS` run on a self-hosted GitLab runner installed on the EC2 in
 | `DOCKER_HUB_USERNAME` | Docker Hub username |
 | `DOCKER_HUB_TOKEN` | Docker Hub access token |
 | `QODANA_TOKEN` | Qodana Cloud token (optional) |
+
+---
+
+## Frontend Pipeline
+
+Separate GitLab CI pipeline for the React frontend application.
+
+> **Source file:** `infra/archive/gitlab-ci-frontend.yml`
+
+### Architecture
+
+```
+.pre (start_runner — start EC2)
+    ↓
+build (yarn install + yarn build)  ←──┐
+build-docker-image                 ←──┤ parallel
+    ↓                                  │
+deploy:                                │
+  publish_to_aws (S3 sync + CF)   ←──┘
+  push-docker-image-to-docker-hub
+    ↓
+clean-node (remove old Docker images)
+    ↓
+.post (stop_runner — stop EC2)
+```
+
+### Variables
+
+```yaml
+variables:
+  CI: "false"
+  AWS_REGION: "us-east-1"
+  INSTANCE_ID: "i-03908d34c63fce042"
+  CI_REGISTRY_IMAGE: "lenie-react-interface"
+  TAG_VERSION: "0.2.9.3"
+```
+
+### Key Differences from Backend Pipeline
+
+| Aspect | Backend | Frontend |
+|--------|---------|----------|
+| Image name | `lenie-ai-server` | `lenie-react-interface` |
+| Build tool | `pip install` | `yarn install` + `yarn build` |
+| Deploy target | Helm chart to S3 | Static files to S3 + CloudFront invalidation |
+| Security scans | Semgrep, TruffleHog, OSV, Trivy | None |
+| Version validation | Semver label on MR to main | None |
+| Trigger | MR events only | Push to `dev` or `main` |
+
+### Jobs
+
+#### 1. job_build (stage: build)
+
+Builds the React application using yarn:
+
+```yaml
+job_build:
+  tags: [AWS]
+  script:
+    - yarn install
+    - yarn build
+  artifacts:
+    paths:
+      - build/
+  only: [dev, main]
+```
+
+#### 2. publish_to_aws (stage: deploy)
+
+Syncs built static files to S3 and invalidates CloudFront cache:
+
+```yaml
+publish_to_aws:
+  tags: [AWS]
+  script:
+    - aws s3 sync ./build/ s3://$S3_BUCKET_APP_WEB --delete
+    - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
+  only: [dev, main]
+```
+
+#### 3. Docker build + push
+
+Builds and pushes the frontend Docker image to Docker Hub:
+
+```yaml
+build-docker-image:
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$TAG_VERSION .
+    - docker tag ... $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
+
+push-docker-image-to-docker-hub:
+  script:
+    - docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION
+    - docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
+```
+
+### Frontend-specific Secrets
+
+| Variable | Description |
+|----------|-------------|
+| `S3_BUCKET_APP_WEB` | S3 bucket for static frontend files |
+| `CLOUDFRONT_DISTRIBUTION_ID` | CloudFront distribution to invalidate |
+
+These are in addition to the shared secrets listed in the backend pipeline section above.
