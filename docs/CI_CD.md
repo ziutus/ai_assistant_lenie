@@ -265,7 +265,7 @@ Detailed configurations for each CI/CD platform:
 
 | Platform | Status | Documentation |
 |----------|--------|---------------|
-| **GitLab CI** | Archived | [GitLabCI.md](GitLabCI.md) |
+| **GitLab CI** | Archived | [GitLabCI.md](GitLabCI.md) (backend + frontend pipelines) |
 | **CircleCI** | Archived (minimal) | [CircleCI.md](CircleCI.md) |
 | **Jenkins** | Archived | [Jenkins.md](Jenkins.md) |
 
