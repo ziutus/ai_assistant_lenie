@@ -601,14 +601,16 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 | `git-webhooks` | Handle Git webhook events |
 | `auditor_review_ec2` | EC2 audit review |
 
-**AMI management pipeline:**
+**AMI management pipeline (archived — VM-based distribution approach shelved):**
 
-| Function | Purpose |
-|----------|---------|
-| `createImageLambda` | Create AMI from EC2 instance |
-| `getImageStateLambda` | Check AMI creation status |
-| `copyImageLambda` | Copy AMI across regions |
-| `setSsmParamLambda` | Store AMI ID in SSM Parameter Store |
+| Function | Purpose | Notes |
+|----------|---------|-------|
+| `createImageLambda` | Create AMI from tagged EC2 instance | Archived: see `serverless/CLAUDE.md` |
+| `getImageStateLambda` | Check AMI creation status | Archived: see `serverless/CLAUDE.md` |
+| `copyImageLambda` | Copy AMI to DR region (encrypted) | Archived: see `serverless/CLAUDE.md` |
+| `setSsmParamLambda` | Store AMI ID in SSM Parameter Store | Archived: see `serverless/CLAUDE.md` |
+
+These 4 functions formed a pipeline for backing up EC2 instances running Lenie as a Linux VM connecting to the database. This distribution approach has been shelved in favor of containerized (Docker/K8s) and serverless (Lambda) deployments.
 
 **Legacy / candidates for cleanup:**
 
