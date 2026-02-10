@@ -171,7 +171,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `budget.yaml` | AWS Budget | $20/month budget with alerts at 50%, 80% (actual) and 100% (forecast) |
+| `budget.yaml` | AWS Budget | $8/month budget with alerts at 50%, 80% (actual) and 100% (forecast) |
 
 ## Recommended Deployment Order (New Environment)
 

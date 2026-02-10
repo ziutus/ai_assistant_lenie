@@ -33,7 +33,7 @@ infra/aws/
 | EC2 Instances         | 1     | t4g.micro (ARM64)                            |
 | Step Functions        | 1     | sqs-to-rds orchestration                     |
 | VPC Subnets           | 6     | 2 public, 2 private, 2 DB private            |
-| Budgets               | 1     | $20/month with alerts                        |
+| Budgets               | 1     | $8/month with alerts                        |
 
 ---
 
@@ -355,7 +355,7 @@ infra/aws/
 
 | Resource          | Type                      | Details                              |
 |-------------------|---------------------------|--------------------------------------|
-| AccountBudget     | AWS::Budgets::Budget      | $20/month, COST type                 |
+| AccountBudget     | AWS::Budgets::Budget      | $8/month, COST type                 |
 
 **Alert Thresholds**:
 - Actual spend > 50% → email notification
@@ -668,15 +668,7 @@ These 4 functions formed a pipeline for backing up EC2 instances running Lenie a
 | `lenie_openai` | openai SDK | Deployed via `zip_to_s3.sh` |
 | `psycopg2_new_layer` | psycopg2-binary 2.9.10 | Deployed via `zip_to_s3.sh` |
 
-### 15.11 Budget (Discrepancy)
-
-| Actual | Documented (budget.yaml) |
-|--------|--------------------------|
-| "My Monthly Cost Budget", $8/month | "AccountBudget", $20/month |
-
-The deployed budget differs from the template — either the template was not used for deployment, or the budget was manually modified.
-
-### 15.12 Summary
+### 15.11 Summary
 
 | Resource Type | Without CF Template | With CF Template |
 |---------------|--------------------:|:----------------:|
