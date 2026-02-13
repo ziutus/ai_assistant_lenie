@@ -5,6 +5,16 @@ from library.api.aws.text_detect_language_aws import detect_text_language_aws
 logger = logging.getLogger(__name__)
 
 
+def compare_language(language_1: str, language_2: str) -> bool:
+    if language_1 == language_2:
+        return True
+    if language_1 == 'pl-PL' and language_2 == 'pl':
+        return True
+    if language_1 == 'pl' and language_2 == 'pl-PL':
+        return True
+    return False
+
+
 def text_language_detect(text: str, provider: str = "aws") -> str:
 
     logger.info("No language selection made")
