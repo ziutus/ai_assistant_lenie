@@ -1,0 +1,54 @@
+{
+  "mcpServers": {
+    "awslabs.aws-iac-mcp-server": {
+      "disabled": false,
+      "timeout": 180,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "tool", "run", "--from",
+        "awslabs.aws-iac-mcp-server@latest",
+        "awslabs.aws-iac-mcp-server.exe"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "AWS_PROFILE": "default",
+        "AWS_REGION": "eu-central-1"
+      }
+    },
+    "awslabs.cfn-mcp-server": {
+      "disabled": false,
+      "timeout": 180,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "tool", "run", "--from",
+        "awslabs.cfn-mcp-server@latest",
+        "awslabs.cfn-mcp-server.exe",
+        "--readonly"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "AWS_PROFILE": "default",
+        "AWS_REGION": "eu-central-1"
+      }
+    },
+    "awslabs.aws-api-mcp-server": {
+      "disabled": false,
+      "timeout": 180,
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "tool", "run", "--from",
+        "awslabs.aws-api-mcp-server@latest",
+        "awslabs.aws-api-mcp-server.exe"
+      ],
+      "env": {
+        "FASTMCP_LOG_LEVEL": "ERROR",
+        "READ_OPERATIONS_ONLY": "true",
+        "AWS_PROFILE": "default",
+        "AWS_REGION": "eu-central-1"
+      }
+    }
+  }
+}

@@ -1,0 +1,116 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'S3 bucket for frontend hosting for Project Lenie'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, qa2, qa3, prod]
+    Description: Environment name
+  CloudFrontDistributionId:
+    Type: String
+    Default: ETIQTXICZBECA
+    Description: CloudFront distribution ID for OAC bucket policy
+
+Conditions:
+  IsProduction: !Or
+    - !Equals [!Ref Environment, prod]
+    - !Equals [!Ref Environment, qa]
+    - !Equals [!Ref Environment, qa2]
+    - !Equals [!Ref Environment, qa3]
+
+Resources:
+  # S3 bucket for frontend hosting (CF import — matches live resource exactly)
+  # DeletionPolicy: Retain required for CF import of existing resource
+  AppWebBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      # Hardcoded to match existing bucket name (CF import requirement)
+      BucketName: lenie-dev-app-web
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+            BucketKeyEnabled: true
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      # ACLs disabled — matches live bucket ownership controls
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+  # CloudFront OAC bucket policy — allows CloudFront to serve frontend content
+  AppWebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AppWebBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Id: PolicyForCloudFrontPrivateContent
+        Statement:
+          - Sid: AllowCloudFrontServicePrincipal
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub '${AppWebBucket.Arn}/*'
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub 'arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistributionId}'
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt AppWebBucket.Arn
+              - !Sub '${AppWebBucket.Arn}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+
+  # SSM Parameter exports
+  AppWebBucketNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/s3/app-web/name'
+      Type: String
+      Value: !Ref AppWebBucket
+      Description: 'S3 app-web bucket name for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+
+  AppWebBucketArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/s3/app-web/arn'
+      Type: String
+      Value: !GetAtt AppWebBucket.Arn
+      Description: 'S3 app-web bucket ARN for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+
+  AppWebBucketDomainNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/s3/app-web/domain-name'
+      Type: String
+      Value: !GetAtt AppWebBucket.DomainName
+      Description: 'S3 app-web bucket domain name for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
