@@ -111,6 +111,9 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 |----------|-----------|-------------|
 | `rds.yaml` | RDS (PostgreSQL), DB Subnet Group, SG | `db.t3.micro` instance, 20GB, snapshot restore support |
 | `dynamodb-documents.yaml` | DynamoDB Table | Documents table with GSI (DateIndex), PITR for prod |
+| `dynamodb-cache-ai-query.yaml` | DynamoDB Table | AI query cache (`lenie-{stage}-cache-ai-query`, PAY_PER_REQUEST) |
+| `dynamodb-cache-language.yaml` | DynamoDB Table | Language detection cache (`lenie-{stage}-cache-language`, PAY_PER_REQUEST) |
+| `dynamodb-cache-translation.yaml` | DynamoDB Table | Translation cache (`lenie-{stage}-cache-translation`, PAY_PER_REQUEST) |
 
 ### Queues and Notifications
 
@@ -125,8 +128,18 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 |----------|-----------|-------------|
 | `s3.yaml` | S3 Bucket | Video transcription bucket (`lenie-{stage}-video-to-text`) |
 | `s3-cloudformation.yaml` | S3 Bucket, SSM | Lambda code and CF artifacts bucket |
+| `s3-website-content.yaml` | S3 Bucket, Bucket Policy, SSM | Website content storage (`lenie-{stage}-website-content`, AES256) |
+| `s3-app-web.yaml` | S3 Bucket, Bucket Policy, SSM | Frontend hosting bucket (`lenie-{stage}-app-web`, CloudFront OAC) |
 | `s3-helm.yaml` | S3 Bucket, Bucket Policy, CloudFront OAI | Helm chart repository bucket with OAI for CloudFront access |
 | `cloudfront-helm.yaml` | CloudFront Distribution | CDN for Helm chart repository (`helm.{env}.lenie-ai.eu`) |
+
+### Lambda Layers
+
+| Template | Resources | Description |
+|----------|-----------|-------------|
+| `lambda-layer-lenie-all.yaml` | Lambda Layer, SSM | Shared library layer (pytube, requests, beautifulsoup4) |
+| `lambda-layer-openai.yaml` | Lambda Layer, SSM | OpenAI SDK layer |
+| `lambda-layer-psycopg2.yaml` | Lambda Layer, SSM | PostgreSQL driver layer (psycopg2-binary) |
 
 ### Compute
 
@@ -153,11 +166,15 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 |----------|-----------|-------------|
 | `sqs-to-rds-step-function.yaml` | Step Functions, EventBridge, IAM, Logs | Workflow: SQS -> start DB -> process -> stop DB |
 
-### Email
+### CDN
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `ses.yaml` | SES Identity, Lambda, Custom Resource | Email with DKIM, auto-update Route53 records |
+| `cloudfront-app.yaml` | CloudFront Distribution, OAC, SSM | CDN for frontend application (`app.{env}.lenie-ai.eu`) |
+
+### Email
+
+*(SES template `ses.yaml` removed in Story 5.1 cleanup. SES is no longer used by the application.)*
 
 ### Organization and Governance
 
@@ -177,22 +194,58 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 ## Recommended Deployment Order (New Environment)
 
-Stacks have dependencies between them. When creating a new environment from scratch, follow this order:
+Stacks have dependencies between them. When creating a new environment from scratch, deploy templates in layer order as defined in `deploy.ini [dev]` section:
 
-1. `env-setup.yaml` - base configuration
-2. `budget.yaml` - cost alerts
-3. `1-domain-route53.yaml` - domain
-4. `vpc.yaml` - network
-5. `secrets.yaml` - credentials (change the default password manually after creation)
-6. `sqs-application-errors.yaml` - DLQ
-7. `s3-cloudformation.yaml` - Lambda artifacts bucket
-8. `rds.yaml` - database (requires VPC, secrets)
-9. `sqs-documents.yaml` - document queue
-10. `lambda-rds-start.yaml` - Lambda for DB start
-11. Remaining Lambdas and API Gateways
-12. `sqs-to-rds-step-function.yaml` - orchestration (requires Lambda and SQS)
+### Layer 1: Foundation
+- `env-setup.yaml` - base configuration (SSM parameters)
+- `budget.yaml` - cost alerts
+- `1-domain-route53.yaml` - domain
 
-This order is reflected in the `deploy.ini` file under the `[dev]` section.
+### Layer 2: Networking
+- `vpc.yaml` - VPC, subnets, IGW
+- `security-groups.yaml` - SSH access rules
+
+### Layer 3: Security
+- `secrets.yaml` - database credentials (change the default password manually after creation)
+
+### Layer 4: Storage
+- `s3.yaml` - video transcription bucket
+- `s3-cloudformation.yaml` - Lambda code and CF artifacts bucket
+- `dynamodb-documents.yaml` - documents table
+- `dynamodb-cache-ai-query.yaml` - AI query cache
+- `dynamodb-cache-language.yaml` - language detection cache
+- `dynamodb-cache-translation.yaml` - translation cache
+- `s3-website-content.yaml` - website content storage
+- `s3-app-web.yaml` - frontend hosting bucket
+- `sqs-documents.yaml` - document processing queue
+- `sqs-application-errors.yaml` - DLQ with email notification
+- `rds.yaml` - database (commented out; deployed separately, managed lifecycle via Step Functions)
+
+### Layer 5: Compute
+- `lambda-layer-lenie-all.yaml` - shared library layer
+- `lambda-layer-openai.yaml` - OpenAI SDK layer
+- `lambda-layer-psycopg2.yaml` - PostgreSQL driver layer
+- `ec2-lenie.yaml` - application server
+- `lenie-launch-template.yaml` - EC2 launch template
+- `lambda-rds-start.yaml` - Lambda for DB start
+- `lambda-weblink-put-into-sqs.yaml` - Lambda for SQS ingestion
+- `sqs-to-rds-lambda.yaml` - SQS to RDS transfer Lambda
+- `url-add.yaml` - URL addition Lambda with API Gateway
+
+### Layer 6: API
+- `api-gw-infra.yaml` - infrastructure management API
+- `api-gw-app.yaml` - main application API
+- `api-gw-url-add.yaml` - Chrome extension API
+
+### Layer 7: Orchestration
+- `sqs-to-rds-step-function.yaml` - SQS -> start DB -> process -> stop DB
+
+### Layer 8: CDN
+- `cloudfront-app.yaml` - CDN for frontend application
+- `s3-helm.yaml` - Helm chart repository bucket
+- `cloudfront-helm.yaml` - CDN for Helm charts
+
+This order is reflected in the `deploy.ini` file under the `[dev]` section. Run `./deploy.sh -p lenie -s dev` to deploy all templates in order.
 
 ## Notes
 

@@ -40,7 +40,7 @@ Resources:
         Variables:
           LOG_LEVEL: 'INFO'
           AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites
-          BUCKET_NAME: lenie-s3-tmp
+          BUCKET_NAME: lenie-dev-website-content
           DYNAMODB_TABLE_NAME: lenie_dev_documents
           TIMESTAMP: !Ref timestamp
 
@@ -90,7 +90,7 @@ Resources:
                   - s3:PutObject
                   - s3:GetObject
                 Resource:
-                  - "arn:aws:s3:::lenie-s3-tmp/*"
+                  - "arn:aws:s3:::lenie-dev-website-content/*"
         - PolicyName: DynamoDBAccess
           PolicyDocument:
             Version: "2012-10-17"

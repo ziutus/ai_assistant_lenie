@@ -27,7 +27,7 @@ Lenie AI Assistant to rozszerzenie przeglądarki, umożliwiające użytkownikom 
 
 1. Po instalacji rozszerzenia kliknij ikonę w pasku przeglądarki.
 2. Wprowadź klucz API w polu "Klucz API".
-3. Ustaw adres serwera API (domyślny: `https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add`).
+3. Ustaw adres serwera API (domyślny: `https://jg40fjwz61.execute-api.us-east-1.amazonaws.com/v1/url_add`).
 4. Skonfiguruj dodatkowe opcje: typ treści, źródło, opcje AI, itd.
 
 ## Opis plików

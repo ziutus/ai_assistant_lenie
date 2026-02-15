@@ -21,15 +21,15 @@ infra/aws/
 
 | Category              | Count | Details                                      |
 |-----------------------|-------|----------------------------------------------|
-| CloudFormation Stacks | 27    | Templates in `cloudformation/templates/`     |
+| CloudFormation Stacks | 38    | Templates in `cloudformation/templates/` (32 dev active, 1 commented, 5 account-level) |
 | Lambda Functions      | 11    | Python 3.11 runtime                          |
 | API Gateway APIs      | 3     | app, infra, chrome-extension                 |
 | API Endpoints         | 20+   | REST (REGIONAL)                              |
 | SQS Queues            | 2     | documents, problems-dlq                      |
 | SNS Topics            | 1     | problems notifications                       |
 | RDS Instances         | 1     | PostgreSQL, db.t3.micro                      |
-| DynamoDB Tables       | 1     | documents (PAY_PER_REQUEST)                  |
-| S3 Buckets            | 2     | video-to-text, cloudformation artifacts      |
+| DynamoDB Tables       | 4     | documents + 3 cache tables (PAY_PER_REQUEST) |
+| S3 Buckets            | 5     | video-to-text, cloudformation, helm, website-content, app-web |
 | EC2 Instances         | 1     | t4g.micro (ARM64)                            |
 | Step Functions        | 1     | sqs-to-rds orchestration                     |
 | VPC Subnets           | 6     | 2 public, 2 private, 2 DB private            |
@@ -106,6 +106,24 @@ infra/aws/
 - **GSI**: `DateIndex` (created_date HASH, sk RANGE, projection: ALL)
 - **PITR**: Disabled for DEV
 
+### 2.3 DynamoDB Cache - AI Query (`dynamodb-cache-ai-query.yaml`)
+
+| Resource | Type | Details |
+|----------|------|---------|
+| CacheTable | AWS::DynamoDB::Table | `lenie-dev-cache-ai-query`, PAY_PER_REQUEST |
+
+### 2.4 DynamoDB Cache - Language (`dynamodb-cache-language.yaml`)
+
+| Resource | Type | Details |
+|----------|------|---------|
+| CacheTable | AWS::DynamoDB::Table | `lenie-dev-cache-language`, PAY_PER_REQUEST |
+
+### 2.5 DynamoDB Cache - Translation (`dynamodb-cache-translation.yaml`)
+
+| Resource | Type | Details |
+|----------|------|---------|
+| CacheTable | AWS::DynamoDB::Table | `lenie-dev-cache-translation`, PAY_PER_REQUEST |
+
 ---
 
 ## 3. Queues & Notifications
@@ -142,6 +160,31 @@ infra/aws/
 |------------------------------|-------------------------|-------------------------------------------|
 | MyS3Bucket                   | AWS::S3::Bucket         | `lenie-2025-dev-cloudformation`           |
 | CloudFormationSSMParameter   | AWS::SSM::Parameter     | `/lenie/dev/s3/cloudformation/name`       |
+
+### 4.3 Website Content (`s3-website-content.yaml`)
+
+| Resource                          | Type                    | Details                                       |
+|-----------------------------------|-------------------------|-----------------------------------------------|
+| WebsiteContentBucket              | AWS::S3::Bucket         | `lenie-dev-website-content`, AES256, public access blocked |
+| WebsiteContentBucketPolicy        | AWS::S3::BucketPolicy   | TLS-only access (deny non-SSL)                |
+| WebsiteContentBucketNameParameter | AWS::SSM::Parameter     | `/lenie/dev/s3/website-content/name`          |
+| WebsiteContentBucketArnParameter  | AWS::SSM::Parameter     | `/lenie/dev/s3/website-content/arn`           |
+
+- Versioning enabled in production environments, suspended in dev
+- Recreate strategy (no DeletionPolicy/Retain)
+
+### 4.4 Frontend Hosting (`s3-app-web.yaml`)
+
+| Resource                            | Type                    | Details                                       |
+|-------------------------------------|-------------------------|-----------------------------------------------|
+| AppWebBucket                        | AWS::S3::Bucket         | `lenie-dev-app-web`, AES256, DeletionPolicy: Retain |
+| AppWebBucketPolicy                  | AWS::S3::BucketPolicy   | CloudFront OAC access + TLS-only              |
+| AppWebBucketNameParameter           | AWS::SSM::Parameter     | `/lenie/dev/s3/app-web/name`                  |
+| AppWebBucketArnParameter            | AWS::SSM::Parameter     | `/lenie/dev/s3/app-web/arn`                   |
+| AppWebBucketDomainNameParameter     | AWS::SSM::Parameter     | `/lenie/dev/s3/app-web/domain-name`           |
+
+- CF-imported existing bucket (DeletionPolicy: Retain)
+- CloudFront origin for `app.dev.lenie-ai.eu`
 
 ---
 
@@ -303,14 +346,9 @@ infra/aws/
 
 ---
 
-## 11. Email - SES (`ses.yaml`)
+## 11. Email - SES
 
-| Resource              | Type                        | Details                                   |
-|-----------------------|-----------------------------|-------------------------------------------|
-| SESDomainIdentity     | AWS::SES::EmailIdentity     | `dev.lenie-ai.eu`, DKIM: RSA_2048_BIT    |
-| LambdaExecutionRole   | AWS::IAM::Role              | route53:*, ses:GetIdentityDkimAttributes  |
-| DnsUpdaterFunction    | AWS::Lambda::Function       | Auto-updates Route53 DKIM records, python3.13 |
-| DnsUpdateTrigger      | Custom::DnsUpdater          | Triggers DNS update on stack changes      |
+*(SES template `ses.yaml` and identities `lenie-ai.eu`, `dev.lenie-ai.eu` removed in Story 5.1 cleanup. SES is no longer used by the application.)*
 
 ---
 
@@ -419,6 +457,10 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 | api-gw-infra.json              | ProjectCode: lenie, stage: dev, OpenvpnEC2Name       |
 | api-gw-url-add.json            | stage: dev, LambdaFunctionName: lenie-dev-url-add    |
 | budget.json                    | BudgetAmount: 20, AlertEmail                         |
+| cloudfront-app.json            | ProjectCode: lenie, Environment: dev                 |
+| dynamodb-cache-ai-query.json   | ProjectCode: lenie, Environment: dev                 |
+| dynamodb-cache-language.json   | ProjectCode: lenie, Environment: dev                 |
+| dynamodb-cache-translation.json| ProjectCode: lenie, Environment: dev                 |
 | dynamodb-documents.json        | ProjectCode: lenie, Environment: dev                 |
 | ec2-lenie.json                 | ProjectName, Environment, SshKeyName                 |
 | env-setup.json                 | stage: dev                                           |
@@ -430,6 +472,11 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 | sqs-documents.json             | ProjectName: lenie, Environment: dev                 |
 | sqs-to-rds-lambda.json         | ProjectName: lenie, Environment: dev                 |
 | sqs-to-rds-step-function.json  | ScheduleExpression (cron)                            |
+| lambda-layer-lenie-all.json    | ProjectCode: lenie, Environment: dev                 |
+| lambda-layer-openai.json       | ProjectCode: lenie, Environment: dev                 |
+| lambda-layer-psycopg2.json     | ProjectCode: lenie, Environment: dev                 |
+| s3-app-web.json                | ProjectCode: lenie, Environment: dev                 |
+| s3-website-content.json        | ProjectCode: lenie, Environment: dev                 |
 | url-add.json                   | ProjectCode: lenie, Environment: dev                 |
 | vpc.json                       | VpcName: lenie-dev                                   |
 
@@ -571,74 +618,50 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 
 | Bucket | Purpose | Notes |
 |--------|---------|-------|
-| `lenie-dev-app-web` | React frontend static files | CloudFront origin for `app.dev.lenie-ai.eu` |
-| `lenie-s3-tmp` | Temporary storage | Candidate for cleanup |
-| `lenie-s3-web-test` | Web test | CloudFront origin, candidate for cleanup |
+| `lenie-s3-tmp` | Temporary storage (legacy) | Data migrated to `lenie-dev-website-content`. Candidate for deletion |
 
 ### 15.2 CloudFront Distributions
 
-| ID | Domain Alias | S3 Origin | Notes |
-|----|-------------|-----------|-------|
-| `ETIQTXICZBECA` | `app.dev.lenie-ai.eu` | lenie-dev-app-web | DEV frontend |
-| `E19SWSRXVWFGJQ` | *(none)* | lenie-s3-web-test | Test distribution, candidate for cleanup |
+*(All CloudFront distributions are now CF-managed. See `cloudfront-app.yaml` and `cloudfront-helm.yaml`.)*
 
 ### 15.3 Lambda Functions
 
-**Legacy / candidates for cleanup:**
-
 | Function | Purpose | Notes |
 |----------|---------|-------|
-| `lenie_2_internet_tmp` | Temp version of app-server-internet | Should be removed |
-| `lenie-url-add` | Older version of url-add | Replaced by `lenie-dev-url-add` (CF-managed) |
 | `step-function-test` | Step Functions testing | Test artifact |
 
 ### 15.4 DynamoDB Tables
 
-| Table | Purpose | Notes |
-|-------|---------|-------|
-| `lenie_cache_ai_query` | Cache for AI/LLM query results | PAY_PER_REQUEST |
-| `lenie_cache_language` | Cache for language detection results | PAY_PER_REQUEST |
-| `lenie_cache_translation` | Cache for translation results | PAY_PER_REQUEST |
+*(All DynamoDB tables are now CF-managed via Story 1.1. See `dynamodb-cache-*.yaml` templates.)*
 
 ### 15.5 SNS Topics
 
-| Topic | Purpose |
-|-------|---------|
-| `rds-monitor-sns` | RDS monitoring notifications |
-| `ses-monitoring` | SES delivery/bounce monitoring |
+*(All SNS topics removed in Story 5.1 cleanup. Remaining SNS topic is CF-managed via `sqs-application-errors.yaml`.)*
 
 ### 15.6 API Gateway
 
-| API ID | Name | Notes |
-|--------|------|-------|
-| `1bkc3kz7c9` | `lenie_split` | Undocumented, candidate for review |
-| `pir31ejsf2` | `lenie_chrome_extension` | Older version, replaced by CF-managed `lenie_dev_add_from_chrome_extension` |
+*(All API Gateways are now CF-managed via Stories 4.2 and earlier. See `api-gw-app.yaml`, `api-gw-infra.yaml`, `api-gw-url-add.yaml`.)*
 
 ### 15.7 SES Email Identities
 
 | Identity | Notes |
 |----------|-------|
-| `lenie-ai.eu` | Root domain (CF template `ses.yaml` covers only `dev.lenie-ai.eu`) |
 | `krzysztof@itsnap.eu` | Personal email identity |
 
 ### 15.8 Lambda Layers
 
-| Layer | Packages | Notes |
-|-------|----------|-------|
-| `lenie_all_layer` | pytube, urllib3, requests, beautifulsoup4 | Deployed via `zip_to_s3.sh` |
-| `lenie_openai` | openai SDK | Deployed via `zip_to_s3.sh` |
-| `psycopg2_new_layer` | psycopg2-binary 2.9.10 | Deployed via `zip_to_s3.sh` |
+*(All Lambda Layers are now CF-managed via Story 2.1. See `lambda-layer-*.yaml` templates.)*
 
 ### 15.9 Summary
 
 | Resource Type | Without CF Template | With CF Template |
 |---------------|--------------------:|:----------------:|
-| S3 Buckets | 4 | 3 |
-| CloudFront Distributions | 2 | 1 |
-| Lambda Functions | 3 | 11 |
-| DynamoDB Tables | 3 | 1 |
-| SNS Topics | 2 | 1 |
-| API Gateway | 2 | 3 |
-| SES Identities | 2 | 1 |
-| Lambda Layers | 3 | 0 |
-| **Total** | **~19** | **~24** |
+| S3 Buckets | 1 | 5 |
+| CloudFront Distributions | 0 | 2 |
+| Lambda Functions | 1 | 11 |
+| DynamoDB Tables | 0 | 4 |
+| SNS Topics | 0 | 1 |
+| API Gateway | 0 | 3 |
+| SES Identities | 1 | 0 |
+| Lambda Layers | 0 | 3 |
+| **Total** | **~3** | **~29** |
