@@ -1,0 +1,73 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DynamoDB cache table for translation results for Project Lenie'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, qa, qa2, qa3, prod]
+    Description: Environment name
+
+Conditions:
+  IsProduction: !Or
+    - !Equals [!Ref Environment, prod]
+    - !Equals [!Ref Environment, qa]
+    - !Equals [!Ref Environment, qa2]
+    - !Equals [!Ref Environment, qa3]
+
+Resources:
+  CacheTranslationTable:
+    Type: AWS::DynamoDB::Table
+    # Retain prevents accidental table deletion during stack operations
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      # Hardcoded to match existing table name (CF import requirement)
+      TableName: lenie_cache_translation
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: hash
+          AttributeType: S
+        - AttributeName: provider
+          AttributeType: S
+      KeySchema:
+        - AttributeName: hash
+          KeyType: HASH
+        - AttributeName: provider
+          KeyType: RANGE
+      SSESpecification:
+        SSEEnabled: true
+        SSEType: KMS
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+  # SSM Parameter exports
+  CacheTranslationTableNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/dynamodb/cache-translation/name'
+      Type: String
+      Value: !Ref CacheTranslationTable
+      Description: 'DynamoDB cache-translation table name for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+
+  CacheTranslationTableArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/dynamodb/cache-translation/arn'
+      Type: String
+      Value: !GetAtt CacheTranslationTable.Arn
+      Description: 'DynamoDB cache-translation table ARN for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode

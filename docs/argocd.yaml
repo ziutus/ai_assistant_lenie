@@ -1,0 +1,19 @@
+# ArgoCD Setup for Lenie AI Server
+#
+# Prerequisites: ArgoCD CLI installed and logged in (argocd login <server>)
+#
+# Related documentation:
+#   - Kubernetes manifests:  infra/kubernetes/kustomize/
+#   - Helm charts:           infra/kubernetes/helm/lenie-ai-server/
+#   - ArgoCD component:      infra/kubernetes/kustomize/components/argocd/README_argocd.md
+#   - CI/CD pipeline:        docs/CI_CD.md (stages BUILD-HELM and DEPLOY)
+
+# Step 1: Register the Git repository in ArgoCD
+# Replace <GITLAB_TOKEN> with a valid GitLab Personal Access Token (glpat-...)
+argocd repo add https://gitlab.com/ziutus/lenie-server.git --username ziutus --password <GITLAB_TOKEN>
+
+# Step 2: Create the ArgoCD application
+# - Deploys raw Kubernetes manifests from infra/kubernetes/lenie/raw
+# - Targets the in-cluster API server (https://kubernetes.default.svc)
+# - Deploys to namespace lenie-ai-dev
+argocd app create lenie-ai-server --repo https://gitlab.com/ziutus/lenie-server.git --path infra/kubernetes/lenie/raw --dest-server https://kubernetes.default.svc --dest-namespace lenie-ai-dev
