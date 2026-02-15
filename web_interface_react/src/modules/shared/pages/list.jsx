@@ -20,34 +20,22 @@ const List = () => {
   const { selectedDocumentType, setSelectedDocumentType, selectedDocumentState, setSelectedDocumentState} = React.useContext(AuthorizationContext);
   const { searchInDocument, setSearchInDocument} = React.useContext(AuthorizationContext);
   const { searchType, setSearchType} = React.useContext(AuthorizationContext);
-  const { awsRum } = React.useContext(AuthorizationContext);
 
   const { handleDeleteDocument } = useManageLLM({ formik, selectedDocumentType, selectedDocumentState });
 
   const handleTypeChange = (event) => {
           setSelectedDocumentType(event.target.value);
           handleGetList(event.target.value, selectedDocumentState,searchInDocument); // Pass both type and documentState
-          awsRum?.recordEvent('listDocuments', {
-            selected_type: selectedDocumentType,
-            selected_document_state: selectedDocumentState
-          });
   };
 
   const handleDocumentStateChange = (event) => {
           setSelectedDocumentState(event.target.value);
           handleGetList(selectedDocumentType, event.target.value,searchInDocument); // Pass both type and documentState
-          awsRum?.recordEvent('listDocuments', {
-            selected_type: selectedDocumentType,
-            selected_document_state: selectedDocumentState
-          });
   };
 
   const handleDocumentDeleteOnThisPage = async (document_id) => {
     console.log("handleDocumentDeleteOnThisPage, page id: " + document_id);
     await handleDeleteDocument(document_id);
-    awsRum?.recordEvent('DeleteDocuments', {
-      'id': document_id
-    });
     handleGetList(selectedDocumentType, selectedDocumentState);
   };
 

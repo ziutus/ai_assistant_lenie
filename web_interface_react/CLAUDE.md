@@ -78,7 +78,6 @@ AuthorizationProvider → BrowserRouter → App (routes) → Layout → Page
 - **API config**: `apiUrl`, `apiKey`, `apiType` (AWS Serverless / Docker)
 - **Infrastructure status**: `databaseStatus`, `vpnServerStatus`, `sqsLength`
 - **Document filters**: `selectedDocumentType`, `selectedDocumentState`, `searchInDocument`, `searchType`
-- **AWS RUM**: CloudWatch Real User Monitoring (disabled on localhost)
 
 ### Custom Hooks
 
@@ -137,7 +136,6 @@ next_id, previous_id, next_type, previous_type
 | formik | ^2.4.6 | Form state management |
 | react-i18next | ^15.0.2 | i18n support (installed, not yet configured) |
 | i18next | ^23.15.1 | i18n core |
-| aws-rum-web | ^1.19.0 | AWS CloudWatch RUM |
 | react-scripts | 5.0.1 | CRA build tools |
 
 ## Running

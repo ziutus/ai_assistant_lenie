@@ -15,8 +15,7 @@
     "react-scripts": "5.0.1",
     "web-vitals": "^2.1.0",
     "react-i18next": "^15.0.2",
-    "i18next": "^23.15.1",
-    "aws-rum-web": "^1.19.0"
+    "i18next": "^23.15.1"
   },
   "scripts": {
     "start": "react-scripts start",
