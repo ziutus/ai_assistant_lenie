@@ -7,7 +7,6 @@ from flask_cors import CORS
 import logging
 import uuid
 
-import library.ai
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_transcript import chapters_text_to_list
@@ -534,64 +533,6 @@ def website_download_text_content():
     #     }
     #
     #     return response, 500
-
-
-@app.route('/ai_ask', methods=['POST'])
-def ai_ask():
-    logging.debug("Correcting text using AI")
-    logging.debug(request.form)
-
-    text = request.form.get('text')
-    query = request.form.get('query')
-    model = request.form.get('model')
-
-    if not query:
-        # logging.info("Using default query to correct website as nothing is comming from fronted")
-        # query = f"Dla treści poniżej popraw błędy interpunkcyjne. Zwróć tylko poprawioną treść.   ---Treść--- {text}"
-        logging.debug("Missing data. Make sure you provide 'query'")
-        return {"status": "error",
-                "message": "Brakujące dane. Upewnij się, że dostarczasz 'query'"}, 400
-
-    if not text:
-        logging.debug("Missing data. Make sure you provide 'text'")
-        return {"status": "error",
-                "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
-
-    if not model:
-        logging.debug("Missing data. Make sure you provide 'model'")
-        return {"status": "error",
-                "message": "Missing data, please provide 'model' to decide which LLM model should be used"}, 400
-
-    query = query.replace("{text}", text)
-
-    logging.debug(f"query: {query}")
-
-    try:
-        llm_answer = library.ai.ai_ask(query=query, model=model)
-        logging.debug(llm_answer)
-
-        response = {
-            "status": "success",
-            "text": llm_answer.response_text,
-            "model": llm_answer.model,
-            "encoding": "utf8",
-            "message": "Text corrected"
-        }
-        logging.debug(response)
-        return response, 200
-
-    except Exception as e:
-        logging.error(f"An error occurred: {e}")
-
-        response = {
-            "status": "failed",
-            "text": text,
-            "encoding": "utf8",
-            "message": str(e)
-        }
-
-        logging.debug(response)
-        return response, 500
 
 
 @app.route('/website_text_remove_not_needed', methods=['POST'])

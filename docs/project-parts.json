@@ -12,7 +12,7 @@
       "framework": "Flask",
       "package_manager": "uv",
       "entry_point": "server.py",
-      "description": "Flask REST API with 19 endpoints for document management, AI operations, and content processing"
+      "description": "Flask REST API with 18 endpoints for document management, AI operations, and content processing"
     },
     {
       "part_id": "web_interface_react",

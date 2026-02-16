@@ -16,7 +16,7 @@ lenie-server-2025/
 ├── Jenkinsfile                        # Jenkins pipeline (AWS EC2, Semgrep)
 │
 ├── backend/                    ★ Flask REST API (Python 3.11)
-│   ├── server.py                      # Main Flask application (19 endpoints)
+│   ├── server.py                      # Main Flask application (18 endpoints)
 │   ├── pyproject.toml                 # Dependencies & build config (uv)
 │   ├── uv.lock                        # Frozen dependency lock
 │   ├── Dockerfile                     # Docker build (python:3.11-slim + uv)
@@ -179,7 +179,7 @@ lenie-server-2025/
 ## Integration Points
 
 ```
-web_interface_react ──(REST API, axios)──→ backend/server.py (19 endpoints)
+web_interface_react ──(REST API, axios)──→ backend/server.py (18 endpoints)
 web_add_url_react ──(POST /url_add)──→ backend/server.py OR sqs-weblink-put-into Lambda
 web_chrome_extension ──(POST /url_add)──→ AWS API Gateway → sqs-weblink-put-into Lambda
 infra/docker ──(deploys)──→ backend + web_interface_react + PostgreSQL

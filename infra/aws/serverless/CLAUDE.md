@@ -84,7 +84,7 @@ Common variables:
 | Function | Endpoints | Description |
 |----------|-----------|-------------|
 | `app-server-db` | `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding` | DB-facing operations. Requires PostgreSQL env vars, `OPENAI_*`, `EMBEDDING_MODEL`, `BACKEND_TYPE`. |
-| `app-server-internet` | `/translate`, `/website_download_text_content`, `/ai_embedding_get`, `/ai_ask` | Internet-facing operations (downloads, AI calls, embeddings). Requires `OPENAI_*`, `AI_MODEL_SUMMARY`, `EMBEDDING_MODEL`. |
+| `app-server-internet` | `/translate`, `/website_download_text_content`, `/ai_embedding_get` | Internet-facing operations (downloads, AI calls, embeddings). Requires `OPENAI_*`, `AI_MODEL_SUMMARY`, `EMBEDDING_MODEL`. |
 
 Both app functions use path-based routing (`event['path']`) via API Gateway proxy integration.
 
@@ -185,7 +185,6 @@ The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-
 | `/website_save` (POST) | `app-server-db` | Functionally equivalent |
 | `/ai_get_embedding` (POST) | `app-server-internet` | **Different endpoint name in Lambda: `/ai_embedding_get`** |
 | `/website_download_text_content` (POST) | `app-server-internet` | Functionally equivalent |
-| `/ai_ask` (POST) | `app-server-internet` | Lambda ignores `model` from request, always uses `llm_simple_jobs_model` env var |
 | `/website_text_remove_not_needed` (POST) | - | server.py only, not implemented in Lambda |
 | - | `app-server-internet` `/translate` | Lambda only, not implemented in server.py |
 | `/healthz`, `/startup`, `/readiness`, `/liveness` (GET) | - | Kubernetes health probes, not needed in Lambda |
@@ -195,13 +194,12 @@ The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-
 ### Known Differences Between Implementations
 
 1. **Endpoint naming inconsistency**: `/ai_get_embedding` (server.py) vs `/ai_embedding_get` (Lambda Internet)
-2. **`/ai_ask` model handling**: server.py uses `model` from the request body; Lambda always uses `llm_simple_jobs_model` from env vars
-3. **`/website_similar` flow**: In server.py, embeddings are computed server-side. In Lambda, the frontend must call `/ai_embedding_get` first (Lambda Internet) and then pass the result to `/website_similar` (Lambda DB) — because one Lambda cannot do both DB access and internet calls.
-4. **`/website_list` response**: server.py returns `all_results_count` field; Lambda does not
-5. **`/website_get_next_to_correct`**: Lambda version accepts `document_type` and `document_state` filter params; server.py only accepts `id`
-6. **Authentication**: server.py validates `x-api-key` header via `before_request` hook; Lambda functions rely on API Gateway for auth (API key or IAM)
-7. **`/website_text_remove_not_needed`**: Missing from Lambda — text cleaning is not available in serverless deployment
-8. **`/translate`**: Missing from server.py — translation is only available in AWS Lambda (uses AWS Translate or similar)
+2. **`/website_similar` flow**: In server.py, embeddings are computed server-side. In Lambda, the frontend must call `/ai_embedding_get` first (Lambda Internet) and then pass the result to `/website_similar` (Lambda DB) — because one Lambda cannot do both DB access and internet calls.
+3. **`/website_list` response**: server.py returns `all_results_count` field; Lambda does not
+4. **`/website_get_next_to_correct`**: Lambda version accepts `document_type` and `document_state` filter params; server.py only accepts `id`
+5. **Authentication**: server.py validates `x-api-key` header via `before_request` hook; Lambda functions rely on API Gateway for auth (API key or IAM)
+6. **`/website_text_remove_not_needed`**: Missing from Lambda — text cleaning is not available in serverless deployment
+7. **`/translate`**: Missing from server.py — translation is only available in AWS Lambda (uses AWS Translate or similar)
 
 ## Related Components
 
