@@ -2,6 +2,8 @@
 stepsCompleted:
   - step-01-validate-prerequisites
   - step-02-design-epics
+  - step-03-create-stories
+  - step-04-final-validation
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/architecture.md
@@ -133,3 +135,110 @@ Developer can read README.md to understand the target architecture (Lenie-AI as 
 **FRs covered:** FR18, FR19, FR20, FR21, FR22
 **NFRs:** NFR8 (README with vision and roadmap), NFR9 (no stale doc references)
 **Dependencies:** Best done after Epic 1 and 2 (to reflect post-cleanup state), but FR18-FR19 (vision/roadmap) can be written independently.
+
+## Epic 1: Step Function Cleanup & API Gateway Simplification
+
+Developer safely archives the unfinished `sqs-to-rds` Step Function code and removes all related AWS resources (CF stack, SSM Parameters), the `/url_add2` endpoint from API Gateway, and deploy.ini entries — resulting in a cleaner API and reduced AWS costs.
+
+### Story 1.1: Archive Step Function Code & Remove AWS Resources
+
+As a developer,
+I want to archive the Step Function `sqs-to-rds` code to `infra/archive/` and then delete all related AWS resources (CF stack, SSM Parameters) and codebase entries (deploy.ini),
+So that the unfinished Step Function code is preserved for future reference while the dead infrastructure is removed from AWS and the project.
+
+**Acceptance Criteria:**
+
+**Given** the Step Function CF template (`sqs-to-rds-step-function.yaml`) and state machine definition (`sqs_to_rds.json`) exist in the codebase
+**When** developer archives the Step Function code
+**Then** `sqs-to-rds-step-function.yaml` is copied to `infra/archive/` (FR11)
+**And** `sqs_to_rds.json` is copied to `infra/archive/` (FR12)
+**And** a README is created in `infra/archive/` explaining the Step Function's purpose, original deployment location, and dependencies (FR13)
+**And** the archived files are retrievable and complete (NFR3)
+
+**Given** the Step Function code is safely archived
+**When** developer removes the AWS resources and codebase references
+**Then** the Step Function CloudFormation stack `sqs-to-rds` is deleted from AWS via CF stack delete operation (FR3, NFR4)
+**And** all SSM Parameters associated with the Step Function are deleted from AWS (FR4)
+**And** the Step Function entry is removed from `deploy.ini` Layer 7 (Orchestration) section (FR8)
+**And** codebase-wide grep confirms zero stale references to `sqs-to-rds` or the Step Function (FR15, NFR6)
+
+### Story 1.2: Remove `/url_add2` Endpoint from API Gateway & Redeploy
+
+As a developer,
+I want to remove the `/url_add2` endpoint and its associated Step Function parameters from `api-gw-app.yaml`, validate the template, and redeploy the API Gateway,
+So that the API Gateway no longer exposes a dead endpoint and all existing endpoints continue to function correctly.
+
+**Acceptance Criteria:**
+
+**Given** the `api-gw-app.yaml` template contains the `/url_add2` endpoint definition and Step Function integration parameters
+**When** developer modifies the API Gateway template
+**Then** the `/url_add2` endpoint resource, method, and integration are removed from `api-gw-app.yaml` (FR9)
+**And** any Step Function-related parameters (ARN, role) referenced only by `/url_add2` are removed from the template (FR9)
+**And** the modified template passes `cfn-lint` validation with zero errors (FR17, NFR5)
+**And** the modified template passes `aws cloudformation validate-template` validation
+
+**Given** the modified template is validated
+**When** developer redeploys the API Gateway via S3 upload workflow (`aws cloudformation package` -> S3 -> deploy)
+**Then** the API Gateway is redeployed successfully without errors (FR10)
+**And** all existing API Gateway endpoints (except `/url_add2`) continue to function correctly (NFR1)
+**And** codebase-wide grep confirms zero stale references to `/url_add2` (FR16, NFR6)
+
+## Epic 2: DynamoDB Cache Table Removal
+
+Developer removes 3 unused DynamoDB cache tables (`lenie_cache_ai_query`, `lenie_cache_language`, `lenie_cache_translation`) from AWS, deletes all related CloudFormation templates, parameter files, deploy.ini entries, and SSM Parameters — eliminating unnecessary costs and dead infrastructure.
+
+### Story 2.1: Delete DynamoDB Cache Tables & Remove All Related Artifacts
+
+As a developer,
+I want to delete the 3 unused DynamoDB cache tables (`lenie_cache_ai_query`, `lenie_cache_language`, `lenie_cache_translation`) from AWS and remove all related CloudFormation templates, parameter files, deploy.ini entries, and SSM Parameters,
+So that the AWS account no longer contains unused cache tables generating costs, and the codebase has no dead infrastructure artifacts.
+
+**Acceptance Criteria:**
+
+**Given** the 3 DynamoDB cache tables are confirmed unused by production code (backend has zero references) and `lenie_dev_documents` is explicitly excluded
+**When** developer deletes the CloudFormation stacks
+**Then** the CF stacks for `lenie_cache_ai_query`, `lenie_cache_language`, and `lenie_cache_translation` are deleted from AWS via CF stack delete operations (FR1, FR2, NFR4)
+**And** all SSM Parameters associated with the 3 DynamoDB cache tables (path pattern `/${ProjectCode}/${Environment}/dynamodb/cache-*/`) are deleted from AWS (FR4)
+**And** the `lenie_dev_documents` DynamoDB table and its CF stack are NOT affected (NFR2)
+
+**Given** the AWS resources are deleted
+**When** developer removes the codebase artifacts
+**Then** the 3 CF templates (`dynamodb-cache-ai-query.yaml`, `dynamodb-cache-language.yaml`, `dynamodb-cache-translation.yaml`) are deleted from `infra/aws/cloudformation/templates/` (FR5)
+**And** the 3 parameter files (`dynamodb-cache-ai-query.json`, `dynamodb-cache-language.json`, `dynamodb-cache-translation.json`) are deleted from `infra/aws/cloudformation/parameters/dev/` (FR6)
+**And** the 3 DynamoDB cache table entries are removed from `deploy.ini` Layer 4 (Storage) section (FR7)
+**And** `deploy.ini` contains no commented-out or dead entries for the removed tables (NFR7)
+**And** codebase-wide grep confirms zero stale references to `lenie_cache_ai_query`, `lenie_cache_language`, and `lenie_cache_translation` (FR14, NFR6)
+
+## Epic 3: Project Vision & Documentation Update
+
+Developer can read README.md to understand the target architecture (Lenie-AI as MCP server for Claude Desktop + Obsidian vault) and phased roadmap. All documentation accurately reflects the current state after cleanup.
+
+### Story 3.1: Update README.md with Project Vision & Roadmap
+
+As a developer (or future contributor),
+I want to read README.md and understand the project's target architecture (Lenie-AI as MCP server for Claude Desktop + Obsidian vault) and phased roadmap,
+So that I know where the project is heading and can plan contributions accordingly.
+
+**Acceptance Criteria:**
+
+**Given** the current README.md does not describe the project's future direction
+**When** developer updates README.md
+**Then** README.md contains a clear description of the target vision: Lenie-AI as an MCP server for Claude Desktop + Obsidian vault workflow (FR18)
+**And** README.md contains a phased roadmap: current state -> MCP server foundation -> Obsidian integration (FR19)
+**And** README.md contains: project purpose, current architecture summary, target vision, and phased roadmap — readable without consulting other files (NFR8)
+**And** README.md is self-contained — a new developer can understand the project's purpose and direction from this single file
+
+### Story 3.2: Update Documentation to Reflect Post-Cleanup State
+
+As a developer,
+I want all documentation files to accurately reflect the current state of the project after cleanup (no references to deleted DynamoDB cache tables, Step Function, or `/url_add2`),
+So that no documentation misleads about resources that no longer exist.
+
+**Acceptance Criteria:**
+
+**Given** Epic 1 and Epic 2 cleanup is complete and AWS resources have been removed
+**When** developer updates documentation files
+**Then** CLAUDE.md is updated to reflect the current project state — no references to removed DynamoDB cache tables, Step Function, or `/url_add2` (FR20)
+**And** `infra/aws/README.md` is updated to remove references to deleted resources (FR21)
+**And** any other documentation files referencing removed resources are updated or corrected (FR22)
+**And** no documentation file in the repository references resources that no longer exist in AWS or in the codebase (NFR9)
