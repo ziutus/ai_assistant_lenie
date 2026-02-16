@@ -106,7 +106,7 @@ development_status:
   # --- Epic 10: Endpoint & Dead Code Removal ---
   epic-10: in-progress
   10-1-remove-ai-ask-endpoint: done
-  10-2-remove-translate-endpoint: backlog
+  10-2-remove-translate-endpoint: done
   10-3-remove-infra-ip-allow-endpoint: backlog
   10-4-remove-ai-describe-image-dead-code: backlog
   epic-10-retrospective: optional

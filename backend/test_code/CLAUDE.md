@@ -91,7 +91,6 @@ These scripts directly import and test production `library/` modules:
 - **`library.ai`** — LLM provider abstraction (used by `embeddings_search.py`, Bielik scripts)
 - **`library.embedding`** — Vector embedding generation
 - **`library.stalker_web_documents_db_postgresql`** — PostgreSQL + pgvector queries
-- **`library.translate`** — Text translation between languages
 - **`library.stalker_cache`** — Query result caching
 - **`library.text_detect_language`** — Language detection
 

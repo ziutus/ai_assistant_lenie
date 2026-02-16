@@ -4,7 +4,6 @@ import Input from "../Input/input";
 const InputsForAllExceptLink = ({
   formik,
   handleSplitTextForEmbedding,
-  handleTranslate,
   handleRemoveNotNeededText,
   isLoading,
 }) => {
@@ -37,13 +36,6 @@ const InputsForAllExceptLink = ({
                 onClick={() => handleSplitTextForEmbedding(formik.values)}
             >
                 Split text for Embedding
-            </button>
-            <button
-                className={"button"}
-                style={{marginRight: "10px"}}
-                onClick={() => handleTranslate(formik.values)}
-            >
-                Translate
             </button>
             <button
                 className={"button"}
