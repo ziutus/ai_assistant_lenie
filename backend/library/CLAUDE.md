@@ -60,7 +60,6 @@ Supported models:
 - **AWS Bedrock**: amazon.titan-tg1-large, amazon.nova-micro, amazon.nova-pro
 - **Google Vertex AI**: gemini-2.0-flash-lite-001
 - **CloudFerro**: Bielik-11B-v2.3-Instruct (Polish)
-- **Bedrock Vision**: anthropic.claude-3-haiku (via `ai_describe_image()`)
 
 Helper: `ai_model_need_translation_to_english(model)` — checks if model requires English input.
 

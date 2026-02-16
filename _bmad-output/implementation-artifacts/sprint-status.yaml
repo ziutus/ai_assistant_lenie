@@ -107,8 +107,8 @@ development_status:
   epic-10: in-progress
   10-1-remove-ai-ask-endpoint: done
   10-2-remove-translate-endpoint: done
-  10-3-remove-infra-ip-allow-endpoint: backlog
-  10-4-remove-ai-describe-image-dead-code: backlog
+  10-3-remove-infra-ip-allow-endpoint: review
+  10-4-remove-ai-describe-image-dead-code: done
   epic-10-retrospective: optional
 
   # --- Epic 11: CloudFormation Template Improvements ---
