@@ -107,7 +107,7 @@ Supported models:
 
 - **`transcript.py`** — Transcription router (`aws`, `assemblyai`, `local`) + `transcript_price()` cost calculator.
 - **`google_auth.py`** — Google OAuth 2.0 credential management with token caching.
-- **`stalker_youtube_file.py`** — `StalkerYoutubeFile`: YouTube URL validation, metadata via `pytube`/`yt-dlp`, video download, transcript loading/splitting by chapters.
+- **`stalker_youtube_file.py`** — `StalkerYoutubeFile`: YouTube URL validation, metadata via `pytubefix`/`yt-dlp`, video download, transcript loading/splitting by chapters.
 
 ## Patterns & Conventions
 

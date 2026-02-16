@@ -135,6 +135,6 @@ No client-side validation schema defined. Validation handled server-side.
 
 The frontend previously used **AWS CloudWatch RUM** (`aws-rum-web`) to track real user interactions — page views, errors, HTTP calls, and custom events (document list filtering, document deletion). The integration used a Cognito Identity Pool for anonymous authentication and was disabled on localhost.
 
-This was removed in Story 5.2 (2026-02-15) because it was still in an experimental/testing phase and added unnecessary complexity to the codebase. The decision was made to keep the frontend clean and focused on core functionality for now.
+This was removed during frontend cleanup because it was still in an experimental/testing phase and added unnecessary complexity to the codebase. The decision was made to keep the frontend clean and focused on core functionality for now.
 
 **Future consideration:** User activity monitoring may be reintroduced later — either via CloudWatch RUM again or an alternative solution (e.g., self-hosted analytics, PostHog, or custom event tracking) to understand how users interact with the application.

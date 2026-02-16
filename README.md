@@ -13,11 +13,56 @@ Lenie's functionalities represent an advanced integration of AI technology with 
 
 This is a side project. Please be aware that the code is under active refactoring and correction as I'm still learning Python and LLMs.
 
-## Components
+## Target Vision
 
-* Web interface for browsing database contents
-* Chrome and Kiwi Browser extension
-* Backend written in Python
+Lenie is evolving into something bigger: a **private knowledge base in an Obsidian vault, managed by Claude Desktop, powered by Lenie-AI as an MCP (Model Context Protocol) server** for searching and managing content.
+
+Instead of interacting with Lenie through a web interface, the target workflow looks like this:
+1. **Claude Desktop** acts as the primary interface — you ask questions, request summaries, or search your knowledge base through natural conversation
+2. **Lenie-AI as MCP server** exposes its search, retrieval, and content management capabilities as MCP tools that Claude Desktop can call directly
+3. **Obsidian vault** serves as the persistent, human-readable knowledge store — notes, articles, transcriptions, and AI-generated summaries all live as markdown files you own and control
+
+This means transitioning from the current architecture (Flask REST API + React SPA accessed through a browser) to an MCP server model where the AI assistant itself becomes the interface. The Flask backend's endpoints (semantic search, content download, text processing) become MCP tools. The React frontend becomes optional — useful for bulk operations and browsing, but no longer the primary way to interact with your knowledge.
+
+The Chrome/Kiwi browser extension remains essential for capturing content from the web.
+
+## Roadmap
+
+### Phase 1: Current State
+
+See [Current Architecture](#current-architecture) for a detailed breakdown of what exists today — Flask REST API backend, React SPA frontend, PostgreSQL with pgvector, AWS serverless deployment, and Chrome/Kiwi browser extension.
+
+### Phase 2: MCP Server Foundation
+
+- Implement MCP server protocol — expose search, retrieve, and content management endpoints as MCP tools
+- Claude Desktop integration — configure Lenie-AI as an MCP server in Claude Desktop
+- API adaptation — adjust endpoint patterns for MCP tool consumption while maintaining backward compatibility with the existing REST API
+- Remove legacy Add URL app (`web_add_url_react`) and its dedicated API Gateway — fully replaced by the Chrome/Kiwi browser extension
+
+### Phase 3: Obsidian Integration
+
+- Obsidian vault synchronization — link database content with markdown files in a local vault
+- Semantic search from within Obsidian via Claude Desktop + MCP — ask questions about your knowledge base without leaving your notes
+- Advanced vector search refinements for personal knowledge management workflows
+
+### Phase 4: Scaling & Deployment Options
+
+- ECS deployment — containerized scaling with managed orchestration
+- EKS deployment — Kubernetes-based scaling for complex workloads
+- Multi-environment support — parameterized deployments across dev/qa/prod
+
+## Current Architecture
+
+- **Backend** — Flask REST API (Python 3.11) serving 19 endpoints with `x-api-key` auth. Handles document CRUD, text processing, AI embeddings, and vector similarity search
+- **Web Interface** — React 18 SPA for browsing, editing, and AI-processing documents. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask)
+- **Browser Extension** — Chrome/Kiwi Manifest v3 extension for capturing webpages and sending them to the backend
+- **Database** — PostgreSQL 17 with pgvector for vector similarity search (1536-dim embeddings)
+- **AWS Serverless** — API Gateway, Lambda functions, SQS queues, Step Functions for cost-optimized processing
+- **AI Services** — OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bielik
+- **Docker** — docker compose stack with Flask + PostgreSQL + React for local development
+- **Kubernetes** — Kustomize-based deployment with GKE dev overlay (experimental)
+
+See [CLAUDE.md](CLAUDE.md) for the full architecture reference.
 
 ## Supported Platforms
 
@@ -101,15 +146,12 @@ In this project, I'm using:
 * HashiCorp Vault for secrets (for local and Kubernetes environments)
 * AWS as the deployment platform (as I'm lazy and don't want to manage infrastructure)
 
-I'm also preparing several deployment methods:
-* Docker image (for easy application deployment)
-* Kubernetes Helm (to test scalability options)
-* AWS Lambda (to test the Event-Driven way of writing applications)
+Current deployment methods:
+* Docker Compose (local development)
+* AWS Lambda (production, event-driven serverless)
+* Kubernetes with Kustomize (experimental)
 
-As I'm a big fan of AWS, you will also see deployment approaches like:
-* Lambdas (to explore the Event-Driven way of writing applications like this),
-* ECS (to explore a convenient way of scaling Docker images),
-* EKS (to learn more about the costs of managing your own Kubernetes cluster and applications on it)
+See [Roadmap](#roadmap) for planned deployment options (ECS, EKS).
 
 ## Services That Can Be Used to Get Data
 
@@ -130,10 +172,6 @@ As I'm a big fan of AWS, you will also see deployment approaches like:
 | [docs/Code_Quality.md](docs/Code_Quality.md) | Linting and security scanning |
 | [docs/API_Usage.md](docs/API_Usage.md) | API request examples |
 | [docs/CI_CD.md](docs/CI_CD.md) | CI/CD pipelines |
-
-# Planned Improvements
-* Add a checker to verify that no Lambda uses AWS Lambda Layers anymore
-
 
 ## Why Do We Need Our Own LLM?
 So far, available LLMs operate in English or implicitly translate to English, losing context or meaning.

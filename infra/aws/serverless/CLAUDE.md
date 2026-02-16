@@ -109,7 +109,7 @@ Three layers provide shared dependencies to Lambda functions:
 | Layer | Script | Packages | Used By |
 |-------|--------|----------|---------|
 | `psycopg2_new_layer` | `layer_create_psycop2_new.sh` | `psycopg2-binary` | `sqs-into-rds`, `app-server-db` |
-| `lenie_all_layer` | `layer_create_lenie_all.sh` | `pytube`, `urllib3`, `requests`, `beautifulsoup4` | `app-server-db`, `app-server-internet` |
+| `lenie_all_layer` | `layer_create_lenie_all.sh` | `pytubefix`, `urllib3`, `requests`, `beautifulsoup4` | `app-server-db`, `app-server-internet` |
 | `lenie_openai` | `layer_openai_2.sh` | `openai` | `app-server-internet` |
 
 Layer build process:

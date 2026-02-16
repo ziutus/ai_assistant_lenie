@@ -111,9 +111,6 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 |----------|-----------|-------------|
 | `rds.yaml` | RDS (PostgreSQL), DB Subnet Group, SG | `db.t3.micro` instance, 20GB, snapshot restore support |
 | `dynamodb-documents.yaml` | DynamoDB Table | Documents table with GSI (DateIndex), PITR for prod |
-| `dynamodb-cache-ai-query.yaml` | DynamoDB Table | AI query cache (`lenie-{stage}-cache-ai-query`, PAY_PER_REQUEST) |
-| `dynamodb-cache-language.yaml` | DynamoDB Table | Language detection cache (`lenie-{stage}-cache-language`, PAY_PER_REQUEST) |
-| `dynamodb-cache-translation.yaml` | DynamoDB Table | Translation cache (`lenie-{stage}-cache-translation`, PAY_PER_REQUEST) |
 
 ### Queues and Notifications
 
@@ -137,7 +134,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `lambda-layer-lenie-all.yaml` | Lambda Layer, SSM | Shared library layer (pytube, requests, beautifulsoup4) |
+| `lambda-layer-lenie-all.yaml` | Lambda Layer, SSM | Shared library layer (pytubefix, urllib3, requests, beautifulsoup4) |
 | `lambda-layer-openai.yaml` | Lambda Layer, SSM | OpenAI SDK layer |
 | `lambda-layer-psycopg2.yaml` | Lambda Layer, SSM | PostgreSQL driver layer (psycopg2-binary) |
 
@@ -157,7 +154,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `api-gw-infra.yaml` | REST API, 7 Lambdas | Infrastructure management API (RDS start/stop, EC2, SQS) |
-| `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (13 endpoints, x-api-key) |
+| `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (12 endpoints, x-api-key) |
 | `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | Chrome extension API (rate limiting) |
 
 ### Orchestration
@@ -174,7 +171,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 ### Email
 
-*(SES template `ses.yaml` removed in Story 5.1 cleanup. SES is no longer used by the application.)*
+*(SES template `ses.yaml` removed during legacy resource cleanup. SES is no longer used by the application.)*
 
 ### Organization and Governance
 
@@ -212,9 +209,6 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `s3.yaml` - video transcription bucket
 - `s3-cloudformation.yaml` - Lambda code and CF artifacts bucket
 - `dynamodb-documents.yaml` - documents table
-- `dynamodb-cache-ai-query.yaml` - AI query cache
-- `dynamodb-cache-language.yaml` - language detection cache
-- `dynamodb-cache-translation.yaml` - translation cache
 - `s3-website-content.yaml` - website content storage
 - `s3-app-web.yaml` - frontend hosting bucket
 - `sqs-documents.yaml` - document processing queue

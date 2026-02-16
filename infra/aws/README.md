@@ -21,14 +21,14 @@ infra/aws/
 
 | Category              | Count | Details                                      |
 |-----------------------|-------|----------------------------------------------|
-| CloudFormation Stacks | 38    | Templates in `cloudformation/templates/` (32 dev active, 1 commented, 5 account-level) |
+| CloudFormation Stacks | 35    | Templates in `cloudformation/templates/` (29 dev active, 1 commented, 5 account-level) |
 | Lambda Functions      | 11    | Python 3.11 runtime                          |
 | API Gateway APIs      | 3     | app, infra, chrome-extension                 |
 | API Endpoints         | 20+   | REST (REGIONAL)                              |
 | SQS Queues            | 2     | documents, problems-dlq                      |
 | SNS Topics            | 1     | problems notifications                       |
 | RDS Instances         | 1     | PostgreSQL, db.t3.micro                      |
-| DynamoDB Tables       | 4     | documents + 3 cache tables (PAY_PER_REQUEST) |
+| DynamoDB Tables       | 1     | documents (PAY_PER_REQUEST)                  |
 | S3 Buckets            | 5     | video-to-text, cloudformation, helm, website-content, app-web |
 | EC2 Instances         | 1     | t4g.micro (ARM64)                            |
 | Step Functions        | 1     | sqs-to-rds orchestration                     |
@@ -105,24 +105,6 @@ infra/aws/
 - **Key Schema**: pk (HASH), sk (RANGE)
 - **GSI**: `DateIndex` (created_date HASH, sk RANGE, projection: ALL)
 - **PITR**: Disabled for DEV
-
-### 2.3 DynamoDB Cache - AI Query (`dynamodb-cache-ai-query.yaml`)
-
-| Resource | Type | Details |
-|----------|------|---------|
-| CacheTable | AWS::DynamoDB::Table | `lenie-dev-cache-ai-query`, PAY_PER_REQUEST |
-
-### 2.4 DynamoDB Cache - Language (`dynamodb-cache-language.yaml`)
-
-| Resource | Type | Details |
-|----------|------|---------|
-| CacheTable | AWS::DynamoDB::Table | `lenie-dev-cache-language`, PAY_PER_REQUEST |
-
-### 2.5 DynamoDB Cache - Translation (`dynamodb-cache-translation.yaml`)
-
-| Resource | Type | Details |
-|----------|------|---------|
-| CacheTable | AWS::DynamoDB::Table | `lenie-dev-cache-translation`, PAY_PER_REQUEST |
 
 ---
 
@@ -348,7 +330,7 @@ infra/aws/
 
 ## 11. Email - SES
 
-*(SES template `ses.yaml` and identities `lenie-ai.eu`, `dev.lenie-ai.eu` removed in Story 5.1 cleanup. SES is no longer used by the application.)*
+*(SES template `ses.yaml` and identities `lenie-ai.eu`, `dev.lenie-ai.eu` removed during legacy resource cleanup. SES is no longer used by the application.)*
 
 ---
 
@@ -458,9 +440,6 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 | api-gw-url-add.json            | stage: dev, LambdaFunctionName: lenie-dev-url-add    |
 | budget.json                    | BudgetAmount: 20, AlertEmail                         |
 | cloudfront-app.json            | ProjectCode: lenie, Environment: dev                 |
-| dynamodb-cache-ai-query.json   | ProjectCode: lenie, Environment: dev                 |
-| dynamodb-cache-language.json   | ProjectCode: lenie, Environment: dev                 |
-| dynamodb-cache-translation.json| ProjectCode: lenie, Environment: dev                 |
 | dynamodb-documents.json        | ProjectCode: lenie, Environment: dev                 |
 | ec2-lenie.json                 | ProjectName, Environment, SshKeyName                 |
 | env-setup.json                 | stage: dev                                           |
@@ -603,7 +582,7 @@ Returns approximate message count in SQS queue. Reads queue URL from SSM Paramet
 | Layer | Packages | Used By |
 |---|---|---|
 | psycopg2_new_layer | psycopg2-binary 2.9.10 | sqs-into-rds, app-server-db |
-| lenie_all_layer | pytube, urllib3, requests, beautifulsoup4 | app-server-db, app-server-internet |
+| lenie_all_layer | pytubefix, urllib3, requests, beautifulsoup4 | app-server-db, app-server-internet |
 | lenie_openai | openai SDK | app-server-internet |
 
 All layers built with `manylinux2014_x86_64` platform for Lambda compatibility.
@@ -632,15 +611,15 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 
 ### 15.4 DynamoDB Tables
 
-*(All DynamoDB tables are now CF-managed via Story 1.1. See `dynamodb-cache-*.yaml` templates.)*
+*(All active DynamoDB tables are CF-managed. See `dynamodb-documents.yaml`. Cache tables removed — no longer needed.)*
 
 ### 15.5 SNS Topics
 
-*(All SNS topics removed in Story 5.1 cleanup. Remaining SNS topic is CF-managed via `sqs-application-errors.yaml`.)*
+*(All SNS topics removed during legacy resource cleanup. Remaining SNS topic is CF-managed via `sqs-application-errors.yaml`.)*
 
 ### 15.6 API Gateway
 
-*(All API Gateways are now CF-managed via Stories 4.2 and earlier. See `api-gw-app.yaml`, `api-gw-infra.yaml`, `api-gw-url-add.yaml`.)*
+*(All API Gateways are now CF-managed. See `api-gw-app.yaml`, `api-gw-infra.yaml`, `api-gw-url-add.yaml`.)*
 
 ### 15.7 SES Email Identities
 
@@ -650,7 +629,7 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 
 ### 15.8 Lambda Layers
 
-*(All Lambda Layers are now CF-managed via Story 2.1. See `lambda-layer-*.yaml` templates.)*
+*(All Lambda Layers are now CF-managed. See `lambda-layer-*.yaml` templates.)*
 
 ### 15.9 Summary
 
@@ -659,9 +638,9 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 | S3 Buckets | 1 | 5 |
 | CloudFront Distributions | 0 | 2 |
 | Lambda Functions | 1 | 11 |
-| DynamoDB Tables | 0 | 4 |
+| DynamoDB Tables | 0 | 1 |
 | SNS Topics | 0 | 1 |
 | API Gateway | 0 | 3 |
 | SES Identities | 1 | 0 |
 | Lambda Layers | 0 | 3 |
-| **Total** | **~3** | **~29** |
+| **Total** | **~3** | **~26** |
