@@ -26,7 +26,7 @@ const Webpage = () => {
       url: "",
       tags: "",
       title: "",
-      document_type: "youtube",
+      document_type: "webpage",
       summary: "",
       text: "",
       text_md: "",
@@ -53,7 +53,6 @@ const Webpage = () => {
     handleGetLinkByID,
     handleGetEntryToReview,
     handleSplitTextForEmbedding,
-    handleCorrectUsingAI,
     handleTranslate,
     handleRemoveNotNeededText
   } = useManageLLM({
@@ -74,7 +73,6 @@ const Webpage = () => {
         <InputsForAllExceptLink
           formik={formik}
           handleSplitTextForEmbedding={handleSplitTextForEmbedding}
-          handleCorrectUsingAI={handleCorrectUsingAI}
           handleTranslate={handleTranslate}
           isLoading={isLoading}
           handleRemoveNotNeededText={handleRemoveNotNeededText}

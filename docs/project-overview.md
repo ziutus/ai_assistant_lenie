@@ -23,10 +23,10 @@ The system consists of a Python/Flask REST API backend, two React frontend appli
 ## Parts Summary
 
 ### Backend API (`backend/`)
-Flask REST API with 19 endpoints for document CRUD, AI operations (LLM queries, embedding generation, similarity search), and content processing (webpage download, text cleanup, YouTube transcription). Multi-provider LLM abstraction supporting OpenAI, AWS Bedrock, Google Vertex AI, and CloudFerro Bielik.
+Flask REST API with 18 endpoints for document CRUD, AI operations (embedding generation, similarity search), and content processing (webpage download, text cleanup, YouTube transcription). Multi-provider LLM abstraction supporting OpenAI, AWS Bedrock, Google Vertex AI, and CloudFerro Bielik.
 
 ### Main Frontend (`web_interface_react/`)
-React 18 SPA with 7 pages for document management. Features include document list with filtering, vector similarity search, and per-type editors (link, webpage, youtube, movie) with AI tools (correct, translate, split for embedding, clean text). Supports two backend modes: AWS Serverless and Docker.
+React 18 SPA with 7 pages for document management. Features include document list with filtering, vector similarity search, and per-type editors (link, webpage, youtube, movie) with AI tools (translate, split for embedding, clean text). Supports two backend modes: AWS Serverless and Docker.
 
 ### Add URL App (`web_add_url_react/`)
 Minimal single-page React app for submitting new URLs via `POST /url_add`. No routing, no document browsing — just a form with URL, type, source, language, note, and text fields. API key can be pre-populated from `?apikey=` query parameter.

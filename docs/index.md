@@ -14,7 +14,7 @@
 ### Backend API (`backend/`)
 - **Type:** REST API (Flask)
 - **Tech Stack:** Python 3.11, Flask, psycopg2, uv
-- **Entry Point:** `server.py` (19 endpoints)
+- **Entry Point:** `server.py` (18 endpoints)
 - **Architecture:** Layered API with service pattern
 
 ### Main Frontend (`web_interface_react/`)
@@ -55,7 +55,7 @@
 - [Architecture — Infrastructure](./architecture-infra.md) — Docker, AWS, Kubernetes, GCloud, CI/CD
 
 ### API & Data
-- [API Contracts — Backend](./api-contracts-backend.md) — All 19 REST endpoints with request/response formats
+- [API Contracts — Backend](./api-contracts-backend.md) — All 18 REST endpoints with request/response formats
 - [Data Models — Backend](./data-models-backend.md) — PostgreSQL schema, enums, domain models, DynamoDB
 
 ### Components

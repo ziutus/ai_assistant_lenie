@@ -69,7 +69,7 @@ AuthorizationProvider (global state)
 
 | Hook | Endpoints | Purpose |
 |------|-----------|---------|
-| `useManageLLM` | 10 endpoints | Core CRUD + AI operations |
+| `useManageLLM` | 9 endpoints | Core CRUD + AI operations |
 | `useList` | `/website_list` | Document list fetching |
 | `useSearch` | `/ai_embedding_get`, `/website_similar` | Vector similarity search |
 | `useDatabase` | `/infra/database/*` | RDS lifecycle (AWS only) |
@@ -107,9 +107,8 @@ Key difference: `useSearch` uses two-step process for AWS (get embedding → sea
 ### AI Tool Buttons (in InputsForAllExceptLink)
 
 1. **Split for Embedding** — calls `/website_split_for_embedding`
-2. **Correct using AI** — calls `/ai_ask` with Polish correction prompt
-3. **Translate (PL→EN)** — calls `/translate`
-4. **Clean Text** — calls `/website_text_remove_not_needed`
+2. **Translate (PL→EN)** — calls `/translate`
+3. **Clean Text** — calls `/website_text_remove_not_needed`
 
 ## Form State Management
 

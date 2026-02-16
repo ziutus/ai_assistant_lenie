@@ -86,28 +86,42 @@ development_status:
   epic-7: done
   7-1-update-step-function-schedule-to-warsaw-time: done
   7-2-remove-url-add2-endpoint-from-api-gateway-and-redeploy: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done
 
   # --- Epic 8: DynamoDB Cache Table Removal ---
   epic-8: done
   8-1-delete-dynamodb-cache-tables-and-remove-all-related-artifacts: done
-  epic-8-retrospective: optional
+  epic-8-retrospective: done
 
   # --- Epic 9: Project Vision & Documentation Update ---
   epic-9: done
   9-1-update-readme-with-project-vision-and-roadmap: done
   9-2-update-documentation-to-reflect-post-cleanup-state: done
-  epic-9-retrospective: optional
+  epic-9-retrospective: done
 
-  # =============================================
-  # SPRINT 3 BACKLOG (not yet planned)
-  # =============================================
-  # - Add AWS resource tagging across all CloudFormation templates for cost allocation and tracking
-  #   (Project, Environment tags on all resources — enables AWS Cost Explorer filtering)
-  # - Parameterize hardcoded Lambda function name in sqs-to-rds-step-function.yaml (DefinitionSubstitutions)
-  # - Replace {{resolve:ssm:...}} with AWS::SSM::Parameter::Value<String> in sqs-to-rds-step-function.yaml
-  # - Fix ApiDeployment pattern in api-gw-app.yaml — add hash/timestamp to force redeployment on Body changes
-  #   (or use separate AWS::ApiGateway::Stage resource). Currently requires manual `aws apigateway create-deployment`.
-  # - Fix Lambda function name typo: `infra-allow-ip-in-secrutity-group` → `infra-allow-ip-in-security-group`
-  #   (requires renaming the Lambda function in AWS first, then updating api-gw-app.yaml)
-  # - Review /website_delete GET method in api-gw-app.yaml — destructive operation via HTTP GET violates REST conventions
+  # =====================================================
+  # SPRINT 3: Code Cleanup — Endpoint & Dead Code Removal
+  # =====================================================
+
+  # --- Epic 10: Endpoint & Dead Code Removal ---
+  epic-10: in-progress
+  10-1-remove-ai-ask-endpoint: done
+  10-2-remove-translate-endpoint: backlog
+  10-3-remove-infra-ip-allow-endpoint: backlog
+  10-4-remove-ai-describe-image-dead-code: backlog
+  epic-10-retrospective: optional
+
+  # --- Epic 11: CloudFormation Template Improvements ---
+  epic-11: backlog
+  11-1-add-project-and-environment-tags-to-all-cloudformation-templates: backlog
+  11-2-improve-step-function-template-ssm-pattern-and-lambda-parameterization: backlog
+  11-3-fix-apideployment-pattern-for-automatic-redeployment: backlog
+  11-4-resolve-lambda-function-name-typo: backlog
+  11-5-rest-compliance-review-for-website-delete: backlog
+  epic-11-retrospective: optional
+
+  # --- Epic 12: Cross-Cutting Verification & Documentation ---
+  epic-12: backlog
+  12-1-codebase-wide-stale-reference-verification: backlog
+  12-2-cloudformation-validation-and-documentation-update: backlog
+  epic-12-retrospective: optional

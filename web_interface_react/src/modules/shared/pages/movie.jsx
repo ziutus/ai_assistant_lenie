@@ -52,8 +52,8 @@ const Movie = () => {
     handleGetLinkByID,
     handleGetEntryToReview,
     handleSplitTextForEmbedding,
-    handleCorrectUsingAI,
     handleTranslate,
+    handleRemoveNotNeededText,
   } = useManageLLM({
     formik, selectedDocumentType, selectedDocumentState
   });
@@ -72,9 +72,9 @@ const Movie = () => {
         <InputsForAllExceptLink
           formik={formik}
           handleSplitTextForEmbedding={handleSplitTextForEmbedding}
-          handleCorrectUsingAI={handleCorrectUsingAI}
           handleTranslate={handleTranslate}
           isLoading={isLoading}
+          handleRemoveNotNeededText={handleRemoveNotNeededText}
         />
 
         <FormButtons

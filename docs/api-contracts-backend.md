@@ -4,7 +4,7 @@
 
 ## Overview
 
-Flask REST API with **19 endpoints**. Version 0.3.13.0. All routes except health checks require `x-api-key` header validated against `STALKER_API_KEY` environment variable.
+Flask REST API with **19 endpoints** (including root `/` and health probes). Version 0.3.13.0. All routes except health checks require `x-api-key` header validated against `STALKER_API_KEY` environment variable.
 
 **Base URL**: `http://localhost:5000` (Docker) or AWS API Gateway endpoint (serverless)
 
@@ -66,12 +66,6 @@ Get next document to review.
 - **Parameters**: `id` (required)
 - **Response**: `{status, next_id, next_type}`
 
-### POST /website_exist
-Check if URL already exists.
-
-- **Parameters**: `url`
-- **Response**: `{status, exists}`
-
 ## Content Processing
 
 ### POST /website_download_text_content
@@ -118,13 +112,6 @@ Find documents similar to query text.
 - **Response**: `{status, websites[], text, message}`
 - **Calls**: `embedding.get_embedding()` → `websites.get_similar()` (pgvector cosine similarity)
 
-### POST /ai_ask
-Ask an AI model a question or process text.
-
-- **Request**: Form — `text`, `query`, `model`
-- **Response**: `{status, text, model, message}`
-- **Supported models**: gpt-3.5-turbo, gpt-4, gpt-4o, gpt-4o-mini, amazon.titan-tg1-large, amazon.nova-micro/pro, Bielik-11B, gemini-2.0-flash-lite
-
 ## Health & Information
 
 | Endpoint | Method | Auth | Response |
@@ -145,7 +132,7 @@ In the AWS Lambda deployment, endpoints are split across two functions:
 `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding`
 
 **app-server-internet** (runs outside VPC — internet access):
-`/translate`, `/website_download_text_content`, `/ai_embedding_get`, `/ai_ask`
+`/translate`, `/website_download_text_content`, `/ai_embedding_get`
 
 **sqs-weblink-put-into** (replaces `/url_add`):
 Receives URL data via API Gateway → stores content in S3, metadata in DynamoDB → sends message to SQS

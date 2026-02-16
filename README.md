@@ -53,7 +53,7 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 
 ## Current Architecture
 
-- **Backend** — Flask REST API (Python 3.11) serving 19 endpoints with `x-api-key` auth. Handles document CRUD, text processing, AI embeddings, and vector similarity search
+- **Backend** — Flask REST API (Python 3.11) serving 18 endpoints with `x-api-key` auth. Handles document CRUD, text processing, AI embeddings, and vector similarity search
 - **Web Interface** — React 18 SPA for browsing, editing, and AI-processing documents. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask)
 - **Browser Extension** — Chrome/Kiwi Manifest v3 extension for capturing webpages and sending them to the backend
 - **Database** — PostgreSQL 17 with pgvector for vector similarity search (1536-dim embeddings)

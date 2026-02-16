@@ -1,10 +1,6 @@
 import axios from "axios";
 import React from "react";
 import { AuthorizationContext } from "../context/authorizationContext";
-import {
-  ai_correct_query,
-  llm_simple_jobs_model_name,
-} from "../constants/variables";
 import { useNavigate } from "react-router-dom";
 
 
@@ -449,45 +445,6 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     }
   };
 
-  const handleCorrectUsingAI = async (website) => {
-    setIsLoading(true);
-    try {
-      const response = await axios.post(
-        `${apiUrl}/ai_ask`,
-        {
-          text: website.text,
-          query: ai_correct_query,
-          model: llm_simple_jobs_model_name,
-        },
-        {
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "x-api-key": `${apiKey}`,
-          },
-        },
-      );
-      formik.setFormikState({
-        values: { ...formik.values, text: response.data.text },
-      });
-      setIsLoading(false);
-      setIsError(false);
-      console.log("end of handleCorrectUsingAI");
-    } catch (error) {
-      console.error("There was an error on handleCorrectUsingAI!", error);
-      let message = error.message;
-      if (
-        error.response &&
-        error.response.status &&
-        error.response.status === 400
-      ) {
-        message += " Check your API key first";
-      }
-      setMessage(`There was an error on handleCorrectUsingAI: ${message}`);
-      setIsLoading(false);
-      setIsError(true);
-    }
-  };
-
   const handleDeleteDocumentNext = async (website) => {
     setIsLoading(true);
 
@@ -598,7 +555,6 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     handleGetLinkByID,
     handleGetEntryToReview,
     handleSplitTextForEmbedding,
-    handleCorrectUsingAI,
     handleTranslate,
     handleRemoveNotNeededText,
     handleDeleteDocumentNext,
