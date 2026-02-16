@@ -64,6 +64,23 @@ Step Function → Lambda (rds-start) → Lambda (sqs-into-rds) → Lambda (rds-s
 React Frontend → API Gateway → Lambda (app-server-db or app-server-internet)
 ```
 
+**Step Function `sqs-to-rds` — Manual Execution:**
+
+The Step Function runs automatically via EventBridge Schedule (daily at 5:00 AM Warsaw time). To run it manually:
+
+```bash
+MSYS_NO_PATHCONV=1 aws stepfunctions start-execution \
+  --state-machine-arn "arn:aws:states:us-east-1:008971653395:stateMachine:lenie-dev-sqs-to-rds" \
+  --input '{"QueueUrl":"https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites","DbInstanceIdentifier":"lenie-dev","StopDatabase":"yes"}' \
+  --region us-east-1
+```
+
+| Parameter | Description | Value |
+|-----------|-------------|-------|
+| `QueueUrl` | SQS queue URL with documents to process | SSM: `/lenie/dev/sqs/documents/url` |
+| `DbInstanceIdentifier` | RDS instance identifier | SSM: `/lenie/dev/database/name` |
+| `StopDatabase` | Stop RDS after processing (`yes`/`no`) | `yes` for cost savings, `no` to keep DB running |
+
 ### 3. Kubernetes (GKE)
 
 Kustomize-based deployment with base + overlays:
