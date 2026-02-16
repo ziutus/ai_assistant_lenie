@@ -363,6 +363,7 @@ Resources:
     Properties:
       Name:  !Sub ${ProjectName}-${Environment}-sqs-to-rds
       ScheduleExpression: !Sub ${ScheduleExpression}
+      ScheduleExpressionTimezone: "Europe/Warsaw"
       FlexibleTimeWindow:
         Mode: "OFF"
       Target:
