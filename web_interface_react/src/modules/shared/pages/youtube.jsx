@@ -52,7 +52,6 @@ const Youtube = () => {
     handleGetLinkByID,
     handleGetEntryToReview,
     handleSplitTextForEmbedding,
-    handleTranslate,
     handleRemoveNotNeededText,
   } = useManageLLM({
     formik, selectedDocumentType, selectedDocumentState
@@ -72,7 +71,6 @@ const Youtube = () => {
         <InputsForAllExceptLink
           formik={formik}
           handleSplitTextForEmbedding={handleSplitTextForEmbedding}
-          handleTranslate={handleTranslate}
           isLoading={isLoading}
           handleRemoveNotNeededText={handleRemoveNotNeededText}
         />

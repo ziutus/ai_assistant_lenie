@@ -1,6 +1,6 @@
 # Frontend (React) — CLAUDE.md
 
-React 18 single-page application for managing documents and running AI operations (translation, text correction, embedding, similarity search). Built with Create React App.
+React 18 single-page application for managing documents and running AI operations (text correction, embedding, similarity search). Built with Create React App.
 
 **App version**: 0.2.11 | **Package version**: 0.1.0
 
@@ -60,7 +60,7 @@ All routes wrapped in `<Layout>` and `<Authorization>`. React Router v6 with opt
 | `/list` | `list.jsx` | Browse documents with type/state/text filters |
 | `/search` | `search.jsx` | Vector similarity search across embeddings |
 | `/link/:id?` | `link.jsx` | Edit link documents (metadata only) |
-| `/webpage/:id?` | `webpage.jsx` | Edit webpages with AI tools (translate, split, clean) |
+| `/webpage/:id?` | `webpage.jsx` | Edit webpages with AI tools (split, clean) |
 | `/youtube/:id?` | `youtube.jsx` | Edit YouTube transcripts |
 | `/movie/:id?` | `movie.jsx` | Edit movie transcripts |
 | `/upload-file` | `file.jsx` | Upload image files (alpha) |
@@ -83,7 +83,7 @@ AuthorizationProvider → BrowserRouter → App (routes) → Layout → Page
 
 | Hook | Purpose | Key API Endpoints |
 |------|---------|-------------------|
-| `useManageLLM` | Document CRUD, AI processing (translate, split, clean) | `/website_get`, `/website_save`, `/website_delete`, `/website_download_text_content`, `/translate`, `/website_split_for_embedding`, `/website_text_remove_not_needed` |
+| `useManageLLM` | Document CRUD, AI processing (split, clean) | `/website_get`, `/website_save`, `/website_delete`, `/website_download_text_content`, `/website_split_for_embedding`, `/website_text_remove_not_needed` |
 | `useList` | Fetch document list with filters | `/website_list` |
 | `useSearch` | Vector similarity search | `/ai_embedding_get` + `/website_similar` (AWS) or `/website_similar` only (Docker) |
 | `useDatabase` | RDS instance management | `/infra/database/status\|start\|stop` |
@@ -95,7 +95,7 @@ AuthorizationProvider → BrowserRouter → App (routes) → Layout → Page
 
 - **Pages** — entry-point components wrapping Formik form + shared components
 - **SharedInputs** — common fields reused across all document types (ID, URL, title, summary, tags, author, source, language, state)
-- **InputsForAllExceptLink** — extra fields for webpage/youtube/movie (markdown, text, AI tool buttons, translation, chapters, note)
+- **InputsForAllExceptLink** — extra fields for webpage/youtube/movie (markdown, text, AI tool buttons, english text, chapters, note)
 - **FormButtons** — save/delete actions with loading state
 - **Input / Select** — generic form primitives with CSS modules
 
@@ -112,7 +112,7 @@ AuthorizationProvider → BrowserRouter → App (routes) → Layout → Page
 |----------|----------|
 | **Document CRUD** | `GET /website_list`, `GET /website_get`, `POST /website_save`, `GET /website_delete`, `GET /website_get_next_to_correct` |
 | **Content processing** | `POST /website_is_paid`, `POST /website_download_text_content`, `POST /website_text_remove_not_needed`, `POST /website_split_for_embedding` |
-| **AI operations** | `POST /ai_embedding_get`, `POST /website_similar`, `POST /translate` |
+| **AI operations** | `POST /ai_embedding_get`, `POST /website_similar` |
 | **Infrastructure** | `/infra/database/*`, `/infra/vpn_server/*`, `/infra/sqs/size` |
 
 ## Form State Management

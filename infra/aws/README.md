@@ -527,18 +527,16 @@ Main application Lambda handling all database operations. Routes requests by API
 
 #### app-server-internet
 
-Internet-facing Lambda for web scraping, AI/LLM operations, embeddings, and translations.
+Internet-facing Lambda for web scraping, AI/LLM operations, and embeddings.
 
 **Endpoints:**
 
 | Path | Method | Description |
 |---|---|---|
-| `/translate` | POST | Translate text (text, target_language, source_language) |
 | `/website_download_text_content` | POST | Download & parse webpage (url) → text, title, summary, language |
 | `/ai_embedding_get` | POST | Generate vector embeddings (model, text) |
-| `/ai_ask` | POST | Query LLM with context (text, query, model) |
 
-**Dependencies:** library.ai, text_translate, download_raw_html, webpage_raw_parse, get_embedding
+**Dependencies:** download_raw_html, webpage_raw_parse, get_embedding
 
 ### 14.2 Document Processing Functions
 

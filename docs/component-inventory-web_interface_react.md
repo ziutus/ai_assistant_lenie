@@ -23,7 +23,7 @@ AuthorizationProvider
 | `list.jsx` | `/list` | Document list with filtering | Type/state/text filters, delete per item, pagination |
 | `search.jsx` | `/search` | Vector similarity search | Dual-path: AWS (2 calls) vs Docker (1 call), translate toggle |
 | `link.jsx` | `/link/:id?` | Link document editor | SharedInputs + FormButtons only (no text content) |
-| `webpage.jsx` | `/webpage/:id?` | Webpage editor + AI tools | Full editing with translate/split/clean |
+| `webpage.jsx` | `/webpage/:id?` | Webpage editor + AI tools | Full editing with split/clean |
 | `youtube.jsx` | `/youtube/:id?` | YouTube transcript editor | Chapter list, no clean text button |
 | `movie.jsx` | `/movie/:id?` | Movie transcript editor | Chapter list, no clean text button |
 | `file.jsx` | `/upload-file` | File upload (alpha) | Direct AWS endpoint, .jpg only |
@@ -55,9 +55,9 @@ AuthorizationProvider
 - **Fields**: Author, ID + navigation (prev/next), Source, Language, Document State (dropdown), Document State Error, URL + Open/Read, Title, Summary, Tags
 
 ### SharedInputs/InputsForAllExceptLink.jsx
-- **Props**: `formik, handleSplitTextForEmbedding, handleTranslate, handleRemoveNotNeededText, isLoading`
+- **Props**: `formik, handleSplitTextForEmbedding, handleRemoveNotNeededText, isLoading`
 - **Fields**: Markdown content, Website content (with AI buttons), Text stats (length, words, embedding parts), English text, Chapter list, Note
-- **AI Tool Buttons**: Split for Embedding, Translate (PL→EN), Clean Text
+- **AI Tool Buttons**: Split for Embedding, Clean Text
 
 ### FormButtons/formButtons.jsx
 - **Props**: `message, formik, isError, isLoading, handleSaveWebsiteNext, handleSaveWebsiteToCorrect, handleDeleteDocumentNext`
@@ -67,7 +67,7 @@ AuthorizationProvider
 
 | Hook | Purpose | Key API Calls |
 |------|---------|---------------|
-| `useManageLLM` | Document CRUD + AI processing | `/website_get`, `/website_save`, `/website_delete`, `/translate`, `/website_split_for_embedding`, `/website_text_remove_not_needed` |
+| `useManageLLM` | Document CRUD + AI processing | `/website_get`, `/website_save`, `/website_delete`, `/website_split_for_embedding`, `/website_text_remove_not_needed` |
 | `useList` | Document list fetching | `/website_list` |
 | `useSearch` | Vector similarity search | `/ai_embedding_get` (AWS), `/website_similar` |
 | `useDatabase` | RDS start/stop/status | `/infra/database/status\|start\|stop` |

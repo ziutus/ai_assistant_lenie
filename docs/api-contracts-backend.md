@@ -132,7 +132,7 @@ In the AWS Lambda deployment, endpoints are split across two functions:
 `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding`
 
 **app-server-internet** (runs outside VPC — internet access):
-`/translate`, `/website_download_text_content`, `/ai_embedding_get`
+`/website_download_text_content`, `/ai_embedding_get`
 
 **sqs-weblink-put-into** (replaces `/url_add`):
 Receives URL data via API Gateway → stores content in S3, metadata in DynamoDB → sends message to SQS

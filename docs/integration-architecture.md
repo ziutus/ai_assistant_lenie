@@ -49,7 +49,6 @@
 Key differences between AWS and Docker modes:
 - **Search**: AWS uses two calls (`/ai_embedding_get` → `/website_similar`), Docker uses one call
 - **Infrastructure**: `/infra/*` endpoints only work in AWS mode
-- **Translate**: `/translate` exists only in AWS Lambda Internet function
 
 ### 2. web_add_url_react → backend
 

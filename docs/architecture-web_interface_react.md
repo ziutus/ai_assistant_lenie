@@ -107,8 +107,7 @@ Key difference: `useSearch` uses two-step process for AWS (get embedding → sea
 ### AI Tool Buttons (in InputsForAllExceptLink)
 
 1. **Split for Embedding** — calls `/website_split_for_embedding`
-2. **Translate (PL→EN)** — calls `/translate`
-3. **Clean Text** — calls `/website_text_remove_not_needed`
+2. **Clean Text** — calls `/website_text_remove_not_needed`
 
 ## Form State Management
 

@@ -4,7 +4,6 @@ from pprint import pprint
 import logging
 from urllib.parse import parse_qs
 
-from library.translate import text_translate
 from library.website.website_download_context import download_raw_html, webpage_raw_parse
 from library.webpage_parse_result import WebPageParseResult
 from library.embedding import get_embedding
@@ -53,36 +52,7 @@ def lambda_handler(event, context):
 
     pprint(event['path'])
 
-    if event['path'] == '/translate':
-
-        logging.debug("Translating")
-        logging.debug(event['body'])
-
-        parsed_dict = parse_qs(event['body'])
-
-        text = parsed_dict['text'][0]
-        target_language = parsed_dict['target_language'][0]
-        source_language = parsed_dict['source_language'][0]
-
-        logging.debug(text)
-        logging.debug(target_language)
-        logging.debug(source_language)
-
-        if not text or not target_language:
-            logging.debug("Missing data. Make sure you provide 'text' and 'target_language'")
-            return prepare_return({"status": "error",
-                                   "message": "Brakujące dane. Upewnij się, że dostarczasz 'text' i 'target_language'"},
-                                  400)
-
-        result_t = text_translate(text=text, target_language=target_language, source_language=source_language)
-        # logging.debug(result.text)
-        if result_t.status == "success":
-            return prepare_return({"status": "success", "message": result_t.translated_text}, 200)
-        else:
-            logging.error(result_t.error_message)
-            return prepare_return({"status": "error", "message": result_t.error_message}, 500)
-
-    elif event['path'] == '/website_download_text_content':
+    if event['path'] == '/website_download_text_content':
         print("Downloading text content")
         parsed_dict = parse_qs(event['body'])
 
