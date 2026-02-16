@@ -35,7 +35,7 @@ Minimal single-page React app for submitting new URLs via `POST /url_add`. No ro
 Chrome/Kiwi browser extension (Manifest v3) for capturing webpages and sending to backend. Auto-extracts title, description, language, and full content (text + HTML). Supports content types: webpage, link, youtube, movie. No build step.
 
 ### Infrastructure (`infra/`)
-Multi-cloud IaC supporting Docker Compose (local), AWS (CloudFormation + Lambda), Kubernetes (GKE with Kustomize/Helm), and GCloud (Terraform). Includes 29 CloudFormation templates, 12 Lambda functions, and CI/CD pipelines (CircleCI, GitLab CI, Jenkins).
+Multi-cloud IaC supporting Docker Compose (local), AWS (CloudFormation + Lambda), Kubernetes (GKE with Kustomize/Helm), and GCloud (Terraform). Includes 29 CloudFormation templates, 11 Lambda functions, and CI/CD pipelines (CircleCI, GitLab CI, Jenkins).
 
 ## Technology Stack
 
@@ -67,5 +67,5 @@ Multi-cloud IaC supporting Docker Compose (local), AWS (CloudFormation + Lambda)
 - **Multi-provider LLM**: Abstract layer routing to OpenAI/Bedrock/Vertex/Sherlock based on model ID
 - **Lambda split**: Two Lambda functions (VPC for DB, public for internet) to avoid NAT Gateway costs
 - **SQS ingestion**: Asynchronous document processing via SQS queue instead of direct DB writes
-- **DynamoDB cache**: Always-available metadata storage for cloud-local synchronization
+- **DynamoDB metadata buffer**: Always-available metadata storage for cloud-local synchronization
 - **Site-specific cleanup**: JSON-based regex rules per Polish news portal domain

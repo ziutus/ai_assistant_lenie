@@ -13,14 +13,6 @@ Parameters:
       - qa
       - prod
     Description: Environment name
-  StepFunctionStateMachineName:
-    Type: String
-    Default: lenie-url-add-analyze
-    Description: Name of the Step Functions state machine for URL processing
-  StepFunctionRoleName:
-    Type: String
-    Default: APIGatewayToStepFunctions
-    Description: Name of the IAM role for API Gateway to invoke Step Functions
 
 Resources:
   LenieApi:
@@ -640,63 +632,6 @@ Resources:
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 contentHandling: "CONVERT_TO_TEXT"
-            options:
-              responses:
-                "200":
-                  description: "200 response"
-                  headers:
-                    Access-Control-Allow-Origin:
-                      schema:
-                        type: "string"
-                    Access-Control-Allow-Methods:
-                      schema:
-                        type: "string"
-                    Access-Control-Allow-Headers:
-                      schema:
-                        type: "string"
-                  content:
-                    application/json:
-                      schema:
-                        $ref: "#/components/schemas/Empty"
-              x-amazon-apigateway-integration:
-                type: "mock"
-                responses:
-                  default:
-                    statusCode: "200"
-                    responseParameters:
-                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
-                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
-                      method.response.header.Access-Control-Allow-Origin: "'*'"
-                requestTemplates:
-                  application/json: "{\"statusCode\": 200}"
-                passthroughBehavior: "when_no_match"
-          /url_add2:
-            post:
-              responses:
-                "200":
-                  description: "200 response"
-                  content:
-                    application/json:
-                      schema:
-                        $ref: "#/components/schemas/Empty"
-              security:
-              - api_key: []
-              x-amazon-apigateway-integration:
-                type: "aws"
-                httpMethod: "POST"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:states:action/StartExecution"
-                credentials: !Sub "arn:aws:iam::${AWS::AccountId}:role/${StepFunctionRoleName}"
-                responses:
-                  default:
-                    statusCode: "200"
-                requestTemplates:
-                  application/json: !Sub |-
-                    {
-                      "input": "$util.escapeJavaScript($input.json('$'))",
-                      "stateMachineArn": "arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${StepFunctionStateMachineName}"
-                    }
-                passthroughBehavior: "when_no_match"
-                timeoutInMillis: 29000
             options:
               responses:
                 "200":

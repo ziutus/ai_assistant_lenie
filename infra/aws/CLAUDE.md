@@ -5,7 +5,7 @@ AWS infrastructure for Project Lenie. As a hobby project, three IaC approaches a
 - **Terraform** - VPC + bastion host (subset for learning)
 - **CDK** - not yet implemented
 
-Cost optimization is a priority. DynamoDB is used for data that doesn't need complex queries (cache for new entries before they reach RDS, cross-environment metadata). RDS is started/stopped on demand via Step Functions and Lambda.
+Cost optimization is a priority. DynamoDB is used for data that doesn't need complex queries (metadata buffer for new entries before they reach RDS, cross-environment synchronization). RDS is started/stopped on demand via Step Functions and Lambda.
 
 ## Architecture Design Principles
 
@@ -46,7 +46,7 @@ aws/
 ## Subdirectories
 
 ### cloudformation/
-Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. Covers 27 templates organized by layer: networking (VPC), database (RDS, DynamoDB), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (3 APIs with 13+ endpoints), orchestration (Step Functions), email (SES), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details.
+Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. Covers 29 templates organized by layer: networking (VPC), database (RDS, DynamoDB), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (3 APIs with 20+ endpoints), orchestration (Step Functions), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details.
 
 ### serverless/
 Lambda function source code (11 functions) and Lambda layer build scripts (psycopg2, lenie_all, openai). Two function categories: simple infrastructure Lambdas (RDS/EC2/SQS management) and app Lambdas that bundle `backend/library/` for document processing and AI operations. Includes packaging scripts (`zip_to_s3.sh`, `create_empty_lambdas.sh`). See `serverless/CLAUDE.md` for details.
@@ -80,14 +80,13 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 |---------|---------|
 | VPC | Networking with public/private/DB subnets |
 | RDS (PostgreSQL) | Primary document database with pgvector |
-| DynamoDB | Document metadata cache, cross-env sync |
+| DynamoDB | Document metadata buffer, cross-env sync |
 | SQS | Asynchronous document processing queue |
 | SNS | Error notifications via email |
 | S3 | Lambda code artifacts, video transcriptions, web content |
 | Lambda | 11 functions for infra management and app logic |
 | API Gateway | 3 REST APIs (app, infra management, Chrome extension) |
 | Step Functions | SQS-to-RDS workflow with auto DB start/stop |
-| SES | Transactional email with DKIM |
 | EC2 | Application server, bastion host, Jenkins, OpenVPN |
 | EKS | Kubernetes cluster (alternative deployment target) |
 | Route53 | DNS for lenie-ai.eu domain |

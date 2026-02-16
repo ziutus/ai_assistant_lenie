@@ -1,4 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Step Function workflow for SQS-to-RDS document processing with EventBridge schedule for Project Lenie'
+
 Parameters:
   ProjectName:
     Type: String
@@ -8,6 +10,7 @@ Parameters:
     Description: 'environment'
   ScheduleExpression:
     Type: String
+    Description: 'EventBridge cron or rate expression for the schedule'
 
 Resources:
   StateMachineRole:
@@ -22,6 +25,11 @@ Resources:
                 - states.amazonaws.com
             Action:
               - sts:AssumeRole
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
       Policies:
         - PolicyName: StateMachinePolicy
           PolicyDocument:
@@ -32,11 +40,17 @@ Resources:
                   - sqs:ReceiveMessage
                   - sqs:DeleteMessage
                   - sqs:GetQueueAttributes
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:lenie_websites"
+              - Effect: Allow
+                Action:
                   - rds:DescribeDBInstances
                   - rds:StartDBInstance
                   - rds:StopDBInstance
+                Resource: !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${ProjectName}-${Environment}"
+              - Effect: Allow
+                Action:
                   - lambda:InvokeFunction
-                Resource: "*"
+                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:lenie-sqs-to-db"
         - PolicyName: CloudWatchLogsPolicy
           PolicyDocument:
             Version: '2012-10-17'
@@ -68,15 +82,25 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/aws/states/${ProjectName}-${Environment}-sqs-to-rds"
-      RetentionInDays: 14  # Możesz dostosować okres przechowywania logów
+      RetentionInDays: 14  # Log retention period can be adjusted as needed
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
 
   MyStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
       StateMachineName: !Sub ${ProjectName}-${Environment}-sqs-to-rds
       RoleArn: !GetAtt StateMachineRole.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
       LoggingConfiguration:
-        Level: "ERROR"  # Możliwe wartości: ALL, ERROR, FATAL, OFF
+        Level: "ERROR"  # Possible values: ALL, ERROR, FATAL, OFF
         IncludeExecutionData: true
         Destinations:
           - CloudWatchLogsLogGroup:
@@ -162,12 +186,8 @@ Resources:
                   "Next": "Receive Message from SQS Queue"
                 },
                 {
-                  "Or": [
-                    {
-                      "Variable": "$",
-                      "StringEquals": "stopped"
-                    }
-                  ],
+                  "Variable": "$",
+                  "StringEquals": "stopped",
                   "Next": "StartDBInstance",
                   "Assign": {
                     "waitSeconds": 300
@@ -337,6 +357,11 @@ Resources:
             Principal:
               Service: "scheduler.amazonaws.com"
             Action: "sts:AssumeRole"
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
       Policies:
         - PolicyName: "StepFunctionInvokePolicy"
           PolicyDocument:
@@ -368,7 +393,7 @@ Resources:
         Mode: "OFF"
       Target:
         Arn: !GetAtt MyStateMachine.Arn
-        RoleArn: !GetAtt StepFunctionInvokerRole.Arn # Rola dozwalająca uruchamianie Step Functions
+        RoleArn: !GetAtt StepFunctionInvokerRole.Arn # Role allowing EventBridge Scheduler to invoke Step Functions
         DeadLetterConfig:
           Arn: !ImportValue lenie-problems-dlq-arn
         Input: !Sub |

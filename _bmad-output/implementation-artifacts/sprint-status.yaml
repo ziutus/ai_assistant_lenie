@@ -1,4 +1,4 @@
-# generated: 2026-02-15
+# generated: 2026-02-16
 # project: lenie-server-2025
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,13 +33,17 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-15
+generated: 2026-02-16
 project: lenie-server-2025
 project_key: NOKEY
 tracking_system: file-system
 story_location: _bmad-output/implementation-artifacts
 
 development_status:
+  # ===================================
+  # SPRINT 1: IaC Coverage & Migration
+  # ===================================
+
   # --- Epic 1: Storage Layer IaC Coverage ---
   epic-1: done
   1-1-create-dynamodb-cache-table-cloudformation-templates: done
@@ -73,3 +77,37 @@ development_status:
   epic-6: done
   6-1-update-deploy-ini-and-document-deployment-order: done
   epic-6-retrospective: done
+
+  # =============================================
+  # SPRINT 2: Cleanup & Vision Documentation
+  # =============================================
+
+  # --- Epic 7: Step Function Update & API Gateway Simplification ---
+  epic-7: done
+  7-1-update-step-function-schedule-to-warsaw-time: done
+  7-2-remove-url-add2-endpoint-from-api-gateway-and-redeploy: done
+  epic-7-retrospective: optional
+
+  # --- Epic 8: DynamoDB Cache Table Removal ---
+  epic-8: done
+  8-1-delete-dynamodb-cache-tables-and-remove-all-related-artifacts: done
+  epic-8-retrospective: optional
+
+  # --- Epic 9: Project Vision & Documentation Update ---
+  epic-9: done
+  9-1-update-readme-with-project-vision-and-roadmap: done
+  9-2-update-documentation-to-reflect-post-cleanup-state: done
+  epic-9-retrospective: optional
+
+  # =============================================
+  # SPRINT 3 BACKLOG (not yet planned)
+  # =============================================
+  # - Add AWS resource tagging across all CloudFormation templates for cost allocation and tracking
+  #   (Project, Environment tags on all resources — enables AWS Cost Explorer filtering)
+  # - Parameterize hardcoded Lambda function name in sqs-to-rds-step-function.yaml (DefinitionSubstitutions)
+  # - Replace {{resolve:ssm:...}} with AWS::SSM::Parameter::Value<String> in sqs-to-rds-step-function.yaml
+  # - Fix ApiDeployment pattern in api-gw-app.yaml — add hash/timestamp to force redeployment on Body changes
+  #   (or use separate AWS::ApiGateway::Stage resource). Currently requires manual `aws apigateway create-deployment`.
+  # - Fix Lambda function name typo: `infra-allow-ip-in-secrutity-group` → `infra-allow-ip-in-security-group`
+  #   (requires renaming the Lambda function in AWS first, then updating api-gw-app.yaml)
+  # - Review /website_delete GET method in api-gw-app.yaml — destructive operation via HTTP GET violates REST conventions
