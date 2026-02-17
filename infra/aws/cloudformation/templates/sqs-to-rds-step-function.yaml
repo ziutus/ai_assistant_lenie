@@ -28,6 +28,10 @@ Parameters:
     Type: String
     Default: lenie-sqs-to-db
     Description: Name of the Lambda function that processes SQS messages into RDS
+  ProblemsDlqArn:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: '/lenie/dev/sqs/problems-dlq/arn'
+    Description: 'DLQ ARN for EventBridge schedule failures (resolved from SSM)'
 
 Resources:
   StateMachineRole:
@@ -57,7 +61,7 @@ Resources:
                   - sqs:ReceiveMessage
                   - sqs:DeleteMessage
                   - sqs:GetQueueAttributes
-                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:lenie_websites"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectCode}*"
               - Effect: Allow
                 Action:
                   - rds:DescribeDBInstances
@@ -414,8 +418,7 @@ Resources:
         Arn: !GetAtt MyStateMachine.Arn
         RoleArn: !GetAtt StepFunctionInvokerRole.Arn # Role allowing EventBridge Scheduler to invoke Step Functions
         DeadLetterConfig:
-          Arn:
-            Fn::ImportValue: !Sub '${ProjectCode}-${Environment}-problems-dlq-arn'
+          Arn: !Ref ProblemsDlqArn
         Input: !Sub |
           {
             "QueueUrl": "${SqsDocumentsQueueUrl}",

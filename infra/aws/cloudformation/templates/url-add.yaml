@@ -15,6 +15,20 @@ Parameters:
       - dev
       # Post-MVP: add prod, qa as needed
 
+  SqsDocumentsUrl:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: '/lenie/dev/sqs/documents/url'
+    Description: SSM path for SQS documents queue URL
+
+  # IMPORTANT: SqsDocumentsQueueName must match the queue referenced by SqsDocumentsUrl (SSM).
+  # If the SSM parameter is updated to point to a different queue, update this value as well.
+  # When sqs-documents.yaml stack is deployed, it will overwrite SSM to point to lenie-dev-documents;
+  # update the parameter file value accordingly to avoid IAM permission mismatch.
+  SqsDocumentsQueueName:
+    Type: String
+    AllowedPattern: '[a-zA-Z0-9_-]+'
+    Description: Name of the SQS documents queue for IAM policy scoping
+
   timestamp:
     Type: String
     Description: Timestamp to force Lambda function update
@@ -42,7 +56,7 @@ Resources:
       Environment:
         Variables:
           LOG_LEVEL: 'INFO'
-          AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites
+          AWS_QUEUE_URL_ADD: !Ref SqsDocumentsUrl
           BUCKET_NAME: !Sub '${ProjectCode}-${Environment}-website-content'
           DYNAMODB_TABLE_NAME: lenie_dev_documents
           TIMESTAMP: !Ref timestamp
@@ -93,7 +107,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - sqs:SendMessage
-                Resource: "arn:aws:sqs:us-east-1:008971653395:lenie_websites"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${SqsDocumentsQueueName}"
         - PolicyName: S3Access
           PolicyDocument:
             Version: "2012-10-17"

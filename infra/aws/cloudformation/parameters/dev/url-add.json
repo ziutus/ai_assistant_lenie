@@ -8,6 +8,14 @@
     "ParameterValue": "dev"
   },
   {
+    "ParameterKey": "SqsDocumentsUrl",
+    "ParameterValue": "/lenie/dev/sqs/documents/url"
+  },
+  {
+    "ParameterKey": "SqsDocumentsQueueName",
+    "ParameterValue": "lenie_websites"
+  },
+  {
     "ParameterKey": "timestamp",
     "ParameterValue": "202602141600"
   }
