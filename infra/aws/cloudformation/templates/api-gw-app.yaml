@@ -987,8 +987,18 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       RestApiId: !Ref LenieApi
-      StageName: v1
       Description: 'CF-managed deployment'
+
+  # API Stage (separated from Deployment for proper redeployment support)
+  ApiStage:
+    Type: 'AWS::ApiGateway::Stage'
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RestApiId: !Ref LenieApi
+      DeploymentId: !Ref ApiDeployment
+      StageName: v1
+      Description: 'Main application API stage'
 
   # SSM Parameter exports
   ApiGatewayIdParameter:

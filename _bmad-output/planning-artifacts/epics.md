@@ -532,6 +532,34 @@ So that the deployed resource name matches the CloudFormation-defined name and f
 
 **Origin:** Code review of Story 11.2 (2026-02-17)
 
+### Story 11.10: Codify API Gateway Stage Logging and Tracing in CloudFormation
+
+As a **developer**,
+I want to add `MethodSettings` and `TracingEnabled` to the `ApiStage` resource in `api-gw-app.yaml` for the dev environment,
+So that the API Gateway logging, metrics, and X-Ray tracing configuration is managed by CloudFormation instead of being manually configured in the AWS console.
+
+**Acceptance Criteria:**
+
+**Given** the `ApiStage` resource exists in `api-gw-app.yaml`
+**When** the developer adds `MethodSettings` with logging and metrics configuration
+**Then** the following settings are codified (matching current console configuration):
+- CloudWatch logs: `LoggingLevel: INFO` (error and info logs)
+- Detailed CloudWatch metrics: `MetricsEnabled: true`
+- Data tracing: `DataTraceEnabled: true`
+**And** the settings apply only to `dev` environment (use `Condition` or `Fn::If` if needed for future multi-env support)
+
+**Given** the `ApiStage` resource has `MethodSettings` configured
+**When** the developer adds `TracingEnabled: true` to the `ApiStage` properties
+**Then** X-Ray tracing is enabled via CloudFormation
+
+**Given** all changes are made
+**When** the developer runs cfn-lint on `api-gw-app.yaml`
+**Then** the template passes with zero errors
+
+**Note:** Requires an API Gateway CloudWatch IAM role (`arn:aws:iam::<account>:role/...`) configured at the account level for CloudWatch logging to work. Verify with `aws apigateway get-account` that the `cloudwatchRoleArn` is set. Consider whether `DataTraceEnabled: true` is appropriate for production (logs full request/response bodies).
+
+**Origin:** Code review of Stories 10.3 and 11.3 (2026-02-17) — discovered stage logging/tracing configured manually in AWS console, not in CloudFormation.
+
 ---
 
 ## Epic 12: Cross-Cutting Verification & Documentation
@@ -594,3 +622,28 @@ So that the project documentation is accurate and all templates are deployment-r
 **Then** CLAUDE.md, README.md, and infra docs accurately reflect the post-Sprint 3 state
 
 **FRs covered:** FR34, FR35
+
+### Story 12.3: Create Observability Strategy Documentation
+
+As a **developer**,
+I want to create a `docs/observability.md` document describing the project's logging, tracing, and monitoring strategy,
+So that the observability approach is documented, consistent across environments (AWS, Kubernetes, GCloud), and serves as a standard for future development.
+
+**Acceptance Criteria:**
+
+**Given** the project has no centralized observability documentation
+**When** the developer creates `docs/observability.md`
+**Then** the document covers:
+1. **Current state** — what logging/tracing exists today per environment (AWS Lambda CloudWatch JSON logs, API Gateway logging/X-Ray, Flask basic Python logging, frontend monitoring status)
+2. **Logging standards** — log levels convention (when to use DEBUG/INFO/WARN/ERROR), structured logging format (JSON), required fields per log entry (timestamp, request_id, user_id, action)
+3. **Per-environment configuration** — AWS (CloudWatch, X-Ray), Docker/local (stdout/stderr), Kubernetes (future: stdout → aggregator), GCloud (future: Cloud Logging)
+4. **Tools inventory** — installed but unused tools (X-Ray SDK, Langfuse, Prometheus `/metrics` endpoint) with activation plan or removal decision
+5. **Request audit trail** — strategy for logging user actions (API requests with method, path, status, response time, API key identity)
+
+**Given** the document is created
+**When** the developer reviews `docs/index.md`
+**Then** the new document is linked in the documentation index
+
+**Note:** This is a documentation-only story. It describes the current state and desired standard — implementation of missing observability features (X-Ray instrumentation, structured Flask logging, Prometheus metrics) would be separate stories in a future sprint.
+
+**Origin:** Code review of Stories 10.3 and 11.3 (2026-02-17) — discovered no centralized observability documentation exists despite multiple logging/tracing tools being partially configured.
