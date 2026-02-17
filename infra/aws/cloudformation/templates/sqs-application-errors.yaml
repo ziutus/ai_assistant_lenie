@@ -66,4 +66,4 @@ Outputs:
     Description: 'ARN queue for default DLQ application'
     Value: !GetAtt LenieDevProblemsDLQ.Arn
     Export:
-      Name: !Sub ${ProjectCode}-${Environment}-problems-dlq-arn
+      Name: !Sub ${ProjectCode}-problems-dlq-arn

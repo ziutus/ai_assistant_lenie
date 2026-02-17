@@ -20,7 +20,7 @@ Resources:
   MyS3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub ${ProjectCode}-2025-${Environment}-cloudformation
+      BucketName: !Sub ${ProjectCode}-${Environment}-cloudformation
       Tags:
         - Key: Environment
           Value: !Ref Environment
@@ -32,7 +32,7 @@ Resources:
     Properties:
       Name: !Sub '/${ProjectCode}/${Environment}/s3/cloudformation/name'
       Type: String
-      Value: !Sub ${ProjectCode}-2025-${Environment}-cloudformation
+      Value: !Sub ${ProjectCode}-${Environment}-cloudformation
       Description: 'Bucket for cloudformation code'
       Tags:
         Environment: !Ref Environment

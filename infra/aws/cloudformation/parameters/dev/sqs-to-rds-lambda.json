@@ -32,10 +32,6 @@
     "ParameterValue": "/lenie/dev/lambda/layers/psycopg2/arn"
   },
   {
-    "ParameterKey": "RDSPasswordSecretArn",
-    "ParameterValue": "arn:aws:secretsmanager:us-east-1:049706517731:secret:/lenie/dev/rds/password-rs54LR"
-  },
-  {
     "ParameterKey": "PostgresqlHost",
     "ParameterValue": "lenie-dev.c9k28ukqsclc.us-east-1.rds.amazonaws.com"
   },
