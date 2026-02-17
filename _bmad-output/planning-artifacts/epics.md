@@ -647,3 +647,169 @@ So that the observability approach is documented, consistent across environments
 **Note:** This is a documentation-only story. It describes the current state and desired standard — implementation of missing observability features (X-Ray instrumentation, structured Flask logging, Prometheus metrics) would be separate stories in a future sprint.
 
 **Origin:** Code review of Stories 10.3 and 11.3 (2026-02-17) — discovered no centralized observability documentation exists despite multiple logging/tracing tools being partially configured.
+
+---
+
+## Future Backlog
+
+### Story B.1: Analyze EC2 Lambda Function Consolidation
+
+As a **developer**,
+I want to analyze whether the three EC2 management Lambda functions (`lenie_ec2-start`, `lenie_ec2-stop`, `lenie_ec2-status`) can be consolidated into a single function with action routing,
+So that the Lambda count is reduced and maintenance is simplified.
+
+**Acceptance Criteria:**
+
+**Given** three separate Lambda functions exist for EC2 management (`lenie_ec2-start`, `lenie_ec2-stop`, `lenie_ec2-status`)
+**When** the developer analyzes their code, dependencies, IAM permissions, and invocation patterns
+**Then** a document is created with: (1) current implementation comparison, (2) proposed consolidated design with action parameter routing, (3) IAM permission impact analysis, (4) API Gateway integration changes required, (5) decision: consolidate, keep separate, or defer
+
+**Given** the analysis is complete
+**When** the developer evaluates trade-offs (single responsibility vs reduced Lambda count, cold start impact, deployment coupling)
+**Then** a recommendation is documented with rationale
+
+**Origin:** User request (2026-02-17) — reduce Lambda function sprawl by consolidating related management functions.
+
+---
+
+### Story B.2: Analyze RDS Lambda Function Consolidation
+
+As a **developer**,
+I want to analyze whether the three RDS management Lambda functions (`lenie_rds-start`, `lenie_rds-stop`, `lenie_rds-status`) can be consolidated into a single function with action routing,
+So that the Lambda count is reduced and maintenance is simplified.
+
+**Acceptance Criteria:**
+
+**Given** three separate Lambda functions exist for RDS management (`lenie_rds-start`, `lenie_rds-stop`, `lenie_rds-status`)
+**When** the developer analyzes their code, dependencies, IAM permissions, and invocation patterns (including Step Function references)
+**Then** a document is created with: (1) current implementation comparison, (2) proposed consolidated design with action parameter routing, (3) IAM permission impact analysis, (4) Step Function definition changes required, (5) API Gateway integration changes required, (6) decision: consolidate, keep separate, or defer
+
+**Given** the analysis is complete
+**When** the developer evaluates trade-offs (single responsibility vs reduced Lambda count, Step Function integration complexity, cold start impact)
+**Then** a recommendation is documented with rationale
+
+**Note:** RDS Lambdas may have additional complexity due to Step Function `sqs-to-rds-step-function` integration — the start function is invoked as part of the SQS-to-RDS workflow.
+
+**Origin:** User request (2026-02-17) — reduce Lambda function sprawl by consolidating related management functions.
+
+---
+
+### Story B.3: Rename Legacy Lambda Functions lenie_2_internet and lenie_2_db
+
+As a **developer**,
+I want to rename the Lambda functions `lenie_2_internet` and `lenie_2_db` to `lenie_internet` and `lenie_db`,
+So that the naming follows the clean convention without the legacy `_2_` artifact from past manual deployment conflicts.
+
+**Acceptance Criteria:**
+
+**Given** the Lambda function `lenie_2_internet` exists in AWS
+**When** the developer creates a new Lambda with the name `lenie_internet` (or updates the CloudFormation template)
+**Then** the function runs with the corrected name
+**And** all references (API Gateway integrations, CloudFormation templates, environment variables, documentation) point to the new name
+
+**Given** the Lambda function `lenie_2_db` exists in AWS
+**When** the developer creates a new Lambda with the name `lenie_db` (or updates the CloudFormation template)
+**Then** the function runs with the corrected name
+**And** all references (API Gateway integrations, CloudFormation templates, Step Function definitions, environment variables, documentation) point to the new name
+
+**Given** both renames are complete
+**When** the developer runs cfn-lint on all affected templates
+**Then** all templates pass with zero errors
+**And** the old `lenie_2_internet` and `lenie_2_db` functions are deleted from AWS
+
+**Note:** The `_2_` in the name originated from a naming conflict during past manual deployments. Since Lambda functions cannot be renamed in-place, the rename requires creating new functions and updating all references. Consider sequencing carefully — API Gateway and Step Function integrations must be updated in the same deployment to avoid downtime.
+
+**Origin:** User request (2026-02-17) — clean up legacy naming from manual deployment era.
+
+---
+
+### Story B.4: Remove Elastic IP from EC2 Instance
+
+As a **developer**,
+I want to remove the Elastic IP (EIP) association from the EC2 instance and rely on the existing Python script (`aws_ec2_route53.py`) for dynamic DNS updates on instance start,
+So that unnecessary EIP costs are eliminated while maintaining DNS-based access to the instance.
+
+**Acceptance Criteria:**
+
+**Given** the EC2 instance `ec2-lenie.yaml` currently allocates an Elastic IP
+**When** the developer removes the EIP resource and association from the CloudFormation template
+**Then** the instance launches with a dynamic public IP assigned by AWS
+**And** the `aws_ec2_route53.py` script (invoked via `make aws-start-openvpn`) updates the Route53 A record with the new public IP on each start
+
+**Given** the EIP resource is removed from the template
+**When** the developer runs cfn-lint on the updated template
+**Then** the template passes with zero errors
+**And** no other templates or scripts reference the removed EIP resource
+
+**Given** the EIP is released in AWS
+**When** the monthly billing cycle completes
+**Then** the EIP cost (~$3.65/month for idle EIP) is eliminated
+
+**Note:** AWS charges for Elastic IPs that are allocated but not associated with a running instance. Since the EC2 instance is started on-demand (not always running), the EIP incurs idle charges most of the time. The existing `aws_ec2_route53.py` script already handles dynamic DNS updates, making the EIP redundant.
+
+**Origin:** User request (2026-02-17) — cost optimization by removing unnecessary Elastic IP.
+
+---
+
+### Story B.5: Fix Redundant Lambda Function Names in CloudFormation Templates
+
+As a **developer**,
+I want to fix the Lambda function naming in CloudFormation templates that produce redundant names like `lenie-dev-lambda-rds-start-rds-start-function`,
+So that Lambda function names are clean and follow the `${ProjectCode}-${Environment}-<description>` convention without duplication.
+
+**Acceptance Criteria:**
+
+**Given** CloudFormation templates produce Lambda function names with redundant segments (e.g., `lenie-dev-lambda-rds-start-rds-start-function`)
+**When** the developer updates the `FunctionName` property in each affected Lambda template
+**Then** each Lambda function has a clean name following `${ProjectCode}-${Environment}-<description>` (e.g., `lenie-dev-rds-start`)
+
+**Given** all Lambda function names are updated
+**When** the developer updates all consumer references (API Gateway integrations, Step Function definitions, IAM policies, parameter files, scripts)
+**Then** all references resolve to the corrected function names
+**And** cfn-lint passes with zero errors on all affected templates
+
+**Note:** The redundancy comes from the CloudFormation logical resource ID or stack name leaking into the function name. Requires careful deployment sequencing — consumers must be updated in the same deploy run or after the Lambda is recreated with the new name. Audit all templates in `lambda-*.yaml` and `api-gw-*.yaml` for affected functions.
+
+**Origin:** User observation during deployment (2026-02-17) — Lambda function names contain redundant segments.
+
+---
+
+### Story B.6: Migrate API Gateway App Stage to Separate CloudFormation Resource
+
+As a **developer**,
+I want to extract the `StageName: v1` from the `ApiDeployment` resource into a separate `AWS::ApiGateway::Stage` resource in `api-gw-app.yaml`,
+So that stage configuration (logging, tracing, method settings) can be managed declaratively in CloudFormation.
+
+**Acceptance Criteria:**
+
+**Given** the `ApiDeployment` resource in `api-gw-app.yaml` currently embeds `StageName: v1`
+**When** the developer uses CloudFormation resource import to move the stage into a separate `ApiStage` resource
+**Then** the stage is managed as its own resource without disrupting the existing API Gateway deployment
+
+**Given** the separate `ApiStage` resource exists
+**When** the developer adds `MethodSettings` and `TracingEnabled` properties
+**Then** CloudWatch logging, detailed metrics, data tracing, and X-Ray tracing are codified in the template
+**And** manual console configuration documented in `cloudformation/CLAUDE.md` is no longer needed
+
+**Note:** Direct migration (removing StageName from ApiDeployment and adding ApiStage) fails because CloudFormation cannot update an immutable property. Requires CloudFormation resource import workflow: (1) add ApiStage to template with DeletionPolicy: Retain, (2) import existing stage as that resource, (3) remove StageName from ApiDeployment.
+
+**Origin:** Deployment failure (2026-02-17) — ApiDeployment StageName is immutable; migration requires CF resource import.
+
+---
+
+### Story B.7: Merge Helm S3 and CloudFront into Single Template
+
+As a **developer**,
+I want to merge the split `s3-helm.yaml` and `cloudfront-helm.yaml` templates into a single `helm.yaml` template,
+So that the tightly coupled Helm S3 bucket and CloudFront distribution are managed in one stack, avoiding cross-stack dependencies for the OAI resource.
+
+**Acceptance Criteria:**
+
+**Given** the split templates `s3-helm.yaml` and `cloudfront-helm.yaml` existed with cross-stack OAI dependency
+**When** the developer merges them into a single `helm.yaml` template
+**Then** `deploy.sh` creates stack `lenie-dev-helm` with S3 bucket, OAI, bucket policy, and CloudFront distribution in one stack
+**And** the old split templates and parameter files are deleted
+
+**Status:** Done (2026-02-17). Old `lenie-dev-helm` stack was empty (all resources previously deleted). Created `helm.yaml` with combined resources, `parameters/dev/helm.json` with ACM cert ARN. Deleted `s3-helm.yaml`, `cloudfront-helm.yaml`, `s3-helm.json`, `cloudfront-helm.json`.
+
+**Origin:** Deployment failure (2026-02-17) — split templates conflicted with existing monolithic stack; analysis showed single stack is better due to tight OAI coupling.

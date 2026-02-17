@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -e
-set -x
+#set -x
 
 source ./env.sh
 
@@ -78,7 +78,7 @@ while IFS= read -r FUNCTION_NAME; do
   aws s3 cp "${LAMBDA_NAME}.zip" "s3://${AWS_S3_BUCKET_NAME}/${LAMBDA_NAME}.zip"
   echo "Uploaded ${LAMBDA_NAME}.zip to S3"
 
-  aws lambda update-function-code --function-name ${LAMBDA_NAME}  --zip-file fileb://"${LAMBDA_NAME}.zip" --profile ${PROFILE}
+  aws lambda update-function-code --function-name ${LAMBDA_NAME}  --zip-file fileb://"${LAMBDA_NAME}.zip" --profile ${PROFILE} || echo "Warning: Lambda ${LAMBDA_NAME} not found in AWS — skipping update (will be created by CloudFormation)"
 
 done <<<"$FUNCTION_LIST"
 

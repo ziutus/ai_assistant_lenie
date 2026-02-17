@@ -136,3 +136,7 @@ development_status:
   B-1-analyze-ec2-lambda-consolidation: backlog
   B-2-analyze-rds-lambda-consolidation: backlog
   B-3-rename-legacy-lambda-lenie-2-internet-and-db: backlog
+  B-4-remove-elastic-ip-from-ec2: backlog
+  B-5-fix-redundant-lambda-function-names: backlog
+  B-6-migrate-api-gw-app-stage-to-separate-resource: backlog
+  B-7-merge-helm-s3-and-cloudfront-into-single-template: done

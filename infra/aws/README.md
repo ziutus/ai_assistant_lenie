@@ -140,7 +140,7 @@ infra/aws/
 
 | Resource                     | Type                    | Details                                   |
 |------------------------------|-------------------------|-------------------------------------------|
-| MyS3Bucket                   | AWS::S3::Bucket         | `lenie-2025-dev-cloudformation`           |
+| MyS3Bucket                   | AWS::S3::Bucket         | `lenie-dev-cloudformation`                |
 | CloudFormationSSMParameter   | AWS::SSM::Parameter     | `/lenie/dev/s3/cloudformation/name`       |
 
 ### 4.3 Website Content (`s3-website-content.yaml`)

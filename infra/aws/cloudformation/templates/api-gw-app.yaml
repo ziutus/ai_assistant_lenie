@@ -981,24 +981,16 @@ Resources:
               name: "x-api-key"
               in: "header"
   # API Deployment
+  # NOTE: StageName kept in Deployment for backward compatibility with existing v1 stage.
+  # Separating into ApiStage requires CF resource import (not creation). See backlog.
   ApiDeployment:
     Type: 'AWS::ApiGateway::Deployment'
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
       RestApiId: !Ref LenieApi
-      Description: 'CF-managed deployment'
-
-  # API Stage (separated from Deployment for proper redeployment support)
-  ApiStage:
-    Type: 'AWS::ApiGateway::Stage'
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      RestApiId: !Ref LenieApi
-      DeploymentId: !Ref ApiDeployment
       StageName: v1
-      Description: 'Main application API stage'
+      Description: 'CF-managed deployment'
 
   # SSM Parameter exports
   ApiGatewayIdParameter:

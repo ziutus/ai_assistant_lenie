@@ -37,9 +37,6 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<String>
     Default: '/lenie/dev/lambda/layers/psycopg2/arn'
     Description: SSM path for psycopg2 Lambda layer ARN
-  RDSPasswordSecretArn:
-    Type: String
-    Description: ARN of the Secrets Manager secret holding RDS credentials
   PostgresqlHost:
     Type: String
     Description: RDS PostgreSQL endpoint hostname
@@ -76,9 +73,9 @@ Resources:
           AWS_QUEUE_URL_ADD: !Ref SqsDocumentsUrl
           POSTGRESQL_DATABASE: !Ref PostgresqlDatabase
           POSTGRESQL_HOST: !Ref PostgresqlHost
-          POSTGRESQL_PASSWORD: !Sub '{{resolve:secretsmanager:${RDSPasswordSecretArn}:SecretString:password}}'
+          POSTGRESQL_PASSWORD: !Sub '{{resolve:secretsmanager:/${ProjectCode}/${Environment}/rds/password:SecretString:password}}'
           POSTGRESQL_PORT: !Ref PostgresqlPort
-          POSTGRESQL_USER: !Sub '{{resolve:secretsmanager:${RDSPasswordSecretArn}:SecretString:username}}'
+          POSTGRESQL_USER: !Sub '{{resolve:secretsmanager:/${ProjectCode}/${Environment}/rds/password:SecretString:username}}'
       Timeout: 900
       MemorySize: 128
       VpcConfig:
