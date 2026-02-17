@@ -27,7 +27,7 @@ show_help() {
 
    -r aws-region - A AWS Region where stack should be created/updated/deleted (default: $REGION)
    -p PROJECT_CODE - project code (for example: lenie)
-   -s stage - Deployment stage (one of prod,cob,qa,dev,test,feature,staging) (default: $STAGE)
+   -s stage - Deployment stage (currently: dev) (default: $STAGE)
    -d - change default action from Create/Update to Delete
    -t  - create change-sets instead of apply changes (default: $CHANGE_SET)
 

@@ -2,25 +2,40 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Template do utworzenia kolejki SQS DLQ'
 
 Parameters:
-  ProjectName:
+  ProjectCode:
     Type: String
-    Description: 'Project Name'
+    Default: lenie
+    Description: Project code for resource naming and tagging
   Environment:
     Type: String
-    Description: 'environment'
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
 
 Resources:
   LenieDevProblemsDLQ:
     Type: 'AWS::SQS::Queue'
     Properties:
-      QueueName: !Sub ${ProjectName}-${Environment}-problems-dlq
+      QueueName: !Sub ${ProjectCode}-${Environment}-problems-dlq
       MessageRetentionPeriod: 1209600
       VisibilityTimeout: 30
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   LenieDevProblemsTopic:
     Type: 'AWS::SNS::Topic'
     Properties:
-      TopicName: !Sub ${ProjectName}-${Environment}-problems
+      TopicName: !Sub ${ProjectCode}-${Environment}-problems
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   EmailSubscription:
     Type: 'AWS::SNS::Subscription'
@@ -37,4 +52,4 @@ Outputs:
     Description: 'ARN queue for default DLQ application'
     Value: !GetAtt LenieDevProblemsDLQ.Arn
     Export:
-      Name: !Sub ${ProjectName}-problems-dlq-arn
+      Name: !Sub ${ProjectCode}-${Environment}-problems-dlq-arn

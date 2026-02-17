@@ -3,42 +3,28 @@ Description: Template for Application launch template
 
 Parameters:
   ProjectCode:
-    Description: Project name
     Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
     AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,20}$
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
   Component:
     Description: Name of the component
     Type: String
     AllowedPattern: ^[a-z][a-zA-Z0-9-]{3,15}$
-  Stage:
-    Description: Stage name
-    Type: String
-    AllowedPattern: ^[a-z][a-zA-Z0-9-]{2,15}$
-#  ApplicationSecurityGroup:
-#    Description: ID of the Application Security Group
-#    Type: AWS::SSM::Parameter::Value<String>
-#  CloudWatchConfigFile:
-#    Description: CloudWatch Config file
-#    Type: String
   ImageId:
     Description: Id of the AMI with Application
     Type: AWS::EC2::Image::Id
-#  InstanceRole:
-#    Description: Name of the instance role
-#    Type: AWS::SSM::Parameter::Value<String>
   InstanceType:
     Description: Type of instance
     Type: String
     Default: t2.micro
-#  ServiceName:
-#    Description: Service Name
-#    Type: String
-#  ServiceConfigFile:
-#    Description: Service configuration file name
-#    Type: String
-#  S3ConfigurationBucket:
-#    Description: Name of the configuration bucket
-#    Type: AWS::SSM::Parameter::Value<String>
 
 Resources:
   ApplicationLaunchTemplate:
@@ -47,53 +33,50 @@ Resources:
       LaunchTemplateData:
         ImageId: !Ref ImageId
         InstanceType: !Ref  InstanceType
-#        IamInstanceProfile:
-#          Arn: !GetAtt  InstanceProfile.Arn
-#        SecurityGroupIds:
-#          - !Ref ApplicationSecurityGroup
         Monitoring:
           Enabled: true
         TagSpecifications:
           - ResourceType: instance
             Tags:
               - Key: Name
-                Value: !Sub ${ProjectCode}-${Stage}-${Component}-application-instance
-#        UserData:
-#          Fn::Base64: !Sub |
-#            #!/bin/bash
-#            aws s3 cp s3://${S3ConfigurationBucket}/cloudwatch/${CloudWatchConfigFile} /opt/aws/amazon-cloudwatch-agent/etc/${CloudWatchConfigFile}
-#            sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl -a fetch-config -m ec2 -c file:/opt/aws/amazon-cloudwatch-agent/etc/${CloudWatchConfigFile} -s
-#            aws s3 cp s3://${S3ConfigurationBucket}/service/${ServiceConfigFile} /etc/${ServiceConfigFile}
-#            sudo systemctl start ${ServiceName}
+                Value: !Sub ${ProjectCode}-${Environment}-${Component}-application-instance
+              - Key: Environment
+                Value: !Ref Environment
+              - Key: Project
+                Value: !Ref ProjectCode
+      TagSpecifications:
+        - ResourceType: launch-template
+          Tags:
+            - Key: Environment
+              Value: !Ref Environment
+            - Key: Project
+              Value: !Ref ProjectCode
 
   ApplicationLaunchTemplateParam:
     Type: AWS::SSM::Parameter
     Properties:
       Type: String
-      Description: !Sub Stores ${ProjectCode}-${Stage}-${Component} Application Launch Template Id
+      Description: !Sub Stores ${ProjectCode}-${Environment}-${Component} Application Launch Template Id
       Tier: Standard
-      Name: !Sub /${ProjectCode}/${Stage}/${Component}/application-launch-template/id
+      Name: !Sub /${ProjectCode}/${Environment}/${Component}/application-launch-template/id
       Value: !Ref ApplicationLaunchTemplate
       Tags:
-        Name: !Sub ${ProjectCode}-${Stage}-${Component}-application-launch-template-id-param
+        Name: !Sub ${ProjectCode}-${Environment}-${Component}-application-launch-template-id-param
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
 
   ApplicationLaunchTemplateLatestVersionParam:
     Type: AWS::SSM::Parameter
     Properties:
       Type: String
-      Description: !Sub Stores ${ProjectCode}-${Stage}-${Component} Application Launch Template Latest Version No.
+      Description: !Sub Stores ${ProjectCode}-${Environment}-${Component} Application Launch Template Latest Version No.
       Tier: Standard
-      Name: !Sub /${ProjectCode}/${Stage}/${Component}/application-launch-template/latest-version
+      Name: !Sub /${ProjectCode}/${Environment}/${Component}/application-launch-template/latest-version
       Value: !GetAtt ApplicationLaunchTemplate.LatestVersionNumber
       Tags:
-        Name: !Sub ${ProjectCode}-${Stage}-${Component}-application-launch-template-latest-version-param
-
-#  InstanceProfile:
-#    Type: AWS::IAM::InstanceProfile
-#    Properties:
-#      Path: /
-#      Roles:
-#        - !Ref InstanceRole
+        Name: !Sub ${ProjectCode}-${Environment}-${Component}-application-launch-template-latest-version-param
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
 
 Outputs:
   ApplicationLaunchTemplateId:

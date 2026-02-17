@@ -2,22 +2,28 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'S3 buckets for Helm chart repository'
 
 Parameters:
-  ProjectName:
+  ProjectCode:
     Type: String
     Default: lenie
+    Description: Project code for resource naming and tagging
   Environment:
     Type: String
     Default: dev
+    Description: Deployment environment
     AllowedValues:
       - dev
-      - qa
-      - prod
+      # Post-MVP: add prod, qa as needed
 
 Resources:
   HelmBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${ProjectName}-${Environment}-helm"
+      BucketName: !Sub "${ProjectCode}-${Environment}-helm"
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
@@ -42,7 +48,7 @@ Resources:
     Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
     Properties:
       CloudFrontOriginAccessIdentityConfig:
-        Comment: !Sub "OAI for ${ProjectName}-${Environment}-helm"
+        Comment: !Sub "OAI for ${ProjectCode}-${Environment}-helm"
 
 Outputs:
   HelmBucketName:

@@ -1,3 +1,19 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Lambda function for putting web links into SQS'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+
 Resources:
   MyLambdaFunction:
     Type: 'AWS::Lambda::Function'
@@ -9,3 +25,8 @@ Resources:
         S3Key: lenie-dev-url-add.zip
       Runtime: python3.11
       Timeout: 10
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode

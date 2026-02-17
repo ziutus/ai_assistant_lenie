@@ -1,28 +1,33 @@
 AWSTemplateFormatVersion: "2010-09-09"
 
 Parameters:
-  ProjectName:
+  ProjectCode:
     Type: String
-    Description: 'Project Name'
+    Default: lenie
+    Description: Project code for resource naming and tagging
   Environment:
     Type: String
-    Description: 'environment'
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
 
 Resources:
   MyLambdaFunction:
     Type: AWS::Lambda::Function
     Properties:
-      FunctionName: lenie-dev-sqs-to-rds-lambda
-      Handler: lambda_function.lambda_handler  # Obsługuje plik lambda_function.py
+      FunctionName: !Sub '${ProjectCode}-${Environment}-sqs-to-rds-lambda'
+      Handler: lambda_function.lambda_handler
       Runtime: python3.11
-      Role: !GetAtt LambdaExecutionRole.Arn  # Twój IAM Role dla uprawnień Lambdy (osobna definicja niżej)
+      Role: !GetAtt LambdaExecutionRole.Arn
       Layers:
         - arn:aws:lambda:us-east-1:017000801446:layer:AWSLambdaPowertoolsPythonV3-python311-x86_64:6
         - arn:aws:lambda:us-east-1:008971653395:layer:lenie_all_layer:1
         - arn:aws:lambda:us-east-1:008971653395:layer:psycopg2_new_layer:1
       Code:
-        S3Bucket: lenie-dev-cloudformation          # Wskaż na wcześniej załadowany pakiet ZIP
-        S3Key: lenie-dev-sqs-to-db.zip
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub '${ProjectCode}-${Environment}-sqs-to-db.zip'
       Environment:
         Variables:
           AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites
@@ -41,6 +46,11 @@ Resources:
           - subnet-05b4d47b482c89936
         SecurityGroupIds:
           - sg-0d3882a9806ec2a9c
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
 
   LambdaExecutionRole:
@@ -63,7 +73,12 @@ Resources:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
-                  - sqs:DeleteMessage  # Opcjonalne akcje dla SQS w Lambda
+                  - sqs:DeleteMessage
                   - sqs:ReceiveMessage
                   - sqs:GetQueueAttributes
                 Resource: "*"
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode

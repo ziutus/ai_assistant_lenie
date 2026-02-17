@@ -32,7 +32,7 @@ Universal script for creating, updating, and deleting CloudFormation stacks.
 | Flag  | Description | Default |
 |-------|-------------|---------|
 | `-p`  | Project code (e.g. `lenie`) | required |
-| `-s`  | Environment: `dev`, `qa`, `prod`, `cob`, `test`, `feature`, `staging` | required |
+| `-s`  | Environment (currently: `dev`; `prod`, `qa` post-MVP) | required |
 | `-r`  | AWS region | `us-east-1` |
 | `-d`  | Delete stacks (instead of create/update) | disabled |
 | `-t`  | Change-set mode (preview changes before applying) | disabled |
@@ -74,7 +74,7 @@ Example: template `templates/vpc.yaml` in the `dev` environment of project `leni
 Configuration defining which templates are deployed per environment. INI format with per-environment sections.
 
 - `[common]` - templates deployed once per region (used only for `prod`)
-- `[dev]`, `[qa]`, `[prod]`, ... - templates per environment
+- `[dev]` - currently the only active environment (post-MVP: add `[prod]`, `[qa]`)
 - Lines starting with `;` are commented out (template skipped)
 
 Template order in the file matters - stacks are created in this order and deleted in reverse.

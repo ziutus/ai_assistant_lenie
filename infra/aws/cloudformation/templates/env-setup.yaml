@@ -2,20 +2,26 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'App Version setup'
 
 Parameters:
-  stage:
-    Default: dev
-    Description: Specify stage (dev, qas, prd)
+  ProjectCode:
     Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
     AllowedValues:
       - dev
-      - qas
-      - prd
+      # Post-MVP: add prod, qa as needed
 
 Resources:
   CloudFormationSSMParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub '/lenie/${stage}/python/lambda-runtime-version'
+      Name: !Sub '/${ProjectCode}/${Environment}/python/lambda-runtime-version'
       Type: String
       Value: 'python3.11'
       Description: 'Python runtime version'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode

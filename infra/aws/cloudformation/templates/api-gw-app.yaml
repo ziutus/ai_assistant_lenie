@@ -10,9 +10,8 @@ Parameters:
     Default: dev
     AllowedValues:
       - dev
-      - qa
-      - prod
-    Description: Environment name
+      # Post-MVP: add prod, qa as needed
+    Description: Deployment environment
 
 Resources:
   LenieApi:
@@ -21,6 +20,11 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       Name: lenie_split
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
       EndpointConfiguration:
         Types:
           - REGIONAL
@@ -881,57 +885,6 @@ Resources:
                 type: "aws_proxy"
                 httpMethod: "POST"
                 uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:lenie-manual-sqs-length/invocations"
-                responses:
-                  default:
-                    statusCode: "200"
-                passthroughBehavior: "when_no_match"
-                timeoutInMillis: 29000
-                contentHandling: "CONVERT_TO_TEXT"
-            options:
-              responses:
-                "200":
-                  description: "200 response"
-                  headers:
-                    Access-Control-Allow-Origin:
-                      schema:
-                        type: "string"
-                    Access-Control-Allow-Methods:
-                      schema:
-                        type: "string"
-                    Access-Control-Allow-Headers:
-                      schema:
-                        type: "string"
-                  content:
-                    application/json:
-                      schema:
-                        $ref: "#/components/schemas/Empty"
-              x-amazon-apigateway-integration:
-                type: "mock"
-                responses:
-                  default:
-                    statusCode: "200"
-                    responseParameters:
-                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
-                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
-                      method.response.header.Access-Control-Allow-Origin: "'*'"
-                requestTemplates:
-                  application/json: "{\"statusCode\": 200}"
-                passthroughBehavior: "when_no_match"
-          /infra/ip-allow:
-            post:
-              responses:
-                "200":
-                  description: "200 response"
-                  content:
-                    application/json:
-                      schema:
-                        $ref: "#/components/schemas/Empty"
-              security:
-              - api_key: []
-              x-amazon-apigateway-integration:
-                type: "aws_proxy"
-                httpMethod: "POST"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:infra-allow-ip-in-secrutity-group/invocations"
                 responses:
                   default:
                     statusCode: "200"

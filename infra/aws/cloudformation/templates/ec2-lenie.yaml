@@ -1,6 +1,26 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: Template to create an EC2 instance with Amazon Linux 2023 and assign an Elastic IP
 
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+  LatestAmazonLinux2023AmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64'
+    Description: Default Amazon Linux 2023 AMI ID
+  SshKeyName:
+    Type: String
+    Description: 'ssh key Name'
+
 Resources:
   EC2Instance:
     Type: 'AWS::EC2::Instance'
@@ -10,37 +30,54 @@ Resources:
       KeyName: !Ref SshKeyName
       SecurityGroupIds:
         - !Ref InstanceSecurityGroup
-      SubnetId: !ImportValue 'lenie-dev-publicSubnet1'
+      SubnetId:
+        Fn::ImportValue: !Sub '${ProjectCode}-${Environment}-publicSubnet1'
       Tags:
         - Key: Name
-          Value: !Sub ${ProjectName}-EC2-${Environment}
-        - Key: Stage
+          Value: !Sub ${ProjectCode}-EC2-${Environment}
+        - Key: Environment
           Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
       IamInstanceProfile: !Ref InstanceProfile
-#      MetadataOptions:
-#        HttpTokens: optional  # Konfiguracja, aby IMDSv2 był opcjonalny https://github.com/aws-cloudformation/cloudformation-coverage-roadmap/issues/655
 
   InstanceSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'
     Properties:
       GroupDescription: 'Enable SSH access'
-      VpcId: !ImportValue 'lenie-dev-vpcId'  # Importowanie identyfikatora VPC
+      VpcId:
+        Fn::ImportValue: !Sub '${ProjectCode}-${Environment}-vpcId'
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: '22'
           ToPort: '22'
-          CidrIp: 0.0.0.0/0  # otwartość na cały internet, dostosuj według potrzeb
+          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: '80'
           ToPort: '80'
-          CidrIp: 0.0.0.0/0  # otwartość na cały internet, dostosuj według potrzeb
+          CidrIp: 0.0.0.0/0
         - IpProtocol: tcp
           FromPort: '443'
           ToPort: '443'
-          CidrIp: 0.0.0.0/0  # otwartość na cały internet, dostosuj według potrzeb
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectCode}-${Environment}-ec2-sg'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   ElasticIP:
     Type: 'AWS::EC2::EIP'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectCode}-${Environment}-eip'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   EIPAssociation:
     Type: 'AWS::EC2::EIPAssociation'
@@ -62,6 +99,11 @@ Resources:
               - 'sts:AssumeRole'
       ManagedPolicyArns:
         - 'arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   InstanceProfile:
     Type: 'AWS::IAM::InstanceProfile'
@@ -69,21 +111,6 @@ Resources:
       Path: '/'
       Roles:
         - !Ref InstanceRole
-
-Parameters:
-  LatestAmazonLinux2023AmiId:
-    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
-    Default: '/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64'
-    Description: Default Amazon Linux 2023 AMI ID
-  ProjectName:
-    Type: String
-    Description: 'Project Name'
-  Environment:
-    Type: String
-    Description: 'environment'
-  SshKeyName:
-    Type: String
-    Description: 'ssh key Name'
 
 Outputs:
   InstanceId:
