@@ -6,5 +6,9 @@
   {
     "ParameterKey": "Environment",
     "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "AlertEmail",
+    "ParameterValue": "krzysztof@lenie-ai.eu"
   }
 ]
