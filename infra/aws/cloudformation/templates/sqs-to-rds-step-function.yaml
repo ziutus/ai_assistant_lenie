@@ -26,7 +26,7 @@ Parameters:
     Description: 'EventBridge cron or rate expression for the schedule'
   SqsToRdsLambdaFunctionName:
     Type: String
-    Default: lenie-sqs-to-db
+    Default: lenie-dev-sqs-to-rds-lambda
     Description: Name of the Lambda function that processes SQS messages into RDS
   ProblemsDlqArn:
     Type: AWS::SSM::Parameter::Value<String>

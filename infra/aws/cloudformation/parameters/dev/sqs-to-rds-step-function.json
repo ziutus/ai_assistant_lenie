@@ -21,7 +21,7 @@
   },
   {
     "ParameterKey": "SqsToRdsLambdaFunctionName",
-    "ParameterValue": "lenie-sqs-to-db"
+    "ParameterValue": "lenie-dev-sqs-to-rds-lambda"
   },
   {
     "ParameterKey": "ProblemsDlqArn",
