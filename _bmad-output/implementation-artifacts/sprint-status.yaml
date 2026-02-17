@@ -119,8 +119,8 @@ development_status:
   11-4-resolve-lambda-function-name-typo: done
   11-5-rest-compliance-review-for-website-delete: done
   11-6-parameterize-sqs-to-rds-lambda-infrastructure-values: done
-  11-7-replace-legacy-lenie-websites-queue-references: backlog
-  11-8-replace-fn-importvalue-with-ssm-parameter-for-dlq-arn: backlog
+  11-7-replace-legacy-lenie-websites-queue-references: done
+  11-8-replace-fn-importvalue-with-ssm-parameter-for-dlq-arn: done
   11-9-reconcile-lambda-function-name-mismatch: backlog
   11-10-codify-api-gateway-stage-logging-and-tracing: backlog
   epic-11-retrospective: optional
