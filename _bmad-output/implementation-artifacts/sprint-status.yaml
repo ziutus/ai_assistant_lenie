@@ -141,3 +141,4 @@ development_status:
   B-6-migrate-api-gw-app-stage-to-separate-resource: backlog
   B-7-merge-helm-s3-and-cloudfront-into-single-template: done
   B-8-manage-acm-certificates-via-cloudformation-and-ssm: backlog
+  B-9-organize-s3-cloudformation-bucket-directory-structure: backlog

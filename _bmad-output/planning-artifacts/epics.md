@@ -837,3 +837,52 @@ So that certificate ARNs are not hardcoded in parameter files and templates can 
 **Note:** ACM certificates used with CloudFront must be in `us-east-1`. ACM public certificates are free of charge. DNS validation requires a CNAME record in Route53 — CloudFormation can automate this via `AWS::CertificateManager::Certificate` with `DomainValidationOptions`. Consider using the wildcard `*.dev.lenie-ai.eu` certificate for all dev CloudFront distributions to simplify management.
 
 **Origin:** User question (2026-02-17) — hardcoded certificate ARNs discovered during deployment; certificates are free, so managing them via IaC has no cost impact.
+
+---
+
+### Story B.9: Organize S3 CloudFormation Bucket Directory Structure
+
+As a **developer**,
+I want to move Lambda function zip files into a `lambdas/` prefix in the `lenie-dev-cloudformation` S3 bucket,
+So that the bucket has a uniform directory structure with all artifact types in dedicated prefixes.
+
+**Current state:**
+```
+lenie-dev-cloudformation/
+├── layers/              ← organized
+├── templates/           ← organized
+├── lenie-dev-*.zip      ← Lambda zips in root (inconsistent)
+```
+
+**Target state:**
+```
+lenie-dev-cloudformation/
+├── layers/              ← Lambda layer zips
+├── templates/           ← CloudFormation templates
+└── lambdas/             ← Lambda function code zips
+```
+
+**Acceptance Criteria:**
+
+**Given** Lambda function zips are stored in the bucket root
+**When** the developer adds the `lambdas/` prefix to all S3Key references
+**Then** all Lambda zips are uploaded to and read from the `lambdas/` prefix
+
+**Given** S3Key references exist in multiple locations
+**When** the developer updates all of them consistently
+**Then** the following files are updated:
+- `zip_to_s3.sh` — upload path (`aws s3 cp` target)
+- `api-gw-infra.yaml` — 7 Lambda functions (sqs-size, rds-start/stop/status, ec2-start/stop/status)
+- `lambda-rds-start.yaml` — S3Key for rds-start
+- `lambda-weblink-put-into-sqs.yaml` — S3Key for url-add
+- `sqs-to-rds-lambda.yaml` — S3Key for sqs-to-db
+- `url-add.yaml` — S3Key for url-add
+
+**Given** all references are updated
+**When** the developer runs `zip_to_s3.sh` and deploys affected stacks
+**Then** Lambda functions load code from the new `lambdas/` prefix
+**And** old root-level zip files can be deleted from the bucket
+
+**Note:** Layer S3Keys already use the `layers/` prefix (configured via parameter files). The change for Lambda zips is a simple prefix addition: `S3Key: !Sub '${ProjectCode}-${Environment}-rds-start.zip'` becomes `S3Key: !Sub 'lambdas/${ProjectCode}-${Environment}-rds-start.zip'`. Deploy order: upload new zips first, then update stacks. Per-environment subdirectories inside `lambdas/` are not needed — the S3 bucket itself is per-environment (`${ProjectCode}-${Environment}-cloudformation`), and zip file names also contain the environment, providing double isolation.
+
+**Origin:** User observation (2026-02-17) — inconsistent S3 bucket structure; layers and templates have prefixes but Lambda zips are in root.
