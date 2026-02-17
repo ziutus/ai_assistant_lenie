@@ -21,8 +21,8 @@ Resources:
       Handler: lambda_function.lambda_handler
       Role: arn:aws:iam::049706517731:role/service-role/test-lambda-role-nskevmou
       Code:
-        S3Bucket: lenie-2025-dev-cloudformation
-        S3Key: lenie-dev-url-add.zip
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub '${ProjectCode}-${Environment}-url-add.zip'
       Runtime: python3.11
       Timeout: 10
       Tags:
