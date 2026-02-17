@@ -8,7 +8,9 @@ Parameters:
   Environment:
     Type: String
     Default: dev
-    AllowedValues: [dev, qa, qa2, qa3, prod]
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
     Description: Environment name
 
 Conditions:

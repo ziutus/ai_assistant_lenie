@@ -117,7 +117,7 @@ See `infra/aws/serverless/CLAUDE.md` for detailed comparison and known differenc
 ## Environment Variables
 
 Key variables (see `.env_example` for full list):
-- `ENV_DATA` - Environment identifier
+- `ENV_DATA` - Environment identifier (currently only `dev`; `prod` and `qa` will be added post-MVP)
 - `POSTGRESQL_HOST/DATABASE/USER/PASSWORD/PORT` - Database connection
 - `LLM_PROVIDER` - LLM backend (openai, bedrock, vertex)
 - `OPENAI_API_KEY`, `OPENAI_ORGANIZATION` - OpenAI credentials

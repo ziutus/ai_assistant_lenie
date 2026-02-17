@@ -4,17 +4,25 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'AWS S3 backups for Lenie applicaion'
 
 Parameters:
-  stage:
-    Default: dev
-    Description: Specify stage (dev, qas, prd)
+  ProjectCode:
     Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
     AllowedValues:
       - dev
-      - qas
-      - prd
+      # Post-MVP: add prod, qa as needed
 
 Resources:
   MyS3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub lenie-${stage}-video-to-text
+      BucketName: !Sub lenie-${Environment}-video-to-text
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode

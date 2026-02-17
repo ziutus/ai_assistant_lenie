@@ -1,25 +1,21 @@
 Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
   VPCId:
     Description: The VPC Id where the RDS instance will be deployed
     Type: AWS::SSM::Parameter::Value<String>
-  Environment:
-    Description: The stage of the application deployment
-    Default: dev
-    Type: String
-    AllowedValues:
-      - dev
-      - qa
-      - prod
-      - cob
-      - test
-      - feature
-  ProjectName:
-    Type: String
-    Description: 'Project Name'
   RDSPasswordSecretArn:
     Type: String
     Description: 'ARN of the Secret in AWS Secrets Manager that holds the RDS master user password'
-
   DataSubnetA:
     Description: Reference of the DataSubnetA from the SSM
     Type: AWS::SSM::Parameter::Value<String>
@@ -59,15 +55,24 @@ Resources:
       MultiAZ: false
       VPCSecurityGroups:
             - !GetAtt MyDatabaseSecurityGroup.GroupId
-#      DeletionPolicy: Snapshot
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   DbSubnetGroup:
     Type: AWS::RDS::DBSubnetGroup
     Properties:
-      DBSubnetGroupDescription: !Sub Subnet group for ${ProjectName}-${Environment}-db instance
+      DBSubnetGroupDescription: !Sub Subnet group for ${ProjectCode}-${Environment}-db instance
       SubnetIds:
         - !Ref DataSubnetA
         - !Ref DataSubnetB
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
 
   MyDatabaseSecurityGroup:
@@ -80,14 +85,10 @@ Resources:
           FromPort: '5432'
           ToPort: '5432'
           CidrIp: 0.0.0.0/0
-
-#  DatabaseNameParameter:
-#    Type: AWS::SSM::Parameter
-#    Properties:
-#      Name: !Sub '/lenie/${Environment}/database/name'
-#      Type: String
-#      Value: !If
-#        - HasSnapshot
-#        - !Ref MyDB
-#        - !Sub 'lenieTmp${Environment}'
-#      Description: !Sub 'Database name for ${ProjectName} in ${Environment} environment'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectCode}-${Environment}-rds-sg'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
