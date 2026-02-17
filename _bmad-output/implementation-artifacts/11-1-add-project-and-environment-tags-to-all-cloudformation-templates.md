@@ -248,6 +248,7 @@ None — all changes passed cfn-lint validation on first attempt (except pre-exi
 6. **cfn-lint warnings (pre-existing, not introduced by this story):**
    - `vpc.yaml` — W2001: Parameter `VpcName` not used
    - `budget.yaml` — W2001: Parameters `ProjectCode` and `Environment` not used (only active resource `AccountBudget` doesn't reference them; commented-out resources do)
+   - **Note:** `budget.yaml` W2001 for `ProjectCode`/`Environment` is now resolved — `AccountBudget` references them via `BudgetName: !Sub "${ProjectCode}-${Environment}-monthly-budget"` (fixed in code review round 2).
 
 7. **Code review fixes — HIGH/MEDIUM (2026-02-17):**
    - `api-gw-infra.yaml:116` — Fixed hardcoded `lenie` in S3Key for RdsStopFunction (`S3Key: !Sub lenie-${Environment}-rds-stop.zip` → `S3Key: !Sub ${ProjectCode}-${Environment}-rds-stop.zip`). All other 6 Lambda S3Keys in the same file already used `${ProjectCode}` correctly.
@@ -282,6 +283,12 @@ None — all changes passed cfn-lint validation on first attempt (except pre-exi
      - `lambda-weblink-put-into-sqs.yaml:22` — hardcoded test IAM Role ARN from different account (`049706517731` instead of `008971653395`)
    - **Next sprint item:** S3 bucket name unification — `s3-cloudformation.yaml` creates `${ProjectCode}-2025-${Environment}-cloudformation` but canonical pattern is `${ProjectCode}-${Environment}-cloudformation` (without `2025`). Rename bucket to remove `2025` and update all references.
    - **Deployment note:** Export name change in `sqs-application-errors.yaml` requires coordinated deployment — update `sqs-to-rds-step-function.yaml` first (remove old ImportValue), then update `sqs-application-errors.yaml` export, then re-deploy step-function with new ImportValue. Alternatively, delete and recreate both stacks.
+
+9. **Code review round 2 — LOW fixes (2026-02-17):**
+   - `sqs-application-errors.yaml` — extracted hardcoded email `krzysztof@lenie-ai.eu` to `AlertEmail` parameter; updated parameter file with value
+   - `budget.yaml` — replaced generic `"My Monthly Cost Budget"` with `!Sub "${ProjectCode}-${Environment}-monthly-budget"`
+   - `secrets.yaml` — replaced hardcoded `"lenie"` username with `${ProjectCode}` reference in `!Sub` block
+   - **cfn-lint verification (v1.44.0):** All 4 templates modified in round 2 (`lambda-weblink-put-into-sqs.yaml`, `sqs-application-errors.yaml`, `budget.yaml`, `secrets.yaml`) pass with zero errors and zero warnings.
 
 ### File List
 
