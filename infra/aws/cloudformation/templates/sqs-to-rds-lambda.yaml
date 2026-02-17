@@ -1,4 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
+Description: Lambda function that processes messages from SQS queue and writes them to RDS PostgreSQL for Project Lenie
 
 Parameters:
   ProjectCode:
@@ -12,6 +13,48 @@ Parameters:
     AllowedValues:
       - dev
       # Post-MVP: add prod, qa as needed
+  SubnetId1:
+    Type: String
+    Description: First subnet ID for Lambda VPC configuration
+    AllowedPattern: 'subnet-[a-f0-9]+'
+  SubnetId2:
+    Type: String
+    Description: Second subnet ID for Lambda VPC configuration
+    AllowedPattern: 'subnet-[a-f0-9]+'
+  SubnetId3:
+    Type: String
+    Description: Third subnet ID for Lambda VPC configuration
+    AllowedPattern: 'subnet-[a-f0-9]+'
+  SecurityGroupId:
+    Type: String
+    Description: Security group ID allowing PostgreSQL access
+    AllowedPattern: 'sg-[a-f0-9]+'
+  LenieAllLayerArn:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: '/lenie/dev/lambda/layers/lenie-all/arn'
+    Description: SSM path for lenie-all Lambda layer ARN
+  Psycopg2LayerArn:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: '/lenie/dev/lambda/layers/psycopg2/arn'
+    Description: SSM path for psycopg2 Lambda layer ARN
+  RDSPasswordSecretArn:
+    Type: String
+    Description: ARN of the Secrets Manager secret holding RDS credentials
+  PostgresqlHost:
+    Type: String
+    Description: RDS PostgreSQL endpoint hostname
+  PostgresqlDatabase:
+    Type: String
+    Default: lenie
+    Description: PostgreSQL database name
+  PostgresqlPort:
+    Type: String
+    Default: '5432'
+    Description: PostgreSQL port number
+  SqsDocumentsUrl:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: '/lenie/dev/sqs/documents/url'
+    Description: SSM path for SQS documents queue URL
 
 Resources:
   MyLambdaFunction:
@@ -22,30 +65,29 @@ Resources:
       Runtime: python3.11
       Role: !GetAtt LambdaExecutionRole.Arn
       Layers:
-        - arn:aws:lambda:us-east-1:017000801446:layer:AWSLambdaPowertoolsPythonV3-python311-x86_64:6
-        - arn:aws:lambda:us-east-1:008971653395:layer:lenie_all_layer:1
-        - arn:aws:lambda:us-east-1:008971653395:layer:psycopg2_new_layer:1
+        - !Sub 'arn:aws:lambda:${AWS::Region}:017000801446:layer:AWSLambdaPowertoolsPythonV3-python311-x86_64:6'
+        - !Ref LenieAllLayerArn
+        - !Ref Psycopg2LayerArn
       Code:
         S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
         S3Key: !Sub '${ProjectCode}-${Environment}-sqs-to-db.zip'
       Environment:
         Variables:
-          AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites
-          POSTGRESQL_DATABASE: lenie
-          POSTGRESQL_HOST: lenie-dev.c9k28ukqsclc.us-east-1.rds.amazonaws.com
-          POSTGRESQL_PASSWORD: change_me
-          POSTGRESQL_PORT: 5432
-          POSTGRESQL_USER: postgres
-
+          AWS_QUEUE_URL_ADD: !Ref SqsDocumentsUrl
+          POSTGRESQL_DATABASE: !Ref PostgresqlDatabase
+          POSTGRESQL_HOST: !Ref PostgresqlHost
+          POSTGRESQL_PASSWORD: !Sub '{{resolve:secretsmanager:${RDSPasswordSecretArn}:SecretString:password}}'
+          POSTGRESQL_PORT: !Ref PostgresqlPort
+          POSTGRESQL_USER: !Sub '{{resolve:secretsmanager:${RDSPasswordSecretArn}:SecretString:username}}'
       Timeout: 900
       MemorySize: 128
       VpcConfig:
         SubnetIds:
-          - subnet-065769ce9d50381e3
-          - subnet-020824bbcbcb05271
-          - subnet-05b4d47b482c89936
+          - !Ref SubnetId1
+          - !Ref SubnetId2
+          - !Ref SubnetId3
         SecurityGroupIds:
-          - sg-0d3882a9806ec2a9c
+          - !Ref SecurityGroupId
       Tags:
         - Key: Environment
           Value: !Ref Environment
@@ -63,6 +105,8 @@ Resources:
             Principal:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
       Policies:
         - PolicyName: LambdaBasicExecution
           PolicyDocument:
@@ -73,10 +117,13 @@ Resources:
                   - logs:CreateLogGroup
                   - logs:CreateLogStream
                   - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
                   - sqs:DeleteMessage
                   - sqs:ReceiveMessage
                   - sqs:GetQueueAttributes
-                Resource: "*"
+                Resource: !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectCode}*'
       Tags:
         - Key: Environment
           Value: !Ref Environment
