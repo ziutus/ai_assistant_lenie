@@ -47,6 +47,17 @@ Resources:
       Endpoint: !Ref AlertEmail
       TopicArn: !Ref LenieDevProblemsTopic
 
+  ProblemsDlqArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/sqs/problems-dlq/arn'
+      Type: String
+      Value: !GetAtt LenieDevProblemsDLQ.Arn
+      Description: 'ARN of the problems dead letter queue for cross-stack reference'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+
 Outputs:
   SqsApplicationErrorsQueueURL:
     Description: 'URL queue for default DLQ application'
