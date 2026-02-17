@@ -68,9 +68,11 @@ React Frontend → API Gateway → Lambda (app-server-db or app-server-internet)
 The Step Function runs automatically via EventBridge Schedule (daily at 5:00 AM Warsaw time). To run it manually:
 
 ```bash
+# Get QueueUrl from SSM first:
+#   aws ssm get-parameter --name /lenie/dev/sqs/documents/url --query 'Parameter.Value' --output text
 MSYS_NO_PATHCONV=1 aws stepfunctions start-execution \
-  --state-machine-arn "arn:aws:states:us-east-1:008971653395:stateMachine:lenie-dev-sqs-to-rds" \
-  --input '{"QueueUrl":"https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites","DbInstanceIdentifier":"lenie-dev","StopDatabase":"yes"}' \
+  --state-machine-arn "arn:aws:states:us-east-1:$(aws sts get-caller-identity --query Account --output text):stateMachine:lenie-dev-sqs-to-rds" \
+  --input "{\"QueueUrl\":\"$(aws ssm get-parameter --name /lenie/dev/sqs/documents/url --query 'Parameter.Value' --output text)\",\"DbInstanceIdentifier\":\"lenie-dev\",\"StopDatabase\":\"yes\"}" \
   --region us-east-1
 ```
 
