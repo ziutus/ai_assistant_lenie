@@ -813,3 +813,27 @@ So that the tightly coupled Helm S3 bucket and CloudFront distribution are manag
 **Status:** Done (2026-02-17). Old `lenie-dev-helm` stack was empty (all resources previously deleted). Created `helm.yaml` with combined resources, `parameters/dev/helm.json` with ACM cert ARN. Deleted `s3-helm.yaml`, `cloudfront-helm.yaml`, `s3-helm.json`, `cloudfront-helm.json`.
 
 **Origin:** Deployment failure (2026-02-17) — split templates conflicted with existing monolithic stack; analysis showed single stack is better due to tight OAI coupling.
+
+---
+
+### Story B.8: Manage ACM Certificates via CloudFormation and SSM
+
+As a **developer**,
+I want to create ACM certificates via CloudFormation and store their ARNs in SSM Parameter Store,
+So that certificate ARNs are not hardcoded in parameter files and templates can resolve them dynamically.
+
+**Acceptance Criteria:**
+
+**Given** ACM certificate ARNs are currently hardcoded in `cloudfront-app.json` and `helm.json`
+**When** the developer creates a CloudFormation template that provisions ACM certificates with DNS validation
+**Then** certificate ARNs are exported to SSM parameters (e.g., `/${ProjectCode}/${Environment}/acm/wildcard-dev/arn`)
+**And** consumer templates (`cloudfront-app.yaml`, `helm.yaml`) use `AWS::SSM::Parameter::Value<String>` to resolve the ARN
+
+**Given** four ACM certificates exist in the account (`app.dev.lenie-ai.eu`, `backend.dev.lenie-ai.eu`, `*.lenie-ai.eu`, `*.dev.lenie-ai.eu`)
+**When** the developer analyzes which certificates are actively used
+**Then** only the necessary certificates are managed via CloudFormation
+**And** unused certificates are documented for potential cleanup
+
+**Note:** ACM certificates used with CloudFront must be in `us-east-1`. ACM public certificates are free of charge. DNS validation requires a CNAME record in Route53 — CloudFormation can automate this via `AWS::CertificateManager::Certificate` with `DomainValidationOptions`. Consider using the wildcard `*.dev.lenie-ai.eu` certificate for all dev CloudFront distributions to simplify management.
+
+**Origin:** User question (2026-02-17) — hardcoded certificate ARNs discovered during deployment; certificates are free, so managing them via IaC has no cost impact.

@@ -140,3 +140,4 @@ development_status:
   B-5-fix-redundant-lambda-function-names: backlog
   B-6-migrate-api-gw-app-stage-to-separate-resource: backlog
   B-7-merge-helm-s3-and-cloudfront-into-single-template: done
+  B-8-manage-acm-certificates-via-cloudformation-and-ssm: backlog
