@@ -13,6 +13,9 @@ Parameters:
     AllowedValues:
       - dev
       # Post-MVP: add prod, qa as needed
+  AlertEmail:
+    Type: String
+    Description: Email address for SNS alert notifications
 
 Resources:
   LenieDevProblemsDLQ:
@@ -41,7 +44,7 @@ Resources:
     Type: 'AWS::SNS::Subscription'
     Properties:
       Protocol: email
-      Endpoint: krzysztof@lenie-ai.eu
+      Endpoint: !Ref AlertEmail
       TopicArn: !Ref LenieDevProblemsTopic
 
 Outputs:
