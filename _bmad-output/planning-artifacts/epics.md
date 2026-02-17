@@ -433,6 +433,107 @@ So that a decision is made and documented for future reference.
 
 ---
 
+### Story 11.6: Parameterize sqs-to-rds-lambda Infrastructure Values
+
+As a **developer**,
+I want to replace hardcoded infrastructure values in `sqs-to-rds-lambda.yaml` with SSM parameters, ImportValues, and Secrets Manager references,
+So that the template is environment-agnostic and deployable to any environment.
+
+**Acceptance Criteria:**
+
+**Given** `sqs-to-rds-lambda.yaml` contains hardcoded subnet IDs (`subnet-065769ce9d50381e3`, etc.), security group ID (`sg-0d3882a9806ec2a9c`), and RDS hostname
+**When** the developer parameterizes these values
+**Then** SubnetIds and SecurityGroupIds use `Fn::ImportValue` from VPC/security-groups stacks or SSM parameters
+**And** RDS hostname uses `{{resolve:ssm:...}}` pattern
+
+**Given** `sqs-to-rds-lambda.yaml` contains hardcoded DB credentials (`POSTGRESQL_PASSWORD: change_me`, etc.)
+**When** the developer replaces them with Secrets Manager references
+**Then** credentials use `{{resolve:secretsmanager:...}}` pattern
+**And** no plaintext passwords remain in the template
+
+**Given** `sqs-to-rds-lambda.yaml` contains hardcoded Lambda layer ARNs with account ID `008971653395`
+**When** the developer parameterizes them
+**Then** layer ARNs use `!Sub` with `${AWS::AccountId}` or are stored as SSM parameters
+
+**Origin:** Code review of Story 11.1 (2026-02-17)
+
+---
+
+### Story 11.7: Replace Legacy lenie_websites Queue References
+
+As a **developer**,
+I want to replace hardcoded references to the legacy `lenie_websites` SQS queue (including account ID `008971653395`) across CloudFormation templates,
+So that all queue references are parameterized and consistent with the project's SSM-based naming convention.
+
+**Acceptance Criteria:**
+
+**Given** `url-add.yaml` contains hardcoded SQS URL `https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites` and ARN `arn:aws:sqs:us-east-1:008971653395:lenie_websites`
+**When** the developer replaces them
+**Then** the URL uses `!Sub` with `${AWS::Region}`, `${AWS::AccountId}` and a parameterized queue name (or SSM reference)
+**And** the ARN uses the same parameterized pattern
+
+**Given** `sqs-to-rds-step-function.yaml:51` contains hardcoded SQS ARN for `lenie_websites`
+**When** the developer replaces it
+**Then** the ARN uses `!Sub` with `${AWS::AccountId}` and a parameterized queue name
+
+**Given** `sqs-to-rds-lambda.yaml:36` contains hardcoded SQS URL for `lenie_websites`
+**When** the developer replaces it
+**Then** the URL uses SSM parameter or `!Sub` with parameterized values
+
+**Note:** The `lenie_websites` queue may be a legacy resource not managed by this project's CloudFormation. Investigate whether it should be replaced by the `lenie-dev-documents` queue (from `sqs-documents.yaml`) or kept as a separate resource with its own CF template.
+
+**Origin:** Code review of Story 11.1 (2026-02-17)
+
+---
+
+### Story 11.8: Replace Fn::ImportValue with SSM Parameter for DLQ ARN in Step Function Template
+
+As a **developer**,
+I want to replace `Fn::ImportValue` for the DLQ ARN in `sqs-to-rds-step-function.yaml` with an SSM Parameter reference,
+So that the template follows the project-standard SSM-only cross-stack communication pattern and eliminates the CloudFormation Exports anti-pattern.
+
+**Acceptance Criteria:**
+
+**Given** `sqs-to-rds-step-function.yaml` uses `Fn::ImportValue: !Sub '${ProjectCode}-${Environment}-problems-dlq-arn'` for the EventBridge DLQ
+**When** the developer replaces it with an `AWS::SSM::Parameter::Value<String>` parameter
+**Then** the DLQ ARN is consumed via SSM Parameter Store instead of CloudFormation Export
+**And** the exporting stack (`sqs-application-errors.yaml`) publishes the DLQ ARN to SSM if not already done
+
+**Given** both templates are updated
+**When** the developer runs cfn-lint validation
+**Then** both templates pass with zero errors
+
+**Origin:** Code review of Story 11.2 (2026-02-17)
+
+---
+
+### Story 11.9: Reconcile Lambda Function Name Mismatch Between Step Function and Lambda Template
+
+As a **developer**,
+I want to reconcile the naming mismatch between the deployed Lambda function `lenie-sqs-to-db` and the CF template `sqs-to-rds-lambda.yaml` which defines `lenie-dev-sqs-to-rds-lambda`,
+So that the deployed resource name matches the CloudFormation-defined name and follows the `${ProjectCode}-${Environment}-<description>` naming convention.
+
+**Acceptance Criteria:**
+
+**Given** the deployed Lambda is named `lenie-sqs-to-db` but `sqs-to-rds-lambda.yaml` defines `lenie-dev-sqs-to-rds-lambda`
+**When** the developer investigates the mismatch origin (manual creation vs CF)
+**Then** a decision is documented: rename deployed Lambda, update CF template, or recreate via CF
+
+**Given** the naming is reconciled
+**When** the developer updates `sqs-to-rds-step-function.yaml` parameter default `SqsToRdsLambdaFunctionName`
+**Then** the default matches the reconciled function name
+**And** the parameter file is updated accordingly
+
+**Given** the reconciliation is complete
+**When** the developer runs cfn-lint on both templates
+**Then** both templates pass with zero errors
+
+**Note:** This may require careful sequencing — if the Lambda is recreated via CF with the new name, the Step Function must be updated in the same deployment to avoid runtime failures.
+
+**Origin:** Code review of Story 11.2 (2026-02-17)
+
+---
+
 ## Epic 12: Cross-Cutting Verification & Documentation
 
 ### Story 12.1: Codebase-Wide Stale Reference Verification

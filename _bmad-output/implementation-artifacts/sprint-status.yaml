@@ -112,12 +112,16 @@ development_status:
   epic-10-retrospective: optional
 
   # --- Epic 11: CloudFormation Template Improvements ---
-  epic-11: backlog
-  11-1-add-project-and-environment-tags-to-all-cloudformation-templates: backlog
-  11-2-improve-step-function-template-ssm-pattern-and-lambda-parameterization: backlog
+  epic-11: in-progress
+  11-1-add-project-and-environment-tags-to-all-cloudformation-templates: done
+  11-2-improve-step-function-template-ssm-pattern-and-lambda-parameterization: done
   11-3-fix-apideployment-pattern-for-automatic-redeployment: backlog
   11-4-resolve-lambda-function-name-typo: backlog
   11-5-rest-compliance-review-for-website-delete: backlog
+  11-6-parameterize-sqs-to-rds-lambda-infrastructure-values: backlog
+  11-7-replace-legacy-lenie-websites-queue-references: backlog
+  11-8-replace-fn-importvalue-with-ssm-parameter-for-dlq-arn: backlog
+  11-9-reconcile-lambda-function-name-mismatch: backlog
   epic-11-retrospective: optional
 
   # --- Epic 12: Cross-Cutting Verification & Documentation ---

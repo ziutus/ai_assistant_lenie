@@ -8,7 +8,19 @@
     "ParameterValue": "dev"
   },
   {
+    "ParameterKey": "SqsDocumentsQueueUrl",
+    "ParameterValue": "/lenie/dev/sqs/documents/url"
+  },
+  {
+    "ParameterKey": "DatabaseInstanceName",
+    "ParameterValue": "/lenie/dev/database/name"
+  },
+  {
     "ParameterKey": "ScheduleExpression",
     "ParameterValue": "cron(0 5 * * ? *)"
+  },
+  {
+    "ParameterKey": "SqsToRdsLambdaFunctionName",
+    "ParameterValue": "lenie-sqs-to-db"
   }
 ]
