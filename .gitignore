@@ -3,6 +3,7 @@
 /tmp/*
 .idea/
 .venv
+__pycache__/
 
 */tmp/
 */.idea/
