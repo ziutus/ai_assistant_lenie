@@ -15,6 +15,7 @@ USE_LOGGER=0
 CHANGE_SET=false
 DELETE_COUNT=0
 ACTION=""
+STACK_UPDATED=false
 
 command -v aws > /dev/null 2>&1 || { echo >&2 "aws cli not installed. Aborting..."; exit 1; }
 command -v jq  > /dev/null 2>&1 || { echo >&2 "jq not installed. Aborting..."; exit 1; }
@@ -87,6 +88,7 @@ create_update_stack() {
 
   for template in "${templates[@]}"
   do
+    STACK_UPDATED=false
     echo "Processing template ${template}"
     log "Processing template ${template}"
     local stack_name
@@ -109,6 +111,33 @@ create_update_stack() {
     fi
 
     cf_execute "${cf_action}" "${stack_name}" "${template}"
+
+    # Auto-redeploy API Gateway after api-gw-app stack update
+    # Note: In change-set mode (-t), auto-redeploy is skipped even after user approval.
+    # After approving a change-set for api-gw-app, run manually:
+    #   aws apigateway create-deployment --rest-api-id <id> --stage-name v1
+    local file_name
+    file_name=$(get_file_name "${template}")
+    if [ "${file_name}" == "api-gw-app" ] && [ "${CHANGE_SET}" != true ] && [ "${STACK_UPDATED}" == true ]; then
+      log "Auto-redeploying API Gateway for ${stack_name}..."
+      local api_id
+      api_id=$(aws --region "${REGION}" ssm get-parameter \
+        --name "/${PROJECT_CODE}/${STAGE}/apigateway/app/id" \
+        --query 'Parameter.Value' --output text 2>/dev/null) || true
+      if [ -n "${api_id}" ]; then
+        local deploy_output
+        if deploy_output=$(aws --region "${REGION}" apigateway create-deployment \
+          --rest-api-id "${api_id}" --stage-name v1 \
+          --description "Auto-deploy after CF stack update ${DATE}" 2>&1); then
+          log "API Gateway redeployed successfully (API ID: ${api_id})"
+        else
+          log "WARNING: API Gateway auto-redeploy failed: ${deploy_output}"
+          log "Run manually: aws apigateway create-deployment --rest-api-id ${api_id} --stage-name v1"
+        fi
+      else
+        log "WARNING: Could not retrieve API Gateway ID from SSM. Auto-redeploy skipped."
+      fi
+    fi
   done
 }
 
@@ -223,9 +252,11 @@ cf_execute() {
     echo "Calling: aws --region \"${REGION}\" cloudformation ${action}-stack --stack-name \"${stack_name}\" ${create_section}"
     if out=$(aws --region "${REGION}" cloudformation ${action}-stack --stack-name "${stack_name}" ${create_section} 2>&1); then
       cf_waiter "${action}" "${stack_name}"
+      STACK_UPDATED=true
     else
-      if [[ "${out}" == "No updates are to be performed" ]]; then
+      if [[ "${out}" == *"No updates are to be performed"* ]]; then
         log "Stack ${stack_name} is up to date"
+        STACK_UPDATED=false
       else
         log "${out}"
         exit $?

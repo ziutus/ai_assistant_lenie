@@ -60,6 +60,7 @@ Universal script for creating, updating, and deleting CloudFormation stacks.
 6. In change-set mode (`-t`), the script creates a change-set and waits for user confirmation.
 7. When deleting (`-d`), stacks are removed in reverse order.
 8. For `prod`, templates from the `[common]` section are also processed.
+9. After deploying `api-gw-app`, automatically creates a new API Gateway deployment to apply any RestApi Body changes (skipped in change-set mode).
 
 ### Stack Naming Convention
 
@@ -156,6 +157,15 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | `api-gw-infra.yaml` | REST API, 7 Lambdas | Infrastructure management API (RDS start/stop, EC2, SQS) |
 | `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (12 endpoints, x-api-key) |
 | `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | Chrome extension API (rate limiting) |
+
+**`api-gw-app` stage configuration (manual, not in CloudFormation):**
+The `v1` stage has the following settings configured directly in the AWS console — they are NOT managed by the CloudFormation template:
+- CloudWatch logs: Error and info logs
+- Detailed CloudWatch metrics: Active
+- Data tracing: Active
+- X-Ray tracing: Active
+
+These settings will be lost if the stage is recreated. To codify them, add `MethodSettings` and `TracingEnabled` to the `ApiStage` resource in `api-gw-app.yaml`.
 
 ### Orchestration
 
