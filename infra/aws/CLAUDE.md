@@ -85,7 +85,7 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 | SNS | Error notifications via email |
 | S3 | Lambda code artifacts, video transcriptions, web content |
 | Lambda | 11 functions for infra management and app logic |
-| API Gateway | 3 REST APIs (app, infra management, Chrome extension) |
+| API Gateway | 2 active REST APIs (app: 10 endpoints, infra: 9 endpoints) + 1 Chrome extension API (url-add.yaml) |
 | Step Functions | SQS-to-RDS workflow with auto DB start/stop |
 | EC2 | Application server, bastion host, Jenkins, OpenVPN |
 | EKS | Kubernetes cluster (alternative deployment target) |

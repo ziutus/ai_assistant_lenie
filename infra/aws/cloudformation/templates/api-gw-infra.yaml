@@ -246,10 +246,10 @@ Resources:
         info:
           title: !Sub "${ProjectCode}_${Environment}_infra"
           description: "Infrastructure management API"
-          version: "2025-02-21T10:52:31Z"
+          version: "2026-02-18T00:00:00Z"
         paths:
-          /sqs/size:
-            post:
+          /infra/sqs/size:
+            get:
               responses:
                 "200":
                   description: "200 response"
@@ -293,9 +293,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-
-
-          /vpn-server/start:
+          /infra/vpn_server/start:
             post:
               responses:
                 "200":
@@ -340,7 +338,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /vpn-server/stop:
+          /infra/vpn_server/stop:
             post:
               responses:
                 "200":
@@ -385,8 +383,8 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /vpn-server/status:
-            post:
+          /infra/vpn_server/status:
+            get:
               responses:
                 "200":
                   description: "200 response"
@@ -430,9 +428,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-
-
-          /database/start:
+          /infra/database/start:
             post:
               responses:
                 "200":
@@ -477,7 +473,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /database/stop:
+          /infra/database/stop:
             post:
               responses:
                 "200":
@@ -522,8 +518,8 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /database/status:
-            post:
+          /infra/database/status:
+            get:
               responses:
                 "200":
                   description: "200 response"
@@ -537,6 +533,49 @@ Resources:
                 type: "aws_proxy"
                 httpMethod: "POST"
                 uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${Environment}-rds-status/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                contentHandling: "CONVERT_TO_TEXT"
+            options:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "mock"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: "when_no_match"
+          /infra/git-webhooks:
+            post:
+              responses:
+                "200":
+                  description: "200 response"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              x-amazon-apigateway-integration:
+                type: "aws_proxy"
+                httpMethod: "POST"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:git-webhooks/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 contentHandling: "CONVERT_TO_TEXT"
@@ -598,6 +637,62 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref RdsStartFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionRdsStop:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RdsStopFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionRdsStatus:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RdsStatusFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionSqsSize:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SqsSizeFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionEc2Status:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Ec2StatusFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionEc2Start:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Ec2StatusStart
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionEc2Stop:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Ec2StatusStop
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionGitWebhooks:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: git-webhooks
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"

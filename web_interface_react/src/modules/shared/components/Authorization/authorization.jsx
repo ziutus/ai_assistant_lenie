@@ -7,7 +7,7 @@ import { useVpnServer } from "../../hooks/useVpnServer";
 import { useSqs } from "../../hooks/useSqs"
 
 const Authorization = () => {
-  const { databaseStatus, apiKey, apiUrl, apiType, setApiKey, setApiUrl, setApiType } =
+  const { databaseStatus, apiKey, apiUrl, infraApiUrl, apiType, setApiKey, setApiUrl, setInfraApiUrl, setApiType } =
     React.useContext(AuthorizationContext);
   const { handleDBStart, handleDBStatusGet, handleDBStop, isLoading } = useDatabase();
   const { handleVPNServerStart, handleVPNServerStop, handleVPNServerStatusGet, isLoadingVpnServer } = useVpnServer();
@@ -77,6 +77,19 @@ const Authorization = () => {
           name={'server-api'}
           type={'text'}
         />
+        {apiType === "AWS Serverless" && (
+          <Input
+            disabled={isLoading}
+            value={infraApiUrl}
+            label={'Infra API URL'}
+            onChange={(e) => {
+              setInfraApiUrl(e.target.value);
+            }}
+            id={'infra-api-url'}
+            name={'infra-api-url'}
+            type={'text'}
+          />
+        )}
         <Input
           disabled={isLoading}
           value={apiKey}

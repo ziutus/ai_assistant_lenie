@@ -154,9 +154,9 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `api-gw-infra.yaml` | REST API, 7 Lambdas | Infrastructure management API (RDS start/stop, EC2, SQS) |
-| `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (18 endpoints, x-api-key) |
-| `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | Chrome extension API (rate limiting) |
+| `api-gw-infra.yaml` | REST API, 7 Lambdas | Infrastructure management API (9 endpoints: RDS, EC2/VPN, SQS, git-webhooks) |
+| `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (10 endpoints, x-api-key) |
+| `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | UNUSED — commented out in deploy.ini (duplicate of url-add.yaml) |
 
 **`api-gw-app` stage configuration (managed by CloudFormation):**
 The `v1` stage logging and tracing settings are codified in `StageDescription` on the `ApiDeployment` resource in `api-gw-app.yaml`:
