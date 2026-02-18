@@ -16,6 +16,22 @@ There's a theoretical risk: without translation to a common language, the same c
 
 The `/translate` endpoint was removed in Sprint 3 (February 2026). The `READY_FOR_TRANSLATION` processing state still exists in the database for backward compatibility with existing records.
 
+## From Built-in AI to MCP-Based Knowledge Pipeline
+
+The `/ai_ask` endpoint was one of the original features — it let the React frontend send a question to an LLM and display the response. It worked, but it was a dead end architecturally. A single request-response API call is a poor interface for serious text analysis: no conversation memory, no multi-document synthesis, no structured output.
+
+The turning point was realizing that the primary workflow had shifted. Lenie's job is to collect and organize documents — news articles, books, social media posts. But the actual *thinking* about those documents happens in Claude Desktop, which offers multi-turn reasoning, tool use, and the ability to work across multiple documents at once.
+
+This led to a new architecture built around the Model Context Protocol (MCP):
+
+1. **Lenie AI** is the knowledge base — it collects, stores, and retrieves documents. An MCP server exposes Lenie's search and retrieval capabilities to Claude.
+2. **Claude Desktop / Claude Code** is the analytical layer — it pulls documents from Lenie via MCP, performs analysis (summarization, comparison, fact-checking), and produces structured output.
+3. **Obsidian** is the knowledge output system — Claude Code pushes organized, summarized notes into Obsidian via a separate MCP server, creating a personal knowledge base from the analyzed material.
+
+The pipeline is: **collect (Lenie) → analyze (Claude) → organize (Obsidian)**.
+
+The `/ai_ask` endpoint was removed in Sprint 3 because it no longer fit this model. The internal `ai_ask()` function in `backend/library/ai.py` was preserved — it's still used by `youtube_processing.py` to generate AI summaries of video transcriptions during the ingestion phase.
+
 ## Three Sprints of Infrastructure Cleanup
 
 ### Sprint 1: IaC Coverage & Migration (Epics 1-6)
