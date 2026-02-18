@@ -21,10 +21,10 @@ infra/aws/
 
 | Category              | Count | Details                                      |
 |-----------------------|-------|----------------------------------------------|
-| CloudFormation Stacks | 35    | Templates in `cloudformation/templates/` (29 dev active, 1 commented, 5 account-level) |
+| CloudFormation Stacks | 34    | Templates in `cloudformation/templates/` (27 dev active, 2 commented, 5 account-level) |
 | Lambda Functions      | 11    | Python 3.11 runtime                          |
 | API Gateway APIs      | 3     | app, infra, chrome-extension                 |
-| API Endpoints         | 20+   | REST (REGIONAL)                              |
+| API Endpoints         | 19    | REST (REGIONAL): app 10 + infra 8 + url-add 1 |
 | SQS Queues            | 2     | documents, problems-dlq                      |
 | SNS Topics            | 1     | problems notifications                       |
 | RDS Instances         | 1     | PostgreSQL, db.t3.micro                      |
@@ -257,7 +257,6 @@ infra/aws/
 | `/website_similar`                | POST, OPTIONS  | Find similar documents         |
 | `/website_is_paid`                | POST, OPTIONS  | Check if content is paywalled  |
 | `/website_get_next_to_correct`    | GET, OPTIONS   | Get next document to review    |
-| `/url_add`                        | POST, OPTIONS  | Add new URL                    |
 | `/ai_embedding_get`              | POST, OPTIONS  | Generate embeddings            |
 
 ---
@@ -280,15 +279,16 @@ infra/aws/
 
 **API Endpoints** (all secured with x-api-key):
 
-| Path                  | Methods        | Description           |
-|-----------------------|----------------|-----------------------|
-| `/sqs/size`           | POST, OPTIONS  | Get SQS queue size    |
-| `/database/start`     | POST, OPTIONS  | Start RDS instance    |
-| `/database/stop`      | POST, OPTIONS  | Stop RDS instance     |
-| `/database/status`    | POST, OPTIONS  | Get RDS status        |
-| `/vpn-server/start`   | POST, OPTIONS  | Start EC2 (VPN)       |
-| `/vpn-server/stop`    | POST, OPTIONS  | Stop EC2 (VPN)        |
-| `/vpn-server/status`  | POST, OPTIONS  | Get EC2 status        |
+| Path                          | Methods        | Description           |
+|-------------------------------|----------------|-----------------------|
+| `/infra/sqs/size`             | POST, OPTIONS  | Get SQS queue size    |
+| `/infra/database/start`       | POST, OPTIONS  | Start RDS instance    |
+| `/infra/database/stop`        | POST, OPTIONS  | Stop RDS instance     |
+| `/infra/database/status`      | POST, OPTIONS  | Get RDS status        |
+| `/infra/vpn_server/start`     | POST, OPTIONS  | Start EC2 (VPN)       |
+| `/infra/vpn_server/stop`      | POST, OPTIONS  | Stop EC2 (VPN)        |
+| `/infra/vpn_server/status`    | POST, OPTIONS  | Get EC2 status        |
+| `/infra/git-webhooks`         | POST, OPTIONS  | Git webhook handler   |
 
 ---
 
