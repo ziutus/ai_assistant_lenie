@@ -886,3 +886,39 @@ lenie-dev-cloudformation/
 **Note:** Layer S3Keys already use the `layers/` prefix (configured via parameter files). The change for Lambda zips is a simple prefix addition: `S3Key: !Sub '${ProjectCode}-${Environment}-rds-start.zip'` becomes `S3Key: !Sub 'lambdas/${ProjectCode}-${Environment}-rds-start.zip'`. Deploy order: upload new zips first, then update stacks. Per-environment subdirectories inside `lambdas/` are not needed — the S3 bucket itself is per-environment (`${ProjectCode}-${Environment}-cloudformation`), and zip file names also contain the environment, providing double isolation.
 
 **Origin:** User observation (2026-02-17) — inconsistent S3 bucket structure; layers and templates have prefixes but Lambda zips are in root.
+
+---
+
+### Story B.15: Add Custom Domains for API Gateways
+
+As a **developer**,
+I want to configure custom domain names (`api.dev.lenie-ai.eu` and `infra-api.dev.lenie-ai.eu`) for the app and infra API Gateways,
+So that API URLs are human-readable, stable across API Gateway replacements, and consistent with existing domain conventions (`app.dev.lenie-ai.eu`, `helm.dev.lenie-ai.eu`).
+
+**Acceptance Criteria:**
+
+**Given** the app API Gateway (`lenie_split`) is accessible via `1bkc3kz7c9.execute-api.us-east-1.amazonaws.com`
+**When** the developer creates a CloudFormation template with `AWS::ApiGateway::DomainName` and `AWS::ApiGateway::BasePathMapping`
+**Then** the app API is accessible at `https://api.dev.lenie-ai.eu`
+**And** a Route53 A-alias record points `api.dev.lenie-ai.eu` to the API Gateway regional domain name
+
+**Given** the infra API Gateway (`lenie_dev_infra`) is accessible via `px1qflfpha.execute-api.us-east-1.amazonaws.com`
+**When** the developer creates the same resources for the infra API
+**Then** the infra API is accessible at `https://infra-api.dev.lenie-ai.eu`
+**And** a Route53 A-alias record points `infra-api.dev.lenie-ai.eu` to the API Gateway regional domain name
+
+**Given** custom domains are configured
+**When** the developer updates the React frontend default URLs
+**Then** `apiUrl` defaults to `https://api.dev.lenie-ai.eu`
+**And** `infraApiUrl` defaults to `https://infra-api.dev.lenie-ai.eu`
+
+**Dependencies:**
+- B-8 (ACM certificates via CloudFormation) — needs a valid ACM certificate for the custom domains. The existing wildcard `*.dev.lenie-ai.eu` certificate can be used. B-8 can be done before or in parallel; alternatively, the certificate ARN can be hardcoded initially and refactored to SSM when B-8 is completed.
+
+**Implementation notes:**
+- Resources per API Gateway: `AWS::ApiGateway::DomainName` (regional endpoint, TLS 1.2) + `AWS::ApiGateway::BasePathMapping` (stage `v1`) + Route53 A-alias record
+- Can be added directly to `api-gw-app.yaml` and `api-gw-infra.yaml`, or as a separate template
+- API Gateway custom domains and Route53 records are free; the only cost is the ACM certificate (also free for public certs)
+- The Chrome extension API (`url-add.yaml`) can also get a custom domain (`add.dev.lenie-ai.eu`) but this is lower priority
+
+**Origin:** User idea (2026-02-18) — replace random API Gateway IDs with readable, stable domain names following existing project conventions.

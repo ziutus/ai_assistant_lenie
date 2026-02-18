@@ -146,3 +146,5 @@ development_status:
   B-11-add-aws-account-info-to-zip-to-s3-script: backlog
   B-12-fix-crlf-git-config-for-parameter-files: backlog
   B-13-parameterize-stage-description-for-multi-environment: backlog
+  B-14-deploy-consolidated-api-gateway-architecture: backlog
+  B-15-add-custom-domains-for-api-gateways: backlog

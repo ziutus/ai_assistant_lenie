@@ -9,6 +9,8 @@ export const AuthorizationContext = createContext({
   setApiKey: () => {},
   apiUrl: "",
   setApiUrl: () => {},
+  infraApiUrl: "",
+  setInfraApiUrl: () => {},
   apiType: "",
   setApiType: () => {},
   sqsLength: -1,
@@ -33,6 +35,9 @@ const AuthorizationProvider = ({ children }) => {
   const [apiUrl, setApiUrl] = React.useState(
     "https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1",
   );
+  const [infraApiUrl, setInfraApiUrl] = React.useState(
+    "https://px1qflfpha.execute-api.us-east-1.amazonaws.com/v1",
+  );
   const [selectedDocumentType, setSelectedDocumentType] = React.useState("link");
   const [selectedDocumentState, setSelectedDocumentState] = React.useState("NEED_MANUAL_REVIEW");
   const [searchInDocument, setSearchInDocument] = React.useState("");
@@ -49,6 +54,8 @@ const AuthorizationProvider = ({ children }) => {
         setApiKey,
         apiUrl,
         setApiUrl,
+        infraApiUrl,
+        setInfraApiUrl,
         apiType,
         setApiType,
         sqsLength,
