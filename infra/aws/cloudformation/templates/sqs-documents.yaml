@@ -2,34 +2,49 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Template do utworzenia kolejki SQS dla dokumentów do bazy RDS'
 
 Parameters:
-  ProjectName:
+  ProjectCode:
     Type: String
-    Description: 'Project Name'
+    Default: lenie
+    Description: Project code for resource naming and tagging
   Environment:
     Type: String
-    Description: 'environment'
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
 
 Resources:
   LenieDocumentsSQS:
     Type: 'AWS::SQS::Queue'
     Properties:
-      QueueName: !Sub ${ProjectName}-${Environment}-documents
+      QueueName: !Sub ${ProjectCode}-${Environment}-documents
       MessageRetentionPeriod: 1209600
       VisibilityTimeout: 30
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   SQSNameParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub '/lenie/${Environment}/sqs/documents/name'
+      Name: !Sub '/${ProjectCode}/${Environment}/sqs/documents/name'
       Type: String
-      Value: !Sub ${ProjectName}-${Environment}-documents
-      Description: !Sub 'Documents which should go to RDS'
+      Value: !Sub ${ProjectCode}-${Environment}-documents
+      Description: 'Documents which should go to RDS'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
 
   SQSUrlParameter:
-      Type: AWS::SSM::Parameter
-      Properties:
-        Name: !Sub '/lenie/${Environment}/sqs/documents/url'
-        Type: String
-        Value: !Ref LenieDocumentsSQS
-        Description: 'URL kolejki SQS dla dokumentów'
-
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/sqs/documents/url'
+      Type: String
+      Value: !Ref LenieDocumentsSQS
+      Description: 'URL kolejki SQS dla dokumentów'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode

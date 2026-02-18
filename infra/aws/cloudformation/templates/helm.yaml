@@ -1,0 +1,124 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'S3 bucket and CloudFront distribution for Helm chart repository for Project Lenie'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+  DomainName:
+    Type: String
+    Default: helm.dev.lenie-ai.eu
+    Description: Custom domain name for CloudFront distribution
+  AcmCertificateArn:
+    Type: String
+    Description: ACM certificate ARN (must be in us-east-1)
+
+Resources:
+  HelmBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${ProjectCode}-${Environment}-helm'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+  CloudFrontOAI:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub 'OAI for ${ProjectCode}-${Environment}-helm'
+
+  HelmBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref HelmBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontOAIAccess
+            Effect: Allow
+            Principal:
+              CanonicalUser: !GetAtt CloudFrontOAI.S3CanonicalUserId
+            Action: s3:GetObject
+            Resource: !Sub '${HelmBucket.Arn}/*'
+
+  HelmDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub '${ProjectCode}-${Environment} Helm chart repository'
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        HttpVersion: http2
+        IPV6Enabled: true
+        Aliases:
+          - !Ref DomainName
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt HelmBucket.DomainName
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub 'origin-access-identity/cloudfront/${CloudFrontOAI}'
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          Compress: true
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          MinTTL: 0
+          DefaultTTL: 86400
+          MaxTTL: 31536000
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: none
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+Outputs:
+  HelmBucketName:
+    Description: Helm chart S3 bucket name
+    Value: !Ref HelmBucket
+
+  HelmBucketArn:
+    Description: Helm chart S3 bucket ARN
+    Value: !GetAtt HelmBucket.Arn
+
+  DistributionId:
+    Description: CloudFront distribution ID
+    Value: !Ref HelmDistribution
+
+  DistributionDomainName:
+    Description: CloudFront distribution domain name
+    Value: !GetAtt HelmDistribution.DomainName

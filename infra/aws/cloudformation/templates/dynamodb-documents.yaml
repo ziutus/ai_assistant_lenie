@@ -9,10 +9,7 @@ Parameters:
     Default: dev
     AllowedValues:
       - dev
-      - qa
-      - qa2
-      - qa3
-      - prod
+      # Post-MVP: add prod, qa as needed
     Description: Environment name
 
 Conditions:

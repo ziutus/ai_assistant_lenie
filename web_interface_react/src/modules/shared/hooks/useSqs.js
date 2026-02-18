@@ -5,12 +5,13 @@ import { AuthorizationContext } from "../context/authorizationContext";
 export const useSqs = () => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [isError, setIsError] = React.useState(false);
-  const { apiKey, apiUrl, setSqsLength } = React.useContext(AuthorizationContext);
+  const { apiKey, apiUrl, infraApiUrl, apiType, setSqsLength } = React.useContext(AuthorizationContext);
+  const baseUrl = apiType === "AWS Serverless" ? infraApiUrl : apiUrl;
 
   const fetchSqsSize = async () => {
     setIsLoading(true);
     try {
-      const response = await axios.get(`${apiUrl}/infra/sqs/size`, {
+      const response = await axios.get(`${baseUrl}/infra/sqs/size`, {
         headers: {
           "Content-Type": "application/json",
           "x-api-key": `${apiKey}`,

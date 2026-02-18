@@ -2,7 +2,7 @@
 set -e
 
 PROFILE="lenie-ai-admin"
-FUNCTION_NAME="lenie-sqs-to-db"
+FUNCTION_NAME="lenie-dev-sqs-to-rds-lambda"
 PROJECT="lenie"
 STAGE="dev"
 

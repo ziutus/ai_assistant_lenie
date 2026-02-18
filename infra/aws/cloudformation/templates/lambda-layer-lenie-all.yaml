@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Lambda Layer with shared Python dependencies (requests, beautifulsoup4, pytube, urllib3) for Project Lenie'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+    Description: Environment name
+  LayerCodeBucket:
+    Type: String
+    Description: S3 bucket containing the layer code ZIP artifact
+  LayerCodeS3Key:
+    Type: String
+    Default: layers/lenie_all_layer.zip
+    Description: S3 key for the layer code ZIP artifact
+  LayerCodeVersion:
+    Type: String
+    Default: '1'
+    Description: Version identifier — change this to force a new layer version when S3 key stays the same
+
+Conditions:
+  IsProduction: !Or
+    - !Equals [!Ref Environment, prod]
+    - !Equals [!Ref Environment, qa]
+    - !Equals [!Ref Environment, qa2]
+    - !Equals [!Ref Environment, qa3]
+
+Resources:
+  # Lambda Layer — stateless resource, recreated on every deploy (no DeletionPolicy needed)
+  LenieAllLayer:
+    Type: AWS::Lambda::LayerVersion
+    Properties:
+      LayerName: lenie_all_layer
+      Description: !Sub 'Lambda Layer with shared Python dependencies (requests, beautifulsoup4, pytube, urllib3) for Project Lenie (v${LayerCodeVersion})'
+      CompatibleRuntimes:
+        - python3.11
+      Content:
+        S3Bucket: !Ref LayerCodeBucket
+        S3Key: !Ref LayerCodeS3Key
+
+  # SSM Parameter exports — layer ARN includes version number for consuming Lambda functions
+  LenieAllLayerArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/lambda/layers/lenie-all/arn'
+      Type: String
+      Value: !Ref LenieAllLayer
+      Description: 'Lambda Layer ARN (with version) for lenie-all layer for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode

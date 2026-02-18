@@ -1,0 +1,94 @@
+{
+  "repository_type": "multi-part",
+  "project_name": "lenie-server-2025",
+  "classification_date": "2026-02-13",
+  "parts": [
+    {
+      "part_id": "backend",
+      "display_name": "Backend API",
+      "project_type_id": "backend",
+      "root_path": "backend/",
+      "primary_language": "Python 3.11",
+      "framework": "Flask",
+      "package_manager": "uv",
+      "entry_point": "server.py",
+      "description": "Flask REST API with 18 endpoints for document management, AI operations, and content processing"
+    },
+    {
+      "part_id": "web_interface_react",
+      "display_name": "Main Frontend",
+      "project_type_id": "web",
+      "root_path": "web_interface_react/",
+      "primary_language": "JavaScript",
+      "framework": "React 18 (CRA)",
+      "package_manager": "npm",
+      "entry_point": "src/index.js",
+      "description": "React 18 SPA for document management, filtering, vector search, and per-type editors with AI tools"
+    },
+    {
+      "part_id": "web_add_url_react",
+      "display_name": "Add URL App",
+      "project_type_id": "web",
+      "root_path": "web_add_url_react/",
+      "primary_language": "JavaScript",
+      "framework": "React 18 (CRA)",
+      "package_manager": "npm",
+      "entry_point": "src/App.js",
+      "description": "Minimal single-page React app for submitting new URLs via POST /url_add"
+    },
+    {
+      "part_id": "web_chrome_extension",
+      "display_name": "Browser Extension",
+      "project_type_id": "extension",
+      "root_path": "web_chrome_extension/",
+      "primary_language": "JavaScript",
+      "framework": "Chrome Manifest v3",
+      "package_manager": "none",
+      "entry_point": "popup.js",
+      "description": "Chrome/Kiwi browser extension for capturing webpages and sending to backend"
+    },
+    {
+      "part_id": "infra",
+      "display_name": "Infrastructure",
+      "project_type_id": "infra",
+      "root_path": "infra/",
+      "primary_language": "YAML/HCL",
+      "framework": "Docker, CloudFormation, Kustomize, Helm",
+      "package_manager": "none",
+      "entry_point": "docker/compose.yaml",
+      "description": "Infrastructure as Code for Docker, AWS (Lambda, RDS, SQS), Kubernetes (GKE), GCloud"
+    }
+  ],
+  "integration_points": [
+    {
+      "from": "web_interface_react",
+      "to": "backend",
+      "type": "REST API",
+      "details": "axios HTTP calls to Flask endpoints with x-api-key auth"
+    },
+    {
+      "from": "web_add_url_react",
+      "to": "backend",
+      "type": "REST API",
+      "details": "POST /url_add via axios"
+    },
+    {
+      "from": "web_chrome_extension",
+      "to": "backend",
+      "type": "REST API",
+      "details": "POST /url_add via fetch to AWS API Gateway or direct Flask endpoint"
+    },
+    {
+      "from": "infra",
+      "to": "backend",
+      "type": "Deployment",
+      "details": "Docker Compose, Lambda packaging, Kubernetes manifests for backend deployment"
+    },
+    {
+      "from": "infra",
+      "to": "web_interface_react",
+      "type": "Deployment",
+      "details": "Docker Compose service on port 3000"
+    }
+  ]
+}

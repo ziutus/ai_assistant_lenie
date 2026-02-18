@@ -4,8 +4,6 @@ import Input from "../Input/input";
 const InputsForAllExceptLink = ({
   formik,
   handleSplitTextForEmbedding,
-  handleCorrectUsingAI,
-  handleTranslate,
   handleRemoveNotNeededText,
   isLoading,
 }) => {
@@ -38,20 +36,6 @@ const InputsForAllExceptLink = ({
                 onClick={() => handleSplitTextForEmbedding(formik.values)}
             >
                 Split text for Embedding
-            </button>
-            <button
-                className={"button"}
-                style={{marginRight: "10px"}}
-                onClick={() => handleCorrectUsingAI(formik.values)}
-            >
-                Correct using AI
-            </button>
-            <button
-                className={"button"}
-                style={{marginRight: "10px"}}
-                onClick={() => handleTranslate(formik.values)}
-            >
-                Translate
             </button>
             <button
                 className={"button"}

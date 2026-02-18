@@ -1,0 +1,1 @@
+{"statusCode": 200, "body": "\"Successfully sent message to SQS, message ID: 42eb7fd0-62c4-418a-9a17-7129e90cfb5c\"", "headers": {"Access-Control-Allow-Origin": "*", "Access-Control-Allow-Credentials": true, "Access-Control-Allow-Methods": "OPTIONS,POST,GET"}}

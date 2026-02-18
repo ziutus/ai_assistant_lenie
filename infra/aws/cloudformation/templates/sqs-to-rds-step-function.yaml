@@ -1,13 +1,37 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Step Function workflow for SQS-to-RDS document processing with EventBridge schedule for Project Lenie'
+
 Parameters:
-  ProjectName:
+  ProjectCode:
     Type: String
-    Description: 'Project Name'
+    Default: lenie
+    Description: Project code for resource naming and tagging
   Environment:
     Type: String
-    Description: 'environment'
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+  SqsDocumentsQueueUrl:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: '/lenie/dev/sqs/documents/url'
+    Description: SQS documents queue URL (resolved from SSM)
+  DatabaseInstanceName:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: '/lenie/dev/database/name'
+    Description: RDS database instance identifier (resolved from SSM)
   ScheduleExpression:
     Type: String
+    Description: 'EventBridge cron or rate expression for the schedule'
+  SqsToRdsLambdaFunctionName:
+    Type: String
+    Default: lenie-dev-sqs-to-rds-lambda
+    Description: Name of the Lambda function that processes SQS messages into RDS
+  ProblemsDlqArn:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: '/lenie/dev/sqs/problems-dlq/arn'
+    Description: 'DLQ ARN for EventBridge schedule failures (resolved from SSM)'
 
 Resources:
   StateMachineRole:
@@ -22,6 +46,11 @@ Resources:
                 - states.amazonaws.com
             Action:
               - sts:AssumeRole
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectCode
+        - Key: Environment
+          Value: !Ref Environment
       Policies:
         - PolicyName: StateMachinePolicy
           PolicyDocument:
@@ -32,11 +61,17 @@ Resources:
                   - sqs:ReceiveMessage
                   - sqs:DeleteMessage
                   - sqs:GetQueueAttributes
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectCode}*"
+              - Effect: Allow
+                Action:
                   - rds:DescribeDBInstances
                   - rds:StartDBInstance
                   - rds:StopDBInstance
+                Resource: !Sub "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:${ProjectCode}-${Environment}"
+              - Effect: Allow
+                Action:
                   - lambda:InvokeFunction
-                Resource: "*"
+                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${SqsToRdsLambdaFunctionName}"
         - PolicyName: CloudWatchLogsPolicy
           PolicyDocument:
             Version: '2012-10-17'
@@ -67,22 +102,34 @@ Resources:
   StateMachineLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub "/aws/states/${ProjectName}-${Environment}-sqs-to-rds"
-      RetentionInDays: 14  # Możesz dostosować okres przechowywania logów
+      LogGroupName: !Sub "/aws/states/${ProjectCode}-${Environment}-sqs-to-rds"
+      RetentionInDays: 14  # Log retention period can be adjusted as needed
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectCode
+        - Key: Environment
+          Value: !Ref Environment
 
   MyStateMachine:
     Type: AWS::StepFunctions::StateMachine
     Properties:
-      StateMachineName: !Sub ${ProjectName}-${Environment}-sqs-to-rds
+      StateMachineName: !Sub ${ProjectCode}-${Environment}-sqs-to-rds
       RoleArn: !GetAtt StateMachineRole.Arn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectCode
+        - Key: Environment
+          Value: !Ref Environment
       LoggingConfiguration:
-        Level: "ERROR"  # Możliwe wartości: ALL, ERROR, FATAL, OFF
+        Level: "ERROR"  # Possible values: ALL, ERROR, FATAL, OFF
         IncludeExecutionData: true
         Destinations:
           - CloudWatchLogsLogGroup:
               LogGroupArn: !GetAtt StateMachineLogGroup.Arn
 
 
+      DefinitionSubstitutions:
+        SqsToRdsLambdaFunctionName: !Ref SqsToRdsLambdaFunctionName
       DefinitionString: >
         {
           "Comment": "Put SQS messages into RDS database",
@@ -162,12 +209,8 @@ Resources:
                   "Next": "Receive Message from SQS Queue"
                 },
                 {
-                  "Or": [
-                    {
-                      "Variable": "$",
-                      "StringEquals": "stopped"
-                    }
-                  ],
+                  "Variable": "$",
+                  "StringEquals": "stopped",
                   "Next": "StartDBInstance",
                   "Assign": {
                     "waitSeconds": 300
@@ -234,7 +277,7 @@ Resources:
                     "Resource": "arn:aws:states:::lambda:invoke",
                     "OutputPath": "$.Payload.body",
                     "Parameters": {
-                      "FunctionName": "lenie-sqs-to-db",
+                      "FunctionName": "${SqsToRdsLambdaFunctionName}",
                       "Payload.$": "$"
                     },
                     "Retry": [
@@ -337,6 +380,11 @@ Resources:
             Principal:
               Service: "scheduler.amazonaws.com"
             Action: "sts:AssumeRole"
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectCode
+        - Key: Environment
+          Value: !Ref Environment
       Policies:
         - PolicyName: "StepFunctionInvokePolicy"
           PolicyDocument:
@@ -361,18 +409,19 @@ Resources:
   EventBridgeScheduler:
     Type: "AWS::Scheduler::Schedule"
     Properties:
-      Name:  !Sub ${ProjectName}-${Environment}-sqs-to-rds
+      Name:  !Sub ${ProjectCode}-${Environment}-sqs-to-rds
       ScheduleExpression: !Sub ${ScheduleExpression}
+      ScheduleExpressionTimezone: "Europe/Warsaw"
       FlexibleTimeWindow:
         Mode: "OFF"
       Target:
         Arn: !GetAtt MyStateMachine.Arn
-        RoleArn: !GetAtt StepFunctionInvokerRole.Arn # Rola dozwalająca uruchamianie Step Functions
+        RoleArn: !GetAtt StepFunctionInvokerRole.Arn # Role allowing EventBridge Scheduler to invoke Step Functions
         DeadLetterConfig:
-          Arn: !ImportValue lenie-problems-dlq-arn
+          Arn: !Ref ProblemsDlqArn
         Input: !Sub |
           {
-            "QueueUrl": "{{resolve:ssm:/lenie/${Environment}/sqs/documents/url}}",
-            "DbInstanceIdentifier": "{{resolve:ssm:/lenie/${Environment}/database/name}}",
+            "QueueUrl": "${SqsDocumentsQueueUrl}",
+            "DbInstanceIdentifier": "${DatabaseInstanceName}",
             "StopDatabase": "yes"
           }

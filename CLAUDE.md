@@ -63,14 +63,14 @@ pre-commit run      # Run pre-commit hooks (includes TruffleHog secret detection
 ## Architecture
 
 ### Backend (`backend/`)
-Flask application (`server.py`) exposing REST API with 19 endpoints. Python 3.11, dependencies managed via uv, Docker build with `python:3.11-slim`. All routes (except health checks) require `x-api-key` header.
+Flask application (`server.py`) exposing REST API with 18 endpoints. Python 3.11, dependencies managed via uv, Docker build with `python:3.11-slim`. All routes (except health checks) require `x-api-key` header.
 
 Key subdirectories: `library/` (core logic & integrations), `database/` (PostgreSQL schema), `imports/` (bulk import scripts), `data/` (site cleanup rules), `tests/` (unit + integration), `test_code/` (experimental scripts). Each has its own `CLAUDE.md`.
 
 See `backend/CLAUDE.md` for full details including endpoints, dependencies, Docker build, and batch processing scripts.
 
 ### Frontend (`web_interface_react/`)
-React 18 SPA (Create React App) for document management and AI processing. 7 pages: document list with filtering, vector similarity search, and per-type editors (link, webpage, youtube, movie) with AI tools (correct, translate, split for embedding, clean text). Formik for form state, axios for API calls, React Router v6. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask). Includes infrastructure controls (start/stop RDS, VPN, SQS queue status).
+React 18 SPA (Create React App) for document management and AI processing. 7 pages: document list with filtering, vector similarity search, and per-type editors (link, webpage, youtube, movie) with AI tools (split for embedding, clean text). Formik for form state, axios for API calls, React Router v6. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask). Includes infrastructure controls (start/stop RDS, VPN, SQS queue status).
 
 See `web_interface_react/CLAUDE.md` for details.
 
@@ -98,13 +98,14 @@ Kustomize-based deployment with base configurations and GKE dev overlay.
 - CloudFormation templates for DynamoDB, RDS, SQS, Lambda, API Gateway
 - Serverless Lambda functions
 
+**Architecture overview**: AWS API Gateway serves as the managed, secure entry point — access is controlled via API keys, eliminating the need to maintain and patch internet-facing services. Incoming documents flow through SQS for asynchronous processing (the database runs only when needed to optimize costs). DynamoDB provides always-available metadata storage, enabling synchronization between cloud (receiving data from mobile devices) and local environments.
+
 **Flask server vs Lambda split**: The Flask `server.py` is the unified backend used in Docker/K8s deployments. For AWS serverless, the same logic is split into two Lambda functions due to VPC networking constraints (no NAT Gateway to save costs):
 - **`app-server-db`** - endpoints requiring PostgreSQL (runs inside VPC): `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding`
-- **`app-server-internet`** - endpoints requiring internet access (runs outside VPC): `/translate`, `/website_download_text_content`, `/ai_embedding_get`, `/ai_ask`
+- **`app-server-internet`** - endpoints requiring internet access (runs outside VPC): `/website_download_text_content`, `/ai_embedding_get`
 - **`sqs-weblink-put-into`** - handles `/url_add` functionality via SQS+DynamoDB+S3 instead of direct DB write
 
 Some endpoints exist only in `server.py` (not in Lambda): `/url_add` (replaced by SQS flow), `/website_text_remove_not_needed`, health checks (`/healthz`, `/startup`, `/readiness`, `/liveness`), `/version`, `/metrics`.
-The `/translate` endpoint exists only in the Lambda Internet version.
 
 See `infra/aws/serverless/CLAUDE.md` for detailed comparison and known differences.
 
@@ -116,7 +117,7 @@ See `infra/aws/serverless/CLAUDE.md` for detailed comparison and known differenc
 ## Environment Variables
 
 Key variables (see `.env_example` for full list):
-- `ENV_DATA` - Environment identifier
+- `ENV_DATA` - Environment identifier (currently only `dev`; `prod` and `qa` will be added post-MVP)
 - `POSTGRESQL_HOST/DATABASE/USER/PASSWORD/PORT` - Database connection
 - `LLM_PROVIDER` - LLM backend (openai, bedrock, vertex)
 - `OPENAI_API_KEY`, `OPENAI_ORGANIZATION` - OpenAI credentials

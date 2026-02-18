@@ -1,0 +1,22 @@
+[
+  {
+    "ParameterKey": "ProjectCode",
+    "ParameterValue": "lenie"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "LayerCodeBucket",
+    "ParameterValue": "lenie-dev-cloudformation"
+  },
+  {
+    "ParameterKey": "LayerCodeS3Key",
+    "ParameterValue": "layers/lenie_all_layer.zip"
+  },
+  {
+    "ParameterKey": "LayerCodeVersion",
+    "ParameterValue": "1"
+  }
+]

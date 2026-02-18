@@ -18,7 +18,6 @@ serverless/
 │   ├── rds-start/             # Start RDS instance
 │   ├── rds-stop/              # Stop RDS instance
 │   ├── rds-status/            # Check RDS instance status
-│   ├── rds-reports/           # RDS reporting/diagnostics
 │   ├── ec2-start/             # Start EC2 instance
 │   ├── ec2-stop/              # Stop EC2 instance
 │   ├── ec2-status/            # Check EC2 instance status
@@ -27,8 +26,6 @@ serverless/
 │   ├── sqs-weblink-put-into/  # Put web links into SQS queue
 │   ├── app-server-db/         # Main app Lambda - DB operations (uses backend/library)
 │   ├── app-server-internet/   # Main app Lambda - internet operations (uses backend/library)
-│   ├── jenkins-job-start/     # Trigger Jenkins job via API
-│   ├── ses-with-excel/        # Send email with Excel attachment via SES
 │   └── tmp/                   # Empty Lambda placeholder
 └── lambda_layers/             # Lambda layer build scripts
     ├── layer_create_psycop2_new.sh  # psycopg2-binary layer
@@ -87,17 +84,23 @@ Common variables:
 | Function | Endpoints | Description |
 |----------|-----------|-------------|
 | `app-server-db` | `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding` | DB-facing operations. Requires PostgreSQL env vars, `OPENAI_*`, `EMBEDDING_MODEL`, `BACKEND_TYPE`. |
-| `app-server-internet` | `/translate`, `/website_download_text_content`, `/ai_embedding_get`, `/ai_ask` | Internet-facing operations (downloads, AI calls, embeddings). Requires `OPENAI_*`, `AI_MODEL_SUMMARY`, `EMBEDDING_MODEL`. |
+| `app-server-internet` | `/website_download_text_content`, `/ai_embedding_get` | Internet-facing operations (downloads, AI calls, embeddings). Requires `OPENAI_*`, `AI_MODEL_SUMMARY`, `EMBEDDING_MODEL`. |
 
 Both app functions use path-based routing (`event['path']`) via API Gateway proxy integration.
 
-#### Utility (simple)
+### Archived Functions
 
-| Function | Description |
-|----------|-------------|
-| `jenkins-job-start` | Triggers a Jenkins job via HTTP API with CSRF crumb authentication. Env vars: `JENKINS_URL`, `JENKINS_USER`, `JENKINS_PASSWORD`, `JENKINS_JOB_NAME` |
-| `ses-with-excel` | Generates an Excel file (openpyxl), uploads to S3, sends via SES as email attachment. Env var: `S3_BUCKET_NAME` |
-| `rds-reports` | Diagnostic script for listing RDS instances and their tags (can run locally) |
+| Function | Archived | Git Tag | Description |
+|----------|----------|---------|-------------|
+| `ses-with-excel` | 2026-02 | `archive/ses-with-excel` | Generated Excel (openpyxl), uploaded to S3, sent via SES. Prototype with hardcoded test data. Restore: `git checkout archive/ses-with-excel -- infra/aws/serverless/lambdas/ses-with-excel/` |
+| `jenkins-job-start` | 2026-02 | `archive/jenkins-job-start` | Triggered Jenkins job via HTTP API with CSRF crumb auth. Jenkins not in use. Restore: `git checkout archive/jenkins-job-start -- infra/aws/serverless/lambdas/jenkins-job-start/` |
+| `jenkins-start-job` | 2026-02 | `archive/jenkins-start-job` | AWS Lambda `jenkins-start-job`. Newer variant of `jenkins-job-start` with added branch parameter and event logging. Runtime: python3.13, bundled requests library. Downloaded from AWS (code not previously in repo). Restore: `git checkout archive/jenkins-start-job -- infra/aws/serverless/lambdas/jenkins-start-job/` |
+| `infra-allow-ip-in-security-group` | 2026-02 | `archive/infra-allow-ip-in-security-group` | AWS Lambda `infra-allow-ip-in-secrutity-group` (note: typo in original AWS name). Adds caller's IP to a hardcoded Security Group (sg-0929bfcae31074fb8) on RDP port 3389. Uses AWS Lambda Powertools. Runtime: python3.12. Downloaded from AWS (code not previously in repo). Lambda deleted from AWS (Story 10.3, 2026-02). Restore: `git checkout archive/infra-allow-ip-in-security-group -- infra/aws/serverless/lambdas/infra-allow-ip-in-security-group/` |
+| `jenkins-start-run-job` (Step Function) | 2026-02 | `archive/jenkins-start-run-job` | Step Function `jenkins-start-run-job`. Starts EC2 Jenkins instance, waits 60s, invokes `jenkins-start-job` Lambda. JSONata query language, STANDARD type. Jenkins no longer in use. Definition saved in `cloudformation/step_functions/jenkins_start_run_job.json`. Restore: `git checkout archive/jenkins-start-run-job -- infra/aws/cloudformation/step_functions/jenkins_start_run_job.json` |
+| `ec2-ami-backup-pipeline` (4 Lambdas) | 2026-02 | `archive/ec2-ami-backup-pipeline` | AMI backup pipeline for EC2-based Lenie distribution. 4 functions: `createImageLambda` (create AMI from tagged EC2), `getImageStateLambda` (poll AMI status), `copyImageLambda` (copy AMI to DR region, encrypted), `setSsmParamLambda` (store AMI ID in SSM). All python3.12, no external deps. Approach shelved — VM-based distribution (Linux VM connecting to database) is no longer pursued. Downloaded from AWS (code not previously in repo). Restore: `git checkout archive/ec2-ami-backup-pipeline -- infra/aws/serverless/lambdas/ec2-ami-backup-pipeline/` |
+| `ses-excel-summary` | 2026-02 | `archive/ses-excel-summary` | AWS Lambda `lenie_ses_excel_summary`. Generated Excel report (openpyxl), uploaded to S3 (`lenie-dev-excel-reports`), sent as email attachment via SES. Prototype with hardcoded test data and email addresses. Runtime: python3.11, bundled openpyxl 3.1.5. Downloaded from AWS (code not previously in repo). Restore: `git checkout archive/ses-excel-summary -- infra/aws/serverless/lambdas/ses-excel-summary/` |
+| `git-webhooks` | 2026-02 | `archive/git-webhooks` | AWS Lambda `git-webhooks`. Received Git webhook events (via API Gateway), extracted branch name from `ref` field, and triggered the `jenkins-start-run-job` Step Function. Runtime: python3.13. Jenkins CI pipeline no longer in use. Downloaded from AWS (code not previously in repo). Restore: `git checkout archive/git-webhooks -- infra/aws/serverless/lambdas/git-webhooks/` |
+| `ses-s3-send-email` | 2026-02 | `archive/ses-s3-send-email` | AWS Lambda `ses_s3_send_email`. Generic email sender: downloads attachment from S3, sends HTML email with attachment via SES using `send_raw_email`. Event-driven (expects `nadawca`, `odbiorca`, `temat`, `tresc_html`, `s3_bucket`, `s3_object_key`). Runtime: python3.13, no external deps. Downloaded from AWS (code not previously in repo). Restore: `git checkout archive/ses-s3-send-email -- infra/aws/serverless/lambdas/ses-s3-send-email/` |
 
 ## Lambda Layers
 
@@ -106,7 +109,7 @@ Three layers provide shared dependencies to Lambda functions:
 | Layer | Script | Packages | Used By |
 |-------|--------|----------|---------|
 | `psycopg2_new_layer` | `layer_create_psycop2_new.sh` | `psycopg2-binary` | `sqs-into-rds`, `app-server-db` |
-| `lenie_all_layer` | `layer_create_lenie_all.sh` | `pytube`, `urllib3`, `requests`, `beautifulsoup4` | `app-server-db`, `app-server-internet` |
+| `lenie_all_layer` | `layer_create_lenie_all.sh` | `pytubefix`, `urllib3`, `requests`, `beautifulsoup4` | `app-server-db`, `app-server-internet` |
 | `lenie_openai` | `layer_openai_2.sh` | `openai` | `app-server-internet` |
 
 Layer build process:
@@ -164,7 +167,7 @@ The Flask backend (`backend/server.py`) is the unified server used in Docker and
 - **`app-server-db`** runs **inside VPC** to access RDS (PostgreSQL). It cannot make outbound internet calls because there is **no NAT Gateway** (cost optimization for a hobby project).
 - **`app-server-internet`** runs **outside VPC** with internet access for downloading web pages, calling LLM APIs (OpenAI), and computing embeddings.
 
-The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-put-into` Lambda, which stores data in S3 + DynamoDB and sends a message to SQS (processed later by `sqs-into-rds` when RDS is available).
+The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-put-into` Lambda, which stores data in S3 + DynamoDB and sends a message to SQS (processed later by `sqs-into-rds` when RDS is available). This asynchronous pattern decouples data ingestion from database availability — documents uploaded from mobile devices (phone, tablet) are immediately stored in DynamoDB and S3, and can be synced to the local PostgreSQL database at any time.
 
 ### Endpoint Mapping: server.py vs Lambdas
 
@@ -182,9 +185,7 @@ The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-
 | `/website_save` (POST) | `app-server-db` | Functionally equivalent |
 | `/ai_get_embedding` (POST) | `app-server-internet` | **Different endpoint name in Lambda: `/ai_embedding_get`** |
 | `/website_download_text_content` (POST) | `app-server-internet` | Functionally equivalent |
-| `/ai_ask` (POST) | `app-server-internet` | Lambda ignores `model` from request, always uses `llm_simple_jobs_model` env var |
 | `/website_text_remove_not_needed` (POST) | - | server.py only, not implemented in Lambda |
-| - | `app-server-internet` `/translate` | Lambda only, not implemented in server.py |
 | `/healthz`, `/startup`, `/readiness`, `/liveness` (GET) | - | Kubernetes health probes, not needed in Lambda |
 | `/version` (GET) | - | server.py only |
 | `/metrics` (GET) | - | Prometheus metrics stub, server.py only |
@@ -192,13 +193,11 @@ The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-
 ### Known Differences Between Implementations
 
 1. **Endpoint naming inconsistency**: `/ai_get_embedding` (server.py) vs `/ai_embedding_get` (Lambda Internet)
-2. **`/ai_ask` model handling**: server.py uses `model` from the request body; Lambda always uses `llm_simple_jobs_model` from env vars
-3. **`/website_similar` flow**: In server.py, embeddings are computed server-side. In Lambda, the frontend must call `/ai_embedding_get` first (Lambda Internet) and then pass the result to `/website_similar` (Lambda DB) — because one Lambda cannot do both DB access and internet calls.
-4. **`/website_list` response**: server.py returns `all_results_count` field; Lambda does not
-5. **`/website_get_next_to_correct`**: Lambda version accepts `document_type` and `document_state` filter params; server.py only accepts `id`
-6. **Authentication**: server.py validates `x-api-key` header via `before_request` hook; Lambda functions rely on API Gateway for auth (API key or IAM)
-7. **`/website_text_remove_not_needed`**: Missing from Lambda — text cleaning is not available in serverless deployment
-8. **`/translate`**: Missing from server.py — translation is only available in AWS Lambda (uses AWS Translate or similar)
+2. **`/website_similar` flow**: In server.py, embeddings are computed server-side. In Lambda, the frontend must call `/ai_embedding_get` first (Lambda Internet) and then pass the result to `/website_similar` (Lambda DB) — because one Lambda cannot do both DB access and internet calls.
+3. **`/website_list` response**: server.py returns `all_results_count` field; Lambda does not
+4. **`/website_get_next_to_correct`**: Lambda version accepts `document_type` and `document_state` filter params; server.py only accepts `id`
+5. **Authentication**: server.py validates `x-api-key` header via `before_request` hook; Lambda functions rely on API Gateway for auth (API key or IAM)
+6. **`/website_text_remove_not_needed`**: Missing from Lambda — text cleaning is not available in serverless deployment
 
 ## Related Components
 

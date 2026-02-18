@@ -1,0 +1,141 @@
+variables:
+  CI: "false"
+  AWS_REGION: "us-east-1"
+  INSTANCE_ID: "i-03908d34c63fce042"
+  CI_REGISTRY_IMAGE: "lenie-react-interface"
+  TAG_VERSION: "0.2.9.3"
+
+stages:
+  - build
+  - test
+  - deploy
+  - clean-node
+
+
+start_runner:
+  stage: .pre
+  variables:
+    GIT_STRATEGY: none  # Zapobieganie klonowaniu repozytorium
+  before_script:
+    - apt-get update -y
+    - apt-get install -y awscli
+    - aws configure set aws_access_key_id $GITLAB_AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $GITLAB_AWS_SECRET_ACCESS_KEY
+    - aws configure set region $AWS_REGION
+  script:
+    - echo "Starting AWS EC2 runner instance..."
+    - aws ec2 start-instances --instance-ids $INSTANCE_ID
+
+job_build:
+  stage: build
+  tags:
+    - AWS
+  environment:
+    name: development
+  script:
+    - echo "Hello, $GITLAB_USER_LOGIN!"
+    - echo "Building the project"
+    - ls
+    - yarn install
+    - yarn build
+    - ls
+  artifacts:
+    paths:
+      - build/
+  only:
+    - dev
+    - main
+
+# job_test_osv_scanner:
+#   stage: test
+#   tags:
+#     - AWS
+#   environment:
+#     name: development
+#   script:
+#     - echo "Now let's test it using osv-scanner"
+#     - ls -l
+#     - /usr/local/bin/osv-scanner scan --lockfile package-lock.json
+#   only:
+#     - dev
+
+
+publish_to_aws:
+  stage: deploy
+  tags:
+    - AWS
+  environment:
+    name: development
+  script:
+    - echo "Now let's deploy it"
+    - ls
+    - aws s3 sync ./build/ s3://$S3_BUCKET_APP_WEB --delete
+    - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_DISTRIBUTION_ID --paths "/*"
+  only:
+    - dev
+    - main
+
+build-docker-image:
+  stage: build
+  tags:
+    - AWS
+  environment:
+    name: development
+  before_script:
+    - docker info
+    - echo "$DOCKER_HUB_USERNAME:$DOCKER_HUB_TOKEN"
+    - docker login -u "$DOCKER_HUB_USERNAME" -p "$DOCKER_HUB_TOKEN"
+  script:
+    - echo "Now let's build it"
+    - docker build -t $CI_REGISTRY_IMAGE:$TAG_VERSION .
+    - docker tag $CI_REGISTRY_IMAGE:$TAG_VERSION $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
+  only:
+    - dev
+    - main
+
+push-docker-image-to-docker-hub:
+  stage: deploy
+  tags:
+    - AWS
+  environment:
+    name: development
+  services:
+    - docker:dind
+  before_script:
+    - echo "$DOCKER_HUB_USERNAME:$DOCKER_HUB_TOKEN"
+    - docker login -u "$DOCKER_HUB_USERNAME" -p "$DOCKER_HUB_TOKEN"
+  script:
+    - echo "Now let's push it"
+    - docker tag $CI_REGISTRY_IMAGE:$TAG_VERSION $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION
+    - docker tag $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
+    - docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:$TAG_VERSION
+    - docker push $DOCKER_HUB_USERNAME/$CI_REGISTRY_IMAGE:latest
+  only:
+    - dev
+    - main
+
+job-clean-docker-image:
+  stage: clean-node
+  tags:
+    - AWS
+  script:
+    - echo "Now let's remove old images  from docker"
+    - chmod +x infra/docker/docker_images_clean.sh
+    - infra/docker/docker_images_clean.sh --remove-name lenie
+  only:
+    - dev
+    - main
+
+stop_runner:
+  stage: .post
+  variables:
+    GIT_STRATEGY: none  # Zapobieganie klonowaniu repozytorium
+  before_script:
+    - apt-get update -y
+    - apt-get install -y awscli
+    - aws configure set aws_access_key_id $GITLAB_AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $GITLAB_AWS_SECRET_ACCESS_KEY
+    - aws configure set region $AWS_REGION
+  script:
+    - echo "Stopping AWS EC2 instance..."
+    - aws ec2 stop-instances --instance-ids $INSTANCE_ID

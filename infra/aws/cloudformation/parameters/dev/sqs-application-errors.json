@@ -1,10 +1,14 @@
 [
   {
-    "ParameterKey": "ProjectName",
+    "ParameterKey": "ProjectCode",
     "ParameterValue": "lenie"
   },
   {
     "ParameterKey": "Environment",
     "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "AlertEmail",
+    "ParameterValue": "krzysztof@lenie-ai.eu"
   }
 ]

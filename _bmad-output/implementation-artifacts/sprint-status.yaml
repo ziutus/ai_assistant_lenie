@@ -1,0 +1,150 @@
+# generated: 2026-02-16
+# project: lenie-server-2025
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: _bmad-output/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: 2026-02-16
+project: lenie-server-2025
+project_key: NOKEY
+tracking_system: file-system
+story_location: _bmad-output/implementation-artifacts
+
+development_status:
+  # ===================================
+  # SPRINT 1: IaC Coverage & Migration
+  # ===================================
+
+  # --- Epic 1: Storage Layer IaC Coverage ---
+  epic-1: done
+  1-1-create-dynamodb-cache-table-cloudformation-templates: done
+  1-2-create-s3-website-content-bucket-template: done
+  1-3-create-s3-frontend-hosting-bucket-template: done
+  epic-1-retrospective: done
+
+  # --- Epic 2: Compute Layer IaC Coverage ---
+  epic-2: done
+  2-1-create-lambda-layer-cloudformation-templates: done
+  epic-2-retrospective: done
+
+  # --- Epic 3: S3 Content Migration ---
+  epic-3: done
+  3-1-migrate-s3-bucket-data-and-update-references: done
+  epic-3-retrospective: done
+
+  # --- Epic 4: Application Delivery IaC Coverage ---
+  epic-4: done
+  4-1-create-cloudfront-distribution-cloudformation-template: done
+  4-2-update-api-gateway-main-application-cloudformation-template: done
+  epic-4-retrospective: done
+
+  # --- Epic 5: AWS Account Cleanup & Code Hygiene ---
+  epic-5: done
+  5-1-remove-legacy-aws-resources: done
+  5-2-remove-dead-frontend-monitoring-code: done
+  epic-5-retrospective: done
+
+  # --- Epic 6: Deployment Orchestration & Documentation ---
+  epic-6: done
+  6-1-update-deploy-ini-and-document-deployment-order: done
+  epic-6-retrospective: done
+
+  # =============================================
+  # SPRINT 2: Cleanup & Vision Documentation
+  # =============================================
+
+  # --- Epic 7: Step Function Update & API Gateway Simplification ---
+  epic-7: done
+  7-1-update-step-function-schedule-to-warsaw-time: done
+  7-2-remove-url-add2-endpoint-from-api-gateway-and-redeploy: done
+  epic-7-retrospective: done
+
+  # --- Epic 8: DynamoDB Cache Table Removal ---
+  epic-8: done
+  8-1-delete-dynamodb-cache-tables-and-remove-all-related-artifacts: done
+  epic-8-retrospective: done
+
+  # --- Epic 9: Project Vision & Documentation Update ---
+  epic-9: done
+  9-1-update-readme-with-project-vision-and-roadmap: done
+  9-2-update-documentation-to-reflect-post-cleanup-state: done
+  epic-9-retrospective: done
+
+  # =====================================================
+  # SPRINT 3: Code Cleanup — Endpoint & Dead Code Removal
+  # =====================================================
+
+  # --- Epic 10: Endpoint & Dead Code Removal ---
+  epic-10: done
+  10-1-remove-ai-ask-endpoint: done
+  10-2-remove-translate-endpoint: done
+  10-3-remove-infra-ip-allow-endpoint: done
+  10-4-remove-ai-describe-image-dead-code: done
+  epic-10-retrospective: optional
+
+  # --- Epic 11: CloudFormation Template Improvements ---
+  epic-11: done
+  11-1-add-project-and-environment-tags-to-all-cloudformation-templates: done
+  11-2-improve-step-function-template-ssm-pattern-and-lambda-parameterization: done
+  11-3-fix-apideployment-pattern-for-automatic-redeployment: done
+  11-4-resolve-lambda-function-name-typo: done
+  11-5-rest-compliance-review-for-website-delete: done
+  11-6-parameterize-sqs-to-rds-lambda-infrastructure-values: done
+  11-7-replace-legacy-lenie-websites-queue-references: done
+  11-8-replace-fn-importvalue-with-ssm-parameter-for-dlq-arn: done
+  11-9-reconcile-lambda-function-name-mismatch: done
+  11-10-codify-api-gateway-stage-logging-and-tracing: done
+  epic-11-retrospective: optional
+
+  # --- Epic 12: Cross-Cutting Verification & Documentation ---
+  epic-12: in-progress
+  12-1-codebase-wide-stale-reference-verification: done
+  12-2-cloudformation-validation-and-documentation-update: done
+  12-3-create-observability-strategy-documentation: backlog
+  epic-12-retrospective: optional
+
+  # --- Future Backlog (next sprint) ---
+  B-1-analyze-ec2-lambda-consolidation: backlog
+  B-2-analyze-rds-lambda-consolidation: backlog
+  B-3-rename-legacy-lambda-lenie-2-internet-and-db: backlog
+  B-4-remove-elastic-ip-from-ec2: backlog
+  B-5-fix-redundant-lambda-function-names: backlog
+  B-6-migrate-api-gw-app-stage-to-separate-resource: backlog
+  B-7-merge-helm-s3-and-cloudfront-into-single-template: done
+  B-8-manage-acm-certificates-via-cloudformation-and-ssm: backlog
+  B-9-organize-s3-cloudformation-bucket-directory-structure: backlog
+  B-10-create-apigw-cloudwatch-iam-role-in-cloudformation: backlog
+  B-11-add-aws-account-info-to-zip-to-s3-script: backlog
+  B-12-fix-crlf-git-config-for-parameter-files: backlog
+  B-13-parameterize-stage-description-for-multi-environment: backlog
+  B-14-deploy-consolidated-api-gateway-architecture: backlog
+  B-15-add-custom-domains-for-api-gateways: backlog

@@ -1,3 +1,19 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Route53 Hosted Zone for lenie-ai.eu domain'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+
 Resources:
   MyHostedZone:
     Type: AWS::Route53::HostedZone
@@ -5,3 +21,8 @@ Resources:
       Name: lenie-ai.eu.
       HostedZoneConfig:
         Comment: 'Hosted zone for Private AI assistance called Lenie'
+      HostedZoneTags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode

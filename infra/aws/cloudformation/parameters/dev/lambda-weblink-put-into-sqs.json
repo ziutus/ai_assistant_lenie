@@ -1,0 +1,14 @@
+[
+  {
+    "ParameterKey": "ProjectCode",
+    "ParameterValue": "lenie"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "SqsDocumentsQueueName",
+    "ParameterValue": "lenie-dev-documents"
+  }
+]

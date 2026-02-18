@@ -2,15 +2,17 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'API Gateway for Lenie Chrome Extension'
 
 Parameters:
-  stage:
-    Default: dev
-    Description: Specify stage (dev, qas, prd)
+  ProjectCode:
     Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
     AllowedValues:
       - dev
-      - qas
-      - prd
-
+      # Post-MVP: add prod, qa as needed
   LambdaFunctionName:
     Type: String
     Default: lenie-dev-url-add
@@ -21,15 +23,20 @@ Resources:
   LenieApiGateway:
     Type: AWS::ApiGateway::RestApi
     Properties:
-      Name: !Sub "lenie_${stage}_add_from_chrome_extension"
+      Name: !Sub "lenie_${Environment}_add_from_chrome_extension"
       Description: "API for Chrome extension \"Lenie AI assistant\""
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
       EndpointConfiguration:
         Types:
           - REGIONAL
       Body:
         openapi: "3.0.1"
         info:
-          title: !Sub "lenie_${stage}_add_from_chrome_extension"
+          title: !Sub "lenie_${Environment}_add_from_chrome_extension"
           description: "API for Chrome extension \"Lenie AI assistant\""
           version: "2025-02-21T10:52:31Z"
         paths:
@@ -94,33 +101,43 @@ Resources:
     Type: AWS::ApiGateway::Deployment
     Properties:
       RestApiId: !Ref LenieApiGateway
-      StageName: !Ref stage
-      Description: !Sub "Deployment for ${stage} stage"
+      StageName: !Ref Environment
+      Description: !Sub "Deployment for ${Environment} stage"
 
   # API Key
   LenieApiKey:
     Type: AWS::ApiGateway::ApiKey
     Properties:
-      Name: !Sub "lenie-${stage}-api-key"
+      Name: !Sub "lenie-${Environment}-api-key"
       Description: "API Key for Lenie Chrome Extension"
       Enabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   # Usage Plan - teraz z poprawną zależnością
   LenieUsagePlan:
     Type: AWS::ApiGateway::UsagePlan
     DependsOn: LenieApiDeployment
     Properties:
-      UsagePlanName: !Sub "lenie-${stage}-usage-plan"
+      UsagePlanName: !Sub "lenie-${Environment}-usage-plan"
       Description: "Usage plan for Lenie API"
       ApiStages:
         - ApiId: !Ref LenieApiGateway
-          Stage: !Ref stage
+          Stage: !Ref Environment
       Throttle:
         RateLimit: 1000
         BurstLimit: 2000
       Quota:
         Limit: 10000
         Period: MONTH
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   # Usage Plan Key
   LenieUsagePlanKey:
@@ -142,7 +159,7 @@ Resources:
 Outputs:
   ApiGatewayUrl:
     Description: "API Gateway endpoint URL"
-    Value: !Sub "https://${LenieApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${stage}"
+    Value: !Sub "https://${LenieApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Environment}"
     Export:
       Name: !Sub "${AWS::StackName}-ApiUrl"
 
