@@ -222,14 +222,15 @@ None — no debugging required.
 
 - 2026-02-18: Story 12.1 implementation — codebase-wide stale reference verification and cleanup (all 7 tasks completed)
 - 2026-02-18: Code review fixes — corrected api-gw-app endpoint count in CF CLAUDE.md (10→18), reordered ADRs numerically, updated File List with 3 missing files, corrected Task 5 completion note
+- 2026-02-18: Adversarial code review (2nd pass) — 6 issues found (1 HIGH, 2 MEDIUM, 3 LOW). HIGH: `docs/architecture-decisions.md:208` "9 infra endpoints"→"8". MEDIUM: README `/url_add` in wrong API table, README missing `/infra/git-webhooks`. LOW: README path notation (no `/infra/` prefix, `vpn-server`→`vpn_server`), template count 35→34 (29→27 active, 1→2 commented), CF CLAUDE.md `api-gw-infra` "7 Lambdas"→"8 Lambdas", README "20+" endpoints→"19", CF CLAUDE.md `s3-helm.yaml`+`cloudfront-helm.yaml`→`helm.yaml` (post B-7 merge). All fixed.
 
 ### File List
 
-- `infra/aws/README.md` (modified) — removed `/ai_ask` row from API endpoints table
+- `infra/aws/README.md` (modified) — removed `/ai_ask` row from API endpoints table; 2nd review: removed `/url_add` from App API table, fixed Infra API paths (`/infra/` prefix, `vpn_server` underscore), added `/infra/git-webhooks`, fixed template count (35→34, 29→27 active, 1→2 commented)
 - `docs/api-contracts-backend.md` (modified) — fixed endpoint count: "19 endpoints" → "18 endpoints"
-- `infra/aws/cloudformation/CLAUDE.md` (modified) — fixed api-gw-app endpoint count: "12 endpoints" → "18 endpoints" (review fix: original incorrectly set to 10)
+- `infra/aws/cloudformation/CLAUDE.md` (modified) — fixed api-gw-app endpoint count: "12 endpoints" → "18 endpoints" (review fix: original incorrectly set to 10); 2nd review: fixed api-gw-infra "7 Lambdas" → "8 Lambdas"
 - `infra/aws/cloudformation/apigw/lenie-split-export.json` (deleted) — historical API GW export with stale endpoint definitions
-- `docs/architecture-decisions.md` (added) — ADR-001 through ADR-005 documenting key architectural decisions
+- `docs/architecture-decisions.md` (added) — ADR-001 through ADR-006 documenting key architectural decisions; 2nd review: fixed ADR-006 "9 infra endpoints" → "8 infra endpoints"
 - `docs/system-evolution.md` (added) — system evolution narrative (embeddings, MCP pipeline, infrastructure cleanup)
 - `docs/index.md` (modified) — added references to new ADR and system evolution docs
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified) — story status: ready-for-dev → in-progress → review

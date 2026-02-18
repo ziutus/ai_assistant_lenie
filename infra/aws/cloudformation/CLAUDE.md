@@ -128,8 +128,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | `s3-cloudformation.yaml` | S3 Bucket, SSM | Lambda code and CF artifacts bucket |
 | `s3-website-content.yaml` | S3 Bucket, Bucket Policy, SSM | Website content storage (`lenie-{stage}-website-content`, AES256) |
 | `s3-app-web.yaml` | S3 Bucket, Bucket Policy, SSM | Frontend hosting bucket (`lenie-{stage}-app-web`, CloudFront OAC) |
-| `s3-helm.yaml` | S3 Bucket, Bucket Policy, CloudFront OAI | Helm chart repository bucket with OAI for CloudFront access |
-| `cloudfront-helm.yaml` | CloudFront Distribution | CDN for Helm chart repository (`helm.{env}.lenie-ai.eu`) |
+| `helm.yaml` | S3 Bucket, Bucket Policy, CloudFront OAI, CloudFront Distribution | Helm chart repository and CDN (`helm.{env}.lenie-ai.eu`) |
 
 ### Lambda Layers
 
@@ -154,7 +153,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `api-gw-infra.yaml` | REST API, 7 Lambdas | Infrastructure management API (8 endpoints: RDS, EC2/VPN, SQS, git-webhooks) |
+| `api-gw-infra.yaml` | REST API, 8 Lambdas | Infrastructure management API (8 endpoints: RDS, EC2/VPN, SQS, git-webhooks) |
 | `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (10 endpoints, x-api-key) |
 | `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | UNUSED — commented out in deploy.ini (duplicate of url-add.yaml) |
 
@@ -248,8 +247,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 
 ### Layer 8: CDN
 - `cloudfront-app.yaml` - CDN for frontend application
-- `s3-helm.yaml` - Helm chart repository bucket
-- `cloudfront-helm.yaml` - CDN for Helm charts
+- `helm.yaml` - Helm chart repository and CDN
 
 This order is reflected in the `deploy.ini` file under the `[dev]` section. Run `./deploy.sh -p lenie -s dev` to deploy all templates in order.
 
