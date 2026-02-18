@@ -11,7 +11,7 @@ So that the project documentation is accurate and all templates are deployment-r
 ## Acceptance Criteria
 
 1. **AC1 — cfn-lint passes on all templates:** All CloudFormation templates pass `cfn-lint` with zero errors.
-2. **AC2 — Endpoint counts accurate:** CLAUDE.md and README.md reflect actual endpoint counts (18 in server.py, 10 in api-gw-app, 9 in api-gw-infra).
+2. **AC2 — Endpoint counts accurate:** CLAUDE.md and README.md reflect actual endpoint counts (18 in server.py, 10 in api-gw-app, 8 in api-gw-infra).
 3. **AC3 — No stale references to removed endpoints:** Zero references to `/ai_ask`, `/translate`, `/infra/ip-allow`, or `ai_describe_image()` in active documentation (excluding historical context in ADRs, system-evolution.md, and _bmad-output/).
 4. **AC4 — Epic 11 decisions documented:** All implement/defer/reject decisions from Epic 11 stories are documented with rationale.
 5. **AC5 — Post-Sprint 3 documentation accurate:** CLAUDE.md, README.md, and infra docs reflect the current state.
@@ -26,8 +26,10 @@ So that the project documentation is accurate and all templates are deployment-r
 - [x] **Task 2: Verify endpoint counts in documentation** (AC: #2)
   - [x] 2.1 Verify server.py has 18 endpoints (counted 19 routes including root `/`, 18 per convention excluding root)
   - [x] 2.2 Verify CLAUDE.md (root), README.md, backend/CLAUDE.md all say "18 endpoints" for server.py — confirmed correct
-  - [x] 2.3 Fix `infra/aws/CLAUDE.md:49` — "3 APIs with 20+ endpoints" updated to "2 active REST APIs: app 10 + infra 9 endpoints, plus Chrome ext API"
-  - [x] 2.4 Verify `infra/aws/cloudformation/CLAUDE.md` API Gateway table — already updated in consolidation commit (api-gw-app: 10 endpoints, api-gw-infra: 9 endpoints)
+  - [x] 2.3 Fix `infra/aws/CLAUDE.md:49` — "3 APIs with 20+ endpoints" updated to "2 active REST APIs: app 10 + infra 8 endpoints, plus Chrome ext API"
+  - [x] 2.4 Fix `infra/aws/cloudformation/CLAUDE.md` API Gateway table — corrected api-gw-infra from 9 to 8 endpoints (actual paths: sqs/size, vpn start/stop/status, database start/stop/status, git-webhooks)
+  - [x] 2.5 Fix `infra/aws/CLAUDE.md:88` — corrected infra endpoint count from 9 to 8
+  - [x] 2.6 Fix template count in `infra/aws/CLAUDE.md:49` — "29 templates" updated to "34 templates" (actual count in templates/ directory)
 
 - [x] **Task 3: Verify no stale endpoint references** (AC: #3)
   - [x] 3.1 Grep for `/ai_ask`, `/translate`, `/infra/ip-allow`, `ai_describe_image` in all active docs
@@ -69,8 +71,8 @@ All warnings are pre-existing conditions for multi-environment support (IsProduc
 | docs/source-tree-analysis.md | 18 (server.py) | Correct |
 | docs/project-overview.md | 18 (server.py) | Correct |
 | docs/index.md | 18 (server.py) | Correct |
-| infra/aws/CLAUDE.md | 2 active APIs (10+9) | Fixed in this story |
-| infra/aws/cloudformation/CLAUDE.md | app:10, infra:9 | Fixed in API GW consolidation |
+| infra/aws/CLAUDE.md | 2 active APIs (10+8), 34 templates | Fixed in this story + code review |
+| infra/aws/cloudformation/CLAUDE.md | app:10, infra:8 | Fixed in code review (was 9, actual 8) |
 
 ### Epic 11 Decision Summary
 
@@ -87,8 +89,35 @@ All warnings are pre-existing conditions for multi-environment support (IsProduc
 | 11-9 Lambda name mismatch | Implemented | Aligned to CF-defined name (Option B) |
 | 11-10 Stage logging/tracing | Implemented | StageDescription with INFO logging, X-Ray, metrics |
 
-## File List
+## Dev Agent Record
 
-- `_bmad-output/implementation-artifacts/12-2-cloudformation-validation-and-documentation-update.md` — this story file (created)
+### Agent Model Used
+
+Claude Opus 4.6
+
+### Debug Log References
+
+- cfn-lint validation: `uvx cfn-lint infra/aws/cloudformation/templates/*.yaml` — zero errors, 5 warnings (cfn-lint v1.44.0)
+- Endpoint count verification: `grep "^\s+/infra/" api-gw-infra.yaml` — 8 paths found (not 9 as originally claimed)
+- Stale reference check: `grep -rn "/ai_ask|/translate|/infra/ip-allow|ai_describe_image"` — zero in active code/docs
+- Template count: `glob infra/aws/cloudformation/templates/*.yaml` — 34 files (not 29 as documented)
+
+### Completion Notes List
+
+- **Task 1**: cfn-lint passed with zero errors and 5 pre-existing warnings (W8001 x4, W2001 x1)
+- **Task 2**: Originally verified endpoint counts as 18/10/9 — code review found api-gw-infra has 8 endpoints (not 9). Fixed all documentation references. Also fixed template count from 29 to 34.
+- **Task 3**: Zero stale references to removed endpoints in active code/docs. All occurrences are in ADR files, system-evolution.md, and _bmad-output/.
+- **Task 4**: All Epic 11 decisions documented — 11-5 DEFER with rationale, 11-7 wildcard decision, 11-9 CF-defined name alignment.
+- **Task 5**: Documentation accuracy review completed. Endpoint counts and template count corrected during code review.
+
+### Change Log
+
+- 2026-02-18: Story created and implemented — cfn-lint validation, endpoint count verification, stale reference check, Epic 11 decision documentation, post-Sprint 3 doc accuracy review
+- 2026-02-18: Code review (adversarial) — 5 issues found (1 HIGH, 2 MEDIUM, 2 LOW). HIGH: api-gw-infra has 8 endpoints not 9. MEDIUM: template count 29→34, missing Dev Agent Record. All fixed.
+
+### File List
+
+- `_bmad-output/implementation-artifacts/12-2-cloudformation-validation-and-documentation-update.md` — this story file (created, updated in code review)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — 12-2: backlog → done
-- `infra/aws/CLAUDE.md` — fixed API Gateway description (line 49)
+- `infra/aws/CLAUDE.md` — fixed API Gateway description (line 49: 29→34 templates, infra 9→8 endpoints; line 88: infra 9→8 endpoints)
+- `infra/aws/cloudformation/CLAUDE.md` — fixed api-gw-infra endpoint count (line 157: 9→8 endpoints)

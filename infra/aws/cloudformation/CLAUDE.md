@@ -154,7 +154,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `api-gw-infra.yaml` | REST API, 7 Lambdas | Infrastructure management API (9 endpoints: RDS, EC2/VPN, SQS, git-webhooks) |
+| `api-gw-infra.yaml` | REST API, 7 Lambdas | Infrastructure management API (8 endpoints: RDS, EC2/VPN, SQS, git-webhooks) |
 | `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (10 endpoints, x-api-key) |
 | `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | UNUSED — commented out in deploy.ini (duplicate of url-add.yaml) |
 
