@@ -336,6 +336,55 @@ Installation, configuration, and invocation instructions for all tools used in t
 
 ---
 
+## Working with GitHub Without CI/CD
+
+When working with GitHub as the repository host **without an active CI/CD pipeline**, it is recommended to install the [GitHub CLI (`gh`)](https://cli.github.com/) tool. It provides convenient access to GitHub features directly from the terminal — pull requests, issues, Dependabot alerts, and more.
+
+### Installation
+
+| Platform | Command |
+|----------|---------|
+| **Windows** | `winget install --id GitHub.cli` |
+| **macOS** | `brew install gh` |
+| **Linux (Debian/Ubuntu)** | See [official instructions](https://github.com/cli/cli/blob/trunk/docs/install_linux.md) |
+
+After installation, authenticate with:
+```bash
+gh auth login
+```
+
+### Claude Code Integration
+
+When using Claude Code with `gh`, add the necessary commands to the allowed permissions list in `.claude/settings.local.json`. For example, to allow querying Dependabot alerts:
+
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh api repos/<owner>/<repo>/dependabot/alerts:*)"
+    ]
+  }
+}
+```
+
+### Useful Commands
+
+```bash
+# Dependabot security alerts
+gh api repos/<owner>/<repo>/dependabot/alerts
+
+# Pull requests
+gh pr list
+gh pr create --title "..." --body "..."
+gh pr view <number>
+
+# Issues
+gh issue list
+gh issue create --title "..." --body "..."
+```
+
+---
+
 ## How to Use This Documentation
 
 When creating a new CI/CD pipeline:
