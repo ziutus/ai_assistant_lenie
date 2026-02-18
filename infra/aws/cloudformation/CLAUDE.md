@@ -155,17 +155,19 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `api-gw-infra.yaml` | REST API, 7 Lambdas | Infrastructure management API (RDS start/stop, EC2, SQS) |
-| `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (12 endpoints, x-api-key) |
+| `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (10 endpoints, x-api-key) |
 | `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | Chrome extension API (rate limiting) |
 
-**`api-gw-app` stage configuration (manual, not in CloudFormation):**
-The `v1` stage has the following settings configured directly in the AWS console — they are NOT managed by the CloudFormation template:
-- CloudWatch logs: Error and info logs
-- Detailed CloudWatch metrics: Active
-- Data tracing: Active
-- X-Ray tracing: Active
+**`api-gw-app` stage configuration (managed by CloudFormation):**
+The `v1` stage logging and tracing settings are codified in `StageDescription` on the `ApiDeployment` resource in `api-gw-app.yaml`:
+- `LoggingLevel: INFO` (error and info CloudWatch logs)
+- `MetricsEnabled: true` (detailed CloudWatch metrics)
+- `DataTraceEnabled: true` (full request/response body logging — review before enabling in production)
+- `TracingEnabled: true` (X-Ray tracing)
 
-These settings will be lost if the stage is recreated. To codify them, add `MethodSettings` and `TracingEnabled` to the `ApiStage` resource in `api-gw-app.yaml`.
+These settings apply to all methods/resources via wildcard `MethodSettings` (`HttpMethod: '*'`, `ResourcePath: '/*'`). Note: CloudWatch logging requires an account-level IAM role (`cloudwatchRoleArn`) — verify with `aws apigateway get-account`.
+
+**Note:** `api-gw-infra` and `api-gw-url-add` do NOT currently have stage logging or tracing configured in their CloudFormation templates.
 
 ### Orchestration
 

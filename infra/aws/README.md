@@ -259,7 +259,6 @@ infra/aws/
 | `/website_get_next_to_correct`    | GET, OPTIONS   | Get next document to review    |
 | `/url_add`                        | POST, OPTIONS  | Add new URL                    |
 | `/ai_embedding_get`              | POST, OPTIONS  | Generate embeddings            |
-| `/ai_ask`                         | POST, OPTIONS  | Ask AI a question              |
 
 ---
 

@@ -61,6 +61,10 @@
 ### Components
 - [Component Inventory — Main Frontend](./component-inventory-web_interface_react.md) — 7 pages, 6 reusable components, 7 hooks, state management
 
+### Decision Records & Evolution
+- [Architecture Decisions (ADR)](./architecture-decisions.md) — Key architectural decisions with context, rationale, and consequences
+- [System Evolution](./system-evolution.md) — How the project evolved: embedding strategy, infrastructure cleanup, cost-driven design
+
 ### Guides
 - [Development Guide](./development-guide.md) — Prerequisites, setup, running, testing, code quality
 - [Project Parts Metadata](./project-parts.json) — Machine-readable project structure
