@@ -21,19 +21,19 @@ infra/aws/
 
 | Category              | Count | Details                                      |
 |-----------------------|-------|----------------------------------------------|
-| CloudFormation Stacks | 27    | Templates in `cloudformation/templates/`     |
-| Lambda Functions      | 14    | Python 3.11 runtime                          |
+| CloudFormation Stacks | 34    | Templates in `cloudformation/templates/` (27 dev active, 2 commented, 5 account-level) |
+| Lambda Functions      | 11    | Python 3.11 runtime                          |
 | API Gateway APIs      | 3     | app, infra, chrome-extension                 |
-| API Endpoints         | 20+   | REST (REGIONAL)                              |
+| API Endpoints         | 19    | REST (REGIONAL): app 10 + infra 8 + url-add 1 |
 | SQS Queues            | 2     | documents, problems-dlq                      |
 | SNS Topics            | 1     | problems notifications                       |
 | RDS Instances         | 1     | PostgreSQL, db.t3.micro                      |
 | DynamoDB Tables       | 1     | documents (PAY_PER_REQUEST)                  |
-| S3 Buckets            | 2     | video-to-text, cloudformation artifacts      |
+| S3 Buckets            | 5     | video-to-text, cloudformation, helm, website-content, app-web |
 | EC2 Instances         | 1     | t4g.micro (ARM64)                            |
 | Step Functions        | 1     | sqs-to-rds orchestration                     |
 | VPC Subnets           | 6     | 2 public, 2 private, 2 DB private            |
-| Budgets               | 1     | $20/month with alerts                        |
+| Budgets               | 1     | $8/month with alerts                        |
 
 ---
 
@@ -140,8 +140,33 @@ infra/aws/
 
 | Resource                     | Type                    | Details                                   |
 |------------------------------|-------------------------|-------------------------------------------|
-| MyS3Bucket                   | AWS::S3::Bucket         | `lenie-2025-dev-cloudformation`           |
+| MyS3Bucket                   | AWS::S3::Bucket         | `lenie-dev-cloudformation`                |
 | CloudFormationSSMParameter   | AWS::SSM::Parameter     | `/lenie/dev/s3/cloudformation/name`       |
+
+### 4.3 Website Content (`s3-website-content.yaml`)
+
+| Resource                          | Type                    | Details                                       |
+|-----------------------------------|-------------------------|-----------------------------------------------|
+| WebsiteContentBucket              | AWS::S3::Bucket         | `lenie-dev-website-content`, AES256, public access blocked |
+| WebsiteContentBucketPolicy        | AWS::S3::BucketPolicy   | TLS-only access (deny non-SSL)                |
+| WebsiteContentBucketNameParameter | AWS::SSM::Parameter     | `/lenie/dev/s3/website-content/name`          |
+| WebsiteContentBucketArnParameter  | AWS::SSM::Parameter     | `/lenie/dev/s3/website-content/arn`           |
+
+- Versioning enabled in production environments, suspended in dev
+- Recreate strategy (no DeletionPolicy/Retain)
+
+### 4.4 Frontend Hosting (`s3-app-web.yaml`)
+
+| Resource                            | Type                    | Details                                       |
+|-------------------------------------|-------------------------|-----------------------------------------------|
+| AppWebBucket                        | AWS::S3::Bucket         | `lenie-dev-app-web`, AES256, DeletionPolicy: Retain |
+| AppWebBucketPolicy                  | AWS::S3::BucketPolicy   | CloudFront OAC access + TLS-only              |
+| AppWebBucketNameParameter           | AWS::SSM::Parameter     | `/lenie/dev/s3/app-web/name`                  |
+| AppWebBucketArnParameter            | AWS::SSM::Parameter     | `/lenie/dev/s3/app-web/arn`                   |
+| AppWebBucketDomainNameParameter     | AWS::SSM::Parameter     | `/lenie/dev/s3/app-web/domain-name`           |
+
+- CF-imported existing bucket (DeletionPolicy: Retain)
+- CloudFront origin for `app.dev.lenie-ai.eu`
 
 ---
 
@@ -232,9 +257,7 @@ infra/aws/
 | `/website_similar`                | POST, OPTIONS  | Find similar documents         |
 | `/website_is_paid`                | POST, OPTIONS  | Check if content is paywalled  |
 | `/website_get_next_to_correct`    | GET, OPTIONS   | Get next document to review    |
-| `/url_add`                        | POST, OPTIONS  | Add new URL                    |
 | `/ai_embedding_get`              | POST, OPTIONS  | Generate embeddings            |
-| `/ai_ask`                         | POST, OPTIONS  | Ask AI a question              |
 
 ---
 
@@ -256,15 +279,16 @@ infra/aws/
 
 **API Endpoints** (all secured with x-api-key):
 
-| Path                  | Methods        | Description           |
-|-----------------------|----------------|-----------------------|
-| `/sqs/size`           | POST, OPTIONS  | Get SQS queue size    |
-| `/database/start`     | POST, OPTIONS  | Start RDS instance    |
-| `/database/stop`      | POST, OPTIONS  | Stop RDS instance     |
-| `/database/status`    | POST, OPTIONS  | Get RDS status        |
-| `/vpn-server/start`   | POST, OPTIONS  | Start EC2 (VPN)       |
-| `/vpn-server/stop`    | POST, OPTIONS  | Stop EC2 (VPN)        |
-| `/vpn-server/status`  | POST, OPTIONS  | Get EC2 status        |
+| Path                          | Methods        | Description           |
+|-------------------------------|----------------|-----------------------|
+| `/infra/sqs/size`             | POST, OPTIONS  | Get SQS queue size    |
+| `/infra/database/start`       | POST, OPTIONS  | Start RDS instance    |
+| `/infra/database/stop`        | POST, OPTIONS  | Stop RDS instance     |
+| `/infra/database/status`      | POST, OPTIONS  | Get RDS status        |
+| `/infra/vpn_server/start`     | POST, OPTIONS  | Start EC2 (VPN)       |
+| `/infra/vpn_server/stop`      | POST, OPTIONS  | Stop EC2 (VPN)        |
+| `/infra/vpn_server/status`    | POST, OPTIONS  | Get EC2 status        |
+| `/infra/git-webhooks`         | POST, OPTIONS  | Git webhook handler   |
 
 ---
 
@@ -303,14 +327,9 @@ infra/aws/
 
 ---
 
-## 11. Email - SES (`ses.yaml`)
+## 11. Email - SES
 
-| Resource              | Type                        | Details                                   |
-|-----------------------|-----------------------------|-------------------------------------------|
-| SESDomainIdentity     | AWS::SES::EmailIdentity     | `dev.lenie-ai.eu`, DKIM: RSA_2048_BIT    |
-| LambdaExecutionRole   | AWS::IAM::Role              | route53:*, ses:GetIdentityDkimAttributes  |
-| DnsUpdaterFunction    | AWS::Lambda::Function       | Auto-updates Route53 DKIM records, python3.13 |
-| DnsUpdateTrigger      | Custom::DnsUpdater          | Triggers DNS update on stack changes      |
+*(SES template `ses.yaml` and identities `lenie-ai.eu`, `dev.lenie-ai.eu` removed during legacy resource cleanup. SES is no longer used by the application.)*
 
 ---
 
@@ -355,7 +374,7 @@ infra/aws/
 
 | Resource          | Type                      | Details                              |
 |-------------------|---------------------------|--------------------------------------|
-| AccountBudget     | AWS::Budgets::Budget      | $20/month, COST type                 |
+| AccountBudget     | AWS::Budgets::Budget      | $8/month, COST type                 |
 
 **Alert Thresholds**:
 - Actual spend > 50% → email notification
@@ -419,6 +438,7 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 | api-gw-infra.json              | ProjectCode: lenie, stage: dev, OpenvpnEC2Name       |
 | api-gw-url-add.json            | stage: dev, LambdaFunctionName: lenie-dev-url-add    |
 | budget.json                    | BudgetAmount: 20, AlertEmail                         |
+| cloudfront-app.json            | ProjectCode: lenie, Environment: dev                 |
 | dynamodb-documents.json        | ProjectCode: lenie, Environment: dev                 |
 | ec2-lenie.json                 | ProjectName, Environment, SshKeyName                 |
 | env-setup.json                 | stage: dev                                           |
@@ -430,6 +450,11 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 | sqs-documents.json             | ProjectName: lenie, Environment: dev                 |
 | sqs-to-rds-lambda.json         | ProjectName: lenie, Environment: dev                 |
 | sqs-to-rds-step-function.json  | ScheduleExpression (cron)                            |
+| lambda-layer-lenie-all.json    | ProjectCode: lenie, Environment: dev                 |
+| lambda-layer-openai.json       | ProjectCode: lenie, Environment: dev                 |
+| lambda-layer-psycopg2.json     | ProjectCode: lenie, Environment: dev                 |
+| s3-app-web.json                | ProjectCode: lenie, Environment: dev                 |
+| s3-website-content.json        | ProjectCode: lenie, Environment: dev                 |
 | url-add.json                   | ProjectCode: lenie, Environment: dev                 |
 | vpc.json                       | VpcName: lenie-dev                                   |
 
@@ -437,7 +462,7 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 
 ## 14. Serverless Lambda Functions (`serverless/`)
 
-Source code for all 14 Lambda functions deployed via CloudFormation, plus 3 shared Lambda layers.
+Source code for all 11 Lambda functions deployed via CloudFormation, plus 3 shared Lambda layers.
 
 ### Directory Structure
 
@@ -449,12 +474,9 @@ serverless/
 │   ├── ec2-start/               # EC2 instance start
 │   ├── ec2-status/              # EC2 instance status
 │   ├── ec2-stop/                # EC2 instance stop
-│   ├── jenkins-job-start/       # Jenkins job trigger
-│   ├── rds-reports/             # RDS diagnostics
 │   ├── rds-start/               # RDS instance start
 │   ├── rds-status/              # RDS instance status
 │   ├── rds-stop/                # RDS instance stop
-│   ├── ses-with-excel/          # Email with Excel attachment
 │   ├── sqs-into-rds/            # SQS → PostgreSQL processor
 │   ├── sqs-size/                # SQS queue message count
 │   ├── sqs-weblink-put-into/    # URL ingestion → S3 + DynamoDB + SQS
@@ -476,13 +498,10 @@ serverless/
 | rds-start | Infrastructure | RDS | DB_ID | No |
 | rds-stop | Infrastructure | RDS | DB_ID | No |
 | rds-status | Infrastructure | RDS | DB_ID | No |
-| rds-reports | Infrastructure | RDS | - | No |
 | ec2-start | Infrastructure | EC2 | INSTANCE_ID | No |
 | ec2-stop | Infrastructure | EC2 | INSTANCE_ID | No |
 | ec2-status | Infrastructure | EC2 | INSTANCE_ID | No |
 | sqs-size | Infrastructure | SQS, SSM | AWS_REGION | No |
-| jenkins-job-start | Utility | HTTP (Jenkins API) | JENKINS_URL, JENKINS_USER, JENKINS_PASSWORD, JENKINS_JOB_NAME | No |
-| ses-with-excel | Utility | S3, SES | S3_BUCKET_NAME | No |
 
 ### 14.1 Application Functions
 
@@ -507,18 +526,16 @@ Main application Lambda handling all database operations. Routes requests by API
 
 #### app-server-internet
 
-Internet-facing Lambda for web scraping, AI/LLM operations, embeddings, and translations.
+Internet-facing Lambda for web scraping, AI/LLM operations, and embeddings.
 
 **Endpoints:**
 
 | Path | Method | Description |
 |---|---|---|
-| `/translate` | POST | Translate text (text, target_language, source_language) |
 | `/website_download_text_content` | POST | Download & parse webpage (url) → text, title, summary, language |
 | `/ai_embedding_get` | POST | Generate vector embeddings (model, text) |
-| `/ai_ask` | POST | Query LLM with context (text, query, model) |
 
-**Dependencies:** library.ai, text_translate, download_raw_html, webpage_raw_parse, get_embedding
+**Dependencies:** download_raw_html, webpage_raw_parse, get_embedding
 
 ### 14.2 Document Processing Functions
 
@@ -546,10 +563,6 @@ RDS instance lifecycle management. Each uses `DB_ID` env var to identify the tar
 - **rds-stop**: `rds.stop_db_instance()`
 - **rds-status**: `rds.describe_db_instances()` → returns `DBInstanceStatus`
 
-#### rds-reports
-
-Diagnostic utility listing all RDS instances and their tags. Can run locally (`__main__`).
-
 #### ec2-start / ec2-stop / ec2-status
 
 EC2 instance lifecycle management. Each uses `INSTANCE_ID` env var.
@@ -561,22 +574,70 @@ EC2 instance lifecycle management. Each uses `INSTANCE_ID` env var.
 
 Returns approximate message count in SQS queue. Reads queue URL from SSM Parameter Store (`/lenie/dev/sqs_queue/new_links`), then queries `ApproximateNumberOfMessages` attribute.
 
-### 14.4 Utility Functions
-
-#### jenkins-job-start
-
-Triggers Jenkins job via HTTP API with Basic Auth. Fetches CSRF crumb, then POSTs to `/job/{name}/buildWithParameters`. Passes INSTANCE_ID and AWS_REGION as parameters.
-
-#### ses-with-excel
-
-Generates Excel files (openpyxl), uploads to S3, and sends via SES as email attachment (MIME multipart). Currently has hardcoded test data.
-
-### 14.5 Lambda Layers
+### 14.4 Lambda Layers
 
 | Layer | Packages | Used By |
 |---|---|---|
 | psycopg2_new_layer | psycopg2-binary 2.9.10 | sqs-into-rds, app-server-db |
-| lenie_all_layer | pytube, urllib3, requests, beautifulsoup4 | app-server-db, app-server-internet |
+| lenie_all_layer | pytubefix, urllib3, requests, beautifulsoup4 | app-server-db, app-server-internet |
 | lenie_openai | openai SDK | app-server-internet |
 
 All layers built with `manylinux2014_x86_64` platform for Lambda compatibility.
+
+---
+
+## 15. Resources Without CloudFormation Templates
+
+The following AWS resources related to Project Lenie exist in the account (us-east-1) but are **not managed by any CloudFormation template**. They were created manually, via scripts, or through other tools.
+
+### 15.1 S3 Buckets
+
+| Bucket | Purpose | Notes |
+|--------|---------|-------|
+| `lenie-s3-tmp` | Temporary storage (legacy) | Data migrated to `lenie-dev-website-content`. Candidate for deletion |
+
+### 15.2 CloudFront Distributions
+
+*(All CloudFront distributions are now CF-managed. See `cloudfront-app.yaml` and `cloudfront-helm.yaml`.)*
+
+### 15.3 Lambda Functions
+
+| Function | Purpose | Notes |
+|----------|---------|-------|
+| `step-function-test` | Step Functions testing | Test artifact |
+
+### 15.4 DynamoDB Tables
+
+*(All active DynamoDB tables are CF-managed. See `dynamodb-documents.yaml`. Cache tables removed — no longer needed.)*
+
+### 15.5 SNS Topics
+
+*(All SNS topics removed during legacy resource cleanup. Remaining SNS topic is CF-managed via `sqs-application-errors.yaml`.)*
+
+### 15.6 API Gateway
+
+*(All API Gateways are now CF-managed. See `api-gw-app.yaml`, `api-gw-infra.yaml`, `api-gw-url-add.yaml`.)*
+
+### 15.7 SES Email Identities
+
+| Identity | Notes |
+|----------|-------|
+| `krzysztof@itsnap.eu` | Personal email identity |
+
+### 15.8 Lambda Layers
+
+*(All Lambda Layers are now CF-managed. See `lambda-layer-*.yaml` templates.)*
+
+### 15.9 Summary
+
+| Resource Type | Without CF Template | With CF Template |
+|---------------|--------------------:|:----------------:|
+| S3 Buckets | 1 | 5 |
+| CloudFront Distributions | 0 | 2 |
+| Lambda Functions | 1 | 11 |
+| DynamoDB Tables | 0 | 1 |
+| SNS Topics | 0 | 1 |
+| API Gateway | 0 | 3 |
+| SES Identities | 1 | 0 |
+| Lambda Layers | 0 | 3 |
+| **Total** | **~3** | **~26** |

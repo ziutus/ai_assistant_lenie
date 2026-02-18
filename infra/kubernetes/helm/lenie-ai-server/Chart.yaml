@@ -1,0 +1,6 @@
+apiVersion: v2
+appVersion: 0.2.14
+description: Lenie-AI is simple Python server to manage private links repository
+name: lenie-ai-server
+type: application
+version: 0.2.14

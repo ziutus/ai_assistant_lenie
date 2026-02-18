@@ -4,13 +4,15 @@ Description: 'API Gateway for APP infrastructure management'
 Parameters:
   ProjectCode:
     Type: String
-  stage:
-    Description: Specify stage (dev, qas, prd)
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
     Type: String
+    Default: dev
+    Description: Deployment environment
     AllowedValues:
       - dev
-      - qas
-      - prd
+      # Post-MVP: add prod, qa as needed
   OpenvpnEC2Name:
     Description: The VPC Id where the RDS instance will be deployed
     Type: AWS::SSM::Parameter::Value<String>
@@ -37,11 +39,16 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "*"
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   SqsSizeFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: !Sub ${ProjectCode}-${stage}-sqs-size
+      FunctionName: !Sub ${ProjectCode}-${Environment}-sqs-size
       Handler: 'lambda_function.lambda_handler'
       Role: !GetAtt LambdaExecutionRole.Arn
       LoggingConfig:
@@ -49,21 +56,26 @@ Resources:
         ApplicationLogLevel: 'INFO'
         SystemLogLevel: 'INFO'
       Code:
-        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
-        S3Key: !Sub ${ProjectCode}-${stage}-sqs-size.zip
-      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${Environment}-sqs-size.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/python/lambda-runtime-version}}'
       Timeout: 30
       MemorySize: 128
       Environment:
         Variables:
           LOG_LEVEL: 'INFO'
-          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/database/name}}'
+          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/database/name}}'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
 
   RdsStartFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: !Sub ${ProjectCode}-${stage}-rds-start
+      FunctionName: !Sub ${ProjectCode}-${Environment}-rds-start
       Handler: 'lambda_function.lambda_handler'
       Role: !GetAtt LambdaExecutionRole.Arn
       LoggingConfig:
@@ -71,20 +83,25 @@ Resources:
         ApplicationLogLevel: 'INFO'
         SystemLogLevel: 'INFO'
       Code:
-        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
-        S3Key: !Sub ${ProjectCode}-${stage}-rds-start.zip
-      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${Environment}-rds-start.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/python/lambda-runtime-version}}'
       Timeout: 30
       MemorySize: 128
       Environment:
         Variables:
           LOG_LEVEL: 'INFO'
-          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/database/name}}'
+          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/database/name}}'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   RdsStopFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: !Sub ${ProjectCode}-${stage}-rds-stop
+      FunctionName: !Sub ${ProjectCode}-${Environment}-rds-stop
       Handler: 'lambda_function.lambda_handler'
       Role: !GetAtt LambdaExecutionRole.Arn
       LoggingConfig:
@@ -92,20 +109,25 @@ Resources:
         ApplicationLogLevel: 'INFO'
         SystemLogLevel: 'INFO'
       Code:
-        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
-        S3Key: !Sub lenie-${stage}-rds-stop.zip
-      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${Environment}-rds-stop.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/python/lambda-runtime-version}}'
       Timeout: 30
       MemorySize: 128
       Environment:
         Variables:
           LOG_LEVEL: 'INFO'
-          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/database/name}}'
+          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/database/name}}'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   RdsStatusFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: !Sub ${ProjectCode}-${stage}-rds-status
+      FunctionName: !Sub ${ProjectCode}-${Environment}-rds-status
       Handler: 'lambda_function.lambda_handler'
       Role: !GetAtt LambdaExecutionRole.Arn
       LoggingConfig:
@@ -113,20 +135,25 @@ Resources:
         ApplicationLogLevel: 'INFO'
         SystemLogLevel: 'INFO'
       Code:
-        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
-        S3Key: !Sub ${ProjectCode}-${stage}-rds-status.zip
-      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${Environment}-rds-status.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/python/lambda-runtime-version}}'
       Timeout: 30
       MemorySize: 128
       Environment:
         Variables:
           LOG_LEVEL: 'INFO'
-          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/database/name}}'
+          DB_ID: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/database/name}}'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   Ec2StatusFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: !Sub ${ProjectCode}-${stage}-ec2-status
+      FunctionName: !Sub ${ProjectCode}-${Environment}-ec2-status
       Handler: 'lambda_function.lambda_handler'
       Role: !GetAtt LambdaExecutionRole.Arn
       LoggingConfig:
@@ -134,20 +161,25 @@ Resources:
         ApplicationLogLevel: 'INFO'
         SystemLogLevel: 'INFO'
       Code:
-        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
-        S3Key: !Sub ${ProjectCode}-${stage}-ec2-status.zip
-      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${Environment}-ec2-status.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/python/lambda-runtime-version}}'
       Timeout: 30
       MemorySize: 128
       Environment:
         Variables:
           LOG_LEVEL: 'INFO'
           INSTANCE_ID: !Sub '${OpenvpnEC2Name}'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   Ec2StatusStart:
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: !Sub ${ProjectCode}-${stage}-ec2-start
+      FunctionName: !Sub ${ProjectCode}-${Environment}-ec2-start
       Handler: 'lambda_function.lambda_handler'
       Role: !GetAtt LambdaExecutionRole.Arn
       LoggingConfig:
@@ -155,20 +187,25 @@ Resources:
         ApplicationLogLevel: 'INFO'
         SystemLogLevel: 'INFO'
       Code:
-        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
-        S3Key: !Sub ${ProjectCode}-${stage}-ec2-start.zip
-      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${Environment}-ec2-start.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/python/lambda-runtime-version}}'
       Timeout: 30
       MemorySize: 128
       Environment:
         Variables:
           LOG_LEVEL: 'INFO'
           INSTANCE_ID: !Sub '${OpenvpnEC2Name}'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   Ec2StatusStop:
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: !Sub ${ProjectCode}-${stage}-ec2-stop
+      FunctionName: !Sub ${ProjectCode}-${Environment}-ec2-stop
       Handler: 'lambda_function.lambda_handler'
       Role: !GetAtt LambdaExecutionRole.Arn
       LoggingConfig:
@@ -176,33 +213,43 @@ Resources:
         ApplicationLogLevel: 'INFO'
         SystemLogLevel: 'INFO'
       Code:
-        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/s3/cloudformation/name}}'
-        S3Key: !Sub ${ProjectCode}-${stage}-ec2-stop.zip
-      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${stage}/python/lambda-runtime-version}}'
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub ${ProjectCode}-${Environment}-ec2-stop.zip
+      Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/python/lambda-runtime-version}}'
       Timeout: 30
       MemorySize: 128
       Environment:
         Variables:
           LOG_LEVEL: 'INFO'
           INSTANCE_ID: !Sub '${OpenvpnEC2Name}'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   LenieApi:
     Type: 'AWS::ApiGateway::RestApi'
     Properties:
-      Name: !Sub "${ProjectCode}_${stage}_infra"
+      Name: !Sub "${ProjectCode}_${Environment}_infra"
       Description: !Sub "${ProjectCode} AWS Infra management"
       EndpointConfiguration:
         Types:
           - REGIONAL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
       Body:
         openapi: "3.0.1"
         info:
-          title: !Sub "${ProjectCode}_${stage}_infra"
-          description: !Sub "Infrastructure management API"
-          version: "2025-02-21T10:52:31Z"
+          title: !Sub "${ProjectCode}_${Environment}_infra"
+          description: "Infrastructure management API"
+          version: "2026-02-18T00:00:00Z"
         paths:
-          /sqs/size:
-            post:
+          /infra/sqs/size:
+            get:
               responses:
                 "200":
                   description: "200 response"
@@ -215,7 +262,7 @@ Resources:
               x-amazon-apigateway-integration:
                 type: "aws_proxy"
                 httpMethod: "POST"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-sqs-size/invocations"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${Environment}-sqs-size/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 contentHandling: "CONVERT_TO_TEXT"
@@ -246,9 +293,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-
-
-          /vpn-server/start:
+          /infra/vpn_server/start:
             post:
               responses:
                 "200":
@@ -262,7 +307,7 @@ Resources:
               x-amazon-apigateway-integration:
                 type: "aws_proxy"
                 httpMethod: "POST"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-ec2-start/invocations"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${Environment}-ec2-start/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 contentHandling: "CONVERT_TO_TEXT"
@@ -293,7 +338,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /vpn-server/stop:
+          /infra/vpn_server/stop:
             post:
               responses:
                 "200":
@@ -307,7 +352,7 @@ Resources:
               x-amazon-apigateway-integration:
                 type: "aws_proxy"
                 httpMethod: "POST"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-ec2-stop/invocations"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${Environment}-ec2-stop/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 contentHandling: "CONVERT_TO_TEXT"
@@ -338,8 +383,8 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /vpn-server/status:
-            post:
+          /infra/vpn_server/status:
+            get:
               responses:
                 "200":
                   description: "200 response"
@@ -352,7 +397,7 @@ Resources:
               x-amazon-apigateway-integration:
                 type: "aws_proxy"
                 httpMethod: "POST"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-ec2-status/invocations"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${Environment}-ec2-status/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 contentHandling: "CONVERT_TO_TEXT"
@@ -383,9 +428,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-
-
-          /database/start:
+          /infra/database/start:
             post:
               responses:
                 "200":
@@ -399,7 +442,7 @@ Resources:
               x-amazon-apigateway-integration:
                 type: "aws_proxy"
                 httpMethod: "POST"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-rds-start/invocations"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${Environment}-rds-start/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 contentHandling: "CONVERT_TO_TEXT"
@@ -430,7 +473,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /database/stop:
+          /infra/database/stop:
             post:
               responses:
                 "200":
@@ -444,7 +487,7 @@ Resources:
               x-amazon-apigateway-integration:
                 type: "aws_proxy"
                 httpMethod: "POST"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-rds-stop/invocations"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${Environment}-rds-stop/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 contentHandling: "CONVERT_TO_TEXT"
@@ -475,8 +518,8 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /database/status:
-            post:
+          /infra/database/status:
+            get:
               responses:
                 "200":
                   description: "200 response"
@@ -489,7 +532,50 @@ Resources:
               x-amazon-apigateway-integration:
                 type: "aws_proxy"
                 httpMethod: "POST"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${stage}-rds-status/invocations"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${Environment}-rds-status/invocations"
+                passthroughBehavior: "when_no_match"
+                timeoutInMillis: 29000
+                contentHandling: "CONVERT_TO_TEXT"
+            options:
+              responses:
+                "200":
+                  description: "200 response"
+                  headers:
+                    Access-Control-Allow-Origin:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Methods:
+                      schema:
+                        type: "string"
+                    Access-Control-Allow-Headers:
+                      schema:
+                        type: "string"
+                  content: {}
+              x-amazon-apigateway-integration:
+                type: "mock"
+                responses:
+                  default:
+                    statusCode: "200"
+                    responseParameters:
+                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
+                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
+                      method.response.header.Access-Control-Allow-Origin: "'*'"
+                requestTemplates:
+                  application/json: '{"statusCode": 200}'
+                passthroughBehavior: "when_no_match"
+          /infra/git-webhooks:
+            post:
+              responses:
+                "200":
+                  description: "200 response"
+                  content:
+                    application/json:
+                      schema:
+                        $ref: "#/components/schemas/Empty"
+              x-amazon-apigateway-integration:
+                type: "aws_proxy"
+                httpMethod: "POST"
+                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:git-webhooks/invocations"
                 passthroughBehavior: "when_no_match"
                 timeoutInMillis: 29000
                 contentHandling: "CONVERT_TO_TEXT"
@@ -551,6 +637,62 @@ Resources:
     Type: AWS::Lambda::Permission
     Properties:
       FunctionName: !Ref RdsStartFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionRdsStop:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RdsStopFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionRdsStatus:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref RdsStatusFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionSqsSize:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref SqsSizeFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionEc2Status:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Ec2StatusFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionEc2Start:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Ec2StatusStart
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionEc2Stop:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Ec2StatusStop
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  LambdaInvokePermissionGitWebhooks:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: git-webhooks
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"

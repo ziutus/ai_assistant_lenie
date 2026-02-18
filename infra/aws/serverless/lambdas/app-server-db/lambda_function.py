@@ -153,8 +153,6 @@ def lambda_handler(event, _):
 
         return prepare_return(response, 200)
 
-    # event['path'] == '/translate' - in internet version - with access to others AWS services
-
     if event['path'] == '/website_similar':
         # pprint(event['body'])
 

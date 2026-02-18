@@ -1,11 +1,14 @@
+import logging
 import os
 from pprint import pprint
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 
-from pytube import YouTube
+from pytubefix import YouTube
 from yt_dlp import YoutubeDL
 
 from library.text_transcript import text_split_with_chapters
+
+logger = logging.getLogger(__name__)
 
 
 class StalkerYoutubeFile:
@@ -33,8 +36,7 @@ class StalkerYoutubeFile:
         self.length_seconds = None
         self.length_minutes = None
 
-        self._yt = YouTube(youtube_url)
-
+        self._yt = None
         self.filename = None
         self.type = None
         self.directory = None
@@ -49,26 +51,38 @@ class StalkerYoutubeFile:
         self.directory = cache_directory
         self.chapters_string = chapters_string
 
-        if not self._yt:
-            raise Exception("Wrong url")
+        try:
+            self._yt = YouTube(youtube_url)
+        except Exception as e:
+            logger.warning(f"pytube failed for {youtube_url}: {e}")
+            self.can_pytube = False
 
-        if media_type == "video":
-            self.filename = f'{self._yt.video_id}.mp4'
+        if self._yt:
+            if media_type == "video":
+                self.filename = f'{self._yt.video_id}.mp4'
 
-        if self._yt.vid_info['playabilityStatus']['status'] == 'LOGIN_REQUIRED':
-            # self.error = "ERROR: YouTube video is login protected"
-            self.can_pytube: bool = False
-            self.private = True
+            if self._yt.vid_info['playabilityStatus']['status'] == 'LOGIN_REQUIRED':
+                self.can_pytube = False
+                self.private = True
 
-        self.text = None
-        self.video_id = self._yt.video_id
+            self.video_id = self._yt.video_id
 
-        if self.can_pytube:
-            self.title = f"{self._yt.title}"
-            self.author = f"{self._yt.author}"
-            self.description = f"{self._yt.description}"
-            self.length_seconds = self._yt.length
-            self.length_minutes = round(self._yt.length / 60, 2)
+            if self.can_pytube:
+                self.title = f"{self._yt.title}"
+                self.author = f"{self._yt.author}"
+                self.description = f"{self._yt.description}"
+                self.length_seconds = self._yt.length
+                self.length_minutes = round(self._yt.length / 60, 2)
+        else:
+            # Extract video_id from URL when pytube fails
+            parsed = urlparse(youtube_url)
+            qs = parse_qs(parsed.query)
+            if 'v' in qs:
+                self.video_id = qs['v'][0]
+            elif parsed.netloc == 'youtu.be':
+                self.video_id = parsed.path.lstrip('/')
+            if self.video_id and media_type == "video":
+                self.filename = f'{self.video_id}.mp4'
 
         self.directory = cache_directory
         self.type = None

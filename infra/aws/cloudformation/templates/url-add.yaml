@@ -10,7 +10,24 @@ Parameters:
   Environment:
     Type: String
     Default: dev
-    Description: Environment (dev, qa, prod, etc.)
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+
+  SqsDocumentsUrl:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: '/lenie/dev/sqs/documents/url'
+    Description: SSM path for SQS documents queue URL
+
+  # IMPORTANT: SqsDocumentsQueueName must match the queue referenced by SqsDocumentsUrl (SSM).
+  # If the SSM parameter is updated to point to a different queue, update this value as well.
+  # When sqs-documents.yaml stack is deployed, it will overwrite SSM to point to lenie-dev-documents;
+  # update the parameter file value accordingly to avoid IAM permission mismatch.
+  SqsDocumentsQueueName:
+    Type: String
+    AllowedPattern: '[a-zA-Z0-9_-]+'
+    Description: Name of the SQS documents queue for IAM policy scoping
 
   timestamp:
     Type: String
@@ -20,7 +37,7 @@ Resources:
   LenineUrlAddLambdaFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
-      FunctionName: 'lenie-dev-url-add'
+      FunctionName: !Sub '${ProjectCode}-${Environment}-url-add'
       Handler: 'lambda_function.lambda_handler'
       Role: !GetAtt LambdaExecutionRole.Arn
       LoggingConfig:
@@ -30,8 +47,8 @@ Resources:
       Layers:
         - arn:aws:lambda:us-east-1:017000801446:layer:AWSLambdaPowertoolsPythonV3-python311-x86_64:6
       Code:
-        S3Bucket: lenie-dev-cloudformation
-        S3Key: lenie-dev-url-add.zip
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub '${ProjectCode}-${Environment}-url-add.zip'
 
       Runtime: 'python3.11'
       Timeout: 30
@@ -39,16 +56,26 @@ Resources:
       Environment:
         Variables:
           LOG_LEVEL: 'INFO'
-          AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites
-          BUCKET_NAME: lenie-s3-tmp
+          AWS_QUEUE_URL_ADD: !Ref SqsDocumentsUrl
+          BUCKET_NAME: !Sub '${ProjectCode}-${Environment}-website-content'
           DYNAMODB_TABLE_NAME: lenie_dev_documents
           TIMESTAMP: !Ref timestamp
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   LenineUrlAddLogGroup:
     Type: 'AWS::Logs::LogGroup'
     Properties:
       LogGroupName: !Sub '/aws/lambda/${LenineUrlAddLambdaFunction}'
       RetentionInDays: 7
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   LambdaExecutionRole:
     Type: 'AWS::IAM::Role'
@@ -80,7 +107,7 @@ Resources:
               - Effect: Allow
                 Action:
                   - sqs:SendMessage
-                Resource: "arn:aws:sqs:us-east-1:008971653395:lenie_websites"
+                Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${SqsDocumentsQueueName}"
         - PolicyName: S3Access
           PolicyDocument:
             Version: "2012-10-17"
@@ -90,7 +117,7 @@ Resources:
                   - s3:PutObject
                   - s3:GetObject
                 Resource:
-                  - "arn:aws:s3:::lenie-s3-tmp/*"
+                  - !Sub "arn:aws:s3:::${ProjectCode}-${Environment}-website-content/*"
         - PolicyName: DynamoDBAccess
           PolicyDocument:
             Version: "2012-10-17"
@@ -102,23 +129,38 @@ Resources:
                   - dynamodb:BatchWriteItem
                 Resource:
                   - Fn::ImportValue: !Sub "${ProjectCode}-${Environment}-dynamodb-documents-TableArn"
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   UrlAddApi:
     Type: 'AWS::ApiGateway::RestApi'
     Properties:
-      Name: 'lenie_dev_add_from_chrome_extension'
+      Name: !Sub '${ProjectCode}_${Environment}_add_from_chrome_extension'
       Description: 'API for Chrome extension "Lenie AI assistant"'
       EndpointConfiguration:
         Types:
           - REGIONAL
       ApiKeySourceType: HEADER
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   ApiKey:
     Type: 'AWS::ApiGateway::ApiKey'
     Properties:
-      Name: 'lenie-dev-chrome-extension-key'
+      Name: !Sub '${ProjectCode}-${Environment}-chrome-extension-key'
       Description: 'API Key for Chrome extension'
       Enabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   UsagePlan:
     Type: 'AWS::ApiGateway::UsagePlan'
@@ -127,7 +169,12 @@ Resources:
         - ApiId: !Ref UrlAddApi
           Stage: !Ref ApiStage
       Description: 'Usage plan for Chrome extension API'
-      UsagePlanName: 'lenie-dev-chrome-extension-plan'
+      UsagePlanName: !Sub '${ProjectCode}-${Environment}-chrome-extension-plan'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   UsagePlanKey:
     Type: 'AWS::ApiGateway::UsagePlanKey'

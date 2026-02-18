@@ -6,14 +6,17 @@ Parameters:
     Type: String
     Default: 'MyVPC'
     Description: 'Nazwa VPC'
-  ProjectName:
+  ProjectCode:
     Type: String
-    Default: 'lenie'
-    Description: 'Project Name'
+    Default: lenie
+    Description: Project code for resource naming and tagging
   Environment:
     Type: String
-    Default: 'dev'
-    Description: 'environment'
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
   VpcCidr:
     Type: String
     Default: '10.0.0.0/16'
@@ -52,19 +55,24 @@ Resources:
       EnableDnsHostnames: 'true'
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-VPC'
+          Value: !Sub '${ProjectCode}-${Environment}-VPC'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   LenieVPCParam:
     Type: AWS::SSM::Parameter
     Properties:
       Type: String
-      Description: !Sub Stores ${ProjectName}-${Environment}- DataSubnetB Id
+      Description: !Sub Stores ${ProjectCode}-${Environment}- DataSubnetB Id
       Tier: Standard
-      Name: !Sub /${ProjectName}/${Environment}/vpc-id
+      Name: !Sub /${ProjectCode}/${Environment}/vpc-id
       Value: !Ref LenieVPC
       Tags:
-        Name: !Sub ${ProjectName}-${Environment}-vpc-id
-
+        Name: !Sub ${ProjectCode}-${Environment}-vpc-id
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
 
   PublicSubnet1:
     Type: 'AWS::EC2::Subnet'
@@ -75,7 +83,11 @@ Resources:
       MapPublicIpOnLaunch: 'true'
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-PublicSubnet1'
+          Value: !Sub '${ProjectCode}-${Environment}-PublicSubnet1'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   PublicSubnet2:
     Type: 'AWS::EC2::Subnet'
@@ -86,7 +98,11 @@ Resources:
       MapPublicIpOnLaunch: 'true'
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-PublicSubnet2'
+          Value: !Sub '${ProjectCode}-${Environment}-PublicSubnet2'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   PrivateSubnet1:
     Type: 'AWS::EC2::Subnet'
@@ -97,7 +113,11 @@ Resources:
       MapPublicIpOnLaunch: 'false'
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-PrivateSubnet1'
+          Value: !Sub '${ProjectCode}-${Environment}-PrivateSubnet1'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   PrivateSubnet2:
     Type: 'AWS::EC2::Subnet'
@@ -108,7 +128,11 @@ Resources:
       MapPublicIpOnLaunch: 'false'
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-PrivateSubnet2'
+          Value: !Sub '${ProjectCode}-${Environment}-PrivateSubnet2'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   PrivateDBSubnet1:
     Type: 'AWS::EC2::Subnet'
@@ -119,18 +143,24 @@ Resources:
       MapPublicIpOnLaunch: 'false'
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-PrivateDBSubnet1'
+          Value: !Sub '${ProjectCode}-${Environment}-PrivateDBSubnet1'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   DataSubnetBIdParam:
     Type: AWS::SSM::Parameter
     Properties:
       Type: String
-      Description: !Sub Stores ${ProjectName}-${Environment}- DataSubnetA Id
+      Description: !Sub Stores ${ProjectCode}-${Environment}- DataSubnetA Id
       Tier: Standard
-      Name: !Sub /${ProjectName}/${Environment}/data-subnet-a/subnet-id
+      Name: !Sub /${ProjectCode}/${Environment}/data-subnet-a/subnet-id
       Value: !Ref PrivateDBSubnet1
       Tags:
-        Name: !Sub ${ProjectName}-${Environment}-data-subnet-a-id-param
+        Name: !Sub ${ProjectCode}-${Environment}-data-subnet-a-id-param
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
 
   PrivateDBSubnet2:
     Type: 'AWS::EC2::Subnet'
@@ -141,25 +171,35 @@ Resources:
       MapPublicIpOnLaunch: 'false'
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-PrivateDBSubnet2'
+          Value: !Sub '${ProjectCode}-${Environment}-PrivateDBSubnet2'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   DataSubnetBIdParam2:
     Type: AWS::SSM::Parameter
     Properties:
       Type: String
-      Description: !Sub Stores ${ProjectName}-${Environment}- DataSubnetB Id
+      Description: !Sub Stores ${ProjectCode}-${Environment}- DataSubnetB Id
       Tier: Standard
-      Name: !Sub /${ProjectName}/${Environment}/data-subnet-b/subnet-id
+      Name: !Sub /${ProjectCode}/${Environment}/data-subnet-b/subnet-id
       Value: !Ref PrivateDBSubnet2
       Tags:
-        Name: !Sub ${ProjectName}-${Environment}-data-subnet-b-id-param
+        Name: !Sub ${ProjectCode}-${Environment}-data-subnet-b-id-param
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
 
   MyInternetGateway:
     Type: 'AWS::EC2::InternetGateway'
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-InternetGateway'
+          Value: !Sub '${ProjectCode}-${Environment}-InternetGateway'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   AttachGateway:
     Type: 'AWS::EC2::VPCGatewayAttachment'
@@ -173,7 +213,11 @@ Resources:
       VpcId: !Ref LenieVPC
       Tags:
         - Key: Name
-          Value: !Sub '${ProjectName}-${Environment}-RouteTable'
+          Value: !Sub '${ProjectCode}-${Environment}-RouteTable'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   MyRoute:
     Type: 'AWS::EC2::Route'
@@ -200,12 +244,12 @@ Outputs:
     Description: ID of the created VPC
     Value: !Ref LenieVPC
     Export:
-      Name: !Sub ${ProjectName}-${Environment}-vpcId
+      Name: !Sub ${ProjectCode}-${Environment}-vpcId
   PublicSubnet1Id:
     Description: ID of the created PublicSubnet1
     Value: !Ref PublicSubnet1
     Export:
-      Name: !Sub ${ProjectName}-${Environment}-publicSubnet1
+      Name: !Sub ${ProjectCode}-${Environment}-publicSubnet1
   PublicSubnet2Id:
     Description: ID of the created PublicSubnet2
     Value: !Ref PublicSubnet2

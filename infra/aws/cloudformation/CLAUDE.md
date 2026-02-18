@@ -32,7 +32,7 @@ Universal script for creating, updating, and deleting CloudFormation stacks.
 | Flag  | Description | Default |
 |-------|-------------|---------|
 | `-p`  | Project code (e.g. `lenie`) | required |
-| `-s`  | Environment: `dev`, `qa`, `prod`, `cob`, `test`, `feature`, `staging` | required |
+| `-s`  | Environment (currently: `dev`; `prod`, `qa` post-MVP) | required |
 | `-r`  | AWS region | `us-east-1` |
 | `-d`  | Delete stacks (instead of create/update) | disabled |
 | `-t`  | Change-set mode (preview changes before applying) | disabled |
@@ -60,6 +60,7 @@ Universal script for creating, updating, and deleting CloudFormation stacks.
 6. In change-set mode (`-t`), the script creates a change-set and waits for user confirmation.
 7. When deleting (`-d`), stacks are removed in reverse order.
 8. For `prod`, templates from the `[common]` section are also processed.
+9. After deploying `api-gw-app`, automatically creates a new API Gateway deployment to apply any RestApi Body changes (skipped in change-set mode).
 
 ### Stack Naming Convention
 
@@ -74,7 +75,7 @@ Example: template `templates/vpc.yaml` in the `dev` environment of project `leni
 Configuration defining which templates are deployed per environment. INI format with per-environment sections.
 
 - `[common]` - templates deployed once per region (used only for `prod`)
-- `[dev]`, `[qa]`, `[prod]`, ... - templates per environment
+- `[dev]` - currently the only active environment (post-MVP: add `[prod]`, `[qa]`)
 - Lines starting with `;` are commented out (template skipped)
 
 Template order in the file matters - stacks are created in this order and deleted in reverse.
@@ -125,6 +126,17 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 |----------|-----------|-------------|
 | `s3.yaml` | S3 Bucket | Video transcription bucket (`lenie-{stage}-video-to-text`) |
 | `s3-cloudformation.yaml` | S3 Bucket, SSM | Lambda code and CF artifacts bucket |
+| `s3-website-content.yaml` | S3 Bucket, Bucket Policy, SSM | Website content storage (`lenie-{stage}-website-content`, AES256) |
+| `s3-app-web.yaml` | S3 Bucket, Bucket Policy, SSM | Frontend hosting bucket (`lenie-{stage}-app-web`, CloudFront OAC) |
+| `helm.yaml` | S3 Bucket, Bucket Policy, CloudFront OAI, CloudFront Distribution | Helm chart repository and CDN (`helm.{env}.lenie-ai.eu`) |
+
+### Lambda Layers
+
+| Template | Resources | Description |
+|----------|-----------|-------------|
+| `lambda-layer-lenie-all.yaml` | Lambda Layer, SSM | Shared library layer (pytubefix, urllib3, requests, beautifulsoup4) |
+| `lambda-layer-openai.yaml` | Lambda Layer, SSM | OpenAI SDK layer |
+| `lambda-layer-psycopg2.yaml` | Lambda Layer, SSM | PostgreSQL driver layer (psycopg2-binary) |
 
 ### Compute
 
@@ -141,9 +153,20 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `api-gw-infra.yaml` | REST API, 7 Lambdas | Infrastructure management API (RDS start/stop, EC2, SQS) |
-| `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (13 endpoints, x-api-key) |
-| `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | Chrome extension API (rate limiting) |
+| `api-gw-infra.yaml` | REST API, 8 Lambdas | Infrastructure management API (8 endpoints: RDS, EC2/VPN, SQS, git-webhooks) |
+| `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (10 endpoints, x-api-key) |
+| `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | UNUSED — commented out in deploy.ini (duplicate of url-add.yaml) |
+
+**`api-gw-app` stage configuration (managed by CloudFormation):**
+The `v1` stage logging and tracing settings are codified in `StageDescription` on the `ApiDeployment` resource in `api-gw-app.yaml`:
+- `LoggingLevel: INFO` (error and info CloudWatch logs)
+- `MetricsEnabled: true` (detailed CloudWatch metrics)
+- `DataTraceEnabled: true` (full request/response body logging — review before enabling in production)
+- `TracingEnabled: true` (X-Ray tracing)
+
+These settings apply to all methods/resources via wildcard `MethodSettings` (`HttpMethod: '*'`, `ResourcePath: '/*'`). Note: CloudWatch logging requires an account-level IAM role (`cloudwatchRoleArn`) — verify with `aws apigateway get-account`.
+
+**Note:** `api-gw-infra` and `api-gw-url-add` do NOT currently have stage logging or tracing configured in their CloudFormation templates.
 
 ### Orchestration
 
@@ -151,11 +174,15 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 |----------|-----------|-------------|
 | `sqs-to-rds-step-function.yaml` | Step Functions, EventBridge, IAM, Logs | Workflow: SQS -> start DB -> process -> stop DB |
 
-### Email
+### CDN
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `ses.yaml` | SES Identity, Lambda, Custom Resource | Email with DKIM, auto-update Route53 records |
+| `cloudfront-app.yaml` | CloudFront Distribution, OAC, SSM | CDN for frontend application (`app.{env}.lenie-ai.eu`) |
+
+### Email
+
+*(SES template `ses.yaml` removed during legacy resource cleanup. SES is no longer used by the application.)*
 
 ### Organization and Governance
 
@@ -171,26 +198,58 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `budget.yaml` | AWS Budget | $20/month budget with alerts at 50%, 80% (actual) and 100% (forecast) |
+| `budget.yaml` | AWS Budget | $8/month budget with alerts at 50%, 80% (actual) and 100% (forecast) |
 
 ## Recommended Deployment Order (New Environment)
 
-Stacks have dependencies between them. When creating a new environment from scratch, follow this order:
+Stacks have dependencies between them. When creating a new environment from scratch, deploy templates in layer order as defined in `deploy.ini [dev]` section:
 
-1. `env-setup.yaml` - base configuration
-2. `budget.yaml` - cost alerts
-3. `1-domain-route53.yaml` - domain
-4. `vpc.yaml` - network
-5. `secrets.yaml` - credentials (change the default password manually after creation)
-6. `sqs-application-errors.yaml` - DLQ
-7. `s3-cloudformation.yaml` - Lambda artifacts bucket
-8. `rds.yaml` - database (requires VPC, secrets)
-9. `sqs-documents.yaml` - document queue
-10. `lambda-rds-start.yaml` - Lambda for DB start
-11. Remaining Lambdas and API Gateways
-12. `sqs-to-rds-step-function.yaml` - orchestration (requires Lambda and SQS)
+### Layer 1: Foundation
+- `env-setup.yaml` - base configuration (SSM parameters)
+- `budget.yaml` - cost alerts
+- `1-domain-route53.yaml` - domain
 
-This order is reflected in the `deploy.ini` file under the `[dev]` section.
+### Layer 2: Networking
+- `vpc.yaml` - VPC, subnets, IGW
+- `security-groups.yaml` - SSH access rules
+
+### Layer 3: Security
+- `secrets.yaml` - database credentials (change the default password manually after creation)
+
+### Layer 4: Storage
+- `s3.yaml` - video transcription bucket
+- `s3-cloudformation.yaml` - Lambda code and CF artifacts bucket
+- `dynamodb-documents.yaml` - documents table
+- `s3-website-content.yaml` - website content storage
+- `s3-app-web.yaml` - frontend hosting bucket
+- `sqs-documents.yaml` - document processing queue
+- `sqs-application-errors.yaml` - DLQ with email notification
+- `rds.yaml` - database (commented out; deployed separately, managed lifecycle via Step Functions)
+
+### Layer 5: Compute
+- `lambda-layer-lenie-all.yaml` - shared library layer
+- `lambda-layer-openai.yaml` - OpenAI SDK layer
+- `lambda-layer-psycopg2.yaml` - PostgreSQL driver layer
+- `ec2-lenie.yaml` - application server
+- `lenie-launch-template.yaml` - EC2 launch template
+- `lambda-rds-start.yaml` - Lambda for DB start
+- `lambda-weblink-put-into-sqs.yaml` - Lambda for SQS ingestion
+- `sqs-to-rds-lambda.yaml` - SQS to RDS transfer Lambda
+- `url-add.yaml` - URL addition Lambda with API Gateway
+
+### Layer 6: API
+- `api-gw-infra.yaml` - infrastructure management API
+- `api-gw-app.yaml` - main application API
+- `api-gw-url-add.yaml` - Chrome extension API
+
+### Layer 7: Orchestration
+- `sqs-to-rds-step-function.yaml` - SQS -> start DB -> process -> stop DB
+
+### Layer 8: CDN
+- `cloudfront-app.yaml` - CDN for frontend application
+- `helm.yaml` - Helm chart repository and CDN
+
+This order is reflected in the `deploy.ini` file under the `[dev]` section. Run `./deploy.sh -p lenie -s dev` to deploy all templates in order.
 
 ## Notes
 

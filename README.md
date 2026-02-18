@@ -13,11 +13,56 @@ Lenie's functionalities represent an advanced integration of AI technology with 
 
 This is a side project. Please be aware that the code is under active refactoring and correction as I'm still learning Python and LLMs.
 
-## Components
+## Target Vision
 
-* Web interface for browsing database contents
-* Chrome and Kiwi Browser extension
-* Backend written in Python
+Lenie is evolving into something bigger: a **private knowledge base in an Obsidian vault, managed by Claude Desktop, powered by Lenie-AI as an MCP (Model Context Protocol) server** for searching and managing content.
+
+Instead of interacting with Lenie through a web interface, the target workflow looks like this:
+1. **Claude Desktop** acts as the primary interface — you ask questions, request summaries, or search your knowledge base through natural conversation
+2. **Lenie-AI as MCP server** exposes its search, retrieval, and content management capabilities as MCP tools that Claude Desktop can call directly
+3. **Obsidian vault** serves as the persistent, human-readable knowledge store — notes, articles, transcriptions, and AI-generated summaries all live as markdown files you own and control
+
+This means transitioning from the current architecture (Flask REST API + React SPA accessed through a browser) to an MCP server model where the AI assistant itself becomes the interface. The Flask backend's endpoints (semantic search, content download, text processing) become MCP tools. The React frontend becomes optional — useful for bulk operations and browsing, but no longer the primary way to interact with your knowledge.
+
+The Chrome/Kiwi browser extension remains essential for capturing content from the web.
+
+## Roadmap
+
+### Phase 1: Current State
+
+See [Current Architecture](#current-architecture) for a detailed breakdown of what exists today — Flask REST API backend, React SPA frontend, PostgreSQL with pgvector, AWS serverless deployment, and Chrome/Kiwi browser extension.
+
+### Phase 2: MCP Server Foundation
+
+- Implement MCP server protocol — expose search, retrieve, and content management endpoints as MCP tools
+- Claude Desktop integration — configure Lenie-AI as an MCP server in Claude Desktop
+- API adaptation — adjust endpoint patterns for MCP tool consumption while maintaining backward compatibility with the existing REST API
+- Remove legacy Add URL app (`web_add_url_react`) and its dedicated API Gateway — fully replaced by the Chrome/Kiwi browser extension
+
+### Phase 3: Obsidian Integration
+
+- Obsidian vault synchronization — link database content with markdown files in a local vault
+- Semantic search from within Obsidian via Claude Desktop + MCP — ask questions about your knowledge base without leaving your notes
+- Advanced vector search refinements for personal knowledge management workflows
+
+### Phase 4: Scaling & Deployment Options
+
+- ECS deployment — containerized scaling with managed orchestration
+- EKS deployment — Kubernetes-based scaling for complex workloads
+- Multi-environment support — parameterized deployments across dev/qa/prod
+
+## Current Architecture
+
+- **Backend** — Flask REST API (Python 3.11) serving 18 endpoints with `x-api-key` auth. Handles document CRUD, text processing, AI embeddings, and vector similarity search
+- **Web Interface** — React 18 SPA for browsing, editing, and AI-processing documents. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask)
+- **Browser Extension** — Chrome/Kiwi Manifest v3 extension for capturing webpages and sending them to the backend
+- **Database** — PostgreSQL 17 with pgvector for vector similarity search (1536-dim embeddings)
+- **AWS Serverless** — API Gateway, Lambda functions, SQS queues, Step Functions for cost-optimized processing
+- **AI Services** — OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bielik
+- **Docker** — docker compose stack with Flask + PostgreSQL + React for local development
+- **Kubernetes** — Kustomize-based deployment with GKE dev overlay (experimental)
+
+See [CLAUDE.md](CLAUDE.md) for the full architecture reference.
 
 ## Supported Platforms
 
@@ -101,195 +146,12 @@ In this project, I'm using:
 * HashiCorp Vault for secrets (for local and Kubernetes environments)
 * AWS as the deployment platform (as I'm lazy and don't want to manage infrastructure)
 
-I'm also preparing several deployment methods:
-* Docker image (for easy application deployment)
-* Kubernetes Helm (to test scalability options)
-* AWS Lambda (to test the Event-Driven way of writing applications)
+Current deployment methods:
+* Docker Compose (local development)
+* AWS Lambda (production, event-driven serverless)
+* Kubernetes with Kustomize (experimental)
 
-As I'm a big fan of AWS, you will also see deployment approaches like:
-* Lambdas (to explore the Event-Driven way of writing applications like this),
-* ECS (to explore a convenient way of scaling Docker images),
-* EKS (to learn more about the costs of managing your own Kubernetes cluster and applications on it)
-
-
-## Python Notes
-
-### Using uv to manage dependencies
-
-Install uv:
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-or on Windows:
-```
-pip install uv
-```
-
-Quick start with Makefile:
-```bash
-make install          # Install base dependencies
-make install-all      # Install all dependencies (including optional)
-make install-docker   # Install docker dependencies only
-make lock             # Update uv.lock after changing pyproject.toml
-```
-
-Manual usage:
-```bash
-cd backend
-uv sync                    # Install base dependencies
-uv sync --all-extras       # Install all optional dependencies
-uv sync --extra docker     # Install specific extra
-uv lock                    # Update lock file
-```
-
-### Project Configuration
-
-Dependencies are managed via `backend/pyproject.toml` with optional dependency groups:
-- Base dependencies (server)
-- `[docker]` - Minimal dependencies for Docker image
-- `[markdown]` - Markdown processing tools
-- `[all]` - All dependencies including Google APIs, AWS tools, etc.
-
-
-## Prerequisites
-Before running the Docker container with the Lenie application, make sure you have:
-
-* Docker installed on your computer. Installation instructions can be found in the official Docker documentation.
-
-To create a Docker image for the Lenie application, you need a Dockerfile in your project directory. Below is an example process of building the image.
-
-1. Open a terminal in the directory where the Dockerfile is located.
-
-2. Run the following command to build the Docker image:
-
-```bash
-docker build -t stalker-server2:latest .
-```
-
-* The `-t` flag is used to tag (name) the image, in this case stalker.
-* The dot `.` at the end indicates that the Dockerfile is in the current directory.
-
-After the build process is complete, you can run the Docker container with the newly created image by using the command described in the section Running the Container.
-
-## Virtual Linux Machine
-
-### Debian machine
-```bash
-useradd lenie-ai
-mkdir /home/lenie-ai
-chown lenie-ai:lenie-ai /home/lenie-ai/
-
-apt-get install git
-apt install python3.11-venv
-apt install python3-pip
-
-```
-
-Installation of PostgreSQL database
-
-```bash
-
-```
-
-```bash
-python3 server.py
-```
-
-## AWS
-
-### Pushing Image to ECR
-```powershell
-(Get-ECRLoginCommand -ProfileName stalker-free-developer -Region us-east-1).Password | docker login --username AWS --password-stdin ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
-```
-
-```powershell
-docker build -t lenie-ai-server .
-```
-```powershell
-docker tag lenie-ai-server:latest ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/lenie-ai-server:latest
-```
-
-```powershell
-docker push ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/lenie-ai-server:latest
-```
-
-
-## Accessing the Application
-
-After starting the application or container, you can access the Lenie application by going to http://localhost:5000 in your web browser.
-
-### Docker
-
-#### Preparing Local Environment
-
-Install the Vault binary from: https://developer.hashicorp.com/vault/install
-
-```bash
-docker volume create vault_secrets_dev
-docker volume create vault_logs_dev
-
- docker run -d --name=vault_dev --cap-add=IPC_LOCK -e 'VAULT_LOCAL_CONFIG={"storage": {"file": {"path":
- "/vault/file"}}, "listener": [{"tcp": { "address": "0.0.0.0:8200", "tls_disable": true}}], "default_lease_ttl": "168h", "max_lease_ttl":
-"720h", "ui": true}' -v vault_secrets_dev:/vault/file -v vault_logs_dev:/vault/logs -p 8200:8200 hashicorp/vault server
-```
-
-```bash
-docker pull pgvector/pgvector:pg17
-```
-
-```bash
-docker run -d --name lenie-ai-db -e POSTGRES_PASSWORD=postgres -p 5432:5432 pgvector/pgvector:pg17
-```
-
-```sql
-CREATE EXTENSION vector
-```
-
-
-#### Running the Application
-
-Running from a local image:
-```bash
-docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenie-ai-server:latest
-```
-
-Running from a remote image:
-
-```powershell
-docker run --rm --env-file .env -p 5000:5000 --name lenie-ai-server -d lenieai/lenie-ai-server:latest
-```
-
-### Docker Compose
-
-```shell
-docker-compose.exe create
-docker-compose.exe start
-```
-
-## Working with the API
-
-You can send an example API request from the command line:
-
-```shell
-
-curl -X POST https://pir31ejsf2.execute-api.us-east-1.amazonaws.com/v1/url_add \
-     -H "Content-Type: application/json" \
-     -H "x-api-key: XXXX" \
-     -d '{
-           "url": "https://tech.wp.pl/ukrainski-system-delta-zintegrowany-z-polskim-topazem-zadaje-rosjanom-wielkie-straty,7066814570990208a",
-           "type": "webpage",
-           "note": "Interesting integration with the Polish battlefield imaging system",
-           "text": "HTML of the page from the given URL"
-         }'
-```
-
-If port forwarding is enabled, you can use this to validate your API request:
-
-```
-curl -H "x-api-key: XXX" -X GET "http://localhost:5000/website_list?type=ALL&
-document_state=ALL&search_in_document="
-```
-
+See [Roadmap](#roadmap) for planned deployment options (ECS, EKS).
 
 ## Services That Can Be Used to Get Data
 
@@ -298,41 +160,18 @@ document_state=ALL&search_in_document="
 | Textract    | AWS        | PDF to text | https://aws.amazon.com/textract/     |
 | AssemblyAI  | AssemblyAI | Speech to text ($0.12 per hour) | https://www.assemblyai.com/ |
 
-## Code Quality & Security
+## Documentation
 
-### Linting and Formatting (ruff)
-```bash
-make lint         # Run ruff linter
-make lint-fix     # Run ruff with auto-fix
-make format       # Format code with ruff
-make format-check # Check formatting (for CI)
-```
-
-### Security Scanning
-All security tools are run via `uvx` (uv tool runner) to avoid adding heavy dependencies to the project venv.
-
-```bash
-make security        # Run semgrep static analysis
-make security-deps   # Check dependencies for vulnerabilities (pip-audit)
-make security-bandit # Run bandit Python security linter
-make security-safety # Check dependencies with safety
-make security-all    # Run all security checks
-```
-
-| Tool | Purpose |
-|------|---------|
-| Semgrep | Static code analysis, security vulnerabilities |
-| pip-audit | Dependency vulnerability scanning (PyPI advisory DB) |
-| Bandit | Python-specific security linter |
-| Safety | Dependency vulnerability check (requires free account) |
-
-### Pre-commit Hooks (TruffleHog)
-Pre-commit hooks include TruffleHog for secret detection. See `.pre-commit-config.yaml`.
-
-
-# Planned Improvements
-* Add a checker to verify that no Lambda uses AWS Lambda Layers anymore
-
+| Document | Description |
+|----------|-------------|
+| [CLAUDE.md](CLAUDE.md) | Full architecture reference |
+| [docs/Python_Dependencies.md](docs/Python_Dependencies.md) | Dependency management with uv |
+| [docs/Docker_Local.md](docs/Docker_Local.md) | Docker development and deployment |
+| [docs/VM_Setup.md](docs/VM_Setup.md) | Virtual machine setup |
+| [docs/AWS_Infrastructure.md](docs/AWS_Infrastructure.md) | AWS infrastructure |
+| [docs/Code_Quality.md](docs/Code_Quality.md) | Linting and security scanning |
+| [docs/API_Usage.md](docs/API_Usage.md) | API request examples |
+| [docs/CI_CD.md](docs/CI_CD.md) | CI/CD pipelines |
 
 ## Why Do We Need Our Own LLM?
 So far, available LLMs operate in English or implicitly translate to English, losing context or meaning.

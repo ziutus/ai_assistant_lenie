@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFront distribution for frontend app hosting for Project Lenie'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+    Description: Environment name
+  AcmCertificateArn:
+    Type: String
+    Description: ACM certificate ARN for custom domain (must be in us-east-1)
+
+Resources:
+  # Origin Access Control for S3 origin (sigv4 signing)
+  AppOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      OriginAccessControlConfig:
+        Name: lenie-dev-app-web.s3.us-east-1.amazonaws.com
+        SigningProtocol: sigv4
+        SigningBehavior: always
+        OriginAccessControlOriginType: s3
+        Description: ''
+
+  # CloudFront distribution for frontend app (CF import — matches live resource exactly)
+  # DeletionPolicy: Retain required for CF import of existing resource
+  AppDistribution:
+    Type: AWS::CloudFront::Distribution
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: 'DEV app version of lenie'
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        HttpVersion: http2
+        IPV6Enabled: true
+        Aliases:
+          - app.dev.lenie-ai.eu
+        Origins:
+          - Id: lenie-dev-app-web.s3.us-east-1.amazonaws.com
+            DomainName: lenie-dev-app-web.s3.us-east-1.amazonaws.com
+            OriginAccessControlId: !GetAtt AppOriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: lenie-dev-app-web.s3.us-east-1.amazonaws.com
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          # AWS managed CachingOptimized policy
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: none
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+  # SSM Parameter exports
+  AppDistributionIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/cloudfront/app/id'
+      Type: String
+      Value: !Ref AppDistribution
+      Description: 'CloudFront app distribution ID for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+
+  AppDistributionDomainNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/cloudfront/app/domain-name'
+      Type: String
+      Value: !GetAtt AppDistribution.DomainName
+      Description: 'CloudFront app distribution domain name for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode

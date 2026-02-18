@@ -6,13 +6,14 @@ export const useVpnServer = () => {
     const [message, setMessage] = React.useState("");
     const [isLoading, setIsLoading] = React.useState(false);
     const [isError, setIsError] = React.useState(false);
-    const { apiKey, apiUrl, setVpnServerStatus } = React.useContext(AuthorizationContext);
+    const { apiKey, apiUrl, infraApiUrl, apiType, setVpnServerStatus } = React.useContext(AuthorizationContext);
+    const baseUrl = apiType === "AWS Serverless" ? infraApiUrl : apiUrl;
 
     const handleVPNServerStatusGet = async () => {
         setVpnServerStatus("unknown");
         setIsLoading(true);
         try {
-            const response = await axios.get(`${apiUrl}/infra/vpn_server/status`, {
+            const response = await axios.get(`${baseUrl}/infra/vpn_server/status`, {
                 headers: {
                     "Content-Type": "application/json",
                     "x-api-key": `${apiKey}`,
@@ -41,7 +42,7 @@ export const useVpnServer = () => {
         setIsLoading(true);
         try {
             const response = await axios.post(
-                `${apiUrl}/infra/vpn_server/start`,
+                `${baseUrl}/infra/vpn_server/start`,
                 {},
                 {
                     headers: {
@@ -72,7 +73,7 @@ export const useVpnServer = () => {
         setIsLoading(true);
         try {
             const response = await axios.post(
-                `${apiUrl}/infra/vpn_server/stop`,
+                `${baseUrl}/infra/vpn_server/stop`,
                 {},
                 {
                     headers: {

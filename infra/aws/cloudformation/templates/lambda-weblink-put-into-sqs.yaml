@@ -1,11 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Lambda function for putting web links into SQS'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+  SqsDocumentsUrl:
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: '/lenie/dev/sqs/documents/url'
+    Description: SSM path for SQS documents queue URL
+  SqsDocumentsQueueName:
+    Type: String
+    Description: Name of the SQS documents queue for IAM policy scoping
+
 Resources:
-  MyLambdaFunction:
-    Type: 'AWS::Lambda::Function'
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub '${AWS::StackName}-lambda-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaBasicExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+        - PolicyName: SQSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${SqsDocumentsQueueName}'
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${ProjectCode}-${Environment}-website-content/*'
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource:
+                  - !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectCode}_${Environment}_documents'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+  MyLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectCode}-${Environment}-weblink-put-into-sqs'
       Handler: lambda_function.lambda_handler
-      Role: arn:aws:iam::049706517731:role/service-role/test-lambda-role-nskevmou
+      Role: !GetAtt LambdaExecutionRole.Arn
       Code:
-        S3Bucket: lenie-2025-dev-cloudformation
-        S3Key: lenie-dev-url-add.zip
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub '${ProjectCode}-${Environment}-url-add.zip'
       Runtime: python3.11
-      Timeout: 10
+      Timeout: 30
+      Environment:
+        Variables:
+          AWS_QUEUE_URL_ADD: !Ref SqsDocumentsUrl
+          BUCKET_NAME: !Sub '${ProjectCode}-${Environment}-website-content'
+          DYNAMODB_TABLE_NAME: !Sub '${ProjectCode}_${Environment}_documents'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode

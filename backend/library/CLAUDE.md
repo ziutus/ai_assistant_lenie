@@ -60,7 +60,6 @@ Supported models:
 - **AWS Bedrock**: amazon.titan-tg1-large, amazon.nova-micro, amazon.nova-pro
 - **Google Vertex AI**: gemini-2.0-flash-lite-001
 - **CloudFerro**: Bielik-11B-v2.3-Instruct (Polish)
-- **Bedrock Vision**: anthropic.claude-3-haiku (via `ai_describe_image()`)
 
 Helper: `ai_model_need_translation_to_english(model)` — checks if model requires English input.
 
@@ -107,7 +106,7 @@ Supported models:
 
 - **`transcript.py`** — Transcription router (`aws`, `assemblyai`, `local`) + `transcript_price()` cost calculator.
 - **`google_auth.py`** — Google OAuth 2.0 credential management with token caching.
-- **`stalker_youtube_file.py`** — `StalkerYoutubeFile`: YouTube URL validation, metadata via `pytube`/`yt-dlp`, video download, transcript loading/splitting by chapters.
+- **`stalker_youtube_file.py`** — `StalkerYoutubeFile`: YouTube URL validation, metadata via `pytubefix`/`yt-dlp`, video download, transcript loading/splitting by chapters.
 
 ## Patterns & Conventions
 

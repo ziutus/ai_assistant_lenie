@@ -1,6 +1,6 @@
 [
   {
-    "ParameterKey": "ProjectName",
+    "ParameterKey": "ProjectCode",
     "ParameterValue": "lenie"
   },
   {
@@ -8,7 +8,23 @@
     "ParameterValue": "dev"
   },
   {
+    "ParameterKey": "SqsDocumentsQueueUrl",
+    "ParameterValue": "/lenie/dev/sqs/documents/url"
+  },
+  {
+    "ParameterKey": "DatabaseInstanceName",
+    "ParameterValue": "/lenie/dev/database/name"
+  },
+  {
     "ParameterKey": "ScheduleExpression",
-    "ParameterValue": "cron(30 4 * * ? *)"
+    "ParameterValue": "cron(0 5 * * ? *)"
+  },
+  {
+    "ParameterKey": "SqsToRdsLambdaFunctionName",
+    "ParameterValue": "lenie-dev-sqs-to-rds-lambda"
+  },
+  {
+    "ParameterKey": "ProblemsDlqArn",
+    "ParameterValue": "/lenie/dev/sqs/problems-dlq/arn"
   }
 ]

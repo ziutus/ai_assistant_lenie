@@ -7,7 +7,6 @@ import logging
 import library.embedding as embedding
 from library.ai import ai_ask, ai_model_need_translation_to_english
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.translate import text_translate
 from library.text_detect_language import text_language_detect
 from library.stalker_cache import cache_get, cache_write
 
@@ -65,22 +64,16 @@ if __name__ == '__main__':
 
     if args.en:
         logging.info("Your text is supposed to be in English.")
-        langauge = "en"
+        language = "en"
     elif args.pl:
         logging.info("Your text is supposed to be in Polish")
-        langauge = "pl"
+        language = "pl"
     else:
         logging.info("No language selection made, checking using AWS service")
         language = text_language_detect(text=question)
 
     logging.info(f"Language: {language}")
-    if language != 'en':
-        logging.info("Will translate query to English")
-        query = text_translate(text=question, target_language='en', source_language=language).translated_text
-        logging.info(f"Translated query to English is:{query}")
-
-    else:
-        query = question
+    query = question
 
     if answer and use_cache:
         answer_cached = cache_get('query', query, llm_model)
@@ -150,15 +143,6 @@ if __name__ == '__main__':
 
         if use_cache:
             cache_write('query', query, answer_en, llm_model)
-
-        if ai_model_need_translation_to_english(llm_model):
-            translate_result = text_translate(answer_en, source_language='en', target_language='pl')
-            if translate_result.status == "success":
-                answer = translate_result.text
-                print(f"Odpowiedz: {answer}")
-            else:
-                logging.error(f"Translation of answer had problem! {translate_result.error_message}")
-                exit(1)
 
         if use_own_knowledge:
             print("\nSources:")

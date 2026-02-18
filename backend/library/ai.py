@@ -4,20 +4,6 @@ from library.models.ai_response import AiResponse
 from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
 import library.api.google.google_vertexai as google_vertexai
 
-# https://huggingface.co/speakleash/Bielik-11B-v2.3-Instruct
-models = {
-    "amazon.titan-tg1-large": {"max_tokens": 32000},
-    "gpt-4": {},
-    "gpt-3.5-turbo-16k": {"max_tokens": 16000},
-    "gpt-3.5-turbo": {"max_tokens": 8000},
-    "gpt-4o": {},
-    "gpt-4o-mini": {},
-    "Bielik-11B-v2.3-Instruct": {"need_translation": False},
-    "anthropic.claude-3-haiku-20240307-v1:0": {},
-    "gemini-2.0-flash-lite-001": {}
-}
-
-
 def get_all_models_info():
     return {
         "amazon.titan-tg1-large": {"need_translation": True},
@@ -40,9 +26,9 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         -> AiResponse:
 
     if model in ["gpt-3.5-turbo", "gpt-3.5-turbo-16k"]:
-        if len(str) < 8000:
+        if len(query) < 8000:
             model = "gpt-3.5-turbo"
-        elif len(str) < 16000:
+        elif len(query) < 16000:
             model = "gpt-3.5-turbo-16k"
         else:
             raise Exception("To long text for gpt-3.5 models")
@@ -92,21 +78,3 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
 
     else:
         raise Exception(f"ERROR: Unknown model {model}")
-
-
-def ai_describe_image(base64_image=None, image_urls: [] = None, model_id="anthropic.claude-3-haiku-20240307-v1:0",
-                      max_tokens=1000, media_type="image/png", question="What's in this image?"):
-
-    if image_urls is None:
-        image_urls = []
-    if media_type not in ["image/png", "image/jpeg"]:
-        raise ValueError("Invalid media type. Supported types: image/png, image/jpeg")
-
-    if model_id == "anthropic.claude-3-haiku-20240307-v1:0":
-        response_text = library.api.aws.bedrock_ask.aws_bedrock_describe_image(base64_image, model_id, max_tokens, media_type, question)
-    elif model_id in ["gpt-4o-mini"]:
-        response_text = library.api.openai.openai_my.OpenAIClient.get_completion_image(question, model=model_id, image_urls=image_urls)
-    else:
-        raise Exception("Unknown model")
-
-    return response_text

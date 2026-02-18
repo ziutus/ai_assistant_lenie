@@ -4,23 +4,36 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'AWS S3 for cloudformation code for Lenie application'
 
 Parameters:
-  ProjectName:
+  ProjectCode:
     Type: String
-    Description: 'Project Name'
+    Default: lenie
+    Description: Project code for resource naming and tagging
   Environment:
     Type: String
-    Description: 'environment'
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
 
 Resources:
   MyS3Bucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub ${ProjectName}-2025-${Environment}-cloudformation
+      BucketName: !Sub ${ProjectCode}-${Environment}-cloudformation
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
 
   CloudFormationSSMParameter:
     Type: AWS::SSM::Parameter
     Properties:
-      Name: !Sub '/lenie/${Environment}/s3/cloudformation/name'
+      Name: !Sub '/${ProjectCode}/${Environment}/s3/cloudformation/name'
       Type: String
-      Value: !Sub ${ProjectName}-2025-${Environment}-cloudformation
+      Value: !Sub ${ProjectCode}-${Environment}-cloudformation
       Description: 'Bucket for cloudformation code'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode

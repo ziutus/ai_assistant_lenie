@@ -3,6 +3,7 @@
 /tmp/*
 .idea/
 .venv
+__pycache__/
 
 */tmp/
 */.idea/
@@ -83,3 +84,6 @@ credentials.json
 token.json
 /infra/aws/serverless/env_lenie_2025.sh
 /infra/kubernetes/kustomize/overlays/gke-dev/server_secrets.yaml
+
+# Local-only context files (contain account-specific AWS details)
+context_*.txt
