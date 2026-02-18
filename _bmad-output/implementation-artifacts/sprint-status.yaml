@@ -104,7 +104,7 @@ development_status:
   # =====================================================
 
   # --- Epic 10: Endpoint & Dead Code Removal ---
-  epic-10: in-progress
+  epic-10: done
   10-1-remove-ai-ask-endpoint: done
   10-2-remove-translate-endpoint: done
   10-3-remove-infra-ip-allow-endpoint: done
@@ -112,7 +112,7 @@ development_status:
   epic-10-retrospective: optional
 
   # --- Epic 11: CloudFormation Template Improvements ---
-  epic-11: in-progress
+  epic-11: done
   11-1-add-project-and-environment-tags-to-all-cloudformation-templates: done
   11-2-improve-step-function-template-ssm-pattern-and-lambda-parameterization: done
   11-3-fix-apideployment-pattern-for-automatic-redeployment: done
