@@ -128,7 +128,7 @@ development_status:
   # --- Epic 12: Cross-Cutting Verification & Documentation ---
   epic-12: in-progress
   12-1-codebase-wide-stale-reference-verification: done
-  12-2-cloudformation-validation-and-documentation-update: backlog
+  12-2-cloudformation-validation-and-documentation-update: done
   12-3-create-observability-strategy-documentation: backlog
   epic-12-retrospective: optional
 

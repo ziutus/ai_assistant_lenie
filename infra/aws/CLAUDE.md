@@ -46,7 +46,7 @@ aws/
 ## Subdirectories
 
 ### cloudformation/
-Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. Covers 29 templates organized by layer: networking (VPC), database (RDS, DynamoDB), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (3 APIs with 20+ endpoints), orchestration (Step Functions), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details.
+Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. Covers 29 templates organized by layer: networking (VPC), database (RDS, DynamoDB), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (2 active REST APIs: app 10 + infra 9 endpoints, plus Chrome ext API), orchestration (Step Functions), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details.
 
 ### serverless/
 Lambda function source code (11 functions) and Lambda layer build scripts (psycopg2, lenie_all, openai). Two function categories: simple infrastructure Lambdas (RDS/EC2/SQS management) and app Lambdas that bundle `backend/library/` for document processing and AI operations. Includes packaging scripts (`zip_to_s3.sh`, `create_empty_lambdas.sh`). See `serverless/CLAUDE.md` for details.
