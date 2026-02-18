@@ -67,7 +67,7 @@ Resources:
         - !Ref Psycopg2LayerArn
       Code:
         S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
-        S3Key: !Sub '${ProjectCode}-${Environment}-sqs-to-db.zip'
+        S3Key: !Sub '${ProjectCode}-${Environment}-sqs-into-rds.zip'
       Environment:
         Variables:
           AWS_QUEUE_URL_ADD: !Ref SqsDocumentsUrl

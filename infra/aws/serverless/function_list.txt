@@ -4,5 +4,5 @@ rds-status
 manual-sqs-length
 2_internet
 2_db
-sqs-to-db
+sqs-into-rds
 url-add
