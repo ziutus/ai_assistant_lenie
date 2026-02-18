@@ -1,6 +1,6 @@
 # Story 12.1: Codebase-Wide Stale Reference Verification
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -214,19 +214,23 @@ None — no debugging required.
 - **Task 2 (AC2):** Searched entire codebase for `/translate`. Zero stale references in active code/docs. Only match was in deleted `lenie-split-export.json:180`.
 - **Task 3 (AC3):** Searched for `/infra/ip-allow` and `infra-allow-ip-in-secrutity-group`. Zero active references. Only match: `infra/aws/serverless/CLAUDE.md:98` in "Archived Functions" table — confirmed clearly archival context (acceptable per AC3).
 - **Task 4 (AC4):** Zero references to `ai_describe_image` in any active code. Confirmed clean.
-- **Task 5 (AC5):** Fixed `docs/api-contracts-backend.md:7` — "19 endpoints" → "18 endpoints" (convention: root `/` informational endpoint excluded from count). Fixed `infra/aws/cloudformation/CLAUDE.md:158` — "12 endpoints" → "10 endpoints" (actual count in api-gw-app.yaml after Epic 10 removals). Verified 6 files correctly state "18 endpoints": CLAUDE.md, README.md, backend/CLAUDE.md, docs/index.md, docs/project-overview.md, docs/source-tree-analysis.md. Counted 10 endpoint paths in api-gw-app.yaml; "18" figure in docs refers to server.py (19 routes, 18 functional endpoints excluding root `/`).
+- **Task 5 (AC5):** Fixed `docs/api-contracts-backend.md:7` — "19 endpoints" → "18 endpoints" (convention: root `/` informational endpoint excluded from count). Fixed `infra/aws/cloudformation/CLAUDE.md:158` — "12 endpoints" → "18 endpoints" (actual count in api-gw-app.yaml: 10 app endpoints + 8 /infra/* endpoints = 18 total). Verified 6 files correctly state "18 endpoints": CLAUDE.md, README.md, backend/CLAUDE.md, docs/index.md, docs/project-overview.md, docs/source-tree-analysis.md. **[Review fix]** Original implementation incorrectly counted only 10 paths (missed /infra/* endpoints at lines 567-961); corrected to 18 during code review.
 - **Task 6 (AC5, AC6):** Reviewed infra/aws/README.md — only `/ai_ask` was present (removed in Task 1.2); `/translate` and `/infra/ip-allow` were already absent. Reviewed docs/api-contracts-backend.md — no detailed documentation of removed endpoints beyond count. Reviewed infra/aws/serverless/CLAUDE.md endpoint mapping table — only active endpoints listed. Verified zero references to `handleCorrectUsingAI` and `handleTranslate` outside `_bmad-output/`.
 - **Task 7 (AC1, AC2):** Investigated `lenie-split-export.json` — not referenced by any active script, template, or documentation. User chose Option B (delete). File deleted. The `api-gw-app.yaml` template is the authoritative source of truth.
 
 ### Change Log
 
 - 2026-02-18: Story 12.1 implementation — codebase-wide stale reference verification and cleanup (all 7 tasks completed)
+- 2026-02-18: Code review fixes — corrected api-gw-app endpoint count in CF CLAUDE.md (10→18), reordered ADRs numerically, updated File List with 3 missing files, corrected Task 5 completion note
 
 ### File List
 
 - `infra/aws/README.md` (modified) — removed `/ai_ask` row from API endpoints table
 - `docs/api-contracts-backend.md` (modified) — fixed endpoint count: "19 endpoints" → "18 endpoints"
-- `infra/aws/cloudformation/CLAUDE.md` (modified) — fixed api-gw-app endpoint count: "12 endpoints" → "10 endpoints"
+- `infra/aws/cloudformation/CLAUDE.md` (modified) — fixed api-gw-app endpoint count: "12 endpoints" → "18 endpoints" (review fix: original incorrectly set to 10)
 - `infra/aws/cloudformation/apigw/lenie-split-export.json` (deleted) — historical API GW export with stale endpoint definitions
+- `docs/architecture-decisions.md` (added) — ADR-001 through ADR-005 documenting key architectural decisions
+- `docs/system-evolution.md` (added) — system evolution narrative (embeddings, MCP pipeline, infrastructure cleanup)
+- `docs/index.md` (modified) — added references to new ADR and system evolution docs
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` (modified) — story status: ready-for-dev → in-progress → review
 - `_bmad-output/implementation-artifacts/12-1-codebase-wide-stale-reference-verification.md` (modified) — story file updated
