@@ -1,4 +1,4 @@
-# generated: 2026-02-16
+# generated: 2026-02-18
 # project: lenie-server-2025
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-16
+generated: 2026-02-18
 project: lenie-server-2025
 project_key: NOKEY
 tracking_system: file-system
@@ -109,7 +109,7 @@ development_status:
   10-2-remove-translate-endpoint: done
   10-3-remove-infra-ip-allow-endpoint: done
   10-4-remove-ai-describe-image-dead-code: done
-  epic-10-retrospective: optional
+  epic-10-retrospective: done
 
   # --- Epic 11: CloudFormation Template Improvements ---
   epic-11: done
@@ -123,14 +123,14 @@ development_status:
   11-8-replace-fn-importvalue-with-ssm-parameter-for-dlq-arn: done
   11-9-reconcile-lambda-function-name-mismatch: done
   11-10-codify-api-gateway-stage-logging-and-tracing: done
-  epic-11-retrospective: optional
+  epic-11-retrospective: done
 
   # --- Epic 12: Cross-Cutting Verification & Documentation ---
-  epic-12: in-progress
+  epic-12: done
   12-1-codebase-wide-stale-reference-verification: done
   12-2-cloudformation-validation-and-documentation-update: done
-  12-3-create-observability-strategy-documentation: backlog
-  epic-12-retrospective: optional
+  12-3-create-observability-strategy-documentation: done
+  epic-12-retrospective: done
 
   # --- Future Backlog (next sprint) ---
   B-1-analyze-ec2-lambda-consolidation: backlog
@@ -148,3 +148,7 @@ development_status:
   B-13-parameterize-stage-description-for-multi-environment: backlog
   B-14-deploy-consolidated-api-gateway-architecture: backlog
   B-15-add-custom-domains-for-api-gateways: backlog
+  B-16-migrate-web-interface-react-from-cra-to-vite: backlog
+  B-17-migrate-web-add-url-react-from-cra-to-vite: backlog
+  B-18-fix-metrics-endpoint-returns-500: backlog
+  B-19-consolidate-duplicated-documentation-counts: backlog

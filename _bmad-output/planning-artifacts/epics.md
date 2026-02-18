@@ -922,3 +922,99 @@ So that API URLs are human-readable, stable across API Gateway replacements, and
 - The Chrome extension API (`url-add.yaml`) can also get a custom domain (`add.dev.lenie-ai.eu`) but this is lower priority
 
 **Origin:** User idea (2026-02-18) — replace random API Gateway IDs with readable, stable domain names following existing project conventions.
+
+---
+
+### Story B.16: Migrate web_interface_react from Create React App to Vite
+
+As a **developer**,
+I want to migrate the `web_interface_react` application from Create React App (react-scripts 5.0.1) to Vite,
+So that the frontend build toolchain is actively maintained, build times are faster, and the remaining Dependabot security vulnerabilities caused by CRA's unmaintained dependency tree are eliminated.
+
+**Acceptance Criteria:**
+
+**Given** the project uses `react-scripts 5.0.1` (Create React App) as the build tool
+**When** the developer replaces react-scripts with Vite and `@vitejs/plugin-react`
+**Then** `npm run dev` starts a development server with hot module replacement
+**And** `npm run build` produces an optimized production bundle in `dist/`
+**And** `npm run preview` serves the production build locally for verification
+
+**Given** the migration is complete
+**When** the developer runs `pnpm audit`
+**Then** all vulnerabilities caused by react-scripts dependencies (nth-check, jsonpath/bfj, webpack-dev-server, postcss/resolve-url-loader, ajv/schema-utils) are eliminated
+
+**Given** the CRA-specific configuration exists in `package.json`
+**When** the developer removes CRA artifacts
+**Then** the `browserslist` config is removed or moved to a separate file
+**And** the `eslintConfig` section referencing `react-app` is replaced with a standalone ESLint config
+**And** `react-scripts` is removed from dependencies
+
+**Given** the project uses `public/index.html` (CRA convention)
+**When** the developer migrates to Vite's `index.html` convention
+**Then** `index.html` is moved to the project root (Vite convention)
+**And** `%PUBLIC_URL%` references are replaced with Vite equivalents
+**And** environment variables prefixed with `REACT_APP_` are migrated to `VITE_` prefix (if any exist)
+
+**Given** the Dockerfile builds the frontend
+**When** the developer updates the Docker build
+**Then** the Dockerfile uses `pnpm run build` and serves from `dist/` instead of `build/`
+**And** the Docker image builds and runs successfully
+
+**Given** all changes are complete
+**When** the developer verifies the application
+**Then** all pages render correctly (list, search, link, webpage, youtube, movie, file upload)
+**And** API communication works (axios calls to backend)
+**And** routing works (React Router v6)
+**And** form state management works (Formik)
+
+**Implementation notes:**
+- CRA is officially unmaintained (deprecated since 2023). Vite is the recommended replacement by the React team.
+- The `.npmrc` file with `shamefully-hoist=true` (added for CRA+pnpm compatibility) can be removed after migration.
+- The migration is mostly configuration — no business logic changes needed. Key files: `vite.config.js`, `index.html` (move to root), `tsconfig.json` (if added), proxy config for dev server.
+- Consider switching from pnpm to npm for consistency with web_add_url_react, or vice versa.
+
+**Origin:** Dependabot vulnerability resolution (2026-02-18) — 6 remaining alerts in web_interface_react are all caused by react-scripts 5.0.1 unmaintained dependency tree.
+
+---
+
+### Story B.17: Migrate web_add_url_react from Create React App to Vite
+
+As a **developer**,
+I want to migrate the `web_add_url_react` application from Create React App (react-scripts 5.0.1) to Vite,
+So that the frontend build toolchain is actively maintained and the remaining 32 Dependabot security vulnerabilities caused by CRA's unmaintained dependency tree are eliminated.
+
+**Acceptance Criteria:**
+
+**Given** the project uses `react-scripts 5.0.1` (Create React App) as the build tool
+**When** the developer replaces react-scripts with Vite and `@vitejs/plugin-react`
+**Then** `npm run dev` starts a development server with hot module replacement
+**And** `npm run build` produces an optimized production bundle in `dist/`
+
+**Given** the migration is complete
+**When** the developer runs `npm audit`
+**Then** all vulnerabilities caused by react-scripts dependencies (nth-check, jsonpath/bfj, webpack-dev-server, postcss, ajv, and their transitive dependencies) are eliminated
+
+**Given** CRA-specific configuration and artifacts exist
+**When** the developer removes them
+**Then** `react-scripts` is removed from dependencies
+**And** `browserslist` and `eslintConfig` sections in `package.json` are cleaned up
+**And** `index.html` is moved to the project root (Vite convention)
+**And** `%PUBLIC_URL%` references are replaced
+
+**Given** the Dockerfile builds and serves the app via nginx:alpine
+**When** the developer updates the Docker build
+**Then** the Dockerfile uses `npm run build` and copies from `dist/` instead of `build/`
+**And** the Docker image builds and runs successfully on port 80
+
+**Given** all changes are complete
+**When** the developer verifies the application
+**Then** the URL submission form renders and works correctly
+**And** the `?apikey=` query parameter pre-population still works
+**And** `POST /url_add` API calls succeed
+
+**Implementation notes:**
+- This is a simpler migration than B.16 because web_add_url_react is a single-page form with no routing.
+- Can be done independently of B.16 or in parallel.
+- The app is very small (~5 components), so the migration should be straightforward.
+
+**Origin:** Dependabot vulnerability resolution (2026-02-18) — 32 remaining alerts in web_add_url_react are all caused by react-scripts 5.0.1 unmaintained dependency tree.
