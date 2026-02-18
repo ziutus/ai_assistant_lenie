@@ -1,6 +1,6 @@
 # Story 11.9: Reconcile Lambda Function Name Mismatch Between Step Function and Lambda Template
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -41,7 +41,7 @@ so that the deployed resource name matches the CloudFormation-defined name and f
   - [x] 2.3 Choose option based on: (1) project naming convention compliance, (2) deployment risk, (3) number of references to update. Document in Dev Agent Record
 
 - [x] **Task 3: Update Lambda template FunctionName if needed** (AC: #5)
-  - [ ] 3.1 If Option A chosen: update `sqs-to-rds-lambda.yaml` line 63 `FunctionName` to produce `lenie-sqs-to-db` (e.g., change to a parameter with that default)
+  - [x] 3.1 ~~If Option A chosen~~ N/A — Option B chosen. **[Review fix]** S3Key updated: `sqs-to-db.zip` → `sqs-into-rds.zip` to match `function_list_cf.txt` and `lambdas/sqs-into-rds/` directory name convention
   - [x] 3.2 If Option B chosen: no change needed to Lambda template (already produces `lenie-dev-sqs-to-rds-lambda`)
 
 - [x] **Task 4: Update Step Function template and parameter file** (AC: #3, #4)
@@ -252,7 +252,7 @@ The original Lambda `lenie-sqs-to-db` was manually created in an earlier phase b
 5. **Parameter File (AC4):** Updated `SqsToRdsLambdaFunctionName` value from `lenie-sqs-to-db` to `lenie-dev-sqs-to-rds-lambda`.
 6. **Lambda Update Script (AC6):** Updated `FUNCTION_NAME` from `lenie-sqs-to-db` to `lenie-dev-sqs-to-rds-lambda`.
 7. **cfn-lint (AC7):** Both templates pass with zero errors.
-8. **Stale References (AC8):** Zero matches for `lenie-sqs-to-db` in infra/, backend/, docs/, CLAUDE.md, README.md. Only historical BMAD artifacts retain the old name (completed story files, PRD, epics).
+8. **Stale References (AC8):** Zero matches for `lenie-sqs-to-db` in infra/, backend/, docs/, CLAUDE.md, README.md. Only historical BMAD artifacts retain the old name (completed story files, PRD, epics). **[Review fix]** S3Key `sqs-to-db.zip` in `sqs-to-rds-lambda.yaml:70` and `sqs-to-db` in `function_list.txt:7` were missed — updated to `sqs-into-rds` to match directory naming convention.
 
 ### File List
 
@@ -260,8 +260,11 @@ The original Lambda `lenie-sqs-to-db` was manually created in an earlier phase b
 - `infra/aws/cloudformation/parameters/dev/sqs-to-rds-step-function.json` — Updated SqsToRdsLambdaFunctionName value to `lenie-dev-sqs-to-rds-lambda`
 - `infra/aws/serverless/lambdas/sqs-into-rds/lambda_update` — Updated FUNCTION_NAME to `lenie-dev-sqs-to-rds-lambda`
 - `_bmad-output/implementation-artifacts/11-9-reconcile-lambda-function-name-mismatch.md` — Story file with Dev Agent Record
-- `_bmad-output/implementation-artifacts/sprint-status.yaml` — Status updated to review
+- `infra/aws/cloudformation/templates/sqs-to-rds-lambda.yaml` — [Review fix] Updated S3Key from `sqs-to-db.zip` to `sqs-into-rds.zip`
+- `infra/aws/serverless/function_list.txt` — [Review fix] Updated legacy entry from `sqs-to-db` to `sqs-into-rds`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — Status updated to review → done
 
 ### Change Log
 
 - 2026-02-17: Reconciled Lambda function name mismatch — aligned Step Function template, parameter file, and lambda_update script to CF-defined name `lenie-dev-sqs-to-rds-lambda` (Option B). No AWS deployment changes needed; neither Lambda existed in AWS.
+- 2026-02-18: Code review fixes — updated S3Key in sqs-to-rds-lambda.yaml from `sqs-to-db.zip` to `sqs-into-rds.zip` (matches function_list_cf.txt and lambdas/ directory convention), updated legacy function_list.txt entry
