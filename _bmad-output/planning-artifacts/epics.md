@@ -1018,3 +1018,53 @@ So that the frontend build toolchain is actively maintained and the remaining 32
 - The app is very small (~5 components), so the migration should be straightforward.
 
 **Origin:** Dependabot vulnerability resolution (2026-02-18) — 32 remaining alerts in web_add_url_react are all caused by react-scripts 5.0.1 unmaintained dependency tree.
+
+---
+
+### Story B.18: Migrate StalkerWebDocument to Pydantic BaseModel
+
+As a **developer**,
+I want to refactor `StalkerWebDocument` and `StalkerWebDocumentDB` from plain Python classes to Pydantic `BaseModel`,
+So that the core domain model benefits from automatic validation, serialization, and reduced boilerplate code (~180 lines reduced to ~60-70).
+
+**Acceptance Criteria:**
+
+**Given** `backend/library/stalker_web_document.py` uses a manual `__init__` with 30+ explicit attribute assignments
+**When** the developer converts the class to `pydantic.BaseModel` with typed field declarations
+**Then** all attributes are defined as Pydantic fields with proper types and defaults
+**And** the manual `__init__` is removed
+
+**Given** `set_document_type()`, `set_document_state()`, and `set_document_state_error()` each contain 15-30 lines of if/elif chains for string-to-enum conversion
+**When** the developer replaces them with `@field_validator` decorators
+**Then** string-to-enum conversion is handled by Pydantic validators
+**And** invalid values raise `ValidationError` with clear messages
+
+**Given** `__str__()` manually builds a JSON dict and calls `json.dumps`
+**When** the developer removes it in favor of Pydantic's built-in serialization
+**Then** `model_dump_json(indent=4)` produces equivalent output
+**And** `model_dump()` returns a dict for programmatic use
+
+**Given** `validate()` contains manual business validation logic (title length, summary for links, text for webpages)
+**When** the developer converts it to a `@model_validator`
+**Then** validation runs automatically on model creation and assignment
+**And** `document_state` and `document_state_error` are set correctly based on validation results
+
+**Given** `StalkerWebDocumentDB` extends `StalkerWebDocument` and adds DB persistence (`save()`, `delete()`, `embedding_add_simple()`)
+**When** the developer updates the subclass to inherit from the Pydantic-based parent
+**Then** `StalkerWebDocumentDB` continues to work with DB operations
+**And** `model_config = ConfigDict(validate_assignment=True)` is set to allow attribute mutation after construction
+
+**Given** the migration is complete
+**When** the developer runs the existing unit and integration tests
+**Then** all tests pass without modification (or with minimal adjustments for Pydantic validation behavior)
+**And** `server.py`, batch scripts, and Lambda functions that create `StalkerWebDocument` objects continue to work
+
+**Implementation notes:**
+- Use `pydantic.BaseModel`, NOT `pydantic_settings.BaseSettings` (this is a domain model, not configuration).
+- Pydantic is already an indirect dependency (via `openai`, `firecrawl-py`) — no new package needed. Add `pydantic>=2.0` as an explicit dependency in `pyproject.toml`.
+- Key config: `model_config = ConfigDict(validate_assignment=True, arbitrary_types_allowed=True)` to support mutation and custom enum types.
+- The `analyze()` and `translate_to_english()` methods contain business logic (not pure validation) — keep them as regular methods on the model.
+- Consider adding `model_serializer` for custom JSON output if `model_dump_json()` doesn't match the exact existing format.
+- Test with all entry points: `server.py` endpoints, `web_documents_do_the_needful_new.py`, `imports/unknown_news_import.py`, Lambda functions.
+
+**Origin:** User request (2026-02-18) — simplify core domain model by replacing manual boilerplate with Pydantic BaseModel.

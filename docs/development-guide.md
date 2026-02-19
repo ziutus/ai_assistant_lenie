@@ -220,3 +220,53 @@ For batch processing scripts that access AWS RDS:
 - **API auth**: All routes except health checks require `x-api-key` header
 - **Database**: Raw psycopg2 (no ORM)
 - **Commits**: CI/CD varies by tool (CircleCI, GitLab CI, Jenkins)
+
+## Line Endings (.gitattributes)
+
+The project uses a `.gitattributes` file to enforce **LF (Unix) line endings** for all text files, regardless of the developer's operating system.
+
+### Why this matters
+
+- **Shell scripts break with CRLF**: Bash interprets `\r` (carriage return) as part of the code, causing cryptic syntax errors like `$'{\r'`. This is the most common issue when developing on Windows and running scripts in WSL or Linux.
+- **Consistent diffs**: Mixed line endings (some files LF, some CRLF) create noisy git diffs where entire files appear changed even though only whitespace differs.
+- **Cross-platform collaboration**: Developers on Windows, macOS, and Linux all get the same file content in their working copies.
+
+### How it works
+
+The `.gitattributes` file tells Git how to handle line endings at checkout and commit time:
+
+```
+# Auto detect text files and ensure LF line endings
+* text=auto eol=lf
+
+# Shell scripts must always use LF
+*.sh text eol=lf
+```
+
+- `text=auto` — Git detects whether a file is text or binary
+- `eol=lf` — text files are always checked out with LF endings, even on Windows
+- Binary files (`.png`, `.ico`, `.svg`) are explicitly marked to prevent Git from mangling them
+
+### What to do after cloning
+
+No action needed — Git applies `.gitattributes` rules automatically on checkout.
+
+### Fixing existing working copy after adding .gitattributes
+
+If `.gitattributes` was added to a project that previously had CRLF files, run:
+
+```bash
+git add --renormalize .
+git commit -m "fix: normalize line endings to LF"
+```
+
+This re-stages all tracked files through the new line ending rules without changing file content.
+
+### Template for new projects
+
+Copy the `.gitattributes` file from this project's root as a starting point. Adjust the file extension list to match your project's file types. The key rules to always include:
+
+```
+* text=auto eol=lf
+*.sh text eol=lf
+```
