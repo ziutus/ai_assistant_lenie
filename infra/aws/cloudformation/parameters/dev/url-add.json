@@ -13,7 +13,7 @@
   },
   {
     "ParameterKey": "SqsDocumentsQueueName",
-    "ParameterValue": "lenie_websites"
+    "ParameterValue": "lenie-dev-documents"
   },
   {
     "ParameterKey": "timestamp",
