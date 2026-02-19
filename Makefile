@@ -89,6 +89,9 @@ docker-clean:   ## Remove old Docker images matching 'lenie'
 aws-start-openvpn:  ## Start OpenVPN EC2 and update Route53 DNS
 	python infra/aws/tools/aws_ec2_route53.py --instance-id $(OPENVPN_OWN_AWS_INSTANCE_ID) --hosted-zone-id $(AWS_HOSTED_ZONE_ID) --domain-name $(OPENVPN_OWN_DOMAIN_NAME)
 
+aws-smoke-test:     ## Run AWS smoke test for URL add flow
+	bash infra/aws/cloudformation/smoke-test-url-add.sh -p lenie -s dev -r us-east-1
+
 security-all:   ## Run all security checks
 	@echo "=== Running Semgrep ==="
 	-uvx semgrep --config=auto backend/
