@@ -176,9 +176,13 @@
       "Bash(npx pnpm update:*)",
       "Bash(npx pnpm build:*)",
       "Bash(npx pnpm install:*)",
-      "Bash(gh api repos/ziutus/ai_assistant_lenie/dependabot/alerts:*)"
+      "Bash(gh api repos/ziutus/ai_assistant_lenie/dependabot/alerts:*)",
+      "Bash(bash -c 'bash -n infra/aws/cloudformation/smoke-test-url-add.sh 2>&1 && echo SYNTAX_OK || echo SYNTAX_ERROR')",
+      "Bash(bash --version)",
+      "Bash(chmod:*)"
     ]
   },
+  "enableAllProjectMcpServers": true,
   "enabledMcpjsonServers": [
     "awslabs.aws-iac-mcp-server",
     "awslabs.cfn-mcp-server",
