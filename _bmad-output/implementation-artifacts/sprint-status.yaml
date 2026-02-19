@@ -1,4 +1,4 @@
-# generated: 2026-02-18
+# generated: 2026-02-19
 # project: lenie-server-2025
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-18
+generated: 2026-02-19
 project: lenie-server-2025
 project_key: NOKEY
 tracking_system: file-system
@@ -132,23 +132,46 @@ development_status:
   12-3-create-observability-strategy-documentation: done
   epic-12-retrospective: done
 
+  # ============================================================
+  # SPRINT 4: AWS Infrastructure Consolidation & Tooling
+  # ============================================================
+
+  # --- Epic 13: Operational Safety & Tooling ---
+  epic-13: in-progress
+  13-1-add-deployment-safety-header-to-zip-to-s3-sh: done
+  13-2-verify-crlf-git-config-for-parameter-files: backlog
+  epic-13-retrospective: optional
+
+  # --- Epic 14: Infrastructure Cost & Naming Cleanup ---
+  epic-14: backlog
+  14-1-remove-elastic-ip-from-ec2-instance: backlog
+  14-2-fix-redundant-lambda-function-name-in-lambda-rds-start: backlog
+  epic-14-retrospective: optional
+
+  # --- Epic 15: API Gateway Consolidation ---
+  epic-15: backlog
+  15-1-merge-url-add-endpoint-into-api-gw-app-yaml: backlog
+  15-2-update-client-applications-and-version-releases: backlog
+  15-3-remove-old-api-gw-url-add-gateway-and-clean-up: backlog
+  epic-15-retrospective: optional
+
+  # --- Epic 16: Documentation Consolidation & Verification ---
+  epic-16: backlog
+  16-1-create-single-source-infrastructure-metrics-file: backlog
+  16-2-create-automated-documentation-drift-verification-script: backlog
+  epic-16-retrospective: optional
+
   # --- Future Backlog (next sprint) ---
   B-1-analyze-ec2-lambda-consolidation: backlog
   B-2-analyze-rds-lambda-consolidation: backlog
   B-3-rename-legacy-lambda-lenie-2-internet-and-db: backlog
-  B-4-remove-elastic-ip-from-ec2: backlog
-  B-5-fix-redundant-lambda-function-names: backlog
   B-6-migrate-api-gw-app-stage-to-separate-resource: backlog
   B-7-merge-helm-s3-and-cloudfront-into-single-template: done
   B-8-manage-acm-certificates-via-cloudformation-and-ssm: backlog
   B-9-organize-s3-cloudformation-bucket-directory-structure: backlog
   B-10-create-apigw-cloudwatch-iam-role-in-cloudformation: backlog
-  B-11-add-aws-account-info-to-zip-to-s3-script: backlog
-  B-12-fix-crlf-git-config-for-parameter-files: backlog
   B-13-parameterize-stage-description-for-multi-environment: backlog
-  B-14-deploy-consolidated-api-gateway-architecture: backlog
   B-15-add-custom-domains-for-api-gateways: backlog
   B-16-migrate-web-interface-react-from-cra-to-vite: backlog
   B-17-migrate-web-add-url-react-from-cra-to-vite: backlog
   B-18-fix-metrics-endpoint-returns-500: backlog
-  B-19-consolidate-duplicated-documentation-counts: backlog
