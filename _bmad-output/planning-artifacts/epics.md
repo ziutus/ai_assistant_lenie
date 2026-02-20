@@ -97,7 +97,7 @@ This document provides the complete epic and story breakdown for lenie-server-20
 
 - NFR13: Documentation metrics (endpoint counts, template counts, Lambda function counts) have a single source of truth with zero cross-file discrepancies
 - NFR14: An automated verification script exists that detects documentation metric drift and can be run as part of CI or manual review
-- NFR15: All documentation files reference post-consolidation state: 2 API Gateways (app + infra), correct endpoint counts per gateway, correct total template count
+- NFR15: All documentation files reference post-consolidation state: 2 API Gateway templates (app + infra) with url-add.yaml retaining its own REST API (3 total), correct endpoint counts per gateway (app: 11, infra: 7, url-add: 1), correct total template count
 
 ### Additional Requirements
 
@@ -189,7 +189,7 @@ Implementation notes:
 
 ### Epic 15: API Gateway Consolidation
 
-Developer manages 2 API Gateways instead of 3 — the `/url_add` endpoint is consolidated into `api-gw-app`, client applications (Chrome extension, add-url React app) are updated with new URLs and versioned releases.
+The duplicate `api-gw-url-add.yaml` template is removed and its CF stack deleted — the `/url_add` endpoint is consolidated into `api-gw-app.yaml`. Client applications (Chrome extension, add-url React app) are updated with new URLs and versioned releases. Note: `url-add.yaml` retains its own REST API Gateway (3 REST APIs total in AWS: app, infra, url-add).
 
 **FRs covered:** FR12, FR13, FR14, FR15, FR16, FR17, FR17a, FR18, FR19, FR20, FR21
 **NFRs addressed:** NFR1, NFR5, NFR6, NFR8, NFR9
@@ -489,10 +489,10 @@ So that infrastructure counts (endpoints, templates, Lambda functions) are accur
 **When** the developer creates `docs/infrastructure-metrics.md`
 **Then** the file contains authoritative counts organized by deployment perspective:
 - Flask Server (Docker/Kubernetes): endpoint count and list
-- AWS Serverless (Lambda + API Gateway): endpoints per gateway (api-gw-app: 11, api-gw-infra: 8), Lambda function count and list
+- AWS Serverless (Lambda + API Gateway): endpoints per gateway (api-gw-app: 11, api-gw-infra: 7, url-add: 1), Lambda function count and list
 - CloudFormation: template count in deploy.ini, total template file count
 
-**Given** the metrics file is created with post-consolidation values (2 API Gateways, /url_add in api-gw-app)
+**Given** the metrics file is created with post-consolidation values (2 API Gateway templates + url-add.yaml with own REST API = 3 REST APIs total, /url_add in api-gw-app)
 **When** the developer reviews each of the 7+ documentation files
 **Then** all discrepancies are fixed in: `CLAUDE.md`, `README.md`, `backend/CLAUDE.md`, `docs/index.md`, `docs/api-contracts-backend.md`, `infra/aws/CLAUDE.md`, `infra/aws/cloudformation/CLAUDE.md`
 **And** each file either references `docs/infrastructure-metrics.md` as the source of truth or uses consistent correct values

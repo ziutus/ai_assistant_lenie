@@ -241,6 +241,9 @@ No issues encountered during implementation.
 | `web_add_url_react/CLAUDE.md` | MOD | [Code Review] Updated version 0.1.0 → 0.2.0 |
 | `web_add_url_react/package-lock.json` | MOD | [Code Review] Synced version 0.1.0 → 0.2.0 to match package.json |
 | `docs/API_Usage.md` | MOD | [Code Review] Updated curl example URL from jg40fjwz61 to 1bkc3kz7c9 |
+| `web_add_url_react/src/App.js` | MOD | [Code Review 2] Removed console.log(apikeyParam) — security fix |
+| `web_add_url_react/CHANGELOG.md` | MOD | [Code Review 2] Fixed fabricated date 2025-01-01 → 2025-08-28; updated 0.2.0 entry text |
+| `web_chrome_extension/CHANGELOG.md` | MOD | [Code Review 2] Fixed premature "z 3 do 2" claim in 1.0.23 entry |
 
 ## Change Log
 
@@ -248,3 +251,4 @@ No issues encountered during implementation.
 |------|--------|-------|
 | 2026-02-20 | Updated Chrome extension default URL to consolidated api-gw-app gateway (1bkc3kz7c9); bumped Chrome ext to 1.0.23 and React app to 0.2.0; created web_add_url_react/CHANGELOG.md; React app URL already correct (no change needed) | 15-2 |
 | 2026-02-20 | [Code Review] Fixed stale documentation: updated URLs and versions in CLAUDE.md (chrome ext + react app), README.md (chrome ext), API_Usage.md, package-lock.json; fixed popup.html version link to point to correct repo/path | 15-2 |
+| 2026-02-20 | [Code Review 2] Fixed 4 issues: removed console.log API key leak (security), corrected fabricated CHANGELOG date (2025-01-01→2025-08-28), fixed premature "z 3 do 2" claim in both CHANGELOGs, improved React app 0.2.0 entry accuracy | 15-2 review |

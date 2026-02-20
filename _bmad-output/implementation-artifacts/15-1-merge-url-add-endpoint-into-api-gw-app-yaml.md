@@ -1,6 +1,6 @@
 # Story 15.1: Merge /url_add Endpoint into api-gw-app.yaml
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -81,7 +81,7 @@ UrlAddLambdaInvokePermission:
 
 ### Critical Technical Context
 
-**Current api-gw-app.yaml Structure (633 lines, ~9,589 bytes):**
+**Pre-implementation api-gw-app.yaml Structure (633 lines, ~9,589 bytes; post-implementation: 693 lines, 29,647 bytes, 11 endpoints):**
 ```
 Parameters:
   ProjectCode (default: lenie)
@@ -274,9 +274,11 @@ No issues encountered during implementation.
 | File | Action | Description |
 |------|--------|-------------|
 | `infra/aws/cloudformation/templates/api-gw-app.yaml` | MOD | Added /url_add POST+OPTIONS paths (lines 567-617) and UrlAddLambdaInvokePermission resource (lines 685-692) |
+| `infra/aws/cloudformation/parameters/dev/url-add.json` | MOD | Timestamp auto-update during deployment |
 
 ## Change Log
 
 | Date | Change | Story |
 |------|--------|-------|
 | 2026-02-20 | Merged /url_add endpoint (POST+OPTIONS with CORS) and Lambda permission into api-gw-app.yaml; template now serves 11 application endpoints via single API Gateway | 15-1 |
+| 2026-02-20 | Code review: fixed 4 issues (stale endpoint/Lambda counts in 4 doc files, undocumented file in File List, story reference in CF comment, clarified Dev Notes pre/post state). 2 LOW issues deferred (cfn-lint independent verification, deploy.ini comment cleanup for Story 15.3). | 15-1 review |

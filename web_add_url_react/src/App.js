@@ -20,7 +20,6 @@ function App() {
     React.useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const apikeyParam = params.get('apikey');
-        console.log(apikeyParam)
 
         if (apikeyParam) {
             setApiKey(apikeyParam);

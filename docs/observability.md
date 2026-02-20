@@ -57,10 +57,9 @@ The project has **minimal and fragmented observability**. Logging exists in most
 
 | Resource | Template | Configuration | Status |
 |----------|----------|--------------|--------|
-| API Gateway app stage | `api-gw-app.yaml:589-598` | TracingEnabled: true, LoggingLevel: INFO, MetricsEnabled: true, DataTraceEnabled: true | **Active** (codified in Story 11-10) |
+| API Gateway app stage | `api-gw-app.yaml:640-649` | TracingEnabled: true, LoggingLevel: INFO, MetricsEnabled: true, DataTraceEnabled: true | **Active** (codified in Story 11-10) |
 | API Gateway infra Lambdas | `api-gw-infra.yaml:54-57` | LoggingConfig: JSON format, INFO level (ApplicationLogLevel + SystemLogLevel) | **Active** — Lambda-level structured logging |
 | API Gateway infra stage | `api-gw-infra.yaml` | No StageDescription logging | **Not configured** |
-| API Gateway url-add | `api-gw-url-add.yaml` | No stage logging/tracing | **Not configured** |
 | Step Function | `sqs-to-rds-step-function.yaml` | CloudWatch execution monitoring | **Active** |
 
 **Warning:** `DataTraceEnabled: true` on the app API Gateway logs full request/response bodies to CloudWatch. Review this setting before enabling in production environments with sensitive data.
@@ -170,13 +169,13 @@ All log entries should use JSON format with the following required fields:
 - **CloudWatch Alarms**: None configured
 
 **Gaps:**
-- `api-gw-infra` and `api-gw-url-add` stages lack stage-level logging and tracing
+- `api-gw-infra` stage lacks stage-level logging and tracing
 - 7 infrastructure Lambdas (rds-*, ec2-*, sqs-size) use `print()` instead of Python logging module
 - No CloudWatch alarms for error rate thresholds or latency spikes
 - No centralized log aggregation or cross-Lambda correlation
 
 **Recommended improvements (future stories):**
-1. Add StageDescription with logging/tracing to `api-gw-infra` and `api-gw-url-add` templates
+1. Add StageDescription with logging/tracing to `api-gw-infra` template
 2. Replace `print()` with Python `logging` module in infrastructure Lambdas
 3. Enable X-Ray SDK instrumentation in application Lambda code
 4. Configure CloudWatch alarms for 5xx error rates and P99 latency

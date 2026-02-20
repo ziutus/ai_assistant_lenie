@@ -61,7 +61,7 @@ editHistory:
 
 Lenie-server-2025 is a personal AI knowledge management system for collecting, managing, and searching press articles, web content, and YouTube transcriptions using LLMs and vector similarity search (PostgreSQL + pgvector).
 
-**This sprint** executes Phase 2 of the five-phase strategic plan: Infrastructure Consolidation & Tooling. Following the principle "Clean first -> Consolidate -> Secure -> Build new," Sprint 4 consolidates AWS infrastructure and improves operational tooling after Sprint 3 completed code cleanup. Sprint 1 achieved 100% IaC coverage (6 epics, 10 stories). Sprint 2 removed unused AWS resources and documented project vision (3 epics, 5 stories). Sprint 3 removed 3 endpoints, 1 dead function, and applied 6 CloudFormation improvements (3 epics, 33 stories total across sprints). Sprint 4 addresses 6 backlog items: remove Elastic IP from EC2 (B-4), fix redundant Lambda function names (B-5), consolidate API Gateways from 3 to 2 (B-14), add AWS account info to deployment script (B-11), verify CRLF git config for parameter files (B-12), and consolidate duplicated documentation metrics (B-19).
+**This sprint** executes Phase 2 of the five-phase strategic plan: Infrastructure Consolidation & Tooling. Following the principle "Clean first -> Consolidate -> Secure -> Build new," Sprint 4 consolidates AWS infrastructure and improves operational tooling after Sprint 3 completed code cleanup. Sprint 1 achieved 100% IaC coverage (6 epics, 10 stories). Sprint 2 removed unused AWS resources and documented project vision (3 epics, 5 stories). Sprint 3 removed 3 endpoints, 1 dead function, and applied 6 CloudFormation improvements (3 epics, 33 stories total across sprints). Sprint 4 addresses 6 backlog items: remove Elastic IP from EC2 (B-4), fix redundant Lambda function names (B-5), consolidate the duplicate api-gw-url-add template into api-gw-app (B-14), add AWS account info to deployment script (B-11), verify CRLF git config for parameter files (B-12), and consolidate duplicated documentation metrics (B-19).
 
 **Target vision:** Private knowledge base in Obsidian vault, managed by Claude Desktop, powered by Lenie-AI as an MCP server. This sprint consolidates infrastructure to reduce AWS costs and operational friction before security hardening and feature development.
 
@@ -71,13 +71,13 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 
 - Developer sees clean Lambda function names following `${ProjectCode}-${Environment}-<description>` pattern with zero redundancy
 - Developer deploys via `zip_to_s3.sh` with visible AWS account ID confirmation before any upload
-- Developer manages 2 API Gateways instead of 3 (app + infra), with clear separation principle documented
+- Developer manages 2 API Gateway templates instead of 3 (removed duplicate api-gw-url-add.yaml); note: url-add.yaml retains its own REST API — 3 REST APIs total in AWS, with clear separation principle documented
 - Developer finds documentation metrics (endpoint counts, template counts) in a single source of truth with zero cross-file discrepancies
 
 ### Business Success
 
 - Lower AWS costs: ~$3.65/month saved by removing idle Elastic IP
-- Reduced API Gateway count (3 to 2) simplifies infrastructure management and monitoring
+- Reduced API Gateway templates from 3 to 2 (removed duplicate api-gw-url-add.yaml) simplifies infrastructure management
 - Documentation accuracy eliminates confusion about system scope (previously: 12 vs 18 endpoints, 29 vs 34 templates)
 - Foundation prepared for Phase 3 (Security hardening) and Phase 4 (MCP Server implementation)
 
@@ -93,7 +93,7 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 ### Measurable Outcomes
 
 - 2 CloudFormation resources removed from `ec2-lenie.yaml` (`ElasticIP`, `EIPAssociation`)
-- API Gateways reduced from 3 to 2 (app + infra)
+- API Gateway templates reduced from 3 to 2 (removed duplicate api-gw-url-add.yaml); 3 REST APIs remain in AWS (app, infra, url-add)
 - 0 Lambda functions with redundant names (all follow `${ProjectCode}-${Environment}-<description>`)
 - `zip_to_s3.sh` outputs AWS account ID on every run
 - 0 discrepancies between documentation metric counts and actual infrastructure counts
@@ -145,7 +145,7 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 
 **Rising Action:** Ziutus removes the Elastic IP from `ec2-lenie.yaml` and verifies that `aws_ec2_route53.py` correctly updates Route53 with the dynamic public IP on each EC2 start. Ziutus fixes the Lambda function name in `lambda-rds-start.yaml` from `${AWS::StackName}-rds-start-function` to `${ProjectCode}-${Environment}-rds-start` and updates all consumers. Ziutus merges the `/url_add` endpoint from `api-gw-url-add.yaml` into `api-gw-app.yaml`, updates the Chrome extension's default endpoint URL and the add-url React app's hardcoded URL, then removes the standalone template. Ziutus adds account ID display and confirmation to `zip_to_s3.sh`. Ziutus verifies parameter file line endings and documents the finding. Ziutus creates a single-source metrics file and an automated verification script, then fixes all discrepancies across documentation files.
 
-**Climax:** After deployment — EC2 starts with dynamic IP and Route53 updates automatically. Lambda functions have clean names. Two API Gateways serve all endpoints (app: 11 endpoints including `/url_add`, infra: 8 endpoints). The deployment script clearly shows target account `008971653395` before proceeding. Documentation metrics match actual infrastructure with zero discrepancies. The verification script confirms consistency.
+**Climax:** After deployment — EC2 starts with dynamic IP and Route53 updates automatically. Lambda functions have clean names. The duplicate api-gw-url-add template is removed; api-gw-app now serves 11 endpoints (including `/url_add`), api-gw-infra serves 7 endpoints, and url-add.yaml retains its own API Gateway (3 REST APIs total). The deployment script clearly shows target account `008971653395` before proceeding. Documentation metrics match actual infrastructure with zero discrepancies. The verification script confirms consistency.
 
 **Resolution:** Infrastructure is consolidated. Monthly costs are reduced. Operational safety is improved (account visibility in deployment). Documentation is accurate and maintainable. The project is ready for Phase 3 (Security Hardening).
 
@@ -187,11 +187,13 @@ The project uses two categories of API Gateway:
 
 **Rationale:** This separation enables direct comparison between deployment targets. Application endpoints exist in Docker (server.py), AWS Lambda, and future GCP deployments. Infrastructure endpoints are AWS-specific and have no cross-platform equivalent. Keeping them in separate API Gateways makes this boundary explicit.
 
-**Consolidation decision:** The Chrome extension API (`api-gw-url-add.yaml`) serves the `/url_add` endpoint, which is application-level functionality (document submission). It belongs in `api-gw-app.yaml`, not in a standalone API Gateway. Sprint 4 merges it, reducing API Gateways from 3 to 2.
+**Consolidation decision:** The Chrome extension API (`api-gw-url-add.yaml`) was a duplicate template serving the `/url_add` endpoint, which is application-level functionality (document submission). It belongs in `api-gw-app.yaml`, not in a standalone API Gateway template. Sprint 4 merges the endpoint definition into `api-gw-app.yaml` and removes the duplicate `api-gw-url-add.yaml` template and its CF stack. Note: `url-add.yaml` (the Lambda function template) retains its own REST API Gateway — this is a separate template, not the duplicate that was removed.
 
 **Post-consolidation state:**
 - `api-gw-app.yaml` — 11 endpoints: `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding`, `/website_download_text_content`, `/ai_embedding_get`, `/url_add`
-- `api-gw-infra.yaml` — 8 endpoints: `/rds/start`, `/rds/stop`, `/rds/status`, `/ec2/status`, `/ec2/start`, `/ec2/stop`, `/sqs/size`, `/git-webhooks`
+- `api-gw-infra.yaml` — 7 endpoints: `/infra/sqs/size`, `/infra/vpn_server/start`, `/infra/vpn_server/stop`, `/infra/vpn_server/status`, `/infra/database/start`, `/infra/database/stop`, `/infra/database/status`
+- `url-add.yaml` — 1 endpoint: `/url_add` (Lambda function template with its own REST API Gateway, still active in deploy.ini)
+- **Total: 2 API Gateway templates (`api-gw-*`) + 1 Lambda template with embedded API GW (`url-add.yaml`) = 3 REST APIs in AWS**
 
 ## Web App Technical Context
 
@@ -308,4 +310,4 @@ Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway
 
 - NFR13: Documentation metrics (endpoint counts, template counts, Lambda function counts) have a single source of truth with zero cross-file discrepancies
 - NFR14: An automated verification script exists that detects documentation metric drift and can be run as part of CI or manual review
-- NFR15: All documentation files reference post-consolidation state: 2 API Gateways (app + infra), correct endpoint counts per gateway, correct total template count
+- NFR15: All documentation files reference post-consolidation state: 2 API Gateway templates (app + infra) with url-add.yaml retaining its own REST API (3 total), correct endpoint counts per gateway (app: 11, infra: 7, url-add: 1), correct total template count

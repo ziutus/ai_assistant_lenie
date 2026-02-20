@@ -6,7 +6,7 @@ Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym w
 
 ## [1.0.23] - 2026-02-20
 ### Zmienione
-- Zaktualizowano domyślny URL endpointu API na skonsolidowaną bramkę api-gw-app (konsolidacja z 3 do 2 API Gateway)
+- Zaktualizowano domyślny URL endpointu API na skonsolidowaną bramkę api-gw-app (endpoint /url_add przeniesiony do głównej bramki)
 
 ## [1.0.22] - 2025-08-29
 ### Zmienione

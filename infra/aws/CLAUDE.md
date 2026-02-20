@@ -46,7 +46,7 @@ aws/
 ## Subdirectories
 
 ### cloudformation/
-Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. Covers 34 templates organized by layer: networking (VPC), database (RDS, DynamoDB), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (2 active REST APIs: app 10 + infra 7 endpoints, plus Chrome ext API), orchestration (Step Functions), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details.
+Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. Covers 34 templates organized by layer: networking (VPC), database (RDS, DynamoDB), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (2 REST APIs: app 11 + infra 7 endpoints), orchestration (Step Functions), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details.
 
 ### serverless/
 Lambda function source code (11 functions) and Lambda layer build scripts (psycopg2, lenie_all, openai). Two function categories: simple infrastructure Lambdas (RDS/EC2/SQS management) and app Lambdas that bundle `backend/library/` for document processing and AI operations. Includes packaging scripts (`zip_to_s3.sh`, `create_empty_lambdas.sh`). See `serverless/CLAUDE.md` for details.
@@ -85,7 +85,7 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 | SNS | Error notifications via email |
 | S3 | Lambda code artifacts, video transcriptions, web content |
 | Lambda | 11 functions for infra management and app logic |
-| API Gateway | 2 active REST APIs (app: 10 endpoints, infra: 7 endpoints) + 1 Chrome extension API (url-add.yaml) |
+| API Gateway | 3 REST APIs (app: 11 endpoints including /url_add, infra: 7 endpoints, url-add: 1 endpoint) |
 | Step Functions | SQS-to-RDS workflow with auto DB start/stop |
 | EC2 | Application server, bastion host, Jenkins, OpenVPN |
 | EKS | Kubernetes cluster (alternative deployment target) |
