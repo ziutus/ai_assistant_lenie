@@ -120,8 +120,14 @@ Key targets: `build`, `dev`, `down`, `install`, `lint`, `security`, `docker-rele
 
 ## Cost Optimization Decisions
 
+This is a hobbyist/personal project — cost minimization is a priority across all cloud providers.
+
+**AWS:**
 - **No NAT Gateway**: Lambda split into VPC (DB) and public (internet) functions
 - **RDS on-demand**: Database starts/stops via Lambda + Step Function (runs only when needed)
 - **DynamoDB PAY_PER_REQUEST**: No provisioned capacity charges
 - **t4g.micro (ARM64)**: Cost-effective EC2 instance
 - **Budget alert**: $8/month with 50%, 80%, 100% thresholds
+
+**Google Cloud:**
+- Leverages [Google Cloud Free Tier](https://docs.cloud.google.com/free/docs/free-cloud-features#free-tier-usage-limits) where possible
