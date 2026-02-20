@@ -7,7 +7,7 @@ Example API requests for the Lenie backend.
 ## Adding a URL (POST /url_add)
 
 ```shell
-curl -X POST https://jg40fjwz61.execute-api.us-east-1.amazonaws.com/v1/url_add \
+curl -X POST https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add \
      -H "Content-Type: application/json" \
      -H "x-api-key: XXXX" \
      -d '{
