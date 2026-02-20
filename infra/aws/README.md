@@ -195,12 +195,14 @@ infra/aws/
 
 ## 6. Compute - Lambda Functions
 
-### 6.1 RDS Start (`lambda-rds-start.yaml`)
+### 6.1 RDS Start (`lambda-rds-start.yaml`) — REDUNDANT
+
+> **Decommissioned:** Commented out in `deploy.ini`. The rds-start Lambda is now managed by `api-gw-infra.yaml`. Delete stack `lenie-dev-lambda-rds-start` manually.
 
 | Resource                 | Type                     | Details                                        |
 |--------------------------|--------------------------|------------------------------------------------|
-| RDSStartLambdaFunction   | AWS::Lambda::Function    | RDS start/stop, timeout: 60s                   |
-| RDSStartLambdaRole       | AWS::IAM::Role           | rds:Start/Stop/Describe, ssm:GetParameter      |
+| RDSStartLambdaFunction   | AWS::Lambda::Function    | REDUNDANT — managed by api-gw-infra.yaml       |
+| RDSStartLambdaRole       | AWS::IAM::Role           | REDUNDANT — permissions moved to shared role   |
 
 ### 6.2 URL Add to SQS (`lambda-weblink-put-into-sqs.yaml`)
 
@@ -265,7 +267,7 @@ infra/aws/
 
 | Resource              | Type                        | Details                                     |
 |-----------------------|-----------------------------|---------------------------------------------|
-| LambdaExecutionRole   | AWS::IAM::Role              | logs:*, rds:Start/Stop/Describe, ssm:GetParameter |
+| LambdaExecutionRole   | AWS::IAM::Role              | logs:*, rds:Start/Stop/Describe, ec2:Start/Stop/Describe, sqs:GetQueueAttributes, ssm:GetParameter |
 | SqsSizeFunction       | AWS::Lambda::Function       | `lenie-dev-sqs-size`, timeout: 30s          |
 | RdsStartFunction      | AWS::Lambda::Function       | `lenie-dev-rds-start`                       |
 | RdsStopFunction       | AWS::Lambda::Function       | `lenie-dev-rds-stop`                        |
