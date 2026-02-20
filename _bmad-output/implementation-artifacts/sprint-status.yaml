@@ -137,9 +137,9 @@ development_status:
   # ============================================================
 
   # --- Epic 13: Operational Safety & Tooling ---
-  epic-13: in-progress
+  epic-13: done
   13-1-add-deployment-safety-header-to-zip-to-s3-sh: done
-  13-2-verify-crlf-git-config-for-parameter-files: backlog
+  13-2-verify-crlf-git-config-for-parameter-files: done
   epic-13-retrospective: optional
 
   # --- Epic 14: Infrastructure Cost & Naming Cleanup ---

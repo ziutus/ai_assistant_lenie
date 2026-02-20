@@ -270,3 +270,9 @@ Copy the `.gitattributes` file from this project's root as a starting point. Adj
 * text=auto eol=lf
 *.sh text eol=lf
 ```
+
+### Verification (B-12 Closure — Sprint 4, Story 13.2)
+
+On 2026-02-20, all 29 CloudFormation parameter files in `infra/aws/cloudformation/parameters/dev/` were verified to have **LF line endings** (no CRLF found). The `.gitattributes` rules — the global `* text=auto eol=lf` and explicit `*.json text eol=lf` — are confirmed adequate. Verification included `git check-attr` confirmation that git applies `text: set` and `eol: lf` to parameter files. No additional rules needed.
+
+**Background:** Sprint 3 Story 7-2 encountered a CRLF git warning when committing parameter files. Root cause was the Windows `core.autocrlf=true` setting, not corrupt file content. The `.gitattributes` file (commit `6a9bfd7`) and line ending normalization (commit `88b833e`) resolved the issue. This verification formally closes backlog item B-12.
