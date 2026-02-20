@@ -101,6 +101,7 @@
 - [Docker Local](./Docker_Local.md) — Local development with Docker
 - [AWS Infrastructure](./AWS_Infrastructure.md) — AWS resource documentation
 - [Code Quality](./Code_Quality.md) — Linting and security tools
+- [Observability Strategy](./observability.md) — Logging, tracing, and monitoring across environments
 - [Python Dependencies](./Python_Dependencies.md) — uv package management
 
 ## Getting Started

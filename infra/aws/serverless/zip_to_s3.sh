@@ -2,12 +2,31 @@
 set -e
 #set -x
 
-source ./env.sh
+ENV_FILE="./env.sh"
+source "$ENV_FILE"
+
+# Validate required environment variables from sourced env file
+if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$PROFILE" ] || [ -z "$ENVIRONMENT" ] || [ -z "$PROJECT_NAME" ] || [ -z "$AWS_S3_BUCKET_NAME" ]; then
+  echo "ERROR: Required environment variables not set. Check ${ENV_FILE}" >&2
+  exit 1
+fi
+
+# Parse flags (--yes/-y) before positional arguments
+AUTO_CONFIRM=false
+POSITIONAL_ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --yes|-y) AUTO_CONFIRM=true ;;
+    *) POSITIONAL_ARGS+=("$arg") ;;
+  esac
+done
+set -- "${POSITIONAL_ARGS[@]}"
 
 # Check if parameter is provided
 if [ $# -eq 0 ]; then
-  echo "Usage: $0 <functions_type>"
+  echo "Usage: $0 [--yes|-y] <functions_type>"
   echo "functions_type: 'simple' or 'app'"
+  echo "  --yes, -y    Skip confirmation prompt"
   exit 1
 fi
 
@@ -25,6 +44,24 @@ fi
 FUNCTION_LIST=$(cat $FUNCTION_LIST_FILE)
 
 echo "function list: $FUNCTION_LIST"
+
+echo "================================================"
+echo "  Deployment Target Information"
+echo "================================================"
+echo "  Env file:    ${ENV_FILE}"
+echo "  AWS Account: ${AWS_ACCOUNT_ID}"
+echo "  Profile:     ${PROFILE}"
+echo "  Environment: ${ENVIRONMENT}"
+echo "  S3 Bucket:   ${AWS_S3_BUCKET_NAME}"
+echo "================================================"
+
+if [ "$AUTO_CONFIRM" != "true" ]; then
+  read -p "Continue with deployment? (y/N) " confirm
+  if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+    echo "Deployment cancelled."
+    exit 0
+  fi
+fi
 
 TMP_DIR="tmp"
 mkdir -p $TMP_DIR
