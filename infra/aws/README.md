@@ -265,7 +265,7 @@ infra/aws/
 
 | Resource              | Type                        | Details                                     |
 |-----------------------|-----------------------------|---------------------------------------------|
-| LambdaExecutionRole   | AWS::IAM::Role              | logs:*                                      |
+| LambdaExecutionRole   | AWS::IAM::Role              | logs:*, rds:Start/Stop/Describe, ssm:GetParameter |
 | SqsSizeFunction       | AWS::Lambda::Function       | `lenie-dev-sqs-size`, timeout: 30s          |
 | RdsStartFunction      | AWS::Lambda::Function       | `lenie-dev-rds-start`                       |
 | RdsStopFunction       | AWS::Lambda::Function       | `lenie-dev-rds-stop`                        |
@@ -288,7 +288,6 @@ infra/aws/
 | `/infra/vpn_server/start`     | POST, OPTIONS  | Start EC2 (VPN)       |
 | `/infra/vpn_server/stop`      | POST, OPTIONS  | Stop EC2 (VPN)        |
 | `/infra/vpn_server/status`    | POST, OPTIONS  | Get EC2 status        |
-| `/infra/git-webhooks`         | POST, OPTIONS  | Git webhook handler   |
 
 ---
 
