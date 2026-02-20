@@ -143,8 +143,8 @@ development_status:
   epic-13-retrospective: optional
 
   # --- Epic 14: Infrastructure Cost & Naming Cleanup ---
-  epic-14: backlog
-  14-1-remove-elastic-ip-from-ec2-instance: backlog
+  epic-14: in-progress
+  14-1-remove-elastic-ip-from-ec2-instance: review
   14-2-fix-redundant-lambda-function-name-in-lambda-rds-start: backlog
   epic-14-retrospective: optional
 
@@ -161,17 +161,27 @@ development_status:
   16-2-create-automated-documentation-drift-verification-script: backlog
   epic-16-retrospective: optional
 
-  # --- Future Backlog (next sprint) ---
+  # --- Future Backlog ---
+
+  # --- High Priority ---
+  B-20-add-deployment-safety-confirmation-to-deploy-sh: backlog
+  B-18-fix-metrics-endpoint-returns-500: backlog
+  B-3-rename-legacy-lambda-lenie-2-internet-and-db: backlog
+
+  # --- Medium Priority ---
   B-1-analyze-ec2-lambda-consolidation: backlog
   B-2-analyze-rds-lambda-consolidation: backlog
-  B-3-rename-legacy-lambda-lenie-2-internet-and-db: backlog
   B-6-migrate-api-gw-app-stage-to-separate-resource: backlog
-  B-7-merge-helm-s3-and-cloudfront-into-single-template: done
-  B-8-manage-acm-certificates-via-cloudformation-and-ssm: backlog
-  B-9-organize-s3-cloudformation-bucket-directory-structure: backlog
   B-10-create-apigw-cloudwatch-iam-role-in-cloudformation: backlog
-  B-13-parameterize-stage-description-for-multi-environment: backlog
-  B-15-add-custom-domains-for-api-gateways: backlog
   B-16-migrate-web-interface-react-from-cra-to-vite: backlog
   B-17-migrate-web-add-url-react-from-cra-to-vite: backlog
-  B-18-fix-metrics-endpoint-returns-500: backlog
+
+  # --- Low Priority / Ideas ---
+  B-8-manage-acm-certificates-via-cloudformation-and-ssm: backlog
+  B-9-organize-s3-cloudformation-bucket-directory-structure: backlog
+  B-13-parameterize-stage-description-for-multi-environment: backlog
+  B-15-add-custom-domains-for-api-gateways: backlog
+  B-19-convert-ec2-to-spot-with-asg-0-1: backlog
+
+  # --- Done ---
+  B-7-merge-helm-s3-and-cloudfront-into-single-template: done
