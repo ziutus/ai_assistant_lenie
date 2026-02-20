@@ -178,8 +178,6 @@ infra/aws/
 |-------------------------|-------------------------------|--------------------------------------------|
 | EC2Instance             | AWS::EC2::Instance            | t4g.micro (ARM64), Amazon Linux 2023       |
 | InstanceSecurityGroup   | AWS::EC2::SecurityGroup       | SSH (22), HTTP (80), HTTPS (443)           |
-| ElasticIP               | AWS::EC2::EIP                 | Static public IP                           |
-| EIPAssociation          | AWS::EC2::EIPAssociation      | -                                          |
 | InstanceRole            | AWS::IAM::Role                | AmazonSSMManagedInstanceCore               |
 | InstanceProfile         | AWS::IAM::InstanceProfile     | -                                          |
 
