@@ -1,8 +1,10 @@
 # Project Lenie: Personal AI Assistant
 
-Project Lenie, named after the enigmatic protagonist from Peter Watts' novel "Starfish,"
-offers advanced solutions for collecting, managing, and searching data using
-Large Language Models (LLMs).
+Project Lenie is named after Lenie Clarke — the protagonist of Peter Watts' novel "Starfish,"
+who ultimately becomes an agent of extinction for the world as we know it. The name is
+a deliberate nod: I'm not convinced that AI won't end up doing the same to our civilization.
+That said, Lenie offers advanced solutions for collecting, managing, and searching data
+using Large Language Models (LLMs).
 
 Lenie enables users to:
 * collect and manage links, allowing easy searching of accumulated references using LLM,

@@ -1,6 +1,6 @@
 # Story 14.1: Remove Elastic IP from EC2 Instance
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -190,8 +190,34 @@ Removal-only change following CloudFormation Resource Removal Pattern from Sprin
 |------|--------|-------------|
 | `infra/aws/cloudformation/templates/ec2-lenie.yaml` | MOD | Removed ElasticIP, EIPAssociation resources and PublicIP output |
 
+## Senior Developer Review (AI)
+
+**Reviewer:** Claude Opus 4.6 | **Date:** 2026-02-20 | **Outcome:** Changes Requested → Fixed
+
+### Findings
+
+| # | Severity | Issue | Resolution |
+|---|----------|-------|------------|
+| H1 | HIGH | Template Description still says "assign an Elastic IP" after EIP removal (line 2) | FIXED: Updated to "Template to create an EC2 instance with Amazon Linux 2023" |
+| M1 | MEDIUM | `infra/aws/cloudformation/CLAUDE.md` ec2-lenie.yaml entry still listed "EIP" and "Elastic IP" | FIXED: Updated to "SG, IAM" and "dynamic public IP" |
+| M2 | MEDIUM | `infra/aws/README.md` section 5.1 still listed ElasticIP and EIPAssociation resource rows | FIXED: Removed both rows |
+| L1 | LOW | `aws_ec2_route53.py` `get_instance_public_ip()` has unbounded recursion (no max retry) | NOTED: Pre-existing, out of scope — added to backlog as B-22 |
+
+### AC Verification
+
+All 6 Acceptance Criteria verified as correctly implemented. cfn-lint zero errors. All tasks confirmed done.
+
+### Review File List
+
+| File | Action | Description |
+|------|--------|-------------|
+| `infra/aws/cloudformation/templates/ec2-lenie.yaml` | MOD | Removed "and assign an Elastic IP" from Description |
+| `infra/aws/cloudformation/CLAUDE.md` | MOD | Removed EIP references from ec2-lenie.yaml entry |
+| `infra/aws/README.md` | MOD | Removed ElasticIP and EIPAssociation resource rows |
+
 ## Change Log
 
 | Date | Change | Story |
 |------|--------|-------|
 | 2026-02-20 | Removed Elastic IP and EIP Association resources from EC2 CloudFormation template to eliminate ~$3.65/month idle charges; verified Route53 DNS update script and VPC subnet config support dynamic public IP | 14-1 |
+| 2026-02-20 | Code review fixes: removed stale EIP references from template Description, CLAUDE.md, and README.md | 14-1-review |

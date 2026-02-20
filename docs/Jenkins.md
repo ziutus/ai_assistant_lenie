@@ -130,14 +130,7 @@ keytool -importkeystore \
 
 ## GitHub Webhooks
 
-Testing GitHub webhooks:
-
-```bash
-curl -X POST \
-    -H "Content-Type: application/json" \
-    -d '{"key1":"value1", "key2":"value2"}' \
-    https://your-api-gateway.execute-api.us-east-1.amazonaws.com/v1/infra/git-webhooks
-```
+> **Note:** The `/infra/git-webhooks` API Gateway endpoint and its `git-webhooks` Lambda function have been removed (Sprint 4, Story 14.2). The Lambda is archived under git tag `archive/git-webhooks`. Jenkins is no longer in use, so the webhook integration is not needed.
 
 ## Code Checkout
 

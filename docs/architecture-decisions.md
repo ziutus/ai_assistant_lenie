@@ -205,7 +205,7 @@ Problems: (A) infrastructure endpoints were duplicated across `api-gw-app` and `
 ### Related Artifacts
 
 - `infra/aws/cloudformation/templates/api-gw-app.yaml` — 10 app endpoints only
-- `infra/aws/cloudformation/templates/api-gw-infra.yaml` — 8 infra endpoints (database, vpn, sqs, git-webhooks)
+- `infra/aws/cloudformation/templates/api-gw-infra.yaml` — 7 infra endpoints (database start/stop/status, vpn start/stop/status, sqs size)
 - `web_interface_react/src/modules/shared/context/authorizationContext.js` — `infraApiUrl` state
 - `web_interface_react/src/modules/shared/hooks/useDatabase.js` — uses `infraApiUrl` for AWS mode
 - `web_interface_react/src/modules/shared/hooks/useVpnServer.js` — uses `infraApiUrl` for AWS mode

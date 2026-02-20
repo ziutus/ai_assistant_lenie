@@ -142,9 +142,9 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `ec2-lenie.yaml` | EC2 (t4g.micro ARM64), EIP, SG, IAM | Instance with Elastic IP and SSM |
+| `ec2-lenie.yaml` | EC2 (t4g.micro ARM64), SG, IAM | Instance with dynamic public IP and SSM |
 | `lenie-launch-template.yaml` | Launch Template | EC2 launch template |
-| `lambda-rds-start.yaml` | Lambda, IAM Role | Function to start RDS |
+| `lambda-rds-start.yaml` | Lambda, IAM Role | REDUNDANT — commented out in deploy.ini; rds-start Lambda is managed by api-gw-infra.yaml. Delete stack `lenie-dev-lambda-rds-start` manually. |
 | `lambda-weblink-put-into-sqs.yaml` | Lambda | Function to put web links into SQS |
 | `sqs-to-rds-lambda.yaml` | Lambda, IAM Role | Transfer messages from SQS to RDS (VPC, layers) |
 | `url-add.yaml` | Lambda, API GW, API Key, IAM, Logs | URL addition (standalone with its own API Gateway) |
@@ -153,7 +153,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `api-gw-infra.yaml` | REST API, 8 Lambdas | Infrastructure management API (8 endpoints: RDS, EC2/VPN, SQS, git-webhooks) |
+| `api-gw-infra.yaml` | REST API, 7 Lambdas, IAM Role | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). Shared IAM role includes RDS, EC2, SQS, and SSM permissions for all functions. |
 | `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (10 endpoints, x-api-key) |
 | `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | UNUSED — commented out in deploy.ini (duplicate of url-add.yaml) |
 
@@ -232,7 +232,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `lambda-layer-psycopg2.yaml` - PostgreSQL driver layer
 - `ec2-lenie.yaml` - application server
 - `lenie-launch-template.yaml` - EC2 launch template
-- `lambda-rds-start.yaml` - Lambda for DB start
+- ~~`lambda-rds-start.yaml`~~ - REDUNDANT, commented out (rds-start Lambda managed by api-gw-infra.yaml)
 - `lambda-weblink-put-into-sqs.yaml` - Lambda for SQS ingestion
 - `sqs-to-rds-lambda.yaml` - SQS to RDS transfer Lambda
 - `url-add.yaml` - URL addition Lambda with API Gateway
