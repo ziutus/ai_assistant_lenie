@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).
 
+## [1.0.23] - 2026-02-20
+### Zmienione
+- Zaktualizowano domyślny URL endpointu API na skonsolidowaną bramkę api-gw-app (konsolidacja z 3 do 2 API Gateway)
+
 ## [1.0.22] - 2025-08-29
 ### Zmienione
 - usunięto pola do AI summary i AI correction. To będzie robionie automatycznie w backend.
