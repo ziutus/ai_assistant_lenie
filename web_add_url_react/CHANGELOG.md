@@ -6,10 +6,10 @@ Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym w
 
 ## [0.2.0] - 2026-02-20
 ### Zmienione
-- Potwierdzono URL endpointu API po konsolidacji bramek API Gateway (z 3 do 2 bramek)
-- Endpoint `/url_add` jest teraz obsługiwany przez skonsolidowaną bramkę api-gw-app
+- Endpoint `/url_add` jest teraz obsługiwany przez skonsolidowaną bramkę api-gw-app (URL aplikacji już wskazywał na właściwą bramkę — potwierdzono i udokumentowano)
+- Usunięto debug log klucza API z konsoli przeglądarki (poprawa bezpieczeństwa)
 
-## [0.1.0] - 2025-01-01
+## [0.1.0] - 2025-08-28
 ### Dodano
 - Pierwsza wersja aplikacji do dodawania URL-i
 - Formularz z polami: URL, typ dokumentu, źródło, język, notatka, tekst

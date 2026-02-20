@@ -682,7 +682,7 @@ Resources:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
 
-  # Lambda permission for url-add function (API Gateway consolidation - Story 15.1)
+  # Lambda permission for url-add function (API Gateway consolidation)
   UrlAddLambdaInvokePermission:
     Type: AWS::Lambda::Permission
     Properties:

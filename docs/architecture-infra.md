@@ -33,7 +33,7 @@ API Gateway serves as managed entry point with API key authentication.
 | Queues | sqs-documents, sqs-application-errors | Document processing queue (14-day retention), DLQ with SNS alerts |
 | Storage | s3, s3-cloudformation, s3-helm | Video transcriptions, Lambda code, Helm charts |
 | Compute | ec2-lenie, lambda-rds-start, lambda-weblink-put-into, sqs-to-rds-lambda | EC2 (t4g.micro ARM64), Lambda functions |
-| API | api-gw-infra, api-gw-app, api-gw-url-add | 3 API Gateways (infra, app, chrome extension) |
+| API | api-gw-infra, api-gw-app | 2 API Gateway templates; 3 REST APIs total (infra, app, url-add — /url_add also consolidated into app) |
 | DNS | 1-domain-route53 | lenie-ai.eu hosted zone |
 | Orchestration | sqs-to-rds-step-function | Workflow: SQS → start DB → process → stop DB |
 | Governance | organization, identityStore, scp-*, budget | AWS Organization, SCPs, $8/month budget |
