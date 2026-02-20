@@ -195,10 +195,12 @@ No issues encountered.
 
 - 2026-02-19: Implemented all 3 tasks — flag parsing, info header display, confirmation prompt. Single file modified.
 - 2026-02-19: Code review fixes — added env var validation guard, updated usage message with flag documentation.
+- 2026-02-20: Second code review fixes — extended env var validation to include ENVIRONMENT and PROJECT_NAME, fixed architecture.md anti-pattern note.
 
 ### File List
 
 - `infra/aws/serverless/zip_to_s3.sh` (modified) — added flag parsing, ENV_FILE variable, deployment info header, confirmation prompt, env var validation, updated usage message
+- `_bmad-output/planning-artifacts/architecture.md` (modified) — fixed incorrect set -e anti-pattern note in Bash Script Modification Pattern
 
 ## Senior Developer Review (AI)
 
@@ -215,3 +217,19 @@ No issues encountered.
 - [L2] No `--help`/`-h` flag — standard convention but out of scope for this story
 
 **Verdict:** All 5 Acceptance Criteria verified against implementation. All tasks genuinely complete. Code review passed after fixes.
+
+### Senior Developer Review #2 (AI)
+
+**Reviewer:** Claude Opus 4.6 | **Date:** 2026-02-20
+
+**Findings Summary:** 0 Critical, 0 High, 2 Medium (fixed), 2 Low (accepted)
+
+**Fixed Issues:**
+- [M1] Extended env var validation guard to include ENVIRONMENT and PROJECT_NAME — both used in Lambda naming (line 86) but were missing from the safety check
+- [M2] Fixed architecture.md anti-pattern note: changed "Adding `set -e` (existing script does not use it)" to "Changing the existing `set -e` behavior" — script HAS set -e at line 2
+
+**Accepted/Deferred Issues:**
+- [L1] Variable naming inconsistency: architecture uses `${ENV_FILE_NAME}`, implementation uses `${ENV_FILE}` — cosmetic, no functional impact
+- [L2] Pre-existing `--profile` inconsistency: S3 upload (line 115) uses default profile, Lambda update (line 118) uses explicit `${PROFILE}` — out of scope for this story
+
+**Verdict:** All 5 Acceptance Criteria re-verified. Both Medium issues fixed. Story remains done.

@@ -6,7 +6,7 @@ ENV_FILE="./env.sh"
 source "$ENV_FILE"
 
 # Validate required environment variables from sourced env file
-if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$PROFILE" ] || [ -z "$AWS_S3_BUCKET_NAME" ]; then
+if [ -z "$AWS_ACCOUNT_ID" ] || [ -z "$PROFILE" ] || [ -z "$ENVIRONMENT" ] || [ -z "$PROJECT_NAME" ] || [ -z "$AWS_S3_BUCKET_NAME" ]; then
   echo "ERROR: Required environment variables not set. Check ${ENV_FILE}" >&2
   exit 1
 fi

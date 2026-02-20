@@ -3,6 +3,12 @@ stepsCompleted: [1, 2, 3, 4, 5, 6, 7, 8]
 lastStep: 8
 status: 'complete'
 completedAt: '2026-02-13'
+sprint4:
+  stepsCompleted: [2, 3, 4, 5, 6, 7, 8]
+  lastStep: 8
+  status: 'complete'
+  startedAt: '2026-02-19'
+  completedAt: '2026-02-19'
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/prd-validation-report.md
@@ -777,3 +783,526 @@ Phase G (cleanup):     Legacy resource removal (9 resources in dependency order)
 Phase H (frontend):    Remove aws-rum-web, Cognito from React code
 Phase I (docs):        Update deploy.ini, README.md
 ```
+
+---
+
+# Sprint 4 — AWS Infrastructure Consolidation & Tooling
+
+_Continuation of architecture decisions for Sprint 4. Sprint 1 decisions (canonical template pattern, SSM conventions, naming, deployment workflow) remain in effect as foundational context._
+
+## Sprint 4 — Project Context Analysis
+
+### Requirements Overview
+
+**Functional Requirements:**
+32 FRs organized in 6 capability groups:
+1. **Remove Elastic IP (FR1-FR5):** Remove ElasticIP and EIPAssociation from ec2-lenie.yaml, update Outputs to dynamic public IP, verify Route53 update via aws_ec2_route53.py. EC2 is typically stopped (started on-demand for RDS access), making idle EIP charges (~$3.65/month) pure waste.
+2. **Fix Lambda Naming (FR6-FR11):** Fix FunctionName in lambda-rds-start.yaml from `${AWS::StackName}` to `${ProjectCode}-${Environment}-rds-start`, verify all other templates, update all consumers (Step Function definitions, parameter files, API GW integrations).
+3. **API GW Consolidation (FR12-FR21):** Merge `/url_add` from api-gw-url-add.yaml into api-gw-app.yaml, migrate API key/usage plan/Lambda permission, update Chrome extension and add-url React app URLs, remove standalone template, verify 51200 byte limit. Most architecturally complex story.
+4. **Deployment Script Safety (FR22-FR25):** Add AWS account ID display, env file name display, profile/environment/bucket display, confirmation prompt to zip_to_s3.sh.
+5. **CRLF Verification (FR26-FR28):** Verify parameter file line endings, verify .gitattributes coverage, document findings.
+6. **Documentation Consolidation (FR29-FR32):** Create single-source metrics file at docs/infrastructure-metrics.md, fix discrepancies across 7+ files, automated verification script.
+
+**Non-Functional Requirements:**
+15 NFRs in 4 categories:
+- **Reliability & Safety (NFR1-NFR5):** Existing endpoints continue working post-consolidation (smoke test), EC2 accessible after EIP removal, no active resources removed, rollback via git+CF, client apps work with new endpoint.
+- **IaC Quality (NFR6-NFR9):** cfn-lint validation passes, Lambda naming convention enforced, template under 51200 byte limit, deploy.ini order correct after template removal.
+- **Operational Safety (NFR10-NFR12):** Account ID displayed before deployment, confirmation required, LF line endings enforced.
+- **Documentation Quality (NFR13-NFR15):** Single source of truth for metrics, automated drift detection, all docs reflect post-consolidation state.
+
+**Scale & Complexity:**
+
+- Primary domain: AWS Infrastructure consolidation and operational tooling
+- Complexity level: Low-Medium (brownfield modifications, single developer, single environment)
+- Estimated changes: ~6 CF templates modified/removed, ~3 client files updated, ~2 scripts improved, ~7 documentation files corrected
+- Project context: Brownfield — consolidating existing infrastructure, not creating new resources
+
+### Technical Constraints & Dependencies
+
+1. **Existing Gen 2+ canonical template pattern** from Sprint 1 — all CF modifications must maintain consistency with established conventions (ProjectCode + Environment parameters, SSM exports, standard tags).
+
+2. **api-gw-app.yaml complexity** — 632 lines with entire OpenAPI spec inlined, hardcoded Lambda function names (`lenie_2_db`, `lenie_2_internet`), `DeletionPolicy: Retain`. Template modifications require careful handling.
+
+3. **51200 byte CloudFormation inline limit** — api-gw-app.yaml is currently under the limit. Adding /url_add endpoint (~60 lines) must keep it within bounds. Fallback: `aws cloudformation package` for S3-based deployment.
+
+4. **Two AWS accounts** — current production (`008971653395`, env.sh) and target migration (`049706517731`, env_lenie_2025.sh). Scripts must clearly indicate which account they target.
+
+5. **Client app hardcoded URLs** — Chrome extension `popup.html` and add-url React app `App.js` have hardcoded API Gateway URLs that must be updated after B-14 consolidation.
+
+6. **Implementation order matters** — B-5 (Lambda naming) before B-14 (API GW consolidation) to ensure merged template has correct references. B-14 before B-19 (documentation) to reflect post-consolidation state.
+
+### Cross-Cutting Concerns Identified
+
+1. **Implementation sequencing** — B-11 (deployment safety) and B-12 (CRLF) first for immediate operational benefit. B-4 (EIP) and B-5 (Lambda naming) next as independent changes. B-14 (API GW consolidation) as the main architectural work. B-19 (documentation) last to capture final state.
+2. **Template modification safety** — api-gw-app.yaml has Retain policies and hardcoded values. Changes must be tested thoroughly (cfn-lint, smoke test) before deployment.
+3. **Consistency with Sprint 1 architecture** — all modifications must follow the canonical Gen 2+ template pattern established in Sprint 1 architecture decisions (SSM exports, ProjectCode+Environment parameters, standard tags).
+4. **Documentation accuracy chain** — B-19 depends on B-14 completion to know the final API GW structure. Creating the metrics file too early would embed incorrect counts.
+
+## Sprint 4 — Starter Template Evaluation
+
+### Primary Technology Domain
+
+AWS Infrastructure modification (CloudFormation templates, bash scripts, documentation). No new application or framework — Sprint 4 modifies existing brownfield resources.
+
+### Existing Pattern Reuse
+
+**Decision:** Reuse the Generation 2+ canonical template pattern from Sprint 1 architecture.
+
+**Rationale:** Sprint 4 does not create new templates from scratch. All changes modify existing templates or remove templates. The Gen 2+ pattern (ProjectCode + Environment parameters, SSM Parameter Store exports, standard tags, IsProduction condition) remains the governing standard for any template modifications.
+
+**Sprint 4-Specific Pattern Notes:**
+
+1. **api-gw-app.yaml** is a special case — it uses an inline OpenAPI Body specification (not the standard CF resource pattern). Modifications to this template follow the OpenAPI 3.0.1 structure within the Body, not the Gen 2+ resource pattern directly.
+
+2. **Bash script modifications** (zip_to_s3.sh) follow existing shell scripting conventions in the project: sourcing env files, using AWS CLI, standard bash error handling.
+
+3. **Documentation files** follow existing Markdown conventions with CLAUDE.md files per directory.
+
+No starter template evaluation needed — all work builds on established patterns.
+
+## Sprint 4 — Core Architectural Decisions
+
+### Decision Priority Analysis
+
+**Critical Decisions (Block Implementation):**
+1. API Gateway consolidation approach: Inline merge of /url_add into api-gw-app.yaml OpenAPI Body
+2. API key migration: Use existing api-gw-app API key, update client apps (URL + key), do not migrate ApiKey/UsagePlan CF resources
+3. Lambda function rename strategy: In-place CF update (replacement) for lambda-rds-start.yaml — acceptable downtime for on-demand function
+
+**Important Decisions (Shape Architecture):**
+4. EIP removal — Outputs handling: Remove PublicIP output entirely (nothing consumes it)
+5. Hardcoded Lambda names in api-gw-app.yaml (lenie_2_db, lenie_2_internet): Leave as-is — covered by future backlog item B-3 (rename-legacy-lambda-lenie-2-internet-and-db)
+6. deploy.ini handling: Remove api-gw-url-add.yaml entry after manual stack deletion
+7. zip_to_s3.sh confirmation pattern: Header display + --yes flag for automation bypass
+
+**Deferred Decisions (Future Sprints):**
+- B-3: Rename lenie_2_db and lenie_2_internet to ${ProjectCode}-${Environment} pattern + parameterize in api-gw-app.yaml
+- B-6: Migrate api-gw-app stage to separate CF resource
+- B-13: Parameterize StageDescription for multi-environment support
+
+### API Gateway Consolidation Strategy
+
+**Decision:** Inline merge — add /url_add path definition (POST + OPTIONS with CORS, Lambda proxy integration to lenie-dev-url-add) directly into the OpenAPI Body of api-gw-app.yaml. Add AWS::Lambda::Permission resource for the url-add Lambda function.
+
+**Rationale:** api-gw-app.yaml is 632 lines. Adding ~60 lines for /url_add keeps it well within manageable size. The 51200 byte CloudFormation inline limit must be verified post-merge. Fallback: aws cloudformation package for S3-based deployment.
+
+**API Key Strategy:** The /url_add endpoint inherits the existing api_key security scheme defined in api-gw-app.yaml's OpenAPI spec. No ApiKey/UsagePlan CloudFormation resources are migrated. Chrome extension and add-url React app must be updated with: (a) new endpoint URL (api-gw-app gateway), (b) existing api-gw-app API key.
+
+**Post-Consolidation Cleanup:**
+1. Verify /url_add works on consolidated gateway (smoke test)
+2. Delete lenie-dev-api-gw-url-add CloudFormation stack manually
+3. Remove api-gw-url-add.yaml from deploy.ini
+4. Remove api-gw-url-add.yaml template file
+5. Remove parameters/dev/api-gw-url-add.json parameter file
+
+### Lambda Function Rename Strategy
+
+**Decision:** In-place CloudFormation update for lambda-rds-start.yaml. Change FunctionName from `${AWS::StackName}-rds-start-function` to `${ProjectCode}-${Environment}-rds-start`.
+
+**Rationale:** CloudFormation treats FunctionName change as replacement (delete old + create new). This causes brief unavailability, which is acceptable for an on-demand function (starts RDS database, used infrequently). Code re-upload via zip_to_s3.sh after stack update.
+
+**Consumer Updates Required:**
+- Verify api-gw-infra.yaml already references `${ProjectCode}-${Environment}-rds-start` (confirmed from codebase analysis — no change needed)
+- Verify SqsToRdsLambdaFunctionName in sqs-to-rds-step-function.json does NOT reference this Lambda (confirmed: references sqs-to-rds-lambda, not rds-start)
+- Update lambda-rds-start.json parameter file if it contains function name reference
+
+### EIP Removal Strategy
+
+**Decision:** Remove ElasticIP resource, EIPAssociation resource, and PublicIP output from ec2-lenie.yaml entirely.
+
+**Rationale:** EC2 instance is typically stopped (started on-demand for RDS access). Idle EIP incurs ~$3.65/month cost. aws_ec2_route53.py already handles dynamic IP → Route53 A record update on each EC2 start. No other template, parameter, or script consumes the PublicIP output.
+
+**Verification:** EC2 must launch with dynamic public IP via subnet's MapPublicIpOnLaunch: 'true' setting in vpc.yaml (confirmed at lines 83, 98).
+
+### Deployment Script Safety Pattern
+
+**Decision:** Add information header and --yes flag to zip_to_s3.sh.
+
+**Implementation:**
+- Display: sourced env file name, AWS account ID, AWS profile, environment, S3 bucket name
+- Default behavior: require explicit confirmation (read -p "Continue? (y/N)")
+- --yes / -y flag: bypass confirmation prompt for automation
+- Display happens before any S3 upload or Lambda update operation
+
+### Decision Impact Analysis
+
+**Implementation Sequence:**
+1. B-11 (zip_to_s3.sh safety) — independent, immediate operational benefit
+2. B-12 (CRLF verification) — independent, quick verification task
+3. B-4 (EIP removal) — independent, simple CF template change
+4. B-5 (Lambda naming) — independent, CF replacement + code re-upload
+5. B-14 (API GW consolidation) — depends on B-5 being complete (consistent naming context), most complex story
+6. B-19 (Documentation consolidation) — depends on B-14 (needs final API GW state for accurate metrics)
+
+**Cross-Component Dependencies:**
+- B-5 → B-14: Lambda naming should be fixed before API GW consolidation to ensure clean state
+- B-14 → B-19: Documentation must reflect post-consolidation state (2 API GWs, 11 app endpoints)
+- B-11 should be first: improves safety for all subsequent deployments
+- B-4, B-5 are independent of each other: can be done in parallel
+
+## Sprint 4 — Implementation Patterns & Consistency Rules
+
+### Critical Conflict Points Identified
+
+4 areas where AI agents could make different choices when implementing Sprint 4 stories.
+
+### OpenAPI Merge Pattern (B-14)
+
+**Adding /url_add to api-gw-app.yaml OpenAPI Body:**
+
+The /url_add endpoint must follow the exact same structure as existing endpoints in the OpenAPI Body. Key rules:
+
+1. **Lambda integration URI format:** Use `!Sub` with inline ARN construction:
+   ```yaml
+   uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectCode}-${Environment}-url-add/invocations"
+   ```
+   Note: This is the only endpoint in api-gw-app.yaml that uses a parameterized Lambda name. All other endpoints use hardcoded names (lenie_2_db, lenie_2_internet) — this is intentional and will be addressed in future backlog item B-3.
+
+2. **Security:** Include `security: [{api_key: []}]` on the POST method (same as all other endpoints).
+
+3. **CORS OPTIONS method:** Copy the mock integration pattern from any existing endpoint's OPTIONS method. Must include `Access-Control-Allow-Origin`, `Access-Control-Allow-Methods`, `Access-Control-Allow-Headers` response headers.
+
+4. **Timeout:** 29000ms (matching api-gw-url-add.yaml's current timeout).
+
+5. **Position in paths:** Add `/url_add` at the end of the paths section (after `/ai_embedding_get`).
+
+**Anti-patterns:**
+- Using `!Ref` or `Fn::GetAtt` for Lambda ARN instead of `!Sub` inline
+- Changing existing endpoint definitions while adding /url_add
+- Adding request/response models not present in existing endpoints
+- Modifying the security scheme definition
+
+### Lambda Permission Resource Pattern (B-14)
+
+**Adding LambdaPermission for url-add Lambda to api-gw-app.yaml:**
+
+```yaml
+UrlAddLambdaInvokePermission:
+  Type: AWS::Lambda::Permission
+  Properties:
+    FunctionName: !Sub '${ProjectCode}-${Environment}-url-add'
+    Action: lambda:InvokeFunction
+    Principal: apigateway.amazonaws.com
+    SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*/url_add'
+```
+
+**Key rules:**
+- Logical ID: PascalCase, descriptive (`UrlAddLambdaInvokePermission`)
+- FunctionName: Use `!Sub` with `${ProjectCode}-${Environment}` pattern
+- SourceArn: Scope to `/url_add` path specifically (not wildcard `/*/*`)
+- Place after existing Lambda permission resources in the template
+
+### Bash Script Modification Pattern (B-11)
+
+**Adding deployment info display and confirmation to zip_to_s3.sh:**
+
+1. **Argument parsing:** Add `--yes` / `-y` flag parsing before `source ./env.sh`:
+   ```bash
+   AUTO_CONFIRM=false
+   for arg in "$@"; do
+     case "$arg" in
+       --yes|-y) AUTO_CONFIRM=true ;;
+     esac
+   done
+   ```
+
+2. **Info display block:** After sourcing env file, before the function processing loop:
+   ```bash
+   echo "================================================"
+   echo "  Deployment Target Information"
+   echo "================================================"
+   echo "  Env file:    ${ENV_FILE_NAME}"
+   echo "  AWS Account: ${AWS_ACCOUNT_ID}"
+   echo "  Profile:     ${PROFILE}"
+   echo "  Environment: ${ENVIRONMENT}"
+   echo "  S3 Bucket:   ${AWS_S3_BUCKET_NAME}"
+   echo "================================================"
+   ```
+
+3. **Confirmation prompt:** After info display, before processing:
+   ```bash
+   if [ "$AUTO_CONFIRM" != "true" ]; then
+     read -p "Continue with deployment? (y/N) " confirm
+     if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+       echo "Deployment cancelled."
+       exit 0
+     fi
+   fi
+   ```
+
+**Anti-patterns:**
+- Changing the existing `set -e` behavior
+- Adding colored output (no colors in existing scripts)
+- Restructuring the existing loop or variable handling
+- Adding logging to file (not in existing pattern)
+
+### CloudFormation Resource Removal Pattern (B-4, B-14)
+
+**Removing resources from templates:**
+
+1. Delete the resource block entirely — no commented-out remnants
+2. Delete associated outputs that reference removed resources
+3. Do not add placeholder comments (e.g., `# Removed: ElasticIP`) — git history provides this
+4. Do not add replacement resources unless explicitly required by a FR
+
+**Anti-patterns:**
+- Leaving commented-out resource definitions
+- Adding `Condition: Never` instead of removing
+- Adding `DeletionPolicy: Retain` to resources being removed from template (only needed for CF import)
+- Replacing removed output with a new dynamic equivalent when nothing consumes it
+
+### Documentation Metrics File Pattern (B-19)
+
+**Structure for docs/infrastructure-metrics.md:**
+
+Organize metrics by perspective (deployment target), not by resource type:
+
+```markdown
+# Infrastructure Metrics — Single Source of Truth
+
+## Flask Server (Docker / Kubernetes)
+- Endpoints: XX total (list)
+
+## AWS Serverless (Lambda + API Gateway)
+### API Gateways
+- api-gw-app: XX endpoints (list)
+- api-gw-infra: XX endpoints (list)
+### Lambda Functions
+- Total: XX (simple: X, app: X)
+
+## CloudFormation
+- Templates in deploy.ini [dev]: XX
+- Total template files: XX
+
+## Verification
+Last verified: YYYY-MM-DD
+```
+
+**Anti-patterns:**
+- Mixing Flask and Lambda endpoint counts in same table
+- Using generated/computed values instead of explicit counts
+- Duplicating metrics that should reference this file
+- Creating complex scripts when a simple grep/count suffices
+
+### Enforcement Guidelines
+
+**All AI Agents implementing Sprint 4 MUST:**
+1. Follow the OpenAPI merge pattern exactly when adding /url_add to api-gw-app.yaml
+2. Use `!Sub` with `${ProjectCode}-${Environment}` for new Lambda references (not hardcoded names)
+3. Remove resources cleanly without commented remnants
+4. Keep bash script modifications minimal — match existing style
+5. Verify template size stays under 51200 bytes after modifications
+6. Run cfn-lint on modified templates before marking work complete
+7. Update documentation to reflect post-consolidation state (2 API GWs, not 3)
+
+## Sprint 4 — Project Structure & Boundaries
+
+### Complete File Changes (Sprint 4)
+
+Files to modify (MOD), remove (DEL), or create (NEW):
+
+```
+infra/aws/cloudformation/
+├── deploy.ini                                              [MOD] Remove api-gw-url-add.yaml entry
+├── templates/
+│   ├── ec2-lenie.yaml                                      [MOD] Remove ElasticIP, EIPAssociation, PublicIP output
+│   ├── lambda-rds-start.yaml                               [MOD] Fix FunctionName to ${ProjectCode}-${Environment}-rds-start
+│   ├── api-gw-app.yaml                                     [MOD] Add /url_add endpoint (POST+OPTIONS), add LambdaPermission
+│   └── api-gw-url-add.yaml                                 [DEL] Consolidated into api-gw-app.yaml
+├── parameters/dev/
+│   ├── lambda-rds-start.json                               [MOD] Update if references old function name
+│   └── api-gw-url-add.json                                 [DEL] Template removed
+└── smoke-test-url-add.sh                                   [MOD] Update endpoint URL to api-gw-app gateway (if hardcoded)
+
+infra/aws/serverless/
+├── zip_to_s3.sh                                            [MOD] Add info header, --yes flag, confirmation prompt
+├── env.sh                                                  [MOD] Add AWS_ACCOUNT_ID variable if missing
+└── env_lenie_2025.sh                                       [MOD] Add AWS_ACCOUNT_ID variable if missing
+
+web_chrome_extension/
+└── popup.html                                              [MOD] Update default endpoint URL to api-gw-app gateway
+
+web_add_url_react/
+└── src/App.js                                              [MOD] Update hardcoded API URL to api-gw-app gateway
+
+docs/
+└── infrastructure-metrics.md                               [NEW] Single source of truth for infrastructure counts
+
+# Documentation files to update with correct metrics:
+CLAUDE.md                                                   [MOD] Fix endpoint/template counts or reference metrics file
+README.md                                                   [MOD] Update EC2 description (no EIP), API GW count (2 not 3)
+backend/CLAUDE.md                                           [MOD] Fix counts if discrepant
+docs/index.md                                               [MOD] Fix counts if discrepant
+docs/api-contracts-backend.md                               [MOD] Fix counts if discrepant
+infra/aws/CLAUDE.md                                         [MOD] Update: 2 API GWs, remove EIP mention, fix counts
+infra/aws/cloudformation/CLAUDE.md                          [MOD] Remove api-gw-url-add row, update api-gw-app endpoint count
+
+# Verification script:
+scripts/verify-documentation-metrics.sh                     [NEW] Automated drift detection script
+```
+
+**File count summary:**
+- New files: 2 (infrastructure-metrics.md, verify-documentation-metrics.sh)
+- Modified files: ~15 (6 infra, 2 client apps, 7 documentation)
+- Deleted files: 2 (api-gw-url-add.yaml, api-gw-url-add.json)
+
+### Requirements to Structure Mapping
+
+| FR Group | Files Affected |
+|----------|---------------|
+| B-4: Remove EIP (FR1-FR5) | `ec2-lenie.yaml` |
+| B-5: Lambda Naming (FR6-FR11) | `lambda-rds-start.yaml`, `lambda-rds-start.json` |
+| B-14: API GW Consolidation (FR12-FR21) | `api-gw-app.yaml`, `api-gw-url-add.yaml` [DEL], `api-gw-url-add.json` [DEL], `deploy.ini`, `popup.html`, `App.js`, `smoke-test-url-add.sh` |
+| B-11: Script Safety (FR22-FR25) | `zip_to_s3.sh`, `env.sh`, `env_lenie_2025.sh` |
+| B-12: CRLF (FR26-FR28) | `.gitattributes` (if needed), documentation |
+| B-19: Documentation (FR29-FR32) | `infrastructure-metrics.md` [NEW], `verify-documentation-metrics.sh` [NEW], 7 documentation files [MOD] |
+
+### Architectural Boundaries
+
+**Template Boundaries:**
+Sprint 4 modifies templates independently — no new cross-stack SSM dependencies are created:
+- `ec2-lenie.yaml`: Resources removed, no new SSM exports
+- `lambda-rds-start.yaml`: FunctionName changed, existing SSM exports unchanged
+- `api-gw-app.yaml`: New endpoint added, new LambdaPermission resource, no new SSM exports
+
+**Client App Boundaries:**
+- Chrome extension (`popup.html`): Only default URL string changes — user can override in settings
+- Add-URL React app (`App.js`): Hardcoded URL string changes — requires rebuild and redeploy via Amplify
+
+**Script Boundaries:**
+- `zip_to_s3.sh`: Additive changes only — new display block and flag parsing, no changes to existing packaging/upload logic
+
+## Sprint 4 — Architecture Validation Results
+
+### Coherence Validation ✅
+
+**Decision Compatibility:**
+All Sprint 4 architectural decisions work together without conflicts. Inline merge (B-14) with existing API key strategy is the simplest consolidation path. In-place CF replacement (B-5) is independent of API GW merge. EIP removal (B-4) has no cross-dependencies. Script safety (B-11) is purely additive. No Sprint 4 decision conflicts with Sprint 1 architecture decisions (Gen 2+ canonical pattern, SSM conventions, naming standards remain in effect).
+
+**Pattern Consistency:**
+Sprint 4 implementation patterns extend (not replace) Sprint 1 patterns. OpenAPI merge pattern matches existing api-gw-app.yaml endpoint structure. Bash script pattern matches existing project scripting style. CF resource removal pattern is clean (no remnants). Documentation pattern establishes single source of truth with verification.
+
+**Structure Alignment:**
+File changes map covers all 32 FRs and 15 NFRs. Implementation dependencies (B-5→B-14→B-19) are defined with clear rationale. No orphan files or missing references.
+
+### Requirements Coverage Validation ✅
+
+**Functional Requirements Coverage:**
+
+| FR Group | Status | Architectural Support |
+|----------|--------|----------------------|
+| FR1-FR5 (Remove EIP) | ✅ Covered | `ec2-lenie.yaml` modification, Route53 verification via aws_ec2_route53.py |
+| FR6-FR11 (Lambda naming) | ✅ Covered | `lambda-rds-start.yaml` in-place replacement, consumer verification checklist |
+| FR12-FR21 (API GW consolidation) | ✅ Covered | Inline merge into api-gw-app.yaml, LambdaPermission, client URL updates, 5-step cleanup sequence |
+| FR22-FR25 (Script safety) | ✅ Covered | `zip_to_s3.sh` header display + `--yes` flag pattern |
+| FR26-FR28 (CRLF verification) | ✅ Covered | .gitattributes verification + documentation |
+| FR29-FR32 (Documentation) | ✅ Covered | `infrastructure-metrics.md` [NEW] + `verify-documentation-metrics.sh` [NEW] + 7 documentation file updates |
+
+**Non-Functional Requirements Coverage:**
+
+| NFR | Status | Architectural Support |
+|-----|--------|----------------------|
+| NFR1 (Smoke test post-consolidation) | ✅ | smoke-test-url-add.sh executed after consolidation |
+| NFR2 (EC2 accessible after EIP removal) | ✅ | Route53 dynamic update via aws_ec2_route53.py, MapPublicIpOnLaunch verified |
+| NFR3 (No active resources removed) | ✅ | Only consolidated/replaced resources affected |
+| NFR4 (Rollback capability) | ✅ | Git version control + CloudFormation stack operations |
+| NFR5 (Client apps work) | ✅ | URL updates in popup.html and App.js |
+| NFR6 (cfn-lint validation) | ✅ | Enforcement guideline for all modified templates |
+| NFR7 (Lambda naming convention) | ✅ | lambda-rds-start fixed, all others verified clean |
+| NFR8 (51200 byte limit) | ✅ | Size verification post-merge, S3 fallback documented |
+| NFR9 (deploy.ini order) | ✅ | Entry removed after manual stack deletion |
+| NFR10-NFR11 (Script display + confirmation) | ✅ | Header + --yes flag pattern |
+| NFR12 (LF line endings) | ✅ | .gitattributes verification |
+| NFR13-NFR15 (Documentation quality) | ✅ | Single source + verification script + post-consolidation state |
+
+### Implementation Readiness Validation ✅
+
+**Decision Completeness:**
+All 7 architectural decisions are documented with rationale. The API GW consolidation strategy includes a 5-step cleanup sequence. Lambda rename strategy accounts for consumer verification. Implementation patterns include concrete YAML/bash code examples and anti-patterns.
+
+**Structure Completeness:**
+File changes map lists 2 new files, ~15 modifications, and 2 deletions — all annotated with [NEW], [MOD], or [DEL]. Requirements-to-structure mapping covers every FR group. Architectural boundaries (template, client app, script) are defined.
+
+**Pattern Completeness:**
+4 conflict points identified and resolved with explicit patterns: OpenAPI merge, Lambda permission, bash script modification, CF resource removal. Each includes examples and anti-patterns. Enforcement guidelines list 7 mandatory rules for AI agents.
+
+### Gap Analysis Results
+
+**Critical Gaps:** None found.
+
+**Important Gaps (Addressed):**
+1. **Hardcoded Lambda names in api-gw-app.yaml** — explicitly deferred to future backlog item B-3 (rename-legacy-lambda-lenie-2-internet-and-db). Sprint 4 adds /url_add with parameterized `!Sub` name, creating an intentional hybrid state. Documented in decisions.
+
+**Minor Observations:**
+1. `smoke-test-url-add.sh` may need URL update if it references the old api-gw-url-add gateway — flagged in file changes map.
+2. `scripts/` directory for `verify-documentation-metrics.sh` — verify existence or create during implementation.
+
+### Architecture Completeness Checklist
+
+**✅ Sprint 4 Context Analysis**
+
+- [x] 32 FRs in 6 groups analyzed for architectural implications
+- [x] 15 NFRs in 4 categories mapped to architectural support
+- [x] Technical constraints identified (api-gw-app complexity, 51200 limit, two AWS accounts)
+- [x] Cross-cutting concerns mapped (sequencing, template safety, Sprint 1 consistency, documentation chain)
+
+**✅ Architectural Decisions**
+
+- [x] 7 decisions documented with rationale (3 critical, 4 important)
+- [x] Deferred decisions identified with backlog references (B-3, B-6, B-13)
+- [x] Implementation sequence defined with dependencies
+- [x] Cross-component dependencies mapped
+
+**✅ Implementation Patterns**
+
+- [x] 4 conflict points identified and resolved
+- [x] Code examples provided for OpenAPI merge, Lambda permission, bash script, resource removal
+- [x] Anti-patterns documented for each area
+- [x] 7 enforcement rules for AI agents
+
+**✅ Project Structure**
+
+- [x] Complete file changes map (2 new, ~15 modified, 2 deleted)
+- [x] Requirements-to-structure mapping covers all FR groups
+- [x] Architectural boundaries defined (template, client app, script)
+
+### Architecture Readiness Assessment
+
+**Overall Status:** READY FOR IMPLEMENTATION
+
+**Confidence Level:** High — all critical decisions made, no blocking gaps, patterns are concrete with code examples.
+
+**Key Strengths:**
+
+1. **Clear consolidation strategy** — inline merge with existing API key eliminates migration complexity
+2. **Implementation sequencing** — B-11 first (safety), B-4/B-5 parallel (independent), B-14 (main work), B-19 last (accurate metrics)
+3. **Hybrid naming approach** — new /url_add uses parameterized `!Sub`, existing endpoints keep hardcoded names until B-3
+4. **Safety-first design** — deployment script confirmation, smoke test verification, rollback via git+CF
+5. **Strong traceability** — every FR maps to specific files, every decision has rationale, deferred items reference backlog IDs
+
+**Areas for Future Enhancement:**
+
+1. B-3: Rename lenie_2_db and lenie_2_internet + parameterize in api-gw-app.yaml
+2. B-6: Migrate api-gw-app stage to separate CF resource
+3. B-13: Parameterize StageDescription for multi-environment
+4. Extract OpenAPI Body to separate file if api-gw-app.yaml grows beyond manageable size
+5. CI/CD integration for documentation drift detection (currently manual script)
+
+### Implementation Handoff
+
+**AI Agent Guidelines:**
+
+- Follow Sprint 1 Gen 2+ canonical template pattern for all CF modifications
+- Follow Sprint 4 implementation patterns for OpenAPI merge, bash scripts, and resource removal
+- Respect implementation sequence: B-11 → B-12 → B-4/B-5 → B-14 → B-19
+- Verify template size (51200 byte limit) after api-gw-app.yaml modification
+- Run cfn-lint and smoke-test-url-add.sh before marking B-14 complete
+- Update all 7 documentation files to reflect post-consolidation state
+
+**First Implementation Priority:**
+
+1. B-11 (zip_to_s3.sh safety) — immediate operational benefit, zero risk
+2. B-12 (CRLF verification) — quick verification task
+3. B-4 (EIP removal) + B-5 (Lambda naming) — independent, can run in parallel
+4. B-14 (API GW consolidation) — most complex, requires careful execution
+5. B-19 (Documentation consolidation) — last, captures final state
