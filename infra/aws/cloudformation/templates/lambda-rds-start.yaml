@@ -71,7 +71,7 @@ Resources:
 
 Outputs:
   LambdaFunctionArn:
-    Description: 'ARN of the RDS Stop Lambda function'
+    Description: 'ARN of the RDS Start Lambda function'
     Value: !GetAtt RDSStartLambdaFunction.Arn
     Export:
       Name: !Sub '${AWS::StackName}-lambda-arn'
