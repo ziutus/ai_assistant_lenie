@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: Template to create an EC2 instance with Amazon Linux 2023 and assign an Elastic IP
+Description: Template to create an EC2 instance with Amazon Linux 2023
 
 Parameters:
   ProjectCode:

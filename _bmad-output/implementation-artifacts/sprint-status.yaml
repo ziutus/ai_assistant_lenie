@@ -143,8 +143,8 @@ development_status:
   epic-13-retrospective: optional
 
   # --- Epic 14: Infrastructure Cost & Naming Cleanup ---
-  epic-14: in-progress
-  14-1-remove-elastic-ip-from-ec2-instance: review
+  epic-14: done
+  14-1-remove-elastic-ip-from-ec2-instance: done
   14-2-fix-redundant-lambda-function-name-in-lambda-rds-start: done
   epic-14-retrospective: optional
 
@@ -176,6 +176,8 @@ development_status:
   B-10-create-apigw-cloudwatch-iam-role-in-cloudformation: backlog
   B-16-migrate-web-interface-react-from-cra-to-vite: backlog
   B-17-migrate-web-add-url-react-from-cra-to-vite: backlog
+
+  B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
 
   # --- Low Priority / Ideas ---
   B-8-manage-acm-certificates-via-cloudformation-and-ssm: backlog

@@ -142,7 +142,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `ec2-lenie.yaml` | EC2 (t4g.micro ARM64), EIP, SG, IAM | Instance with Elastic IP and SSM |
+| `ec2-lenie.yaml` | EC2 (t4g.micro ARM64), SG, IAM | Instance with dynamic public IP and SSM |
 | `lenie-launch-template.yaml` | Launch Template | EC2 launch template |
 | `lambda-rds-start.yaml` | Lambda, IAM Role | REDUNDANT — commented out in deploy.ini; rds-start Lambda is managed by api-gw-infra.yaml. Delete stack `lenie-dev-lambda-rds-start` manually. |
 | `lambda-weblink-put-into-sqs.yaml` | Lambda | Function to put web links into SQS |
