@@ -149,8 +149,8 @@ development_status:
   epic-14-retrospective: optional
 
   # --- Epic 15: API Gateway Consolidation ---
-  epic-15: backlog
-  15-1-merge-url-add-endpoint-into-api-gw-app-yaml: backlog
+  epic-15: in-progress
+  15-1-merge-url-add-endpoint-into-api-gw-app-yaml: review
   15-2-update-client-applications-and-version-releases: backlog
   15-3-remove-old-api-gw-url-add-gateway-and-clean-up: backlog
   epic-15-retrospective: optional
