@@ -39,6 +39,16 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: "*"
+              - Effect: Allow
+                Action:
+                  - rds:StartDBInstance
+                  - rds:StopDBInstance
+                  - rds:DescribeDBInstances
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectCode}/${Environment}/database/name'
       Tags:
         - Key: Environment
           Value: !Ref Environment
@@ -86,7 +96,7 @@ Resources:
         S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
         S3Key: !Sub ${ProjectCode}-${Environment}-rds-start.zip
       Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/python/lambda-runtime-version}}'
-      Timeout: 30
+      Timeout: 60
       MemorySize: 128
       Environment:
         Variables:
@@ -563,49 +573,6 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /infra/git-webhooks:
-            post:
-              responses:
-                "200":
-                  description: "200 response"
-                  content:
-                    application/json:
-                      schema:
-                        $ref: "#/components/schemas/Empty"
-              x-amazon-apigateway-integration:
-                type: "aws_proxy"
-                httpMethod: "POST"
-                uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:git-webhooks/invocations"
-                passthroughBehavior: "when_no_match"
-                timeoutInMillis: 29000
-                contentHandling: "CONVERT_TO_TEXT"
-            options:
-              responses:
-                "200":
-                  description: "200 response"
-                  headers:
-                    Access-Control-Allow-Origin:
-                      schema:
-                        type: "string"
-                    Access-Control-Allow-Methods:
-                      schema:
-                        type: "string"
-                    Access-Control-Allow-Headers:
-                      schema:
-                        type: "string"
-                  content: {}
-              x-amazon-apigateway-integration:
-                type: "mock"
-                responses:
-                  default:
-                    statusCode: "200"
-                    responseParameters:
-                      method.response.header.Access-Control-Allow-Methods: "'DELETE,GET,HEAD,OPTIONS,PATCH,POST,PUT'"
-                      method.response.header.Access-Control-Allow-Headers: "'Content-Type,Authorization,X-Amz-Date,X-Api-Key,X-Amz-Security-Token'"
-                      method.response.header.Access-Control-Allow-Origin: "'*'"
-                requestTemplates:
-                  application/json: '{"statusCode": 200}'
-                passthroughBehavior: "when_no_match"
         components:
           schemas:
             Empty:
@@ -689,10 +656,3 @@ Resources:
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
 
-  LambdaInvokePermissionGitWebhooks:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: git-webhooks
-      Action: lambda:InvokeFunction
-      Principal: apigateway.amazonaws.com
-      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"

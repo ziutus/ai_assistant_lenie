@@ -145,7 +145,7 @@ development_status:
   # --- Epic 14: Infrastructure Cost & Naming Cleanup ---
   epic-14: in-progress
   14-1-remove-elastic-ip-from-ec2-instance: review
-  14-2-fix-redundant-lambda-function-name-in-lambda-rds-start: backlog
+  14-2-fix-redundant-lambda-function-name-in-lambda-rds-start: review
   epic-14-retrospective: optional
 
   # --- Epic 15: API Gateway Consolidation ---
