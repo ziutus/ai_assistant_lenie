@@ -15,6 +15,9 @@ stepsCompleted:
   - step-e-01-discovery
   - step-e-02-review
   - step-e-03-edit
+  - step-e-01-discovery
+  - step-e-02-review
+  - step-e-03-edit
 classification:
   projectType: web_app
   domain: personal_ai_knowledge_management
@@ -36,92 +39,97 @@ inputDocuments:
   - _bmad-output/implementation-artifacts/epic-7-retro-2026-02-16.md
   - _bmad-output/implementation-artifacts/epic-8-retro-2026-02-16.md
   - _bmad-output/implementation-artifacts/epic-9-retro-2026-02-16.md
+  - _bmad-output/implementation-artifacts/epic-10-retro-2026-02-18.md
+  - _bmad-output/implementation-artifacts/epic-11-retro-2026-02-18.md
+  - _bmad-output/implementation-artifacts/epic-12-retro-2026-02-18.md
 workflowType: 'prd'
-lastEdited: '2026-02-16'
+lastEdited: '2026-02-19'
 editHistory:
   - date: '2026-02-16'
-    changes: 'Updated from Sprint 2 (Cleanup & Vision) to Sprint 3 (Code Cleanup — Endpoint & Dead Code Removal). Rewrote Executive Summary, Success Criteria, Product Scope, User Journeys, Risk Mitigation, FRs (22→35), NFRs (9→13). Applied 3 validation fixes (FR13, FR17, NFR8). Added Phase 2 (Security) to roadmap.'
+    changes: 'Updated from Sprint 2 (Cleanup & Vision) to Sprint 3 (Code Cleanup). Rewrote all sections. Applied validation fixes.'
+  - date: '2026-02-19'
+    changes: 'Updated from Sprint 3 (Code Cleanup) to Sprint 4 (AWS Infrastructure Consolidation & Tooling). 6 backlog stories: B-4, B-5, B-11, B-12, B-14, B-19. Added API Gateway Architecture Principle section.'
 ---
 
 # Product Requirements Document - lenie-server-2025
 
 **Author:** Ziutus
-**Date:** 2026-02-16
-**Sprint:** 3 — Code Cleanup (Endpoint & Dead Code Removal)
+**Date:** 2026-02-19
+**Sprint:** 4 — AWS Infrastructure Consolidation & Tooling
 
 ## Executive Summary
 
 Lenie-server-2025 is a personal AI knowledge management system for collecting, managing, and searching press articles, web content, and YouTube transcriptions using LLMs and vector similarity search (PostgreSQL + pgvector).
 
-**This sprint** executes Phase 1 of the three-phase strategic plan: Code Cleanup. Following the principle "Clean first → Secure second → Build new third," Sprint 3 removes unnecessary functionality before investing in security updates or new features. Sprint 1 achieved 100% IaC coverage (6 epics, 10 stories). Sprint 2 removed unused AWS resources (3 DynamoDB cache tables, `/url_add2` endpoint) and documented project vision (3 epics, 5 stories). Sprint 3 removes 3 endpoints (`/ai_ask`, `/translate`, `/infra/ip-allow`), removes dead code (`ai_describe_image()`), and applies 6 tactical CloudFormation template improvements (tagging, SSM pattern, ApiDeployment fix, Lambda typo, Lambda name parameterization, `/website_delete` review).
+**This sprint** executes Phase 2 of the five-phase strategic plan: Infrastructure Consolidation & Tooling. Following the principle "Clean first -> Consolidate -> Secure -> Build new," Sprint 4 consolidates AWS infrastructure and improves operational tooling after Sprint 3 completed code cleanup. Sprint 1 achieved 100% IaC coverage (6 epics, 10 stories). Sprint 2 removed unused AWS resources and documented project vision (3 epics, 5 stories). Sprint 3 removed 3 endpoints, 1 dead function, and applied 6 CloudFormation improvements (3 epics, 33 stories total across sprints). Sprint 4 addresses 6 backlog items: remove Elastic IP from EC2 (B-4), fix redundant Lambda function names (B-5), consolidate API Gateways from 3 to 2 (B-14), add AWS account info to deployment script (B-11), verify CRLF git config for parameter files (B-12), and consolidate duplicated documentation metrics (B-19).
 
-**Target vision:** Private knowledge base in Obsidian vault, managed by Claude Desktop, powered by Lenie-AI as an MCP server. This sprint continues codebase cleanup to prepare for that transformation.
+**Target vision:** Private knowledge base in Obsidian vault, managed by Claude Desktop, powered by Lenie-AI as an MCP server. This sprint consolidates infrastructure to reduce AWS costs and operational friction before security hardening and feature development.
 
 ## Success Criteria
 
 ### User Success (Developer Experience)
 
-- Developer sees zero stale endpoint references after removal of `/ai_ask`, `/translate`, and `/infra/ip-allow`
-- API Gateway template reflects only active endpoints (21 reduced to 18)
-- CloudFormation templates use consistent patterns (AWS::SSM::Parameter::Value<String>, parameterized Lambda names, resource tagging)
-- Code review confirms `ai_ask()` function remains intact (used by `youtube_processing.py`) despite endpoint removal
+- Developer sees clean Lambda function names following `${ProjectCode}-${Environment}-<description>` pattern with zero redundancy
+- Developer deploys via `zip_to_s3.sh` with visible AWS account ID confirmation before any upload
+- Developer manages 2 API Gateways instead of 3 (app + infra), with clear separation principle documented
+- Developer finds documentation metrics (endpoint counts, template counts) in a single source of truth with zero cross-file discrepancies
 
 ### Business Success
 
-- Lower AWS costs through elimination of 3 unused endpoints and associated CloudWatch logs
-- Cleaner codebase — reduced attack surface, easier maintenance
-- All CloudFormation resources tagged with Project and Environment for AWS Cost Explorer filtering
-- Foundation prepared for Phase 2 (Security hardening) and Phase 3 (MCP Server implementation)
+- Lower AWS costs: ~$3.65/month saved by removing idle Elastic IP
+- Reduced API Gateway count (3 to 2) simplifies infrastructure management and monitoring
+- Documentation accuracy eliminates confusion about system scope (previously: 12 vs 18 endpoints, 29 vs 34 templates)
+- Foundation prepared for Phase 3 (Security hardening) and Phase 4 (MCP Server implementation)
 
 ### Technical Success
 
-- 3 endpoints removed from server.py, Lambda functions, API Gateway template, and React frontend
-- 1 dead code function (`ai_describe_image()`) removed from library/ai.py
-- Zero stale references remaining (verified by grep + semantic review)
-- All CloudFormation templates pass cfn-lint validation with zero errors
-- 6 tactical template improvements applied (tagging, SSM pattern, ApiDeployment fix, Lambda typo, parameterization, REST review)
+- EC2 `ElasticIP` and `EIPAssociation` resources removed from `ec2-lenie.yaml`; Route53 A record updated dynamically via `aws_ec2_route53.py`
+- Lambda `FunctionName` in `lambda-rds-start.yaml` changed from `${AWS::StackName}-rds-start-function` to `${ProjectCode}-${Environment}-rds-start` (eliminates `lenie-dev-lambda-rds-start-rds-start-function` redundancy)
+- `api-gw-url-add.yaml` merged into `api-gw-app.yaml`; Chrome extension and add-url React app updated with new endpoint URL
+- `zip_to_s3.sh` displays AWS account ID and requires confirmation before deployment
+- `.gitattributes` coverage verified for parameter files; documented if current config is adequate
+- Single-source documentation metrics file created with automated drift verification
 
 ### Measurable Outcomes
 
-- 3 endpoints removed (server.py: 1, Lambda app-server-internet: 2, API Gateway: 3)
-- 1 Lambda function deleted or archived from AWS (`infra-allow-ip-in-security-group`)
-- 1 dead code function removed (`ai_describe_image()`)
-- Frontend: 2 hook functions removed from `useManageLLM.js` (`handleCorrectUsingAI`, `handleTranslate`)
-- 0 stale references in codebase (verified by grep + semantic review)
-- All CF resources tagged with Project and Environment
-- SSM pattern replaced, ApiDeployment fixed, Lambda typo corrected, Lambda name parameterized, `/website_delete` REST compliance reviewed
+- 2 CloudFormation resources removed from `ec2-lenie.yaml` (`ElasticIP`, `EIPAssociation`)
+- API Gateways reduced from 3 to 2 (app + infra)
+- 0 Lambda functions with redundant names (all follow `${ProjectCode}-${Environment}-<description>`)
+- `zip_to_s3.sh` outputs AWS account ID on every run
+- 0 discrepancies between documentation metric counts and actual infrastructure counts
+- 0 parameter files with CRLF line endings
 
 ## Product Scope
 
-### Phase 1 — This Sprint (Code Cleanup)
+### Phase 2 — This Sprint (Infrastructure Consolidation & Tooling)
 
-1. **Endpoint Removal: `/ai_ask`** — Remove from server.py, Lambda app-server-internet, API Gateway template, and React frontend (useManageLLM.js). CRITICAL: Preserve `ai_ask()` function in library/ai.py (used by youtube_processing.py:290 for AI summary generation)
-2. **Endpoint Removal: `/translate`** — Remove from Lambda app-server-internet, API Gateway template, and React frontend (useManageLLM.js). Backend module `library.translate` already missing — endpoint broken
-3. **Endpoint Removal: `/infra/ip-allow`** — Remove from API Gateway template, delete or archive Lambda function `infra-allow-ip-in-secrutity-group` from AWS. Function has typo in name, hardcoded security group ID, not used for RDP access
-4. **Dead Code Removal** — Remove `ai_describe_image()` function from library/ai.py (defined at line 97, never called)
-5. **CF Improvements — Tagging** — Add Project and Environment tags to all resources across all CF templates for AWS Cost Explorer filtering
-6. **CF Improvements — SSM Pattern** — Replace `{{resolve:ssm:...}}` with `AWS::SSM::Parameter::Value<String>` in sqs-to-rds-step-function.yaml
-7. **CF Improvements — Lambda Parameterization** — Parameterize hardcoded Lambda function name `lenie-sqs-to-db` in sqs-to-rds-step-function.yaml DefinitionSubstitutions
-8. **CF Improvements — ApiDeployment Fix** — Fix ApiDeployment pattern in api-gw-app.yaml to force redeployment on RestApi Body changes (add hash/timestamp or separate AWS::ApiGateway::Stage resource)
-9. **CF Improvements — Lambda Typo** — Fix Lambda function name typo `infra-allow-ip-in-secrutity-group` → `infra-allow-ip-in-security-group` (requires AWS-side rename first)
-10. **CF Improvements — REST Compliance Review** — Review `/website_delete` GET method in api-gw-app.yaml and propose REST-compliant alternative (DELETE method). Document frontend impact
-11. **Reference Cleanup** — Verify zero stale references across entire codebase (grep + semantic review). Update documentation to reflect post-cleanup state
+1. **B-4: Remove Elastic IP from EC2** — Remove `ElasticIP` (AWS::EC2::EIP) and `EIPAssociation` resources from `infra/aws/cloudformation/templates/ec2-lenie.yaml`. EC2 launches with dynamic public IP; Route53 A record updated via `infra/aws/tools/aws_ec2_route53.py` on each start. Update `Outputs` section to reference dynamic IP instead of EIP. Saves ~$3.65/month.
 
-### Phase 2 (Future — Security Hardening)
+2. **B-5: Fix redundant Lambda function names** — Fix `FunctionName` properties that produce redundant names when `${AWS::StackName}` is used (e.g., `lenie-dev-lambda-rds-start-rds-start-function`). Replace with `${ProjectCode}-${Environment}-<description>` pattern. Affected template: `lambda-rds-start.yaml` (confirmed: uses `${AWS::StackName}-rds-start-function`). Verify all other Lambda templates already use the clean pattern. Update all consumers: API Gateway integrations, Step Function definitions, IAM policies, parameter files referencing the old function name.
+
+3. **B-14: Consolidate api-gw-url-add into api-gw-app** — Merge the `/url_add` endpoint from `api-gw-url-add.yaml` into `api-gw-app.yaml`. Remove or archive `api-gw-url-add.yaml` template and its parameter file `parameters/dev/api-gw-url-add.json`. Migrate API key, usage plan, and Lambda permission resources. Update Chrome extension default endpoint URL (currently `https://jg40fjwz61.execute-api.us-east-1.amazonaws.com/v1/url_add`) and add-url React app endpoint URL (currently `https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1`). The `api-gw-infra.yaml` template is not affected.
+
+4. **B-11: Add AWS account info to zip-to-s3 script** — Script `infra/aws/serverless/zip_to_s3.sh` sources `env.sh` by default (account `008971653395`, the current production account). Add: display `AWS_ACCOUNT_ID` during execution, display which env file is sourced, warn/confirm before proceeding with deployment. Two env configs: `env.sh` (account `008971653395`, current production) and `env_lenie_2025.sh` (account `049706517731`, target migration account).
+
+5. **B-12: Fix CRLF git config for parameter files** — Verify parameter files in `infra/aws/cloudformation/parameters/dev/` (29 JSON files) have correct LF line endings. `.gitattributes` already enforces LF for `*.json`. Sprint 3 story 7-2 found CRLF warning was due to Windows `core.autocrlf` setting, not file content. Verify current state, update `.gitattributes` if needed, or document that current config is adequate.
+
+6. **B-19: Consolidate duplicated documentation counts** — Same metrics (endpoint counts, template counts, Lambda function counts) are duplicated across 7+ files with known discrepancies: `api-gw-app` documented as "12 endpoints" (actual: 10), `api-gw-infra` as "9 endpoints" (actual: 8), total templates documented as "29" (actual: 34). Affected files: `CLAUDE.md`, `README.md`, `backend/CLAUDE.md`, `docs/index.md`, `docs/api-contracts-backend.md`, `infra/aws/CLAUDE.md`, `infra/aws/cloudformation/CLAUDE.md`. Create single source of truth file. Add automated verification script to catch future drift.
+
+### Phase 3 (Future — Security Hardening)
 
 - Lambda Layer security audit (dependencies ~1.5+ years old)
 - CORS hardening (replace wildcard `Access-Control-Allow-Origin: '*'`)
 - Lambda function CloudFormation management (replace hardcoded ARNs)
 - Remove 36 stale API Gateway deployments
 
-### Phase 3 (Future — MCP Server Foundation)
+### Phase 4 (Future — MCP Server Foundation)
 
 - Database abstraction layer (separate raw psycopg2 from business logic)
 - Implement MCP server protocol (expose search/retrieve endpoints as MCP tools)
 - Claude Desktop integration (configure Lenie-AI as MCP server)
 - API adaptation for MCP tool consumption
 
-### Phase 4 (Future — Obsidian Integration)
+### Phase 5 (Future — Obsidian Integration)
 
 - Obsidian vault integration (synchronization, linking, note creation)
 - Semantic search from within Obsidian via Claude Desktop + MCP
@@ -129,169 +137,175 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 
 ## User Journeys
 
-### Journey 1: Developer Code Cleanup Sprint
+### Journey 1: Developer Infrastructure Consolidation Sprint
 
 **Persona:** Ziutus — sole developer and project owner, intermediate skill level.
 
-**Opening Scene:** Ziutus opens the project after completing Sprint 2 (AWS Cleanup & Vision Documentation). Three endpoints (`/ai_ask`, `/translate`, `/infra/ip-allow`) are confirmed unnecessary. One dead function (`ai_describe_image()`) sits unused. CloudFormation templates contain tactical debt (no tagging, hardcoded values, ApiDeployment doesn't force redeployment, Lambda typo). The Sprint 3 backlog includes 6 tactical improvements identified during Epics 7-8 code reviews.
+**Opening Scene:** Ziutus opens the project after completing Sprint 3 (Code Cleanup). The codebase is clean — no dead endpoints or unused functions. However, infrastructure has accumulated debt: an idle Elastic IP costs $3.65/month, Lambda function names contain redundant segments (`lenie-dev-lambda-rds-start-rds-start-function`), three API Gateways exist where two suffice, the deployment script does not show which AWS account it targets, and documentation metrics are inconsistent across 7+ files.
 
-**Rising Action:** Ziutus removes `/ai_ask` endpoint from server.py, Lambda app-server-internet, API Gateway template, and React frontend — but preserves the `ai_ask()` function because it's called by `youtube_processing.py`. Ziutus removes `/translate` endpoint (already broken — backend module missing). Ziutus removes `/infra/ip-allow` endpoint and archives the Lambda function. Ziutus deletes `ai_describe_image()` from library/ai.py. Ziutus applies 6 CloudFormation improvements: adds Project and Environment tags, replaces `{{resolve:ssm:...}}` with `AWS::SSM::Parameter::Value<String>`, parameterizes hardcoded Lambda name, fixes ApiDeployment pattern, fixes Lambda typo (`secrutity` → `security`), reviews `/website_delete` GET method.
+**Rising Action:** Ziutus removes the Elastic IP from `ec2-lenie.yaml` and verifies that `aws_ec2_route53.py` correctly updates Route53 with the dynamic public IP on each EC2 start. Ziutus fixes the Lambda function name in `lambda-rds-start.yaml` from `${AWS::StackName}-rds-start-function` to `${ProjectCode}-${Environment}-rds-start` and updates all consumers. Ziutus merges the `/url_add` endpoint from `api-gw-url-add.yaml` into `api-gw-app.yaml`, updates the Chrome extension's default endpoint URL and the add-url React app's hardcoded URL, then removes the standalone template. Ziutus adds account ID display and confirmation to `zip_to_s3.sh`. Ziutus verifies parameter file line endings and documents the finding. Ziutus creates a single-source metrics file and an automated verification script, then fixes all discrepancies across documentation files.
 
-**Climax:** After codebase-wide grep and semantic review — zero stale references remain. All CloudFormation templates pass cfn-lint validation with zero errors. API Gateway operates with 18 endpoints (down from 21). Frontend components no longer reference removed endpoints. `ai_ask()` function remains intact and operational for YouTube summary generation.
+**Climax:** After deployment — EC2 starts with dynamic IP and Route53 updates automatically. Lambda functions have clean names. Two API Gateways serve all endpoints (app: 11 endpoints including `/url_add`, infra: 8 endpoints). The deployment script clearly shows target account `008971653395` before proceeding. Documentation metrics match actual infrastructure with zero discrepancies. The verification script confirms consistency.
 
-**Resolution:** The project is cleaner. Three unused endpoints are gone. Dead code is removed. CloudFormation templates follow consistent patterns with tagging for cost allocation. The codebase is ready for Phase 2 (Security Hardening) and Phase 3 (MCP Server Foundation).
+**Resolution:** Infrastructure is consolidated. Monthly costs are reduced. Operational safety is improved (account visibility in deployment). Documentation is accurate and maintainable. The project is ready for Phase 3 (Security Hardening).
 
-### Journey 2: Future Developer Onboarding
+### Journey 2: Developer Deploying Lambda Code
 
-**Persona:** A new developer (or Ziutus returning after months away) opening the project for the first time.
+**Persona:** Ziutus deploying updated Lambda code to AWS.
 
-**Opening Scene:** The developer opens README.md and CLAUDE.md to understand the project's purpose and current state.
+**Opening Scene:** Ziutus runs `./zip_to_s3.sh simple` from `infra/aws/serverless/`.
 
-**Rising Action:** Documentation describes current architecture, active endpoints (18 in API Gateway, matching server.py and Lambda implementations), and target vision (MCP server + Obsidian vault). CloudFormation templates are tagged for cost tracking. All resources follow consistent patterns (SSM parameters, parameterized names, REST conventions). No documentation references non-existent endpoints or dead code.
+**Rising Action:** The script displays: sourcing `env.sh`, AWS account ID `008971653395`, profile `default`, environment `dev`, S3 bucket `lenie-dev-cloudformation`. Ziutus reviews the information and confirms deployment. The script packages each Lambda function and uploads to S3.
 
-**Resolution:** The developer understands the project, its active features, and its strategic direction without encountering confusing dead references, broken endpoints, or inconsistent patterns.
+**Resolution:** Ziutus has full visibility into which AWS account receives the deployment. No accidental cross-account deployments. If `env_lenie_2025.sh` were sourced instead, the script would display account `049706517731` and profile `lenie-ai-2025-admin`, making the difference immediately visible.
 
 ### Journey Requirements Summary
 
 | Journey | Capabilities Required |
 |---------|----------------------|
-| Developer Cleanup | Remove `/ai_ask` endpoint from server.py, Lambda, API GW, Frontend |
-| Developer Cleanup | Preserve `ai_ask()` function (used by youtube_processing.py) |
-| Developer Cleanup | Remove `/translate` endpoint from Lambda, API GW, Frontend |
-| Developer Cleanup | Remove `/infra/ip-allow` endpoint from API GW, delete Lambda function |
-| Developer Cleanup | Remove `ai_describe_image()` dead code from library/ai.py |
-| Developer Cleanup | Add Project and Environment tags to all CF resources |
-| Developer Cleanup | Replace `{{resolve:ssm:...}}` with AWS::SSM::Parameter::Value<String> |
-| Developer Cleanup | Parameterize hardcoded Lambda name in Step Function |
-| Developer Cleanup | Fix ApiDeployment pattern to force redeployment |
-| Developer Cleanup | Fix Lambda typo `secrutity` → `security` |
-| Developer Cleanup | Review `/website_delete` GET method for REST compliance |
-| Developer Cleanup | Verify zero stale references (grep + semantic review) |
-| Future Onboarding | Clear documentation with current state and vision |
-| Future Onboarding | No stale references to removed endpoints or dead code |
-| Future Onboarding | Consistent CF patterns across all templates |
+| Infra Consolidation | Remove ElasticIP and EIPAssociation from ec2-lenie.yaml |
+| Infra Consolidation | Update ec2-lenie.yaml Outputs to reference dynamic public IP |
+| Infra Consolidation | Fix Lambda FunctionName in lambda-rds-start.yaml to clean pattern |
+| Infra Consolidation | Update all consumers of renamed Lambda function |
+| Infra Consolidation | Merge api-gw-url-add.yaml /url_add endpoint into api-gw-app.yaml |
+| Infra Consolidation | Update Chrome extension and add-url React app endpoint URLs |
+| Infra Consolidation | Remove or archive api-gw-url-add.yaml template |
+| Infra Consolidation | Add account ID display and confirmation to zip_to_s3.sh |
+| Infra Consolidation | Verify parameter file line endings in .gitattributes |
+| Infra Consolidation | Create single-source documentation metrics file |
+| Infra Consolidation | Add automated verification script for documentation drift |
+| Lambda Deployment | See AWS account ID before deployment proceeds |
+| Lambda Deployment | Confirm deployment target before uploads begin |
+
+## API Gateway Architecture Principle
+
+The project uses two categories of API Gateway:
+
+1. **Application API Gateway (`api-gw-app.yaml`)** — Endpoints that serve application functionality: document CRUD, search, AI operations, content download, URL submission. These endpoints correspond to Flask `server.py` routes and Lambda functions (`app-server-db`, `app-server-internet`, `sqs-weblink-put-into`).
+
+2. **Infrastructure API Gateway (`api-gw-infra.yaml`)** — Endpoints that manage AWS infrastructure: RDS start/stop/status, EC2 start/stop/status, SQS queue size. These endpoints have no equivalent in the Flask `server.py` and exist only in the AWS serverless deployment.
+
+**Rationale:** This separation enables direct comparison between deployment targets. Application endpoints exist in Docker (server.py), AWS Lambda, and future GCP deployments. Infrastructure endpoints are AWS-specific and have no cross-platform equivalent. Keeping them in separate API Gateways makes this boundary explicit.
+
+**Consolidation decision:** The Chrome extension API (`api-gw-url-add.yaml`) serves the `/url_add` endpoint, which is application-level functionality (document submission). It belongs in `api-gw-app.yaml`, not in a standalone API Gateway. Sprint 4 merges it, reducing API Gateways from 3 to 2.
+
+**Post-consolidation state:**
+- `api-gw-app.yaml` — 11 endpoints: `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding`, `/website_download_text_content`, `/ai_embedding_get`, `/url_add`
+- `api-gw-infra.yaml` — 8 endpoints: `/rds/start`, `/rds/stop`, `/rds/status`, `/ec2/status`, `/ec2/start`, `/ec2/stop`, `/sqs/size`, `/git-webhooks`
 
 ## Web App Technical Context
 
-Brownfield web application: React 18 SPA (CloudFront + S3) + Flask REST API (API Gateway + Lambda) + PostgreSQL 17 with pgvector (RDS). Sprint 3 removes endpoints and dead code — impacts both backend and frontend.
+Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway + Lambda) + PostgreSQL 17 with pgvector (RDS). Sprint 4 modifies CloudFormation templates, deployment scripts, and client endpoint configurations — no backend application code changes.
 
-**Key constraint:** `api-gw-app.yaml` currently at 51164 bytes (under 51200 byte inline limit after Sprint 2 cleanup). Removing 3 endpoints will further reduce size. Direct `aws cloudformation deploy --template-file` workflow applies (no S3 packaging needed).
+**API Gateway template size:** `api-gw-app.yaml` is under the 51200 byte CloudFormation inline limit after Sprint 3 endpoint removal. Adding the `/url_add` endpoint (POST + OPTIONS with CORS, ~60 lines of OpenAPI) will increase size. Monitor that merged template stays under the inline limit. If exceeded, switch to S3-based template deployment (`aws cloudformation package`).
 
-**Critical dependency:** `ai_ask()` function in `library/ai.py` is called by `youtube_processing.py:290` for AI summary generation. The `/ai_ask` endpoint must be removed but the underlying function must remain intact. Future MCP Server implementation may replace this dependency when Claude Desktop takes over AI summary generation.
+**Chrome extension endpoint URL:** Currently hardcoded in `web_chrome_extension/popup.html` as `https://jg40fjwz61.execute-api.us-east-1.amazonaws.com/v1/url_add`. After API Gateway consolidation, this URL changes to the `api-gw-app` gateway URL. The extension allows user override via the settings field.
 
-**Broken endpoint:** `/translate` endpoint already broken — backend module `library.translate` does not exist. Removal is cleanup of non-functional code.
+**Add-URL React app endpoint URL:** Currently hardcoded in `web_add_url_react/src/App.js` as `https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1`. After consolidation, this must point to the `api-gw-app` gateway URL.
 
-**Frontend impact:** React frontend (`useManageLLM.js`) contains two functions referencing removed endpoints: `handleCorrectUsingAI()` (calls `/ai_ask`) at line 456, `handleTranslate()` (calls `/translate`) at line 375. Both must be removed or disabled.
+**Lambda function naming:** Stack naming convention is `<PROJECT_CODE>-<STAGE>-<template_name>`. The `lambda-rds-start.yaml` template uses `${AWS::StackName}` in `FunctionName`, producing `lenie-dev-lambda-rds-start-rds-start-function` (stack name `lenie-dev-lambda-rds-start` + suffix `-rds-start-function`). Other Lambda templates already use the clean `${ProjectCode}-${Environment}-<description>` pattern directly: `sqs-to-rds-lambda.yaml` produces `lenie-dev-sqs-to-rds-lambda`, `lambda-weblink-put-into-sqs.yaml` produces `lenie-dev-weblink-put-into-sqs`.
 
-**REST compliance review:** `/website_delete` currently uses GET method for destructive operation. Review requires evaluating switch to DELETE method and potential impact on frontend DELETE request handling.
+**AWS accounts:**
+- `008971653395` — CURRENT production account (all active infrastructure runs here)
+- `049706517731` — TARGET migration account (will be used after full migration including RDS data)
+
+**Deployment script:** `infra/aws/serverless/zip_to_s3.sh` sources `env.sh` by default, which targets account `008971653395`. The script currently provides no account visibility — a developer could source the wrong env file and deploy to the wrong account without warning.
 
 ## Risk Mitigation
 
 **Technical Risks:**
-- *Accidental removal of `ai_ask()` function* — Mitigated by explicit preservation requirement in story, code review verification, grep pattern for `youtube_processing.py` usage
-- *Frontend breaking after endpoint removal* — Mitigated by removing React hook functions (`handleCorrectUsingAI`, `handleTranslate`) and testing against live API
-- *Lambda typo fix before CF update* — Mitigated by two-step process: rename Lambda in AWS first, then update CF template
-- *`/website_delete` REST change breaks frontend* — Mitigated by review-only requirement (no implementation without documented impact analysis)
+- *EC2 unreachable after EIP removal* — Mitigated by verifying `aws_ec2_route53.py` updates Route53 A record with dynamic IP on each EC2 start. TTL is 300 seconds. Makefile target `aws-start-openvpn` already uses this script.
+- *Lambda function rename breaks API Gateway integrations* — Mitigated by: (1) verifying `api-gw-infra.yaml` already references `${ProjectCode}-${Environment}-rds-start` (confirmed from codebase), (2) updating Step Function definitions and parameter files that reference the old name, (3) deploying Lambda template before API Gateway template.
+- *API Gateway consolidation breaks Chrome extension / add-url app* — Mitigated by: (1) updating hardcoded URLs in client code, (2) migrating API key and usage plan resources, (3) testing `/url_add` endpoint on new gateway before removing old gateway.
+- *`api-gw-app.yaml` exceeds 51200 byte inline limit after adding /url_add* — Mitigated by checking template size after merge. Fallback: use `aws cloudformation package` for S3-based deployment.
+- *Wrong AWS account deployment* — Mitigated by adding explicit account display and confirmation prompt to `zip_to_s3.sh`.
 
 **Resource Risks:**
 - *Context loss between sessions* — Mitigated by detailed story files and BMad Method tracking
-- *Incomplete reference cleanup* — Mitigated by grep verification + semantic review (numeric counts, package names, terminology)
+- *Documentation drift reoccurs after consolidation* — Mitigated by automated verification script that compares documented counts against actual infrastructure
 - *CloudFormation validation failures* — Mitigated by cfn-lint validation before every deployment
 
 **Process Risks:**
 - *Retro action items not tracked* — Mitigated by adding retro commitments to sprint-status.yaml
-- *Documentation review gaps* — Mitigated by 2-round review requirement for documentation changes
+- *Old API Gateway left running after consolidation* — Mitigated by story requiring explicit deletion or decommission step for api-gw-url-add stack
 
 ## Functional Requirements
 
-### Endpoint Removal — `/ai_ask`
+### B-4: Remove Elastic IP from EC2
 
-- FR1: Developer can remove `/ai_ask` endpoint from `backend/server.py`
-- FR2: Developer can remove `/ai_ask` endpoint from `infra/aws/serverless/app-server-internet/lambda_function.py`
-- FR3: Developer can remove `/ai_ask` endpoint definition from `infra/aws/cloudformation/templates/api-gw-app.yaml`
-- FR4: Developer can remove or disable `handleCorrectUsingAI()` function from `web_interface_react/src/hooks/useManageLLM.js`
-- FR5: Developer can verify `ai_ask()` function in `backend/library/ai.py` remains intact and is called by `backend/imports/youtube_processing.py`
+- FR1: Developer can remove `ElasticIP` (AWS::EC2::EIP) resource from `infra/aws/cloudformation/templates/ec2-lenie.yaml`
+- FR2: Developer can remove `EIPAssociation` (AWS::EC2::EIPAssociation) resource from `infra/aws/cloudformation/templates/ec2-lenie.yaml`
+- FR3: Developer can update `Outputs.PublicIP` in `ec2-lenie.yaml` to reference the EC2 instance dynamic public IP instead of the Elastic IP
+- FR4: Developer can verify `infra/aws/tools/aws_ec2_route53.py` updates Route53 A record with the EC2 dynamic public IP on each instance start
+- FR5: Developer can verify EC2 instance launches with a dynamic public IP via the public subnet's `MapPublicIpOnLaunch: 'true'` setting in `infra/aws/cloudformation/templates/vpc.yaml` (lines 83, 98)
 
-### Endpoint Removal — `/translate`
+### B-5: Fix Redundant Lambda Function Names
 
-- FR6: Developer can remove `/translate` endpoint from `infra/aws/serverless/app-server-internet/lambda_function.py`
-- FR7: Developer can remove `/translate` endpoint definition from `infra/aws/cloudformation/templates/api-gw-app.yaml`
-- FR8: Developer can remove or disable `handleTranslate()` function from `web_interface_react/src/hooks/useManageLLM.js`
-- FR9: Developer can verify backend module `library.translate` does not exist (endpoint already broken)
+- FR6: Developer can change `FunctionName` in `infra/aws/cloudformation/templates/lambda-rds-start.yaml` from `${AWS::StackName}-rds-start-function` to `${ProjectCode}-${Environment}-rds-start`
+- FR7: Developer can verify all other Lambda templates already use the `${ProjectCode}-${Environment}-<description>` naming pattern (no `${AWS::StackName}` usage)
+- FR8: Developer can update `infra/aws/cloudformation/parameters/dev/lambda-rds-start.json` if any parameter references the old function name
+- FR9: Developer can verify `SqsToRdsLambdaFunctionName` parameter in `infra/aws/cloudformation/parameters/dev/sqs-to-rds-step-function.json` (currently `lenie-dev-sqs-to-rds-lambda`) does not reference the renamed Lambda function and update if needed
+- FR10: Developer can verify `api-gw-infra.yaml` Lambda function references (FunctionName properties) resolve correctly after the rename
+- FR11: Developer can verify the renamed Lambda function is invocable by the Step Function defined in `sqs-to-rds-step-function.yaml`
 
-### Endpoint Removal — `/infra/ip-allow`
+### B-14: Consolidate api-gw-url-add into api-gw-app
 
-- FR10: Developer can remove `/infra/ip-allow` endpoint definition from `infra/aws/cloudformation/templates/api-gw-app.yaml`
-- FR11: Developer can delete or archive Lambda function `infra-allow-ip-in-secrutity-group` from AWS account
-- FR12: Developer can verify zero frontend references to `/infra/ip-allow` endpoint
+- FR12: Developer can add the `/url_add` POST endpoint definition (with Lambda proxy integration) from `api-gw-url-add.yaml` into the OpenAPI Body of `api-gw-app.yaml`
+- FR13: Developer can add the `/url_add` OPTIONS endpoint definition (CORS mock integration) from `api-gw-url-add.yaml` into `api-gw-app.yaml`
+- FR14: Developer can add the Lambda permission resource for the `url-add` Lambda function to `api-gw-app.yaml`
+- FR15: Developer can verify the merged `api-gw-app.yaml` template size remains under the 51200 byte CloudFormation inline limit
+- FR16: Developer can update the default endpoint URL in `web_chrome_extension/popup.html` to the `api-gw-app` gateway URL
+- FR17: Developer can update the hardcoded API URL in `web_add_url_react/src/App.js` to the `api-gw-app` gateway URL
+- FR18: Developer can remove or archive the `api-gw-url-add.yaml` template from `infra/aws/cloudformation/templates/`
+- FR19: Developer can remove the `api-gw-url-add.json` parameter file from `infra/aws/cloudformation/parameters/dev/`
+- FR20: Developer can delete the `lenie-dev-api-gw-url-add` CloudFormation stack from AWS after the consolidated gateway is deployed and verified
+- FR21: Developer can verify the `/url_add` endpoint on the consolidated `api-gw-app` gateway returns successful responses with the existing API key
 
-### Dead Code Removal
+### B-11: Add AWS Account Info to zip-to-s3 Script
 
-- FR13: Developer can remove `ai_describe_image()` function from `backend/library/ai.py`
-- FR14: Developer can verify `ai_describe_image()` has zero callers across entire codebase
+- FR22: Developer can see the sourced environment file name (`env.sh` or `env_lenie_2025.sh`) displayed when running `infra/aws/serverless/zip_to_s3.sh`
+- FR23: Developer can see the AWS account ID (`AWS_ACCOUNT_ID` variable) displayed when running `zip_to_s3.sh`
+- FR24: Developer can see the AWS profile name, environment, and S3 bucket name displayed before deployment begins
+- FR25: Developer can confirm or abort deployment after reviewing the displayed account information
 
-### CloudFormation Improvements — Tagging
+### B-12: Fix CRLF Git Config for Parameter Files
 
-- FR15: Developer can add `Project` tag to all resources across all CloudFormation templates
-- FR16: Developer can add `Environment` tag to all resources across all CloudFormation templates
-- FR17: Developer can verify tags enable filtering in AWS Cost Explorer
+- FR26: Developer can verify all 29 parameter files in `infra/aws/cloudformation/parameters/dev/` have LF line endings
+- FR27: Developer can verify `.gitattributes` rules cover `*.json` files with `text eol=lf`
+- FR28: Developer can document the verification result — either update `.gitattributes` with additional rules, or confirm current config is adequate with explanation
 
-### CloudFormation Improvements — SSM Pattern
+### B-19: Consolidate Duplicated Documentation Counts
 
-- FR18: Developer can replace `{{resolve:ssm:...}}` with `AWS::SSM::Parameter::Value<String>` in `infra/aws/cloudformation/templates/sqs-to-rds-step-function.yaml`
-- FR19: Developer can verify updated template passes cfn-lint validation with zero errors
-
-### CloudFormation Improvements — Lambda Parameterization
-
-- FR20: Developer can parameterize hardcoded Lambda function name `lenie-sqs-to-db` in `sqs-to-rds-step-function.yaml` DefinitionSubstitutions
-- FR21: Developer can verify parameterized Lambda name resolves correctly in Step Function definition
-
-### CloudFormation Improvements — ApiDeployment Fix
-
-- FR22: Developer can fix ApiDeployment pattern in `api-gw-app.yaml` to force redeployment when RestApi Body changes
-- FR23: Developer can verify API Gateway redeploys automatically without manual `aws apigateway create-deployment` command
-
-### CloudFormation Improvements — Lambda Typo Fix
-
-- FR24: Developer can rename Lambda function `infra-allow-ip-in-secrutity-group` to `infra-allow-ip-in-security-group` in AWS account
-- FR25: Developer can update `api-gw-app.yaml` to reference corrected Lambda function name
-- FR26: Developer can verify API Gateway integration references correct Lambda function after deployment
-
-### CloudFormation Improvements — REST Compliance Review
-
-- FR27: Developer can review `/website_delete` GET method in `api-gw-app.yaml`
-- FR28: Developer can document REST-compliant alternative (DELETE method) with frontend impact analysis
-- FR29: Developer can document decision (implement now, defer, or reject) based on frontend change scope
-
-### Reference Cleanup
-
-- FR30: Developer can verify zero stale references to `/ai_ask` endpoint across entire codebase
-- FR31: Developer can verify zero stale references to `/translate` endpoint across entire codebase
-- FR32: Developer can verify zero stale references to `/infra/ip-allow` endpoint across entire codebase
-- FR33: Developer can verify zero stale references to `ai_describe_image()` function across entire codebase
-- FR34: Developer can verify all modified CloudFormation templates pass cfn-lint validation with zero errors
-- FR35: Developer can verify API Gateway endpoint count in documentation reflects actual count after removal
+- FR29: Developer can create a single-source metrics file at `docs/infrastructure-metrics.md` containing authoritative counts for: API Gateway endpoints (per gateway), CloudFormation templates, Lambda functions, server.py endpoints
+- FR30: Developer can fix all discrepancies across documentation files (`CLAUDE.md`, `README.md`, `backend/CLAUDE.md`, `docs/index.md`, `docs/api-contracts-backend.md`, `infra/aws/CLAUDE.md`, `infra/aws/cloudformation/CLAUDE.md`) to reference the single-source file or use consistent correct values
+- FR31: Developer can run an automated verification script that compares documented counts against actual infrastructure counts and reports any discrepancies
+- FR32: Developer can verify zero discrepancies between documented and actual counts after running the verification script
 
 ## Non-Functional Requirements
 
 ### Reliability & Safety
 
-- NFR1: Existing API Gateway endpoints (all except `/ai_ask`, `/translate`, `/infra/ip-allow`) continue to function correctly after template modification and redeployment
-- NFR2: `ai_ask()` function in `library/ai.py` remains operational and callable by `youtube_processing.py` after `/ai_ask` endpoint removal
-- NFR3: No actively used code, endpoints, or functions are removed — only confirmed-unused or broken resources
-- NFR4: All cleanup operations preserve rollback capability through version control (git) and CloudFormation stack operations
-- NFR5: Frontend application loads and functions after React hook modifications (`handleCorrectUsingAI`, `handleTranslate` removed or disabled)
+- NFR1: Existing API Gateway endpoints continue to function correctly after `api-gw-url-add` consolidation into `api-gw-app`, verified by `infra/aws/cloudformation/smoke-test-url-add.sh` passing with exit code 0 (tests API Gateway → Lambda → DynamoDB flow)
+- NFR2: EC2 instance remains accessible via SSH and HTTP/HTTPS after Elastic IP removal, with Route53 A record updated within 5 minutes of instance start
+- NFR3: No actively used CloudFormation resources are removed — only resources being consolidated or replaced
+- NFR4: All infrastructure changes preserve rollback capability through version control (git) and CloudFormation stack operations
+- NFR5: Chrome extension and add-url React app successfully submit URLs via the consolidated API Gateway endpoint
 
 ### IaC Quality & Validation
 
 - NFR6: All modified CloudFormation templates pass cfn-lint validation with zero errors before deployment
-- NFR7: All CloudFormation resources include Project and Environment tags for cost allocation tracking
-- NFR8: CloudFormation templates use consistent patterns: `AWS::SSM::Parameter::Value<String>` instead of `{{resolve:ssm:...}}`, parameterized Lambda names instead of hardcoded values
-- NFR9: ApiDeployment resource triggers redeployment automatically when RestApi Body changes (no manual `aws apigateway create-deployment` required)
-- NFR10: Codebase-wide search (grep + semantic review) confirms zero stale references to removed endpoints, dead code, or incorrect numeric counts
+- NFR7: All Lambda functions follow the naming convention `${ProjectCode}-${Environment}-<description>` with zero `${AWS::StackName}` usage in FunctionName properties
+- NFR8: The consolidated `api-gw-app.yaml` template remains under the 51200 byte CloudFormation inline limit
+- NFR9: CloudFormation deployment order in `deploy.ini` remains correct after template removal (no dangling dependencies)
+
+### Operational Safety
+
+- NFR10: `zip_to_s3.sh` displays AWS account ID, profile, and environment on every execution before any S3 upload or Lambda update occurs
+- NFR11: `zip_to_s3.sh` requires explicit user confirmation before proceeding with deployment to prevent accidental cross-account deployments
+- NFR12: Parameter files in `infra/aws/cloudformation/parameters/dev/` have consistent LF line endings verified by `.gitattributes` enforcement
 
 ### Documentation Quality
 
-- NFR11: API Gateway endpoint count in CLAUDE.md and README.md matches actual deployed count with zero discrepancies
-- NFR12: No documentation file references removed endpoints (`/ai_ask`, `/translate`, `/infra/ip-allow`) or dead code (`ai_describe_image()`)
-- NFR13: CloudFormation improvement decisions (implement, defer, or reject) are documented with rationale for future reference
+- NFR13: Documentation metrics (endpoint counts, template counts, Lambda function counts) have a single source of truth with zero cross-file discrepancies
+- NFR14: An automated verification script exists that detects documentation metric drift and can be run as part of CI or manual review
+- NFR15: All documentation files reference post-consolidation state: 2 API Gateways (app + infra), correct endpoint counts per gateway, correct total template count

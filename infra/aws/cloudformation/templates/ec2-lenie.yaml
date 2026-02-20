@@ -68,23 +68,6 @@ Resources:
         - Key: Project
           Value: !Ref ProjectCode
 
-  ElasticIP:
-    Type: 'AWS::EC2::EIP'
-    Properties:
-      Tags:
-        - Key: Name
-          Value: !Sub '${ProjectCode}-${Environment}-eip'
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Project
-          Value: !Ref ProjectCode
-
-  EIPAssociation:
-    Type: 'AWS::EC2::EIPAssociation'
-    Properties:
-      InstanceId: !Ref EC2Instance
-      EIP: !Ref ElasticIP
-
   InstanceRole:
     Type: 'AWS::IAM::Role'
     Properties:
@@ -116,6 +99,3 @@ Outputs:
   InstanceId:
     Description: 'The Instance ID'
     Value: !Ref EC2Instance
-  PublicIP:
-    Description: 'The Public IP address of the instance'
-    Value: !Ref ElasticIP
