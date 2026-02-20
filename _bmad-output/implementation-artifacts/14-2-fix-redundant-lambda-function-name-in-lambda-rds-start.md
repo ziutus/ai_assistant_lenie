@@ -1,6 +1,6 @@
 # Story 14.2: Fix Redundant Lambda Function Name in lambda-rds-start
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -247,9 +247,39 @@ Claude Opus 4.6
 | `docs/architecture-decisions.md` | MOD | Updated api-gw-infra endpoint list (removed git-webhooks) |
 | `docs/Jenkins.md` | MOD | Added note that git-webhooks endpoint was removed |
 
+## Senior Developer Review (AI)
+
+**Reviewer:** Claude Opus 4.6 | **Date:** 2026-02-20 | **Outcome:** Changes Requested → Fixed
+
+### Findings
+
+| # | Severity | Issue | Resolution |
+|---|----------|-------|------------|
+| H1 | HIGH | Missing EC2 permissions (ec2:Start/Stop/DescribeInstances) in shared LambdaExecutionRole — EC2/VPN endpoints broken | FIXED: Added EC2 permissions to LambdaExecutionRole |
+| H2 | HIGH | Missing SQS permissions (sqs:GetQueueAttributes) and SSM scope for sqs-size Lambda — SQS endpoint broken | FIXED: Added SQS permission, broadened SSM scope to `/${ProjectCode}/${Environment}/*` |
+| M1 | MEDIUM | Stale documentation in `infra/aws/README.md` section 6.1 — still described lambda-rds-start.yaml as active | FIXED: Marked section as REDUNDANT with decommission note |
+| M2 | MEDIUM | Scope creep: git-webhooks removal not in original ACs (pragmatic but undocumented) | NOTED: Documented in review, no code fix needed |
+| L1 | LOW | `lambda-rds-start.yaml` Output description says "Stop" instead of "Start" (line 74) | FIXED: Corrected to "Start" |
+| L2 | LOW | RDS permissions used `Resource: '*'` (overly broad) | FIXED: Scoped to `arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*` |
+| L3 | LOW | SSM runtime permission for database/name was unnecessary (rds-start/stop/status use env vars only) | FIXED: Removed specific database/name scope, replaced with project-wide `/${ProjectCode}/${Environment}/*` for sqs-size |
+
+### Backlog Item Created
+
+- **B-21-split-shared-lambda-execution-role-into-per-function-roles** (MEDIUM priority): Each Lambda in api-gw-infra.yaml should have its own IAM role scoped to its specific permissions instead of sharing a single overly-broad role.
+
+### Review File List
+
+| File | Action | Description |
+|------|--------|-------------|
+| `infra/aws/cloudformation/templates/api-gw-infra.yaml` | MOD | Added EC2, SQS permissions; scoped RDS to db resources; broadened SSM to project namespace |
+| `infra/aws/README.md` | MOD | Marked section 6.1 as REDUNDANT; updated LambdaExecutionRole description |
+| `infra/aws/cloudformation/templates/lambda-rds-start.yaml` | MOD | Fixed Output description typo (Stop → Start) |
+| `infra/aws/cloudformation/CLAUDE.md` | MOD | Updated api-gw-infra IAM role description |
+
 ## Change Log
 
 | Date | Change | Story |
 |------|--------|-------|
 | 2026-02-20 | Consolidated rds-start Lambda management into api-gw-infra.yaml: added RDS/SSM IAM permissions, increased timeout, decommissioned redundant lambda-rds-start.yaml in deploy.ini | 14.2 |
 | 2026-02-20 | Removed `/infra/git-webhooks` endpoint from api-gw-infra.yaml (Lambda `git-webhooks` archived, blocked stack updates). Updated 6 documentation files: endpoint count 8→7. | 14.2 |
+| 2026-02-20 | Code review fixes: added missing EC2/SQS IAM permissions to LambdaExecutionRole, scoped RDS resource, broadened SSM scope, fixed stale docs (README 6.1, CLAUDE.md), fixed Output typo in lambda-rds-start.yaml | 14.2-review |

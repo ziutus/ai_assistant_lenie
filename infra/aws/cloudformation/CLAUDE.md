@@ -153,7 +153,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `api-gw-infra.yaml` | REST API, 7 Lambdas, IAM Role | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). Shared IAM role includes RDS + SSM permissions for rds-start/stop/status functions. |
+| `api-gw-infra.yaml` | REST API, 7 Lambdas, IAM Role | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). Shared IAM role includes RDS, EC2, SQS, and SSM permissions for all functions. |
 | `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (10 endpoints, x-api-key) |
 | `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | UNUSED — commented out in deploy.ini (duplicate of url-add.yaml) |
 

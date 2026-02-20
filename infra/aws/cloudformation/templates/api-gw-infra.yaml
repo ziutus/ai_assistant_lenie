@@ -44,11 +44,21 @@ Resources:
                   - rds:StartDBInstance
                   - rds:StopDBInstance
                   - rds:DescribeDBInstances
+                Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+              - Effect: Allow
+                Action:
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                  - ec2:DescribeInstances
                 Resource: '*'
               - Effect: Allow
                 Action:
+                  - sqs:GetQueueAttributes
+                Resource: !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:*'
+              - Effect: Allow
+                Action:
                   - ssm:GetParameter
-                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectCode}/${Environment}/database/name'
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectCode}/${Environment}/*'
       Tags:
         - Key: Environment
           Value: !Ref Environment
