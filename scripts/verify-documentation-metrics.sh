@@ -144,11 +144,29 @@ while IFS= read -r line; do
     fi
 done < <(grep -E '^\s*templates/' "$DEPLOY_INI" | sed 's/^[[:space:]]*//')
 
-# Lambda non-CF: count unique function names hardcoded in api-gw-app.yaml
-# These are lenie_2_db and lenie_2_internet, referenced as Lambda function URIs
-# NOTE: Pattern depends on current Lambda naming convention (lenie_2_ prefix).
-# Must be updated when backlog item B-3 (rename-legacy-lambda-lenie-2-internet-and-db) is implemented.
-ACTUAL_LAMBDA_NON_CF=$(grep -oE 'function:lenie_2_[a-z_]+' "$API_GW_APP" | sort -u | wc -l)
+# Lambda non-CF: count unique Lambda function name suffixes in api-gw-app.yaml
+# that are NOT defined in any CloudFormation template in deploy.ini.
+# All function URIs now use parameterized ${ProjectCode}-${Environment}-<suffix> pattern.
+# Extract unique <suffix> values from Lambda URIs, then subtract CF-managed ones.
+ACTUAL_LAMBDA_NON_CF=0
+while IFS= read -r suffix; do
+    # Check if this suffix has a CF template that defines an AWS::Lambda::Function
+    is_cf=false
+    while IFS= read -r tmpl_line; do
+        tmpl_line=$(echo "$tmpl_line" | tr -d '\r')
+        tmpl_path="infra/aws/cloudformation/$tmpl_line"
+        if [ -f "$tmpl_path" ] && grep -q 'AWS::Lambda::Function' "$tmpl_path" 2>/dev/null; then
+            # Check if template manages this specific function suffix
+            if grep -q "$suffix" "$tmpl_path" 2>/dev/null; then
+                is_cf=true
+                break
+            fi
+        fi
+    done < <(grep -E '^\s*templates/' "$DEPLOY_INI" | sed 's/^[[:space:]]*//')
+    if [ "$is_cf" = false ]; then
+        ACTUAL_LAMBDA_NON_CF=$((ACTUAL_LAMBDA_NON_CF + 1))
+    fi
+done < <(grep -oP 'function:\$\{ProjectCode\}-\$\{Environment\}-\K[a-z-]+(?=/invocations)' "$API_GW_APP" | sort -u)
 
 ACTUAL_LAMBDA_TOTAL=$((ACTUAL_LAMBDA_CF + ACTUAL_LAMBDA_NON_CF))
 

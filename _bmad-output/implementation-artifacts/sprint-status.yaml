@@ -169,15 +169,15 @@ development_status:
   epic-17: in-progress
   17-1-add-deployment-safety-confirmation-to-deploy-sh: done
   17-2-fix-metrics-endpoint-returns-500: done
-  17-3-rename-legacy-lambda-lenie-2-internet-and-db: ready-for-dev
+  17-3-rename-legacy-lambda-lenie-2-internet-and-db: done
   17-4-fix-sqs-to-rds-lambda-deployment-and-db-connectivity: done  # sqs-into-rds moved to app list, SSL added, Step Function Catch added, Secrets Manager auto-generated password, PostgreSQL user lenie created in RDS
   17-5-add-api-gateway-custom-domain: done  # B-15: api.dev.lenie-ai.eu — ACM cert, DomainName (REGIONAL, TLS 1.2), BasePathMappings (root->app, /infra->infra), Route53 alias, SSM exports. url-add.yaml fully removed (2 REST APIs: app+infra)
   epic-17-retrospective: optional
 
   # --- Epic 18: Lambda Consolidation Analysis ---
-  epic-18: in-progress
-  18-1-analyze-ec2-lambda-consolidation: ready-for-dev
-  18-2-analyze-rds-lambda-consolidation: ready-for-dev
+  epic-18: done
+  18-1-analyze-ec2-lambda-consolidation: done  # CONSOLIDATE: 69% code overlap, API GW only, no Step Function dependency. Rec: ec2-manager single Lambda
+  18-2-analyze-rds-lambda-consolidation: done  # CONSOLIDATE: 70% code overlap, Step Function uses SDK not Lambda. Joint rec: Option D (ec2-manager + rds-manager). 6 bugs found in RDS code
   epic-18-retrospective: optional
 
   # --- Future Backlog ---

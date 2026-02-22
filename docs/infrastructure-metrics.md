@@ -1,6 +1,6 @@
 # Infrastructure Metrics — Single Source of Truth
 
-> Last verified: 2026-02-21 | Post-Sprint 4 (Epic 15 API Gateway consolidation complete)
+> Last verified: 2026-02-23 | Post-Sprint 5 (Story 17-3 Lambda rename complete)
 
 This file is the authoritative source for infrastructure counts. All other documentation files should reference or be consistent with values here.
 
@@ -42,16 +42,16 @@ All routes except `/startup`, `/readiness`, `/liveness`, `/version` require `x-a
 
 | # | Path | Method(s) | Lambda Target |
 |---|------|-----------|---------------|
-| 1 | `/website_list` | GET | `lenie_2_db` |
-| 2 | `/website_get` | GET | `lenie_2_db` |
-| 3 | `/website_save` | POST | `lenie_2_db` |
-| 4 | `/website_delete` | GET, POST | `lenie_2_db` |
-| 5 | `/website_is_paid` | POST | `lenie_2_db` |
-| 6 | `/website_get_next_to_correct` | GET | `lenie_2_db` |
-| 7 | `/website_similar` | POST | `lenie_2_db` |
-| 8 | `/website_split_for_embedding` | POST | `lenie_2_db` |
-| 9 | `/website_download_text_content` | POST | `lenie_2_internet` |
-| 10 | `/ai_embedding_get` | POST | `lenie_2_internet` |
+| 1 | `/website_list` | GET | `${PC}-${Env}-app-server-db` |
+| 2 | `/website_get` | GET | `${PC}-${Env}-app-server-db` |
+| 3 | `/website_save` | POST | `${PC}-${Env}-app-server-db` |
+| 4 | `/website_delete` | GET, POST | `${PC}-${Env}-app-server-db` |
+| 5 | `/website_is_paid` | POST | `${PC}-${Env}-app-server-db` |
+| 6 | `/website_get_next_to_correct` | GET | `${PC}-${Env}-app-server-db` |
+| 7 | `/website_similar` | POST | `${PC}-${Env}-app-server-db` |
+| 8 | `/website_split_for_embedding` | POST | `${PC}-${Env}-app-server-db` |
+| 9 | `/website_download_text_content` | POST | `${PC}-${Env}-app-server-internet` |
+| 10 | `/ai_embedding_get` | POST | `${PC}-${Env}-app-server-internet` |
 | 11 | `/url_add` | POST | `${ProjectCode}-${Environment}-url-add` |
 
 Each path also has an OPTIONS method for CORS (not counted as functional endpoints).
@@ -108,15 +108,15 @@ All 7 `/infra/*` endpoints (infrastructure management — no equivalent in Docke
 
 | # | Function Name | Purpose |
 |---|--------------|---------|
-| 11 | `lenie_2_db` | App endpoints requiring PostgreSQL (inside VPC) |
-| 12 | `lenie_2_internet` | App endpoints requiring internet (outside VPC) |
+| 11 | `${PC}-${Env}-app-server-db` | App endpoints requiring PostgreSQL (inside VPC) |
+| 12 | `${PC}-${Env}-app-server-internet` | App endpoints requiring internet (outside VPC) |
 
 `${PC}` = ProjectCode (`lenie`), `${Env}` = Environment (`dev`)
 
 ## CloudFormation
 
-**Templates in deploy.ini [dev]: 26**
-**Total .yaml files in templates/: 33**
+**Templates in deploy.ini [dev]: 27**
+**Total .yaml files in templates/: 34**
 
 ### deploy.ini [dev] — 26 templates by layer
 

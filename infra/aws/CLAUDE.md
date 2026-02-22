@@ -51,7 +51,7 @@ aws/
 Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. 27 templates in deploy.ini [dev] (34 total .yaml files) organized by layer: networking (VPC), database (RDS, DynamoDB), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (2 REST APIs: app 11 + infra 7 endpoints, custom domain with base path mappings), orchestration (Step Functions), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for authoritative counts.
 
 ### serverless/
-Lambda function source code and Lambda layer build scripts (psycopg2, lenie_all, openai). 12 Lambda functions total: 10 CF-managed (7 simple infrastructure inline in api-gw-infra.yaml + 3 S3-packaged app functions) and 2 non-CF-managed (`lenie_2_db`, `lenie_2_internet`). Includes packaging scripts (`zip_to_s3.sh`, `create_empty_lambdas.sh`). See `serverless/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for full inventory.
+Lambda function source code and Lambda layer build scripts (psycopg2, lenie_all, openai). 8 Lambda functions total: 6 CF-managed (3 simple infrastructure in api-gw-infra.yaml + 3 S3-packaged app functions) and 2 non-CF-managed (`lenie-dev-app-server-db`, `lenie-dev-app-server-internet`). Includes packaging scripts (`zip_to_s3.sh`, `create_empty_lambdas.sh`). See `serverless/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for full inventory.
 
 ### eks/
 EKS cluster configurations. Main cluster `lenie-ai` (K8s 1.31, spot instances, us-east-1) and a Karpenter POC cluster. Managed via `eksctl` with addons: EBS CSI Driver, Metrics Server, Stakater Reloader, AWS Load Balancer Controller. Includes automated deployment script for Karpenter setup. See `eks/CLAUDE.md` for details.
@@ -86,7 +86,7 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 | SQS | Asynchronous document processing queue |
 | SNS | Error notifications via email |
 | S3 | Lambda code artifacts, video transcriptions, web content |
-| Lambda | 12 functions (10 CF-managed + 2 non-CF) for infra management and app logic |
+| Lambda | 8 functions (6 CF-managed + 2 non-CF) for infra management and app logic |
 | API Gateway | 2 REST APIs (app: 11 endpoints including /url_add, infra: 7 endpoints) + custom domain `api.{env}.lenie-ai.eu` with base path mappings |
 | Step Functions | SQS-to-RDS workflow with auto DB start/stop |
 | EC2 | Application server, bastion host, Jenkins, OpenVPN |
