@@ -186,9 +186,17 @@ development_status:
   B-15-add-custom-domains-for-api-gateways: backlog
   B-19-convert-ec2-to-spot-with-asg-0-1: backlog
 
-  # --- Multiuser (Phase 6 — na samym końcu) ---
+  # --- LLM Text Analysis (Phase 6 — po MVP) ---
+  # Automatyczna analiza tekstu przez LLM, zwracająca ustrukturyzowany JSON
+  # z metadanymi: autor, temat, państwa, źródło danych, itp.
+  B-29-create-llm-text-analysis-endpoint: backlog
+  B-30-define-analysis-json-schema-and-db-storage: backlog
+  B-31-frontend-ui-for-analysis-results: backlog
+  B-32-batch-analysis-for-existing-documents: backlog
+
+  # --- Multiuser (Phase 7 — na samym końcu) ---
   # Wsparcie wielu użytkowników na AWS. Realizowane jako ostatnia faza,
-  # po zakończeniu wszystkich pozostałych prac (Security, MCP Server, Obsidian).
+  # po zakończeniu wszystkich pozostałych prac (Security, MCP Server, Obsidian, LLM Analysis).
   B-23-implement-user-authentication-with-aws-cognito: backlog
   B-24-add-user-ownership-to-database-schema: backlog
   B-25-enforce-data-isolation-per-user-in-api-endpoints: backlog

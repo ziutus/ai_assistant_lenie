@@ -277,9 +277,31 @@ On 2026-02-20, all 29 CloudFormation parameter files in `infra/aws/cloudformatio
 
 **Background:** Sprint 3 Story 7-2 encountered a CRLF git warning when committing parameter files. Root cause was the Windows `core.autocrlf=true` setting, not corrupt file content. The `.gitattributes` file (commit `6a9bfd7`) and line ending normalization (commit `88b833e`) resolved the issue. This verification formally closes backlog item B-12.
 
-## Future: Multiuser Support (Phase 6)
+## Future: LLM Text Analysis (Phase 6)
 
-> **Status:** Backlog — planowane na samym końcu, po zakończeniu faz Security, MCP Server i Obsidian Integration.
+> **Status:** Backlog — po MVP (Security, MCP Server, Obsidian), przed Multiuser.
+
+Automatyczna analiza tekstu dokumentów przez LLM, zwracająca ustrukturyzowany JSON z metadanymi. Backlog items (B-29 do B-32) w `_bmad-output/implementation-artifacts/sprint-status.yaml`.
+
+### Zakres
+
+| Backlog ID | Opis |
+|------------|------|
+| B-29 | Endpoint analizy tekstu przez LLM — ekstrakcja metadanych do JSON (autor, temat, państwa, źródło, osoby, organizacje) |
+| B-30 | Schemat JSON analizy i przechowywanie w bazie — kolumna JSONB lub dedykowana tabela, indeksy GIN |
+| B-31 | UI wyników analizy — wyświetlanie, edycja, filtrowanie listy dokumentów po metadanych |
+| B-32 | Batch analysis istniejących dokumentów — skrypt przetwarzający + integracja ze Step Function/SQS |
+
+### Wpływ na architekturę
+
+- **Baza danych:** Nowa kolumna `ai_analysis` (JSONB) w `web_documents` lub dedykowana tabela `web_documents_analysis`. Indeksy GIN do wyszukiwania po polach JSON.
+- **Backend (Flask / Lambda):** Nowy endpoint + prompt ekstrakcyjny. Wykorzystanie istniejącej konfiguracji `LLM_PROVIDER` (OpenAI, Bedrock, Vertex).
+- **Pipeline:** Nowe statusy dokumentu (`ANALYSIS_NEEDED` → `ANALYSIS_DONE`) w `stalker_document_status.py`.
+- **Frontend:** Sekcja analizy na stronie edycji dokumentu + filtry na liście.
+
+## Future: Multiuser Support (Phase 7)
+
+> **Status:** Backlog — planowane na samym końcu, po zakończeniu wszystkich faz łącznie z LLM Text Analysis.
 
 Sekcja multiuser umożliwi korzystanie z systemu przez wielu użytkowników na infrastrukturze AWS. Backlog items (B-23 do B-28) w `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
