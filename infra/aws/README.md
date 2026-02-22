@@ -21,10 +21,10 @@ infra/aws/
 
 | Category              | Count | Details                                      |
 |-----------------------|-------|----------------------------------------------|
-| CloudFormation Stacks | 34    | Templates in `cloudformation/templates/` (27 dev active, 2 commented, 5 account-level) |
+| CloudFormation Stacks | 33    | Templates in `cloudformation/templates/` (26 dev active, 2 commented, 5 account-level) |
 | Lambda Functions      | 11    | Python 3.11 runtime                          |
 | API Gateway APIs      | 3     | app, infra, chrome-extension                 |
-| API Endpoints         | 19    | REST (REGIONAL): app 10 + infra 8 + url-add 1 |
+| API Endpoints         | 19    | REST (REGIONAL): app 11 + infra 7 + url-add 1 |
 | SQS Queues            | 2     | documents, problems-dlq                      |
 | SNS Topics            | 1     | problems notifications                       |
 | RDS Instances         | 1     | PostgreSQL, db.t3.micro                      |
@@ -258,6 +258,7 @@ infra/aws/
 | `/website_is_paid`                | POST, OPTIONS  | Check if content is paywalled  |
 | `/website_get_next_to_correct`    | GET, OPTIONS   | Get next document to review    |
 | `/ai_embedding_get`              | POST, OPTIONS  | Generate embeddings            |
+| `/url_add`                       | POST, OPTIONS  | Submit URL to processing queue |
 
 ---
 
@@ -291,22 +292,7 @@ infra/aws/
 
 ---
 
-## 9. API Gateway - Chrome Extension (`api-gw-url-add.yaml`)
-
-| Resource               | Type                           | Details                                        |
-|------------------------|--------------------------------|------------------------------------------------|
-| LenieApiGateway        | AWS::ApiGateway::RestApi       | `lenie_dev_add_from_chrome_extension`, REGIONAL |
-| LenieApiDeployment     | AWS::ApiGateway::Deployment    | -                                              |
-| LenieApiKey            | AWS::ApiGateway::ApiKey        | `lenie-dev-api-key`                            |
-| LenieUsagePlan         | AWS::ApiGateway::UsagePlan     | Rate: 1000/s, Burst: 2000, Quota: 10000/month |
-| LenieUsagePlanKey      | AWS::ApiGateway::UsagePlanKey  | -                                              |
-| LambdaInvokePermission | AWS::Lambda::Permission        | -                                              |
-
-**API Endpoint**: `/url_add` (POST, OPTIONS) - secured with API Key
-
----
-
-## 10. Orchestration - Step Functions (`sqs-to-rds-step-function.yaml`)
+## 9. Orchestration - Step Functions (`sqs-to-rds-step-function.yaml`)
 
 | Resource                  | Type                                  | Details                                    |
 |---------------------------|---------------------------------------|--------------------------------------------|
@@ -326,28 +312,28 @@ infra/aws/
 
 ---
 
-## 11. Email - SES
+## 10. Email - SES
 
 *(SES template `ses.yaml` and identities `lenie-ai.eu`, `dev.lenie-ai.eu` removed during legacy resource cleanup. SES is no longer used by the application.)*
 
 ---
 
-## 12. Organization & Governance
+## 11. Organization & Governance
 
-### 12.1 Organization (`organization.yaml`)
+### 11.1Organization (`organization.yaml`)
 
 | Resource          | Type                                  | Details             |
 |-------------------|---------------------------------------|---------------------|
 | MyOrganization    | AWS::Organizations::Organization      | FeatureSet: ALL     |
 
-### 12.2 Identity Store (`identityStore.yaml`)
+### 11.2Identity Store (`identityStore.yaml`)
 
 | Resource                      | Type                                       | Details                  |
 |-------------------------------|--------------------------------------------|--------------------------|
 | LenieAIDevelopersGroup        | AWS::IdentityStore::Group                  | "Lenie-Developers"       |
 | ZiutusInDevelopersGroup       | AWS::IdentityStore::GroupMembership        | User → Developers group  |
 
-### 12.3 Service Control Policies
+### 11.3Service Control Policies
 
 **Block All (`scp-block-all.yaml`)**
 
@@ -369,7 +355,7 @@ infra/aws/
 
 ---
 
-## 13. Monitoring & Budgets (`budget.yaml`)
+## 12. Monitoring & Budgets (`budget.yaml`)
 
 | Resource          | Type                      | Details                              |
 |-------------------|---------------------------|--------------------------------------|
@@ -435,7 +421,7 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 |--------------------------------|------------------------------------------------------|
 | api-gw-app.json                | ProjectCode: lenie, stage: dev                       |
 | api-gw-infra.json              | ProjectCode: lenie, stage: dev, OpenvpnEC2Name       |
-| api-gw-url-add.json            | stage: dev, LambdaFunctionName: lenie-dev-url-add    |
+
 | budget.json                    | BudgetAmount: 20, AlertEmail                         |
 | cloudfront-app.json            | ProjectCode: lenie, Environment: dev                 |
 | dynamodb-documents.json        | ProjectCode: lenie, Environment: dev                 |
@@ -459,7 +445,7 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 
 ---
 
-## 14. Serverless Lambda Functions (`serverless/`)
+## 13. Serverless Lambda Functions (`serverless/`)
 
 Source code for all 11 Lambda functions deployed via CloudFormation, plus 3 shared Lambda layers.
 
@@ -502,7 +488,7 @@ serverless/
 | ec2-status | Infrastructure | EC2 | INSTANCE_ID | No |
 | sqs-size | Infrastructure | SQS, SSM | AWS_REGION | No |
 
-### 14.1 Application Functions
+### 13.1 Application Functions
 
 #### app-server-db
 
@@ -536,7 +522,7 @@ Internet-facing Lambda for web scraping, AI/LLM operations, and embeddings.
 
 **Dependencies:** download_raw_html, webpage_raw_parse, get_embedding
 
-### 14.2 Document Processing Functions
+### 13.2 Document Processing Functions
 
 #### sqs-weblink-put-into
 
@@ -553,7 +539,7 @@ SQS event-triggered function. Reads messages from SQS queue and persists documen
 
 **Flow:** Parse SQS message → Check if URL exists in DB → Map fields to document object → `web_doc.save()` → Return ReceiptHandle
 
-### 14.3 Infrastructure Management Functions
+### 13.3 Infrastructure Management Functions
 
 #### rds-start / rds-stop / rds-status
 
@@ -573,7 +559,7 @@ EC2 instance lifecycle management. Each uses `INSTANCE_ID` env var.
 
 Returns approximate message count in SQS queue. Reads queue URL from SSM Parameter Store (`/lenie/dev/sqs_queue/new_links`), then queries `ApproximateNumberOfMessages` attribute.
 
-### 14.4 Lambda Layers
+### 13.4 Lambda Layers
 
 | Layer | Packages | Used By |
 |---|---|---|
@@ -585,49 +571,49 @@ All layers built with `manylinux2014_x86_64` platform for Lambda compatibility.
 
 ---
 
-## 15. Resources Without CloudFormation Templates
+## 14. Resources Without CloudFormation Templates
 
 The following AWS resources related to Project Lenie exist in the account (us-east-1) but are **not managed by any CloudFormation template**. They were created manually, via scripts, or through other tools.
 
-### 15.1 S3 Buckets
+### 14.1 S3 Buckets
 
 | Bucket | Purpose | Notes |
 |--------|---------|-------|
 | `lenie-s3-tmp` | Temporary storage (legacy) | Data migrated to `lenie-dev-website-content`. Candidate for deletion |
 
-### 15.2 CloudFront Distributions
+### 14.2 CloudFront Distributions
 
 *(All CloudFront distributions are now CF-managed. See `cloudfront-app.yaml` and `cloudfront-helm.yaml`.)*
 
-### 15.3 Lambda Functions
+### 14.3 Lambda Functions
 
 | Function | Purpose | Notes |
 |----------|---------|-------|
 | `step-function-test` | Step Functions testing | Test artifact |
 
-### 15.4 DynamoDB Tables
+### 14.4 DynamoDB Tables
 
 *(All active DynamoDB tables are CF-managed. See `dynamodb-documents.yaml`. Cache tables removed — no longer needed.)*
 
-### 15.5 SNS Topics
+### 14.5 SNS Topics
 
 *(All SNS topics removed during legacy resource cleanup. Remaining SNS topic is CF-managed via `sqs-application-errors.yaml`.)*
 
-### 15.6 API Gateway
+### 14.6 API Gateway
 
-*(All API Gateways are now CF-managed. See `api-gw-app.yaml`, `api-gw-infra.yaml`, `api-gw-url-add.yaml`.)*
+*(All three API Gateways are CF-managed. See `api-gw-app.yaml`, `api-gw-infra.yaml`, `url-add.yaml`.)*
 
-### 15.7 SES Email Identities
+### 14.7 SES Email Identities
 
 | Identity | Notes |
 |----------|-------|
 | `krzysztof@itsnap.eu` | Personal email identity |
 
-### 15.8 Lambda Layers
+### 14.8 Lambda Layers
 
 *(All Lambda Layers are now CF-managed. See `lambda-layer-*.yaml` templates.)*
 
-### 15.9 Summary
+### 14.9 Summary
 
 | Resource Type | Without CF Template | With CF Template |
 |---------------|--------------------:|:----------------:|

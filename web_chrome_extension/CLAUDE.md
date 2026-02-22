@@ -2,7 +2,7 @@
 
 Chrome/Kiwi browser extension for capturing webpages and sending them to the Lenie AI backend. No build step — load unpacked directly from this folder.
 
-**Version**: 1.0.22 | **Manifest**: v3
+**Version**: 1.0.23 | **Manifest**: v3
 
 ## Directory Structure
 
@@ -44,7 +44,7 @@ Two-tab interface (~500px wide):
 
 | Property | Value |
 |----------|-------|
-| **Default endpoint** | `https://jg40fjwz61.execute-api.us-east-1.amazonaws.com/v1/url_add` |
+| **Default endpoint** | `https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add` |
 | **Method** | `POST` |
 | **Auth header** | `x-api-key` |
 | **Content-Type** | `application/json` |

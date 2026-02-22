@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Lenie AI assistant",
-  "version": "1.0.22",
+  "version": "1.0.23",
   "description": "Wtyczka do komunikacji z API lenie-ai.eu",
   "permissions": ["storage", "activeTab", "tabs", "scripting"],
   "content_security_policy": {

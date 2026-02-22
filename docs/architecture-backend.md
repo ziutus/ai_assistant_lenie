@@ -110,11 +110,12 @@ URL_ADDED → DOCUMENT_INTO_DATABASE → NEED_MANUAL_REVIEW → READY_FOR_TRANSL
 
 ## API Design
 
-18 REST endpoints organized in 4 categories:
-- **Document CRUD** (7): url_add, website_list, website_get, website_save, website_delete, website_get_next_to_correct, website_exist
-- **Content Processing** (4): website_download_text_content, website_text_remove_not_needed, website_split_for_embedding, website_is_paid
+19 REST endpoints organized in 5 categories:
+- **Document CRUD** (5): url_add, website_list, website_get, website_save, website_delete
+- **Content Processing** (3): website_download_text_content, website_text_remove_not_needed, website_split_for_embedding
 - **AI Operations** (2): ai_get_embedding, website_similar
-- **Health & Info** (5): healthz, startup, readiness, liveness, version
+- **Metadata** (2): website_is_paid, website_get_next_to_correct
+- **Health & Info** (7): / (root), healthz, metrics, startup, readiness, liveness, version
 
 Authentication: `x-api-key` header on all routes except health checks.
 

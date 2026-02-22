@@ -2,7 +2,7 @@
 
 Minimal single-page React application for submitting URLs to the Lenie backend. Unlike the main frontend (`web_interface_react/`), this app does **only one thing** — adds new documents via `POST /url_add`. No routing, no document browsing, no AI tools, no infrastructure controls.
 
-**Version**: 0.1.0
+**Version**: 0.2.0
 
 ## Directory Structure
 

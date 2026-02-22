@@ -1,5 +1,5 @@
 
-# Instalacja
+# Setup
 
 ```shell
 gcloud config set project lenie-ai-dev-2025-03
@@ -11,7 +11,7 @@ gcloud services enable run.googleapis.com
 gcloud services enable dns.googleapis.com
 ```
 
-Dla API Gateway potrzeba włączyć następujace usługi:
+For API Gateway, the following services need to be enabled:
 
 ```shell
 gcloud services enable apigateway.googleapis.com
@@ -26,7 +26,7 @@ terraform plan -target="module.lenie-ai-server"
 gcloud artifacts docker images list europe-west3-docker.pkg.dev/lenie-ai-dev-2025-03/lenie-ai-dev-2025-03/convert-ebook --include-tags
 ```
 
-Zezwolenie dockerowi na autoryzacje przy pomocy gcloud
+Allow Docker to authenticate via gcloud:
 
 ```shell
 gcloud auth configure-docker europe-west3-docker.pkg.dev
@@ -64,7 +64,7 @@ Do you want to continue (Y/n)?
 Docker configuration file updated.
 ```
 
-Testowe pobranie obrazu:
+Test image pull:
 ```shell
  docker pull europe-west3-docker.pkg.dev/lenie-ai-dev-2025-03/lenie-ai-dev-2025-03/convert-ebook:0.0.1
 ```
