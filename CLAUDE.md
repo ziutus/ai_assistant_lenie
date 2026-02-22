@@ -57,13 +57,18 @@ pytest backend/tests/unit/test_split_for_embedding.py
 ### Code Quality
 ```bash
 ruff check backend/ # Linting (line-length=120)
+make lint           # Run ruff linter (via Makefile)
+make lint-fix       # Run ruff with auto-fix
+make format         # Format code with ruff
+make format-check   # Check formatting (for CI)
 pre-commit run      # Run pre-commit hooks (includes TruffleHog secret detection)
+make security-all   # Run all security checks (semgrep, pip-audit, bandit, safety)
 ```
 
 ## Architecture
 
 ### Backend (`backend/`)
-Flask application (`server.py`) exposing REST API with 18 endpoints. Python 3.11, dependencies managed via uv, Docker build with `python:3.11-slim`. All routes (except health checks) require `x-api-key` header.
+Flask application (`server.py`) exposing REST API with 19 endpoints (see `docs/infrastructure-metrics.md` for full inventory). Python 3.11, dependencies managed via uv, Docker build with `python:3.11-slim`. All routes (except health checks) require `x-api-key` header.
 
 Key subdirectories: `library/` (core logic & integrations), `database/` (PostgreSQL schema), `imports/` (bulk import scripts), `data/` (site cleanup rules), `tests/` (unit + integration), `test_code/` (experimental scripts). Each has its own `CLAUDE.md`.
 
@@ -73,11 +78,6 @@ See `backend/CLAUDE.md` for full details including endpoints, dependencies, Dock
 React 18 SPA (Create React App) for document management and AI processing. 7 pages: document list with filtering, vector similarity search, and per-type editors (link, webpage, youtube, movie) with AI tools (split for embedding, clean text). Formik for form state, axios for API calls, React Router v6. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask). Includes infrastructure controls (start/stop RDS, VPN, SQS queue status).
 
 See `web_interface_react/CLAUDE.md` for details.
-
-### Add URL App (`web_add_url_react/`)
-Minimal single-page React app for submitting new URLs via `POST /url_add`. No routing, no document browsing — just a form with URL, type, source, language, note, and text fields. API key can be pre-populated from `?apikey=` query parameter. Docker build serves static files via nginx:alpine on port 80.
-
-See `web_add_url_react/CLAUDE.md` for details.
 
 ### Browser Extension (`web_chrome_extension/`)
 Chrome/Kiwi browser extension (Manifest v3) for capturing webpages and sending them to the backend. Auto-extracts page title, description, language, and full content (text + HTML). Supports content types: webpage, link, youtube, movie. Calls `POST /url_add` with `x-api-key` auth. No build step — load unpacked from folder.

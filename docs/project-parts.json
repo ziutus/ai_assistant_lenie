@@ -26,17 +26,6 @@
       "description": "React 18 SPA for document management, filtering, vector search, and per-type editors with AI tools"
     },
     {
-      "part_id": "web_add_url_react",
-      "display_name": "Add URL App",
-      "project_type_id": "web",
-      "root_path": "web_add_url_react/",
-      "primary_language": "JavaScript",
-      "framework": "React 18 (CRA)",
-      "package_manager": "npm",
-      "entry_point": "src/App.js",
-      "description": "Minimal single-page React app for submitting new URLs via POST /url_add"
-    },
-    {
       "part_id": "web_chrome_extension",
       "display_name": "Browser Extension",
       "project_type_id": "extension",
@@ -65,12 +54,6 @@
       "to": "backend",
       "type": "REST API",
       "details": "axios HTTP calls to Flask endpoints with x-api-key auth"
-    },
-    {
-      "from": "web_add_url_react",
-      "to": "backend",
-      "type": "REST API",
-      "details": "POST /url_add via axios"
     },
     {
       "from": "web_chrome_extension",

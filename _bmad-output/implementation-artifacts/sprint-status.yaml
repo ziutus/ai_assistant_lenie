@@ -1,4 +1,4 @@
-# generated: 2026-02-19
+# generated: 2026-02-21
 # project: lenie-server-2025
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-19
+generated: 2026-02-21
 project: lenie-server-2025
 project_key: NOKEY
 tracking_system: file-system
@@ -140,26 +140,26 @@ development_status:
   epic-13: done
   13-1-add-deployment-safety-header-to-zip-to-s3-sh: done
   13-2-verify-crlf-git-config-for-parameter-files: done
-  epic-13-retrospective: optional
+  epic-13-retrospective: done
 
   # --- Epic 14: Infrastructure Cost & Naming Cleanup ---
   epic-14: done
   14-1-remove-elastic-ip-from-ec2-instance: done
   14-2-fix-redundant-lambda-function-name-in-lambda-rds-start: done
-  epic-14-retrospective: optional
+  epic-14-retrospective: done
 
   # --- Epic 15: API Gateway Consolidation ---
-  epic-15: backlog
-  15-1-merge-url-add-endpoint-into-api-gw-app-yaml: backlog
-  15-2-update-client-applications-and-version-releases: backlog
-  15-3-remove-old-api-gw-url-add-gateway-and-clean-up: backlog
-  epic-15-retrospective: optional
+  epic-15: done
+  15-1-merge-url-add-endpoint-into-api-gw-app-yaml: done
+  15-2-update-client-applications-and-version-releases: done
+  15-3-remove-old-api-gw-url-add-gateway-and-clean-up: done
+  epic-15-retrospective: done
 
   # --- Epic 16: Documentation Consolidation & Verification ---
-  epic-16: backlog
-  16-1-create-single-source-infrastructure-metrics-file: backlog
-  16-2-create-automated-documentation-drift-verification-script: backlog
-  epic-16-retrospective: optional
+  epic-16: done
+  16-1-create-single-source-infrastructure-metrics-file: done
+  16-2-create-automated-documentation-drift-verification-script: done
+  epic-16-retrospective: done
 
   # --- Future Backlog ---
 
@@ -169,6 +169,7 @@ development_status:
   B-3-rename-legacy-lambda-lenie-2-internet-and-db: backlog
 
   # --- Medium Priority ---
+  B-23-consolidate-lambdas-with-vpc-ipv6-dual-stack: backlog  # Enable IPv6 dual-stack + Egress-Only IGW to merge app-server-db + app-server-internet into one Lambda. BLOCKER: OpenAI API has no IPv6 (no AAAA record as of 2026-02). Options: switch to Bedrock, use NAT64, or wait for OpenAI IPv6 support.
   B-21-split-shared-lambda-execution-role-into-per-function-roles: backlog
   B-1-analyze-ec2-lambda-consolidation: backlog
   B-2-analyze-rds-lambda-consolidation: backlog
@@ -185,6 +186,24 @@ development_status:
   B-13-parameterize-stage-description-for-multi-environment: backlog
   B-15-add-custom-domains-for-api-gateways: backlog
   B-19-convert-ec2-to-spot-with-asg-0-1: backlog
+
+  # --- LLM Text Analysis (Phase 6 — po MVP) ---
+  # Automatyczna analiza tekstu przez LLM, zwracająca ustrukturyzowany JSON
+  # z metadanymi: autor, temat, państwa, źródło danych, itp.
+  B-29-create-llm-text-analysis-endpoint: backlog
+  B-30-define-analysis-json-schema-and-db-storage: backlog
+  B-31-frontend-ui-for-analysis-results: backlog
+  B-32-batch-analysis-for-existing-documents: backlog
+
+  # --- Multiuser (Phase 7 — na samym końcu) ---
+  # Wsparcie wielu użytkowników na AWS. Realizowane jako ostatnia faza,
+  # po zakończeniu wszystkich pozostałych prac (Security, MCP Server, Obsidian, LLM Analysis).
+  B-23-implement-user-authentication-with-aws-cognito: backlog
+  B-24-add-user-ownership-to-database-schema: backlog
+  B-25-enforce-data-isolation-per-user-in-api-endpoints: backlog
+  B-26-replace-shared-api-key-with-per-user-auth-tokens: backlog
+  B-27-add-login-logout-ui-to-frontend-applications: backlog
+  B-28-add-user-management-admin-panel: backlog
 
   # --- Done ---
   B-7-merge-helm-s3-and-cloudfront-into-single-template: done

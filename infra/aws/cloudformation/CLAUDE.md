@@ -154,8 +154,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `api-gw-infra.yaml` | REST API, 7 Lambdas, IAM Role | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). Shared IAM role includes RDS, EC2, SQS, and SSM permissions for all functions. |
-| `api-gw-app.yaml` | REST API, 2 Lambdas | Main application API (10 endpoints, x-api-key) |
-| `api-gw-url-add.yaml` | REST API, API Key, Usage Plan | UNUSED — commented out in deploy.ini (duplicate of url-add.yaml) |
+| `api-gw-app.yaml` | REST API, Lambda Permissions | Main application API (11 endpoints, x-api-key). References 3 Lambda functions: `lenie_2_db`, `lenie_2_internet`, `${PC}-${Env}-url-add` |
 
 **`api-gw-app` stage configuration (managed by CloudFormation):**
 The `v1` stage logging and tracing settings are codified in `StageDescription` on the `ApiDeployment` resource in `api-gw-app.yaml`:
@@ -166,7 +165,7 @@ The `v1` stage logging and tracing settings are codified in `StageDescription` o
 
 These settings apply to all methods/resources via wildcard `MethodSettings` (`HttpMethod: '*'`, `ResourcePath: '/*'`). Note: CloudWatch logging requires an account-level IAM role (`cloudwatchRoleArn`) — verify with `aws apigateway get-account`.
 
-**Note:** `api-gw-infra` and `api-gw-url-add` do NOT currently have stage logging or tracing configured in their CloudFormation templates.
+**Note:** `api-gw-infra` does NOT currently have stage logging or tracing configured in its CloudFormation template.
 
 ### Orchestration
 
@@ -239,8 +238,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 
 ### Layer 6: API
 - `api-gw-infra.yaml` - infrastructure management API
-- `api-gw-app.yaml` - main application API
-- `api-gw-url-add.yaml` - Chrome extension API
+- `api-gw-app.yaml` - main application API (11 endpoints including /url_add)
 
 ### Layer 7: Orchestration
 - `sqs-to-rds-step-function.yaml` - SQS -> start DB -> process -> stop DB

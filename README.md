@@ -39,7 +39,7 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 - Implement MCP server protocol — expose search, retrieve, and content management endpoints as MCP tools
 - Claude Desktop integration — configure Lenie-AI as an MCP server in Claude Desktop
 - API adaptation — adjust endpoint patterns for MCP tool consumption while maintaining backward compatibility with the existing REST API
-- Remove legacy Add URL app (`web_add_url_react`) and its dedicated API Gateway — fully replaced by the Chrome/Kiwi browser extension
+- ~~Remove legacy Add URL app (`web_add_url_react`) and its dedicated API Gateway~~ — Done (archived to `_archive/`, Chrome/Kiwi browser extension is the sole content submission interface)
 
 ### Phase 3: Obsidian Integration
 
@@ -53,9 +53,24 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 - EKS deployment — Kubernetes-based scaling for complex workloads
 - Multi-environment support — parameterized deployments across dev/qa/prod
 
+### Phase 5: LLM Text Analysis
+
+- Automatic document analysis via LLM — extract structured metadata as JSON (author, topic, countries, data source, people, organizations)
+- JSONB storage in PostgreSQL with GIN indexes for metadata search
+- Frontend UI for viewing, editing, and filtering by analysis results
+- Batch processing for existing documents without analysis
+
+### Phase 6: Multiuser Support
+
+- User authentication via AWS Cognito (registration, login, JWT tokens)
+- Data ownership — `user_id` column in database tables, per-user data isolation
+- Replace shared `x-api-key` with per-user Cognito auth tokens across all clients
+- Login/logout UI in frontend applications (React SPA, Chrome extension, Add URL app)
+- User management admin panel (user list, blocking, per-user statistics)
+
 ## Current Architecture
 
-- **Backend** — Flask REST API (Python 3.11) serving 18 endpoints with `x-api-key` auth. Handles document CRUD, text processing, AI embeddings, and vector similarity search
+- **Backend** — Flask REST API (Python 3.11) serving 19 endpoints with `x-api-key` auth. Handles document CRUD, text processing, AI embeddings, and vector similarity search
 - **Web Interface** — React 18 SPA for browsing, editing, and AI-processing documents. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask)
 - **Browser Extension** — Chrome/Kiwi Manifest v3 extension for capturing webpages and sending them to the backend
 - **Database** — PostgreSQL 17 with pgvector for vector similarity search (1536-dim embeddings)
@@ -161,6 +176,31 @@ See [Roadmap](#roadmap) for planned deployment options (ECS, EKS).
 |-------------|------------|---|------|
 | Textract    | AWS        | PDF to text | https://aws.amazon.com/textract/     |
 | AssemblyAI  | AssemblyAI | Speech to text ($0.12 per hour) | https://www.assemblyai.com/ |
+
+## Code Quality & Security
+
+For linting, formatting, and testing commands, see [CLAUDE.md](CLAUDE.md).
+
+### Security Scanning
+All security tools are run via `uvx` (uv tool runner) to avoid adding heavy dependencies to the project venv.
+
+```bash
+make security        # Run semgrep static analysis
+make security-deps   # Check dependencies for vulnerabilities (pip-audit)
+make security-bandit # Run bandit Python security linter
+make security-safety # Check dependencies with safety
+make security-all    # Run all security checks
+```
+
+| Tool | Purpose |
+|------|---------|
+| Semgrep | Static code analysis, security vulnerabilities |
+| pip-audit | Dependency vulnerability scanning (PyPI advisory DB) |
+| Bandit | Python-specific security linter |
+| Safety | Dependency vulnerability check (requires free account) |
+
+### Pre-commit Hooks (TruffleHog)
+Pre-commit hooks include TruffleHog for secret detection. See `.pre-commit-config.yaml`.
 
 ## Documentation
 

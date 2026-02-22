@@ -16,7 +16,7 @@ lenie-server-2025/
 ├── Jenkinsfile                        # Jenkins pipeline (AWS EC2, Semgrep)
 │
 ├── backend/                    ★ Flask REST API (Python 3.11)
-│   ├── server.py                      # Main Flask application (18 endpoints)
+│   ├── server.py                      # Main Flask application (19 endpoints)
 │   ├── pyproject.toml                 # Dependencies & build config (uv)
 │   ├── uv.lock                        # Frozen dependency lock
 │   ├── Dockerfile                     # Docker build (python:3.11-slim + uv)
@@ -101,13 +101,6 @@ lenie-server-2025/
 │   ├── Dockerfile                     # Docker build (node:24.0)
 │   └── package.json                   # React 18, axios, formik, router
 │
-├── web_add_url_react/          ★ Add URL App (single-page)
-│   ├── src/
-│   │   ├── App.js                     # All logic in one file (~165 lines)
-│   │   └── App.css                    # Cyan background styling
-│   ├── Dockerfile                     # Docker build (node → nginx:alpine)
-│   └── package.json                   # React 18, axios only
-│
 ├── web_chrome_extension/       ★ Browser Extension (Manifest v3)
 │   ├── manifest.json                  # Chrome Extension v3 manifest
 │   ├── popup.html                     # Two-tab UI (Add + Settings)
@@ -169,7 +162,6 @@ lenie-server-2025/
 | `backend/database/init/` | PostgreSQL schema initialization | SQL scripts |
 | `web_interface_react/src/` | Main frontend source | `index.js` → `App.js` |
 | `web_interface_react/src/modules/shared/hooks/` | API communication layer | `useManageLLM.js` |
-| `web_add_url_react/src/` | Add URL app source | `App.js` |
 | `web_chrome_extension/` | Browser extension | `popup.js` |
 | `infra/docker/` | Local development stack | `compose.yaml` |
 | `infra/aws/cloudformation/` | AWS infrastructure templates | `deploy.sh` |
@@ -179,8 +171,7 @@ lenie-server-2025/
 ## Integration Points
 
 ```
-web_interface_react ──(REST API, axios)──→ backend/server.py (18 endpoints)
-web_add_url_react ──(POST /url_add)──→ backend/server.py OR sqs-weblink-put-into Lambda
+web_interface_react ──(REST API, axios)──→ backend/server.py (19 endpoints)
 web_chrome_extension ──(POST /url_add)──→ AWS API Gateway → sqs-weblink-put-into Lambda
 infra/docker ──(deploys)──→ backend + web_interface_react + PostgreSQL
 infra/aws/cloudformation ──(provisions)──→ VPC, RDS, Lambda, API Gateway, SQS, DynamoDB
