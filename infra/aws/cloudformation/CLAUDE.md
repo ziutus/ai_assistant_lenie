@@ -153,8 +153,8 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `api-gw-infra.yaml` | REST API, 7 Lambdas, IAM Role, SSM | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). Paths without `/infra` prefix (routing via custom domain base path mapping). Exports API ID and invoke URL to SSM. |
-| `api-gw-app.yaml` | REST API, Lambda Permissions, SSM | Main application API (11 endpoints, x-api-key). References 3 Lambda functions: `lenie_2_db`, `lenie_2_internet`, `${PC}-${Env}-url-add`. Exports API ID, root resource ID, and invoke URL to SSM. |
+| `api-gw-infra.yaml` | REST API, 3 Lambdas, IAM Role, SSM | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). 3 consolidated Lambdas: rds-manager, ec2-manager, sqs-size. Paths without `/infra` prefix (routing via custom domain base path mapping). Exports API ID and invoke URL to SSM. |
+| `api-gw-app.yaml` | REST API, Lambda Permissions, SSM | Main application API (11 endpoints, x-api-key). References 3 Lambda functions: `${PC}-${Env}-app-server-db`, `${PC}-${Env}-app-server-internet`, `${PC}-${Env}-url-add`. All Lambda names fully parameterized. Exports API ID, root resource ID, and invoke URL to SSM. |
 | `api-gw-custom-domain.yaml` | ACM Certificate, API GW DomainName, BasePathMappings, Route53, SSM | Custom domain `api.{env}.lenie-ai.eu` with TLS 1.2. Root path (`/`) maps to app API, `/infra` maps to infra API. DNS validation via Route53. |
 
 **`api-gw-app` stage configuration (managed by CloudFormation):**
