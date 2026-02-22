@@ -60,7 +60,7 @@ Universal script for creating, updating, and deleting CloudFormation stacks.
 6. In change-set mode (`-t`), the script creates a change-set and waits for user confirmation.
 7. When deleting (`-d`), stacks are removed in reverse order.
 8. For `prod`, templates from the `[common]` section are also processed.
-9. After deploying `api-gw-app`, automatically creates a new API Gateway deployment to apply any RestApi Body changes (skipped in change-set mode).
+9. After deploying `api-gw-app` or `api-gw-infra`, automatically creates a new API Gateway deployment to apply any RestApi Body changes (skipped in change-set mode).
 
 ### Stack Naming Convention
 
@@ -147,14 +147,15 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | `lambda-rds-start.yaml` | Lambda, IAM Role | REDUNDANT — commented out in deploy.ini; rds-start Lambda is managed by api-gw-infra.yaml. Delete stack `lenie-dev-lambda-rds-start` manually. |
 | `lambda-weblink-put-into-sqs.yaml` | Lambda | Function to put web links into SQS |
 | `sqs-to-rds-lambda.yaml` | Lambda, IAM Role | Transfer messages from SQS to RDS (VPC, layers, `POSTGRESQL_SSLMODE: require`) |
-| `url-add.yaml` | Lambda, API GW, API Key, IAM, Logs | URL addition (standalone with its own API Gateway) |
+| `url-add.yaml` | Lambda, IAM, Logs | URL addition Lambda function (API GW removed — `/url_add` endpoint served via `api-gw-app.yaml`) |
 
 ### API Gateway
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `api-gw-infra.yaml` | REST API, 7 Lambdas, IAM Role | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). Shared IAM role includes RDS, EC2, SQS, and SSM permissions for all functions. |
-| `api-gw-app.yaml` | REST API, Lambda Permissions | Main application API (11 endpoints, x-api-key). References 3 Lambda functions: `lenie_2_db`, `lenie_2_internet`, `${PC}-${Env}-url-add` |
+| `api-gw-infra.yaml` | REST API, 7 Lambdas, IAM Role, SSM | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). Paths without `/infra` prefix (routing via custom domain base path mapping). Exports API ID and invoke URL to SSM. |
+| `api-gw-app.yaml` | REST API, Lambda Permissions, SSM | Main application API (11 endpoints, x-api-key). References 3 Lambda functions: `lenie_2_db`, `lenie_2_internet`, `${PC}-${Env}-url-add`. Exports API ID, root resource ID, and invoke URL to SSM. |
+| `api-gw-custom-domain.yaml` | ACM Certificate, API GW DomainName, BasePathMappings, Route53, SSM | Custom domain `api.{env}.lenie-ai.eu` with TLS 1.2. Root path (`/`) maps to app API, `/infra` maps to infra API. DNS validation via Route53. |
 
 **`api-gw-app` stage configuration (managed by CloudFormation):**
 The `v1` stage logging and tracing settings are codified in `StageDescription` on the `ApiDeployment` resource in `api-gw-app.yaml`:
@@ -234,11 +235,12 @@ Stacks have dependencies between them. When creating a new environment from scra
 - ~~`lambda-rds-start.yaml`~~ - REDUNDANT, commented out (rds-start Lambda managed by api-gw-infra.yaml)
 - `lambda-weblink-put-into-sqs.yaml` - Lambda for SQS ingestion
 - `sqs-to-rds-lambda.yaml` - SQS to RDS transfer Lambda
-- `url-add.yaml` - URL addition Lambda with API Gateway
+- `url-add.yaml` - URL addition Lambda (no API Gateway — served via `api-gw-app.yaml`)
 
 ### Layer 6: API
-- `api-gw-infra.yaml` - infrastructure management API
+- `api-gw-infra.yaml` - infrastructure management API (7 endpoints, SSM exports)
 - `api-gw-app.yaml` - main application API (11 endpoints including /url_add)
+- `api-gw-custom-domain.yaml` - custom domain `api.{env}.lenie-ai.eu` with base path mappings (root → app API, `/infra` → infra API)
 
 ### Layer 7: Orchestration
 - `sqs-to-rds-step-function.yaml` - SQS -> start DB -> process -> stop DB
