@@ -10,7 +10,6 @@ GitHub Dependabot automatically scans project dependencies for known vulnerabili
 |-----------|----------|-----------------|
 | Python | `backend/pyproject.toml`, `backend/uv.lock` | uv |
 | Node.js (pnpm) | `web_interface_react/package.json`, `pnpm-lock.yaml` | pnpm |
-| Node.js (npm) | `web_add_url_react/package.json`, `package-lock.json` | npm |
 
 ## How to Check Alerts
 
@@ -83,12 +82,8 @@ uvx ruff check backend/
 # web_interface_react (pnpm)
 cd web_interface_react && pnpm update <package-name>
 
-# web_add_url_react (npm)
-cd web_add_url_react && npm update <package-name>
-
 # For transitive dependencies, use overrides:
 # pnpm: add "pnpm.overrides" in package.json
-# npm: add "overrides" in package.json
 ```
 
 ### Dismissing alerts
@@ -106,14 +101,14 @@ Valid `dismissed_reason` values: `fix_started`, `inaccurate`, `no_bandwidth`, `n
 
 ### CRA (Create React App) transitive dependencies
 
-Both React apps use `react-scripts` (CRA), which pulls in vulnerable transitive dependencies:
+The React app uses `react-scripts` (CRA), which pulls in vulnerable transitive dependencies:
 - `jsonpath` (HIGH — no patch available, code injection via `react-scripts` → `bfj` → `jsonpath`)
 - `nth-check` (HIGH — ReDoS)
 - `webpack-dev-server` (MEDIUM — source code theft in dev mode)
 - `postcss` (MEDIUM — parsing error)
 - `ajv` (MEDIUM — ReDoS)
 
-**Resolution:** Migrate both apps from CRA to Vite (backlog items B-16 and B-17). CRA is deprecated and no longer receives security updates.
+**Resolution:** Migrate the app from CRA to Vite (backlog item B-16). CRA is deprecated and no longer receives security updates.
 
 **Risk assessment:** These are build-time/dev-time dependencies only. They are NOT included in the production bundle served to users. The `jsonpath` code injection vulnerability requires passing untrusted input to jsonpath expressions, which does not happen in the CRA build pipeline.
 
@@ -132,8 +127,6 @@ When using Claude Code to review and fix Dependabot alerts, the agent needs the 
 | `uvx ruff check backend/` | Run Python linter |
 | `cd web_interface_react && pnpm update` | Update pnpm dependencies |
 | `cd web_interface_react && pnpm audit` | Audit pnpm dependencies |
-| `cd web_add_url_react && npm update` | Update npm dependencies |
-| `cd web_add_url_react && npm audit` | Audit npm dependencies |
 
 ### Web access
 
@@ -153,8 +146,6 @@ When using Claude Code to review and fix Dependabot alerts, the agent needs the 
 | `backend/uv.lock` | Read current locked versions |
 | `web_interface_react/package.json` | Read/edit Node.js dependencies |
 | `web_interface_react/pnpm-lock.yaml` | Read current locked versions |
-| `web_add_url_react/package.json` | Read/edit Node.js dependencies |
-| `web_add_url_react/package-lock.json` | Read current locked versions |
 
 ## Alert Review Log
 

@@ -4,18 +4,18 @@
 
 ## Integration Overview
 
-5 parts communicate primarily via REST API. The backend serves as the central hub, with all frontends and the extension acting as API clients.
+4 parts communicate primarily via REST API. The backend serves as the central hub, with the frontend and the extension acting as API clients.
 
 ```
-┌─────────────────────┐     ┌──────────────────────┐     ┌─────────────────────┐
-│  web_interface_react │     │  web_add_url_react    │     │ web_chrome_extension │
-│  (React 18 SPA)     │     │  (React 18 minimal)   │     │ (Chrome Manifest v3) │
-│  Port: 3000         │     │  Port: 80 (nginx)     │     │ Browser popup        │
-└─────────┬───────────┘     └──────────┬────────────┘     └──────────┬───────────┘
-          │ axios                      │ axios                       │ fetch
-          │ 19+ endpoints             │ POST /url_add               │ POST /url_add
-          │ x-api-key                  │ x-api-key                   │ x-api-key
-          ▼                            ▼                             ▼
+┌─────────────────────┐     ┌─────────────────────┐
+│  web_interface_react │     │ web_chrome_extension │
+│  (React 18 SPA)     │     │ (Chrome Manifest v3) │
+│  Port: 3000         │     │ Browser popup        │
+└─────────┬───────────┘     └──────────┬───────────┘
+          │ axios                       │ fetch
+          │ 19+ endpoints              │ POST /url_add
+          │ x-api-key                   │ x-api-key
+          ▼                             ▼
 ┌──────────────────────────────────────────────────────────────────────────────┐
 │                              API Layer                                       │
 │  Docker: Flask server.py (port 5000)                                        │
@@ -50,17 +50,7 @@ Key differences between AWS and Docker modes:
 - **Search**: AWS uses two calls (`/ai_embedding_get` → `/website_similar`), Docker uses one call
 - **Infrastructure**: `/infra/*` endpoints only work in AWS mode
 
-### 2. web_add_url_react → backend
-
-| Integration | Details |
-|------------|---------|
-| **Type** | REST API (axios HTTP client) |
-| **Auth** | `x-api-key` header (auto-populated from `?apikey=` query param) |
-| **Content-Type** | `application/json` |
-| **Endpoint** | `POST /url_add` (single endpoint) |
-| **Default URL** | AWS API Gateway endpoint |
-
-### 3. web_chrome_extension → backend
+### 2. web_chrome_extension → backend
 
 | Integration | Details |
 |------------|---------|
@@ -71,7 +61,7 @@ Key differences between AWS and Docker modes:
 | **Default URL** | AWS API Gateway endpoint |
 | **Extra data** | Sends page text (innerText) + HTML (outerHTML) |
 
-### 4. infra → backend (Deployment)
+### 3. infra → backend (Deployment)
 
 | Target | Mechanism |
 |--------|-----------|
@@ -79,7 +69,7 @@ Key differences between AWS and Docker modes:
 | AWS Lambda | `zip_to_s3.sh` packages `backend/library/` into Lambda zip |
 | Kubernetes | Docker Hub image `lenieai/lenie-ai-server:latest` |
 
-### 5. infra → web_interface_react (Deployment)
+### 4. infra → web_interface_react (Deployment)
 
 | Target | Mechanism |
 |--------|-----------|

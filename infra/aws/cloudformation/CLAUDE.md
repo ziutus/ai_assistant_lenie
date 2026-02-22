@@ -154,7 +154,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `api-gw-infra.yaml` | REST API, 7 Lambdas, IAM Role | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). Shared IAM role includes RDS, EC2, SQS, and SSM permissions for all functions. |
-| `api-gw-app.yaml` | REST API, 3 Lambdas | Main application API (11 endpoints, x-api-key) |
+| `api-gw-app.yaml` | REST API, Lambda Permissions | Main application API (11 endpoints, x-api-key). References 3 Lambda functions: `lenie_2_db`, `lenie_2_internet`, `${PC}-${Env}-url-add` |
 
 **`api-gw-app` stage configuration (managed by CloudFormation):**
 The `v1` stage logging and tracing settings are codified in `StageDescription` on the `ApiDeployment` resource in `api-gw-app.yaml`:

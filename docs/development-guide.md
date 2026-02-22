@@ -135,15 +135,6 @@ The frontend supports two backend modes (toggled in Authorization panel):
 
 Set API key and backend URL in the Authorization section of the UI.
 
-## Add URL App Development (web_add_url_react)
-
-```bash
-cd web_add_url_react
-npm install
-npm start          # Dev server (port 3000)
-npm run build      # Production build → nginx:alpine (port 80)
-```
-
 ## Browser Extension Development (web_chrome_extension)
 
 No build step. Load unpacked:
