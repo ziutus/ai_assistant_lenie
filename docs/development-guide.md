@@ -276,3 +276,28 @@ Copy the `.gitattributes` file from this project's root as a starting point. Adj
 On 2026-02-20, all 29 CloudFormation parameter files in `infra/aws/cloudformation/parameters/dev/` were verified to have **LF line endings** (no CRLF found). The `.gitattributes` rules — the global `* text=auto eol=lf` and explicit `*.json text eol=lf` — are confirmed adequate. Verification included `git check-attr` confirmation that git applies `text: set` and `eol: lf` to parameter files. No additional rules needed.
 
 **Background:** Sprint 3 Story 7-2 encountered a CRLF git warning when committing parameter files. Root cause was the Windows `core.autocrlf=true` setting, not corrupt file content. The `.gitattributes` file (commit `6a9bfd7`) and line ending normalization (commit `88b833e`) resolved the issue. This verification formally closes backlog item B-12.
+
+## Future: Multiuser Support (Phase 6)
+
+> **Status:** Backlog — planowane na samym końcu, po zakończeniu faz Security, MCP Server i Obsidian Integration.
+
+Sekcja multiuser umożliwi korzystanie z systemu przez wielu użytkowników na infrastrukturze AWS. Backlog items (B-23 do B-28) w `_bmad-output/implementation-artifacts/sprint-status.yaml`.
+
+### Zakres
+
+| Backlog ID | Opis |
+|------------|------|
+| B-23 | Uwierzytelnianie użytkowników — AWS Cognito User Pool (rejestracja, logowanie, JWT) |
+| B-24 | Własność danych w bazie — kolumna `user_id` w `web_documents` i `websites_embeddings`, migracja istniejących danych |
+| B-25 | Izolacja danych per użytkownik — filtrowanie po `user_id` we wszystkich endpointach API |
+| B-26 | Zamiana `x-api-key` na tokeny Cognito — aktualizacja API Gateway (Cognito Authorizer) i wszystkich klientów |
+| B-27 | UI logowania/wylogowania — ekrany auth w React SPA, Chrome extension i Add URL app |
+| B-28 | Panel administracyjny — zarządzanie użytkownikami, statystyki per użytkownik |
+
+### Wpływ na architekturę
+
+- **API Gateway:** Cognito Authorizer zamiast API Key auth
+- **Baza danych:** Nowa kolumna `user_id` + indeksy, RLS (Row Level Security) lub filtrowanie w warstwie aplikacji
+- **Backend (Flask / Lambda):** Ekstrakcja `user_id` z JWT tokena, przekazywanie do zapytań SQL
+- **Frontend:** Integracja z Cognito (Amplify Auth lub aws-amplify SDK), obsługa sesji i odświeżania tokenów
+- **Chrome extension:** Zastąpienie pola API key logowaniem Cognito
