@@ -4,7 +4,7 @@
 
 ## Overview
 
-Flask REST API with **18 endpoints** (plus root `/` informational endpoint). Version 0.3.13.0. All routes except health checks require `x-api-key` header validated against `STALKER_API_KEY` environment variable.
+Flask REST API with **19 endpoints** (including root `/` informational endpoint). Version 0.3.13.0. All routes except health checks require `x-api-key` header validated against `STALKER_API_KEY` environment variable.
 
 **Base URL**: `http://localhost:5000` (Docker) or AWS API Gateway endpoint (serverless)
 

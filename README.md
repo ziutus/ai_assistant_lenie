@@ -39,7 +39,7 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 - Implement MCP server protocol — expose search, retrieve, and content management endpoints as MCP tools
 - Claude Desktop integration — configure Lenie-AI as an MCP server in Claude Desktop
 - API adaptation — adjust endpoint patterns for MCP tool consumption while maintaining backward compatibility with the existing REST API
-- Remove legacy Add URL app (`web_add_url_react`) and its dedicated API Gateway — fully replaced by the Chrome/Kiwi browser extension
+- ~~Remove legacy Add URL app (`web_add_url_react`) and its dedicated API Gateway~~ — Done (archived to `_archive/`, Chrome/Kiwi browser extension is the sole content submission interface)
 
 ### Phase 3: Obsidian Integration
 
@@ -55,7 +55,7 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 
 ## Current Architecture
 
-- **Backend** — Flask REST API (Python 3.11) serving 18 endpoints with `x-api-key` auth. Handles document CRUD, text processing, AI embeddings, and vector similarity search
+- **Backend** — Flask REST API (Python 3.11) serving 19 endpoints with `x-api-key` auth. Handles document CRUD, text processing, AI embeddings, and vector similarity search
 - **Web Interface** — React 18 SPA for browsing, editing, and AI-processing documents. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask)
 - **Browser Extension** — Chrome/Kiwi Manifest v3 extension for capturing webpages and sending them to the backend
 - **Database** — PostgreSQL 17 with pgvector for vector similarity search (1536-dim embeddings)

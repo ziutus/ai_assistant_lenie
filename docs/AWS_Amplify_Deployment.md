@@ -15,9 +15,8 @@ This is the recommended approach for making the frontend publicly accessible —
 | Application | Directory | Framework | Amplify Platform |
 |-------------|-----------|-----------|-----------------|
 | Main frontend (React SPA) | `web_interface_react/` | React 18 (CRA) | WEB (static) |
-| Add URL app | `web_add_url_react/` | React (CRA) | WEB (static) |
 
-Both are static React applications that produce a `build/` directory with HTML/JS/CSS files.
+The main frontend is a static React application that produces a `build/` directory with HTML/JS/CSS files.
 
 ## Setting Up Amplify Hosting
 

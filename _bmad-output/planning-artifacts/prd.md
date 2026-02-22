@@ -18,6 +18,9 @@ stepsCompleted:
   - step-e-01-discovery
   - step-e-02-review
   - step-e-03-edit
+  - step-e-01-discovery
+  - step-e-02-review
+  - step-e-03-edit
 classification:
   projectType: web_app
   domain: personal_ai_knowledge_management
@@ -43,12 +46,14 @@ inputDocuments:
   - _bmad-output/implementation-artifacts/epic-11-retro-2026-02-18.md
   - _bmad-output/implementation-artifacts/epic-12-retro-2026-02-18.md
 workflowType: 'prd'
-lastEdited: '2026-02-19'
+lastEdited: '2026-02-21'
 editHistory:
   - date: '2026-02-16'
     changes: 'Updated from Sprint 2 (Cleanup & Vision) to Sprint 3 (Code Cleanup). Rewrote all sections. Applied validation fixes.'
   - date: '2026-02-19'
     changes: 'Updated from Sprint 3 (Code Cleanup) to Sprint 4 (AWS Infrastructure Consolidation & Tooling). 6 backlog stories: B-4, B-5, B-11, B-12, B-14, B-19. Added API Gateway Architecture Principle section.'
+  - date: '2026-02-21'
+    changes: 'Removed all references to web_add_url_react (archived and deleted from project). Chrome extension is the sole content submission interface. Removed FR17 (add-url app URL update). Updated NFR5, risk mitigation, user journeys, and technical context.'
 ---
 
 # Product Requirements Document - lenie-server-2025
@@ -85,7 +90,7 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 
 - EC2 `ElasticIP` and `EIPAssociation` resources removed from `ec2-lenie.yaml`; Route53 A record updated dynamically via `aws_ec2_route53.py`
 - Lambda `FunctionName` in `lambda-rds-start.yaml` changed from `${AWS::StackName}-rds-start-function` to `${ProjectCode}-${Environment}-rds-start` (eliminates `lenie-dev-lambda-rds-start-rds-start-function` redundancy)
-- `api-gw-url-add.yaml` merged into `api-gw-app.yaml`; Chrome extension and add-url React app updated with new endpoint URL
+- `api-gw-url-add.yaml` merged into `api-gw-app.yaml`; Chrome extension updated with new endpoint URL
 - `zip_to_s3.sh` displays AWS account ID and requires confirmation before deployment
 - `.gitattributes` coverage verified for parameter files; documented if current config is adequate
 - Single-source documentation metrics file created with automated drift verification
@@ -107,7 +112,7 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 
 2. **B-5: Fix redundant Lambda function names** — Fix `FunctionName` properties that produce redundant names when `${AWS::StackName}` is used (e.g., `lenie-dev-lambda-rds-start-rds-start-function`). Replace with `${ProjectCode}-${Environment}-<description>` pattern. Affected template: `lambda-rds-start.yaml` (confirmed: uses `${AWS::StackName}-rds-start-function`). Verify all other Lambda templates already use the clean pattern. Update all consumers: API Gateway integrations, Step Function definitions, IAM policies, parameter files referencing the old function name.
 
-3. **B-14: Consolidate api-gw-url-add into api-gw-app** — Merge the `/url_add` endpoint from `api-gw-url-add.yaml` into `api-gw-app.yaml`. Remove or archive `api-gw-url-add.yaml` template and its parameter file `parameters/dev/api-gw-url-add.json`. Migrate API key, usage plan, and Lambda permission resources. Update Chrome extension default endpoint URL (currently `https://jg40fjwz61.execute-api.us-east-1.amazonaws.com/v1/url_add`) and add-url React app endpoint URL (currently `https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1`). The `api-gw-infra.yaml` template is not affected.
+3. **B-14: Consolidate api-gw-url-add into api-gw-app** — Merge the `/url_add` endpoint from `api-gw-url-add.yaml` into `api-gw-app.yaml`. Remove or archive `api-gw-url-add.yaml` template and its parameter file `parameters/dev/api-gw-url-add.json`. Migrate API key, usage plan, and Lambda permission resources. Update Chrome extension default endpoint URL (currently `https://jg40fjwz61.execute-api.us-east-1.amazonaws.com/v1/url_add`). The `api-gw-infra.yaml` template is not affected.
 
 4. **B-11: Add AWS account info to zip-to-s3 script** — Script `infra/aws/serverless/zip_to_s3.sh` sources `env.sh` by default (account `008971653395`, the current production account). Add: display `AWS_ACCOUNT_ID` during execution, display which env file is sourced, warn/confirm before proceeding with deployment. Two env configs: `env.sh` (account `008971653395`, current production) and `env_lenie_2025.sh` (account `049706517731`, target migration account).
 
@@ -143,7 +148,7 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 
 **Opening Scene:** Ziutus opens the project after completing Sprint 3 (Code Cleanup). The codebase is clean — no dead endpoints or unused functions. However, infrastructure has accumulated debt: an idle Elastic IP costs $3.65/month, Lambda function names contain redundant segments (`lenie-dev-lambda-rds-start-rds-start-function`), three API Gateways exist where two suffice, the deployment script does not show which AWS account it targets, and documentation metrics are inconsistent across 7+ files.
 
-**Rising Action:** Ziutus removes the Elastic IP from `ec2-lenie.yaml` and verifies that `aws_ec2_route53.py` correctly updates Route53 with the dynamic public IP on each EC2 start. Ziutus fixes the Lambda function name in `lambda-rds-start.yaml` from `${AWS::StackName}-rds-start-function` to `${ProjectCode}-${Environment}-rds-start` and updates all consumers. Ziutus merges the `/url_add` endpoint from `api-gw-url-add.yaml` into `api-gw-app.yaml`, updates the Chrome extension's default endpoint URL and the add-url React app's hardcoded URL, then removes the standalone template. Ziutus adds account ID display and confirmation to `zip_to_s3.sh`. Ziutus verifies parameter file line endings and documents the finding. Ziutus creates a single-source metrics file and an automated verification script, then fixes all discrepancies across documentation files.
+**Rising Action:** Ziutus removes the Elastic IP from `ec2-lenie.yaml` and verifies that `aws_ec2_route53.py` correctly updates Route53 with the dynamic public IP on each EC2 start. Ziutus fixes the Lambda function name in `lambda-rds-start.yaml` from `${AWS::StackName}-rds-start-function` to `${ProjectCode}-${Environment}-rds-start` and updates all consumers. Ziutus merges the `/url_add` endpoint from `api-gw-url-add.yaml` into `api-gw-app.yaml`, updates the Chrome extension's default endpoint URL, then removes the standalone template. Ziutus adds account ID display and confirmation to `zip_to_s3.sh`. Ziutus verifies parameter file line endings and documents the finding. Ziutus creates a single-source metrics file and an automated verification script, then fixes all discrepancies across documentation files.
 
 **Climax:** After deployment — EC2 starts with dynamic IP and Route53 updates automatically. Lambda functions have clean names. The duplicate api-gw-url-add template is removed; api-gw-app now serves 11 endpoints (including `/url_add`), api-gw-infra serves 7 endpoints, and url-add.yaml retains its own API Gateway (3 REST APIs total). The deployment script clearly shows target account `008971653395` before proceeding. Documentation metrics match actual infrastructure with zero discrepancies. The verification script confirms consistency.
 
@@ -168,7 +173,7 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 | Infra Consolidation | Fix Lambda FunctionName in lambda-rds-start.yaml to clean pattern |
 | Infra Consolidation | Update all consumers of renamed Lambda function |
 | Infra Consolidation | Merge api-gw-url-add.yaml /url_add endpoint into api-gw-app.yaml |
-| Infra Consolidation | Update Chrome extension and add-url React app endpoint URLs |
+| Infra Consolidation | Update Chrome extension endpoint URL |
 | Infra Consolidation | Remove or archive api-gw-url-add.yaml template |
 | Infra Consolidation | Add account ID display and confirmation to zip_to_s3.sh |
 | Infra Consolidation | Verify parameter file line endings in .gitattributes |
@@ -203,8 +208,6 @@ Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway
 
 **Chrome extension endpoint URL:** Currently hardcoded in `web_chrome_extension/popup.html` as `https://jg40fjwz61.execute-api.us-east-1.amazonaws.com/v1/url_add`. After API Gateway consolidation, this URL changes to the `api-gw-app` gateway URL. The extension allows user override via the settings field.
 
-**Add-URL React app endpoint URL:** Currently hardcoded in `web_add_url_react/src/App.js` as `https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1`. After consolidation, this must point to the `api-gw-app` gateway URL.
-
 **Lambda function naming:** Stack naming convention is `<PROJECT_CODE>-<STAGE>-<template_name>`. The `lambda-rds-start.yaml` template uses `${AWS::StackName}` in `FunctionName`, producing `lenie-dev-lambda-rds-start-rds-start-function` (stack name `lenie-dev-lambda-rds-start` + suffix `-rds-start-function`). Other Lambda templates already use the clean `${ProjectCode}-${Environment}-<description>` pattern directly: `sqs-to-rds-lambda.yaml` produces `lenie-dev-sqs-to-rds-lambda`, `lambda-weblink-put-into-sqs.yaml` produces `lenie-dev-weblink-put-into-sqs`.
 
 **AWS accounts:**
@@ -218,7 +221,7 @@ Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway
 **Technical Risks:**
 - *EC2 unreachable after EIP removal* — Mitigated by verifying `aws_ec2_route53.py` updates Route53 A record with dynamic IP on each EC2 start. TTL is 300 seconds. Makefile target `aws-start-openvpn` already uses this script.
 - *Lambda function rename breaks API Gateway integrations* — Mitigated by: (1) verifying `api-gw-infra.yaml` already references `${ProjectCode}-${Environment}-rds-start` (confirmed from codebase), (2) updating Step Function definitions and parameter files that reference the old name, (3) deploying Lambda template before API Gateway template.
-- *API Gateway consolidation breaks Chrome extension / add-url app* — Mitigated by: (1) updating hardcoded URLs in client code, (2) migrating API key and usage plan resources, (3) testing `/url_add` endpoint on new gateway before removing old gateway.
+- *API Gateway consolidation breaks Chrome extension* — Mitigated by: (1) updating hardcoded URL in Chrome extension, (2) migrating API key and usage plan resources, (3) testing `/url_add` endpoint on new gateway before removing old gateway.
 - *`api-gw-app.yaml` exceeds 51200 byte inline limit after adding /url_add* — Mitigated by checking template size after merge. Fallback: use `aws cloudformation package` for S3-based deployment.
 - *Wrong AWS account deployment* — Mitigated by adding explicit account display and confirmation prompt to `zip_to_s3.sh`.
 
@@ -257,8 +260,7 @@ Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway
 - FR14: Developer can add the Lambda permission resource for the `url-add` Lambda function to `api-gw-app.yaml`
 - FR15: Developer can verify the merged `api-gw-app.yaml` template size remains under the 51200 byte CloudFormation inline limit
 - FR16: Developer can update the default endpoint URL in `web_chrome_extension/popup.html` to the `api-gw-app` gateway URL
-- FR17: Developer can update the hardcoded API URL in `web_add_url_react/src/App.js` to the `api-gw-app` gateway URL
-- FR18: Developer can remove or archive the `api-gw-url-add.yaml` template from `infra/aws/cloudformation/templates/`
+- FR17: Developer can remove or archive the `api-gw-url-add.yaml` template from `infra/aws/cloudformation/templates/`
 - FR19: Developer can remove the `api-gw-url-add.json` parameter file from `infra/aws/cloudformation/parameters/dev/`
 - FR20: Developer can delete the `lenie-dev-api-gw-url-add` CloudFormation stack from AWS after the consolidated gateway is deployed and verified
 - FR21: Developer can verify the `/url_add` endpoint on the consolidated `api-gw-app` gateway returns successful responses with the existing API key
@@ -291,7 +293,7 @@ Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway
 - NFR2: EC2 instance remains accessible via SSH and HTTP/HTTPS after Elastic IP removal, with Route53 A record updated within 5 minutes of instance start
 - NFR3: No actively used CloudFormation resources are removed — only resources being consolidated or replaced
 - NFR4: All infrastructure changes preserve rollback capability through version control (git) and CloudFormation stack operations
-- NFR5: Chrome extension and add-url React app successfully submit URLs via the consolidated API Gateway endpoint
+- NFR5: Chrome extension successfully submits URLs via the consolidated API Gateway endpoint
 
 ### IaC Quality & Validation
 

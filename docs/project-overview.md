@@ -6,14 +6,14 @@
 
 **Project Lenie** is a personal AI assistant for collecting, managing, and searching data using LLMs. Named after the protagonist from Peter Watts' novel "Starfish," it helps users collect links/references, download and store webpage content, transcribe YouTube videos, and assess information reliability using AI.
 
-The system consists of a Python/Flask REST API backend, two React frontend applications, a Chrome browser extension, and multi-cloud infrastructure (AWS, GCloud, Kubernetes).
+The system consists of a Python/Flask REST API backend, a React frontend application, a Chrome browser extension, and multi-cloud infrastructure (AWS, GCloud, Kubernetes).
 
 ## Repository Structure
 
 | Property | Value |
 |----------|-------|
 | **Type** | Multi-part Monorepo |
-| **Parts** | 5 (backend, main frontend, add URL app, browser extension, infrastructure) |
+| **Parts** | 4 (backend, main frontend, browser extension, infrastructure) |
 | **Primary Language** | Python 3.11 (backend), JavaScript/React 18 (frontends) |
 | **Architecture** | Layered REST API + SPA + Serverless |
 | **Database** | PostgreSQL 17 + pgvector |
@@ -23,13 +23,10 @@ The system consists of a Python/Flask REST API backend, two React frontend appli
 ## Parts Summary
 
 ### Backend API (`backend/`)
-Flask REST API with 18 endpoints for document CRUD, AI operations (embedding generation, similarity search), and content processing (webpage download, text cleanup, YouTube transcription). Multi-provider LLM abstraction supporting OpenAI, AWS Bedrock, Google Vertex AI, and CloudFerro Bielik.
+Flask REST API with 19 endpoints for document CRUD, AI operations (embedding generation, similarity search), and content processing (webpage download, text cleanup, YouTube transcription). Multi-provider LLM abstraction supporting OpenAI, AWS Bedrock, Google Vertex AI, and CloudFerro Bielik.
 
 ### Main Frontend (`web_interface_react/`)
 React 18 SPA with 7 pages for document management. Features include document list with filtering, vector similarity search, and per-type editors (link, webpage, youtube, movie) with AI tools (split for embedding, clean text). Supports two backend modes: AWS Serverless and Docker.
-
-### Add URL App (`web_add_url_react/`)
-Minimal single-page React app for submitting new URLs via `POST /url_add`. No routing, no document browsing — just a form with URL, type, source, language, note, and text fields. API key can be pre-populated from `?apikey=` query parameter.
 
 ### Browser Extension (`web_chrome_extension/`)
 Chrome/Kiwi browser extension (Manifest v3) for capturing webpages and sending to backend. Auto-extracts title, description, language, and full content (text + HTML). Supports content types: webpage, link, youtube, movie. No build step.

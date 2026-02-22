@@ -85,7 +85,6 @@ All frontend applications currently have **no client-side monitoring or error tr
 | Application | Type | Monitoring | Notes |
 |-------------|------|-----------|-------|
 | Main Frontend (`web_interface_react/`) | React 18 SPA | None | No error tracking, no performance monitoring |
-| Add URL App (`web_add_url_react/`) | React 18 SPA | None | Minimal single-page app |
 | Browser Extension (`web_chrome_extension/`) | Chrome Extension (Manifest v3) | None | No telemetry |
 
 AWS RUM (Real User Monitoring) was previously integrated but was completely removed in Story 5-2 as dead/unused code. No replacement has been implemented.
