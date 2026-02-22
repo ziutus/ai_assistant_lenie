@@ -53,6 +53,21 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 - EKS deployment — Kubernetes-based scaling for complex workloads
 - Multi-environment support — parameterized deployments across dev/qa/prod
 
+### Phase 5: LLM Text Analysis
+
+- Automatic document analysis via LLM — extract structured metadata as JSON (author, topic, countries, data source, people, organizations)
+- JSONB storage in PostgreSQL with GIN indexes for metadata search
+- Frontend UI for viewing, editing, and filtering by analysis results
+- Batch processing for existing documents without analysis
+
+### Phase 6: Multiuser Support
+
+- User authentication via AWS Cognito (registration, login, JWT tokens)
+- Data ownership — `user_id` column in database tables, per-user data isolation
+- Replace shared `x-api-key` with per-user Cognito auth tokens across all clients
+- Login/logout UI in frontend applications (React SPA, Chrome extension, Add URL app)
+- User management admin panel (user list, blocking, per-user statistics)
+
 ## Current Architecture
 
 - **Backend** — Flask REST API (Python 3.11) serving 19 endpoints with `x-api-key` auth. Handles document CRUD, text processing, AI embeddings, and vector similarity search
