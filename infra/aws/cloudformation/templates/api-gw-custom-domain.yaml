@@ -1,0 +1,123 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'API Gateway custom domain with ACM certificate and Route53 DNS for Project Lenie'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+  BaseDomainName:
+    Type: String
+    Default: lenie-ai.eu
+    Description: Base domain name (e.g. lenie-ai.eu)
+  HostedZoneId:
+    Type: String
+    Description: Route53 Hosted Zone ID for the base domain
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  # ACM Certificate with DNS validation
+  ApiCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !If
+        - IsProd
+        - !Sub 'api.${BaseDomainName}'
+        - !Sub 'api.${Environment}.${BaseDomainName}'
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !If
+            - IsProd
+            - !Sub 'api.${BaseDomainName}'
+            - !Sub 'api.${Environment}.${BaseDomainName}'
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+  # API Gateway Custom Domain Name
+  ApiDomainName:
+    Type: AWS::ApiGateway::DomainName
+    Properties:
+      DomainName: !If
+        - IsProd
+        - !Sub 'api.${BaseDomainName}'
+        - !Sub 'api.${Environment}.${BaseDomainName}'
+      RegionalCertificateArn: !Ref ApiCertificate
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      SecurityPolicy: TLS_1_2
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+  # Base Path Mapping: root (/) -> app API (lenie_split), stage v1
+  AppBasePathMapping:
+    Type: AWS::ApiGateway::BasePathMapping
+    Properties:
+      DomainName: !Ref ApiDomainName
+      RestApiId: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/apigateway/app/id}}'
+      Stage: v1
+
+  # Base Path Mapping: /infra -> infra API, stage v1
+  InfraBasePathMapping:
+    Type: AWS::ApiGateway::BasePathMapping
+    Properties:
+      DomainName: !Ref ApiDomainName
+      BasePath: infra
+      RestApiId: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/apigateway/infra/id}}'
+      Stage: v1
+
+  # Route53 A-record alias pointing to API Gateway regional domain
+  ApiDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !If
+        - IsProd
+        - !Sub 'api.${BaseDomainName}'
+        - !Sub 'api.${Environment}.${BaseDomainName}'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt ApiDomainName.RegionalDomainName
+        HostedZoneId: !GetAtt ApiDomainName.RegionalHostedZoneId
+
+  # SSM Parameter exports
+  CustomDomainUrlParameter:
+    Type: 'AWS::SSM::Parameter'
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/apigateway/custom-domain/url'
+      Type: String
+      Value: !If
+        - IsProd
+        - !Sub 'https://api.${BaseDomainName}'
+        - !Sub 'https://api.${Environment}.${BaseDomainName}'
+      Description: 'API Gateway custom domain URL for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+
+  CustomDomainCertificateArnParameter:
+    Type: 'AWS::SSM::Parameter'
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/apigateway/custom-domain/certificate-arn'
+      Type: String
+      Value: !Ref ApiCertificate
+      Description: 'ACM certificate ARN for API Gateway custom domain'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
