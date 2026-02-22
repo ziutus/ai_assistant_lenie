@@ -22,7 +22,7 @@ infra/aws/
 | Category              | Count | Details                                      |
 |-----------------------|-------|----------------------------------------------|
 | CloudFormation Stacks | 33    | Templates in `cloudformation/templates/` (26 dev active, 2 commented, 5 account-level) |
-| Lambda Functions      | 11    | Python 3.11 runtime                          |
+| Lambda Functions      | 8     | Python 3.11 runtime                          |
 | API Gateway APIs      | 3     | app, infra, chrome-extension                 |
 | API Endpoints         | 19    | REST (REGIONAL): app 11 + infra 7 + url-add 1 |
 | SQS Queues            | 2     | documents, problems-dlq                      |
@@ -268,12 +268,8 @@ infra/aws/
 |-----------------------|-----------------------------|---------------------------------------------|
 | LambdaExecutionRole   | AWS::IAM::Role              | logs:*, rds:Start/Stop/Describe, ec2:Start/Stop/Describe, sqs:GetQueueAttributes, ssm:GetParameter |
 | SqsSizeFunction       | AWS::Lambda::Function       | `lenie-dev-sqs-size`, timeout: 30s          |
-| RdsStartFunction      | AWS::Lambda::Function       | `lenie-dev-rds-start`                       |
-| RdsStopFunction       | AWS::Lambda::Function       | `lenie-dev-rds-stop`                        |
-| RdsStatusFunction     | AWS::Lambda::Function       | `lenie-dev-rds-status`                      |
-| Ec2StatusFunction     | AWS::Lambda::Function       | `lenie-dev-ec2-status`                      |
-| Ec2StatusStart        | AWS::Lambda::Function       | `lenie-dev-ec2-start`                       |
-| Ec2StatusStop         | AWS::Lambda::Function       | `lenie-dev-ec2-stop`                        |
+| RdsManagerFunction    | AWS::Lambda::Function       | `lenie-dev-rds-manager`, timeout: 60s       |
+| Ec2ManagerFunction    | AWS::Lambda::Function       | `lenie-dev-ec2-manager`, timeout: 30s       |
 | LenieApi              | AWS::ApiGateway::RestApi    | `lenie_dev_infra`, REGIONAL                 |
 | ApiStage              | AWS::ApiGateway::Stage      | Stage: v1                                   |
 | ApiDeployment         | AWS::ApiGateway::Deployment | -                                           |
@@ -447,7 +443,7 @@ All DEV parameter files are in `cloudformation/parameters/dev/`:
 
 ## 13. Serverless Lambda Functions (`serverless/`)
 
-Source code for all 11 Lambda functions deployed via CloudFormation, plus 3 shared Lambda layers.
+Source code for all 8 Lambda functions deployed via CloudFormation, plus 3 shared Lambda layers.
 
 ### Directory Structure
 
@@ -456,12 +452,8 @@ serverless/
 ├── lambdas/
 │   ├── app-server-db/           # Application - DB operations
 │   ├── app-server-internet/     # Application - internet/AI operations
-│   ├── ec2-start/               # EC2 instance start
-│   ├── ec2-status/              # EC2 instance status
-│   ├── ec2-stop/                # EC2 instance stop
-│   ├── rds-start/               # RDS instance start
-│   ├── rds-status/              # RDS instance status
-│   ├── rds-stop/                # RDS instance stop
+│   ├── ec2-manager/             # EC2 instance management (start/stop/status)
+│   ├── rds-manager/             # RDS instance management (start/stop/status)
 │   ├── sqs-into-rds/            # SQS → PostgreSQL processor
 │   ├── sqs-size/                # SQS queue message count
 │   ├── sqs-weblink-put-into/    # URL ingestion → S3 + DynamoDB + SQS
@@ -480,12 +472,8 @@ serverless/
 | app-server-internet | Application | External APIs | OpenAI, EMBEDDING_MODEL | Yes |
 | sqs-weblink-put-into | Document Processing | S3, DynamoDB, SQS | AWS_QUEUE_URL_ADD, BUCKET_NAME, DYNAMODB_TABLE_NAME | No |
 | sqs-into-rds | Document Processing | RDS, SQS | PostgreSQL vars | Yes |
-| rds-start | Infrastructure | RDS | DB_ID | No |
-| rds-stop | Infrastructure | RDS | DB_ID | No |
-| rds-status | Infrastructure | RDS | DB_ID | No |
-| ec2-start | Infrastructure | EC2 | INSTANCE_ID | No |
-| ec2-stop | Infrastructure | EC2 | INSTANCE_ID | No |
-| ec2-status | Infrastructure | EC2 | INSTANCE_ID | No |
+| rds-manager | Infrastructure | RDS | DB_ID | No |
+| ec2-manager | Infrastructure | EC2 | INSTANCE_ID | No |
 | sqs-size | Infrastructure | SQS, SSM | AWS_REGION | No |
 
 ### 13.1 Application Functions
@@ -541,19 +529,19 @@ SQS event-triggered function. Reads messages from SQS queue and persists documen
 
 ### 13.3 Infrastructure Management Functions
 
-#### rds-start / rds-stop / rds-status
+#### rds-manager
 
-RDS instance lifecycle management. Each uses `DB_ID` env var to identify the target instance.
-- **rds-start**: `rds.start_db_instance()`
-- **rds-stop**: `rds.stop_db_instance()`
-- **rds-status**: `rds.describe_db_instances()` → returns `DBInstanceStatus`
+Consolidated RDS instance lifecycle management. Uses `DB_ID` env var and API Gateway path-based routing (`/database/start`, `/database/stop`, `/database/status`).
+- **start**: `rds.start_db_instance()`
+- **stop**: `rds.stop_db_instance()`
+- **status**: `rds.describe_db_instances()` → returns `DBInstanceStatus`
 
-#### ec2-start / ec2-stop / ec2-status
+#### ec2-manager
 
-EC2 instance lifecycle management. Each uses `INSTANCE_ID` env var.
-- **ec2-start**: `ec2.start_instances()`
-- **ec2-stop**: `ec2.stop_instances()`
-- **ec2-status**: `ec2.describe_instances()` → returns `State['Name']`
+Consolidated EC2 instance lifecycle management. Uses `INSTANCE_ID` env var and API Gateway path-based routing (`/vpn_server/start`, `/vpn_server/stop`, `/vpn_server/status`).
+- **start**: `ec2.start_instances()`
+- **stop**: `ec2.stop_instances()`
+- **status**: `ec2.describe_instances()` → returns `State['Name']`
 
 #### sqs-size
 
@@ -619,7 +607,7 @@ The following AWS resources related to Project Lenie exist in the account (us-ea
 |---------------|--------------------:|:----------------:|
 | S3 Buckets | 1 | 5 |
 | CloudFront Distributions | 0 | 2 |
-| Lambda Functions | 1 | 11 |
+| Lambda Functions | 1 | 8 |
 | DynamoDB Tables | 0 | 1 |
 | SNS Topics | 0 | 1 |
 | API Gateway | 0 | 3 |
