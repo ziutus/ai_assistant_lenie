@@ -140,6 +140,26 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 - Semantic search from within Obsidian via Claude Desktop + MCP
 - Advanced vector search refinements for personal knowledge management
 
+### Phase 6 (Future — LLM Text Analysis)
+
+Realizowane po MVP (po fazach Security, MCP Server, Obsidian). Automatyczna analiza tekstu dokumentów przez LLM, zwracająca ustrukturyzowany JSON z metadanymi.
+
+- **B-29: Endpoint analizy tekstu przez LLM** — Nowy endpoint API wysyłający tekst dokumentu do LLM z promptem ekstrakcyjnym. LLM zwraca JSON z polami: autor, temat/tematy, państwa których dotyczy, źródło danych (np. BBC, Reuters), data publikacji, typ treści (news, opinia, analiza), osoby wymienione, organizacje. Obsługa wielu providerów LLM (OpenAI, Bedrock, Vertex) zgodnie z istniejącą konfiguracją `LLM_PROVIDER`.
+- **B-30: Schemat JSON analizy i przechowywanie w bazie** — Definicja schematu JSON dla wyników analizy. Nowa kolumna `ai_analysis` (JSONB) w tabeli `web_documents` lub dedykowana tabela `web_documents_analysis`. Indeksy GIN na polach JSONB do wyszukiwania po autorze, temacie, kraju.
+- **B-31: UI wyników analizy we frontendzie** — Wyświetlanie wyników analizy na stronie edycji dokumentu. Możliwość ręcznej korekty wyników. Filtrowanie listy dokumentów po metadanych z analizy (autor, kraj, temat).
+- **B-32: Batch analysis istniejących dokumentów** — Skrypt przetwarzający dokumenty bez analizy (analogiczny do `web_documents_do_the_needful_new.py`). Nowy status dokumentu w pipeline (np. `ANALYSIS_NEEDED` → `ANALYSIS_DONE`). Integracja z Step Function/SQS na AWS.
+
+### Phase 7 (Future — Multiuser Support on AWS)
+
+Realizowane na samym końcu, po zakończeniu wszystkich pozostałych faz. Umożliwi korzystanie z systemu przez wielu użytkowników na infrastrukturze AWS.
+
+- **B-23: Uwierzytelnianie użytkowników (AWS Cognito)** — Wdrożenie AWS Cognito User Pool do rejestracji i logowania użytkowników. Integracja z API Gateway (Cognito Authorizer) zamiast obecnego statycznego klucza API.
+- **B-24: Własność danych w bazie** — Dodanie kolumny `user_id` (owner) do tabel `web_documents` i `websites_embeddings`. Migracja istniejących danych do domyślnego użytkownika. Indeksy uwzględniające `user_id`.
+- **B-25: Izolacja danych per użytkownik w API** — Wszystkie endpointy filtrują dane po `user_id` z tokena Cognito. Użytkownik widzi i modyfikuje tylko swoje dokumenty.
+- **B-26: Zamiana wspólnego klucza API na tokeny per użytkownik** — Usunięcie mechanizmu `x-api-key` na rzecz JWT z Cognito. Aktualizacja wszystkich klientów (frontend, Chrome extension, add-url app).
+- **B-27: UI logowania/wylogowania** — Ekrany logowania i rejestracji w aplikacjach frontendowych. Obsługa sesji użytkownika i odświeżania tokenów.
+- **B-28: Panel administracyjny użytkowników** — Zarządzanie użytkownikami (lista, blokowanie, usuwanie). Widoczność statystyk per użytkownik (liczba dokumentów, zużycie embeddingów).
+
 ## User Journeys
 
 ### Journey 1: Developer Infrastructure Consolidation Sprint
