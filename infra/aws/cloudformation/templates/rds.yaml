@@ -14,8 +14,9 @@ Parameters:
     Description: The VPC Id where the RDS instance will be deployed
     Type: AWS::SSM::Parameter::Value<String>
   RDSPasswordSecretArn:
-    Type: String
-    Description: 'ARN of the Secret in AWS Secrets Manager that holds the RDS master user password'
+    Type: AWS::SSM::Parameter::Value<String>
+    Default: '/lenie/dev/rds/secret-arn'
+    Description: 'SSM path resolving to the ARN of the Secret in AWS Secrets Manager that holds the RDS master user password'
   DataSubnetA:
     Description: Reference of the DataSubnetA from the SSM
     Type: AWS::SSM::Parameter::Value<String>
@@ -74,6 +75,13 @@ Resources:
         - Key: Project
           Value: !Ref ProjectCode
 
+
+  SecretTargetAttachment:
+    Type: 'AWS::SecretsManager::SecretTargetAttachment'
+    Properties:
+      SecretId: !Ref RDSPasswordSecretArn
+      TargetId: !Ref MyDB
+      TargetType: 'AWS::RDS::DBInstance'
 
   MyDatabaseSecurityGroup:
     Type: 'AWS::EC2::SecurityGroup'

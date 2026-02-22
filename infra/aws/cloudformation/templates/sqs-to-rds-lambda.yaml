@@ -76,6 +76,7 @@ Resources:
           POSTGRESQL_PASSWORD: !Sub '{{resolve:secretsmanager:/${ProjectCode}/${Environment}/rds/password:SecretString:password}}'
           POSTGRESQL_PORT: !Ref PostgresqlPort
           POSTGRESQL_USER: !Sub '{{resolve:secretsmanager:/${ProjectCode}/${Environment}/rds/password:SecretString:username}}'
+          POSTGRESQL_SSLMODE: require
       Timeout: 900
       MemorySize: 128
       VpcConfig:

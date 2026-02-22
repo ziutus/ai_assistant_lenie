@@ -199,7 +199,10 @@
       "WebFetch(domain:community.openai.com)",
       "Bash(bash scripts/verify-documentation-metrics.sh)",
       "Bash(pip3 show:*)",
-      "Bash(file:*)"
+      "Bash(file:*)",
+      "Bash(tail:*)",
+      "Bash(aws sts get-caller-identity:*)",
+      "Bash(MSYS_NO_PATHCONV=1 aws sts get-caller-identity:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

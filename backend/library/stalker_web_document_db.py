@@ -14,13 +14,17 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                  webpage_parse_result: WebPageParseResult | None = None):
         super().__init__(url, webpage_parse_result)
         if not self.db_conn:
-            self.db_conn = psycopg2.connect(
-                host=os.getenv("POSTGRESQL_HOST"),
-                database=os.getenv("POSTGRESQL_DATABASE"),
-                user=os.getenv("POSTGRESQL_USER"),
-                password=os.getenv("POSTGRESQL_PASSWORD"),
-                port=os.getenv("POSTGRESQL_PORT")
-            )
+            connect_kwargs = {
+                "host": os.getenv("POSTGRESQL_HOST"),
+                "database": os.getenv("POSTGRESQL_DATABASE"),
+                "user": os.getenv("POSTGRESQL_USER"),
+                "password": os.getenv("POSTGRESQL_PASSWORD"),
+                "port": os.getenv("POSTGRESQL_PORT"),
+            }
+            sslmode = os.getenv("POSTGRESQL_SSLMODE")
+            if sslmode:
+                connect_kwargs["sslmode"] = sslmode
+            self.db_conn = psycopg2.connect(**connect_kwargs)
 
         self.next_id = None
         self.next_type = None

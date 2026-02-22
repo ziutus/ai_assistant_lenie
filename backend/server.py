@@ -2,7 +2,7 @@ import os
 from pprint import pprint
 
 from dotenv import load_dotenv
-from flask import Flask, request, abort
+from flask import Flask, Response, request, abort
 from flask_cors import CORS
 import logging
 import uuid
@@ -694,7 +694,10 @@ def healthz():
 # metrics in Prometheus format
 @app.route('/metrics', methods=['GET'])
 def kubernetes_metrics():
-    pass
+    metrics = "# HELP lenie_app_info Application information\n"
+    metrics += "# TYPE lenie_app_info gauge\n"
+    metrics += f'lenie_app_info{{version="{APP_VERSION}"}} 1\n'
+    return Response(metrics, mimetype='text/plain; charset=utf-8')
 
 
 @app.route('/startup', methods=['GET'])

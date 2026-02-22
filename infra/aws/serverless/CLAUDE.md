@@ -76,7 +76,6 @@ Common variables:
 
 | Function | Description |
 |----------|-------------|
-| `sqs-into-rds` | Reads SQS message, creates `StalkerWebDocumentDB`, saves document to PostgreSQL. Uses `backend/library` via Lambda layer. |
 | `sqs-weblink-put-into` | Receives URL data via API Gateway, stores text/HTML in S3, saves metadata to DynamoDB, sends message to SQS. Env vars: `AWS_QUEUE_URL_ADD`, `BUCKET_NAME`, `DYNAMODB_TABLE_NAME` |
 
 #### Application Server (app - includes backend/library)
@@ -85,6 +84,7 @@ Common variables:
 |----------|-----------|-------------|
 | `app-server-db` | `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding` | DB-facing operations. Requires PostgreSQL env vars, `OPENAI_*`, `EMBEDDING_MODEL`, `BACKEND_TYPE`. |
 | `app-server-internet` | `/website_download_text_content`, `/ai_embedding_get` | Internet-facing operations (downloads, AI calls, embeddings). Requires `OPENAI_*`, `AI_MODEL_SUMMARY`, `EMBEDDING_MODEL`. |
+| `sqs-into-rds` | - | Reads SQS message, creates `StalkerWebDocumentDB`, saves document to PostgreSQL. Requires `backend/library` in zip package. |
 
 Both app functions use path-based routing (`event['path']`) via API Gateway proxy integration.
 
