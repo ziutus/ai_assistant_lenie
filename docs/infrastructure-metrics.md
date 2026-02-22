@@ -1,6 +1,6 @@
 # Infrastructure Metrics — Single Source of Truth
 
-> Last verified: 2026-02-23 | Post-Sprint 5 (Story 17-3 Lambda rename complete)
+> Last verified: 2026-02-23 | Post-Sprint 5 (Epic 18: Lambda consolidation ec2-manager + rds-manager)
 
 This file is the authoritative source for infrastructure counts. All other documentation files should reference or be consistent with values here.
 
@@ -61,12 +61,12 @@ Each path also has an OPTIONS method for CORS (not counted as functional endpoin
 | # | Path | Method | Lambda Target |
 |---|------|--------|---------------|
 | 1 | `/infra/sqs/size` | GET | `${ProjectCode}-${Environment}-sqs-size` |
-| 2 | `/infra/vpn_server/start` | POST | `${ProjectCode}-${Environment}-ec2-start` |
-| 3 | `/infra/vpn_server/stop` | POST | `${ProjectCode}-${Environment}-ec2-stop` |
-| 4 | `/infra/vpn_server/status` | GET | `${ProjectCode}-${Environment}-ec2-status` |
-| 5 | `/infra/database/start` | POST | `${ProjectCode}-${Environment}-rds-start` |
-| 6 | `/infra/database/stop` | POST | `${ProjectCode}-${Environment}-rds-stop` |
-| 7 | `/infra/database/status` | GET | `${ProjectCode}-${Environment}-rds-status` |
+| 2 | `/infra/vpn_server/start` | POST | `${ProjectCode}-${Environment}-ec2-manager` |
+| 3 | `/infra/vpn_server/stop` | POST | `${ProjectCode}-${Environment}-ec2-manager` |
+| 4 | `/infra/vpn_server/status` | GET | `${ProjectCode}-${Environment}-ec2-manager` |
+| 5 | `/infra/database/start` | POST | `${ProjectCode}-${Environment}-rds-manager` |
+| 6 | `/infra/database/stop` | POST | `${ProjectCode}-${Environment}-rds-manager` |
+| 7 | `/infra/database/status` | GET | `${ProjectCode}-${Environment}-rds-manager` |
 
 **url-add (`lenie_dev_add_from_chrome_extension`) — 1 endpoint path:**
 
@@ -87,22 +87,18 @@ All 7 `/infra/*` endpoints (infrastructure management — no equivalent in Docke
 
 ### Lambda Functions
 
-**Total: 12 Lambda functions in AWS**
+**Total: 8 Lambda functions in AWS**
 
-**CF-managed via deploy.ini (10 functions):**
+**CF-managed via deploy.ini (6 functions):**
 
 | # | Function Name | Template | Type |
 |---|--------------|----------|------|
 | 1 | `${PC}-${Env}-sqs-size` | `api-gw-infra.yaml` | Inline (simple) |
-| 2 | `${PC}-${Env}-rds-start` | `api-gw-infra.yaml` | Inline (simple) |
-| 3 | `${PC}-${Env}-rds-stop` | `api-gw-infra.yaml` | Inline (simple) |
-| 4 | `${PC}-${Env}-rds-status` | `api-gw-infra.yaml` | Inline (simple) |
-| 5 | `${PC}-${Env}-ec2-status` | `api-gw-infra.yaml` | Inline (simple) |
-| 6 | `${PC}-${Env}-ec2-start` | `api-gw-infra.yaml` | Inline (simple) |
-| 7 | `${PC}-${Env}-ec2-stop` | `api-gw-infra.yaml` | Inline (simple) |
-| 8 | `${PC}-${Env}-sqs-to-rds-lambda` | `sqs-to-rds-lambda.yaml` | S3 packaged (app) |
-| 9 | `${PC}-${Env}-weblink-put-into-sqs` | `lambda-weblink-put-into-sqs.yaml` | S3 packaged (app) |
-| 10 | `${PC}-${Env}-url-add` | `url-add.yaml` | S3 packaged (app) |
+| 2 | `${PC}-${Env}-rds-manager` | `api-gw-infra.yaml` | Inline (simple) |
+| 3 | `${PC}-${Env}-ec2-manager` | `api-gw-infra.yaml` | Inline (simple) |
+| 4 | `${PC}-${Env}-sqs-to-rds-lambda` | `sqs-to-rds-lambda.yaml` | S3 packaged (app) |
+| 5 | `${PC}-${Env}-weblink-put-into-sqs` | `lambda-weblink-put-into-sqs.yaml` | S3 packaged (app) |
+| 6 | `${PC}-${Env}-url-add` | `url-add.yaml` | S3 packaged (app) |
 
 **Non-CF-managed (2 functions) — referenced by api-gw-app.yaml:**
 

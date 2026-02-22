@@ -20,7 +20,6 @@ AUTO_CONFIRM=false
 
 command -v aws > /dev/null 2>&1 || { echo >&2 "aws cli not installed. Aborting..."; exit 1; }
 command -v jq  > /dev/null 2>&1 || { echo >&2 "jq not installed. Aborting..."; exit 1; }
-command -v sponge > /dev/null 2>&1 || { echo >&2 "sponge not installed. For Debian use: apt install moreutils Aborting..."; exit 1; }
 #[ -e /dev/log ] || { echo >&2 "deploy.sh: can't use logger, pleas install syslog-ng or similar software"; exit 1;}
 
 show_help() {
@@ -247,7 +246,7 @@ cf_execute() {
 
   if [ -f  "$parameters_file_full" ]; then
     # update timestamp in parameters file
-    jq '(.[] | select(.ParameterKey == "timestamp") | .ParameterValue) = '\"$(date +%s)\" $parameters_file_full | sponge $parameters_file_full
+    jq '(.[] | select(.ParameterKey == "timestamp") | .ParameterValue) = '\"$(date +%s)\" $parameters_file_full > "${parameters_file_full}.tmp" && mv "${parameters_file_full}.tmp" $parameters_file_full
     create_section="${create_section} --parameters file://${parameters_file_full}"
   fi
 

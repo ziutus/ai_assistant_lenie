@@ -15,12 +15,8 @@ serverless/
 ├── function_list_cf_app.txt   # Functions deployed via CloudFormation (app - include backend/library)
 ├── tmp/                       # Temporary build artifacts (zip files)
 ├── lambdas/                   # Lambda function source code
-│   ├── rds-start/             # Start RDS instance
-│   ├── rds-stop/              # Stop RDS instance
-│   ├── rds-status/            # Check RDS instance status
-│   ├── ec2-start/             # Start EC2 instance
-│   ├── ec2-stop/              # Stop EC2 instance
-│   ├── ec2-status/            # Check EC2 instance status
+│   ├── rds-manager/           # RDS instance management (start/stop/status) — consolidated from rds-start, rds-stop, rds-status
+│   ├── ec2-manager/           # EC2 instance management (start/stop/status) — consolidated from ec2-start, ec2-stop, ec2-status
 │   ├── sqs-size/              # Get SQS queue message count
 │   ├── sqs-into-rds/          # Process SQS messages into RDS (document ingestion)
 │   ├── sqs-weblink-put-into/  # Put web links into SQS queue
@@ -64,12 +60,8 @@ Common variables:
 
 | Function | Env Vars | Description |
 |----------|----------|-------------|
-| `rds-start` | `DB_ID` | Start an RDS instance |
-| `rds-stop` | `DB_ID` | Stop an RDS instance |
-| `rds-status` | `DB_ID` | Check RDS instance status (available/stopped/etc.) |
-| `ec2-start` | `INSTANCE_ID` | Start an EC2 instance |
-| `ec2-stop` | `INSTANCE_ID` | Stop an EC2 instance |
-| `ec2-status` | `INSTANCE_ID` | Check EC2 instance state |
+| `rds-manager` | `DB_ID` | RDS instance management — start/stop/status via API Gateway path routing |
+| `ec2-manager` | `INSTANCE_ID` | EC2 instance management — start/stop/status via API Gateway path routing |
 | `sqs-size` | SSM: `/lenie/dev/sqs_queue/new_links` | Get approximate message count in SQS queue |
 
 #### Document Processing (simple)
