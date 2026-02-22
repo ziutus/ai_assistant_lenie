@@ -9,7 +9,7 @@
   },
   {
     "ParameterKey": "RDSPasswordSecretArn",
-    "ParameterValue": "arn:aws:secretsmanager:us-east-1:049706517731:secret:/lenie/dev/rds/password-rs54LR"
+    "ParameterValue": "/lenie/dev/rds/secret-arn"
   },
   {
     "ParameterKey": "VPCId",

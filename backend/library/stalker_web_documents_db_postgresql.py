@@ -20,13 +20,17 @@ class WebsitesDBPostgreSQL:
                 bool(os.getenv("POSTGRESQL_PASSWORD")),
             )
 
-        self.conn = psycopg2.connect(
-            host=os.getenv("POSTGRESQL_HOST"),
-            database=os.getenv("POSTGRESQL_DATABASE"),
-            user=os.getenv("POSTGRESQL_USER"),
-            password=os.getenv("POSTGRESQL_PASSWORD"),
-            port=os.getenv("POSTGRESQL_PORT")
-        )
+        connect_kwargs = {
+            "host": os.getenv("POSTGRESQL_HOST"),
+            "database": os.getenv("POSTGRESQL_DATABASE"),
+            "user": os.getenv("POSTGRESQL_USER"),
+            "password": os.getenv("POSTGRESQL_PASSWORD"),
+            "port": os.getenv("POSTGRESQL_PORT"),
+        }
+        sslmode = os.getenv("POSTGRESQL_SSLMODE")
+        if sslmode:
+            connect_kwargs["sslmode"] = sslmode
+        self.conn = psycopg2.connect(**connect_kwargs)
 
         self.embedding = os.getenv("EMBEDDING_MODEL")
 

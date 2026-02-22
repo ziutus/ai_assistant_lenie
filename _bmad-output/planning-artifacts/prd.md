@@ -153,12 +153,12 @@ Realizowane po MVP (po fazach Security, MCP Server, Obsidian). Automatyczna anal
 
 Realizowane na samym końcu, po zakończeniu wszystkich pozostałych faz. Umożliwi korzystanie z systemu przez wielu użytkowników na infrastrukturze AWS.
 
-- **B-23: Uwierzytelnianie użytkowników (AWS Cognito)** — Wdrożenie AWS Cognito User Pool do rejestracji i logowania użytkowników. Integracja z API Gateway (Cognito Authorizer) zamiast obecnego statycznego klucza API.
-- **B-24: Własność danych w bazie** — Dodanie kolumny `user_id` (owner) do tabel `web_documents` i `websites_embeddings`. Migracja istniejących danych do domyślnego użytkownika. Indeksy uwzględniające `user_id`.
-- **B-25: Izolacja danych per użytkownik w API** — Wszystkie endpointy filtrują dane po `user_id` z tokena Cognito. Użytkownik widzi i modyfikuje tylko swoje dokumenty.
-- **B-26: Zamiana wspólnego klucza API na tokeny per użytkownik** — Usunięcie mechanizmu `x-api-key` na rzecz JWT z Cognito. Aktualizacja wszystkich klientów (frontend, Chrome extension, add-url app).
-- **B-27: UI logowania/wylogowania** — Ekrany logowania i rejestracji w aplikacjach frontendowych. Obsługa sesji użytkownika i odświeżania tokenów.
-- **B-28: Panel administracyjny użytkowników** — Zarządzanie użytkownikami (lista, blokowanie, usuwanie). Widoczność statystyk per użytkownik (liczba dokumentów, zużycie embeddingów).
+- **B-33: Uwierzytelnianie użytkowników (AWS Cognito)** — Wdrożenie AWS Cognito User Pool do rejestracji i logowania użytkowników. Integracja z API Gateway (Cognito Authorizer) zamiast obecnego statycznego klucza API.
+- **B-34: Własność danych w bazie** — Dodanie kolumny `user_id` (owner) do tabel `web_documents` i `websites_embeddings`. Migracja istniejących danych do domyślnego użytkownika. Indeksy uwzględniające `user_id`.
+- **B-35: Izolacja danych per użytkownik w API** — Wszystkie endpointy filtrują dane po `user_id` z tokena Cognito. Użytkownik widzi i modyfikuje tylko swoje dokumenty.
+- **B-36: Zamiana wspólnego klucza API na tokeny per użytkownik** — Usunięcie mechanizmu `x-api-key` na rzecz JWT z Cognito. Aktualizacja wszystkich klientów (frontend, Chrome extension, add-url app).
+- **B-37: UI logowania/wylogowania** — Ekrany logowania i rejestracji w aplikacjach frontendowych. Obsługa sesji użytkownika i odświeżania tokenów.
+- **B-38: Panel administracyjny użytkowników** — Zarządzanie użytkownikami (lista, blokowanie, usuwanie). Widoczność statystyk per użytkownik (liczba dokumentów, zużycie embeddingów).
 
 ## User Journeys
 

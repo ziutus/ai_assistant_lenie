@@ -92,7 +92,7 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 | EC2 | Application server, bastion host, Jenkins, OpenVPN |
 | EKS | Kubernetes cluster (alternative deployment target) |
 | Route53 | DNS for lenie-ai.eu domain |
-| Secrets Manager | Database credentials |
+| Secrets Manager | Database credentials (auto-generated via `GenerateSecretString`, ARN exported to SSM) |
 | SSM Parameter Store | Cross-stack value sharing |
 | CloudWatch | Logging, Step Function execution monitoring |
 | Budgets | Cost alerts ($8/month threshold) |

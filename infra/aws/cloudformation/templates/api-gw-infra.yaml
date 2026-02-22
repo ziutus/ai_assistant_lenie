@@ -268,7 +268,7 @@ Resources:
           description: "Infrastructure management API"
           version: "2026-02-18T00:00:00Z"
         paths:
-          /infra/sqs/size:
+          /sqs/size:
             get:
               responses:
                 "200":
@@ -313,7 +313,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /infra/vpn_server/start:
+          /vpn_server/start:
             post:
               responses:
                 "200":
@@ -358,7 +358,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /infra/vpn_server/stop:
+          /vpn_server/stop:
             post:
               responses:
                 "200":
@@ -403,7 +403,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /infra/vpn_server/status:
+          /vpn_server/status:
             get:
               responses:
                 "200":
@@ -448,7 +448,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /infra/database/start:
+          /database/start:
             post:
               responses:
                 "200":
@@ -493,7 +493,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /infra/database/stop:
+          /database/stop:
             post:
               responses:
                 "200":
@@ -538,7 +538,7 @@ Resources:
                 requestTemplates:
                   application/json: '{"statusCode": 200}'
                 passthroughBehavior: "when_no_match"
-          /infra/database/status:
+          /database/status:
             get:
               responses:
                 "200":
@@ -665,4 +665,27 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
       SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${LenieApi}/*/*"
+
+  # SSM Parameter exports
+  ApiGatewayInfraIdParameter:
+    Type: 'AWS::SSM::Parameter'
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/apigateway/infra/id'
+      Type: String
+      Value: !Ref LenieApi
+      Description: 'API Gateway infra REST API ID for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+
+  ApiGatewayInfraInvokeUrlParameter:
+    Type: 'AWS::SSM::Parameter'
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/apigateway/infra/invoke-url'
+      Type: String
+      Value: !Sub 'https://${LenieApi}.execute-api.${AWS::Region}.amazonaws.com/v1'
+      Description: 'API Gateway infra invoke URL for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
 

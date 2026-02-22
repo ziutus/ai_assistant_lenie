@@ -104,13 +104,13 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | `vpc.yaml` | VPC, 6 Subnets, IGW, Route Table, SSM | Multi-AZ network (public, private, DB subnets) |
 | `1-domain-route53.yaml` | Route53 Hosted Zone | Domain `lenie-ai.eu` |
 | `security-groups.yaml` | Security Group | SSH access from specific IPs |
-| `secrets.yaml` | Secrets Manager | Database credentials (RDS username/password) |
+| `secrets.yaml` | Secrets Manager, SSM Parameter | Database credentials (auto-generated password, username in `GenerateSecretString`). Exports secret ARN to SSM at `/${ProjectCode}/${Environment}/rds/secret-arn` |
 
 ### Database
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `rds.yaml` | RDS (PostgreSQL), DB Subnet Group, SG | `db.t3.micro` instance, 20GB, snapshot restore support |
+| `rds.yaml` | RDS (PostgreSQL), DB Subnet Group, SG, SecretTargetAttachment | `db.t3.micro` instance, 20GB, snapshot restore support. `SecretTargetAttachment` links Secrets Manager secret to RDS instance (enables future auto-rotation). `RDSPasswordSecretArn` resolved from SSM |
 | `dynamodb-documents.yaml` | DynamoDB Table | Documents table with GSI (DateIndex), PITR for prod |
 
 ### Queues and Notifications
@@ -146,7 +146,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | `lenie-launch-template.yaml` | Launch Template | EC2 launch template |
 | `lambda-rds-start.yaml` | Lambda, IAM Role | REDUNDANT — commented out in deploy.ini; rds-start Lambda is managed by api-gw-infra.yaml. Delete stack `lenie-dev-lambda-rds-start` manually. |
 | `lambda-weblink-put-into-sqs.yaml` | Lambda | Function to put web links into SQS |
-| `sqs-to-rds-lambda.yaml` | Lambda, IAM Role | Transfer messages from SQS to RDS (VPC, layers) |
+| `sqs-to-rds-lambda.yaml` | Lambda, IAM Role | Transfer messages from SQS to RDS (VPC, layers, `POSTGRESQL_SSLMODE: require`) |
 | `url-add.yaml` | Lambda, API GW, API Key, IAM, Logs | URL addition (standalone with its own API Gateway) |
 
 ### API Gateway
@@ -171,7 +171,7 @@ These settings apply to all methods/resources via wildcard `MethodSettings` (`Ht
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `sqs-to-rds-step-function.yaml` | Step Functions, EventBridge, IAM, Logs | Workflow: SQS -> start DB -> process -> stop DB |
+| `sqs-to-rds-step-function.yaml` | Step Functions, EventBridge, IAM, Logs | Workflow: SQS -> start DB -> process -> stop DB. Map state has `Catch` with `States.ALL` to stop DB on Lambda failure (cost protection) |
 
 ### CDN
 
@@ -213,7 +213,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `security-groups.yaml` - SSH access rules
 
 ### Layer 3: Security
-- `secrets.yaml` - database credentials (change the default password manually after creation)
+- `secrets.yaml` - database credentials (password auto-generated via `GenerateSecretString`, secret ARN exported to SSM)
 
 ### Layer 4: Storage
 - `s3.yaml` - video transcription bucket

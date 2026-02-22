@@ -16,6 +16,7 @@ CHANGE_SET=false
 DELETE_COUNT=0
 ACTION=""
 STACK_UPDATED=false
+AUTO_CONFIRM=false
 
 command -v aws > /dev/null 2>&1 || { echo >&2 "aws cli not installed. Aborting..."; exit 1; }
 command -v jq  > /dev/null 2>&1 || { echo >&2 "jq not installed. Aborting..."; exit 1; }
@@ -31,7 +32,8 @@ show_help() {
    -s stage - Deployment stage (currently: dev) (default: $STAGE)
    -d - change default action from Create/Update to Delete
    -t  - create change-sets instead of apply changes (default: $CHANGE_SET)
-
+   --yes, -y - skip confirmation prompt (for automation/CI)
+             must be a separate argument (not combined, e.g. use '-d -y' not '-dy')
 
    -h show this message
 
@@ -112,9 +114,9 @@ create_update_stack() {
 
     cf_execute "${cf_action}" "${stack_name}" "${template}"
 
-    # Auto-redeploy API Gateway after api-gw-app stack update
+    # Auto-redeploy API Gateway after api-gw-app or api-gw-infra stack update
     # Note: In change-set mode (-t), auto-redeploy is skipped even after user approval.
-    # After approving a change-set for api-gw-app, run manually:
+    # After approving a change-set, run manually:
     #   aws apigateway create-deployment --rest-api-id <id> --stage-name v1
     local file_name
     file_name=$(get_file_name "${template}")
@@ -136,6 +138,27 @@ create_update_stack() {
         fi
       else
         log "WARNING: Could not retrieve API Gateway ID from SSM. Auto-redeploy skipped."
+      fi
+    fi
+
+    if [ "${file_name}" == "api-gw-infra" ] && [ "${CHANGE_SET}" != true ] && [ "${STACK_UPDATED}" == true ]; then
+      log "Auto-redeploying API Gateway for ${stack_name}..."
+      local infra_api_id
+      infra_api_id=$(aws --region "${REGION}" ssm get-parameter \
+        --name "/${PROJECT_CODE}/${STAGE}/apigateway/infra/id" \
+        --query 'Parameter.Value' --output text 2>/dev/null) || true
+      if [ -n "${infra_api_id}" ]; then
+        local infra_deploy_output
+        if infra_deploy_output=$(aws --region "${REGION}" apigateway create-deployment \
+          --rest-api-id "${infra_api_id}" --stage-name v1 \
+          --description "Auto-deploy after CF stack update ${DATE}" 2>&1); then
+          log "API Gateway infra redeployed successfully (API ID: ${infra_api_id})"
+        else
+          log "WARNING: API Gateway infra auto-redeploy failed: ${infra_deploy_output}"
+          log "Run manually: aws apigateway create-deployment --rest-api-id ${infra_api_id} --stage-name v1"
+        fi
+      else
+        log "WARNING: Could not retrieve infra API Gateway ID from SSM. Auto-redeploy skipped."
       fi
     fi
   done
@@ -281,6 +304,16 @@ delete_stack(){
   done
 }
 
+# Parse long-form flags before getopts (getopts doesn't handle long options)
+REMAINING_ARGS=()
+for arg in "$@"; do
+  case "$arg" in
+    --yes|-y) AUTO_CONFIRM=true ;;
+    *) REMAINING_ARGS+=("$arg") ;;
+  esac
+done
+set -- "${REMAINING_ARGS[@]}"
+
 # Parse parameters
 while getopts "h:s:r:dc:p:t" opt; do
   case "$opt" in
@@ -306,7 +339,6 @@ done
 shift $((OPTIND-1))
 
 [ "${1:-}" = "--" ] && shift
-
 
 if [ -z "${REGION}" ]; then echo "aws-region is required"; show_help; fi
 if [ -z "${PROJECT_CODE}" ]; then echo "PROJECT_CODE is required"; show_help; fi
@@ -334,8 +366,33 @@ if [ ${#TEMPLATES[@]} -eq 0 ] && [ ${#COMMON_TEMPLATES[@]} -eq 0 ]; then
     exit 1
 fi
 
+# Determine action type for display
 if [ "$ACTION" == "delete" ]; then
-  if [ -z "${DELETE_COUNT}" ]; then
+  ACTION_TYPE="DELETE"
+elif [ "${CHANGE_SET}" == true ]; then
+  ACTION_TYPE="CHANGE-SET"
+else
+  ACTION_TYPE="CREATE/UPDATE"
+fi
+
+TEMPLATE_COUNT=$(( ${#TEMPLATES[@]} + ${#COMMON_TEMPLATES[@]} ))
+
+log "=== Deployment Summary ==="
+log "Action: ${ACTION_TYPE}"
+log "Templates to process: ${TEMPLATE_COUNT}"
+log "========================="
+log ""
+
+if [ "$AUTO_CONFIRM" != "true" ]; then
+  read -r -p "Continue with deployment? (y/N) " confirm
+  if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+    echo "Deployment cancelled."
+    exit 0
+  fi
+fi
+
+if [ "$ACTION" == "delete" ]; then
+  if [ -z "${DELETE_COUNT}" ] && [ "$AUTO_CONFIRM" != "true" ]; then
     read -p "Removing ALL stacks. Are you sure? (y/n)" -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then

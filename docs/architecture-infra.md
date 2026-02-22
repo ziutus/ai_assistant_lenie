@@ -35,7 +35,7 @@ API Gateway serves as managed entry point with API key authentication.
 | Compute | ec2-lenie, lambda-rds-start, lambda-weblink-put-into, sqs-to-rds-lambda | EC2 (t4g.micro ARM64), Lambda functions |
 | API | api-gw-infra, api-gw-app | 2 API Gateway templates; 3 REST APIs total (infra, app, url-add — /url_add also consolidated into app) |
 | DNS | 1-domain-route53 | lenie-ai.eu hosted zone |
-| Orchestration | sqs-to-rds-step-function | Workflow: SQS → start DB → process → stop DB |
+| Orchestration | sqs-to-rds-step-function | Workflow: SQS → start DB → process → stop DB (Catch on Lambda failure stops DB to avoid costs) |
 | Governance | organization, identityStore, scp-*, budget | AWS Organization, SCPs, $8/month budget |
 
 **Lambda Functions (11):**

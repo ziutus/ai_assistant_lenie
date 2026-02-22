@@ -111,7 +111,7 @@ Supported models:
 ## Patterns & Conventions
 
 - **Provider abstraction**: `ai.py` and `embedding.py` act as routers — they inspect the model name and delegate to the appropriate `api/*` module. New providers should follow this pattern.
-- **Custom ORM**: Database access uses raw `psycopg2` queries, not SQLAlchemy. `StalkerWebDocumentDB` handles single-document CRUD; `WebsitesDBPostgreSQL` handles queries and vector search.
+- **Custom ORM**: Database access uses raw `psycopg2` queries, not SQLAlchemy. `StalkerWebDocumentDB` handles single-document CRUD; `WebsitesDBPostgreSQL` handles queries and vector search. Both support optional SSL via `POSTGRESQL_SSLMODE` env var (required for AWS RDS).
 - **Data classes**: Models in `models/` are plain Python classes (not dataclasses or Pydantic). They use `__init__` with explicit attributes.
 - **Environment-driven config**: All API keys and connection strings come from environment variables (loaded via `dotenv`).
 - **Site-specific rules**: Website content cleanup uses regex rules defined in `data/site_rules.json` and `website/website_text_clean_regexp.py`, targeted at Polish news sites.
@@ -121,6 +121,7 @@ Supported models:
 ```
 # Database
 POSTGRESQL_HOST, POSTGRESQL_DATABASE, POSTGRESQL_USER, POSTGRESQL_PASSWORD, POSTGRESQL_PORT
+POSTGRESQL_SSLMODE  # Optional: set to 'require' for RDS encrypted connections
 
 # LLM / Embedding providers
 OPENAI_API_KEY, OPENAI_ORGANIZATION

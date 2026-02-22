@@ -307,6 +307,13 @@ Resources:
                   }
                 }
               },
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "Next": "Database Should be stopped?",
+                  "Comment": "On Lambda failure (e.g. import error), ensure database is stopped to avoid costs"
+                }
+              ],
               "Next": "Get number of messages in Queue"
             },
             "Get number of messages in Queue": {
