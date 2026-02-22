@@ -171,6 +171,7 @@ development_status:
   17-2-fix-metrics-endpoint-returns-500: done
   17-3-rename-legacy-lambda-lenie-2-internet-and-db: ready-for-dev
   17-4-fix-sqs-to-rds-lambda-deployment-and-db-connectivity: done  # sqs-into-rds moved to app list, SSL added, Step Function Catch added, Secrets Manager auto-generated password, PostgreSQL user lenie created in RDS
+  17-5-add-api-gateway-custom-domain: done  # B-15: api.dev.lenie-ai.eu — ACM cert, DomainName (REGIONAL, TLS 1.2), BasePathMappings (root->app, /infra->infra), Route53 alias, SSM exports. url-add.yaml fully removed (2 REST APIs: app+infra)
   epic-17-retrospective: optional
 
   # --- Epic 18: Lambda Consolidation Analysis ---
@@ -191,10 +192,10 @@ development_status:
 
   # --- Low Priority / Ideas ---
   B-23-consolidate-lambdas-with-vpc-ipv6-dual-stack: backlog  # Enable IPv6 dual-stack + Egress-Only IGW to merge app-server-db + app-server-internet into one Lambda. BLOCKER: OpenAI API has no IPv6 (no AAAA record as of 2026-02). Options: switch to Bedrock, use NAT64, or wait for OpenAI IPv6 support.
-  B-8-manage-acm-certificates-via-cloudformation-and-ssm: backlog
+  B-8-manage-acm-certificates-via-cloudformation-and-ssm: backlog  # Partially addressed by 17-5: api-gw-custom-domain.yaml manages ACM cert for api.dev.lenie-ai.eu
   B-9-organize-s3-cloudformation-bucket-directory-structure: backlog
   B-13-parameterize-stage-description-for-multi-environment: backlog
-  B-15-add-custom-domains-for-api-gateways: backlog
+  B-15-add-custom-domains-for-api-gateways: done  # Realized as story 17-5: api.dev.lenie-ai.eu
   B-19-convert-ec2-to-spot-with-asg-0-1: backlog
 
   # --- LLM Text Analysis (Phase 6 — po MVP) ---
