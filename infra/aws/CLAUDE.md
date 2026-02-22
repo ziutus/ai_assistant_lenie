@@ -25,6 +25,8 @@ DynamoDB serves as a persistent, always-available store for document metadata. D
 
 No NAT Gateway (saves ~$30/month), RDS started/stopped on demand via Step Functions, DynamoDB PAY_PER_REQUEST billing, budget alerts at $8/month.
 
+See [README.md](README.md) for a detailed inventory of all AWS resources (CloudFormation stacks, Lambda functions, API Gateway endpoints, parameters, and architecture diagram).
+
 ## Directory Structure
 
 ```
