@@ -186,5 +186,15 @@ development_status:
   B-15-add-custom-domains-for-api-gateways: backlog
   B-19-convert-ec2-to-spot-with-asg-0-1: backlog
 
+  # --- Multiuser (Phase 6 — na samym końcu) ---
+  # Wsparcie wielu użytkowników na AWS. Realizowane jako ostatnia faza,
+  # po zakończeniu wszystkich pozostałych prac (Security, MCP Server, Obsidian).
+  B-23-implement-user-authentication-with-aws-cognito: backlog
+  B-24-add-user-ownership-to-database-schema: backlog
+  B-25-enforce-data-isolation-per-user-in-api-endpoints: backlog
+  B-26-replace-shared-api-key-with-per-user-auth-tokens: backlog
+  B-27-add-login-logout-ui-to-frontend-applications: backlog
+  B-28-add-user-management-admin-panel: backlog
+
   # --- Done ---
   B-7-merge-helm-s3-and-cloudfront-into-single-template: done
