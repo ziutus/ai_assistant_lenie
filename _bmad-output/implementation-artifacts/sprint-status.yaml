@@ -184,6 +184,7 @@ development_status:
   # --- Future Backlog ---
 
   # --- Medium Priority ---
+  B-39-delegate-dns-subzones-per-environment: backlog  # Split lenie-ai.eu into delegated subzones: main zone (root + NS delegations only) + per-env subzones (dev.lenie-ai.eu, prod.lenie-ai.eu). Enables multi-account (049706517731) and multi-cloud (GCP k8s.lenie-ai.eu). Prerequisite for multi-env. Remove 1-domain-route53.yaml, create new templates. $0.50/month per subzone.
   B-21-split-shared-lambda-execution-role-into-per-function-roles: backlog
   B-6-migrate-api-gw-app-stage-to-separate-resource: backlog
   B-10-create-apigw-cloudwatch-iam-role-in-cloudformation: backlog
