@@ -74,7 +74,7 @@ Example: template `templates/vpc.yaml` in the `dev` environment of project `leni
 
 Configuration defining which templates are deployed per environment. INI format with per-environment sections.
 
-- `[common]` - templates deployed once per region (used only for `prod`)
+- `[common]` - account-wide resources deployed once (stacks named `lenie-all-<template>`): organization, SCPs
 - `[dev]` - currently the only active environment (post-MVP: add `[prod]`, `[qa]`)
 - Lines starting with `;` are commented out (template skipped)
 
@@ -128,6 +128,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | `s3-cloudformation.yaml` | S3 Bucket, SSM | Lambda code and CF artifacts bucket |
 | `s3-website-content.yaml` | S3 Bucket, Bucket Policy, SSM | Website content storage (`lenie-{stage}-website-content`, AES256) |
 | `s3-app-web.yaml` | S3 Bucket, Bucket Policy, SSM | Frontend hosting bucket (`lenie-{stage}-app-web`, CloudFront OAC) |
+| `s3-app2-web.yaml` | S3 Bucket, Bucket Policy, SSM | Target multi-user UI hosting bucket (`lenie-{stage}-app2-web`, CloudFront OAC) |
 | `s3-landing-web.yaml` | S3 Bucket, Bucket Policy, SSM | Landing page hosting bucket (`lenie-{stage}-landing-web`, CloudFront OAC) |
 | `helm.yaml` | S3 Bucket, Bucket Policy, CloudFront OAI, CloudFront Distribution | Helm chart repository and CDN (`helm.{env}.lenie-ai.eu`) |
 
@@ -180,21 +181,30 @@ These settings apply to all methods/resources via wildcard `MethodSettings` (`Ht
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `cloudfront-app.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for frontend application (`app.{env}.lenie-ai.eu`) with SPA error responses (403/404 → index.html) and Route53 alias record |
+| `cloudfront-app2.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for target multi-user UI (`app2.{env}.lenie-ai.eu`) with SPA error responses and Route53 alias record |
 | `cloudfront-landing.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for landing page (`www.lenie-ai.eu`) with static 404 error page and Route53 alias record |
 
 ### Email
 
 *(SES template `ses.yaml` removed during legacy resource cleanup. SES is no longer used by the application.)*
 
-### Organization and Governance
+### Organization and Governance (`[common]` section — stacks named `lenie-all-*`)
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `organization.yaml` | AWS Organization | Organization (FeatureSet: ALL) |
-| `identityStore.yaml` | Identity Store Group, Membership | Developer group and user assignment |
-| `scp-block-all.yaml` | SCP | Block all actions (for inactive accounts) |
-| `scp-block-sso-creation.yaml` | SCP | Block SSO instance creation |
-| `scp-only-allowed-reginos.yaml` | SCP | Restrict to regions: eu-west-1/2, eu-central-1, us-east-1 |
+| `organization.yaml` | AWS Organization | Organization (FeatureSet: ALL). Exports `organization-root-id` for use by SCP templates |
+| `scp-block-sso-creation.yaml` | SCP | Block SSO instance creation. Auto-attached to organization root |
+| `scp-only-allowed-reginos.yaml` | SCP | Restrict to regions: eu-west-1/2, eu-central-1, us-east-1. Auto-attached to organization root |
+
+**PREREQUISITE for fresh account setup:** Before deploying SCP stacks, enable SCP policy type manually (one-time):
+```bash
+aws organizations enable-policy-type --root-id <ROOT_ID> --policy-type SERVICE_CONTROL_POLICY
+```
+CloudFormation does not support enabling policy types.
+
+**Removed templates:**
+- `identityStore.yaml` — template exists but not deployed (Identity Store `d-9067dcf0bd` no longer exists)
+- `scp-block-all.yaml` — available for inactive accounts, not deployed by default
 
 ### Monitoring
 
@@ -205,6 +215,11 @@ These settings apply to all methods/resources via wildcard `MethodSettings` (`Ht
 ## Recommended Deployment Order (New Environment)
 
 Stacks have dependencies between them. When creating a new environment from scratch, deploy templates in layer order as defined in `deploy.ini [dev]` section:
+
+### Layer 0: Account-wide (`[common]`, stacks `lenie-all-*`)
+- `organization.yaml` - AWS Organization (prerequisite: enable SCP policy type manually)
+- `scp-block-sso-creation.yaml` - Block SSO creation (auto-attached to root)
+- `scp-only-allowed-reginos.yaml` - Region restrictions (auto-attached to root)
 
 ### Layer 1: Foundation
 - `env-setup.yaml` - base configuration (SSM parameters)
@@ -224,6 +239,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `dynamodb-documents.yaml` - documents table
 - `s3-website-content.yaml` - website content storage
 - `s3-app-web.yaml` - frontend hosting bucket
+- `s3-app2-web.yaml` - target multi-user UI hosting bucket
 - `s3-landing-web.yaml` - landing page hosting bucket
 - `sqs-documents.yaml` - document processing queue
 - `sqs-application-errors.yaml` - DLQ with email notification
@@ -249,7 +265,8 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `sqs-to-rds-step-function.yaml` - SQS -> start DB -> process -> stop DB
 
 ### Layer 8: CDN
-- `cloudfront-app.yaml` - CDN for frontend application
+- `cloudfront-app.yaml` - CDN for frontend application (`app.{env}.lenie-ai.eu`)
+- `cloudfront-app2.yaml` - CDN for target multi-user UI (`app2.{env}.lenie-ai.eu`)
 - `cloudfront-landing.yaml` - CDN for landing page (`www.lenie-ai.eu`)
 - `helm.yaml` - Helm chart repository and CDN
 

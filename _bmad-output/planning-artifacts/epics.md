@@ -13,7 +13,7 @@ inputDocuments:
 
 ## Overview
 
-This document provides the complete epic and story breakdown for lenie-server-2025. Sprint 4 (Epics 13–16) covers AWS Infrastructure Consolidation & Tooling addressing 6 backlog items: B-4, B-5, B-11, B-12, B-14, B-19. Sprint 5 (Epics 17–18) covers Operational Fixes & Lambda Analysis — deployment safety, bug fixes, database connectivity, API Gateway custom domain (B-15), and Lambda consolidation analysis.
+This document provides the complete epic and story breakdown for lenie-server-2025. Sprint 4 (Epics 13–16) covers AWS Infrastructure Consolidation & Tooling addressing 6 backlog items: B-4, B-5, B-11, B-12, B-14, B-19. Sprint 5 (Epics 17–18) covers Operational Fixes & Lambda Analysis — deployment safety, bug fixes, database connectivity, API Gateway custom domain (B-15), and Lambda consolidation analysis. Backlog section includes completed non-sprint work (landing page deployment, app2 infrastructure) and Epic 19 (Multi-User Admin Interface).
 
 ## Requirements Inventory
 
@@ -746,3 +746,143 @@ so that I can reduce infrastructure complexity and maintenance overhead.
 **Then** a joint recommendation is provided: consolidate EC2 only, RDS only, both into one function, or keep all separate
 
 **Status:** done
+
+---
+
+## Backlog: Frontend & Multi-User Platform
+
+### Overview
+
+Work completed outside of Sprint 4/5 scope: landing page deployment and app2 (multi-user UI) infrastructure setup. Epic 19 captures the future development of the target multi-user admin interface.
+
+### Completed Work (Non-Sprint)
+
+**Landing Page (www.lenie-ai.eu):**
+- Migrated landing page to monorepo (`web_landing_page/`): Next.js 14.2 + React 18 + Tailwind 3.4
+- Completed TypeScript migration (45 files JSX→TSX)
+- Deployed on S3 + CloudFront via CloudFormation stacks (`s3-landing-web`, `cloudfront-landing`)
+- Status: **LIVE** — publicly accessible at `www.lenie-ai.eu`
+
+**app2 Infrastructure (app2.dev.lenie-ai.eu):**
+- Created `s3-app2-web.yaml` — S3 bucket with CloudFront OAC, AES256 encryption, fully blocked public access
+- Created `cloudfront-app2.yaml` — CloudFront distribution with SPA routing, TLSv1.2, Route53 alias
+- Added both templates to `deploy.ini [dev]` (Layer 4 and Layer 8)
+- `web_interface_target/` — purchased layout build artifacts stored as visual/structural reference
+- Status: **Deployed** — purchased layout build is live at `app2.dev.lenie-ai.eu` (publicly accessible, **requires immediate auth protection**)
+
+---
+
+## Epic 19: Multi-User Admin Interface (app2) — PRIORITY
+
+**URGENT:** app2 is currently publicly accessible at `app2.dev.lenie-ai.eu` without any authentication. Story 19.2 (login) is the highest priority to hide the UI behind credentials.
+
+Developer has a new admin interface at `app2.dev.lenie-ai.eu` that supports multiple users — built from scratch using the purchased layout (`web_interface_target/`) as partial structural/visual base, with own code (license restriction prevents direct reuse of purchased layout).
+
+**Stories:** 19-1, 19-2, 19-3, 19-4
+
+Implementation notes:
+- **app2 is LIVE and publicly accessible** — authentication is the most urgent task
+- Infrastructure already provisioned and deployed (S3 + CloudFront stacks)
+- `web_interface_target/` contains build artifacts only (no source code) — serves as design reference
+- Tech stack from reference layout: React 18, Redux, React Bootstrap, TypeScript, Sass
+- Current single-user app: `web_interface_react/` at `app.dev.lenie-ai.eu`
+- This epic is a major effort — will likely span multiple sprints
+- Auth approach: simple hardcoded credentials (env vars) as initial solution; AWS Cognito planned for Phase 7
+
+### Story 19.1: Scaffold Multi-User App Project
+
+As a **developer**,
+I want to create a new web application project (`web_interface_app2/`) with a modern React + TypeScript stack,
+so that development of the multi-user interface can begin with a clean, properly structured codebase.
+
+**Acceptance Criteria:**
+
+**Given** the purchased layout uses React 18, Redux, React Bootstrap, TypeScript, and Sass
+**When** the developer scaffolds the new project
+**Then** the project uses a compatible modern stack (Vite + React 18 + TypeScript + Redux Toolkit + React Bootstrap)
+**And** the project is created in `web_interface_app2/` directory
+**And** it builds and runs on port 3001
+
+**Given** the app2 CloudFront distribution exists
+**When** the developer configures the build
+**Then** static export is compatible with S3 + CloudFront SPA hosting (index.html fallback)
+
+**Status:** ready-for-dev
+
+### Story 19.2: Add Login Page and Route Protection — URGENT
+
+As a **developer**,
+I want app2 to require login before showing any content,
+so that the admin interface is not publicly accessible to unauthorized users.
+
+**Acceptance Criteria:**
+
+**Given** app2 is publicly accessible at `app2.dev.lenie-ai.eu` without authentication
+**When** the developer adds a login page
+**Then** all routes except `/login` redirect to the login page when the user is not authenticated
+**And** the login page has a simple form with username and password fields
+
+**Given** the login credentials are stored as environment variables (hardcoded approach)
+**When** the user submits correct credentials
+**Then** the app stores a session token (JWT or simple token) in localStorage
+**And** the user is redirected to the main dashboard
+**And** all protected routes become accessible
+
+**Given** the user submits incorrect credentials
+**When** the login form processes the submission
+**Then** an error message is displayed ("Invalid credentials")
+**And** the user remains on the login page
+
+**Given** a simple backend auth endpoint is needed
+**When** the developer implements it
+**Then** the endpoint validates credentials against environment variables (`APP2_AUTH_USERNAME`, `APP2_AUTH_PASSWORD`)
+**And** returns a signed token on success (e.g., JWT with expiration)
+
+**Given** the user's session expires or token is invalid
+**When** the user tries to access a protected route
+**Then** the user is redirected to the login page
+
+**Priority:** URGENT — app2 is publicly accessible
+**Status:** ready-for-dev
+
+### Story 19.3: Implement Core Layout and Navigation
+
+As a **developer**,
+I want to implement the core layout structure (sidebar, header, main content area) inspired by the purchased layout,
+so that the application has a professional multi-user admin interface look and feel.
+
+**Acceptance Criteria:**
+
+**Given** `web_interface_target/` contains the purchased layout build artifacts
+**When** the developer reviews the layout structure
+**Then** the new app recreates the visual structure with own code (sidebar navigation, header bar, content area)
+**And** responsive design works on desktop and tablet
+
+**Given** the current app has 7 pages (document list, search, link/webpage/youtube/movie editors)
+**When** the developer plans the navigation
+**Then** the sidebar includes routes for all existing features plus user management (future)
+
+**Given** Story 19.2 (login) is implemented
+**When** the layout is rendered
+**Then** all layout pages are behind the authentication guard
+
+**Status:** ready-for-dev
+
+### Story 19.4: Connect Backend API
+
+As a **developer**,
+I want the new multi-user interface to connect to the existing backend API,
+so that all current functionality (document CRUD, search, AI operations) works through the new UI.
+
+**Acceptance Criteria:**
+
+**Given** the backend API is accessible at `api.dev.lenie-ai.eu`
+**When** the developer integrates API calls
+**Then** all existing endpoints work: document list, get, save, delete, search, download content, AI embedding
+**And** the `x-api-key` authentication header is included in all requests
+
+**Given** the current app (`web_interface_react/`) has working API integration
+**When** the developer reviews its implementation
+**Then** the API service layer is adapted for the new app (axios, error handling, auth)
+
+**Status:** ready-for-dev

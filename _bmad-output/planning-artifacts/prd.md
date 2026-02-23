@@ -54,6 +54,10 @@ editHistory:
     changes: 'Updated from Sprint 3 (Code Cleanup) to Sprint 4 (AWS Infrastructure Consolidation & Tooling). 6 backlog stories: B-4, B-5, B-11, B-12, B-14, B-19. Added API Gateway Architecture Principle section.'
   - date: '2026-02-21'
     changes: 'Removed all references to web_add_url_react (archived and deleted from project). Chrome extension is the sole content submission interface. Removed FR17 (add-url app URL update). Updated NFR5, risk mitigation, user journeys, and technical context.'
+  - date: '2026-02-23'
+    changes: 'Added landing page (www.lenie-ai.eu) and app2 infrastructure (app2.dev.lenie-ai.eu) to Technical Context. Updated Phase 7 with app2 multi-user UI infrastructure readiness. Updated deploy.ini counts (30 templates in [dev], 3 in [common]). Added web_interface_target reference layout info.'
+  - date: '2026-02-23'
+    changes: 'Added Phase 5 (RSS & Slack Integration) with 3 backlog items: B-40 (Slack workspace + webhooks for notifications), B-41 (RSS feed ingestion with LLM filtering, starting with AWS Whats New), B-42 (Slack Bot for user queries via Socket Mode). Renumbered Obsidian → Phase 6, LLM Text Analysis → Phase 7, Multiuser → Phase 8.'
 ---
 
 # Product Requirements Document - lenie-server-2025
@@ -134,13 +138,21 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 - Claude Desktop integration (configure Lenie-AI as MCP server)
 - API adaptation for MCP tool consumption
 
-### Phase 5 (Future — Obsidian Integration)
+### Phase 5 (Future — RSS & Slack Integration)
+
+Bidirectional communication channel (Slack) and new automated data source (RSS feeds). Enables proactive notifications about errors and interesting content, and allows querying the system from mobile via Slack. Phased: webhooks first (simple, serverless-friendly), then Slack Bot (requires persistent process or Socket Mode).
+
+- **B-40: Slack Workspace & Incoming Webhooks** — Create Slack workspace (free plan). Configure Incoming Webhook for a `#notifications` channel. Integrate webhook into existing error handling pipeline (alongside SNS email). Send notifications on: document processing errors, SQS DLQ messages. Store webhook URL in Secrets Manager (or SSM SecureString). Add CloudFormation parameter for webhook URL.
+- **B-41: RSS Feed Ingestion with LLM Filtering** — New data source: RSS feeds (starting with AWS "What's New" — `https://aws.amazon.com/about-aws/whats-new/recent/feed/`). Daily scheduled Lambda (EventBridge cron) fetches RSS, parses entries, sends each to LLM for relevance scoring (prompt: "Is this relevant to: serverless, containers, PostgreSQL, AI/ML, security?"). Relevant entries are submitted to the existing document pipeline (`/url_add` flow via SQS). Store last-processed entry timestamp in DynamoDB to avoid duplicates. Notify via Slack webhook when interesting articles are found.
+- **B-42: Slack Bot for User Queries (Socket Mode)** — Slack App with Bot user using Socket Mode (no public endpoint required). Bot listens for messages and supports commands: `search <query>` (calls `/website_similar` for vector search), `status` (returns SQS queue size, RDS status), `recent` (lists last N processed documents). Requires a persistent process (EC2, ECS, or always-on Lambda via provisioned concurrency). Evaluate cost trade-offs: EC2 (already exists, add as systemd service) vs ECS Fargate (~$3-5/month) vs Socket Mode on existing infrastructure.
+
+### Phase 6 (Future — Obsidian Integration)
 
 - Obsidian vault integration (synchronization, linking, note creation)
 - Semantic search from within Obsidian via Claude Desktop + MCP
 - Advanced vector search refinements for personal knowledge management
 
-### Phase 6 (Future — LLM Text Analysis)
+### Phase 7 (Future — LLM Text Analysis)
 
 Realizowane po MVP (po fazach Security, MCP Server, Obsidian). Automatyczna analiza tekstu dokumentów przez LLM, zwracająca ustrukturyzowany JSON z metadanymi.
 
@@ -149,16 +161,19 @@ Realizowane po MVP (po fazach Security, MCP Server, Obsidian). Automatyczna anal
 - **B-31: UI wyników analizy we frontendzie** — Wyświetlanie wyników analizy na stronie edycji dokumentu. Możliwość ręcznej korekty wyników. Filtrowanie listy dokumentów po metadanych z analizy (autor, kraj, temat).
 - **B-32: Batch analysis istniejących dokumentów** — Skrypt przetwarzający dokumenty bez analizy (analogiczny do `web_documents_do_the_needful_new.py`). Nowy status dokumentu w pipeline (np. `ANALYSIS_NEEDED` → `ANALYSIS_DONE`). Integracja z Step Function/SQS na AWS.
 
-### Phase 7 (Future — Multiuser Support on AWS)
+### Phase 8 (Future — Multiuser Support on AWS)
 
 Realizowane na samym końcu, po zakończeniu wszystkich pozostałych faz. Umożliwi korzystanie z systemu przez wielu użytkowników na infrastrukturze AWS.
+
+**Infrastructure status (2026-02-23):** app2 hosting infrastructure is ready — S3 bucket (`s3-app2-web.yaml`) and CloudFront distribution (`cloudfront-app2.yaml`) templates created and added to deploy.ini. Target domain: `app2.dev.lenie-ai.eu`. A purchased layout (`web_interface_target/`) provides visual/structural reference for the new multi-user admin interface. License restriction prevents direct reuse — new UI will be built from scratch using layout as partial base (React 18, Redux, React Bootstrap, TypeScript, Sass stack). See Epic 19 in `epics.md`.
 
 - **B-33: Uwierzytelnianie użytkowników (AWS Cognito)** — Wdrożenie AWS Cognito User Pool do rejestracji i logowania użytkowników. Integracja z API Gateway (Cognito Authorizer) zamiast obecnego statycznego klucza API.
 - **B-34: Własność danych w bazie** — Dodanie kolumny `user_id` (owner) do tabel `web_documents` i `websites_embeddings`. Migracja istniejących danych do domyślnego użytkownika. Indeksy uwzględniające `user_id`.
 - **B-35: Izolacja danych per użytkownik w API** — Wszystkie endpointy filtrują dane po `user_id` z tokena Cognito. Użytkownik widzi i modyfikuje tylko swoje dokumenty.
-- **B-36: Zamiana wspólnego klucza API na tokeny per użytkownik** — Usunięcie mechanizmu `x-api-key` na rzecz JWT z Cognito. Aktualizacja wszystkich klientów (frontend, Chrome extension, add-url app).
-- **B-37: UI logowania/wylogowania** — Ekrany logowania i rejestracji w aplikacjach frontendowych. Obsługa sesji użytkownika i odświeżania tokenów.
+- **B-36: Zamiana wspólnego klucza API na tokeny per użytkownik** — Usunięcie mechanizmu `x-api-key` na rzecz JWT z Cognito. Aktualizacja wszystkich klientów (frontend, Chrome extension).
+- **B-37: UI logowania/wylogowania** — Ekrany logowania i rejestracji w aplikacjach frontendowych (app2). Obsługa sesji użytkownika i odświeżania tokenów.
 - **B-38: Panel administracyjny użytkowników** — Zarządzanie użytkownikami (lista, blokowanie, usuwanie). Widoczność statystyk per użytkownik (liczba dokumentów, zużycie embeddingów).
+- **B-39: Multi-user Admin Interface (app2)** — **URGENT:** app2 jest publicznie dostępna bez uwierzytelniania. Pierwszym krokiem jest dodanie prostego logowania (hardcoded credentials z env vars: `APP2_AUTH_USERNAME`, `APP2_AUTH_PASSWORD`) i ochrona wszystkich tras. Następnie: scaffold projektu (Vite + React 18 + TypeScript + Redux Toolkit + React Bootstrap), layout i nawigacja wzorowane na zakupionym szablonie, podpięcie istniejącego backend API. Infrastruktura S3 + CloudFront wdrożona. Docelowo migracja na AWS Cognito (B-33).
 
 ## User Journeys
 
@@ -235,6 +250,13 @@ Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway
 - `049706517731` — TARGET migration account (will be used after full migration including RDS data)
 
 **Deployment script:** `infra/aws/serverless/zip_to_s3.sh` sources `env.sh` by default, which targets account `008971653395`. The script currently provides no account visibility — a developer could source the wrong env file and deploy to the wrong account without warning.
+
+**Frontend deployments (current state as of 2026-02-23):**
+- **React admin app** (`web_interface_react/`): `app.dev.lenie-ai.eu` — S3 + CloudFront, active single-user interface
+- **Landing page** (`web_landing_page/`): `www.lenie-ai.eu` — S3 + CloudFront, Next.js 14.2 + TypeScript static export, **LIVE**
+- **Target multi-user UI** (`web_interface_target/`): `app2.dev.lenie-ai.eu` — S3 + CloudFront **deployed and publicly accessible**. Build artifacts from purchased layout stored as visual/structural reference. License restriction prevents direct reuse — new UI will be built from scratch using layout as partial base. **URGENT:** currently no authentication — login with hardcoded credentials (env vars) needed ASAP.
+
+**CloudFormation state:** 30 templates in deploy.ini [dev] + 3 in [common] (organization, SCPs). Total 38 .yaml files in templates/.
 
 ## Risk Mitigation
 
