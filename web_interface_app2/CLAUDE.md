@@ -1,0 +1,55 @@
+# web_interface_app2
+
+Admin panel for Lenie AI, deployed at `app2.dev.lenie-ai.eu`.
+
+## Tech Stack
+
+- Vite 6 + React 18 + TypeScript
+- React Bootstrap 2 + Bootstrap 5
+- React Router v6, axios
+
+## Development
+
+```bash
+npm install
+npm run dev      # Dev server on port 3001
+npm run build    # Production build → build/
+npm run lint     # TypeScript check
+```
+
+## Authentication
+
+Uses the existing backend API key as password — no backend changes needed.
+
+- Login form sends `GET /website_list?type=link&limit=1` with `x-api-key` header
+- Success → credentials saved to localStorage (prefix `lenie_app2_`), redirect to dashboard
+- Failure → "Invalid credentials" error message
+
+## Deployment
+
+```bash
+./deploy.sh                    # Full build + deploy to S3 + CF invalidation
+./deploy.sh --skip-build       # Deploy existing build/ only
+./deploy.sh --skip-invalidation  # Skip CF cache invalidation
+```
+
+Target: S3 bucket `lenie-dev-app2-web` + CloudFront distribution `E1NHFTM571WQ7L`.
+
+## Project Structure
+
+```
+src/
+├── main.tsx                  # Entry: AuthProvider + BrowserRouter + Bootstrap CSS
+├── App.tsx                   # Routes: /login (public), /* (RequireAuth)
+├── vite-env.d.ts
+├── types/index.ts            # AuthState, AuthContextType
+├── context/AuthContext.tsx    # Provider with login()/logout(), localStorage persistence
+├── services/
+│   ├── storage.ts            # localStorage helpers (prefix lenie_app2_)
+│   └── api.ts                # axios helper + API key validation
+├── components/RequireAuth.tsx # Route guard → redirect to /login
+├── pages/
+│   ├── LoginPage.tsx         # Login form (Bootstrap Card, centered)
+│   └── DashboardPage.tsx     # Placeholder: "Welcome" + logout
+└── styles/index.css          # Minimal custom styles
+```
