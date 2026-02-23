@@ -3,7 +3,7 @@ variables:
   AWS_REGION: "us-east-1"
   INSTANCE_ID: "i-03908d34c63fce042"
   CI_REGISTRY_IMAGE: "lenie-react-interface"
-  TAG_VERSION: "0.2.9.3"
+  TAG_VERSION: "0.3.13.0"
 
 stages:
   - build
@@ -36,8 +36,8 @@ job_build:
     - echo "Hello, $GITLAB_USER_LOGIN!"
     - echo "Building the project"
     - ls
-    - yarn install
-    - yarn build
+    - npm ci
+    - npm run build
     - ls
   artifacts:
     paths:
