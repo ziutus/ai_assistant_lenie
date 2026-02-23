@@ -418,7 +418,7 @@ function Blog() {
 												id="sidebar-search"
 												placeholder="Type to search..."
 												className="h-full w-full rounded-[50px] border border-[#E1E1E1] bg-white py-[15px] pl-16 pr-8 text-lg outline-none transition-all focus:border-colorOrangyRed"
-												required=""
+												required
 											/>
 											<button
 												type="submit"
@@ -667,7 +667,7 @@ function Blog() {
 												id="sidebar-newsletter"
 												placeholder="Enter your email address"
 												className="h-[60px] w-full rounded-[50px] border border-colorCodGray bg-transparent px-10 py-[15px] text-lg outline-none transition-all placeholder:text-black focus:border-colorOrangyRed"
-												required=""
+												required
 											/>
 											<button
 												type="submit"

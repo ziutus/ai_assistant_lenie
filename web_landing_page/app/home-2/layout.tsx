@@ -1,7 +1,7 @@
 import Header_02 from '@/components/header/Header_02';
 import Footer_02 from '@/components/footer/Footer_02';
 
-function Wrapper02({ children }) {
+function Wrapper02({ children }: { children: React.ReactNode }) {
   return (
     <div className='page-wrapper relative z-[1] bg-white'>
       {/*...::: Header Start :::... */}

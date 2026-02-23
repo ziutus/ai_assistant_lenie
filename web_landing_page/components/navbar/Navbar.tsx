@@ -3,11 +3,16 @@ import { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 
-// eslint-disable-next-line react/prop-types
-const Navbar = ({ mobileMenu, setMobileMenu, color }) => {
-  const [mobileSubMenu, setMobileSubMenu] = useState('');
-  const [mobileSubMenuSub, setMobileSubMenuSub] = useState('');
-  const [menuTitle, setMenuTitle] = useState('');
+interface NavbarProps {
+  mobileMenu: boolean;
+  setMobileMenu: (value: boolean) => void;
+  color?: string;
+}
+
+const Navbar = ({ mobileMenu, setMobileMenu, color }: NavbarProps) => {
+  const [mobileSubMenu, setMobileSubMenu] = useState<string | number>('');
+  const [mobileSubMenuSub, setMobileSubMenuSub] = useState<string | number>('');
+  const [menuTitle, setMenuTitle] = useState<string>('');
 
   const handleMenu = () => {
     setMobileMenu(false);
@@ -15,27 +20,29 @@ const Navbar = ({ mobileMenu, setMobileMenu, color }) => {
     setMobileSubMenuSub('');
   };
 
-  const handleSubMenu = (e, id) => {
+  const handleSubMenu = (e: React.MouseEvent<HTMLElement>, id: number) => {
     e.preventDefault();
     setMobileSubMenu(id);
+    const target = e.target as HTMLElement;
 
-    if (e.target.tagName === 'A') {
-      const content = e.target.firstChild.textContent;
+    if (target.tagName === 'A') {
+      const content = target.firstChild?.textContent ?? '';
       setMenuTitle(content);
     } else {
-      const content = e.target.parentElement.textContent;
+      const content = target.parentElement?.textContent ?? '';
       setMenuTitle(content);
     }
   };
 
-  const handleSubMenuSub = (e, id) => {
+  const handleSubMenuSub = (e: React.MouseEvent<HTMLElement>, id: number) => {
     e.preventDefault();
     setMobileSubMenuSub(id);
-    if (e.target.tagName === 'A') {
-      const content = e.target.firstChild.textContent;
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'A') {
+      const content = target.firstChild?.textContent ?? '';
       setMenuTitle(content);
     } else {
-      const content = e.target.parentElement.textContent;
+      const content = target.parentElement?.textContent ?? '';
       setMenuTitle(content);
     }
   };

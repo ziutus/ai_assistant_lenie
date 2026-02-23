@@ -1,8 +1,7 @@
 import Header_03 from '../header/Header_03';
 import Footer_03 from '../footer/Footer_03';
 
-// eslint-disable-next-line react/prop-types
-const Wrapper_03 = ({ children }) => {
+const Wrapper_03 = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className='page-wrapper relative z-[1] bg-[#F6F6EB]'>
       {/*...::: Header Start :::... */}

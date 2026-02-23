@@ -1,9 +1,9 @@
 import { useState } from 'react';
 
-const useAccordion = (init = 0) => {
-  const [activeIndex, setActiveIndex] = useState(init);
+const useAccordion = (init: number = 0): [number | null, (index: number) => void] => {
+  const [activeIndex, setActiveIndex] = useState<number | null>(init);
 
-  const handleAccordion = (index) => {
+  const handleAccordion = (index: number) => {
     setActiveIndex((prevIndex) => (prevIndex === index ? null : index));
   };
 

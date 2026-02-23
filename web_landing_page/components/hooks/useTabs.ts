@@ -1,9 +1,9 @@
 import { useState } from 'react';
 
-const useTabs = (init = 0) => {
-  const [activeTab, setActiveTab] = useState(init);
+const useTabs = (init: number = 0): [number, (index: number) => void] => {
+  const [activeTab, setActiveTab] = useState<number>(init);
 
-  const handleTabClick = (index) => {
+  const handleTabClick = (index: number) => {
     setActiveTab(index);
   };
 
