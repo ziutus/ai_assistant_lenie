@@ -8,9 +8,7 @@ Source code for Lambda functions and Lambda layers, along with scripts for packa
 serverless/
 ├── env.sh                     # Environment config (old AWS account)
 ├── env_lenie_2025.sh          # Environment config (current AWS account)
-├── create_empty_lambdas.sh    # Create placeholder Lambda functions in AWS
 ├── zip_to_s3.sh               # Package and deploy Lambda code to S3 + update function
-├── function_list.txt          # Legacy function list (manual Lambda management)
 ├── function_list_cf.txt       # Functions deployed via CloudFormation (simple)
 ├── function_list_cf_app.txt   # Functions deployed via CloudFormation (app - include backend/library)
 ├── tmp/                       # Temporary build artifacts (zip files)
@@ -112,14 +110,6 @@ Layer build process:
 
 ## Deployment Scripts
 
-### create_empty_lambdas.sh
-
-Creates placeholder Lambda functions in AWS for functions listed in `function_list.txt`. Checks if each function already exists and skips if so.
-
-```bash
-./create_empty_lambdas.sh
-```
-
 ### zip_to_s3.sh
 
 Packages Lambda code and deploys it. Two modes:
@@ -144,7 +134,7 @@ Process:
 Each Lambda directory contains a `lambda_update.sh` script for quick individual deployment:
 
 ```bash
-cd lambdas/rds-start/
+cd lambdas/sqs-size/
 ./lambda_update.sh
 ```
 
