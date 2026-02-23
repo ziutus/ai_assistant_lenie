@@ -1,0 +1,171 @@
+.audio-main-wrapper{
+    margin-top: 50px;
+    padding: 55px 40px;
+    border: 1px solid #E5E4FF;
+    border-radius: 4px;
+    @media #{$laptop-device} {
+      padding: 45px 20px;
+    }
+    @media #{$smlg-device} {
+      padding: 45px 20px;
+    }
+      .audio-player,
+      .audio-players,
+      .audio-playerer {
+        width: 100%;
+        font-family: arial;
+        color: white;
+        font-size: 0.75em;
+        display: grid;
+        grid-template-rows: 6px auto;
+        .timeline {
+            background: #D8D8FF;
+            width: 100%;
+            position: relative;
+            cursor: pointer;
+            max-width: 70%;
+            left: 50%;
+            transform: translateX(-50%);
+            @media #{$large-mobile} {
+              left: 61%;
+            }
+          .progress {
+            background: var(--color-primary);
+            width: 0%;
+            height: 100%;
+            transition: 0.25s;
+          }
+        }
+        .controls {
+          display: flex;
+          justify-content: space-between;
+          align-items: stretch;
+          padding: 0 20px;
+          margin-top: -24px;
+          @media #{$large-mobile} {
+            padding: 0;
+          }
+          @media #{$sm-layout} {
+                flex-direction: column;
+                align-items: flex-start;
+          }
+          @media #{$large-mobile} {
+                flex-direction: column;
+                align-items: flex-start;
+          }
+          .play-container{
+            height: 40px;
+            width: 40px;
+            border-radius: 50%;
+            background: var(--color-primary);
+            .play{
+                left: 5px !important;
+            }
+          }
+          > * {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--color-primary);
+          }
+          .toggle-play {
+            &.play {
+              cursor: pointer;
+              position: relative;
+              left: 0;
+              height: 0;
+              width: 0;
+              border: 7px solid #0000;
+              border-left: 13px solid white;
+              &:hover {
+                transform: scale(1.1);
+              }
+            }
+            &.pause {
+              height: 15px;
+              width: 20px;
+              cursor: pointer;
+              position: relative;
+              left: 4px;
+              &:before {
+                position: absolute;
+                top: 0;
+                left: 0px;
+                background: white;
+                content: "";
+                height: 15px;
+                width: 3px;
+              }
+              &:after {
+                position: absolute;
+                top: 0;
+                right: 8px;
+                background: white;
+                content: "";
+                height: 15px;
+                width: 3px;
+              }
+              &:hover {
+                transform: scale(1.1);
+              }
+            }
+          }
+          .time {
+            display: flex;
+            justify-content: space-between;
+            width: 85%;
+            > * {
+              padding: 2px;
+              color: var(--color-primary);
+              font-size: 18px;
+            }
+          }
+          .volume-container {
+            cursor: pointer;
+            .volume-button {
+              height: 26px;
+              display: flex;
+              align-items: center;
+              .volume {
+                transform: scale(0.7);
+                color: var(--color-primary);
+              }
+            }
+            position: relative;
+            z-index: 2;
+            .volume-slider {
+              position: absolute;
+              left: -3px; top: 15px;
+              z-index: -1;
+              width: 0;
+              height: 7px;
+              background: #f1f1f1;
+              transition: .0;
+              border-radius: 4px;
+              transform: rotate(-90deg);
+              top: -59px;
+              .volume-percentage {
+                background: var(--color-primary);
+                height: 100%;
+                width: 75%;
+                transition: .3s;
+              }
+            }
+            &:hover {
+              .volume-slider {
+                left: -48px;
+                width: 120px;
+                transform: rotate(-90deg);
+                top: -59px;
+              }
+            }
+          }
+        }
+      }
+}
+
+.audio-main-wrapper-top-bottom{
+    button{
+        max-width: max-content;
+    }
+}
