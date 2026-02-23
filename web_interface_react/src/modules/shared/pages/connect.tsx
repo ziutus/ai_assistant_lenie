@@ -7,23 +7,19 @@ import type { ApiType } from "../../../types";
 
 const Connect: React.FC = () => {
   const navigate = useNavigate();
-  const { setApiKey, setApiUrl, setInfraApiUrl, setApiType } =
+  const { setApiKey, setApiUrl, setApiType, setDatabaseStatus } =
     React.useContext(AuthorizationContext);
 
   const [formApiType, setFormApiType] = useState<ApiType>("AWS Serverless");
-  const [formApiUrl, setFormApiUrl] = useState(DEFAULT_URLS["AWS Serverless"].apiUrl);
-  const [formInfraApiUrl, setFormInfraApiUrl] = useState(DEFAULT_URLS["AWS Serverless"].infraApiUrl);
+  const [formApiUrl, setFormApiUrl] = useState(DEFAULT_URLS["AWS Serverless"]);
   const [formApiKey, setFormApiKey] = useState("");
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState("");
-  const [skipValidation, setSkipValidation] = useState(false);
 
   const handleApiTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newType = e.target.value as ApiType;
     setFormApiType(newType);
-    const defaults = DEFAULT_URLS[newType];
-    setFormApiUrl(defaults.apiUrl);
-    setFormInfraApiUrl(defaults.infraApiUrl);
+    setFormApiUrl(DEFAULT_URLS[newType]);
   };
 
   const handleConnect = async () => {
@@ -34,42 +30,65 @@ const Connect: React.FC = () => {
       return;
     }
 
-    if (skipValidation) {
-      applyAndRedirect();
-      return;
-    }
-
     setIsValidating(true);
+    const headers = { "x-api-key": formApiKey };
+    const timeout = 10000;
+
+    // Step 1: Check infra API — validates key + returns DB status
+    let dbStatus = "unknown";
     try {
-      await axios.get(`${formApiUrl}/website_list`, {
-        params: { type: "link", limit: 1 },
-        headers: { "x-api-key": formApiKey },
-        timeout: 10000,
+      const response = await axios.get(`${formApiUrl}/infra/database/status`, {
+        headers,
+        timeout,
       });
-      applyAndRedirect();
+      dbStatus = response.data;
     } catch (err: any) {
+      setIsValidating(false);
       if (err.response?.status === 403 || err.response?.status === 401) {
         setError("Invalid API key. Check the key and try again.");
       } else if (err.code === "ECONNABORTED") {
-        setError("Connection timed out. Check the server URL or skip validation.");
+        setError("Connection timed out. Check the API URL.");
       } else {
-        setError(`Connection failed: ${err.message}. You can skip validation if the backend is down.`);
+        setError(`Connection failed: ${err.message}`);
       }
-    } finally {
-      setIsValidating(false);
+      return;
     }
+
+    // Step 2: If DB is up, also validate app API key
+    if (dbStatus === "available") {
+      try {
+        await axios.get(`${formApiUrl}/website_list`, {
+          params: { type: "link", limit: 1 },
+          headers,
+          timeout,
+        });
+      } catch (err: any) {
+        setIsValidating(false);
+        if (err.response?.status === 403 || err.response?.status === 401) {
+          setError("Database is up, but App API rejected the key (403). Check your API key.");
+        } else if (err.code === "ECONNABORTED") {
+          setError("Database is up, but App API timed out.");
+        } else {
+          setError(`Database is up, but App API failed: ${err.message}`);
+        }
+        return;
+      }
+    }
+
+    // All checks passed — save DB status and enter the app
+    setIsValidating(false);
+    setDatabaseStatus(dbStatus);
+    applyAndRedirect();
   };
 
   const applyAndRedirect = () => {
     saveConnectionConfig({
       apiType: formApiType,
       apiUrl: formApiUrl,
-      infraApiUrl: formInfraApiUrl,
       apiKey: formApiKey,
     });
     setApiType(formApiType);
     setApiUrl(formApiUrl);
-    setInfraApiUrl(formInfraApiUrl);
     setApiKey(formApiKey);
     navigate("/list");
   };
@@ -95,7 +114,7 @@ const Connect: React.FC = () => {
 
       <div style={{ marginBottom: "15px" }}>
         <label htmlFor="connect-api-url" style={{ display: "block", marginBottom: "4px", fontWeight: 500 }}>
-          Server API URL
+          API URL
         </label>
         <input
           id="connect-api-url"
@@ -105,21 +124,6 @@ const Connect: React.FC = () => {
           style={{ width: "100%", padding: "8px", fontSize: "14px" }}
         />
       </div>
-
-      {formApiType === "AWS Serverless" && (
-        <div style={{ marginBottom: "15px" }}>
-          <label htmlFor="connect-infra-url" style={{ display: "block", marginBottom: "4px", fontWeight: 500 }}>
-            Infra API URL
-          </label>
-          <input
-            id="connect-infra-url"
-            type="text"
-            value={formInfraApiUrl}
-            onChange={(e) => setFormInfraApiUrl(e.target.value)}
-            style={{ width: "100%", padding: "8px", fontSize: "14px" }}
-          />
-        </div>
-      )}
 
       <div style={{ marginBottom: "15px" }}>
         <label htmlFor="connect-api-key" style={{ display: "block", marginBottom: "4px", fontWeight: 500 }}>
@@ -133,17 +137,6 @@ const Connect: React.FC = () => {
           placeholder="Enter your API key"
           style={{ width: "100%", padding: "8px", fontSize: "14px" }}
         />
-      </div>
-
-      <div style={{ marginBottom: "15px" }}>
-        <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-          <input
-            type="checkbox"
-            checked={skipValidation}
-            onChange={(e) => setSkipValidation(e.target.checked)}
-          />
-          Skip validation (use when backend is down)
-        </label>
       </div>
 
       {error && (
