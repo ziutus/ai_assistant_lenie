@@ -188,7 +188,7 @@ development_status:
   B-6-migrate-api-gw-app-stage-to-separate-resource: backlog
   B-10-create-apigw-cloudwatch-iam-role-in-cloudformation: backlog
   B-16-migrate-web-interface-react-from-cra-to-vite: backlog
-  # B-17 removed: web_add_url_react archived, CRA-to-Vite migration no longer applicable
+  # B-17 removed: web_add_url_react archived and deleted from repo. Restore: git checkout archive/web-add-url-react -- _archive/web_add_url_react/
   B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
 
   # --- Low Priority / Ideas ---
