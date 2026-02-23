@@ -39,7 +39,7 @@ function Login() {
 													id="login-email"
 													placeholder="example@gmail.com"
 													className="rounded-[10px] border border-gray-300 bg-white px-6 py-[18px] font-bold text-black outline-none transition-all placeholder:text-slate-500 focus:border-colorOrangyRed"
-													required=""
+													required
 												/>
 											</div>
 											{/* Form Single Input */}
@@ -57,7 +57,7 @@ function Login() {
 													id="login-password"
 													placeholder="............"
 													className="rounded-[10px] border border-gray-300 bg-white px-6 py-[18px] font-bold text-black outline-none transition-all placeholder:text-slate-500 focus:border-colorOrangyRed"
-													required=""
+													required
 												/>
 											</div>
 											{/* Form Single Input */}
@@ -69,7 +69,7 @@ function Login() {
 														className="relative appearance-none text-base after:absolute after:left-0 after:top-[6px] after:h-4 after:w-4 after:rounded-[3px] after:border after:border-[#7F8995] after:bg-white after:text-white after:transition-all after:delay-300 checked:after:border-colorOrangyRed checked:after:bg-colorOrangyRed checked:after:bg-[url(/assets/img_placeholder/th-1/icon-white-checkmark-filled.svg)]"
 														name="login-check"
 														id="login-check"
-														required=""
+														required
 													/>
 													<label
 														htmlFor="login-check"

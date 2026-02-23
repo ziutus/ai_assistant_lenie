@@ -42,7 +42,7 @@ const Home_4 = () => {
                       type='email'
                       placeholder='Enter your email...'
                       className='h-full w-full bg-colorCodGray px-6 pr-[150px]'
-                      required=''
+                      required
                     />
                     <button
                       type='submit'

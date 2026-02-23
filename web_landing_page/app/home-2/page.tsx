@@ -4,13 +4,14 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation } from 'swiper/modules';
+import type { Swiper as SwiperType } from 'swiper';
 import useAccordion from '@/components/hooks/useAccordion';
 
 /* eslint-disable react/no-unescaped-entities */
 
 function Home_2() {
   const [activeIndex, handleAccordion] = useAccordion(0);
-  const swiperRef = useRef(null);
+  const swiperRef = useRef<SwiperType | null>(null);
 
   return (
     <>
@@ -637,7 +638,7 @@ function Home_2() {
                 {/* If we need navigation buttons */}
                 <div className='testimonial-nav'>
                   <button
-                    onClick={() => swiperRef.current.slidePrev()}
+                    onClick={() => swiperRef.current?.slidePrev()}
                     className='testimonial-nav-prev testimonial-nav-dir'
                   >
                     <Image
@@ -654,7 +655,7 @@ function Home_2() {
                     />
                   </button>
                   <button
-                    onClick={() => swiperRef.current.slideNext()}
+                    onClick={() => swiperRef.current?.slideNext()}
                     className='testimonial-nav-next testimonial-nav-dir'
                   >
                     <Image

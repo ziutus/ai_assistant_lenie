@@ -382,7 +382,7 @@ function BlogDetails() {
 															id="comment-name"
 															placeholder="Adam Smith"
 															className="placeholder:[#7F8995] rounded-[10px] border border-gray-300 bg-white px-6 py-[18px] font-semibold text-black outline-none transition-all focus:border-colorOrangyRed"
-															required=""
+															required
 														/>
 													</div>
 													{/* Form Single Input */}
@@ -400,7 +400,7 @@ function BlogDetails() {
 															id="comment-email"
 															placeholder="example@gmail.com"
 															className="placeholder:[#7F8995] rounded-[10px] border border-gray-300 bg-white px-6 py-[18px] font-semibold text-black outline-none transition-all focus:border-colorOrangyRed"
-															required=""
+															required
 														/>
 													</div>
 													{/* Form Single Input */}
@@ -421,7 +421,7 @@ function BlogDetails() {
 															id="comment-message"
 															className="placeholder:[#7F8995] min-h-[180px] rounded-[10px] border border-gray-300 bg-white px-6 py-[18px] font-semibold text-black outline-none transition-all focus:border-colorOrangyRed"
 															placeholder="Write your message here..."
-															required=""
+															required
 															defaultValue={"                            "}
 														/>
 													</div>
@@ -458,7 +458,7 @@ function BlogDetails() {
 												id="sidebar-search"
 												placeholder="Type to search..."
 												className="h-full w-full rounded-[50px] border border-[#E1E1E1] bg-white py-[15px] pl-16 pr-8 text-lg outline-none transition-all focus:border-colorOrangyRed"
-												required=""
+												required
 											/>
 											<button
 												type="submit"
@@ -707,7 +707,7 @@ function BlogDetails() {
 												id="sidebar-newsletter"
 												placeholder="Enter your email address"
 												className="h-[60px] w-full rounded-[50px] border border-colorCodGray bg-transparent px-10 py-[15px] text-lg outline-none transition-all placeholder:text-black focus:border-colorOrangyRed"
-												required=""
+												required
 											/>
 											<button
 												type="submit"

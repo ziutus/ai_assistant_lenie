@@ -31,7 +31,7 @@ const SpaceGrotesk = localFont({
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' });
 
-export default function RootLayout({ children }) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
 
   const jos_options = {

@@ -28,7 +28,7 @@ const Footer_02 = () => {
                     id='newsletter-email'
                     placeholder='Enter your email'
                     className='p-y-[18px] h-full w-full rounded-[50px] border-[1px] border-white bg-transparent px-[24px] pr-20 outline-none sm:pr-48'
-                    required=''
+                    required
                   />
                   <button
                     type='submit'
