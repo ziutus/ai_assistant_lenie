@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "ProjectCode",
+    "ParameterValue": "lenie"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "AcmCertificateArn",
+    "ParameterValue": "arn:aws:acm:us-east-1:008971653395:certificate/086deba9-90e6-454a-b9d7-e2111542f150"
+  },
+  {
+    "ParameterKey": "HostedZoneId",
+    "ParameterValue": "Z07906713RCJHAZLQEP4C"
+  }
+]

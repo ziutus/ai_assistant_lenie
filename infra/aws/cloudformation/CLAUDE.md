@@ -102,7 +102,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 |----------|-----------|-------------|
 | `env-setup.yaml` | SSM Parameter | Runtime version configuration (python3.11) |
 | `vpc.yaml` | VPC, 6 Subnets, IGW, Route Table, SSM | Multi-AZ network (public, private, DB subnets) |
-| `1-domain-route53.yaml` | Route53 Hosted Zone | Domain `lenie-ai.eu` |
+| `1-domain-route53.yaml` | Route53 Hosted Zone | DISABLED — creates duplicate zone. Domain `lenie-ai.eu` hosted zone is managed by legacy stack `lenie-domain-route53-definition` (with SSM exports for all environments). |
 | `security-groups.yaml` | Security Group | SSH access from specific IPs |
 | `secrets.yaml` | Secrets Manager, SSM Parameter | Database credentials (auto-generated password, username in `GenerateSecretString`). Exports secret ARN to SSM at `/${ProjectCode}/${Environment}/rds/secret-arn` |
 
@@ -128,6 +128,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | `s3-cloudformation.yaml` | S3 Bucket, SSM | Lambda code and CF artifacts bucket |
 | `s3-website-content.yaml` | S3 Bucket, Bucket Policy, SSM | Website content storage (`lenie-{stage}-website-content`, AES256) |
 | `s3-app-web.yaml` | S3 Bucket, Bucket Policy, SSM | Frontend hosting bucket (`lenie-{stage}-app-web`, CloudFront OAC) |
+| `s3-landing-web.yaml` | S3 Bucket, Bucket Policy, SSM | Landing page hosting bucket (`lenie-{stage}-landing-web`, CloudFront OAC) |
 | `helm.yaml` | S3 Bucket, Bucket Policy, CloudFront OAI, CloudFront Distribution | Helm chart repository and CDN (`helm.{env}.lenie-ai.eu`) |
 
 ### Lambda Layers
@@ -179,6 +180,7 @@ These settings apply to all methods/resources via wildcard `MethodSettings` (`Ht
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `cloudfront-app.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for frontend application (`app.{env}.lenie-ai.eu`) with SPA error responses (403/404 → index.html) and Route53 alias record |
+| `cloudfront-landing.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for landing page (`www.lenie-ai.eu`) with static 404 error page and Route53 alias record |
 
 ### Email
 
@@ -207,7 +209,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 ### Layer 1: Foundation
 - `env-setup.yaml` - base configuration (SSM parameters)
 - `budget.yaml` - cost alerts
-- `1-domain-route53.yaml` - domain
+- ~~`1-domain-route53.yaml`~~ - DISABLED (duplicate zone; managed by legacy stack `lenie-domain-route53-definition`)
 
 ### Layer 2: Networking
 - `vpc.yaml` - VPC, subnets, IGW
@@ -222,6 +224,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `dynamodb-documents.yaml` - documents table
 - `s3-website-content.yaml` - website content storage
 - `s3-app-web.yaml` - frontend hosting bucket
+- `s3-landing-web.yaml` - landing page hosting bucket
 - `sqs-documents.yaml` - document processing queue
 - `sqs-application-errors.yaml` - DLQ with email notification
 - `rds.yaml` - database (commented out; deployed separately, managed lifecycle via Step Functions)
@@ -247,6 +250,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 
 ### Layer 8: CDN
 - `cloudfront-app.yaml` - CDN for frontend application
+- `cloudfront-landing.yaml` - CDN for landing page (`www.lenie-ai.eu`)
 - `helm.yaml` - Helm chart repository and CDN
 
 This order is reflected in the `deploy.ini` file under the `[dev]` section. Run `./deploy.sh -p lenie -s dev` to deploy all templates in order.
