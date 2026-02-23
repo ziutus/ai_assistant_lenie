@@ -20,6 +20,14 @@ const Authorization = () => {
   const { fetchSqsSize } = useSqs();
   const navigate = useNavigate();
 
+  // Auto-check infrastructure status on mount
+  React.useEffect(() => {
+    handleDBStatusGet();
+    handleVPNServerStatusGet();
+    fetchSqsSize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const generateClass = (): string => {
     switch (databaseStatus) {
       case "unknown":

@@ -16,7 +16,7 @@ const List = () => {
     onSubmit: () => {},
   });
 
-  const { selectedDocumentType, setSelectedDocumentType, selectedDocumentState, setSelectedDocumentState} = React.useContext(AuthorizationContext);
+  const { selectedDocumentType, setSelectedDocumentType, selectedDocumentState, setSelectedDocumentState, databaseStatus } = React.useContext(AuthorizationContext);
   const { searchInDocument, setSearchInDocument} = React.useContext(AuthorizationContext);
   const { searchType, setSearchType} = React.useContext(AuthorizationContext);
 
@@ -38,11 +38,19 @@ const List = () => {
     handleGetList(selectedDocumentType, selectedDocumentState);
   };
 
+  const dbDown = databaseStatus !== "available";
+
   return (
     <div>
       <h2 style={{ marginBottom: "20px" }}>
         Lista Zapisanych Stron i linków {!!data && `(${data?.length} z ${dataAllLength})`}
       </h2>
+
+      {dbDown && (
+        <p style={{ padding: "15px", background: "#fff3cd", border: "1px solid #ffc107", borderRadius: "4px", marginBottom: "15px" }}>
+          Baza danych jest niedostępna (status: {databaseStatus}). Uruchom bazę danych w panelu po lewej stronie, aby przeglądać dokumenty.
+        </p>
+      )}
 
       <select value={selectedDocumentType} onChange={handleTypeChange}>
         <option value="ALL">ALL</option>
@@ -93,7 +101,7 @@ const List = () => {
         />
         <label htmlFor="similar">Similar</label>
       <button
-        disabled={isLoading}
+        disabled={isLoading || dbDown}
         className={"button"}
         type={"button"}
         onClick={() => handleGetList(selectedDocumentType, selectedDocumentState, searchInDocument)}
