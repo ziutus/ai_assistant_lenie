@@ -6,15 +6,14 @@ export const useDatabase = () => {
   const [message, setMessage] = React.useState<string | false>(false);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isError, setIsError] = React.useState(false);
-  const { apiKey, apiUrl, infraApiUrl, apiType, setDatabaseStatus } =
+  const { apiKey, apiUrl, setDatabaseStatus } =
     React.useContext(AuthorizationContext);
-  const baseUrl = apiType === "AWS Serverless" ? infraApiUrl : apiUrl;
 
   const handleDBStatusGet = async () => {
     setDatabaseStatus("unknown");
     setIsLoading(true);
     try {
-      const response = await axios.get(`${baseUrl}/infra/database/status`, {
+      const response = await axios.get(`${apiUrl}/infra/database/status`, {
         headers: {
           "Content-Type": "application/json",
           "x-api-key": `${apiKey}`,
@@ -47,7 +46,7 @@ export const useDatabase = () => {
     setIsLoading(true);
     try {
       const response = await axios.post(
-        `${baseUrl}/infra/database/start`,
+        `${apiUrl}/infra/database/start`,
         {},
         {
           headers: {
@@ -82,7 +81,7 @@ export const useDatabase = () => {
     setIsLoading(true);
     try {
       const response = await axios.post(
-        `${baseUrl}/infra/database/stop`,
+        `${apiUrl}/infra/database/stop`,
         {},
         {
           headers: {

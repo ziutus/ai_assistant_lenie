@@ -32,8 +32,6 @@ export interface AuthorizationState {
   setApiKey: React.Dispatch<React.SetStateAction<string | undefined>>;
   apiUrl: string;
   setApiUrl: React.Dispatch<React.SetStateAction<string>>;
-  infraApiUrl: string;
-  setInfraApiUrl: React.Dispatch<React.SetStateAction<string>>;
   apiType: ApiType;
   setApiType: React.Dispatch<React.SetStateAction<ApiType>>;
   sqsLength: number;
