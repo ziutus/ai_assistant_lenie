@@ -1,8 +1,0 @@
-rds-start
-rds-stop
-rds-status
-manual-sqs-length
-2_internet
-2_db
-sqs-into-rds
-url-add

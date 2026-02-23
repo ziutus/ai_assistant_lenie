@@ -178,7 +178,7 @@ These settings apply to all methods/resources via wildcard `MethodSettings` (`Ht
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `cloudfront-app.yaml` | CloudFront Distribution, OAC, SSM | CDN for frontend application (`app.{env}.lenie-ai.eu`) |
+| `cloudfront-app.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for frontend application (`app.{env}.lenie-ai.eu`) with SPA error responses (403/404 → index.html) and Route53 alias record |
 
 ### Email
 
