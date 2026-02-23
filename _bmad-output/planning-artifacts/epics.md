@@ -723,7 +723,7 @@ so that I can reduce infrastructure complexity and maintenance overhead.
 **When** the developer proposes the new architecture
 **Then** the proposal includes: single function with action parameter routing, updated API Gateway integration, backward compatibility plan
 
-**Status:** ready-for-dev
+**Status:** done
 
 ### Story 18.2: Analyze RDS Lambda Consolidation
 
@@ -745,4 +745,4 @@ so that I can reduce infrastructure complexity and maintenance overhead.
 **When** the developer completes the RDS analysis
 **Then** a joint recommendation is provided: consolidate EC2 only, RDS only, both into one function, or keep all separate
 
-**Status:** ready-for-dev
+**Status:** done

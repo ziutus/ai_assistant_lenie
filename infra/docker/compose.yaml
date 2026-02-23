@@ -25,7 +25,7 @@ services:
   lenie-ai-fronted:
     build: ../../web_interface_react
     ports:
-      - "3000:3000"
+      - "3000:80"
     restart: no
 
 volumes:
