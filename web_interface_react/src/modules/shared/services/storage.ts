@@ -10,7 +10,7 @@ const KEYS = {
 export const DEFAULT_URLS: Record<ApiType, { apiUrl: string; infraApiUrl: string }> = {
   "AWS Serverless": {
     apiUrl: "https://api.dev.lenie-ai.eu",
-    infraApiUrl: "https://api.dev.lenie-ai.eu/infra",
+    infraApiUrl: "https://api.dev.lenie-ai.eu",
   },
   Docker: {
     apiUrl: "http://localhost:5000",
