@@ -131,7 +131,7 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 
 | API Type | Server URL | Infra URL |
 |----------|-----------|-----------|
-| AWS Serverless | `https://api.dev.lenie-ai.eu` | `https://api.dev.lenie-ai.eu/infra` |
+| AWS Serverless | `https://api.dev.lenie-ai.eu` | `https://api.dev.lenie-ai.eu` |
 | Docker | `http://localhost:5000` | `http://localhost:5000` |
 
 ## TypeScript
