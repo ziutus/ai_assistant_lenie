@@ -1,0 +1,110 @@
+
+
+// new chat sidebar
+
+.right-side-bar-new-chat-option{
+    width: 325px;
+    height: 100%;
+    position: fixed;
+    right: 0;
+    top: 80px;
+    bottom: 0;
+    padding: 30px;
+    border: 1px solid #E5E4FF;
+    border-right: none;
+    border-top: none;
+    transition: .5s;
+    @media #{$smlg-device} {
+        display: none;
+    }
+    &.close-right{
+        right: -325px;
+    }
+    .new-chat-option{
+        background: #fff;
+        border: 1px solid #E5E4FF;
+        height: 40px;
+        width: 100%;
+        padding: 10px 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+}
+
+
+.chatbot .main-center-content-m-left.collapsed {
+    margin-left: 60px;
+    transform: none; 
+    min-width: auto;
+    max-width: calc(100% - 390px);
+    @media #{$smlg-device} {
+    max-width: 95%;        
+    }
+}
+
+.chatbot{
+    .main-center-content-m-left.center-content .search-form {
+        max-width: calc(100% - 691px);
+        @media #{$smlg-device} {
+            max-width: 89%;
+        }
+    }
+    .main-center-content-m-left.center-content .search-form input {
+        max-width: calc(100% - 691px);
+        @media #{$smlg-device} {
+            max-width: 89%;
+        }
+    }
+}
+
+.chatbot .main-center-content-m-left.collapsed.center-content .search-form input {
+    max-width: calc(100% - 447px);
+}
+.chatbot .main-center-content-m-left.center-content.collapsed .search-form {
+    max-width: calc(100% - 450px);
+}
+
+.chat-history-wrapper{
+    height: calc(100vh - 200px);
+    overflow: scroll;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+    margin-top: 20px;
+    padding: 10px;
+}
+
+
+.chat-history-area-start{
+    margin-bottom: 30px;
+    &:last-child{
+        margin-bottom: 0;
+    }
+    .title{
+        font-weight: 400;
+        font-size: 14px;
+        color: var(--color-primary);
+    }
+    .single-history{
+        padding: 8px 15px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-left: -10px;
+        p{
+            margin-bottom: 0;
+            color: #001C42;
+            font-size: 15px;
+            font-weight: 500;
+            text-transform: capitalize;
+            font-family: var(--font-secondary);
+        }
+        &:hover{
+            background: #E9E9FF;
+        }
+    }
+}
