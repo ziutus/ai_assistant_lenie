@@ -1,0 +1,14 @@
+[
+  {
+    "ParameterKey": "ProjectCode",
+    "ParameterValue": "lenie"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "dev"
+  },
+  {
+    "ParameterKey": "CloudFrontDistributionId",
+    "ParameterValue": "E3604IQH1WCL5D"
+  }
+]
