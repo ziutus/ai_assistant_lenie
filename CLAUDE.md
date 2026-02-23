@@ -84,6 +84,12 @@ Chrome/Kiwi browser extension (Manifest v3) for capturing webpages and sending t
 
 See `web_chrome_extension/CLAUDE.md` for details.
 
+### Landing Page (`web_landing_page/`)
+Next.js 14.2 static export with React 18 + Tailwind 3.4 + TypeScript. Deployed at `www.lenie-ai.eu` via S3 + CloudFront. 25 static pages.
+
+### Target Multi-User UI (`web_interface_target/`)
+Build artifacts from a purchased layout (React 18, Redux, React Bootstrap, TypeScript, Sass). Serves as visual/structural reference for the future multi-user admin interface at `app2.dev.lenie-ai.eu`. License restriction prevents direct reuse — new UI to be built from scratch using layout as partial base. Infrastructure ready (S3 + CloudFront templates in deploy.ini). No functionality connected yet.
+
 ## Infrastructure
 
 ### Docker Stack (`infra/docker/compose.yaml`)

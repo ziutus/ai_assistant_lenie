@@ -1,7 +1,12 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Description: 'SCP - Restrict actions to allowed regions only'
+# PREREQUISITE: SCP policy type must be enabled on the organization root before deploying this stack:
+#   aws organizations enable-policy-type --root-id <ROOT_ID> --policy-type SERVICE_CONTROL_POLICY
+# This is required only once (fresh account setup). CloudFormation does not support enabling policy types.
 Resources:
   DenyOutsideIrelandPolicy:
     Type: 'AWS::Organizations::Policy'
+    DeletionPolicy: Retain
     Properties:
       Content: |
         {
@@ -58,3 +63,5 @@ Resources:
       Description: "Deny actions outside the specified regions except for some services."
       Name: "DenyOutsideIrelandPolicy"
       Type: "SERVICE_CONTROL_POLICY"
+      TargetIds:
+        - !ImportValue organization-root-id

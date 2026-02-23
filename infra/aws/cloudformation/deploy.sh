@@ -402,8 +402,8 @@ if [ "$ACTION" == "delete" ]; then
   delete_stack "${TEMPLATES[@]}"
 else
   log "Create stacks in ${REGION}"
-  if [ "${STAGE}" == "prod" ]; then
-    log "As STAGE is prod, I'm analyzing also COMMON templates"
+  if [ ${#COMMON_TEMPLATES[@]} -gt 0 ]; then
+    log "Processing COMMON templates (account-wide resources)"
     echo "Liczba elementów w COMMON_TEMPLATES: ${#COMMON_TEMPLATES[@]}"
     temp_stage="${STAGE}"
     STAGE="all"

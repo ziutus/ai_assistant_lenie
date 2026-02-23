@@ -36,7 +36,7 @@ API Gateway serves as managed entry point with API key authentication.
 | API | api-gw-infra, api-gw-app | 2 API Gateway templates; 3 REST APIs total (infra, app, url-add — /url_add also consolidated into app) |
 | DNS | 1-domain-route53 | lenie-ai.eu hosted zone |
 | Orchestration | sqs-to-rds-step-function | Workflow: SQS → start DB → process → stop DB (Catch on Lambda failure stops DB to avoid costs) |
-| Governance | organization, identityStore, scp-*, budget | AWS Organization, SCPs, $8/month budget |
+| Governance | organization, scp-*, budget | AWS Organization, SCPs (auto-attached to root: BlockSSOCreation, DenyOutsideIreland), $8/month budget. `[common]` section stacks named `lenie-all-*`. Prerequisite: `aws organizations enable-policy-type --root-id <ROOT_ID> --policy-type SERVICE_CONTROL_POLICY` (one-time) |
 
 **Lambda Functions (11):**
 

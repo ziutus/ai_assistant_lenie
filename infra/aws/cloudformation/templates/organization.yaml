@@ -1,6 +1,18 @@
 AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Organization with SCP policy type enabled'
+# PREREQUISITE: Before deploying SCP stacks, enable SCP policy type manually:
+#   aws organizations enable-policy-type --root-id <ROOT_ID> --policy-type SERVICE_CONTROL_POLICY
+# This is required only once (fresh account setup). CloudFormation does not support enabling policy types.
 Resources:
   MyOrganization:
     Type: 'AWS::Organizations::Organization'
+    DeletionPolicy: Retain
     Properties:
       FeatureSet: 'ALL'  # Options are 'ALL' or 'CONSOLIDATED_BILLING'
+
+Outputs:
+  OrganizationRootId:
+    Description: Root ID of the organization
+    Value: !GetAtt MyOrganization.RootId
+    Export:
+      Name: organization-root-id

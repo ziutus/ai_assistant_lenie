@@ -48,7 +48,7 @@ aws/
 ## Subdirectories
 
 ### cloudformation/
-Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. 29 templates in deploy.ini [dev] (36 total .yaml files) organized by layer: networking (VPC), database (RDS, DynamoDB), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (2 REST APIs: app 11 + infra 7 endpoints, custom domain with base path mappings), orchestration (Step Functions), CDN (CloudFront for app + landing page), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for authoritative counts.
+Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. 30 templates in deploy.ini [dev] + 3 in [common] (38 total .yaml files) organized by layer: networking (VPC), database (RDS, DynamoDB), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (2 REST APIs: app 11 + infra 7 endpoints, custom domain with base path mappings), orchestration (Step Functions), CDN (CloudFront for app, app2, landing page), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for authoritative counts.
 
 ### serverless/
 Lambda function source code and Lambda layer build scripts (psycopg2, lenie_all, openai). 8 Lambda functions total: 6 CF-managed (3 simple infrastructure in api-gw-infra.yaml + 3 S3-packaged app functions) and 2 non-CF-managed (`lenie-dev-app-server-db`, `lenie-dev-app-server-internet`). Includes packaging script (`zip_to_s3.sh`). See `serverless/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for full inventory.
@@ -97,12 +97,13 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 | CloudWatch | Logging, Step Function execution monitoring |
 | Budgets | Cost alerts ($8/month threshold) |
 | Organizations + SCPs | Multi-account governance, region restrictions |
-| CloudFront | CDN for frontend app (`app.dev.lenie-ai.eu`) and landing page (`www.lenie-ai.eu`) |
+| CloudFront | CDN for frontend app (`app.dev.lenie-ai.eu`), target multi-user UI (`app2.dev.lenie-ai.eu`), and landing page (`www.lenie-ai.eu`) |
 
 ## Frontend Hosting
 
-Two web frontends are hosted via S3 + CloudFront:
+Three web frontends are hosted via S3 + CloudFront:
 - **React app** (`web_interface_react/`) — `app.dev.lenie-ai.eu` via `s3-app-web` + `cloudfront-app` stacks
+- **Target multi-user UI** (`web_interface_target/`, build artifacts) — `app2.dev.lenie-ai.eu` via `s3-app2-web` + `cloudfront-app2` stacks. Future multi-user version of the admin interface, currently infrastructure-only (no functionality connected yet).
 - **Landing page** (`web_landing_page/`, Next.js static export) — `www.lenie-ai.eu` via `s3-landing-web` + `cloudfront-landing` stacks
 
 ### Historical Context

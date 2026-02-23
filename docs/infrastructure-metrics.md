@@ -111,31 +111,38 @@ All 7 `/infra/*` endpoints (infrastructure management — no equivalent in Docke
 
 ## CloudFormation
 
-**Templates in deploy.ini [dev]: 27**
-**Total .yaml files in templates/: 34**
+**Templates in deploy.ini [dev]: 30**
+**Templates in deploy.ini [common]: 3** (account-wide: organization, SCPs)
+**Total .yaml files in templates/: 38**
 
-### deploy.ini [dev] — 26 templates by layer
+### deploy.ini [dev] — 30 templates by layer
 
 | Layer | Templates | Count |
 |-------|-----------|-------|
-| 1. Foundation | env-setup, budget, 1-domain-route53 | 3 |
+| 1. Foundation | env-setup, budget, ~~1-domain-route53~~ (disabled) | 2 |
 | 2. Networking | vpc, security-groups | 2 |
 | 3. Security | secrets | 1 |
-| 4. Storage | s3, s3-cloudformation, dynamodb-documents, s3-website-content, s3-app-web, sqs-documents, sqs-application-errors | 7 |
+| 4. Storage | s3, s3-cloudformation, dynamodb-documents, s3-website-content, s3-app-web, s3-app2-web, s3-landing-web, sqs-documents, sqs-application-errors | 9 |
 | 5. Compute | lambda-layer-lenie-all, lambda-layer-openai, lambda-layer-psycopg2, ec2-lenie, lenie-launch-template, lambda-weblink-put-into-sqs, sqs-to-rds-lambda, url-add | 8 |
-| 6. API | api-gw-infra, api-gw-app | 2 |
+| 6. API | api-gw-infra, api-gw-app, api-gw-custom-domain | 3 |
 | 7. Orchestration | sqs-to-rds-step-function | 1 |
-| 8. CDN | cloudfront-app, helm | 2 |
-| **Total** | | **26** |
+| 8. CDN | cloudfront-app, cloudfront-app2, cloudfront-landing, helm | 4 |
+| **Total** | | **30** |
 
-### Templates NOT in deploy.ini (7 files)
+### deploy.ini [common] — 3 templates (stacks named `lenie-all-*`)
+
+| Template | Description |
+|----------|-------------|
+| `organization.yaml` | AWS Organization (FeatureSet: ALL). Exports `organization-root-id` |
+| `scp-block-sso-creation.yaml` | Block SSO instance creation. Auto-attached to org root |
+| `scp-only-allowed-reginos.yaml` | Restrict to regions: eu-west-1/2, eu-central-1, us-east-1. Auto-attached to org root |
+
+### Templates NOT in deploy.ini (5 files)
 
 | Template | Reason |
 |----------|--------|
 | `rds.yaml` | Deployed separately, managed lifecycle via Step Functions |
 | `lambda-rds-start.yaml` | REDUNDANT — rds-start Lambda now managed by api-gw-infra.yaml |
-| `identityStore.yaml` | Organization governance (deployed separately) |
-| `organization.yaml` | Organization governance (deployed separately) |
-| `scp-block-all.yaml` | Organization SCP (deployed separately) |
-| `scp-block-sso-creation.yaml` | Organization SCP (deployed separately) |
-| `scp-only-allowed-reginos.yaml` | Organization SCP (deployed separately) |
+| `identityStore.yaml` | Not deployed (Identity Store no longer exists) |
+| `scp-block-all.yaml` | Available for inactive accounts, not deployed by default |
+| `1-domain-route53.yaml` | DISABLED — duplicate zone; managed by legacy stack `lenie-domain-route53-definition` |
