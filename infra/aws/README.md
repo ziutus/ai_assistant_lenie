@@ -460,8 +460,7 @@ serverless/
 │   └── tmp/                     # Empty placeholder
 ├── lambda_layers/               # Shared dependency layers
 ├── env.sh / env_lenie_2025.sh   # Environment config
-├── zip_to_s3.sh                 # Package & deploy to S3
-└── create_empty_lambdas.sh      # Create placeholder functions
+└── zip_to_s3.sh                 # Package & deploy to S3
 ```
 
 ### Function Overview

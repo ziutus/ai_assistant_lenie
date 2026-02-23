@@ -14,9 +14,11 @@ This is the recommended approach for making the frontend publicly accessible —
 
 | Application | Directory | Framework | Amplify Platform |
 |-------------|-----------|-----------|-----------------|
-| Main frontend (React SPA) | `web_interface_react/` | React 18 (CRA) | WEB (static) |
+| Main frontend (React SPA) | `web_interface_react/` | React 18 (Vite + TypeScript) | WEB (static) |
 
 The main frontend is a static React application that produces a `build/` directory with HTML/JS/CSS files.
+
+> **Active deployment:** The dev environment currently uses a **S3 + CloudFront** pipeline managed by CloudFormation (`cloudfront-app.yaml`) and GitLab CI, serving at `app.dev.lenie-ai.eu`. Three legacy Amplify apps exist (`app.lenie-ai.eu`, `app2.lenie-ai.eu`, `www.lenie-ai.eu`) but are not actively used for the main dev frontend. There is no domain conflict — Amplify uses `app.lenie-ai.eu` while CloudFormation uses `app.dev.lenie-ai.eu`.
 
 ## Setting Up Amplify Hosting
 
@@ -100,14 +102,9 @@ Amplify will provide CNAME records to add in Route53. Certificates are managed a
 
 ## Environment Variables
 
-The React frontend uses `REACT_APP_*` environment variables set at build time. Configure them in Amplify Console → App settings → Environment variables:
+Since the migration to Vite, the frontend uses `VITE_*` environment variables (not `REACT_APP_*`). However, the current implementation uses a runtime connection configuration screen (`/connect`) instead of build-time env vars. API URL and key are stored in localStorage.
 
-| Variable | Description |
-|----------|-------------|
-| `REACT_APP_API_URL` | Backend API URL |
-| `REACT_APP_API_KEY` | API key (if pre-populated) |
-
-These can also be set per branch for different environments.
+If Amplify deployment is reactivated, update the build spec `npm run build` command accordingly. No `VITE_*` env vars are currently required.
 
 ## Access Control
 
