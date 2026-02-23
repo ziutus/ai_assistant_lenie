@@ -95,7 +95,7 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 
 ### Global State (`authorizationContext.tsx`)
 
-- **API config** (persisted to localStorage): `apiUrl`, `apiKey`, `apiType` (AWS Serverless / Docker), `infraApiUrl`
+- **API config** (persisted to localStorage): `apiUrl`, `apiKey`, `apiType` (AWS Serverless / Docker)
 - **Infrastructure status**: `databaseStatus`, `vpnServerStatus`, `sqsLength`
 - **Document filters**: `selectedDocumentType`, `selectedDocumentState`, `searchInDocument`, `searchType`
 
@@ -104,8 +104,7 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 | Key | Value |
 |-----|-------|
 | `lenie_apiType` | "AWS Serverless" or "Docker" |
-| `lenie_apiUrl` | Server API URL |
-| `lenie_infraApiUrl` | Infrastructure API URL |
+| `lenie_apiUrl` | API URL (single URL for both app and infra endpoints) |
 | `lenie_apiKey` | API authentication key |
 
 ### Custom Hooks
@@ -129,10 +128,12 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 
 ### Default URLs
 
-| API Type | Server URL | Infra URL |
-|----------|-----------|-----------|
-| AWS Serverless | `https://api.dev.lenie-ai.eu` | `https://api.dev.lenie-ai.eu` |
-| Docker | `http://localhost:5000` | `http://localhost:5000` |
+| API Type | API URL |
+|----------|---------|
+| AWS Serverless | `https://api.dev.lenie-ai.eu` |
+| Docker | `http://localhost:5000` |
+
+App endpoints use the base URL (e.g., `/website_list`), infra endpoints use `/infra` prefix (e.g., `/infra/database/status`). Both share the same domain via API Gateway custom domain base path mappings.
 
 ## TypeScript
 

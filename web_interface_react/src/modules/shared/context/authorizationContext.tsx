@@ -11,8 +11,6 @@ export const AuthorizationContext = createContext<AuthorizationState>({
   setApiKey: () => {},
   apiUrl: "",
   setApiUrl: () => {},
-  infraApiUrl: "",
-  setInfraApiUrl: () => {},
   apiType: "AWS Serverless",
   setApiType: () => {},
   sqsLength: -1,
@@ -37,7 +35,6 @@ const AuthorizationProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [apiKey, setApiKey] = React.useState<string | undefined>(saved.apiKey);
   const [apiType, setApiType] = React.useState<ApiType>(saved.apiType);
   const [apiUrl, setApiUrl] = React.useState(saved.apiUrl);
-  const [infraApiUrl, setInfraApiUrl] = React.useState(saved.infraApiUrl);
   const [selectedDocumentType, setSelectedDocumentType] = React.useState("link");
   const [selectedDocumentState, setSelectedDocumentState] = React.useState("NEED_MANUAL_REVIEW");
   const [searchInDocument, setSearchInDocument] = React.useState("");
@@ -49,11 +46,10 @@ const AuthorizationProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       saveConnectionConfig({
         apiType,
         apiUrl,
-        infraApiUrl,
         apiKey,
       });
     }
-  }, [apiType, apiUrl, infraApiUrl, apiKey]);
+  }, [apiType, apiUrl, apiKey]);
 
   return (
     <AuthorizationContext.Provider
@@ -66,8 +62,6 @@ const AuthorizationProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setApiKey,
         apiUrl,
         setApiUrl,
-        infraApiUrl,
-        setInfraApiUrl,
         apiType,
         setApiType,
         sqsLength,
