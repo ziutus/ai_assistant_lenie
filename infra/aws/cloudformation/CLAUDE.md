@@ -166,17 +166,17 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `api-gw-infra.yaml` | REST API, 3 Lambdas, 3 IAM Roles, SSM | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). 3 consolidated Lambdas: rds-manager, ec2-manager, sqs-size. Each Lambda has its own least-privilege IAM role with resource-level scoping (SQS scoped to project queues, RDS scoped to specific DB instance via SSM, EC2 start/stop scoped to specific instance). Paths without `/infra` prefix (routing via custom domain base path mapping). Exports API ID and invoke URL to SSM. |
-| `api-gw-app.yaml` | REST API, Lambda Permissions, SSM | Main application API (11 endpoints, x-api-key). References 3 Lambda functions: `${PC}-${Env}-app-server-db`, `${PC}-${Env}-app-server-internet`, `${PC}-${Env}-url-add`. All Lambda names fully parameterized. Exports API ID, root resource ID, and invoke URL to SSM. |
+| `api-gw-app.yaml` | REST API, Stage, Lambda Permissions, SSM | Main application API (11 endpoints, x-api-key). Separate `ApiStage` resource manages v1 stage settings (logging, tracing, metrics). References 3 Lambda functions: `${PC}-${Env}-app-server-db`, `${PC}-${Env}-app-server-internet`, `${PC}-${Env}-url-add`. All Lambda names fully parameterized. Exports API ID, root resource ID, and invoke URL to SSM. |
 | `api-gw-custom-domain.yaml` | ACM Certificate, API GW DomainName, BasePathMappings, Route53, SSM | Custom domain `api.{env}.lenie-ai.eu` with TLS 1.2. Root path (`/`) maps to app API, `/infra` maps to infra API. DNS validation via Route53. |
 
 **`api-gw-app` stage configuration (managed by CloudFormation):**
-The `v1` stage logging and tracing settings are codified in `StageDescription` on the `ApiDeployment` resource in `api-gw-app.yaml`:
+The `v1` stage is managed by a separate `ApiStage` resource (`AWS::ApiGateway::Stage`) in `api-gw-app.yaml`. Stage settings:
 - `LoggingLevel: INFO` (error and info CloudWatch logs)
 - `MetricsEnabled: true` (detailed CloudWatch metrics)
 - `DataTraceEnabled: true` (full request/response body logging — review before enabling in production)
 - `TracingEnabled: true` (X-Ray tracing)
 
-These settings apply to all methods/resources via wildcard `MethodSettings` (`HttpMethod: '*'`, `ResourcePath: '/*'`). Note: CloudWatch logging requires an account-level IAM role (`cloudwatchRoleArn`) — verify with `aws apigateway get-account`.
+These settings apply to all methods/resources via wildcard `MethodSettings` (`HttpMethod: '*'`, `ResourcePath: '/*'`). The `ApiDeployment` resource retains `StageName: v1` (CloudFormation does not support removing it from an existing resource). Note: CloudWatch logging requires an account-level IAM role (`cloudwatchRoleArn`) — verify with `aws apigateway get-account`.
 
 **Note:** `api-gw-infra` does NOT currently have stage logging or tracing configured in its CloudFormation template.
 

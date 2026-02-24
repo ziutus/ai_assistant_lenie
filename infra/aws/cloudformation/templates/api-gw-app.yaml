@@ -625,10 +625,8 @@ Resources:
               type: "apiKey"
               name: "x-api-key"
               in: "header"
-  # API Deployment
-  # NOTE: StageName kept in Deployment for backward compatibility with existing v1 stage.
-  # Separating into ApiStage requires CF resource import (not creation). See backlog (Story B.6: migrate to separate ApiStage resource).
-  # Stage logging, metrics, and X-Ray tracing are codified in StageDescription below.
+  # Stage configuration managed by separate ApiStage resource.
+  # StageName kept on Deployment (CloudFormation does not support removing it from an existing resource).
   ApiDeployment:
     Type: 'AWS::ApiGateway::Deployment'
     DeletionPolicy: Retain
@@ -636,17 +634,24 @@ Resources:
     Properties:
       RestApiId: !Ref LenieApi
       StageName: v1
-      Description: 'CF-managed deployment'
-      StageDescription:
-        TracingEnabled: true
-        MethodSettings:
-          - HttpMethod: '*'
-            ResourcePath: '/*'
-            LoggingLevel: INFO
-            MetricsEnabled: true
-            # DataTraceEnabled logs full request/response bodies.
-            # Review before enabling in production environments.
-            DataTraceEnabled: true
+
+  ApiStage:
+    Type: 'AWS::ApiGateway::Stage'
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RestApiId: !Ref LenieApi
+      DeploymentId: !Ref ApiDeployment
+      StageName: 'v1'
+      Description: 'CF-managed v1 stage'
+      TracingEnabled: true
+      MethodSettings:
+        - HttpMethod: '*'
+          ResourcePath: '/*'
+          LoggingLevel: INFO
+          MetricsEnabled: true
+          # DataTraceEnabled logs full request/response bodies — review before enabling in production
+          DataTraceEnabled: true
 
   # SSM Parameter exports
   ApiGatewayIdParameter:
