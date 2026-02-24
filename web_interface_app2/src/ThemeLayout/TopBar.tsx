@@ -222,9 +222,7 @@ const TopBar = () => {
                                         <div className="user_information_main_wrapper slide-down__click language-area" style={{ display: isLanguage ? "block" : "none" }}>
                                             <ul className="select-language-area">
                                                 <li><Link to="#">English</Link></li>
-                                                <li><Link to="#">Bangla</Link></li>
-                                                <li><Link to="#">Hindi</Link></li>
-                                                <li><Link to="#">Latin</Link></li>
+                                                <li><Link to="#">Polish</Link></li>
                                             </ul>
                                         </div>
 

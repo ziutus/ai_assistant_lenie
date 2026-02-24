@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFront distribution for app2 (target) frontend hosting for Project Lenie'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+    Description: Environment name
+  AcmCertificateArn:
+    Type: String
+    Description: ACM certificate ARN for custom domain (must be in us-east-1)
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Description: Route53 hosted zone ID for lenie-ai.eu
+
+Resources:
+  # Origin Access Control for S3 origin (sigv4 signing)
+  App2OriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub '${ProjectCode}-${Environment}-app2-web.s3.us-east-1.amazonaws.com'
+        SigningProtocol: sigv4
+        SigningBehavior: always
+        OriginAccessControlOriginType: s3
+        Description: 'OAC for app2 frontend S3 bucket'
+
+  # CloudFront distribution for app2 frontend
+  App2Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: 'app2 (target) version of lenie'
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        HttpVersion: http2
+        IPV6Enabled: true
+        Aliases:
+          - !Sub 'app2.${Environment}.lenie-ai.eu'
+        Origins:
+          - Id: !Sub '${ProjectCode}-${Environment}-app2-web.s3.us-east-1.amazonaws.com'
+            DomainName: !Sub '${ProjectCode}-${Environment}-app2-web.s3.us-east-1.amazonaws.com'
+            OriginAccessControlId: !GetAtt App2OriginAccessControl.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: !Sub '${ProjectCode}-${Environment}-app2-web.s3.us-east-1.amazonaws.com'
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          Compress: true
+          # AWS managed CachingOptimized policy
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 10
+        Restrictions:
+          GeoRestriction:
+            RestrictionType: none
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+  # Route53 A-record alias pointing to CloudFront distribution
+  App2DnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Sub 'app2.${Environment}.lenie-ai.eu'
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt App2Distribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront global hosted zone ID
+
+  # SSM Parameter exports
+  App2DistributionIdParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/cloudfront/app2/id'
+      Type: String
+      Value: !Ref App2Distribution
+      Description: 'CloudFront app2 distribution ID for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+
+  App2DistributionDomainNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/cloudfront/app2/domain-name'
+      Type: String
+      Value: !GetAtt App2Distribution.DomainName
+      Description: 'CloudFront app2 distribution domain name for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+
+Outputs:
+  DistributionId:
+    Description: CloudFront Distribution ID (use in s3-app2-web parameters)
+    Value: !Ref App2Distribution
+  DistributionDomainName:
+    Description: CloudFront Distribution Domain Name
+    Value: !GetAtt App2Distribution.DomainName

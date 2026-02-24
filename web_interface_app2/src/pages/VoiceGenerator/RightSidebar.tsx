@@ -12,9 +12,8 @@ const RightSidebar = () => {
                         <h6 className="title">Language</h6>
                         <select className="nice-select" name="sort" multiple>
                             <option>Select Language</option>
-                            <option value="asc">Bangla</option>
-                            <option value="desc">English</option>
-                            <option value="pop">Hindi</option>
+                            <option value="en">English</option>
+                            <option value="pl">Polish</option>
                         </select>
                     </div>
                     <div className="image-diamention single-diamention pt--30">
