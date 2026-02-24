@@ -1,0 +1,39 @@
+
+
+body{
+    &.modal-open{
+        padding-right: 0 !important;
+    }
+}
+
+
+.modal-dialog{
+    max-width: 80%;
+    scrollbar-width: none;
+    .modal-content{
+        padding: 50px 50px 0 50px;
+        .modal-header{
+            border: none;
+        }
+    }
+}
+
+
+.modal{
+    scrollbar-width: none;
+}
+
+.register{
+    .dash-board-main-wrapper .left-side-bar{
+        margin-left: 0;
+        display: none;
+    }
+    .main-center-content-m-left.center-content{
+        margin-left: 0;
+        margin: auto;
+    }
+    .rts-register-area{
+        margin-left: auto;
+        margin: auto;
+    }
+}
