@@ -581,6 +581,8 @@ Resources:
 
   ApiStage:
     Type: 'AWS::ApiGateway::Stage'
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       DeploymentId: !Ref ApiDeployment
       RestApiId: !Ref LenieApi

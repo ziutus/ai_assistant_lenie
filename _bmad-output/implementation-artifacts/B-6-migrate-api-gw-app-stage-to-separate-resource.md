@@ -88,7 +88,7 @@ The `v1` stage already exists in AWS, created by the `ApiDeployment` resource. S
 - **Story 11-3** originally separated the stage in the template, but **story 11-10** added `StageDescription` (logging/tracing) which requires `StageName` on the Deployment. The separation was reverted and B-6 was created as a dedicated backlog item.
 - The current comment at line 629-630 explains: "StageName kept in Deployment for backward compatibility with existing v1 stage. Separating into ApiStage requires CF resource import (not creation)."
 
-### Current Template Structure (lines 628-649)
+### Current Template Structure (pre-migration, historical reference)
 
 ```yaml
 # NOTE: StageName kept in Deployment for backward compatibility with existing v1 stage.
@@ -114,15 +114,10 @@ ApiDeployment:
 
 ### Target Template Structure
 
-```yaml
-# Stage managed by separate ApiStage resource (migrated from inline StageName)
-ApiDeployment:
-  Type: 'AWS::ApiGateway::Deployment'
-  DeletionPolicy: Retain
-  UpdateReplacePolicy: Retain
-  Properties:
-    RestApiId: !Ref LenieApi
+*(Updated to reflect actual implementation — `StageName: 'v1'` retained on `ApiDeployment` due to CF limitation.)*
 
+```yaml
+# Stage managed by separate ApiStage resource
 ApiStage:
   Type: 'AWS::ApiGateway::Stage'
   DeletionPolicy: Retain
@@ -130,7 +125,8 @@ ApiStage:
   Properties:
     RestApiId: !Ref LenieApi
     DeploymentId: !Ref ApiDeployment
-    StageName: v1
+    StageName: 'v1'
+    Description: 'CF-managed v1 stage'
     TracingEnabled: true
     MethodSettings:
       - HttpMethod: '*'
@@ -138,6 +134,15 @@ ApiStage:
         LoggingLevel: INFO
         MetricsEnabled: true
         DataTraceEnabled: true
+
+# StageName kept on Deployment (CloudFormation does not support removing it from an existing resource)
+ApiDeployment:
+  Type: 'AWS::ApiGateway::Deployment'
+  DeletionPolicy: Retain
+  UpdateReplacePolicy: Retain
+  Properties:
+    RestApiId: !Ref LenieApi
+    StageName: 'v1'
 ```
 
 ### Placement in Template
@@ -233,10 +238,11 @@ Claude Opus 4.6
 
 - 2026-02-24: Migrated API Gateway v1 stage to separate ApiStage CloudFormation resource (B-6)
 - 2026-02-24: Code review fixes — updated AC1 deviation note, Task 3.1 CF limitation, DataTraceEnabled warning comment in template, Completion Notes clarification
+- 2026-02-24: Code review #2 — fixed StageName quoting inconsistency (v1 → 'v1' on ApiDeployment), updated Target Template Structure to reflect CF limitation deviation, corrected sprint-status.yaml description in File List, reordered ApiStage before ApiDeployment (consistent with api-gw-infra.yaml), added DeletionPolicy/UpdateReplacePolicy to api-gw-infra.yaml ApiStage, fixed stale line references in Dev Notes
 
 ### File List
 
 - `infra/aws/cloudformation/templates/api-gw-app.yaml` — Added `ApiStage` resource, removed `StageDescription` from `ApiDeployment`, updated comments
 - `infra/aws/cloudformation/CLAUDE.md` — Updated api-gw-app documentation to reflect separate stage resource
-- `_bmad-output/implementation-artifacts/sprint-status.yaml` — Status updated to in-progress → review
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — Status updated: backlog → done
 - `_bmad-output/implementation-artifacts/B-6-migrate-api-gw-app-stage-to-separate-resource.md` — Story file updated
