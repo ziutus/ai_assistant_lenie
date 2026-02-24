@@ -197,7 +197,7 @@ development_status:
 
   # --- Cleaning AWS Architecture ---
   B-39-delegate-dns-subzones-per-environment: backlog  # Split lenie-ai.eu into delegated subzones: main zone (root + NS delegations only) + per-env subzones (dev.lenie-ai.eu, prod.lenie-ai.eu). Enables multi-account (049706517731) and multi-cloud (GCP k8s.lenie-ai.eu). Prerequisite for multi-env. Remove 1-domain-route53.yaml, create new templates. $0.50/month per subzone.
-  B-21-split-shared-lambda-execution-role-into-per-function-roles: backlog
+  B-21-split-shared-lambda-execution-role-into-per-function-roles: done  # Tech spec completed 2026-02-24, all 4 steps done
   B-6-migrate-api-gw-app-stage-to-separate-resource: done
   B-10-create-apigw-cloudwatch-iam-role-in-cloudformation: backlog
   B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
