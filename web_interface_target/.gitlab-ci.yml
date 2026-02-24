@@ -1,0 +1,70 @@
+variables:
+  CI: "false"
+  AWS_REGION: "us-east-1"
+  INSTANCE_ID: "i-03908d34c63fce042"
+  CI_REGISTRY_IMAGE: "lenie-react-interface-target"
+  TAG_VERSION: "0.1.0"
+
+stages:
+  - build
+  - deploy
+
+start_runner:
+  stage: .pre
+  variables:
+    GIT_STRATEGY: none
+  before_script:
+    - apt-get update -y
+    - apt-get install -y awscli
+    - aws configure set aws_access_key_id $GITLAB_AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $GITLAB_AWS_SECRET_ACCESS_KEY
+    - aws configure set region $AWS_REGION
+  script:
+    - echo "Starting AWS EC2 runner instance..."
+    - aws ec2 start-instances --instance-ids $INSTANCE_ID
+
+job_build:
+  stage: build
+  tags:
+    - AWS
+  environment:
+    name: development
+  script:
+    - echo "Hello, $GITLAB_USER_LOGIN!"
+    - echo "Building the project"
+    - yarn install --frozen-lockfile
+    - yarn run build
+  artifacts:
+    paths:
+      - build/
+  only:
+    - dev
+    - main
+
+publish_to_aws:
+  stage: deploy
+  tags:
+    - AWS
+  environment:
+    name: development
+  script:
+    - echo "Deploying to S3 and invalidating CloudFront"
+    - aws s3 sync ./build/ s3://$S3_BUCKET_APP2_WEB --delete
+    - aws cloudfront create-invalidation --distribution-id $CLOUDFRONT_APP2_DISTRIBUTION_ID --paths "/*"
+  only:
+    - dev
+    - main
+
+stop_runner:
+  stage: .post
+  variables:
+    GIT_STRATEGY: none
+  before_script:
+    - apt-get update -y
+    - apt-get install -y awscli
+    - aws configure set aws_access_key_id $GITLAB_AWS_ACCESS_KEY_ID
+    - aws configure set aws_secret_access_key $GITLAB_AWS_SECRET_ACCESS_KEY
+    - aws configure set region $AWS_REGION
+  script:
+    - echo "Stopping AWS EC2 instance..."
+    - aws ec2 stop-instances --instance-ids $INSTANCE_ID
