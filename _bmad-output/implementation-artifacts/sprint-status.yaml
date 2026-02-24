@@ -191,6 +191,7 @@ development_status:
   B-16-migrate-web-interface-react-from-cra-to-vite: backlog
   # B-17 removed: web_add_url_react archived and deleted from repo. Restore: git checkout archive/web-add-url-react -- _archive/web_add_url_react/
   B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
+  B-44-storytel-audiobook-tracking: backlog  # Track audiobooks listened on storytel.com — scrape/API metadata (title, author, genre, progress), store as content type 'audiobook' in existing pipeline
 
   # --- Low Priority / Ideas ---
   B-23-consolidate-lambdas-with-vpc-ipv6-dual-stack: backlog  # Enable IPv6 dual-stack + Egress-Only IGW to merge app-server-db + app-server-internet into one Lambda. BLOCKER: OpenAI API has no IPv6 (no AAAA record as of 2026-02). Options: switch to Bedrock, use NAT64, or wait for OpenAI IPv6 support.
