@@ -8,7 +8,8 @@ cloudformation/
 ├── deploy.ini             # Configuration - template list per environment
 ├── templates/             # CloudFormation templates (YAML)
 ├── parameters/            # Parameters per environment
-│   └── dev/               # Parameters for dev environment
+│   ├── dev/               # Parameters for dev environment
+│   └── landing-prod/      # Parameters for landing page (production)
 ├── apigw/                 # Exported API Gateway definitions (OpenAPI)
 └── step_functions/        # Step Functions definitions (JSON)
 ```
@@ -53,6 +54,9 @@ The `-y` flag skips the interactive confirmation prompt (required for non-intera
 # Deploy dev environment (create/update)
 ./deploy.sh -p lenie -s dev
 
+# Deploy landing page (production)
+./deploy.sh -p lenie -s landing-prod
+
 # Deploy with change preview (change-set)
 ./deploy.sh -p lenie -s dev -t
 
@@ -85,7 +89,8 @@ Example: template `templates/vpc.yaml` in the `dev` environment of project `leni
 Configuration defining which templates are deployed per environment. INI format with per-environment sections.
 
 - `[common]` - account-wide resources deployed once (stacks named `lenie-all-<template>`): organization, SCPs
-- `[dev]` - currently the only active environment (post-MVP: add `[prod]`, `[qa]`)
+- `[dev]` - dev environment (stacks named `lenie-dev-<template>`)
+- `[landing-prod]` - production landing page resources (stacks named `lenie-landing-prod-<template>`), deployed separately via `deploy.sh -s landing-prod`
 - Lines starting with `;` are commented out (template skipped)
 
 Template order in the file matters - stacks are created in this order and deleted in reverse.
@@ -139,8 +144,8 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | `s3-website-content.yaml` | S3 Bucket, Bucket Policy, SSM | Website content storage (`lenie-{stage}-website-content`, AES256) |
 | `s3-app-web.yaml` | S3 Bucket, Bucket Policy, SSM | Frontend hosting bucket (`lenie-{stage}-app-web`, CloudFront OAC) |
 | `s3-app2-web.yaml` | S3 Bucket, Bucket Policy, SSM | Target multi-user UI hosting bucket (`lenie-{stage}-app2-web`, CloudFront OAC) |
-| `s3-landing-web.yaml` | S3 Bucket, Bucket Policy, SSM | Landing page hosting bucket (`lenie-{stage}-landing-web`, CloudFront OAC) |
-| `helm.yaml` | S3 Bucket, Bucket Policy, CloudFront OAI, CloudFront Distribution | Helm chart repository and CDN (`helm.{env}.lenie-ai.eu`) |
+| `s3-landing-web.yaml` | S3 Bucket, Bucket Policy, SSM | Landing page hosting bucket (`lenie-{stage}-landing-web`, CloudFront OAC). Deployed in `[landing-prod]` section — production resource. |
+| `helm.yaml` | S3 Bucket, Bucket Policy, CloudFront OAI, CloudFront Distribution | Helm chart repository and CDN (`helm.{env}.lenie-ai.eu`). Certificate ARN resolved from SSM. |
 
 ### Lambda Layers
 
@@ -186,13 +191,19 @@ These settings apply to all methods/resources via wildcard `MethodSettings` (`Ht
 |----------|-----------|-------------|
 | `sqs-to-rds-step-function.yaml` | Step Functions, EventBridge, IAM, Logs | Workflow: SQS -> start DB -> process -> stop DB. Map state has `Catch` with `States.ALL` to stop DB on Lambda failure (cost protection) |
 
+### Certificates
+
+| Template | Resources | Description |
+|----------|-----------|-------------|
+| `acm-certificates.yaml` | ACM Certificate, SSM Parameter | Wildcard certificate for CloudFront distributions (`*.{env}.lenie-ai.eu` for dev, `*.lenie-ai.eu` for prod). DNS validation via Route53. ARN exported to SSM at `/${ProjectCode}/${Environment}/acm/cloudfront/arn`. Deployed in `[dev]` Layer 8 before CloudFront stacks. |
+
 ### CDN
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `cloudfront-app.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for frontend application (`app.{env}.lenie-ai.eu`) with SPA error responses (403/404 → index.html) and Route53 alias record |
-| `cloudfront-app2.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for target multi-user UI (`app2.{env}.lenie-ai.eu`) with SPA error responses and Route53 alias record |
-| `cloudfront-landing.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for landing page (`www.lenie-ai.eu`) with static 404 error page and Route53 alias record |
+| `cloudfront-app.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for frontend application (`app.{env}.lenie-ai.eu`) with SPA error responses (403/404 → index.html) and Route53 alias record. Certificate ARN resolved from SSM via `{{resolve:ssm:...}}` dynamic reference. |
+| `cloudfront-app2.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for target multi-user UI (`app2.{env}.lenie-ai.eu`) with SPA error responses and Route53 alias record. Certificate ARN resolved from SSM. |
+| `cloudfront-landing.yaml` | CloudFront Distribution, OAC, ACM Certificate, Route53 A-Record, SSM | CDN for landing page (`www.lenie-ai.eu`) with static 404 error page, Route53 alias record, and self-contained inline ACM certificate (DNS validation). Deployed in `[landing-prod]` section — production resource, not per-environment. |
 
 ### Email
 
@@ -250,7 +261,6 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `s3-website-content.yaml` - website content storage
 - `s3-app-web.yaml` - frontend hosting bucket
 - `s3-app2-web.yaml` - target multi-user UI hosting bucket
-- `s3-landing-web.yaml` - landing page hosting bucket
 - `sqs-documents.yaml` - document processing queue
 - `sqs-application-errors.yaml` - DLQ with email notification
 - `rds.yaml` - database (commented out; deployed separately, managed lifecycle via Step Functions)
@@ -274,13 +284,19 @@ Stacks have dependencies between them. When creating a new environment from scra
 ### Layer 7: Orchestration
 - `sqs-to-rds-step-function.yaml` - SQS -> start DB -> process -> stop DB
 
-### Layer 8: CDN
-- `cloudfront-app.yaml` - CDN for frontend application (`app.{env}.lenie-ai.eu`)
-- `cloudfront-app2.yaml` - CDN for target multi-user UI (`app2.{env}.lenie-ai.eu`)
-- `cloudfront-landing.yaml` - CDN for landing page (`www.lenie-ai.eu`)
-- `helm.yaml` - Helm chart repository and CDN
+### Layer 8: Certificates & CDN
+- `acm-certificates.yaml` - wildcard certificate for dev CloudFront distributions (SSM export)
+- `cloudfront-app.yaml` - CDN for frontend application (`app.{env}.lenie-ai.eu`, cert from SSM)
+- `cloudfront-app2.yaml` - CDN for target multi-user UI (`app2.{env}.lenie-ai.eu`, cert from SSM)
+- `helm.yaml` - Helm chart repository and CDN (cert from SSM)
 
 This order is reflected in the `deploy.ini` file under the `[dev]` section. Run `./deploy.sh -p lenie -s dev` to deploy all templates in order.
+
+### Landing Page (`[landing-prod]`, stacks `lenie-landing-prod-*`)
+- `s3-landing-web.yaml` - landing page hosting bucket (`lenie-prod-landing-web`)
+- `cloudfront-landing.yaml` - CDN for landing page (`www.lenie-ai.eu`) with self-contained inline ACM certificate
+
+The landing page is a production resource, not per-environment. Deploy separately via `./deploy.sh -p lenie -s landing-prod`.
 
 ## Notes
 

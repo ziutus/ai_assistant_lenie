@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'ACM wildcard certificate for CloudFront distributions for Project Lenie'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      - prod
+  BaseDomainName:
+    Type: String
+    Default: lenie-ai.eu
+    Description: Base domain name (e.g. lenie-ai.eu)
+  HostedZoneId:
+    Type: AWS::Route53::HostedZone::Id
+    Description: Route53 Hosted Zone ID for the base domain
+
+Conditions:
+  IsProd: !Equals [!Ref Environment, 'prod']
+
+Resources:
+  CloudFrontCertificate:
+    Type: AWS::CertificateManager::Certificate
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DomainName: !If [IsProd, !Sub '*.${BaseDomainName}', !Sub '*.${Environment}.${BaseDomainName}']
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: !If [IsProd, !Sub '*.${BaseDomainName}', !Sub '*.${Environment}.${BaseDomainName}']
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+  CloudFrontCertificateArnParameter:
+    Type: AWS::SSM::Parameter
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/acm/cloudfront/arn'
+      Type: String
+      Value: !Ref CloudFrontCertificate
+      Description: 'ACM wildcard certificate ARN for CloudFront distributions'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode

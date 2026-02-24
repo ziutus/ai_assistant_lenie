@@ -17,9 +17,6 @@ Parameters:
     Type: String
     Default: helm.dev.lenie-ai.eu
     Description: Custom domain name for CloudFront distribution
-  AcmCertificateArn:
-    Type: String
-    Description: ACM certificate ARN (must be in us-east-1)
 
 Resources:
   HelmBucket:
@@ -94,7 +91,7 @@ Resources:
           DefaultTTL: 86400
           MaxTTL: 31536000
         ViewerCertificate:
-          AcmCertificateArn: !Ref AcmCertificateArn
+          AcmCertificateArn: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/acm/cloudfront/arn}}'
           SslSupportMethod: sni-only
           MinimumProtocolVersion: TLSv1.2_2021
         Restrictions:

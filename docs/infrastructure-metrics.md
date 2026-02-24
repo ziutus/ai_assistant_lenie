@@ -111,23 +111,31 @@ All 7 `/infra/*` endpoints (infrastructure management — no equivalent in Docke
 
 ## CloudFormation
 
-**Templates in deploy.ini [dev]: 30**
+**Templates in deploy.ini [dev]: 29**
+**Templates in deploy.ini [landing-prod]: 2** (production landing page)
 **Templates in deploy.ini [common]: 3** (account-wide: organization, SCPs)
-**Total .yaml files in templates/: 38**
+**Total .yaml files in templates/: 39**
 
-### deploy.ini [dev] — 30 templates by layer
+### deploy.ini [dev] — 29 templates by layer
 
 | Layer | Templates | Count |
 |-------|-----------|-------|
 | 1. Foundation | env-setup, budget, ~~1-domain-route53~~ (disabled) | 2 |
 | 2. Networking | vpc, security-groups | 2 |
 | 3. Security | secrets | 1 |
-| 4. Storage | s3, s3-cloudformation, dynamodb-documents, s3-website-content, s3-app-web, s3-app2-web, s3-landing-web, sqs-documents, sqs-application-errors | 9 |
+| 4. Storage | s3, s3-cloudformation, dynamodb-documents, s3-website-content, s3-app-web, s3-app2-web, sqs-documents, sqs-application-errors | 8 |
 | 5. Compute | lambda-layer-lenie-all, lambda-layer-openai, lambda-layer-psycopg2, ec2-lenie, lenie-launch-template, lambda-weblink-put-into-sqs, sqs-to-rds-lambda, url-add | 8 |
 | 6. API | api-gw-infra, api-gw-app, api-gw-custom-domain | 3 |
 | 7. Orchestration | sqs-to-rds-step-function | 1 |
-| 8. CDN | cloudfront-app, cloudfront-app2, cloudfront-landing, helm | 4 |
-| **Total** | | **30** |
+| 8. Certificates & CDN | acm-certificates, cloudfront-app, cloudfront-app2, helm | 4 |
+| **Total** | | **29** |
+
+### deploy.ini [landing-prod] — 2 templates (stacks named `lenie-landing-prod-*`)
+
+| Template | Description |
+|----------|-------------|
+| `s3-landing-web.yaml` | Landing page hosting S3 bucket (`lenie-prod-landing-web`) |
+| `cloudfront-landing.yaml` | CDN for landing page (`www.lenie-ai.eu`) with self-contained inline ACM certificate |
 
 ### deploy.ini [common] — 3 templates (stacks named `lenie-all-*`)
 

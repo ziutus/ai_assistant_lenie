@@ -5,6 +5,10 @@
   },
   {
     "ParameterKey": "Environment",
-    "ParameterValue": "dev"
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "HostedZoneId",
+    "ParameterValue": "Z07906713RCJHAZLQEP4C"
   }
 ]
