@@ -625,16 +625,7 @@ Resources:
               type: "apiKey"
               name: "x-api-key"
               in: "header"
-  # Stage configuration managed by separate ApiStage resource.
-  # StageName kept on Deployment (CloudFormation does not support removing it from an existing resource).
-  ApiDeployment:
-    Type: 'AWS::ApiGateway::Deployment'
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      RestApiId: !Ref LenieApi
-      StageName: v1
-
+  # Stage managed by separate ApiStage resource
   ApiStage:
     Type: 'AWS::ApiGateway::Stage'
     DeletionPolicy: Retain
@@ -652,6 +643,15 @@ Resources:
           MetricsEnabled: true
           # DataTraceEnabled logs full request/response bodies — review before enabling in production
           DataTraceEnabled: true
+
+  # StageName kept on Deployment (CloudFormation does not support removing it from an existing resource)
+  ApiDeployment:
+    Type: 'AWS::ApiGateway::Deployment'
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RestApiId: !Ref LenieApi
+      StageName: 'v1'
 
   # SSM Parameter exports
   ApiGatewayIdParameter:
