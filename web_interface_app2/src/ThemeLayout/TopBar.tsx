@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useContext, useEffect, useState } from "react";
 import { Col } from "react-bootstrap";
 import { Link } from "react-router-dom";
 import ManageSubscription from "Common/ManageSubscription";
 import { useDispatch, useSelector } from "react-redux";
 import { THEME_MODE, THEME_SIDEBAR_TOGGLE, changeTheme, changeSidebarThemeToggle } from "Slices/theme/reducer";
 import { RootState } from "Slices/theme/store";
+import { AuthContext } from "../context/AuthContext";
 
 //images
 import logo01 from "assets/images/logo/logo-lenie-ai.png";
@@ -16,6 +17,7 @@ import avatar_user from "assets/images/users/jozwiak_krzysztof_logged_in.jpeg";
 
 
 const TopBar = () => {
+    const { logout } = useContext(AuthContext);
     const [isUpdateSubscription, setIsUpdateSubscription] = useState<boolean>(false);
 
     const toggleUpdateSubscription = () => {
@@ -294,9 +296,9 @@ const TopBar = () => {
                                                 </ul>
                                             </div>
                                             <div className="popup-footer-btn">
-                                                <Link to="#" className="geex-content__header__popup__footer__link">Logout
+                                                <a href="#" className="geex-content__header__popup__footer__link" onClick={(e) => { e.preventDefault(); logout(); }}>Logout
                                                     <i className="fa-light fa-arrow-right"></i>
-                                                </Link>
+                                                </a>
                                             </div>
                                         </div>
                                     </div>
