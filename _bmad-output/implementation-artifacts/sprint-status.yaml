@@ -220,3 +220,4 @@ development_status:
 
   # --- Done ---
   B-7-merge-helm-s3-and-cloudfront-into-single-template: done
+  B-43-fix-app2-domain-to-app2-dev-lenie-ai-eu: done  # Domain moved from app2.lenie-ai.eu to app2.dev.lenie-ai.eu, ACM cert switched to *.dev.lenie-ai.eu, CF stack updated
