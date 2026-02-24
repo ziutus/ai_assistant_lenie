@@ -10,7 +10,7 @@ Parameters:
     Default: dev
     AllowedValues:
       - dev
-      # Post-MVP: add prod, qa as needed
+      - prod
     Description: Environment name
   CloudFrontDistributionId:
     Type: String

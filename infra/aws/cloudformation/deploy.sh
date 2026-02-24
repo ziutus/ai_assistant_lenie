@@ -61,7 +61,7 @@ log() {
 }
 
 parse_config() {
-  local section_name_pattern="^\[\w*\]$"
+  local section_name_pattern="^\[[a-zA-Z0-9_-]*\]$"
   local value_pattern="^\w.*"
   local val
   local section

@@ -12,9 +12,6 @@ Parameters:
       - dev
       # Post-MVP: add prod, qa as needed
     Description: Environment name
-  AcmCertificateArn:
-    Type: String
-    Description: ACM certificate ARN for custom domain (must be in us-east-1)
   HostedZoneId:
     Type: AWS::Route53::HostedZone::Id
     Description: Route53 hosted zone ID for lenie-ai.eu
@@ -63,7 +60,7 @@ Resources:
           # AWS managed CachingOptimized policy
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
         ViewerCertificate:
-          AcmCertificateArn: !Ref AcmCertificateArn
+          AcmCertificateArn: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/acm/cloudfront/arn}}'
           SslSupportMethod: sni-only
           MinimumProtocolVersion: TLSv1.2_2021
         CustomErrorResponses:

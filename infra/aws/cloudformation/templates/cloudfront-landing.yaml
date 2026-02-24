@@ -10,16 +10,34 @@ Parameters:
     Default: dev
     AllowedValues:
       - dev
-      # Post-MVP: add prod, qa as needed
+      - prod
     Description: Environment name
-  AcmCertificateArn:
-    Type: String
-    Description: ACM certificate ARN for custom domain (must be in us-east-1)
   HostedZoneId:
     Type: AWS::Route53::HostedZone::Id
     Description: Route53 hosted zone ID for lenie-ai.eu
 
 Resources:
+  # ACM Certificate with DNS validation (self-contained — landing page is a production resource)
+  LandingCertificate:
+    Type: AWS::CertificateManager::Certificate
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DomainName: www.lenie-ai.eu
+      SubjectAlternativeNames:
+        - lenie-ai.eu
+      ValidationMethod: DNS
+      DomainValidationOptions:
+        - DomainName: www.lenie-ai.eu
+          HostedZoneId: !Ref HostedZoneId
+        - DomainName: lenie-ai.eu
+          HostedZoneId: !Ref HostedZoneId
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
   # Origin Access Control for S3 origin (sigv4 signing)
   LandingOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
@@ -44,6 +62,7 @@ Resources:
         IPV6Enabled: true
         Aliases:
           - www.lenie-ai.eu
+          - lenie-ai.eu
         Origins:
           - Id: !Sub '${ProjectCode}-${Environment}-landing-web.s3.us-east-1.amazonaws.com'
             DomainName: !Sub '${ProjectCode}-${Environment}-landing-web.s3.us-east-1.amazonaws.com'
@@ -63,7 +82,7 @@ Resources:
           # AWS managed CachingOptimized policy
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
         ViewerCertificate:
-          AcmCertificateArn: !Ref AcmCertificateArn
+          AcmCertificateArn: !Ref LandingCertificate
           SslSupportMethod: sni-only
           MinimumProtocolVersion: TLSv1.2_2021
         CustomErrorResponses:
@@ -84,12 +103,22 @@ Resources:
         - Key: Project
           Value: !Ref ProjectCode
 
-  # Route53 A-record alias pointing to CloudFront distribution
+  # Route53 A-record aliases pointing to CloudFront distribution
   LandingDnsRecord:
     Type: AWS::Route53::RecordSet
     Properties:
       HostedZoneId: !Ref HostedZoneId
       Name: www.lenie-ai.eu
+      Type: A
+      AliasTarget:
+        DNSName: !GetAtt LandingDistribution.DomainName
+        HostedZoneId: Z2FDTNDATAQYW2  # CloudFront global hosted zone ID
+
+  LandingApexDnsRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: lenie-ai.eu
       Type: A
       AliasTarget:
         DNSName: !GetAtt LandingDistribution.DomainName

@@ -202,7 +202,7 @@ development_status:
   B-10-create-apigw-cloudwatch-iam-role-in-cloudformation: backlog
   B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
   B-23-consolidate-lambdas-with-vpc-ipv6-dual-stack: backlog  # Enable IPv6 dual-stack + Egress-Only IGW to merge app-server-db + app-server-internet into one Lambda. BLOCKER: OpenAI API has no IPv6 (no AAAA record as of 2026-02). Options: switch to Bedrock, use NAT64, or wait for OpenAI IPv6 support.
-  B-8-manage-acm-certificates-via-cloudformation-and-ssm: backlog  # Partially addressed by 17-5: api-gw-custom-domain.yaml manages ACM cert for api.dev.lenie-ai.eu
+  B-8-manage-acm-certificates-via-cloudformation-and-ssm: done  # ACM certs via CF: wildcard (SSM) + landing inline cert. deploy.sh regex fix. 3 old manual certs deleted. Review: DeletionPolicy added to cert resources, orphaned param file removed.
   B-9-organize-s3-cloudformation-bucket-directory-structure: backlog
   B-13-parameterize-stage-description-for-multi-environment: backlog
   B-15-add-custom-domains-for-api-gateways: done  # Realized as story 17-5: api.dev.lenie-ai.eu

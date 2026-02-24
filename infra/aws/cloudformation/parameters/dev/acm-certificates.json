@@ -8,8 +8,8 @@
     "ParameterValue": "dev"
   },
   {
-    "ParameterKey": "AcmCertificateArn",
-    "ParameterValue": "arn:aws:acm:us-east-1:008971653395:certificate/086deba9-90e6-454a-b9d7-e2111542f150"
+    "ParameterKey": "BaseDomainName",
+    "ParameterValue": "lenie-ai.eu"
   },
   {
     "ParameterKey": "HostedZoneId",
