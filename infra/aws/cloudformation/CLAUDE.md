@@ -21,12 +21,21 @@ Universal script for creating, updating, and deleting CloudFormation stacks.
 
 - `aws` (AWS CLI)
 - `jq` (JSON processing)
-- `sponge` (from `moreutils` package - Debian: `apt install moreutils`)
+
+### Running from Claude Code
+
+The script uses `file://` URIs with `$PWD` paths. Git Bash (MSYS) on Windows translates paths incorrectly (`/c/Users/...` instead of `/mnt/c/Users/...`), so the script **must be run via WSL**:
+
+```bash
+wsl bash -c "cd /mnt/c/Users/ziutus/git/_lenie-all/lenie-server-2025/infra/aws/cloudformation && ./deploy.sh -p lenie -s dev -y"
+```
+
+The `-y` flag skips the interactive confirmation prompt (required for non-interactive execution from Claude Code).
 
 ### Usage
 
 ```bash
-./deploy.sh -p <PROJECT_CODE> -s <STAGE> [-r <REGION>] [-d] [-t]
+./deploy.sh -p <PROJECT_CODE> -s <STAGE> [-r <REGION>] [-d] [-t] [-y]
 ```
 
 | Flag  | Description | Default |
@@ -36,6 +45,7 @@ Universal script for creating, updating, and deleting CloudFormation stacks.
 | `-r`  | AWS region | `us-east-1` |
 | `-d`  | Delete stacks (instead of create/update) | disabled |
 | `-t`  | Change-set mode (preview changes before applying) | disabled |
+| `-y`, `--yes` | Skip confirmation prompt (for automation/CI) | disabled |
 
 ### Examples
 
@@ -155,7 +165,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `api-gw-infra.yaml` | REST API, 3 Lambdas, IAM Role, SSM | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). 3 consolidated Lambdas: rds-manager, ec2-manager, sqs-size. Paths without `/infra` prefix (routing via custom domain base path mapping). Exports API ID and invoke URL to SSM. |
+| `api-gw-infra.yaml` | REST API, 3 Lambdas, 3 IAM Roles, SSM | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). 3 consolidated Lambdas: rds-manager, ec2-manager, sqs-size. Each Lambda has its own least-privilege IAM role with resource-level scoping (SQS scoped to project queues, RDS scoped to specific DB instance via SSM, EC2 start/stop scoped to specific instance). Paths without `/infra` prefix (routing via custom domain base path mapping). Exports API ID and invoke URL to SSM. |
 | `api-gw-app.yaml` | REST API, Lambda Permissions, SSM | Main application API (11 endpoints, x-api-key). References 3 Lambda functions: `${PC}-${Env}-app-server-db`, `${PC}-${Env}-app-server-internet`, `${PC}-${Env}-url-add`. All Lambda names fully parameterized. Exports API ID, root resource ID, and invoke URL to SSM. |
 | `api-gw-custom-domain.yaml` | ACM Certificate, API GW DomainName, BasePathMappings, Route53, SSM | Custom domain `api.{env}.lenie-ai.eu` with TLS 1.2. Root path (`/`) maps to app API, `/infra` maps to infra API. DNS validation via Route53. |
 

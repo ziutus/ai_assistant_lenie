@@ -18,9 +18,10 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<String>
 
 Resources:
-  LambdaExecutionRole:
+  SqsSizeExecutionRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub '${ProjectCode}-${Environment}-sqs-size-role'
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -29,7 +30,43 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: LambdaBasicExecution2
+        - PolicyName: SqsSizePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - sqs:GetQueueAttributes
+                Resource: !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectCode}-${Environment}-*'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectCode}/${Environment}/*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+  RdsManagerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectCode}-${Environment}-rds-manager-role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: RdsManagerPolicy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -44,17 +81,48 @@ Resources:
                   - rds:StartDBInstance
                   - rds:StopDBInstance
                   - rds:DescribeDBInstances
-                Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:*'
+                Resource: !Sub 'arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:{{resolve:ssm:/${ProjectCode}/${Environment}/database/name}}'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectCode}/${Environment}/*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+
+  Ec2ManagerExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectCode}-${Environment}-ec2-manager-role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: Ec2ManagerPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
               - Effect: Allow
                 Action:
                   - ec2:StartInstances
                   - ec2:StopInstances
-                  - ec2:DescribeInstances
-                Resource: '*'
+                Resource: !Sub 'arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/${OpenvpnEC2Name}'
               - Effect: Allow
                 Action:
-                  - sqs:GetQueueAttributes
-                Resource: !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:*'
+                  - ec2:DescribeInstances
+                Resource: '*'
               - Effect: Allow
                 Action:
                   - ssm:GetParameter
@@ -70,7 +138,7 @@ Resources:
     Properties:
       FunctionName: !Sub ${ProjectCode}-${Environment}-sqs-size
       Handler: 'lambda_function.lambda_handler'
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt SqsSizeExecutionRole.Arn
       LoggingConfig:
         LogFormat: 'JSON'
         ApplicationLogLevel: 'INFO'
@@ -97,7 +165,7 @@ Resources:
     Properties:
       FunctionName: !Sub ${ProjectCode}-${Environment}-rds-manager
       Handler: 'lambda_function.lambda_handler'
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt RdsManagerExecutionRole.Arn
       LoggingConfig:
         LogFormat: 'JSON'
         ApplicationLogLevel: 'INFO'
@@ -123,7 +191,7 @@ Resources:
     Properties:
       FunctionName: !Sub ${ProjectCode}-${Environment}-ec2-manager
       Handler: 'lambda_function.lambda_handler'
-      Role: !GetAtt LambdaExecutionRole.Arn
+      Role: !GetAtt Ec2ManagerExecutionRole.Arn
       LoggingConfig:
         LogFormat: 'JSON'
         ApplicationLogLevel: 'INFO'
