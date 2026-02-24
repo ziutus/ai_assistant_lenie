@@ -2,7 +2,7 @@
 title: 'Split Shared Lambda Execution Role into Per-Function Roles'
 slug: 'b21-split-lambda-iam-roles'
 created: '2026-02-24'
-status: 'ready-for-dev'
+status: 'done'
 stepsCompleted: [1, 2, 3, 4]
 tech_stack: ['AWS CloudFormation', 'AWS IAM', 'AWS Lambda', 'AWS SSM Parameter Store']
 files_to_modify: ['infra/aws/cloudformation/templates/api-gw-infra.yaml', 'docs/architecture-infra.md']
@@ -94,7 +94,7 @@ Create 3 individual IAM roles — one per Lambda function — each scoped to onl
 
 ### Tasks
 
-- [ ] Task 1: Create `SqsSizeExecutionRole` IAM role
+- [x] Task 1: Create `SqsSizeExecutionRole` IAM role
   - File: `infra/aws/cloudformation/templates/api-gw-infra.yaml`
   - Action: Add new `AWS::IAM::Role` resource after the existing `LambdaExecutionRole` block (after line 66). The role includes:
     - `RoleName: !Sub '${ProjectCode}-${Environment}-sqs-size-role'`
@@ -105,7 +105,7 @@ Create 3 individual IAM roles — one per Lambda function — each scoped to onl
       3. SSM (`ssm:GetParameter`) — `Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectCode}/${Environment}/*'`
     - Tags: `Environment` + `Project` (same pattern as existing)
 
-- [ ] Task 2: Create `RdsManagerExecutionRole` IAM role
+- [x] Task 2: Create `RdsManagerExecutionRole` IAM role
   - File: `infra/aws/cloudformation/templates/api-gw-infra.yaml`
   - Action: Add new `AWS::IAM::Role` resource. The role includes:
     - `RoleName: !Sub '${ProjectCode}-${Environment}-rds-manager-role'`
@@ -116,7 +116,7 @@ Create 3 individual IAM roles — one per Lambda function — each scoped to onl
       3. SSM (`ssm:GetParameter`) — `Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectCode}/${Environment}/*'`
     - Tags: `Environment` + `Project`
 
-- [ ] Task 3: Create `Ec2ManagerExecutionRole` IAM role
+- [x] Task 3: Create `Ec2ManagerExecutionRole` IAM role
   - File: `infra/aws/cloudformation/templates/api-gw-infra.yaml`
   - Action: Add new `AWS::IAM::Role` resource. The role includes:
     - `RoleName: !Sub '${ProjectCode}-${Environment}-ec2-manager-role'`
@@ -128,45 +128,45 @@ Create 3 individual IAM roles — one per Lambda function — each scoped to onl
       4. SSM (`ssm:GetParameter`) — `Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectCode}/${Environment}/*'`
     - Tags: `Environment` + `Project`
 
-- [ ] Task 4: Update Lambda function role references
+- [x] Task 4: Update Lambda function role references
   - File: `infra/aws/cloudformation/templates/api-gw-infra.yaml`
   - Action: Change `Role:` property in each Lambda function:
     - `SqsSizeFunction` (line 73): `Role: !GetAtt LambdaExecutionRole.Arn` → `Role: !GetAtt SqsSizeExecutionRole.Arn`
     - `RdsManagerFunction` (line 100): `Role: !GetAtt LambdaExecutionRole.Arn` → `Role: !GetAtt RdsManagerExecutionRole.Arn`
     - `Ec2ManagerFunction` (line 126): `Role: !GetAtt LambdaExecutionRole.Arn` → `Role: !GetAtt Ec2ManagerExecutionRole.Arn`
 
-- [ ] Task 5: Remove shared `LambdaExecutionRole`
+- [x] Task 5: Remove shared `LambdaExecutionRole`
   - File: `infra/aws/cloudformation/templates/api-gw-infra.yaml`
   - Action: Delete the entire `LambdaExecutionRole` resource block (lines 21-66)
   - Notes: This must happen AFTER Tasks 1-4 so that the new roles are in place. CloudFormation handles this atomically — it creates new roles before deleting the old one during stack update.
 
-- [ ] Task 6: Validate CloudFormation template
+- [x] Task 6: Validate CloudFormation template
   - Action: Run `aws cloudformation validate-template --template-body file://infra/aws/cloudformation/templates/api-gw-infra.yaml`
   - Notes: Confirms YAML syntax and basic CloudFormation structure are valid.
 
-- [ ] Task 7: Update architecture documentation
+- [x] Task 7: Update architecture documentation
   - File: `docs/architecture-infra.md`
   - Action: Update the `api-gw-infra.yaml` row in the API Gateway table (line 158) to reflect that each Lambda now has its own IAM role instead of a shared role. Change description from mentioning "IAM Role" (singular) to "3 IAM Roles" (per-function). Add a note that roles follow least-privilege principle with resource-level scoping.
 
 ### Acceptance Criteria
 
-- [ ] AC 1: Given the updated `api-gw-infra.yaml` template, when `aws cloudformation validate-template` is run, then it succeeds without errors.
+- [x] AC 1: Given the updated `api-gw-infra.yaml` template, when `aws cloudformation validate-template` is run, then it succeeds without errors.
 
-- [ ] AC 2: Given the deployed stack, when inspecting `SqsSizeFunction` in AWS Console, then its execution role is `lenie-dev-sqs-size-role` and the role has ONLY CloudWatch Logs, SQS (`GetQueueAttributes` scoped to `lenie-dev-*` queues), and SSM permissions.
+- [x] AC 2: Given the deployed stack, when inspecting `SqsSizeFunction` in AWS Console, then its execution role is `lenie-dev-sqs-size-role` and the role has ONLY CloudWatch Logs, SQS (`GetQueueAttributes` scoped to `lenie-dev-*` queues), and SSM permissions.
 
-- [ ] AC 3: Given the deployed stack, when inspecting `RdsManagerFunction` in AWS Console, then its execution role is `lenie-dev-rds-manager-role` and the role has ONLY CloudWatch Logs, RDS (Start/Stop/Describe scoped to the specific DB instance from SSM), and SSM permissions.
+- [x] AC 3: Given the deployed stack, when inspecting `RdsManagerFunction` in AWS Console, then its execution role is `lenie-dev-rds-manager-role` and the role has ONLY CloudWatch Logs, RDS (Start/Stop/Describe scoped to the specific DB instance from SSM), and SSM permissions.
 
-- [ ] AC 4: Given the deployed stack, when inspecting `Ec2ManagerFunction` in AWS Console, then its execution role is `lenie-dev-ec2-manager-role` and the role has ONLY CloudWatch Logs, EC2 (Start/Stop scoped to the specific instance, Describe with `*`), and SSM permissions.
+- [x] AC 4: Given the deployed stack, when inspecting `Ec2ManagerFunction` in AWS Console, then its execution role is `lenie-dev-ec2-manager-role` and the role has ONLY CloudWatch Logs, EC2 (Start/Stop scoped to the specific instance, Describe with `*`), and SSM permissions.
 
-- [ ] AC 5: Given the deployed stack, when searching for the old `LambdaExecutionRole` in IAM, then it no longer exists (deleted by CloudFormation during stack update).
+- [x] AC 5: Given the deployed stack, when searching for the old `LambdaExecutionRole` in IAM, then it no longer exists (deleted by CloudFormation during stack update).
 
-- [ ] AC 6: Given the deployed stack, when calling `GET /sqs/size` via API Gateway, then it returns the SQS queue size successfully (200 response).
+- [x] AC 6: Given the deployed stack, when calling `GET /sqs/size` via API Gateway, then it returns the SQS queue size successfully (200 response).
 
-- [ ] AC 7: Given the deployed stack, when calling `POST /database/start`, `POST /database/stop`, and `GET /database/status` via API Gateway, then each returns a successful response (Lambda can perform RDS operations).
+- [x] AC 7: Given the deployed stack, when calling `POST /database/start`, `POST /database/stop`, and `GET /database/status` via API Gateway, then each returns a successful response (Lambda can perform RDS operations).
 
-- [ ] AC 8: Given the deployed stack, when calling `POST /vpn_server/start`, `POST /vpn_server/stop`, and `GET /vpn_server/status` via API Gateway, then each returns a successful response (Lambda can perform EC2 operations).
+- [x] AC 8: Given the deployed stack, when calling `POST /vpn_server/start`, `POST /vpn_server/stop`, and `GET /vpn_server/status` via API Gateway, then each returns a successful response (Lambda can perform EC2 operations).
 
-- [ ] AC 9: Given the updated `docs/architecture-infra.md`, when reviewing the api-gw-infra row, then it accurately describes per-function IAM roles with least-privilege scoping.
+- [x] AC 9: Given the updated `docs/architecture-infra.md`, when reviewing the api-gw-infra row, then it accurately describes per-function IAM roles with least-privilege scoping.
 
 ## Additional Context
 
