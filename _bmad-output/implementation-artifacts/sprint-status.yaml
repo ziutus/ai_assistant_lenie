@@ -184,7 +184,7 @@ development_status:
   # --- Future Backlog ---
 
   # --- Frontend ---
-  B-16-migrate-web-interface-react-from-cra-to-vite: backlog
+  B-16-migrate-web-interface-react-from-cra-to-vite: done  # Already migrated — Vite 6, vitest, vite.config.ts, no CRA traces
   # B-17 removed: web_add_url_react archived and deleted from repo. Restore: git checkout archive/web-add-url-react -- _archive/web_add_url_react/
 
   # --- Extending Functionality (Phase 7) ---
