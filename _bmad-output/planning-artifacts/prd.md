@@ -130,6 +130,7 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 - CORS hardening (replace wildcard `Access-Control-Allow-Origin: '*'`)
 - Lambda function CloudFormation management (replace hardcoded ARNs)
 - Remove 36 stale API Gateway deployments
+- **B-46: Define strict SCP policies for lenie account** — Define granular Service Control Policies for the 008971653395 account to increase security: restrict unused AWS services, enforce encryption defaults (S3, EBS, RDS), block public S3 buckets, limit IAM actions beyond current region-only SCPs.
 
 ### Phase 4 (Future — MCP Server Foundation)
 
@@ -143,9 +144,6 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 Bidirectional communication channel (Slack) and new automated data source (RSS feeds). Enables proactive notifications about errors and interesting content, and allows querying the system from mobile via Slack. Phased: webhooks first (simple, serverless-friendly), then Slack Bot (requires persistent process or Socket Mode).
 
 - **B-40: Slack Workspace & Incoming Webhooks** — Create Slack workspace (free plan). Configure Incoming Webhook for a `#notifications` channel. Integrate webhook into existing error handling pipeline (alongside SNS email). Send notifications on: document processing errors, SQS DLQ messages. Store webhook URL in Secrets Manager (or SSM SecureString). Add CloudFormation parameter for webhook URL.
-- **B-41: RSS Feed Ingestion with LLM Filtering** — New data source: RSS feeds (starting with AWS "What's New" — `https://aws.amazon.com/about-aws/whats-new/recent/feed/`). Daily scheduled Lambda (EventBridge cron) fetches RSS, parses entries, sends each to LLM for relevance scoring (prompt: "Is this relevant to: serverless, containers, PostgreSQL, AI/ML, security?"). Relevant entries are submitted to the existing document pipeline (`/url_add` flow via SQS). Store last-processed entry timestamp in DynamoDB to avoid duplicates. Notify via Slack webhook when interesting articles are found.
-- **B-42: Slack Bot for User Queries (Socket Mode)** — Slack App with Bot user using Socket Mode (no public endpoint required). Bot listens for messages and supports commands: `search <query>` (calls `/website_similar` for vector search), `status` (returns SQS queue size, RDS status), `recent` (lists last N processed documents). Deploy as systemd service on existing `lenie-dev-ec2` instance (t4g.micro) — zero additional infrastructure cost. Bot runs during EC2 uptime (~12h on working days). Slack Socket Mode handles disconnects gracefully (auto-reconnect when EC2 starts).
-- **B-44: Storytel Audiobook Tracking** — Automatically track audiobooks listened on storytel.com. Scrape or integrate with Storytel to capture book metadata (title, author, genre, listening progress/completion). Store as documents in the existing pipeline (new content type: `audiobook`). Enable searching and managing audiobook history alongside other collected data. Explore Storytel API or web scraping for data extraction.
 - ~~**B-43: Fix app2 domain — move from `app2.lenie-ai.eu` to `app2.dev.lenie-ai.eu`**~~ ✅ DONE (2026-02-24) — CloudFront alias updated to `app2.dev.lenie-ai.eu`, Route53 A record migrated, ACM certificate switched to `*.dev.lenie-ai.eu` wildcard. Also: wired up TopBar logout button, replaced language options with English/Polish.
 
 ### Phase 6 (Future — Obsidian Integration)
@@ -154,7 +152,19 @@ Bidirectional communication channel (Slack) and new automated data source (RSS f
 - Semantic search from within Obsidian via Claude Desktop + MCP
 - Advanced vector search refinements for personal knowledge management
 
-### Phase 7 (Future — LLM Text Analysis)
+### Phase 7 (Future — Extending Functionality)
+
+Non-MVP features for expanding data sources and interaction channels. Not required for core product but valuable for personal knowledge management workflow.
+
+- **B-41: RSS Feed Ingestion with LLM Filtering** — New data source: RSS feeds (starting with AWS "What's New" — `https://aws.amazon.com/about-aws/whats-new/recent/feed/`). Daily scheduled Lambda (EventBridge cron) fetches RSS, parses entries, sends each to LLM for relevance scoring (prompt: "Is this relevant to: serverless, containers, PostgreSQL, AI/ML, security?"). Relevant entries are submitted to the existing document pipeline (`/url_add` flow via SQS). Store last-processed entry timestamp in DynamoDB to avoid duplicates. Notify via Slack webhook when interesting articles are found.
+- **B-42: Slack Bot for User Queries (Socket Mode)** — Slack App with Bot user using Socket Mode (no public endpoint required). Bot listens for messages and supports commands: `search <query>` (calls `/website_similar` for vector search), `status` (returns SQS queue size, RDS status), `recent` (lists last N processed documents). Deploy as systemd service on existing `lenie-dev-ec2` instance (t4g.micro) — zero additional infrastructure cost. Bot runs during EC2 uptime (~12h on working days). Slack Socket Mode handles disconnects gracefully (auto-reconnect when EC2 starts).
+- **B-44: Storytel Audiobook Tracking** — Automatically track audiobooks listened on storytel.com. Scrape or integrate with Storytel to capture book metadata (title, author, genre, listening progress/completion). Store as documents in the existing pipeline (new content type: `audiobook`). Enable searching and managing audiobook history alongside other collected data. Explore Storytel API or web scraping for data extraction.
+- **B-45: YouTube Movie Description Fetching** — Automatically fetch and store video descriptions, metadata (title, channel, duration, publish date, tags) for YouTube videos added to the system. Extend existing YouTube content type with richer metadata beyond transcript. Use YouTube Data API v3 or yt-dlp for extraction.
+- **B-47: WhatsApp Conversation Analysis** — Import exported WhatsApp conversations and analyze them via LLM. Extract key topics, mentioned contacts, decisions, action items, and important dates. Store as documents in the existing pipeline (new content type: `whatsapp`). Support WhatsApp's text export format (.txt).
+- **B-48: Google Contacts Integration** — Integrate with Google People API to sync address book data. Link contacts to documents and conversations stored in the system. Enable searching documents by contact name. OAuth 2.0 authentication for Google API access.
+
+### Phase 8 (Future — LLM Text Analysis)
+
 
 Realizowane po MVP (po fazach Security, MCP Server, Obsidian). Automatyczna analiza tekstu dokumentów przez LLM, zwracająca ustrukturyzowany JSON z metadanymi.
 
@@ -163,7 +173,7 @@ Realizowane po MVP (po fazach Security, MCP Server, Obsidian). Automatyczna anal
 - **B-31: UI wyników analizy we frontendzie** — Wyświetlanie wyników analizy na stronie edycji dokumentu. Możliwość ręcznej korekty wyników. Filtrowanie listy dokumentów po metadanych z analizy (autor, kraj, temat).
 - **B-32: Batch analysis istniejących dokumentów** — Skrypt przetwarzający dokumenty bez analizy (analogiczny do `web_documents_do_the_needful_new.py`). Nowy status dokumentu w pipeline (np. `ANALYSIS_NEEDED` → `ANALYSIS_DONE`). Integracja z Step Function/SQS na AWS.
 
-### Phase 8 (Future — Multiuser Support on AWS)
+### Phase 9 (Future — Multiuser Support on AWS)
 
 Realizowane na samym końcu, po zakończeniu wszystkich pozostałych faz. Umożliwi korzystanie z systemu przez wielu użytkowników na infrastrukturze AWS.
 

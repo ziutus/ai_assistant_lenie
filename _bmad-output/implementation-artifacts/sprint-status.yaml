@@ -183,23 +183,31 @@ development_status:
 
   # --- Future Backlog ---
 
-  # --- Medium Priority ---
+  # --- Frontend ---
+  B-16-migrate-web-interface-react-from-cra-to-vite: backlog
+  # B-17 removed: web_add_url_react archived and deleted from repo. Restore: git checkout archive/web-add-url-react -- _archive/web_add_url_react/
+
+  # --- Extending Functionality (Phase 7) ---
+  B-41-rss-feed-ingestion-with-llm-filtering: backlog  # RSS feeds (AWS What's New), daily Lambda, LLM relevance scoring, submit to /url_add pipeline
+  B-42-slack-bot-for-user-queries-socket-mode: backlog  # Slack Bot (Socket Mode) — search, status, recent commands. Deploy on lenie-dev-ec2
+  B-44-storytel-audiobook-tracking: backlog  # Track audiobooks listened on storytel.com — scrape/API metadata (title, author, genre, progress), store as content type 'audiobook' in existing pipeline
+  B-45-youtube-movie-description-fetching: backlog  # Fetch and store YouTube video descriptions, metadata (title, channel, duration, tags) for videos in the system
+  B-47-whatsapp-conversation-analysis: backlog  # Import and analyze WhatsApp conversations — extract key topics, contacts, decisions, action items via LLM
+  B-48-google-contacts-integration: backlog  # Integrate with Google Contacts (People API) — sync address book data, link contacts to documents and conversations
+
+  # --- Cleaning AWS Architecture ---
   B-39-delegate-dns-subzones-per-environment: backlog  # Split lenie-ai.eu into delegated subzones: main zone (root + NS delegations only) + per-env subzones (dev.lenie-ai.eu, prod.lenie-ai.eu). Enables multi-account (049706517731) and multi-cloud (GCP k8s.lenie-ai.eu). Prerequisite for multi-env. Remove 1-domain-route53.yaml, create new templates. $0.50/month per subzone.
   B-21-split-shared-lambda-execution-role-into-per-function-roles: backlog
   B-6-migrate-api-gw-app-stage-to-separate-resource: backlog
   B-10-create-apigw-cloudwatch-iam-role-in-cloudformation: backlog
-  B-16-migrate-web-interface-react-from-cra-to-vite: backlog
-  # B-17 removed: web_add_url_react archived and deleted from repo. Restore: git checkout archive/web-add-url-react -- _archive/web_add_url_react/
   B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
-  B-44-storytel-audiobook-tracking: backlog  # Track audiobooks listened on storytel.com — scrape/API metadata (title, author, genre, progress), store as content type 'audiobook' in existing pipeline
-
-  # --- Low Priority / Ideas ---
   B-23-consolidate-lambdas-with-vpc-ipv6-dual-stack: backlog  # Enable IPv6 dual-stack + Egress-Only IGW to merge app-server-db + app-server-internet into one Lambda. BLOCKER: OpenAI API has no IPv6 (no AAAA record as of 2026-02). Options: switch to Bedrock, use NAT64, or wait for OpenAI IPv6 support.
   B-8-manage-acm-certificates-via-cloudformation-and-ssm: backlog  # Partially addressed by 17-5: api-gw-custom-domain.yaml manages ACM cert for api.dev.lenie-ai.eu
   B-9-organize-s3-cloudformation-bucket-directory-structure: backlog
   B-13-parameterize-stage-description-for-multi-environment: backlog
   B-15-add-custom-domains-for-api-gateways: done  # Realized as story 17-5: api.dev.lenie-ai.eu
   B-19-convert-ec2-to-spot-with-asg-0-1: backlog
+  B-46-define-strict-scp-policies-for-lenie-account: backlog  # Define granular SCPs for the 008971653395 account — restrict unused services, enforce encryption, block public S3, limit regions beyond current SCPs
 
   # --- LLM Text Analysis (Phase 6 — po MVP) ---
   # Automatyczna analiza tekstu przez LLM, zwracająca ustrukturyzowany JSON
