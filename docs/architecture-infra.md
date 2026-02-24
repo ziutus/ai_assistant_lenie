@@ -33,7 +33,7 @@ API Gateway serves as managed entry point with API key authentication.
 | Queues | sqs-documents, sqs-application-errors | Document processing queue (14-day retention), DLQ with SNS alerts |
 | Storage | s3, s3-cloudformation, s3-helm | Video transcriptions, Lambda code, Helm charts |
 | Compute | ec2-lenie, lambda-rds-start, lambda-weblink-put-into, sqs-to-rds-lambda | EC2 (t4g.micro ARM64), Lambda functions |
-| API | api-gw-infra, api-gw-app | 2 API Gateway templates; 3 REST APIs total (infra, app, url-add — /url_add also consolidated into app) |
+| API | api-gw-infra, api-gw-app | 2 API Gateway templates; 3 REST APIs total (infra, app, url-add — /url_add also consolidated into app). api-gw-infra uses 3 per-function IAM roles with least-privilege resource-level scoping |
 | DNS | 1-domain-route53 | lenie-ai.eu hosted zone |
 | Orchestration | sqs-to-rds-step-function | Workflow: SQS → start DB → process → stop DB (Catch on Lambda failure stops DB to avoid costs) |
 | Governance | organization, scp-*, budget | AWS Organization, SCPs (auto-attached to root: BlockSSOCreation, DenyOutsideIreland), $8/month budget. `[common]` section stacks named `lenie-all-*`. Prerequisite: `aws organizations enable-policy-type --root-id <ROOT_ID> --policy-type SERVICE_CONTROL_POLICY` (one-time) |
