@@ -95,9 +95,6 @@ Vite 6 + React 18 + TypeScript admin panel at `app2.dev.lenie-ai.eu`. Uses React
 
 See `web_interface_app2/CLAUDE.md` for details.
 
-### Target Multi-User UI (`web_interface_target/`)
-Build artifacts from a purchased layout (React 18, Redux, React Bootstrap, TypeScript, Sass). Serves as visual/structural reference for the future multi-user admin interface at `app2.dev.lenie-ai.eu`. License restriction prevents direct reuse — new UI to be built from scratch using layout as partial base. Infrastructure ready (S3 + CloudFront templates in deploy.ini). No functionality connected yet.
-
 ## Infrastructure
 
 ### Docker Stack (`infra/docker/compose.yaml`)
