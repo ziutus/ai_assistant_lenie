@@ -169,6 +169,22 @@ npm test          # Run Vitest tests
 npm run lint      # TypeScript type check only
 ```
 
+## AWS Deployment
+
+Deploy to S3 + CloudFront (`app.dev.lenie-ai.eu`). The script resolves S3 bucket and CloudFront distribution ID from SSM Parameter Store.
+
+```bash
+./deploy.sh                      # Full build + deploy to S3 + CF invalidation
+./deploy.sh --skip-build         # Deploy existing build/ only
+./deploy.sh --skip-invalidation  # Skip CF cache invalidation
+```
+
+SSM parameters used:
+- `/${PROJECT_CODE}/${ENVIRONMENT}/s3/app-web/name` — S3 bucket name
+- `/${PROJECT_CODE}/${ENVIRONMENT}/cloudfront/app/id` — CloudFront distribution ID
+
+Environment variables: `PROJECT_CODE` (default: `lenie`), `ENVIRONMENT` (default: `dev`), `AWS_REGION` (default: `us-east-1`).
+
 ## Docker Build
 
 ```

@@ -115,6 +115,22 @@ Some endpoints exist only in `server.py` (not in Lambda): `/url_add` (replaced b
 
 See `infra/aws/serverless/CLAUDE.md` for detailed comparison and known differences.
 
+### Frontend Deployment (AWS)
+
+All three frontends are deployed to S3 + CloudFront. Deploy scripts resolve bucket names and distribution IDs from SSM Parameter Store (exported by CloudFormation). See `docs/frontend-deployment.md` for full details.
+
+```bash
+# React app (app.dev.lenie-ai.eu)
+cd web_interface_react && ./deploy.sh
+
+# Admin panel (app2.dev.lenie-ai.eu)
+cd web_interface_app2 && ./deploy.sh
+
+# Common options
+./deploy.sh --skip-build         # Deploy existing build/ only
+./deploy.sh --skip-invalidation  # Skip CloudFront cache invalidation
+```
+
 ### CI/CD
 - CircleCI (`.circleci/config.yml`) - EC2-based testing
 - GitLab CI (`.gitlab-ci.yml`) - Qodana security scanning

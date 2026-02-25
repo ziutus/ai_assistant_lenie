@@ -13,6 +13,7 @@ const Connect: React.FC = () => {
   const [formApiType, setFormApiType] = useState<ApiType>("AWS Serverless");
   const [formApiUrl, setFormApiUrl] = useState(DEFAULT_URLS["AWS Serverless"]);
   const [formApiKey, setFormApiKey] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState("");
 
@@ -98,34 +99,6 @@ const Connect: React.FC = () => {
       <h2 style={{ marginBottom: "20px" }}>Connect to Lenie Backend</h2>
 
       <div style={{ marginBottom: "15px" }}>
-        <label htmlFor="connect-api-type" style={{ display: "block", marginBottom: "4px", fontWeight: 500 }}>
-          API Type
-        </label>
-        <select
-          id="connect-api-type"
-          value={formApiType}
-          onChange={handleApiTypeChange}
-          style={{ width: "100%", padding: "8px", fontSize: "14px" }}
-        >
-          <option value="AWS Serverless">AWS Serverless</option>
-          <option value="Docker">Docker</option>
-        </select>
-      </div>
-
-      <div style={{ marginBottom: "15px" }}>
-        <label htmlFor="connect-api-url" style={{ display: "block", marginBottom: "4px", fontWeight: 500 }}>
-          API URL
-        </label>
-        <input
-          id="connect-api-url"
-          type="text"
-          value={formApiUrl}
-          onChange={(e) => setFormApiUrl(e.target.value)}
-          style={{ width: "100%", padding: "8px", fontSize: "14px" }}
-        />
-      </div>
-
-      <div style={{ marginBottom: "15px" }}>
         <label htmlFor="connect-api-key" style={{ display: "block", marginBottom: "4px", fontWeight: 500 }}>
           API Key
         </label>
@@ -138,6 +111,63 @@ const Connect: React.FC = () => {
           style={{ width: "100%", padding: "8px", fontSize: "14px" }}
         />
       </div>
+
+      <div style={{ marginBottom: "15px" }}>
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          disabled={isValidating}
+          aria-expanded={showAdvanced}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#007bff",
+            cursor: "pointer",
+            padding: 0,
+            fontSize: "14px",
+            textDecoration: "underline",
+          }}
+        >
+          {showAdvanced ? "Hide advanced settings" : "Advanced settings"}
+        </button>
+        {!showAdvanced && (
+          <div style={{ fontSize: "12px", color: "#6c757d", marginTop: "4px" }}>
+            {formApiType} — {formApiUrl}
+          </div>
+        )}
+      </div>
+
+      {showAdvanced && (
+        <>
+          <div style={{ marginBottom: "15px" }}>
+            <label htmlFor="connect-api-type" style={{ display: "block", marginBottom: "4px", fontWeight: 500 }}>
+              API Type
+            </label>
+            <select
+              id="connect-api-type"
+              value={formApiType}
+              onChange={handleApiTypeChange}
+              style={{ width: "100%", padding: "8px", fontSize: "14px" }}
+            >
+              <option value="AWS Serverless">AWS Serverless</option>
+              <option value="Docker">Docker</option>
+            </select>
+          </div>
+
+          <div style={{ marginBottom: "15px" }}>
+            <label htmlFor="connect-api-url" style={{ display: "block", marginBottom: "4px", fontWeight: 500 }}>
+              API URL
+            </label>
+            <input
+              id="connect-api-url"
+              type="text"
+              value={formApiUrl}
+              onChange={(e) => setFormApiUrl(e.target.value)}
+              style={{ width: "100%", padding: "8px", fontSize: "14px" }}
+            />
+          </div>
+        </>
+      )}
 
       {error && (
         <p className="errorText" style={{ marginBottom: "15px" }}>{error}</p>
