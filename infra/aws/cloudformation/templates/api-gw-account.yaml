@@ -1,0 +1,55 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  API Gateway account-level CloudWatch IAM role.
+  Enables CloudWatch logging for all API Gateways in this account/region.
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+
+Resources:
+  ApiGatewayCloudWatchRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub '${ProjectCode}-${Environment}-apigw-cloudwatch-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: apigateway.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs'
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectCode
+        - Key: Environment
+          Value: !Ref Environment
+
+  ApiGatewayAccount:
+    Type: 'AWS::ApiGateway::Account'
+    Properties:
+      CloudWatchRoleArn: !GetAtt ApiGatewayCloudWatchRole.Arn
+
+  CloudWatchRoleArnParameter:
+    Type: 'AWS::SSM::Parameter'
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/apigw/cloudwatch-role-arn'
+      Type: String
+      Value: !GetAtt ApiGatewayCloudWatchRole.Arn
+      Description: 'API Gateway CloudWatch IAM Role ARN'
+
+Outputs:
+  CloudWatchRoleArn:
+    Description: 'API Gateway CloudWatch IAM Role ARN'
+    Value: !GetAtt ApiGatewayCloudWatchRole.Arn
