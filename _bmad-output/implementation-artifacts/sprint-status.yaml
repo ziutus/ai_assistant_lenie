@@ -1,4 +1,4 @@
-# generated: 2026-02-23
+# generated: 2026-02-25
 # project: lenie-server-2025
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-23
+generated: 2026-02-25
 project: lenie-server-2025
 project_key: NOKEY
 tracking_system: file-system
@@ -181,52 +181,74 @@ development_status:
   18-consolidation-implementation: done  # Implemented consolidation: 6 Lambdas (ec2-start/stop/status, rds-start/stop/status) → 2 (ec2-manager, rds-manager). CF template api-gw-infra.yaml updated (6→2 Lambda defs, 6→2 permissions). 6 RDS bugs fixed. deploy.sh sponge dependency removed. Deployed & verified via API GW test-invoke-method. Commit 6b458cf.
   epic-18-retrospective: done
 
-  # --- Future Backlog ---
+  # ============================================================
+  # BACKLOG (only items TO DO)
+  # ============================================================
 
-  # --- Frontend ---
-  B-16-migrate-web-interface-react-from-cra-to-vite: done  # Already migrated — Vite 6, vitest, vite.config.ts, no CRA traces
-  # B-17 removed: web_add_url_react archived and deleted from repo. Restore: git checkout archive/web-add-url-react -- _archive/web_add_url_react/
+  # --- Phase 2.5: API Contract & Type Safety ---
+  B-50-api-type-synchronization-pydantic-openapi-ts: backlog  # Pydantic → OpenAPI → generated TS types. Fixes backend-frontend drift: id type mismatch, missing fields (13 in WebDocument, 5 in ListItem, 7 in SearchResult), untyped enums. Strategy: docs/api-type-sync-strategy.md. 5 phases: Pydantic models, Flask route integration, OpenAPI gen, TS gen, CI check.
 
-  # --- Extending Functionality (Phase 7) ---
-  B-41-rss-feed-ingestion-with-llm-filtering: backlog  # RSS feeds (AWS What's New), daily Lambda, LLM relevance scoring, submit to /url_add pipeline
-  B-42-slack-bot-for-user-queries-socket-mode: backlog  # Slack Bot (Socket Mode) — search, status, recent commands. Deploy on lenie-dev-ec2
-  B-44-storytel-audiobook-tracking: backlog  # Track audiobooks listened on storytel.com — scrape/API metadata (title, author, genre, progress), store as content type 'audiobook' in existing pipeline
-  B-45-youtube-movie-description-fetching: backlog  # Fetch and store YouTube video descriptions, metadata (title, channel, duration, tags) for videos in the system
-  B-47-whatsapp-conversation-analysis: backlog  # Import and analyze WhatsApp conversations — extract key topics, contacts, decisions, action items via LLM
-  B-48-google-contacts-integration: backlog  # Integrate with Google Contacts (People API) — sync address book data, link contacts to documents and conversations
-
-  # --- Cleaning AWS Architecture ---
-  B-39-delegate-dns-subzones-per-environment: backlog  # Split lenie-ai.eu into delegated subzones: main zone (root + NS delegations only) + per-env subzones (dev.lenie-ai.eu, prod.lenie-ai.eu). Enables multi-account (049706517731) and multi-cloud (GCP k8s.lenie-ai.eu). Prerequisite for multi-env. Remove 1-domain-route53.yaml, create new templates. $0.50/month per subzone.
-  B-21-split-shared-lambda-execution-role-into-per-function-roles: done  # Tech spec completed 2026-02-24, all 4 steps done
-  B-6-migrate-api-gw-app-stage-to-separate-resource: done
-  B-10-create-apigw-cloudwatch-iam-role-in-cloudformation: review
-  B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
-  B-23-consolidate-lambdas-with-vpc-ipv6-dual-stack: backlog  # Enable IPv6 dual-stack + Egress-Only IGW to merge app-server-db + app-server-internet into one Lambda. BLOCKER: OpenAI API has no IPv6 (no AAAA record as of 2026-02). Options: switch to Bedrock, use NAT64, or wait for OpenAI IPv6 support.
-  B-8-manage-acm-certificates-via-cloudformation-and-ssm: done  # ACM certs via CF: wildcard (SSM) + landing inline cert. deploy.sh regex fix. 3 old manual certs deleted. Review: DeletionPolicy added to cert resources, orphaned param file removed.
-  B-9-organize-s3-cloudformation-bucket-directory-structure: done  # Lambda ZIPs moved to lambdas/ prefix, 7 stale ZIPs deleted, CF templates + scripts updated, docs updated. Review: added --profile to s3 cp, fixed AC1 count, documented url-add.json
+  # --- Phase 3: Security Hardening & AWS Cleanup ---
   B-13-parameterize-stage-description-for-multi-environment: backlog
-  B-15-add-custom-domains-for-api-gateways: done  # Realized as story 17-5: api.dev.lenie-ai.eu
   B-19-convert-ec2-to-spot-with-asg-0-1: backlog
-  B-46-define-strict-scp-policies-for-lenie-account: backlog  # Define granular SCPs for the 008971653395 account — restrict unused services, enforce encryption, block public S3, limit regions beyond current SCPs
+  B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
+  B-23-consolidate-lambdas-with-vpc-ipv6-dual-stack: backlog  # BLOCKER: OpenAI API has no IPv6 (no AAAA record as of 2026-02). Options: switch to Bedrock, use NAT64, or wait for OpenAI IPv6 support.
+  B-39-delegate-dns-subzones-per-environment: backlog  # Split lenie-ai.eu into delegated subzones (dev, prod). Enables multi-account + multi-cloud. $0.50/month per subzone.
+  B-46-define-strict-scp-policies-for-lenie-account: backlog  # Granular SCPs for 008971653395 — restrict unused services, enforce encryption, block public S3, limit regions.
+  B-52-lambda-layer-security-audit: backlog  # Lambda Layer dependencies ~1.5+ years old. Audit, update, rebuild layer ZIP.
+  B-53-cors-hardening: backlog  # Replace wildcard Access-Control-Allow-Origin: '*' with explicit allowed origins.
+  B-54-lambda-cloudformation-management: backlog  # Replace hardcoded Lambda ARNs with CloudFormation-managed references (SSM/Fn::GetAtt).
+  B-55-remove-stale-api-gateway-deployments: backlog  # Remove 36 stale API Gateway deployments left from manual/ad-hoc deploys.
 
-  # --- LLM Text Analysis (Phase 6 — po MVP) ---
-  # Automatyczna analiza tekstu przez LLM, zwracająca ustrukturyzowany JSON
-  # z metadanymi: autor, temat, państwa, źródło danych, itp.
-  B-29-create-llm-text-analysis-endpoint: backlog
-  B-30-define-analysis-json-schema-and-db-storage: backlog
-  B-31-frontend-ui-for-analysis-results: backlog
-  B-32-batch-analysis-for-existing-documents: backlog
+  # --- Phase 4: MCP Server Foundation ---
+  B-56-database-abstraction-layer: backlog  # Separate raw psycopg2 queries from business logic. Prerequisite for MCP server and testability.
+  B-57-implement-mcp-server-protocol: backlog  # Expose search/retrieve endpoints as MCP tools. Follow MCP specification.
+  B-58-claude-desktop-integration: backlog  # Configure Lenie-AI as MCP server in Claude Desktop. Test search and retrieve workflows.
+  B-59-api-adaptation-for-mcp-tool-consumption: backlog  # Adapt API response formats for MCP tool consumption patterns.
 
-  # --- Multiuser (Phase 7 — na samym końcu) ---
-  # Wsparcie wielu użytkowników na AWS. Realizowane jako ostatnia faza,
-  # po zakończeniu wszystkich pozostałych prac (Security, MCP Server, Obsidian, LLM Analysis).
-  B-33-implement-user-authentication-with-aws-cognito: backlog
-  B-34-add-user-ownership-to-database-schema: backlog
-  B-35-enforce-data-isolation-per-user-in-api-endpoints: backlog
-  B-36-replace-shared-api-key-with-per-user-auth-tokens: backlog
-  B-37-add-login-logout-ui-to-frontend-applications: backlog
-  B-38-add-user-management-admin-panel: backlog
+  # --- Phase 5: RSS & Slack Integration ---
+  B-40-slack-workspace-and-incoming-webhooks: backlog  # Create Slack workspace, configure Incoming Webhook for #notifications, integrate with error handling pipeline (SNS email + Slack). Webhook URL in Secrets Manager.
+  B-41-rss-feed-ingestion-with-llm-filtering: backlog  # RSS feeds (AWS What's New), daily Lambda, LLM relevance scoring, submit to /url_add pipeline.
+  B-42-slack-bot-for-user-queries-socket-mode: backlog  # Slack Bot (Socket Mode) — search, status, recent commands. Deploy on lenie-dev-ec2.
 
-  # --- Done ---
+  # --- Phase 6: Obsidian Integration ---
+  B-60-obsidian-vault-integration: backlog  # Synchronization between Lenie-AI and Obsidian vault — linking, note creation, bidirectional sync.
+  B-61-semantic-search-from-obsidian: backlog  # Semantic search from within Obsidian via Claude Desktop + MCP server (depends on B-57, B-58).
+  B-62-advanced-vector-search-refinements: backlog  # Advanced vector search refinements for personal knowledge management — filtering, ranking, hybrid search.
+
+  # --- Phase 7: Extending Functionality ---
+  B-44-storytel-audiobook-tracking: backlog  # Track audiobooks on storytel.com — scrape/API metadata, store as content type 'audiobook'.
+  B-45-youtube-movie-description-fetching: backlog  # Fetch and store YouTube video descriptions, metadata for videos in the system.
+  B-47-whatsapp-conversation-analysis: backlog  # Import and analyze WhatsApp conversations — extract topics, contacts, decisions via LLM.
+  B-48-google-contacts-integration: backlog  # Google People API — sync address book data, link contacts to documents.
+
+  # --- Phase 8: LLM Text Analysis ---
+  B-29-create-llm-text-analysis-endpoint: backlog  # Nowy endpoint API — LLM zwraca JSON z metadanymi (autor, temat, państwa, źródło).
+  B-30-define-analysis-json-schema-and-db-storage: backlog  # Schemat JSON, kolumna JSONB lub dedykowana tabela, indeksy GIN.
+  B-31-frontend-ui-for-analysis-results: backlog  # Wyświetlanie wyników analizy, ręczna korekta, filtrowanie po metadanych.
+  B-32-batch-analysis-for-existing-documents: backlog  # Batch processing istniejących dokumentów, nowy status ANALYSIS_NEEDED → ANALYSIS_DONE.
+
+  # --- Phase 9: Multiuser ---
+  B-33-implement-user-authentication-with-aws-cognito: backlog  # Cognito User Pool, integracja z API Gateway (Cognito Authorizer).
+  B-34-add-user-ownership-to-database-schema: backlog  # Kolumna user_id w web_documents i websites_embeddings, migracja danych.
+  B-35-enforce-data-isolation-per-user-in-api-endpoints: backlog  # Wszystkie endpointy filtrują po user_id z tokena Cognito.
+  B-36-replace-shared-api-key-with-per-user-auth-tokens: backlog  # JWT z Cognito zamiast x-api-key. Aktualizacja frontendów i Chrome extension.
+  B-37-add-login-logout-ui-to-frontend-applications: backlog  # Ekrany logowania/rejestracji w app2, obsługa sesji i odświeżania tokenów.
+  B-38-add-user-management-admin-panel: backlog  # Zarządzanie użytkownikami — lista, blokowanie, usuwanie, statystyki per user.
+
+  # ============================================================
+  # DONE (completed backlog items — historical record)
+  # ============================================================
+  # B-17 removed: web_add_url_react archived and deleted from repo
+  B-6-migrate-api-gw-app-stage-to-separate-resource: done
   B-7-merge-helm-s3-and-cloudfront-into-single-template: done
-  B-43-fix-app2-domain-to-app2-dev-lenie-ai-eu: done  # Domain moved from app2.lenie-ai.eu to app2.dev.lenie-ai.eu, ACM cert switched to *.dev.lenie-ai.eu, CF stack updated
+  B-8-manage-acm-certificates-via-cloudformation-and-ssm: done  # ACM certs via CF: wildcard (SSM) + landing inline cert. deploy.sh regex fix. 3 old manual certs deleted.
+  B-9-organize-s3-cloudformation-bucket-directory-structure: done  # Lambda ZIPs moved to lambdas/ prefix, 7 stale ZIPs deleted, CF templates + scripts updated.
+  B-10-create-apigw-cloudwatch-iam-role-in-cloudformation: done  # PR #29 merged 2026-02-25
+  B-15-add-custom-domains-for-api-gateways: done  # Realized as story 17-5: api.dev.lenie-ai.eu
+  B-16-migrate-web-interface-react-from-cra-to-vite: done  # Vite 6, vitest, vite.config.ts
+  B-21-split-shared-lambda-execution-role-into-per-function-roles: done  # Tech spec completed 2026-02-24
+  B-43-fix-app2-domain-to-app2-dev-lenie-ai-eu: done  # Domain moved to app2.dev.lenie-ai.eu, ACM cert switched to *.dev.lenie-ai.eu
+  B-49-extract-shared-typescript-types-to-shared-package: done  # shared/ package with @lenie/shared alias. Commit 64e3213.
+  B-51-frontend-deploy-scripts-with-ssm: done  # Deploy scripts for both frontends, SSM integration. Commit f2432ce.
+  epic-19: done  # All 4 stories completed 2026-02-24 (scaffold, login, layout, API)
