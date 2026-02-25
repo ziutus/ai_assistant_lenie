@@ -48,7 +48,7 @@ Resources:
         - arn:aws:lambda:us-east-1:017000801446:layer:AWSLambdaPowertoolsPythonV3-python311-x86_64:6
       Code:
         S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
-        S3Key: !Sub '${ProjectCode}-${Environment}-url-add.zip'
+        S3Key: !Sub 'lambdas/${ProjectCode}-${Environment}-url-add.zip'
 
       Runtime: 'python3.11'
       Timeout: 30
