@@ -13,7 +13,7 @@ inputDocuments:
 
 ## Overview
 
-This document provides the complete epic and story breakdown for lenie-server-2025. Sprint 4 (Epics 13–16) covers AWS Infrastructure Consolidation & Tooling addressing 6 backlog items: B-4, B-5, B-11, B-12, B-14, B-19. Sprint 5 (Epics 17–18) covers Operational Fixes & Lambda Analysis — deployment safety, bug fixes, database connectivity, API Gateway custom domain (B-15), and Lambda consolidation analysis. Backlog section includes completed non-sprint work (landing page deployment, app2 infrastructure) and Epic 19 (Multi-User Admin Interface).
+This document provides the complete epic and story breakdown for lenie-server-2025. Sprint 4 (Epics 13–16) covers AWS Infrastructure Consolidation & Tooling addressing 6 backlog items: B-4, B-5, B-11, B-12, B-14, B-19. Sprint 5 (Epics 17–18) covers Operational Fixes & Lambda Analysis — deployment safety, bug fixes, database connectivity, API Gateway custom domain (B-15), and Lambda consolidation analysis. Backlog sections include: completed non-sprint work (landing page, app2 infrastructure), Epic 19 (Multi-User Admin Interface — all 4 stories DONE), and Frontend Architecture & API Contract (B-49 shared types DONE, B-50 API type sync pipeline BACKLOG, B-51 deploy scripts DONE).
 
 ## Requirements Inventory
 
@@ -772,22 +772,22 @@ Work completed outside of Sprint 4/5 scope: landing page deployment and app2 (mu
 
 ---
 
-## Epic 19: Multi-User Admin Interface (app2) — PRIORITY
+## Epic 19: Multi-User Admin Interface (app2) — DONE
 
-**URGENT:** app2 is currently publicly accessible at `app2.dev.lenie-ai.eu` without any authentication. Story 19.2 (login) is the highest priority to hide the UI behind credentials.
+All 4 stories completed (2026-02-24). Admin panel at `app2.dev.lenie-ai.eu` is scaffolded, has API key login gate, professional layout, and connected backend API.
 
-Developer has a new admin interface at `app2.dev.lenie-ai.eu` that supports multiple users — scaffolded from a purchased layout (now removed from repo) with added authentication, API integration, and own code in `web_interface_app2/`.
+Developer has a new admin interface at `app2.dev.lenie-ai.eu` — scaffolded from a purchased layout (now removed from repo) with API key authentication, API integration, and own code in `web_interface_app2/`.
 
-**Stories:** 19-1, 19-2, 19-3, 19-4
+**Stories:** 19-1 ✅, 19-2 ✅, 19-3 ✅, 19-4 ✅
 
 Implementation notes:
-- **app2 is LIVE and publicly accessible** — authentication is the most urgent task
-- Infrastructure already provisioned and deployed (S3 + CloudFront stacks)
-- Original purchased layout reference removed from repo (was `web_interface_target/`); design already incorporated into `web_interface_app2/`
+- Authentication uses `x-api-key` (same as backend) instead of originally planned username/password env vars — simpler, sufficient for dev/single-user. AWS Cognito migration planned for Phase 9 (B-33).
+- Infrastructure provisioned and deployed (S3 + CloudFront stacks)
+- Original purchased layout reference removed from repo (commit e8a44fd); design incorporated into `web_interface_app2/`
 - Tech stack: Vite 6, React 18, Redux, React Bootstrap, TypeScript, Sass
 - Current single-user app: `web_interface_react/` at `app.dev.lenie-ai.eu`
-- This epic is a major effort — will likely span multiple sprints
-- Auth approach: simple hardcoded credentials (env vars) as initial solution; AWS Cognito planned for Phase 7
+- Deploy script created with SSM integration (B-51)
+- Domain: `app2.dev.lenie-ai.eu` (fixed from `app2.lenie-ai.eu` in B-43)
 
 ### Story 19.1: Scaffold Multi-User App Project
 
@@ -807,9 +807,10 @@ so that development of the multi-user interface can begin with a clean, properly
 **When** the developer configures the build
 **Then** static export is compatible with S3 + CloudFront SPA hosting (index.html fallback)
 
-**Status:** ready-for-dev
+**Status:** done
+**Completed:** 2026-02-24 (commit 478b62c)
 
-### Story 19.2: Add Login Page and Route Protection — URGENT
+### Story 19.2: Add Login Page and Route Protection
 
 As a **developer**,
 I want app2 to require login before showing any content,
@@ -820,30 +821,23 @@ so that the admin interface is not publicly accessible to unauthorized users.
 **Given** app2 is publicly accessible at `app2.dev.lenie-ai.eu` without authentication
 **When** the developer adds a login page
 **Then** all routes except `/login` redirect to the login page when the user is not authenticated
-**And** the login page has a simple form with username and password fields
+**And** the login page has a simple form with API key field
 
-**Given** the login credentials are stored as environment variables (hardcoded approach)
-**When** the user submits correct credentials
-**Then** the app stores a session token (JWT or simple token) in localStorage
+**Given** the user submits a valid API key
+**When** the login form processes the submission
+**Then** the app stores the API key in localStorage
 **And** the user is redirected to the main dashboard
 **And** all protected routes become accessible
 
-**Given** the user submits incorrect credentials
+**Given** the user submits an incorrect API key
 **When** the login form processes the submission
-**Then** an error message is displayed ("Invalid credentials")
+**Then** an error message is displayed
 **And** the user remains on the login page
 
-**Given** a simple backend auth endpoint is needed
-**When** the developer implements it
-**Then** the endpoint validates credentials against environment variables (`APP2_AUTH_USERNAME`, `APP2_AUTH_PASSWORD`)
-**And** returns a signed token on success (e.g., JWT with expiration)
+**Implementation note:** Original spec called for username/password with env vars (`APP2_AUTH_USERNAME`, `APP2_AUTH_PASSWORD`). Actual implementation uses `x-api-key` authentication — the same API key used by the backend. This is simpler and sufficient for single-user/dev use. Migration to AWS Cognito (B-33) planned for Phase 9.
 
-**Given** the user's session expires or token is invalid
-**When** the user tries to access a protected route
-**Then** the user is redirected to the login page
-
-**Priority:** URGENT — app2 is publicly accessible
-**Status:** ready-for-dev
+**Status:** done
+**Completed:** 2026-02-24 (commits: 478b62c, a5422fc, 9c279e7, 5c57356)
 
 ### Story 19.3: Implement Core Layout and Navigation
 
@@ -866,7 +860,10 @@ so that the application has a professional multi-user admin interface look and f
 **When** the layout is rendered
 **Then** all layout pages are behind the authentication guard
 
-**Status:** ready-for-dev
+**Implementation note:** Layout scaffolded from purchased template. Purchased template reference (`web_interface_target/`) removed from repo (commit e8a44fd) — design already incorporated into app2 codebase.
+
+**Status:** done
+**Completed:** 2026-02-24 (commit 478b62c)
 
 ### Story 19.4: Connect Backend API
 
@@ -885,4 +882,59 @@ so that all current functionality (document CRUD, search, AI operations) works t
 **When** the developer reviews its implementation
 **Then** the API service layer is adapted for the new app (axios, error handling, auth)
 
-**Status:** ready-for-dev
+**Implementation note:** Hardcoded API key removed (commit 5c57356), API key now provided via login page. Redux store manages API server configuration.
+
+**Status:** done
+**Completed:** 2026-02-24 (commits: 478b62c, 5c57356)
+
+---
+
+## Backlog: Frontend Architecture & API Contract
+
+### Overview
+
+Work completed and planned to address frontend-backend type drift and shared code infrastructure. The `shared/` TypeScript package was extracted (B-49) and a strategy document for full API type synchronization was written (`docs/api-type-sync-strategy.md`). The main backlog item (B-50) covers the multi-phase implementation of Pydantic → OpenAPI → generated TypeScript types.
+
+### Completed Work (Non-Sprint)
+
+**B-49: Extract Shared TypeScript Types to shared/ Package** — DONE (2026-02-25)
+- Created `shared/` package with domain types: `WebDocument`, `ApiType`, `SearchResult`, `ListItem`
+- Added constants (`DEFAULT_API_URLS`) and factory values (`emptyDocument`)
+- Both frontends (`web_interface_react/`, `web_interface_app2/`) reference via `@lenie/shared` alias (tsconfig paths + Vite resolve.alias)
+- No build step — Vite transpiles directly via esbuild
+- Commit: 64e3213
+
+**B-51: Frontend Deployment Scripts with SSM** — DONE (2026-02-25)
+- Created `deploy.sh` for `web_interface_react/` and `web_interface_app2/`
+- Scripts resolve S3 bucket name and CloudFront distribution ID from SSM Parameter Store
+- Support `--skip-build` and `--skip-invalidation` flags
+- Commit: f2432ce
+
+### B-50: API Type Synchronization Pipeline (Pydantic → OpenAPI → TypeScript)
+
+**Problem:** Frontend (`shared/types/`) and backend (`backend/library/`) define the same data structures independently, leading to drift. Known issues documented in `docs/api-type-sync-strategy.md`:
+
+| Issue | Detail |
+|-------|--------|
+| `id` type mismatch | TS: `string`, Python: `int` (serial PK) |
+| `WebDocument` missing fields | Backend returns 13 fields not in TS interface |
+| `ListItem` field count | TS: 5 fields, backend: 10 |
+| `SearchResult` field count | TS: 5 fields, backend: 12 |
+| Enums as plain strings | Backend has typed enums, frontend treats as `string` |
+| No contract | No OpenAPI, JSON Schema, or Pydantic — backend uses custom classes + raw dicts |
+
+**Chosen approach:** Python Pydantic models (source of truth) → OpenAPI schema (generated) → TypeScript types (generated)
+
+**Implementation phases (from `docs/api-type-sync-strategy.md`):**
+
+1. **Phase 1: Pydantic Response Models** — Create Pydantic v2 models in `backend/library/models/schemas/` for all API response shapes (WebDocumentResponse, WebDocumentListItem, SearchResultItem, ListResponse, SearchResponse, ErrorResponse)
+2. **Phase 2: Use Models in Flask Routes** — Replace raw dict returns with Pydantic model serialization in `server.py` and Lambda handlers
+3. **Phase 3: Generate OpenAPI Schema** — Manual export script or flask-smorest integration to produce `docs/openapi.json`
+4. **Phase 4: Generate TypeScript from OpenAPI** — Use `openapi-typescript` to generate `shared/types/generated.ts` from OpenAPI schema
+5. **Phase 5: CI Integration** — Add generation + diff check to CI pipeline to prevent future drift
+
+**Migration path:** Incremental, one endpoint at a time. Start with `/website_get`, then `/website_list`, `/website_similar`. Hand-written `shared/types/` coexists with generated types during migration.
+
+**Status:** backlog
+**Strategy document:** `docs/api-type-sync-strategy.md`
+**Depends on:** B-49 (shared types package) — DONE

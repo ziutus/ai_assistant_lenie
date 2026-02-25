@@ -58,6 +58,8 @@ editHistory:
     changes: 'Added landing page (www.lenie-ai.eu) and app2 infrastructure (app2.dev.lenie-ai.eu) to Technical Context. Updated Phase 7 with app2 multi-user UI infrastructure readiness. Updated deploy.ini counts (30 templates in [dev], 3 in [common]). Added web_interface_target reference layout info.'
   - date: '2026-02-23'
     changes: 'Added Phase 5 (RSS & Slack Integration) with 3 backlog items: B-40 (Slack workspace + webhooks for notifications), B-41 (RSS feed ingestion with LLM filtering, starting with AWS Whats New), B-42 (Slack Bot for user queries via Socket Mode). Renumbered Obsidian → Phase 6, LLM Text Analysis → Phase 7, Multiuser → Phase 8.'
+  - date: '2026-02-25'
+    changes: 'Added Phase 2.5 (API Contract & Type Safety) with B-49 (shared TS types — done), B-50 (Pydantic→OpenAPI→TS pipeline — backlog), B-51 (frontend deploy scripts — done). Epic 19 all 4 stories completed. Non-BMad changes reconciled.'
 ---
 
 # Product Requirements Document - lenie-server-2025
@@ -124,20 +126,33 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 
 6. **B-19: Consolidate duplicated documentation counts** — Same metrics (endpoint counts, template counts, Lambda function counts) are duplicated across 7+ files with known discrepancies: `api-gw-app` documented as "12 endpoints" (actual: 10), `api-gw-infra` as "9 endpoints" (actual: 8), total templates documented as "29" (actual: 34). Affected files: `CLAUDE.md`, `README.md`, `backend/CLAUDE.md`, `docs/index.md`, `docs/api-contracts-backend.md`, `infra/aws/CLAUDE.md`, `infra/aws/cloudformation/CLAUDE.md`. Create single source of truth file. Add automated verification script to catch future drift.
 
-### Phase 3 (Future — Security Hardening)
+### Phase 2.5 (Future — API Contract & Type Safety)
 
-- Lambda Layer security audit (dependencies ~1.5+ years old)
-- CORS hardening (replace wildcard `Access-Control-Allow-Origin: '*'`)
-- Lambda function CloudFormation management (replace hardcoded ARNs)
-- Remove 36 stale API Gateway deployments
-- **B-46: Define strict SCP policies for lenie account** — Define granular Service Control Policies for the 008971653395 account to increase security: restrict unused AWS services, enforce encryption defaults (S3, EBS, RDS), block public S3 buckets, limit IAM actions beyond current region-only SCPs.
+Formalize the API contract between backend and frontend to eliminate type drift and enable safe refactoring.
+
+- ~~**B-49: Extract shared TypeScript types to shared/ package**~~ ✅ DONE (2026-02-25) — `shared/` package with domain types, constants, factory values. Both frontends use `@lenie/shared` alias.
+- **B-50: API type synchronization pipeline (Pydantic → OpenAPI → TS)** — Multi-phase: (1) Pydantic v2 response models in `backend/library/models/schemas/`, (2) integrate into Flask routes, (3) generate `docs/openapi.json`, (4) generate `shared/types/generated.ts` via `openapi-typescript`, (5) CI drift check. Known drift: `id` type mismatch (TS `string` vs Python `int`), 13 missing fields in `WebDocument`, 5 missing in `ListItem`, 7 missing in `SearchResult`, untyped enums. Strategy: `docs/api-type-sync-strategy.md`. Incremental migration — start with `/website_get`.
+- ~~**B-51: Frontend deployment scripts with SSM**~~ ✅ DONE (2026-02-25) — Deploy scripts for both frontends, SSM Parameter Store integration.
+
+### Phase 3 (Future — Security Hardening & AWS Cleanup)
+
+- **B-13: Parameterize stage description for multi-environment** — Enable multi-env support in CloudFormation templates.
+- **B-19: Convert EC2 to Spot with ASG 0-1** — Reduce EC2 costs by switching to Spot instances with Auto Scaling Group (min 0, max 1).
+- **B-22: Add max retry limit to aws_ec2_route53 script** — Prevent infinite loops in Route53 update script.
+- **B-23: Consolidate Lambdas with VPC IPv6 dual-stack** — Merge app-server-db + app-server-internet into one Lambda. ⚠️ BLOCKER: OpenAI API has no IPv6.
+- **B-39: Delegate DNS subzones per environment** — Split lenie-ai.eu into delegated subzones (dev, prod). Enables multi-account + multi-cloud. $0.50/month per subzone.
+- **B-46: Define strict SCP policies for lenie account** — Granular SCPs for 008971653395: restrict unused services, enforce encryption defaults, block public S3, limit regions.
+- **B-52: Lambda Layer security audit** — Lambda Layer dependencies ~1.5+ years old. Audit, update, rebuild layer ZIP.
+- **B-53: CORS hardening** — Replace wildcard `Access-Control-Allow-Origin: '*'` with explicit allowed origins.
+- **B-54: Lambda function CloudFormation management** — Replace hardcoded Lambda ARNs with CloudFormation-managed references (SSM/Fn::GetAtt).
+- **B-55: Remove stale API Gateway deployments** — Remove 36 stale API Gateway deployments left from manual/ad-hoc deploys.
 
 ### Phase 4 (Future — MCP Server Foundation)
 
-- Database abstraction layer (separate raw psycopg2 from business logic)
-- Implement MCP server protocol (expose search/retrieve endpoints as MCP tools)
-- Claude Desktop integration (configure Lenie-AI as MCP server)
-- API adaptation for MCP tool consumption
+- **B-56: Database abstraction layer** — Separate raw psycopg2 queries from business logic. Prerequisite for MCP server and testability.
+- **B-57: Implement MCP server protocol** — Expose search/retrieve endpoints as MCP tools. Follow MCP specification.
+- **B-58: Claude Desktop integration** — Configure Lenie-AI as MCP server in Claude Desktop. Test search and retrieve workflows.
+- **B-59: API adaptation for MCP tool consumption** — Adapt API response formats for MCP tool consumption patterns.
 
 ### Phase 5 (Future — RSS & Slack Integration)
 
@@ -148,9 +163,9 @@ Bidirectional communication channel (Slack) and new automated data source (RSS f
 
 ### Phase 6 (Future — Obsidian Integration)
 
-- Obsidian vault integration (synchronization, linking, note creation)
-- Semantic search from within Obsidian via Claude Desktop + MCP
-- Advanced vector search refinements for personal knowledge management
+- **B-60: Obsidian vault integration** — Synchronization between Lenie-AI and Obsidian vault — linking, note creation, bidirectional sync.
+- **B-61: Semantic search from Obsidian** — Semantic search from within Obsidian via Claude Desktop + MCP server (depends on B-57, B-58).
+- **B-62: Advanced vector search refinements** — Advanced vector search refinements for personal knowledge management — filtering, ranking, hybrid search.
 
 ### Phase 7 (Future — Extending Functionality)
 
