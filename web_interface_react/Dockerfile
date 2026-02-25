@@ -3,15 +3,16 @@ LABEL authors="ziutus"
 
 WORKDIR /app
 
-COPY package*.json ./
+COPY web_interface_react/package*.json ./
 RUN npm ci
 
-COPY . .
+COPY shared/ ../shared/
+COPY web_interface_react/ .
 RUN npm run build
 
 FROM nginx:alpine
 COPY --from=build-stage /app/build /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build-stage /app/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]

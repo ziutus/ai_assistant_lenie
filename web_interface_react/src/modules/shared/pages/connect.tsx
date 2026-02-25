@@ -2,8 +2,9 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { AuthorizationContext } from "../context/authorizationContext";
-import { DEFAULT_URLS, saveConnectionConfig } from "../services/storage";
+import { saveConnectionConfig } from "../services/storage";
 import type { ApiType } from "../../../types";
+import { DEFAULT_API_URLS } from "../../../types";
 
 const Connect: React.FC = () => {
   const navigate = useNavigate();
@@ -11,7 +12,7 @@ const Connect: React.FC = () => {
     React.useContext(AuthorizationContext);
 
   const [formApiType, setFormApiType] = useState<ApiType>("AWS Serverless");
-  const [formApiUrl, setFormApiUrl] = useState(DEFAULT_URLS["AWS Serverless"]);
+  const [formApiUrl, setFormApiUrl] = useState(DEFAULT_API_URLS["AWS Serverless"]);
   const [formApiKey, setFormApiKey] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -20,7 +21,7 @@ const Connect: React.FC = () => {
   const handleApiTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newType = e.target.value as ApiType;
     setFormApiType(newType);
-    setFormApiUrl(DEFAULT_URLS[newType]);
+    setFormApiUrl(DEFAULT_API_URLS[newType]);
   };
 
   const handleConnect = async () => {
