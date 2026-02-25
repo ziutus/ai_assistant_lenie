@@ -84,7 +84,7 @@ Resources:
       Role: !GetAtt LambdaExecutionRole.Arn
       Code:
         S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
-        S3Key: !Sub '${ProjectCode}-${Environment}-url-add.zip'
+        S3Key: !Sub 'lambdas/${ProjectCode}-${Environment}-url-add.zip'
       Runtime: python3.11
       Timeout: 30
       Environment:

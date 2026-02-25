@@ -145,7 +145,7 @@ Resources:
         SystemLogLevel: 'INFO'
       Code:
         S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
-        S3Key: !Sub ${ProjectCode}-${Environment}-sqs-size.zip
+        S3Key: !Sub lambdas/${ProjectCode}-${Environment}-sqs-size.zip
       Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/python/lambda-runtime-version}}'
       Timeout: 30
       MemorySize: 128
@@ -172,7 +172,7 @@ Resources:
         SystemLogLevel: 'INFO'
       Code:
         S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
-        S3Key: !Sub ${ProjectCode}-${Environment}-rds-manager.zip
+        S3Key: !Sub lambdas/${ProjectCode}-${Environment}-rds-manager.zip
       Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/python/lambda-runtime-version}}'
       Timeout: 60
       MemorySize: 128
@@ -198,7 +198,7 @@ Resources:
         SystemLogLevel: 'INFO'
       Code:
         S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
-        S3Key: !Sub ${ProjectCode}-${Environment}-ec2-manager.zip
+        S3Key: !Sub lambdas/${ProjectCode}-${Environment}-ec2-manager.zip
       Runtime: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/python/lambda-runtime-version}}'
       Timeout: 30
       MemorySize: 128

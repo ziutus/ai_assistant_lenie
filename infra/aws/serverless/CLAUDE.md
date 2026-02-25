@@ -126,7 +126,7 @@ Process:
 1. For each function in the list file, copies source from `lambdas/<function>/`
 2. For `app` type, also copies `backend/library/` into the package
 3. Creates a zip file named `<project>-<env>-<function>.zip`
-4. Uploads to S3 bucket
+4. Uploads to S3 bucket under `lambdas/` prefix (e.g., `s3://<bucket>/lambdas/<project>-<env>-<function>.zip`)
 5. Updates Lambda function code via `aws lambda update-function-code`
 
 ### Per-function lambda_update.sh
@@ -185,4 +185,4 @@ The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-
 
 - **CloudFormation templates**: `cloudformation/templates/` - Lambda function and API Gateway infrastructure definitions
 - **Backend library**: `backend/library/` - shared code bundled into `app-server-*` Lambdas
-- **S3 bucket**: Lambda code is stored in the CloudFormation S3 bucket (created by `cloudformation/templates/s3-cloudformation.yaml`)
+- **S3 bucket**: Lambda code is stored in the CloudFormation S3 bucket under the `lambdas/` prefix (created by `cloudformation/templates/s3-cloudformation.yaml`). Bucket structure: `lambdas/` (Lambda ZIP packages), `layers/` (Lambda layer ZIPs), `templates/` (exported API definitions)

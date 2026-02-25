@@ -140,7 +140,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `s3.yaml` | S3 Bucket | Video transcription bucket (`lenie-{stage}-video-to-text`) |
-| `s3-cloudformation.yaml` | S3 Bucket, SSM | Lambda code and CF artifacts bucket |
+| `s3-cloudformation.yaml` | S3 Bucket, SSM | Lambda code and CF artifacts bucket. Directory structure: `lambdas/` (Lambda ZIP packages), `layers/` (Lambda layers), `templates/` (exported API definitions) |
 | `s3-website-content.yaml` | S3 Bucket, Bucket Policy, SSM | Website content storage (`lenie-{stage}-website-content`, AES256) |
 | `s3-app-web.yaml` | S3 Bucket, Bucket Policy, SSM | Frontend hosting bucket (`lenie-{stage}-app-web`, CloudFront OAC) |
 | `s3-app2-web.yaml` | S3 Bucket, Bucket Policy, SSM | Target multi-user UI hosting bucket (`lenie-{stage}-app2-web`, CloudFront OAC) |
@@ -302,5 +302,5 @@ The landing page is a production resource, not per-environment. Deploy separatel
 
 - All stacks use `CAPABILITY_NAMED_IAM` (creating IAM resources with custom names).
 - SSM Parameters (`AWS::SSM::Parameter`) are used to pass values between stacks (e.g. VPC ID, subnet ID).
-- Lambdas use code from the S3 bucket (`s3-cloudformation`) - code must be uploaded before deploying Lambda templates.
+- Lambdas use code from the S3 bucket (`s3-cloudformation`) under the `lambdas/` prefix (e.g., `s3://lenie-dev-cloudformation/lambdas/lenie-dev-sqs-size.zip`). Code must be uploaded before deploying Lambda templates.
 - Step Function automatically starts and stops RDS to save costs.
