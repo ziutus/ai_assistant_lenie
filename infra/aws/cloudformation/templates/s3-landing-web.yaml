@@ -39,6 +39,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   LandingWebBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -79,6 +83,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   LandingWebBucketArnParameter:
     Type: AWS::SSM::Parameter
@@ -90,6 +96,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   LandingWebBucketDomainNameParameter:
     Type: AWS::SSM::Parameter
@@ -101,3 +109,5 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'

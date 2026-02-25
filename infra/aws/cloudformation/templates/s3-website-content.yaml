@@ -45,6 +45,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   # Enforce TLS-only access to the bucket
   WebsiteContentBucketPolicy:
@@ -76,6 +80,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   WebsiteContentBucketArnParameter:
     Type: AWS::SSM::Parameter
@@ -87,3 +93,5 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
