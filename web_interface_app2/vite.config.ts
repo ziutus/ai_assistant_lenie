@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@lenie/shared': path.resolve(__dirname, '../shared'),
       assets: path.resolve(__dirname, 'src/assets'),
       Pages: path.resolve(__dirname, 'src/pages'),
       Slices: path.resolve(__dirname, 'src/Slices'),

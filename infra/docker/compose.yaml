@@ -23,7 +23,9 @@ services:
 #      - ../../backend/database/init:/docker-entrypoint-initdb.d
     restart: unless-stopped
   lenie-ai-fronted:
-    build: ../../web_interface_react
+    build:
+      context: ../..
+      dockerfile: web_interface_react/Dockerfile
     ports:
       - "3000:80"
     restart: no
