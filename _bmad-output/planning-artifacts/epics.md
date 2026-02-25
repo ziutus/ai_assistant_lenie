@@ -767,8 +767,8 @@ Work completed outside of Sprint 4/5 scope: landing page deployment and app2 (mu
 - Created `s3-app2-web.yaml` — S3 bucket with CloudFront OAC, AES256 encryption, fully blocked public access
 - Created `cloudfront-app2.yaml` — CloudFront distribution with SPA routing, TLSv1.2, Route53 alias
 - Added both templates to `deploy.ini [dev]` (Layer 4 and Layer 8)
-- `web_interface_target/` — purchased layout build artifacts stored as visual/structural reference
-- Status: **Deployed** — purchased layout build is live at `app2.dev.lenie-ai.eu` (publicly accessible, **requires immediate auth protection**)
+- `web_interface_app2/` — admin panel scaffolded from purchased layout (original reference layout removed from repo)
+- Status: **Deployed** — admin panel with API key authentication live at `app2.dev.lenie-ai.eu`
 
 ---
 
@@ -776,15 +776,15 @@ Work completed outside of Sprint 4/5 scope: landing page deployment and app2 (mu
 
 **URGENT:** app2 is currently publicly accessible at `app2.dev.lenie-ai.eu` without any authentication. Story 19.2 (login) is the highest priority to hide the UI behind credentials.
 
-Developer has a new admin interface at `app2.dev.lenie-ai.eu` that supports multiple users — built from scratch using the purchased layout (`web_interface_target/`) as partial structural/visual base, with own code (license restriction prevents direct reuse of purchased layout).
+Developer has a new admin interface at `app2.dev.lenie-ai.eu` that supports multiple users — scaffolded from a purchased layout (now removed from repo) with added authentication, API integration, and own code in `web_interface_app2/`.
 
 **Stories:** 19-1, 19-2, 19-3, 19-4
 
 Implementation notes:
 - **app2 is LIVE and publicly accessible** — authentication is the most urgent task
 - Infrastructure already provisioned and deployed (S3 + CloudFront stacks)
-- `web_interface_target/` contains build artifacts only (no source code) — serves as design reference
-- Tech stack from reference layout: React 18, Redux, React Bootstrap, TypeScript, Sass
+- Original purchased layout reference removed from repo (was `web_interface_target/`); design already incorporated into `web_interface_app2/`
+- Tech stack: Vite 6, React 18, Redux, React Bootstrap, TypeScript, Sass
 - Current single-user app: `web_interface_react/` at `app.dev.lenie-ai.eu`
 - This epic is a major effort — will likely span multiple sprints
 - Auth approach: simple hardcoded credentials (env vars) as initial solution; AWS Cognito planned for Phase 7
@@ -853,9 +853,9 @@ so that the application has a professional multi-user admin interface look and f
 
 **Acceptance Criteria:**
 
-**Given** `web_interface_target/` contains the purchased layout build artifacts
+**Given** `web_interface_app2/` already contains the layout scaffolded from the purchased template
 **When** the developer reviews the layout structure
-**Then** the new app recreates the visual structure with own code (sidebar navigation, header bar, content area)
+**Then** the app has a professional visual structure with own code (sidebar navigation, header bar, content area)
 **And** responsive design works on desktop and tablet
 
 **Given** the current app has 7 pages (document list, search, link/webpage/youtube/movie editors)

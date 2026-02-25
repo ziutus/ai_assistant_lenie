@@ -177,7 +177,7 @@ Realizowane po MVP (po fazach Security, MCP Server, Obsidian). Automatyczna anal
 
 Realizowane na samym końcu, po zakończeniu wszystkich pozostałych faz. Umożliwi korzystanie z systemu przez wielu użytkowników na infrastrukturze AWS.
 
-**Infrastructure status (2026-02-23):** app2 hosting infrastructure is ready — S3 bucket (`s3-app2-web.yaml`) and CloudFront distribution (`cloudfront-app2.yaml`) templates created and added to deploy.ini. Target domain: `app2.dev.lenie-ai.eu`. A purchased layout (`web_interface_target/`) provides visual/structural reference for the new multi-user admin interface. License restriction prevents direct reuse — new UI will be built from scratch using layout as partial base (React 18, Redux, React Bootstrap, TypeScript, Sass stack). See Epic 19 in `epics.md`.
+**Infrastructure status (2026-02-23):** app2 hosting infrastructure is ready — S3 bucket (`s3-app2-web.yaml`) and CloudFront distribution (`cloudfront-app2.yaml`) templates created and added to deploy.ini. Target domain: `app2.dev.lenie-ai.eu`. Admin panel (`web_interface_app2/`) scaffolded from a purchased layout with API key authentication already implemented. Tech stack: Vite 6, React 18, Redux, React Bootstrap, TypeScript, Sass. See Epic 19 in `epics.md`.
 
 - **B-33: Uwierzytelnianie użytkowników (AWS Cognito)** — Wdrożenie AWS Cognito User Pool do rejestracji i logowania użytkowników. Integracja z API Gateway (Cognito Authorizer) zamiast obecnego statycznego klucza API.
 - **B-34: Własność danych w bazie** — Dodanie kolumny `user_id` (owner) do tabel `web_documents` i `websites_embeddings`. Migracja istniejących danych do domyślnego użytkownika. Indeksy uwzględniające `user_id`.
@@ -266,7 +266,7 @@ Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway
 **Frontend deployments (current state as of 2026-02-23):**
 - **React admin app** (`web_interface_react/`): `app.dev.lenie-ai.eu` — S3 + CloudFront, active single-user interface
 - **Landing page** (`web_landing_page/`): `www.lenie-ai.eu` — S3 + CloudFront, Next.js 14.2 + TypeScript static export, **LIVE**
-- **Target multi-user UI** (`web_interface_target/`): `app2.dev.lenie-ai.eu` — S3 + CloudFront **deployed and publicly accessible**. Build artifacts from purchased layout stored as visual/structural reference. License restriction prevents direct reuse — new UI will be built from scratch using layout as partial base. **URGENT:** currently no authentication — login with hardcoded credentials (env vars) needed ASAP.
+- **Admin panel** (`web_interface_app2/`): `app2.dev.lenie-ai.eu` — S3 + CloudFront, Vite 6 + React 18 + TypeScript admin panel with API key authentication. Originally scaffolded from a purchased layout (visual/structural reference only, now removed from repo).
 
 **CloudFormation state:** 30 templates in deploy.ini [dev] + 3 in [common] (organization, SCPs). Total 38 .yaml files in templates/.
 
