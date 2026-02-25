@@ -182,6 +182,18 @@ development_status:
   epic-18-retrospective: done
 
   # ============================================================
+  # BACKLOG: Multi-User Admin Interface
+  # ============================================================
+
+  # --- Epic 19: Multi-User Admin Interface (app2) ---
+  epic-19: done  # All 4 stories completed 2026-02-24 (scaffold, login, layout, API)
+  19-1-scaffold-multi-user-app-project: done
+  19-2-add-login-page-and-route-protection: done
+  19-3-implement-core-layout-and-navigation: done
+  19-4-connect-backend-api: done
+  epic-19-retrospective: optional
+
+  # ============================================================
   # BACKLOG (only items TO DO)
   # ============================================================
 
@@ -251,4 +263,3 @@ development_status:
   B-43-fix-app2-domain-to-app2-dev-lenie-ai-eu: done  # Domain moved to app2.dev.lenie-ai.eu, ACM cert switched to *.dev.lenie-ai.eu
   B-49-extract-shared-typescript-types-to-shared-package: done  # shared/ package with @lenie/shared alias. Commit 64e3213.
   B-51-frontend-deploy-scripts-with-ssm: done  # Deploy scripts for both frontends, SSM integration. Commit f2432ce.
-  epic-19: done  # All 4 stories completed 2026-02-24 (scaffold, login, layout, API)
