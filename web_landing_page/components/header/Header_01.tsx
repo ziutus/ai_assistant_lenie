@@ -23,13 +23,13 @@ const Header_01 = () => {
           {/* Header User Event */}
           <div className='flex items-center gap-6'>
             <Link
-              href='https://app2.lenie-ai.eu/login'
+              href='https://app2.dev.lenie-ai.eu/login'
               className='button hidden rounded-[50px] border-[#7F8995] bg-transparent text-black after:bg-colorOrangyRed hover:border-colorOrangyRed hover:text-white lg:inline-block'
             >
               Login
             </Link>
             <Link
-              href='https://app2.lenie-ai.eu/signup'
+              href='https://app2.dev.lenie-ai.eu/signup'
               className='button hidden rounded-[50px] border-black bg-black text-white after:bg-colorOrangyRed hover:border-colorOrangyRed hover:text-white lg:inline-block'
             >
               Sign up free
