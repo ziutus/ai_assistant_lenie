@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFront distribution for landing page hosting for Project Lenie'
+Description: 'Lenie Landing - CloudFront distribution for landing page hosting'
 
 Parameters:
   ProjectCode:
@@ -59,7 +59,7 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: !Sub '${Environment} landing page for lenie'
+        Comment: !Sub 'Lenie Landing ${Environment} - landing page hosting'
         DefaultRootObject: index.html
         PriceClass: PriceClass_100
         HttpVersion: http2

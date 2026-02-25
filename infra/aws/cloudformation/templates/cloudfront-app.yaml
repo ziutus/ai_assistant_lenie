@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFront distribution for frontend app hosting for Project Lenie'
+Description: 'Lenie App - CloudFront distribution for frontend hosting'
 
 Parameters:
   ProjectCode:
@@ -39,7 +39,7 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: 'DEV app version of lenie'
+        Comment: !Sub 'Lenie App ${Environment} - frontend hosting'
         DefaultRootObject: index.html
         PriceClass: PriceClass_100
         HttpVersion: http2

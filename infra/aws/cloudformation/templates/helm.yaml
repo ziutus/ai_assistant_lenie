@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'S3 bucket and CloudFront distribution for Helm chart repository for Project Lenie'
+Description: 'Lenie Helm - S3 bucket and CloudFront distribution for Helm chart repository'
 
 Parameters:
   ProjectCode:
@@ -63,7 +63,7 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: !Sub '${ProjectCode}-${Environment} Helm chart repository'
+        Comment: !Sub 'Lenie Helm ${Environment} - chart repository'
         DefaultRootObject: index.html
         PriceClass: PriceClass_100
         HttpVersion: http2
