@@ -41,6 +41,14 @@ SSM parameters used:
 
 Environment variables: `PROJECT_CODE` (default: `lenie`), `ENVIRONMENT` (default: `dev`), `AWS_REGION` (default: `us-east-1`).
 
+## Shared Types (`@lenie/shared`)
+
+Domain types are imported from the shared `shared/` directory (project root) via `@lenie/shared` alias. Configured in `tsconfig.json` (`paths`) and `vite.config.ts` (`resolve.alias`).
+
+Currently used: `DEFAULT_API_URLS` in `src/services/storage.ts` (replaces hardcoded URL).
+
+See `docs/shared-types.md` for full details.
+
 ## Project Structure
 
 ```

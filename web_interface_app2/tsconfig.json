@@ -24,8 +24,9 @@
       "Pages/*": ["Pages/*"],
       "Slices/*": ["Slices/*"],
       "ThemeLayout/*": ["ThemeLayout/*"],
-      "Common/*": ["Common/*"]
+      "Common/*": ["Common/*"],
+      "@lenie/shared/*": ["../../shared/*"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "../../shared"]
 }
