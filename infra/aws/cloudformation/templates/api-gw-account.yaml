@@ -35,6 +35,10 @@ Resources:
           Value: !Ref ProjectCode
         - Key: Environment
           Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   ApiGatewayAccount:
     Type: 'AWS::ApiGateway::Account'
@@ -48,6 +52,11 @@ Resources:
       Type: String
       Value: !GetAtt ApiGatewayCloudWatchRole.Arn
       Description: 'API Gateway CloudWatch IAM Role ARN'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
 Outputs:
   CloudWatchRoleArn:

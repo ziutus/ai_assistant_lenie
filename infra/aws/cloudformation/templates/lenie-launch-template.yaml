@@ -44,6 +44,10 @@ Resources:
                 Value: !Ref Environment
               - Key: Project
                 Value: !Ref ProjectCode
+              - Key: ManagedBy
+                Value: CloudFormation
+              - Key: StackName
+                Value: !Ref 'AWS::StackName'
       TagSpecifications:
         - ResourceType: launch-template
           Tags:
@@ -51,6 +55,10 @@ Resources:
               Value: !Ref Environment
             - Key: Project
               Value: !Ref ProjectCode
+            - Key: ManagedBy
+              Value: CloudFormation
+            - Key: StackName
+              Value: !Ref 'AWS::StackName'
 
   ApplicationLaunchTemplateParam:
     Type: AWS::SSM::Parameter
@@ -64,6 +72,8 @@ Resources:
         Name: !Sub ${ProjectCode}-${Environment}-${Component}-application-launch-template-id-param
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   ApplicationLaunchTemplateLatestVersionParam:
     Type: AWS::SSM::Parameter
@@ -77,6 +87,8 @@ Resources:
         Name: !Sub ${ProjectCode}-${Environment}-${Component}-application-launch-template-latest-version-param
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
 Outputs:
   ApplicationLaunchTemplateId:

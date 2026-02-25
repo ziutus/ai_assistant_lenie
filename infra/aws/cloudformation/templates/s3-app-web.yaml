@@ -53,6 +53,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   # CloudFront OAC bucket policy — allows CloudFront to serve frontend content
   AppWebBucketPolicy:
@@ -94,6 +98,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   AppWebBucketArnParameter:
     Type: AWS::SSM::Parameter
@@ -105,6 +111,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   AppWebBucketDomainNameParameter:
     Type: AWS::SSM::Parameter
@@ -116,3 +124,5 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'

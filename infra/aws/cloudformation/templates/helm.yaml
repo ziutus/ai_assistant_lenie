@@ -33,6 +33,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   CloudFrontOAI:
     Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
@@ -102,6 +106,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
 Outputs:
   HelmBucketName:

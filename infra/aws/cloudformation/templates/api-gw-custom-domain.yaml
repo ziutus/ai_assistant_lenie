@@ -45,6 +45,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   # API Gateway Custom Domain Name
   ApiDomainName:
@@ -64,6 +68,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   # Base Path Mapping: root (/) -> app API (lenie_split), stage v1
   AppBasePathMapping:
@@ -110,6 +118,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   CustomDomainCertificateArnParameter:
     Type: 'AWS::SSM::Parameter'
@@ -121,3 +131,5 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'

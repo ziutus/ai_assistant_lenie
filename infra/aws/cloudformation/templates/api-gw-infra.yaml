@@ -53,6 +53,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   RdsManagerExecutionRole:
     Type: AWS::IAM::Role
@@ -91,6 +95,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   Ec2ManagerExecutionRole:
     Type: AWS::IAM::Role
@@ -132,6 +140,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   SqsSizeFunction:
     Type: 'AWS::Lambda::Function'
@@ -158,6 +170,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
 
   RdsManagerFunction:
@@ -185,6 +201,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   Ec2ManagerFunction:
     Type: 'AWS::Lambda::Function'
@@ -211,6 +231,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   LenieApi:
     Type: 'AWS::ApiGateway::RestApi'
@@ -225,6 +249,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
       Body:
         openapi: "3.0.1"
         info:
@@ -587,6 +615,15 @@ Resources:
       DeploymentId: !Ref ApiDeployment
       RestApiId: !Ref LenieApi
       StageName: 'v1'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   ApiDeployment:
     Type: 'AWS::ApiGateway::Deployment'
@@ -631,6 +668,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   ApiGatewayInfraInvokeUrlParameter:
     Type: 'AWS::SSM::Parameter'
@@ -642,4 +681,6 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 

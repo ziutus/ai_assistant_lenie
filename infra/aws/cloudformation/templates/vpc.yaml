@@ -60,6 +60,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   LenieVPCParam:
     Type: AWS::SSM::Parameter
@@ -73,6 +77,8 @@ Resources:
         Name: !Sub ${ProjectCode}-${Environment}-vpc-id
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   PublicSubnet1:
     Type: 'AWS::EC2::Subnet'
@@ -88,6 +94,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   PublicSubnet2:
     Type: 'AWS::EC2::Subnet'
@@ -103,6 +113,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   PrivateSubnet1:
     Type: 'AWS::EC2::Subnet'
@@ -118,6 +132,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   PrivateSubnet2:
     Type: 'AWS::EC2::Subnet'
@@ -133,6 +151,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   PrivateDBSubnet1:
     Type: 'AWS::EC2::Subnet'
@@ -148,6 +170,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   DataSubnetBIdParam:
     Type: AWS::SSM::Parameter
@@ -161,6 +187,8 @@ Resources:
         Name: !Sub ${ProjectCode}-${Environment}-data-subnet-a-id-param
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   PrivateDBSubnet2:
     Type: 'AWS::EC2::Subnet'
@@ -176,6 +204,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   DataSubnetBIdParam2:
     Type: AWS::SSM::Parameter
@@ -189,6 +221,8 @@ Resources:
         Name: !Sub ${ProjectCode}-${Environment}-data-subnet-b-id-param
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   MyInternetGateway:
     Type: 'AWS::EC2::InternetGateway'
@@ -200,6 +234,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   AttachGateway:
     Type: 'AWS::EC2::VPCGatewayAttachment'
@@ -218,6 +256,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   MyRoute:
     Type: 'AWS::EC2::Route'
