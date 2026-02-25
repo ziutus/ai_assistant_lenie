@@ -57,6 +57,29 @@ Resources:
         SSEEnabled: true
         SSEType: KMS
 
+  # SSM Parameter exports
+  DocumentsTableNameParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/dynamodb/documents/name'
+      Type: String
+      Value: !Ref LenieDocumentsTable
+      Description: 'DynamoDB documents table name for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+
+  DocumentsTableArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/dynamodb/documents/arn'
+      Type: String
+      Value: !GetAtt LenieDocumentsTable.Arn
+      Description: 'DynamoDB documents table ARN for Project Lenie'
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+
 Outputs:
   TableName:
     Description: Name of the DynamoDB table

@@ -6,10 +6,63 @@ Standalone import scripts for bulk-loading documents from external sources into 
 
 ```
 imports/
-└── unknown_news_import.py   # Import curated links from unknow.news
+├── dynamodb_sync.py          # Sync documents from DynamoDB + S3 to local PostgreSQL
+└── unknown_news_import.py    # Import curated links from unknow.news
 ```
 
 ## Scripts
+
+### `dynamodb_sync.py`
+
+Incremental sync of documents from AWS DynamoDB and S3 webpage content to the local Docker PostgreSQL. No VPN, EC2, or RDS needed — uses standard AWS API access over the internet.
+
+**Resource discovery via SSM Parameter Store.** DynamoDB table name and S3 bucket name are resolved from SSM using the project/environment convention (`/{project}/{env}/dynamodb/documents/name`, `/{project}/{env}/s3/website-content/name`). CLI overrides (`--table`, `--bucket`) skip the SSM lookup.
+
+**Data access: DynamoDB + S3 → Direct database connection**. Reads from DynamoDB (DateIndex GSI) and S3, writes via `StalkerWebDocumentDB.save()` with direct SQL for `created_at` and `chapter_list` preservation.
+
+**How it works:**
+1. Resolves DynamoDB table name and S3 bucket from SSM Parameter Store (or CLI overrides)
+2. Queries DynamoDB `DateIndex` GSI day-by-day from `--since` date to today (handles pagination)
+3. For each item, checks if URL already exists in local PostgreSQL (duplicate detection via `StalkerWebDocumentDB`)
+4. For `webpage` type items with `s3_uuid`: downloads `{uuid}.txt` and `{uuid}.html` from S3, saves locally to `data/`
+5. Inserts new documents via `StalkerWebDocumentDB.save()`, then preserves original `created_at` and `chapter_list` via direct SQL UPDATE
+6. Sets `document_state` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
+
+**DynamoDB → PostgreSQL field mapping:**
+- `url` → `url`, `type` → `document_type`, `title` → `title`, `language` → `language`
+- `source` → `source` (default "own"), `note` → `note`, `paywall` → `paywall`
+- `chapter_list` → `chapter_list`, `s3_uuid` → `s3_uuid`, `created_at` → `created_at`
+- S3 `{uuid}.txt` → `text`, S3 `{uuid}.html` → `text_raw`
+
+**Running:**
+```bash
+cd backend
+PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20
+PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --dry-run
+PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --limit 10
+PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --skip-s3
+PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --env dev --project lenie
+```
+
+**Arguments:**
+- `--since YYYY-MM-DD` (required) — sync documents from this date onward
+- `--dry-run` — preview only, no DB writes or S3 downloads
+- `--limit N` — max documents to sync (for testing)
+- `--skip-s3` — metadata only, skip S3 file downloads
+- `--project CODE` — project code for SSM path (default: `lenie`)
+- `--env ENV` — environment for SSM path (default: `dev`)
+- `--table TABLE` — DynamoDB table name override (skips SSM lookup)
+- `--bucket BUCKET` — S3 bucket name override (skips SSM lookup)
+- `--data-dir PATH` — local dir for S3 files (default: `data/`)
+
+**SSM parameters used:**
+- `/{project}/{env}/dynamodb/documents/name` — DynamoDB table name
+- `/{project}/{env}/s3/website-content/name` — S3 bucket for webpage content
+
+**Prerequisites:**
+- PostgreSQL database must be accessible (local Docker on port 5433)
+- `.env` file with `POSTGRESQL_*` variables
+- AWS credentials (via env vars or AWS profile) with SSM read, DynamoDB read, and S3 read access
 
 ### `unknown_news_import.py`
 
