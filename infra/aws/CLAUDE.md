@@ -97,13 +97,13 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 | CloudWatch | Logging, Step Function execution monitoring |
 | Budgets | Cost alerts ($8/month threshold) |
 | Organizations + SCPs | Multi-account governance, region restrictions |
-| CloudFront | CDN for frontend app (`app.dev.lenie-ai.eu`), target multi-user UI (`app2.dev.lenie-ai.eu`), and landing page (`www.lenie-ai.eu`) |
+| CloudFront | CDN for frontend app (`app.dev.lenie-ai.eu`), admin panel (`app2.dev.lenie-ai.eu`), and landing page (`www.lenie-ai.eu`) |
 
 ## Frontend Hosting
 
 Three web frontends are hosted via S3 + CloudFront:
 - **React app** (`web_interface_react/`) — `app.dev.lenie-ai.eu` via `s3-app-web` + `cloudfront-app` stacks
-- **Target multi-user UI** (`web_interface_target/`, build artifacts) — `app2.dev.lenie-ai.eu` via `s3-app2-web` + `cloudfront-app2` stacks. Future multi-user version of the admin interface, currently infrastructure-only (no functionality connected yet).
+- **Admin panel** (`web_interface_app2/`) — `app2.dev.lenie-ai.eu` via `s3-app2-web` + `cloudfront-app2` stacks
 - **Landing page** (`web_landing_page/`, Next.js static export) — `www.lenie-ai.eu` via `s3-landing-web` + `cloudfront-landing` stacks
 
 ### Historical Context
