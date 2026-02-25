@@ -65,6 +65,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   LenineUrlAddLogGroup:
     Type: 'AWS::Logs::LogGroup'
@@ -76,6 +80,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   LambdaExecutionRole:
     Type: 'AWS::IAM::Role'
@@ -134,4 +142,7 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
-
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'

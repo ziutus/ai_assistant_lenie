@@ -51,6 +51,10 @@ Resources:
           Value: !Ref ProjectCode
         - Key: Environment
           Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
       Policies:
         - PolicyName: StateMachinePolicy
           PolicyDocument:
@@ -109,6 +113,10 @@ Resources:
           Value: !Ref ProjectCode
         - Key: Environment
           Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
 
   MyStateMachine:
     Type: AWS::StepFunctions::StateMachine
@@ -120,6 +128,10 @@ Resources:
           Value: !Ref ProjectCode
         - Key: Environment
           Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
       LoggingConfiguration:
         Level: "ERROR"  # Possible values: ALL, ERROR, FATAL, OFF
         IncludeExecutionData: true
@@ -392,6 +404,10 @@ Resources:
           Value: !Ref ProjectCode
         - Key: Environment
           Value: !Ref Environment
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
       Policies:
         - PolicyName: "StepFunctionInvokePolicy"
           PolicyDocument:
