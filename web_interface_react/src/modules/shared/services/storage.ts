@@ -1,15 +1,11 @@
 import type { ApiType } from "../../../types";
+import { DEFAULT_API_URLS } from "../../../types";
 
 const KEYS = {
   apiType: "lenie_apiType",
   apiUrl: "lenie_apiUrl",
   apiKey: "lenie_apiKey",
 } as const;
-
-export const DEFAULT_URLS: Record<ApiType, string> = {
-  "AWS Serverless": "https://api.dev.lenie-ai.eu",
-  Docker: "http://localhost:5000",
-};
 
 export function loadConnectionConfig(): {
   apiType: ApiType;
@@ -19,7 +15,7 @@ export function loadConnectionConfig(): {
   const apiType = (localStorage.getItem(KEYS.apiType) as ApiType) || "AWS Serverless";
   return {
     apiType,
-    apiUrl: localStorage.getItem(KEYS.apiUrl) || DEFAULT_URLS[apiType],
+    apiUrl: localStorage.getItem(KEYS.apiUrl) || DEFAULT_API_URLS[apiType],
     apiKey: localStorage.getItem(KEYS.apiKey) || undefined,
   };
 }

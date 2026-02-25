@@ -16,7 +16,7 @@ web_interface_react/
 │   ├── utils.tsx                       # Utility components
 │   ├── vite-env.d.ts                   # Vite + CSS module type declarations
 │   ├── types/
-│   │   └── index.ts                    # TypeScript interfaces (WebDocument, ApiType, etc.)
+│   │   └── index.ts                    # Re-exports from @lenie/shared + app-specific AuthorizationState
 │   ├── modules/shared/
 │   │   ├── context/
 │   │   │   └── authorizationContext.tsx # Global state: API config (from localStorage), DB/VPN status, filters
@@ -137,13 +137,20 @@ App endpoints use the base URL (e.g., `/website_list`), infra endpoints use `/in
 
 ## TypeScript
 
-All source files are TypeScript (`.ts`/`.tsx`). Key type definitions in `src/types/index.ts`:
+All source files are TypeScript (`.ts`/`.tsx`). Strict mode enabled (`tsconfig.json`: `strict: true`).
+
+### Shared Types (`@lenie/shared`)
+
+Domain types are defined in `shared/` (project root) and imported via `@lenie/shared` alias:
 - `ApiType` — union type for API backend mode
 - `WebDocument` — document form fields interface
-- `AuthorizationState` — global context interface
+- `emptyDocument` — factory constant
+- `DEFAULT_API_URLS` — default backend URLs per API type
 - `SearchResult`, `ListItem` — API response types
 
-Strict mode enabled (`tsconfig.json`: `strict: true`).
+The alias is configured in both `tsconfig.json` (`paths`) and `vite.config.ts` (`resolve.alias`). The local `src/types/index.ts` re-exports shared types and adds app-specific `AuthorizationState`.
+
+See `docs/shared-types.md` for full details.
 
 ## Dependencies
 
@@ -188,10 +195,12 @@ Environment variables: `PROJECT_CODE` (default: `lenie`), `ENVIRONMENT` (default
 ## Docker Build
 
 ```
-Stage 1: node:24 → npm ci && npm run build
+Stage 1: node:24 → npm ci && npm run build (build context is repo root; copies shared/ + web_interface_react/)
 Stage 2: nginx:alpine → serve build/ on port 80
 Config: nginx.conf with SPA routing (all paths → index.html)
 ```
+
+Note: The Dockerfile expects the build context to be the repository root (set in `infra/docker/compose.yaml`). It copies `shared/` into `../shared/` relative to the app workdir so Vite can resolve `@lenie/shared`.
 
 ## i18n
 

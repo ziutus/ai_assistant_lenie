@@ -74,8 +74,11 @@ Key subdirectories: `library/` (core logic & integrations), `database/` (Postgre
 
 See `backend/CLAUDE.md` for full details including endpoints, dependencies, Docker build, and batch processing scripts.
 
+### Shared Types (`shared/`)
+Shared TypeScript type definitions used by both frontend applications. Contains domain types (`WebDocument`, `ApiType`, `SearchResult`, `ListItem`), constants (`DEFAULT_API_URLS`), and factory values (`emptyDocument`). No build step — Vite transpiles directly via esbuild. Both frontends reference it through `@lenie/shared` alias (tsconfig `paths` + Vite `resolve.alias`). See `docs/shared-types.md` for details.
+
 ### Frontend (`web_interface_react/`)
-React 18 SPA (Create React App) for document management and AI processing. 7 pages: document list with filtering, vector similarity search, and per-type editors (link, webpage, youtube, movie) with AI tools (split for embedding, clean text). Formik for form state, axios for API calls, React Router v6. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask). Includes infrastructure controls (start/stop RDS, VPN, SQS queue status).
+React 18 SPA (Vite) for document management and AI processing. 7 pages: document list with filtering, vector similarity search, and per-type editors (link, webpage, youtube, movie) with AI tools (split for embedding, clean text). Formik for form state, axios for API calls, React Router v6. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask). Includes infrastructure controls (start/stop RDS, VPN, SQS queue status). Domain types imported from `shared/` via `@lenie/shared` alias.
 
 See `web_interface_react/CLAUDE.md` for details.
 
@@ -86,6 +89,11 @@ See `web_chrome_extension/CLAUDE.md` for details.
 
 ### Landing Page (`web_landing_page/`)
 Next.js 14.2 static export with React 18 + Tailwind 3.4 + TypeScript. Deployed at `www.lenie-ai.eu` via S3 + CloudFront. 25 static pages.
+
+### Admin Panel (`web_interface_app2/`)
+Vite 6 + React 18 + TypeScript admin panel at `app2.dev.lenie-ai.eu`. Uses React Bootstrap, React Router v6. Domain types imported from `shared/` via `@lenie/shared` alias.
+
+See `web_interface_app2/CLAUDE.md` for details.
 
 ### Target Multi-User UI (`web_interface_target/`)
 Build artifacts from a purchased layout (React 18, Redux, React Bootstrap, TypeScript, Sass). Serves as visual/structural reference for the future multi-user admin interface at `app2.dev.lenie-ai.eu`. License restriction prevents direct reuse — new UI to be built from scratch using layout as partial base. Infrastructure ready (S3 + CloudFront templates in deploy.ini). No functionality connected yet.

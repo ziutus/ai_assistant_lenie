@@ -1,4 +1,5 @@
 import type { AuthState } from '../types';
+import { DEFAULT_API_URLS } from '@lenie/shared/types';
 
 const PREFIX = 'lenie_app2_';
 
@@ -8,7 +9,7 @@ const KEYS = {
   apiUrl: `${PREFIX}apiUrl`,
 } as const;
 
-export const DEFAULT_API_URL = 'https://api.dev.lenie-ai.eu';
+export const DEFAULT_API_URL = DEFAULT_API_URLS["AWS Serverless"];
 
 export function loadAuth(): AuthState | null {
   const apiKey = localStorage.getItem(KEYS.apiKey);
