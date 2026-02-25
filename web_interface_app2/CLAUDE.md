@@ -27,13 +27,19 @@ Uses the existing backend API key as password — no backend changes needed.
 
 ## Deployment
 
+Deploy to S3 + CloudFront (`app2.dev.lenie-ai.eu`). The script resolves S3 bucket and CloudFront distribution ID from SSM Parameter Store.
+
 ```bash
-./deploy.sh                    # Full build + deploy to S3 + CF invalidation
-./deploy.sh --skip-build       # Deploy existing build/ only
+./deploy.sh                      # Full build + deploy to S3 + CF invalidation
+./deploy.sh --skip-build         # Deploy existing build/ only
 ./deploy.sh --skip-invalidation  # Skip CF cache invalidation
 ```
 
-Target: S3 bucket `lenie-dev-app2-web` + CloudFront distribution `E1NHFTM571WQ7L`.
+SSM parameters used:
+- `/${PROJECT_CODE}/${ENVIRONMENT}/s3/app2-web/name` — S3 bucket name
+- `/${PROJECT_CODE}/${ENVIRONMENT}/cloudfront/app2/id` — CloudFront distribution ID
+
+Environment variables: `PROJECT_CODE` (default: `lenie`), `ENVIRONMENT` (default: `dev`), `AWS_REGION` (default: `us-east-1`).
 
 ## Project Structure
 

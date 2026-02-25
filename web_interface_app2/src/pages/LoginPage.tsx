@@ -80,7 +80,25 @@ const LoginPage: React.FC = () => {
               />
             </Form.Group>
 
-            {showApiUrl ? (
+            <div className="mb-3">
+              <Button
+                variant="link"
+                size="sm"
+                className="p-0"
+                onClick={() => setShowApiUrl(!showApiUrl)}
+                disabled={isLoading}
+                aria-expanded={showApiUrl}
+              >
+                {showApiUrl ? 'Hide advanced settings' : 'Advanced settings'}
+              </Button>
+              {!showApiUrl && (
+                <div style={{ fontSize: '12px', color: '#6c757d', marginTop: '4px' }}>
+                  API URL: {apiUrl}
+                </div>
+              )}
+            </div>
+
+            {showApiUrl && (
               <Form.Group className="mb-3" controlId="apiUrl">
                 <Form.Label>API URL</Form.Label>
                 <Form.Control
@@ -90,17 +108,6 @@ const LoginPage: React.FC = () => {
                   disabled={isLoading}
                 />
               </Form.Group>
-            ) : (
-              <div className="mb-3">
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="p-0"
-                  onClick={() => setShowApiUrl(true)}
-                >
-                  Advanced settings
-                </Button>
-              </div>
             )}
 
             {error && <Alert variant="danger">{error}</Alert>}

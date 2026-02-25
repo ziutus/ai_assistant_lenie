@@ -1,11 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
-# Deploy script for web_interface_app2 (app2.dev.lenie-ai.eu)
+# Deploy script for web_interface_react (app.dev.lenie-ai.eu)
 # Usage: ./deploy.sh [--skip-build] [--skip-invalidation]
 #
 # S3 bucket and CloudFront distribution ID are resolved from SSM Parameter Store
-# (exported by CloudFormation templates s3-app2-web.yaml and cloudfront-app2.yaml).
+# (exported by CloudFormation templates s3-app-web.yaml and cloudfront-app.yaml).
 
 PROJECT_CODE="${PROJECT_CODE:-lenie}"
 ENVIRONMENT="${ENVIRONMENT:-dev}"
@@ -45,10 +45,10 @@ done
 # MSYS_NO_PATHCONV prevents Git Bash from mangling SSM paths starting with /
 echo "--- Resolving configuration from SSM ---"
 SSM_PREFIX="/${PROJECT_CODE}/${ENVIRONMENT}"
-S3_BUCKET=$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "${SSM_PREFIX}/s3/app2-web/name" --query 'Parameter.Value' --output text --region "$AWS_REGION")
-CLOUDFRONT_DISTRIBUTION_ID=$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "${SSM_PREFIX}/cloudfront/app2/id" --query 'Parameter.Value' --output text --region "$AWS_REGION")
+S3_BUCKET=$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "${SSM_PREFIX}/s3/app-web/name" --query 'Parameter.Value' --output text --region "$AWS_REGION")
+CLOUDFRONT_DISTRIBUTION_ID=$(MSYS_NO_PATHCONV=1 aws ssm get-parameter --name "${SSM_PREFIX}/cloudfront/app/id" --query 'Parameter.Value' --output text --region "$AWS_REGION")
 
-echo "=== Deploying web_interface_app2 to app2.${ENVIRONMENT}.lenie-ai.eu ==="
+echo "=== Deploying web_interface_react to app.${ENVIRONMENT}.lenie-ai.eu ==="
 echo "S3 bucket:      ${S3_BUCKET}"
 echo "CloudFront ID:  ${CLOUDFRONT_DISTRIBUTION_ID}"
 echo "Region:         ${AWS_REGION}"
@@ -92,4 +92,4 @@ else
 fi
 
 echo ""
-echo "=== Deploy complete: https://app2.${ENVIRONMENT}.lenie-ai.eu ==="
+echo "=== Deploy complete: https://app.${ENVIRONMENT}.lenie-ai.eu ==="
