@@ -213,10 +213,19 @@
       "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_interface_react && npx vitest run 2>&1)",
       "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_landing_page && npm outdated 2>&1)",
       "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_landing_page && rm -rf node_modules package-lock.json .next && npm install 2>&1)",
-      "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_interface_target && yarn install --frozen-lockfile 2>&1)",
       "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_interface_app2 && bash deploy.sh --skip-build 2>&1)",
       "Bash(cd \"C:/Users/ziutus/git/_lenie-all/lenie-server-2025/infra/aws/cloudformation\" && bash ./deploy.sh -p lenie -s dev 2>&1)",
-      "Bash(cd \"C:/Users/ziutus/git/_lenie-all/lenie-server-2025/infra/aws/cloudformation\" && bash ./deploy.sh -p lenie -s dev -y 2>&1)"
+      "Bash(cd \"C:/Users/ziutus/git/_lenie-all/lenie-server-2025/infra/aws/cloudformation\" && bash ./deploy.sh -p lenie -s dev -y 2>&1)",
+      "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_interface_app2 && bash deploy.sh 2>&1)",
+      "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_interface_react && bash deploy.sh 2>&1)",
+      "Bash(PATH_PREFIX=\"/lenie/dev/\" && aws ssm get-parameters-by-path --path \"$PATH_PREFIX\" --recursive --query \"Parameters[].Name\" --output json 2>&1)",
+      "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_interface_react && bash deploy.sh --skip-build --skip-invalidation 2>&1)",
+      "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_interface_app2 && bash deploy.sh --skip-build --skip-invalidation 2>&1)",
+      "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025 && gh api repos/ziutus/ai_assistant_lenie/dependabot/alerts --paginate -q '[.[] | select\\(.state == \"open\"\\)] | group_by\\(.security_vulnerability.package.name\\) | .[] | {package: .[0].security_vulnerability.package.name, count: length, severity: .[0].security_advisory.severity, manifests: [.[].dependency.manifest_path] | unique}' 2>&1)",
+      "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_interface_react && npx tsc -p ../shared/tsconfig.json --noEmit 2>&1)",
+      "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_interface_react && npm run lint 2>&1)",
+      "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_interface_app2 && npm run lint 2>&1)",
+      "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025/web_interface_react && npm test 2>&1)"
     ]
   },
   "enableAllProjectMcpServers": true,
