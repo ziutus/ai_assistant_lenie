@@ -51,6 +51,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: lenie
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: !If [IsProduction, true, false]
       SSESpecification:
@@ -68,6 +72,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   DocumentsTableArnParameter:
     Type: AWS::SSM::Parameter
@@ -79,6 +85,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
 Outputs:
   TableName:

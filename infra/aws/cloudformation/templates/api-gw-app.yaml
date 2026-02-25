@@ -25,6 +25,10 @@ Resources:
           Value: !Ref Environment
         - Key: Project
           Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
       EndpointConfiguration:
         Types:
           - REGIONAL
@@ -636,6 +640,15 @@ Resources:
       StageName: 'v1'
       Description: 'CF-managed v1 stage'
       TracingEnabled: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
       MethodSettings:
         - HttpMethod: '*'
           ResourcePath: '/*'
@@ -664,6 +677,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   ApiGatewayRootResourceIdParameter:
     Type: 'AWS::SSM::Parameter'
@@ -675,6 +690,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   ApiGatewayInvokeUrlParameter:
     Type: 'AWS::SSM::Parameter'
@@ -686,6 +703,8 @@ Resources:
       Tags:
         Environment: !Ref Environment
         Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
 
   # Lambda permissions for API Gateway to invoke Lambda functions
   # Wildcard SourceArn (/*) used for app-server-db and app-server-internet because
