@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFront distribution for app2 (target) frontend hosting for Project Lenie'
+Description: 'Lenie App2 - CloudFront distribution for admin panel hosting'
 
 Parameters:
   ProjectCode:
@@ -34,7 +34,7 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: 'app2 (target) version of lenie'
+        Comment: !Sub 'Lenie App2 ${Environment} - admin panel hosting'
         DefaultRootObject: index.html
         PriceClass: PriceClass_100
         HttpVersion: http2
