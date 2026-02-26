@@ -1,12 +1,12 @@
 import os
 from pprint import pprint
 
-from dotenv import load_dotenv
 from flask import Flask, Response, request, abort
 from flask_cors import CORS
 import logging
 import uuid
 
+from library.config_loader import load_config
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_transcript import chapters_text_to_list
@@ -15,58 +15,46 @@ from library.models.webpage_parse_result import WebPageParseResult
 from library.website.website_paid import website_is_paid
 from library.text_functions import split_text_for_embedding
 
-logging.basicConfig(level=logging.INFO)  # Change level as per your need
-load_dotenv()
+logging.basicConfig(level=logging.INFO)
 
+cfg = load_config()
 
-def fetch_env_var(var_name, default_value=None):
-    """
-  Utility method to fetch and validate environment variable
-  """
-    var = os.getenv(var_name)
-    if var is None:
-        if default_value is not None:
-            var = default_value
-        else:
-            logging.error(f"ERROR: missing OS variables {var_name}, exiting... ")
-            exit(1)
-    return var
-
-env_data = fetch_env_var("ENV_DATA")
+env_data = cfg.require("ENV_DATA")
 
 APP_VERSION = "0.3.13.0"
 BUILD_TIME = "2026.01.23 04:04"
 
 logging.info(f"APP VERSION={APP_VERSION} (build time:{BUILD_TIME})")
-logging.info("ENV_DATA: " + os.getenv("ENV_DATA"))
+logging.info("ENV_DATA: %s", env_data)
 
-llm_provider = fetch_env_var("LLM_PROVIDER")
+llm_provider = cfg.require("LLM_PROVIDER")
 
 if llm_provider == "openai":
-    openai_organization = fetch_env_var("OPENAI_ORGANIZATION")
-    openai_api_key = fetch_env_var("OPENAI_API_KEY")
+    openai_organization = cfg.require("OPENAI_ORGANIZATION")
+    openai_api_key = cfg.require("OPENAI_API_KEY")
 
-llm_simple_jobs_model = fetch_env_var("AI_MODEL_SUMMARY")
+llm_simple_jobs_model = cfg.require("AI_MODEL_SUMMARY")
 
-backend_type = fetch_env_var("BACKEND_TYPE", "postgresql")
+backend_type = cfg.require("BACKEND_TYPE", "postgresql")
 
-if os.getenv("BACKEND_TYPE") == "postgresql":
-    if not os.getenv("POSTGRESQL_HOST") or not os.getenv("POSTGRESQL_DATABASE") or not os.getenv("POSTGRESQL_USER") \
-            or not os.getenv("POSTGRESQL_PASSWORD") or not os.getenv("POSTGRESQL_PORT"):
-        logging.error("ERROR: missing configuration data for PostgreSQL, exiting...")
-        exit(1)
+if backend_type == "postgresql":
+    cfg.require("POSTGRESQL_HOST")
+    cfg.require("POSTGRESQL_DATABASE")
+    cfg.require("POSTGRESQL_USER")
+    cfg.require("POSTGRESQL_PASSWORD")
+    cfg.require("POSTGRESQL_PORT")
 
     logging.debug("Using PostgreSQL database")
     websites = WebsitesDBPostgreSQL()
 else:
-    logging.error("ERROR: Unknown backend type: >" + os.getenv("BACKEND_TYPE") + "<")
+    logging.error("ERROR: Unknown backend type: >%s<", backend_type)
     exit(1)
 
-embedding_model = fetch_env_var("EMBEDDING_MODEL")
+embedding_model = cfg.require("EMBEDDING_MODEL")
 
-logging.info("Using embedding model: " + os.getenv("EMBEDDING_MODEL"))
+logging.info("Using embedding model: %s", embedding_model)
 
-port = fetch_env_var("PORT")
+port = cfg.require("PORT")
 
 logging.info(f"all pages in database: {websites.get_count()}")
 
@@ -78,7 +66,7 @@ def check_auth_header():
     api_key = request.headers.get('x-api-key')
     if api_key is None:
         abort(400, 'x-api-key header is missing')
-    if api_key != fetch_env_var("STALKER_API_KEY"):
+    if api_key != cfg.require("STALKER_API_KEY"):
         abort(400, 'x-api-key header is wrong')
 
 
@@ -124,7 +112,7 @@ def url_add():
         return response, 200
 
     # Pobranie zmiennych środowiskowych
-    bucket_name = os.getenv("AWS_S3_WEBSITE_CONTENT")
+    bucket_name = cfg.get("AWS_S3_WEBSITE_CONTENT")
 
     use_aws_s3 = True
     if bucket_name is None:
@@ -427,7 +415,7 @@ def ai_get_embedding():
         text = request.args.get('search')
 
     import library.embedding as embedding
-    embedds = embedding.get_embedding(model=os.getenv("EMBEDDING_MODEL"), text=text)
+    embedds = embedding.get_embedding(model=cfg.require("EMBEDDING_MODEL"), text=text)
 
     return {"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
             "embedding": embedds}, 200
@@ -460,13 +448,13 @@ def search_similar():
     logging.info(f"searching embedding for {text}")
 
     import library.embedding as embedding
-    embedds = embedding.get_embedding(model=os.getenv("EMBEDDING_MODEL"), text=text)
+    embedds = embedding.get_embedding(model=cfg.require("EMBEDDING_MODEL"), text=text)
 
     if embedds.status != "success" or len(embedds.embedding) == 0:
         return {"status": embedds.status, "message": "Error during getting embedding for text", "encoding": "utf8", "text": text,
                 "websites": []}, 500
 
-    websites_list = websites.get_similar(embedds.embedding, os.getenv("EMBEDDING_MODEL"), limit=limit)
+    websites_list = websites.get_similar(embedds.embedding, cfg.require("EMBEDDING_MODEL"), limit=limit)
 
     return {"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
             "websites": websites_list}, 200
@@ -731,9 +719,9 @@ def app_version():
 
 
 if __name__ == '__main__':
-    if os.getenv("USE_SSL") == "true":
+    if cfg.require("USE_SSL", "false") == "true":
         logging.debug("Using SSL")
-        app.run(debug=os.getenv("DEBUG", "False").lower() == "true", host='0.0.0.0', port=os.getenv("PORT"), ssl_context='adhoc')
+        app.run(debug=cfg.require("DEBUG", "false").lower() == "true", host='0.0.0.0', port=port, ssl_context='adhoc')
     else:
         logging.debug("Using HTTP")
-        app.run(debug=os.getenv("DEBUG", "False").lower() == "true", port=os.getenv("PORT"), host='0.0.0.0')
+        app.run(debug=cfg.require("DEBUG", "false").lower() == "true", port=port, host='0.0.0.0')

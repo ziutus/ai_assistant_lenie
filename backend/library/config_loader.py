@@ -221,6 +221,10 @@ def load_config() -> Config:
     """Create (or return cached) Config from the selected backend.
 
     The backend is chosen via ``SECRETS_BACKEND`` env-var (default ``env``).
+
+    For non-env backends (vault, aws), loaded values are injected into
+    ``os.environ`` so that library modules still using ``os.getenv()``
+    continue to work during the incremental migration.
     """
     global _config
     if _config is not None:
@@ -230,6 +234,13 @@ def load_config() -> Config:
     logging.info("Config loader: using '%s' backend", backend_name)
     backend = _create_backend(backend_name)
     _config = Config(backend.load())
+
+    # Inject into os.environ for backward compatibility with os.getenv() calls.
+    if backend_name != "env":
+        for key, value in _config.items():
+            if isinstance(value, str):
+                os.environ[key] = value
+
     return _config
 
 

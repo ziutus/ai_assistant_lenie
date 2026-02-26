@@ -1,49 +1,40 @@
 import json
 import logging
-import os
 from pprint import pprint
 from urllib.parse import parse_qs
 
+from library.config_loader import load_config
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_functions import split_text_for_embedding
 from library.text_transcript import chapters_text_to_list
 from library.website.website_paid import website_is_paid
 
-logging.basicConfig(level=logging.DEBUG)  # Change level as per your need
+logging.basicConfig(level=logging.DEBUG)
 
+cfg = load_config()
 
-def fetch_env_var(var_name):
-    """
-  Utility method to fetch and validate environment variable
-  """
-    var = os.getenv(var_name)
-    if var is None:
-        logging.error(f"ERROR: missing OS variables {var_name}, exiting... ")
-        exit(1)
-    return var
+openai_organization = cfg.require("OPENAI_ORGANIZATION")
+openai_api_key = cfg.require("OPENAI_API_KEY")
+llm_simple_jobs_model = cfg.require("AI_MODEL_SUMMARY")
+backend_type = cfg.require("BACKEND_TYPE", "postgresql")
 
-
-openai_organization = fetch_env_var("OPENAI_ORGANIZATION")
-openai_api_key = fetch_env_var("OPENAI_API_KEY")
-llm_simple_jobs_model = fetch_env_var("AI_MODEL_SUMMARY")
-backend_type = fetch_env_var("BACKEND_TYPE")
-
-if os.getenv("BACKEND_TYPE") == "postgresql":
-    if not os.getenv("POSTGRESQL_HOST") or not os.getenv("POSTGRESQL_DATABASE") or not os.getenv("POSTGRESQL_USER") \
-            or not os.getenv("POSTGRESQL_PASSWORD") or not os.getenv("POSTGRESQL_PORT"):
-        logging.error("ERROR: missing configuration data for PostgreSQL, exiting...")
-        exit(1)
+if backend_type == "postgresql":
+    cfg.require("POSTGRESQL_HOST")
+    cfg.require("POSTGRESQL_DATABASE")
+    cfg.require("POSTGRESQL_USER")
+    cfg.require("POSTGRESQL_PASSWORD")
+    cfg.require("POSTGRESQL_PORT")
 
     logging.debug("Using PostgreSQL database")
     websites = WebsitesDBPostgreSQL()
 else:
-    logging.error("ERROR: Unknown backend type: >" + os.getenv("BACKEND_TYPE") + "<")
+    logging.error("ERROR: Unknown backend type: >%s<", backend_type)
     exit(1)
 
-embedding_model = fetch_env_var("EMBEDDING_MODEL")
+embedding_model = cfg.require("EMBEDDING_MODEL")
 
-logging.info("Using embedding model: " + os.getenv("EMBEDDING_MODEL"))
+logging.info("Using embedding model: %s", embedding_model)
 
 
 def prepare_return(data, status_code: int):
