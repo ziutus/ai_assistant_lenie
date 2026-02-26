@@ -1,0 +1,18 @@
+# Custom Gitleaks rules for lenie-server-2025
+# Extends default ruleset with additional patterns
+# Created: 2026-02-26 (B-64)
+
+[extend]
+# Use default rules as base
+
+[[rules]]
+id = "github-pat"
+description = "GitHub Personal Access Token (classic)"
+regex = '''ghp_[A-Za-z0-9]{36}'''
+tags = ["key", "github"]
+
+[[rules]]
+id = "github-fine-grained-pat"
+description = "GitHub Fine-Grained Personal Access Token"
+regex = '''github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}'''
+tags = ["key", "github"]
