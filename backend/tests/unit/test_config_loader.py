@@ -169,7 +169,7 @@ class TestVaultBackend(unittest.TestCase):
         with patch.dict(os.environ, {
             "VAULT_ADDR": "http://vault:8200",
             "VAULT_TOKEN": "bad-token",
-            "ENV_DATA": "dev",
+            "VAULT_ENV": "dev",
         }, clear=True):
             # Need to patch hvac import inside VaultBackend.load()
             with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
@@ -194,7 +194,7 @@ class TestVaultBackend(unittest.TestCase):
         with patch.dict(os.environ, {
             "VAULT_ADDR": "http://vault:8200",
             "VAULT_TOKEN": "test-token",
-            "ENV_DATA": "dev",
+            "VAULT_ENV": "dev",
             "SECRETS_BACKEND": "vault",
         }, clear=True):
             with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
@@ -206,7 +206,7 @@ class TestVaultBackend(unittest.TestCase):
         self.assertEqual(result["OPENAI_API_KEY"], "sk-vault-secret")
         # Bootstrap env vars preserved
         self.assertEqual(result["VAULT_ADDR"], "http://vault:8200")
-        self.assertEqual(result["ENV_DATA"], "dev")
+        self.assertEqual(result["VAULT_ENV"], "dev")
         self.assertEqual(result["SECRETS_BACKEND"], "vault")
         # Correct Vault path called
         mock_client.secrets.kv.v2.read_secret_version.assert_called_once_with(
@@ -221,7 +221,7 @@ class TestVaultBackend(unittest.TestCase):
         with patch.dict(os.environ, {
             "VAULT_ADDR": "http://vault:8200",
             "VAULT_TOKEN": "tok",
-            "ENV_DATA": "dev",
+            "VAULT_ENV": "dev",
         }, clear=True):
             with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
                 backend = VaultBackend()
@@ -241,7 +241,7 @@ class TestVaultBackend(unittest.TestCase):
         with patch.dict(os.environ, {
             "VAULT_ADDR": "http://vault:8200",
             "VAULT_TOKEN": "tok",
-            "ENV_DATA": "dev",
+            "VAULT_ENV": "dev",
         }, clear=True):
             with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
                 backend = VaultBackend()

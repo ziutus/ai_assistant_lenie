@@ -71,6 +71,7 @@ _BOOTSTRAP_VARS = frozenset({
     "SECRETS_BACKEND",
     "VAULT_ADDR",
     "VAULT_TOKEN",
+    "VAULT_ENV",
     "ENV_DATA",
     "AWS_REGION",
 })
@@ -79,17 +80,18 @@ _BOOTSTRAP_VARS = frozenset({
 class VaultBackend(ConfigBackend):
     """Loads configuration from HashiCorp Vault KV v2.
 
-    Secrets are stored at ``secret/lenie/{ENV_DATA}`` as a single KV v2
+    Secrets are stored at ``secret/lenie/{VAULT_ENV}`` as a single KV v2
     secret containing all configuration key-value pairs.
 
-    Bootstrap env vars (``VAULT_ADDR``, ``VAULT_TOKEN``, ``ENV_DATA``)
+    Bootstrap env vars (``VAULT_ADDR``, ``VAULT_TOKEN``, ``VAULT_ENV``)
     must be set in the real environment (e.g. ``.env`` or shell).
+    ``VAULT_ENV`` defaults to ``dev`` if not set.
     """
 
     def load(self) -> dict[str, str]:
         vault_addr = os.environ.get("VAULT_ADDR")
         vault_token = os.environ.get("VAULT_TOKEN")
-        env_data = os.environ.get("ENV_DATA", "dev")
+        vault_env = os.environ.get("VAULT_ENV", "dev")
 
         if not vault_addr:
             logging.error("VAULT_ADDR must be set when using vault backend")
@@ -112,7 +114,7 @@ class VaultBackend(ConfigBackend):
                 )
                 sys.exit(1)
 
-            secret_path = f"lenie/{env_data}"
+            secret_path = f"lenie/{vault_env}"
             logging.info("Vault: reading secret at secret/%s", secret_path)
             response = client.secrets.kv.v2.read_secret_version(
                 path=secret_path,
