@@ -46,7 +46,7 @@ inputDocuments:
   - _bmad-output/implementation-artifacts/epic-11-retro-2026-02-18.md
   - _bmad-output/implementation-artifacts/epic-12-retro-2026-02-18.md
 workflowType: 'prd'
-lastEdited: '2026-02-21'
+lastEdited: '2026-02-26'
 editHistory:
   - date: '2026-02-16'
     changes: 'Updated from Sprint 2 (Cleanup & Vision) to Sprint 3 (Code Cleanup). Rewrote all sections. Applied validation fixes.'
@@ -60,6 +60,8 @@ editHistory:
     changes: 'Added Phase 5 (RSS & Slack Integration) with 3 backlog items: B-40 (Slack workspace + webhooks for notifications), B-41 (RSS feed ingestion with LLM filtering, starting with AWS Whats New), B-42 (Slack Bot for user queries via Socket Mode). Renumbered Obsidian → Phase 6, LLM Text Analysis → Phase 7, Multiuser → Phase 8.'
   - date: '2026-02-25'
     changes: 'Added Phase 2.5 (API Contract & Type Safety) with B-49 (shared TS types — done), B-50 (Pydantic→OpenAPI→TS pipeline — backlog), B-51 (frontend deploy scripts — done). Epic 19 all 4 stories completed. Non-BMad changes reconciled.'
+  - date: '2026-02-26'
+    changes: 'Added B-63 (Migrate .env to secret managers) to Phase 2 current sprint. Docker/NAS → HashiCorp Vault, AWS → SSM/Secrets Manager. Added FR33-FR39 and NFR16-NFR17. Epic 20 with 5 stories.'
 ---
 
 # Product Requirements Document - lenie-server-2025
@@ -72,7 +74,7 @@ editHistory:
 
 Lenie-server-2025 is a personal AI knowledge management system for collecting, managing, and searching press articles, web content, and YouTube transcriptions using LLMs and vector similarity search (PostgreSQL + pgvector).
 
-**This sprint** executes Phase 2 of the five-phase strategic plan: Infrastructure Consolidation & Tooling. Following the principle "Clean first -> Consolidate -> Secure -> Build new," Sprint 4 consolidates AWS infrastructure and improves operational tooling after Sprint 3 completed code cleanup. Sprint 1 achieved 100% IaC coverage (6 epics, 10 stories). Sprint 2 removed unused AWS resources and documented project vision (3 epics, 5 stories). Sprint 3 removed 3 endpoints, 1 dead function, and applied 6 CloudFormation improvements (3 epics, 33 stories total across sprints). Sprint 4 addresses 6 backlog items: remove Elastic IP from EC2 (B-4), fix redundant Lambda function names (B-5), consolidate the duplicate api-gw-url-add template into api-gw-app (B-14), add AWS account info to deployment script (B-11), verify CRLF git config for parameter files (B-12), and consolidate duplicated documentation metrics (B-19).
+**This sprint** executes Phase 2 of the five-phase strategic plan: Infrastructure Consolidation & Tooling. Following the principle "Clean first -> Consolidate -> Secure -> Build new," Sprint 4 consolidates AWS infrastructure and improves operational tooling after Sprint 3 completed code cleanup. Sprint 1 achieved 100% IaC coverage (6 epics, 10 stories). Sprint 2 removed unused AWS resources and documented project vision (3 epics, 5 stories). Sprint 3 removed 3 endpoints, 1 dead function, and applied 6 CloudFormation improvements (3 epics, 33 stories total across sprints). Sprint 4 addresses 7 backlog items: remove Elastic IP from EC2 (B-4), fix redundant Lambda function names (B-5), consolidate the duplicate api-gw-url-add template into api-gw-app (B-14), add AWS account info to deployment script (B-11), verify CRLF git config for parameter files (B-12), consolidate duplicated documentation metrics (B-19), and migrate .env configuration to secret managers (B-63).
 
 **Target vision:** Private knowledge base in Obsidian vault, managed by Claude Desktop, powered by Lenie-AI as an MCP server. This sprint consolidates infrastructure to reduce AWS costs and operational friction before security hardening and feature development.
 
@@ -125,6 +127,8 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 5. **B-12: Fix CRLF git config for parameter files** — Verify parameter files in `infra/aws/cloudformation/parameters/dev/` (29 JSON files) have correct LF line endings. `.gitattributes` already enforces LF for `*.json`. Sprint 3 story 7-2 found CRLF warning was due to Windows `core.autocrlf` setting, not file content. Verify current state, update `.gitattributes` if needed, or document that current config is adequate.
 
 6. **B-19: Consolidate duplicated documentation counts** — Same metrics (endpoint counts, template counts, Lambda function counts) are duplicated across 7+ files with known discrepancies: `api-gw-app` documented as "12 endpoints" (actual: 10), `api-gw-infra` as "9 endpoints" (actual: 8), total templates documented as "29" (actual: 34). Affected files: `CLAUDE.md`, `README.md`, `backend/CLAUDE.md`, `docs/index.md`, `docs/api-contracts-backend.md`, `infra/aws/CLAUDE.md`, `infra/aws/cloudformation/CLAUDE.md`. Create single source of truth file. Add automated verification script to catch future drift.
+
+7. **B-63: Migrate .env configuration to secret managers** — Move all configuration from `.env` files to environment-appropriate secret managers. **Docker/NAS:** HashiCorp Vault (already installed on NAS) — backend reads all config from Vault at startup. **AWS:** SSM Parameter Store (non-secret config) + AWS Secrets Manager (credentials, API keys) — Lambda functions and EC2 read config from SSM/Secrets Manager. Only minimal bootstrap configuration remains in `.env`: Vault address (Docker), AWS region/secrets mechanism (AWS), `ENV_DATA` environment identifier. Variables to migrate: database credentials (`POSTGRESQL_*`), API keys (`OPENAI_API_KEY`, `STALKER_API_KEY`), external service tokens (AssemblyAI, Firecrawl), LLM config (`LLM_PROVIDER`, `EMBEDDING_MODEL`), and all remaining non-secret config. Scope: config loader module in backend supporting both Vault and SSM/Secrets Manager, update `server.py` and Lambda handlers, update `.env_example` to bootstrap-only vars, documentation of new config flow.
 
 ### Phase 2.5 (Future — API Contract & Type Safety)
 
@@ -354,6 +358,16 @@ Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway
 - FR31: Developer can run an automated verification script that compares documented counts against actual infrastructure counts and reports any discrepancies
 - FR32: Developer can verify zero discrepancies between documented and actual counts after running the verification script
 
+### B-63: Migrate .env Configuration to Secret Managers
+
+- FR33: Developer can create a config loader module in `backend/library/` that abstracts secret retrieval behind a unified interface, supporting HashiCorp Vault (Docker/NAS) and AWS SSM Parameter Store / Secrets Manager (AWS)
+- FR34: Developer can configure the config loader via minimal bootstrap `.env` variables: `SECRETS_BACKEND` (`vault` or `aws`), `VAULT_ADDR` (Vault endpoint for Docker), `AWS_REGION` (for AWS), `ENV_DATA` (environment identifier)
+- FR35: Developer can store all application configuration (database credentials, API keys, LLM config, service tokens) in HashiCorp Vault for the Docker/NAS environment and verify the backend reads them at startup
+- FR36: Developer can store all application configuration in AWS SSM Parameter Store (non-secret config) and AWS Secrets Manager (credentials, API keys) for the AWS environment and verify Lambda functions and EC2 read them at startup
+- FR37: Developer can update `server.py` to use the config loader module instead of reading directly from `os.environ` / `.env`
+- FR38: Developer can update Lambda handlers to use the config loader module instead of reading directly from environment variables
+- FR39: Developer can update `.env_example` to contain only bootstrap variables with documentation explaining the new config flow
+
 ## Non-Functional Requirements
 
 ### Reliability & Safety
@@ -382,3 +396,8 @@ Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway
 - NFR13: Documentation metrics (endpoint counts, template counts, Lambda function counts) have a single source of truth with zero cross-file discrepancies
 - NFR14: An automated verification script exists that detects documentation metric drift and can be run as part of CI or manual review
 - NFR15: All documentation files reference post-consolidation state: 2 API Gateway templates (app + infra) with url-add.yaml retaining its own REST API (3 total), correct endpoint counts per gateway (app: 11, infra: 7, url-add: 1), correct total template count
+
+### Secrets Management
+
+- NFR16: No secrets (API keys, passwords, tokens) remain in `.env` files after migration — only bootstrap variables (Vault address, AWS region, secrets backend selector, environment identifier)
+- NFR17: Backend starts successfully in both Docker (Vault) and AWS (SSM/Secrets Manager) environments using the unified config loader, with clear error messages if the secret backend is unreachable
