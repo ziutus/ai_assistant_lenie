@@ -263,3 +263,4 @@ development_status:
   B-43-fix-app2-domain-to-app2-dev-lenie-ai-eu: done  # Domain moved to app2.dev.lenie-ai.eu, ACM cert switched to *.dev.lenie-ai.eu
   B-49-extract-shared-typescript-types-to-shared-package: done  # shared/ package with @lenie/shared alias. Commit 64e3213.
   B-51-frontend-deploy-scripts-with-ssm: done  # Deploy scripts for both frontends, SSM integration. Commit f2432ce.
+  B-63-gitguardian-incident-management-script: done  # CLI script to review and close GitGuardian incidents. Script uses GitGuardian REST API directly. Token from env var (Vault integration is separate task). Features: list open incidents (with --severity and --repo filters), show details, resolve/ignore with reason.
