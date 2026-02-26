@@ -1,10 +1,11 @@
 import os
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 from library.config_loader import (
     Config,
     EnvBackend,
+    VaultBackend,
     _create_backend,
     get_config,
     load_config,
@@ -65,10 +66,9 @@ class TestCreateBackend(unittest.TestCase):
         backend = _create_backend("env")
         self.assertIsInstance(backend, EnvBackend)
 
-    def test_vault_not_implemented(self):
-        with self.assertRaises(NotImplementedError) as ctx:
-            _create_backend("vault")
-        self.assertIn("Story 20.2", str(ctx.exception))
+    def test_vault_backend(self):
+        backend = _create_backend("vault")
+        self.assertIsInstance(backend, VaultBackend)
 
     def test_aws_not_implemented(self):
         with self.assertRaises(NotImplementedError) as ctx:
@@ -107,10 +107,13 @@ class TestLoadConfig(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 load_config()
 
-    def test_vault_backend_not_implemented(self):
+    @patch("library.config_loader.VaultBackend.load")
+    def test_vault_backend_loads(self, mock_vault_load):
+        mock_vault_load.return_value = {"DB_HOST": "vault-host", "ENV_DATA": "dev"}
         with patch.dict(os.environ, {"SECRETS_BACKEND": "vault"}, clear=False):
-            with self.assertRaises(NotImplementedError):
-                load_config()
+            cfg = load_config()
+        self.assertEqual(cfg["DB_HOST"], "vault-host")
+        mock_vault_load.assert_called_once()
 
     def test_aws_backend_not_implemented(self):
         with patch.dict(os.environ, {"SECRETS_BACKEND": "aws"}, clear=False):
@@ -140,6 +143,112 @@ class TestLoadConfig(unittest.TestCase):
             reset_config()
             cfg2 = load_config()
         self.assertIsNot(cfg1, cfg2)
+
+
+class TestVaultBackend(unittest.TestCase):
+    """VaultBackend reads secrets from HashiCorp Vault KV v2."""
+
+    def test_missing_vault_addr_exits(self):
+        with patch.dict(os.environ, {"VAULT_TOKEN": "tok"}, clear=True):
+            backend = VaultBackend()
+            with self.assertRaises(SystemExit):
+                backend.load()
+
+    def test_missing_vault_token_exits(self):
+        with patch.dict(os.environ, {"VAULT_ADDR": "http://vault:8200"}, clear=True):
+            backend = VaultBackend()
+            with self.assertRaises(SystemExit):
+                backend.load()
+
+    @patch("library.config_loader.hvac", create=True)
+    def test_auth_failure_exits(self, mock_hvac_module):
+        mock_client = MagicMock()
+        mock_client.is_authenticated.return_value = False
+        mock_hvac_module.Client.return_value = mock_client
+
+        with patch.dict(os.environ, {
+            "VAULT_ADDR": "http://vault:8200",
+            "VAULT_TOKEN": "bad-token",
+            "VAULT_ENV": "dev",
+        }, clear=True):
+            # Need to patch hvac import inside VaultBackend.load()
+            with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
+                backend = VaultBackend()
+                with self.assertRaises(SystemExit):
+                    backend.load()
+
+    @patch("library.config_loader.hvac", create=True)
+    def test_successful_load(self, mock_hvac_module):
+        mock_client = MagicMock()
+        mock_client.is_authenticated.return_value = True
+        mock_client.secrets.kv.v2.read_secret_version.return_value = {
+            "data": {
+                "data": {
+                    "POSTGRESQL_HOST": "db.vault.local",
+                    "OPENAI_API_KEY": "sk-vault-secret",
+                }
+            }
+        }
+        mock_hvac_module.Client.return_value = mock_client
+
+        with patch.dict(os.environ, {
+            "VAULT_ADDR": "http://vault:8200",
+            "VAULT_TOKEN": "test-token",
+            "VAULT_ENV": "dev",
+            "SECRETS_BACKEND": "vault",
+        }, clear=True):
+            with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
+                backend = VaultBackend()
+                result = backend.load()
+
+        # Vault secrets present
+        self.assertEqual(result["POSTGRESQL_HOST"], "db.vault.local")
+        self.assertEqual(result["OPENAI_API_KEY"], "sk-vault-secret")
+        # Bootstrap env vars preserved
+        self.assertEqual(result["VAULT_ADDR"], "http://vault:8200")
+        self.assertEqual(result["VAULT_ENV"], "dev")
+        self.assertEqual(result["SECRETS_BACKEND"], "vault")
+        # Correct Vault path called
+        mock_client.secrets.kv.v2.read_secret_version.assert_called_once_with(
+            path="lenie/dev",
+            mount_point="secret",
+        )
+
+    @patch("library.config_loader.hvac", create=True)
+    def test_connection_error_exits(self, mock_hvac_module):
+        mock_hvac_module.Client.side_effect = ConnectionError("refused")
+
+        with patch.dict(os.environ, {
+            "VAULT_ADDR": "http://vault:8200",
+            "VAULT_TOKEN": "tok",
+            "VAULT_ENV": "dev",
+        }, clear=True):
+            with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
+                backend = VaultBackend()
+                with self.assertRaises(SystemExit):
+                    backend.load()
+
+    @patch("library.config_loader.hvac", create=True)
+    def test_vault_secret_overrides_bootstrap(self, mock_hvac_module):
+        """Vault secrets take precedence over bootstrap env vars."""
+        mock_client = MagicMock()
+        mock_client.is_authenticated.return_value = True
+        mock_client.secrets.kv.v2.read_secret_version.return_value = {
+            "data": {"data": {"ENV_DATA": "prod"}}
+        }
+        mock_hvac_module.Client.return_value = mock_client
+
+        with patch.dict(os.environ, {
+            "VAULT_ADDR": "http://vault:8200",
+            "VAULT_TOKEN": "tok",
+            "VAULT_ENV": "dev",
+        }, clear=True):
+            with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
+                backend = VaultBackend()
+                result = backend.load()
+
+        # Vault value overrides bootstrap
+        self.assertEqual(result["ENV_DATA"], "prod")
 
 
 if __name__ == "__main__":

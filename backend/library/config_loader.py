@@ -1,8 +1,8 @@
 """Unified configuration loader with pluggable backends.
 
-Story 20.1 — provides a centralized Config object that replaces scattered
-os.getenv() calls.  Only the ``env`` backend is functional; ``vault`` and
-``aws`` are stubs for Stories 20.2 / 20.3.
+Provides a centralized Config object that replaces scattered os.getenv()
+calls.  Backends: ``env`` (dotenv), ``vault`` (HashiCorp Vault KV v2),
+``aws`` (stub for Story 20.3).
 
 Usage::
 
@@ -65,6 +65,76 @@ class EnvBackend(ConfigBackend):
         return dict(os.environ)
 
 
+# Bootstrap env vars that are always read from the real environment,
+# regardless of which backend is selected.
+_BOOTSTRAP_VARS = frozenset({
+    "SECRETS_BACKEND",
+    "VAULT_ADDR",
+    "VAULT_TOKEN",
+    "VAULT_ENV",
+    "ENV_DATA",
+    "AWS_REGION",
+})
+
+
+class VaultBackend(ConfigBackend):
+    """Loads configuration from HashiCorp Vault KV v2.
+
+    Secrets are stored at ``secret/lenie/{VAULT_ENV}`` as a single KV v2
+    secret containing all configuration key-value pairs.
+
+    Bootstrap env vars (``VAULT_ADDR``, ``VAULT_TOKEN``, ``VAULT_ENV``)
+    must be set in the real environment (e.g. ``.env`` or shell).
+    ``VAULT_ENV`` defaults to ``dev`` if not set.
+    """
+
+    def load(self) -> dict[str, str]:
+        vault_addr = os.environ.get("VAULT_ADDR")
+        vault_token = os.environ.get("VAULT_TOKEN")
+        vault_env = os.environ.get("VAULT_ENV", "dev")
+
+        if not vault_addr:
+            logging.error("VAULT_ADDR must be set when using vault backend")
+            sys.exit(1)
+        if not vault_token:
+            logging.error("VAULT_TOKEN must be set when using vault backend")
+            sys.exit(1)
+
+        try:
+            import hvac
+        except ImportError:
+            logging.error("hvac package is required for vault backend: pip install hvac")
+            sys.exit(1)
+
+        try:
+            client = hvac.Client(url=vault_addr, token=vault_token)
+            if not client.is_authenticated():
+                logging.error(
+                    "Vault authentication failed at %s — check VAULT_TOKEN", vault_addr
+                )
+                sys.exit(1)
+
+            secret_path = f"lenie/{vault_env}"
+            logging.info("Vault: reading secret at secret/%s", secret_path)
+            response = client.secrets.kv.v2.read_secret_version(
+                path=secret_path,
+                mount_point="secret",
+            )
+            vault_data = response["data"]["data"]
+        except SystemExit:
+            raise
+        except Exception as exc:
+            logging.error(
+                "Failed to load config from Vault at %s: %s", vault_addr, exc
+            )
+            sys.exit(1)
+
+        # Start with bootstrap env vars, overlay with Vault secrets.
+        result = {k: os.environ[k] for k in _BOOTSTRAP_VARS if k in os.environ}
+        result.update(vault_data)
+        return result
+
+
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
@@ -77,9 +147,7 @@ def _create_backend(name: str) -> ConfigBackend:
     if name == "env":
         return EnvBackend()
     if name == "vault":
-        raise NotImplementedError(
-            "Vault backend is not yet implemented (see Story 20.2)."
-        )
+        return VaultBackend()
     if name == "aws":
         raise NotImplementedError(
             "AWS backend is not yet implemented (see Story 20.3)."
