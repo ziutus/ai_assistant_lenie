@@ -3,6 +3,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 
 from library.config_loader import (
+    AWSSSMBackend,
     Config,
     EnvBackend,
     VaultBackend,
@@ -70,10 +71,9 @@ class TestCreateBackend(unittest.TestCase):
         backend = _create_backend("vault")
         self.assertIsInstance(backend, VaultBackend)
 
-    def test_aws_not_implemented(self):
-        with self.assertRaises(NotImplementedError) as ctx:
-            _create_backend("aws")
-        self.assertIn("Story 20.3", str(ctx.exception))
+    def test_aws_backend(self):
+        backend = _create_backend("aws")
+        self.assertIsInstance(backend, AWSSSMBackend)
 
     def test_unknown_backend_exits(self):
         with self.assertRaises(SystemExit):
@@ -115,10 +115,13 @@ class TestLoadConfig(unittest.TestCase):
         self.assertEqual(cfg["DB_HOST"], "vault-host")
         mock_vault_load.assert_called_once()
 
-    def test_aws_backend_not_implemented(self):
+    @patch("library.config_loader.AWSSSMBackend.load")
+    def test_aws_backend_loads(self, mock_ssm_load):
+        mock_ssm_load.return_value = {"DB_HOST": "ssm-host", "ENV_DATA": "dev"}
         with patch.dict(os.environ, {"SECRETS_BACKEND": "aws"}, clear=False):
-            with self.assertRaises(NotImplementedError):
-                load_config()
+            cfg = load_config()
+        self.assertEqual(cfg["DB_HOST"], "ssm-host")
+        mock_ssm_load.assert_called_once()
 
     @patch("library.config_loader.load_dotenv")
     def test_singleton_same_instance(self, mock_dotenv):
@@ -248,6 +251,133 @@ class TestVaultBackend(unittest.TestCase):
                 result = backend.load()
 
         # Vault value overrides bootstrap
+        self.assertEqual(result["ENV_DATA"], "prod")
+
+
+class TestAWSSSMBackend(unittest.TestCase):
+    """AWSSSMBackend reads secrets from AWS SSM Parameter Store."""
+
+    @patch("library.config_loader.boto3", create=True)
+    def test_successful_load(self, mock_boto3_module):
+        mock_ssm = MagicMock()
+        mock_paginator = MagicMock()
+        mock_paginator.paginate.return_value = [
+            {
+                "Parameters": [
+                    {"Name": "/lenie/dev/POSTGRESQL_HOST", "Value": "db.ssm.local"},
+                    {"Name": "/lenie/dev/OPENAI_API_KEY", "Value": "sk-ssm-secret"},
+                ]
+            }
+        ]
+        mock_ssm.get_paginator.return_value = mock_paginator
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_ssm
+        mock_boto3_module.Session.return_value = mock_session
+
+        with patch.dict(os.environ, {
+            "VAULT_ENV": "dev",
+            "AWS_REGION": "eu-central-1",
+            "SECRETS_BACKEND": "aws",
+        }, clear=True):
+            with patch.dict("sys.modules", {"boto3": mock_boto3_module}):
+                backend = AWSSSMBackend()
+                result = backend.load()
+
+        self.assertEqual(result["POSTGRESQL_HOST"], "db.ssm.local")
+        self.assertEqual(result["OPENAI_API_KEY"], "sk-ssm-secret")
+        # Bootstrap env vars preserved
+        self.assertEqual(result["VAULT_ENV"], "dev")
+        self.assertEqual(result["AWS_REGION"], "eu-central-1")
+        self.assertEqual(result["SECRETS_BACKEND"], "aws")
+        # Correct path used
+        mock_paginator.paginate.assert_called_once_with(
+            Path="/lenie/dev/",
+            Recursive=False,
+            WithDecryption=True,
+        )
+
+    @patch("library.config_loader.boto3", create=True)
+    def test_default_env_is_dev(self, mock_boto3_module):
+        mock_ssm = MagicMock()
+        mock_paginator = MagicMock()
+        mock_paginator.paginate.return_value = [
+            {"Parameters": [{"Name": "/lenie/dev/KEY", "Value": "val"}]}
+        ]
+        mock_ssm.get_paginator.return_value = mock_paginator
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_ssm
+        mock_boto3_module.Session.return_value = mock_session
+
+        with patch.dict(os.environ, {}, clear=True):
+            with patch.dict("sys.modules", {"boto3": mock_boto3_module}):
+                backend = AWSSSMBackend()
+                result = backend.load()
+
+        # Default VAULT_ENV=dev, so path is /lenie/dev/
+        mock_paginator.paginate.assert_called_once_with(
+            Path="/lenie/dev/",
+            Recursive=False,
+            WithDecryption=True,
+        )
+        self.assertEqual(result["KEY"], "val")
+
+    @patch("library.config_loader.boto3", create=True)
+    def test_connection_error_exits(self, mock_boto3_module):
+        mock_boto3_module.Session.side_effect = Exception("No credentials")
+
+        with patch.dict(os.environ, {
+            "VAULT_ENV": "dev",
+            "AWS_REGION": "eu-central-1",
+        }, clear=True):
+            with patch.dict("sys.modules", {"boto3": mock_boto3_module}):
+                backend = AWSSSMBackend()
+                with self.assertRaises(SystemExit):
+                    backend.load()
+
+    @patch("library.config_loader.boto3", create=True)
+    def test_empty_result_warns_but_returns(self, mock_boto3_module):
+        mock_ssm = MagicMock()
+        mock_paginator = MagicMock()
+        mock_paginator.paginate.return_value = [{"Parameters": []}]
+        mock_ssm.get_paginator.return_value = mock_paginator
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_ssm
+        mock_boto3_module.Session.return_value = mock_session
+
+        with patch.dict(os.environ, {
+            "VAULT_ENV": "dev",
+            "AWS_REGION": "eu-central-1",
+        }, clear=True):
+            with patch.dict("sys.modules", {"boto3": mock_boto3_module}):
+                backend = AWSSSMBackend()
+                result = backend.load()
+
+        # Should return bootstrap vars even with no SSM params
+        self.assertEqual(result["VAULT_ENV"], "dev")
+        self.assertNotIn("POSTGRESQL_HOST", result)
+
+    @patch("library.config_loader.boto3", create=True)
+    def test_ssm_overrides_bootstrap(self, mock_boto3_module):
+        """SSM parameters take precedence over bootstrap env vars."""
+        mock_ssm = MagicMock()
+        mock_paginator = MagicMock()
+        mock_paginator.paginate.return_value = [
+            {"Parameters": [{"Name": "/lenie/dev/ENV_DATA", "Value": "prod"}]}
+        ]
+        mock_ssm.get_paginator.return_value = mock_paginator
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_ssm
+        mock_boto3_module.Session.return_value = mock_session
+
+        with patch.dict(os.environ, {
+            "VAULT_ENV": "dev",
+            "AWS_REGION": "eu-central-1",
+            "ENV_DATA": "dev",
+        }, clear=True):
+            with patch.dict("sys.modules", {"boto3": mock_boto3_module}):
+                backend = AWSSSMBackend()
+                result = backend.load()
+
         self.assertEqual(result["ENV_DATA"], "prod")
 
 
