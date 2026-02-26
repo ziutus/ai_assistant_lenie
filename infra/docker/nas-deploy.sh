@@ -53,7 +53,7 @@ declare -A SVC_EXTRA=(
     [frontend]=""
     [app2]=""
     [backend]="--network ${NAS_NETWORK} --env-file ${NAS_ENV_FILE} -v lenie-ai-data:/app/data"
-    [db]="-e POSTGRES_PASSWORD=postgres -v lenie-ai-db-data:/var/lib/postgresql/data"
+    [db]="-e POSTGRES_PASSWORD=\${NAS_DB_PASSWORD:-postgres} -v lenie-ai-db-data:/var/lib/postgresql/data"
 )
 
 ALL_SERVICES="db backend frontend app2"
