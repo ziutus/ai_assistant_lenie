@@ -179,9 +179,10 @@ SSM_TAGS = [
 
 
 def ssm_put_parameter(ssm_client, env: str, key: str, value: str):
-    """Put a single parameter to SSM as SecureString with tags."""
+    """Put a single parameter to SSM as SecureString with tags and description."""
     name = f"{ssm_path_prefix(env)}{key}"
     tags = SSM_TAGS + [{"Key": "environment", "Value": env}]
+    description = f"Lenie {env} | managed by env_to_vault.py"
 
     # SSM doesn't allow Tags on Overwrite, so we try create first.
     try:
@@ -189,6 +190,7 @@ def ssm_put_parameter(ssm_client, env: str, key: str, value: str):
             Name=name,
             Value=value,
             Type="SecureString",
+            Description=description,
             Tags=tags,
         )
     except ssm_client.exceptions.ParameterAlreadyExists:
@@ -197,6 +199,7 @@ def ssm_put_parameter(ssm_client, env: str, key: str, value: str):
             Name=name,
             Value=value,
             Type="SecureString",
+            Description=description,
             Overwrite=True,
         )
 
