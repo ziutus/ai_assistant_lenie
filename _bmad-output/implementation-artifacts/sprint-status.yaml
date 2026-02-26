@@ -1,4 +1,4 @@
-# generated: 2026-02-25
+# generated: 2026-02-26
 # project: lenie-server-2025
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-25
+generated: 2026-02-26
 project: lenie-server-2025
 project_key: NOKEY
 tracking_system: file-system
@@ -182,7 +182,7 @@ development_status:
   epic-18-retrospective: done
 
   # ============================================================
-  # BACKLOG: Multi-User Admin Interface
+  # Epic 19: Multi-User Admin Interface
   # ============================================================
 
   # --- Epic 19: Multi-User Admin Interface (app2) ---
@@ -191,7 +191,23 @@ development_status:
   19-2-add-login-page-and-route-protection: done
   19-3-implement-core-layout-and-navigation: done
   19-4-connect-backend-api: done
-  epic-19-retrospective: optional
+  epic-19-retrospective: done
+
+  # ============================================================
+  # SPRINT 6: Secrets Management & Security Verification
+  # ============================================================
+
+  # --- Epic 20: Secrets Management — Migrate .env to Vault & AWS SSM ---
+  epic-20: backlog
+  20-1-create-unified-config-loader-module: backlog
+  20-2-implement-hashicorp-vault-backend-docker-nas: backlog
+  20-3-implement-aws-ssm-secrets-manager-backend: backlog
+  20-4-integrate-config-loader-into-server-and-lambda-handlers: backlog
+  20-5-update-env-example-and-document-config-flow: backlog
+  epic-20-retrospective: optional
+
+  # --- B-64: Verify Pre-Commit Secret Detection (Sprint 6) ---
+  B-64-verify-pre-commit-secret-detection: done  # Verified: Gitleaks detects 6/10 secret types (AWS keys, OpenAI, PEM, Slack, GitHub PAT with custom rule). TruffleHog verifies real secrets online. Added .gitleaks.toml with GitHub PAT rules. Report: docs/security/pre-commit-verification.md
 
   # ============================================================
   # BACKLOG (only items TO DO)
