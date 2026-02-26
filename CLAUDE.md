@@ -141,6 +141,16 @@ cd web_interface_app2 && ./deploy.sh
 - GitLab CI (`.gitlab-ci.yml`) - Qodana security scanning
 - Jenkins (`Jenkinsfile`) - AWS EC2 orchestration, Semgrep security
 
+## Security — Secrets Handling
+
+**NEVER commit files containing real secrets** (API keys, passwords, tokens, credentials) to the repository. This is a hard rule — no exceptions.
+
+- Always create `.example` files with placeholders (e.g., `nas.env.example` with `<your-api-key>`) and commit those instead
+- Add files with real secrets to `.gitignore` BEFORE creating them
+- When creating new env/config files: first add the filename to `.gitignore`, then create the `.example` template, then create the real file locally
+- Files that must never be committed: `.env`, `nas.env`, `credentials.json`, `token.json`, any file containing API keys or passwords
+- If in doubt whether a file contains secrets, do NOT stage or commit it — ask first
+
 ## Environment Variables
 
 Key variables (see `.env_example` for full list):

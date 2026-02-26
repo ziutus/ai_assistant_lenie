@@ -1,5 +1,6 @@
 ./.idea
-.env
+# All .env files anywhere in the repo (secrets) — use *.env.example templates instead
+*.env
 /tmp/*
 .idea/
 .venv
@@ -89,3 +90,4 @@ token.json
 
 # Local-only context files (contain account-specific AWS details)
 context_*.txt
+

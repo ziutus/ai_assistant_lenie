@@ -84,7 +84,11 @@ def _create_backend(name: str) -> ConfigBackend:
         raise NotImplementedError(
             "AWS backend is not yet implemented (see Story 20.3)."
         )
-    logging.error("Unknown SECRETS_BACKEND value: %s", name)
+    logging.error(
+        "Unknown SECRETS_BACKEND value: '%s'. Valid options: %s",
+        name,
+        ", ".join(sorted(_KNOWN_BACKENDS)),
+    )
     sys.exit(1)
 
 
@@ -105,6 +109,7 @@ def load_config() -> Config:
         return _config
 
     backend_name = os.environ.get("SECRETS_BACKEND", "env")
+    logging.info("Config loader: using '%s' backend", backend_name)
     backend = _create_backend(backend_name)
     _config = Config(backend.load())
     return _config
