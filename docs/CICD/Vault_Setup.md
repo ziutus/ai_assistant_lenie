@@ -113,51 +113,58 @@ SECRETS_BACKEND=vault                  # set to "vault" to use Vault instead of 
 
 ## Managing Secrets (`scripts/env_to_vault.py`)
 
-Python script for managing secrets in Vault. Requires `hvac` package. Reads `VAULT_ADDR` and `VAULT_TOKEN` from `.env`.
+Unified script for managing secrets in both Vault and AWS SSM Parameter Store. Supports full migration, individual key operations, and synchronization between backends.
 
-### Full migration from .env
+Requirements: `hvac` (for Vault), `boto3` (for SSM).
+
+Bootstrap variables (`VAULT_ADDR`, `VAULT_TOKEN`, `SECRETS_BACKEND`) are automatically excluded from uploads.
+
+### Vault commands
 
 ```bash
-# Dry-run (shows what would be uploaded, no changes)
-python scripts/env_to_vault.py upload --env dev
+# Full migration from .env
+python scripts/env_to_vault.py vault upload --env dev                  # dry-run
+python scripts/env_to_vault.py vault upload --env dev --write          # write all
 
-# Actually write all variables to Vault
-python scripts/env_to_vault.py upload --env dev --write
-
-# Upload from a different .env file to a different environment
-python scripts/env_to_vault.py upload --env prod --env-file .env.prod --write
+# Single key operations
+python scripts/env_to_vault.py vault set --env dev KEY=value           # add/update (patch)
+python scripts/env_to_vault.py vault set --env dev K1=v1 K2=v2        # multiple keys
+python scripts/env_to_vault.py vault delete --env dev KEY              # delete key
+python scripts/env_to_vault.py vault list --env dev                    # list all (masked)
+python scripts/env_to_vault.py vault get --env dev OPENAI_API_KEY      # get actual value
 ```
 
-Bootstrap variables (`VAULT_ADDR`, `VAULT_TOKEN`, `SECRETS_BACKEND`) are automatically excluded from the upload.
+### AWS SSM Parameter Store commands
 
-### Add or update keys (patch)
+All parameters stored as `SecureString` under `/lenie/{env}/`. Uses default boto3 credential chain.
 
 ```bash
-# Set a single key (other keys are untouched)
-python scripts/env_to_vault.py set --env dev NEW_KEY=new_value
+# Full migration from .env
+python scripts/env_to_vault.py ssm upload --env dev                    # dry-run
+python scripts/env_to_vault.py ssm upload --env dev --write            # write all
 
-# Set multiple keys at once
-python scripts/env_to_vault.py set --env dev KEY1=value1 KEY2=value2
+# Single key operations
+python scripts/env_to_vault.py ssm set --env dev KEY=value             # add/update
+python scripts/env_to_vault.py ssm delete --env dev KEY                # delete
+python scripts/env_to_vault.py ssm list --env dev                      # list all (masked)
+python scripts/env_to_vault.py ssm get --env dev OPENAI_API_KEY        # get actual value
+
+# Optional AWS flags (for all ssm commands)
+python scripts/env_to_vault.py ssm list --env dev --region eu-central-1
+python scripts/env_to_vault.py ssm list --env dev --profile lenie-ai-2025-admin
 ```
 
-### Delete keys
+### Sync between backends
+
+Compares source and target, shows diff, writes only new/changed keys. Does **not** delete keys that exist only in the target.
 
 ```bash
-# Delete a single key
-python scripts/env_to_vault.py delete --env dev OLD_KEY
+# Vault -> SSM
+python scripts/env_to_vault.py sync --env dev --from vault --to ssm            # dry-run
+python scripts/env_to_vault.py sync --env dev --from vault --to ssm --write    # actually sync
 
-# Delete multiple keys
-python scripts/env_to_vault.py delete --env dev KEY1 KEY2
-```
-
-### List and read keys
-
-```bash
-# List all keys (values are masked)
-python scripts/env_to_vault.py list --env dev
-
-# Get the actual value of a key
-python scripts/env_to_vault.py get --env dev OPENAI_API_KEY
+# SSM -> Vault
+python scripts/env_to_vault.py sync --env dev --from ssm --to vault --write
 ```
 
 ## Web UI
