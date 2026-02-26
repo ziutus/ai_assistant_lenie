@@ -5,5 +5,6 @@ repos:
         name: TruffleHog
         description: Detect secrets in your data.
         language: docker_image
-        entry: 'docker run --rm -it -v "${PWD}:/pwd" trufflesecurity/trufflehog git file://. --only-verified --fail --since-commit HEAD'
+        entry: 'trufflesecurity/trufflehog:latest git file:///src --only-verified --fail --since-commit HEAD'
+        pass_filenames: false
         stages: ["pre-commit", "pre-push"]
