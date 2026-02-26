@@ -2,7 +2,7 @@
 
 Provides a centralized Config object that replaces scattered os.getenv()
 calls.  Backends: ``env`` (dotenv), ``vault`` (HashiCorp Vault KV v2),
-``aws`` (stub for Story 20.3).
+``aws`` (AWS SSM Parameter Store).
 
 Usage::
 
@@ -135,6 +135,58 @@ class VaultBackend(ConfigBackend):
         return result
 
 
+class AWSSSMBackend(ConfigBackend):
+    """Loads configuration from AWS SSM Parameter Store.
+
+    All parameters are stored as SecureString under
+    ``/lenie/{VAULT_ENV}/<key>`` and loaded via ``GetParametersByPath``.
+
+    Bootstrap env vars (``AWS_REGION``, ``VAULT_ENV``) must be set in
+    the real environment.  ``VAULT_ENV`` defaults to ``dev``.
+    Uses default boto3 credential chain (env vars, profile, instance role).
+    """
+
+    def load(self) -> dict[str, str]:
+        vault_env = os.environ.get("VAULT_ENV", "dev")
+        aws_region = os.environ.get("AWS_REGION", "eu-central-1")
+
+        try:
+            import boto3
+        except ImportError:
+            logging.error("boto3 package is required for aws backend: pip install boto3")
+            sys.exit(1)
+
+        prefix = f"/lenie/{vault_env}/"
+        logging.info("AWS SSM: reading parameters under %s (region: %s)", prefix, aws_region)
+
+        try:
+            session = boto3.Session(region_name=aws_region)
+            ssm = session.client("ssm")
+
+            params = {}
+            paginator = ssm.get_paginator("get_parameters_by_path")
+            for page in paginator.paginate(
+                Path=prefix,
+                Recursive=False,
+                WithDecryption=True,
+            ):
+                for param in page["Parameters"]:
+                    key = param["Name"][len(prefix):]
+                    params[key] = param["Value"]
+
+        except Exception as exc:
+            logging.error("Failed to load config from AWS SSM (%s): %s", prefix, exc)
+            sys.exit(1)
+
+        if not params:
+            logging.warning("AWS SSM: no parameters found under %s", prefix)
+
+        # Start with bootstrap env vars, overlay with SSM parameters.
+        result = {k: os.environ[k] for k in _BOOTSTRAP_VARS if k in os.environ}
+        result.update(params)
+        return result
+
+
 # ---------------------------------------------------------------------------
 # Factory
 # ---------------------------------------------------------------------------
@@ -149,9 +201,7 @@ def _create_backend(name: str) -> ConfigBackend:
     if name == "vault":
         return VaultBackend()
     if name == "aws":
-        raise NotImplementedError(
-            "AWS backend is not yet implemented (see Story 20.3)."
-        )
+        return AWSSSMBackend()
     logging.error(
         "Unknown SECRETS_BACKEND value: '%s'. Valid options: %s",
         name,
