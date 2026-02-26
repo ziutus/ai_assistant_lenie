@@ -198,9 +198,9 @@ development_status:
   # ============================================================
 
   # --- Epic 20: Secrets Management — Migrate .env to Vault & AWS SSM ---
-  epic-20: backlog
-  20-1-create-unified-config-loader-module: backlog
-  20-2-implement-hashicorp-vault-backend-docker-nas: backlog
+  epic-20: in-progress
+  20-1-create-unified-config-loader-module: done  # Config, EnvBackend, factory, singleton, 19 unit tests. Commits: 4870e16, 084ec14.
+  20-2-implement-hashicorp-vault-backend-docker-nas: review  # VaultBackend implemented: hvac KV v2, token auth, path secret/lenie/{ENV_DATA}, bootstrap vars merge, 6 unit tests. Pending: real Vault integration test on NAS.
   20-3-implement-aws-ssm-secrets-manager-backend: backlog
   20-4-integrate-config-loader-into-server-and-lambda-handlers: backlog
   20-5-update-env-example-and-document-config-flow: backlog
