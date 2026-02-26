@@ -89,3 +89,6 @@ token.json
 
 # Local-only context files (contain account-specific AWS details)
 context_*.txt
+
+# NAS environment file (contains secrets, use nas.env.example as template)
+infra/docker/nas.env
