@@ -1,9 +1,15 @@
 repos:
-  - repo: local
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.0
+    hooks:
+      - id: gitleaks
+        name: gitleaks - Detect secrets in code
+        description: Detect hardcoded secrets using regex patterns (offline, fast).
+        stages: ["pre-commit", "pre-push"]
+  - repo: https://github.com/trufflesecurity/trufflehog
+    rev: v3.93.4
     hooks:
       - id: trufflehog
-        name: TruffleHog
-        description: Detect secrets in your data.
-        language: docker_image
-        entry: 'docker run --rm -it -v "${PWD}:/pwd" trufflesecurity/trufflehog git file://. --only-verified --fail --since-commit HEAD'
+        name: TruffleHog - Detect verified secrets
+        description: Detect secrets with online verification.
         stages: ["pre-commit", "pre-push"]
