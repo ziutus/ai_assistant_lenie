@@ -41,4 +41,4 @@ EXPOSE 5000
 
 # Define the command to run your application
 #CMD ["python", "server.py"]
-ENTRYPOINT ["python", "server.py"]
+ENTRYPOINT ["/app/.venv/bin/python", "server.py"]
