@@ -218,7 +218,7 @@ Instead of manually unsealing Vault after every NAS restart, Vault can automatic
 
 ### Prerequisites
 
-AWS infrastructure is managed by CloudFormation stack `lenie-nas-vault-kms-unseal` on the personal AWS account (`639394817995`), region `eu-central-1`. The stack creates:
+AWS infrastructure is managed by CloudFormation stack `lenie-nas-vault-kms-unseal` on the personal AWS account (profile `ziutus-Administrator`), region `eu-central-1`. The stack creates:
 
 | Resource | Description |
 |----------|-------------|

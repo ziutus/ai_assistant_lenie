@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   KMS key and IAM user for HashiCorp Vault auto-unseal on NAS.
-  Deployed on personal AWS account (639394817995), separate from application infrastructure.
+  Deployed on personal AWS account (ziutus-Administrator profile), separate from application infrastructure.
   Region: eu-central-1
 
 Parameters:
