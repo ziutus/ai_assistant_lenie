@@ -2,7 +2,7 @@
 
 Full Lenie stack running on a local QNAP NAS for personal use and testing.
 
-> **Related docs:** [Docker_Local.md](Docker_Local.md) — local Docker Compose development, [frontend-deployment.md](frontend-deployment.md) — AWS frontend deployment.
+> **Related docs:** [Docker_Local.md](Docker_Local.md) — local Docker Compose development, [frontend-deployment.md](../frontend-deployment.md) — AWS frontend deployment.
 
 ## Hardware
 
@@ -18,15 +18,17 @@ Full Lenie stack running on a local QNAP NAS for personal use and testing.
 
 | Service | Container | Image | Port | Description |
 |---------|-----------|-------|------|-------------|
-| Frontend React | `lenie-ai-frontend` | `lenie-ai-frontend:latest` | 3000 | Main web interface |
-| Admin Panel | `lenie-ai-app2` | `lenie-ai-app2:latest` | 3001 | Admin panel (app2) |
-| Backend | `lenie-ai-server` | `lenie-ai-server:latest` | 5055 | Flask API server |
-| PostgreSQL | `lenie-ai-db` | `lenie-ai-db:latest` | 5434 | PostgreSQL 17 + pgvector |
+| Frontend React | `lenie-ai-frontend` | `192.168.200.7:5005/lenie-ai-frontend` | 3000 | Main web interface |
+| Admin Panel | `lenie-ai-app2` | `192.168.200.7:5005/lenie-ai-app2` | 3001 | Admin panel (app2) |
+| Backend | `lenie-ai-server` | `192.168.200.7:5005/lenie-ai-server` | 5055 | Flask API server |
+| PostgreSQL | `lenie-ai-db` | `192.168.200.7:5005/lenie-ai-db` | 5434 | PostgreSQL 17 + pgvector |
 | Vault | `lenie-vault` | `hashicorp/vault:latest` | 8210 | HashiCorp Vault secrets manager |
+| **Registry** | `lenie-registry` | `registry:2` | 5005 | Private Docker registry (infra) |
 
-All services use `--restart unless-stopped` policy.
+All application services are orchestrated via `docker compose` using `compose.nas.yaml`.
+The registry container runs standalone (started once, persists across deployments).
 
-**Network topology:** Backend and database are connected via Docker network `lenie-net` (backend connects to DB by container name `lenie-ai-db` on internal port 5432). Frontend containers serve static files via nginx and don't need the Docker network — API calls go from the user's browser directly to the backend port.
+**Network topology:** All services are connected via Docker network `lenie-net`. Backend connects to DB by container name `lenie-ai-db` on internal port 5432. Frontend containers serve static files via nginx — API calls go from the user's browser directly to the backend port.
 
 ## Access URLs
 
@@ -36,6 +38,7 @@ From any device on the local network:
 - **Admin Panel:** http://192.168.200.7:3001
 - **Backend API:** http://192.168.200.7:5055
 - **Vault UI:** http://192.168.200.7:8210/ui
+- **Registry catalog:** http://192.168.200.7:5005/v2/_catalog
 
 ## Prerequisites
 
@@ -67,38 +70,185 @@ QNAP uses several ports by default. Known conflicts:
 
 | Port | Used by | Solution |
 |------|---------|----------|
-| 5000-5001 | Apache WebDAV | Backend uses 5055 |
+| 5000-5001 | Apache WebDAV | Backend uses 5055, registry uses 5005 |
 | 5050 | Python process | — |
 | 5433 | Local PostgreSQL | DB container uses 5434 |
 | 8200 | UPnP Media Server | Vault uses 8210 |
+
+## Private Docker Registry
+
+A private Docker registry (`registry:2`) runs on the NAS to store built images. This replaces the previous workflow of exporting images to `.tar.gz`, transferring via `scp`, and loading with `docker load`.
+
+### One-Time Setup
+
+#### 1. Start registry container on NAS
+
+```bash
+ssh admin@192.168.200.7
+DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+
+$DOCKER run -d --name lenie-registry \
+  --restart unless-stopped \
+  -p 5005:5000 \
+  -v lenie-registry-data:/var/lib/registry \
+  registry:2
+```
+
+#### 2. Configure insecure-registries
+
+The registry runs without TLS (HTTP only), so both the PC and NAS must allow it as an insecure registry.
+
+**PC (Docker Desktop):**
+
+Settings → Docker Engine → add to JSON:
+
+```json
+{
+  "insecure-registries": ["192.168.200.7:5005"]
+}
+```
+
+Apply & Restart Docker Desktop.
+
+**NAS (Container Station):**
+
+Edit `/share/CACHEDEV1_DATA/.qpkg/container-station/etc/docker.json`, add:
+
+```json
+{
+  "insecure-registries": ["192.168.200.7:5005"]
+}
+```
+
+Restart Container Station from QNAP App Center (or reboot NAS).
+
+#### 3. Verify
+
+```bash
+# From PC — push a test image
+docker pull hello-world
+docker tag hello-world 192.168.200.7:5005/hello-world
+docker push 192.168.200.7:5005/hello-world
+
+# Check registry catalog
+curl http://192.168.200.7:5005/v2/_catalog
+# Expected: {"repositories":["hello-world"]}
+
+# From NAS — pull it back
+ssh admin@192.168.200.7
+DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+$DOCKER pull 192.168.200.7:5005/hello-world
+```
+
+### Garbage Collection
+
+Over time, the registry accumulates old image layers. To reclaim disk space:
+
+```bash
+ssh admin@192.168.200.7
+DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+
+# Run garbage collection (removes unreferenced blobs)
+$DOCKER exec lenie-registry bin/registry garbage-collect /etc/docker/registry/config.yml
+
+# Check registry disk usage
+$DOCKER exec lenie-registry du -sh /var/lib/registry
+```
 
 ## Deployment
 
 ### Automated Deploy Script
 
-The script `infra/docker/nas-deploy.sh` handles building, transferring, and deploying images to the NAS.
+The script `infra/docker/nas-deploy.sh` handles building images, pushing to the private registry, and deploying via `docker compose`.
 
 ```bash
-# Deploy all services
+# Deploy all services (build → push → compose up)
 ./infra/docker/nas-deploy.sh
 
 # Deploy specific service(s)
 ./infra/docker/nas-deploy.sh frontend
 ./infra/docker/nas-deploy.sh backend app2
-./infra/docker/nas-deploy.sh db
 
-# Transfer and restart without rebuilding
+# Push existing image without rebuilding
 ./infra/docker/nas-deploy.sh --skip-build backend
+
+# Only run compose up on NAS (no build/push)
+./infra/docker/nas-deploy.sh --compose-only
+
+# Copy compose.nas.yaml to NAS and deploy
+./infra/docker/nas-deploy.sh --sync-compose
+
+# Sync compose file and deploy specific services
+./infra/docker/nas-deploy.sh --sync-compose frontend app2
 ```
 
 The script performs these steps for each service:
+
 1. Build Docker image locally (faster than on NAS CPU)
-2. Export image to `.tar.gz`
-3. Transfer via `scp` to NAS
-4. Load image on NAS with `docker load`
-5. Stop and remove old container
-6. Start new container with correct ports, volumes, and network
-7. Clean up temporary archive files
+2. Tag image for the private registry (`192.168.200.7:5005/...`)
+3. Push to registry via `docker push`
+4. On NAS: `docker compose pull` to fetch updated images
+5. On NAS: `docker compose up -d` to recreate changed containers
+
+### Compose File
+
+The compose file lives at `/share/Container/lenie-compose/compose.nas.yaml` on the NAS. Source of truth is `infra/docker/compose.nas.yaml` in the repo.
+
+To sync it to NAS:
+
+```bash
+./infra/docker/nas-deploy.sh --sync-compose
+# or manually:
+scp infra/docker/compose.nas.yaml admin@192.168.200.7:/share/Container/lenie-compose/compose.nas.yaml
+```
+
+### Docker Compose Commands on NAS
+
+```bash
+ssh admin@192.168.200.7
+DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+
+# Status
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml ps
+
+# Restart all
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml restart
+
+# Restart single service
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml restart lenie-ai-server
+
+# View logs
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
+
+# Stop everything
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml down
+
+# Pull latest images and recreate
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml pull
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d
+```
+
+### Migration from Old Workflow
+
+If migrating from the previous tar.gz/scp deployment:
+
+1. Configure insecure-registries on PC and NAS (see [Private Docker Registry](#private-docker-registry))
+2. Start the registry container on NAS
+3. Verify push/pull with a test image
+4. Sync compose file: `./nas-deploy.sh --sync-compose`
+5. Create external volumes (if they don't exist):
+   ```bash
+   ssh admin@192.168.200.7
+   DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+   $DOCKER volume create lenie-ai-db-data
+   $DOCKER volume create lenie-ai-data
+   ```
+6. Stop old containers:
+   ```bash
+   $DOCKER stop lenie-ai-frontend lenie-ai-app2 lenie-ai-server lenie-ai-db
+   $DOCKER rm lenie-ai-frontend lenie-ai-app2 lenie-ai-server lenie-ai-db
+   ```
+7. Push all images and deploy: `./nas-deploy.sh`
 
 ### Manual Deploy (Step by Step)
 
@@ -122,58 +272,22 @@ docker build -t lenie-ai-db:latest -f infra/docker/Postgresql/Dockerfile .
 
 All builds use the project root as Docker context (required for `shared/` directory access).
 
-#### 2. Export and transfer
+#### 2. Tag and push to registry
 
 ```bash
-docker save <IMAGE>:latest | gzip > /tmp/<IMAGE>.tar.gz
-scp /tmp/<IMAGE>.tar.gz admin@192.168.200.7:/share/Container/
+docker tag lenie-ai-frontend:latest 192.168.200.7:5005/lenie-ai-frontend:latest
+docker push 192.168.200.7:5005/lenie-ai-frontend:latest
+
+# Repeat for each image...
 ```
 
-#### 3. Load on NAS
+#### 3. Deploy on NAS
 
 ```bash
 ssh admin@192.168.200.7
 DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
-$DOCKER load -i /share/Container/<IMAGE>.tar.gz
-```
-
-#### 4. Start containers
-
-```bash
-DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
-
-# Database (start first)
-$DOCKER run -d --name lenie-ai-db \
-  --restart unless-stopped \
-  -p 5434:5432 \
-  -e POSTGRES_PASSWORD=postgres \
-  -v lenie-ai-db-data:/var/lib/postgresql/data \
-  lenie-ai-db:latest
-
-# Create network and connect DB
-$DOCKER network create lenie-net
-$DOCKER network connect lenie-net lenie-ai-db
-
-# Backend
-$DOCKER run -d --name lenie-ai-server \
-  --restart unless-stopped \
-  --network lenie-net \
-  -p 5055:5000 \
-  --env-file /share/Container/lenie-env/.env \
-  -v lenie-ai-data:/app/data \
-  lenie-ai-server:latest
-
-# Frontend
-$DOCKER run -d --name lenie-ai-frontend \
-  --restart unless-stopped \
-  -p 3000:80 \
-  lenie-ai-frontend:latest
-
-# Admin Panel
-$DOCKER run -d --name lenie-ai-app2 \
-  --restart unless-stopped \
-  -p 3001:80 \
-  lenie-ai-app2:latest
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml pull
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d
 ```
 
 ## Database Setup
@@ -187,7 +301,7 @@ The database container uses a custom image built from `infra/docker/Postgresql/D
   - `03-create-table.sql` — creates `web_documents` table with indexes
   - `04-create-table.sql` — creates `websites_embeddings` table with vector index
 
-Data is persisted in Docker volume `lenie-ai-db-data`.
+Data is persisted in Docker volume `lenie-ai-db-data` (external, survives compose down).
 
 ### Connecting from local machine
 
@@ -217,7 +331,9 @@ scp infra/docker/nas.env admin@192.168.200.7:/share/Container/lenie-env/.env
 
 ## Vault
 
-HashiCorp Vault runs on the NAS for secrets management.
+HashiCorp Vault runs on the NAS for secrets management. Auto-unseal is configured via AWS KMS — Vault unseals itself automatically after every NAS restart.
+
+> **Detailed setup:** [Vault_Setup.md](Vault_Setup.md) — full installation, auto-unseal migration, token management.
 
 ### Configuration
 
@@ -233,28 +349,22 @@ listener "tcp" {
   tls_disable = 1
 }
 
+seal "awskms" {
+  region     = "eu-central-1"
+  kms_key_id = "<KMS_KEY_ID>"
+}
+
 ui = true
 disable_mlock = true
 api_addr = "http://0.0.0.0:8200"
 ```
 
+AWS credentials for KMS are provided via env file at `/share/Container/lenie-env/vault.env` (see `infra/docker/vault.env.example` for template). The KMS key and IAM user are managed by CloudFormation stack `lenie-nas-vault-kms-unseal` on account `639394817995` (personal).
+
 Persistent data directories on NAS:
 - `/share/Container/vault/config` — configuration
 - `/share/Container/vault/data` — encrypted storage
 - `/share/Container/vault/logs` — logs
-
-### Container
-
-```bash
-$DOCKER run -d --name lenie-vault \
-  --restart unless-stopped \
-  --cap-add IPC_LOCK \
-  -p 8210:8200 \
-  -v /share/Container/vault/config:/vault/config \
-  -v /share/Container/vault/data:/vault/file \
-  -v /share/Container/vault/logs:/vault/logs \
-  hashicorp/vault:latest server
-```
 
 ### Initial Setup (First Time Only)
 
@@ -276,7 +386,9 @@ $DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 -e VAULT_TOKEN=<ROOT_TOKEN> len
 
 ### After NAS Restart
 
-Vault seals itself on restart. You must unseal it manually:
+With auto-unseal configured, **Vault unseals itself automatically** — no manual intervention needed.
+
+If auto-unseal is not yet configured (or AWS KMS is unreachable), unseal manually:
 
 ```bash
 ssh admin@192.168.200.7
@@ -284,8 +396,6 @@ DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
 $DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
   vault operator unseal <UNSEAL_KEY>
 ```
-
-Alternatively, access Vault UI at http://192.168.200.7:8210/ui and enter the unseal key.
 
 ### Connecting Backend to Vault
 
@@ -314,16 +424,21 @@ This setting is saved in the browser's localStorage.
 ```bash
 ssh admin@192.168.200.7
 DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
-$DOCKER ps --filter name=lenie-ai
-$DOCKER ps --filter name=lenie-vault
+
+# Via compose
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml ps
+
+# All lenie containers (including registry)
+$DOCKER ps --filter name=lenie
 ```
 
 ### View logs
 
 ```bash
-$DOCKER logs --tail 50 lenie-ai-server
-$DOCKER logs --tail 50 lenie-ai-db
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-db
 $DOCKER logs --tail 50 lenie-vault
+$DOCKER logs --tail 50 lenie-registry
 ```
 
 ### Container keeps restarting
@@ -331,7 +446,7 @@ $DOCKER logs --tail 50 lenie-vault
 Check logs for errors. Common issues:
 - **`ModuleNotFoundError`** in backend — Dockerfile ENTRYPOINT must use venv Python (`/app/.venv/bin/python`)
 - **Port already in use** — check with `netstat -tlnp | grep <PORT>`
-- **Database connection refused** — ensure DB container is running and connected to `lenie-net` network
+- **Database connection refused** — ensure DB container is running and healthy (`docker compose ps`)
 
 ### Rebuild and redeploy a single service
 
@@ -349,4 +464,20 @@ Clean unused Docker images on NAS:
 
 ```bash
 $DOCKER system prune -a
+```
+
+### Registry troubleshooting
+
+```bash
+# Check registry is running
+$DOCKER ps --filter name=lenie-registry
+
+# List all images in registry
+curl http://192.168.200.7:5005/v2/_catalog
+
+# List tags for a specific image
+curl http://192.168.200.7:5005/v2/lenie-ai-server/tags/list
+
+# Check registry logs
+$DOCKER logs --tail 50 lenie-registry
 ```

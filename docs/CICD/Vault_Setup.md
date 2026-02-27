@@ -68,14 +68,16 @@ docker exec -it vault sh -c \
 
 **Save the Unseal Key and Root Token!** They are required for unsealing after restarts and for admin operations.
 
-### 5. Unseal
+### 5. Unseal (manual — replaced by auto-unseal, see below)
 
-Required after every container restart:
+Required after every container restart (only if auto-unseal is not configured):
 
 ```bash
 docker exec -it vault sh -c \
   "VAULT_ADDR=http://127.0.0.1:8200 vault operator unseal <UNSEAL_KEY>"
 ```
+
+For automatic unsealing, see [Auto-Unseal with AWS KMS](#auto-unseal-with-aws-kms).
 
 ### 6. Enable KV v2 engine
 
@@ -203,3 +205,165 @@ docker exec -it vault sh -c "VAULT_ADDR=http://127.0.0.1:8200 vault operator gen
 docker exec -it vault sh -c \
   "VAULT_ADDR=http://127.0.0.1:8200 vault operator generate-root -decode=<ENCODED_TOKEN> -otp=<OTP>"
 ```
+
+## Auto-Unseal with AWS KMS
+
+Instead of manually unsealing Vault after every NAS restart, Vault can automatically unseal itself using an AWS KMS key. This eliminates the need to store or enter the unseal key manually.
+
+### How it works
+
+1. NAS restarts → Vault container starts (sealed)
+2. Vault detects `seal "awskms"` in config → calls AWS KMS to decrypt the master key
+3. Vault unseals itself automatically — no manual intervention needed
+
+### Prerequisites
+
+AWS infrastructure is managed by CloudFormation stack `lenie-nas-vault-kms-unseal` on the personal AWS account (`639394817995`), region `eu-central-1`. The stack creates:
+
+| Resource | Description |
+|----------|-------------|
+| KMS Key | `alias/lenie-vault-unseal` — symmetric key with auto-rotation |
+| IAM User | `lenie-vault-nas-unseal` — programmatic access only |
+| IAM Policy | `kms:Encrypt`, `kms:Decrypt`, `kms:DescribeKey` — scoped to the single key |
+
+Deploy (one-time):
+
+```bash
+cd infra/aws/cloudformation
+aws cloudformation create-stack \
+  --stack-name lenie-nas-vault-kms-unseal \
+  --template-body file://templates/vault-kms-unseal.yaml \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --region eu-central-1 \
+  --profile ziutus-Administrator
+```
+
+After deployment, retrieve `AccessKeyId`, `SecretAccessKey`, and `KmsKeyId` from stack outputs:
+
+```bash
+aws cloudformation describe-stacks \
+  --stack-name lenie-nas-vault-kms-unseal \
+  --region eu-central-1 \
+  --profile ziutus-Administrator \
+  --query 'Stacks[0].Outputs' --output table
+```
+
+### Configuration
+
+#### 1. Update `vault.hcl` on NAS
+
+Add the `seal "awskms"` block to `/share/Container/vault/config/vault.hcl`:
+
+```hcl
+storage "file" {
+  path = "/vault/file"
+}
+
+listener "tcp" {
+  address     = "0.0.0.0:8200"
+  tls_disable = 1
+}
+
+seal "awskms" {
+  region     = "eu-central-1"
+  kms_key_id = "<KMS_KEY_ID_FROM_STACK_OUTPUT>"
+}
+
+ui = true
+disable_mlock = true
+api_addr = "http://0.0.0.0:8200"
+```
+
+#### 2. Create `vault.env` on NAS
+
+Create the env file from the template and fill in real credentials:
+
+```bash
+# Copy template
+cp infra/docker/vault.env.example infra/docker/vault.env
+# Edit with real values from CloudFormation outputs
+# Then copy to NAS:
+scp infra/docker/vault.env admin@192.168.200.7:/share/Container/lenie-env/vault.env
+```
+
+The file should contain:
+
+```bash
+AWS_ACCESS_KEY_ID=<AccessKeyId from stack output>
+AWS_SECRET_ACCESS_KEY=<SecretAccessKey from stack output>
+AWS_REGION=eu-central-1
+```
+
+#### 3. Update compose file
+
+The `compose.nas.yaml` already references this env file. Sync it to NAS:
+
+```bash
+./infra/docker/nas-deploy.sh --sync-compose
+```
+
+### Migration from Shamir to KMS (one-time)
+
+If Vault was previously initialized with Shamir keys (manual unseal), you must migrate to KMS unseal:
+
+```bash
+ssh admin@192.168.200.7
+DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+
+# 1. Ensure Vault is running and currently UNSEALED (unseal manually one last time if needed)
+$DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
+  vault operator unseal <CURRENT_SHAMIR_UNSEAL_KEY>
+
+# 2. Verify Vault is unsealed
+$DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
+  vault status
+
+# 3. Stop the container
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml stop lenie-vault
+
+# 4. Update vault.hcl with the seal "awskms" block (see above)
+# 5. Ensure vault.env is in place at /share/Container/lenie-env/vault.env
+# 6. Sync compose.nas.yaml with the updated vault service config
+
+# 7. Start Vault — it will detect the seal migration
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d lenie-vault
+
+# 8. Perform the migration (requires the OLD Shamir unseal key)
+$DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
+  vault operator unseal -migrate <CURRENT_SHAMIR_UNSEAL_KEY>
+
+# 9. Verify — Seal Type should now be "awskms"
+$DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
+  vault status
+```
+
+After migration, Vault will auto-unseal on every restart. The old Shamir unseal key is no longer needed for daily operations (but keep it stored safely as a recovery key).
+
+### Troubleshooting
+
+**Vault fails to auto-unseal (stays sealed after restart):**
+
+```bash
+# Check Vault logs for KMS errors
+$DOCKER logs --tail 50 lenie-vault
+
+# Common causes:
+# - AWS credentials expired or invalid → check vault.env
+# - KMS key disabled or deleted → check AWS Console
+# - No internet from NAS → check NAS network/DNS
+# - Wrong region in vault.hcl → must be eu-central-1
+```
+
+**Test KMS connectivity from Vault container:**
+
+```bash
+# Install AWS CLI in the container (temporary debug)
+$DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
+  vault status
+# Look for "Seal Type: awskms" and "Sealed: false"
+```
+
+### Cost
+
+- KMS key: ~$1/month (fixed, regardless of usage)
+- KMS API calls: negligible (only on Vault startup)

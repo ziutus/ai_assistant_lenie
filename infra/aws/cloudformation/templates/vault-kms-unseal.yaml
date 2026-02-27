@@ -1,0 +1,166 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  KMS key and IAM user for HashiCorp Vault auto-unseal on NAS.
+  Deployed on personal AWS account (639394817995), separate from application infrastructure.
+  Region: eu-central-1
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+
+  Environment:
+    Type: String
+    Default: nas
+    AllowedValues:
+      - nas
+    Description: Deployment environment (NAS-specific)
+
+Resources:
+  # --- KMS Key for Vault auto-unseal ---
+  VaultUnsealKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: !Sub 'Vault auto-unseal key for ${ProjectCode} NAS deployment'
+      KeyUsage: ENCRYPT_DECRYPT
+      KeySpec: SYMMETRIC_DEFAULT
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowRootAccountFullAccess
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+            Action: 'kms:*'
+            Resource: '*'
+          - Sid: AllowVaultNasUserUnseal
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt VaultNasUser.Arn
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:DescribeKey
+            Resource: '*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
+        - Key: Purpose
+          Value: vault-auto-unseal
+
+  VaultUnsealKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub 'alias/${ProjectCode}-vault-unseal'
+      TargetKeyId: !Ref VaultUnsealKey
+
+  # --- IAM User for Vault on NAS ---
+  VaultNasUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: !Sub '${ProjectCode}-vault-nas-unseal'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
+
+  VaultNasGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: !Sub '${ProjectCode}-vault-nas-unseal'
+
+  VaultNasUserToGroup:
+    Type: AWS::IAM::UserToGroupAddition
+    Properties:
+      GroupName: !Ref VaultNasGroup
+      Users:
+        - !Ref VaultNasUser
+
+  VaultNasGroupPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: !Sub '${ProjectCode}-vault-kms-unseal'
+      Groups:
+        - !Ref VaultNasGroup
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowVaultUnsealOperations
+            Effect: Allow
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:DescribeKey
+            Resource: !GetAtt VaultUnsealKey.Arn
+
+  VaultNasAccessKey:
+    Type: AWS::IAM::AccessKey
+    Properties:
+      UserName: !Ref VaultNasUser
+
+  # --- SSM Parameters for reference ---
+  SsmKmsKeyId:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/vault/kms-key-id'
+      Type: String
+      Value: !Ref VaultUnsealKey
+      Description: KMS Key ID for Vault auto-unseal
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
+
+  SsmKmsKeyArn:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ProjectCode}/${Environment}/vault/kms-key-arn'
+      Type: String
+      Value: !GetAtt VaultUnsealKey.Arn
+      Description: KMS Key ARN for Vault auto-unseal
+      Tags:
+        Environment: !Ref Environment
+        Project: !Ref ProjectCode
+        ManagedBy: CloudFormation
+        StackName: !Ref 'AWS::StackName'
+
+Outputs:
+  KmsKeyId:
+    Description: KMS Key ID for vault.hcl configuration
+    Value: !Ref VaultUnsealKey
+
+  KmsKeyArn:
+    Description: KMS Key ARN
+    Value: !GetAtt VaultUnsealKey.Arn
+
+  KmsKeyAlias:
+    Description: KMS Key Alias
+    Value: !Sub '${ProjectCode}-vault-unseal'
+
+  VaultNasUserArn:
+    Description: IAM User ARN for Vault on NAS
+    Value: !GetAtt VaultNasUser.Arn
+
+  AccessKeyId:
+    Description: Access Key ID for NAS configuration (save this!)
+    Value: !Ref VaultNasAccessKey
+
+  SecretAccessKey:
+    Description: Secret Access Key for NAS configuration (save this - not retrievable later!)
+    Value: !GetAtt VaultNasAccessKey.SecretAccessKey
