@@ -16,7 +16,7 @@ The system consists of a Python/Flask REST API backend, a React frontend applica
 | **Parts** | 4 (backend, main frontend, browser extension, infrastructure) |
 | **Primary Language** | Python 3.11 (backend), JavaScript/React 18 (frontends) |
 | **Architecture** | Layered REST API + SPA + Serverless |
-| **Database** | PostgreSQL 17 + pgvector |
+| **Database** | PostgreSQL 18 + pgvector (RDS: 18.1, Docker/NAS: 17 — pending upgrade) |
 | **Version** | 0.3.13.0 |
 | **License** | MIT |
 

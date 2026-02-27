@@ -186,3 +186,76 @@ so that changes to secret management CLI operations can be verified without requ
 - All tests pass in CI (no live connections required)
 
 **Status:** backlog
+
+---
+
+## Backlog: Technology Upgrades
+
+### B-68: Upgrade Python Runtime in Lambda to 3.12+
+
+As a **developer**,
+I want Lambda functions to run on the latest supported Python runtime,
+so that the project benefits from performance improvements, new language features, and continued AWS security patching.
+
+**Origin:** Technology debt — Lambda functions and layers were built on Python 3.11. AWS Lambda now supports Python 3.12 and 3.13. Python 3.11 will reach end-of-life in October 2027.
+
+**Current state:**
+- All Lambda functions use Python 3.11 (configured via SSM parameter `/${ProjectCode}/${Environment}/python/lambda-runtime-version`)
+- Lambda layer `lenie_all_layer` built with Python 3.11
+- AWS Lambda Powertools layer pinned to `python311-x86_64` variant
+- Docker image uses `python:3.11-slim`
+
+**Scope:**
+1. Update SSM parameter for Lambda runtime version to `python3.12` (or `python3.13`)
+2. Rebuild `lenie_all_layer` with the new Python version
+3. Update Powertools layer ARN to matching Python version variant
+4. Update `backend/Dockerfile` base image to `python:3.12-slim` (or `3.13-slim`)
+5. Update `pyproject.toml` `requires-python` to `>=3.12`
+6. Verify all Lambda functions work correctly (deploy to dev, run integration tests)
+7. Verify Docker stack works correctly
+8. Update documentation (`CLAUDE.md`, `docs/technology-choices.md`, `docs/project-overview.md`)
+
+**Acceptance Criteria:**
+- All Lambda functions run on Python 3.12+ without errors
+- Lambda layer deploys successfully with new Python version
+- Docker image builds and runs correctly
+- All unit and integration tests pass
+- No regressions in API behavior
+
+**Technical notes:**
+- SSM parameter approach makes the runtime change easy — update one parameter, redeploy stacks
+- Main risk: dependency compatibility (psycopg2-binary, boto3, etc.) — test in dev first
+- Consider going directly to 3.13 if all dependencies support it
+
+**Status:** backlog
+
+---
+
+### B-69: Upgrade Docker/NAS PostgreSQL from 17 to 18
+
+As a **developer**,
+I want the Docker/NAS PostgreSQL image to match the RDS version (18),
+so that all environments run the same database version.
+
+**Origin:** RDS was upgraded to PostgreSQL 18.1 (Feb 2026). Docker/NAS image still uses `postgres:17-bookworm`.
+
+**Current state:**
+- AWS RDS: **PostgreSQL 18.1** (already upgraded)
+- Docker/NAS: **PostgreSQL 17** (`infra/docker/Postgresql/Dockerfile` uses `postgres:17-bookworm`)
+- NAS database is empty — no data migration needed, rebuild from scratch
+
+**Scope:**
+1. Update `infra/docker/Postgresql/Dockerfile`: base image `postgres:17-bookworm` → `postgres:18-bookworm`, package `postgresql-17-pgvector` → `postgresql-18-pgvector`
+2. Update `infra/docker/compose.yaml` comment: `pgvector/pgvector:pg17` → `pgvector/pgvector:pg18`
+3. Build and test locally: `make build && make dev`, run integration tests
+4. Push updated image to NAS registry (`192.168.200.7:5005/lenie-ai-db:latest`)
+5. Recreate NAS database container (empty DB — init scripts will create schema)
+6. Update documentation version references
+
+**Acceptance Criteria:**
+- Docker image builds successfully with PostgreSQL 18 + pgvector
+- Local integration tests pass
+- NAS deployment works with new image
+- Vector similarity search works correctly
+
+**Status:** backlog
