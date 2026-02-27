@@ -126,6 +126,7 @@ def _build_compare_help_text() -> str | None:
     return "\n".join(lines)
 
 
+
 def parse_env_file(path: Path) -> dict[str, str]:
     """Parse a .env file into a dict, skipping comments and empty lines."""
     result = {}
