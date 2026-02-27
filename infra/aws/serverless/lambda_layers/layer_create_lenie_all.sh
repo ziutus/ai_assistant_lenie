@@ -15,7 +15,7 @@ pwd
 
 mkdir python
 
-pip install pytube urllib3 requests beautifulsoup4  --platform ${PLATFORM} --python-version $PYTHON_VERSION --only-binary=:all: -t ./python
+pip install urllib3 requests beautifulsoup4 python-dotenv  --platform ${PLATFORM} --python-version $PYTHON_VERSION --only-binary=:all: -t ./python
 
 zip -r lenie_${PYTHON_VERSION_NICE} python
 

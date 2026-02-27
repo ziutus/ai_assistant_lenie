@@ -15,7 +15,7 @@
 | Service | Image | Port | Description |
 |---------|-------|------|-------------|
 | lenie-ai-server | Built from `backend/Dockerfile` | 5000 | Flask REST API |
-| lenie-ai-db | Custom PostgreSQL 17 + pgvector | 5433 | Database |
+| lenie-ai-db | Custom PostgreSQL 17 + pgvector (upgrade to 18 pending — B-69) | 5433 | Database |
 | lenie-ai-fronted | Built from `web_interface_react/Dockerfile` | 3000 | React frontend |
 
 PostgreSQL uses custom Dockerfile (`infra/docker/Postgresql/Dockerfile`) based on `postgres:17-bookworm` with `postgresql-17-pgvector` installed.
@@ -52,7 +52,7 @@ API Gateway serves as managed entry point with API key authentication.
 
 **Lambda Layers:**
 - psycopg2_new_layer (PostgreSQL driver)
-- lenie_all_layer (pytubefix, urllib3, requests, beautifulsoup4)
+- lenie_all_layer (urllib3, requests, beautifulsoup4, python-dotenv) — `pytubefix` removed due to 50 MB layer limit (see ADR-007)
 - lenie_openai (OpenAI SDK)
 
 **Data Flow (Serverless):**
@@ -106,11 +106,16 @@ Terraform configuration for:
 
 ## CI/CD Pipelines
 
-| Tool | Config | Purpose |
-|------|--------|---------|
-| CircleCI | `.circleci/config.yml` | EC2-based testing |
-| GitLab CI | `.gitlab-ci.yml` | Qodana security scanning |
-| Jenkins | `Jenkinsfile` | AWS EC2 orchestration, Semgrep security |
+**Currently inactive** — all deployments are manual from the developer's machine. Configuration files from previous experimental setups remain in the repository as reference:
+
+| Tool | Config | Previous purpose | Status |
+|------|--------|------------------|--------|
+| CircleCI | `.circleci/config.yml` | EC2-based testing | Inactive |
+| GitLab CI | `.gitlab-ci.yml` | Qodana security scanning | Inactive |
+| Jenkins | `Jenkinsfile` | AWS EC2 orchestration, Semgrep security | Inactive |
+| GitHub Actions | — | Not yet configured | Planned |
+
+Restoration tracked in backlog: B-70 (prerequisites), B-71–B-74 (per-tool pipelines). See [technology-choices.md](./technology-choices.md#cicd) for details.
 
 ## Build Automation (Makefile)
 

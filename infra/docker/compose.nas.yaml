@@ -1,0 +1,95 @@
+# Docker Compose for NAS (QNAP TS-453Be) deployment
+# Images pulled from private registry at 192.168.200.7:5005
+#
+# Usage on NAS:
+#   DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+#   $DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d
+#   $DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml ps
+
+services:
+  lenie-ai-db:
+    image: 192.168.200.7:5005/lenie-ai-db:latest
+    container_name: lenie-ai-db
+    restart: unless-stopped
+    ports:
+      - "5434:5432"
+    environment:
+      POSTGRES_PASSWORD: ${NAS_DB_PASSWORD:-postgres}
+    volumes:
+      - lenie-ai-db-data:/var/lib/postgresql/data
+    networks:
+      - lenie-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  lenie-ai-server:
+    image: 192.168.200.7:5005/lenie-ai-server:latest
+    container_name: lenie-ai-server
+    restart: unless-stopped
+    ports:
+      - "5055:5000"
+    env_file:
+      - /share/Container/lenie-env/.env
+    volumes:
+      - lenie-ai-data:/app/data
+    networks:
+      - lenie-net
+    depends_on:
+      lenie-ai-db:
+        condition: service_healthy
+
+  lenie-ai-frontend:
+    image: 192.168.200.7:5005/lenie-ai-frontend:latest
+    container_name: lenie-ai-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    networks:
+      - lenie-net
+
+  lenie-ai-app2:
+    image: 192.168.200.7:5005/lenie-ai-app2:latest
+    container_name: lenie-ai-app2
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    networks:
+      - lenie-net
+
+  lenie-vault:
+    image: hashicorp/vault:1.21.3
+    container_name: lenie-vault
+    restart: unless-stopped
+    ports:
+      - "8210:8200"
+    cap_add:
+      - IPC_LOCK
+    env_file:
+      - /share/Container/lenie-env/vault.env
+    volumes:
+      - /share/Container/vault/config:/vault/config
+      - /share/Container/vault/data:/vault/file
+      - /share/Container/vault/logs:/vault/logs
+    command: server
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - lenie-net
+
+networks:
+  lenie-net:
+    name: lenie-net
+    driver: bridge
+
+volumes:
+  lenie-ai-db-data:
+    external: true
+  lenie-ai-data:
+    external: true

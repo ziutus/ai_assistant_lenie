@@ -1,33 +1,23 @@
 import json
-import os
 from pprint import pprint
 import logging
 from urllib.parse import parse_qs
 
+from library.config_loader import load_config
 from library.website.website_download_context import download_raw_html, webpage_raw_parse
 from library.webpage_parse_result import WebPageParseResult
 from library.embedding import get_embedding
 
-logging.basicConfig(level=logging.DEBUG)  # Change level as per you r need
+logging.basicConfig(level=logging.DEBUG)
 
+cfg = load_config()
 
-def fetch_env_var(var_name):
-    """
-  Utility method to fetch and validate environment variable
-  """
-    var = os.getenv(var_name)
-    if var is None:
-        logging.error(f"ERROR: missing OS variables {var_name}, exiting... ")
-        exit(1)
-    return var
+openai_organization = cfg.require("OPENAI_ORGANIZATION")
+openai_api_key = cfg.require("OPENAI_API_KEY")
 
+embedding_model = cfg.require("EMBEDDING_MODEL")
 
-openai_organization = fetch_env_var("OPENAI_ORGANIZATION")
-openai_api_key = fetch_env_var("OPENAI_API_KEY")
-
-embedding_model = fetch_env_var("EMBEDDING_MODEL")
-
-logging.info("Using embedding model: " + os.getenv("EMBEDDING_MODEL"))
+logging.info("Using embedding model: %s", embedding_model)
 
 
 def prepare_return(data, status_code: int):

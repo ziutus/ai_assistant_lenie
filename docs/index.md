@@ -7,7 +7,7 @@
 - **Type:** Multi-part Monorepo with 4 parts
 - **Primary Languages:** Python 3.11 (backend), JavaScript/React 18 (frontends)
 - **Architecture:** Layered REST API + SPA + Serverless + Multi-cloud IaC
-- **Database:** PostgreSQL 17 + pgvector (1536-dim vector similarity search)
+- **Database:** PostgreSQL 18 + pgvector (1536-dim vector similarity search)
 
 ## Quick Reference
 
@@ -56,6 +56,7 @@
 - [Component Inventory — Main Frontend](./component-inventory-web_interface_react.md) — 7 pages, 6 reusable components, 7 hooks, state management
 
 ### Decision Records & Evolution
+- [Technology Choices & Rationale](./technology-choices.md) — Complete inventory of tools and technologies with rationale for each choice
 - [Architecture Decisions (ADR)](./architecture-decisions.md) — Key architectural decisions with context, rationale, and consequences
 - [System Evolution](./system-evolution.md) — How the project evolved: embedding strategy, infrastructure cleanup, cost-driven design
 
@@ -90,10 +91,10 @@
 
 ### Operations & Metrics
 - [Infrastructure Metrics](./infrastructure-metrics.md) — Single source of truth for endpoint, template, and Lambda counts
-- [CI/CD Specification](./CI_CD.md) — Generic pipeline spec
-- [CI/CD Tools](./CI_CD_Tools.md) — CircleCI, GitLab CI, Jenkins
-- [Docker Local](./Docker_Local.md) — Local development with Docker
-- [AWS Infrastructure](./AWS_Infrastructure.md) — AWS resource documentation
+- [CI/CD Specification](./CICD/CI_CD.md) — Generic pipeline spec (currently inactive — all deploys manual)
+- [CI/CD Tools](./CICD/CI_CD_Tools.md) — CircleCI, GitLab CI, Jenkins (historical configs, not active)
+- [Docker Local](./CICD/Docker_Local.md) — Local development with Docker
+- [AWS Infrastructure](./CICD/AWS_Infrastructure.md) — AWS resource documentation
 - [Code Quality](./Code_Quality.md) — Linting and security tools
 - [Observability Strategy](./observability.md) — Logging, tracing, and monitoring across environments
 - [Python Dependencies](./Python_Dependencies.md) — uv package management

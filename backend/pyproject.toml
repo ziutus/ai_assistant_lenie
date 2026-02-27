@@ -18,7 +18,6 @@ dependencies = [
     "psycopg2-binary",
     "openai",
     "pytest",
-    "pytest-html",
     "pytubefix",
     "youtube-transcript-api",
     "assemblyai",
@@ -32,11 +31,13 @@ dependencies = [
     "langfuse",
     "chardet",
     "boto3",
-    "hvac",
     "dateparser",
 ]
 
 [project.optional-dependencies]
+vault = [
+    "hvac",
+]
 markdown = [
     "markitdown",
     "psycopg2-binary",
@@ -62,6 +63,7 @@ docker = [
     "boto3",
     "aws-xray-sdk",
     "langfuse",
+    "hvac",
 ]
 
 all = [
@@ -105,7 +107,6 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pytest",
-    "pytest-html",
     "pre-commit",
     "ruff",
 ]

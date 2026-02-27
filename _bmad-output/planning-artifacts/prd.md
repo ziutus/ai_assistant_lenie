@@ -268,7 +268,7 @@ The project uses two categories of API Gateway:
 
 ## Web App Technical Context
 
-Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway + Lambda) + PostgreSQL 17 with pgvector (RDS). Sprint 4 modifies CloudFormation templates, deployment scripts, and client endpoint configurations — no backend application code changes.
+Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway + Lambda) + PostgreSQL 18 with pgvector (RDS). Sprint 4 modifies CloudFormation templates, deployment scripts, and client endpoint configurations — no backend application code changes.
 
 **API Gateway template size:** `api-gw-app.yaml` is under the 51200 byte CloudFormation inline limit after Sprint 3 endpoint removal. Adding the `/url_add` endpoint (POST + OPTIONS with CORS, ~60 lines of OpenAPI) will increase size. Monitor that merged template stays under the inline limit. If exceeded, switch to S3-based template deployment (`aws cloudformation package`).
 
