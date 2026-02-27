@@ -259,3 +259,191 @@ so that all environments run the same database version.
 - Vector similarity search works correctly
 
 **Status:** backlog
+
+---
+
+### B-70: Restore CI/CD — Common Prerequisites
+
+As a **developer**,
+I want all prerequisites for CI/CD pipelines to be met,
+so that any of the CI/CD tools (B-71 through B-74) can be configured and activated.
+
+**Origin:** CI/CD tools were previously configured and tested but are not currently active. All deployments happen manually from the developer's machine.
+
+**Current state:**
+- No active CI/CD pipeline — all deploys are manual
+- Configuration files remain in the repository as reference: `.circleci/config.yml`, `.gitlab-ci.yml`, `Jenkinsfile`
+- Previous setup used three tools experimentally
+
+**Scope:**
+1. All infrastructure deployable via IaC (CloudFormation `deploy.sh`, Docker `compose.yaml`)
+2. All secrets accessible from CI environment (SSM, Vault, or CI-native secrets)
+3. All deploy scripts tested and idempotent (`infra/aws/cloudformation/deploy.sh`, frontend `deploy.sh`)
+4. Integration tests runnable against a CI database (Docker Compose or test RDS)
+5. Define common pipeline stages that all tools must implement:
+   - **Lint & format check** — `ruff check`, `ruff format --check`
+   - **Unit tests** — `pytest backend/tests/unit/`
+   - **Security scan** — pre-commit hooks (gitleaks, TruffleHog), semgrep, pip-audit
+   - **Build** — Docker image build, frontend build
+   - **Deploy to dev** — CloudFormation stacks, Lambda layers, frontend to S3+CloudFront
+
+**Acceptance Criteria:**
+- All deploy scripts execute successfully from a clean environment (no local state dependencies)
+- Secrets access pattern documented for CI environments
+- Common pipeline stage definitions documented in `docs/CICD/CI_CD.md`
+
+**Status:** backlog
+**Blocks:** B-71, B-72, B-73, B-74
+
+---
+
+### B-71: CI/CD — GitHub Actions Pipeline
+
+As a **developer**,
+I want a CI/CD pipeline using GitHub Actions,
+so that CI runs natively in the repository host without external services.
+
+**Origin:** Repository is hosted on GitHub. GitHub Actions is the native CI/CD solution — no external account or runner setup needed.
+
+**Existing config:** None (new).
+
+**Pros:**
+- Native to GitHub — no external service, no separate account
+- Free tier: 2,000 minutes/month for private repos
+- Direct integration with PR checks, branch protection, deployments
+- Large marketplace of reusable actions (AWS deploy, Docker build, etc.)
+
+**Cons:**
+- No existing configuration to build on
+- GitHub-hosted runners have limited compute (2 vCPU, 7 GB RAM)
+- Vendor lock-in to GitHub ecosystem
+
+**Scope:**
+1. Create `.github/workflows/ci.yml` — lint + unit tests + security scan on push/PR
+2. Create `.github/workflows/deploy.yml` — build + deploy on merge to main (manual trigger)
+3. Configure GitHub secrets for AWS credentials and API keys
+4. Set up branch protection rules requiring CI pass before merge
+
+**Acceptance Criteria:**
+- PR checks run lint + unit tests + security scan
+- Deploy workflow available as manual dispatch or on merge to main
+- Pipeline completes in < 10 minutes for CI checks
+- Documentation in `docs/CICD/GitHub_Actions.md`
+
+**Depends on:** B-70
+**Status:** backlog
+
+---
+
+### B-72: CI/CD — CircleCI Pipeline
+
+As a **developer**,
+I want a CI/CD pipeline using CircleCI,
+so that CI runs on dedicated EC2 runners with full AWS access.
+
+**Origin:** CircleCI was previously configured (`.circleci/config.yml` exists) for EC2-based testing.
+
+**Existing config:** `.circleci/config.yml` — needs update to current project structure.
+
+**Pros:**
+- Existing configuration as starting point
+- EC2-based runners — can have VPC access for integration tests against RDS
+- Good parallelism and caching support
+- Free tier: 6,000 build minutes/month
+
+**Cons:**
+- External service — requires CircleCI account
+- Previous config is outdated and needs significant rework
+- Self-hosted runner setup needed for VPC access
+
+**Scope:**
+1. Update `.circleci/config.yml` to current project structure
+2. Configure CircleCI context with AWS credentials
+3. Set up EC2 runner if VPC access needed for integration tests
+4. GitHub integration for PR status checks
+
+**Acceptance Criteria:**
+- PR checks run lint + unit tests + security scan
+- Deploy workflow available on merge to main
+- Pipeline completes in < 10 minutes for CI checks
+- Documentation updated in `docs/CICD/CircleCI.md`
+
+**Depends on:** B-70
+**Status:** backlog
+
+---
+
+### B-73: CI/CD — GitLab CI Pipeline
+
+As a **developer**,
+I want a CI/CD pipeline using GitLab CI,
+so that CI runs with Qodana security scanning and GitLab-native features.
+
+**Origin:** GitLab CI was previously configured (`.gitlab-ci.yml` exists) for Qodana security scanning.
+
+**Existing config:** `.gitlab-ci.yml` — Qodana-focused, needs expansion to full pipeline.
+
+**Pros:**
+- Existing configuration as starting point
+- Qodana integration for deep code quality analysis
+- Built-in container registry, environments, and review apps
+- Free tier: 400 compute minutes/month on gitlab.com
+
+**Cons:**
+- Requires GitLab mirror or separate GitLab repository (primary repo is on GitHub)
+- Lower free tier than alternatives
+- Previous config is narrow (Qodana only, not full pipeline)
+
+**Scope:**
+1. Update `.gitlab-ci.yml` to full pipeline (lint, test, security, build, deploy)
+2. Configure GitLab CI/CD variables for AWS credentials
+3. Set up GitHub → GitLab mirroring if needed
+4. Integrate Qodana as a pipeline stage
+
+**Acceptance Criteria:**
+- Full pipeline runs on push (lint + test + security + Qodana)
+- Deploy stage available on main branch
+- Pipeline completes in < 10 minutes for CI checks (excluding Qodana)
+- Documentation updated in `docs/CICD/GitLabCI.md`
+
+**Depends on:** B-70
+**Status:** backlog
+
+---
+
+### B-74: CI/CD — Jenkins Pipeline
+
+As a **developer**,
+I want a CI/CD pipeline using Jenkins,
+so that CI runs on a self-managed AWS EC2 instance with full control over the environment.
+
+**Origin:** Jenkins was previously configured (`Jenkinsfile` exists) for AWS EC2 orchestration and Semgrep security scanning.
+
+**Existing config:** `Jenkinsfile` — needs update to current project structure.
+
+**Pros:**
+- Existing configuration as starting point
+- Full control over runner environment (EC2 instance)
+- Direct AWS access from EC2 — IAM role, VPC, no credential passing needed
+- Unlimited builds (self-hosted, pay only for EC2)
+
+**Cons:**
+- Self-managed infrastructure — EC2 instance maintenance, Jenkins updates, plugin management
+- EC2 cost even when idle (unless using spot/on-demand scheduling)
+- Most complex setup and maintenance of all options
+
+**Scope:**
+1. Update `Jenkinsfile` to current project structure
+2. Set up Jenkins EC2 instance (or reuse existing AMI from `docs/CICD/EC2_AMI_Backup_Pipeline.md`)
+3. Configure IAM role for Jenkins EC2 with deploy permissions
+4. Integrate Semgrep as a pipeline stage
+5. GitHub webhook for PR triggers
+
+**Acceptance Criteria:**
+- PR checks run lint + unit tests + security scan + Semgrep
+- Deploy stage available on main branch
+- Pipeline completes in < 10 minutes for CI checks
+- Documentation updated in `docs/CICD/Jenkins.md`
+
+**Depends on:** B-70
+**Status:** backlog

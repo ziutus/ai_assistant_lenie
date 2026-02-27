@@ -32,7 +32,7 @@ React 18 SPA with 7 pages for document management. Features include document lis
 Chrome/Kiwi browser extension (Manifest v3) for capturing webpages and sending to backend. Auto-extracts title, description, language, and full content (text + HTML). Supports content types: webpage, link, youtube, movie. No build step.
 
 ### Infrastructure (`infra/`)
-Multi-cloud IaC supporting Docker Compose (local), AWS (CloudFormation + Lambda), Kubernetes (GKE with Kustomize/Helm), and GCloud (Terraform). Includes 29 CloudFormation templates, 11 Lambda functions, and CI/CD pipelines (CircleCI, GitLab CI, Jenkins).
+Multi-cloud IaC supporting Docker Compose (local), AWS (CloudFormation + Lambda), Kubernetes (GKE with Kustomize/Helm), and GCloud (Terraform). Includes 29 CloudFormation templates and 11 Lambda functions. CI/CD pipelines (CircleCI, GitLab CI, Jenkins) were previously configured but are currently inactive — all deployments are manual.
 
 ## Technology Stack
 
@@ -47,7 +47,7 @@ Multi-cloud IaC supporting Docker Compose (local), AWS (CloudFormation + Lambda)
 | **Speech** | AssemblyAI, AWS Transcribe |
 | **Cloud** | AWS (Lambda, RDS, SQS, DynamoDB, API Gateway, S3), GCP (Cloud Run, Terraform) |
 | **Container** | Docker, Docker Compose, Kubernetes (GKE) |
-| **CI/CD** | CircleCI, GitLab CI, Jenkins |
+| **CI/CD** | Currently inactive — configs exist for CircleCI, GitLab CI, Jenkins (see [technology-choices.md](./technology-choices.md#cicd)) |
 | **Security** | pre-commit, TruffleHog, Semgrep, Bandit, pip-audit |
 | **Secrets** | HashiCorp Vault (hvac) |
 

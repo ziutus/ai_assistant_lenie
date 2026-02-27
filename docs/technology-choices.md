@@ -12,7 +12,7 @@
 - **Why 3.11 (not 3.12+):** AWS Lambda layers and runtime were built on Python 3.11. Upgrading requires rebuilding all Lambda layers, updating CloudFormation templates, and re-testing the serverless stack.
 - **Why Python:** Primary language of the project owner; rich ecosystem for AI/LLM, web scraping, and AWS integrations.
 
-**Upgrade plan (B-68):** Migrate to Python 3.12 or 3.13. Python 3.11 EOL: October 2027. The upgrade is straightforward thanks to the SSM parameter `/${ProjectCode}/${Environment}/python/lambda-runtime-version` — update one parameter, rebuild Lambda layer, update Powertools layer ARN variant, update Docker base image (`python:3.11-slim` → `3.12-slim`), verify dependency compatibility. No blockers — can start anytime.
+**Upgrade plan ([B-68](../_bmad-output/planning-artifacts/epics/backlog.md#b-68-upgrade-python-runtime-in-lambda-to-312)):** Migrate to Python 3.12 or 3.13. Python 3.11 EOL: October 2027. The upgrade is straightforward thanks to the SSM parameter `/${ProjectCode}/${Environment}/python/lambda-runtime-version` — update one parameter, rebuild Lambda layer, update Powertools layer ARN variant, update Docker base image (`python:3.11-slim` → `3.12-slim`), verify dependency compatibility. No blockers — can start anytime.
 
 ### Node.js 18+
 
@@ -63,13 +63,15 @@
   - 1536-dimension vectors for OpenAI embeddings, extensible to other dimensions
 - **Why not a dedicated vector DB (Pinecone, Weaviate, Qdrant):** Single-database simplicity. The dataset size (~thousands of documents) doesn't require a specialized vector store. pgvector performs well at this scale.
 
-**Upgrade plan (B-69):** Docker/NAS image still uses `postgres:17-bookworm` (`infra/docker/Postgresql/Dockerfile`). Needs rebuild to `postgres:18-bookworm` with `postgresql-18-pgvector`. NAS database is empty — rebuild from scratch (no `pg_upgrade` needed).
+**Upgrade plan ([B-69](../_bmad-output/planning-artifacts/epics/backlog.md#b-69-upgrade-dockernas-postgresql-from-17-to-18)):** Docker/NAS image still uses `postgres:17-bookworm` (`infra/docker/Postgresql/Dockerfile`). Needs rebuild to `postgres:18-bookworm` with `postgresql-18-pgvector`. NAS database is empty — rebuild from scratch (no `pg_upgrade` needed).
 
 ### psycopg2 (raw SQL, no ORM)
 
 - **Used in:** All database access (`backend/library/db_postgresql.py`)
 - **Why:** See [ADR-004](./architecture-decisions.md#adr-004-raw-psycopg2-instead-of-orm). Full control over pgvector-specific queries (cosine similarity search), simpler dependency tree, no ORM abstraction overhead.
 - **Trade-off:** Manual SQL construction, no migration framework.
+
+**Evolution plan ([B-50](../_bmad-output/planning-artifacts/epics/backlog.md#b-50-api-type-synchronization-pipeline-pydantic--openapi--typescript)):** The API response layer will migrate from raw dicts to **Pydantic v2 models** ([api-type-sync-strategy.md](./api-type-sync-strategy.md)). psycopg2 SQL queries remain — Pydantic replaces only the serialization layer (custom `.dict()` methods → Pydantic `BaseModel`), enabling automatic OpenAPI schema generation and TypeScript type generation. This is not an ORM migration — database access stays raw SQL.
 
 ### DynamoDB
 
@@ -89,11 +91,6 @@
 
 - **Used in:** OpenAI API calls (chat completions, embeddings)
 - **Why:** Official SDK, also used as the client for OpenAI-compatible APIs.
-
-### boto3
-
-- **Used in:** AWS Bedrock (LLM), S3 (storage), SQS (queues), SSM (secrets), DynamoDB, RDS management
-- **Why:** Official AWS SDK for Python. Required for all AWS service integrations.
 
 ## Content Processing
 
@@ -117,7 +114,7 @@
 - **Used in:** YouTube video metadata extraction, video download
 - **Why:** Maintained fork of `pytube` (abandoned). Cannot run in Lambda due to `nodejs-wheel-binaries` dependency (~60 MB). See [ADR-007](./architecture-decisions.md#adr-007-pytubefix-excluded-from-lambda--serverless-youtube-processing-requires-alternative-compute).
 
-**Upgrade plan (B-67):** Enable in serverless path via Lambda container image (10 GB limit) or ECS Fargate task. Architecture decision pending.
+**Upgrade plan ([B-67](../_bmad-output/planning-artifacts/epics/backlog.md#b-67-choose-compute-model-for-serverless-youtube-processing)):** Enable in serverless path via Lambda container image (10 GB limit) or ECS Fargate task. Architecture decision pending.
 
 ### youtube-transcript-api
 
@@ -243,6 +240,13 @@ All run as one-off tools via `uvx` — not installed in project venv.
 - **Used in:** Landing page (`web_landing_page/`)
 - **Why:** Static site generation for `www.lenie-ai.eu`. 25 static pages deployed to S3 + CloudFront.
 
+## AWS SDK
+
+### boto3
+
+- **Used in:** S3 (document storage), SQS (async processing), SSM Parameter Store (secrets), DynamoDB (sync buffer), RDS management (start/stop), Bedrock (LLM), CloudFormation operations
+- **Why:** Official AWS SDK for Python. Required for all AWS service integrations across the entire stack.
+
 ## Infrastructure
 
 ### Docker + Docker Compose
@@ -272,13 +276,19 @@ All run as one-off tools via `uvx` — not installed in project venv.
 
 ## CI/CD
 
-| Tool | Environment | Purpose |
-|------|-------------|---------|
-| **CircleCI** | EC2-based | Primary CI — testing, linting |
+**Current state: inactive.** All deployments are performed manually from the developer's machine (CloudFormation via `deploy.sh`, frontends via `deploy.sh`, Docker images via `make docker-push`). There is no automated CI/CD pipeline running.
+
+The following tools were **previously configured and tested** but are not currently active:
+
+| Tool | Environment | What was tested |
+|------|-------------|-----------------|
+| **CircleCI** | EC2-based | Testing, linting |
 | **GitLab CI** | GitLab runners | Qodana security scanning |
 | **Jenkins** | AWS EC2 | AWS deployment orchestration, Semgrep security |
 
-- **Why three tools:** Historical evolution. Each serves a different purpose in the pipeline. Consolidation is a future consideration.
+Configuration files (`.circleci/config.yml`, `.gitlab-ci.yml`, `Jenkinsfile`) remain in the repository as reference for future restoration.
+
+**Restoration plan:** Prerequisites tracked in [B-70](../_bmad-output/planning-artifacts/epics/backlog.md#b-70-restore-cicd--common-prerequisites) (IaC complete, secrets accessible, deploy scripts idempotent). Each tool has a dedicated backlog item: [B-71 GitHub Actions](../_bmad-output/planning-artifacts/epics/backlog.md#b-71-cicd--github-actions-pipeline), [B-72 CircleCI](../_bmad-output/planning-artifacts/epics/backlog.md#b-72-cicd--circleci-pipeline), [B-73 GitLab CI](../_bmad-output/planning-artifacts/epics/backlog.md#b-73-cicd--gitlab-ci-pipeline), [B-74 Jenkins](../_bmad-output/planning-artifacts/epics/backlog.md#b-74-cicd--jenkins-pipeline). A single consolidated pipeline is preferred over the previous multi-tool setup.
 
 ## Build System
 

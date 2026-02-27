@@ -91,8 +91,8 @@
 
 ### Operations & Metrics
 - [Infrastructure Metrics](./infrastructure-metrics.md) — Single source of truth for endpoint, template, and Lambda counts
-- [CI/CD Specification](./CICD/CI_CD.md) — Generic pipeline spec
-- [CI/CD Tools](./CICD/CI_CD_Tools.md) — CircleCI, GitLab CI, Jenkins
+- [CI/CD Specification](./CICD/CI_CD.md) — Generic pipeline spec (currently inactive — all deploys manual)
+- [CI/CD Tools](./CICD/CI_CD_Tools.md) — CircleCI, GitLab CI, Jenkins (historical configs, not active)
 - [Docker Local](./CICD/Docker_Local.md) — Local development with Docker
 - [AWS Infrastructure](./CICD/AWS_Infrastructure.md) — AWS resource documentation
 - [Code Quality](./Code_Quality.md) — Linting and security tools
