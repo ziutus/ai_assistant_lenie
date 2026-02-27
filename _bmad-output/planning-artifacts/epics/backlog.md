@@ -480,3 +480,28 @@ so that frontends build on a supported, up-to-date runtime with the same behavio
 - Documentation reflects Node.js 24 as the standard
 
 **Status:** backlog
+
+---
+
+### B-76: Restore pytest-html for CI/CD Test Reports
+
+As a **developer**,
+I want pytest-html restored when CI/CD pipelines are active,
+so that test results are available as visual HTML reports in CI artifacts.
+
+**Origin:** pytest-html was removed from dependencies (Feb 2026) because no CI/CD pipeline is active to consume the reports. It was previously used to generate HTML test reports (`pytest --self-contained-html --html=pytest-results/`) as CI build artifacts.
+
+**Scope:**
+1. Add `pytest-html` back to `[dependency-groups] dev` in `backend/pyproject.toml`
+2. Update `uv.lock`
+3. Restore `pytest --self-contained-html --html=pytest-results/` commands in documentation (`CLAUDE.md`, `backend/CLAUDE.md`, `backend/tests/CLAUDE.md`, `docs/development-guide.md`)
+4. Configure CI pipeline to archive `pytest-results/` as build artifacts
+5. Update `docs/technology-choices.md` status
+
+**Acceptance Criteria:**
+- pytest-html is in dev dependencies
+- CI pipeline archives HTML test reports as artifacts
+- Reports are accessible from CI build page
+
+**Depends on:** B-70 (CI/CD prerequisites)
+**Status:** backlog

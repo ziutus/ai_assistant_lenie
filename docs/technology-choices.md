@@ -181,10 +181,10 @@
   - Better fixture system for test setup/teardown
   - De-facto standard for modern Python testing
 
-### pytest-html
+### pytest-html (removed, restore with CI/CD)
 
-- **Used in:** HTML test reports (`pytest --self-contained-html --html=pytest-results/`)
-- **Why:** Visual test results for CI/CD artifacts and local debugging.
+- **Previously used for:** HTML test reports in CI/CD pipelines (`pytest --self-contained-html --html=pytest-results/`)
+- **Status:** Removed from dependencies — no active CI/CD pipeline to consume reports. Will be restored when CI/CD is reactivated ([B-76](../_bmad-output/planning-artifacts/epics/backlog.md#b-76-restore-pytest-html-for-cicd-test-reports)).
 
 ## Security Scanning
 

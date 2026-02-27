@@ -28,8 +28,8 @@ backend/tests/
 ## Running Tests
 
 ```bash
-# All tests with HTML report
-pytest --self-contained-html --html=pytest-results/
+# All tests
+pytest
 
 # Unit tests only (no external dependencies)
 pytest backend/tests/unit/

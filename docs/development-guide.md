@@ -65,8 +65,8 @@ make build && make dev
 ### Testing
 
 ```bash
-# Full test suite with HTML report
-pytest --self-contained-html --html=pytest-results/
+# Full test suite
+pytest
 
 # Unit tests only (no dependencies)
 pytest backend/tests/unit/
