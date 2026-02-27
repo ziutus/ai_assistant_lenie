@@ -157,6 +157,7 @@ so that Vault restarts (planned or unplanned) don't require manual unseal interv
 
 ---
 
+
 ## Backlog: Config Loader Improvements
 
 ### B-65: Handle Empty String Values in Config.require()
