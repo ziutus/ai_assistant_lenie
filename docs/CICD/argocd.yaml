@@ -6,7 +6,7 @@
 #   - Kubernetes manifests:  infra/kubernetes/kustomize/
 #   - Helm charts:           infra/kubernetes/helm/lenie-ai-server/
 #   - ArgoCD component:      infra/kubernetes/kustomize/components/argocd/README_argocd.md
-#   - CI/CD pipeline:        docs/CI_CD.md (stages BUILD-HELM and DEPLOY)
+#   - CI/CD pipeline:        docs/CICD/CI_CD.md (stages BUILD-HELM and DEPLOY)
 
 # Step 1: Register the Git repository in ArgoCD
 # Replace <GITLAB_TOKEN> with a valid GitLab Personal Access Token (glpat-...)

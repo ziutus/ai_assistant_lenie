@@ -90,10 +90,10 @@
 
 ### Operations & Metrics
 - [Infrastructure Metrics](./infrastructure-metrics.md) — Single source of truth for endpoint, template, and Lambda counts
-- [CI/CD Specification](./CI_CD.md) — Generic pipeline spec
-- [CI/CD Tools](./CI_CD_Tools.md) — CircleCI, GitLab CI, Jenkins
-- [Docker Local](./Docker_Local.md) — Local development with Docker
-- [AWS Infrastructure](./AWS_Infrastructure.md) — AWS resource documentation
+- [CI/CD Specification](./CICD/CI_CD.md) — Generic pipeline spec
+- [CI/CD Tools](./CICD/CI_CD_Tools.md) — CircleCI, GitLab CI, Jenkins
+- [Docker Local](./CICD/Docker_Local.md) — Local development with Docker
+- [AWS Infrastructure](./CICD/AWS_Infrastructure.md) — AWS resource documentation
 - [Code Quality](./Code_Quality.md) — Linting and security tools
 - [Observability Strategy](./observability.md) — Logging, tracing, and monitoring across environments
 - [Python Dependencies](./Python_Dependencies.md) — uv package management

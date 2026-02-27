@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Lambda Layer with shared Python dependencies (requests, beautifulsoup4, pytube, urllib3) for Project Lenie'
+Description: 'Lambda Layer with shared Python dependencies (requests, beautifulsoup4, urllib3, python-dotenv) for Project Lenie'
 
 Parameters:
   ProjectCode:
@@ -37,7 +37,7 @@ Resources:
     Type: AWS::Lambda::LayerVersion
     Properties:
       LayerName: lenie_all_layer
-      Description: !Sub 'Lambda Layer with shared Python dependencies (requests, beautifulsoup4, pytube, urllib3) for Project Lenie (v${LayerCodeVersion})'
+      Description: !Sub 'Lambda Layer with shared Python dependencies (requests, beautifulsoup4, urllib3, python-dotenv) for Project Lenie (v${LayerCodeVersion})'
       CompatibleRuntimes:
         - python3.11
       Content:

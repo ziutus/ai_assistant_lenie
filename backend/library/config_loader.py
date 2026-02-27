@@ -18,7 +18,10 @@ import os
 import sys
 from abc import ABC, abstractmethod
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None  # Lambda environment — no .env files
 
 # ---------------------------------------------------------------------------
 # Config object
@@ -30,13 +33,13 @@ class Config(dict):
     ``fetch_env_var()`` behaviour: return value, fall back to *default*,
     or log-and-exit when the key is missing."""
 
-    def require(self, key: str, default=None):
+    def require(self, key: str, default: str | None = None) -> str:
         value = self.get(key)
         if value is not None:
             return value
         if default is not None:
             return default
-        logging.error("ERROR: missing OS variables %s, exiting... ", key)
+        logging.error("Missing configuration variable %s, exiting...", key)
         sys.exit(1)
 
 
@@ -61,7 +64,8 @@ class EnvBackend(ConfigBackend):
     """
 
     def load(self) -> dict[str, str]:
-        load_dotenv()
+        if load_dotenv is not None:
+            load_dotenv()
         return dict(os.environ)
 
 
@@ -71,27 +75,51 @@ _BOOTSTRAP_VARS = frozenset({
     "SECRETS_BACKEND",
     "VAULT_ADDR",
     "VAULT_TOKEN",
-    "VAULT_ENV",
+    "SECRETS_ENV",
+    "VAULT_ENV",  # deprecated: use SECRETS_ENV
     "ENV_DATA",
     "AWS_REGION",
+    "PROJECT_CODE",
 })
+
+
+def _get_secrets_env() -> str:
+    """Return the environment name (dev/prod/qa).
+
+    Reads ``SECRETS_ENV`` first; falls back to ``VAULT_ENV`` for backward
+    compatibility.  Defaults to ``dev``.
+    """
+    env = os.environ.get("SECRETS_ENV") or os.environ.get("VAULT_ENV")
+    if env is None:
+        return "dev"
+    if os.environ.get("VAULT_ENV") and not os.environ.get("SECRETS_ENV"):
+        logging.warning(
+            "VAULT_ENV is deprecated for environment selection, use SECRETS_ENV instead"
+        )
+    return env
+
+
+def _get_project_code() -> str:
+    """Return the project code (default ``lenie``)."""
+    return os.environ.get("PROJECT_CODE", "lenie")
 
 
 class VaultBackend(ConfigBackend):
     """Loads configuration from HashiCorp Vault KV v2.
 
-    Secrets are stored at ``secret/lenie/{VAULT_ENV}`` as a single KV v2
-    secret containing all configuration key-value pairs.
+    Secrets are stored at ``secret/{PROJECT_CODE}/{SECRETS_ENV}`` as a
+    single KV v2 secret containing all configuration key-value pairs.
 
-    Bootstrap env vars (``VAULT_ADDR``, ``VAULT_TOKEN``, ``VAULT_ENV``)
+    Bootstrap env vars (``VAULT_ADDR``, ``VAULT_TOKEN``, ``SECRETS_ENV``)
     must be set in the real environment (e.g. ``.env`` or shell).
-    ``VAULT_ENV`` defaults to ``dev`` if not set.
+    ``SECRETS_ENV`` defaults to ``dev`` if not set.
     """
 
     def load(self) -> dict[str, str]:
         vault_addr = os.environ.get("VAULT_ADDR")
         vault_token = os.environ.get("VAULT_TOKEN")
-        vault_env = os.environ.get("VAULT_ENV", "dev")
+        secrets_env = _get_secrets_env()
+        project_code = _get_project_code()
 
         if not vault_addr:
             logging.error("VAULT_ADDR must be set when using vault backend")
@@ -114,7 +142,7 @@ class VaultBackend(ConfigBackend):
                 )
                 sys.exit(1)
 
-            secret_path = f"lenie/{vault_env}"
+            secret_path = f"{project_code}/{secrets_env}"
             logging.info("Vault: reading secret at secret/%s", secret_path)
             response = client.secrets.kv.v2.read_secret_version(
                 path=secret_path,
@@ -139,16 +167,18 @@ class AWSSSMBackend(ConfigBackend):
     """Loads configuration from AWS SSM Parameter Store.
 
     All parameters are stored as SecureString under
-    ``/lenie/{VAULT_ENV}/<key>`` and loaded via ``GetParametersByPath``.
+    ``/{PROJECT_CODE}/{SECRETS_ENV}/<key>`` and loaded via
+    ``GetParametersByPath``.
 
-    Bootstrap env vars (``AWS_REGION``, ``VAULT_ENV``) must be set in
-    the real environment.  ``VAULT_ENV`` defaults to ``dev``.
+    Bootstrap env vars (``AWS_REGION``, ``SECRETS_ENV``) must be set in
+    the real environment.  ``SECRETS_ENV`` defaults to ``dev``.
     Uses default boto3 credential chain (env vars, profile, instance role).
     """
 
     def load(self) -> dict[str, str]:
-        vault_env = os.environ.get("VAULT_ENV", "dev")
+        secrets_env = _get_secrets_env()
         aws_region = os.environ.get("AWS_REGION", "eu-central-1")
+        project_code = _get_project_code()
 
         try:
             import boto3
@@ -156,7 +186,7 @@ class AWSSSMBackend(ConfigBackend):
             logging.error("boto3 package is required for aws backend: pip install boto3")
             sys.exit(1)
 
-        prefix = f"/lenie/{vault_env}/"
+        prefix = f"/{project_code}/{secrets_env}/"
         logging.info("AWS SSM: reading parameters under %s (region: %s)", prefix, aws_region)
 
         try:
@@ -215,6 +245,7 @@ def _create_backend(name: str) -> ConfigBackend:
 # ---------------------------------------------------------------------------
 
 _config: Config | None = None
+_injected_keys: set[str] = set()
 
 
 def load_config() -> Config:
@@ -240,6 +271,7 @@ def load_config() -> Config:
         for key, value in _config.items():
             if isinstance(value, str):
                 os.environ[key] = value
+                _injected_keys.add(key)
 
     return _config
 
@@ -252,6 +284,9 @@ def get_config() -> Config:
 
 
 def reset_config() -> None:
-    """Clear the cached Config (intended for tests only)."""
+    """Clear the cached Config and undo os.environ injection (intended for tests only)."""
     global _config
     _config = None
+    for key in _injected_keys:
+        os.environ.pop(key, None)
+    _injected_keys.clear()

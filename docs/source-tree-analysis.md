@@ -143,12 +143,16 @@ lenie-server-2025/
 │       └── cloud-run-shell/           # Cloud Run container
 │
 └── docs/                       ★ Documentation (this directory)
-    ├── API_Usage.md
-    ├── CI_CD.md, CI_CD_Tools.md
-    ├── CircleCI.md, GitLabCI.md, Jenkins.md
-    ├── AWS_Infrastructure.md, AWS_Amplify_Deployment.md
-    ├── Docker_Local.md, Code_Quality.md
-    └── Python_Dependencies.md
+    ├── API_Usage.md, Code_Quality.md, Python_Dependencies.md
+    ├── CICD/
+    │   ├── CI_CD.md, CI_CD_Tools.md
+    │   ├── CircleCI.md, GitLabCI.md, Jenkins.md
+    │   ├── AWS_Infrastructure.md, AWS_Amplify_Deployment.md
+    │   ├── Docker_Local.md, NAS_Deployment.md, VM_Setup.md
+    │   ├── AWS_EC2_Runner_Setup.md, AWS_Troubleshooting.md
+    │   ├── EC2_AMI_Backup_Pipeline.md
+    │   └── Security_Dependabot_Review.md
+    └── ...
 ```
 
 ## Critical Folders

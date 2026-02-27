@@ -78,6 +78,25 @@ Common variables:
 
 Both app functions use path-based routing (`event['path']`) via API Gateway proxy integration.
 
+#### IAM Permissions for Non-CF-Managed Lambdas
+
+`app-server-db` and `app-server-internet` are **not managed by CloudFormation** — their IAM roles are created manually. When using `SECRETS_BACKEND=aws` (config_loader reads from SSM Parameter Store), the execution role must include:
+
+```json
+{
+  "Effect": "Allow",
+  "Action": [
+    "ssm:GetParametersByPath",
+    "ssm:GetParameter"
+  ],
+  "Resource": "arn:aws:ssm:<region>:<account-id>:parameter/lenie/<env>/*"
+}
+```
+
+Replace `<region>`, `<account-id>`, and `<env>` with actual values (e.g., `eu-central-1`, `008971653395`, `dev`).
+
+Without this permission, `load_config()` will fail at Lambda cold start when `SECRETS_BACKEND=aws` is set.
+
 ### Archived Functions
 
 | Function | Archived | Git Tag | Description |
@@ -99,7 +118,7 @@ Three layers provide shared dependencies to Lambda functions:
 | Layer | Script | Packages | Used By |
 |-------|--------|----------|---------|
 | `psycopg2_new_layer` | `layer_create_psycop2_new.sh` | `psycopg2-binary` | `sqs-into-rds`, `app-server-db` |
-| `lenie_all_layer` | `layer_create_lenie_all.sh` | `pytubefix`, `urllib3`, `requests`, `beautifulsoup4` | `app-server-db`, `app-server-internet` |
+| `lenie_all_layer` | `layer_create_lenie_all.sh` | `urllib3`, `requests`, `beautifulsoup4`, `python-dotenv` | `app-server-db`, `app-server-internet`, `sqs-into-rds` |
 | `lenie_openai` | `layer_openai_2.sh` | `openai` | `app-server-internet` |
 
 Layer build process:
@@ -107,6 +126,28 @@ Layer build process:
 2. `pip install` with `--platform manylinux2014_x86_64 --only-binary=:all:` into a `python/` directory
 3. Zip the `python/` directory
 4. Publish via `aws lambda publish-layer-version`
+
+## Known Limitations
+
+### Lambda Layer Size Limit (50 MB zipped / 250 MB unzipped)
+
+**`pytubefix` cannot be included in Lambda layers.** The `pytubefix` package depends on `nodejs-wheel-binaries` (~60 MB Node.js binary), which alone exceeds the 50 MB Lambda layer ZIP limit. This was discovered when the `lenie_all_layer` ZIP grew to 66 MB after switching from the deprecated `pytube` to `pytubefix`.
+
+**Impact:** YouTube video metadata extraction and download (`stalker_youtube_file.py`, `youtube_processing.py`) is **not available** in any Lambda function. Currently these modules are only used by batch scripts and the Flask server (Docker/K8s), so existing Lambda endpoints are unaffected.
+
+**Future architecture decision required:** If YouTube processing is ever needed in the serverless path (e.g., triggered by SQS or API Gateway), Lambda alone cannot support it. Possible alternatives:
+- **ECS Fargate task** — on-demand container with full `pytubefix` available, triggered by Step Functions or EventBridge
+- **ECS Fargate service** — long-running container for YouTube processing workloads
+- **Step Functions + ECS task** — orchestrate: receive request via Lambda → start ECS task for YouTube processing → Lambda writes results to DB
+- **Lambda with container image** (up to 10 GB) — package `pytubefix` in a Docker image deployed as Lambda, avoids layer limit but increases cold start time
+
+This is a **blocking architectural constraint** for any serverless YouTube processing feature. A decision must be made before implementing such functionality.
+
+### No NAT Gateway — VPC Lambda Cannot Access External APIs
+
+Lambda functions running inside VPC (e.g., `app-server-db`, `sqs-to-rds-lambda`) cannot access AWS APIs (SSM, Secrets Manager, S3) or the internet without a NAT Gateway (~$30/month) or VPC Endpoints (~$7-22/month). This exceeds the $8/month budget.
+
+**Impact:** VPC Lambdas must use `SECRETS_BACKEND=env` (Lambda environment variables) rather than `SECRETS_BACKEND=aws` (SSM Parameter Store) for configuration.
 
 ## Deployment Scripts
 

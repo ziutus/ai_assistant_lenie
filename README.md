@@ -208,12 +208,12 @@ Pre-commit hooks include TruffleHog for secret detection. See `.pre-commit-confi
 |----------|-------------|
 | [CLAUDE.md](CLAUDE.md) | Full architecture reference |
 | [docs/Python_Dependencies.md](docs/Python_Dependencies.md) | Dependency management with uv |
-| [docs/Docker_Local.md](docs/Docker_Local.md) | Docker development and deployment |
-| [docs/VM_Setup.md](docs/VM_Setup.md) | Virtual machine setup |
-| [docs/AWS_Infrastructure.md](docs/AWS_Infrastructure.md) | AWS infrastructure |
+| [docs/CICD/Docker_Local.md](docs/CICD/Docker_Local.md) | Docker development and deployment |
+| [docs/CICD/VM_Setup.md](docs/CICD/VM_Setup.md) | Virtual machine setup |
+| [docs/CICD/AWS_Infrastructure.md](docs/CICD/AWS_Infrastructure.md) | AWS infrastructure |
 | [docs/Code_Quality.md](docs/Code_Quality.md) | Linting and security scanning |
 | [docs/API_Usage.md](docs/API_Usage.md) | API request examples |
-| [docs/CI_CD.md](docs/CI_CD.md) | CI/CD pipelines |
+| [docs/CICD/CI_CD.md](docs/CICD/CI_CD.md) | CI/CD pipelines |
 
 ## Why Do We Need Our Own LLM?
 So far, available LLMs operate in English or implicitly translate to English, losing context or meaning.
