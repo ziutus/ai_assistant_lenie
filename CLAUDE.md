@@ -154,7 +154,10 @@ cd web_interface_app2 && ./deploy.sh
 ## Environment Variables
 
 Key variables (see `.env_example` for full list):
-- `ENV_DATA` - Environment identifier (currently only `dev`; `prod` and `qa` will be added post-MVP)
+- `SECRETS_BACKEND` - Secret backend to use: `env` (default, reads `.env`), `vault` (HashiCorp Vault), `aws` (SSM Parameter Store)
+- `SECRETS_ENV` - Environment name for secret paths (`dev`, `prod`, `qa`). Falls back to `VAULT_ENV` if not set. Default: `dev`
+- `PROJECT_CODE` - Project code used in secret paths. Default: `lenie`
+- `ENV_DATA` - Date of last configuration data update (e.g., `2025.10.02`), logged at startup to verify the application loaded fresh config
 - `POSTGRESQL_HOST/DATABASE/USER/PASSWORD/PORT` - Database connection
 - `POSTGRESQL_SSLMODE` - SSL mode for PostgreSQL (set to `require` for AWS RDS)
 - `LLM_PROVIDER` - LLM backend (openai, bedrock, vertex)

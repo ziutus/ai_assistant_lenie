@@ -32,11 +32,13 @@ dependencies = [
     "langfuse",
     "chardet",
     "boto3",
-    "hvac",
     "dateparser",
 ]
 
 [project.optional-dependencies]
+vault = [
+    "hvac",
+]
 markdown = [
     "markitdown",
     "psycopg2-binary",
@@ -62,6 +64,7 @@ docker = [
     "boto3",
     "aws-xray-sdk",
     "langfuse",
+    "hvac",
 ]
 
 all = [

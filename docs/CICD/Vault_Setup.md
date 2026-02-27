@@ -100,7 +100,7 @@ Add to your `.env` file:
 ```bash
 VAULT_ADDR=http://192.168.200.7:8210
 VAULT_TOKEN=hvs.xxxxxxxxxxxxx
-VAULT_ENV=dev                          # optional, defaults to "dev"
+SECRETS_ENV=dev                        # optional, defaults to "dev"
 SECRETS_BACKEND=vault                  # set to "vault" to use Vault instead of .env
 ```
 
@@ -108,7 +108,7 @@ SECRETS_BACKEND=vault                  # set to "vault" to use Vault instead of 
 |----------|-------------|----------|
 | `VAULT_ADDR` | Vault server URL (NAS port 8210) | Yes |
 | `VAULT_TOKEN` | Authentication token | Yes |
-| `VAULT_ENV` | Environment name for secret path (`dev`, `prod`, `qa`). Default: `dev` | No |
+| `SECRETS_ENV` | Environment name for secret path (`dev`, `prod`, `qa`). Default: `dev`. Falls back to `VAULT_ENV` for backward compat. | No |
 | `SECRETS_BACKEND` | Set to `vault` to activate Vault backend in `config_loader.py` | Yes |
 
 ## Managing Secrets (`scripts/env_to_vault.py`)

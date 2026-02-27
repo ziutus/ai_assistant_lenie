@@ -95,3 +95,94 @@ Work completed and planned to address frontend-backend type drift and shared cod
 **Status:** backlog
 **Strategy document:** `docs/api-type-sync-strategy.md`
 **Depends on:** B-49 (shared types package) — DONE
+
+---
+
+## Backlog: Architecture Decisions
+
+### B-67: Choose Compute Model for Serverless YouTube Processing
+
+As an **architect**,
+I want to decide how to run YouTube processing (pytubefix) in the AWS serverless architecture,
+so that future features requiring YouTube metadata/download can be implemented without Lambda layer size constraints.
+
+**Origin:** Lambda layer rebuild (Story 20-4, 2026-02). `pytubefix` depends on `nodejs-wheel-binaries` (~60 MB), which exceeds the Lambda layer ZIP limit (50 MB). YouTube processing is currently available only in Docker/K8s and batch scripts, not in any Lambda function.
+
+**Constraint:** Lambda layers: 50 MB zipped / 250 MB unzipped. No NAT Gateway (budget $8/month).
+
+**Options to evaluate:**
+
+| Option | Pros | Cons |
+|--------|------|------|
+| ECS Fargate task (on-demand) | Pay only when running, full dependency support, no size limits | Fargate pricing (~$0.04/vCPU-hr), cold start ~30-60s, needs task definition + ECR |
+| ECS Fargate task + Step Functions | Clean orchestration (Lambda → ECS task → Lambda), cost protection via timeout | More infrastructure to manage, Step Functions pricing |
+| Lambda container image (up to 10 GB) | Stays in Lambda ecosystem, familiar API | Longer cold starts (~5-10s), need Docker build pipeline, still limited to 15 min |
+| EKS job (existing cluster) | Reuses existing EKS infra | EKS cluster cost, over-engineered for single task |
+
+**Acceptance Criteria:**
+- Option chosen and documented in `docs/architecture-decisions/` (ADR format)
+- Cost estimate for chosen option at expected usage (~10-50 YouTube videos/month)
+- Proof of concept with `pytubefix` running in chosen compute model
+- Integration path defined (how to trigger from SQS/API Gateway/Step Functions)
+
+**Status:** backlog
+
+---
+
+## Backlog: Config Loader Improvements
+
+### B-65: Handle Empty String Values in Config.require()
+
+As a **developer**,
+I want `Config.require()` to handle empty string values deliberately,
+so that missing-but-set configuration variables (e.g., `OPENAI_API_KEY=""`) don't silently pass validation and cause cryptic runtime errors later.
+
+**Origin:** Code review of Story 20-1 (config_loader module).
+
+**Current behavior:**
+`cfg.require("OPENAI_API_KEY")` on `Config({"OPENAI_API_KEY": ""})` returns `""` without any warning. For API keys, passwords, and database hosts, an empty string is effectively the same as a missing value.
+
+**Challenge:** Some variables are legitimately empty (e.g., `DEBUG=""`, `POSTGRESQL_SSLMODE=""`). A blanket rejection of empty strings would break existing behavior.
+
+**Possible approaches (to be decided):**
+1. Add a `allow_empty=False` parameter to `require()` — raises/warns when value is `""`
+2. Maintain a list of "critical" keys that must be non-empty
+3. Add a separate `require_non_empty()` method
+4. Log a warning for empty values but still return them (least disruptive)
+
+**Acceptance Criteria:**
+- Empty string handling strategy is chosen and documented
+- `require()` behavior is updated accordingly
+- Existing tests pass, new tests cover the empty string scenario
+- No breaking changes to current callers
+
+**Status:** backlog
+
+---
+
+### B-66: Add Tests for env_to_vault.py Script
+
+As a **developer**,
+I want `scripts/env_to_vault.py` to have unit tests,
+so that changes to secret management CLI operations can be verified without requiring live Vault or AWS SSM connections.
+
+**Origin:** Code review of Story 20-3 (AWS SSM Parameter Store backend).
+
+**Current state:**
+`env_to_vault.py` has ~700 lines covering: .env parsing, Vault CRUD, SSM CRUD, and backend sync — all without any tests. Refactoring (e.g., extracting `PROJECT_CODE`, renaming `SKIP_VARS`) was done without automated verification.
+
+**Suggested test coverage:**
+1. `parse_env_file()` — parsing, comments, empty lines, quoting, edge cases
+2. `mask_value()` — short/long strings
+3. `vault_secret_path()` / `ssm_path_prefix()` — path construction with PROJECT_CODE
+4. `SKIP_VARS` filtering — ensure bootstrap vars are excluded from uploads
+5. CLI argument parsing — verify subcommands and required arguments
+6. Vault/SSM operations — mock `hvac` and `boto3` clients to test command logic without live connections
+
+**Acceptance Criteria:**
+- Test file created at `scripts/tests/test_env_to_vault.py` (or `backend/tests/unit/test_env_to_vault.py`)
+- Pure functions tested without mocks
+- Vault/SSM operations tested with mocked clients
+- All tests pass in CI (no live connections required)
+
+**Status:** backlog

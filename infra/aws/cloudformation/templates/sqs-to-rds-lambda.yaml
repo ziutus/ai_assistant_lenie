@@ -126,6 +126,11 @@ Resources:
                   - sqs:ReceiveMessage
                   - sqs:GetQueueAttributes
                 Resource: !Sub 'arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${ProjectCode}*'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParametersByPath
+                  - ssm:GetParameter
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectCode}/${Environment}/*'
       Tags:
         - Key: Environment
           Value: !Ref Environment

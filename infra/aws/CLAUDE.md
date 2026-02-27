@@ -25,6 +25,14 @@ DynamoDB serves as a persistent, always-available store for document metadata. D
 
 No NAT Gateway (saves ~$30/month), RDS started/stopped on demand via Step Functions, DynamoDB PAY_PER_REQUEST billing, budget alerts at $8/month.
 
+### Lambda Serverless Constraints
+
+Lambda layers have a **50 MB zipped / 250 MB unzipped** size limit. This prevents including packages with large binary dependencies (e.g., `pytubefix` with its `nodejs-wheel-binaries` ~60 MB dependency). YouTube video processing is therefore **not available** in Lambda functions — only in Docker/K8s deployments and batch scripts.
+
+VPC-attached Lambdas cannot access AWS APIs or the internet without NAT Gateway (~$30/month) or VPC Endpoints (~$7-22/month), both exceeding the $8/month budget. VPC Lambdas must use Lambda environment variables for configuration instead of SSM Parameter Store.
+
+**Architectural decision pending:** If YouTube processing is ever needed in the serverless path, an alternative compute model must be chosen (ECS Fargate task, Lambda container image, or hybrid Step Functions orchestration). See `serverless/CLAUDE.md` "Known Limitations" for detailed options.
+
 See [README.md](README.md) for a detailed inventory of all AWS resources (CloudFormation stacks, Lambda functions, API Gateway endpoints, parameters, and architecture diagram).
 
 ## Directory Structure
@@ -68,7 +76,7 @@ Invoked via Makefile targets from the project root (variables loaded from `.env`
 make aws-start-openvpn    # Start OpenVPN EC2 and update DNS
 ```
 
-Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently in use. See `docs/Jenkins.md` for restoration instructions.
+Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently in use. See `docs/CICD/Jenkins.md` for restoration instructions.
 
 ## Environment Setup
 

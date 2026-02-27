@@ -52,7 +52,7 @@ API Gateway serves as managed entry point with API key authentication.
 
 **Lambda Layers:**
 - psycopg2_new_layer (PostgreSQL driver)
-- lenie_all_layer (pytubefix, urllib3, requests, beautifulsoup4)
+- lenie_all_layer (urllib3, requests, beautifulsoup4, python-dotenv) — `pytubefix` removed due to 50 MB layer limit (see ADR-007)
 - lenie_openai (OpenAI SDK)
 
 **Data Flow (Serverless):**

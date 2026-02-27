@@ -35,7 +35,12 @@ SKIP_VARS = {
     "VAULT_ADDR",
     "VAULT_TOKEN",
     "SECRETS_BACKEND",
+    "SECRETS_ENV",
+    "PROJECT_CODE",
 }
+
+# Project code used in secret paths (Vault: {PROJECT_CODE}/{env}, SSM: /{PROJECT_CODE}/{env}/).
+PROJECT_CODE = "lenie"
 
 
 def parse_env_file(path: Path) -> dict[str, str]:
@@ -67,6 +72,11 @@ def mask_value(value: str) -> str:
 # ===========================================================================
 # Vault helpers
 # ===========================================================================
+
+
+def vault_secret_path(env: str) -> str:
+    """Return the Vault secret path for an environment."""
+    return f"{PROJECT_CODE}/{env}"
 
 
 def _require_hvac():
@@ -152,11 +162,11 @@ def get_ssm_client(env_file: str = ".env", region: str = None, profile: str = No
 
 def ssm_path_prefix(env: str) -> str:
     """Return the SSM parameter path prefix for an environment."""
-    return f"/lenie/{env}/"
+    return f"/{PROJECT_CODE}/{env}/"
 
 
 def ssm_read_all(ssm_client, env: str) -> dict[str, str]:
-    """Read all parameters under /lenie/{env}/ from SSM."""
+    """Read all parameters under /{PROJECT_CODE}/{env}/ from SSM."""
     prefix = ssm_path_prefix(env)
     result = {}
     paginator = ssm_client.get_paginator("get_parameters_by_path")
@@ -166,7 +176,7 @@ def ssm_read_all(ssm_client, env: str) -> dict[str, str]:
         WithDecryption=True,
     ):
         for param in page["Parameters"]:
-            # Strip prefix to get key name: /lenie/dev/MY_KEY -> MY_KEY
+            # Strip prefix to get key name: /{PROJECT_CODE}/dev/MY_KEY -> MY_KEY
             key = param["Name"][len(prefix):]
             result[key] = param["Value"]
     return result
@@ -174,7 +184,7 @@ def ssm_read_all(ssm_client, env: str) -> dict[str, str]:
 
 SSM_TAGS = [
     {"Key": "managed-by", "Value": "env-to-vault-script"},
-    {"Key": "project", "Value": "lenie"},
+    {"Key": "project", "Value": PROJECT_CODE},
 ]
 
 
@@ -233,7 +243,7 @@ def cmd_vault_upload(args):
         sys.exit(1)
 
     upload_vars = {k: v for k, v in all_vars.items() if k not in SKIP_VARS}
-    secret_path = f"lenie/{args.env}"
+    secret_path = vault_secret_path(args.env)
 
     print(f"Variables to upload: {len(upload_vars)} (skipping: {', '.join(sorted(SKIP_VARS))})")
     print(f"Vault target: {vault_addr} -> secret/{secret_path}")
@@ -276,7 +286,7 @@ def cmd_vault_set(args):
         updates[key.strip()] = value.strip()
 
     client, vault_addr = get_vault_client(args.env_file)
-    secret_path = f"lenie/{args.env}"
+    secret_path = vault_secret_path(args.env)
 
     print(f"Vault: {vault_addr} -> secret/{secret_path}")
     print(f"Setting {len(updates)} key(s):")
@@ -299,7 +309,7 @@ def cmd_vault_delete(args):
         sys.exit(1)
 
     client, vault_addr = get_vault_client(args.env_file)
-    secret_path = f"lenie/{args.env}"
+    secret_path = vault_secret_path(args.env)
 
     current = vault_read_all(client, secret_path)
     if not current:
@@ -333,7 +343,7 @@ def cmd_vault_delete(args):
 def cmd_vault_list(args):
     """List all keys in the Vault secret."""
     client, vault_addr = get_vault_client(args.env_file)
-    secret_path = f"lenie/{args.env}"
+    secret_path = vault_secret_path(args.env)
 
     current = vault_read_all(client, secret_path)
     if not current:
@@ -354,7 +364,7 @@ def cmd_vault_get(args):
         sys.exit(1)
 
     client, vault_addr = get_vault_client(args.env_file)
-    secret_path = f"lenie/{args.env}"
+    secret_path = vault_secret_path(args.env)
 
     current = vault_read_all(client, secret_path)
     if args.key not in current:
@@ -458,7 +468,7 @@ def cmd_ssm_delete(args):
 
 
 def cmd_ssm_list(args):
-    """List all SSM parameters under /lenie/{env}/."""
+    """List all SSM parameters under /{PROJECT_CODE}/{env}/."""
     ssm, region = get_ssm_client(args.env_file, args.region, args.profile)
     prefix = ssm_path_prefix(args.env)
 
@@ -508,7 +518,7 @@ def cmd_sync(args):
     # Read source
     if source_name == "vault":
         client, vault_addr = get_vault_client(args.env_file)
-        secret_path = f"lenie/{args.env}"
+        secret_path = vault_secret_path(args.env)
         source_data = vault_read_all(client, secret_path)
         print(f"Source: Vault ({vault_addr} -> secret/{secret_path})")
     else:
@@ -526,7 +536,7 @@ def cmd_sync(args):
     if target_name == "vault":
         if source_name != "vault":
             client, vault_addr = get_vault_client(args.env_file)
-        secret_path = f"lenie/{args.env}"
+        secret_path = vault_secret_path(args.env)
         target_data = vault_read_all(client, secret_path)
         print(f"Target: Vault ({vault_addr} -> secret/{secret_path})")
     else:
