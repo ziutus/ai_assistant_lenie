@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.venv/
+.venv_markdown/
+
+# Build output
+build/
+dist/
+.next/
+out/
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Test output
+pytest-results/
+htmlcov/
+coverage/
+
+# IDE
+.idea/
+.vscode/
+
+# Terraform state
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Lambda build artifacts
+infra/aws/serverless/tmp/
+infra/aws/serverless/lambdas/tmp/
+infra/aws/serverless/lambda_layers/tmp/
+*.zip
+
+# Temporary files
+tmp/
+*.tar.gz
+*.bak
+
+# Minified files
+*.min.js
+*.min.css
