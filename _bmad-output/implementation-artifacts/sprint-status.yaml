@@ -202,7 +202,7 @@ development_status:
   20-1-create-unified-config-loader-module: done  # Config, EnvBackend, factory, singleton, 19 unit tests. Commits: 4870e16, 084ec14.
   20-2-implement-hashicorp-vault-backend-docker-nas: done  # VaultBackend: hvac KV v2, VAULT_ENV path, bootstrap vars, env_to_vault.py script, 6 unit tests. Tested on NAS Vault.
   20-3-implement-aws-ssm-secrets-manager-backend: done  # AWSSSMBackend: SSM GetParametersByPath, SecureString, /lenie/{env}/ path. Script extended with ssm+sync commands, 5 unit tests. Tested on AWS us-east-1.
-  20-4-integrate-config-loader-into-server-and-lambda-handlers: done  # Migrated server.py + app-server-db + app-server-internet. Removed fetch_env_var(), replaced os.getenv() with cfg.require()/cfg.get(). os.environ injection for backward compat.
+  20-4-integrate-config-loader-into-server-and-lambda-handlers: done  # Migrated server.py + app-server-db + app-server-internet + sqs-into-rds. Replaced os.getenv() with cfg.require()/cfg.get() in entry points. Library modules (stalker_web_document_db, api/*) still use os.getenv() — backward-compat injection into os.environ ensures they work with vault/aws backends (intentional incremental migration). VPC Lambda (sqs-to-rds) keeps CF env vars — cannot reach SSM without NAT Gateway.
   20-5-update-env-example-and-document-config-flow: backlog
   20-6-extend-env-to-vault-compare-review-classify: done  # SSOT yaml, compare/review/remove/generate/validate commands, 36 unit tests. SSM tag filtering, bootstrap exclusion, improved help/UX. Subsumes B-66.
   epic-20-retrospective: optional

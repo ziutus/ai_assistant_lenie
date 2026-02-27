@@ -7,7 +7,9 @@ from library.stalker_web_document_db import StalkerWebDocumentDB
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-cfg = load_config()
+# Trigger config loading and os.environ injection for library modules
+# that still use os.getenv() (backward-compat during incremental migration).
+load_config()
 
 
 def lambda_handler(event, context):
