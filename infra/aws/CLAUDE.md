@@ -97,7 +97,7 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 | Lambda | 8 functions (6 CF-managed + 2 non-CF) for infra management and app logic |
 | API Gateway | 2 REST APIs (app: 11 endpoints including /url_add, infra: 7 endpoints) + custom domain `api.{env}.lenie-ai.eu` with base path mappings |
 | Step Functions | SQS-to-RDS workflow with auto DB start/stop |
-| EC2 | Application server, bastion host, Jenkins, OpenVPN |
+| EC2 | Application server, bastion host, OpenVPN (Jenkins previously used, currently inactive) |
 | EKS | Kubernetes cluster (alternative deployment target) |
 | Route53 | DNS for lenie-ai.eu domain |
 | Secrets Manager | Database credentials (auto-generated via `GenerateSecretString`, ARN exported to SSM) |

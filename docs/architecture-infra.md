@@ -106,11 +106,16 @@ Terraform configuration for:
 
 ## CI/CD Pipelines
 
-| Tool | Config | Purpose |
-|------|--------|---------|
-| CircleCI | `.circleci/config.yml` | EC2-based testing |
-| GitLab CI | `.gitlab-ci.yml` | Qodana security scanning |
-| Jenkins | `Jenkinsfile` | AWS EC2 orchestration, Semgrep security |
+**Currently inactive** — all deployments are manual from the developer's machine. Configuration files from previous experimental setups remain in the repository as reference:
+
+| Tool | Config | Previous purpose | Status |
+|------|--------|------------------|--------|
+| CircleCI | `.circleci/config.yml` | EC2-based testing | Inactive |
+| GitLab CI | `.gitlab-ci.yml` | Qodana security scanning | Inactive |
+| Jenkins | `Jenkinsfile` | AWS EC2 orchestration, Semgrep security | Inactive |
+| GitHub Actions | — | Not yet configured | Planned |
+
+Restoration tracked in backlog: B-70 (prerequisites), B-71–B-74 (per-tool pipelines). See [technology-choices.md](./technology-choices.md#cicd) for details.
 
 ## Build Automation (Makefile)
 

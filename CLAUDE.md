@@ -137,9 +137,10 @@ cd web_interface_app2 && ./deploy.sh
 ```
 
 ### CI/CD
-- CircleCI (`.circleci/config.yml`) - EC2-based testing
-- GitLab CI (`.gitlab-ci.yml`) - Qodana security scanning
-- Jenkins (`Jenkinsfile`) - AWS EC2 orchestration, Semgrep security
+**Currently inactive** — all deployments are manual from the developer's machine. Configuration files from previous experimental setups remain in the repository:
+- CircleCI (`.circleci/config.yml`), GitLab CI (`.gitlab-ci.yml`), Jenkins (`Jenkinsfile`)
+
+Restoration tracked in backlog: B-70 (prerequisites), B-71–B-74 (per-tool pipelines). See `docs/technology-choices.md` for details.
 
 ## Security — Secrets Handling
 
