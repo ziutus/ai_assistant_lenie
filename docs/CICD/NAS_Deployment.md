@@ -359,7 +359,7 @@ disable_mlock = true
 api_addr = "http://0.0.0.0:8200"
 ```
 
-AWS credentials for KMS are provided via env file at `/share/Container/lenie-env/vault.env` (see `infra/docker/vault.env.example` for template). The KMS key and IAM user are managed by CloudFormation stack `lenie-nas-vault-kms-unseal` on account `639394817995` (personal).
+AWS credentials for KMS are provided via env file at `/share/Container/lenie-env/vault.env` (see `infra/docker/vault.env.example` for template). The KMS key and IAM user are managed by CloudFormation stack `lenie-nas-vault-kms-unseal` on the personal AWS account (profile `ziutus-Administrator`).
 
 Persistent data directories on NAS:
 - `/share/Container/vault/config` — configuration
