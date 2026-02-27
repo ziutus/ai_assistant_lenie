@@ -8,7 +8,7 @@
 |-------------|---------|---------|
 | Python | >= 3.11 | Backend runtime |
 | uv | latest | Python package manager |
-| Node.js | >= 18 | Frontend build |
+| Node.js | >= 22 (recommended: 24 LTS) | Frontend build |
 | npm/yarn | latest | Frontend package manager |
 | Docker + Docker Compose | latest | Local development stack |
 | PostgreSQL | 17 | Database (via Docker or standalone) |
