@@ -2,13 +2,14 @@
 
 Developer has all application secrets and configuration loaded from environment-appropriate secret managers (HashiCorp Vault for Docker/NAS, AWS SSM Parameter Store + Secrets Manager for AWS) — `.env` files contain only minimal bootstrap variables.
 
-**Stories:** 20-1, 20-2, 20-3, 20-4, 20-5
+**Stories:** 20-1, 20-2, 20-3, 20-4, 20-5, 20-6
 
 Implementation notes:
 - Story 20-1 must be completed first (defines the interface)
 - Stories 20-2 and 20-3 can be done in parallel (independent backends)
 - Story 20-4 depends on 20-1 (and ideally 20-2/20-3 for testing)
 - Story 20-5 is the final cleanup step
+- Story 20-6 extends env_to_vault.py with compare/review/remove + YAML SSOT (discovered scope gap after 20-3/20-4)
 
 ### Story 20.1: Create Unified Config Loader Module
 
@@ -172,4 +173,38 @@ so that future developers understand how configuration works in each environment
 - Keep old `.env_example` content as comment block or separate `env_example_legacy.md` for reference during migration
 
 **FRs:** FR39
+**Status:** pending
+
+### Story 20.6: Extend env_to_vault.py with Compare, Review, and Variable Classification SSOT
+
+As a **developer**,
+I want `env_to_vault.py` extended with tools to compare backend state, review variable coverage, and manage the full variable lifecycle via a YAML Single Source of Truth,
+so that after migrating secrets (Stories 20-2/20-3) I can verify consistency, clean up orphans, and maintain configuration across environments.
+
+**Origin:** Discovered during Stories 20-3/20-4 — after migrating to Vault and SSM, there were no tools to compare state between backends, clean up unused keys, or manage the variable lifecycle. Configuration documentation was fragmented across 16+ files with ~14 variables undocumented.
+
+**Tech Spec:** `_bmad-output/implementation-artifacts/tech-spec-env-to-vault-compare-review-classify.md` (ready-for-dev, 10 tasks, 21 ACs)
+
+**Scope:**
+1. Create `scripts/vars-classification.yaml` — SSOT for ~50 config variables with classification (secret/config), backend definitions, and environment mappings
+2. Add YAML loader infrastructure to `env_to_vault.py` (ruamel.yaml for round-trip preservation)
+3. Implement `compare` command — universal comparison between any two sources (vault/ssm/env-file)
+4. Implement `review` command — interactive review of YAML vs backend state, with actions (add orphans, delete variables)
+5. Implement `remove` command — remove variable from all backends in an environment + YAML
+6. Implement `generate env-example` command — produce `.env_example` from YAML for a given backend type
+7. Implement `validate env-file` command — check that `.env` contains only appropriate variables
+8. Unit tests (≥30 test methods)
+
+**Acceptance Criteria:** 21 criteria defined in tech spec (ACs 1–21).
+
+**Subsumes:** B-66 (unit tests for env_to_vault.py — covered by Task 10 in tech spec)
+**Partially addresses:** Story 20-5 (`generate env-example` replaces manual .env_example update)
+
+**Technical notes:**
+- ruamel.yaml required (round-trip YAML preservation for comments/formatting)
+- Named backend instances (nas-vault, aws-ssm-main, aws-ssm-2025)
+- Dry-run by default, `--write` to execute (existing pattern)
+- Client connection caching for multi-backend commands
+
+**FRs:** FR35, FR36 (operational tooling)
 **Status:** pending

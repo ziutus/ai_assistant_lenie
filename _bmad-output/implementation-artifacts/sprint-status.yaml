@@ -204,6 +204,7 @@ development_status:
   20-3-implement-aws-ssm-secrets-manager-backend: done  # AWSSSMBackend: SSM GetParametersByPath, SecureString, /lenie/{env}/ path. Script extended with ssm+sync commands, 5 unit tests. Tested on AWS us-east-1.
   20-4-integrate-config-loader-into-server-and-lambda-handlers: done  # Migrated server.py + app-server-db + app-server-internet. Removed fetch_env_var(), replaced os.getenv() with cfg.require()/cfg.get(). os.environ injection for backward compat.
   20-5-update-env-example-and-document-config-flow: backlog
+  20-6-extend-env-to-vault-compare-review-classify: done  # SSOT yaml, compare/review/remove/generate/validate commands, 36 unit tests. SSM tag filtering, bootstrap exclusion, improved help/UX. Subsumes B-66.
   epic-20-retrospective: optional
 
   # --- B-64: Verify Pre-Commit Secret Detection (Sprint 6) ---
