@@ -12,7 +12,7 @@
 - **Why 3.11 (not 3.12+):** AWS Lambda layers and runtime were built on Python 3.11. Upgrading requires rebuilding all Lambda layers, updating CloudFormation templates, and re-testing the serverless stack.
 - **Why Python:** Primary language of the project owner; rich ecosystem for AI/LLM, web scraping, and AWS integrations.
 
-**Upgrade plan ([B-68](../_bmad-output/planning-artifacts/epics/backlog.md#b-68-upgrade-python-runtime-in-lambda-to-312)):** Migrate to Python 3.12 or 3.13. Python 3.11 EOL: October 2027. The upgrade is straightforward thanks to the SSM parameter `/${ProjectCode}/${Environment}/python/lambda-runtime-version` — update one parameter, rebuild Lambda layer, update Powertools layer ARN variant, update Docker base image (`python:3.11-slim` → `3.12-slim`), verify dependency compatibility. No blockers — can start anytime.
+**Upgrade plan ([B-68](backlog-reference.md)):** Migrate to Python 3.12 or 3.13. Python 3.11 EOL: October 2027. The upgrade is straightforward thanks to the SSM parameter `/${ProjectCode}/${Environment}/python/lambda-runtime-version` — update one parameter, rebuild Lambda layer, update Powertools layer ARN variant, update Docker base image (`python:3.11-slim` → `3.12-slim`), verify dependency compatibility. No blockers — can start anytime.
 
 ### Node.js
 
@@ -20,7 +20,7 @@
 - **Versions:** Docker builds: **24 LTS** (`web_interface_react/Dockerfile`, `web_interface_app2/Dockerfile`). Local developer requirement: **>= 18** (outdated — should be >= 20).
 - **Why:** Standard runtime for React tooling. No custom Node.js backend code — used only for build and dev server.
 
-**Upgrade plan ([B-75](../_bmad-output/planning-artifacts/epics/backlog.md#b-75-standardize-nodejs-version-to-24-lts)):** Standardize on Node.js 24 LTS across all environments. Docker images already use `node:24`. Remaining work: update `docs/development-guide.md` prerequisite (>= 18 → >= 22), verify `web_landing_page/` builds on Node.js 24, update any CI configs. Node.js 18 is already EOL (Apr 2025), Node.js 20 EOL Apr 2026.
+**Upgrade plan ([B-75](backlog-reference.md)):** Standardize on Node.js 24 LTS across all environments. Docker images already use `node:24`. Remaining work: update `docs/development-guide.md` prerequisite (>= 18 → >= 22), verify `web_landing_page/` builds on Node.js 24, update any CI configs. Node.js 18 is already EOL (Apr 2025), Node.js 20 EOL Apr 2026.
 
 ## Package Managers
 
@@ -66,7 +66,7 @@
   - 1536-dimension vectors for OpenAI embeddings, extensible to other dimensions
 - **Why not a dedicated vector DB (Pinecone, Weaviate, Qdrant):** Single-database simplicity. The dataset size (~thousands of documents) doesn't require a specialized vector store. pgvector performs well at this scale.
 
-**Upgrade plan ([B-69](../_bmad-output/planning-artifacts/epics/backlog.md#b-69-upgrade-dockernas-postgresql-from-17-to-18)):** Docker/NAS image still uses `postgres:17-bookworm` (`infra/docker/Postgresql/Dockerfile`). Needs rebuild to `postgres:18-bookworm` with `postgresql-18-pgvector`. NAS database is empty — rebuild from scratch (no `pg_upgrade` needed).
+**Upgrade plan ([B-69](backlog-reference.md)):** Docker/NAS image still uses `postgres:17-bookworm` (`infra/docker/Postgresql/Dockerfile`). Needs rebuild to `postgres:18-bookworm` with `postgresql-18-pgvector`. NAS database is empty — rebuild from scratch (no `pg_upgrade` needed).
 
 ### psycopg2 (raw SQL, no ORM)
 
@@ -74,7 +74,7 @@
 - **Why:** See [ADR-004](./architecture-decisions.md#adr-004-raw-psycopg2-instead-of-orm). Full control over pgvector-specific queries (cosine similarity search), simpler dependency tree, no ORM abstraction overhead.
 - **Trade-off:** Manual SQL construction, no migration framework.
 
-**Evolution plan ([B-50](../_bmad-output/planning-artifacts/epics/backlog.md#b-50-api-type-synchronization-pipeline-pydantic--openapi--typescript)):** The API response layer will migrate from raw dicts to **Pydantic v2 models** ([api-type-sync-strategy.md](./api-type-sync-strategy.md)). psycopg2 SQL queries remain — Pydantic replaces only the serialization layer (custom `.dict()` methods → Pydantic `BaseModel`), enabling automatic OpenAPI schema generation and TypeScript type generation. This is not an ORM migration — database access stays raw SQL.
+**Evolution plan ([B-50](backlog-reference.md)):** The API response layer will migrate from raw dicts to **Pydantic v2 models** ([api-type-sync-strategy.md](./api-type-sync-strategy.md)). psycopg2 SQL queries remain — Pydantic replaces only the serialization layer (custom `.dict()` methods → Pydantic `BaseModel`), enabling automatic OpenAPI schema generation and TypeScript type generation. This is not an ORM migration — database access stays raw SQL.
 
 ### DynamoDB
 
@@ -117,7 +117,7 @@
 - **Used in:** YouTube video metadata extraction, video download
 - **Why:** Maintained fork of `pytube` (abandoned). Cannot run in Lambda due to `nodejs-wheel-binaries` dependency (~60 MB). See [ADR-007](./architecture-decisions.md#adr-007-pytubefix-excluded-from-lambda--serverless-youtube-processing-requires-alternative-compute).
 
-**Upgrade plan ([B-67](../_bmad-output/planning-artifacts/epics/backlog.md#b-67-choose-compute-model-for-serverless-youtube-processing)):** Enable in serverless path via Lambda container image (10 GB limit) or ECS Fargate task. Architecture decision pending.
+**Upgrade plan ([B-67](backlog-reference.md)):** Enable in serverless path via Lambda container image (10 GB limit) or ECS Fargate task. Architecture decision pending.
 
 ### youtube-transcript-api
 
@@ -184,7 +184,7 @@
 ### pytest-html (removed, restore with CI/CD)
 
 - **Previously used for:** HTML test reports in CI/CD pipelines (`pytest --self-contained-html --html=pytest-results/`)
-- **Status:** Removed from dependencies — no active CI/CD pipeline to consume reports. Will be restored when CI/CD is reactivated ([B-76](../_bmad-output/planning-artifacts/epics/backlog.md#b-76-restore-pytest-html-for-cicd-test-reports)).
+- **Status:** Removed from dependencies — no active CI/CD pipeline to consume reports. Will be restored when CI/CD is reactivated ([B-76](backlog-reference.md)).
 
 ## Security Scanning
 
@@ -230,7 +230,7 @@ All run as one-off tools via `uvx` — not installed in project venv.
 - **Why React:** Widely adopted, large ecosystem, familiar to the project owner.
 - **Why Vite:** Fast dev server with HMR, fast builds via esbuild. Replaces Create React App (deprecated).
 
-**Upgrade plan ([B-77](../_bmad-output/planning-artifacts/epics/backlog.md#b-77-upgrade-react-to-19-and-vite-to-7-in-main-frontends)):** Upgrade `web_interface_react/` and `web_interface_app2/` to React 19 + Vite 7. React 19 introduces Server Components, Actions, and improved hooks (`use`, `useFormStatus`). Vite 7 brings performance improvements. Landing page (`web_landing_page/`) already runs React 19 — confirms ecosystem compatibility.
+**Upgrade plan ([B-77](backlog-reference.md)):** Upgrade `web_interface_react/` and `web_interface_app2/` to React 19 + Vite 7. React 19 introduces Server Components, Actions, and improved hooks (`use`, `useFormStatus`). Vite 7 brings performance improvements. Landing page (`web_landing_page/`) already runs React 19 — confirms ecosystem compatibility.
 
 ### Key frontend libraries
 
@@ -247,7 +247,7 @@ All run as one-off tools via `uvx` — not installed in project venv.
 - **Version:** **15.5.10** (current: 16.1.x).
 - **Why:** Static site generation for `www.lenie-ai.eu`. 25 static pages deployed to S3 + CloudFront.
 
-**Upgrade plan ([B-77](../_bmad-output/planning-artifacts/epics/backlog.md#b-77-upgrade-react-to-19-and-vite-to-7-in-main-frontends)):** Upgrade to Next.js 16 as part of the frontend upgrade batch. Already runs React 19.
+**Upgrade plan ([B-77](backlog-reference.md)):** Upgrade to Next.js 16 as part of the frontend upgrade batch. Already runs React 19.
 
 ## AWS SDK
 
@@ -297,7 +297,7 @@ The following tools were **previously configured and tested** but are not curren
 
 Configuration files (`.circleci/config.yml`, `.gitlab-ci.yml`, `Jenkinsfile`) remain in the repository as reference for future restoration.
 
-**Restoration plan:** Prerequisites tracked in [B-70](../_bmad-output/planning-artifacts/epics/backlog.md#b-70-restore-cicd--common-prerequisites) (IaC complete, secrets accessible, deploy scripts idempotent). Each tool has a dedicated backlog item: [B-71 GitHub Actions](../_bmad-output/planning-artifacts/epics/backlog.md#b-71-cicd--github-actions-pipeline), [B-72 CircleCI](../_bmad-output/planning-artifacts/epics/backlog.md#b-72-cicd--circleci-pipeline), [B-73 GitLab CI](../_bmad-output/planning-artifacts/epics/backlog.md#b-73-cicd--gitlab-ci-pipeline), [B-74 Jenkins](../_bmad-output/planning-artifacts/epics/backlog.md#b-74-cicd--jenkins-pipeline). A single consolidated pipeline is preferred over the previous multi-tool setup.
+**Restoration plan:** Prerequisites tracked in [B-70](backlog-reference.md) (IaC complete, secrets accessible, deploy scripts idempotent). Each tool has a dedicated backlog item: [B-71 GitHub Actions](backlog-reference.md), [B-72 CircleCI](backlog-reference.md), [B-73 GitLab CI](backlog-reference.md), [B-74 Jenkins](backlog-reference.md). A single consolidated pipeline is preferred over the previous multi-tool setup.
 
 ## Build System
 

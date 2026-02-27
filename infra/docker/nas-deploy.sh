@@ -2,34 +2,41 @@
 set -euo pipefail
 
 # ============================================================================
-# NAS Deploy Script - Build, transfer and deploy Docker images to QNAP NAS
+# NAS Deploy Script - Build, push to registry, and deploy via Docker Compose
 # Usage:
-#   ./nas-deploy.sh              # Deploy all services
-#   ./nas-deploy.sh frontend     # Deploy only frontend (web_interface_react)
-#   ./nas-deploy.sh app2         # Deploy only admin panel (web_interface_app2)
-#   ./nas-deploy.sh backend      # Deploy only backend (Flask server)
-#   ./nas-deploy.sh db           # Deploy only database (PostgreSQL + pgvector)
-#   ./nas-deploy.sh --skip-build frontend  # Transfer and restart without rebuilding
+#   ./nas-deploy.sh                          # Build, push & deploy all services
+#   ./nas-deploy.sh frontend                 # Build, push & deploy frontend only
+#   ./nas-deploy.sh backend app2             # Build, push & deploy backend + app2
+#   ./nas-deploy.sh --skip-build frontend    # Push existing image & deploy
+#   ./nas-deploy.sh --compose-only           # Only run compose up on NAS
+#   ./nas-deploy.sh --sync-compose           # Copy compose.nas.yaml to NAS
 # ============================================================================
 
 # --- Configuration ---
 NAS_HOST="192.168.200.7"
 NAS_USER="admin"
 NAS_DOCKER="/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker"
-NAS_CONTAINER_DIR="/share/Container"
-NAS_ENV_FILE="/share/Container/lenie-env/.env"
-NAS_NETWORK="lenie-net"
+NAS_COMPOSE_DIR="/share/Container/lenie-compose"
+NAS_COMPOSE_FILE="${NAS_COMPOSE_DIR}/compose.nas.yaml"
+REGISTRY="${NAS_HOST}:5005"
 
 # Project root (two levels up from this script)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+LOCAL_COMPOSE_FILE="${SCRIPT_DIR}/compose.nas.yaml"
 
-# Service definitions: name | image | dockerfile (relative to PROJECT_ROOT) | port_mapping | extra_args
+# Service definitions: name | local image | registry image | dockerfile
 declare -A SVC_IMAGE=(
     [frontend]="lenie-ai-frontend:latest"
     [app2]="lenie-ai-app2:latest"
     [backend]="lenie-ai-server:latest"
     [db]="lenie-ai-db:latest"
+)
+declare -A SVC_REGISTRY_IMAGE=(
+    [frontend]="${REGISTRY}/lenie-ai-frontend:latest"
+    [app2]="${REGISTRY}/lenie-ai-app2:latest"
+    [backend]="${REGISTRY}/lenie-ai-server:latest"
+    [db]="${REGISTRY}/lenie-ai-db:latest"
 )
 declare -A SVC_DOCKERFILE=(
     [frontend]="web_interface_react/Dockerfile"
@@ -37,23 +44,11 @@ declare -A SVC_DOCKERFILE=(
     [backend]="backend/Dockerfile"
     [db]="infra/docker/Postgresql/Dockerfile"
 )
-declare -A SVC_CONTAINER=(
+declare -A SVC_COMPOSE_NAME=(
     [frontend]="lenie-ai-frontend"
     [app2]="lenie-ai-app2"
     [backend]="lenie-ai-server"
     [db]="lenie-ai-db"
-)
-declare -A SVC_PORTS=(
-    [frontend]="3000:80"
-    [app2]="3001:80"
-    [backend]="5055:5000"
-    [db]="5434:5432"
-)
-declare -A SVC_EXTRA=(
-    [frontend]=""
-    [app2]=""
-    [backend]="--network ${NAS_NETWORK} --env-file ${NAS_ENV_FILE} -v lenie-ai-data:/app/data"
-    [db]="-e POSTGRES_PASSWORD=\${NAS_DB_PASSWORD:-postgres} -v lenie-ai-db-data:/var/lib/postgresql/data"
 )
 
 ALL_SERVICES="db backend frontend app2"
@@ -95,6 +90,14 @@ check_docker_local() {
     ok "Docker lokalny OK"
 }
 
+check_registry() {
+    log "Sprawdzanie registry (${REGISTRY})..."
+    if ! curl -s --connect-timeout 5 "http://${REGISTRY}/v2/" &>/dev/null; then
+        error "Registry niedostępne na ${REGISTRY}. Uruchom registry na NAS (patrz docs/CICD/NAS_Deployment.md)."
+    fi
+    ok "Registry ${REGISTRY} OK"
+}
+
 build_image() {
     local svc="$1"
     local image="${SVC_IMAGE[$svc]}"
@@ -106,46 +109,51 @@ build_image() {
     ok "Obraz ${image} zbudowany"
 }
 
-transfer_image() {
+push_image() {
     local svc="$1"
     local image="${SVC_IMAGE[$svc]}"
-    local archive="/tmp/lenie-${svc}.tar.gz"
+    local registry_image="${SVC_REGISTRY_IMAGE[$svc]}"
 
-    log "Eksportowanie obrazu ${image}..."
-    docker save "$image" | gzip > "$archive"
-    local size
-    size=$(du -h "$archive" | cut -f1)
-    ok "Obraz wyeksportowany (${size})"
+    log "Tagowanie ${image} → ${registry_image}..."
+    docker tag "$image" "$registry_image"
 
-    log "Przesyłanie na NAS..."
-    scp "$archive" "${NAS_USER}@${NAS_HOST}:${NAS_CONTAINER_DIR}/"
-    ok "Przesłano na NAS"
-
-    log "Ładowanie obrazu na NAS..."
-    nas_docker "load -i ${NAS_CONTAINER_DIR}/lenie-${svc}.tar.gz"
-    ok "Obraz załadowany na NAS"
-
-    # Cleanup
-    rm -f "$archive"
-    nas_ssh "rm -f ${NAS_CONTAINER_DIR}/lenie-${svc}.tar.gz"
+    log "Pushowanie do registry: ${registry_image}..."
+    docker push "$registry_image"
+    ok "Obraz ${registry_image} w registry"
 }
 
-restart_container() {
-    local svc="$1"
-    local container="${SVC_CONTAINER[$svc]}"
-    local image="${SVC_IMAGE[$svc]}"
-    local ports="${SVC_PORTS[$svc]}"
-    local extra="${SVC_EXTRA[$svc]}"
+deploy_on_nas() {
+    local services_to_pull="$1"
 
-    log "Restartowanie kontenera ${container}..."
+    log "Pulling i restartowanie na NAS..."
 
-    # Stop and remove old container (ignore errors if not exists)
-    nas_docker "stop ${container}" 2>/dev/null || true
-    nas_docker "rm ${container}" 2>/dev/null || true
+    if [ -n "$services_to_pull" ]; then
+        # Pull only specified services
+        for svc in $services_to_pull; do
+            local compose_name="${SVC_COMPOSE_NAME[$svc]}"
+            log "Pull: ${compose_name}..."
+            nas_docker "compose -f ${NAS_COMPOSE_FILE} pull ${compose_name}"
+        done
+        # Recreate only the specified services
+        local compose_names=""
+        for svc in $services_to_pull; do
+            compose_names="${compose_names} ${SVC_COMPOSE_NAME[$svc]}"
+        done
+        nas_docker "compose -f ${NAS_COMPOSE_FILE} up -d ${compose_names}"
+    else
+        # Pull and deploy everything
+        nas_docker "compose -f ${NAS_COMPOSE_FILE} pull"
+        nas_docker "compose -f ${NAS_COMPOSE_FILE} up -d"
+    fi
 
-    # Start new container
-    nas_docker "run -d --name ${container} --restart unless-stopped -p ${ports} ${extra} ${image}"
-    ok "Kontener ${container} uruchomiony (port ${ports})"
+    ok "Deploy na NAS zakończony"
+}
+
+sync_compose() {
+    log "Kopiowanie compose.nas.yaml na NAS..."
+    nas_ssh "mkdir -p ${NAS_COMPOSE_DIR}"
+    scp "$LOCAL_COMPOSE_FILE" "${NAS_USER}@${NAS_HOST}:${NAS_COMPOSE_FILE}"
+    ok "compose.nas.yaml skopiowany do ${NAS_COMPOSE_FILE}"
 }
 
 deploy_service() {
@@ -163,54 +171,51 @@ deploy_service() {
         warn "Pomijanie buildu (--skip-build)"
     fi
 
-    transfer_image "$svc"
-    restart_container "$svc"
-
-    ok "Deploy ${svc} zakończony!"
-}
-
-ensure_nas_network() {
-    log "Sprawdzanie sieci Docker na NAS..."
-    if ! nas_docker "network inspect ${NAS_NETWORK}" &>/dev/null; then
-        log "Tworzenie sieci ${NAS_NETWORK}..."
-        nas_docker "network create ${NAS_NETWORK}"
-    fi
-
-    # Ensure DB is connected to the network
-    nas_docker "network connect ${NAS_NETWORK} lenie-ai-db" 2>/dev/null || true
-    ok "Sieć ${NAS_NETWORK} OK"
+    push_image "$svc"
+    ok "Deploy ${svc} — obraz w registry"
 }
 
 show_status() {
     echo ""
     log "Stan kontenerów na NAS:"
-    nas_docker "ps --filter name=lenie-ai --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
+    nas_docker "compose -f ${NAS_COMPOSE_FILE} ps" 2>/dev/null || \
+        nas_docker "ps --filter name=lenie --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'"
 }
 
 usage() {
-    echo "Usage: $0 [--skip-build] [service|all]"
+    echo "Usage: $0 [OPTIONS] [service ...]"
     echo ""
     echo "Services: frontend, app2, backend, db, all (default)"
     echo ""
     echo "Options:"
-    echo "  --skip-build    Skip Docker build, only transfer and restart"
+    echo "  --skip-build      Skip Docker build, push existing local image"
+    echo "  --compose-only    Only run compose up on NAS (no build/push)"
+    echo "  --sync-compose    Copy compose.nas.yaml to NAS before deploying"
+    echo "  --help, -h        Show this help"
     echo ""
     echo "Examples:"
-    echo "  $0                    # Build and deploy all services"
-    echo "  $0 frontend           # Build and deploy frontend only"
-    echo "  $0 --skip-build app2  # Transfer and restart app2 without rebuilding"
+    echo "  $0                           # Build, push & deploy all"
+    echo "  $0 frontend                  # Build, push & deploy frontend only"
+    echo "  $0 --skip-build backend      # Push existing image & deploy"
+    echo "  $0 --compose-only            # Just compose up on NAS"
+    echo "  $0 --sync-compose            # Sync compose file and deploy all"
+    echo "  $0 --sync-compose frontend   # Sync compose file and deploy frontend"
     exit 0
 }
 
 # --- Main ---
 SKIP_BUILD="false"
+COMPOSE_ONLY="false"
+SYNC_COMPOSE="false"
 SERVICES=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --skip-build) SKIP_BUILD="true"; shift ;;
-        --help|-h)    usage ;;
-        all)          SERVICES="$ALL_SERVICES"; shift ;;
+        --skip-build)    SKIP_BUILD="true"; shift ;;
+        --compose-only)  COMPOSE_ONLY="true"; shift ;;
+        --sync-compose)  SYNC_COMPOSE="true"; shift ;;
+        --help|-h)       usage ;;
+        all)             SERVICES="$ALL_SERVICES"; shift ;;
         frontend|app2|backend|db) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
@@ -222,25 +227,37 @@ if [ -z "$SERVICES" ]; then
 fi
 
 echo -e "${GREEN}============================================${NC}"
-echo -e "${GREEN}  Lenie NAS Deploy${NC}"
+echo -e "${GREEN}  Lenie NAS Deploy (Registry)${NC}"
 echo -e "${GREEN}  NAS: ${NAS_HOST}${NC}"
+echo -e "${GREEN}  Registry: ${REGISTRY}${NC}"
 echo -e "${GREEN}  Services: ${SERVICES}${NC}"
 echo -e "${GREEN}  Skip build: ${SKIP_BUILD}${NC}"
+echo -e "${GREEN}  Compose only: ${COMPOSE_ONLY}${NC}"
 echo -e "${GREEN}============================================${NC}"
 
-check_docker_local
 check_nas_connection
 
-# Ensure network exists if deploying backend
-if [[ "$SERVICES" == *"backend"* ]]; then
-    ensure_nas_network
+# Sync compose file if requested
+if [ "$SYNC_COMPOSE" = "true" ]; then
+    sync_compose
 fi
 
-for svc in $SERVICES; do
-    deploy_service "$svc" "$SKIP_BUILD"
-done
+if [ "$COMPOSE_ONLY" = "true" ]; then
+    # Only compose up — no build, no push
+    deploy_on_nas "$SERVICES"
+    show_status
+else
+    # Full workflow: build → push → deploy
+    check_docker_local
+    check_registry
 
-show_status
+    for svc in $SERVICES; do
+        deploy_service "$svc" "$SKIP_BUILD"
+    done
+
+    deploy_on_nas "$SERVICES"
+    show_status
+fi
 
 echo ""
 ok "Deploy zakończony!"
@@ -249,4 +266,7 @@ echo "  Frontend:    http://${NAS_HOST}:3000"
 echo "  Admin Panel: http://${NAS_HOST}:3001"
 echo "  Backend API: http://${NAS_HOST}:5055"
 echo "  PostgreSQL:  ${NAS_HOST}:5434"
+echo "  Vault UI:    http://${NAS_HOST}:8210/ui"
+echo ""
+echo "  Registry:    http://${REGISTRY}/v2/_catalog"
 echo ""
