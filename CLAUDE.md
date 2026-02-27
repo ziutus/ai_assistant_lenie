@@ -178,6 +178,10 @@ Document processing states: `URL_ADDED` → `DOCUMENT_INTO_DATABASE` → ... →
 
 Access layer: raw `psycopg2` queries (no ORM). Connection via `POSTGRESQL_HOST/DATABASE/USER/PASSWORD/PORT` env vars.
 
+## File Export Convention
+
+When saving text files (chat exports, notes, analysis results) during a conversation, **always save them to `.claude/exports/`** instead of the project root. Create the directory if it doesn't exist. This keeps the project root clean and the directory is already in `.gitignore`.
+
 ## External Services
 
 - **AI/LLM**: OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bielik
