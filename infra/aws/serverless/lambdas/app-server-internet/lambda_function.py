@@ -12,8 +12,10 @@ logging.basicConfig(level=logging.DEBUG)
 
 cfg = load_config()
 
-openai_organization = cfg.require("OPENAI_ORGANIZATION")
-openai_api_key = cfg.require("OPENAI_API_KEY")
+llm_provider = cfg.get("LLM_PROVIDER")
+if llm_provider == "openai":
+    openai_organization = cfg.require("OPENAI_ORGANIZATION")
+    openai_api_key = cfg.require("OPENAI_API_KEY")
 
 embedding_model = cfg.require("EMBEDDING_MODEL")
 
