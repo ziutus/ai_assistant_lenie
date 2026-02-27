@@ -129,6 +129,34 @@ so that future features requiring YouTube metadata/download can be implemented w
 
 ---
 
+## Backlog: Infrastructure — Vault
+
+### B-78: Vault Auto-Unseal via AWS KMS for NAS Deployment
+
+As a **developer**,
+I want HashiCorp Vault on NAS to automatically unseal using AWS KMS,
+so that Vault restarts (planned or unplanned) don't require manual unseal intervention.
+
+**Origin:** Sprint 6 (Epic 20) — while integrating config_loader (Story 20-4), the NAS Vault deployment needed production-grade reliability. Manual unseal after every container restart was operationally unacceptable for a secrets backend.
+
+**What was implemented (commit 60eddb3):**
+1. **CloudFormation template** (`infra/aws/cloudformation/templates/vault-kms-unseal.yaml`) — KMS key + IAM user dedicated to Vault auto-unseal, deployed on personal AWS account (`ziutus-Administrator` profile, eu-central-1)
+2. **NAS Compose improvements** (`infra/docker/compose.nas.yaml`) — Vault pinned to 1.21.3, added `env_file` for AWS credentials, healthcheck (30s interval, 5s timeout)
+3. **Configuration templates** — `vault.env.example` with AWS KMS credential placeholders
+4. **Documentation** — expanded `docs/CICD/Vault_Setup.md` (auto-unseal section + migration steps) and `docs/CICD/NAS_Deployment.md`
+
+**Acceptance Criteria:**
+- ✅ Vault container auto-unseals on restart without manual intervention
+- ✅ KMS key and IAM user provisioned via CloudFormation (IaC, not manual)
+- ✅ AWS credentials passed via env_file (not hardcoded in compose)
+- ✅ No AWS account numbers committed to repository
+- ✅ Documentation covers setup, migration from Shamir to transit seal, and troubleshooting
+
+**Status:** done (2026-02-27)
+**Related:** Story 20-2 (Vault backend), Story 20-4 (config_loader integration)
+
+---
+
 ## Backlog: Config Loader Improvements
 
 ### B-65: Handle Empty String Values in Config.require()
@@ -185,7 +213,7 @@ so that changes to secret management CLI operations can be verified without requ
 - Vault/SSM operations tested with mocked clients
 - All tests pass in CI (no live connections required)
 
-**Status:** backlog
+**Status:** subsumed by Story 20-6 (Task 10 in tech spec covers all test scope + 30 additional tests for new commands)
 
 ---
 

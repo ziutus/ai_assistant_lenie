@@ -1,0 +1,421 @@
+# vars-classification.yaml — Single Source of Truth for all configuration variables
+# Used by env_to_vault.py for compare, review, generate, validate, remove commands.
+# Maintained manually; future: auto-discovery from codebase scans.
+
+metadata:
+  project_code: lenie
+  version: "1.0"
+  description: "Single Source of Truth for all configuration variables in Project Lenie"
+
+# Named backend instances — each has connection metadata.
+# connection_from documents which bootstrap vars are needed; actual connection
+# uses existing get_vault_client() / get_ssm_client() code.
+backends:
+  nas-vault:
+    description: "HashiCorp Vault on local NAS"
+    type: vault_kv2
+    mount: secret
+    path_pattern: "{project_code}/{env}"
+    connection_from: [VAULT_ADDR, VAULT_TOKEN]
+  aws-ssm-main:
+    description: "AWS SSM Parameter Store (main application account)"
+    type: aws_ssm
+    path_pattern: "/{project_code}/{env}/{key}"
+    region: us-east-1
+    profile: default
+  aws-ssm-2025:
+    description: "AWS SSM Parameter Store (target migration account)"
+    type: aws_ssm
+    path_pattern: "/{project_code}/{env}/{key}"
+    region: eu-central-1
+    profile: lenie-ai-2025-admin
+
+# Per-environment backend mapping.
+environments:
+  dev:
+    backends: [nas-vault, aws-ssm-main]
+  prod:
+    backends: [aws-ssm-2025]
+  qa:
+    backends: [aws-ssm-2025]
+
+# Variable groups — organized by functional area.
+# Per-variable fields:
+#   description  — human-readable purpose
+#   type         — "secret" or "config"
+#                  Derived defaults: secret -> ssm_type: SecureString, k8s: Secret
+#                                    config -> ssm_type: String, k8s: ConfigMap
+#   required     — true/false (or required_when for conditional)
+#   default      — default value (optional)
+#   example      — example value for env-example generation (optional)
+#   used_by      — list of deployment targets (optional)
+groups:
+  bootstrap:
+    description: "Variables that stay in real environment — not uploaded to secret backends"
+    variables:
+      SECRETS_BACKEND:
+        description: "Secret backend to use (env | vault | aws)"
+        type: config
+        required: true
+        default: "env"
+        example: "env"
+        used_by: [docker, lambda, local]
+      SECRETS_ENV:
+        description: "Environment name for secret paths (dev | prod | qa)"
+        type: config
+        required: true
+        default: "dev"
+        example: "dev"
+        used_by: [docker, lambda, local]
+      VAULT_ADDR:
+        description: "HashiCorp Vault server URL"
+        type: config
+        required_when: "SECRETS_BACKEND=vault"
+        example: "http://vault.local:8200"
+        used_by: [docker, local]
+      VAULT_TOKEN:
+        description: "HashiCorp Vault authentication token"
+        type: secret
+        required_when: "SECRETS_BACKEND=vault"
+        used_by: [docker, local]
+      VAULT_ENV:
+        description: "Deprecated — use SECRETS_ENV instead. Fallback for SECRETS_ENV."
+        type: config
+        required: false
+        status: deprecated
+        used_by: [local]
+      ENV_DATA:
+        description: "Date of last configuration data update, logged at startup"
+        type: config
+        required: true
+        example: "2025.10.02"
+        used_by: [docker, lambda, local]
+      PROJECT_CODE:
+        description: "Project code used in secret paths"
+        type: config
+        required: false
+        default: "lenie"
+        example: "lenie"
+        used_by: [docker, lambda, local]
+      AWS_REGION:
+        description: "Default AWS region for SDK calls"
+        type: config
+        required: false
+        default: "eu-central-1"
+        example: "eu-central-1"
+        used_by: [docker, lambda, local]
+
+  database:
+    description: "PostgreSQL connection settings"
+    variables:
+      POSTGRESQL_HOST:
+        description: "Database server hostname"
+        type: config
+        required_when: "BACKEND_TYPE=postgresql"
+        example: "lenie-ai-db"
+        used_by: [docker, lambda, local]
+      POSTGRESQL_DATABASE:
+        description: "Database name"
+        type: config
+        required_when: "BACKEND_TYPE=postgresql"
+        example: "lenie-ai"
+        used_by: [docker, lambda, local]
+      POSTGRESQL_USER:
+        description: "Database user"
+        type: config
+        required_when: "BACKEND_TYPE=postgresql"
+        example: "postgres"
+        used_by: [docker, lambda, local]
+      POSTGRESQL_PASSWORD:
+        description: "Database password"
+        type: secret
+        required_when: "BACKEND_TYPE=postgresql"
+        used_by: [docker, lambda, local]
+      POSTGRESQL_PORT:
+        description: "Database port"
+        type: config
+        required_when: "BACKEND_TYPE=postgresql"
+        default: "5432"
+        example: "5432"
+        used_by: [docker, lambda, local]
+      POSTGRESQL_SSLMODE:
+        description: "SSL mode for PostgreSQL (set to 'require' for AWS RDS)"
+        type: config
+        required: false
+        example: "require"
+        used_by: [docker, lambda, local]
+
+  llm:
+    description: "LLM provider and model settings"
+    variables:
+      LLM_PROVIDER:
+        description: "LLM backend provider (openai | bedrock | vertex)"
+        type: config
+        required: true
+        example: "openai"
+        used_by: [docker, lambda, local]
+      OPENAI_API_KEY:
+        description: "OpenAI API key"
+        type: secret
+        required_when: "LLM_PROVIDER=openai"
+        used_by: [docker, lambda, local]
+      OPENAI_ORGANIZATION:
+        description: "OpenAI organization ID"
+        type: config
+        required_when: "LLM_PROVIDER=openai"
+        used_by: [docker, lambda, local]
+      EMBEDDING_MODEL:
+        description: "Primary model for vector embeddings"
+        type: config
+        required: true
+        example: "BAAI/bge-multilingual-gemma2"
+        used_by: [docker, lambda, local]
+      EMBEDDING_MODEL2:
+        description: "Secondary/fallback embedding model"
+        type: config
+        required: false
+        example: "text-embedding-ada-002"
+        used_by: [docker, local]
+      AI_MODEL_SUMMARY:
+        description: "LLM model for generating summaries"
+        type: config
+        required: true
+        example: "gpt-4o-2024-05-13"
+        used_by: [docker, lambda, local]
+
+  aws:
+    description: "AWS credentials and resource identifiers"
+    variables:
+      AWS_ACCESS_KEY_ID:
+        description: "AWS access key ID for SDK calls"
+        type: secret
+        required: false
+        used_by: [docker, local]
+      AWS_SECRET_ACCESS_KEY:
+        description: "AWS secret access key for SDK calls"
+        type: secret
+        required: false
+        used_by: [docker, local]
+      AWS_S3_WEBSITE_CONTENT:
+        description: "S3 bucket name for downloaded webpage content"
+        type: config
+        required: false
+        example: "lenie-s3-tmp"
+        used_by: [docker, lambda, local]
+      AWS_S3_TRANSCRIPT:
+        description: "S3 bucket name for video/audio transcripts"
+        type: config
+        required: false
+        example: "stalker-video-to-text"
+        used_by: [docker, lambda, local]
+      AWS_QUEUE_URL_ADD:
+        description: "SQS queue URL for url_add async processing"
+        type: config
+        required: false
+        example: "https://sqs.us-east-1.amazonaws.com/<account-id>/lenie_websites"
+        used_by: [lambda]
+
+  app:
+    description: "Application runtime settings"
+    variables:
+      PORT:
+        description: "HTTP server port"
+        type: config
+        required: true
+        default: "5000"
+        example: "5000"
+        used_by: [docker, local]
+      DEBUG:
+        description: "Enable debug mode and verbose logging"
+        type: config
+        required: false
+        default: "false"
+        example: "false"
+        used_by: [docker, local]
+      USE_SSL:
+        description: "Enable SSL for Flask server"
+        type: config
+        required: false
+        default: "false"
+        example: "false"
+        used_by: [docker, local]
+      USE_CACHE:
+        description: "Enable caching for downloaded content"
+        type: config
+        required: false
+        default: "True"
+        example: "True"
+        used_by: [docker, local]
+      BACKEND_TYPE:
+        description: "Database backend type"
+        type: config
+        required: true
+        default: "postgresql"
+        example: "postgresql"
+        used_by: [docker, lambda, local]
+      CACHE_DIR:
+        description: "Directory for YouTube transcript cache"
+        type: config
+        required: false
+        default: "cache"
+        example: "tmp/youtube_to_text"
+        used_by: [docker, local]
+      STALKER_API_KEY:
+        description: "API authentication key for all endpoints"
+        type: secret
+        required: true
+        used_by: [docker, lambda, local]
+      STALKER_AWS_API_URL:
+        description: "AWS API Gateway URL for url_add"
+        type: config
+        required: false
+        example: "https://<api-id>.execute-api.us-east-1.amazonaws.com/v1/url_add"
+        used_by: [local]
+      STALKER_AWS_API_URL2:
+        description: "AWS API Gateway base URL (v1)"
+        type: config
+        required: false
+        example: "https://<api-id>.execute-api.us-east-1.amazonaws.com/v1"
+        used_by: [local]
+      STALKER_AWS_API_KEY:
+        description: "API key for AWS API Gateway access"
+        type: secret
+        required: false
+        used_by: [local]
+
+  integrations:
+    description: "Third-party service API keys and endpoints"
+    variables:
+      ASSEMBLYAI:
+        description: "AssemblyAI API key for speech-to-text ($0.12/hour)"
+        type: secret
+        required: false
+        used_by: [docker, local]
+      FIRECRAWL_API_KEY:
+        description: "Firecrawl API key for web scraping"
+        type: secret
+        required: false
+        used_by: [docker, local]
+      LANGFUSE_HOST:
+        description: "Langfuse observability platform URL"
+        type: config
+        required: false
+        example: "https://cloud.langfuse.com"
+        used_by: [docker, local]
+      LANGFUSE_SECRET_KEY:
+        description: "Langfuse secret key for authentication"
+        type: secret
+        required: false
+        used_by: [docker, local]
+      LANGFUSE_PUBLIC_KEY:
+        description: "Langfuse public key for client-side"
+        type: config
+        required: false
+        used_by: [docker, local]
+      CLOUDFERRO_SHERLOCK_KEY:
+        description: "CloudFerro Bielik/Sherlock API key"
+        type: secret
+        required: false
+        used_by: [local]
+      SERPER_DEV_APIKEY:
+        description: "Serper.dev API key for web search"
+        type: secret
+        required: false
+        used_by: [local]
+      OPENROUTER_API_KEY:
+        description: "OpenRouter API key for multi-provider LLM routing"
+        type: secret
+        required: false
+        used_by: [local]
+
+  media:
+    description: "Media processing settings"
+    variables:
+      TRANSCRIPT_PROVIDER:
+        description: "Speech-to-text provider (assemblyai | aws_transcribe)"
+        type: config
+        required: false
+        default: "assemblyai"
+        example: "assemblyai"
+        used_by: [docker, local]
+      YOUTUBE_DEFAULT_LANGUAGE:
+        description: "Default language for YouTube transcript extraction"
+        type: config
+        required: false
+        default: "pl"
+        example: "pl"
+        used_by: [docker, local]
+
+  gcp:
+    description: "Google Cloud Platform settings"
+    variables:
+      GCP_PROJECT_ID:
+        description: "GCP project ID for Vertex AI"
+        type: config
+        required_when: "LLM_PROVIDER=vertex"
+        example: "lenie-ai"
+        used_by: [local]
+      GCP_LOCATION:
+        description: "GCP region for Vertex AI"
+        type: config
+        required_when: "LLM_PROVIDER=vertex"
+        example: "europe-central2"
+        used_by: [local]
+      GCP_FIRESTORE_PROJECT_ID:
+        description: "GCP project ID for Firestore database"
+        type: config
+        required: false
+        example: "lenie-ai-478308"
+        used_by: [local]
+      GCP_FIRESTORE_DATABASE:
+        description: "Firestore database name"
+        type: config
+        required: false
+        example: "lenie-ai"
+        used_by: [local]
+
+  legacy:
+    description: "Deprecated variables — scheduled for removal"
+    variables:
+      AWS_FREE_TIER_ACCESS_KEY_ID:
+        description: "AWS Free Tier access key (deprecated)"
+        type: secret
+        required: false
+        status: deprecated
+        used_by: [local]
+      AWS_FREE_TIER_SECRET_ACCESS_KEY:
+        description: "AWS Free Tier secret key (deprecated)"
+        type: secret
+        required: false
+        status: deprecated
+        used_by: [local]
+      AWS_FREE_TIER_REGION:
+        description: "AWS Free Tier region (deprecated)"
+        type: config
+        required: false
+        status: deprecated
+        used_by: [local]
+      AWS_FREE_TIER_PROFILE:
+        description: "AWS Free Tier profile name (deprecated)"
+        type: config
+        required: false
+        status: deprecated
+        used_by: [local]
+      AWS_FREE_TIER_VPN_SERVER:
+        description: "AWS Free Tier VPN server address (deprecated)"
+        type: config
+        required: false
+        status: deprecated
+        used_by: [local]
+      WEBSITES_CACHE_DIR:
+        description: "Cache directory for websites (deprecated, use CACHE_DIR)"
+        type: config
+        required: false
+        status: deprecated
+        used_by: [local]
+      LINKS_CACHE_DIR:
+        description: "Cache directory for links (deprecated, use CACHE_DIR)"
+        type: config
+        required: false
+        status: deprecated
+        used_by: [local]
