@@ -447,3 +447,36 @@ so that CI runs on a self-managed AWS EC2 instance with full control over the en
 
 **Depends on:** B-70
 **Status:** backlog
+
+---
+
+### B-75: Standardize Node.js Version to 24 LTS
+
+As a **developer**,
+I want all environments to use Node.js 24 LTS consistently,
+so that frontends build on a supported, up-to-date runtime with the same behavior everywhere.
+
+**Origin:** Docker builds already use `node:24` (`web_interface_react/Dockerfile`, `web_interface_app2/Dockerfile`), but documentation still stated `>= 18`. Node.js 18 reached EOL in April 2025. Node.js 20 EOL is April 2026. The project should standardize on Node.js 24 LTS (active LTS, supported until April 2028).
+
+**Current state:**
+- Docker builds: `node:24` (already up to date)
+- `docs/development-guide.md`: lists `>= 22` as prerequisite (updated from `>= 18`)
+- `web_landing_page/`: Next.js 14.2, built locally — not verified against Node.js 24
+- No `.nvmrc` or `engines` field in `package.json` to enforce version
+
+**Scope:**
+1. Verify `web_landing_page/` builds correctly on Node.js 24 (Next.js 14.2 compatibility)
+2. Add `engines` field to all `package.json` files: `"node": ">=22"`
+3. Add `.nvmrc` file to project root: `24` (for developers using nvm)
+4. Update `docs/development-guide.md` prerequisite to `>= 22 (recommended: 24 LTS)`
+5. Verify all npm scripts work on Node.js 24 (`npm install`, `npm run build`, `npm test`)
+6. Update CI configs (when restored) to use Node.js 24
+
+**Acceptance Criteria:**
+- All three frontends build successfully on Node.js 24
+- `package.json` files have `engines` field enforcing `>= 22`
+- `.nvmrc` present in project root
+- No deprecation warnings from Node.js 24 during builds
+- Documentation reflects Node.js 24 as the standard
+
+**Status:** backlog

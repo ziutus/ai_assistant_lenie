@@ -14,10 +14,13 @@
 
 **Upgrade plan ([B-68](../_bmad-output/planning-artifacts/epics/backlog.md#b-68-upgrade-python-runtime-in-lambda-to-312)):** Migrate to Python 3.12 or 3.13. Python 3.11 EOL: October 2027. The upgrade is straightforward thanks to the SSM parameter `/${ProjectCode}/${Environment}/python/lambda-runtime-version` — update one parameter, rebuild Lambda layer, update Powertools layer ARN variant, update Docker base image (`python:3.11-slim` → `3.12-slim`), verify dependency compatibility. No blockers — can start anytime.
 
-### Node.js 18+
+### Node.js
 
 - **Used in:** Frontend build (Vite/React), landing page (Next.js)
+- **Versions:** Docker builds: **24 LTS** (`web_interface_react/Dockerfile`, `web_interface_app2/Dockerfile`). Local developer requirement: **>= 18** (outdated — should be >= 20).
 - **Why:** Standard runtime for React tooling. No custom Node.js backend code — used only for build and dev server.
+
+**Upgrade plan ([B-75](../_bmad-output/planning-artifacts/epics/backlog.md#b-75-standardize-nodejs-version-to-24-lts)):** Standardize on Node.js 24 LTS across all environments. Docker images already use `node:24`. Remaining work: update `docs/development-guide.md` prerequisite (>= 18 → >= 22), verify `web_landing_page/` builds on Node.js 24, update any CI configs. Node.js 18 is already EOL (Apr 2025), Node.js 20 EOL Apr 2026.
 
 ## Package Managers
 
