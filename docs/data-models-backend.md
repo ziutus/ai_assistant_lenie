@@ -1,6 +1,6 @@
 # Data Models — Backend
 
-> Generated: 2026-02-13 | Part: backend | Database: PostgreSQL 17 + pgvector
+> Generated: 2026-02-13 | Part: backend | Database: PostgreSQL 18 + pgvector
 
 ## Database Schema
 

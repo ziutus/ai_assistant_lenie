@@ -8,6 +8,8 @@ from library.config_loader import (
     EnvBackend,
     VaultBackend,
     _create_backend,
+    _get_project_code,
+    _get_secrets_env,
     get_config,
     load_config,
     reset_config,
@@ -172,7 +174,7 @@ class TestVaultBackend(unittest.TestCase):
         with patch.dict(os.environ, {
             "VAULT_ADDR": "http://vault:8200",
             "VAULT_TOKEN": "bad-token",
-            "VAULT_ENV": "dev",
+            "SECRETS_ENV": "dev",
         }, clear=True):
             # Need to patch hvac import inside VaultBackend.load()
             with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
@@ -197,7 +199,7 @@ class TestVaultBackend(unittest.TestCase):
         with patch.dict(os.environ, {
             "VAULT_ADDR": "http://vault:8200",
             "VAULT_TOKEN": "test-token",
-            "VAULT_ENV": "dev",
+            "SECRETS_ENV": "dev",
             "SECRETS_BACKEND": "vault",
         }, clear=True):
             with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
@@ -209,7 +211,7 @@ class TestVaultBackend(unittest.TestCase):
         self.assertEqual(result["OPENAI_API_KEY"], "sk-vault-secret")
         # Bootstrap env vars preserved
         self.assertEqual(result["VAULT_ADDR"], "http://vault:8200")
-        self.assertEqual(result["VAULT_ENV"], "dev")
+        self.assertEqual(result["SECRETS_ENV"], "dev")
         self.assertEqual(result["SECRETS_BACKEND"], "vault")
         # Correct Vault path called
         mock_client.secrets.kv.v2.read_secret_version.assert_called_once_with(
@@ -224,7 +226,7 @@ class TestVaultBackend(unittest.TestCase):
         with patch.dict(os.environ, {
             "VAULT_ADDR": "http://vault:8200",
             "VAULT_TOKEN": "tok",
-            "VAULT_ENV": "dev",
+            "SECRETS_ENV": "dev",
         }, clear=True):
             with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
                 backend = VaultBackend()
@@ -244,7 +246,7 @@ class TestVaultBackend(unittest.TestCase):
         with patch.dict(os.environ, {
             "VAULT_ADDR": "http://vault:8200",
             "VAULT_TOKEN": "tok",
-            "VAULT_ENV": "dev",
+            "SECRETS_ENV": "dev",
         }, clear=True):
             with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
                 backend = VaultBackend()
@@ -252,6 +254,31 @@ class TestVaultBackend(unittest.TestCase):
 
         # Vault value overrides bootstrap
         self.assertEqual(result["ENV_DATA"], "prod")
+
+    @patch("library.config_loader.hvac", create=True)
+    def test_vault_env_backward_compat(self, mock_hvac_module):
+        """VAULT_ENV still works when SECRETS_ENV is not set (backward compat)."""
+        mock_client = MagicMock()
+        mock_client.is_authenticated.return_value = True
+        mock_client.secrets.kv.v2.read_secret_version.return_value = {
+            "data": {"data": {"KEY": "val"}}
+        }
+        mock_hvac_module.Client.return_value = mock_client
+
+        with patch.dict(os.environ, {
+            "VAULT_ADDR": "http://vault:8200",
+            "VAULT_TOKEN": "tok",
+            "VAULT_ENV": "staging",
+        }, clear=True):
+            with patch.dict("sys.modules", {"hvac": mock_hvac_module}):
+                backend = VaultBackend()
+                result = backend.load()
+
+        mock_client.secrets.kv.v2.read_secret_version.assert_called_once_with(
+            path="lenie/staging",
+            mount_point="secret",
+        )
+        self.assertEqual(result["KEY"], "val")
 
 
 class TestAWSSSMBackend(unittest.TestCase):
@@ -275,7 +302,7 @@ class TestAWSSSMBackend(unittest.TestCase):
         mock_boto3_module.Session.return_value = mock_session
 
         with patch.dict(os.environ, {
-            "VAULT_ENV": "dev",
+            "SECRETS_ENV": "dev",
             "AWS_REGION": "eu-central-1",
             "SECRETS_BACKEND": "aws",
         }, clear=True):
@@ -286,7 +313,7 @@ class TestAWSSSMBackend(unittest.TestCase):
         self.assertEqual(result["POSTGRESQL_HOST"], "db.ssm.local")
         self.assertEqual(result["OPENAI_API_KEY"], "sk-ssm-secret")
         # Bootstrap env vars preserved
-        self.assertEqual(result["VAULT_ENV"], "dev")
+        self.assertEqual(result["SECRETS_ENV"], "dev")
         self.assertEqual(result["AWS_REGION"], "eu-central-1")
         self.assertEqual(result["SECRETS_BACKEND"], "aws")
         # Correct path used
@@ -326,7 +353,7 @@ class TestAWSSSMBackend(unittest.TestCase):
         mock_boto3_module.Session.side_effect = Exception("No credentials")
 
         with patch.dict(os.environ, {
-            "VAULT_ENV": "dev",
+            "SECRETS_ENV": "dev",
             "AWS_REGION": "eu-central-1",
         }, clear=True):
             with patch.dict("sys.modules", {"boto3": mock_boto3_module}):
@@ -345,7 +372,7 @@ class TestAWSSSMBackend(unittest.TestCase):
         mock_boto3_module.Session.return_value = mock_session
 
         with patch.dict(os.environ, {
-            "VAULT_ENV": "dev",
+            "SECRETS_ENV": "dev",
             "AWS_REGION": "eu-central-1",
         }, clear=True):
             with patch.dict("sys.modules", {"boto3": mock_boto3_module}):
@@ -353,7 +380,7 @@ class TestAWSSSMBackend(unittest.TestCase):
                 result = backend.load()
 
         # Should return bootstrap vars even with no SSM params
-        self.assertEqual(result["VAULT_ENV"], "dev")
+        self.assertEqual(result["SECRETS_ENV"], "dev")
         self.assertNotIn("POSTGRESQL_HOST", result)
 
     @patch("library.config_loader.boto3", create=True)
@@ -370,7 +397,7 @@ class TestAWSSSMBackend(unittest.TestCase):
         mock_boto3_module.Session.return_value = mock_session
 
         with patch.dict(os.environ, {
-            "VAULT_ENV": "dev",
+            "SECRETS_ENV": "dev",
             "AWS_REGION": "eu-central-1",
             "ENV_DATA": "dev",
         }, clear=True):
@@ -379,6 +406,91 @@ class TestAWSSSMBackend(unittest.TestCase):
                 result = backend.load()
 
         self.assertEqual(result["ENV_DATA"], "prod")
+
+    @patch("library.config_loader.boto3", create=True)
+    def test_vault_env_backward_compat(self, mock_boto3_module):
+        """VAULT_ENV still works when SECRETS_ENV is not set (backward compat)."""
+        mock_ssm = MagicMock()
+        mock_paginator = MagicMock()
+        mock_paginator.paginate.return_value = [
+            {"Parameters": [{"Name": "/lenie/staging/KEY", "Value": "val"}]}
+        ]
+        mock_ssm.get_paginator.return_value = mock_paginator
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_ssm
+        mock_boto3_module.Session.return_value = mock_session
+
+        with patch.dict(os.environ, {
+            "VAULT_ENV": "staging",
+            "AWS_REGION": "eu-central-1",
+        }, clear=True):
+            with patch.dict("sys.modules", {"boto3": mock_boto3_module}):
+                backend = AWSSSMBackend()
+                result = backend.load()
+
+        mock_paginator.paginate.assert_called_once_with(
+            Path="/lenie/staging/",
+            Recursive=False,
+            WithDecryption=True,
+        )
+        self.assertEqual(result["KEY"], "val")
+
+    @patch("library.config_loader.boto3", create=True)
+    def test_project_code_parametrization(self, mock_boto3_module):
+        """PROJECT_CODE env var overrides hardcoded 'lenie' in path."""
+        mock_ssm = MagicMock()
+        mock_paginator = MagicMock()
+        mock_paginator.paginate.return_value = [
+            {"Parameters": [{"Name": "/myproj/dev/KEY", "Value": "val"}]}
+        ]
+        mock_ssm.get_paginator.return_value = mock_paginator
+        mock_session = MagicMock()
+        mock_session.client.return_value = mock_ssm
+        mock_boto3_module.Session.return_value = mock_session
+
+        with patch.dict(os.environ, {
+            "SECRETS_ENV": "dev",
+            "AWS_REGION": "eu-central-1",
+            "PROJECT_CODE": "myproj",
+        }, clear=True):
+            with patch.dict("sys.modules", {"boto3": mock_boto3_module}):
+                backend = AWSSSMBackend()
+                result = backend.load()
+
+        mock_paginator.paginate.assert_called_once_with(
+            Path="/myproj/dev/",
+            Recursive=False,
+            WithDecryption=True,
+        )
+        self.assertEqual(result["KEY"], "val")
+
+
+class TestHelpers(unittest.TestCase):
+    """_get_secrets_env and _get_project_code helpers."""
+
+    def test_secrets_env_from_secrets_env(self):
+        with patch.dict(os.environ, {"SECRETS_ENV": "prod"}, clear=True):
+            self.assertEqual(_get_secrets_env(), "prod")
+
+    def test_secrets_env_fallback_to_vault_env(self):
+        with patch.dict(os.environ, {"VAULT_ENV": "staging"}, clear=True):
+            self.assertEqual(_get_secrets_env(), "staging")
+
+    def test_secrets_env_prefers_secrets_env(self):
+        with patch.dict(os.environ, {"SECRETS_ENV": "prod", "VAULT_ENV": "dev"}, clear=True):
+            self.assertEqual(_get_secrets_env(), "prod")
+
+    def test_secrets_env_default_dev(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(_get_secrets_env(), "dev")
+
+    def test_project_code_default(self):
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(_get_project_code(), "lenie")
+
+    def test_project_code_custom(self):
+        with patch.dict(os.environ, {"PROJECT_CODE": "myproj"}, clear=True):
+            self.assertEqual(_get_project_code(), "myproj")
 
 
 if __name__ == "__main__":

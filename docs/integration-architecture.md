@@ -26,7 +26,7 @@
           ┌────────────────────────┼────────────────────────┐
           ▼                        ▼                        ▼
 ┌─────────────────┐    ┌──────────────────┐    ┌──────────────────────┐
-│ PostgreSQL 17   │    │ External APIs    │    │ AWS Services         │
+│ PostgreSQL 18   │    │ External APIs    │    │ AWS Services         │
 │ + pgvector      │    │ OpenAI, Bedrock  │    │ S3, SQS, DynamoDB    │
 │ (web_documents, │    │ Vertex AI        │    │ Transcribe           │
 │  embeddings)    │    │ AssemblyAI       │    │                      │

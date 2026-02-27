@@ -67,7 +67,7 @@ Managed via **uv** package manager. Python >= 3.11, build system: hatchling.
 | **docker** extra | Curated subset for Docker + aws-xray-sdk | `uv sync --extra docker` |
 | **markdown** extra | MarkItDown, html2markdown, html2text | `uv sync --extra markdown` |
 | **all** extra | Everything combined | `uv sync --all-extras` |
-| **dev** group | pytest, pytest-html, pre-commit, ruff | Included by default |
+| **dev** group | pytest, pre-commit, ruff | Included by default |
 
 ### Key Dependencies
 
@@ -136,7 +136,7 @@ uv lock                    # update lock file after pyproject.toml changes
 ```bash
 pytest backend/tests/unit/          # Unit tests (no dependencies)
 pytest backend/tests/integration/   # Integration tests (requires PostgreSQL)
-pytest --self-contained-html --html=pytest-results/  # Full suite with report
+pytest                                               # Full suite
 ```
 
 ## Code Quality

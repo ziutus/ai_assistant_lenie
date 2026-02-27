@@ -21,7 +21,7 @@ To re-initialize the database, delete the named volume (`lenie-ai-db-data-3`) an
 
 ## Database: `lenie-ai`
 
-PostgreSQL 17 with the **pgvector** extension for vector similarity search.
+PostgreSQL 18 with the **pgvector** extension for vector similarity search (RDS: 18.1, Docker/NAS: 17 — pending upgrade via B-69).
 
 ### Table: `public.web_documents`
 

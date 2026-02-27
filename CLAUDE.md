@@ -41,8 +41,8 @@ make lock            # or: cd backend && uv lock
 
 ### Testing
 ```bash
-# All tests with HTML report
-pytest --self-contained-html --html=pytest-results/
+# All tests
+pytest
 
 # Unit tests only
 pytest backend/tests/unit/
@@ -137,9 +137,10 @@ cd web_interface_app2 && ./deploy.sh
 ```
 
 ### CI/CD
-- CircleCI (`.circleci/config.yml`) - EC2-based testing
-- GitLab CI (`.gitlab-ci.yml`) - Qodana security scanning
-- Jenkins (`Jenkinsfile`) - AWS EC2 orchestration, Semgrep security
+**Currently inactive** — all deployments are manual from the developer's machine. Configuration files from previous experimental setups remain in the repository:
+- CircleCI (`.circleci/config.yml`), GitLab CI (`.gitlab-ci.yml`), Jenkins (`Jenkinsfile`)
+
+Restoration tracked in backlog: B-70 (prerequisites), B-71–B-74 (per-tool pipelines). See `docs/technology-choices.md` for details.
 
 ## Security — Secrets Handling
 
@@ -154,7 +155,10 @@ cd web_interface_app2 && ./deploy.sh
 ## Environment Variables
 
 Key variables (see `.env_example` for full list):
-- `ENV_DATA` - Environment identifier (currently only `dev`; `prod` and `qa` will be added post-MVP)
+- `SECRETS_BACKEND` - Secret backend to use: `env` (default, reads `.env`), `vault` (HashiCorp Vault), `aws` (SSM Parameter Store)
+- `SECRETS_ENV` - Environment name for secret paths (`dev`, `prod`, `qa`). Falls back to `VAULT_ENV` if not set. Default: `dev`
+- `PROJECT_CODE` - Project code used in secret paths. Default: `lenie`
+- `ENV_DATA` - Date of last configuration data update (e.g., `2025.10.02`), logged at startup to verify the application loaded fresh config
 - `POSTGRESQL_HOST/DATABASE/USER/PASSWORD/PORT` - Database connection
 - `POSTGRESQL_SSLMODE` - SSL mode for PostgreSQL (set to `require` for AWS RDS)
 - `LLM_PROVIDER` - LLM backend (openai, bedrock, vertex)
@@ -165,7 +169,7 @@ Key variables (see `.env_example` for full list):
 
 ## Database
 
-PostgreSQL 17 with pgvector extension for vector similarity search. Schema defined in `backend/database/init/` (see `backend/database/CLAUDE.md` for full details).
+PostgreSQL 18 with pgvector extension for vector similarity search (RDS: 18.1, Docker/NAS: 17 — pending upgrade via B-69). Schema defined in `backend/database/init/` (see `backend/database/CLAUDE.md` for full details).
 
 Two tables:
 - **`web_documents`** (28 columns) — documents with content, metadata, processing state, and multilingual fields
@@ -174,6 +178,10 @@ Two tables:
 Document processing states: `URL_ADDED` → `DOCUMENT_INTO_DATABASE` → ... → `EMBEDDING_EXIST` (15 states total, see `backend/library/models/stalker_document_status.py`).
 
 Access layer: raw `psycopg2` queries (no ORM). Connection via `POSTGRESQL_HOST/DATABASE/USER/PASSWORD/PORT` env vars.
+
+## File Export Convention
+
+When saving text files (chat exports, notes, analysis results) during a conversation, **always save them to `.claude/exports/`** instead of the project root. Create the directory if it doesn't exist. This keeps the project root clean and the directory is already in `.gitignore`.
 
 ## External Services
 

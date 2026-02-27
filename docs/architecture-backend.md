@@ -15,7 +15,7 @@ Library Service (library/*.py) → business logic, LLM routing, text processing
   ↓
 Data Access (stalker_web_document_db.py, stalker_web_documents_db_postgresql.py) → raw psycopg2
   ↓
-PostgreSQL 17 + pgvector
+PostgreSQL 18 + pgvector
 ```
 
 ## Technology Stack

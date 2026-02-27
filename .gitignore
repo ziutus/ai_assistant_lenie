@@ -91,3 +91,6 @@ token.json
 # Local-only context files (contain account-specific AWS details)
 context_*.txt
 
+# Claude Code chat exports (saved during conversations)
+/.claude/exports/
+

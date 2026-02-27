@@ -1,9 +1,13 @@
 import json
-from library.stalker_web_document_db import StalkerWebDocumentDB
 import logging
+
+from library.config_loader import load_config
+from library.stalker_web_document_db import StalkerWebDocumentDB
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+cfg = load_config()
 
 
 def lambda_handler(event, context):

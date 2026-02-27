@@ -3,7 +3,7 @@
 Local development tools for linting, formatting, and security scanning.
 
 > **Parent document:** [../CLAUDE.md](../CLAUDE.md) — full architecture reference.
-> See also: [CI_CD_Tools.md](CI_CD_Tools.md) — CI pipeline tool integration.
+> See also: [CI_CD_Tools.md](CICD/CI_CD_Tools.md) — CI pipeline tool integration.
 
 ## Linting and Formatting (ruff)
 

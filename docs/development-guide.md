@@ -8,7 +8,7 @@
 |-------------|---------|---------|
 | Python | >= 3.11 | Backend runtime |
 | uv | latest | Python package manager |
-| Node.js | >= 18 | Frontend build |
+| Node.js | >= 22 (recommended: 24 LTS) | Frontend build |
 | npm/yarn | latest | Frontend package manager |
 | Docker + Docker Compose | latest | Local development stack |
 | PostgreSQL | 17 | Database (via Docker or standalone) |
@@ -65,8 +65,8 @@ make build && make dev
 ### Testing
 
 ```bash
-# Full test suite with HTML report
-pytest --self-contained-html --html=pytest-results/
+# Full test suite
+pytest
 
 # Unit tests only (no dependencies)
 pytest backend/tests/unit/
@@ -267,6 +267,71 @@ Copy the `.gitattributes` file from this project's root as a starting point. Adj
 On 2026-02-20, all 29 CloudFormation parameter files in `infra/aws/cloudformation/parameters/dev/` were verified to have **LF line endings** (no CRLF found). The `.gitattributes` rules — the global `* text=auto eol=lf` and explicit `*.json text eol=lf` — are confirmed adequate. Verification included `git check-attr` confirmation that git applies `text: set` and `eol: lf` to parameter files. No additional rules needed.
 
 **Background:** Sprint 3 Story 7-2 encountered a CRLF git warning when committing parameter files. Root cause was the Windows `core.autocrlf=true` setting, not corrupt file content. The `.gitattributes` file (commit `6a9bfd7`) and line ending normalization (commit `88b833e`) resolved the issue. This verification formally closes backlog item B-12.
+
+## Claude Code — MCP Servers Setup
+
+The project uses [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers to give Claude Code direct access to AWS services. Configuration is in `.mcp.json`.
+
+### Configured MCP servers
+
+| Server | Purpose |
+|--------|---------|
+| `awslabs.aws-iac-mcp-server` | CloudFormation template validation, compliance checking, CDK docs |
+| `awslabs.cfn-mcp-server` | Read/list AWS resources by CloudFormation type (readonly) |
+| `awslabs.aws-api-mcp-server` | Execute AWS API calls (read-only mode) |
+| `gitguardian` | Secret detection and remediation |
+
+### Prerequisites
+
+1. **Install `uv`** (Python package manager): https://docs.astral.sh/uv/getting-started/installation/
+
+2. **Install MCP servers as persistent tools** (one-time setup):
+
+```bash
+uv tool install awslabs.aws-iac-mcp-server
+uv tool install awslabs.cfn-mcp-server
+uv tool install awslabs.aws-api-mcp-server
+```
+
+> **Why not `uv tool run --from ...@latest`?** The `@latest` variant downloads packages on every start (~23s), which combined with server startup time (~10s) exceeds Claude Code's default 30-second MCP connection timeout. Pre-installing eliminates the download step.
+
+3. **Set MCP connection timeout** — the default 30 seconds is too short for these servers on Windows:
+
+**Windows (permanent, recommended):**
+```cmd
+setx MCP_TIMEOUT 60000
+```
+
+**Linux/macOS (add to `~/.bashrc` or `~/.zshrc`):**
+```bash
+export MCP_TIMEOUT=60000
+```
+
+After setting the variable, restart your terminal and Claude Code.
+
+### Updating MCP servers
+
+To update to the latest versions:
+
+```bash
+uv tool upgrade awslabs.aws-iac-mcp-server
+uv tool upgrade awslabs.cfn-mcp-server
+uv tool upgrade awslabs.aws-api-mcp-server
+```
+
+### Troubleshooting
+
+If MCP servers fail to connect, check the debug logs:
+
+```bash
+# Latest debug log (look for "timeout" or "Connection failed")
+cat ~/.claude/debug/latest
+```
+
+Common issues:
+- **Connection timeout**: Increase `MCP_TIMEOUT` (e.g., `90000` for 90s)
+- **Command not found**: Verify installation with `uv tool list` — all three `awslabs-*` servers should be listed
+- **AWS credentials**: Servers use `AWS_PROFILE=default` and `AWS_REGION=eu-central-1` (configured in `.mcp.json` env)
 
 ## Future: LLM Text Analysis (Phase 6)
 

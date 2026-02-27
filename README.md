@@ -73,7 +73,7 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 - **Backend** — Flask REST API (Python 3.11) serving 19 endpoints with `x-api-key` auth. Handles document CRUD, text processing, AI embeddings, and vector similarity search
 - **Web Interface** — React 18 SPA for browsing, editing, and AI-processing documents. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask)
 - **Browser Extension** — Chrome/Kiwi Manifest v3 extension for capturing webpages and sending them to the backend
-- **Database** — PostgreSQL 17 with pgvector for vector similarity search (1536-dim embeddings)
+- **Database** — PostgreSQL 18 with pgvector for vector similarity search (1536-dim embeddings)
 - **AWS Serverless** — API Gateway, Lambda functions, SQS queues, Step Functions for cost-optimized processing
 - **AI Services** — OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bielik
 - **Docker** — docker compose stack with Flask + PostgreSQL + React for local development
@@ -208,12 +208,12 @@ Pre-commit hooks include TruffleHog for secret detection. See `.pre-commit-confi
 |----------|-------------|
 | [CLAUDE.md](CLAUDE.md) | Full architecture reference |
 | [docs/Python_Dependencies.md](docs/Python_Dependencies.md) | Dependency management with uv |
-| [docs/Docker_Local.md](docs/Docker_Local.md) | Docker development and deployment |
-| [docs/VM_Setup.md](docs/VM_Setup.md) | Virtual machine setup |
-| [docs/AWS_Infrastructure.md](docs/AWS_Infrastructure.md) | AWS infrastructure |
+| [docs/CICD/Docker_Local.md](docs/CICD/Docker_Local.md) | Docker development and deployment |
+| [docs/CICD/VM_Setup.md](docs/CICD/VM_Setup.md) | Virtual machine setup |
+| [docs/CICD/AWS_Infrastructure.md](docs/CICD/AWS_Infrastructure.md) | AWS infrastructure |
 | [docs/Code_Quality.md](docs/Code_Quality.md) | Linting and security scanning |
 | [docs/API_Usage.md](docs/API_Usage.md) | API request examples |
-| [docs/CI_CD.md](docs/CI_CD.md) | CI/CD pipelines |
+| [docs/CICD/CI_CD.md](docs/CICD/CI_CD.md) | CI/CD pipelines |
 
 ## Why Do We Need Our Own LLM?
 So far, available LLMs operate in English or implicitly translate to English, losing context or meaning.
