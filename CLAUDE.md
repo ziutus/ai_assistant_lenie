@@ -168,7 +168,7 @@ Key variables (see `.env_example` for full list):
 
 ## Database
 
-PostgreSQL 17 with pgvector extension for vector similarity search. Schema defined in `backend/database/init/` (see `backend/database/CLAUDE.md` for full details).
+PostgreSQL 18 with pgvector extension for vector similarity search (RDS: 18.1, Docker/NAS: 17 — pending upgrade via B-69). Schema defined in `backend/database/init/` (see `backend/database/CLAUDE.md` for full details).
 
 Two tables:
 - **`web_documents`** (28 columns) — documents with content, metadata, processing state, and multilingual fields

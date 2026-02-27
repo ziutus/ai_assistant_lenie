@@ -21,7 +21,7 @@ Full Lenie stack running on a local QNAP NAS for personal use and testing.
 | Frontend React | `lenie-ai-frontend` | `192.168.200.7:5005/lenie-ai-frontend` | 3000 | Main web interface |
 | Admin Panel | `lenie-ai-app2` | `192.168.200.7:5005/lenie-ai-app2` | 3001 | Admin panel (app2) |
 | Backend | `lenie-ai-server` | `192.168.200.7:5005/lenie-ai-server` | 5055 | Flask API server |
-| PostgreSQL | `lenie-ai-db` | `192.168.200.7:5005/lenie-ai-db` | 5434 | PostgreSQL 17 + pgvector |
+| PostgreSQL | `lenie-ai-db` | `192.168.200.7:5005/lenie-ai-db` | 5434 | PostgreSQL 17 + pgvector (upgrade to 18 pending — B-69) |
 | Vault | `lenie-vault` | `hashicorp/vault:latest` | 8210 | HashiCorp Vault secrets manager |
 | **Registry** | `lenie-registry` | `registry:2` | 5005 | Private Docker registry (infra) |
 
