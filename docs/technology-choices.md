@@ -223,11 +223,14 @@ All run as one-off tools via `uvx` — not installed in project venv.
 
 ## Frontend
 
-### React 18 + Vite
+### React 18 + Vite 6
 
 - **Used in:** Main frontend (`web_interface_react/`), admin panel (`web_interface_app2/`)
+- **Versions:** React **18.3.1** (current: 19.2.x), Vite **6.0.7** (current: 7.3.x). Landing page already uses React 19.
 - **Why React:** Widely adopted, large ecosystem, familiar to the project owner.
 - **Why Vite:** Fast dev server with HMR, fast builds via esbuild. Replaces Create React App (deprecated).
+
+**Upgrade plan ([B-77](../_bmad-output/planning-artifacts/epics/backlog.md#b-77-upgrade-react-to-19-and-vite-to-7-in-main-frontends)):** Upgrade `web_interface_react/` and `web_interface_app2/` to React 19 + Vite 7. React 19 introduces Server Components, Actions, and improved hooks (`use`, `useFormStatus`). Vite 7 brings performance improvements. Landing page (`web_landing_page/`) already runs React 19 — confirms ecosystem compatibility.
 
 ### Key frontend libraries
 
@@ -238,10 +241,13 @@ All run as one-off tools via `uvx` — not installed in project venv.
 | **axios** | HTTP client | Interceptors for API key injection, better error handling than fetch |
 | **React Bootstrap** | UI components (admin panel) | Quick prototyping with consistent styling |
 
-### Next.js 14.2
+### Next.js 15
 
 - **Used in:** Landing page (`web_landing_page/`)
+- **Version:** **15.5.10** (current: 16.1.x).
 - **Why:** Static site generation for `www.lenie-ai.eu`. 25 static pages deployed to S3 + CloudFront.
+
+**Upgrade plan ([B-77](../_bmad-output/planning-artifacts/epics/backlog.md#b-77-upgrade-react-to-19-and-vite-to-7-in-main-frontends)):** Upgrade to Next.js 16 as part of the frontend upgrade batch. Already runs React 19.
 
 ## AWS SDK
 

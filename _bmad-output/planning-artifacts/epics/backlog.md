@@ -505,3 +505,51 @@ so that test results are available as visual HTML reports in CI artifacts.
 
 **Depends on:** B-70 (CI/CD prerequisites)
 **Status:** backlog
+
+---
+
+### B-77: Upgrade React to 19 and Vite to 7 in Main Frontends
+
+As a **developer**,
+I want all frontends to use React 19 and the latest build tools,
+so that the project benefits from new React features, performance improvements, and security patches.
+
+**Origin:** Main frontend (`web_interface_react/`) and admin panel (`web_interface_app2/`) use React 18.3.1 + Vite 6.0.7. Landing page already uses React 19. React 19 has been stable since Dec 2024 (current: 19.2.x). Vite 7 is current stable (7.3.x).
+
+**Current state:**
+
+| App | React | Vite/Next.js | Target |
+|-----|-------|-------------|--------|
+| `web_interface_react/` | 18.3.1 | Vite 6.0.7 | React 19 + Vite 7 |
+| `web_interface_app2/` | 18.3.1 | Vite 6.0.7 | React 19 + Vite 7 |
+| `web_landing_page/` | 19.0.0 | Next.js 15.5.10 | Next.js 16 |
+
+**Scope:**
+1. **React 19 migration** (`web_interface_react/`, `web_interface_app2/`):
+   - Update `react` and `react-dom` to `^19.0.0`
+   - Review breaking changes: `forwardRef` removal, `ref` as prop, `Context` as provider, `use()` hook
+   - Update `react-router-dom`, `formik`, `react-bootstrap` to React 19-compatible versions
+   - Verify shared types (`@lenie/shared`) work with React 19
+2. **Vite 7 upgrade** (`web_interface_react/`, `web_interface_app2/`):
+   - Update `vite` to `^7.0.0`
+   - Review Vite 7 migration guide for config changes
+   - Verify build output and dev server functionality
+3. **Next.js 16 upgrade** (`web_landing_page/`):
+   - Update `next` to `^16.0.0`
+   - Review Next.js 16 migration guide
+   - Verify static export still works (`output: 'export'`)
+   - Verify S3 + CloudFront deployment
+4. **Testing:**
+   - Verify all pages load correctly
+   - Test document CRUD operations
+   - Test vector similarity search
+   - Verify Chrome extension compatibility (API calls unchanged)
+
+**Acceptance Criteria:**
+- All three frontends build successfully with updated dependencies
+- No runtime errors on any page
+- All existing functionality works (document list, edit, search, AI tools)
+- Docker builds work with updated dependencies
+- `npm run build` produces valid output for S3 deployment
+
+**Status:** backlog
