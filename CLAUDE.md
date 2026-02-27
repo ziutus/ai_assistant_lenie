@@ -154,18 +154,17 @@ Restoration tracked in backlog: B-70 (prerequisites), B-71–B-74 (per-tool pipe
 
 ## Environment Variables
 
-Key variables (see `.env_example` for full list):
-- `SECRETS_BACKEND` - Secret backend to use: `env` (default, reads `.env`), `vault` (HashiCorp Vault), `aws` (SSM Parameter Store)
-- `SECRETS_ENV` - Environment name for secret paths (`dev`, `prod`, `qa`). Falls back to `VAULT_ENV` if not set. Default: `dev`
+Configuration is managed by the **config_loader** module (`backend/library/config_loader.py`) with three backends: `env` (default), `vault` (HashiCorp Vault), `aws` (AWS SSM). See [`docs/secrets-management.md`](docs/secrets-management.md) for full architecture, setup instructions, and troubleshooting.
+
+Bootstrap variables (always in `.env`, regardless of backend):
+- `SECRETS_BACKEND` - Secret backend to use: `env`, `vault`, `aws`. Default: `env`
+- `SECRETS_ENV` - Environment name for secret paths (`dev`, `prod`, `qa`). Default: `dev`
 - `PROJECT_CODE` - Project code used in secret paths. Default: `lenie`
-- `ENV_DATA` - Date of last configuration data update (e.g., `2025.10.02`), logged at startup to verify the application loaded fresh config
-- `POSTGRESQL_HOST/DATABASE/USER/PASSWORD/PORT` - Database connection
-- `POSTGRESQL_SSLMODE` - SSL mode for PostgreSQL (set to `require` for AWS RDS)
-- `LLM_PROVIDER` - LLM backend (openai, bedrock, vertex)
-- `OPENAI_API_KEY`, `OPENAI_ORGANIZATION` - OpenAI credentials
-- `EMBEDDING_MODEL` - Model for vector embeddings
-- `STALKER_API_KEY` - API authentication key
-- `PORT` - Server port
+- `ENV_DATA` - Date of last configuration data update (e.g., `2025.10.02`), logged at startup
+- `VAULT_ADDR`, `VAULT_TOKEN` - Required when `SECRETS_BACKEND=vault`
+- `AWS_REGION` - Required when `SECRETS_BACKEND=aws`. Default: `eu-central-1`
+
+All application variables (database, LLM, API keys, etc.) are defined in [`scripts/vars-classification.yaml`](scripts/vars-classification.yaml). To generate a backend-specific `.env` file: `python scripts/env_to_vault.py generate env-example --backend <env|vault|aws>`
 
 ## Database
 
