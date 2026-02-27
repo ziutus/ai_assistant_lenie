@@ -41,8 +41,8 @@ make lock            # or: cd backend && uv lock
 
 ### Testing
 ```bash
-# All tests with HTML report
-pytest --self-contained-html --html=pytest-results/
+# All tests
+pytest
 
 # Unit tests only
 pytest backend/tests/unit/
