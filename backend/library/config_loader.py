@@ -73,9 +73,9 @@ class EnvBackend(ConfigBackend):
         if load_dotenv is not None:
             env_path = find_dotenv(usecwd=True) if find_dotenv is not None else None
             if env_path:
-                logging.info("Config loader: loading .env from %s", env_path)
+                logging.debug("EnvBackend: loading .env from %s", env_path)
             else:
-                logging.warning("Config loader: no .env file found (searched from cwd upward)")
+                logging.debug("EnvBackend: no .env file found (searched from cwd upward)")
             load_dotenv(dotenv_path=env_path or None)
         return dict(os.environ)
 
@@ -291,7 +291,7 @@ def load_config() -> Config:
     dotenv_path = _load_bootstrap_dotenv()
     if dotenv_path:
         logging.info("Config loader: loaded .env from %s", dotenv_path)
-    else:
+    elif load_dotenv is not None:
         logging.warning("Config loader: no .env file found (searched from cwd upward)")
 
     backend_name = os.environ.get("SECRETS_BACKEND", "env")
