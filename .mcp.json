@@ -4,12 +4,8 @@
       "disabled": false,
       "timeout": 180,
       "type": "stdio",
-      "command": "uv",
-      "args": [
-        "tool", "run", "--from",
-        "awslabs.aws-iac-mcp-server@latest",
-        "awslabs.aws-iac-mcp-server.exe"
-      ],
+      "command": "awslabs.aws-iac-mcp-server",
+      "args": [],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR",
         "AWS_PROFILE": "default",
@@ -20,11 +16,8 @@
       "disabled": false,
       "timeout": 180,
       "type": "stdio",
-      "command": "uv",
+      "command": "awslabs.cfn-mcp-server",
       "args": [
-        "tool", "run", "--from",
-        "awslabs.cfn-mcp-server@latest",
-        "awslabs.cfn-mcp-server.exe",
         "--readonly"
       ],
       "env": {
@@ -37,18 +30,25 @@
       "disabled": false,
       "timeout": 180,
       "type": "stdio",
-      "command": "uv",
-      "args": [
-        "tool", "run", "--from",
-        "awslabs.aws-api-mcp-server@latest",
-        "awslabs.aws-api-mcp-server.exe"
-      ],
+      "command": "awslabs.aws-api-mcp-server",
+      "args": [],
       "env": {
         "FASTMCP_LOG_LEVEL": "ERROR",
         "READ_OPERATIONS_ONLY": "true",
         "AWS_PROFILE": "default",
         "AWS_REGION": "eu-central-1"
       }
+    },
+    "gitguardian": {
+      "disabled": false,
+      "timeout": 120,
+      "type": "stdio",
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/GitGuardian/ggmcp.git",
+        "developer-mcp-server"
+      ]
     }
   }
 }
