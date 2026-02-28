@@ -4,6 +4,7 @@
 /tmp/*
 .idea/
 .venv
+.venv_wsl
 __pycache__/
 node_modules/
 *.tsbuildinfo

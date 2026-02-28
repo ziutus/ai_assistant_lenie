@@ -14,9 +14,12 @@ logging.basicConfig(level=logging.DEBUG)
 
 cfg = load_config()
 
-openai_organization = cfg.require("OPENAI_ORGANIZATION")
-openai_api_key = cfg.require("OPENAI_API_KEY")
-llm_simple_jobs_model = cfg.require("AI_MODEL_SUMMARY")
+llm_provider = cfg.get("LLM_PROVIDER")
+if llm_provider == "openai":
+    openai_organization = cfg.require("OPENAI_ORGANIZATION")
+    openai_api_key = cfg.require("OPENAI_API_KEY")
+
+llm_simple_jobs_model = cfg.get("AI_MODEL_SUMMARY")
 backend_type = cfg.require("BACKEND_TYPE", "postgresql")
 
 if backend_type == "postgresql":

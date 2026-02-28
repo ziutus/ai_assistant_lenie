@@ -65,4 +65,3 @@ local/
 
 # Exclude the virtual environment
 .venv/
-.venv_markdown/
