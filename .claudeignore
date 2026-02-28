@@ -1,7 +1,6 @@
 # Dependencies
 node_modules/
 .venv/
-.venv_markdown/
 
 # Build output
 build/
