@@ -181,19 +181,30 @@ def get_vault_client(env_file: str = ".env"):
         sys.exit(1)
 
     all_vars = parse_env_file(env_path)
-    vault_addr = all_vars.get("VAULT_ADDR")
-    vault_token = all_vars.get("VAULT_TOKEN")
+    vault_addr = all_vars.get("VAULT_ADDR") or os.environ.get("VAULT_ADDR")
+    vault_token = all_vars.get("VAULT_TOKEN") or os.environ.get("VAULT_TOKEN")
 
+    missing = []
     if not vault_addr:
-        print("ERROR: VAULT_ADDR not found in .env")
-        sys.exit(1)
+        missing.append("VAULT_ADDR")
     if not vault_token:
-        print("ERROR: VAULT_TOKEN not found in .env")
+        missing.append("VAULT_TOKEN")
+    if missing:
+        print(f"ERROR: Missing Vault connection variable(s) in .env or environment: {', '.join(missing)}")
+        print(f"  Set them in {env_path} or export as environment variables.")
         sys.exit(1)
 
     client = hvac.Client(url=vault_addr, token=vault_token)
-    if not client.is_authenticated():
-        print(f"ERROR: Vault authentication failed at {vault_addr}")
+    try:
+        is_auth = client.is_authenticated()
+    except Exception as e:
+        print(f"ERROR: Vault server not reachable at {vault_addr}")
+        print(f"  Details: {e}")
+        print("  Check that VAULT_ADDR points to a running Vault instance (correct host and port).")
+        sys.exit(1)
+
+    if not is_auth:
+        print(f"ERROR: Vault authentication failed at {vault_addr} — check VAULT_TOKEN")
         sys.exit(1)
 
     return client, vault_addr
@@ -1180,9 +1191,16 @@ def cmd_remove(args):
 # ===========================================================================
 
 
-def build_review_data(classification, env: str, args) -> dict:
+def build_review_data(classification, env: str, args, backend_filter: str | None = None) -> dict:
     """Build unified review data for all YAML-defined variables vs backends."""
     backends = get_backends_for_env(classification, env)
+    if backend_filter:
+        matched = [(n, d) for n, d in backends if n == backend_filter]
+        if not matched:
+            available = ", ".join(n for n, _ in backends)
+            print(f"ERROR: Backend '{backend_filter}' not found for environment '{env}'. Available: {available}")
+            sys.exit(1)
+        backends = matched
     all_vars = get_all_variables(classification)
 
     backend_data = {}
@@ -1324,14 +1342,18 @@ def cmd_review(args):
     """Interactive review of YAML-defined variables vs actual backend state."""
     classification = load_classification()
     env = args.env
+    backend_filter = getattr(args, "only_backend", None)
     # Validate environment
     get_backends_for_env(classification, env)
 
-    print(f"Environment '{env}' review")
+    header = f"Environment '{env}' review"
+    if backend_filter:
+        header += f" (backend: {backend_filter})"
+    print(header)
     print("Note: YAML changes made outside this session will be overwritten by save operations.")
     print()
 
-    review_data = build_review_data(classification, env, args)
+    review_data = build_review_data(classification, env, args, backend_filter=backend_filter)
     display_review(review_data)
     print()
 
@@ -1374,7 +1396,7 @@ def cmd_review(args):
             _client_cache.clear()
             classification = load_classification()
             print()
-            review_data = build_review_data(classification, env, args)
+            review_data = build_review_data(classification, env, args, backend_filter=backend_filter)
             display_review(review_data)
             print()
 
@@ -1414,7 +1436,7 @@ def cmd_review(args):
             _client_cache.clear()
             classification = load_classification()
             print()
-            review_data = build_review_data(classification, env, args)
+            review_data = build_review_data(classification, env, args, backend_filter=backend_filter)
             display_review(review_data)
             print()
 
@@ -1558,6 +1580,8 @@ examples:
     # ---- review ----
     review_parser = backend_parsers.add_parser("review", help="Interactive review of YAML vs backend state")
     review_parser.add_argument("--env", required=True, help="Environment (dev, prod, qa)")
+    review_parser.add_argument("--only-backend", default=None, dest="only_backend",
+                               help="Review only this backend (e.g. nas-vault, aws-ssm-main)")
     add_ssm_args(review_parser)
 
     # ---- remove ----
