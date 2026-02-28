@@ -230,7 +230,8 @@
       "Bash(gh api:*)",
       "Bash(cd /c/Users/ziutus/git/_lenie-all/lenie-server-2025 && python scripts/gitguardian_manage_incidents.py:*)",
       "Bash(python scripts/gitguardian_manage_incidents.py:*)",
-      "Bash(git fetch:*)"
+      "Bash(git fetch:*)",
+      "Bash(uv sync:*)"
     ]
   },
   "enableAllProjectMcpServers": true,
