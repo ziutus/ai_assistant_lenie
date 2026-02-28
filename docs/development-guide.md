@@ -52,6 +52,72 @@ uv sync --extra docker     # Docker-specific deps
 uv sync --extra markdown   # Markdown processing deps
 ```
 
+### Note on PYTHONPATH
+
+Older documentation and some files may reference `PYTHONPATH=. python -m ...` when running backend scripts. This is **no longer necessary**. The project's `pyproject.toml` now includes a `[tool.hatch.build.targets.wheel]` section that tells hatchling which directories are Python packages:
+
+```toml
+[tool.hatch.build.targets.wheel]
+packages = ["library", "imports"]
+```
+
+After `uv sync`, the project is installed as an editable package and Python resolves `library` and `imports` modules automatically. You can run scripts directly:
+
+```bash
+cd backend
+./imports/unknown_news_import.py --help
+./imports/dynamodb_sync.py --since 2026-02-20 --dry-run
+```
+
+### WSL: Separate Virtual Environment Required
+
+The Windows `.venv` (`backend/.venv/`) **cannot be shared with WSL**. Python virtual environments are platform-specific — compiled packages (e.g., `psycopg2-binary`) produce `.pyd` files on Windows and `.so` files on Linux, and `pyvenv.cfg` stores an absolute path to the system interpreter.
+
+If you need to run backend scripts (e.g., `imports/unknown_news_import.py`) from WSL, create a separate venv:
+
+```bash
+cd /mnt/c/Users/<user>/git/_lenie-all/lenie-server-2025/backend
+uv venv .venv_wsl
+source .venv_wsl/bin/activate
+uv sync --active
+./imports/unknown_news_import.py --help
+```
+
+> **Why `--active`?** `uv sync` defaults to the project's `.venv` directory. Without `--active`, uv ignores the activated `.venv_wsl` and installs into `.venv` instead.
+
+> **Expected warning:** When WSL accesses files on a Windows filesystem (`/mnt/c/...`), uv may print: `warning: Failed to hardlink files; falling back to full copy`. This is normal — hardlinks don't work across the Linux/Windows filesystem boundary. Installation still completes correctly, just slower. The fix is in the "WSL: Final Bash Setup" section below.
+
+> **Note:** `.venv_wsl/` is already covered by `.gitignore` (`.venv*` pattern). Do not attempt to reuse the Windows `.venv/` from WSL — it will fail with `ModuleNotFoundError` for compiled packages.
+
+### WSL: Final Bash Setup
+
+Add the following lines to your `~/.bashrc` (or `~/.zshrc`):
+
+```bash
+# --- Lenie project: WSL settings ---
+# Suppress uv hardlink warning (hardlinks don't work across Windows/Linux filesystem boundary)
+export UV_LINK_MODE=copy
+```
+
+Then reload your shell: `source ~/.bashrc`
+
+### WSL: Project Location and IDE Considerations
+
+**Keep the project on the Windows filesystem** (`/mnt/c/...`), not on the native WSL filesystem (`/home/<user>/...`).
+
+While the native Linux filesystem offers 5-10x faster I/O for shell operations (`git status`, `uv sync`, `npm install`), IDEs running on Windows access it through the `\\wsl$\` network bridge (9P protocol), which reverses the performance advantage:
+
+| Setup | Shell I/O | IDE indexing | IDE editing |
+|-------|-----------|-------------|-------------|
+| Project on `/mnt/c/` (Windows FS) | moderate | fast | fast |
+| Project on `/home/` (Linux FS) | fast | **slow** (via `\\wsl$\`) | noticeable lag |
+
+**PyCharm** supports WSL interpreters natively (Settings → Project → Python Interpreter → Add → WSL), so you can use the `.venv_wsl` interpreter while keeping files on the Windows filesystem. This gives the best of both worlds: fast IDE performance with access to Linux Python environment when needed.
+
+**VS Code** with the "Remote - WSL" extension works better with the native Linux filesystem (its server runs inside WSL), but since the project uses PyCharm, moving the repo is not recommended.
+
+**Recommended workflow:** Project on `/mnt/c/`, PyCharm with Windows interpreter for daily development, WSL with `.venv_wsl` only for running scripts that require Linux (deploy scripts, shell scripts, import scripts).
+
 ### Running
 
 ```bash

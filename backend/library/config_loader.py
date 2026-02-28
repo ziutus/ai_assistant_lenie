@@ -19,8 +19,9 @@ import sys
 from abc import ABC, abstractmethod
 
 try:
-    from dotenv import load_dotenv
+    from dotenv import find_dotenv, load_dotenv
 except ImportError:
+    find_dotenv = None
     load_dotenv = None  # Lambda environment — no .env files
 
 # ---------------------------------------------------------------------------
@@ -59,13 +60,23 @@ class ConfigBackend(ABC):
 class EnvBackend(ConfigBackend):
     """Loads configuration from ``.env`` file + real environment variables.
 
+    Uses ``find_dotenv(usecwd=True)`` to locate the ``.env`` file starting
+    from the current working directory and searching upward through parent
+    directories.  This allows scripts in ``backend/`` and ``scripts/`` to
+    share a single ``.env`` in the repository root.
+
     Calls ``load_dotenv()`` so that library modules still using raw
     ``os.getenv()`` keep working during the incremental migration.
     """
 
     def load(self) -> dict[str, str]:
         if load_dotenv is not None:
-            load_dotenv()
+            env_path = find_dotenv(usecwd=True) if find_dotenv is not None else None
+            if env_path:
+                logging.debug("EnvBackend: loading .env from %s", env_path)
+            else:
+                logging.debug("EnvBackend: no .env file found (searched from cwd upward)")
+            load_dotenv(dotenv_path=env_path or None)
         return dict(os.environ)
 
 
@@ -248,6 +259,21 @@ _config: Config | None = None
 _injected_keys: set[str] = set()
 
 
+def _load_bootstrap_dotenv() -> str | None:
+    """Load ``.env`` for bootstrap variables (SECRETS_BACKEND, VAULT_*, etc.).
+
+    Must run before backend selection so that ``SECRETS_BACKEND=vault``
+    in ``.env`` is visible via ``os.environ``.  Returns the resolved path
+    (for logging) or *None* when no file was found.
+    """
+    if load_dotenv is None:
+        return None
+    env_path = find_dotenv(usecwd=True) if find_dotenv is not None else None
+    if env_path:
+        load_dotenv(dotenv_path=env_path)
+    return env_path or None
+
+
 def load_config() -> Config:
     """Create (or return cached) Config from the selected backend.
 
@@ -260,6 +286,13 @@ def load_config() -> Config:
     global _config
     if _config is not None:
         return _config
+
+    # Load .env first so SECRETS_BACKEND and VAULT_* are available.
+    dotenv_path = _load_bootstrap_dotenv()
+    if dotenv_path:
+        logging.info("Config loader: loaded .env from %s", dotenv_path)
+    elif load_dotenv is not None:
+        logging.warning("Config loader: no .env file found (searched from cwd upward)")
 
     backend_name = os.environ.get("SECRETS_BACKEND", "env")
     logging.info("Config loader: using '%s' backend", backend_name)

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """Sync documents from AWS DynamoDB + S3 to local PostgreSQL.
 
 Pulls new documents from DynamoDB and S3 webpage content,
@@ -8,11 +9,11 @@ using the project/environment convention: /{project}/{env}/...
 
 Usage:
     cd backend
-    PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20
-    PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --dry-run
-    PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --limit 10
-    PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --skip-s3
-    PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --env dev --project lenie
+    ./imports/dynamodb_sync.py --since 2026-02-20
+    ./imports/dynamodb_sync.py --since 2026-02-20 --dry-run
+    ./imports/dynamodb_sync.py --since 2026-02-20 --limit 10
+    ./imports/dynamodb_sync.py --since 2026-02-20 --skip-s3
+    ./imports/dynamodb_sync.py --since 2026-02-20 --env dev --project lenie
 """
 
 import argparse
@@ -23,17 +24,17 @@ from datetime import datetime, timedelta
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
-from dotenv import load_dotenv
 
+from library.config_loader import load_config
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_document import StalkerDocumentStatus
 
-load_dotenv()
+cfg = load_config()
 
 
 def get_ssm_parameter(name: str, region: str = None) -> str:
     """Fetch a single SSM Parameter Store value."""
-    region = region or os.getenv("AWS_REGION", "us-east-1")
+    region = region or cfg.require("AWS_REGION", "us-east-1")
     ssm = boto3.client("ssm", region_name=region)
     response = ssm.get_parameter(Name=name)
     return response["Parameter"]["Value"]

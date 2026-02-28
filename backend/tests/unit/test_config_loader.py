@@ -493,5 +493,64 @@ class TestHelpers(unittest.TestCase):
             self.assertEqual(_get_project_code(), "myproj")
 
 
+class TestBackwardCompatInjection(unittest.TestCase):
+    """Verify os.environ injection for backward compatibility with library modules
+    that still use os.getenv() during the incremental migration."""
+
+    def setUp(self):
+        reset_config()
+
+    def tearDown(self):
+        reset_config()
+
+    @patch("library.config_loader.VaultBackend.load")
+    def test_vault_values_injected_into_environ(self, mock_vault_load):
+        mock_vault_load.return_value = {"DB_HOST": "vault-host", "DB_PORT": "5432"}
+        with patch.dict(os.environ, {"SECRETS_BACKEND": "vault"}, clear=False):
+            load_config()
+            self.assertEqual(os.environ.get("DB_HOST"), "vault-host")
+            self.assertEqual(os.environ.get("DB_PORT"), "5432")
+
+    @patch("library.config_loader.AWSSSMBackend.load")
+    def test_aws_values_injected_into_environ(self, mock_ssm_load):
+        mock_ssm_load.return_value = {"DB_HOST": "ssm-host", "API_KEY": "ssm-key"}
+        with patch.dict(os.environ, {"SECRETS_BACKEND": "aws"}, clear=False):
+            load_config()
+            self.assertEqual(os.environ.get("DB_HOST"), "ssm-host")
+            self.assertEqual(os.environ.get("API_KEY"), "ssm-key")
+
+    @patch("library.config_loader.load_dotenv")
+    def test_env_backend_does_not_inject(self, mock_dotenv):
+        """env backend should NOT inject into os.environ (values are already there)."""
+        with patch.dict(os.environ, {"SECRETS_BACKEND": "env"}, clear=False):
+            load_config()
+            # No new keys injected (env backend reads os.environ directly)
+            # The _injected_keys set should be empty
+            from library.config_loader import _injected_keys
+            self.assertEqual(len(_injected_keys), 0)
+
+    @patch("library.config_loader.VaultBackend.load")
+    def test_reset_removes_injected_keys(self, mock_vault_load):
+        mock_vault_load.return_value = {"INJECTED_TEST_KEY": "test-value"}
+        with patch.dict(os.environ, {"SECRETS_BACKEND": "vault"}, clear=False):
+            load_config()
+            self.assertEqual(os.environ.get("INJECTED_TEST_KEY"), "test-value")
+            reset_config()
+            self.assertIsNone(os.environ.get("INJECTED_TEST_KEY"))
+
+    @patch("library.config_loader.VaultBackend.load")
+    def test_injected_values_accessible_via_os_getenv(self, mock_vault_load):
+        """Library modules using os.getenv() should see injected values."""
+        mock_vault_load.return_value = {
+            "POSTGRESQL_HOST": "vault-db.local",
+            "POSTGRESQL_PORT": "5432",
+        }
+        with patch.dict(os.environ, {"SECRETS_BACKEND": "vault"}, clear=False):
+            load_config()
+            # Simulate what library modules do: os.getenv()
+            self.assertEqual(os.getenv("POSTGRESQL_HOST"), "vault-db.local")
+            self.assertEqual(os.getenv("POSTGRESQL_PORT"), "5432")
+
+
 if __name__ == "__main__":
     unittest.main()

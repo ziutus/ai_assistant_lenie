@@ -37,11 +37,11 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 **Running:**
 ```bash
 cd backend
-PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20
-PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --dry-run
-PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --limit 10
-PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --skip-s3
-PYTHONPATH=. python -m imports.dynamodb_sync --since 2026-02-20 --env dev --project lenie
+./imports/dynamodb_sync.py --since 2026-02-20
+./imports/dynamodb_sync.py --since 2026-02-20 --dry-run
+./imports/dynamodb_sync.py --since 2026-02-20 --limit 10
+./imports/dynamodb_sync.py --since 2026-02-20 --skip-s3
+./imports/dynamodb_sync.py --since 2026-02-20 --env dev --project lenie
 ```
 
 **Arguments:**
@@ -73,15 +73,17 @@ Imports curated technology/science links from [unknow.news](https://unknow.news/
 **How it works:**
 1. Downloads `archiwum.json` from `https://unknow.news/archiwum.json` (full archive of curated links)
 2. Saves it locally to `tmp/archiwum.json` as a cache
-3. Queries the database for the most recent entry from this source (`get_last_unknown_news()`)
+3. Determines the date cutoff: uses `--since` if provided, otherwise queries the database for the most recent entry (`get_last_unknown_news()`). If DB returns None (empty), imports all entries.
 4. Iterates through the JSON entries, skipping:
    - Entries older than the last imported date (already processed)
    - Paid/affiliate links (`uw7.org/un` URLs)
    - Sponsored entries (title matching "sponsorowane")
 5. For each new URL:
+   - In `--dry-run` mode: prints what would be added without DB writes
    - Checks if it already exists in the database (by URL lookup via `StalkerWebDocumentDB`)
    - If it exists: corrects missing `date_from` field if needed
    - If it's new: creates a document with status `READY_FOR_TRANSLATION`, type `link`, language `pl`, source `https://unknow.news/`
+6. Stops after `--limit` documents are added (if specified)
 
 **Imported document fields:**
 - `url` — link URL
@@ -96,13 +98,19 @@ Imports curated technology/science links from [unknow.news](https://unknow.news/
 **Running:**
 ```bash
 cd backend
-python -m imports.unknown_news_import
-# or:
-python imports/unknown_news_import.py
+./imports/unknown_news_import.py
+./imports/unknown_news_import.py --since 2026-02-01
+./imports/unknown_news_import.py --since 2026-02-01 --dry-run
+./imports/unknown_news_import.py --since 2026-02-01 --dry-run --limit 5
 ```
 
+**Arguments:**
+- `--since YYYY-MM-DD` — import entries from this date onward (overrides auto-detection from DB)
+- `--dry-run` — preview only, no DB writes
+- `--limit N` — max documents to add (0 = unlimited, default)
+
 **Prerequisites:**
-- PostgreSQL database must be accessible
+- PostgreSQL database must be accessible (unless using `--since` with `--dry-run`)
 - `.env` file with `POSTGRESQL_HOST`, `POSTGRESQL_DATABASE`, `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`, `POSTGRESQL_PORT`
 - `tmp/` directory must exist (for caching the downloaded JSON)
 - Network access to `https://unknow.news/`
