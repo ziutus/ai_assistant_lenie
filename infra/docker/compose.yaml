@@ -2,7 +2,9 @@ name: lenie-ai
 
 services:
   lenie-ai-server:
-    build: ../../backend
+    build:
+      context: ../..
+      dockerfile: backend/Dockerfile
     ports:
       - "5000:5000"
     restart: no
@@ -24,6 +26,15 @@ services:
     volumes:
       - lenie-ai-db-data-3:/var/lib/postgresql/data
 #      - ../../backend/database/init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+  lenie-ai-slack-bot:
+    build:
+      context: ../..
+      dockerfile: slack_bot/Dockerfile
+    profiles: ["slack"]
+    env_file: .env
+    depends_on:
+      - lenie-ai-server
     restart: unless-stopped
   lenie-ai-fronted:
     build:

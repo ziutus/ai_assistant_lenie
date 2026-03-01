@@ -1,0 +1,48 @@
+# Slack App Manifest for Lenie Bot
+# Import at: https://api.slack.com/apps → Create New App → From an app manifest
+# Format: Slack App Manifest v1 (v2 is for Deno SDK only)
+
+_metadata:
+  major_version: 1
+  minor_version: 1
+
+display_information:
+  name: "Lenie Bot"
+  description: "Knowledge base assistant for Lenie-AI"
+  background_color: "#2c2d30"
+
+features:
+  bot_user:
+    display_name: "Lenie Bot"
+    always_online: true
+  slash_commands:
+    - command: /lenie-version
+      description: "Show backend version and build info"
+      should_escape: false
+    - command: /lenie-count
+      description: "Show document count by type"
+      should_escape: false
+    - command: /lenie-add
+      description: "Add a URL to the knowledge base"
+      usage_hint: "<url>"
+      should_escape: false
+    - command: /lenie-check
+      description: "Check if a URL exists in the database"
+      usage_hint: "<url>"
+      should_escape: false
+    - command: /lenie-info
+      description: "Get document details by ID"
+      usage_hint: "<document_id>"
+      should_escape: false
+
+oauth_config:
+  scopes:
+    bot:
+      - commands
+      - chat:write
+      - chat:write.public
+
+settings:
+  socket_mode_enabled: true
+  org_deploy_enabled: false
+  token_rotation_enabled: false

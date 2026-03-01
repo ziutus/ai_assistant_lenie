@@ -94,6 +94,7 @@ while IFS= read -r FUNCTION_NAME; do
   if [ "$FUNCTIONS_TYPE" == "app" ]; then
     ls -l "$CURRENT_DIR"/../
     cp -r "$CURRENT_DIR"/../../../../backend/library "${TEMP_FUNCTION_DIR}/"
+    cp -r "$CURRENT_DIR"/../../../../shared_python/unified-config-loader/unified_config_loader "${TEMP_FUNCTION_DIR}/"
   fi
 
   # Spakuj zawartość tymczasowego katalogu

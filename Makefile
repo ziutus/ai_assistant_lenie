@@ -54,6 +54,9 @@ format:         ## Format code with ruff
 format-check:   ## Check code formatting (no changes)
 	cd backend && uv run ruff format . --check
 
+duplicate-check: ## Detect duplicate code blocks (pylint similarity checker)
+	cd backend && uvx pylint --disable=all --enable=duplicate-code --min-similarity-lines=6 library/
+
 # Security (all tools use uvx - no installation to project venv)
 security:       ## Run semgrep security scan
 	uvx semgrep --config=auto backend/

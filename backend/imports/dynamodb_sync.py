@@ -222,7 +222,8 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
 
 def main():
     parser = argparse.ArgumentParser(description="Sync documents from DynamoDB + S3 to local PostgreSQL")
-    parser.add_argument("--since", required=True, help="Sync documents from this date (YYYY-MM-DD)")
+    parser.add_argument("--since", required=True, metavar="YYYY-MM-DD",
+                        help="Sync documents from this date, e.g. --since 2026-02-20")
     parser.add_argument("--dry-run", action="store_true", help="Preview only, no DB writes or S3 downloads")
     parser.add_argument("--limit", type=int, default=0, help="Max documents to sync (0 = unlimited)")
     parser.add_argument("--skip-s3", action="store_true", help="Skip S3 file downloads (metadata only)")
@@ -231,6 +232,7 @@ def main():
     parser.add_argument("--table", default=None, help="DynamoDB table name override (skips SSM lookup)")
     parser.add_argument("--bucket", default=None, help="S3 bucket name override (skips SSM lookup)")
     parser.add_argument("--data-dir", default="data", help="Local dir for S3 files (default: data/)")
+    parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
     args = parser.parse_args()
 
     # Validate date format
@@ -249,7 +251,26 @@ def main():
         print("S3 downloads: skipped")
     if args.limit:
         print(f"Limit: {args.limit}")
+
+    # Show source and target information
+    aws_profile = os.environ.get("AWS_PROFILE", "(default)")
+    aws_region = cfg.require("AWS_REGION", "us-east-1")
+    pg_host = os.getenv("POSTGRESQL_HOST", "(not set)")
+    pg_db = os.getenv("POSTGRESQL_DATABASE", "(not set)")
+    pg_port = os.getenv("POSTGRESQL_PORT", "5432")
+    pg_user = os.getenv("POSTGRESQL_USER", "(not set)")
+
     print()
+    print(f"Source: AWS profile={aws_profile}, region={aws_region}")
+    print(f"Target: PostgreSQL {pg_user}@{pg_host}:{pg_port}/{pg_db}")
+    print()
+
+    if not args.yes:
+        answer = input("Continue? [y/N] ").strip().lower()
+        if answer != "y":
+            print("Aborted.")
+            sys.exit(0)
+        print()
 
     # Resolve resource names from SSM (or CLI overrides)
     need_bucket = not args.skip_s3 and not args.dry_run
