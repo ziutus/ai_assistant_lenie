@@ -283,6 +283,34 @@ groups:
         required: false
         used_by: [local]
 
+  slack:
+    description: "Slack bot tokens and configuration"
+    variables:
+      SLACK_BOT_TOKEN:
+        description: "Slack Bot User OAuth Token (xoxb-...)"
+        type: secret
+        required_when: "slack bot deployed"
+        used_by: [docker]
+      SLACK_APP_TOKEN:
+        description: "Slack App-Level Token for Socket Mode (xapp-...)"
+        type: secret
+        required_when: "slack bot deployed"
+        used_by: [docker]
+      LENIE_API_URL:
+        description: "Backend API base URL"
+        type: config
+        required: false
+        default: "http://lenie-ai-server:5000"
+        example: "http://lenie-ai-server:5000"
+        used_by: [docker]
+      SLACK_CHANNEL_STARTUP:
+        description: "Channel for bot startup confirmation messages"
+        type: config
+        required: false
+        default: "#general"
+        example: "#lenie-bot"
+        used_by: [docker]
+
   integrations:
     description: "Third-party service API keys and endpoints"
     variables:

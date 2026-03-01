@@ -17,15 +17,18 @@ RUN apt-get update && \
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
+# Copy shared package first (path dependency)
+COPY shared_python/unified-config-loader/ /shared_python/unified-config-loader/
+
 # Copy dependency files
-COPY pyproject.toml uv.lock ./
+COPY backend/pyproject.toml backend/uv.lock ./
 
 # Install dependencies using uv
 RUN uv sync --frozen --extra docker --no-dev --no-install-project
 
-COPY library ./library/
-#COPY tests /app/tests/
-COPY server.py .
+COPY backend/library ./library/
+#COPY backend/tests /app/tests/
+COPY backend/server.py .
 
 # Create a non-root user with specific UID and GID, and change ownership of the app directory
 RUN groupadd -g 1000 lenie-ai-client && \

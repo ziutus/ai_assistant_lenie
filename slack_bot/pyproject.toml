@@ -1,0 +1,52 @@
+[project]
+name = "lenie-slack-bot"
+version = "0.1.0"
+description = "Slack bot module for Lenie-AI personal knowledge management system"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Lenie AI Team" }
+]
+
+dependencies = [
+    "slack-bolt>=1.27.0,<2.0.0",
+    "slack-sdk>=3.40.0,<4.0.0",
+    "python-json-logger>=3.0,<4.0",
+    "requests>=2.31.0",
+    "unified-config-loader",
+]
+
+[project.optional-dependencies]
+vault = ["unified-config-loader[vault]"]
+aws = ["unified-config-loader[aws]"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.uv.sources]
+unified-config-loader = { path = "../shared_python/unified-config-loader" }
+
+[tool.ruff]
+line-length = 120
+exclude = [".git", "__pycache__", ".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

@@ -33,6 +33,7 @@ dependencies = [
     "boto3",
     "dateparser",
     "ruamel.yaml>=0.18",
+    "unified-config-loader[vault,aws]",
 ]
 
 [project.optional-dependencies]
@@ -116,6 +117,7 @@ dev = [
 ]
 
 [tool.uv.sources]
+unified-config-loader = { path = "../shared_python/unified-config-loader" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

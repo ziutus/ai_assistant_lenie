@@ -54,12 +54,25 @@ This document serves as the index for all epics in lenie-server-2025. Individual
 
 - Epic 19: Multi-User Admin Interface (app2) — [archived](../archive/epics-app2-and-completed-backlog-2026-02-26.md)
 
-### Sprint 6: Secrets Management & Security Verification (IN PROGRESS)
+### Sprint 6: Secrets Management & Security Verification (DONE)
 
 - Epic 20: Secrets Management — Migrate .env to Vault & AWS SSM — [epic-20.md](epic-20.md)
 - B-64: Verify Pre-Commit Secret Detection — [backlog.md](backlog.md#b-64-verify-pre-commit-secret-detection)
 
+### Sprint 7: Slack Bot MVP & Config Loader Migration (IN PROGRESS)
+
+- Epic 21: Slack Bot MVP — Slash Commands — [epics.md](../epics.md#epic-21-slack-bot-mvp--slash-commands)
+- B-79: Migrate Standalone Scripts to config_loader — [backlog.md](backlog.md#b-79-migrate-standalone-scripts-to-config-loader)
+
+### Future Sprint 8: Slack Bot Enhancements
+
+- Epic 22: Direct Message Interaction — [epics.md](../epics.md#epic-22-direct-message-interaction)
+- Epic 23: Channel App Mentions — [epics.md](../epics.md#epic-23-channel-app-mentions)
+- Epic 24: Conversational LLM Intelligence — [epics.md](../epics.md#epic-24-conversational-llm-intelligence)
+- Epic 25: Proactive Health Monitoring — [epics.md](../epics.md#epic-25-proactive-health-monitoring)
+
 ## Backlog Items
 
 - **B-50:** API Type Synchronization Pipeline (Pydantic → OpenAPI → TypeScript) — backlog
+- **B-82:** Add MinIO as S3-Compatible Local Storage for NAS Development — backlog
 - **Details:** [backlog.md](backlog.md)

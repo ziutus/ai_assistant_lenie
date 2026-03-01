@@ -158,6 +158,62 @@ so that Vault restarts (planned or unplanned) don't require manual unseal interv
 ---
 
 
+### B-79: Migrate Standalone Scripts to config_loader
+
+As a **developer**,
+I want all standalone scripts to use config_loader instead of `load_dotenv()`,
+so that they work correctly when `.env` contains only bootstrap variables (Vault/AWS mode).
+
+**Origin:** Epic 20 retrospective (2026-02-27) — discovered that import scripts and batch processing scripts still use `load_dotenv()` directly instead of config_loader. They will fail when `.env` contains only bootstrap variables.
+
+**Scope:**
+1. `imports/unknown_news_import.py` — replace `load_dotenv()` with `load_config()`
+2. `imports/dynamodb_sync.py` — replace `load_dotenv()` with `load_config()`
+3. `web_documents_do_the_needful_new.py` — replace `load_dotenv()` with `load_config()`
+4. `webdocument_md_decode.py` — replace `load_dotenv()` with `load_config()`
+5. `markdown_to_embedding.py` — replace `load_dotenv()` with `load_config()`
+6. `webdocument_prepare_regexp_by_ai.py` — replace `load_dotenv()` with `load_config()`
+
+**Acceptance Criteria:**
+- All scripts use `load_config()` from `library.config_loader`
+- Scripts work with `SECRETS_BACKEND=vault` (NAS) and `SECRETS_BACKEND=aws`
+- No `load_dotenv()` calls remain outside of `config_loader.py` itself
+- Existing behavior preserved for `SECRETS_BACKEND=env`
+
+**Priority:** HIGH — blocks Vault-only deployments for batch processing
+**Status:** backlog
+**Related:** Epic 20 retrospective action item #3
+
+---
+
+## Backlog: Docker Build Optimization
+
+### B-80: Add .dockerignore to Directories with Dockerfiles
+
+As a **developer**,
+I want each directory with a Dockerfile to have a `.dockerignore` file,
+so that Docker build context excludes unnecessary files (`.venv/`, `tests/`, `__pycache__/`, `tmp/`) reducing build time and image size.
+
+**Origin:** Code review of Story 21-1 (Slack bot). Found that `slack_bot/` had no `.dockerignore` (fixed in review). Investigation showed other directories have the same issue.
+
+**Affected directories:**
+- `backend/` — most impactful: `.venv/`, `tests/`, `test_code/`, `tmp/`, `__pycache__/`, `imports/`, `.pytest_cache/`
+- `web_interface_app2/` — `node_modules/`, `.vite/`, `dist/`
+- `infra/docker/Postgresql/` — minor (small directory)
+- `infra/gcloud/cloud-run-shell/` — minor
+
+**Note:** `web_interface_react/` uses root as build context (per `compose.yaml`), so root `.dockerignore` applies. `slack_bot/` already fixed (Story 21-1 review).
+
+**Acceptance Criteria:**
+- Each directory with a Dockerfile has a `.dockerignore` tailored to its content
+- Docker builds exclude dev dependencies, tests, caches, and temp files
+- No change in runtime behavior — only build context optimization
+
+**Status:** backlog
+**Priority:** LOW — optimization, not blocking
+
+---
+
 ## Backlog: Config Loader Improvements
 
 ### B-65: Handle Empty String Values in Config.require()
@@ -581,4 +637,91 @@ so that the project benefits from new React features, performance improvements, 
 - Docker builds work with updated dependencies
 - `npm run build` produces valid output for S3 deployment
 
+**Status:** backlog
+
+---
+
+## Backlog: Code Quality
+
+### B-81: Expand Code Duplication Control
+
+As a **developer**,
+I want comprehensive code duplication detection across the entire project (Python + TypeScript),
+so that duplicated code blocks are identified early and can be refactored into shared modules.
+
+**Origin:** Extraction of `shared_python/unified-config-loader/` (commit 7d11b12) eliminated ~300 lines of duplicated config code. Initial `pylint --duplicate-code` check added to Makefile (`make duplicate-check`). Further expansion needed for cross-language coverage and CI integration.
+
+**Current state:**
+- `make duplicate-check` — pylint `duplicate-code` checker for Python (`backend/library/`), min 6 lines
+- Known duplicates detected: DB connection kwargs block (2 files), document serialization block (2 files)
+- No TypeScript duplication check
+- Not integrated into CI pipeline
+
+**Scope:**
+1. **Fix known Python duplicates** — extract `connect_kwargs` builder and shared serialization into helpers
+2. **Add jscpd** for cross-language detection (Python + TypeScript): `npx jscpd --min-lines 5 --ignore "**/node_modules/**,**/.venv/**,**/dist/**"`
+3. **Expand pylint scope** — include `shared_python/`, `slack_bot/src/`, `scripts/` (not just `backend/library/`)
+4. **CI integration** — add duplication check to CI pipeline stages (depends on [B-70](./backlog.md))
+5. **Set thresholds** — define acceptable duplication percentage, fail CI if exceeded
+
+**Acceptance Criteria:**
+- Python duplication check covers all Python source directories
+- TypeScript duplication check covers `web_interface_react/src/`, `web_interface_app2/src/`, `shared/`
+- Known duplicates from initial scan are resolved or documented as accepted
+- CI pipeline includes duplication check (when B-70 is done)
+- Documentation updated in [`docs/Code_Quality.md`](../../docs/Code_Quality.md)
+
+**Priority:** LOW — quality improvement, not blocking
+**Status:** backlog
+**Related:** B-70 (CI/CD prerequisites)
+
+---
+
+## Backlog: Infrastructure — Storage
+
+### B-82: Add MinIO as S3-Compatible Local Storage for NAS Development
+
+As a **developer**,
+I want a local S3-compatible storage (MinIO) running on NAS alongside the application,
+so that development uses the same S3 API as production (AWS) and future Kubernetes deployments — eliminating environment-specific file storage code paths.
+
+**Origin:** `dynamodb_sync.py` downloads S3 files to a local `data/` directory, creating a divergence between dev (filesystem) and prod (S3). With NAS as the primary development environment, a unified storage interface prevents future rewrites.
+
+**Current state:**
+- **Production (AWS):** S3 buckets for webpage content (`{uuid}.txt`, `{uuid}.html`)
+- **Development (NAS/Docker):** local `data/` directory via filesystem I/O
+- **Backend code:** `server.py` uses boto3 S3 client; `dynamodb_sync.py` downloads to local dir; batch scripts mix S3 and local paths
+
+**Why MinIO:**
+- S3-compatible API — same boto3 code, only `endpoint_url` changes
+- Single Docker container, single-node — no cluster complexity
+- Web console for browsing stored objects (port 9001)
+- Smooth migration path to Kubernetes (MinIO has a K8s operator)
+- Data stored as plain files on NAS disk — easy to backup
+
+**Scope:**
+1. Add MinIO service to `infra/docker/compose.nas.yaml` (port 9000 for S3 API, 9001 for console)
+2. Add `MINIO_*` env vars to config_loader: `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
+3. Update boto3 S3 client initialization in backend to use `endpoint_url` when configured (transparent — if `S3_ENDPOINT_URL` is not set, defaults to AWS S3)
+4. Create initial buckets (e.g., `website-content`) via MinIO client or startup script
+5. Update `dynamodb_sync.py` to upload downloaded S3 files to local MinIO instead of (or in addition to) saving to `data/`
+6. Update `vars-classification.yaml` with new S3/MinIO variables
+7. Add MinIO credentials to Vault (NAS deployment)
+8. Documentation: update `docs/CICD/NAS_Deployment.md`, `CLAUDE.md`
+
+**Acceptance Criteria:**
+- MinIO runs as a Docker container on NAS alongside PostgreSQL and the backend
+- Backend can read/write objects via boto3 using `S3_ENDPOINT_URL` pointing to MinIO
+- Same backend code works against both MinIO (dev) and AWS S3 (prod) without changes
+- `dynamodb_sync.py` stores downloaded content in MinIO
+- MinIO web console accessible for debugging/browsing stored objects
+- Vault stores MinIO credentials (NAS deployment)
+
+**Technical notes:**
+- MinIO single-node config: `minio server /data --console-address ":9001"` — that's it
+- boto3 integration: `boto3.client("s3", endpoint_url="http://minio:9000")` — no other code changes
+- Data lives in a Docker volume mapped to NAS disk — survives container restarts
+- Consider `mc` (MinIO client CLI) for bucket creation in entrypoint/init script
+
+**Priority:** MEDIUM — enables consistent NAS development, prevents future rewrites
 **Status:** backlog

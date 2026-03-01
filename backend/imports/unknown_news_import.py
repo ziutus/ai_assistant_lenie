@@ -14,6 +14,7 @@ Usage:
 
 import argparse
 import json
+import os
 import re
 import sys
 from datetime import datetime
@@ -27,7 +28,8 @@ from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType
 
 FEED_URL = "https://unknow.news/archiwum.json"
-FEED_CACHE = "tmp/archiwum.json"
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FEED_CACHE = os.path.join(_BACKEND_DIR, "tmp", "archiwum.json")
 SOURCE = "https://unknow.news/"
 
 
@@ -41,6 +43,7 @@ def download_feed(cache_path: str) -> list[dict]:
     print("Download data from https://unknow.news/")
     response = requests.get(FEED_URL)
     response.raise_for_status()
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     with open(cache_path, 'wb') as file:
         file.write(response.content)
     print(f"Data saved to {cache_path}")
