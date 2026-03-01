@@ -1,8 +1,4 @@
-"""Backward-compatible re-export from unified_config_loader.
-
-All imports like ``from library.config_loader import load_config`` continue
-to work — they resolve to the shared ``unified_config_loader`` package.
-"""
+"""Backward-compatible re-export from unified_config_loader."""
 
 from unified_config_loader import (  # noqa: F401
     Config,
@@ -18,5 +14,4 @@ from unified_config_loader import (  # noqa: F401
     get_secrets_env as _get_secrets_env,
     get_project_code as _get_project_code,
     _create_backend,
-    _injected_keys,
 )

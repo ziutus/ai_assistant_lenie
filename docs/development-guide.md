@@ -89,6 +89,30 @@ uv sync --active
 
 > **Note:** `.venv_wsl/` is already covered by `.gitignore` (`.venv*` pattern). Do not attempt to reuse the Windows `.venv/` from WSL — it will fail with `ModuleNotFoundError` for compiled packages.
 
+### WSL: Keeping `.venv_wsl` in Sync
+
+`.venv_wsl` is a **separate environment** that is not updated automatically when you change `pyproject.toml` or lock files on Windows. After any dependency change (adding/removing packages, adding path dependencies like `shared_python/`), you must sync `.venv_wsl` manually:
+
+```bash
+# Full sync from lock file (recommended after pyproject.toml changes)
+cd /mnt/c/Users/<user>/git/_lenie-all/lenie-server-2025/backend
+source .venv_wsl/bin/activate
+uv sync --active
+
+# Or install a specific new path dependency
+uv pip install -e ../shared_python/unified-config-loader/ --python .venv_wsl/bin/python
+```
+
+**When to sync:**
+- After running `uv lock` on Windows (changed `pyproject.toml`)
+- After adding/removing a path dependency (e.g., `shared_python/`)
+- After pulling changes that modify `uv.lock`
+
+**Quick verification:**
+```bash
+.venv_wsl/bin/python -c "from library.config_loader import load_config; print('OK')"
+```
+
 ### WSL: Final Bash Setup
 
 Add the following lines to your `~/.bashrc` (or `~/.zshrc`):
@@ -175,6 +199,8 @@ make lock                    # or: cd backend && uv lock
 # Sync dependencies from lock file
 make sync                    # or: cd backend && uv sync
 ```
+
+> **Remember:** After changing dependencies, also sync `.venv_wsl` if you use WSL. See [WSL: Keeping .venv_wsl in Sync](#wsl-keeping-venv_wsl-in-sync).
 
 ## Frontend Development (web_interface_react)
 

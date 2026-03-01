@@ -65,6 +65,28 @@ pre-commit run      # Run pre-commit hooks (includes TruffleHog secret detection
 make security-all   # Run all security checks (semgrep, pip-audit, bandit, safety)
 ```
 
+## WSL Linux Environment (`backend/.venv_wsl`)
+
+The developer works on Windows with a WSL (Fedora) environment for running Linux-specific scripts (imports, deploy scripts, shell scripts). A separate venv `.venv_wsl` exists in `backend/` for this purpose.
+
+**When modifying Python dependencies** (adding/removing packages in `pyproject.toml`, adding path dependencies like `shared_python/`), you MUST also sync `.venv_wsl`:
+
+```bash
+# Sync .venv_wsl after dependency changes
+wsl bash -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && cd /mnt/c/Users/ziutus/git/_lenie-all/lenie-server-2025/backend && uv pip install -e ../shared_python/unified-config-loader/ --python .venv_wsl/bin/python"
+
+# Or full sync (recreates from lock file)
+wsl bash -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && cd /mnt/c/Users/ziutus/git/_lenie-all/lenie-server-2025/backend && uv sync --python .venv_wsl/bin/python --active"
+```
+
+**Checklist for dependency changes:**
+1. Update `pyproject.toml` and run `uv lock`
+2. Verify Windows tests pass (uvx pytest)
+3. Sync `.venv_wsl` in WSL
+4. Verify import works: `wsl bash -c "cd .../backend && .venv_wsl/bin/python -c 'import <new_package>'"`
+
+See [`docs/development-guide.md`](docs/development-guide.md) for full WSL setup instructions.
+
 ## Architecture
 
 ### Backend (`backend/`)
@@ -73,6 +95,11 @@ Flask application (`server.py`) exposing REST API with 19 endpoints (see `docs/i
 Key subdirectories: `library/` (core logic & integrations), `database/` (PostgreSQL schema), `imports/` (bulk import scripts), `data/` (site cleanup rules), `tests/` (unit + integration), `test_code/` (experimental scripts). Each has its own `CLAUDE.md`.
 
 See `backend/CLAUDE.md` for full details including endpoints, dependencies, Docker build, and batch processing scripts.
+
+### Shared Python Package (`shared_python/unified-config-loader/`)
+Reusable Python package providing a unified configuration loader with pluggable backends (env/vault/aws). Used by both `backend/` and `slack_bot/` as a path dependency. The package is published as `unified-config-loader` with import `from unified_config_loader import load_config`. Both consumers re-export from `unified_config_loader` for backward compatibility (`library.config_loader` and `src.config`).
+
+See [`shared_python/unified-config-loader/README.md`](shared_python/unified-config-loader/README.md) for details.
 
 ### Shared Types (`shared/`)
 Shared TypeScript type definitions used by both frontend applications. Contains domain types (`WebDocument`, `ApiType`, `SearchResult`, `ListItem`), constants (`DEFAULT_API_URLS`), and factory values (`emptyDocument`). No build step — Vite transpiles directly via esbuild. Both frontends reference it through `@lenie/shared` alias (tsconfig `paths` + Vite `resolve.alias`). See `docs/shared-types.md` for details.
