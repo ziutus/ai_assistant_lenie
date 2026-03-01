@@ -54,6 +54,9 @@ cd backend
 - `--table TABLE` — DynamoDB table name override (skips SSM lookup)
 - `--bucket BUCKET` — S3 bucket name override (skips SSM lookup)
 - `--data-dir PATH` — local dir for S3 files (default: `data/`)
+- `-y`, `--yes` — skip confirmation prompt (for automation)
+
+Before executing any operations, the script displays source (AWS profile, region) and target (PostgreSQL host/db/port/user) information, then asks for confirmation (`Continue? [y/N]`). Use `-y` to skip the prompt.
 
 **SSM parameters used:**
 - `/{project}/{env}/dynamodb/documents/name` — DynamoDB table name
