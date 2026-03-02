@@ -217,13 +217,13 @@ development_status:
   # ============================================================
 
   # --- Epic 21: Slack Bot MVP — Slash Commands ---
-  epic-21: in-progress
+  epic-21: done
   21-1-project-scaffolding-slack-connection: done  # Code review fixes: startup message after connect, added main.py tests, Dockerfile CMD, .dockerignore
   21-2-api-client-for-backend-communication: done  # Code review: 9 issues found (3H/4M/2L), all fixed. 24 tests, ruff clean.
   21-3-system-information-slash-commands: done  # Code review: 7 issues found (1H/5M/1L), all fixed. 17 tests, ruff clean.
   21-4-content-management-slash-commands: done  # Code review: 5 issues found (1H/2M/2L), all H+M fixed. 46 command tests, 100 full suite.
   21-5-slack-app-manifest-setup-documentation: done
-  epic-21-retrospective: optional
+  epic-21-retrospective: done  # Retro completed 2026-03-02. Key decisions: Epic 22 restructured (deployment-first), conversational state removed from DM commands.
 
   # --- B-79: Migrate Standalone Scripts to config_loader ---
   B-79-migrate-standalone-scripts-to-config-loader: backlog  # Replace load_dotenv() with load_config() in 6 standalone scripts. HIGH priority — blocks Vault-only deployments for batch processing.

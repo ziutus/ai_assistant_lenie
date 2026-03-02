@@ -122,8 +122,8 @@ User can add links, check duplicates, query system status, and get document info
 **FRs covered:** FR1, FR2, FR3, FR4, FR5, FR6, FR7, FR18, FR19, FR20, FR21, FR22, FR23, FR24, FR25
 **NFRs covered:** NFR1-NFR18 (all — quality foundation from first epic)
 
-### Epic 22: Direct Message Interaction (Sprint 8)
-User can send text commands as direct messages to the bot (without `/` prefix). Bot parses DM text and responds with the same capabilities as slash commands.
+### Epic 22: Slack Bot Stabilization & DM Commands (Sprint 8)
+Deploy Slack Bot MVP to NAS, verify end-to-end on real environment, fix any integration issues, then add simplified DM text commands (without conversational state). Deployment-first approach decided during [Epic 21 retrospective](../implementation-artifacts/epic-21-retro-2026-03-02.md).
 **FRs covered:** FR8, FR9
 **Builds on:** Epic 21
 
@@ -288,11 +288,65 @@ So that I can set up the bot from scratch in under 15 minutes.
 
 ---
 
-## Epic 22: Direct Message Interaction
+## Epic 22: Slack Bot Stabilization & DM Commands
 
-User can send text commands as direct messages to the bot without `/` prefix. Bot parses text and responds identically to slash commands.
+Deploy Slack Bot MVP to NAS, verify end-to-end on real environment, fix any integration issues discovered during deployment, then add simplified DM text commands. Deployment-first approach decided during [Epic 21 retrospective](../implementation-artifacts/epic-21-retro-2026-03-02.md). Conversational state (bare URL detection with confirmation prompt) removed from scope — deferred to future epic if needed.
 
-### Story 22.1: DM Event Subscription & Text Command Parsing
+### Story 22.1: NAS Deployment & End-to-End Verification
+
+As a **developer**,
+I want to deploy the Slack Bot to NAS and verify all 5 slash commands work end-to-end,
+So that I have confidence the MVP works on a real environment before building new features.
+
+**Acceptance Criteria:**
+
+**Given** the NAS has Docker and the Lenie backend running
+**When** developer runs `docker compose --profile slack up -d` on NAS
+**Then** the bot container builds, starts, and connects to Slack via Socket Mode
+
+**Given** the bot is running on NAS
+**When** bot connects to Slack
+**Then** startup confirmation message appears in the designated Slack channel
+
+**Given** the bot is running on NAS with real backend
+**When** user types `/lenie-version` in Slack
+**Then** bot responds with actual backend version and build timestamp
+
+**Given** the bot is running on NAS with real backend
+**When** user types `/lenie-count` in Slack
+**Then** bot responds with real document count and per-type breakdown
+
+**Given** the bot is running on NAS with real backend
+**When** user types `/lenie-add <url>`, `/lenie-check <url>`, `/lenie-info <id>` in Slack
+**Then** all 3 content management commands work correctly with real data
+
+**Given** deployment procedure is verified
+**When** developer documents the process
+**Then** a repeatable deployment procedure exists (git pull, build, up, verify)
+
+**Covers:** FR21, FR24 | NFR2, NFR5, NFR8
+
+### Story 22.2: Backend API Response Fixes (Conditional)
+
+As a **developer**,
+I want to fix any API response format mismatches discovered during NAS deployment,
+So that the Slack Bot receives the exact response format it expects from all backend endpoints.
+
+**Acceptance Criteria:**
+
+**Given** NAS deployment revealed API response mismatches
+**When** developer fixes the backend response format or Slack Bot parser
+**Then** all 5 slash commands work correctly with real backend responses
+
+**Given** NAS deployment revealed no issues
+**When** this story is evaluated
+**Then** story is marked as skipped (no work needed)
+
+**Note:** This story may be empty if Story 22-1 deployment passes cleanly. Reserved as placeholder for integration fixes.
+
+**Covers:** NFR9
+
+### Story 22.3: DM Text Command Parsing (Simplified)
 
 As a **user**,
 I want to send commands as plain messages in a DM with the bot (e.g., "version", "add https://..."),
@@ -320,11 +374,10 @@ So that I can interact without remembering slash command syntax.
 **When** user sends unrecognized text (e.g., "hello" or "asdf")
 **Then** bot responds with a help message listing available commands
 
-**Given** user sends a bare URL without a command keyword
-**When** the message matches URL pattern
-**Then** bot asks: "Did you want to add this URL? Reply 'yes' to confirm."
-
 **Covers:** FR8, FR9 | NFR1, NFR18
+
+**Removed from original scope (Epic 21 retro decision):**
+- ~~Bare URL detection with confirmation prompt ("Did you want to add this URL? Reply 'yes' to confirm.")~~ — requires conversational state management, deferred to future epic
 
 ---
 
