@@ -13,15 +13,13 @@ from src.api_client import (
     ApiConnectionError,
     ApiError,
     ApiResponseError,
-    create_client,
+    LenieApiClient,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from slack_bolt import App
-    from src.api_client import LenieApiClient
-    from src.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -153,9 +151,8 @@ def _handle_info(ack: Callable, respond: Callable, client: LenieApiClient, comma
         respond(text="Unexpected response from backend")
 
 
-def register_commands(app: App, cfg: Config) -> None:
+def register_commands(app: App, client: LenieApiClient) -> None:
     """Register all slash commands on the Slack Bolt app."""
-    client = create_client(cfg)
     logger.info("Registering slash commands")
 
     @app.command("/lenie-version")

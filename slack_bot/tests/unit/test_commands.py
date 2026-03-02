@@ -14,6 +14,7 @@ from src.commands import (
 )
 
 
+
 # --- Helpers ---
 
 
@@ -232,11 +233,9 @@ class TestHandleCount:
 class TestRegisterCommands:
     def test_registers_version_and_count_commands(self):
         app = MagicMock()
-        cfg = MagicMock()
+        client = _make_mock_client()
 
-        with patch("src.commands.create_client") as mock_create:
-            mock_create.return_value = MagicMock()
-            register_commands(app, cfg)
+        register_commands(app, client)
 
         # Verify app.command was called for both slash commands
         command_calls = [c for c in app.command.call_args_list]
@@ -244,14 +243,14 @@ class TestRegisterCommands:
         assert "/lenie-version" in registered
         assert "/lenie-count" in registered
 
-    def test_creates_client_from_config(self):
+    def test_uses_provided_client(self):
         app = MagicMock()
-        cfg = MagicMock()
+        client = _make_mock_client()
 
-        with patch("src.commands.create_client") as mock_create:
-            mock_create.return_value = MagicMock()
-            register_commands(app, cfg)
-            mock_create.assert_called_once_with(cfg)
+        register_commands(app, client)
+
+        # Should register commands without creating a new client
+        assert app.command.call_count == 5
 
 
 # --- Task 5.1-5.3: Test /lenie-add ---
@@ -659,11 +658,9 @@ class TestRegisterCommandsAll:
     def test_registers_all_five_commands(self):
         """5.13: Verify all 5 commands registered (2 from 21-3 + 3 new)."""
         app = MagicMock()
-        cfg = MagicMock()
+        client = _make_mock_client()
 
-        with patch("src.commands.create_client") as mock_create:
-            mock_create.return_value = MagicMock()
-            register_commands(app, cfg)
+        register_commands(app, client)
 
         command_calls = [c for c in app.command.call_args_list]
         registered = {c.args[0] for c in command_calls}
