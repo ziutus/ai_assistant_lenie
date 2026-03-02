@@ -15,8 +15,8 @@ COPY shared_python/unified-config-loader/ /shared_python/unified-config-loader/
 # Copy dependency files
 COPY slack_bot/pyproject.toml slack_bot/uv.lock ./
 
-# Install dependencies
-RUN uv sync --frozen --no-dev --no-install-project
+# Install dependencies (include vault + aws extras for secret backends)
+RUN uv sync --frozen --no-dev --no-install-project --extra vault --extra aws
 
 # Copy source code
 COPY slack_bot/src/ src/
