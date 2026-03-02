@@ -59,6 +59,51 @@ services:
     networks:
       - lenie-net
 
+  lenie-ai-slack-bot:
+    image: 192.168.200.7:5005/lenie-ai-slack-bot:latest
+    container_name: lenie-ai-slack-bot
+    restart: unless-stopped
+    env_file:
+      - /share/Container/lenie-env/.env
+    networks:
+      - lenie-net
+    depends_on:
+      - lenie-ai-server
+
+  lenie-minio:
+    image: minio/minio:latest
+    container_name: lenie-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    env_file:
+      - /share/Container/lenie-env/minio.env
+    command: server /data --console-address ":9001"
+    volumes:
+      - lenie-minio-data:/data
+    networks:
+      - lenie-net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  lenie-registry-ui:
+    image: joxit/docker-registry-ui:latest
+    container_name: lenie-registry-ui
+    restart: unless-stopped
+    ports:
+      - "8550:80"
+    environment:
+      SINGLE_REGISTRY: "true"
+      REGISTRY_TITLE: "Lenie AI Registry"
+      REGISTRY_URL: "http://192.168.200.7:5005"
+      DELETE_IMAGES: "true"
+    networks:
+      - lenie-net
+
   lenie-vault:
     image: hashicorp/vault:1.21.3
     container_name: lenie-vault
@@ -70,9 +115,9 @@ services:
     env_file:
       - /share/Container/lenie-env/vault.env
     volumes:
-      - /share/Container/vault/config:/vault/config
-      - /share/Container/vault/data:/vault/file
-      - /share/Container/vault/logs:/vault/logs
+      - /share/vault/config:/vault/config
+      - /share/vault/data:/vault/file
+      - /share/vault/logs:/vault/logs
     command: server
     healthcheck:
       test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
@@ -92,4 +137,6 @@ volumes:
   lenie-ai-db-data:
     external: true
   lenie-ai-data:
+    external: true
+  lenie-minio-data:
     external: true

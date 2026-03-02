@@ -21,8 +21,11 @@ Full Lenie stack running on a local QNAP NAS for personal use and testing.
 | Frontend React | `lenie-ai-frontend` | `192.168.200.7:5005/lenie-ai-frontend` | 3000 | Main web interface |
 | Admin Panel | `lenie-ai-app2` | `192.168.200.7:5005/lenie-ai-app2` | 3001 | Admin panel (app2) |
 | Backend | `lenie-ai-server` | `192.168.200.7:5005/lenie-ai-server` | 5055 | Flask API server |
+| Slack Bot | `lenie-ai-slack-bot` | `192.168.200.7:5005/lenie-ai-slack-bot` | — | Slack Bot (Socket Mode, no exposed port) |
 | PostgreSQL | `lenie-ai-db` | `192.168.200.7:5005/lenie-ai-db` | 5434 | PostgreSQL 17 + pgvector (upgrade to 18 pending — B-69) |
-| Vault | `lenie-vault` | `hashicorp/vault:latest` | 8210 | HashiCorp Vault secrets manager |
+| MinIO | `lenie-minio` | `minio/minio:latest` | 9000, 9001 | S3-compatible storage (API + web console) |
+| Vault | `lenie-vault` | `hashicorp/vault:1.21.3` | 8210 | HashiCorp Vault secrets manager |
+| Registry UI | `lenie-registry-ui` | `joxit/docker-registry-ui:latest` | 8550 | Web UI for Docker registry |
 | **Registry** | `lenie-registry` | `registry:2` | 5005 | Private Docker registry (infra) |
 
 All application services are orchestrated via `docker compose` using `compose.nas.yaml`.
@@ -37,7 +40,9 @@ From any device on the local network:
 - **Frontend:** http://192.168.200.7:3000
 - **Admin Panel:** http://192.168.200.7:3001
 - **Backend API:** http://192.168.200.7:5055
+- **MinIO Console:** http://192.168.200.7:9001
 - **Vault UI:** http://192.168.200.7:8210/ui
+- **Registry UI:** http://192.168.200.7:8550
 - **Registry catalog:** http://192.168.200.7:5005/v2/_catalog
 
 ## Prerequisites
@@ -74,6 +79,7 @@ QNAP uses several ports by default. Known conflicts:
 | 5050 | Python process | — |
 | 5433 | Local PostgreSQL | DB container uses 5434 |
 | 8200 | UPnP Media Server | Vault uses 8210 |
+| 9000, 9001 | — (free) | MinIO S3 API + web console |
 
 ## Private Docker Registry
 
@@ -162,12 +168,18 @@ $DOCKER exec lenie-registry du -sh /var/lib/registry
 The script `infra/docker/nas-deploy.sh` handles building images, pushing to the private registry, and deploying via `docker compose`.
 
 ```bash
-# Deploy all services (build → push → compose up)
+# Deploy all core services (build → push → compose up)
 ./infra/docker/nas-deploy.sh
 
 # Deploy specific service(s)
 ./infra/docker/nas-deploy.sh frontend
 ./infra/docker/nas-deploy.sh backend app2
+
+# Deploy Slack Bot (build → push → compose up)
+./infra/docker/nas-deploy.sh slack-bot
+
+# Deploy MinIO (official image — no build, only compose pull/up)
+./infra/docker/nas-deploy.sh minio
 
 # Push existing image without rebuilding
 ./infra/docker/nas-deploy.sh --skip-build backend
@@ -181,6 +193,8 @@ The script `infra/docker/nas-deploy.sh` handles building images, pushing to the 
 # Sync compose file and deploy specific services
 ./infra/docker/nas-deploy.sh --sync-compose frontend app2
 ```
+
+> **Note:** `slack-bot` and `minio` are not included in the default `all` target — they must be deployed explicitly. MinIO uses the official Docker Hub image, so the build/push step is skipped automatically.
 
 The script performs these steps for each service:
 
@@ -242,11 +256,12 @@ If migrating from the previous tar.gz/scp deployment:
    DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
    $DOCKER volume create lenie-ai-db-data
    $DOCKER volume create lenie-ai-data
+   $DOCKER volume create lenie-minio-data
    ```
 6. Stop old containers:
    ```bash
-   $DOCKER stop lenie-ai-frontend lenie-ai-app2 lenie-ai-server lenie-ai-db
-   $DOCKER rm lenie-ai-frontend lenie-ai-app2 lenie-ai-server lenie-ai-db
+   $DOCKER stop lenie-ai-frontend lenie-ai-app2 lenie-ai-server lenie-ai-db vault
+   $DOCKER rm lenie-ai-frontend lenie-ai-app2 lenie-ai-server lenie-ai-db vault
    ```
 7. Push all images and deploy: `./nas-deploy.sh`
 
@@ -437,6 +452,8 @@ $DOCKER ps --filter name=lenie
 ```bash
 $DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
 $DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-db
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-slack-bot
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-minio
 $DOCKER logs --tail 50 lenie-vault
 $DOCKER logs --tail 50 lenie-registry
 ```

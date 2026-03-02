@@ -18,7 +18,8 @@ COPY slack_bot/pyproject.toml slack_bot/uv.lock ./
 # Install dependencies (include vault + aws extras for secret backends)
 RUN uv sync --frozen --no-dev --no-install-project --extra vault --extra aws
 
-# Copy source code
+# Copy source code and README (required by hatchling build)
+COPY slack_bot/README.md .
 COPY slack_bot/src/ src/
 
 # Create non-root user
