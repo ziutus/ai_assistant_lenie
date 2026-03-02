@@ -113,7 +113,8 @@ class WebsitesDBPostgreSQL:
 
 
         if search_in_documents:
-            search_clauses = [f"text LIKE '%{search_in_documents}%'",
+            search_clauses = [f"url LIKE '%{search_in_documents}%'",
+                              f"text LIKE '%{search_in_documents}%'",
                               f"title LIKE '%{search_in_documents}%'",
                               f"summary LIKE '%{search_in_documents}%'",
                               f"chapter_list LIKE '%{search_in_documents}%'",
