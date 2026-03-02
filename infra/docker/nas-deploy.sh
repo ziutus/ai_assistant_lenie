@@ -31,24 +31,29 @@ declare -A SVC_IMAGE=(
     [app2]="lenie-ai-app2:latest"
     [backend]="lenie-ai-server:latest"
     [db]="lenie-ai-db:latest"
+    [slack-bot]="lenie-ai-slack-bot:latest"
 )
 declare -A SVC_REGISTRY_IMAGE=(
     [frontend]="${REGISTRY}/lenie-ai-frontend:latest"
     [app2]="${REGISTRY}/lenie-ai-app2:latest"
     [backend]="${REGISTRY}/lenie-ai-server:latest"
     [db]="${REGISTRY}/lenie-ai-db:latest"
+    [slack-bot]="${REGISTRY}/lenie-ai-slack-bot:latest"
 )
 declare -A SVC_DOCKERFILE=(
     [frontend]="web_interface_react/Dockerfile"
     [app2]="web_interface_app2/Dockerfile"
     [backend]="backend/Dockerfile"
     [db]="infra/docker/Postgresql/Dockerfile"
+    [slack-bot]="slack_bot/Dockerfile"
 )
 declare -A SVC_COMPOSE_NAME=(
     [frontend]="lenie-ai-frontend"
     [app2]="lenie-ai-app2"
     [backend]="lenie-ai-server"
     [db]="lenie-ai-db"
+    [slack-bot]="lenie-ai-slack-bot"
+    [minio]="lenie-minio"
 )
 
 ALL_SERVICES="db backend frontend app2"
@@ -165,6 +170,13 @@ deploy_service() {
     echo -e "${BLUE}  Deploying: ${svc}${NC}"
     echo -e "${BLUE}========================================${NC}"
 
+    # Services without Dockerfile use official images (e.g., minio) — skip build/push
+    if [ -z "${SVC_DOCKERFILE[$svc]:-}" ]; then
+        log "Serwis ${svc} używa oficjalnego obrazu — pomijanie build/push"
+        ok "Deploy ${svc} — obraz z Docker Hub (compose pull)"
+        return
+    fi
+
     if [ "$skip_build" = "false" ]; then
         build_image "$svc"
     else
@@ -185,7 +197,9 @@ show_status() {
 usage() {
     echo "Usage: $0 [OPTIONS] [service ...]"
     echo ""
-    echo "Services: frontend, app2, backend, db, all (default)"
+    echo "Services: frontend, app2, backend, db, slack-bot, minio, all (default: core services)"
+    echo "  Note: 'all' deploys core services only (db, backend, frontend, app2)."
+    echo "  slack-bot and minio must be deployed explicitly."
     echo ""
     echo "Options:"
     echo "  --skip-build      Skip Docker build, push existing local image"
@@ -194,8 +208,10 @@ usage() {
     echo "  --help, -h        Show this help"
     echo ""
     echo "Examples:"
-    echo "  $0                           # Build, push & deploy all"
+    echo "  $0                           # Build, push & deploy core services"
     echo "  $0 frontend                  # Build, push & deploy frontend only"
+    echo "  $0 slack-bot                 # Build, push & deploy Slack Bot"
+    echo "  $0 minio                     # Deploy MinIO (official image, no build)"
     echo "  $0 --skip-build backend      # Push existing image & deploy"
     echo "  $0 --compose-only            # Just compose up on NAS"
     echo "  $0 --sync-compose            # Sync compose file and deploy all"
@@ -216,7 +232,7 @@ while [[ $# -gt 0 ]]; do
         --sync-compose)  SYNC_COMPOSE="true"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
-        frontend|app2|backend|db) SERVICES="$SERVICES $1"; shift ;;
+        frontend|app2|backend|db|slack-bot|minio) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
 done
@@ -267,6 +283,7 @@ echo "  Admin Panel: http://${NAS_HOST}:3001"
 echo "  Backend API: http://${NAS_HOST}:5055"
 echo "  PostgreSQL:  ${NAS_HOST}:5434"
 echo "  Vault UI:    http://${NAS_HOST}:8210/ui"
+echo "  MinIO Console: http://${NAS_HOST}:9001"
 echo ""
 echo "  Registry:    http://${REGISTRY}/v2/_catalog"
 echo ""
