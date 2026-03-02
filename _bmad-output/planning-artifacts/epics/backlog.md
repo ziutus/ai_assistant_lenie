@@ -725,3 +725,39 @@ so that development uses the same S3 API as production (AWS) and future Kubernet
 
 **Priority:** MEDIUM — enables consistent NAS development, prevents future rewrites
 **Status:** backlog
+
+### B-84: Add CONTENT_NEEDED Document Status for Slack Bot URL Additions
+
+As a **developer**,
+I want a new document processing status `CONTENT_NEEDED` that signals the backend to fetch page content automatically,
+so that URLs added via Slack Bot (which cannot send page HTML/text like the Chrome extension) still get their content downloaded and processed.
+
+**Origin:** Story 22.1 verification — `/lenie-add` works but adding `webpage` type via Slack is incomplete because the Chrome extension sends full HTML/text content with the request, while Slack Bot can only send the URL. Without content, the document sits in the database with no text to process.
+
+**Context — how different sources add documents:**
+- **Chrome extension** (`/url_add`): sends URL + type + full HTML + extracted text + title + language → document is immediately ready for processing
+- **Slack Bot** (`/lenie-add`): can only send URL + type → no content available at submission time
+- **YouTube**: content is fetched automatically via YouTube Transcript API — works fine from Slack
+- **link**: only URL and description matter — works fine from Slack
+- **webpage**: needs HTML/text content that Slack cannot provide → this is the gap
+
+**Proposed solution:**
+1. Add `CONTENT_NEEDED` status to `StalkerDocumentStatus` enum (in `backend/library/models/stalker_document_status.py`)
+2. When `/url_add` receives a `webpage` without `text`/`html` fields, set status to `CONTENT_NEEDED` instead of the default flow
+3. Backend batch processing script (`web_documents_do_the_needful_new.py`) picks up `CONTENT_NEEDED` documents and downloads content using existing tools (BeautifulSoup, Firecrawl, Markdownify)
+4. After content is fetched, status transitions to `DOCUMENT_INTO_DATABASE` and normal processing continues
+
+**Scope:**
+1. Add `CONTENT_NEEDED` to `StalkerDocumentStatus` enum and database `document_types` table
+2. Modify `/url_add` endpoint to detect missing content and set appropriate status
+3. Extend `web_documents_do_the_needful_new.py` to handle `CONTENT_NEEDED` → download content → update status
+4. Update Slack Bot `/lenie-add` response to inform user that content will be fetched automatically
+
+**Acceptance Criteria:**
+- `/lenie-add https://example.com webpage` via Slack → document created with status `CONTENT_NEEDED`
+- Batch processing script picks up `CONTENT_NEEDED` documents and downloads their content
+- After content fetch, document transitions to normal processing pipeline
+- Chrome extension workflow unchanged (still sends content directly)
+
+**Priority:** MEDIUM — improves Slack Bot usefulness for webpage additions
+**Status:** backlog

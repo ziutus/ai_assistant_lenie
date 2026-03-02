@@ -257,8 +257,8 @@ class TestRegisterCommands:
 
 
 class TestHandleAdd:
-    def test_success(self):
-        """5.1: Mocked add_url(), verify response format with document_id."""
+    def test_success_default_type(self):
+        """Default type is webpage when no type specified."""
         client = _make_mock_client()
         client.add_url.return_value = {"status": "success", "document_id": 42}
         ack, respond = _make_ack_respond()
@@ -267,11 +267,37 @@ class TestHandleAdd:
         _handle_add(ack, respond, client, command)
 
         ack.assert_called_once()
-        client.add_url.assert_called_once_with("https://example.com/article")
+        client.add_url.assert_called_once_with("https://example.com/article", url_type="webpage")
         text = respond.call_args[1]["text"]
         assert "42" in text
-        assert "link" in text
+        assert "webpage" in text
         assert "Added to knowledge base" in text
+
+    def test_success_explicit_type(self):
+        """Explicit type passed as second argument."""
+        client = _make_mock_client()
+        client.add_url.return_value = {"status": "success", "document_id": 99}
+        ack, respond = _make_ack_respond()
+        command = {"text": "https://youtube.com/watch?v=abc youtube"}
+
+        _handle_add(ack, respond, client, command)
+
+        client.add_url.assert_called_once_with("https://youtube.com/watch?v=abc", url_type="youtube")
+        text = respond.call_args[1]["text"]
+        assert "99" in text
+        assert "youtube" in text
+
+    def test_invalid_type(self):
+        """Invalid type returns error message."""
+        client = _make_mock_client()
+        ack, respond = _make_ack_respond()
+        command = {"text": "https://example.com badtype"}
+
+        _handle_add(ack, respond, client, command)
+
+        client.add_url.assert_not_called()
+        text = respond.call_args[1]["text"]
+        assert "Unknown type" in text
 
     def test_empty_url(self):
         """5.2: Empty URL — verify usage hint response."""
