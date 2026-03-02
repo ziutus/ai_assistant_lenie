@@ -239,6 +239,7 @@ development_status:
   B-50-api-type-synchronization-pydantic-openapi-ts: backlog  # Pydantic → OpenAPI → generated TS types. Fixes backend-frontend drift: id type mismatch, missing fields (13 in WebDocument, 5 in ListItem, 7 in SearchResult), untyped enums. Strategy: docs/api-type-sync-strategy.md. 5 phases: Pydantic models, Flask route integration, OpenAPI gen, TS gen, CI check.
 
   # --- Phase 3: Security Hardening & AWS Cleanup ---
+  B-83-vault-auto-unseal-aws-kms: backlog  # Vault on NAS uses Shamir seal (manual unseal). Fix: add seal "awskms" block to vault.hcl, create vault.env with dedicated IAM user credentials, migrate seal (vault operator unseal -migrate), unify mount paths (/share/vault vs /share/Container/vault). Requires: dedicated AWS IAM user for KMS.
   B-13-parameterize-stage-description-for-multi-environment: backlog
   B-19-convert-ec2-to-spot-with-asg-0-1: backlog
   B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
@@ -266,8 +267,8 @@ development_status:
   # ============================================================
 
   # --- Epic 22: Slack Bot Stabilization & DM Commands ---
-  epic-22: backlog
-  22-1-nas-deployment-end-to-end-verification: backlog
+  epic-22: in-progress
+  22-1-nas-deployment-end-to-end-verification: in-progress
   22-2-backend-api-response-fixes-conditional: backlog
   22-3-dm-text-command-parsing-simplified: backlog
   epic-22-retrospective: optional
