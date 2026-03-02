@@ -3,8 +3,9 @@
 import logging
 from unittest.mock import MagicMock
 
+from src.api_client import ApiConnectionError, ApiError
 from src.config import Config
-from src.main import post_startup_message, setup_logging
+from src.main import check_backend_connectivity, post_startup_message, setup_logging
 
 
 class TestSetupLogging:
@@ -24,6 +25,60 @@ class TestSetupLogging:
         setup_logging()
         root = logging.getLogger()
         assert root.level == logging.INFO
+
+
+class TestCheckBackendConnectivity:
+    """Tests for check_backend_connectivity."""
+
+    def test_logs_success_with_version_info(self, caplog):
+        client = MagicMock()
+        client.check_health.return_value = {"status": "OK"}
+        client.get_version.return_value = {
+            "app_version": "0.3.13.0",
+            "app_build_time": "2026.01.23 04:04",
+        }
+        with caplog.at_level(logging.INFO):
+            check_backend_connectivity(client)
+        assert "Backend connection OK" in caplog.text
+        assert "0.3.13.0" in caplog.text
+        assert "2026.01.23 04:04" in caplog.text
+
+    def test_logs_warning_on_connection_error(self, caplog):
+        client = MagicMock()
+        client.check_health.side_effect = ApiConnectionError("Connection refused")
+        with caplog.at_level(logging.WARNING):
+            check_backend_connectivity(client)
+        assert "Backend is NOT reachable" in caplog.text
+        assert "Connection refused" in caplog.text
+
+    def test_logs_warning_on_health_api_error(self, caplog):
+        client = MagicMock()
+        client.check_health.side_effect = ApiError("Internal error")
+        with caplog.at_level(logging.WARNING):
+            check_backend_connectivity(client)
+        assert "Backend health check failed" in caplog.text
+        assert "Internal error" in caplog.text
+
+    def test_does_not_raise_on_connection_error(self):
+        client = MagicMock()
+        client.check_health.side_effect = ApiConnectionError("timeout")
+        # Should not raise
+        check_backend_connectivity(client)
+
+    def test_health_ok_but_version_fails_logs_info(self, caplog):
+        """Backend reachable via /healthz but /version returns error."""
+        client = MagicMock()
+        client.check_health.return_value = {"status": "OK"}
+        client.get_version.side_effect = ApiError("non-JSON response")
+        with caplog.at_level(logging.INFO):
+            check_backend_connectivity(client)
+        assert "Backend is reachable but /version endpoint unavailable" in caplog.text
+
+    def test_does_not_call_version_if_health_fails(self):
+        client = MagicMock()
+        client.check_health.side_effect = ApiConnectionError("timeout")
+        check_backend_connectivity(client)
+        client.get_version.assert_not_called()
 
 
 class TestPostStartupMessage:

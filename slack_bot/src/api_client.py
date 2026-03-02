@@ -82,6 +82,10 @@ class LenieApiClient:
                 response_body=resp.text[:MAX_ERROR_BODY_LENGTH],
             ) from exc
 
+    def check_health(self) -> dict:
+        """GET /healthz — returns backend health status (no auth required)."""
+        return self._request("GET", "/healthz")
+
     def get_version(self) -> dict:
         """GET /version — returns backend version info."""
         return self._request("GET", "/version")

@@ -14,6 +14,7 @@ from typing import Any
 from pythonjsonlogger import jsonlogger
 
 from src import __version__
+from src.api_client import ApiConnectionError, ApiError, LenieApiClient, create_client
 from src.commands import register_commands
 from src.config import Config, load_config
 
@@ -30,6 +31,29 @@ def setup_logging() -> None:
     root.handlers.clear()
     root.addHandler(handler)
     root.setLevel(logging.INFO)
+
+
+def check_backend_connectivity(client: LenieApiClient) -> None:
+    """Check if the Lenie backend is reachable by calling GET /healthz."""
+    logger = logging.getLogger(__name__)
+    try:
+        client.check_health()
+    except ApiConnectionError as exc:
+        logger.warning("Backend is NOT reachable: %s", exc.message)
+        return
+    except ApiError as exc:
+        logger.warning("Backend health check failed: %s", exc.message)
+        return
+
+    try:
+        data = client.get_version()
+        logger.info(
+            "Backend connection OK — version %s, build %s",
+            data.get("app_version", "unknown"),
+            data.get("app_build_time", "unknown"),
+        )
+    except ApiError:
+        logger.info("Backend is reachable but /version endpoint unavailable")
 
 
 def post_startup_message(app: Any, cfg: Config) -> None:
@@ -70,13 +94,16 @@ def main() -> None:
         logger.error("slack-bolt package is required: pip install slack-bolt")
         sys.exit(1)
 
+    api_client = create_client(cfg)
+
     app = App(token=bot_token)
-    register_commands(app, cfg)
+    register_commands(app, api_client)
 
     handler = SocketModeHandler(app, app_token)
     handler.connect()
     logger.info("Socket Mode connection established")
 
+    check_backend_connectivity(api_client)
     post_startup_message(app, cfg)
 
     logger.info("Bot is running. Press Ctrl+C to stop.")
