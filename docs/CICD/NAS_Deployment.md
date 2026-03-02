@@ -97,6 +97,11 @@ $DOCKER run -d --name lenie-registry \
   --restart unless-stopped \
   -p 5005:5000 \
   -v lenie-registry-data:/var/lib/registry \
+  -e REGISTRY_HTTP_HEADERS_Access-Control-Allow-Origin='["*"]' \
+  -e REGISTRY_HTTP_HEADERS_Access-Control-Allow-Methods='["HEAD","GET","OPTIONS","DELETE"]' \
+  -e REGISTRY_HTTP_HEADERS_Access-Control-Allow-Headers='["Authorization","Accept","Cache-Control"]' \
+  -e REGISTRY_HTTP_HEADERS_Access-Control-Expose-Headers='["Docker-Content-Digest"]' \
+  -e REGISTRY_STORAGE_DELETE_ENABLED=true \
   registry:2
 ```
 
