@@ -1,4 +1,4 @@
-# generated: 2026-02-28
+# generated: 2026-03-02
 # project: lenie-server-2025
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-02-28
+generated: 2026-03-02
 project: lenie-server-2025
 project_key: NOKEY
 tracking_system: file-system
@@ -261,11 +261,32 @@ development_status:
   B-41-rss-feed-ingestion-with-llm-filtering: backlog  # RSS feeds (AWS What's New), daily Lambda, LLM relevance scoring, submit to /url_add pipeline.
   # B-42: SUPERSEDED by Epic 21-25 (Slack Bot). Full decomposition in epics.md.
 
-  # --- Future Sprint 8: Slack Bot Enhancements (Epics 22-25) ---
-  # epic-22: Direct Message Interaction (Story 22-1)
-  # epic-23: Channel App Mentions (Story 23-1)
-  # epic-24: Conversational LLM Intelligence (Stories 24-1, 24-2)
-  # epic-25: Proactive Health Monitoring (Story 25-1)
+  # ============================================================
+  # SPRINT 8: Slack Bot Enhancements
+  # ============================================================
+
+  # --- Epic 22: Slack Bot Stabilization & DM Commands ---
+  epic-22: backlog
+  22-1-nas-deployment-end-to-end-verification: backlog
+  22-2-backend-api-response-fixes-conditional: backlog
+  22-3-dm-text-command-parsing-simplified: backlog
+  epic-22-retrospective: optional
+
+  # --- Epic 23: Channel App Mentions ---
+  epic-23: backlog
+  23-1-app-mention-event-handler-thread-responses: backlog
+  epic-23-retrospective: optional
+
+  # --- Epic 24: Conversational LLM Intelligence ---
+  epic-24: backlog
+  24-1-llm-intent-parser: backlog
+  24-2-semantic-search-via-natural-language: backlog
+  epic-24-retrospective: optional
+
+  # --- Epic 25: Proactive Health Monitoring ---
+  epic-25: backlog
+  25-1-scheduled-health-checks-proactive-alerts: backlog
+  epic-25-retrospective: optional
 
   # --- Phase 6: Obsidian Integration ---
   B-60-obsidian-vault-integration: backlog  # Synchronization between Lenie-AI and Obsidian vault — linking, note creation, bidirectional sync.
