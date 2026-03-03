@@ -242,7 +242,7 @@ development_status:
   B-50-api-type-synchronization-pydantic-openapi-ts: backlog  # Pydantic → OpenAPI → generated TS types. Fixes backend-frontend drift: id type mismatch, missing fields (13 in WebDocument, 5 in ListItem, 7 in SearchResult), untyped enums. Strategy: docs/api-type-sync-strategy.md. 5 phases: Pydantic models, Flask route integration, OpenAPI gen, TS gen, CI check.
 
   # --- Phase 3: Security Hardening & AWS Cleanup ---
-  B-83-vault-auto-unseal-aws-kms: backlog  # Vault on NAS uses Shamir seal (manual unseal). Fix: add seal "awskms" block to vault.hcl, create vault.env with dedicated IAM user credentials, migrate seal (vault operator unseal -migrate), unify mount paths (/share/vault vs /share/Container/vault). Requires: dedicated AWS IAM user for KMS.
+  B-83-vault-auto-unseal-aws-kms: done  # DONE 2026-03-03. Migrated Vault seal from Shamir to AWS KMS on NAS. Added seal "awskms" block to vault.hcl, created vault.env with IAM user credentials, ran unseal -migrate, tested auto-unseal after restart. Fixed doc paths (/share/Container/vault → /share/vault) in Vault_Setup.md and NAS_Deployment.md. Updated migration procedure with docker restart vs force-recreate gotcha.
   B-13-parameterize-stage-description-for-multi-environment: backlog
   B-19-convert-ec2-to-spot-with-asg-0-1: backlog
   B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
