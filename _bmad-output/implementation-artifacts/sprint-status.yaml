@@ -232,6 +232,9 @@ development_status:
   # BACKLOG (only items TO DO)
   # ============================================================
 
+  # --- Bug Fixes ---
+  B-85-website-get-returns-500-for-nonexistent-id: backlog  # GET /website_get?id=<nonexistent> returns HTTP 500 instead of 404. Backend should return 404 with clear error message when document ID does not exist. Found during Story 22.1 verification.
+
   # --- Code Quality ---
   B-81-expand-code-duplication-control: backlog  # pylint duplicate-code added to Makefile (make duplicate-check). Next: jscpd for cross-language (Python+TS), expand scope, CI integration, fix known duplicates (connect_kwargs, serialization).
 
@@ -268,7 +271,7 @@ development_status:
 
   # --- Epic 22: Slack Bot Stabilization & DM Commands ---
   epic-22: in-progress
-  22-1-nas-deployment-end-to-end-verification: in-progress
+  22-1-nas-deployment-end-to-end-verification: done
   22-2-backend-api-response-fixes-conditional: backlog
   22-3-dm-text-command-parsing-simplified: backlog
   epic-22-retrospective: optional

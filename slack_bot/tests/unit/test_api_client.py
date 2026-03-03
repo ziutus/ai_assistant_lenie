@@ -103,7 +103,7 @@ class TestAddUrl:
         with patch.object(client._session, "request", return_value=mock_resp) as mock_req:
             client.add_url("https://example.com")
         call_json = mock_req.call_args[1]["json"]
-        assert call_json["type"] == "link"
+        assert call_json["type"] == "webpage"
 
 
 # --- Task 4.3: Test get_document() ---
