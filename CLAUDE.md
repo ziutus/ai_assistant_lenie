@@ -209,6 +209,16 @@ Access layer: raw `psycopg2` queries (no ORM). Connection via `POSTGRESQL_HOST/D
 
 When saving text files (chat exports, notes, analysis results) during a conversation, **always save them to `.claude/exports/`** instead of the project root. Create the directory if it doesn't exist. This keeps the project root clean and the directory is already in `.gitignore`.
 
+## Git Commit Authorship
+
+When creating git commits, always use the `--author` flag to attribute the code to Claude Code:
+
+```bash
+git commit --author="Claude Code <noreply@anthropic.com>" -m "commit message"
+```
+
+This ensures the commit history correctly shows **Claude Code as the author** (who wrote the code) and the repository owner as the **committer** (who approved and committed it). Do NOT add the `Co-Authored-By` trailer when using `--author` — the authorship is already set.
+
 ## External Services
 
 - **AI/LLM**: OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bielik
