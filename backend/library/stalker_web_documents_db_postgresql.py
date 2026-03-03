@@ -7,6 +7,8 @@ import psycopg2
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_type import StalkerDocumentType
 
+logger = logging.getLogger(__name__)
+
 
 class WebsitesDBPostgreSQL:
     def __init__(self):
@@ -59,7 +61,7 @@ class WebsitesDBPostgreSQL:
         # Końcowe zapytanie
         query = f"{base_query} {where_query} ORDER BY id LIMIT 1"
 
-        print(query)
+        logger.debug("query: %s", query)
 
         with self.conn:
             with self.conn.cursor() as cur:
@@ -79,7 +81,7 @@ class WebsitesDBPostgreSQL:
                 dict[str, str, str, str, str, str, str, str, str]]:
         offset = offset * limit
 
-        print(f"count: {count}")
+        logger.debug("count: %s", count)
 
         if count:
             base_query = "SELECT count(id) FROM public.web_documents"
@@ -91,35 +93,39 @@ class WebsitesDBPostgreSQL:
         limit_offset = f"LIMIT {int(limit)} OFFSET {int(offset)}"
 
         where_clauses = []
+        params = []
 
         if document_type != "ALL":
-            where_clauses.append(f"document_type = '{document_type}'")
+            where_clauses.append("document_type = %s")
+            params.append(document_type)
 
         if document_state != "ALL":
-            where_clauses.append(f"document_state = '{document_state}'")
+            where_clauses.append("document_state = %s")
+            params.append(document_state)
 
         if project:
-            where_clauses.append(f"document_state = '{project}'")
+            where_clauses.append("document_state = %s")
+            params.append(project)
 
         if ai_correction_needed:
-            where_clauses.append(f"ai_correction_needed = '{ai_correction_needed}'")
+            where_clauses.append("ai_correction_needed = %s")
+            params.append(ai_correction_needed)
 
         if ai_summary_needed:
-            where_clauses.append(f"ai_summary_needed = '{ai_summary_needed}'")
+            where_clauses.append("ai_summary_needed = %s")
+            params.append(ai_summary_needed)
 
         if start_id:
             start_id = int(start_id)
-            where_clauses.append(f"id >= {start_id} ")
+            where_clauses.append("id >= %s")
+            params.append(start_id)
 
 
         if search_in_documents:
-            search_clauses = [f"url LIKE '%{search_in_documents}%'",
-                              f"text LIKE '%{search_in_documents}%'",
-                              f"title LIKE '%{search_in_documents}%'",
-                              f"summary LIKE '%{search_in_documents}%'",
-                              f"chapter_list LIKE '%{search_in_documents}%'",
-                              f"summary_english LIKE '%{search_in_documents}%'",
-                              f"text_english LIKE '%{search_in_documents}%'"]
+            search_fields = ["url", "text", "title", "summary", "chapter_list", "summary_english", "text_english"]
+            search_clauses = [f"{field} LIKE %s" for field in search_fields]
+            search_pattern = f"%{search_in_documents}%"
+            params.extend([search_pattern] * len(search_fields))
             where_clauses.append(f"({' OR '.join(search_clauses)})")
 
         # Łączenie warunków zapytania
@@ -134,11 +140,11 @@ class WebsitesDBPostgreSQL:
         else:
             query = f"{base_query}{where_query} {order_by} {limit_offset}"
 
-        print(query)
+        logger.debug("query: %s", query)
 
         with self.conn:
             with self.conn.cursor() as cur:
-                cur.execute(query)
+                cur.execute(query, params if params else None)
 
                 if count:
                     result = cur.fetchone()[0]
@@ -365,11 +371,11 @@ class WebsitesDBPostgreSQL:
         query = f"""
             SELECT id
             FROM web_documents as wd
-            WHERE url like '{url}%'  AND document_type='webpage'  AND wd.id > {min} and ((document_state='ERROR' and document_state_error='REGEX_ERROR') OR document_state='URL_ADDED') 
+            WHERE url like '{url}%'  AND document_type='webpage'  AND wd.id > {min} and ((document_state='ERROR' and document_state_error='REGEX_ERROR') OR document_state='URL_ADDED')
             ORDER by wd.id
         """
 
-        print(query)
+        logger.debug("query: %s", query)
 
         with self.conn:
             with self.conn.cursor() as cur:
