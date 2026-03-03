@@ -175,6 +175,22 @@ class WebsitesDBPostgreSQL:
                 cur.execute("SELECT count(id) FROM public.web_documents")
                 return cur.fetchone()[0]
 
+    def get_count_by_type(self) -> dict[str, int]:
+        """Return document counts grouped by type, plus 'ALL' total.
+
+        Returns dict like: {"ALL": 150, "webpage": 80, "youtube": 40, "link": 30}
+        Types with zero count are omitted (except ALL which is always present).
+        """
+        with self.conn:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    "SELECT document_type, count(id) FROM public.web_documents GROUP BY document_type"
+                )
+                rows = cur.fetchall()
+                counts = {row[0]: row[1] for row in rows}
+                counts["ALL"] = sum(counts.values())
+                return counts
+
     def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30, project=None) -> list[dict[
             str, Any]] | None:
 

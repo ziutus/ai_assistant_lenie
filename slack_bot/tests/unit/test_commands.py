@@ -129,14 +129,15 @@ class TestHandleVersion:
 class TestHandleCount:
     def test_success(self):
         client = _make_mock_client()
-        # ALL returns 1847, individual types return various counts
-        counts = {"ALL": 1847, "webpage": 423, "youtube": 312, "link": 891, "movie": 42, "text_message": 0, "text": 179}
-        client.get_count.side_effect = lambda t: counts[t]
+        client.get_all_counts.return_value = {
+            "ALL": 1847, "webpage": 423, "youtube": 312, "link": 891, "movie": 42, "text_message": 0, "text": 179,
+        }
         ack, respond = _make_ack_respond()
 
         _handle_count(ack, respond, client)
 
         ack.assert_called_once()
+        client.get_all_counts.assert_called_once()
         text = respond.call_args[1]["text"]
         assert "1,847" in text
         assert "webpage: 423" in text
@@ -149,8 +150,7 @@ class TestHandleCount:
 
     def test_zero_count_types_omitted(self):
         client = _make_mock_client()
-        counts = {"ALL": 10, "webpage": 10, "youtube": 0, "link": 0, "movie": 0, "text_message": 0, "text": 0}
-        client.get_count.side_effect = lambda t: counts[t]
+        client.get_all_counts.return_value = {"ALL": 10, "webpage": 10}
         ack, respond = _make_ack_respond()
 
         _handle_count(ack, respond, client)
@@ -171,7 +171,7 @@ class TestHandleCount:
 
     def test_connection_error(self):
         client = _make_mock_client()
-        client.get_count.side_effect = ApiConnectionError("timeout")
+        client.get_all_counts.side_effect = ApiConnectionError("timeout")
         ack, respond = _make_ack_respond()
 
         _handle_count(ack, respond, client)
@@ -182,7 +182,7 @@ class TestHandleCount:
 
     def test_response_error(self):
         client = _make_mock_client()
-        client.get_count.side_effect = ApiResponseError("bad", status_code=500, response_body="error")
+        client.get_all_counts.side_effect = ApiResponseError("bad", status_code=500, response_body="error")
         ack, respond = _make_ack_respond()
 
         _handle_count(ack, respond, client)
@@ -194,7 +194,7 @@ class TestHandleCount:
 
     def test_generic_api_error(self):
         client = _make_mock_client()
-        client.get_count.side_effect = ApiError("count failed")
+        client.get_all_counts.side_effect = ApiError("count failed")
         ack, respond = _make_ack_respond()
 
         _handle_count(ack, respond, client)
@@ -207,8 +207,7 @@ class TestHandleCount:
     def test_ack_called_before_respond(self):
         """Verify ack() is called before respond() for /lenie-count — NFR1."""
         client = _make_mock_client()
-        counts = {"ALL": 5, "webpage": 5, "youtube": 0, "link": 0, "movie": 0, "text_message": 0, "text": 0}
-        client.get_count.side_effect = lambda t: counts[t]
+        client.get_all_counts.return_value = {"ALL": 5, "webpage": 5}
         call_order = []
         ack = MagicMock(side_effect=lambda: call_order.append("ack"))
         respond = MagicMock(side_effect=lambda **kw: call_order.append("respond"))
@@ -219,7 +218,7 @@ class TestHandleCount:
 
     def test_response_error_logs_warning(self):
         client = _make_mock_client()
-        client.get_count.side_effect = ApiResponseError("bad", status_code=500, response_body="error")
+        client.get_all_counts.side_effect = ApiResponseError("bad", status_code=500, response_body="error")
         ack, respond = _make_ack_respond()
 
         with patch("src.commands.logger") as mock_logger:
@@ -286,6 +285,18 @@ class TestHandleAdd:
         text = respond.call_args[1]["text"]
         assert "99" in text
         assert "youtube" in text
+
+    def test_too_many_arguments(self):
+        """Too many arguments returns usage hint."""
+        client = _make_mock_client()
+        ack, respond = _make_ack_respond()
+        command = {"text": "https://example.com webpage extra stuff"}
+
+        _handle_add(ack, respond, client, command)
+
+        client.add_url.assert_not_called()
+        text = respond.call_args[1]["text"]
+        assert "Too many arguments" in text
 
     def test_invalid_type(self):
         """Invalid type returns error message."""
