@@ -90,7 +90,7 @@ class LenieApiClient:
         """GET /version — returns backend version info."""
         return self._request("GET", "/version")
 
-    def add_url(self, url: str, url_type: str = "link", **kwargs) -> dict:
+    def add_url(self, url: str, url_type: str = "webpage", **kwargs) -> dict:
         """POST /url_add — submit a URL to the knowledge base."""
         payload = {"url": url, "type": url_type, **kwargs}
         return self._request("POST", "/url_add", json=payload)

@@ -1,7 +1,6 @@
 """Slack slash command handlers.
 
 Implements /lenie-version, /lenie-count, /lenie-check, /lenie-add, /lenie-info.
-Scope: Story 21-3 and Story 21-4.
 """
 
 from __future__ import annotations
@@ -66,7 +65,7 @@ def _handle_count(ack: Callable, respond: Callable, client: LenieApiClient) -> N
         respond(text=f"An error occurred: {exc.message}")
 
 
-_VALID_TYPES = {"link", "webpage", "youtube", "movie", "text_message", "text"}
+_VALID_TYPES = frozenset(DOCUMENT_TYPES)
 
 
 def _handle_add(ack: Callable, respond: Callable, client: LenieApiClient, command: dict) -> None:
@@ -74,7 +73,7 @@ def _handle_add(ack: Callable, respond: Callable, client: LenieApiClient, comman
     ack()
     parts = command.get("text", "").strip().split()
     if not parts:
-        respond(text="Usage: `/lenie-add <url> [type]`\nTypes: webpage (default), link, youtube, movie")
+        respond(text=f"Usage: `/lenie-add <url> [type]`\nTypes: {', '.join(DOCUMENT_TYPES)} (default: webpage)")
         return
     url = parts[0]
     url_type = parts[1] if len(parts) > 1 else "webpage"
