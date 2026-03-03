@@ -272,7 +272,7 @@ development_status:
   # --- Epic 22: Slack Bot Stabilization & DM Commands ---
   epic-22: in-progress
   22-1-nas-deployment-end-to-end-verification: done
-  22-2-backend-api-response-fixes-conditional: backlog
+  22-2-backend-api-response-fixes-conditional: review
   22-3-dm-text-command-parsing-simplified: backlog
   epic-22-retrospective: optional
 

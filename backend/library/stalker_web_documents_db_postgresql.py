@@ -104,7 +104,7 @@ class WebsitesDBPostgreSQL:
             params.append(document_state)
 
         if project:
-            where_clauses.append("document_state = %s")
+            where_clauses.append("project = %s")
             params.append(project)
 
         if ai_correction_needed:
