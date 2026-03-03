@@ -77,8 +77,7 @@ class WebsitesDBPostgreSQL:
     def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL",
                  search_in_documents = None, count = False, project = None, ai_summary_needed: bool = None,# noqa
                  ai_correction_needed: bool = None, start_id = None) -> \
-            list[
-                dict[str, str, str, str, str, str, str, str, str]]:
+            list[dict[str, Any]]:
         offset = offset * limit
 
         logger.debug("count: %s", count)
@@ -90,7 +89,6 @@ class WebsitesDBPostgreSQL:
 
 
         order_by = "ORDER BY created_at DESC"
-        limit_offset = f"LIMIT {int(limit)} OFFSET {int(offset)}"
 
         where_clauses = []
         params = []
@@ -107,11 +105,11 @@ class WebsitesDBPostgreSQL:
             where_clauses.append("project = %s")
             params.append(project)
 
-        if ai_correction_needed:
+        if ai_correction_needed is not None:
             where_clauses.append("ai_correction_needed = %s")
             params.append(ai_correction_needed)
 
-        if ai_summary_needed:
+        if ai_summary_needed is not None:
             where_clauses.append("ai_summary_needed = %s")
             params.append(ai_summary_needed)
 
@@ -124,7 +122,8 @@ class WebsitesDBPostgreSQL:
         if search_in_documents:
             search_fields = ["url", "text", "title", "summary", "chapter_list", "summary_english", "text_english"]
             search_clauses = [f"{field} LIKE %s" for field in search_fields]
-            search_pattern = f"%{search_in_documents}%"
+            escaped = search_in_documents.replace("%", "\\%").replace("_", "\\_")
+            search_pattern = f"%{escaped}%"
             params.extend([search_pattern] * len(search_fields))
             where_clauses.append(f"({' OR '.join(search_clauses)})")
 
@@ -138,7 +137,8 @@ class WebsitesDBPostgreSQL:
         if count:
             query = f"{base_query}{where_query}"
         else:
-            query = f"{base_query}{where_query} {order_by} {limit_offset}"
+            query = f"{base_query}{where_query} {order_by} LIMIT %s OFFSET %s"
+            params.extend([int(limit), int(offset)])
 
         logger.debug("query: %s", query)
 
