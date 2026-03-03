@@ -2,6 +2,10 @@ import os
 import unittest
 from unittest.mock import patch, MagicMock
 
+import pytest
+
+pytest.importorskip("unified_config_loader", reason="unified_config_loader not installed (path dependency)")
+
 from library.config_loader import (
     AWSSSMBackend,
     Config,
