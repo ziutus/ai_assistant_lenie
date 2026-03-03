@@ -1,6 +1,6 @@
 # Story 22.2: Backend API Response Fixes (Conditional)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -175,10 +175,13 @@ Claude Opus 4.6
 ### Change Log
 
 - 2026-03-03: Fixed `project` filter column bug in `get_list()` (AC #4). Added 8 unit tests for `get_list()` query construction. Verified all prior fixes (AC #1-3). Created PR.
+- 2026-03-03: **Code Review (AI):** 7 issues found (0H/3M/4L). Fixed M2 (`print()` → `logging.debug()` in `server.py`), M3 (boolean params `is not None` check in `get_list()`), L1 (invalid type hint). M1 (SQL injection in sibling methods) deferred to backlog. All issues were pre-existing, not introduced by this story. PR #56 merged. Story → done.
 
 ### File List
 
 - `backend/library/stalker_web_documents_db_postgresql.py` — MODIFIED: Fixed `project` filter WHERE clause (line 107: `document_state = %s` → `project = %s`)
 - `backend/tests/unit/test_get_list_query.py` — NEW: 8 unit tests for `get_list()` query construction (project filter, parameterization, search fields)
 - `_bmad-output/implementation-artifacts/22-2-backend-api-response-fixes-conditional.md` — MODIFIED: Updated tasks, status, dev agent record
-- `_bmad-output/implementation-artifacts/sprint-status.yaml` — MODIFIED: Story status `ready-for-dev` → `in-progress` → `review`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml` — MODIFIED: Story status `ready-for-dev` → `in-progress` → `review` → `done`
+- `backend/server.py` — MODIFIED: `print()` → `logging.debug()` in `/website_list` endpoint (review fix M2)
+- `backend/library/stalker_web_documents_db_postgresql.py` — MODIFIED: Boolean params `is not None` check, fixed return type hint (review fixes M3, L1)
