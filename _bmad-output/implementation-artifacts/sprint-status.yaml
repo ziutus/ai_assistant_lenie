@@ -236,6 +236,7 @@ development_status:
   B-85-website-get-returns-500-for-nonexistent-id: backlog  # GET /website_get?id=<nonexistent> returns HTTP 500 instead of 404. Backend should return 404 with clear error message when document ID does not exist. Found during Story 22.1 verification.
 
   # --- Code Quality ---
+  B-86-parameterize-sql-in-remaining-db-methods: backlog  # SQL injection: get_next_to_correct(), get_similar(), get_documents_by_url(), get_documents_md_needed() use f-string interpolation instead of %s parameterized queries. Same vulnerability pattern fixed in get_list() (Story 22.2). Found during code review.
   B-81-expand-code-duplication-control: backlog  # pylint duplicate-code added to Makefile (make duplicate-check). Next: jscpd for cross-language (Python+TS), expand scope, CI integration, fix known duplicates (connect_kwargs, serialization).
 
   # --- Phase 2.5: API Contract & Type Safety ---
@@ -273,7 +274,7 @@ development_status:
   epic-22: in-progress
   22-1-nas-deployment-end-to-end-verification: done
   22-2-backend-api-response-fixes-conditional: done
-  22-3-dm-text-command-parsing-simplified: backlog
+  22-3-dm-text-command-parsing-simplified: done
   epic-22-retrospective: optional
 
   # --- Epic 23: Channel App Mentions ---

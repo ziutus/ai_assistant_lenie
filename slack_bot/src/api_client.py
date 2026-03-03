@@ -110,6 +110,17 @@ class LenieApiClient:
             )
         return data["all_results_count"]
 
+    def get_all_counts(self) -> dict[str, int]:
+        """GET /website_count — returns document counts by type in a single request."""
+        data = self._request("GET", "/website_count")
+        if "counts" not in data:
+            raise ApiResponseError(
+                "Unexpected response format: missing 'counts'",
+                status_code=200,
+                response_body=str(data)[:MAX_ERROR_BODY_LENGTH],
+            )
+        return data["counts"]
+
     def check_url(self, url: str) -> dict | None:
         """GET /website_list?search_in_document={url} — returns first match or None."""
         data = self._request("GET", "/website_list", params={"search_in_document": url})

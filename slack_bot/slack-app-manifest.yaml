@@ -41,8 +41,15 @@ oauth_config:
       - commands
       - chat:write
       - chat:write.public
+      - im:history  # Required to receive DM messages
 
 settings:
+  # NOTE: After updating this manifest, the Slack App must be reinstalled
+  # to the workspace (or updated via api.slack.com → App Manifest page)
+  # for new scopes and event subscriptions to take effect.
+  event_subscriptions:
+    bot_events:
+      - message.im  # Receive DM text messages for command parsing
   socket_mode_enabled: true
   org_deploy_enabled: false
   token_rotation_enabled: false
