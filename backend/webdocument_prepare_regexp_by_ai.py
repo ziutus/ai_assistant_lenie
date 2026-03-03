@@ -2,34 +2,29 @@ import os.path
 import re
 import json
 import logging
-from dotenv import load_dotenv
 from pprint import pprint
 
 from markitdown import MarkItDown
 from html2markdown import convert
 import html2text
 
-from library.api.cloudferro.sherlock.sherlock_embedding import sherlock_create_embeddings
-from library.lenie_markdown import get_images_with_links_md, links_correct, process_markdown_and_extract_links, \
-    md_square_brackets_in_one_line, md_split_for_emb, md_get_images_as_links, md_remove_markdown
-from library.stalker_web_document import StalkerDocumentStatusError, StalkerDocumentStatus
 from library.stalker_web_document_db import StalkerWebDocumentDB
-from library.stalker_web_document import StalkerWebDocument
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.api.aws.s3_aws import s3_file_exist, s3_take_file
+from library.config_loader import load_config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+cfg = load_config()
 
-S3_BUCKET_NAME = os.getenv("AWS_S3_WEBSITE_CONTENT")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
+S3_BUCKET_NAME = cfg.get("AWS_S3_WEBSITE_CONTENT")
+EMBEDDING_MODEL = cfg.get("EMBEDDING_MODEL")
 
 wb_db = WebsitesDBPostgreSQL()
 
 # cache dir for S3 downloads and markdown output
-cache_dir_base = os.getenv("CACHE_DIR", "tmp/markdown")
+cache_dir_base = cfg.get("CACHE_DIR") or "tmp/markdown"
 
 def calculate_reduction(html_size, markdown_size):
     return ((html_size - markdown_size) / html_size) * 100

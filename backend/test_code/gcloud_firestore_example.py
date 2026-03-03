@@ -1,14 +1,13 @@
 from google.cloud import firestore
 from pprint import pprint
 import dateparser
-from dotenv import load_dotenv
-import os
-load_dotenv()
 
+from library.config_loader import load_config
 
+cfg = load_config()
 
-project_id = os.environ.get("GCP_FIRESTORE_PROJECT_ID")
-database = os.environ.get("GCP_FIRESTORE_DATABASE")
+project_id = cfg.get("GCP_FIRESTORE_PROJECT_ID")
+database = cfg.get("GCP_FIRESTORE_DATABASE")
 
 db = firestore.Client(project=project_id, database=database)
 
@@ -44,7 +43,7 @@ Kolejne cztery zostaną zbudowane w Luizjanie, a wszystkie sześć statków zost
 
 Zamówienia dla USA są częścią starań o dorównanie rosyjskiej liczbie lodołamaczy. Obecnie Rosja posiada ich około 40, w tym osiem o napędzie jądrowym. Dla porównania, w USA obecnie eksploatowane są tylko trzy. Tymczasem Chiny eksploatują około pięciu jednostek zdolnych do żeglugi polarnej.
 
-Źródło: BBC        
+Źródło: BBC
     """
 
 }

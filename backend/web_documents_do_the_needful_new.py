@@ -5,7 +5,7 @@ import uuid
 
 from markitdown import MarkItDown
 import boto3
-from dotenv import load_dotenv
+from library.config_loader import load_config
 
 # Importacja własnych modułów
 from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
@@ -16,12 +16,12 @@ from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.embedding import embedding_need_translation
 from library.youtube_processing import process_youtube_url
 
-# Ładowanie zmiennych środowiskowych
-load_dotenv()
+# Ładowanie konfiguracji (obsługuje .env, Vault, AWS SSM)
+cfg = load_config()
 
 logging.basicConfig(level=logging.INFO)  # Change level as per your need
 
-aws_xray_enabled = os.getenv("AWS_XRAY_ENABLED")
+aws_xray_enabled = cfg.get("AWS_XRAY_ENABLED")
 print(f"aws_xray_enabled: {aws_xray_enabled}")
 
 
@@ -35,13 +35,13 @@ The maximum file size for a local file uploaded to the API via the /v2/upload en
 
 if __name__ == '__main__':
 
-    # model = os.getenv("EMBEDDING_MODEL")
-    embedding_model = os.getenv("EMBEDDING_MODEL")
-    cache_dir = os.getenv("CACHE_DIR")
-    s3_bucket = os.getenv("AWS_S3_WEBSITE_CONTENT")
-    s3_bucket_transcript = os.getenv("AWS_S3_TRANSCRIPT")
-    transcript_provider = os.getenv("TRANSCRIPT_PROVIDER")
-    llm_model = os.getenv("AI_MODEL_SUMMARY")
+    # model = cfg.get("EMBEDDING_MODEL")
+    embedding_model = cfg.get("EMBEDDING_MODEL")
+    cache_dir = cfg.get("CACHE_DIR")
+    s3_bucket = cfg.get("AWS_S3_WEBSITE_CONTENT")
+    s3_bucket_transcript = cfg.get("AWS_S3_TRANSCRIPT")
+    transcript_provider = cfg.get("TRANSCRIPT_PROVIDER")
+    llm_model = cfg.get("AI_MODEL_SUMMARY")
     interactive: bool = False
 
     print(f"Using >{embedding_model}< for embedding")
@@ -57,14 +57,14 @@ if __name__ == '__main__':
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
 
-    print("AWS REGION: ", os.getenv("AWS_REGION"))
-    queue_url = os.getenv("AWS_QUEUE_URL_ADD")
+    print("AWS REGION: ", cfg.get("AWS_REGION"))
+    queue_url = cfg.get("AWS_QUEUE_URL_ADD")
 
     print("Step 1: Taking pages to put into RDS database")
     boto_session = boto3.session.Session(
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.getenv("AWS_REGION")
+        aws_access_key_id=cfg.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=cfg.get("AWS_SECRET_ACCESS_KEY"),
+        region_name=cfg.get("AWS_REGION")
     )
 
     sqs = boto_session.client('sqs')

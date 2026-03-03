@@ -13,7 +13,6 @@ def get_images_with_links_md(markdown_text):
     matches = re.findall(regex, markdown_text, re.DOTALL)
 
     extracted_images = []
-    updated_text = markdown_text
     for i, match in enumerate(matches):
         alt_text_original = match[0]
         image = {
@@ -30,7 +29,7 @@ def get_images_with_links_md(markdown_text):
         # logger.debug(f"Tekst szukany występuje {liczba_wystapien} razy.")
 
         if liczba_wystapien > 1:
-            markdown_text = re.sub(alt_text_original, alt_text_original.replace("\n", " "), markdown_text, 1, re.DOTALL)
+            markdown_text = re.sub(alt_text_original, alt_text_original.replace("\n", " "), markdown_text, count=1, flags=re.DOTALL)
             markdown_text = remove_new_line_only_in_string(markdown_text, alt_text_original)
 
 
@@ -47,8 +46,8 @@ def get_images_with_links_md(markdown_text):
 
 
             tmp_to_replace = rf'\!\[{re.escape(image["alt_text"])}\]\({re.escape(image["url"])}\)\s*{re.escape(image["owner"])}\s*{re.escape(image["alt_text"])}'
-            tmp_replace = f'picture({i}):"{image["alt_text"]}"'
-            markdown_text = re.sub(tmp_to_replace, tmp_replace, markdown_text, 1, re.DOTALL)
+            tmp_replace = f'picture[{i}]:"{image["alt_text"]}"'
+            markdown_text = re.sub(tmp_to_replace, tmp_replace, markdown_text, count=1, flags=re.DOTALL)
         # else:
             # logger.debug("Not found reach")
         image["url"] = image["url"].replace("\n", "")
@@ -154,7 +153,8 @@ def md_square_brackets_in_one_line(text):
                 is_in_brackets = False
             continue
         elif char == "\n" and is_in_brackets and level > 0:
-            text_new += " "
+            if text_new and text_new[-1] not in (" ", "["):
+                text_new += " "
             continue
         else:
             text_new += char
