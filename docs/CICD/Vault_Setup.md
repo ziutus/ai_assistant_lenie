@@ -48,16 +48,16 @@ api_addr = "http://0.0.0.0:8200"
 
 ### 3. Start the container
 
+Vault is managed via `compose.nas.yaml`. Sync the compose file and start:
+
 ```bash
-docker run -d \
-  --name vault \
-  --restart=unless-stopped \
-  --cap-add=IPC_LOCK \
-  -p 8210:8200 \
-  -v /share/vault/data:/vault/file \
-  -v /share/vault/config:/vault/config \
-  hashicorp/vault:1.21.3 vault server -config=/vault/config/vault.hcl
+./infra/docker/nas-deploy.sh --sync-compose
+ssh admin@192.168.200.7
+DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d lenie-vault
 ```
+
+See [NAS_Deployment.md](NAS_Deployment.md) for full compose workflow.
 
 ### 4. Initialize (one-time)
 
@@ -210,6 +210,8 @@ docker exec -it vault sh -c \
 
 Instead of manually unsealing Vault after every NAS restart, Vault can automatically unseal itself using an AWS KMS key. This eliminates the need to store or enter the unseal key manually.
 
+> **Status:** Auto-unseal is **active** since 2026-03-03. Migration from Shamir to KMS completed and tested — Vault auto-unseals after container restart.
+
 ### How it works
 
 1. NAS restarts → Vault container starts (sealed)
@@ -252,7 +254,7 @@ aws cloudformation describe-stacks \
 
 #### 1. Update `vault.hcl` on NAS
 
-Add the `seal "awskms"` block to `/share/Container/vault/config/vault.hcl`:
+Add the `seal "awskms"` block to `/share/vault/config/vault.hcl`:
 
 ```hcl
 storage "file" {
@@ -304,38 +306,34 @@ The `compose.nas.yaml` already references this env file. Sync it to NAS:
 
 ### Migration from Shamir to KMS (one-time)
 
+> **Completed 2026-03-03.** Steps below are kept for reference.
+
 If Vault was previously initialized with Shamir keys (manual unseal), you must migrate to KMS unseal:
 
 ```bash
 ssh admin@192.168.200.7
 DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
 
-# 1. Ensure Vault is running and currently UNSEALED (unseal manually one last time if needed)
-$DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
-  vault operator unseal <CURRENT_SHAMIR_UNSEAL_KEY>
+# 1. Update vault.hcl with the seal "awskms" block (see above)
+# 2. Ensure vault.env is in place at /share/Container/lenie-env/vault.env
 
-# 2. Verify Vault is unsealed
-$DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
-  vault status
+# 3. Recreate the container (IMPORTANT: must use --force-recreate, not "docker restart",
+#    because "docker restart" does NOT reload env_file — credentials won't be available)
+$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d --force-recreate lenie-vault
 
-# 3. Stop the container
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml stop lenie-vault
+# 4. Wait for Vault to start in migration mode (~10s)
+sleep 12
 
-# 4. Update vault.hcl with the seal "awskms" block (see above)
-# 5. Ensure vault.env is in place at /share/Container/lenie-env/vault.env
-# 6. Sync compose.nas.yaml with the updated vault service config
-
-# 7. Start Vault — it will detect the seal migration
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d lenie-vault
-
-# 8. Perform the migration (requires the OLD Shamir unseal key)
+# 5. Perform the migration (requires the OLD Shamir unseal key)
 $DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
   vault operator unseal -migrate <CURRENT_SHAMIR_UNSEAL_KEY>
 
-# 9. Verify — Seal Type should now be "awskms"
+# 6. Verify — Seal Type should now be "awskms", Sealed: false
 $DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
   vault status
 ```
+
+**Important:** Always use `docker compose up -d --force-recreate` (not `docker restart`) when changing `vault.env` or `vault.hcl`. `docker restart` reuses the existing container environment and will not pick up changes to `env_file`.
 
 After migration, Vault will auto-unseal on every restart. The old Shamir unseal key is no longer needed for daily operations (but keep it stored safely as a recovery key).
 
