@@ -29,7 +29,7 @@ def get_images_with_links_md(markdown_text):
         # logger.debug(f"Tekst szukany występuje {liczba_wystapien} razy.")
 
         if liczba_wystapien > 1:
-            markdown_text = re.sub(alt_text_original, alt_text_original.replace("\n", " "), markdown_text, 1, re.DOTALL)
+            markdown_text = re.sub(alt_text_original, alt_text_original.replace("\n", " "), markdown_text, count=1, flags=re.DOTALL)
             markdown_text = remove_new_line_only_in_string(markdown_text, alt_text_original)
 
 
@@ -47,7 +47,7 @@ def get_images_with_links_md(markdown_text):
 
             tmp_to_replace = rf'\!\[{re.escape(image["alt_text"])}\]\({re.escape(image["url"])}\)\s*{re.escape(image["owner"])}\s*{re.escape(image["alt_text"])}'
             tmp_replace = f'picture[{i}]:"{image["alt_text"]}"'
-            markdown_text = re.sub(tmp_to_replace, tmp_replace, markdown_text, 1, re.DOTALL)
+            markdown_text = re.sub(tmp_to_replace, tmp_replace, markdown_text, count=1, flags=re.DOTALL)
         # else:
             # logger.debug("Not found reach")
         image["url"] = image["url"].replace("\n", "")
