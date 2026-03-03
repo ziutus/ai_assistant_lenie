@@ -47,11 +47,12 @@ def _handle_count(ack: Callable, respond: Callable, client: LenieApiClient) -> N
     """Handle /lenie-count command — return document count breakdown."""
     ack()
     try:
-        total = client.get_count("ALL")
+        counts = client.get_all_counts()
+        total = counts.get("ALL", 0)
         lines = [f"Documents in knowledge base: {total:,} total", ""]
 
         for doc_type in DOCUMENT_TYPES:
-            count = client.get_count(doc_type)
+            count = counts.get(doc_type, 0)
             if count > 0:
                 lines.append(f"  {doc_type}: {count:,}")
 
@@ -63,6 +64,9 @@ def _handle_count(ack: Callable, respond: Callable, client: LenieApiClient) -> N
         respond(text=f"Unexpected response from backend (HTTP {exc.status_code})")
     except ApiError as exc:
         respond(text=f"An error occurred: {exc.message}")
+    except KeyError as exc:
+        logger.warning("Unexpected count response format: missing key %s", exc)
+        respond(text="Unexpected response from backend")
 
 
 _VALID_TYPES = frozenset(DOCUMENT_TYPES)
@@ -76,6 +80,9 @@ def _handle_add(ack: Callable, respond: Callable, client: LenieApiClient, comman
         respond(text=f"Usage: `/lenie-add <url> [type]`\nTypes: {', '.join(DOCUMENT_TYPES)} (default: webpage)")
         return
     url = parts[0]
+    if len(parts) > 2:
+        respond(text=f"Too many arguments. Usage: `/lenie-add <url> [type]`\nTypes: {', '.join(DOCUMENT_TYPES)} (default: webpage)")
+        return
     url_type = parts[1] if len(parts) > 1 else "webpage"
     if url_type not in _VALID_TYPES:
         respond(text=f"Unknown type `{url_type}`. Valid: {', '.join(sorted(_VALID_TYPES))}")

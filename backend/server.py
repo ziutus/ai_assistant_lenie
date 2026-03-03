@@ -314,6 +314,14 @@ def website_list():
     return response, 200
 
 
+@app.route('/website_count', methods=['GET'])
+def website_count():
+    """Return document counts grouped by type in a single query."""
+    logging.debug("Getting document counts by type")
+    counts = websites.get_count_by_type()
+    return {"status": "success", "counts": counts}, 200
+
+
 @app.route('/website_is_paid', methods=['POST'])
 def website_check_is_paid():
     logging.debug("Checking if website is paid")
