@@ -1,16 +1,16 @@
 import os
 from pprint import pprint
-from dotenv import load_dotenv
 import argparse
 import logging
 
 import library.embedding as embedding
 from library.ai import ai_ask, ai_model_need_translation_to_english
+from library.config_loader import load_config
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_detect_language import text_language_detect
 from library.stalker_cache import cache_get, cache_write
 
-load_dotenv()
+cfg = load_config()
 logging.basicConfig(level=logging.INFO)
 
 

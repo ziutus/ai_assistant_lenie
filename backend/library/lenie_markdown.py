@@ -13,7 +13,6 @@ def get_images_with_links_md(markdown_text):
     matches = re.findall(regex, markdown_text, re.DOTALL)
 
     extracted_images = []
-    updated_text = markdown_text
     for i, match in enumerate(matches):
         alt_text_original = match[0]
         image = {
@@ -47,7 +46,7 @@ def get_images_with_links_md(markdown_text):
 
 
             tmp_to_replace = rf'\!\[{re.escape(image["alt_text"])}\]\({re.escape(image["url"])}\)\s*{re.escape(image["owner"])}\s*{re.escape(image["alt_text"])}'
-            tmp_replace = f'picture({i}):"{image["alt_text"]}"'
+            tmp_replace = f'picture[{i}]:"{image["alt_text"]}"'
             markdown_text = re.sub(tmp_to_replace, tmp_replace, markdown_text, 1, re.DOTALL)
         # else:
             # logger.debug("Not found reach")
@@ -154,7 +153,8 @@ def md_square_brackets_in_one_line(text):
                 is_in_brackets = False
             continue
         elif char == "\n" and is_in_brackets and level > 0:
-            text_new += " "
+            if text_new and text_new[-1] not in (" ", "["):
+                text_new += " "
             continue
         else:
             text_new += char

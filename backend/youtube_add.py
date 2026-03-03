@@ -10,11 +10,11 @@ import logging
 import sys
 import time
 
-from dotenv import load_dotenv
+from library.config_loader import load_config
 
-load_dotenv()
+load_config()
 
-from library.youtube_processing import process_youtube_url
+from library.youtube_processing import process_youtube_url  # noqa: E402
 
 
 def main():
