@@ -91,7 +91,7 @@ def main() -> None:
         from slack_bolt import App
         from slack_bolt.adapter.socket_mode import SocketModeHandler
     except ImportError:
-        logger.error("slack-bolt package is required: pip install slack-bolt")
+        logger.error("slack-bolt package is required. Install: uv sync (or pip install slack-bolt)")
         sys.exit(1)
 
     api_client = create_client(cfg)
