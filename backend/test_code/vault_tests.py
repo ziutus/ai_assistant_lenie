@@ -1,10 +1,8 @@
 import hvac
-from dotenv import load_dotenv
-import os
 from pprint import pprint
 import requests
-import os
-from urllib.parse import urlparse
+
+from library.config_loader import load_config
 
 
 def sprawdz_dostepnosc_vault(url, timeout=2):
@@ -32,7 +30,7 @@ def sprawdz_dostepnosc_vault(url, timeout=2):
         print(f"Błąd podczas sprawdzania dostępności serwera: {e}")
         return False, None
 
-load_dotenv()
+cfg = load_config()
 
 def get_vault_client(vault_url, token=None, role_id=None, secret_id=None):
     """
@@ -77,7 +75,7 @@ def list_secrets(client, path, mount_point="kv"):
         print(f"Błąd podczas listowania sekretów: {e}")
         return []
 
-vault_client = get_vault_client(os.getenv("VAULT_URL"), token=os.getenv("VAULT_TOKEN"))
+vault_client = get_vault_client(cfg.get("VAULT_URL"), token=cfg.get("VAULT_TOKEN"))
 CLOUDFERRO_SHERLOCK_KEY=get_secret(vault_client, "lenie-ai/dev/cloudferro", "SHERLOCK_KEY")
 print(CLOUDFERRO_SHERLOCK_KEY)
 
@@ -96,7 +94,7 @@ print(health_status)
 status = vault_client.sys.read_health_status(method='GET')
 print('Vault initialization status is: %s' % status['initialized'])
 
-vault_url = os.getenv("VAULT_URL", "http://127.0.0.1:8200")
+vault_url = cfg.get("VAULT_URL") or "http://127.0.0.1:8200"
 
 dostepny, kod = sprawdz_dostepnosc_vault(vault_url)
 if dostepny:

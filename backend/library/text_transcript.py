@@ -11,9 +11,9 @@ def time_to_seconds(time_str: str) -> int:
         return minutes * 60 + seconds
 
 
-def split_text_and_time(input_string: str | None) -> dict[str, str] | None:
+def split_text_and_time(input_string: str | None) -> dict[str, str]:
     if input_string is None:
-        return None
+        return {}
 
     match = re.match(r'(.*)\s(\d{1,2}:\d{2})$', input_string)
     if match:
@@ -28,7 +28,7 @@ def split_text_and_time(input_string: str | None) -> dict[str, str] | None:
         time, text = match3.groups()
         return {'text': text, 'czas': time}
     else:
-        return None
+        return {}
 
 
 def chapters_text_to_list(chapters_string):

@@ -2,7 +2,6 @@ import os.path
 import re
 import json
 import logging
-from dotenv import load_dotenv
 from pprint import pprint
 
 from markitdown import MarkItDown
@@ -16,14 +15,15 @@ from library.stalker_web_document import StalkerDocumentStatusError, StalkerDocu
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.api.aws.s3_aws import s3_file_exist, s3_take_file
+from library.config_loader import load_config
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-load_dotenv()
+cfg = load_config()
 
-S3_BUCKET_NAME = os.getenv("AWS_S3_WEBSITE_CONTENT")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
+S3_BUCKET_NAME = cfg.get("AWS_S3_WEBSITE_CONTENT")
+EMBEDDING_MODEL = cfg.get("EMBEDDING_MODEL")
 
 
 def calculate_reduction(html_size, markdown_size):
