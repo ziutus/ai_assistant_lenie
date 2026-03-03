@@ -301,7 +301,7 @@ def website_list():
     websites_list = websites.get_list(document_type=document_type, document_state=document_state, search_in_documents=search_in_documents)
     websites_list_count = websites.get_list(document_type=document_type, document_state=document_state, search_in_documents=search_in_documents, count=True)
     # pprint_debug(websites_list)
-    print(f"website count: {websites_list_count}")
+    logging.debug("website count: %s", websites_list_count)
 
     response = {
         "status": "success",
