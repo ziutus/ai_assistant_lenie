@@ -226,7 +226,7 @@ development_status:
   epic-21-retrospective: done  # Retro completed 2026-03-02. Key decisions: Epic 22 restructured (deployment-first), conversational state removed from DM commands.
 
   # --- B-79: Migrate Standalone Scripts to config_loader ---
-  B-79-migrate-standalone-scripts-to-config-loader: backlog  # Replace load_dotenv() with load_config() in 6 standalone scripts. HIGH priority — blocks Vault-only deployments for batch processing.
+  B-79-migrate-standalone-scripts-to-config-loader: done  # DONE 2026-03-04. Migrated 10 scripts from load_dotenv() to load_config(). Additional fixes: re.sub kwargs, text_transcript safer return. Remaining load_dotenv() in test_code/ and sherlock tracked in B-85.
 
   # ============================================================
   # BACKLOG (only items TO DO)
@@ -234,6 +234,9 @@ development_status:
 
   # --- Bug Fixes ---
   B-85-website-get-returns-500-for-nonexistent-id: backlog  # GET /website_get?id=<nonexistent> returns HTTP 500 instead of 404. Backend should return 404 with clear error message when document ID does not exist. Found during Story 22.1 verification.
+
+  # --- Project Governance ---
+  B-87-add-bsl-1-1-license: backlog  # Add Business Source License 1.1 (BUSL-1.1) to the repository. Allows personal/internal use, modification, and redistribution. Prohibits offering the software as a competing commercial hosted/managed service (anti-cloud-provider clause, similar to Elastic/HashiCorp model). After 4 years each version auto-converts to open-source (Change License: Apache 2.0 or MPL 2.0 — TBD). GitHub natively supports BUSL-1.1 in choosealicense.com and license detection. Steps: (1) choose Additional Use Grant wording and Change License, (2) create LICENSE file with BSL 1.1 text and project-specific parameters, (3) add license headers to source files, (4) update README with license section.
 
   # --- Code Quality ---
   B-86-parameterize-sql-in-remaining-db-methods: backlog  # SQL injection: get_next_to_correct(), get_similar(), get_documents_by_url(), get_documents_md_needed() use f-string interpolation instead of %s parameterized queries. Same vulnerability pattern fixed in get_list() (Story 22.2). Found during code review.
@@ -243,7 +246,6 @@ development_status:
   B-50-api-type-synchronization-pydantic-openapi-ts: backlog  # Pydantic → OpenAPI → generated TS types. Fixes backend-frontend drift: id type mismatch, missing fields (13 in WebDocument, 5 in ListItem, 7 in SearchResult), untyped enums. Strategy: docs/api-type-sync-strategy.md. 5 phases: Pydantic models, Flask route integration, OpenAPI gen, TS gen, CI check.
 
   # --- Phase 3: Security Hardening & AWS Cleanup ---
-  B-83-vault-auto-unseal-aws-kms: done  # DONE 2026-03-03. Migrated Vault seal from Shamir to AWS KMS on NAS. Added seal "awskms" block to vault.hcl, created vault.env with IAM user credentials, ran unseal -migrate, tested auto-unseal after restart. Fixed doc paths (/share/Container/vault → /share/vault) in Vault_Setup.md and NAS_Deployment.md. Updated migration procedure with docker restart vs force-recreate gotcha.
   B-13-parameterize-stage-description-for-multi-environment: backlog
   B-19-convert-ec2-to-spot-with-asg-0-1: backlog
   B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
@@ -271,7 +273,7 @@ development_status:
   # ============================================================
 
   # --- Epic 22: Slack Bot Stabilization & DM Commands ---
-  epic-22: in-progress
+  epic-22: done
   22-1-nas-deployment-end-to-end-verification: done
   22-2-backend-api-response-fixes-conditional: done
   22-3-dm-text-command-parsing-simplified: done
@@ -334,3 +336,4 @@ development_status:
   B-49-extract-shared-typescript-types-to-shared-package: done  # shared/ package with @lenie/shared alias. Commit 64e3213.
   B-51-frontend-deploy-scripts-with-ssm: done  # Deploy scripts for both frontends, SSM integration. Commit f2432ce.
   B-63-gitguardian-incident-management-script: done  # CLI script to review and close GitGuardian incidents. Script uses GitGuardian REST API directly. Token from env var (Vault integration is separate task). Features: list open incidents (with --severity and --repo filters), show details, resolve/ignore with reason.
+  B-83-vault-auto-unseal-aws-kms: done  # DONE 2026-03-03. Migrated Vault seal from Shamir to AWS KMS on NAS. Added seal "awskms" block to vault.hcl, created vault.env with IAM user credentials, ran unseal -migrate, tested auto-unseal after restart. Fixed doc paths (/share/Container/vault → /share/vault) in Vault_Setup.md and NAS_Deployment.md. Updated migration procedure with docker restart vs force-recreate gotcha.

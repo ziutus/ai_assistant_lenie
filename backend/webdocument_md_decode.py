@@ -523,7 +523,7 @@ if __name__ == '__main__':
         logger.debug("Step 6: cleaning markdown document for embedding")
 
         logger.debug("Removing img from markdown")
-        markdown = re.sub(r"picture\(\d+\):.*", '', markdown)
+        markdown = re.sub(r"picture\[\d+\]:.*", '', markdown)
 
         logger.debug("Removing links from markdown")
         markdown = re.sub(r"link\[\d+]:", '', markdown)
