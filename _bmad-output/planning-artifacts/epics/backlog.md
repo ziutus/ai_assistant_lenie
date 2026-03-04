@@ -166,51 +166,63 @@ so that they work correctly when `.env` contains only bootstrap variables (Vault
 
 **Origin:** Epic 20 retrospective (2026-02-27) — discovered that import scripts and batch processing scripts still use `load_dotenv()` directly instead of config_loader. They will fail when `.env` contains only bootstrap variables.
 
-**Scope:**
-1. `imports/unknown_news_import.py` — replace `load_dotenv()` with `load_config()`
-2. `imports/dynamodb_sync.py` — replace `load_dotenv()` with `load_config()`
-3. `web_documents_do_the_needful_new.py` — replace `load_dotenv()` with `load_config()`
-4. `webdocument_md_decode.py` — replace `load_dotenv()` with `load_config()`
-5. `markdown_to_embedding.py` — replace `load_dotenv()` with `load_config()`
-6. `webdocument_prepare_regexp_by_ai.py` — replace `load_dotenv()` with `load_config()`
+**Scope (original 6 scripts + 4 bonus):**
+1. `imports/unknown_news_import.py` — already migrated before B-79 branch (uses `load_config()` since creation)
+2. `imports/dynamodb_sync.py` — already migrated before B-79 branch; fixed remaining `os.getenv()` → `cfg.get()` for display vars (2026-03-03)
+3. `web_documents_do_the_needful_new.py` — migrated (commit 119fd42)
+4. `webdocument_md_decode.py` — migrated (commit 119fd42)
+5. `markdown_to_embedding.py` — **N/A**: script does not use any configuration (reads local files only, no env vars)
+6. `webdocument_prepare_regexp_by_ai.py` — migrated + unused imports cleaned (commit 119fd42)
+7. `youtube_add.py` — migrated (commit 119fd42, bonus)
+8. `test_code/embeddings_search.py` — migrated (commit 119fd42, bonus)
+9. `test_code/gcloud_firestore_example.py` — migrated (commit 119fd42, bonus)
+10. `test_code/vault_tests.py` — migrated (commit 119fd42, bonus)
+
+**Additional fix (commit eb2653e):**
+- `library/lenie_markdown.py` — `re.sub()` keyword args to silence DeprecationWarning
+- `library/text_transcript.py` — `split_text_and_time()` returns `{}` instead of `None` for safer API contract
 
 **Acceptance Criteria:**
-- All scripts use `load_config()` from `library.config_loader`
-- Scripts work with `SECRETS_BACKEND=vault` (NAS) and `SECRETS_BACKEND=aws`
-- No `load_dotenv()` calls remain outside of `config_loader.py` itself
-- Existing behavior preserved for `SECRETS_BACKEND=env`
+- ✅ All scripts use `load_config()` from `library.config_loader`
+- ✅ Scripts work with `SECRETS_BACKEND=vault` (NAS) and `SECRETS_BACKEND=aws`
+- ⚠️ `load_dotenv()` calls remain in `test_code/` (11 scripts) and `library/api/cloudferro/sherlock/` (2 files) — tracked in [B-85](#b-85-migrate-remaining-test_code-and-library-scripts-to-config_loader)
+- ✅ Existing behavior preserved for `SECRETS_BACKEND=env`
 
 **Priority:** HIGH — blocks Vault-only deployments for batch processing
-**Status:** backlog
-**Related:** Epic 20 retrospective action item #3
+**Status:** done (2026-03-03)
+**Related:** Epic 20 retrospective action item #3, [B-85](#b-85-migrate-remaining-test_code-and-library-scripts-to-config_loader)
 
 ---
 
 ## Backlog: Docker Build Optimization
 
-### B-80: Add .dockerignore to Directories with Dockerfiles
+### B-80: Optimize Docker Build Context with .dockerignore
 
 As a **developer**,
-I want each directory with a Dockerfile to have a `.dockerignore` file,
-so that Docker build context excludes unnecessary files (`.venv/`, `tests/`, `__pycache__/`, `tmp/`) reducing build time and image size.
+I want Docker build context to exclude unnecessary files,
+so that builds are faster and don't send unnecessary data to the Docker daemon.
 
 **Origin:** Code review of Story 21-1 (Slack bot). Found that `slack_bot/` had no `.dockerignore` (fixed in review). Investigation showed other directories have the same issue.
 
-**Affected directories:**
-- `backend/` — most impactful: `.venv/`, `tests/`, `test_code/`, `tmp/`, `__pycache__/`, `imports/`, `.pytest_cache/`
-- `web_interface_app2/` — `node_modules/`, `.vite/`, `dist/`
-- `infra/docker/Postgresql/` — minor (small directory)
-- `infra/gcloud/cloud-run-shell/` — minor
+**Implementation note:** All compose builds use project root as build context (`context: ../..`), so per-directory `.dockerignore` files are NOT needed — only the **root `.dockerignore`** matters. The original plan to add per-directory files was based on incorrect assumptions.
 
-**Note:** `web_interface_react/` uses root as build context (per `compose.yaml`), so root `.dockerignore` applies. `slack_bot/` already fixed (Story 21-1 review).
+**What was done (2026-03-04):**
+- Rewrote root `.dockerignore` with proper `**` glob patterns (Docker matching: patterns without `**` only match root level)
+- Added project-specific exclusions: `_bmad/`, `_bmad-output/`, `.claude/`, `docs/`, `scripts/`, `web_landing_page/`, `web_chrome_extension/`, `infra/`
+- Added backend dev exclusions: `backend/tests/`, `backend/test_code/`, `backend/tmp/`, `backend/imports/`, `backend/data/`
+- Added `**/*.md` exclusion with `!slack_bot/README.md` exception (required by hatchling build in slack_bot Dockerfile)
+- Added `backend/.venv_wsl/` exclusion (WSL venv)
+- Verified all COPY sources in all 5 Dockerfiles remain accessible
+
+**Previous state:** Generic `.dockerignore` with patterns like `tests/`, `tmp/` that only matched root level (ineffective for `backend/tests/` etc.)
 
 **Acceptance Criteria:**
-- Each directory with a Dockerfile has a `.dockerignore` tailored to its content
-- Docker builds exclude dev dependencies, tests, caches, and temp files
-- No change in runtime behavior — only build context optimization
+- ✅ Docker builds exclude dev dependencies, tests, caches, and temp files at all directory levels
+- ✅ No change in runtime behavior — only build context optimization
+- ✅ All Dockerfile COPY commands verified against exclusion rules
 
-**Status:** backlog
 **Priority:** LOW — optimization, not blocking
+**Status:** done (2026-03-04)
 
 ---
 
@@ -761,3 +773,44 @@ so that URLs added via Slack Bot (which cannot send page HTML/text like the Chro
 
 **Priority:** MEDIUM — improves Slack Bot usefulness for webpage additions
 **Status:** backlog
+
+---
+
+## Backlog: Code Quality — Config Migration
+
+### B-85: Migrate Remaining test_code/ and Library Scripts to config_loader
+
+As a **developer**,
+I want all remaining scripts using `load_dotenv()` to be migrated to `config_loader`,
+so that the acceptance criterion from [B-79](#b-79-migrate-standalone-scripts-to-config_loader) ("no `load_dotenv()` calls remain outside of `config_loader.py`") is fully met.
+
+**Origin:** B-79 completion review (2026-03-03) — discovered 13 files still using `load_dotenv()` directly.
+
+**Scope:**
+
+**Library code (priority — used in production):**
+1. `library/api/cloudferro/sherlock/sherlock_embedding.py`
+2. `library/api/cloudferro/sherlock/sherlock.py`
+
+**Experimental scripts (`test_code/` — lower priority):**
+3. `test_code/webdocument_bielik_popraw_2.py`
+4. `test_code/webdocument_bielik_popraw.py`
+5. `test_code/webdocument_bielik_analizuj.py`
+6. `test_code/serper_dev.py`
+7. `test_code/openroute.py`
+8. `test_code/models_list.py`
+9. `test_code/gcloud_firestore.py`
+10. `test_code/firecrawl.py`
+11. `test_code/embedding_search_2.py`
+12. `test_code/describe_image.py`
+13. `test_code/cloudferro_embeddings.py`
+14. `test_code/cloudferro_ark_labs_models.py`
+
+**Acceptance Criteria:**
+- No `load_dotenv()` calls remain in `backend/` outside of `config_loader.py` itself and test mocks
+- All migrated scripts use `load_config()` from `library.config_loader`
+- `test_code/CLAUDE.md` updated to reflect new pattern
+
+**Priority:** LOW — `test_code/` scripts are experimental; sherlock library files are medium priority
+**Status:** backlog
+**Related:** [B-79](#b-79-migrate-standalone-scripts-to-config_loader)
