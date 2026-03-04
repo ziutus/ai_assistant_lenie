@@ -1,67 +1,82 @@
-# .dockerignore file
-
-# Python specific
-__pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
-.coverage
-
-# Node.js specific
-node_modules/
-npm-debug.log
-yarn-debug.log
-
-# Go specific
-/vendor/
-*.test
-.go-cache/
-
-# Java specific
-target/
-*.class
-.gradle/
-
-# Development artifacts
-.idea/
-.vscode/
-*.swp
-*.swo
-dist/
-build/
-out/
-test/
-tests/
-*_test.go
-debug/
-*.log
+# =============================================================================
+# Root .dockerignore — Project Lenie
+# All compose builds use project root as build context (context: ../..)
+# Docker matching: patterns without ** match root level only
+# =============================================================================
 
 # Version control
 .git/
 .gitignore
-.svn/
-.hg/
 
-# Environment and secrets
+# Python artifacts (any level)
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/.pytest_cache/
+**/.coverage
+**/.ruff_cache/
+
+# Virtual environments
+**/.venv/
+backend/.venv_wsl/
+
+# Node.js artifacts (any level)
+**/node_modules/
+**/.vite/
+**/npm-debug.log
+**/yarn-debug.log
+
+# Build outputs (rebuilt inside Docker)
+**/dist/
+**/build/
+**/out/
+
+# IDE / editor
+**/.idea/
+**/.vscode/
+**/*.swp
+**/*.swo
+
+# Environment and secrets (compose uses env_file from host, not context)
 .env*
-*.env
-*.pem
-*.key
-*.crt
-config.local.*
-*.local.yml
+**/*.pem
+**/*.key
+**/*.crt
 
-# Project-specific
-README*
-*.md
+# Documentation and markdown
+**/*.md
+# Exceptions: README.md files required by hatchling build
+!slack_bot/README.md
+!shared_python/unified-config-loader/README.md
+
+# Project directories not needed in any Docker build
+_bmad/
+_bmad-output/
+.claude/
 docs/
-Dockerfile*
-docker-compose*
-tmp/
-temp/
-*.tmp
-.local/
-local/
+scripts/
+web_landing_page/
+web_chrome_extension/
+infra/
 
-# Exclude the virtual environment
-.venv/
+# Backend dev/test files (Dockerfile only copies library/ and server.py)
+backend/tests/
+backend/test_code/
+backend/tmp/
+backend/imports/
+backend/data/
+
+# CI/CD configs
+.circleci/
+.gitlab-ci.yml
+Jenkinsfile
+.pre-commit-config.yaml
+Makefile
+
+# Docker meta (Dockerfiles read from host via -f flag, not from context)
+**/Dockerfile*
+**/.dockerignore
+
+# Misc
+**/*.log
+**/*.tmp
