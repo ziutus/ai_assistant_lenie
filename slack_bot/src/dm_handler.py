@@ -38,8 +38,8 @@ HELP_TEXT = (
 )
 
 
-def _handle_version(say: Callable, client: LenieApiClient) -> None:
-    """Handle 'version' DM command."""
+def handle_version(say: Callable, client: LenieApiClient) -> None:
+    """Handle 'version' command."""
     try:
         data = client.get_version()
         say(text=f"Version: {data['app_version']}\nBuild: {data['app_build_time']}")
@@ -55,8 +55,8 @@ def _handle_version(say: Callable, client: LenieApiClient) -> None:
         say(text="Unexpected response from backend")
 
 
-def _handle_count(say: Callable, client: LenieApiClient) -> None:
-    """Handle 'count' DM command."""
+def handle_count(say: Callable, client: LenieApiClient) -> None:
+    """Handle 'count' command."""
     try:
         counts = client.get_all_counts()
         total = counts.get("ALL", 0)
@@ -80,8 +80,8 @@ def _handle_count(say: Callable, client: LenieApiClient) -> None:
         say(text="Unexpected response from backend")
 
 
-def _handle_add(say: Callable, client: LenieApiClient, args_str: str) -> None:
-    """Handle 'add <url> [type]' DM command."""
+def handle_add(say: Callable, client: LenieApiClient, args_str: str) -> None:
+    """Handle 'add <url> [type]' command."""
     parts = args_str.strip().split()
     if not parts:
         say(text=f"Usage: `add <url> [type]`\nTypes: {', '.join(DOCUMENT_TYPES)} (default: webpage)")
@@ -112,8 +112,8 @@ def _handle_add(say: Callable, client: LenieApiClient, args_str: str) -> None:
         say(text="Unexpected response from backend")
 
 
-def _handle_check(say: Callable, client: LenieApiClient, args_str: str) -> None:
-    """Handle 'check <url>' DM command."""
+def handle_check(say: Callable, client: LenieApiClient, args_str: str) -> None:
+    """Handle 'check <url>' command."""
     url = args_str.strip()
     if not url:
         say(text="Usage: `check <url>`")
@@ -144,8 +144,8 @@ def _handle_check(say: Callable, client: LenieApiClient, args_str: str) -> None:
         say(text="Unexpected response from backend")
 
 
-def _handle_info(say: Callable, client: LenieApiClient, args_str: str) -> None:
-    """Handle 'info <id>' DM command."""
+def handle_info(say: Callable, client: LenieApiClient, args_str: str) -> None:
+    """Handle 'info <id>' command."""
     text_input = args_str.strip()
     if not text_input:
         say(text="Usage: `info <document_id>` (numeric ID required)")
@@ -181,11 +181,11 @@ def register_dm_handler(app: App, client: LenieApiClient) -> None:
     logger.info("Registering DM message handler")
 
     commands = {
-        "version": lambda say, args: _handle_version(say, client),
-        "count": lambda say, args: _handle_count(say, client),
-        "add": lambda say, args: _handle_add(say, client, args),
-        "check": lambda say, args: _handle_check(say, client, args),
-        "info": lambda say, args: _handle_info(say, client, args),
+        "version": lambda say, args: handle_version(say, client),
+        "count": lambda say, args: handle_count(say, client),
+        "add": lambda say, args: handle_add(say, client, args),
+        "check": lambda say, args: handle_check(say, client, args),
+        "info": lambda say, args: handle_info(say, client, args),
         "help": lambda say, args: say(text=HELP_TEXT),
     }
 
