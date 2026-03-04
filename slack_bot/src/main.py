@@ -17,6 +17,7 @@ from src import __version__
 from src.api_client import ApiConnectionError, ApiError, LenieApiClient, create_client
 from src.commands import register_commands
 from src.dm_handler import register_dm_handler
+from src.mention_handler import register_mention_handler
 from src.config import Config, load_config
 
 
@@ -100,6 +101,7 @@ def main() -> None:
     app = App(token=bot_token)
     register_commands(app, api_client)
     register_dm_handler(app, api_client)
+    register_mention_handler(app, api_client)
 
     handler = SocketModeHandler(app, app_token)
     handler.connect()
