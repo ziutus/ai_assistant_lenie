@@ -12,7 +12,7 @@ import time
 
 from library.config_loader import load_config
 
-load_config()
+cfg = load_config()  # noqa: F841 — side effect: populates os.environ for library modules
 
 from library.youtube_processing import process_youtube_url  # noqa: E402
 

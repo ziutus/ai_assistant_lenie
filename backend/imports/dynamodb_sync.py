@@ -253,7 +253,7 @@ def main():
         print(f"Limit: {args.limit}")
 
     # Show source and target information
-    aws_profile = os.environ.get("AWS_PROFILE", "(default)")
+    aws_profile = os.environ.get("AWS_PROFILE", "(default)")  # AWS SDK convention — read from env, not config_loader
     aws_region = cfg.require("AWS_REGION", "us-east-1")
     pg_host = cfg.get("POSTGRESQL_HOST") or "(not set)"
     pg_db = cfg.get("POSTGRESQL_DATABASE") or "(not set)"

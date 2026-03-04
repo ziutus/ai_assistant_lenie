@@ -45,7 +45,8 @@ backend/.venv_wsl/
 
 # Documentation and markdown
 **/*.md
-# Exceptions: README.md files required by hatchling build
+# IMPORTANT: Exceptions below MUST stay after **/*.md (Docker processes rules top-to-bottom)
+# These README.md files are required by hatchling build (pyproject.toml readme field)
 !slack_bot/README.md
 !shared_python/unified-config-loader/README.md
 
