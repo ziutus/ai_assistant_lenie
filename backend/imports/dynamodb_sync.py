@@ -255,10 +255,10 @@ def main():
     # Show source and target information
     aws_profile = os.environ.get("AWS_PROFILE", "(default)")
     aws_region = cfg.require("AWS_REGION", "us-east-1")
-    pg_host = os.getenv("POSTGRESQL_HOST", "(not set)")
-    pg_db = os.getenv("POSTGRESQL_DATABASE", "(not set)")
-    pg_port = os.getenv("POSTGRESQL_PORT", "5432")
-    pg_user = os.getenv("POSTGRESQL_USER", "(not set)")
+    pg_host = cfg.get("POSTGRESQL_HOST") or "(not set)"
+    pg_db = cfg.get("POSTGRESQL_DATABASE") or "(not set)"
+    pg_port = cfg.get("POSTGRESQL_PORT") or "5432"
+    pg_user = cfg.get("POSTGRESQL_USER") or "(not set)"
 
     print()
     print(f"Source: AWS profile={aws_profile}, region={aws_region}")
