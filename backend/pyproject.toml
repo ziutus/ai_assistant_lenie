@@ -49,6 +49,10 @@ markdown = [
     "html2text",
 ]
 
+notion = [
+    "notion-client>=2.2.0,<3",
+]
+
 docker = [
     "requests",
     "beautifulsoup4",
@@ -100,6 +104,7 @@ all = [
     "google-api-python-client",
     "google-auth-httplib2",
     "google-auth-oauthlib",
+    "notion-client>=2.2.0,<3",
 ]
 
 [build-system]

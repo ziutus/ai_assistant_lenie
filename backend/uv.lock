@@ -1162,6 +1162,7 @@ all = [
     { name = "markdownify" },
     { name = "markitdown" },
     { name = "neo4j" },
+    { name = "notion-client" },
     { name = "openai" },
     { name = "pre-commit" },
     { name = "psycopg2-binary" },
@@ -1199,6 +1200,9 @@ markdown = [
     { name = "markitdown" },
     { name = "psycopg2-binary" },
     { name = "python-dotenv" },
+]
+notion = [
+    { name = "notion-client" },
 ]
 vault = [
     { name = "hvac" },
@@ -1258,6 +1262,8 @@ requires-dist = [
     { name = "markitdown", marker = "extra == 'markdown'" },
     { name = "neo4j" },
     { name = "neo4j", marker = "extra == 'all'" },
+    { name = "notion-client", marker = "extra == 'all'", specifier = ">=2.2.0,<3" },
+    { name = "notion-client", marker = "extra == 'notion'", specifier = ">=2.2.0,<3" },
     { name = "openai" },
     { name = "openai", marker = "extra == 'all'" },
     { name = "openai", marker = "extra == 'docker'" },
@@ -1292,7 +1298,7 @@ requires-dist = [
     { name = "youtube-transcript-api", marker = "extra == 'all'" },
     { name = "youtube-transcript-api", marker = "extra == 'docker'" },
 ]
-provides-extras = ["vault", "markdown", "docker", "all"]
+provides-extras = ["vault", "markdown", "notion", "docker", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1619,6 +1625,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/3c/99/da515f7bc3bce35cfa6005f0e0c4e3c4042a466782b143112eb393b663be/nodejs_wheel_binaries-24.13.1-py2.py3-none-musllinux_1_2_x86_64.whl", hash = "sha256:0e581ae219a39073dcadd398a2eb648f0707b0f5d68c565586139f919c91cbe9", size = 61870142, upload-time = "2026-02-12T17:30:54.563Z" },
     { url = "https://files.pythonhosted.org/packages/cc/c0/22001d2c96d8200834af7d1de5e72daa3266c7270330275104c3d9ddd143/nodejs_wheel_binaries-24.13.1-py2.py3-none-win_amd64.whl", hash = "sha256:d4c969ea0bcb8c8b20bc6a7b4ad2796146d820278f17d4dc20229b088c833e22", size = 41185473, upload-time = "2026-02-12T17:30:57.524Z" },
     { url = "https://files.pythonhosted.org/packages/ab/c4/7532325f968ecfc078e8a028e69a52e4c3f95fb800906bf6931ac1e89e2b/nodejs_wheel_binaries-24.13.1-py2.py3-none-win_arm64.whl", hash = "sha256:caec398cb9e94c560bacdcba56b3828df22a355749eb291f47431af88cbf26dc", size = 38881194, upload-time = "2026-02-12T17:31:00.214Z" },
+]
+
+[[package]]
+name = "notion-client"
+version = "2.7.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9b/ff/06695dca5d0691346fbd89ba300a2ceeeaf0b0632fe8235b588e83e505a3/notion_client-2.7.0.tar.gz", hash = "sha256:31bde3ae03ede77650cadce136152916efdd86579ff65f49fc6705fbe462e2fb", size = 26384, upload-time = "2025-10-31T12:10:15.264Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2a/6a/9716315432f5aba4c82979f9677aeb101018f0e790835721dc4e01deb933/notion_client-2.7.0-py2.py3-none-any.whl", hash = "sha256:9057a8ac2103ff245556c2a5102bde1d2ccdd3505f66bcc130fc31857731d91e", size = 16999, upload-time = "2025-10-31T12:10:13.835Z" },
 ]
 
 [[package]]

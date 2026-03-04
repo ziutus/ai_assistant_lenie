@@ -228,6 +228,9 @@ development_status:
   # --- B-79: Migrate Standalone Scripts to config_loader ---
   B-79-migrate-standalone-scripts-to-config-loader: done  # DONE 2026-03-04. Migrated 10 scripts from load_dotenv() to load_config(). Additional fixes: re.sub kwargs, text_transcript safer return. Remaining load_dotenv() in test_code/ and sherlock tracked in B-85.
 
+  # --- B-88: Notion Changelog Script (PoC) ---
+  B-88-notion-changelog-script: done  # DONE 2026-03-04. PoC script backend/scripts/notion_changelog.py — fetches N recent documents from PostgreSQL, publishes as table on Notion page. Uses config_loader for NOTION_API_TOKEN + NOTION_PAGE_ID. Added notion-client optional dep to pyproject.toml, vars to vars-classification.yaml. Code review: 4 fixes (pagination, rate limit 429, DB info leak, PRD date_added→created_at).
+
   # ============================================================
   # BACKLOG (only items TO DO)
   # ============================================================
