@@ -5,11 +5,11 @@ from unittest.mock import MagicMock, patch
 from src.api_client import ApiConnectionError, ApiError, ApiResponseError
 from src.dm_handler import (
     HELP_TEXT,
-    _handle_add,
-    _handle_check,
-    _handle_count,
-    _handle_info,
-    _handle_version,
+    handle_add,
+    handle_check,
+    handle_count,
+    handle_info,
+    handle_version,
     register_dm_handler,
 )
 
@@ -51,7 +51,7 @@ class TestDmHandleVersion:
         }
         say = _make_say()
 
-        _handle_version(say, client)
+        handle_version(say, client)
 
         say.assert_called_once()
         text = say.call_args[1]["text"]
@@ -63,7 +63,7 @@ class TestDmHandleVersion:
         client.get_version.side_effect = ApiConnectionError("timeout")
         say = _make_say()
 
-        _handle_version(say, client)
+        handle_version(say, client)
 
         text = say.call_args[1]["text"]
         assert "Backend unreachable" in text
@@ -74,7 +74,7 @@ class TestDmHandleVersion:
         client.get_version.side_effect = ApiResponseError("bad", status_code=502, response_body="error")
         say = _make_say()
 
-        _handle_version(say, client)
+        handle_version(say, client)
 
         text = say.call_args[1]["text"]
         assert "Unexpected response from backend" in text
@@ -85,7 +85,7 @@ class TestDmHandleVersion:
         client.get_version.side_effect = ApiError("something broke")
         say = _make_say()
 
-        _handle_version(say, client)
+        handle_version(say, client)
 
         text = say.call_args[1]["text"]
         assert "An error occurred" in text
@@ -96,7 +96,7 @@ class TestDmHandleVersion:
         client.get_version.return_value = {"status": "success"}
         say = _make_say()
 
-        _handle_version(say, client)
+        handle_version(say, client)
 
         text = say.call_args[1]["text"]
         assert "Unexpected response from backend" in text
@@ -107,7 +107,7 @@ class TestDmHandleVersion:
         say = _make_say()
 
         with patch("src.dm_handler.logger") as mock_logger:
-            _handle_version(say, client)
+            handle_version(say, client)
             mock_logger.warning.assert_called_once()
 
 
@@ -122,7 +122,7 @@ class TestDmHandleCount:
         }
         say = _make_say()
 
-        _handle_count(say, client)
+        handle_count(say, client)
 
         client.get_all_counts.assert_called_once()
         text = say.call_args[1]["text"]
@@ -138,7 +138,7 @@ class TestDmHandleCount:
         client.get_all_counts.return_value = {"ALL": 10, "webpage": 10}
         say = _make_say()
 
-        _handle_count(say, client)
+        handle_count(say, client)
 
         text = say.call_args[1]["text"]
         assert "webpage: 10" in text
@@ -155,7 +155,7 @@ class TestDmHandleCount:
         client.get_all_counts.side_effect = ApiConnectionError("timeout")
         say = _make_say()
 
-        _handle_count(say, client)
+        handle_count(say, client)
 
         text = say.call_args[1]["text"]
         assert "Backend unreachable" in text
@@ -165,7 +165,7 @@ class TestDmHandleCount:
         client.get_all_counts.side_effect = ApiResponseError("bad", status_code=500, response_body="error")
         say = _make_say()
 
-        _handle_count(say, client)
+        handle_count(say, client)
 
         text = say.call_args[1]["text"]
         assert "Unexpected response from backend" in text
@@ -176,7 +176,7 @@ class TestDmHandleCount:
         client.get_all_counts.side_effect = ApiError("count failed")
         say = _make_say()
 
-        _handle_count(say, client)
+        handle_count(say, client)
 
         text = say.call_args[1]["text"]
         assert "An error occurred" in text
@@ -192,7 +192,7 @@ class TestDmHandleAdd:
         client.add_url.return_value = {"status": "success", "document_id": 42}
         say = _make_say()
 
-        _handle_add(say, client, "https://example.com/article")
+        handle_add(say, client, "https://example.com/article")
 
         client.add_url.assert_called_once_with("https://example.com/article", url_type="webpage")
         text = say.call_args[1]["text"]
@@ -205,7 +205,7 @@ class TestDmHandleAdd:
         client.add_url.return_value = {"status": "success", "document_id": 99}
         say = _make_say()
 
-        _handle_add(say, client, "https://youtube.com/watch?v=abc youtube")
+        handle_add(say, client, "https://youtube.com/watch?v=abc youtube")
 
         client.add_url.assert_called_once_with("https://youtube.com/watch?v=abc", url_type="youtube")
         text = say.call_args[1]["text"]
@@ -216,7 +216,7 @@ class TestDmHandleAdd:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_add(say, client, "example.com")
+        handle_add(say, client, "example.com")
 
         client.add_url.assert_not_called()
         text = say.call_args[1]["text"]
@@ -226,7 +226,7 @@ class TestDmHandleAdd:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_add(say, client, "hello")
+        handle_add(say, client, "hello")
 
         client.add_url.assert_not_called()
         text = say.call_args[1]["text"]
@@ -236,7 +236,7 @@ class TestDmHandleAdd:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_add(say, client, "https://example.com webpage extra stuff")
+        handle_add(say, client, "https://example.com webpage extra stuff")
 
         client.add_url.assert_not_called()
         text = say.call_args[1]["text"]
@@ -246,7 +246,7 @@ class TestDmHandleAdd:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_add(say, client, "https://example.com badtype")
+        handle_add(say, client, "https://example.com badtype")
 
         client.add_url.assert_not_called()
         text = say.call_args[1]["text"]
@@ -256,7 +256,7 @@ class TestDmHandleAdd:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_add(say, client, "")
+        handle_add(say, client, "")
 
         text = say.call_args[1]["text"]
         assert "Usage:" in text
@@ -266,7 +266,7 @@ class TestDmHandleAdd:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_add(say, client, "   ")
+        handle_add(say, client, "   ")
 
         text = say.call_args[1]["text"]
         assert "Usage:" in text
@@ -277,7 +277,7 @@ class TestDmHandleAdd:
         client.add_url.side_effect = ApiConnectionError("timeout")
         say = _make_say()
 
-        _handle_add(say, client, "https://example.com/article")
+        handle_add(say, client, "https://example.com/article")
 
         text = say.call_args[1]["text"]
         assert "Backend unreachable" in text
@@ -287,7 +287,7 @@ class TestDmHandleAdd:
         client.add_url.side_effect = ApiResponseError("bad", status_code=500, response_body="error")
         say = _make_say()
 
-        _handle_add(say, client, "https://example.com/article")
+        handle_add(say, client, "https://example.com/article")
 
         text = say.call_args[1]["text"]
         assert "Unexpected response from backend" in text
@@ -298,7 +298,7 @@ class TestDmHandleAdd:
         client.add_url.side_effect = ApiError("add failed")
         say = _make_say()
 
-        _handle_add(say, client, "https://example.com/article")
+        handle_add(say, client, "https://example.com/article")
 
         text = say.call_args[1]["text"]
         assert "An error occurred" in text
@@ -309,7 +309,7 @@ class TestDmHandleAdd:
         client.add_url.return_value = {"status": "success"}
         say = _make_say()
 
-        _handle_add(say, client, "https://example.com")
+        handle_add(say, client, "https://example.com")
 
         text = say.call_args[1]["text"]
         assert "Unexpected response from backend" in text
@@ -330,7 +330,7 @@ class TestDmHandleCheck:
         }
         say = _make_say()
 
-        _handle_check(say, client, "https://example.com/article")
+        handle_check(say, client, "https://example.com/article")
 
         client.check_url.assert_called_once_with("https://example.com/article")
         text = say.call_args[1]["text"]
@@ -344,7 +344,7 @@ class TestDmHandleCheck:
         client.check_url.return_value = None
         say = _make_say()
 
-        _handle_check(say, client, "https://example.com/new")
+        handle_check(say, client, "https://example.com/new")
 
         text = say.call_args[1]["text"]
         assert "Not found in database." in text
@@ -353,7 +353,7 @@ class TestDmHandleCheck:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_check(say, client, "example.com")
+        handle_check(say, client, "example.com")
 
         client.check_url.assert_not_called()
         text = say.call_args[1]["text"]
@@ -363,7 +363,7 @@ class TestDmHandleCheck:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_check(say, client, "random-text")
+        handle_check(say, client, "random-text")
 
         client.check_url.assert_not_called()
         text = say.call_args[1]["text"]
@@ -373,7 +373,7 @@ class TestDmHandleCheck:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_check(say, client, "")
+        handle_check(say, client, "")
 
         text = say.call_args[1]["text"]
         assert "Usage:" in text
@@ -383,7 +383,7 @@ class TestDmHandleCheck:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_check(say, client, "   ")
+        handle_check(say, client, "   ")
 
         text = say.call_args[1]["text"]
         assert "Usage:" in text
@@ -394,7 +394,7 @@ class TestDmHandleCheck:
         client.check_url.side_effect = ApiConnectionError("timeout")
         say = _make_say()
 
-        _handle_check(say, client, "https://example.com")
+        handle_check(say, client, "https://example.com")
 
         text = say.call_args[1]["text"]
         assert "Backend unreachable" in text
@@ -404,7 +404,7 @@ class TestDmHandleCheck:
         client.check_url.side_effect = ApiResponseError("bad", status_code=502, response_body="error")
         say = _make_say()
 
-        _handle_check(say, client, "https://example.com")
+        handle_check(say, client, "https://example.com")
 
         text = say.call_args[1]["text"]
         assert "Unexpected response from backend" in text
@@ -415,7 +415,7 @@ class TestDmHandleCheck:
         client.check_url.side_effect = ApiError("check failed")
         say = _make_say()
 
-        _handle_check(say, client, "https://example.com")
+        handle_check(say, client, "https://example.com")
 
         text = say.call_args[1]["text"]
         assert "An error occurred" in text
@@ -426,7 +426,7 @@ class TestDmHandleCheck:
         client.check_url.return_value = {"id": 123}
         say = _make_say()
 
-        _handle_check(say, client, "https://example.com")
+        handle_check(say, client, "https://example.com")
 
         text = say.call_args[1]["text"]
         assert "Unexpected response from backend" in text
@@ -447,7 +447,7 @@ class TestDmHandleInfo:
         }
         say = _make_say()
 
-        _handle_info(say, client, "123")
+        handle_info(say, client, "123")
 
         client.get_document.assert_called_once_with(123)
         text = say.call_args[1]["text"]
@@ -461,7 +461,7 @@ class TestDmHandleInfo:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_info(say, client, "abc")
+        handle_info(say, client, "abc")
 
         text = say.call_args[1]["text"]
         assert "Usage:" in text
@@ -472,7 +472,7 @@ class TestDmHandleInfo:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_info(say, client, "")
+        handle_info(say, client, "")
 
         text = say.call_args[1]["text"]
         assert "Usage:" in text
@@ -481,7 +481,7 @@ class TestDmHandleInfo:
         client = _make_mock_client()
         say = _make_say()
 
-        _handle_info(say, client, "\u00b2")  # superscript 2
+        handle_info(say, client, "\u00b2")  # superscript 2
 
         text = say.call_args[1]["text"]
         assert "Usage:" in text
@@ -493,7 +493,7 @@ class TestDmHandleInfo:
         client.get_document.side_effect = ApiConnectionError("timeout")
         say = _make_say()
 
-        _handle_info(say, client, "123")
+        handle_info(say, client, "123")
 
         text = say.call_args[1]["text"]
         assert "Backend unreachable" in text
@@ -503,7 +503,7 @@ class TestDmHandleInfo:
         client.get_document.side_effect = ApiResponseError("bad", status_code=404, response_body="not found")
         say = _make_say()
 
-        _handle_info(say, client, "999")
+        handle_info(say, client, "999")
 
         text = say.call_args[1]["text"]
         assert "Unexpected response from backend" in text
@@ -514,7 +514,7 @@ class TestDmHandleInfo:
         client.get_document.side_effect = ApiError("info failed")
         say = _make_say()
 
-        _handle_info(say, client, "123")
+        handle_info(say, client, "123")
 
         text = say.call_args[1]["text"]
         assert "An error occurred" in text
@@ -525,7 +525,7 @@ class TestDmHandleInfo:
         client.get_document.return_value = {"id": 123}
         say = _make_say()
 
-        _handle_info(say, client, "123")
+        handle_info(say, client, "123")
 
         text = say.call_args[1]["text"]
         assert "Unexpected response from backend" in text
