@@ -814,3 +814,222 @@ so that the acceptance criterion from [B-79](#b-79-migrate-standalone-scripts-to
 **Priority:** LOW — `test_code/` scripts are experimental; sherlock library files are medium priority
 **Status:** backlog
 **Related:** [B-79](#b-79-migrate-standalone-scripts-to-config_loader)
+
+---
+
+## Backlog: Security — CodeQL & SAST Findings
+
+### B-86: Triage CodeQL Clear-Text Logging Alerts (12 HIGH)
+
+As a **developer**,
+I want to review and resolve CodeQL "clear-text logging of sensitive data" alerts,
+so that actual credential leaks are fixed and false positives are properly suppressed.
+
+**Origin:** First CodeQL scan (2026-03-05) — 12 HIGH alerts of rule `py/clear-text-logging-sensitive-data`.
+
+**Alerts to review (12):**
+
+| # | File | Line | Assessment |
+|---|------|------|------------|
+| 3,4,5 | `shared_python/unified-config-loader/.../aws.py` | 30, 48, 52 | Logs SSM parameter **names** (paths like `/lenie/dev/db_host`), not values. **Likely false positive** — but verify each `logging.info()` call. |
+| 6,7 | `shared_python/unified-config-loader/.../config.py` | 62, 101 | Logs config key names being loaded. **Likely false positive.** |
+| 10 | `shared_python/unified-config-loader/.../vault.py` | 44 | Logs Vault path. **Verify** — could log secret value if variable naming is ambiguous. |
+| 8 | `scripts/gitguardian_manage_incidents.py` | 203 | **Verify** — script handles incident data, may log token/secret info. |
+| 9 | `backend/scripts/notion_changelog.py` | 141 | **Verify** — may log Notion API token. |
+| 11,12,13 | `backend/imports/unknown_news_import.py` | 77, 90, 95 | **Verify** — import script, check what is logged. |
+| 14 | `backend/test_code/vault_tests.py` | 80 | Logs Vault secret values for debugging. **True positive** in test code — low risk but should be suppressed or removed. |
+
+**How to suppress false positives in CodeQL:**
+
+1. **Per-alert dismissal** (recommended for individual false positives):
+   ```bash
+   gh api repos/{owner}/{repo}/code-scanning/alerts/{alert_number} \
+     -X PATCH -f state=dismissed -f dismissed_reason="false_positive" \
+     -f dismissed_comment="Logs parameter name/path, not secret value"
+   ```
+
+2. **CodeQL config file** (recommended for excluding paths like `test_code/`):
+   Create `.github/codeql/codeql-config.yml`:
+   ```yaml
+   paths-ignore:
+     - backend/test_code
+   ```
+   Then reference it in `.github/workflows/codeql.yml`:
+   ```yaml
+   - name: Initialize CodeQL
+     uses: github/codeql-action/init@v3
+     with:
+       languages: ${{ matrix.language }}
+       config-file: .github/codeql/codeql-config.yml
+   ```
+
+3. **Disable specific rule globally** (NOT recommended — rule catches real issues):
+   ```yaml
+   # in codeql-config.yml
+   query-filters:
+     - exclude:
+         id: py/clear-text-logging-sensitive-data
+   ```
+
+**Acceptance Criteria:**
+- Each of the 12 alerts is reviewed and categorized as true positive or false positive
+- True positives are fixed (remove secret logging or mask values)
+- False positives are dismissed via GitHub API with explanation
+- `test_code/` path excluded from CodeQL scanning via config file
+
+**Priority:** MEDIUM — no actual secrets are being leaked (initial assessment), but alerts should be triaged
+**Status:** backlog
+
+---
+
+### B-87: Fix Stack Trace Exposure in server.py Error Handlers (7 MEDIUM)
+
+As a **developer**,
+I want error handlers in `server.py` to return generic error messages instead of raw exception details,
+so that stack traces and internal implementation details are not exposed to API consumers.
+
+**Origin:** CodeQL scan (2026-03-05) — 7 MEDIUM alerts of rule `py/stack-trace-exposure`.
+
+**Affected lines in `backend/server.py`:** 189, 204, 222, 237, 277, 285, 682
+
+**Current pattern:**
+```python
+except Exception as e:
+    return jsonify({"error": str(e)}), 500
+```
+
+**Proposed fix:**
+```python
+except Exception as e:
+    logging.exception("Error in endpoint_name")
+    return jsonify({"error": "Internal server error"}), 500
+```
+
+For development, keep detailed errors behind a `DEBUG` flag:
+```python
+except Exception as e:
+    logging.exception("Error in endpoint_name")
+    if cfg.require("DEBUG", "false").lower() == "true":
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"error": "Internal server error"}), 500
+```
+
+**Acceptance Criteria:**
+- All `except` blocks in `server.py` return generic error messages in production
+- Full exception details are logged server-side via `logging.exception()`
+- DEBUG mode still returns detailed errors for development
+- CodeQL alerts resolve after fix
+
+**Priority:** MEDIUM — API is behind `x-api-key` auth, but good practice
+**Status:** backlog
+
+---
+
+### B-88: Review Reflected XSS Alerts in server.py (8 MEDIUM)
+
+As a **developer**,
+I want to verify that Flask endpoints in `server.py` are not vulnerable to reflected XSS,
+so that CodeQL alerts are resolved — either by fixing real issues or dismissing false positives.
+
+**Origin:** CodeQL scan (2026-03-05) — 8 MEDIUM alerts of rule `py/reflective-xss`.
+
+**Affected lines in `backend/server.py`:** 364, 428, 462, 467, 519, 569, 603, 674
+
+**Assessment needed:**
+- All endpoints return `jsonify()` responses (Content-Type: `application/json`)
+- JSON responses are generally not vulnerable to reflected XSS because browsers don't render them as HTML
+- If all responses use `jsonify()`, these are **likely false positives**
+- However, verify that no endpoint returns raw `str` or `make_response()` with HTML content-type
+
+**How to suppress if confirmed false positive:**
+```bash
+# Per-alert dismissal
+gh api repos/{owner}/{repo}/code-scanning/alerts/{alert_number} \
+  -X PATCH -f state=dismissed -f dismissed_reason="false_positive" \
+  -f dismissed_comment="Endpoint returns application/json via jsonify(), not rendered as HTML"
+```
+
+**Acceptance Criteria:**
+- Each of the 8 alerts is reviewed — verify response Content-Type
+- True positives fixed (add escaping or ensure JSON response)
+- False positives dismissed with explanation
+
+**Priority:** MEDIUM — API returns JSON, likely false positives, but should be verified
+**Status:** backlog
+
+---
+
+### B-89: Fix ReDoS Vulnerability in webdocument_prepare_regexp_by_ai.py
+
+As a **developer**,
+I want to fix the regular expression with exponential backtracking risk,
+so that the application is not vulnerable to ReDoS (Regular Expression Denial of Service).
+
+**Origin:** CodeQL scan (2026-03-05) — 1 HIGH alert of rule `py/redos` at line 36.
+
+**Details:** The regex pattern may cause exponential backtracking on strings starting with `\n` and containing many repetitions of `\n`.
+
+**Acceptance Criteria:**
+- Regex is rewritten to avoid catastrophic backtracking
+- Unit test added to verify regex works on edge cases (long strings with many newlines)
+- CodeQL alert resolves after fix
+
+**Priority:** HIGH — ReDoS can cause application hangs with crafted input
+**Status:** backlog
+
+---
+
+### B-90: Add Timeout to All requests Calls (6 locations)
+
+As a **developer**,
+I want all `requests.get()` and `requests.post()` calls to include a `timeout` parameter,
+so that the application does not hang indefinitely on unresponsive external services.
+
+**Origin:** Bandit scan (2026-03-05) — 6 MEDIUM alerts of rule B113.
+
+**Affected files:**
+1. `backend/library/api/cloudferro/sherlock/sherlock_embedding.py:40` — `requests.post()` (production)
+2. `backend/library/website/website_download_context.py:18` — `requests.get()` (production)
+3. `backend/library/youtube_processing.py:272` — `requests.get()` (production)
+4. `backend/imports/unknown_news_import.py:44` — `requests.get()` (import script)
+5. `backend/test_code/cloudferro_ark_labs_models.py:30,52` — `requests.get()` (test code)
+6. `backend/test_code/cloudferro_embeddings.py:38` — `requests.post()` (test code)
+
+**Fix:** Add `timeout=30` (or appropriate value) to each call.
+
+**Acceptance Criteria:**
+- All `requests` calls in `backend/` have explicit `timeout=` parameter
+- No new Bandit B113 alerts
+
+**Priority:** MEDIUM — production code (items 1-3) should be fixed soon; test code is lower priority
+**Status:** backlog
+
+---
+
+### B-91: Migrate SQL F-Strings to Parameterized Queries
+
+As a **developer**,
+I want SQL queries in `stalker_web_documents_db_postgresql.py` to use parameterized queries instead of f-strings,
+so that the code follows security best practices and SAST tools stop flagging SQL injection risks.
+
+**Origin:** Semgrep (22 findings) + Bandit (11 findings) + CodeQL scan (2026-03-05). All three tools flag the same pattern.
+
+**Risk assessment:**
+- Most f-strings interpolate Python enum `.name` attributes (e.g., `StalkerDocumentStatus.URL_ADDED.name`) — these are **not user-controlled** and are safe
+- However, some queries interpolate function parameters: `embedding`, `model`, `url`, `min` — these could be risky if upstream validation is missing
+- **Highest risk locations:** lines 358-363 (`min` param), 387-392 (`url` param)
+
+**Scope:**
+1. `backend/library/stalker_web_documents_db_postgresql.py` — ~15 queries
+2. `backend/library/stalker_web_document_db.py` — 1 query
+3. `backend/imports/dynamodb_sync.py` — 1 query
+
+**Acceptance Criteria:**
+- All SQL queries use `%s` placeholders with parameter tuples
+- Semgrep/Bandit/CodeQL scans show 0 SQL injection alerts
+- All existing unit tests pass
+- Integration tests pass against test database
+
+**Priority:** LOW — enum `.name` interpolation is safe in practice; parameterized queries are better practice but not urgent
+**Status:** backlog
+**Related:** [B-85](#b-85-migrate-remaining-test_code-and-library-scripts-to-config_loader)

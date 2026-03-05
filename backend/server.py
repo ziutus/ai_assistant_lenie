@@ -14,6 +14,7 @@ from library.website.website_download_context import download_raw_html, webpage_
 from library.models.webpage_parse_result import WebPageParseResult
 from library.website.website_paid import website_is_paid
 from library.text_functions import split_text_for_embedding
+from library.ai_intent_parser import parse_intent
 
 logging.basicConfig(level=logging.INFO)
 
@@ -680,6 +681,32 @@ def website_save():
         logging.error(e)
         logging.debug(f"Error while saving new webpage: {e}")
         return {"status": "error", "message": str(e)}, 500
+
+
+@app.route('/ai_parse_intent', methods=['POST'])
+def ai_parse_intent():
+    """Parse natural language text into a structured command intent using LLM."""
+    intent_enabled = cfg.get("INTENT_PARSER_ENABLED", "false").lower() == "true"
+    if not intent_enabled:
+        return {"status": "error", "message": "Intent parser is disabled"}, 400
+
+    if request.json:
+        text = request.json.get("text", "")
+    else:
+        return {"status": "error", "message": "JSON body with 'text' field required"}, 400
+
+    if not text or not text.strip():
+        return {"status": "error", "message": "Empty text provided"}, 400
+
+    logging.debug("Intent parse request received")
+
+    result = parse_intent(text)
+    return {
+        "status": "success",
+        "command": result["command"],
+        "args": result["args"],
+        "confidence": result["confidence"],
+    }, 200
 
 
 @app.route('/healthz', methods=['GET'])
