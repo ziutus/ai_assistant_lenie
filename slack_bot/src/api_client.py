@@ -127,6 +127,15 @@ class LenieApiClient:
         websites = data.get("websites", [])
         return websites[0] if websites else None
 
+    def parse_intent(self, text: str) -> dict:
+        """POST /ai_parse_intent — parse natural language into command intent."""
+        return self._request("POST", "/ai_parse_intent", json={"text": text})
+
+    def search_similar(self, query: str, limit: int = 5) -> list[dict]:
+        """POST /website_similar — vector similarity search."""
+        data = self._request("POST", "/website_similar", json={"search": query, "limit": limit})
+        return data.get("websites", [])
+
 
 # --- Factory ---
 

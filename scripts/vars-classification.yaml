@@ -182,6 +182,20 @@ groups:
         required: true
         example: "gpt-4o-2024-05-13"
         used_by: [docker, lambda, local]
+      INTENT_PARSER_ENABLED:
+        description: "Enable/disable LLM intent parsing for natural language commands"
+        type: config
+        required: false
+        default: "false"
+        example: "false"
+        used_by: [docker, local]
+      INTENT_PARSER_MODEL:
+        description: "LLM model for intent classification (Bielik default, fallback: gpt-4o-mini)"
+        type: config
+        required: false
+        default: "Bielik-11B-v2.3-Instruct"
+        example: "Bielik-11B-v2.3-Instruct"
+        used_by: [docker, local]
 
   aws:
     description: "AWS credentials and resource identifiers"

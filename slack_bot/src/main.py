@@ -97,11 +97,14 @@ def main() -> None:
         sys.exit(1)
 
     api_client = create_client(cfg)
+    intent_enabled = cfg.get("INTENT_PARSER_ENABLED", "false").lower() == "true"
+    if intent_enabled:
+        logger.info("LLM intent parsing is ENABLED")
 
     app = App(token=bot_token)
     register_commands(app, api_client)
-    register_dm_handler(app, api_client)
-    register_mention_handler(app, api_client)
+    register_dm_handler(app, api_client, intent_enabled=intent_enabled)
+    register_mention_handler(app, api_client, intent_enabled=intent_enabled)
 
     handler = SocketModeHandler(app, app_token)
     handler.connect()
