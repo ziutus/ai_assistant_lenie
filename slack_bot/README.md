@@ -95,6 +95,23 @@ You should see a message like: `Lenie Bot started successfully` and a startup me
 | `/lenie-check` | Check if a URL exists in the database | `/lenie-check https://example.com` |
 | `/lenie-info` | Get document details by ID | `/lenie-info 42` |
 
+## LLM Intent Parsing
+
+The bot supports natural language command recognition via LLM. When enabled, if a message doesn't match any keyword command, the bot calls the backend `/ai_parse_intent` endpoint to classify the user's intent.
+
+**Fallback chain:**
+1. Keyword match (instant, no LLM cost) — always tried first
+2. LLM intent parsing (0.5-2s latency) — only when keyword fails and `INTENT_PARSER_ENABLED=true`
+3. Help text — shown when LLM returns "unknown" or is unreachable
+
+**Examples of natural language that works with intent parsing:**
+- "how many articles do I have?" → `count` command
+- "do I already have this link? https://example.com" → `check` command
+- "save this article https://example.com" → `add` command
+- "show me document 42" → `info` command
+
+To enable, set `INTENT_PARSER_ENABLED=true` in your configuration. The default model is `Bielik-11B-v2.3-Instruct` (CloudFerro); override with `INTENT_PARSER_MODEL`.
+
 ## Configuration Reference
 
 | Variable | Type | Required | Default | Description |
@@ -104,6 +121,8 @@ You should see a message like: `Lenie Bot started successfully` and a startup me
 | `LENIE_API_URL` | config | No | `http://lenie-ai-server:5000` | Backend API base URL |
 | `SLACK_CHANNEL_STARTUP` | config | No | `#general` | Channel for bot startup messages |
 | `STALKER_API_KEY` | secret | Yes | — | API key for backend authentication |
+| `INTENT_PARSER_ENABLED` | config | No | `false` | Enable LLM intent parsing for natural language commands |
+| `INTENT_PARSER_MODEL` | config | No | `Bielik-11B-v2.3-Instruct` | LLM model for intent classification |
 
 ## Troubleshooting
 
@@ -162,11 +181,17 @@ slack_bot/
 │   ├── config.py            # Configuration loader wrapper
 │   ├── main.py              # App entry point (Socket Mode)
 │   ├── api_client.py        # Backend API client
-│   └── commands.py          # Slash command handlers
+│   ├── commands.py          # Slash command handlers
+│   ├── dm_handler.py        # DM text command handler
+│   ├── mention_handler.py   # Channel @mention handler
+│   └── intent_parser.py     # LLM intent parser client
 └── tests/
     └── unit/
         ├── test_config.py
         ├── test_main.py
         ├── test_api_client.py
-        └── test_commands.py
+        ├── test_commands.py
+        ├── test_dm_handler.py
+        ├── test_mention_handler.py
+        └── test_intent_parser.py
 ```

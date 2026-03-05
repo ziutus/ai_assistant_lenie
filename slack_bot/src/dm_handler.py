@@ -16,6 +16,7 @@ from src.api_client import (
     ApiResponseError,
 )
 from src.commands import DOCUMENT_TYPES, _VALID_TYPES
+from src.intent_parser import ParsedIntent, parse_intent
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -176,9 +177,40 @@ def handle_info(say: Callable, client: LenieApiClient, args_str: str) -> None:
         say(text="Unexpected response from backend")
 
 
-def register_dm_handler(app: App, client: LenieApiClient) -> None:
+def _route_intent(intent: "ParsedIntent", say: "Callable", commands: dict) -> bool:
+    """Route a parsed intent to the appropriate command handler.
+
+    Returns True if a command was successfully routed, False otherwise.
+    """
+    cmd = intent.command
+    if cmd == "unknown":
+        return False
+
+    handler = commands.get(cmd)
+    if not handler:
+        logger.debug("No handler for LLM-parsed command: %s", cmd)
+        return False
+
+    args = intent.args
+    if cmd == "check":
+        handler(say, args.get("url", ""))
+    elif cmd == "add":
+        parts = [args.get("url", "")]
+        if args.get("type"):
+            parts.append(args["type"])
+        handler(say, " ".join(parts))
+    elif cmd == "info":
+        handler(say, str(args.get("id", "")))
+    elif cmd == "search":
+        handler(say, args.get("query", ""))
+    else:
+        handler(say, "")
+    return True
+
+
+def register_dm_handler(app: App, client: LenieApiClient, intent_enabled: bool = False) -> None:
     """Register DM message event handler on the Slack Bolt app."""
-    logger.info("Registering DM message handler")
+    logger.info("Registering DM message handler (intent_parsing=%s)", intent_enabled)
 
     commands = {
         "version": lambda say, args: handle_version(say, client),
@@ -208,6 +240,7 @@ def register_dm_handler(app: App, client: LenieApiClient) -> None:
             say(text=HELP_TEXT)
             return
 
+        # 1. Try keyword matching first (instant, no LLM cost)
         parts = text.split(maxsplit=1)
         command = parts[0].lower()
         args_str = parts[1] if len(parts) > 1 else ""
@@ -215,5 +248,20 @@ def register_dm_handler(app: App, client: LenieApiClient) -> None:
         handler = commands.get(command)
         if handler:
             handler(say, args_str)
-        else:
-            say(text=f"I didn't understand that. {HELP_TEXT}")
+            return
+
+        # 2. If no keyword match and intent parsing enabled, try LLM
+        if intent_enabled:
+            intent = parse_intent(client, text)
+            if intent and intent.command != "unknown":
+                if _route_intent(intent, say, commands):
+                    return
+                # If routing failed (e.g. unimplemented command like "search"), inform user
+                say(text=f"I understood your request ({intent.command}), but this command is not yet available. {HELP_TEXT}")
+                return
+            if intent and intent.command == "unknown":
+                say(text=f"I'm not sure what you mean. {HELP_TEXT}")
+                return
+            # intent is None (LLM unreachable) — fall through to help
+
+        say(text=f"I didn't understand that. {HELP_TEXT}")

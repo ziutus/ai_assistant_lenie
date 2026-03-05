@@ -1,21 +1,21 @@
 import os
+import sys
 import requests
-from dotenv import load_dotenv
 from pprint import pprint
 from datetime import datetime
 
-load_dotenv()
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from library.config_loader import load_config
+
+load_config()
 
 to_check = "cloudferro"
-# Ustawienie klucza API i niestandardowego URL dla OpenAI API
 
 if to_check == "cloudferro":
     api_key = os.environ["CLOUDFERRO_SHERLOCK_KEY"]
     api_base = "https://api-sherlock.cloudferro.com/openai/v1/"
 elif to_check == "ARK_LABS":
-    # Ark LABS nie obsługuje tego endpointu jeszcze
     api_key = os.environ["ARK_LABS_KEY"]
-    # api_base = "https://api-sherlock.cloudferro.com/openai/v1/"
     api_base = "https://api.ark-labs.cloud/api/v1"
 else:
     print("ERROR: Unknown provider, exiting.")
