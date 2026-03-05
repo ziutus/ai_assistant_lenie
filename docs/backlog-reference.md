@@ -54,3 +54,14 @@ Quick reference of all backlog items. For full specifications (acceptance criter
 | B-73 | CI/CD — GitLab CI Pipeline | backlog | B-70 |
 | B-74 | CI/CD — Jenkins Pipeline | backlog | B-70 |
 | B-76 | Restore pytest-html for CI/CD Test Reports | backlog | B-70 |
+
+## Security — CodeQL & SAST Findings
+
+| ID | Title | Status | Depends on |
+|----|-------|--------|------------|
+| B-86 | Triage CodeQL Clear-Text Logging Alerts (12 HIGH) | backlog | — |
+| B-87 | Fix Stack Trace Exposure in server.py Error Handlers (7 MEDIUM) | backlog | — |
+| B-88 | Review Reflected XSS Alerts in server.py (8 MEDIUM) | backlog | — |
+| B-89 | Fix ReDoS Vulnerability in webdocument_prepare_regexp_by_ai.py | backlog | — |
+| B-90 | Add Timeout to All requests Calls (6 locations) | backlog | — |
+| B-91 | Migrate SQL F-Strings to Parameterized Queries | backlog | — |

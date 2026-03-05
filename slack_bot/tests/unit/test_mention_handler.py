@@ -1,7 +1,8 @@
 """Unit tests for src.mention_handler module."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
+from src.intent_parser import ParsedIntent
 from src.mention_handler import _strip_mention, register_mention_handler
 
 
@@ -215,3 +216,85 @@ class TestMentionFiltering:
         text = say.call_args[1]["text"]
         assert "I didn't understand that" in text
         assert "Available commands:" in text
+
+
+# --- Test mention handler with intent parsing ---
+
+
+def _get_handler_with_intent(client=None):
+    """Register mention handler with intent_enabled=True."""
+    app = MagicMock()
+    if client is None:
+        client = _make_mock_client()
+    register_mention_handler(app, client, intent_enabled=True)
+    handler_fn = app.event.return_value.call_args[0][0]
+    return handler_fn, client
+
+
+class TestMentionIntentParsing:
+    """Test LLM intent fallback in the mention event handler."""
+
+    def test_keyword_match_takes_priority(self):
+        client = _make_mock_client()
+        client.get_all_counts.return_value = {"ALL": 5, "webpage": 5}
+        handler_fn, _ = _get_handler_with_intent(client)
+        event = _make_mention_event("<@U123ABC> count")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        client.get_all_counts.assert_called_once()
+        client.parse_intent.assert_not_called()
+
+    @patch("src.mention_handler.parse_intent")
+    def test_llm_fallback_count(self, mock_parse):
+        client = _make_mock_client()
+        client.get_all_counts.return_value = {"ALL": 42, "webpage": 42}
+        mock_parse.return_value = ParsedIntent(command="count", args={}, confidence=0.95)
+        handler_fn, _ = _get_handler_with_intent(client)
+        event = _make_mention_event("<@U123ABC> how many articles?")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        mock_parse.assert_called_once()
+        client.get_all_counts.assert_called_once()
+        assert say.call_args[1]["thread_ts"] == "1234567890.123456"
+
+    @patch("src.mention_handler.parse_intent")
+    def test_llm_unknown_shows_help_in_thread(self, mock_parse):
+        mock_parse.return_value = ParsedIntent(command="unknown", args={}, confidence=0.0)
+        handler_fn, _ = _get_handler_with_intent()
+        event = _make_mention_event("<@U123ABC> random gibberish", ts="9999.1234")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        text = say.call_args[1]["text"]
+        assert "I'm not sure what you mean" in text
+        assert say.call_args[1]["thread_ts"] == "9999.1234"
+
+    @patch("src.mention_handler.parse_intent")
+    def test_llm_unreachable_shows_fallback(self, mock_parse):
+        mock_parse.return_value = None
+        handler_fn, _ = _get_handler_with_intent()
+        event = _make_mention_event("<@U123ABC> tell me something")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        text = say.call_args[1]["text"]
+        assert "I didn't understand that" in text
+
+    @patch("src.mention_handler.parse_intent")
+    def test_thread_response_preserved_for_llm(self, mock_parse):
+        client = _make_mock_client()
+        client.get_version.return_value = {"app_version": "1.0", "app_build_time": "2026-01-01"}
+        mock_parse.return_value = ParsedIntent(command="version", args={}, confidence=0.9)
+        handler_fn, _ = _get_handler_with_intent(client)
+        event = _make_mention_event("<@U123ABC> what version is running?", ts="5555.6666")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        assert say.call_args[1]["thread_ts"] == "5555.6666"

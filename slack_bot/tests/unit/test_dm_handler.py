@@ -12,6 +12,7 @@ from src.dm_handler import (
     handle_version,
     register_dm_handler,
 )
+from src.intent_parser import ParsedIntent
 
 
 # --- Helpers ---
@@ -829,3 +830,156 @@ class TestHelpText:
         assert "link" in HELP_TEXT
         assert "movie" in HELP_TEXT
         assert "text_message" in HELP_TEXT
+
+
+# --- Test DM handler with intent parsing ---
+
+
+class TestDmIntentParsing:
+    """Test LLM intent fallback in the DM event handler."""
+
+    def _get_handler_with_intent(self, client=None):
+        """Register DM handler with intent_enabled=True and return handler."""
+        app = MagicMock()
+        if client is None:
+            client = _make_mock_client()
+        register_dm_handler(app, client, intent_enabled=True)
+        return app.event.return_value.call_args[0][0], client
+
+    def _get_handler_without_intent(self, client=None):
+        """Register DM handler with intent_enabled=False and return handler."""
+        app = MagicMock()
+        if client is None:
+            client = _make_mock_client()
+        register_dm_handler(app, client, intent_enabled=False)
+        return app.event.return_value.call_args[0][0], client
+
+    def test_keyword_match_takes_priority_over_llm(self):
+        """Keyword match should work even when intent parsing is enabled."""
+        client = _make_mock_client()
+        client.get_all_counts.return_value = {"ALL": 5, "webpage": 5}
+        handler_fn, _ = self._get_handler_with_intent(client)
+        event = _make_dm_event("count")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        client.get_all_counts.assert_called_once()
+        client.parse_intent.assert_not_called()
+
+    @patch("src.dm_handler.parse_intent")
+    def test_llm_fallback_count_command(self, mock_parse):
+        """When keyword fails, LLM should parse intent."""
+        client = _make_mock_client()
+        client.get_all_counts.return_value = {"ALL": 42, "webpage": 42}
+        mock_parse.return_value = ParsedIntent(command="count", args={}, confidence=0.95)
+        handler_fn, _ = self._get_handler_with_intent(client)
+        event = _make_dm_event("how many articles do I have?")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        mock_parse.assert_called_once_with(client, "how many articles do I have?")
+        client.get_all_counts.assert_called_once()
+
+    @patch("src.dm_handler.parse_intent")
+    def test_llm_fallback_check_command(self, mock_parse):
+        client = _make_mock_client()
+        client.check_url.return_value = None
+        mock_parse.return_value = ParsedIntent(
+            command="check", args={"url": "https://example.com"}, confidence=0.9
+        )
+        handler_fn, _ = self._get_handler_with_intent(client)
+        event = _make_dm_event("do I have https://example.com?")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        client.check_url.assert_called_once()
+
+    @patch("src.dm_handler.parse_intent")
+    def test_llm_unknown_shows_help(self, mock_parse):
+        """When LLM returns unknown, show help text."""
+        mock_parse.return_value = ParsedIntent(command="unknown", args={}, confidence=0.0)
+        handler_fn, client = self._get_handler_with_intent()
+        event = _make_dm_event("random gibberish that makes no sense")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        text = say.call_args[1]["text"]
+        assert "I'm not sure what you mean" in text
+
+    @patch("src.dm_handler.parse_intent")
+    def test_llm_unreachable_shows_fallback(self, mock_parse):
+        """When LLM is unreachable (returns None), show default help."""
+        mock_parse.return_value = None
+        handler_fn, client = self._get_handler_with_intent()
+        event = _make_dm_event("tell me something")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        text = say.call_args[1]["text"]
+        assert "I didn't understand that" in text
+
+    def test_intent_disabled_no_llm_call(self):
+        """When intent parsing is disabled, no LLM call should be made."""
+        handler_fn, client = self._get_handler_without_intent()
+        event = _make_dm_event("how many articles?")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        client.parse_intent.assert_not_called()
+        text = say.call_args[1]["text"]
+        assert "I didn't understand that" in text
+
+    @patch("src.dm_handler.parse_intent")
+    def test_llm_fallback_add_command(self, mock_parse):
+        client = _make_mock_client()
+        client.add_url.return_value = {"document_id": 77}
+        mock_parse.return_value = ParsedIntent(
+            command="add", args={"url": "https://test.com", "type": "youtube"}, confidence=0.85
+        )
+        handler_fn, _ = self._get_handler_with_intent(client)
+        event = _make_dm_event("save this youtube video https://test.com")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        client.add_url.assert_called_once()
+
+    @patch("src.dm_handler.parse_intent")
+    def test_llm_fallback_info_command(self, mock_parse):
+        client = _make_mock_client()
+        client.get_document.return_value = {
+            "id": 42, "title": "T", "document_type": "link",
+            "document_state": "URL_ADDED", "created_at": "2026-01-01",
+        }
+        mock_parse.return_value = ParsedIntent(
+            command="info", args={"id": 42}, confidence=0.92
+        )
+        handler_fn, _ = self._get_handler_with_intent(client)
+        event = _make_dm_event("show me document 42")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        client.get_document.assert_called_once_with(42)
+
+    @patch("src.dm_handler.parse_intent")
+    def test_llm_unimplemented_command_shows_not_available(self, mock_parse):
+        """When LLM returns a valid command with no handler (e.g. search), show not-available message."""
+        mock_parse.return_value = ParsedIntent(
+            command="search", args={"query": "kubernetes"}, confidence=0.9
+        )
+        handler_fn, client = self._get_handler_with_intent()
+        event = _make_dm_event("find articles about kubernetes")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        text = say.call_args[1]["text"]
+        assert "not yet available" in text
+        assert "search" in text

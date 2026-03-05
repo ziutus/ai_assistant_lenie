@@ -13,12 +13,14 @@ from typing import TYPE_CHECKING
 
 from src.dm_handler import (
     HELP_TEXT,
+    _route_intent,
     handle_add,
     handle_check,
     handle_count,
     handle_info,
     handle_version,
 )
+from src.intent_parser import parse_intent
 
 if TYPE_CHECKING:
     from slack_bolt import App
@@ -35,9 +37,9 @@ def _strip_mention(text: str) -> str:
     return _BOT_MENTION_RE.sub("", text, count=1).strip()
 
 
-def register_mention_handler(app: App, client: LenieApiClient) -> None:
+def register_mention_handler(app: App, client: LenieApiClient, intent_enabled: bool = False) -> None:
     """Register app_mention event handler on the Slack Bolt app."""
-    logger.info("Registering app_mention handler")
+    logger.info("Registering app_mention handler (intent_parsing=%s)", intent_enabled)
 
     commands = {
         "version": lambda say, args: handle_version(say, client),
@@ -63,6 +65,7 @@ def register_mention_handler(app: App, client: LenieApiClient) -> None:
             threaded_say(text=HELP_TEXT)
             return
 
+        # 1. Try keyword matching first (instant, no LLM cost)
         parts = text.split(maxsplit=1)
         command = parts[0].lower()
         args_str = parts[1] if len(parts) > 1 else ""
@@ -70,5 +73,19 @@ def register_mention_handler(app: App, client: LenieApiClient) -> None:
         handler = commands.get(command)
         if handler:
             handler(threaded_say, args_str)
-        else:
-            threaded_say(text=f"I didn't understand that. {HELP_TEXT}")
+            return
+
+        # 2. If no keyword match and intent parsing enabled, try LLM
+        if intent_enabled:
+            intent = parse_intent(client, text)
+            if intent and intent.command != "unknown":
+                if _route_intent(intent, threaded_say, commands):
+                    return
+                threaded_say(text=f"I understood your request ({intent.command}), but this command is not yet available. {HELP_TEXT}")
+                return
+            if intent and intent.command == "unknown":
+                threaded_say(text=f"I'm not sure what you mean. {HELP_TEXT}")
+                return
+            # intent is None (LLM unreachable) — fall through to help
+
+        threaded_say(text=f"I didn't understand that. {HELP_TEXT}")

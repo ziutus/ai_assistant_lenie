@@ -283,13 +283,13 @@ development_status:
   epic-22-retrospective: optional
 
   # --- Epic 23: Channel App Mentions ---
-  epic-23: backlog
-  23-1-app-mention-event-handler-thread-responses: backlog
+  epic-23: done
+  23-1-app-mention-event-handler-thread-responses: done  # DONE 2026-03-04. Implemented in PR #64 (commit c9d01c5). mention_handler.py with thread responses, shared command handlers from dm_handler.py, 21 unit tests, manifest updated (app_mentions:read scope + app_mention event). Version bumped to 0.2.0.
   epic-23-retrospective: optional
 
   # --- Epic 24: Conversational LLM Intelligence ---
-  epic-24: backlog
-  24-1-llm-intent-parser: backlog
+  epic-24: in-progress
+  24-1-llm-intent-parser: done  # DONE 2026-03-05. Backend /ai_parse_intent endpoint + slack_bot intent_parser.py + DM/mention handler LLM fallback chain. 27 backend tests, 214 slack_bot tests (22 new). Version 0.3.0. Code review: 6 issues fixed (H1 unused import, H2 dead param, M1 unimplemented cmd UX, M3 input sanitization, M4 missing test).
   24-2-semantic-search-via-natural-language: backlog
   epic-24-retrospective: optional
 
@@ -314,6 +314,9 @@ development_status:
   B-30-define-analysis-json-schema-and-db-storage: backlog  # Schemat JSON, kolumna JSONB lub dedykowana tabela, indeksy GIN.
   B-31-frontend-ui-for-analysis-results: backlog  # Wyświetlanie wyników analizy, ręczna korekta, filtrowanie po metadanych.
   B-32-batch-analysis-for-existing-documents: backlog  # Batch processing istniejących dokumentów, nowy status ANALYSIS_NEEDED → ANALYSIS_DONE.
+
+  # --- Observability & Cost Management ---
+  B-89-api-usage-cost-and-limits-dashboard: backlog  # Admin panel (app2) showing external API usage, costs, and remaining limits/quotas. Covers: OpenAI, AWS Bedrock, CloudFerro Bielik, AssemblyAI, Firecrawl, Google Vertex AI, AWS Textract. Display per-provider: calls made, tokens/units consumed, estimated cost, free-tier/package limits remaining. Backend endpoint to aggregate usage data. Future: alerts when approaching limits.
 
   # --- Phase 9: Multiuser ---
   B-33-implement-user-authentication-with-aws-cognito: backlog  # Cognito User Pool, integracja z API Gateway (Cognito Authorizer).

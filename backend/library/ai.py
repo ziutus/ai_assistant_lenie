@@ -1,8 +1,5 @@
-import library.api.aws.bedrock_ask
-import library.api.openai.openai_my
 from library.models.ai_response import AiResponse
-from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
-import library.api.google.google_vertexai as google_vertexai
+
 
 def get_all_models_info():
     return {
@@ -10,6 +7,7 @@ def get_all_models_info():
         "gpt-4": {"need_translation": True},
         "gpt-3.5-turbo": {"need_translation": True},
         "Bielik-11B-v2.3-Instruct": {"need_translation": False},
+        "Bielik-11B-v3.0-Instruct": {"need_translation": False},
         "gemini-2.0-flash-lite-001": {"need_translation": False},
     }
 
@@ -26,6 +24,7 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         -> AiResponse:
 
     if model in ["gpt-3.5-turbo", "gpt-3.5-turbo-16k"]:
+        import library.api.openai.openai_my
         if len(query) < 8000:
             model = "gpt-3.5-turbo"
         elif len(query) < 16000:
@@ -43,6 +42,7 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         ai_response.response_text = response
         return ai_response
     if model in ["gpt-4", "gpt-4o", "gpt-4o-2024-05-13"]:
+        import library.api.openai.openai_my
         response = library.api.openai.openai_my.OpenAIClient.get_completion(query, model)
         ai_response = AiResponse(query=query, model=model)
 
@@ -53,6 +53,7 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         return ai_response
 
     elif model in ["gpt-4o-mini"]:
+        import library.api.openai.openai_my
         response = library.api.openai.openai_my.OpenAIClient.get_completion(query, model)
         ai_response = AiResponse(query=query, model=model)
 
@@ -63,17 +64,16 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         return ai_response
 
     elif model in ('amazon.titan-tg1-large', 'amazon.nova-micro', 'amazon.nova-pro', 'aws'):
+        import library.api.aws.bedrock_ask
         ai_response = library.api.aws.bedrock_ask.query_aws_bedrock(query, model, temperature=temperature,
                                                                     max_token_count=max_token_count, top_p=top_p)
 
-        # if isinstance(response, bytes):
-        #     response = response.decode('utf-8')
-
-        # ai_response.response_text = response
         return ai_response
-    elif model in ["Bielik-11B-v2.3-Instruct"]:
+    elif model in ["Bielik-11B-v2.3-Instruct", "Bielik-11B-v3.0-Instruct"]:
+        from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
         return sherlock_get_completion(query, model=model)
     elif model in ['gemini-2.0-flash-lite-001']:
+        import library.api.google.google_vertexai as google_vertexai
         return google_vertexai.connect_to_google_llm_with_role(query, model)
 
     else:
