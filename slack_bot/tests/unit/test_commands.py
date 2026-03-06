@@ -9,6 +9,7 @@ from src.commands import (
     _handle_check,
     _handle_count,
     _handle_info,
+    _handle_search,
     _handle_version,
     register_commands,
 )
@@ -249,7 +250,7 @@ class TestRegisterCommands:
         register_commands(app, client)
 
         # Should register commands without creating a new client
-        assert app.command.call_count == 5
+        assert app.command.call_count == 6
 
 
 # --- Task 5.1-5.3: Test /lenie-add ---
@@ -692,8 +693,8 @@ class TestHandleInfo:
 
 
 class TestRegisterCommandsAll:
-    def test_registers_all_five_commands(self):
-        """5.13: Verify all 5 commands registered (2 from 21-3 + 3 new)."""
+    def test_registers_all_six_commands(self):
+        """Verify all 6 commands registered."""
         app = MagicMock()
         client = _make_mock_client()
 
@@ -707,7 +708,142 @@ class TestRegisterCommandsAll:
             "/lenie-add",
             "/lenie-check",
             "/lenie-info",
+            "/lenie-search",
         }
+
+
+# --- Test /lenie-search ---
+
+
+class TestHandleSearch:
+    def test_success(self):
+        client = _make_mock_client()
+        client.search_similar.return_value = [
+            {"title": "K8s Security Guide", "url": "https://example.com/k8s", "document_type": "webpage", "similarity": 0.87},
+            {"title": "CKS Prep", "url": "https://example.com/cks", "document_type": "link", "similarity": 0.72},
+        ]
+        ack, respond = _make_ack_respond()
+        command = {"text": "Kubernetes security"}
+
+        _handle_search(ack, respond, client, command)
+
+        ack.assert_called_once()
+        client.search_similar.assert_called_once_with("Kubernetes security")
+        text = respond.call_args[1]["text"]
+        assert "K8s Security Guide" in text
+        assert "87%" in text
+        assert "CKS Prep" in text
+        assert "72%" in text
+
+    def test_empty_query(self):
+        client = _make_mock_client()
+        ack, respond = _make_ack_respond()
+        command = {"text": ""}
+
+        _handle_search(ack, respond, client, command)
+
+        ack.assert_called_once()
+        text = respond.call_args[1]["text"]
+        assert "Usage:" in text
+        assert "/lenie-search" in text
+        client.search_similar.assert_not_called()
+
+    def test_whitespace_only_query(self):
+        client = _make_mock_client()
+        ack, respond = _make_ack_respond()
+        command = {"text": "   "}
+
+        _handle_search(ack, respond, client, command)
+
+        ack.assert_called_once()
+        text = respond.call_args[1]["text"]
+        assert "Usage:" in text
+        client.search_similar.assert_not_called()
+
+    def test_no_results(self):
+        client = _make_mock_client()
+        client.search_similar.return_value = []
+        ack, respond = _make_ack_respond()
+        command = {"text": "obscure topic xyz"}
+
+        _handle_search(ack, respond, client, command)
+
+        ack.assert_called_once()
+        text = respond.call_args[1]["text"]
+        assert "No similar documents found" in text
+
+    def test_connection_error(self):
+        client = _make_mock_client()
+        client.search_similar.side_effect = ApiConnectionError("timeout")
+        ack, respond = _make_ack_respond()
+        command = {"text": "test query"}
+
+        _handle_search(ack, respond, client, command)
+
+        ack.assert_called_once()
+        text = respond.call_args[1]["text"]
+        assert "Backend unreachable" in text
+
+    def test_response_error(self):
+        client = _make_mock_client()
+        client.search_similar.side_effect = ApiResponseError("bad", status_code=500, response_body="error")
+        ack, respond = _make_ack_respond()
+        command = {"text": "test query"}
+
+        _handle_search(ack, respond, client, command)
+
+        ack.assert_called_once()
+        text = respond.call_args[1]["text"]
+        assert "Unexpected response from backend" in text
+        assert "500" in text
+
+    def test_generic_api_error(self):
+        client = _make_mock_client()
+        client.search_similar.side_effect = ApiError("search failed")
+        ack, respond = _make_ack_respond()
+        command = {"text": "test query"}
+
+        _handle_search(ack, respond, client, command)
+
+        ack.assert_called_once()
+        text = respond.call_args[1]["text"]
+        assert "An error occurred" in text
+        assert "search failed" in text
+
+    def test_ack_called_before_respond(self):
+        client = _make_mock_client()
+        client.search_similar.return_value = [
+            {"title": "Doc", "url": "https://ex.com", "document_type": "webpage", "similarity": 0.5}
+        ]
+        call_order = []
+        ack = MagicMock(side_effect=lambda: call_order.append("ack"))
+        respond = MagicMock(side_effect=lambda **kw: call_order.append("respond"))
+        command = {"text": "test"}
+
+        _handle_search(ack, respond, client, command)
+
+        assert call_order == ["ack", "respond"]
+
+    def test_response_error_logs_warning(self):
+        client = _make_mock_client()
+        client.search_similar.side_effect = ApiResponseError("bad", status_code=500, response_body="error")
+        ack, respond = _make_ack_respond()
+        command = {"text": "test"}
+
+        with patch("src.commands.logger") as mock_logger:
+            _handle_search(ack, respond, client, command)
+            mock_logger.warning.assert_called_once()
+
+    def test_no_text_key(self):
+        client = _make_mock_client()
+        ack, respond = _make_ack_respond()
+        command = {}
+
+        _handle_search(ack, respond, client, command)
+
+        ack.assert_called_once()
+        text = respond.call_args[1]["text"]
+        assert "Usage:" in text
 
 
 class TestDocumentTypes:

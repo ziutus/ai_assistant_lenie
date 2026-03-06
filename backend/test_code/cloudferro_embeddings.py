@@ -2,7 +2,7 @@ import os
 import requests
 from dotenv import load_dotenv
 from pprint import pprint
-from library.embedding_results import EmbeddingResults
+from library.models.embedding_results import EmbeddingResults
 
 load_dotenv()
 

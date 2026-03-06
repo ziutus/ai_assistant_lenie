@@ -290,7 +290,7 @@ development_status:
   # --- Epic 24: Conversational LLM Intelligence ---
   epic-24: in-progress
   24-1-llm-intent-parser: done  # DONE 2026-03-05. Backend /ai_parse_intent endpoint + slack_bot intent_parser.py + DM/mention handler LLM fallback chain. 27 backend tests, 214 slack_bot tests (22 new). Version 0.3.0. Code review: 6 issues fixed (H1 unused import, H2 dead param, M1 unimplemented cmd UX, M3 input sanitization, M4 missing test).
-  24-2-semantic-search-via-natural-language: backlog
+  24-2-semantic-search-via-natural-language: review
   epic-24-retrospective: optional
 
   # --- Epic 25: Proactive Health Monitoring ---

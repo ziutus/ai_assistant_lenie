@@ -173,6 +173,41 @@ class TestMentionCommandRouting:
         text = say.call_args[1]["text"]
         assert "Available commands:" in text
 
+    def test_search_command(self):
+        client = _make_mock_client()
+        client.search_similar.return_value = [
+            {"title": "Result", "url": "https://ex.com", "document_type": "webpage", "similarity": 0.8}
+        ]
+        handler_fn, _ = _get_handler(client)
+        event = _make_mention_event("<@U123ABC> search kubernetes")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        client.search_similar.assert_called_once_with("kubernetes")
+        assert say.call_args[1]["thread_ts"] == "1234567890.123456"
+
+    def test_search_with_multi_word_query(self):
+        client = _make_mock_client()
+        client.search_similar.return_value = []
+        handler_fn, _ = _get_handler(client)
+        event = _make_mention_event("<@U123ABC> search kubernetes security best practices")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        client.search_similar.assert_called_once_with("kubernetes security best practices")
+
+    def test_search_no_args(self):
+        handler_fn, _ = _get_handler()
+        event = _make_mention_event("<@U123ABC> search")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        text = say.call_args[1]["text"]
+        assert "Usage:" in text
+
     def test_case_insensitive(self):
         handler_fn, client = _get_handler()
         event = _make_mention_event("<@U123ABC> VERSION")
@@ -285,6 +320,22 @@ class TestMentionIntentParsing:
 
         text = say.call_args[1]["text"]
         assert "I didn't understand that" in text
+
+    @patch("src.mention_handler.parse_intent")
+    def test_llm_fallback_search(self, mock_parse):
+        client = _make_mock_client()
+        client.search_similar.return_value = [
+            {"title": "Result", "url": "https://ex.com", "document_type": "webpage", "similarity": 0.8}
+        ]
+        mock_parse.return_value = ParsedIntent(command="search", args={"query": "k8s"}, confidence=0.9)
+        handler_fn, _ = _get_handler_with_intent(client)
+        event = _make_mention_event("<@U123ABC> find articles about k8s", ts="5555.6666")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        client.search_similar.assert_called_once_with("k8s")
+        assert say.call_args[1]["thread_ts"] == "5555.6666"
 
     @patch("src.mention_handler.parse_intent")
     def test_thread_response_preserved_for_llm(self, mock_parse):
