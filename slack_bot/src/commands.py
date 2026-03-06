@@ -1,6 +1,6 @@
 """Slack slash command handlers.
 
-Implements /lenie-version, /lenie-count, /lenie-check, /lenie-add, /lenie-info.
+Implements /lenie-version, /lenie-count, /lenie-check, /lenie-add, /lenie-info, /lenie-search.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from src.api_client import (
     ApiResponseError,
     LenieApiClient,
 )
+from src.search_formatter import format_search_results
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -165,6 +166,25 @@ def _handle_info(ack: Callable, respond: Callable, client: LenieApiClient, comma
         respond(text="Unexpected response from backend")
 
 
+def _handle_search(ack: Callable, respond: Callable, client: LenieApiClient, command: dict) -> None:
+    """Handle /lenie-search command — semantic search via vector similarity."""
+    ack()
+    query = command.get("text", "").strip()
+    if not query:
+        respond(text="Usage: `/lenie-search <query>`")
+        return
+    try:
+        results = client.search_similar(query)
+        respond(text=format_search_results(query, results))
+    except ApiConnectionError:
+        respond(text="Backend unreachable (connection timeout). Check if lenie-ai-server is running.")
+    except ApiResponseError as exc:
+        logger.warning("Unexpected response from backend: %s", exc.message)
+        respond(text=f"Unexpected response from backend (HTTP {exc.status_code})")
+    except ApiError as exc:
+        respond(text=f"An error occurred: {exc.message}")
+
+
 def register_commands(app: App, client: LenieApiClient) -> None:
     """Register all slash commands on the Slack Bolt app."""
     logger.info("Registering slash commands")
@@ -188,3 +208,7 @@ def register_commands(app: App, client: LenieApiClient) -> None:
     @app.command("/lenie-info")
     def handle_info(ack, respond, command):
         _handle_info(ack, respond, client, command)
+
+    @app.command("/lenie-search")
+    def handle_search(ack, respond, command):
+        _handle_search(ack, respond, client, command)

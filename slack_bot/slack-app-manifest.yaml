@@ -37,6 +37,10 @@ features:
       description: "Get document details by ID"
       usage_hint: "<document_id>"
       should_escape: false
+    - command: /lenie-search
+      description: "Semantic search in the knowledge base"
+      usage_hint: "<query>"
+      should_escape: false
 
 oauth_config:
   scopes:
