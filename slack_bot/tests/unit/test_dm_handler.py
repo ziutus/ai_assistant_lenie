@@ -9,6 +9,7 @@ from src.dm_handler import (
     handle_check,
     handle_count,
     handle_info,
+    handle_search,
     handle_version,
     register_dm_handler,
 )
@@ -532,6 +533,87 @@ class TestDmHandleInfo:
         assert "Unexpected response from backend" in text
 
 
+# --- Test DM search handler ---
+
+
+class TestDmHandleSearch:
+    def test_success(self):
+        client = _make_mock_client()
+        client.search_similar.return_value = [
+            {"title": "K8s Guide", "url": "https://example.com/k8s", "document_type": "webpage", "similarity": 0.87},
+        ]
+        say = _make_say()
+
+        handle_search(say, client, "Kubernetes security")
+
+        client.search_similar.assert_called_once_with("Kubernetes security")
+        text = say.call_args[1]["text"]
+        assert "K8s Guide" in text
+        assert "87%" in text
+
+    def test_empty_query(self):
+        client = _make_mock_client()
+        say = _make_say()
+
+        handle_search(say, client, "")
+
+        text = say.call_args[1]["text"]
+        assert "Usage:" in text
+        client.search_similar.assert_not_called()
+
+    def test_whitespace_only(self):
+        client = _make_mock_client()
+        say = _make_say()
+
+        handle_search(say, client, "   ")
+
+        text = say.call_args[1]["text"]
+        assert "Usage:" in text
+        client.search_similar.assert_not_called()
+
+    def test_no_results(self):
+        client = _make_mock_client()
+        client.search_similar.return_value = []
+        say = _make_say()
+
+        handle_search(say, client, "obscure xyz")
+
+        text = say.call_args[1]["text"]
+        assert "No similar documents found" in text
+
+    def test_connection_error(self):
+        client = _make_mock_client()
+        client.search_similar.side_effect = ApiConnectionError("timeout")
+        say = _make_say()
+
+        handle_search(say, client, "test query")
+
+        text = say.call_args[1]["text"]
+        assert "Backend unreachable" in text
+
+    def test_response_error(self):
+        client = _make_mock_client()
+        client.search_similar.side_effect = ApiResponseError("bad", status_code=500, response_body="error")
+        say = _make_say()
+
+        handle_search(say, client, "test query")
+
+        text = say.call_args[1]["text"]
+        assert "Unexpected response from backend" in text
+        assert "500" in text
+
+    def test_generic_api_error(self):
+        client = _make_mock_client()
+        client.search_similar.side_effect = ApiError("search failed")
+        say = _make_say()
+
+        handle_search(say, client, "test query")
+
+        text = say.call_args[1]["text"]
+        assert "An error occurred" in text
+        assert "search failed" in text
+
+
 # --- Test DM event filtering and parsing ---
 
 
@@ -775,6 +857,29 @@ class TestDmCommandParsing:
         text = say.call_args[1]["text"]
         assert "numeric ID required" in text
 
+    def test_search_command(self):
+        client = _make_mock_client()
+        client.search_similar.return_value = [
+            {"title": "Doc A", "url": "https://a.com", "document_type": "webpage", "similarity": 0.8}
+        ]
+        handler_fn, _ = self._get_handler(client)
+        event = _make_dm_event("search kubernetes security")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        client.search_similar.assert_called_once_with("kubernetes security")
+
+    def test_search_no_args(self):
+        handler_fn, _ = self._get_handler()
+        event = _make_dm_event("search")
+        say = _make_say()
+
+        handler_fn(event=event, say=say)
+
+        text = say.call_args[1]["text"]
+        assert "Usage:" in text
+
     def test_help_command(self):
         handler_fn, _ = self._get_handler()
         event = _make_dm_event("help")
@@ -786,6 +891,7 @@ class TestDmCommandParsing:
         assert "Available commands:" in text
         assert "version" in text
         assert "count" in text
+        assert "search" in text
         assert "add" in text
         assert "check" in text
         assert "info" in text
@@ -819,6 +925,7 @@ class TestHelpText:
     def test_contains_all_commands(self):
         assert "version" in HELP_TEXT
         assert "count" in HELP_TEXT
+        assert "search" in HELP_TEXT
         assert "add" in HELP_TEXT
         assert "check" in HELP_TEXT
         assert "info" in HELP_TEXT
@@ -969,17 +1076,21 @@ class TestDmIntentParsing:
         client.get_document.assert_called_once_with(42)
 
     @patch("src.dm_handler.parse_intent")
-    def test_llm_unimplemented_command_shows_not_available(self, mock_parse):
-        """When LLM returns a valid command with no handler (e.g. search), show not-available message."""
+    def test_llm_fallback_search_command(self, mock_parse):
+        """When LLM returns search command, route to search handler."""
+        client = _make_mock_client()
+        client.search_similar.return_value = [
+            {"title": "K8s Article", "url": "https://example.com/k8s", "document_type": "webpage", "similarity": 0.85}
+        ]
         mock_parse.return_value = ParsedIntent(
             command="search", args={"query": "kubernetes"}, confidence=0.9
         )
-        handler_fn, client = self._get_handler_with_intent()
+        handler_fn, _ = self._get_handler_with_intent(client)
         event = _make_dm_event("find articles about kubernetes")
         say = _make_say()
 
         handler_fn(event=event, say=say)
 
+        client.search_similar.assert_called_once_with("kubernetes")
         text = say.call_args[1]["text"]
-        assert "not yet available" in text
-        assert "search" in text
+        assert "K8s Article" in text

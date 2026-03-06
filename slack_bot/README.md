@@ -94,6 +94,7 @@ You should see a message like: `Lenie Bot started successfully` and a startup me
 | `/lenie-add` | Add a URL to the knowledge base | `/lenie-add https://example.com` |
 | `/lenie-check` | Check if a URL exists in the database | `/lenie-check https://example.com` |
 | `/lenie-info` | Get document details by ID | `/lenie-info 42` |
+| `/lenie-search` | Semantic search in knowledge base | `/lenie-search Kubernetes security` |
 
 ## LLM Intent Parsing
 
@@ -109,6 +110,7 @@ The bot supports natural language command recognition via LLM. When enabled, if 
 - "do I already have this link? https://example.com" → `check` command
 - "save this article https://example.com" → `add` command
 - "show me document 42" → `info` command
+- "find articles about pgvector performance" → `search` command
 
 To enable, set `INTENT_PARSER_ENABLED=true` in your configuration. The default model is `Bielik-11B-v2.3-Instruct` (CloudFerro); override with `INTENT_PARSER_MODEL`.
 
@@ -123,6 +125,7 @@ To enable, set `INTENT_PARSER_ENABLED=true` in your configuration. The default m
 | `STALKER_API_KEY` | secret | Yes | — | API key for backend authentication |
 | `INTENT_PARSER_ENABLED` | config | No | `false` | Enable LLM intent parsing for natural language commands |
 | `INTENT_PARSER_MODEL` | config | No | `Bielik-11B-v2.3-Instruct` | LLM model for intent classification |
+| `SEARCH_RESULTS_LIMIT` | config | No | `5` | Max number of search results to display |
 
 ## Troubleshooting
 
@@ -184,7 +187,8 @@ slack_bot/
 │   ├── commands.py          # Slash command handlers
 │   ├── dm_handler.py        # DM text command handler
 │   ├── mention_handler.py   # Channel @mention handler
-│   └── intent_parser.py     # LLM intent parser client
+│   ├── intent_parser.py     # LLM intent parser client
+│   └── search_formatter.py  # Shared search result formatter
 └── tests/
     └── unit/
         ├── test_config.py

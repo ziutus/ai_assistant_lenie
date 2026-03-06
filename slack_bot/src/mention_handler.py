@@ -18,6 +18,7 @@ from src.dm_handler import (
     handle_check,
     handle_count,
     handle_info,
+    handle_search,
     handle_version,
 )
 from src.intent_parser import parse_intent
@@ -44,6 +45,7 @@ def register_mention_handler(app: App, client: LenieApiClient, intent_enabled: b
     commands = {
         "version": lambda say, args: handle_version(say, client),
         "count": lambda say, args: handle_count(say, client),
+        "search": lambda say, args: handle_search(say, client, args),
         "add": lambda say, args: handle_add(say, client, args),
         "check": lambda say, args: handle_check(say, client, args),
         "info": lambda say, args: handle_info(say, client, args),
