@@ -1,6 +1,6 @@
 from openai import OpenAI
 
-from library.embedding_results import EmbeddingResult
+from library.models.embedding_result import EmbeddingResult
 
 
 def get_embedding(text: str) -> EmbeddingResult:

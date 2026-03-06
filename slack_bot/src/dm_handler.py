@@ -17,6 +17,7 @@ from src.api_client import (
 )
 from src.commands import DOCUMENT_TYPES, _VALID_TYPES
 from src.intent_parser import ParsedIntent, parse_intent
+from src.search_formatter import format_search_results
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -31,6 +32,7 @@ HELP_TEXT = (
     "Available commands:\n"
     "  version  — Show backend version and build info\n"
     "  count    — Show document count by type\n"
+    "  search <query>  — Semantic search in knowledge base\n"
     "  add <url> [type]  — Add a URL to the knowledge base\n"
     "  check <url>  — Check if a URL exists in the database\n"
     "  info <id>  — Get document details by ID\n"
@@ -177,6 +179,24 @@ def handle_info(say: Callable, client: LenieApiClient, args_str: str) -> None:
         say(text="Unexpected response from backend")
 
 
+def handle_search(say: Callable, client: "LenieApiClient", args_str: str) -> None:
+    """Handle 'search <query>' command."""
+    query = args_str.strip()
+    if not query:
+        say(text="Usage: `search <query>`")
+        return
+    try:
+        results = client.search_similar(query)
+        say(text=format_search_results(query, results))
+    except ApiConnectionError:
+        say(text="Backend unreachable (connection timeout). Check if lenie-ai-server is running.")
+    except ApiResponseError as exc:
+        logger.warning("Unexpected response from backend: %s", exc.message)
+        say(text=f"Unexpected response from backend (HTTP {exc.status_code})")
+    except ApiError as exc:
+        say(text=f"An error occurred: {exc.message}")
+
+
 def _route_intent(intent: "ParsedIntent", say: "Callable", commands: dict) -> bool:
     """Route a parsed intent to the appropriate command handler.
 
@@ -215,6 +235,7 @@ def register_dm_handler(app: App, client: LenieApiClient, intent_enabled: bool =
     commands = {
         "version": lambda say, args: handle_version(say, client),
         "count": lambda say, args: handle_count(say, client),
+        "search": lambda say, args: handle_search(say, client, args),
         "add": lambda say, args: handle_add(say, client, args),
         "check": lambda say, args: handle_check(say, client, args),
         "info": lambda say, args: handle_info(say, client, args),
@@ -256,7 +277,7 @@ def register_dm_handler(app: App, client: LenieApiClient, intent_enabled: bool =
             if intent and intent.command != "unknown":
                 if _route_intent(intent, say, commands):
                     return
-                # If routing failed (e.g. unimplemented command like "search"), inform user
+                # If routing failed (unimplemented command), inform user
                 say(text=f"I understood your request ({intent.command}), but this command is not yet available. {HELP_TEXT}")
                 return
             if intent and intent.command == "unknown":
