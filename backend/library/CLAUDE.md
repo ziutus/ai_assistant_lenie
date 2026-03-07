@@ -34,7 +34,7 @@ library/
 ### Domain Model & Database
 
 - **`stalker_web_document.py`** — `StalkerWebDocument` class: ~30 attributes covering URL, text content (raw/English/markdown), metadata, processing state. Methods: `validate()`, `set_document_type()`, `set_document_state()`.
-- **`stalker_web_document_db.py`** — `StalkerWebDocumentDB(StalkerWebDocument)`: adds `save()`, `delete()`, `embedding_add_simple()`, `embedding_delete()`. Loads document from DB on construction. Custom ORM (no SQLAlchemy), uses `psycopg2` directly.
+- **`stalker_web_document_db.py`** — `StalkerWebDocumentDB(StalkerWebDocument)`: adds `save()`, `delete()`, `embedding_add(model)` (high-level: generates and stores embedding), `embedding_add_simple()`, `embedding_delete()`. Loads document from DB on construction. Custom ORM (no SQLAlchemy), uses `psycopg2` directly. Currently `embedding_add()` supports `link` document type (uses title+summary as text); other types raise `NotImplementedError`.
 - **`stalker_web_documents_db_postgresql.py`** — `WebsitesDBPostgreSQL`: connection management + queries: `get_list()` (paginated/filtered), `get_similar()` (pgvector cosine search), `get_next_to_correct()`, `get_count()`.
 
 **Database tables:** `public.web_documents` (28 columns), `public.websites_embeddings` (vector similarity).
