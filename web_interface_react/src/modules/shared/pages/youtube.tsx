@@ -29,7 +29,6 @@ const Youtube = () => {
       document_type: "youtube",
       summary: "",
       text: "",
-      text_english: "",
       document_state: "",
       document_state_error: "",
       chapter_list: "",

@@ -266,9 +266,6 @@ def lambda_handler(event, _):
         if 'text' in parsed_dict.keys():
             web_document.text = parsed_dict['text'][0]
 
-        if 'text_english' in parsed_dict.keys():
-            web_document.text_english = parsed_dict['text_english'][0]
-
         if 'title' in parsed_dict.keys():
             web_document.title = parsed_dict['title'][0]
 

@@ -1,18 +1,15 @@
 from openai import OpenAI
-import os
-from dotenv import load_dotenv
+from library.config_loader import load_config
 from library.models.ai_response import AiResponse
-
-
-load_dotenv()
 
 
 def sherlock_get_completion(prompt: str, model: str = "Bielik-11B-v2.3-Instruct", max_tokens=1000) -> AiResponse:
 
     ai_response = AiResponse(query=prompt, model=model)
+    cfg = load_config()
 
     client = OpenAI(
-        api_key=os.environ['CLOUDFERRO_SHERLOCK_KEY'],
+        api_key=cfg.require('CLOUDFERRO_SHERLOCK_KEY'),
         base_url="https://api-sherlock.cloudferro.com/openai/v1"
     )
 
