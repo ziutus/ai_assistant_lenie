@@ -16,3 +16,21 @@ id = "github-fine-grained-pat"
 description = "GitHub Fine-Grained Personal Access Token"
 regex = '''github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}'''
 tags = ["key", "github"]
+
+[[rules]]
+id = "hashicorp-vault-service-token"
+description = "HashiCorp Vault Service Token (hvs.)"
+regex = '''hvs\.[A-Za-z0-9]{20,}'''
+tags = ["key", "vault"]
+
+[[rules]]
+id = "hashicorp-vault-root-token"
+description = "HashiCorp Vault Root Token (hvr.)"
+regex = '''hvr\.[A-Za-z0-9]{20,}'''
+tags = ["key", "vault"]
+
+[[rules]]
+id = "hashicorp-vault-batch-token"
+description = "HashiCorp Vault Batch Token (hvb.)"
+regex = '''hvb\.[A-Za-z0-9]{20,}'''
+tags = ["key", "vault"]
