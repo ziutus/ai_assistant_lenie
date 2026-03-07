@@ -36,10 +36,15 @@ class StalkerWebDocumentDB(StalkerWebDocument):
 
         with self.db_conn:
             with self.db_conn.cursor() as cur:
+                select_cols = ("id, summary, url, language, tags, text, paywall, title, created_at, "
+                              "document_type, source, date_from, original_id, "
+                              "document_length, chapter_list, document_state, document_state_error, "
+                              "text_raw, transcript_job_id, ai_summary_needed, author, note, s3_uuid, "
+                              "project, text_md")
                 if url:
-                    cur.execute("SELECT * FROM public.web_documents WHERE url = %s", (url,))
+                    cur.execute(f"SELECT {select_cols} FROM public.web_documents WHERE url = %s", (url,))
                 elif id:
-                    cur.execute("SELECT * FROM public.web_documents WHERE id = %s", (document_id,))
+                    cur.execute(f"SELECT {select_cols} FROM public.web_documents WHERE id = %s", (document_id,))
                 else:
                     raise Exception("One of url or id must be provided")
 
@@ -55,24 +60,21 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                     self.title = website_data[7]
                     self.created_at = website_data[8]
                     self.set_document_type(website_data[9])
-                    self.text_english = website_data[10]
-                    self.source = website_data[11]
-                    self.summary_english = website_data[12]
-                    self.title_english = website_data[13]
-                    self.date_from = website_data[14]
-                    self.original_id = website_data[15]
-                    self.document_length = website_data[16]
-                    self.chapter_list = website_data[17]
-                    self.set_document_state(website_data[18])
-                    self.set_document_state_error(website_data[19])
-                    self.text_raw = website_data[20]
-                    self.transcript_job_id = website_data[21]
-                    self.ai_summary_needed = website_data[22]
-                    self.author = website_data[23]
-                    self.note = website_data[24]
-                    self.s3_uuid = website_data[25]
-                    self.project = website_data[26]
-                    self.text_md = website_data[27] if website_data[27] is not None else ""
+                    self.source = website_data[10]
+                    self.date_from = website_data[11]
+                    self.original_id = website_data[12]
+                    self.document_length = website_data[13]
+                    self.chapter_list = website_data[14]
+                    self.set_document_state(website_data[15])
+                    self.set_document_state_error(website_data[16])
+                    self.text_raw = website_data[17]
+                    self.transcript_job_id = website_data[18]
+                    self.ai_summary_needed = website_data[19]
+                    self.author = website_data[20]
+                    self.note = website_data[21]
+                    self.s3_uuid = website_data[22]
+                    self.project = website_data[23]
+                    self.text_md = website_data[24] if website_data[24] is not None else ""
 
                     if self.ai_summary_needed is None:
                         self.ai_summary_needed = False
@@ -114,10 +116,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
             "title": self.title,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S"),
             "document_type": self.document_type.name,
-            "text_english": self.text_english,
             "source": self.source,
-            "summary_english": self.summary_english,
-            "title_english": self.title_english,
             "date_from": self.date_from,
             "original_id": self.original_id,
             "document_length": self.document_length,
@@ -140,18 +139,18 @@ class StalkerWebDocumentDB(StalkerWebDocument):
             with self.db_conn.cursor() as cur:
                 if self.id is None:
                     query = sql.SQL(
-                        "INSERT INTO {} (title, title_english, summary, summary_english, url, language, "
-                        "tags, document_type, text, text_english, source, paywall, date_from, original_id,"
+                        "INSERT INTO {} (title, summary, url, language, "
+                        "tags, document_type, text, source, paywall, date_from, original_id,"
                         "document_length, document_state, document_state_error, text_raw, transcript_job_id, "
                         "ai_summary_needed, author, note, s3_uuid, project, text_md) "
-                        "VALUES (%s, %s,%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
                     ).format(sql.Identifier('web_documents'))
 
                     cur.execute(
                         query,
-                        (self.title, self.title_english, self.summary, self.summary_english, self.url, self.language,
+                        (self.title, self.summary, self.url, self.language,
                          self.tags, self.document_type.name, self.text,
-                         self.text_english, self.source, self.paywall, self.date_from, self.original_id,
+                         self.source, self.paywall, self.date_from, self.original_id,
                          self.document_length,
                          self.document_state.name, self.document_state_error.name, self.text_raw,
                          self.transcript_job_id, self.ai_summary_needed, self.author, self.note, self.s3_uuid,
@@ -164,14 +163,11 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                 else:
                     columns = [
                         ("summary", self.summary),
-                        ("summary_english", self.summary_english),
                         ("url", self.url),
                         ("title", self.title),
-                        ("title_english", self.title_english),
                         ("language", self.language),
                         ("tags", self.tags),
                         ("text", self.text),
-                        ("text_english", self.text_english),
                         ("document_type", self.document_type.name),
                         ("paywall", self.paywall),
                         ("source", self.source),
@@ -220,10 +216,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         self.title = None
         self.created_at = None
         self.document_type = None
-        self.text_english = None
         self.source = None
-        self.summary_english = None
-        self.title_english = None
         self.date_from = None
         self.original_id = None
         self.document_length = None

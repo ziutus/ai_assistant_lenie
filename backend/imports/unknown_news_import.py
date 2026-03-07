@@ -184,7 +184,7 @@ def main():
             web_document.language = "pl"
             web_document.document_type = StalkerDocumentType.link
             web_document.source = SOURCE
-            web_document.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION
+            web_document.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
             web_document.date_from = entry['date']
             web_document.save()
 
