@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Scan git history for secrets between local branch and remote
 # Uses both TruffleHog and gitleaks to catch different secret patterns
 #
