@@ -30,7 +30,6 @@ const Webpage = () => {
       summary: "",
       text: "",
       text_md: "",
-      text_english: "",
       document_state: "",
       document_state_error: "",
       chapter_list: "",

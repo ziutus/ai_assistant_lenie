@@ -18,10 +18,7 @@ class StalkerWebDocument:
                  created_at=None,
                  updated_at=None,
                  document_type: StalkerDocumentType = None,
-                 text_english: str | None = None,
                  source: str | None = "own",
-                 title_english: str | None = None,
-                 summary_english: str | None = None,
                  date_from: str | None = None, original_id: str | None = None,
                  document_length: int | None = None,
                  chapter_list: str | None = None,
@@ -42,11 +39,8 @@ class StalkerWebDocument:
         self.language: str | None = language
         self.tags: str | None = tags
         self.title: str | None = title
-        self.title_english: str | None = title_english
         self.summary: str | None = summary
-        self.summary_english: str | None = summary_english
         self.text: str | None = text
-        self.text_english: str | None = text_english
         self.source: str | None = source
         self.created_at = created_at
         self.updated_at = updated_at
@@ -75,14 +69,11 @@ class StalkerWebDocument:
             "url": self.url,
             "created_at": self.created_at,
             "summary": self.summary,
-            "summary_english": self.summary_english,
             "language": self.language,
             "tags": self.tags,
             "text": self.text,
-            "text_english": self.text_english,
             "paywall": self.paywall,
             "title": self.title,
-            "title_english": self.title_english,
             "document_type": self.document_type.name,
             "date_from": self.date_from,
             "original_id": self.original_id,
@@ -208,15 +199,6 @@ class StalkerWebDocument:
         #     self.language = text_language_detect(text=self.text)
         #     print("[DONE]")
         #
-        # if self.language and self.language.lower() == "en" and not self.text_english:
-        #     self.text_english = self.text
-
-        # if self.text.find("\n\n"):
-        #     self.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION
-        #
-        # if self.text.find("\n\n") and self.text_english and len(self.text_english) > 3:
-        #     self.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
-
         if self.document_type == StalkerDocumentType.link:
             self.text = None
 
@@ -240,41 +222,3 @@ class StalkerWebDocument:
                 self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
                 self.document_state_error = StalkerDocumentStatusError.TEXT_MISSING
 
-    def translate_to_english(self) -> None:
-        # if self.language == 'en' and self.document_state.READY_FOR_TRANSLATION:
-        #     self.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
-        #
-        # if self.language != 'en':
-        #     if self.title and len(self.title):
-        #         translate_result = text_translate(text=self.title, target_language='en')
-        #         if translate_result.status == "success":
-        #             self.title_english = translate_result.translated_text
-        #         else:
-        #             self.document_state_error = StalkerDocumentStatusError.TITLE_TRANSLATION_ERROR
-        #             self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-        #
-        #     if self.summary and len(self.summary) > 1:
-        #         translate_result = text_translate(text=self.summary, target_language='en')
-        #         if translate_result.status == "success":
-        #             self.summary_english = translate_result.translated_text
-        #         else:
-        #             self.document_state_error = StalkerDocumentStatusError.SUMMARY_TRANSLATION_ERROR
-        #             self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-        #
-        #     if self.document_type == StalkerDocumentType.link:
-        #         if self.title_english and self.summary_english:
-        #             self.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
-        #
-        #     if self.document_type in [StalkerDocumentType.webpage, StalkerDocumentType.youtube]:
-        #         if len(self.text) > 3:
-        #             translate_result = text_translate(text=self.text, target_language='en')
-        #             if translate_result.status == "success":
-        #                 self.text_english = translate_result.translated_text
-        #             else:
-        #                 self.document_state_error = StalkerDocumentStatusError.TEXT_TRANSLATION_ERROR
-        #                 self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-        #
-        #         if self.title_english and self.text_english:
-        #             self.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
-
-        return None

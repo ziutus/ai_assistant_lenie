@@ -14,7 +14,6 @@ from library.website.website_download_context import download_raw_html, webpage_
 from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType, StalkerDocumentStatusError
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.embedding import embedding_need_translation
 from library.youtube_processing import process_youtube_url
 
 # Ładowanie konfiguracji (obsługuje .env, Vault, AWS SSM)
@@ -25,8 +24,6 @@ logging.basicConfig(level=logging.INFO)  # Change level as per your need
 print(f"aws_xray_enabled: {cfg.get('AWS_XRAY_ENABLED')}")
 
 missing_markdown_correct = False
-missing_embedding = True
-make_translation = False
 
 """
 TODO: add limits for asemblay.ai upload files (check), see: https://www.assemblyai.com/docs/concepts/faq
@@ -290,7 +287,7 @@ if __name__ == '__main__':
                         web_doc.validate()
 
                         if web_doc.document_state == StalkerDocumentStatus.URL_ADDED and web_doc.document_type == StalkerDocumentType.link:
-                            web_doc.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION
+                            web_doc.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
 
                         web_doc.save()
 
@@ -341,75 +338,26 @@ if __name__ == '__main__':
             print(f"Processing  {web_doc.id} {web_doc.document_type.name} ({website_nb} from {websites_data_len} "
                   f"{progress}%): "
                   f"{web_doc.url}")
-            web_doc.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION
+            web_doc.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
             web_doc.save()
             website_nb += 1
 
 
-    print("Step 5: TRANSLATION")
-    if not make_translation:
-        print("ignoring translation")
-    else:
-        translation_needed = websites.get_ready_for_translation()
-        websites_data_len = len(translation_needed)
-        print(f"entries to translation: {websites_data_len}")
-        website_nb = 1
-        for website_id in translation_needed:
-            web_doc = StalkerWebDocumentDB(document_id=website_id)
-
-            progress = round((website_nb / websites_data_len) * 100)
-
-            if embedding_need_translation(model=cfg.get('EMBEDDING_MODEL')):
-                raise("Need translation implemented back")
-                # print(f"Processing  {web_doc.id} {web_doc.document_type.name} ({website_nb} from {websites_data_len} "
-                #       f"{progress}%): "
-                #       f"{web_doc.url}")
-                # web_doc.translate_to_english()
-            else:
-                web_doc.set_document_state("READY_FOR_EMBEDDING")
-            web_doc.save()
-            website_nb += 1
-
-    # print("Step 6: making AI tekst correction")
-    # ai_correction_needed = websites.get_list(ai_correction_needed=True)
-    # pprint(ai_correction_needed)
-
-    # print("Step 7: making AI tekst summary")
-    # ai_summary_needed = websites.get_list(ai_summary_needed=True)
-    # pprint(ai_summary_needed)
-
-    print("Step 8: adding embedding")
-    embedding_needed = websites.get_ready_for_embedding()
-    website_nb = 1
+    print(f"Step 5: adding embeddings (model: {cfg.get('EMBEDDING_MODEL')})")
+    embedding_needed = websites.get_documents_needing_embedding(cfg.get('EMBEDDING_MODEL'))
     embedding_needed_len = len(embedding_needed)
     print(f"entries to analyze: {embedding_needed_len}")
+    website_nb = 1
     for website_id in embedding_needed:
         web_doc = StalkerWebDocumentDB(document_id=website_id)
-
         progress = round((website_nb / embedding_needed_len) * 100)
         print(f"Working on ID:{web_doc.id} ({website_nb} from {embedding_needed_len} {progress}%)"
-              f" {web_doc.document_type}" f"url: {web_doc.url}")
-        website_nb += 1
+              f" {web_doc.document_type} url: {web_doc.url}")
         web_doc.embedding_add(model=cfg.get('EMBEDDING_MODEL'))
         web_doc.save()
+        website_nb += 1
 
-    print(f"Step 9: adding missing embedding for model >{cfg.get('EMBEDDING_MODEL')}")
-    if missing_embedding:
-        embedding_needed = websites.get_embedding_missing(cfg.get('EMBEDDING_MODEL'))
-        website_nb = 1
-        embedding_needed_len = len(embedding_needed)
-        print(f"entries to analyze: {embedding_needed_len}")
-        for website_id in embedding_needed:
-            web_doc = StalkerWebDocumentDB(document_id=website_id)
-
-            progress = round((website_nb / embedding_needed_len) * 100)
-            print(f"Working on ID:{web_doc.id} ({website_nb} from {embedding_needed_len} {progress}%)"
-                  f" {web_doc.document_type}" f"url: {web_doc.url}")
-            website_nb += 1
-            web_doc.embedding_add(model=cfg.get('EMBEDDING_MODEL'))
-            web_doc.save()
-
-    print("Step 10: adding missing markdown entries")
+    print("Step 6: adding missing markdown entries")
     if missing_markdown_correct:
         # TODO: sprawdzić, dlaczego jest problem z pobraniem poniższych stron
         problems = [38, 89, 150, 157, 191, 208, 220, 311, 371, 376, 396,

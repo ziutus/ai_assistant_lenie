@@ -120,7 +120,7 @@ class WebsitesDBPostgreSQL:
 
 
         if search_in_documents:
-            search_fields = ["url", "text", "title", "summary", "chapter_list", "summary_english", "text_english"]
+            search_fields = ["url", "text", "title", "summary", "chapter_list"]
             search_clauses = [f"{field} LIKE %s" for field in search_fields]
             escaped = search_in_documents.replace("%", "\\%").replace("_", "\\_")
             search_pattern = f"%{escaped}%"
@@ -254,43 +254,11 @@ class WebsitesDBPostgreSQL:
         website_data = cursor.fetchall()
         return website_data
 
-    def get_ready_for_embedding(self) -> list[int | str]:
-        query = f"""
-            SELECT id
-            FROM public.web_documents
-            WHERE public.web_documents.document_state = '{StalkerDocumentStatus.READY_FOR_EMBEDDING.name}'
-            ORDER BY id
-           """
-        cursor = self.conn.cursor()
-        cursor.execute(query)
-
-        result = []
-        for r in cursor.fetchall():
-            result.append(r[0])
-
-        return result
-
     def get_transcription_done(self) -> list[int | str]:
         query = f"""
             SELECT id
             FROM public.web_documents
             WHERE public.web_documents.document_state = '{StalkerDocumentStatus.TRANSCRIPTION_DONE.name}'
-            ORDER BY id
-            """
-        cursor = self.conn.cursor()
-        cursor.execute(query)
-
-        result = []
-        for r in cursor.fetchall():
-            result.append(r[0])
-
-        return result
-
-    def get_ready_for_translation(self) -> list[int | str]:
-        query = f"""
-            SELECT id
-            FROM public.web_documents
-            WHERE public.web_documents.document_state = '{StalkerDocumentStatus.READY_FOR_TRANSLATION.name}'
             ORDER BY id
             """
         cursor = self.conn.cursor()
@@ -330,17 +298,16 @@ class WebsitesDBPostgreSQL:
                 cur.execute(query)
                 return cur.fetchone()[0]
 
-    def get_embedding_missing(self, embedding_model: str) -> list[int | str]:
-        cursor = self.conn.cursor()
-
+    def get_documents_needing_embedding(self, embedding_model: str) -> list[int]:
         query = f"""
-            SELECT wd.id
-            FROM web_documents wd
-                     LEFT JOIN websites_embeddings we
-                               ON wd.id = we.website_id AND we.model = '{embedding_model}'
-            WHERE we.website_id IS NULL and wd.document_state = 'EMBEDDING_EXIST';
+            SELECT id FROM web_documents WHERE document_state = '{StalkerDocumentStatus.READY_FOR_EMBEDDING.name}'
+            UNION
+            SELECT wd.id FROM web_documents wd
+                LEFT JOIN websites_embeddings we ON wd.id = we.website_id AND we.model = '{embedding_model}'
+                WHERE we.website_id IS NULL AND wd.document_state = '{StalkerDocumentStatus.EMBEDDING_EXIST.name}'
+            ORDER BY id
         """
-
+        cursor = self.conn.cursor()
         cursor.execute(query)
 
         result = []

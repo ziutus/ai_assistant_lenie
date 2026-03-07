@@ -9,7 +9,6 @@ export interface WebDocument {
   summary: string;
   text: string;
   text_md: string;
-  text_english: string;
   document_type: string;
   document_state: string;
   document_state_error: string;
@@ -32,7 +31,6 @@ export const emptyDocument: WebDocument = {
   summary: "",
   text: "",
   text_md: "",
-  text_english: "",
   document_type: "",
   document_state: "",
   document_state_error: "",
