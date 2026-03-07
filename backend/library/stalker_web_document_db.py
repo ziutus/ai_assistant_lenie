@@ -40,7 +40,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                               "document_type, source, date_from, original_id, "
                               "document_length, chapter_list, document_state, document_state_error, "
                               "text_raw, transcript_job_id, ai_summary_needed, author, note, s3_uuid, "
-                              "project, text_md")
+                              "project, text_md, transcript_needed")
                 if url:
                     cur.execute(f"SELECT {select_cols} FROM public.web_documents WHERE url = %s", (url,))
                 elif id:
@@ -75,6 +75,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                     self.s3_uuid = website_data[22]
                     self.project = website_data[23]
                     self.text_md = website_data[24] if website_data[24] is not None else ""
+                    self.transcript_needed = website_data[25] if website_data[25] is not None else False
 
                     if self.ai_summary_needed is None:
                         self.ai_summary_needed = False
@@ -130,7 +131,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
             "note": self.note,
             "s3_uuid": self.s3_uuid,
             "project": self.project,
-            "text_md": self.text_md
+            "text_md": self.text_md,
+            "transcript_needed": self.transcript_needed
         }
         return result
 
@@ -142,8 +144,8 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                         "INSERT INTO {} (title, summary, url, language, "
                         "tags, document_type, text, source, paywall, date_from, original_id,"
                         "document_length, document_state, document_state_error, text_raw, transcript_job_id, "
-                        "ai_summary_needed, author, note, s3_uuid, project, text_md) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
+                        "ai_summary_needed, author, note, s3_uuid, project, text_md, transcript_needed) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id"
                     ).format(sql.Identifier('web_documents'))
 
                     cur.execute(
@@ -154,7 +156,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                          self.document_length,
                          self.document_state.name, self.document_state_error.name, self.text_raw,
                          self.transcript_job_id, self.ai_summary_needed, self.author, self.note, self.s3_uuid,
-                         self.project, self.text_md)
+                         self.project, self.text_md, self.transcript_needed)
                     )
                     self.id = cur.fetchone()[0]
 
@@ -184,6 +186,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
                         ("s3_uuid", self.s3_uuid),
                         ("project", self.project),
                         ("text_md", self.text_md),
+                        ("transcript_needed", self.transcript_needed),
                     ]
                     set_clause = ", ".join(
                         f"{column} = %s" for column, value in columns if value is not None
@@ -231,6 +234,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         self.s3_uuid = None
         self.project = None
         self.text_md = None
+        self.transcript_needed = False
 
     def delete(self) -> bool:
         with self.db_conn:
@@ -267,7 +271,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
     def embedding_add_simple(self, model, embedding, text) -> None:
         cursor = self.db_conn.cursor()
         cursor.execute(
-            "INSERT INTO public.websites_embeddings (website_id, langauge, text, embedding, model) "
+            "INSERT INTO public.websites_embeddings (website_id, language, text, embedding, model) "
             "VALUES (%s,%s, %s, %s, %s)",
             (self.id, self.language, text, embedding, model)
         )

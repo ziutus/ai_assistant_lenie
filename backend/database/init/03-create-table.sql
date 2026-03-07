@@ -31,7 +31,8 @@ create table web_documents
     note                 text,
     s3_uuid              varchar(100),
     project              varchar(100),
-    text_md              text
+    text_md              text,
+    transcript_needed    boolean     default false
 );
 
 -- Indeksy dla optymalizacji wydajności
