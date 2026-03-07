@@ -13,6 +13,7 @@ Usage:
 """
 
 import argparse
+from urllib.parse import urlparse
 import json
 import os
 import re
@@ -182,7 +183,8 @@ def main():
             web_document.title = entry['title']
             web_document.summary = entry['info']
             web_document.language = "pl"
-            if "youtube.com" in entry['url'] or "youtu.be" in entry['url']:
+            hostname = urlparse(entry['url']).hostname or ""
+            if hostname in ("youtube.com", "www.youtube.com", "m.youtube.com") or hostname == "youtu.be":
                 web_document.document_type = StalkerDocumentType.youtube
                 web_document.document_state = StalkerDocumentStatus.URL_ADDED
             else:
