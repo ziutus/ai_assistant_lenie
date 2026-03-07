@@ -90,11 +90,13 @@ Work completed and planned to address frontend-backend type drift and shared cod
 4. **Phase 4: Generate TypeScript from OpenAPI** — Use `openapi-typescript` to generate `shared/types/generated.ts` from OpenAPI schema
 5. **Phase 5: CI Integration** — Add generation + diff check to CI pipeline to prevent future drift
 
-**Migration path:** Incremental, one endpoint at a time. Start with `/website_get`, then `/website_list`, `/website_similar`. Hand-written `shared/types/` coexists with generated types during migration.
+**Migration path:** Incremental, one endpoint at a time. Start with `/ai_parse_intent` (simplest, already used as AI structured output in slack_bot), then `/website_get`, `/website_list`, `/website_similar`. Hand-written `shared/types/` coexists with generated types during migration.
+
+**Additional benefit:** Pydantic schemas double as `response_format` for LLM structured outputs (OpenAI, Bedrock, Vertex AI). The `/ai_parse_intent` endpoint is a natural first candidate — its Pydantic schema (`ParsedIntent`) can serve as both the API response model and the LLM structured output format, replacing manual JSON parsing in `ai_intent_parser.py`.
 
 **Status:** backlog
 **Strategy document:** `docs/api-type-sync-strategy.md`
-**Depends on:** B-49 (shared types package) — DONE
+**Depends on:** B-49 (shared types package) — DONE, [B-92](#b-92-migrate-database-layer-to-sqlalchemy-orm--pydantic-schemas) (Pydantic dependency)
 
 ---
 
@@ -1031,5 +1033,60 @@ so that the code follows security best practices and SAST tools stop flagging SQ
 - Integration tests pass against test database
 
 **Priority:** LOW — enum `.name` interpolation is safe in practice; parameterized queries are better practice but not urgent
-**Status:** backlog
+**Status:** superseded by [B-92](#b-92-migrate-database-layer-to-sqlalchemy-orm--pydantic-schemas) — SQLAlchemy uses parameterized queries by default
 **Related:** [B-85](#b-85-migrate-remaining-test_code-and-library-scripts-to-config_loader)
+
+---
+
+### B-92: Migrate Database Layer to SQLAlchemy ORM + Pydantic Schemas
+
+As a **developer**,
+I want the database layer to use SQLAlchemy ORM instead of raw psycopg2,
+so that adding a column requires only one field definition instead of manual changes in 5+ places (SELECT, INSERT, UPDATE, dict, clean, model).
+
+**Origin:** Repeated pain of manual SQL maintenance. Adding `transcript_needed` column required edits in `stalker_web_document.py`, `stalker_web_document_db.py` (SELECT, INSERT, UPDATE, dict, clean), `03-create-table.sql`, and a migration script. See [ADR-004a](../../docs/architecture-decisions.md#adr-004a-migrate-to-sqlalchemy-orm--pydantic-schemas).
+
+**Architecture:**
+
+Two-layer design:
+1. **SQLAlchemy 2.x ORM models** (`backend/library/db/models.py`) — `WebDocument`, `WebsiteEmbedding`. Define schema once, SQLAlchemy generates all SQL.
+2. **Pydantic v2 schemas** (`backend/library/models/schemas/`) — API response serialization, OpenAPI generation, structured AI outputs. Separate from ORM models.
+
+**Dependencies to add:** `sqlalchemy>=2.0`, `pgvector>=0.3.0`, `alembic>=1.13`
+
+**Scope:**
+
+| File | Change |
+|------|--------|
+| `backend/library/db/__init__.py` | NEW — package |
+| `backend/library/db/engine.py` | NEW — engine, session factory, Base |
+| `backend/library/db/models.py` | NEW — WebDocument, WebsiteEmbedding ORM models |
+| `backend/library/stalker_web_document.py` | REWRITE — re-export from new model |
+| `backend/library/stalker_web_document_db.py` | REWRITE — thin wrapper delegating to WebDocument ORM |
+| `backend/library/stalker_web_documents_db_postgresql.py` | REWRITE — SQLAlchemy session queries |
+| `backend/server.py` | UPDATE — add session teardown |
+| `backend/alembic.ini` | NEW — Alembic config |
+| `backend/alembic/env.py` | NEW — Alembic environment |
+| `backend/pyproject.toml` | UPDATE — new dependencies |
+
+Consumers (no API changes needed — wrappers preserve signatures):
+- `backend/web_documents_do_the_needful_new.py`
+- `backend/youtube_add.py`
+- `backend/imports/unknown_news_import.py`
+- `backend/imports/dynamodb_sync.py`
+- `infra/aws/serverless/lambdas/app-server-db/lambda_function.py`
+- `infra/aws/serverless/lambdas/sqs-into-rds/lambda_function.py`
+
+**Acceptance Criteria:**
+- All existing unit tests pass
+- All existing integration tests pass
+- Adding a new column requires only one field in ORM model + `alembic revision --autogenerate`
+- `dict()` serialization produces identical output to current implementation
+- pgvector similarity search (`get_similar()`) works unchanged
+- `.venv_wsl` synced with new dependencies
+
+**Supersedes:** [B-91](#b-91-migrate-sql-f-strings-to-parameterized-queries) — SQLAlchemy uses parameterized queries by default
+**Enables:** [B-50](#b-50-api-type-synchronization-pipeline-pydantic--openapi--typescript) Phase 1 (Pydantic schemas)
+**Priority:** MEDIUM
+**Status:** backlog
+**Plan:** [`.claude/exports/plan-sqlalchemy-migration.md`](../../.claude/exports/plan-sqlalchemy-migration.md)

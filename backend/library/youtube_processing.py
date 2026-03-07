@@ -10,7 +10,6 @@ import boto3
 import requests
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 
-from library.ai import ai_ask
 from library.api.aws.s3_aws import s3_file_exist
 from library.api.aws.transcript import aws_transcript
 from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType
@@ -39,11 +38,9 @@ def process_youtube_url(
     chapter_list: str | None = None,
     note: str | None = None,
     source: str = "own",
-    ai_summary_needed: bool = False,
     force_reprocess: bool = False,
     cache_dir: str | None = None,
     transcript_provider: str | None = None,
-    llm_model: str | None = None,
 ) -> StalkerWebDocumentDB:
     """Process a YouTube URL: fetch metadata, download captions/transcription, store in DB.
 
@@ -61,7 +58,6 @@ def process_youtube_url(
     # Config from env vars with parameter fallbacks
     cache_dir = cache_dir or os.getenv("CACHE_DIR", "cache")
     transcript_provider = transcript_provider or os.getenv("TRANSCRIPT_PROVIDER", "assemblyai")
-    llm_model = llm_model or os.getenv("AI_MODEL_SUMMARY")
     s3_bucket_transcript = os.getenv("AWS_S3_TRANSCRIPT")
 
     if not os.path.exists(cache_dir):
@@ -81,12 +77,11 @@ def process_youtube_url(
             web_document.chapter_list = chapter_list
         if note:
             web_document.note = note
-        web_document.ai_summary_needed = ai_summary_needed
         web_document.save()
     else:
         logger.info(f"Document already exists in DB with ID: {web_document.id}")
 
-    if not force_reprocess and web_document.id and web_document.status_code == StalkerDocumentStatus.EMBEDDING_EXIST:
+    if not force_reprocess and web_document.id and web_document.document_state == StalkerDocumentStatus.EMBEDDING_EXIST:
         logger.info(f"Document {web_document.id} already has embeddings, skipping.")
         return web_document
 
@@ -136,17 +131,16 @@ def process_youtube_url(
             if yt_language == 'pl-PL':
                 yt_language = 'pl'
 
-            transcript_list = YouTubeTranscriptApi.list_transcripts(youtube_file.video_id)
+            ytt_api = YouTubeTranscriptApi()
+            transcript_list = ytt_api.list(youtube_file.video_id)
             available_languages = [trans.language_code for trans in transcript_list]
 
             if yt_language not in available_languages:
                 logger.warning(f"Language '{yt_language}' not found. Trying default language 'en' (English).")
                 yt_language = 'en'
 
-            srt = YouTubeTranscriptApi.get_transcript(
-                video_id=youtube_file.video_id, languages=[yt_language]
-            )
-            transcript_text = json.dumps(srt)
+            srt = ytt_api.fetch(youtube_file.video_id, languages=[yt_language])
+            transcript_text = json.dumps(srt.to_raw_data())
             logger.info(f"Successfully retrieved transcript in language: {yt_language}")
 
             if transcript_text:
@@ -283,14 +277,6 @@ def process_youtube_url(
             logger.error(f"Unknown transcript provider: {transcript_provider}")
 
         logger.info(f"External transcription step: {time.time() - t0:.2f}s")
-
-    # AI summary if requested
-    if web_document.ai_summary_needed and not web_document.summary and web_document.text:
-        prompt = f"Wykonaj podsumowanie w punktach:\n\n TEXT: {web_document.text} "
-        response = ai_ask(query=prompt, model=llm_model).response_text
-        logger.info(response)
-        web_document.summary = response
-        web_document.save()
 
     logger.info(f"Total process_youtube_url: {time.time() - t_start:.2f}s")
     return web_document

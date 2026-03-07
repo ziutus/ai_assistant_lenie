@@ -67,22 +67,20 @@
 - **Why not a dedicated vector DB (Pinecone, Weaviate, Qdrant):** Single-database simplicity. The dataset size (~thousands of documents) doesn't require a specialized vector store. pgvector performs well at this scale.
 - **Embedding architecture:** See [docs/embeddings.md](./embeddings.md) for supported models, indexing strategy, and multi-model design.
 
-### psycopg2 (raw SQL, no ORM)
+### SQLAlchemy 2.x + psycopg2 (ORM)
 
-- **Used in:** All database access (`backend/library/stalker_web_document_db.py`, `backend/library/stalker_web_documents_db_postgresql.py`)
-- **Why:** See [ADR-004](./architecture-decisions.md#adr-004-raw-psycopg2-instead-of-orm). Full control over pgvector-specific queries (cosine similarity search), simpler dependency tree, no ORM abstraction overhead.
-- **Trade-off:** Manual SQL construction, no migration framework.
-- **Status: maintenance-only upstream.** psycopg2 is no longer actively developed — new features go into psycopg3 (psycopg).
+- **Used in:** All database access (`backend/library/db/models.py`, `backend/library/db/engine.py`)
+- **Why:** See [ADR-004a](./architecture-decisions.md#adr-004a-migrate-to-sqlalchemy-orm--pydantic-schemas). Eliminates manual SQL construction — adding a column requires only one field in the ORM model. Alembic manages schema migrations. pgvector-python provides native `Vector()` type and `cosine_distance()` operator.
+- **Migration from:** Raw psycopg2 (ADR-004). The manual SQL approach required changes in 5+ places per column addition.
+- **Driver:** psycopg2-binary (SQLAlchemy dialect). Future upgrade to psycopg3 is a driver swap, not a code change.
 
-**Upgrade plan:** Migrate to **psycopg3** (`psycopg`). Key benefits:
-- **Server-side parameter binding** — eliminates SQL f-string injection risk ([B-91](backlog-reference.md))
-- **Native async support** (`AsyncConnection`) — useful if Flask is replaced with an async framework
-- **Built-in connection pooling** (`ConnectionPool`)
-- **Better pgvector integration** with `pgvector-python` library
-- **3x faster** for large result sets (~500k rows/s vs ~150k rows/s)
-- **Breaking change:** `with conn` closes the connection (not just the transaction) — requires code review
+**Two-layer architecture:**
+- **SQLAlchemy models** (`backend/library/db/models.py`) — database schema and persistence (ORM)
+- **Pydantic v2 schemas** (`backend/library/models/schemas/`) — API serialization, OpenAPI generation, structured AI outputs
 
-**Evolution plan ([B-50](backlog-reference.md)):** The API response layer will migrate from raw dicts to **Pydantic v2 models** ([api-type-sync-strategy.md](./api-type-sync-strategy.md)). psycopg2 SQL queries remain — Pydantic replaces only the serialization layer (custom `.dict()` methods → Pydantic `BaseModel`), enabling automatic OpenAPI schema generation and TypeScript type generation. This is not an ORM migration — database access stays raw SQL.
+**Evolution plan ([B-50](backlog-reference.md)):** Pydantic schemas enable the OpenAPI → TypeScript pipeline ([api-type-sync-strategy.md](./api-type-sync-strategy.md)). Pydantic replaces the custom `.dict()` serialization layer. The same schemas serve as structured output format for LLM API calls (OpenAI, Bedrock, Vertex AI).
+
+**Note:** [B-91](backlog-reference.md) (SQL f-string migration) is superseded — SQLAlchemy uses parameterized queries by default.
 
 ### DynamoDB
 
