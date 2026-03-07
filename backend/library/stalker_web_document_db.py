@@ -3,7 +3,10 @@ import os
 import psycopg2
 from psycopg2 import sql
 
+from library.embedding import get_embedding
 from library.stalker_web_document import StalkerWebDocument
+from library.models.stalker_document_type import StalkerDocumentType
+from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.webpage_parse_result import WebPageParseResult
 
 
@@ -243,6 +246,23 @@ class StalkerWebDocumentDB(StalkerWebDocument):
 
                 self.__clean_values()
                 return True
+
+    def embedding_add(self, model: str) -> None:
+        if self.document_type == StalkerDocumentType.link:
+            text = self.title or ""
+            if self.summary:
+                text = text + " " + self.summary if text else self.summary
+            text = text.strip()
+            if not text:
+                print(f"WARNING: document {self.id} has no title or summary, skipping embedding")
+                return
+
+            self.embedding_delete(model)
+            result = get_embedding(model, text)
+            self.embedding_add_simple(model, result.embedding, text)
+            self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
+        else:
+            raise NotImplementedError(f"embedding_add not yet implemented for document type: {self.document_type}")
 
     def embedding_delete(self, model) -> None:
         cursor = self.db_conn.cursor()

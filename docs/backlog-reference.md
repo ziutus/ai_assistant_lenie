@@ -40,7 +40,7 @@ Quick reference of all backlog items. For full specifications (acceptance criter
 | ID | Title | Status | Depends on |
 |----|-------|--------|------------|
 | B-68 | Upgrade Python Runtime in Lambda to 3.12+ | backlog | — |
-| B-69 | Upgrade Docker/NAS PostgreSQL from 17 to 18 | backlog | — |
+| B-69 | Upgrade Docker/NAS PostgreSQL from 17 to 18 | DONE (2026-03-07) | — |
 | B-75 | Standardize Node.js Version to 24 LTS | backlog | — |
 | B-77 | Upgrade React to 19 and Vite to 7 in Main Frontends | backlog | — |
 
@@ -64,4 +64,4 @@ Quick reference of all backlog items. For full specifications (acceptance criter
 | B-88 | Review Reflected XSS Alerts in server.py (8 MEDIUM) | backlog | — |
 | B-89 | Fix ReDoS Vulnerability in webdocument_prepare_regexp_by_ai.py | backlog | — |
 | B-90 | Add Timeout to All requests Calls (6 locations) | backlog | — |
-| B-91 | Migrate SQL F-Strings to Parameterized Queries | backlog | — |
+| B-91 | Migrate SQL F-Strings to Parameterized Queries | backlog | — | **Note:** Migration to psycopg3 would solve this — psycopg3 uses server-side parameter binding by default, making f-string SQL construction unnecessary. Consider combining with psycopg2→psycopg3 migration. See [technology-choices.md](technology-choices.md#psycopg2-raw-sql-no-orm). |

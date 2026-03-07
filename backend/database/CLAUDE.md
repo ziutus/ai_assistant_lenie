@@ -71,11 +71,11 @@ Vector embeddings for document chunks used in similarity search.
 | `langauge` | `varchar(10)` | Language of the embedded text (note: intentional typo kept for compatibility) |
 | `text` | `text` | Translated/processed text that was embedded |
 | `text_original` | `text` | Original text before translation |
-| `embedding` | `vector(1536)` | Vector embedding (1536 dimensions — OpenAI ada-002 format) |
+| `embedding` | `vector` | Vector embedding (dimensionless — supports multiple models with different dimensions) |
 | `model` | `varchar(100) NOT NULL` | Embedding model used |
 | `created_at` | `timestamp` | Row creation timestamp |
 
-**Indexes:** `website_id`, `model`, IVFFlat index on `embedding` (cosine similarity).
+**Indexes:** `website_id`, `model`, HNSW partial indexes on `embedding` per model (cosine similarity). Each embedding model has its own partial index to support different vector dimensions.
 
 ## Document Processing States
 
@@ -127,5 +127,4 @@ Connection configured via environment variables: `POSTGRESQL_HOST`, `POSTGRESQL_
 ## Known Issues
 
 - The `langauge` column in `websites_embeddings` has a typo (should be `language`). Kept for backward compatibility.
-- The `embedding` column is fixed at 1536 dimensions, matching OpenAI's `text-embedding-ada-002`. Other models with different dimensions (e.g. Titan, Bielik) may require schema changes.
-- The IVFFlat index on embeddings requires the table to have existing rows before it can be used effectively. For small datasets, consider switching to HNSW index type.
+- The `embedding` column uses dimensionless `vector` type to support multiple embedding models with different dimensions (e.g. OpenAI ada-002: 1536, Titan v2: 1024, BAAI/bge-multilingual-gemma2: 3584). Each model has a dedicated HNSW partial index. When adding a new embedding model, create a new partial index in `04-create-table.sql`.
