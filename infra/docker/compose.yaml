@@ -24,7 +24,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - lenie-ai-db-data-3:/var/lib/postgresql/data
+      - lenie-ai-db-data-3:/var/lib/postgresql
 #      - ../../backend/database/init:/docker-entrypoint-initdb.d
     restart: unless-stopped
   lenie-ai-slack-bot:

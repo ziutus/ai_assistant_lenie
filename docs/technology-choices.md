@@ -58,21 +58,29 @@
 ### PostgreSQL 18 + pgvector
 
 - **Used in:** Document storage, vector similarity search
-- **Versions:** AWS RDS: **18.1** (upgraded Feb 2026). Docker/NAS: **17** (pending upgrade).
+- **Versions:** AWS RDS: **18.1**. Docker/NAS: **18.3** (upgraded Mar 2026, [B-69](backlog-reference.md) DONE). pgvector: **0.8.2**.
 - **Why PostgreSQL:**
   - Mature, reliable RDBMS with excellent tooling
-  - pgvector extension enables vector similarity search (cosine distance with IVFFlat index) in the same database as document metadata — no separate vector DB needed
+  - pgvector extension enables vector similarity search (cosine distance with HNSW partial indexes) in the same database as document metadata — no separate vector DB needed
   - AWS RDS support for managed hosting
-  - 1536-dimension vectors for OpenAI embeddings, extensible to other dimensions
+  - Dimensionless `vector` column supports multiple embedding models with different dimensions (1024–4096)
 - **Why not a dedicated vector DB (Pinecone, Weaviate, Qdrant):** Single-database simplicity. The dataset size (~thousands of documents) doesn't require a specialized vector store. pgvector performs well at this scale.
-
-**Upgrade plan ([B-69](backlog-reference.md)):** Docker/NAS image still uses `postgres:17-bookworm` (`infra/docker/Postgresql/Dockerfile`). Needs rebuild to `postgres:18-bookworm` with `postgresql-18-pgvector`. NAS database is empty — rebuild from scratch (no `pg_upgrade` needed).
+- **Embedding architecture:** See [docs/embeddings.md](./embeddings.md) for supported models, indexing strategy, and multi-model design.
 
 ### psycopg2 (raw SQL, no ORM)
 
-- **Used in:** All database access (`backend/library/db_postgresql.py`)
+- **Used in:** All database access (`backend/library/stalker_web_document_db.py`, `backend/library/stalker_web_documents_db_postgresql.py`)
 - **Why:** See [ADR-004](./architecture-decisions.md#adr-004-raw-psycopg2-instead-of-orm). Full control over pgvector-specific queries (cosine similarity search), simpler dependency tree, no ORM abstraction overhead.
 - **Trade-off:** Manual SQL construction, no migration framework.
+- **Status: maintenance-only upstream.** psycopg2 is no longer actively developed — new features go into psycopg3 (psycopg).
+
+**Upgrade plan:** Migrate to **psycopg3** (`psycopg`). Key benefits:
+- **Server-side parameter binding** — eliminates SQL f-string injection risk ([B-91](backlog-reference.md))
+- **Native async support** (`AsyncConnection`) — useful if Flask is replaced with an async framework
+- **Built-in connection pooling** (`ConnectionPool`)
+- **Better pgvector integration** with `pgvector-python` library
+- **3x faster** for large result sets (~500k rows/s vs ~150k rows/s)
+- **Breaking change:** `with conn` closes the connection (not just the transaction) — requires code review
 
 **Evolution plan ([B-50](backlog-reference.md)):** The API response layer will migrate from raw dicts to **Pydantic v2 models** ([api-type-sync-strategy.md](./api-type-sync-strategy.md)). psycopg2 SQL queries remain — Pydantic replaces only the serialization layer (custom `.dict()` methods → Pydantic `BaseModel`), enabling automatic OpenAPI schema generation and TypeScript type generation. This is not an ORM migration — database access stays raw SQL.
 
