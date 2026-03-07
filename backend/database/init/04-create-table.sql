@@ -9,7 +9,7 @@
 CREATE TABLE IF NOT EXISTS public.websites_embeddings (
                                                           id SERIAL PRIMARY KEY,
                                                           website_id INTEGER NOT NULL,
-                                                          langauge VARCHAR(10), -- zachowuję oryginalną nazwę z błędem dla kompatybilności
+                                                          language VARCHAR(10),
                                                           text TEXT,
                                                           text_original TEXT,
                                                           embedding vector, -- bez ustalonego wymiaru — obsługa wielu modeli o różnych wymiarach

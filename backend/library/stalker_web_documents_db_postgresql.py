@@ -278,12 +278,12 @@ class WebsitesDBPostgreSQL:
 
         return website_data
 
-    def embedding_add(self, website_id, embedding, langauge, text, text_original, model) -> None:
+    def embedding_add(self, website_id, embedding, language, text, text_original, model) -> None:
         cursor = self.conn.cursor()
         cursor.execute(
-            "INSERT INTO public.websites_embeddings (website_id, langauge, text, embedding, model, text_original) "
+            "INSERT INTO public.websites_embeddings (website_id, language, text, embedding, model, text_original) "
             "VALUES (%s,%s, %s, %s, %s,%s)",
-            (website_id, langauge, text, embedding, model, text_original)
+            (website_id, language, text, embedding, model, text_original)
         )
         self.conn.commit()
 

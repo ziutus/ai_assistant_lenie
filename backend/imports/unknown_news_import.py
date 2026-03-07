@@ -182,9 +182,13 @@ def main():
             web_document.title = entry['title']
             web_document.summary = entry['info']
             web_document.language = "pl"
-            web_document.document_type = StalkerDocumentType.link
+            if "youtube.com" in entry['url'] or "youtu.be" in entry['url']:
+                web_document.document_type = StalkerDocumentType.youtube
+                web_document.document_state = StalkerDocumentStatus.URL_ADDED
+            else:
+                web_document.document_type = StalkerDocumentType.link
+                web_document.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
             web_document.source = SOURCE
-            web_document.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
             web_document.date_from = entry['date']
             web_document.save()
 

@@ -68,7 +68,7 @@ Vector embeddings for document chunks used in similarity search.
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `website_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
-| `langauge` | `varchar(10)` | Language of the embedded text (note: intentional typo kept for compatibility) |
+| `language` | `varchar(10)` | Language of the embedded text |
 | `text` | `text` | Translated/processed text that was embedded |
 | `text_original` | `text` | Original text before translation |
 | `embedding` | `vector` | Vector embedding (dimensionless — supports multiple models with different dimensions) |
@@ -126,5 +126,5 @@ Connection configured via environment variables: `POSTGRESQL_HOST`, `POSTGRESQL_
 
 ## Known Issues
 
-- The `langauge` column in `websites_embeddings` has a typo (should be `language`). Kept for backward compatibility.
+- The `langauge` typo in `websites_embeddings` was fixed — column renamed to `language` (migration: `08-fix-language-typo.sql`).
 - The `embedding` column uses dimensionless `vector` type to support multiple embedding models with different dimensions (e.g. OpenAI ada-002: 1536, Titan v2: 1024, BAAI/bge-multilingual-gemma2: 3584). Each model has a dedicated HNSW partial index. When adding a new embedding model, create a new partial index in `04-create-table.sql`.
