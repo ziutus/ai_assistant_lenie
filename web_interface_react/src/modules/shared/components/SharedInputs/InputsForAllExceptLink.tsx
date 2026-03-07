@@ -73,17 +73,6 @@ const InputsForAllExceptLink = ({
         <br/>
         <Input
             disabled={isLoading}
-            value={formik.values.text_english}
-            label={"English"}
-            onChange={formik.handleChange}
-            id={"text_english"}
-            name={"text_english"}
-            type={"text"}
-            multiline
-        />
-
-        <Input
-            disabled={isLoading}
         value={formik.values.chapter_list}
         label={"Chapter list:"}
         onChange={formik.handleChange}

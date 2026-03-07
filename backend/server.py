@@ -657,8 +657,6 @@ def website_save():
     web_document.set_document_state(request.form.get('document_state'))
 
     web_document.text = request.form.get('text')
-    web_document.text_english = request.form.get('text_english')
-
     web_document.title = request.form.get('title')
     web_document.language = request.form.get('language')
     web_document.tags = request.form.get('tags')

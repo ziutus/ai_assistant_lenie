@@ -1,16 +1,14 @@
-import os
 import requests
-from dotenv import load_dotenv
-from pprint import pprint
+from library.config_loader import load_config
 from library.models.embedding_results import EmbeddingResults
 from library.models.embedding_result import EmbeddingResult
 
+API_BASE = "https://api-sherlock.cloudferro.com/openai/v1/"
 
-load_dotenv()
 
-# Ustawienie klucza API i niestandardowego URL dla CloudFerro Sherlock API
-api_key = os.environ["CLOUDFERRO_SHERLOCK_KEY"]
-api_base = "https://api-sherlock.cloudferro.com/openai/v1/"
+def _get_api_key() -> str:
+    cfg = load_config()
+    return cfg.require("CLOUDFERRO_SHERLOCK_KEY")
 
 
 def sherlock_create_embeddings(texts, model="BAAI/bge-multilingual-gemma2")-> EmbeddingResults :
@@ -27,7 +25,7 @@ def sherlock_create_embeddings(texts, model="BAAI/bge-multilingual-gemma2")-> Em
     embedding = EmbeddingResults(text=texts)
 
     headers = {
-        "Authorization": f"Bearer {api_key}",
+        "Authorization": f"Bearer {_get_api_key()}",
         "Content-Type": "application/json"
     }
 
@@ -38,7 +36,7 @@ def sherlock_create_embeddings(texts, model="BAAI/bge-multilingual-gemma2")-> Em
 
     try:
         response = requests.post(
-            f"{api_base}embeddings",
+            f"{API_BASE}embeddings",
             headers=headers,
             json=payload
         )

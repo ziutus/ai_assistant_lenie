@@ -139,11 +139,9 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     setIsLoading(true);
     var text_tmp = website.text;
     var text_tmp_md = website.text_md;
-    var text_tmp_english = website.text_english;
     if (website.document_type === "link") {
       text_tmp = "";
       text_tmp_md = "";
-      text_tmp_english = "";
     }
 
     try {
@@ -158,7 +156,6 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
           source: website.source,
           text: text_tmp,
           text_md: text_tmp_md,
-          text_english: text_tmp_english,
           language: website.language,
           document_type: website.document_type,
           document_state: website.document_state,
@@ -199,10 +196,8 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
 
     var text_tmp = website.text;
     var text_tmp_md = website.text_md;
-    var text_tmp_english = website.text_english;
     if (website.document_type === "link") {
       text_tmp = "";
-      text_tmp_english = "";
     }
 
     try {
@@ -217,10 +212,9 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
           source: website.source,
           text: text_tmp,
           text_md: text_tmp_md,
-          text_english: text_tmp_english,
           language: website.language,
           document_type: website.document_type,
-          document_state: "READY_FOR_TRANSLATION",
+          document_state: "READY_FOR_EMBEDDING",
           chapter_list: website.chapter_list,
           author: website.author,
           note: website.note,
