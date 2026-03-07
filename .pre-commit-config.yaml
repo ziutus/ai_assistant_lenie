@@ -13,3 +13,13 @@ repos:
         name: TruffleHog - Detect verified secrets
         description: Detect secrets with online verification.
         stages: ["pre-commit", "pre-push"]
+  - repo: local
+    hooks:
+      - id: scan-history-secrets
+        name: Scan unpushed commit history for secrets
+        description: Scans all commits between local branch and remote for secrets using TruffleHog.
+        entry: ./scripts/scan-history-secrets.sh
+        language: system
+        stages: ["pre-push"]
+        always_run: true
+        pass_filenames: false
