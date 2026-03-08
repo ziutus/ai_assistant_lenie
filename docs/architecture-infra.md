@@ -15,10 +15,10 @@
 | Service | Image | Port | Description |
 |---------|-------|------|-------------|
 | lenie-ai-server | Built from `backend/Dockerfile` | 5000 | Flask REST API |
-| lenie-ai-db | Custom PostgreSQL 17 + pgvector (upgrade to 18 pending — B-69) | 5433 | Database |
+| lenie-ai-db | Custom PostgreSQL 18 + pgvector | 5433 | Database |
 | lenie-ai-fronted | Built from `web_interface_react/Dockerfile` | 3000 | React frontend |
 
-PostgreSQL uses custom Dockerfile (`infra/docker/Postgresql/Dockerfile`) based on `postgres:17-bookworm` with `postgresql-17-pgvector` installed.
+PostgreSQL uses custom Dockerfile (`infra/docker/Postgresql/Dockerfile`) based on `postgres:18-bookworm` with `postgresql-18-pgvector` installed.
 
 ### 2. AWS Serverless
 

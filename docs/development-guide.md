@@ -11,7 +11,7 @@
 | Node.js | >= 22 (recommended: 24 LTS) | Frontend build |
 | npm/yarn | latest | Frontend package manager |
 | Docker + Docker Compose | latest | Local development stack |
-| PostgreSQL | 17 | Database (via Docker or standalone) |
+| PostgreSQL | 18 | Database (via Docker or standalone) |
 | Git | latest | Version control |
 
 ## Quick Start (Docker)

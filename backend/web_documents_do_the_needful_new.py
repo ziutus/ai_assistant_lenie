@@ -158,7 +158,7 @@ if __name__ == '__main__':
 
     websites = WebsitesDBPostgreSQL()
 
-    print("Step 2 a: putting youtube movies data into database")
+    print("S    tep 2 a: putting youtube movies data into database")
     if not process_types["youtube"]:
         print("ignoring youtube movies")
     else:
