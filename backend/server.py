@@ -77,6 +77,14 @@ logging.info("Flask - enabling CORS for all routes")
 CORS(app)  # This will enable CORS for all routes
 
 
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    """Clean up scoped session at end of Flask request."""
+    from library.db.engine import get_scoped_session
+    # Lazily initializes engine on first call; .remove() is a no-op if no ORM session was used.
+    get_scoped_session().remove()
+
+
 @app.before_request
 def before_request_func():
     exempt_paths = ['/healthz', '/startup', '/readiness', '/liveness', '/version']

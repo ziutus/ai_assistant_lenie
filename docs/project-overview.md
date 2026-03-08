@@ -16,7 +16,7 @@ The system consists of a Python/Flask REST API backend, a React frontend applica
 | **Parts** | 4 (backend, main frontend, browser extension, infrastructure) |
 | **Primary Language** | Python 3.11 (backend), JavaScript/React 18 (frontends) |
 | **Architecture** | Layered REST API + SPA + Serverless |
-| **Database** | PostgreSQL 18 + pgvector (RDS: 18.1, Docker/NAS: 17 — pending upgrade) |
+| **Database** | PostgreSQL 18 + pgvector |
 | **Version** | 0.3.13.0 |
 | **License** | MIT |
 
@@ -40,7 +40,7 @@ Multi-cloud IaC supporting Docker Compose (local), AWS (CloudFormation + Lambda)
 |----------|-------------|
 | **Backend** | Python 3.11, Flask, psycopg2, uv |
 | **Frontend** | React 18, CRA, React Router v6, Formik, axios |
-| **Database** | PostgreSQL 17, pgvector (1536-dim vectors) |
+| **Database** | PostgreSQL 18, pgvector (variable-dimension vectors per embedding model) |
 | **AI/LLM** | OpenAI (GPT-4o), AWS Bedrock (Titan, Nova), Google Vertex (Gemini), CloudFerro (Bielik) |
 | **Embeddings** | text-embedding-ada-002, amazon.titan-embed-text, BAAI/bge-multilingual-gemma2 |
 | **Content** | BeautifulSoup4, Markdownify, Firecrawl, YouTube Transcript API |
