@@ -71,6 +71,13 @@ This document serves as the index for all epics in lenie-server-2025. Individual
 - Epic 24: Conversational LLM Intelligence — [epics.md](../epics.md#epic-24-conversational-llm-intelligence)
 - Epic 25: Proactive Health Monitoring — [epics.md](../epics.md#epic-25-proactive-health-monitoring)
 
+### Sprint 9: SQLAlchemy ORM Migration
+
+- Epic 26: ORM Foundation & Schema Management — [epic-26.md](epic-26.md)
+- Epic 27: Document CRUD & API Serving — [epic-27.md](epic-27.md)
+- Epic 28: Vector Embeddings & Similarity Search — [epic-28.md](epic-28.md)
+- Epic 29: Data Pipeline Migration & Cleanup — [epic-29.md](epic-29.md)
+
 ## Backlog Items
 
 - **B-50:** API Type Synchronization Pipeline (Pydantic → OpenAPI → TypeScript) — backlog
