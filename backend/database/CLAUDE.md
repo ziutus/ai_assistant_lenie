@@ -21,7 +21,7 @@ To re-initialize the database, delete the named volume (`lenie-ai-db-data-3`) an
 
 ## Database: `lenie-ai`
 
-PostgreSQL 18 with the **pgvector** extension for vector similarity search (RDS: 18.1, Docker/NAS: 17 — pending upgrade via B-69).
+PostgreSQL 18 with the **pgvector** extension for vector similarity search.
 
 ### Table: `public.web_documents`
 
@@ -103,7 +103,7 @@ The `document_type` column (defined in `backend/library/models/stalker_document_
 
 ## Docker Setup
 
-**Image:** Custom image built from `postgres:17-bookworm` with `postgresql-17-pgvector` package installed (see `infra/docker/Postgresql/Dockerfile`).
+**Image:** Custom image built from `postgres:18-bookworm` with `postgresql-18-pgvector` package installed (see `infra/docker/Postgresql/Dockerfile`).
 
 **Compose service** (`infra/docker/compose.yaml`):
 - Image: `lenie-ai-db:latest` (must be built locally first)

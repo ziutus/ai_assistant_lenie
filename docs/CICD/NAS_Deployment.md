@@ -22,7 +22,7 @@ Full Lenie stack running on a local QNAP NAS for personal use and testing.
 | Admin Panel | `lenie-ai-app2` | `192.168.200.7:5005/lenie-ai-app2` | 3001 | Admin panel (app2) |
 | Backend | `lenie-ai-server` | `192.168.200.7:5005/lenie-ai-server` | 5055 | Flask API server |
 | Slack Bot | `lenie-ai-slack-bot` | `192.168.200.7:5005/lenie-ai-slack-bot` | — | Slack Bot (Socket Mode, no exposed port) |
-| PostgreSQL | `lenie-ai-db` | `192.168.200.7:5005/lenie-ai-db` | 5434 | PostgreSQL 17 + pgvector (upgrade to 18 pending — B-69) |
+| PostgreSQL | `lenie-ai-db` | `192.168.200.7:5005/lenie-ai-db` | 5434 | PostgreSQL 18 + pgvector |
 | MinIO | `lenie-minio` | `minio/minio:latest` | 9000, 9001 | S3-compatible storage (API + web console) |
 | Vault | `lenie-vault` | `hashicorp/vault:1.21.3` | 8210 | HashiCorp Vault secrets manager |
 | Registry UI | `lenie-registry-ui` | `joxit/docker-registry-ui:latest` | 8550 | Web UI for Docker registry |
@@ -313,8 +313,8 @@ $DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d
 ## Database Setup
 
 The database container uses a custom image built from `infra/docker/Postgresql/Dockerfile`:
-- Base: `postgres:17-bookworm`
-- Extension: `postgresql-17-pgvector`
+- Base: `postgres:18-bookworm`
+- Extension: `postgresql-18-pgvector`
 - Init scripts from `backend/database/init/` (auto-executed on first run):
   - `01-create-database.sql` — creates `lenie-ai` database
   - `02-create-extension.sql` — installs pgvector extension

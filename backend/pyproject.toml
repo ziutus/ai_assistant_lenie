@@ -35,6 +35,9 @@ dependencies = [
     "ruamel.yaml>=0.18",
     "unified-config-loader[vault,aws]",
     "boto3-stubs~=1.42.43",
+    "sqlalchemy>=2.0,<3.0",
+    "pgvector>=0.3.0",
+    "alembic>=1.13",
 ]
 
 [project.optional-dependencies]
@@ -71,6 +74,9 @@ docker = [
     "aws-xray-sdk",
     "langfuse",
     "hvac",
+    "sqlalchemy>=2.0,<3.0",
+    "pgvector>=0.3.0",
+    "alembic>=1.13",
 ]
 
 all = [
@@ -106,6 +112,9 @@ all = [
     "google-auth-httplib2",
     "google-auth-oauthlib",
     "notion-client>=2.2.0,<3",
+    "sqlalchemy>=2.0,<3.0",
+    "pgvector>=0.3.0",
+    "alembic>=1.13",
 ]
 
 [build-system]

@@ -81,11 +81,11 @@ docker volume create vault_logs_dev
 ```
 
 ```bash
-docker pull pgvector/pgvector:pg17
+docker pull pgvector/pgvector:pg18
 ```
 
 ```bash
-docker run -d --name lenie-ai-db -e POSTGRES_PASSWORD=postgres -p 5432:5432 pgvector/pgvector:pg17
+docker run -d --name lenie-ai-db -e POSTGRES_PASSWORD=postgres -p 5432:5432 pgvector/pgvector:pg18
 ```
 
 ```sql
