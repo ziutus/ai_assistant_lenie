@@ -9,6 +9,14 @@ sprint4:
   status: 'complete'
   startedAt: '2026-02-19'
   completedAt: '2026-02-19'
+sprint6:
+  stepsCompleted: [2, 3, 4, 5, 6, 7, 8]
+  lastStep: 8
+  status: 'complete'
+  startedAt: '2026-03-07'
+  completedAt: '2026-03-07'
+  status: 'in-progress'
+  startedAt: '2026-03-07'
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/prd-validation-report.md
@@ -21,6 +29,8 @@ inputDocuments:
   - docs/integration-architecture.md
   - docs/api-contracts-backend.md
   - docs/data-models-backend.md
+  - docs/architecture-decisions.md
+  - .claude/exports/plan-sqlalchemy-migration.md
 workflowType: 'architecture'
 project_name: 'lenie-server-2025'
 user_name: 'Ziutus'
@@ -1306,3 +1316,744 @@ File changes map lists 2 new files, ~15 modifications, and 2 deletions — all a
 3. B-4 (EIP removal) + B-5 (Lambda naming) — independent, can run in parallel
 4. B-14 (API GW consolidation) — most complex, requires careful execution
 5. B-19 (Documentation consolidation) — last, captures final state
+
+---
+
+# Sprint 6 — SQLAlchemy ORM Migration
+
+_Continuation of architecture decisions for Sprint 6. Sprint 1 and Sprint 4 decisions remain as foundational context._
+
+## Sprint 6 — Project Context Analysis
+
+### Requirements Overview
+
+**Functional Requirements:**
+43 FRs organized in 7 capability groups:
+1. **ORM Model Definition (FR1-FR5):** Define `WebDocument` (STI base with document type discriminator) and `WebsiteEmbedding` (dimensionless `Vector()`) as SQLAlchemy 2.x declarative models with domain methods (validate, analyze, set_document_type, set_document_state)
+2. **Schema Migration (FR6-FR9):** Initialize Alembic, auto-generate migration scripts from model diffs, apply/rollback migrations, stamp existing database as baseline
+3. **Session & Connection Management (FR10-FR13):** Thread-local scoped sessions for Flask (`get_scoped_session()`), script-scoped sessions for imports/batch (`get_session()`), `pool_pre_ping` for stale connection recovery, `@app.teardown_appcontext` cleanup
+4. **Document Persistence (FR14-FR19):** CRUD operations via ORM (create, update, delete with cascade, lookup by URL/ID, dict serialization for API responses)
+5. **Embedding Operations (FR20-FR23):** Add/delete embeddings via ORM relationship, find documents needing embeddings (outer join), similarity search via `pgvector-python` `cosine_distance()`
+6. **Repository Queries (FR24-FR30):** Dynamic filtered lists, count by type/state, documents ready for download/transcription/correction, last import date — all via SQLAlchemy `select()` queries
+7. **Consumer Compatibility (FR31-FR43):** Import scripts (`dynamodb_sync.py`, `unknown_news_import.py`), batch pipeline (`web_documents_do_the_needful_new.py`), and Flask API endpoints must produce identical behavior and data formats
+
+**Non-Functional Requirements:**
+12 NFRs in 4 categories:
+- **Code Quality (NFR1-NFR4):** Zero raw `cursor.execute()` in production code, ruff clean, existing unit tests pass, type hints via `Mapped[]`
+- **Backward Compatibility (NFR5-NFR6):** Enum classes preserved with identical values, database schema identical after migration (Alembic baseline = no diff)
+- **Maintainability (NFR7-NFR9):** Adding column = 1 file change, adding table = 1 file + 1 Alembic command, no dead code from old architecture
+- **Dependency Management (NFR10-NFR12):** New deps in `pyproject.toml` with version pins, valid `uv lock`, `.venv_wsl` synchronized
+
+**Scale & Complexity:**
+
+- Primary domain: Backend refactor (database access layer migration)
+- Complexity level: Low (single user, no production data, brownfield rewrite)
+- Estimated architectural components: 3 new files (engine, models, alembic config) + 2 rewritten files (wrapper, query layer) + 5 updated consumers
+- Project context: Brownfield — rewriting data layer within existing Flask backend, preserving API contracts
+
+### Technical Constraints & Dependencies
+
+1. **Three-class architecture to two-layer** — current: `StalkerWebDocument` (base) -> `StalkerWebDocumentDB` (persistence) -> `WebsitesDBPostgreSQL` (queries). Target: ORM model (data + domain methods) + repository (complex queries). The intermediate `StalkerWebDocumentDB` wrapper is eliminated.
+
+2. **Singleton connection anti-pattern** — `StalkerWebDocumentDB` uses class-level `db_conn = None` shared across all instances. Thread-unsafe for Flask. Must be replaced by SQLAlchemy session factory with proper scoping.
+
+3. **pgvector partial HNSW indexes** — 5 model-specific partial indexes exist on `websites_embeddings.embedding` (ada-002: 1536, titan-v1: 1536, titan-v2: 1024, stella: 1024, bge-m3: 1024). These cannot be defined in the ORM model — must be managed by Alembic migrations.
+
+4. **`langauge` typo already fixed** — migration `08-fix-language-typo.sql` corrected the column name to `language`. ORM model uses correct spelling.
+
+5. **Enum storage as varchar** — `document_type`, `document_state`, `document_state_error` stored as string values in the database (not PostgreSQL enum types). ORM model must use string-backed enum mapping.
+
+6. **Pydantic explicitly out of scope** — PRD defers Pydantic v2 schemas to Phase 2. `dict()` serialization stays on the ORM model for now.
+
+7. **Lambda compatibility deferred** — SQLAlchemy adds ~30MB to Lambda layers. Lambda/AWS deployment compatibility is not in scope.
+
+8. **Navigation fields are computed** — `next_id`, `next_type`, `previous_id`, `previous_type` are loaded on construction in `StalkerWebDocumentDB.__init__()` via additional SQL queries. Must become repository-level logic or lazy-loaded transient attributes.
+
+9. **Mixed SQL safety** — some queries use `psycopg2.sql.SQL` for safe parameterization, others embed strings directly. SQLAlchemy eliminates this inconsistency by default (parameterized queries).
+
+10. **28 columns in `web_documents`** (including `transcript_needed` added recently) — ORM model must map all columns exactly to match existing schema for Alembic baseline.
+
+### Cross-Cutting Concerns Identified
+
+1. **Session lifecycle management** — three distinct contexts (Flask request-scoped, script-scoped, batch per-document commit) require a unified session factory with different instantiation patterns. Incorrect scoping causes connection pool exhaustion or data inconsistency.
+
+2. **Backward compatibility of API responses** — `dict()` output from ORM model must produce identical keys and value formats as current `StalkerWebDocumentDB.dict()`. Consumers (React frontend, import scripts) depend on exact field names and date formatting (`"YYYY-MM-DD HH:MM:SS"`).
+
+3. **Enum preservation** — `StalkerDocumentStatus`, `StalkerDocumentType`, `StalkerDocumentStatusError` are imported across 15+ files. Class names, member names, and values must remain identical. Re-export from original module paths for zero-change consumer imports.
+
+4. **Alembic baseline integrity** — ORM model must exactly match existing DDL (`03-create-table.sql`, `04-create-table.sql`) including column types, defaults, constraints, and indexes. Any drift causes `alembic revision --autogenerate` to generate unwanted changes.
+
+5. **pgvector operator compatibility** — `get_similar()` uses raw SQL with `<=>` operator. `pgvector-python`'s `cosine_distance()` must produce identical similarity scores and ranking. Verification required with known test vectors.
+
+## Sprint 6 — Starter Template Evaluation
+
+### Primary Technology Domain
+
+Backend database access layer migration (Python 3.11, Flask, PostgreSQL + pgvector). No new project or framework — Sprint 6 rewrites the data access layer within the existing Flask backend.
+
+### Existing Pattern Reuse
+
+**Decision:** No external starter template. Use SQLAlchemy 2.x conventions directly, following the project's existing patterns and SQLAlchemy documentation.
+
+**Rationale:** Sprint 6 does not create a new application. It replaces the internal data access layer (raw psycopg2 -> SQLAlchemy ORM) within an established Flask backend. The "starter" is the combination of:
+1. SQLAlchemy 2.x declarative model conventions (`mapped_column()`, `Mapped[]`, `DeclarativeBase`)
+2. pgvector-python integration patterns (`Vector()` type, `cosine_distance()` operator)
+3. Alembic initialization conventions (`alembic init`, `env.py` with engine integration)
+4. Existing project structure (files live in `backend/library/db/`)
+
+### Technology Decisions Already Established
+
+| Decision | Choice | Source |
+|----------|--------|--------|
+| ORM | SQLAlchemy 2.x (`mapped_column()` declarative) | ADR-004a, PRD |
+| Vector operations | `pgvector-python` native integration | PRD |
+| Migration tool | Alembic with autogenerate | PRD |
+| Inheritance | Single Table Inheritance on `web_documents` | PRD |
+| DB driver | `psycopg2-binary` (retained) | PRD |
+| Session management | Plain SQLAlchemy (not Flask-SQLAlchemy) | PRD |
+| Pydantic | Deferred (out of scope) | PRD |
+
+### Sprint 6-Specific Pattern Notes
+
+1. **ORM model file** (`backend/library/db/models.py`) follows SQLAlchemy 2.x declarative style with `Mapped[]` type hints — not the older `Column()` style.
+
+2. **Engine file** (`backend/library/db/engine.py`) provides factory functions (`get_engine()`, `get_session()`, `get_scoped_session()`) — not a global session object.
+
+3. **Repository file** (`backend/library/stalker_web_documents_db_postgresql.py`) is rewritten to use `session.execute(select(...))` — preserving existing method signatures and return formats.
+
+4. **Alembic configuration** follows standard layout: `backend/alembic.ini` + `backend/alembic/env.py` + `backend/alembic/versions/`.
+
+No starter template evaluation needed — all work builds on established SQLAlchemy conventions within the existing project structure.
+
+## Sprint 6 — Core Architectural Decisions
+
+### Decision Priority Analysis
+
+**Critical Decisions (Block Implementation):**
+1. Wrapper elimination strategy: Re-export only (option C)
+2. Session in repository: Dependency injection via constructor parameter
+3. ORM model style: SQLAlchemy 2.x `mapped_column()` with `Mapped[]` type hints (from PRD)
+4. Vector operations: `pgvector-python` native `cosine_distance()` with `text()` fallback for partial index filtering
+
+**Important Decisions (Shape Architecture):**
+5. Query location: Hybrid — simple lookups as classmethods on model, complex queries in repository
+6. API serialization: `dict()` method on ORM model (clean migration path to Pydantic in Phase 2)
+7. Navigation fields: Repository method `load_neighbors(doc)` populates transient attributes on model
+
+**Deferred Decisions (Post-MVP):**
+- Pydantic v2 schemas for API serialization (Phase 2 — `model_validate(orm_instance)` with `from_attributes=True`)
+- TypeScript type synchronization via Pydantic -> OpenAPI -> `openapi-typescript` (Phase 2)
+- Joined Table Inheritance split of `web_documents` by document type (Phase 3)
+- Lambda/AWS deployment compatibility with SQLAlchemy (separate sprint)
+
+### Wrapper Elimination Strategy
+
+**Decision:** Re-export only — no wrapper class, no delegation layer.
+
+**Implementation:**
+- `stalker_web_document.py` becomes: `from library.db.models import WebDocument as StalkerWebDocument`
+- `stalker_web_document_db.py` becomes: `from library.db.models import WebDocument as StalkerWebDocumentDB`
+- Consumers that import `StalkerWebDocumentDB` or `StalkerWebDocument` continue working without import changes
+- Over time, consumers migrate to direct `from library.db.models import WebDocument` imports
+
+**Rationale:** Single developer, no production code, no need for gradual migration. Re-export provides backward compatibility at zero maintenance cost. The wrapper pattern (`__getattr__`/`__setattr__` delegation) adds complexity without value in this context.
+
+### Session Management Strategy
+
+**Decision:** Dependency injection — session passed as constructor parameter to repository.
+
+**Implementation:**
+```python
+# Flask (request-scoped):
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    scoped_session.remove()
+
+# Route handler:
+session = scoped_session()
+repo = WebsitesDBPostgreSQL(session)
+results = repo.get_list(...)
+
+# Scripts (script-scoped):
+session = get_session()
+repo = WebsitesDBPostgreSQL(session)
+try:
+    # ... work ...
+    session.commit()
+finally:
+    session.close()
+```
+
+**Rationale:** Clean dependency injection makes the repository testable (mock session) and explicit about its database dependency. Flask creates the scoped session, scripts create their own — the repository doesn't care which.
+
+### Query Location Strategy
+
+**Decision:** Hybrid — simple lookups as classmethods, complex queries in repository.
+
+**Classmethods on `WebDocument`:**
+- `get_by_id(session, id, reach=False)` — single document lookup
+- `get_by_url(session, url)` — duplicate detection
+
+**Repository methods (`WebsitesDBPostgreSQL`):**
+- `get_list(...)` — dynamic filtered, paginated lists
+- `get_similar(...)` — pgvector cosine similarity search
+- `get_count(...)`, `get_count_by_type()` — aggregations
+- `get_ready_for_download()`, `get_youtube_just_added()`, `get_transcription_done()` — state-based queries
+- `get_documents_needing_embedding(model)` — outer join query
+- `get_next_to_correct(...)` — navigation query
+- `get_last_unknown_news()` — source-specific query
+- `load_neighbors(doc)` — populates `next_id`, `next_type`, `previous_id`, `previous_type`
+
+**Rationale:** Simple lookups are natural as classmethods (standard SQLAlchemy pattern). Complex queries with joins, dynamic filters, and aggregations belong in the repository to keep the model focused on data definition and domain logic.
+
+### API Serialization Strategy
+
+**Decision:** `dict()` method on ORM model, with clean migration path to Pydantic in Phase 2.
+
+**Implementation:** `WebDocument.dict()` produces identical output to current `StalkerWebDocumentDB.dict()`:
+- Enum fields serialized as `.name` (string)
+- `created_at` formatted as `"YYYY-MM-DD HH:MM:SS"` string
+- Navigation fields (`next_id`, `next_type`, `previous_id`, `previous_type`) included when populated
+- All existing dict keys preserved for frontend backward compatibility
+
+**Phase 2 migration path:** `dict()` replaced by `WebDocumentResponse.model_validate(doc).model_dump()` using Pydantic v2's `from_attributes=True`. Date formatting moves to `field_serializer`. No complex refactoring required.
+
+### Vector Operations Strategy
+
+**Decision:** pgvector-python native operators as primary approach, SQLAlchemy `text()` as fallback for edge cases.
+
+**Primary (native):**
+```python
+select(WebsiteEmbedding)
+    .order_by(WebsiteEmbedding.embedding.cosine_distance(query_vector))
+    .limit(limit)
+```
+
+**Fallback (text()) — for similarity score calculation and partial index filtering:**
+```python
+similarity = (1 - func.cast(
+    WebsiteEmbedding.embedding.cosine_distance(query_vector),
+    Float
+)).label("similarity")
+```
+
+**Rationale:** NFR1 requires zero raw `cursor.execute()`. pgvector-python provides native SQLAlchemy operators for `cosine_distance()`, satisfying this requirement. The `text()` fallback is only for cases where native operators don't support the full query pattern (e.g., combining similarity with minimum threshold filtering).
+
+### Navigation Fields Strategy
+
+**Decision:** Repository method `load_neighbors(doc)` populates transient attributes.
+
+**Implementation:**
+```python
+# On WebDocument model — transient (not mapped to DB):
+next_id: int | None = None  # not a mapped_column
+next_type: str | None = None
+previous_id: int | None = None
+previous_type: str | None = None
+
+# In repository:
+def load_neighbors(self, doc: WebDocument) -> None:
+    # Query for next/previous documents by ID and type
+    # Populate doc.next_id, doc.next_type, etc.
+```
+
+**Rationale:** The ORM model should not contain session-dependent logic. Navigation is a query concern — the repository knows how to find neighbors. The model provides transient attributes as data slots. Route handlers call `repo.load_neighbors(doc)` only when needed (e.g., `/website_get` endpoint, not `/website_list`).
+
+### Decision Impact Analysis
+
+**Implementation Sequence:**
+1. Dependencies + engine + session factories (foundation)
+2. ORM models (`WebDocument` STI + `WebsiteEmbedding` with `Vector()`)
+3. Repository rewrite (`WebsitesDBPostgreSQL` with SQLAlchemy queries)
+4. Re-exports (`stalker_web_document.py`, `stalker_web_document_db.py`)
+5. Flask integration (`@app.teardown_appcontext`, scoped session in route handlers)
+6. Consumer updates (import scripts, batch pipeline)
+7. Alembic initialization + baseline stamp
+8. Old code removal + cleanup
+9. Verification (unit tests, ruff, manual testing)
+
+**Cross-Component Dependencies:**
+- Engine must exist before models (models import `Base`)
+- Models must exist before repository (repository queries ORM models)
+- Repository must exist before Flask integration (route handlers use repository)
+- Re-exports must exist before consumer updates (backward compatibility)
+- Alembic baseline requires models to be complete and matching DDL
+- Old code removal is last — only after all consumers are migrated and verified
+
+## Sprint 6 — Implementation Patterns & Consistency Rules
+
+### Critical Conflict Points Identified
+
+6 areas where AI agents could make different choices when implementing the SQLAlchemy migration.
+
+### Naming Patterns
+
+**ORM Model Class Names:**
+- `WebDocument` (not `WebDocumentModel`, `Document`, `StalkerWebDocument`)
+- `WebsiteEmbedding` (not `Embedding`, `WebDocumentEmbedding`, `VectorEmbedding`)
+- Match existing table names exactly: `__tablename__ = "web_documents"`, `__tablename__ = "websites_embeddings"`
+
+**Column Mapping:**
+- Use exact database column names in `mapped_column()` — no renaming
+- Python attribute names = database column names (e.g., `document_type`, `created_at`, `ai_summary_needed`)
+- Exception: `language` attribute maps to `language` column (typo `langauge` already fixed by migration 08)
+
+**Module Paths:**
+- Engine: `backend/library/db/engine.py`
+- Models: `backend/library/db/models.py`
+- Repository: `backend/library/stalker_web_documents_db_postgresql.py` (same file, rewritten)
+- Re-exports: `backend/library/stalker_web_document.py`, `backend/library/stalker_web_document_db.py`
+- Anti-pattern: Creating `backend/library/db/repository.py` (keep the existing filename)
+
+### Structure Patterns
+
+**ORM Model File Organization (`models.py`):**
+```python
+# 1. Imports (sqlalchemy, pgvector, enums)
+# 2. Base declaration
+# 3. WebDocument model (with STI configuration)
+#    - __tablename__, __mapper_args__
+#    - Mapped columns (same order as DDL: id, url, document_type, ...)
+#    - Relationships
+#    - Transient attributes (next_id, next_type, etc.)
+#    - Domain methods (set_document_type, set_document_state, validate, analyze)
+#    - Classmethods (get_by_id, get_by_url)
+#    - Serialization (dict)
+# 4. WebsiteEmbedding model
+#    - __tablename__
+#    - Mapped columns
+#    - Relationships
+```
+
+**Engine File Organization (`engine.py`):**
+```python
+# 1. Imports
+# 2. Module-level engine variable (lazy init)
+# 3. get_engine() — creates/returns engine singleton
+# 4. get_session() — returns new Session (for scripts)
+# 5. get_scoped_session() — returns scoped_session (for Flask)
+```
+
+**Enum Preservation:**
+- Enums stay in their original files: `backend/library/models/stalker_document_status.py`, etc.
+- Import path unchanged: `from library.models.stalker_document_status import StalkerDocumentStatus`
+- ORM model imports enums from their original location
+- Anti-pattern: Moving enums into `models.py` or creating new enum files
+
+### Format Patterns
+
+**`dict()` Output Format — Exact Match Required:**
+```python
+{
+    "id": 42,
+    "url": "https://...",
+    "title": "...",
+    "document_type": "link",           # enum .name, not .value
+    "document_state": "URL_ADDED",     # enum .name
+    "document_state_error": "NONE",    # enum .name
+    "created_at": "2026-03-07 14:30:00",  # NOT ISO format, NOT datetime object
+    "language": "pl",
+    "summary": "...",
+    "tags": "...",
+    "text": "...",
+    "paywall": False,                  # Python bool, not 0/1
+    "date_from": "2026-03-07",         # date as string, or None
+    "ai_summary_needed": False,
+    "author": None,
+    "note": None,
+    "s3_uuid": None,
+    "project": None,
+    "text_md": None,
+    "transcript_needed": False,
+    "next_id": 43,                     # transient, only when loaded
+    "next_type": "webpage",
+    "previous_id": 41,
+    "previous_type": "link"
+}
+```
+- Anti-pattern: Using `datetime.isoformat()`, returning enum objects, omitting None fields
+
+**`get_list()` Return Format — Subset Dict:**
+```python
+{
+    "id": 42,
+    "url": "https://...",
+    "title": "...",
+    "document_type": "link",
+    "created_at": "2026-03-07 14:30:00",
+    "document_state": "URL_ADDED",
+    "document_state_error": "NONE",
+    "note": None,
+    "project": None,
+    "s3_uuid": None
+}
+```
+
+**`get_similar()` Return Format:**
+```python
+{
+    "website_id": 42,
+    "text": "embedded text",
+    "similarity": 0.87,               # float, 1 - cosine_distance
+    "id": 42,
+    "url": "https://...",
+    "language": "pl",
+    "text_original": "original text",
+    "websites_text_length": 1500,
+    "embeddings_text_length": 500,
+    "title": "...",
+    "document_type": "link",
+    "project": None
+}
+```
+
+### Process Patterns
+
+**Session Lifecycle in Flask Route Handlers:**
+```python
+# CORRECT:
+@app.route("/website_list")
+def website_list():
+    session = scoped_session()
+    repo = WebsitesDBPostgreSQL(session)
+    results = repo.get_list(...)
+    return jsonify(results)
+# Session cleaned up by @app.teardown_appcontext
+
+# WRONG — do NOT:
+# - Create engine per request
+# - Call session.close() in route handler (teardown handles it)
+# - Use global session variable
+# - Pass session through function parameters chain
+```
+
+**Session Lifecycle in Scripts:**
+```python
+# CORRECT:
+from library.db.engine import get_session
+
+session = get_session()
+try:
+    repo = WebsitesDBPostgreSQL(session)
+    # ... work ...
+    session.commit()
+finally:
+    session.close()
+
+# WRONG — do NOT:
+# - Use scoped_session in scripts
+# - Forget session.close()
+# - Commit inside repository methods (caller controls transaction)
+```
+
+**Transaction Boundaries:**
+- Repository methods NEVER commit or rollback — caller controls transactions
+- Flask: implicit commit via scoped session lifecycle
+- Scripts: explicit `session.commit()` at logical boundaries
+- Anti-pattern: `session.commit()` inside `repo.get_list()` or `repo.embedding_add()`
+
+**ORM Model Save/Delete Pattern:**
+```python
+# CORRECT — via session directly:
+doc = WebDocument(url="https://...")
+session.add(doc)
+session.commit()
+
+# Update:
+doc.title = "New title"
+session.commit()  # SQLAlchemy dirty tracking handles UPDATE
+
+# Delete:
+session.delete(doc)
+session.commit()  # CASCADE deletes embeddings
+
+# WRONG — do NOT:
+# - Add save()/delete() methods to WebDocument model
+# - Use session.merge() when session.add() suffices
+# - Manually delete embeddings before document (CASCADE handles it)
+```
+
+### Enforcement Guidelines
+
+**All AI Agents implementing Sprint 6 MUST:**
+1. Use exact database column names in ORM model — no renaming attributes
+2. Preserve enum imports from original module paths (`library.models.*`)
+3. Match `dict()` output format exactly (date as `"YYYY-MM-DD HH:MM:SS"` string, enums as `.name`)
+4. Pass session as constructor parameter to repository — never create session inside repository
+5. Never commit/rollback inside repository methods — caller controls transactions
+6. Use `mapped_column()` with `Mapped[]` type hints — not older `Column()` style
+7. Keep pgvector HNSW indexes out of ORM model — managed by Alembic only
+
+**Anti-Patterns (NEVER do this):**
+- Move enums into `models.py` (breaks 15+ import locations)
+- Add `session` attribute to ORM model (session belongs to caller)
+- Use `datetime.isoformat()` in `dict()` (frontend expects `"YYYY-MM-DD HH:MM:SS"`)
+- Create `backend/library/db/repository.py` (reuse existing filename)
+- Add `save()` or `delete()` methods to ORM model (use `session.add()`/`session.delete()`)
+- Call `session.commit()` inside repository query methods
+
+## Sprint 6 — Project Structure & Boundaries
+
+### Complete Directory Structure (Changes Only)
+
+Files to create (NEW), modify (MOD), or delete (DEL):
+
+```
+backend/
+├── library/
+│   ├── db/
+│   │   ├── __init__.py                                    [NEW] Package init (empty)
+│   │   ├── engine.py                                      [NEW] get_engine(), get_session(), get_scoped_session(), Base
+│   │   └── models.py                                      [NEW] WebDocument (STI), WebsiteEmbedding
+│   ├── stalker_web_document.py                            [MOD] Re-export: WebDocument as StalkerWebDocument
+│   ├── stalker_web_document_db.py                         [MOD] Re-export: WebDocument as StalkerWebDocumentDB
+│   ├── stalker_web_documents_db_postgresql.py             [MOD] Rewrite: SQLAlchemy session queries
+│   ├── models/
+│   │   ├── stalker_document_status.py                     [NO CHANGE] Enum preserved
+│   │   ├── stalker_document_type.py                       [NO CHANGE] Enum preserved
+│   │   └── stalker_document_status_error.py               [NO CHANGE] Enum preserved
+│   └── ... (other library files unchanged)
+├── alembic.ini                                            [NEW] Alembic configuration
+├── alembic/
+│   ├── env.py                                             [NEW] Alembic env (imports Base.metadata, get_engine())
+│   ├── script.py.mako                                     [NEW] Alembic migration template
+│   └── versions/                                          [NEW] Migration scripts directory
+├── server.py                                              [MOD] Add teardown_appcontext, scoped_session, update route handlers
+├── pyproject.toml                                         [MOD] Add sqlalchemy, pgvector, alembic dependencies
+├── imports/
+│   ├── dynamodb_sync.py                                   [MOD] Use ORM model + session instead of wrapper
+│   └── unknown_news_import.py                             [MOD] Use ORM model + session instead of wrapper
+├── web_documents_do_the_needful_new.py                    [MOD] Use ORM model + session instead of wrapper
+├── database/
+│   └── init/
+│       ├── 03-create-table.sql                            [NO CHANGE] Reference DDL (Alembic baseline source)
+│       └── 04-create-table.sql                            [NO CHANGE] Reference DDL (Alembic baseline source)
+└── tests/
+    └── unit/                                              [NO CHANGE] Existing tests must pass
+```
+
+**File count summary:**
+- New files: 6 (db/__init__.py, engine.py, models.py, alembic.ini, alembic/env.py, script.py.mako)
+- Modified files: 8 (stalker_web_document.py, stalker_web_document_db.py, stalker_web_documents_db_postgresql.py, server.py, pyproject.toml, dynamodb_sync.py, unknown_news_import.py, web_documents_do_the_needful_new.py)
+- Deleted files: 0 (re-export files replace content, not deleted)
+- New directories: 2 (library/db/, alembic/versions/)
+
+### Requirements to Structure Mapping
+
+| FR Group | Files Affected |
+|----------|---------------|
+| FR1-FR5 (ORM Models) | `library/db/models.py` [NEW] |
+| FR6-FR9 (Alembic) | `alembic.ini` [NEW], `alembic/env.py` [NEW], `alembic/versions/` [NEW] |
+| FR10-FR13 (Session Management) | `library/db/engine.py` [NEW], `server.py` [MOD] |
+| FR14-FR19 (Document Persistence) | `library/db/models.py` [NEW] (classmethods + dict) |
+| FR20-FR23 (Embedding Operations) | `library/db/models.py` [NEW], `stalker_web_documents_db_postgresql.py` [MOD] |
+| FR24-FR30 (Repository Queries) | `stalker_web_documents_db_postgresql.py` [MOD] |
+| FR31-FR34 (Import Scripts) | `imports/dynamodb_sync.py` [MOD], `imports/unknown_news_import.py` [MOD] |
+| FR35-FR38 (Batch Pipeline) | `web_documents_do_the_needful_new.py` [MOD] |
+| FR39-FR43 (Flask API) | `server.py` [MOD] |
+
+### Architectural Boundaries
+
+**Data Access Boundary:**
+All database operations are mediated through two paths:
+```
+Flask Route / Script
+  |
+  v
+WebDocument.get_by_id(session, id)  --or--  WebsitesDBPostgreSQL(session).get_list(...)
+  |                                            |
+  v                                            v
+SQLAlchemy Session                          SQLAlchemy Session
+  |                                            |
+  v                                            v
+PostgreSQL 18 + pgvector
+```
+
+No direct `psycopg2` cursor usage anywhere in production code. All database access flows through SQLAlchemy session.
+
+**Model Boundary:**
+- `library/db/models.py` — defines data structure, domain methods, simple lookups
+- `stalker_web_documents_db_postgresql.py` — complex queries, aggregations, vector search
+- Models know nothing about HTTP, Flask, or API response formats (except `dict()` for backward compat)
+- Repository knows nothing about Flask routes or request handling
+
+**Session Boundary:**
+- `library/db/engine.py` — the ONLY place that creates sessions and engines
+- `server.py` — the ONLY place that creates scoped sessions for Flask
+- Scripts — each creates its own session via `get_session()`
+- No session creation inside models or repository
+
+**Enum Boundary:**
+- Enums live in `library/models/` — unchanged
+- ORM model imports enums from their original location
+- No enum definitions inside `library/db/models.py`
+
+### Development Workflow
+
+**For the migration, the agent workflow is:**
+1. Add dependencies to `pyproject.toml`, run `uv lock`
+2. Create `library/db/__init__.py`, `engine.py`, `models.py`
+3. Verify model matches DDL: `python -c "from library.db.models import WebDocument, WebsiteEmbedding; print('OK')"`
+4. Rewrite `stalker_web_documents_db_postgresql.py` with SQLAlchemy queries
+5. Create re-exports in `stalker_web_document.py` and `stalker_web_document_db.py`
+6. Update `server.py` (teardown, scoped session, route handlers)
+7. Update import scripts and batch pipeline
+8. Initialize Alembic: `alembic init alembic`, configure `env.py`
+9. Stamp baseline: `alembic stamp head`
+10. Run tests: `cd backend && PYTHONPATH=. uvx pytest tests/unit/ -v`
+11. Run linter: `uvx ruff check backend/`
+12. Sync `.venv_wsl`
+
+## Sprint 6 — Architecture Validation Results
+
+### Coherence Validation
+
+**Decision Compatibility:**
+All Sprint 6 architectural decisions work together without conflicts. Re-export strategy (decision 1) is compatible with session injection (decision 2) — re-exported classes are the same ORM model that receives sessions via repository. Hybrid query location (decision 3) aligns with session injection — classmethods accept session parameter, repository receives session in constructor. The `dict()` on model (decision 4) is self-contained and does not conflict with any other decision. pgvector-python native operators (decision 5) work with SQLAlchemy session-based queries. Navigation fields via repository (decision 6) respect the session boundary — model has no session dependency.
+
+**Pattern Consistency:**
+Implementation patterns fully support the architectural decisions. Naming patterns (exact column names, existing module paths) ensure backward compatibility required by the re-export strategy. Format patterns (exact `dict()` output) preserve API contracts. Process patterns (transaction boundaries, session lifecycle) enforce the session injection decision consistently across Flask and script contexts. No contradictions between patterns and decisions.
+
+**Structure Alignment:**
+The project structure supports all decisions. New files (`library/db/engine.py`, `library/db/models.py`) align with the two-layer architecture (ORM model + repository). Re-export files (`stalker_web_document.py`, `stalker_web_document_db.py`) stay at their existing paths for backward compatibility. Repository stays in its existing file. Alembic configuration follows standard layout. All boundaries (data access, model, session, enum) are structurally enforced by file organization.
+
+### Requirements Coverage Validation
+
+**Functional Requirements Coverage:**
+
+| FR Group | Status | Architectural Support |
+|----------|--------|----------------------|
+| FR1-FR5 (ORM Models) | Covered | `library/db/models.py`: WebDocument (STI) + WebsiteEmbedding (Vector) |
+| FR6-FR9 (Alembic) | Covered | `alembic.ini` + `alembic/env.py` + baseline stamp |
+| FR10-FR13 (Session Management) | Covered | `engine.py`: get_engine/session/scoped_session, server.py: teardown |
+| FR14-FR19 (Document Persistence) | Covered | ORM session.add/commit/delete, WebDocument.get_by_id/url, dict() |
+| FR20-FR23 (Embedding Operations) | Covered | WebsiteEmbedding ORM model, cosine_distance() in repository |
+| FR24-FR30 (Repository Queries) | Covered | WebsitesDBPostgreSQL rewritten with SQLAlchemy select() |
+| FR31-FR34 (Import Scripts) | Covered | dynamodb_sync.py, unknown_news_import.py use ORM + session |
+| FR35-FR38 (Batch Pipeline) | Covered | web_documents_do_the_needful_new.py uses ORM + session |
+| FR39-FR43 (Flask API) | Covered | server.py with scoped_session, repository per request |
+
+**Non-Functional Requirements Coverage:**
+
+| NFR | Status | Architectural Support |
+|-----|--------|----------------------|
+| NFR1 (Zero cursor.execute) | Covered | All queries via SQLAlchemy session, pgvector-python operators |
+| NFR2 (ruff clean) | Covered | Enforcement guideline: run ruff before marking complete |
+| NFR3 (Unit tests pass) | Covered | Tests don't touch DB layer — no changes needed |
+| NFR4 (Type hints) | Covered | Mapped[] type hints on all ORM columns |
+| NFR5 (Enum preservation) | Covered | Enums unchanged in original files, re-exported |
+| NFR6 (Schema identical) | Covered | Alembic baseline = no diff against DDL |
+| NFR7 (1-file column add) | Covered | mapped_column() in models.py only |
+| NFR8 (1-file table add) | Covered | New model class in models.py + alembic autogenerate |
+| NFR9 (No dead code) | Covered | Re-export files replace old code, no wrapper remnants |
+| NFR10 (Dependencies pinned) | Covered | pyproject.toml with version ranges |
+| NFR11 (uv lock valid) | Covered | Development workflow step 1 |
+| NFR12 (.venv_wsl synced) | Covered | Development workflow step 12 |
+
+### Implementation Readiness Validation
+
+**Decision Completeness:**
+All 7 architectural decisions are documented with rationale and code examples. Session management has examples for both Flask and script contexts. Vector operations show both native and fallback patterns. Re-export strategy shows exact import statements. No ambiguity in any decision.
+
+**Structure Completeness:**
+Project structure lists all 6 new files, 8 modified files, and 2 new directories with [NEW]/[MOD] annotations. Requirements-to-structure mapping covers every FR group. Architectural boundaries (data access, model, session, enum) are defined with diagrams.
+
+**Pattern Completeness:**
+6 conflict points identified and resolved. Naming patterns cover model classes, column mapping, and module paths. Format patterns include exact dict() output for all three return types (full, list, similar). Process patterns cover session lifecycle, transaction boundaries, and save/delete operations. 7 enforcement rules and 6 anti-patterns documented.
+
+### Gap Analysis Results
+
+**Critical Gaps:** None found.
+
+**Important Gaps (Addressed):**
+
+1. **`get_similar()` similarity score calculation** — the formula `1 - cosine_distance` must be computed in SQLAlchemy, not Python. The pgvector-python `cosine_distance()` returns distance (0=identical, 2=opposite). The similarity score `1 - distance` must be computed as a SQL expression for correct sorting. *Resolution: Documented in Vector Operations Strategy with `func.cast` example.*
+
+2. **Transient attributes on ORM model** — `next_id`, `next_type`, `previous_id`, `previous_type` must NOT be `mapped_column()`. They should be plain Python attributes with `__init__` defaults or class-level defaults. SQLAlchemy's `__init__` behavior with declarative models requires care. *Resolution: Documented in Navigation Fields Strategy with explicit `= None` class-level defaults.*
+
+**Nice-to-Have Gaps (Deferred):**
+
+3. Unit tests for ORM model `dict()` output — verifying backward compatibility with known test data. Useful but belongs in implementation, not architecture.
+4. Performance benchmarks for SQLAlchemy vs raw psycopg2 — informational but not blocking. Single-user system with no performance-sensitive workload.
+
+### Architecture Completeness Checklist
+
+**Requirements Analysis**
+
+- [x] Project context thoroughly analyzed (brownfield backend refactor, single dev)
+- [x] Scale and complexity assessed (low — 6 new + 8 modified files)
+- [x] Technical constraints identified (10 constraints including singleton anti-pattern, pgvector indexes, enum storage)
+- [x] Cross-cutting concerns mapped (session lifecycle, backward compat, enum preservation, Alembic baseline, pgvector compat)
+
+**Architectural Decisions**
+
+- [x] Critical decisions documented with rationale (4 critical + 3 important)
+- [x] Technology stack fully specified (SQLAlchemy 2.x, pgvector-python, Alembic, psycopg2-binary driver)
+- [x] Integration patterns defined (session injection, re-exports, hybrid query location)
+- [x] Deferred decisions explicitly listed with rationale (Pydantic, TypeScript sync, JTI, Lambda)
+
+**Implementation Patterns**
+
+- [x] Naming conventions established (model classes, column mapping, module paths)
+- [x] Structure patterns defined (model file organization, engine file organization, enum preservation)
+- [x] Format patterns specified (dict() output, get_list() format, get_similar() format)
+- [x] Process patterns documented (session lifecycle Flask/scripts, transaction boundaries, save/delete)
+
+**Project Structure**
+
+- [x] Complete directory structure defined (NEW/MOD annotations)
+- [x] Component boundaries established (data access, model, session, enum)
+- [x] Integration points mapped (two data access paths diagram)
+- [x] Requirements to structure mapping complete (FR -> file table)
+
+### Architecture Readiness Assessment
+
+**Overall Status:** READY FOR IMPLEMENTATION
+
+**Confidence Level:** High — all critical decisions made, no blocking gaps, patterns comprehensive with code examples, backward compatibility explicitly addressed.
+
+**Key Strengths:**
+
+1. **Clean two-layer architecture** — ORM model + repository replaces three-class hierarchy with zero wrapper overhead
+2. **Explicit backward compatibility** — re-exports preserve all existing import paths, dict() format exact match documented
+3. **Session injection** — testable, explicit, supports all three contexts (Flask, scripts, batch)
+4. **Comprehensive anti-patterns** — 6 explicitly forbidden patterns prevent common SQLAlchemy migration mistakes
+5. **Clear migration path to Pydantic** — dict() on model today, Pydantic model_validate() tomorrow, no refactoring needed
+
+**Areas for Future Enhancement:**
+
+1. Pydantic v2 schemas for API serialization (Phase 2)
+2. TypeScript type synchronization via Pydantic -> OpenAPI (Phase 2)
+3. Joined Table Inheritance split of web_documents (Phase 3)
+4. Lambda/AWS deployment compatibility with SQLAlchemy (separate sprint)
+5. Repository unit tests with mock sessions
+
+### Implementation Handoff
+
+**AI Agent Guidelines:**
+
+- Follow all Sprint 6 architectural decisions exactly as documented
+- Use implementation patterns consistently: naming, structure, format, process
+- Respect all 4 architectural boundaries (data access, model, session, enum)
+- Match dict() output format exactly for backward compatibility
+- Never commit inside repository methods — caller controls transactions
+- Verify Alembic baseline produces no diff against existing DDL
+
+**First Implementation Priority:**
+
+1. Dependencies + engine (foundation — everything depends on this)
+2. ORM models (WebDocument STI + WebsiteEmbedding with Vector())
+3. Repository rewrite (SQLAlchemy queries preserving signatures)
+
+**Implementation Sequence (Full):**
+
+```
+Phase A (foundation):  pyproject.toml -> uv lock -> library/db/__init__.py -> engine.py
+Phase B (models):      models.py (WebDocument + WebsiteEmbedding)
+Phase C (repository):  stalker_web_documents_db_postgresql.py rewrite
+Phase D (compat):      stalker_web_document.py + stalker_web_document_db.py re-exports
+Phase E (Flask):       server.py (teardown, scoped session, route handlers)
+Phase F (consumers):   dynamodb_sync.py + unknown_news_import.py + web_documents_do_the_needful_new.py
+Phase G (Alembic):     alembic init + env.py config + stamp head
+Phase H (verify):      pytest + ruff + manual test + .venv_wsl sync
+```

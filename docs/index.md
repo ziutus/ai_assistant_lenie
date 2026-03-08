@@ -7,7 +7,7 @@
 - **Type:** Multi-part Monorepo with 4 parts
 - **Primary Languages:** Python 3.11 (backend), JavaScript/React 18 (frontends)
 - **Architecture:** Layered REST API + SPA + Serverless + Multi-cloud IaC
-- **Database:** PostgreSQL 18 + pgvector (1536-dim vector similarity search)
+- **Database:** PostgreSQL 18 + pgvector (vector similarity search)
 
 ## Quick Reference
 

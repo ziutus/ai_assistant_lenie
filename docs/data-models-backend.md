@@ -52,7 +52,7 @@ Vector embeddings for similarity search.
 | `langauge` | varchar(10) | — | Language code (intentional typo kept for compatibility) |
 | `text` | text | — | Processed text that was embedded |
 | `text_original` | text | — | Original text before translation |
-| `embedding` | vector(1536) | — | Vector (OpenAI ada-002 / Titan format) |
+| `embedding` | vector | — | Dimensionless vector (supports multiple models: ada-002=1536, Titan v2=1024, bge-m3=1024) |
 | `model` | varchar(100) | NOT NULL | Embedding model identifier |
 | `created_at` | timestamp | DEFAULT CURRENT_TIMESTAMP | Timestamp |
 
@@ -146,7 +146,7 @@ Static query methods:
 ### Supporting Models
 
 - **AiResponse** — LLM response: query, model, response_text, token counts, temperature
-- **EmbeddingResult** — embedding result: text, embedding (1536 dims), status, model_id
+- **EmbeddingResult** — embedding result: text, embedding (dimensions vary by model), status, model_id
 - **WebPageParseResult** — parsed webpage: url, text_raw, text, title, summary, language
 
 ## AWS DynamoDB (Serverless)

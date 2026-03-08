@@ -24,11 +24,11 @@ PostgreSQL 18 + pgvector
 |----------|-----------|---------|
 | Language | Python | >= 3.11 |
 | Framework | Flask + Flask-CORS | latest |
-| Database | PostgreSQL + pgvector | 17 |
+| Database | PostgreSQL + pgvector | 18 |
 | ORM | None (raw psycopg2) | — |
 | Package Manager | uv (hatchling build) | latest |
 | LLM | OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bielik | multi-provider |
-| Embeddings | ada-002, Titan v1/v2, BAAI/bge-multilingual | 1536-dim |
+| Embeddings | ada-002, Titan v1/v2, BAAI/bge-multilingual | 1024-1536 dim (model-dependent) |
 | Content | BeautifulSoup4, Markdownify, Firecrawl | latest |
 | Speech | AssemblyAI, AWS Transcribe | latest |
 | Cloud SDK | boto3 (AWS), google-api-python-client | latest |
@@ -60,7 +60,7 @@ Entry point: `ai.ai_ask(query, model, temperature, max_token_count, top_p) → A
 |----------|-------|-----------|
 | OpenAI | text-embedding-ada-002 | 1536 |
 | AWS Bedrock | amazon.titan-embed-text-v1 | 1536 |
-| AWS Bedrock | amazon.titan-embed-text-v2:0 | 1536 |
+| AWS Bedrock | amazon.titan-embed-text-v2:0 | 1024 |
 | CloudFerro | BAAI/bge-multilingual-gemma2 | varies |
 
 Entry point: `get_embedding(model, text) → EmbeddingResult`
@@ -79,7 +79,7 @@ StalkerWebDocument (base, 30 attrs)
 2. **Parse**: `webpage_raw_parse(url, html)` → WebPageParseResult (text, title, summary, language)
 3. **Clean**: `webpage_text_clean(url, text)` → cleaned text (site-specific regex rules)
 4. **Split**: `split_text_for_embedding(text, titles, max_words)` → text chunks
-5. **Embed**: `get_embedding(model, chunk)` → vector (1536 dims)
+5. **Embed**: `get_embedding(model, chunk)` → vector (dimensions vary by model)
 6. **Store**: `StalkerWebDocumentDB.save()` + `embedding_add_simple(vector, model)`
 
 ### Batch Processing

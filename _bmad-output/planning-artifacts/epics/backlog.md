@@ -357,7 +357,7 @@ so that all environments run the same database version.
 - NAS deployment works with new image
 - Vector similarity search works correctly
 
-**Status:** backlog
+**Status:** done (2026-03-07)
 
 ---
 

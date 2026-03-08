@@ -197,6 +197,42 @@ Recent commits show:
 - [Source: `_bmad-output/planning-artifacts/epics.md`#Story 24.2 — requirements]
 - [Source: `_bmad-output/implementation-artifacts/24-1-llm-intent-parser.md` — previous story learnings]
 
+## Review Follow-ups (AI)
+
+Action items from Senior Developer Code Review (code already merged via PR #68):
+
+- [ ] **M2**: File List in story mentions only slack_bot files, but `backend/library/stalker_web_documents_db_postgresql.py` and `backend/library/ai_intent_parser.py` are also dependencies — add them to Dev Notes or File List for traceability
+- [ ] **M3**: `SEARCH_RESULTS_LIMIT` env var controls display limit but `api_client.search_similar()` hardcodes `limit=5` — align both via shared config or pass display limit to API call
+- [ ] **M4**: `format_search_results()` says "Found N results" even when truncated by `SEARCH_RESULTS_LIMIT` — should say "Showing N of M" when `len(results) > limit`
+- [ ] **L1**: `int(similarity * 100)` truncates instead of rounding — `round(similarity * 100)` is more accurate (e.g., 0.869 → 87% not 86%)
+- [ ] **L2**: No test verifying `text` field exclusion from formatted output — add a test asserting `text` content doesn't appear in result string
+- [ ] **L3**: Slack mrkdwn special characters (`*`, `_`, `~`, `` ` ``) in document titles are not escaped — could break formatting
+
+## Senior Developer Review (AI)
+
+**Reviewer**: Claude Opus 4.6 (adversarial code review)
+**Date**: 2026-03-08
+**Verdict**: PASS with follow-ups (no HIGH issues, code already merged)
+
+### Findings
+
+| # | Severity | Issue | Status |
+|---|----------|-------|--------|
+| M1 | MEDIUM | Sprint-status.yaml showed `review` but story file said `done` | **Fixed** — updated sprint-status to `done`, epic-24 → `done` |
+| M2 | MEDIUM | File List missing backend dependency files | Action item |
+| M3 | MEDIUM | `SEARCH_RESULTS_LIMIT` disconnected from API `limit=5` | Action item |
+| M4 | MEDIUM | "Found N results" misleading when truncated | Action item |
+| L1 | LOW | `int(similarity * 100)` truncates vs rounds | Action item |
+| L2 | LOW | No test for `text` field exclusion from display | Action item |
+| L3 | LOW | Slack mrkdwn characters not escaped in titles | Action item |
+
+### Positive Observations
+
+- Clean separation of concerns: shared `search_formatter.py` used by all three handlers
+- Consistent error handling pattern across slash command, DM, and mention handlers
+- Comprehensive test coverage: 36 new tests (10 + 9 + 4 + 13)
+- Follows established codebase conventions from Stories 21-23 and 24-1
+
 ## Dev Agent Record
 
 ### Agent Model Used
@@ -236,3 +272,9 @@ None — clean implementation with no debug issues.
 - `slack_bot/tests/unit/test_mention_handler.py` — MODIFIED: 4 search tests
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — MODIFIED: status update
 - `_bmad-output/implementation-artifacts/24-2-semantic-search-via-natural-language.md` — MODIFIED: task completion
+
+## Change Log
+
+| Date | Change | Author |
+|------|--------|--------|
+| 2026-03-08 | Senior Developer Review (AI): 7 findings (0H/4M/3L). M1 fixed (sprint-status sync). M2-M4, L1-L3 added as follow-up action items. | Claude Opus 4.6 |

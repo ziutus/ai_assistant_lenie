@@ -288,9 +288,9 @@ development_status:
   epic-23-retrospective: optional
 
   # --- Epic 24: Conversational LLM Intelligence ---
-  epic-24: in-progress
+  epic-24: done
   24-1-llm-intent-parser: done  # DONE 2026-03-05. Backend /ai_parse_intent endpoint + slack_bot intent_parser.py + DM/mention handler LLM fallback chain. 27 backend tests, 214 slack_bot tests (22 new). Version 0.3.0. Code review: 6 issues fixed (H1 unused import, H2 dead param, M1 unimplemented cmd UX, M3 input sanitization, M4 missing test).
-  24-2-semantic-search-via-natural-language: review
+  24-2-semantic-search-via-natural-language: done  # DONE. Code review: 7 issues (0H/4M/3L). M1 sprint-status fixed. M2-M4, L1-L3 as follow-up action items. 250 tests, ruff clean.
   epic-24-retrospective: optional
 
   # --- Epic 25: Proactive Health Monitoring ---
@@ -325,6 +325,37 @@ development_status:
   B-36-replace-shared-api-key-with-per-user-auth-tokens: backlog  # JWT z Cognito zamiast x-api-key. Aktualizacja frontendów i Chrome extension.
   B-37-add-login-logout-ui-to-frontend-applications: backlog  # Ekrany logowania/rejestracji w app2, obsługa sesji i odświeżania tokenów.
   B-38-add-user-management-admin-panel: backlog  # Zarządzanie użytkownikami — lista, blokowanie, usuwanie, statystyki per user.
+
+  # ============================================================
+  # SPRINT 9: SQLAlchemy ORM Migration
+  # ============================================================
+
+  # --- Epic 26: ORM Foundation & Schema Management ---
+  epic-26: done
+  26-1-dependencies-engine-session-factories: done  # DONE 2026-03-08. SQLAlchemy 2.0.48 + pgvector 0.4.2 + Alembic 1.18.4. Engine singleton (URL.create), Base (DeclarativeBase), get_session/get_scoped_session/dispose_engine. 15 unit tests. Code review: 5 issues fixed (H2 URL encoding + defaults, M3 weak tests + dispose API).
+  26-2-orm-models-web-document-website-embedding: done  # WebDocument (26 cols, STI, domain methods, dict()), 6 STI subclasses, WebsiteEmbedding (8 cols, Vector(), cascade). 104 unit tests. Code review #2: H1 pytest.importorskip, M2 full state test coverage, M3 logging. WSL sync verified.
+  26-3-alembic-initialization-flask-session-integration: done  # Code review: 8 issues (1H/4M/3L), all H+M fixed. include_object: table-name check + 5 behavioral tests. 20 tests total, ruff clean.
+  epic-26-retrospective: optional
+
+  # --- Epic 27: Document CRUD & API Serving ---
+  epic-27: backlog
+  27-1-document-persistence-crud-via-orm: backlog
+  27-2-repository-queries-list-count-state-lookups: backlog
+  27-3-flask-api-endpoints-crud-routes-via-repository: backlog
+  epic-27-retrospective: optional
+
+  # --- Epic 28: Vector Embeddings & Similarity Search ---
+  epic-28: backlog
+  28-1-embedding-crud-documents-needing-embeddings: backlog
+  28-2-similarity-search-pgvector-python-api-endpoint: backlog
+  epic-28-retrospective: optional
+
+  # --- Epic 29: Data Pipeline Migration & Cleanup ---
+  epic-29: backlog
+  29-1-import-scripts-migration: backlog
+  29-2-batch-pipeline-youtube-processing-migration: backlog
+  29-3-old-code-removal-final-verification: backlog
+  epic-29-retrospective: optional
 
   # ============================================================
   # DONE (completed backlog items — historical record)

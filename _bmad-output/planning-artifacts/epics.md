@@ -5,10 +5,9 @@ stepsCompleted:
   - step-03-create-stories
   - step-04-final-validation
 status: complete
-completedAt: '2026-02-28'
+completedAt: '2026-03-07'
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
-  - _bmad-output/planning-artifacts/prd-validation-report.md
   - _bmad-output/planning-artifacts/architecture.md
 ---
 
@@ -16,495 +15,593 @@ inputDocuments:
 
 ## Overview
 
-This document provides the complete epic and story breakdown for the Lenie Slack Bot, decomposing the requirements from the PRD into implementable stories. Architecture document covers infrastructure (Sprint 4), not the Slack Bot — PRD Technical Context section serves as the architectural reference.
+This document provides the complete epic and story breakdown for lenie-server-2025, decomposing the requirements from the PRD, Architecture (Sprint 6), and PRD Validation Report into implementable stories. The scope covers Sprint 9: SQLAlchemy ORM Migration — replacing raw psycopg2 queries with SQLAlchemy 2.x ORM, Alembic schema migrations, and pgvector-python native operators.
 
 ## Requirements Inventory
 
 ### Functional Requirements
 
-FR1: User can add a URL to the knowledge base by providing the link via Slack
-FR2: User can check whether a specific URL already exists in the knowledge base
-FR3: User can retrieve detailed information about a document by its ID (type, status, title, date added)
-FR4: User can query the current backend version and build timestamp
-FR5: User can query the total document count in the knowledge base, broken down by document type
-FR6: User can invoke bot capabilities via slash commands (`/lenie-version`, `/lenie-count`, `/lenie-check`, `/lenie-add`, `/lenie-info`)
-FR7: Bot responds to slash commands with formatted text messages in the same Slack channel
-FR8: User can invoke the same capabilities by sending text commands in a direct message to the bot
-FR9: Bot parses DM text to identify the intended command and parameters
-FR10: User can invoke bot capabilities by mentioning the bot on any channel (`@Lenie version`)
-FR11: Bot responds to app mentions in the same channel thread
-FR12: User can interact with the bot using natural language instead of structured commands
-FR13: Bot interprets user intent via LLM and maps it to the appropriate backend API call
-FR14: User can perform semantic search across the knowledge base via natural language query
-FR15: Bot can periodically check backend health (API reachability, database connectivity)
-FR16: Bot can send unprompted messages to the user when a health check fails
-FR17: Bot does not send repeated alerts for the same ongoing failure (alert deduplication)
-FR18: Bot displays user-friendly error messages when backend is unreachable (no stack traces, actionable suggestions)
-FR19: Bot remains connected to Slack and responsive even when backend is down
-FR20: Bot communicates specific failure reasons (timeout, HTTP error, invalid response) in plain language
-FR21: Developer can deploy the bot as an optional Docker container using Compose profiles (`--profile slack`)
-FR22: Developer can configure Slack tokens and backend URL via secret manager (Vault for Docker/NAS, SSM for AWS)
-FR23: Developer can set up the Slack App using a manifest file included in the repository
-FR24: Bot posts a startup confirmation message to a designated Slack channel upon successful connection
-FR25: Developer can follow a step-by-step README to set up the bot from scratch (Slack workspace creation, App setup, token configuration, Docker launch)
+FR1: Developer can define database table structure as a Python ORM model class in a single file
+FR2: Developer can define column types, constraints, defaults, and nullability as model field attributes
+FR3: Developer can define relationships between models (one-to-many, many-to-one) using ORM relationship declarations
+FR4: Developer can define Single Table Inheritance hierarchy on `web_documents` with document type as discriminator
+FR5: Developer can add domain methods (validate, analyze, set_document_type, set_document_state) directly on the ORM model
+FR6: Developer can auto-generate migration scripts from ORM model changes via Alembic
+FR7: Developer can apply migrations to the database with a single command (`alembic upgrade head`)
+FR8: Developer can roll back migrations to a previous version (`alembic downgrade`)
+FR9: Developer can initialize Alembic on an existing database by stamping the current state as baseline
+FR10: Flask application can obtain thread-local database sessions scoped to the request lifecycle
+FR11: Flask application can automatically clean up sessions on request teardown
+FR12: Import scripts and batch pipeline can obtain, commit, and close their own database sessions (script-scoped lifecycle)
+FR13: Engine can detect and recover from stale database connections (`pool_pre_ping`)
+FR14: Consumer can create a new document by instantiating an ORM model and committing to session
+FR15: Consumer can update an existing document by modifying ORM model attributes and committing
+FR16: Consumer can delete a document via session, with cascade deletion of related embeddings
+FR17: Consumer can look up a document by URL for duplicate detection
+FR18: Consumer can look up a document by ID
+FR19: Consumer can serialize a document to a dictionary for API responses
+FR20: Consumer can add a vector embedding to a document via ORM relationship
+FR21: Consumer can delete embeddings for a document filtered by model name
+FR22: Repository can find documents needing embeddings (outer join on `websites_embeddings`)
+FR23: Repository can perform similarity search using `pgvector-python` `cosine_distance()` operator
+FR24: Repository can list documents with dynamic filters (document_type, document_state, source, project, limit, offset)
+FR25: Repository can count documents by type and/or state
+FR26: Repository can find documents ready for download (URL_ADDED state, webpage/link type)
+FR27: Repository can find YouTube documents just added (URL_ADDED state, youtube type)
+FR28: Repository can find documents with completed transcriptions
+FR29: Repository can find the next document to correct (navigation by ID and type)
+FR30: Repository can retrieve the last imported date for a given source
+FR31: `dynamodb_sync.py` can create documents from DynamoDB items using ORM models
+FR32: `dynamodb_sync.py` can set `created_at` and `chapter_list` via normal ORM attribute assignment (no direct SQL)
+FR33: `unknown_news_import.py` can create documents from JSON feed entries using ORM models
+FR34: `unknown_news_import.py` can detect and skip duplicate URLs via ORM query
+FR35: `web_documents_do_the_needful_new.py` can process SQS messages and create documents via ORM
+FR36: `web_documents_do_the_needful_new.py` can generate and store embeddings via ORM relationship
+FR37: `web_documents_do_the_needful_new.py` can update document state through the processing lifecycle
+FR38: YouTube processing pipeline can store transcript text and metadata via ORM
+FR39: `/website_list` endpoint can return filtered, paginated document lists via repository
+FR40: `/website_get` endpoint can return a single document with neighbor navigation via repository
+FR41: `/website_save` endpoint can create or update documents via ORM model
+FR42: `/website_delete` endpoint can remove documents with cascade embedding deletion via ORM
+FR43: `/website_similar` endpoint can perform vector similarity search via `pgvector-python`
 
 ### NonFunctional Requirements
 
-NFR1: Bot responds to slash commands within 3 seconds (excluding backend API latency)
-NFR2: Bot establishes Socket Mode connection within 10 seconds of container startup
-NFR3: API client uses 5-second timeout for all backend HTTP calls — no hanging requests
-NFR4: Zero secrets (Slack tokens, API keys) hardcoded in source code or Docker images
-NFR5: All secrets retrieved from secret manager at runtime (Vault for Docker/NAS, SSM for AWS)
-NFR6: Bot logs never contain secret values, tokens, or API keys (even at DEBUG level)
-NFR7: Backend API key transmitted via `x-api-key` header, never as URL parameter
-NFR8: Bot communicates with backend exclusively via HTTP REST API — zero code-level dependencies on `backend/`
-NFR9: Bot tolerates backend API response format changes gracefully (logs warning, returns user-friendly error instead of crashing)
-NFR10: Slack Bolt SDK version pinned in `pyproject.toml` to prevent breaking changes from automatic updates
-NFR11: Code passes `ruff check` with zero warnings (line-length=120, consistent with backend)
-NFR12: All public functions have type hints
-NFR13: `api_client.py` and command handlers have unit tests with >80% coverage
-NFR14: Clear module separation: Slack interaction logic (`commands.py`) decoupled from HTTP client (`api_client.py`)
-NFR15: JSON structured logging from day one (`python-json-logger`)
-NFR16: Bot process remains running and connected to Slack when backend is unreachable
-NFR17: Slack Bolt SDK auto-reconnect handles transient Socket Mode disconnections without manual intervention
-NFR18: Bot does not crash on malformed user input (invalid URL, missing ID, empty command arguments)
+NFR1: Zero raw `cursor.execute()` calls in production code — all database operations via SQLAlchemy ORM or `pgvector-python` operators
+NFR2: Code passes `ruff check backend/` with zero warnings (line-length=120)
+NFR3: All existing unit tests pass without modification (tests that don't touch DB layer)
+NFR4: ORM models use type hints (`Mapped[type]`) for IDE autocompletion and static analysis
+NFR5: Enum classes (`StalkerDocumentStatus`, `StalkerDocumentType`, `StalkerDocumentStatusError`) are preserved with identical values — no import changes needed in consumers
+NFR6: Database schema after migration is identical to before — Alembic baseline produces no diff against existing DDL scripts
+NFR7: Adding a new column requires changes in exactly one file (`backend/library/db/models.py`)
+NFR8: Adding a new table requires changes in exactly one file plus one Alembic migration command
+NFR9: No dead code from old architecture remains (`stalker_web_document_db.py` wrapper fully removed)
+NFR10: New dependencies (`sqlalchemy`, `pgvector`, `alembic`) added to `pyproject.toml` with version pins
+NFR11: `uv lock` produces a valid lock file after dependency changes
+NFR12: `.venv_wsl` synchronized after dependency changes
 
 ### Additional Requirements
 
-- New top-level directory `slack_bot/` with `Dockerfile`, `pyproject.toml`, `src/`, `tests/unit/`
-- Docker Compose profile `slack` in `infra/docker/compose.yaml` — started with `docker compose --profile slack up -d`
-- Slack App manifest YAML in repo (`slack_bot/slack-app-manifest.yaml`) for automated App configuration
-- Secrets via config_loader pattern (Vault for Docker/NAS, SSM for AWS)
-- Module separation: `commands.py` (Slack handlers) vs `api_client.py` (HTTP client) vs `config.py` (configuration)
-- Startup confirmation message posted to designated Slack channel
-- JSON structured logging to stdout (Docker logs collection)
-- Backend base URL configurable via `LENIE_API_URL` environment variable
-- All API calls use `x-api-key` header for authentication
-- 5-second HTTP timeout on all backend calls
-- No architecture document exists for Slack Bot — PRD Technical Context section serves as reference
+From Architecture (Sprint 6):
+
+- Wrapper elimination via re-export only — `stalker_web_document.py` re-exports `WebDocument as StalkerWebDocument`, `stalker_web_document_db.py` re-exports `WebDocument as StalkerWebDocumentDB`
+- Session injection — session passed as constructor parameter to repository (`WebsitesDBPostgreSQL(session)`)
+- Hybrid query location — simple lookups (`get_by_id`, `get_by_url`) as classmethods on model, complex queries in repository
+- `dict()` backward compatibility — exact match required: dates as `"YYYY-MM-DD HH:MM:SS"` strings, enums as `.name`, navigation as transient attributes
+- pgvector-python native operators as primary — `cosine_distance()` for similarity, `text()` fallback for edge cases only
+- Navigation fields — repository method `load_neighbors(doc)` populates transient attributes (`next_id`, `next_type`, `previous_id`, `previous_type`)
+- Enum preservation — enums stay in `library/models/` unchanged, ORM model imports from original locations
+- Transaction boundaries — repository methods NEVER commit or rollback, caller controls transactions
+- pgvector HNSW partial indexes — managed by Alembic migrations only, not defined in ORM model
+- Implementation sequence — 9 phases: dependencies -> models -> repository -> re-exports -> Flask -> consumers -> Alembic -> cleanup -> verification
+- No starter template — work within existing Flask backend structure
+- 28 columns in `web_documents` (including `transcript_needed`) must all be mapped in ORM model
+- `langauge` typo already fixed (migration 08) — ORM model uses correct `language` spelling
+- Enum storage as varchar — string-backed enum mapping in ORM model (not PostgreSQL enum types)
+- Singleton connection anti-pattern eliminated — replaced by SQLAlchemy session factory with proper scoping
+
+From PRD Validation Report:
+
+- No additional requirements — validation confirmed PRD as 5/5 Excellent with 0 critical issues
+- Post-validation fixes already applied to PRD (FR12 specificity, Out of Scope section, Assumptions & Dependencies section, dimensionless Vector())
 
 ### FR Coverage Map
 
 | FR | Epic | Description |
 |----|------|-------------|
-| FR1 | Epic 21 | Add URL via Slack |
-| FR2 | Epic 21 | Check URL existence |
-| FR3 | Epic 21 | Get document info by ID |
-| FR4 | Epic 21 | Query backend version |
-| FR5 | Epic 21 | Query document count by type |
-| FR6 | Epic 21 | Invoke via slash commands |
-| FR7 | Epic 21 | Formatted responses in channel |
-| FR8 | Epic 22 | DM text commands |
-| FR9 | Epic 22 | DM text parsing |
-| FR10 | Epic 23 | App mentions on channels |
-| FR11 | Epic 23 | Thread responses to mentions |
-| FR12 | Epic 24 | Natural language interaction |
-| FR13 | Epic 24 | LLM intent mapping to API calls |
-| FR14 | Epic 24 | Semantic search via natural language |
-| FR15 | Epic 25 | Periodic health checks |
-| FR16 | Epic 25 | Proactive failure alerts |
-| FR17 | Epic 25 | Alert deduplication |
-| FR18 | Epic 21 | User-friendly error messages |
-| FR19 | Epic 21 | Stay connected when backend down |
-| FR20 | Epic 21 | Specific failure reasons in plain language |
-| FR21 | Epic 21 | Docker Compose profile deployment |
-| FR22 | Epic 21 | Secrets via Vault/SSM |
-| FR23 | Epic 21 | Slack App manifest in repo |
-| FR24 | Epic 21 | Startup confirmation message |
-| FR25 | Epic 21 | Step-by-step setup README |
+| FR1 | Epic 276 | Define table structure as ORM model class |
+| FR2 | Epic 276 | Define column types, constraints, defaults |
+| FR3 | Epic 276 | Define relationships between models |
+| FR4 | Epic 276 | Define STI hierarchy on web_documents |
+| FR5 | Epic 276 | Add domain methods on ORM model |
+| FR6 | Epic 276 | Auto-generate migration scripts via Alembic |
+| FR7 | Epic 276 | Apply migrations with single command |
+| FR8 | Epic 276 | Roll back migrations |
+| FR9 | Epic 276 | Initialize Alembic on existing database |
+| FR10 | Epic 276 | Thread-local sessions for Flask |
+| FR11 | Epic 276 | Auto cleanup sessions on teardown |
+| FR12 | Epic 276 | Script-scoped sessions for imports/batch |
+| FR13 | Epic 276 | Stale connection recovery (pool_pre_ping) |
+| FR14 | Epic 27 | Create document via ORM |
+| FR15 | Epic 27 | Update document via ORM attributes |
+| FR16 | Epic 27 | Delete document with cascade |
+| FR17 | Epic 27 | Look up document by URL |
+| FR18 | Epic 27 | Look up document by ID |
+| FR19 | Epic 27 | Serialize document to dict for API |
+| FR20 | Epic 28 | Add embedding via ORM relationship |
+| FR21 | Epic 28 | Delete embeddings by model name |
+| FR22 | Epic 28 | Find documents needing embeddings |
+| FR23 | Epic 28 | Similarity search via cosine_distance() |
+| FR24 | Epic 27 | List documents with dynamic filters |
+| FR25 | Epic 27 | Count documents by type/state |
+| FR26 | Epic 27 | Find documents ready for download |
+| FR27 | Epic 27 | Find YouTube documents just added |
+| FR28 | Epic 27 | Find documents with completed transcriptions |
+| FR29 | Epic 27 | Find next document to correct |
+| FR30 | Epic 27 | Retrieve last imported date for source |
+| FR31 | Epic 29 | dynamodb_sync.py creates documents via ORM |
+| FR32 | Epic 29 | dynamodb_sync.py sets created_at via ORM |
+| FR33 | Epic 29 | unknown_news_import.py creates documents via ORM |
+| FR34 | Epic 29 | unknown_news_import.py detects duplicates via ORM |
+| FR35 | Epic 29 | Batch pipeline processes SQS messages via ORM |
+| FR36 | Epic 29 | Batch pipeline stores embeddings via ORM |
+| FR37 | Epic 29 | Batch pipeline updates document state via ORM |
+| FR38 | Epic 29 | YouTube pipeline stores transcript via ORM |
+| FR39 | Epic 27 | /website_list returns filtered lists via repository |
+| FR40 | Epic 27 | /website_get returns document with navigation |
+| FR41 | Epic 27 | /website_save creates/updates via ORM |
+| FR42 | Epic 27 | /website_delete removes with cascade |
+| FR43 | Epic 28 | /website_similar performs vector search |
 
-**Coverage: 25/25 FRs — 100%**
+**Coverage: 43/43 FRs — 100%**
 
 ## Epic List
 
-### Epic 21: Slack Bot MVP — Slash Commands (Sprint 7)
-User can add links, check duplicates, query system status, and get document info via 5 Slack slash commands. Bot runs as an optional Docker container with full error handling, secrets management, and setup documentation.
-**FRs covered:** FR1, FR2, FR3, FR4, FR5, FR6, FR7, FR18, FR19, FR20, FR21, FR22, FR23, FR24, FR25
-**NFRs covered:** NFR1-NFR18 (all — quality foundation from first epic)
+### Epic 276: ORM Foundation & Schema Management
+Developer can define database schema as SQLAlchemy 2.x ORM models, manage database sessions for Flask and scripts, and use Alembic for schema migrations — eliminating the fear of schema changes.
+**FRs covered:** FR1, FR2, FR3, FR4, FR5, FR6, FR7, FR8, FR9, FR10, FR11, FR12, FR13
+**NFRs covered:** NFR4, NFR5, NFR6, NFR7, NFR8, NFR10, NFR11, NFR12
 
-### Epic 22: Slack Bot Stabilization & DM Commands (Sprint 8)
-Deploy Slack Bot MVP to NAS, verify end-to-end on real environment, fix any integration issues, then add simplified DM text commands (without conversational state). Deployment-first approach decided during [Epic 21 retrospective](../implementation-artifacts/epic-21-retro-2026-03-02.md).
-**FRs covered:** FR8, FR9
-**Builds on:** Epic 21
+### Epic 27: Document CRUD & API Serving
+Developer can create, update, delete, and query documents through the ORM repository, and all Flask API endpoints (`/website_list`, `/website_get`, `/website_save`, `/website_delete`) return identical data formats as before. Old wrapper classes replaced with re-exports.
+**FRs covered:** FR14, FR15, FR16, FR17, FR18, FR19, FR24, FR25, FR26, FR27, FR28, FR29, FR30, FR39, FR40, FR41, FR42
+**NFRs covered:** NFR1 (partial), NFR5
+**Builds on:** Epic 276
 
-### Epic 23: Channel App Mentions (Sprint 8)
-User can mention the bot on any channel (`@Lenie version`) and get a response in a thread. Same command set as slash commands and DMs.
-**FRs covered:** FR10, FR11
-**Builds on:** Epic 21, Epic 22
+### Epic 28: Vector Embeddings & Similarity Search
+Developer can manage vector embeddings via ORM relationship and perform similarity search using pgvector-python native `cosine_distance()` operator — zero raw SQL for vector operations.
+**FRs covered:** FR20, FR21, FR22, FR23, FR43
+**NFRs covered:** NFR1 (partial)
+**Builds on:** Epic 276, Epic 27
 
-### Epic 24: Conversational LLM Intelligence (Sprint 8)
-User interacts with the bot using natural language ("how many articles about Kubernetes?"). Bot interprets intent via LLM and maps to appropriate API call. Includes semantic search via `/website_similar`.
-**FRs covered:** FR12, FR13, FR14
-**Builds on:** Epic 21-23
-
-### Epic 25: Proactive Health Monitoring (Sprint 8)
-Bot periodically checks backend health and proactively alerts the user via DM when failures are detected. Alert deduplication prevents notification spam.
-**FRs covered:** FR15, FR16, FR17
-**Builds on:** Epic 21
+### Epic 29: Data Pipeline Migration & Cleanup
+Import scripts and batch pipeline work with ORM models and sessions. YouTube pipeline stores transcripts via ORM. Old wrapper code fully removed, all quality gates pass.
+**FRs covered:** FR31, FR32, FR33, FR34, FR35, FR36, FR37, FR38
+**NFRs covered:** NFR1 (complete), NFR2, NFR3, NFR9
+**Builds on:** Epic 276, Epic 27, Epic 28
 
 ---
 
-## Epic 21: Slack Bot MVP — Slash Commands
+## Epic 276: ORM Foundation & Schema Management
 
-User can add links, check duplicates, query system status, and get document info via 5 Slack slash commands. Bot runs as an optional Docker container with full error handling, secrets management, and setup documentation.
+Developer can define database schema as SQLAlchemy 2.x ORM models, manage database sessions for Flask and scripts, and use Alembic for schema migrations — eliminating the fear of schema changes.
 
-### Story 21.1: Project Scaffolding & Slack Connection
-
-As a **developer**,
-I want a `slack_bot/` project with Docker container that connects to Slack via Socket Mode,
-So that I have a running bot foundation to build commands on.
-
-**Acceptance Criteria:**
-
-**Given** Docker Compose file has a `slack` profile with the bot service
-**When** developer runs `docker compose --profile slack up -d`
-**Then** the bot container starts and connects to Slack via Socket Mode within 10 seconds
-
-**Given** the bot successfully connects to Slack
-**When** connection is established
-**Then** bot posts a startup confirmation message to a designated channel with version info
-
-**Given** Slack tokens are stored in Vault (or SSM/env)
-**When** the bot starts
-**Then** it retrieves `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, and `STALKER_API_KEY` from the configured secret backend
-
-**Given** the bot is running
-**When** inspecting source code and Docker image
-**Then** zero secrets are hardcoded and logs never contain token values
-
-**Covers:** FR21, FR22, FR24 | NFR2, NFR4-NFR7, NFR10-NFR11, NFR14-NFR15
-
-### Story 21.2: API Client for Backend Communication
+### Story 26.1: Dependencies, Engine & Session Factories
 
 As a **developer**,
-I want an HTTP client module that calls Lenie backend REST API endpoints,
-So that slash commands can retrieve and send data to the knowledge base.
+I want SQLAlchemy engine and session factory functions (`get_engine`, `get_session`, `get_scoped_session`),
+So that all consumers have a unified, thread-safe way to access the database.
 
 **Acceptance Criteria:**
 
-**Given** backend is running at `LENIE_API_URL`
-**When** `api_client.get_version()` is called
-**Then** it sends `GET /version` and returns parsed version data
+**Given** `pyproject.toml` is updated with `sqlalchemy>=2.0,<3.0`, `pgvector>=0.3.0`, `alembic>=1.13`
+**When** `uv lock` is run
+**Then** lock file is valid and dependencies resolve
 
-**Given** backend is running
-**When** `api_client.add_url("https://example.com")` is called
-**Then** it sends `POST /url_add` with `x-api-key` header and URL payload
+**Given** `library/db/engine.py` exists
+**When** `get_engine()` is called
+**Then** returns a SQLAlchemy engine with `pool_pre_ping=True` using `POSTGRESQL_*` env vars
 
-**Given** backend is unreachable (connection timeout)
-**When** any API method is called
-**Then** it raises a typed exception with clear error message (not raw stack trace)
+**Given** engine is initialized
+**When** `get_session()` is called
+**Then** returns a new `Session` bound to the engine (for scripts)
 
-**Given** backend returns HTTP 500
-**When** any API method is called
-**Then** it raises an exception with status code and response body for logging
+**Given** engine is initialized
+**When** `get_scoped_session()` is called
+**Then** returns a thread-local `scoped_session` (for Flask)
 
-**Given** unit test suite runs
-**When** `pytest tests/unit/test_api_client.py` executes
-**Then** all API methods are tested with mocked HTTP (no real backend needed), coverage >80%
+**Given** `.venv_wsl` exists
+**When** dependencies change
+**Then** `.venv_wsl` is synchronized
 
-**Covers:** NFR3, NFR7-NFR9, NFR13-NFR14
+**Covers:** FR10, FR12, FR13 | NFR10, NFR11, NFR12
 
-### Story 21.3: System Information Slash Commands
-
-As a **user**,
-I want to type `/lenie-version` and `/lenie-count` in Slack,
-So that I can check system status quickly without opening the web UI.
-
-**Acceptance Criteria:**
-
-**Given** the bot is connected and backend is running
-**When** user types `/lenie-version`
-**Then** bot responds with backend version and build timestamp in the same channel within 3 seconds
-
-**Given** the bot is connected and backend is running
-**When** user types `/lenie-count`
-**Then** bot responds with total document count and breakdown by type (webpage, youtube, link, etc.)
-
-**Given** the backend is unreachable
-**When** user types `/lenie-version` or `/lenie-count`
-**Then** bot responds with user-friendly error message: "Backend unreachable (connection timeout). Check if lenie-ai-server is running."
-
-**Given** the bot is connected
-**When** backend returns unexpected response format
-**Then** bot logs a warning and responds with "Unexpected response from backend" (no crash)
-
-**Covers:** FR4, FR5, FR6 (partial), FR7, FR18-FR20 | NFR1, NFR16
-
-### Story 21.4: Content Management Slash Commands
-
-As a **user**,
-I want to add links, check for duplicates, and get document details via Slack,
-So that I can manage my knowledge base from mobile without opening the web UI.
-
-**Acceptance Criteria:**
-
-**Given** the bot is connected and backend is running
-**When** user types `/lenie-add https://example.com/article`
-**Then** bot calls `POST /url_add` and responds with "Added to knowledge base (ID: X). Type: link."
-
-**Given** the URL already exists in the knowledge base
-**When** user types `/lenie-check https://example.com/article`
-**Then** bot responds with "Found in database (ID: X). Type: Y. Status: Z. Added: DATE."
-
-**Given** the URL does not exist in the knowledge base
-**When** user types `/lenie-check https://example.com/new`
-**Then** bot responds with "Not found in database."
-
-**Given** a document with ID 1234 exists
-**When** user types `/lenie-info 1234`
-**Then** bot responds with document type, status, title, and date added
-
-**Given** user provides invalid input
-**When** user types `/lenie-add` (no URL) or `/lenie-info abc` (non-numeric)
-**Then** bot responds with usage hint: "Usage: `/lenie-add <url>`" (no crash)
-
-**Given** backend is unreachable
-**When** user types any content management command
-**Then** bot responds with specific failure reason in plain language
-
-**Covers:** FR1, FR2, FR3, FR6 (remaining), FR18-FR20 | NFR1, NFR16, NFR18
-
-### Story 21.5: Slack App Manifest & Setup Documentation
+### Story 26.2: ORM Models — WebDocument (STI) & WebsiteEmbedding
 
 As a **developer**,
-I want a Slack App manifest and step-by-step README,
-So that I can set up the bot from scratch in under 15 minutes.
+I want `WebDocument` and `WebsiteEmbedding` defined as SQLAlchemy 2.x ORM models in `library/db/models.py`,
+So that database schema is defined once in Python and I can add columns/tables with a single-file change.
 
 **Acceptance Criteria:**
 
-**Given** a developer has a free Slack workspace
-**When** they import `slack-app-manifest.yaml` at api.slack.com
-**Then** the Slack App is created with correct permissions (slash commands, Socket Mode, bot scopes)
+**Given** `library/db/models.py` exists
+**When** `WebDocument` model is inspected
+**Then** it maps all 28 columns from `web_documents` table with exact column names and types matching DDL (`03-create-table.sql`)
 
-**Given** the README exists
-**When** a developer follows it step-by-step
-**Then** they can go from zero to working bot: create workspace, create App, configure tokens, run `docker compose --profile slack up -d`, verify with `/lenie-version`
+**Given** `WebDocument` has STI configured
+**When** `__mapper_args__` is inspected
+**Then** `document_type` is the polymorphic discriminator
 
-**Given** Slack tokens are classified as secrets
-**When** reviewing `vars-classification.yaml`
-**Then** `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN` are listed with `classification: secret` and appropriate backend definitions
+**Given** `WebDocument` has domain methods
+**When** `set_document_type()`, `set_document_state()`, `validate()`, `dict()` are called
+**Then** they behave identically to current `StalkerWebDocumentDB` methods
 
-**Covers:** FR23, FR25 | NFR12
+**Given** `dict()` is called on a `WebDocument` instance
+**When** the result is inspected
+**Then** dates are formatted as `"YYYY-MM-DD HH:MM:SS"`, enums as `.name`, all existing keys preserved
+
+**Given** `WebsiteEmbedding` model exists
+**When** inspected
+**Then** it has dimensionless `Vector()` column, `web_document_id` FK, `language`, `model`, `text` columns matching DDL (`04-create-table.sql`)
+
+**Given** `WebDocument` has a relationship to `WebsiteEmbedding`
+**When** relationship is inspected
+**Then** `cascade="all, delete-orphan"` is configured
+
+**Given** enums are needed by ORM model
+**When** imports are inspected
+**Then** enums are imported from `library.models.stalker_document_status` (original location, not moved)
+
+**Given** all ORM model columns use type hints
+**When** code is inspected
+**Then** all columns use `Mapped[type]` with `mapped_column()` (not older `Column()` style)
+
+**Given** navigation fields exist
+**When** `next_id`, `next_type`, `previous_id`, `previous_type` are inspected
+**Then** they are plain Python class attributes (`= None`), NOT `mapped_column()`
+
+**Covers:** FR1, FR2, FR3, FR4, FR5 | NFR4, NFR5, NFR7
+
+### Story 26.3: Alembic Initialization & Flask Session Integration
+
+As a **developer**,
+I want Alembic initialized with a baseline migration and Flask session teardown configured,
+So that I can auto-generate migration scripts from model changes and Flask sessions are properly scoped.
+
+**Acceptance Criteria:**
+
+**Given** `backend/alembic.ini` and `backend/alembic/env.py` exist
+**When** `alembic revision --autogenerate -m "test"` is run against existing database
+**Then** the generated migration is empty (no diff — model matches DDL exactly)
+
+**Given** Alembic is initialized
+**When** `alembic stamp head` is run
+**Then** existing database is marked as baseline (no migrations needed)
+
+**Given** developer adds a new column to the ORM model
+**When** `alembic revision --autogenerate -m "add column"` is run
+**Then** Alembic generates correct `ALTER TABLE` migration script
+
+**Given** a migration exists
+**When** `alembic upgrade head` is run
+**Then** database schema is updated
+
+**Given** a migration was applied
+**When** `alembic downgrade -1` is run
+**Then** migration is rolled back
+
+**Given** `server.py` has `@app.teardown_appcontext`
+**When** a Flask request completes
+**Then** `scoped_session.remove()` is called, releasing the session
+
+**Given** re-export files exist
+**When** `from library.stalker_web_document import StalkerWebDocument` is used
+**Then** it returns the `WebDocument` ORM model (backward compatibility)
+
+**Given** re-export files exist
+**When** `from library.stalker_web_document_db import StalkerWebDocumentDB` is used
+**Then** it returns the `WebDocument` ORM model (backward compatibility)
+
+**Covers:** FR6, FR7, FR8, FR9, FR10, FR11 | NFR5, NFR6, NFR8
 
 ---
 
-## Epic 22: Slack Bot Stabilization & DM Commands
+## Epic 27: Document CRUD & API Serving
 
-Deploy Slack Bot MVP to NAS, verify end-to-end on real environment, fix any integration issues discovered during deployment, then add simplified DM text commands. Deployment-first approach decided during [Epic 21 retrospective](../implementation-artifacts/epic-21-retro-2026-03-02.md). Conversational state (bare URL detection with confirmation prompt) removed from scope — deferred to future epic if needed.
+Developer can create, update, delete, and query documents through the ORM repository, and all Flask API endpoints (`/website_list`, `/website_get`, `/website_save`, `/website_delete`) return identical data formats as before. Old wrapper classes replaced with re-exports.
 
-### Story 22.1: NAS Deployment & End-to-End Verification
-
-As a **developer**,
-I want to deploy the Slack Bot to NAS and verify all 5 slash commands work end-to-end,
-So that I have confidence the MVP works on a real environment before building new features.
-
-**Acceptance Criteria:**
-
-**Given** the NAS has Docker and the Lenie backend running
-**When** developer runs `docker compose --profile slack up -d` on NAS
-**Then** the bot container builds, starts, and connects to Slack via Socket Mode
-
-**Given** the bot is running on NAS
-**When** bot connects to Slack
-**Then** startup confirmation message appears in the designated Slack channel
-
-**Given** the bot is running on NAS with real backend
-**When** user types `/lenie-version` in Slack
-**Then** bot responds with actual backend version and build timestamp
-
-**Given** the bot is running on NAS with real backend
-**When** user types `/lenie-count` in Slack
-**Then** bot responds with real document count and per-type breakdown
-
-**Given** the bot is running on NAS with real backend
-**When** user types `/lenie-add <url>`, `/lenie-check <url>`, `/lenie-info <id>` in Slack
-**Then** all 3 content management commands work correctly with real data
-
-**Given** deployment procedure is verified
-**When** developer documents the process
-**Then** a repeatable deployment procedure exists (git pull, build, up, verify)
-
-**Covers:** FR21, FR24 | NFR2, NFR5, NFR8
-
-### Story 22.2: Backend API Response Fixes (Conditional)
+### Story 27.1: Document Persistence — CRUD via ORM
 
 As a **developer**,
-I want to fix any API response format mismatches discovered during NAS deployment,
-So that the Slack Bot receives the exact response format it expects from all backend endpoints.
+I want to create, read, update, and delete documents via ORM session operations and classmethods,
+So that I no longer need manual SQL for basic document operations.
 
 **Acceptance Criteria:**
 
-**Given** NAS deployment revealed API response mismatches
-**When** developer fixes the backend response format or Slack Bot parser
-**Then** all 5 slash commands work correctly with real backend responses
+**Given** a session and document data
+**When** `WebDocument(url="https://...")` is created and `session.add(doc)` + `session.commit()` is called
+**Then** the document is persisted in `web_documents` table
 
-**Given** NAS deployment revealed no issues
-**When** this story is evaluated
-**Then** story is marked as skipped (no work needed)
+**Given** an existing document in the database
+**When** `doc.title = "New title"` is set and `session.commit()` is called
+**Then** SQLAlchemy dirty tracking generates UPDATE for the changed column only
 
-**Note:** This story may be empty if Story 22-1 deployment passes cleanly. Reserved as placeholder for integration fixes.
+**Given** a document with related embeddings
+**When** `session.delete(doc)` + `session.commit()` is called
+**Then** the document AND all related embeddings are deleted (cascade)
 
-**Covers:** NFR9
+**Given** a URL string
+**When** `WebDocument.get_by_url(session, url)` is called
+**Then** returns the matching document or `None` (for duplicate detection)
 
-### Story 22.3: DM Text Command Parsing (Simplified)
+**Given** a document ID
+**When** `WebDocument.get_by_id(session, id)` is called
+**Then** returns the matching document or `None`
 
-As a **user**,
-I want to send commands as plain messages in a DM with the bot (e.g., "version", "add https://..."),
-So that I can interact without remembering slash command syntax.
+**Given** a `WebDocument` instance
+**When** `doc.dict()` is called
+**Then** output matches exact format: dates as `"YYYY-MM-DD HH:MM:SS"`, enums as `.name`, all existing keys preserved including transient navigation fields when populated
+
+**Covers:** FR14, FR15, FR16, FR17, FR18, FR19 | NFR5
+
+### Story 27.2: Repository Queries — List, Count, State-Based Lookups
+
+As a **developer**,
+I want all repository query methods rewritten with SQLAlchemy `select()` queries,
+So that document listing, counting, and state-based lookups work without raw SQL.
 
 **Acceptance Criteria:**
 
-**Given** the bot is connected and user is in a DM with it
-**When** user sends "version"
-**Then** bot responds with the same version info as `/lenie-version`
+**Given** `WebsitesDBPostgreSQL` receives session via constructor (`WebsitesDBPostgreSQL(session)`)
+**When** any query method is called
+**Then** it uses `session.execute(select(...))` — no raw `cursor.execute()`
 
-**Given** the bot is in a DM
-**When** user sends "add https://example.com/article"
-**Then** bot calls `POST /url_add` and responds with confirmation (same as `/lenie-add`)
+**Given** repository method `get_list(document_type='link', limit=20)`
+**When** called
+**Then** returns list of subset dicts (id, url, title, document_type, created_at, document_state, document_state_error, note, project, s3_uuid) with dynamic filters applied
 
-**Given** the bot is in a DM
-**When** user sends "check https://example.com/article"
-**Then** bot responds with found/not-found (same as `/lenie-check`)
+**Given** repository method `get_count(document_type='link')`
+**When** called
+**Then** returns integer count using `func.count()`
 
-**Given** the bot is in a DM
-**When** user sends "info 1234"
-**Then** bot responds with document details (same as `/lenie-info`)
+**Given** repository method `get_count_by_type()`
+**When** called
+**Then** returns dict with counts per document type
 
-**Given** the bot is in a DM
-**When** user sends unrecognized text (e.g., "hello" or "asdf")
-**Then** bot responds with a help message listing available commands
+**Given** repository method `get_ready_for_download()`
+**When** called
+**Then** returns documents in URL_ADDED state with webpage/link type
 
-**Covers:** FR8, FR9 | NFR1, NFR18
+**Given** repository method `get_youtube_just_added()`
+**When** called
+**Then** returns YouTube documents in URL_ADDED state
 
-**Removed from original scope (Epic 21 retro decision):**
-- ~~Bare URL detection with confirmation prompt ("Did you want to add this URL? Reply 'yes' to confirm.")~~ — requires conversational state management, deferred to future epic
+**Given** repository method `get_transcription_done()`
+**When** called
+**Then** returns documents with completed transcriptions
+
+**Given** repository method `get_next_to_correct(id, document_type)`
+**When** called
+**Then** returns the next document for navigation
+
+**Given** repository method `get_last_unknown_news()`
+**When** called
+**Then** returns the last imported date for unknow.news source
+
+**Given** repository method `load_neighbors(doc)`
+**When** called
+**Then** populates `doc.next_id`, `doc.next_type`, `doc.previous_id`, `doc.previous_type` transient attributes
+
+**Given** any repository method
+**When** inspected
+**Then** it NEVER calls `session.commit()` or `session.rollback()` — caller controls transactions
+
+**Covers:** FR24, FR25, FR26, FR27, FR28, FR29, FR30
+
+### Story 27.3: Flask API Endpoints — CRUD Routes via Repository
+
+As a **developer**,
+I want Flask route handlers updated to use the ORM repository with scoped session,
+So that the React frontend receives identical API responses after the migration.
+
+**Acceptance Criteria:**
+
+**Given** Flask app with scoped session
+**When** `GET /website_list?document_type=link&limit=20` is called
+**Then** route creates `WebsitesDBPostgreSQL(scoped_session())`, calls `get_list()`, returns JSON response identical to pre-migration format
+
+**Given** a document with ID exists
+**When** `GET /website_get?id=42` is called
+**Then** route returns full document dict with navigation fields (`next_id`, `next_type`, `previous_id`, `previous_type`) populated via `load_neighbors()`
+
+**Given** valid document data in request body
+**When** `POST /website_save` is called
+**Then** route creates or updates document via ORM model and `session.commit()`, returns success response
+
+**Given** a document ID
+**When** `DELETE /website_delete?id=42` is called
+**Then** route deletes document via `session.delete()` with cascade (embeddings removed), returns success response
+
+**Given** any Flask endpoint completes (success or error)
+**When** request teardown occurs
+**Then** `scoped_session.remove()` is called via `@app.teardown_appcontext`
+
+**Given** frontend makes API calls before and after migration
+**When** response JSON is compared
+**Then** field names, value types, and date formats are identical
+
+**Covers:** FR39, FR40, FR41, FR42 | NFR1 (partial)
 
 ---
 
-## Epic 23: Channel App Mentions
+## Epic 28: Vector Embeddings & Similarity Search
 
-User can mention the bot on any channel (`@Lenie version`) and get a response in a thread. Same command set as slash commands and DMs.
+Developer can manage vector embeddings via ORM relationship and perform similarity search using pgvector-python native `cosine_distance()` operator — zero raw SQL for vector operations.
 
-### Story 23.1: App Mention Event Handler & Thread Responses
+### Story 28.1: Embedding CRUD & Documents Needing Embeddings
 
-As a **user**,
-I want to mention `@Lenie` on any channel to invoke commands,
-So that I can interact with the bot in team channels without switching to DM.
+As a **developer**,
+I want to add, delete, and query embeddings via ORM relationship and repository,
+So that embedding management no longer requires hand-written INSERT/DELETE SQL.
 
 **Acceptance Criteria:**
 
-**Given** the bot is added to a channel
-**When** user posts `@Lenie version`
-**Then** bot responds with version info **in a thread** under the mention message
+**Given** a `WebDocument` instance and an embedding vector
+**When** a `WebsiteEmbedding` is created and added via ORM relationship (`doc.embeddings.append(embedding)`) and `session.commit()` is called
+**Then** the embedding is persisted in `websites_embeddings` table with correct `web_document_id` FK
 
-**Given** the bot is mentioned on a channel
-**When** user posts `@Lenie count`
-**Then** bot responds with document count in a thread
+**Given** a document with embeddings for multiple models
+**When** embeddings are deleted filtered by model name via repository
+**Then** only embeddings for the specified model are removed, others remain
 
-**Given** the bot is mentioned on a channel
-**When** user posts `@Lenie add https://example.com/article`
-**Then** bot adds the URL and confirms in a thread
+**Given** documents exist with and without embeddings
+**When** repository method `get_documents_needing_embedding(model)` is called
+**Then** returns documents that have no embedding for the specified model (outer join on `websites_embeddings`)
 
-**Given** the bot is mentioned without a command
-**When** user posts just `@Lenie`
-**Then** bot responds in a thread with a help message listing available commands
+**Given** the query uses SQLAlchemy
+**When** `get_documents_needing_embedding()` is inspected
+**Then** it uses `select()` with `outerjoin()` — no raw `cursor.execute()`
 
-**Given** the bot is mentioned on a channel it hasn't been added to
-**When** the event arrives
-**Then** bot handles gracefully (Slack shows "not in channel" — no bot crash)
+**Covers:** FR20, FR21, FR22
 
-**Covers:** FR10, FR11 | NFR1, NFR18
+### Story 28.2: Similarity Search via pgvector-python & API Endpoint
+
+As a **developer**,
+I want similarity search implemented with pgvector-python native `cosine_distance()` operator and the `/website_similar` endpoint functional,
+So that vector search works through ORM with zero raw SQL.
+
+**Acceptance Criteria:**
+
+**Given** a query vector and a limit
+**When** repository method `get_similar(vector, limit, model)` is called
+**Then** it uses `WebsiteEmbedding.embedding.cosine_distance(query_vector)` for ordering
+
+**Given** similarity search results
+**When** similarity score is computed
+**Then** it is calculated as `1 - cosine_distance` using a SQLAlchemy SQL expression (`func.cast`), not Python-side computation
+
+**Given** `get_similar()` returns results
+**When** result format is inspected
+**Then** each result is a dict with: `website_id`, `text`, `similarity` (float), `id`, `url`, `language`, `text_original`, `websites_text_length`, `embeddings_text_length`, `title`, `document_type`, `project`
+
+**Given** a query vector
+**When** `GET /website_similar` endpoint is called with vector and model parameters
+**Then** Flask route creates repository, calls `get_similar()`, returns JSON response
+
+**Given** no similar documents exist above threshold
+**When** similarity search is performed
+**Then** returns empty list (no error)
+
+**Given** pgvector HNSW partial indexes exist in the database
+**When** ORM model is inspected
+**Then** indexes are NOT defined in the model — they are managed by Alembic migrations only
+
+**Covers:** FR23, FR43 | NFR1 (partial)
 
 ---
 
-## Epic 24: Conversational LLM Intelligence
+## Epic 29: Data Pipeline Migration & Cleanup
 
-User interacts with the bot using natural language. Bot interprets intent via LLM and maps to API calls. Includes semantic search.
+Import scripts and batch pipeline work with ORM models and sessions. YouTube pipeline stores transcripts via ORM. Old wrapper code fully removed, all quality gates pass.
 
-### Story 24.1: LLM Intent Parser
+### Story 29.1: Import Scripts Migration (dynamodb_sync & unknown_news_import)
 
-As a **user**,
-I want to ask the bot questions in natural language ("how many articles do I have?"),
-So that I don't need to remember specific command syntax.
-
-**Acceptance Criteria:**
-
-**Given** the bot is in a DM and LLM is configured
-**When** user sends "how many articles do I have?"
-**Then** LLM interprets intent as `count` command, bot responds with document count
-
-**Given** the bot is in a DM
-**When** user sends "do I already have this link? https://example.com"
-**Then** LLM interprets intent as `check` command with URL, bot responds with found/not-found
-
-**Given** the LLM service is unreachable
-**When** user sends a natural language message
-**Then** bot falls back to direct text parsing (Epic 22 logic) and responds or shows help
-
-**Given** the LLM cannot determine intent
-**When** user sends ambiguous message
-**Then** bot responds: "I'm not sure what you mean. Available commands: version, count, check, add, info"
-
-**Covers:** FR12, FR13 | NFR3, NFR9
-
-### Story 24.2: Semantic Search via Natural Language
-
-As a **user**,
-I want to search my knowledge base with natural language ("articles about Kubernetes security"),
-So that I can find relevant documents without knowing exact titles or IDs.
+As a **developer**,
+I want import scripts to use ORM models and sessions instead of the old wrapper,
+So that data imports work through the same ORM layer as the rest of the application.
 
 **Acceptance Criteria:**
 
-**Given** the bot is connected and embeddings exist in the database
-**When** user types `/lenie-search Kubernetes security`
-**Then** bot calls `/website_similar` and responds with top results (title, type, score)
+**Given** `dynamodb_sync.py` is updated
+**When** it processes a DynamoDB item
+**Then** it creates `WebDocument(url=item['url'])` via ORM, sets attributes, and `session.commit()`
 
-**Given** the bot is in a DM with LLM enabled
-**When** user sends "find articles about pgvector performance"
-**Then** LLM maps to search intent, bot returns similar documents
+**Given** `dynamodb_sync.py` needs to set `created_at` and `chapter_list`
+**When** these fields are updated
+**Then** they are set via normal ORM attribute assignment (`doc.created_at = value`) — no direct SQL UPDATE
 
-**Given** no similar documents are found
-**When** user searches for an obscure topic
-**Then** bot responds: "No similar documents found for 'topic'."
+**Given** `unknown_news_import.py` is updated
+**When** it processes a JSON feed entry
+**Then** it creates `WebDocument` via ORM with fields: `title`, `summary`, `language`, `source`, `date_from`, `document_type`, `document_state`
 
-**Given** the query is empty
-**When** user types `/lenie-search` without arguments
-**Then** bot responds with usage hint
+**Given** `unknown_news_import.py` processes a URL that already exists
+**When** `WebDocument.get_by_url(session, url)` returns a match
+**Then** the duplicate is skipped (not inserted)
 
-**Covers:** FR14 | NFR1, NFR18
+**Given** either import script
+**When** session lifecycle is inspected
+**Then** it follows the pattern: `session = get_session()` -> `try` -> `session.commit()` -> `finally` -> `session.close()`
 
----
+**Given** import scripts use no raw SQL
+**When** code is inspected
+**Then** zero `cursor.execute()` calls remain in import scripts
 
-## Epic 25: Proactive Health Monitoring
+**Covers:** FR31, FR32, FR33, FR34
 
-Bot periodically checks backend health and proactively alerts the user via DM when failures are detected. Alert deduplication prevents notification spam.
+### Story 29.2: Batch Pipeline & YouTube Processing Migration
 
-### Story 25.1: Scheduled Health Checks & Proactive Alerts
-
-As a **user**,
-I want the bot to alert me via DM when the backend goes down,
-So that I learn about problems without manually checking.
+As a **developer**,
+I want `web_documents_do_the_needful_new.py` and YouTube processing to use ORM models,
+So that the batch pipeline and transcript storage work through the same ORM layer.
 
 **Acceptance Criteria:**
 
-**Given** health monitoring is enabled and backend is running
-**When** the health check runs every 5 minutes
-**Then** no alerts are sent (system is healthy)
+**Given** `web_documents_do_the_needful_new.py` is updated
+**When** it processes an SQS message
+**Then** it creates/retrieves `WebDocument` via ORM and `session.commit()`
 
-**Given** the backend becomes unreachable
-**When** the next health check runs
-**Then** bot sends a DM to the configured user: "Backend unreachable since HH:MM. Error: connection timeout."
+**Given** batch pipeline needs to generate embeddings
+**When** embeddings are created
+**Then** they are stored via ORM relationship (`WebsiteEmbedding` added to document's embeddings collection)
 
-**Given** the backend remains unreachable
-**When** subsequent health checks continue to fail
-**Then** bot does NOT send repeated alerts (deduplication active)
+**Given** batch pipeline processes a document through its lifecycle
+**When** document state changes (e.g., `URL_ADDED` -> `DOCUMENT_INTO_DATABASE` -> `EMBEDDING_EXIST`)
+**Then** state is updated via ORM attribute assignment (`doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST`) and `session.commit()`
 
-**Given** the backend comes back online after a failure
-**When** the next health check succeeds
-**Then** bot sends a recovery DM: "Backend recovered. Downtime: X minutes."
+**Given** YouTube processing pipeline receives transcript
+**When** transcript text and metadata are stored
+**Then** they are set via ORM attributes on `WebDocument` (not direct SQL)
 
-**Given** `HEALTH_CHECK_ENABLED=false`
-**When** the bot starts
-**Then** health monitoring is disabled, no background checks run
+**Given** batch pipeline session lifecycle
+**When** inspected
+**Then** uses script-scoped `get_session()` with commit per document
 
-**Covers:** FR15, FR16, FR17 | NFR3, NFR16
+**Given** batch pipeline uses no raw SQL
+**When** code is inspected
+**Then** zero `cursor.execute()` calls remain
+
+**Covers:** FR35, FR36, FR37, FR38
+
+### Story 29.3: Old Code Removal & Final Verification
+
+As a **developer**,
+I want all old wrapper code removed and all quality gates verified,
+So that the migration is complete with zero legacy code and a clean codebase.
+
+**Acceptance Criteria:**
+
+**Given** all consumers are migrated to ORM
+**When** `stalker_web_document.py` is inspected
+**Then** it contains only: `from library.db.models import WebDocument as StalkerWebDocument` (re-export)
+
+**Given** all consumers are migrated
+**When** `stalker_web_document_db.py` is inspected
+**Then** it contains only: `from library.db.models import WebDocument as StalkerWebDocumentDB` (re-export)
+
+**Given** old wrapper code
+**When** codebase is searched for `cursor.execute()`
+**Then** zero occurrences found in production code (NFR1 complete)
+
+**Given** updated codebase
+**When** `ruff check backend/` is run
+**Then** zero warnings reported (line-length=120)
+
+**Given** existing unit tests
+**When** `cd backend && PYTHONPATH=. uvx pytest tests/unit/ -v` is run
+**Then** all tests pass without modification
+
+**Given** the complete migration
+**When** codebase is searched for dead code from old architecture
+**Then** no remnants of `StalkerWebDocumentDB` class definition, `db_conn` singleton, or `__clean_values()` method remain
+
+**Covers:** NFR1 (complete), NFR2, NFR3, NFR9
