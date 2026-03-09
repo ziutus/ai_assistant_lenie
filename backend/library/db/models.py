@@ -18,9 +18,10 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    select,
     text as sa_text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from pgvector.sqlalchemy import Vector
 
@@ -117,6 +118,58 @@ class WebDocument(Base):
     next_type = None
     previous_id = None
     previous_type = None
+
+    # --- Classmethods (Story 27.1) ---
+
+    @classmethod
+    def populate_neighbors(cls, session: Session, doc: "WebDocument") -> None:
+        """Populate transient navigation fields (next_id, next_type, previous_id, previous_type)."""
+        next_row = session.execute(
+            select(cls.id, cls.document_type)
+            .where(cls.id > doc.id)
+            .order_by(cls.id.asc())
+            .limit(1)
+        ).first()
+        if next_row is not None:
+            doc.next_id = next_row[0]
+            doc.next_type = next_row[1].name if hasattr(next_row[1], "name") else next_row[1]
+        else:
+            doc.next_id = None
+            doc.next_type = None
+
+        prev_row = session.execute(
+            select(cls.id, cls.document_type)
+            .where(cls.id < doc.id)
+            .order_by(cls.id.desc())
+            .limit(1)
+        ).first()
+        if prev_row is not None:
+            doc.previous_id = prev_row[0]
+            doc.previous_type = prev_row[1].name if hasattr(prev_row[1], "name") else prev_row[1]
+        else:
+            doc.previous_id = None
+            doc.previous_type = None
+
+    @classmethod
+    def get_by_id(cls, session: Session, doc_id: int, reach: bool = False) -> "WebDocument | None":
+        """Return document by primary key, or None if not found.
+
+        When reach=True, populate transient navigation fields (next_id,
+        next_type, previous_id, previous_type) with neighboring documents.
+        """
+        doc = session.get(cls, doc_id)
+        if doc is None:
+            return None
+        if reach:
+            cls.populate_neighbors(session, doc)
+        return doc
+
+    @classmethod
+    def get_by_url(cls, session: Session, url: str) -> "WebDocument | None":
+        """Return document matching the given URL, or None."""
+        return session.scalars(
+            select(cls).where(cls.url == url)
+        ).first()
 
     # --- Domain methods (migrated from stalker_web_document.py) ---
 
