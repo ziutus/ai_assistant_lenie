@@ -7,7 +7,8 @@ import logging
 import uuid
 
 from library.config_loader import load_config
-from library.stalker_web_document_db import StalkerWebDocumentDB
+from library.db.engine import get_scoped_session
+from library.db.models import WebDocument
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_transcript import chapters_text_to_list
 from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
@@ -46,7 +47,6 @@ if backend_type == "postgresql":
     cfg.require("POSTGRESQL_PORT")
 
     logging.debug("Using PostgreSQL database")
-    websites = WebsitesDBPostgreSQL()
 else:
     logging.error("ERROR: Unknown backend type: >%s<", backend_type)
     exit(1)
@@ -56,9 +56,6 @@ embedding_model = cfg.require("EMBEDDING_MODEL")
 logging.info("Using embedding model: %s", embedding_model)
 
 port = cfg.require("PORT")
-
-logging.info(f"all pages in database: {websites.get_count()}")
-
 
 def check_auth_header():
     """
@@ -80,8 +77,6 @@ CORS(app)  # This will enable CORS for all routes
 @app.teardown_appcontext
 def shutdown_session(exception=None):
     """Clean up scoped session at end of Flask request."""
-    from library.db.engine import get_scoped_session
-    # Lazily initializes engine on first call; .remove() is a no-op if no ORM session was used.
     get_scoped_session().remove()
 
 
@@ -159,7 +154,6 @@ def url_add():
         paywall = url_data.get("paywall", False)
         source = url_data.get("source", "own")
         ai_summary = url_data.get("ai_summary", False)
-        ai_correction = url_data.get("ai_correction", False)
         chapter_list = url_data.get("chapter_list", False)
 
         if not target_url or not url_type:
@@ -253,34 +247,35 @@ def url_add():
 
         # Zapis do bazy danych
         try:
-            web_doc = StalkerWebDocumentDB()
-            web_doc.url = target_url
-            web_doc.set_document_type(url_type)
-            web_doc.note = note
-            web_doc.title = title
-            web_doc.language = language
-            web_doc.paywall = paywall
-            web_doc.source = source
-            web_doc.ai_summary_needed = ai_summary
-            web_doc.ai_correction_needed = ai_correction
-            web_doc.chapter_list = chapter_list
-            web_doc.s3_uuid = s3_uuid
+            session = get_scoped_session()
+            doc = WebDocument(url=target_url)
+            doc.set_document_type(url_type)
+            doc.note = note
+            doc.title = title
+            doc.language = language
+            doc.paywall = paywall
+            doc.source = source
+            doc.ai_summary_needed = ai_summary
+            # Skip ai_correction_needed — column does NOT exist in DB or ORM model
+            doc.chapter_list = chapter_list
+            doc.s3_uuid = s3_uuid
 
             # Ustawienie stanu dokumentu
-            web_doc.set_document_state("URL_ADDED")
+            doc.set_document_state("URL_ADDED")
 
-            # Zapis do bazy
-            web_doc.save()
+            session.add(doc)
+            session.commit()
 
-            logging.info(f"Successfully saved document to database with ID: {web_doc.id}")
+            logging.info(f"Successfully saved document to database with ID: {doc.id}")
 
             return {
                 'status': 'success',
-                'message': f'Successfully saved document with ID: {web_doc.id}',
-                'document_id': web_doc.id
+                'message': f'Successfully saved document with ID: {doc.id}',
+                'document_id': doc.id
             }, 200
 
         except Exception as e:
+            session.rollback()
             error_message = f"Failed to save to database: {str(e)}"
             logging.error(error_message)
             return {
@@ -307,9 +302,10 @@ def website_list():
     search_in_documents = request.args.get('search_in_document', '')
     logging.debug(document_type)
 
-    websites_list = websites.get_list(document_type=document_type, document_state=document_state, search_in_documents=search_in_documents)
-    websites_list_count = websites.get_list(document_type=document_type, document_state=document_state, search_in_documents=search_in_documents, count=True)
-    # pprint_debug(websites_list)
+    session = get_scoped_session()
+    repo = WebsitesDBPostgreSQL(session)
+    websites_list = repo.get_list(document_type=document_type, document_state=document_state, search_in_documents=search_in_documents)
+    websites_list_count = repo.get_list(document_type=document_type, document_state=document_state, search_in_documents=search_in_documents, count=True)
     logging.debug("website count: %s", websites_list_count)
 
     response = {
@@ -327,7 +323,9 @@ def website_list():
 def website_count():
     """Return document counts grouped by type in a single query."""
     logging.debug("Getting document counts by type")
-    counts = websites.get_count_by_type()
+    session = get_scoped_session()
+    repo = WebsitesDBPostgreSQL(session)
+    counts = repo.get_count_by_type()
     return {"status": "success", "counts": counts}, 200
 
 
@@ -386,8 +384,11 @@ def website_get_by_id():
         return {"status": "error",
                 "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
 
-    web_document = StalkerWebDocumentDB(document_id=int(link_id), reach=True)
-    return web_document.dict(), 200
+    session = get_scoped_session()
+    doc = WebDocument.get_by_id(session, int(link_id), reach=True)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+    return doc.dict(), 200
 
 
 @app.route('/website_get_next_to_correct', methods=['GET'])
@@ -403,8 +404,16 @@ def website_get_next_to_correct():
         return {"status": "error",
                 "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
 
-    next_data = websites.get_next_to_correct(link_id)
-    pprint(next_data)
+    session = get_scoped_session()
+    repo = WebsitesDBPostgreSQL(session)
+    next_data = repo.get_next_to_correct(link_id)
+    if next_data == -1:
+        response = {
+            "status": "success",
+            "next_id": -1,
+            "next_type": "",
+        }
+        return response, 200
     next_id = next_data[0]
     next_type = next_data[1]
     logging.info(next_id)
@@ -471,7 +480,10 @@ def search_similar():
         return {"status": embedds.status, "message": "Error during getting embedding for text", "encoding": "utf8", "text": text,
                 "websites": []}, 500
 
-    websites_list = websites.get_similar(embedds.embedding, cfg.require("EMBEDDING_MODEL"), limit=limit)
+    # Legacy instance — get_similar() not yet migrated to ORM (Epic 28)
+    legacy_repo = WebsitesDBPostgreSQL()  # No session → psycopg2 mode
+    websites_list = legacy_repo.get_similar(embedds.embedding, cfg.require("EMBEDDING_MODEL"), limit=limit)
+    legacy_repo.close()
 
     return {"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
             "websites": websites_list}, 200
@@ -617,7 +629,7 @@ def website_delete():
     logging.debug("Deleting website")
     logging.debug(request.form)
 
-    link_id = int(request.args.get('id'))
+    link_id = request.args.get('id')
     logging.debug(link_id)
 
     if not link_id:
@@ -625,9 +637,10 @@ def website_delete():
         return {"status": "error",
                 "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
 
-    web_document = StalkerWebDocumentDB(document_id=link_id)
+    session = get_scoped_session()
+    doc = WebDocument.get_by_id(session, int(link_id))
 
-    if not web_document.id:
+    if doc is None:
         response = {
             "status": "success",
             "message": "Page doesn't exist in database",
@@ -635,13 +648,19 @@ def website_delete():
         }
         return response, 200
 
-    web_document.delete()
-    response = {
-        "status": "success",
-        "message": "Page has been deleted from database",
-        "encoding": "utf8",
-    }
-    return response, 200
+    try:
+        session.delete(doc)
+        session.commit()
+        response = {
+            "status": "success",
+            "message": "Page has been deleted from database",
+            "encoding": "utf8",
+        }
+        return response, 200
+    except Exception as e:
+        session.rollback()
+        logging.error("Failed to delete document: %s", e)
+        return {"status": "error", "message": "Failed to delete document"}, 500
 
 
 @app.route('/website_save', methods=['POST'])
@@ -656,37 +675,43 @@ def website_save():
         return {"status": "error", "message": "Missing data. Make sure you provide 'url'"}, 400
 
     link_id = request.form.get('id')
+    session = get_scoped_session()
 
     if link_id:
-        web_document = StalkerWebDocumentDB(document_id=int(link_id))
+        doc = WebDocument.get_by_id(session, int(link_id))
     else:
-        web_document = StalkerWebDocumentDB(url=url)
+        doc = WebDocument.get_by_url(session, url)
 
-    web_document.set_document_state(request.form.get('document_state'))
+    if doc is None:
+        doc = WebDocument(url=url)
+        session.add(doc)
 
-    web_document.text = request.form.get('text')
-    web_document.title = request.form.get('title')
-    web_document.language = request.form.get('language')
-    web_document.tags = request.form.get('tags')
-    web_document.summary = request.form.get('summary')
-    web_document.source = request.form.get('source')
-    web_document.author = request.form.get('author')
-    web_document.note = request.form.get('note')
-    web_document.analyze()
+    document_state = request.form.get('document_state')
+    if document_state is not None:
+        doc.set_document_state(document_state)
+
+    for attr in ('text', 'title', 'language', 'tags', 'summary', 'source', 'author', 'note'):
+        value = request.form.get(attr)
+        if value is not None:
+            setattr(doc, attr, value)
 
     try:
-        web_document.set_document_type(request.form.get('document_type'))
+        document_type = request.form.get('document_type')
+        if document_type is not None:
+            doc.set_document_type(document_type)
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logging.error(f"Wrong document type: {e}")
         return {"status": "error", "message": f"Wrong document type: {request.form.get('document_type')}."}, 500
 
+    doc.analyze()
+
     try:
-        web_document.save()
-        return {"status": "success", "message": f"Dane strony {web_document.id} zaktualizowane pomyślnie."}, 200
+        session.commit()
+        return {"status": "success", "message": f"Dane strony {doc.id} zaktualizowane pomyślnie."}, 200
     except Exception as e:
-        logging.error(e)
-        logging.debug(f"Error while saving new webpage: {e}")
-        return {"status": "error", "message": str(e)}, 500
+        session.rollback()
+        logging.error("Failed to save document: %s", e)
+        return {"status": "error", "message": "Failed to save document"}, 500
 
 
 @app.route('/ai_parse_intent', methods=['POST'])

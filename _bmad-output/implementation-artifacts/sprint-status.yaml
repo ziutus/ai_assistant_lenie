@@ -242,7 +242,7 @@ development_status:
   B-87-add-bsl-1-1-license: backlog  # Add Business Source License 1.1 (BUSL-1.1) to the repository. Allows personal/internal use, modification, and redistribution. Prohibits offering the software as a competing commercial hosted/managed service (anti-cloud-provider clause, similar to Elastic/HashiCorp model). After 4 years each version auto-converts to open-source (Change License: Apache 2.0 or MPL 2.0 — TBD). GitHub natively supports BUSL-1.1 in choosealicense.com and license detection. Steps: (1) choose Additional Use Grant wording and Change License, (2) create LICENSE file with BSL 1.1 text and project-specific parameters, (3) add license headers to source files, (4) update README with license section.
 
   # --- Code Quality ---
-  B-86-parameterize-sql-in-remaining-db-methods: backlog  # SQL injection: get_next_to_correct(), get_similar(), get_documents_by_url(), get_documents_md_needed() use f-string interpolation instead of %s parameterized queries. Same vulnerability pattern fixed in get_list() (Story 22.2). Found during code review.
+  B-86-parameterize-sql-in-remaining-db-methods: backlog  # SQL injection: get_similar(), get_documents_by_url(), get_documents_md_needed() use f-string interpolation instead of %s parameterized queries. get_next_to_correct() fixed in Story 27.2 code review. Same vulnerability pattern fixed in get_list() (Story 22.2). Found during code review.
   B-81-expand-code-duplication-control: backlog  # pylint duplicate-code added to Makefile (make duplicate-check). Next: jscpd for cross-language (Python+TS), expand scope, CI integration, fix known duplicates (connect_kwargs, serialization).
 
   # --- Phase 2.5: API Contract & Type Safety ---
@@ -338,15 +338,15 @@ development_status:
   epic-26-retrospective: optional
 
   # --- Epic 27: Document CRUD & API Serving ---
-  epic-27: backlog
-  27-1-document-persistence-crud-via-orm: backlog
-  27-2-repository-queries-list-count-state-lookups: backlog
-  27-3-flask-api-endpoints-crud-routes-via-repository: backlog
+  epic-27: in-progress
+  27-1-document-persistence-crud-via-orm: done
+  27-2-repository-queries-list-count-state-lookups: done
+  27-3-flask-api-endpoints-crud-routes-via-repository: done
   epic-27-retrospective: optional
 
   # --- Epic 28: Vector Embeddings & Similarity Search ---
-  epic-28: backlog
-  28-1-embedding-crud-documents-needing-embeddings: backlog
+  epic-28: in-progress
+  28-1-embedding-crud-documents-needing-embeddings: in-progress
   28-2-similarity-search-pgvector-python-api-endpoint: backlog
   epic-28-retrospective: optional
 

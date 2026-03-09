@@ -261,6 +261,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         else:
             raise NotImplementedError(f"embedding_add not yet implemented for document type: {self.document_type}")
 
+    # TODO(Epic-29): Migrate to ORM session — currently used by batch scripts
     def embedding_delete(self, model) -> None:
         cursor = self.db_conn.cursor()
         cursor.execute(
@@ -268,6 +269,7 @@ class StalkerWebDocumentDB(StalkerWebDocument):
         )
         self.db_conn.commit()
 
+    # TODO(Epic-29): Migrate to ORM session — currently used by batch scripts
     def embedding_add_simple(self, model, embedding, text) -> None:
         cursor = self.db_conn.cursor()
         cursor.execute(
