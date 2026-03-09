@@ -659,8 +659,8 @@ def website_delete():
         return response, 200
     except Exception as e:
         session.rollback()
-        logging.error(e)
-        return {"status": "error", "message": str(e)}, 500
+        logging.error("Failed to delete document: %s", e)
+        return {"status": "error", "message": "Failed to delete document"}, 500
 
 
 @app.route('/website_save', methods=['POST'])
@@ -710,9 +710,8 @@ def website_save():
         return {"status": "success", "message": f"Dane strony {doc.id} zaktualizowane pomyślnie."}, 200
     except Exception as e:
         session.rollback()
-        logging.error(e)
-        logging.debug(f"Error while saving new webpage: {e}")
-        return {"status": "error", "message": str(e)}, 500
+        logging.error("Failed to save document: %s", e)
+        return {"status": "error", "message": "Failed to save document"}, 500
 
 
 @app.route('/ai_parse_intent', methods=['POST'])
