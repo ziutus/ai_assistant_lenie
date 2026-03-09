@@ -273,7 +273,7 @@ class TestFlaskTeardown:
 
         import server  # noqa: F811
 
-        with patch("library.db.engine.get_scoped_session") as mock_get_scoped:
+        with patch("server.get_scoped_session") as mock_get_scoped:
             mock_session = MagicMock()
             mock_get_scoped.return_value = mock_session
 
