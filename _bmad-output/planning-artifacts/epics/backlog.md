@@ -1090,3 +1090,28 @@ Consumers (no API changes needed — wrappers preserve signatures):
 **Priority:** MEDIUM
 **Status:** backlog
 **Plan:** [`.claude/exports/plan-sqlalchemy-migration.md`](../../.claude/exports/plan-sqlalchemy-migration.md)
+
+### B-93: Synchronize Document States from Backend to Frontend
+
+As a **developer**,
+I want the list of document states in the frontend to be fetched from the backend API instead of hardcoded,
+so that adding a new state (like `TEMPORARY_ERROR`) doesn't require manual frontend updates and rebuilds.
+
+**Origin:** Frontend `list.tsx` had a hardcoded subset of 5 document states (out of 16). Adding `TEMPORARY_ERROR` required a manual edit. Same applies to `document_type` and `document_state_error` enums.
+
+**Current state:** `StalkerDocumentStatus` enum is defined in `backend/library/models/stalker_document_status.py` (16 values). Frontend `list.tsx` duplicates a subset as `<option>` elements.
+
+**Proposed solution:**
+
+1. Add `GET /document_states` endpoint in `server.py` returning `{"states": ["ERROR", "TEMPORARY_ERROR", ...], "types": ["webpage", "link", ...]}` from the Python enums
+2. Frontend fetches available states on mount and populates `<select>` dynamically
+3. Optionally cache in `localStorage` to avoid extra request on every page load
+
+**Acceptance Criteria:**
+- `GET /document_states` returns all values from `StalkerDocumentStatus` and `StalkerDocumentType`
+- Frontend `list.tsx` populates state and type dropdowns from API response
+- Adding a new enum value in backend automatically appears in frontend without code change
+- Existing filter behavior unchanged
+
+**Priority:** LOW
+**Status:** backlog

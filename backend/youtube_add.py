@@ -14,6 +14,7 @@ from library.config_loader import load_config
 
 cfg = load_config()  # noqa: F841 — side effect: populates os.environ for library modules
 
+from library.db.engine import get_session  # noqa: E402
 from library.youtube_processing import process_youtube_url  # noqa: E402
 
 
@@ -48,8 +49,10 @@ def main():
     t_start = time.time()
     logging.info("Script started")
 
+    session = get_session()
     try:
         web_document = process_youtube_url(
+            session=session,
             youtube_url=args.url,
             language=args.language,
             chapter_list=chapter_list,
@@ -61,6 +64,8 @@ def main():
     except Exception as e:
         logging.error(f"Error processing YouTube URL: {e}")
         sys.exit(1)
+    finally:
+        session.close()
 
     # Print summary
     print("\n--- Document Summary ---")

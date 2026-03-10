@@ -10,7 +10,7 @@ export function createApiClient(apiUrl: string, apiKey: string) {
 
 export async function validateApiKey(apiUrl: string, apiKey: string): Promise<void> {
   const client = createApiClient(apiUrl, apiKey);
-  // Use /infra/database/status — responds regardless of DB state,
-  // but still requires valid x-api-key (returns 403 on bad key).
-  await client.get('/infra/database/status');
+  // Validate API key using /website_list — works in both AWS and Docker/NAS environments.
+  // /infra/database/status only exists in AWS (API Gateway + Lambda).
+  await client.get('/website_list', { params: { type: 'link', limit: 1 } });
 }

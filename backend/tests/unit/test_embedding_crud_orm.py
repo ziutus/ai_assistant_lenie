@@ -1,6 +1,6 @@
 """Unit tests for embedding CRUD operations via ORM (Story 28.1)."""
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -192,19 +192,10 @@ class TestDualModeConstructor:
         repo = WebsitesDBPostgreSQL(session=mock_session)
         assert repo.session is mock_session
 
-    @patch.dict("os.environ", {
-        "POSTGRESQL_HOST": "localhost",
-        "POSTGRESQL_DATABASE": "test",
-        "POSTGRESQL_USER": "user",
-        "POSTGRESQL_PASSWORD": "pass",
-        "POSTGRESQL_PORT": "5432",
-    })
-    @patch("library.stalker_web_documents_db_postgresql.psycopg2.connect")
-    def test_legacy_mode_without_session(self, mock_connect):
-        """When no session is provided, legacy psycopg2 connection is used."""
-        repo = WebsitesDBPostgreSQL(session=None)
-        assert repo.session is None
-        mock_connect.assert_called_once()
+    def test_session_is_required(self):
+        """Session parameter is required — no legacy psycopg2 fallback."""
+        with pytest.raises(TypeError):
+            WebsitesDBPostgreSQL()
 
 
 # ---------------------------------------------------------------------------

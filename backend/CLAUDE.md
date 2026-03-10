@@ -106,7 +106,7 @@ Standalone scripts for bulk document operations. Run manually, not part of the F
 
 ### Database connectivity requirement
 
-Scripts marked **Yes** use `WebsitesDBPostgreSQL` (direct `psycopg2` connection). The same applies to `imports/unknown_news_import.py`.
+Scripts marked **Yes** use `WebsitesDBPostgreSQL` with SQLAlchemy ORM session (`get_session()` from `library.db.engine`). The same applies to `imports/unknown_news_import.py`.
 
 - **Local/Docker**: Connect to local PostgreSQL (`lenie-ai-db` on port 5433) — works out of the box.
 - **AWS RDS**: The database runs inside a private VPC and is not publicly accessible. To connect from a local machine, start the OpenVPN EC2 instance first:
