@@ -1091,6 +1091,110 @@ Consumers (no API changes needed — wrappers preserve signatures):
 **Status:** backlog
 **Plan:** [`.claude/exports/plan-sqlalchemy-migration.md`](../../.claude/exports/plan-sqlalchemy-migration.md)
 
+---
+
+## Epic 30: Database Lookup Tables & Search Extensions
+
+Introduce database-level enum enforcement via lookup tables with FK constraints (matching AWS production schema), and add PostgreSQL search extensions (`unaccent`, `pg_trgm`) for Polish name/city search. Prepares the database for personal CRM capabilities.
+
+**Related ADRs:** [ADR-009](../../docs/architecture-decisions.md#adr-009-postgresql-search-strategy--unaccent--pg_trgm-for-structured-fields-embeddings-for-content), [ADR-010](../../docs/architecture-decisions.md#adr-010-database-lookup-tables-with-foreign-keys-for-enum-like-fields)
+
+### B-94: Create Lookup Tables and Seed Data
+
+As a **developer**,
+I want lookup tables (`document_status_types`, `document_status_error_types`, `document_types`, `embedding_models`) created in the database with seed data from Python enums,
+so that valid values are defined at the database level, not just in application code.
+
+**Origin:** AWS production database already has these tables (visible in dump from 2026-01-23). Docker init scripts do not create them, causing schema divergence. See [ADR-010](../../docs/architecture-decisions.md#adr-010-database-lookup-tables-with-foreign-keys-for-enum-like-fields).
+
+**Scope:**
+- Add new init script (e.g., `backend/database/init/09-create-lookup-tables.sql`) creating 4 lookup tables
+- Seed with values from `StalkerDocumentStatus` (16), `StalkerDocumentStatusError` (17), `StalkerDocumentType` (6)
+- Seed `embedding_models` with currently used models (ada-002, titan-v1, titan-v2, stella, bge-m3, bge-gemma2, e5-mistral)
+- Create Alembic migration for existing databases
+
+**Acceptance Criteria:**
+- All 4 lookup tables exist after `docker compose up` (fresh volume)
+- `SELECT count(*) FROM document_status_types` returns 16
+- `SELECT count(*) FROM document_types` returns 6
+- Alembic migration applies cleanly to existing Docker database
+- Alembic migration applies cleanly to AWS RDS (via VPN)
+
+**Priority:** MEDIUM
+**Status:** backlog
+
+### B-95: Add Foreign Key Constraints to web_documents and websites_embeddings
+
+As a **developer**,
+I want FK constraints on `document_state`, `document_state_error`, `document_type`, and `embedding model` columns,
+so that the database rejects invalid values and matches the AWS production schema.
+
+**Origin:** [ADR-010](../../docs/architecture-decisions.md#adr-010-database-lookup-tables-with-foreign-keys-for-enum-like-fields). Depends on [B-94](#b-94-create-lookup-tables-and-seed-data).
+
+**Scope:**
+- Add FK constraints in init script (e.g., `backend/database/init/10-add-foreign-keys.sql`)
+- Create Alembic migration for existing databases
+- Verify no orphaned values exist before adding constraints (clean up if needed)
+
+**Acceptance Criteria:**
+- `INSERT INTO web_documents (..., document_state, ...) VALUES (..., 'INVALID_STATE', ...)` fails with FK violation
+- `INSERT INTO web_documents (..., document_type, ...) VALUES (..., 'podcast', ...)` fails with FK violation
+- All existing data passes FK validation (no orphaned values)
+- All unit and integration tests pass
+
+**Depends on:** [B-94](#b-94-create-lookup-tables-and-seed-data)
+**Priority:** MEDIUM
+**Status:** backlog
+
+### B-96: Update SQLAlchemy ORM Models for Lookup Table Relationships
+
+As a **developer**,
+I want the SQLAlchemy ORM models to use `ForeignKey` + `relationship()` for enum-like fields instead of `SAEnum(..., native_enum=False)`,
+so that the ORM reflects the actual database schema and enables JOIN queries on lookup tables.
+
+**Origin:** [ADR-010](../../docs/architecture-decisions.md#adr-010-database-lookup-tables-with-foreign-keys-for-enum-like-fields). Depends on [B-95](#b-95-add-foreign-key-constraints-to-web_documents-and-websites_embeddings).
+
+**Scope:**
+- Create SQLAlchemy ORM models for 4 lookup tables (`DocumentStatusType`, `DocumentStatusErrorType`, `DocumentType`, `EmbeddingModel`)
+- Update `WebDocument` model: replace `SAEnum` columns with `String` + `ForeignKey('document_types.name')`
+- Update `WebsiteEmbedding` model: add `ForeignKey('embedding_models.name')` to `model` column
+- Add startup sync: on app start, verify Python enum values match lookup table rows (log warnings for mismatches)
+
+**Acceptance Criteria:**
+- `WebDocument.document_type` has FK relationship to `DocumentType` model
+- `session.query(DocumentStatusType).all()` returns all 16 states
+- All existing unit and integration tests pass
+- Adding a new enum value + Alembic migration seeds it into lookup table
+
+**Depends on:** [B-95](#b-95-add-foreign-key-constraints-to-web_documents-and-websites_embeddings)
+**Priority:** MEDIUM
+**Status:** backlog
+
+### B-97: Install unaccent and pg_trgm Extensions on Existing Databases
+
+As a **developer**,
+I want `unaccent` and `pg_trgm` PostgreSQL extensions installed on all database environments (Docker, NAS, AWS RDS),
+so that diacritic-insensitive and fuzzy search is available for future CRM features.
+
+**Origin:** [ADR-009](../../docs/architecture-decisions.md#adr-009-postgresql-search-strategy--unaccent--pg_trgm-for-structured-fields-embeddings-for-content). Init scripts already updated (`02-create-extension.sql`), but existing databases need manual migration.
+
+**Scope:**
+- Run `CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pg_trgm;` on:
+  - ~~Docker local database (port 5433)~~ — not actively used
+  - NAS Docker database — **DONE** (2026-03-10)
+  - AWS RDS (via VPN) — deferred, AWS not a priority until NAS MVP is complete
+- Verify extensions are installed: `SELECT extname FROM pg_extension;`
+
+**Acceptance Criteria:**
+- `SELECT unaccent('Łódź')` returns `Lodz` — **verified on NAS** (`unaccent('Łódź')` → `Lodz`)
+- `SELECT similarity('Warszawa', 'Warszawie')` returns a value > 0.3 — **verified on NAS** (→ `0.58`)
+- No errors in application logs after extension installation
+
+**Priority:** MEDIUM
+**Status:** done (NAS), deferred (AWS RDS)
+
+---
+
 ### B-93: Synchronize Document States from Backend to Frontend
 
 As a **developer**,

@@ -362,3 +362,216 @@ Use **`ruamel.yaml>=0.18`** instead of `pyyaml` for all YAML operations in `env_
 - `scripts/env_to_vault.py` — consumer (YAML loader infrastructure, Task 3)
 - `scripts/vars-classification.yaml` — the SSOT file that benefits from round-trip preservation
 - `backend/pyproject.toml` — dependency declaration (Task 1)
+
+---
+
+## ADR-009: PostgreSQL Search Strategy — `unaccent` + `pg_trgm` for Structured Fields, Embeddings for Content
+
+**Date:** 2026-03-10
+**Status:** Accepted
+**Decision Makers:** Ziutus
+
+### Context
+
+Project Lenie is evolving toward a personal CRM capability — linking contacts from Google Contacts with notes and documents in the database and Obsidian. The key use case: *"I met person X, we talked about Y — I want to find this quickly before the next meeting."*
+
+This requires effective search across two dimensions:
+
+1. **Structured fields** — names (`Michał Śliwiński` vs `Michal Sliwinski`), cities (`Łódź` vs `Lodz`, `w Warszawie` vs `Warszawa`), and other metadata with Polish diacritics and variant spellings.
+2. **Content/notes** — free-text notes and document content where semantic understanding matters (e.g., finding notes about "Warsaw" when the text says "warszawski meetup").
+
+Four PostgreSQL search mechanisms were evaluated:
+
+| Mechanism | Strengths | Weaknesses for this use case |
+|-----------|-----------|------------------------------|
+| `simple` dictionary | Trivial setup, lowercase normalization | No diacritic handling, no fuzzy matching |
+| `unaccent` extension | Normalizes diacritics (`ł→l`, `ą→a`, `ź→z`) | Exact match only, no fuzzy/typo tolerance |
+| `pg_trgm` extension | Fuzzy matching via trigram similarity, handles typos and partial matches | Doesn't understand semantics |
+| Hunspell `pl_PL` | Polish stemming for common words | Poor with proper nouns (names, small towns not in dictionary), complex setup, high maintenance |
+| pgvector embeddings | Semantic understanding, handles inflection naturally | Already implemented; overkill for exact name lookups |
+
+### Decision
+
+Adopt a **three-layer search strategy**:
+
+1. **`unaccent` extension** — for diacritic-insensitive matching on structured fields (names, cities, authors). Solves the primary problem of `Michał` vs `Michal`, `Łódź` vs `Lodz`.
+
+2. **`pg_trgm` extension** — for fuzzy/approximate matching on structured fields. Handles typos (`karboviak` → `Karbowiak`), partial matches, and Polish case inflection at the trigram level (`Warszawa` ↔ `Warszawie` share 5/7 trigrams, similarity ~0.6).
+
+3. **pgvector embeddings** (existing) — for semantic content search in notes and documents. Already handles Polish inflection, synonyms, and meaning-based retrieval naturally.
+
+**Rejected alternative:** Hunspell/Ispell Polish stemmer. While it handles inflection for common Polish words well, it fails for proper nouns — names like `Karbowiaka` (genitive) and small towns like `Pcim Dolny` or `Huta Dłutowska` are not in the dictionary. The setup and maintenance cost (dictionary files, custom text search configuration) is not justified given that embeddings already solve the content search problem and `pg_trgm` provides sufficient fuzzy matching for names.
+
+### Implementation
+
+Add to database init scripts:
+
+```sql
+CREATE EXTENSION IF NOT EXISTS unaccent;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+```
+
+Example usage patterns:
+
+```sql
+-- Diacritic-insensitive name search
+SELECT * FROM contacts
+WHERE unaccent(lower(name)) LIKE '%' || unaccent(lower('Michal')) || '%';
+
+-- Fuzzy city matching (handles typos and partial inflection)
+SELECT * FROM contacts
+WHERE similarity(unaccent(lower(address_1_city)), unaccent(lower('Łódź'))) > 0.3;
+
+-- Semantic content search (existing pgvector mechanism)
+SELECT * FROM websites_embeddings
+WHERE embedding <=> query_embedding < 0.3;
+```
+
+### Consequences
+
+- **Positive:** Covers all search scenarios — exact names, fuzzy names, diacritics, semantic content — with minimal new infrastructure.
+- **Positive:** `unaccent` and `pg_trgm` are built-in PostgreSQL extensions — no external dependencies or dictionary files to manage.
+- **Positive:** Both extensions are lightweight and have negligible impact on database performance.
+- **Positive:** Works with existing PostgreSQL 16/18 deployments (both Docker and AWS RDS support these extensions).
+- **Negative:** `pg_trgm` similarity threshold (0.3) may need tuning per use case — too low gives false positives, too high misses valid matches.
+- **Negative:** Neither `unaccent` nor `pg_trgm` solves full Polish inflection (e.g., `Pcim Dolny` → `w Pcimiu Dolnym`) — but embeddings handle this for content search.
+
+### Related Artifacts
+
+- `backend/database/init/02-create-extension.sql` — extension installation (to be updated)
+- `backend/database/init/03-create-table.sql` — `web_documents` table
+- `backend/database/init/04-create-table.sql` — `websites_embeddings` table (pgvector)
+- `backend/tmp/sql_data/lenie_aws-2026_01_23_05_00_40-dump.sql` — AWS dump showing `unaccent` and `polish` text search config already present
+- `docs/architecture-decisions.md` — ADR-001 (native-language embeddings decision)
+
+---
+
+## ADR-010: Database Lookup Tables with Foreign Keys for Enum-Like Fields
+
+**Date:** 2026-03-10
+**Status:** Accepted
+**Decision Makers:** Ziutus
+
+### Context
+
+The project uses three Python enums to define constrained value sets for `web_documents` columns:
+
+| Python Enum | Column | Values |
+|-------------|--------|--------|
+| `StalkerDocumentStatus` | `document_state` | 16 states (ERROR → TEMPORARY_ERROR) |
+| `StalkerDocumentStatusError` | `document_state_error` | 17 error types |
+| `StalkerDocumentType` | `document_type` | 6 types (movie, youtube, link, webpage, text_message, text) |
+
+Additionally, `websites_embeddings.model` stores embedding model names as free-text `varchar`.
+
+The AWS production database (dump from 2026-01-23) already has four lookup tables with FK constraints enforcing these values at the database level:
+
+- `document_status_types` (FK on `web_documents.document_state`)
+- `document_status_error_types` (FK on `web_documents.document_state_error`)
+- `document_types` (FK on `web_documents.document_type`)
+- `embedding_models` (FK on `websites_embeddings.model` and `embeddings_cache.model`)
+
+The Docker init scripts (`03-create-table.sql`, `04-create-table.sql`) do **not** create these lookup tables — they store enum values as plain `varchar` strings with no FK constraints. The Python code comments confirm this gap: `# Those errors status are also defined in Postgresql table: document_status_types`.
+
+The current SQLAlchemy ORM models (`db/models.py`) use `SAEnum(..., native_enum=False)` which stores values as VARCHAR with application-level validation only — the database does not enforce valid values.
+
+### Decision
+
+Create database lookup tables with FK constraints to enforce data integrity at the database level, matching the existing AWS production schema:
+
+1. **`document_status_types`** — lookup for `web_documents.document_state`
+2. **`document_status_error_types`** — lookup for `web_documents.document_state_error`
+3. **`document_types`** — lookup for `web_documents.document_type`
+4. **`embedding_models`** — lookup for `websites_embeddings.model` (and future `embeddings_cache.model`)
+
+Each lookup table has `id SERIAL PRIMARY KEY` and `name VARCHAR UNIQUE NOT NULL`. FK constraints reference the `name` column (not `id`) for readability of raw queries and data exports.
+
+Python enums (`StalkerDocumentStatus`, `StalkerDocumentStatusError`, `StalkerDocumentType`) remain the **source of truth** for values — an Alembic migration or init script seeds the lookup tables from the enum definitions.
+
+### Rationale
+
+1. **Data integrity.** Without FK constraints, a bug or manual SQL could insert `document_state = 'EMBEDING_EXIST'` (typo) and the database would accept it silently. FK constraints catch this immediately.
+
+2. **Consistency with production.** The AWS database already has these tables and constraints. The Docker development environment should match production schema to avoid "works locally, breaks in prod" issues.
+
+3. **ORM alignment.** SQLAlchemy supports FK-backed enums naturally. The ORM can be updated to define proper `relationship()` mappings to lookup tables, enabling JOIN queries (e.g., statistics per document type).
+
+4. **Extensibility.** Adding a new document type or status becomes: (a) add to Python enum, (b) INSERT into lookup table (via Alembic migration). The FK constraint ensures both stay in sync.
+
+5. **Query clarity.** `SELECT DISTINCT document_state FROM web_documents` is fragile (shows only used values). `SELECT name FROM document_status_types` shows all valid values regardless of usage.
+
+### Implementation
+
+**Phase 1 — Lookup tables & seed data (init scripts + Alembic migration):**
+
+```sql
+CREATE TABLE IF NOT EXISTS document_status_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR UNIQUE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS document_status_error_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR UNIQUE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS document_types (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR UNIQUE NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS embedding_models (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL
+);
+```
+
+Seed with values from Python enums. Add FK constraints:
+
+```sql
+ALTER TABLE web_documents
+    ADD CONSTRAINT fk_document_type
+    FOREIGN KEY (document_type) REFERENCES document_types(name);
+
+ALTER TABLE web_documents
+    ADD CONSTRAINT fk_document_state
+    FOREIGN KEY (document_state) REFERENCES document_status_types(name);
+
+ALTER TABLE web_documents
+    ADD CONSTRAINT fk_document_state_error
+    FOREIGN KEY (document_state_error) REFERENCES document_status_error_types(name);
+
+ALTER TABLE websites_embeddings
+    ADD CONSTRAINT model_fk
+    FOREIGN KEY (model) REFERENCES embedding_models(name) ON UPDATE CASCADE ON DELETE CASCADE;
+```
+
+**Phase 2 — ORM model updates:**
+
+Update SQLAlchemy models to reflect FK relationships. Replace `SAEnum(..., native_enum=False)` with `String` + `ForeignKey` + `relationship()`.
+
+**Phase 3 — Sync mechanism:**
+
+Add a startup check or Alembic migration that inserts missing enum values into lookup tables, ensuring Python enums and database stay in sync.
+
+### Consequences
+
+- **Positive:** Database enforces valid values — impossible to insert invalid states, types, or models.
+- **Positive:** Docker and AWS schemas converge — reduces environment-specific bugs.
+- **Positive:** Lookup tables serve as queryable documentation of valid values.
+- **Positive:** Enables future features like status/type metadata (descriptions, display order, active/deprecated flags).
+- **Negative:** Adding a new enum value now requires both a code change and a database migration (INSERT into lookup table).
+- **Negative:** FK constraints may complicate bulk data imports if values are inserted before lookup tables are populated.
+- **Trade-off:** FK references `name` (not `id`) — more readable in raw SQL but slightly less efficient for joins. Acceptable for the table sizes involved (< 20 rows each).
+
+### Related Artifacts
+
+- `backend/library/models/stalker_document_status.py` — 16 document states
+- `backend/library/models/stalker_document_status_error.py` — 17 error types
+- `backend/library/models/stalker_document_type.py` — 6 document types
+- `backend/library/db/models.py` — SQLAlchemy ORM models (lines 59-92, `SAEnum` definitions)
+- `backend/database/init/03-create-table.sql` — `web_documents` table (no FK constraints)
+- `backend/database/init/04-create-table.sql` — `websites_embeddings` table (no FK constraints)
+- `backend/tmp/sql_data/lenie_aws-2026_01_23_05_00_40-dump.sql` — AWS dump with lookup tables and FK constraints
+- [ADR-004a](../../docs/architecture-decisions.md#adr-004a-migrate-to-sqlalchemy-orm--pydantic-schemas) — SQLAlchemy ORM migration
+- [B-92](#b-92-migrate-database-layer-to-sqlalchemy-orm--pydantic-schemas) — ORM migration backlog item
