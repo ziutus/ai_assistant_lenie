@@ -17,6 +17,7 @@ from src import __version__
 from src.api_client import ApiConnectionError, ApiError, LenieApiClient, create_client
 from src.commands import register_commands
 from src.dm_handler import register_dm_handler
+from src.health_monitor import HealthMonitor
 from src.mention_handler import register_mention_handler
 from src.config import Config, load_config
 
@@ -113,11 +114,35 @@ def main() -> None:
     check_backend_connectivity(api_client)
     post_startup_message(app, cfg)
 
+    # Start health monitor if enabled
+    health_monitor = None
+    health_enabled = cfg.get("HEALTH_CHECK_ENABLED", "false").lower() == "true"
+    if health_enabled:
+        health_user_id = cfg.get("HEALTH_CHECK_USER_ID", "")
+        if not health_user_id:
+            logger.warning("HEALTH_CHECK_ENABLED=true but HEALTH_CHECK_USER_ID not set — health monitor disabled")
+        else:
+            try:
+                health_interval = int(cfg.get("HEALTH_CHECK_INTERVAL", "300"))
+            except ValueError:
+                logger.warning("HEALTH_CHECK_INTERVAL is not a valid integer, using default 300s")
+                health_interval = 300
+            health_monitor = HealthMonitor(
+                api_client=api_client,
+                slack_client=app.client,
+                alert_user_id=health_user_id,
+                interval=health_interval,
+            )
+            health_monitor.start()
+            logger.info("Health monitor started (interval: %ds, user: %s)", health_interval, health_user_id)
+
     logger.info("Bot is running. Press Ctrl+C to stop.")
     try:
         Event().wait()
     except KeyboardInterrupt:
         logger.info("Shutting down...")
+        if health_monitor is not None:
+            health_monitor.stop()
         handler.close()
 
 
