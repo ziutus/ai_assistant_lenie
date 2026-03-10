@@ -21,13 +21,20 @@ logging.basicConfig(level=logging.INFO)
 
 cfg = load_config()
 
-env_data = cfg.require("ENV_DATA")
+secrets_backend = cfg.require("SECRETS_BACKEND", "env")
 
 APP_VERSION = "0.3.13.0"
 BUILD_TIME = "2026.01.23 04:04"
 
 logging.info(f"APP VERSION={APP_VERSION} (build time:{BUILD_TIME})")
-logging.info("ENV_DATA: %s", env_data)
+
+if secrets_backend == "env":
+    env_data = cfg.require("ENV_DATA")
+    logging.info("ENV_DATA: %s", env_data)
+elif secrets_backend == "vault":
+    logging.info("Secrets loaded from Vault (ENV_DATA not required)")
+elif secrets_backend == "aws":
+    logging.info("Secrets loaded from AWS SSM (ENV_DATA not required)")
 
 llm_provider = cfg.require("LLM_PROVIDER")
 
@@ -480,10 +487,11 @@ def search_similar():
         return {"status": embedds.status, "message": "Error during getting embedding for text", "encoding": "utf8", "text": text,
                 "websites": []}, 500
 
-    # Legacy instance — get_similar() not yet migrated to ORM (Epic 28)
-    legacy_repo = WebsitesDBPostgreSQL()  # No session → psycopg2 mode
-    websites_list = legacy_repo.get_similar(embedds.embedding, cfg.require("EMBEDDING_MODEL"), limit=limit)
-    legacy_repo.close()
+    if not limit:
+        limit = 3
+
+    repo = WebsitesDBPostgreSQL(session=get_scoped_session())
+    websites_list = repo.get_similar(embedds.embedding, cfg.require("EMBEDDING_MODEL"), limit=int(limit))
 
     return {"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
             "websites": websites_list}, 200

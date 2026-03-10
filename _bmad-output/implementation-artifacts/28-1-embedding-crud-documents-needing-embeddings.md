@@ -1,6 +1,6 @@
 # Story 28.1: Embedding CRUD & Documents Needing Embeddings
 
-Status: in-progress
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 

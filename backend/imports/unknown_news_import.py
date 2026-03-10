@@ -20,13 +20,15 @@ import re
 import sys
 from datetime import datetime
 
-import psycopg2
 import requests
+from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from library.config_loader import load_config
-from library.stalker_web_document_db import StalkerWebDocumentDB
+from library.db.models import WebDocument
+from library.db.engine import get_session
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType
+from library.models.stalker_document_status import StalkerDocumentStatus
+from library.models.stalker_document_type import StalkerDocumentType
 
 FEED_URL = "https://unknow.news/archiwum.json"
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -34,10 +36,16 @@ FEED_CACHE = os.path.join(_BACKEND_DIR, "tmp", "archiwum.json")
 SOURCE = "https://unknow.news/"
 
 
-def date1_younger(date1: str, date2: str) -> bool:
-    date1_datetime = datetime.strptime(date1, '%Y-%m-%d')
-    date2_datetime = datetime.strptime(date2, '%Y-%m-%d')
-    return date1_datetime > date2_datetime
+def date1_younger(date1, date2) -> bool:
+    if isinstance(date1, str):
+        date1 = datetime.strptime(date1, '%Y-%m-%d').date()
+    elif isinstance(date1, datetime):
+        date1 = date1.date()
+    if isinstance(date2, str):
+        date2 = datetime.strptime(date2, '%Y-%m-%d').date()
+    elif isinstance(date2, datetime):
+        date2 = date2.date()
+    return date1 > date2
 
 
 def download_feed(cache_path: str) -> list[dict]:
@@ -53,6 +61,59 @@ def download_feed(cache_path: str) -> list[dict]:
         json_data = json.load(file)
     print(f"Loaded {len(json_data)} entries")
     return json_data
+
+
+def process_entry(entry: dict, session) -> str:
+    """Process a single feed entry via ORM. Returns 'added', 'exists', or 'error'."""
+    url = entry['url']
+
+    try:
+        existing = WebDocument.get_by_url(session, url)
+    except SAOperationalError as e:
+        print(f"ERROR: lost database connection: {e}")
+        return "error"
+
+    if existing:
+        print(f"Already exists link (id {existing.id}): {url}")
+
+        if not existing.date_from:
+            existing.date_from = entry['date']
+            print("Correcting date from in DB...", end=' ')
+            try:
+                session.commit()
+            except SAOperationalError as e:
+                session.rollback()
+                print(f"[FAILED] {e}")
+                return "error"
+            print("[DONE]")
+
+        return "exists"
+
+    print(f"Will add link {url}, {entry['title']}")
+    doc = WebDocument(url=url)
+    doc.title = entry['title']
+    doc.summary = entry['info']
+    doc.language = "pl"
+
+    hostname = urlparse(url).hostname or ""
+    if hostname in ("youtube.com", "www.youtube.com", "m.youtube.com") or hostname == "youtu.be":
+        doc.document_type = StalkerDocumentType.youtube
+        doc.document_state = StalkerDocumentStatus.URL_ADDED
+    else:
+        doc.document_type = StalkerDocumentType.link
+        doc.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
+
+    doc.source = SOURCE
+    doc.date_from = entry['date']
+
+    session.add(doc)
+    try:
+        session.commit()
+    except SAOperationalError as e:
+        session.rollback()
+        print(f"  ERROR committing {url}: {e}")
+        return "error"
+    return "added"
 
 
 def main():
@@ -108,6 +169,9 @@ def main():
     # Download feed
     json_data = download_feed(FEED_CACHE)
 
+    # Single session for the entire script — used for both date lookup and processing
+    session = get_session()
+
     # Determine last_date cutoff
     if args.since:
         last_date = args.since
@@ -115,8 +179,9 @@ def main():
     else:
         print("Connecting to database", end=" ")
         try:
-            websites = WebsitesDBPostgreSQL()
-        except psycopg2.OperationalError as e:
+            websites = WebsitesDBPostgreSQL(session=session)
+        except SAOperationalError as e:
+            session.close()
             print("[FAILED]")
             print(f"ERROR: cannot connect to PostgreSQL: {e}")
             print("Check POSTGRESQL_HOST/DATABASE/USER/PASSWORD/PORT in your .env file.")
@@ -134,69 +199,43 @@ def main():
     add = 0
     exist = 0
     ignored = 0
+    try:
+        for entry in json_data:
+            if last_date is not None and date1_younger(last_date, entry["date"]):
+                ignored += 1
+                continue
 
-    for entry in json_data:
-        if last_date is not None and date1_younger(last_date, entry["date"]):
-            ignored += 1
-            continue
+            #  noinspection HttpUrlsUsage
+            unsecure_address = "http://uw7.org/un"
+            if entry['url'].startswith("https://uw7.org/un") or entry['url'].startswith(unsecure_address):
+                print("Will ignore as paid link: " + entry['url'])
+                continue
 
-        #  noinspection HttpUrlsUsage
-        unsecure_address = "http://uw7.org/un"
-        if entry['url'].startswith("https://uw7.org/un") or entry['url'].startswith(unsecure_address):
-            print("Will ignore as paid link: " + entry['url'])
-            continue
+            if re.match("sponsorowane", entry['title']):
+                print("Will ignore as 'reklama': " + entry['url'])
+                continue
 
-        if re.match("sponsorowane", entry['title']):
-            print("Will ignore as 'reklama': " + entry['url'])
-            continue
+            if args.dry_run:
+                print(f"  DRY-RUN: would add [{entry['date']}] {entry['title'][:80]} — {entry['url']}")
+                add += 1
+                if args.limit and add >= args.limit:
+                    print(f"Limit reached ({args.limit})")
+                    break
+                continue
 
-        if args.dry_run:
-            print(f"  DRY-RUN: would add [{entry['date']}] {entry['title'][:80]} — {entry['url']}")
-            add += 1
-            if args.limit and add >= args.limit:
-                print(f"Limit reached ({args.limit})")
+            result = process_entry(entry, session)
+            if result == "added":
+                add += 1
+                if args.limit and add >= args.limit:
+                    print(f"Limit reached ({args.limit})")
+                    break
+            elif result == "exists":
+                exist += 1
+            elif result == "error":
+                print("Aborting import.")
                 break
-            continue
-
-        try:
-            web_document = StalkerWebDocumentDB(url=entry['url'])
-        except psycopg2.OperationalError as e:
-            print(f"ERROR: lost database connection: {e}")
-            print("Aborting import.")
-            break
-
-        if web_document.id:
-            print(f"Already exists link (id {web_document.id}): {entry['url']}")
-            exist += 1
-
-            if not web_document.date_from:
-                web_document.date_from = entry['date']
-                print("Correcting date from in DB...", end=' ')
-                web_document.save()
-                print("[DONE]")
-
-            continue
-        else:
-            print(f"Will add link {entry['url']}, {entry['title']}")
-            add += 1
-            web_document.url = entry['url']
-            web_document.title = entry['title']
-            web_document.summary = entry['info']
-            web_document.language = "pl"
-            hostname = urlparse(entry['url']).hostname or ""
-            if hostname in ("youtube.com", "www.youtube.com", "m.youtube.com") or hostname == "youtu.be":
-                web_document.document_type = StalkerDocumentType.youtube
-                web_document.document_state = StalkerDocumentStatus.URL_ADDED
-            else:
-                web_document.document_type = StalkerDocumentType.link
-                web_document.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
-            web_document.source = SOURCE
-            web_document.date_from = entry['date']
-            web_document.save()
-
-            if args.limit and add >= args.limit:
-                print(f"Limit reached ({args.limit})")
-                break
+    finally:
+        session.close()
 
     # Summary
     print("\n=== Summary ===")

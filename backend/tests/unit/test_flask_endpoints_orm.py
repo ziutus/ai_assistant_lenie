@@ -249,13 +249,14 @@ class TestWebsiteDelete:
 
 
 class TestWebsiteSimilar:
-    def test_legacy_instance_used(self, client):
-        """Verify /website_similar creates legacy WebsitesDBPostgreSQL (no session)."""
+    def test_orm_session_used(self, client):
+        """Verify /website_similar creates WebsitesDBPostgreSQL with ORM session."""
         mock_embedding_result = MagicMock()
         mock_embedding_result.status = "success"
         mock_embedding_result.embedding = [0.1, 0.2, 0.3]
 
-        with patch("server.get_scoped_session"):
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
             with patch("server.WebsitesDBPostgreSQL") as MockRepo:
                 repo_instance = MagicMock()
                 repo_instance.get_similar.return_value = [{"website_id": 1, "similarity": 0.9}]
@@ -270,9 +271,68 @@ class TestWebsiteSimilar:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "success"
-        # Legacy instance created without session argument
-        MockRepo.assert_called_once_with()
-        repo_instance.close.assert_called_once()
+        # ORM instance created with session argument
+        MockRepo.assert_called_once_with(session=mock_session)
+
+    def test_returns_correct_json_structure(self, client):
+        """Verify endpoint returns status, message, websites keys."""
+        mock_embedding_result = MagicMock()
+        mock_embedding_result.status = "success"
+        mock_embedding_result.embedding = [0.1, 0.2, 0.3]
+
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.WebsitesDBPostgreSQL") as MockRepo:
+                repo_instance = MagicMock()
+                repo_instance.get_similar.return_value = [
+                    {"website_id": 1, "text": "t", "similarity": 0.9, "id": 10,
+                     "url": "https://example.com", "language": "en", "text_original": "t",
+                     "websites_text_length": 100, "embeddings_text_length": 50,
+                     "title": "Test", "document_type": "webpage", "project": None}
+                ]
+                MockRepo.return_value = repo_instance
+
+                with patch("library.embedding.get_embedding", return_value=mock_embedding_result):
+                    resp = client.post("/website_similar", json={
+                        "search": "test query",
+                        "limit": 3,
+                    }, headers=API_HEADERS, content_type="application/json")
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "success"
+        assert "message" in data
+        assert "websites" in data
+        assert len(data["websites"]) == 1
+
+    def test_limit_cast_to_int(self, client):
+        """Verify limit parameter from form/args (string) is cast to int."""
+        mock_embedding_result = MagicMock()
+        mock_embedding_result.status = "success"
+        mock_embedding_result.embedding = [0.1, 0.2, 0.3]
+
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.WebsitesDBPostgreSQL") as MockRepo:
+                repo_instance = MagicMock()
+                repo_instance.get_similar.return_value = []
+                MockRepo.return_value = repo_instance
+
+                with patch("library.embedding.get_embedding", return_value=mock_embedding_result):
+                    resp = client.post("/website_similar", data={
+                        "search": "test query",
+                        "limit": "7",
+                    }, headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        # Verify limit was passed as int, not string
+        call_kwargs = repo_instance.get_similar.call_args
+        limit_arg = call_kwargs.kwargs.get("limit") or call_kwargs[1].get("limit")
+        if limit_arg is None:
+            # positional arg: get_similar(embedding, model, limit=...)
+            limit_arg = call_kwargs[0][2] if len(call_kwargs[0]) > 2 else None
+        assert isinstance(limit_arg, int)
+        assert limit_arg == 7
 
 
 # ---------------------------------------------------------------------------

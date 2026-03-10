@@ -338,23 +338,23 @@ development_status:
   epic-26-retrospective: optional
 
   # --- Epic 27: Document CRUD & API Serving ---
-  epic-27: in-progress
+  epic-27: done
   27-1-document-persistence-crud-via-orm: done
   27-2-repository-queries-list-count-state-lookups: done
   27-3-flask-api-endpoints-crud-routes-via-repository: done
   epic-27-retrospective: optional
 
   # --- Epic 28: Vector Embeddings & Similarity Search ---
-  epic-28: in-progress
-  28-1-embedding-crud-documents-needing-embeddings: in-progress
-  28-2-similarity-search-pgvector-python-api-endpoint: backlog
-  epic-28-retrospective: optional
+  epic-28: done
+  28-1-embedding-crud-documents-needing-embeddings: done
+  28-2-similarity-search-pgvector-python-api-endpoint: done
+  epic-28-retrospective: done
 
   # --- Epic 29: Data Pipeline Migration & Cleanup ---
-  epic-29: backlog
-  29-1-import-scripts-migration: backlog
-  29-2-batch-pipeline-youtube-processing-migration: backlog
-  29-3-old-code-removal-final-verification: backlog
+  epic-29: in-progress
+  29-1-import-scripts-migration: done
+  29-2-batch-pipeline-youtube-processing-migration: done
+  29-3-old-code-removal-final-verification: review
   epic-29-retrospective: optional
 
   # ============================================================
