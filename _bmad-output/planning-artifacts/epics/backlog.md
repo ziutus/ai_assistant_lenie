@@ -1180,18 +1180,18 @@ so that diacritic-insensitive and fuzzy search is available for future CRM featu
 
 **Scope:**
 - Run `CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pg_trgm;` on:
-  - Docker local database (port 5433)
-  - NAS Docker database
-  - AWS RDS (via VPN)
+  - ~~Docker local database (port 5433)~~ — not actively used
+  - NAS Docker database — **DONE** (2026-03-10)
+  - AWS RDS (via VPN) — deferred, AWS not a priority until NAS MVP is complete
 - Verify extensions are installed: `SELECT extname FROM pg_extension;`
 
 **Acceptance Criteria:**
-- `SELECT unaccent('Łódź')` returns `Lodz` on all three environments
-- `SELECT similarity('Warszawa', 'Warszawie')` returns a value > 0.3 on all three environments
+- `SELECT unaccent('Łódź')` returns `Lodz` — **verified on NAS** (`unaccent('Łódź')` → `Lodz`)
+- `SELECT similarity('Warszawa', 'Warszawie')` returns a value > 0.3 — **verified on NAS** (→ `0.58`)
 - No errors in application logs after extension installation
 
 **Priority:** MEDIUM
-**Status:** backlog
+**Status:** done (NAS), deferred (AWS RDS)
 
 ---
 
