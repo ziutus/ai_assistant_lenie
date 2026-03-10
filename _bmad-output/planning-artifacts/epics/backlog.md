@@ -1219,3 +1219,39 @@ so that adding a new state (like `TEMPORARY_ERROR`) doesn't require manual front
 
 **Priority:** LOW
 **Status:** backlog
+
+### B-98: Add IP Geolocation for API Request Analytics and Security
+
+As a **developer**,
+I want to integrate IP geolocation into the backend API request logging,
+so that when the project has multiple users, I can analyze usage patterns by geography and detect anomalous access from unexpected locations.
+
+**Origin:** Evaluation of [ip66.dev](https://ip66.dev/) — a free, daily-updated MMDB geolocation database (CC BY 4.0) compatible with MaxMind libraries. No API keys, no usage limits.
+
+**Proposed solution:**
+
+1. Download ip66 MMDB file and set up a daily refresh (cron or startup script)
+2. Add `geoip2` or `maxminddb` Python library to dependencies
+3. Create a middleware/decorator in `server.py` that resolves request IP to country/ASN
+4. Log geolocation data alongside existing request logs
+5. Optionally: add a `/metrics` or `/analytics` endpoint showing request distribution by country
+
+**Use cases (when multi-user):**
+- **Security:** detect login/API access from unexpected countries
+- **Analytics:** understand user distribution by geography
+- **Rate limiting:** per-region throttling if needed
+- **Abuse detection:** identify suspicious ASNs or IP ranges
+
+**Technical notes:**
+- ip66 uses MMDB format — drop-in replacement for MaxMind GeoLite2
+- Local file lookup, no external API calls — zero latency impact
+- Database rebuilt daily at [ip66.dev](https://ip66.dev/)
+
+**Acceptance Criteria:**
+- MMDB file is downloaded and refreshed automatically
+- Each API request logs country code and ASN (when available)
+- No performance regression (local file lookup < 1ms)
+- Works in both Docker and direct-run modes
+
+**Priority:** LOW
+**Status:** backlog

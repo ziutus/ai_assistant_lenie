@@ -1,4 +1,4 @@
-# generated: 2026-03-02
+# generated: 2026-03-10
 # project: lenie-server-2025
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-03-02
+generated: 2026-03-10
 project: lenie-server-2025
 project_key: NOKEY
 tracking_system: file-system
@@ -351,11 +351,24 @@ development_status:
   epic-28-retrospective: done
 
   # --- Epic 29: Data Pipeline Migration & Cleanup ---
-  epic-29: in-progress
+  epic-29: done
   29-1-import-scripts-migration: done
   29-2-batch-pipeline-youtube-processing-migration: done
-  29-3-old-code-removal-final-verification: review
+  29-3-old-code-removal-final-verification: done  # DONE 2026-03-10. Removed all legacy psycopg2 branches from WebsitesDBPostgreSQL (630→270 lines). Replaced stalker_web_document.py + stalker_web_document_db.py with ORM re-exports. Migrated 3 experimental scripts. Zero cursor.execute() in production code. 386 tests pass, ruff clean.
   epic-29-retrospective: optional
+
+  # ============================================================
+  # SPRINT 10: Database Lookup Tables & Search Extensions
+  # ============================================================
+
+  # --- Epic 30: Database Lookup Tables & Search Extensions ---
+  epic-30: in-progress  # B-97 done (NAS), remaining stories in backlog
+  B-93-synchronize-document-states-from-backend-to-frontend: review  # Backend GET /document_states endpoint + frontend dynamic dropdowns. Eliminates hardcoded enum subsets in list.tsx.
+  B-94-create-lookup-tables-and-seed-data: backlog  # 4 lookup tables (document_status_types, document_status_error_types, document_types, embedding_models) + Alembic migration. ADR-010.
+  B-95-add-foreign-key-constraints-to-web-documents-and-websites-embeddings: backlog  # FK constraints on document_state, document_state_error, document_type, embedding model. Depends on B-94.
+  B-96-update-sqlalchemy-orm-models-for-lookup-table-relationships: backlog  # ORM models for lookup tables, ForeignKey + relationship() instead of SAEnum. Depends on B-95.
+  B-97-install-unaccent-and-pg-trgm-extensions-on-existing-databases: done  # DONE 2026-03-10 (NAS). unaccent('Łódź')→'Lodz', similarity('Warszawa','Warszawie')→0.58. AWS RDS deferred. ADR-009.
+  epic-30-retrospective: optional
 
   # ============================================================
   # DONE (completed backlog items — historical record)
