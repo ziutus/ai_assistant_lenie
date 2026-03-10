@@ -62,11 +62,19 @@ const List = () => {
 
       <select value={selectedDocumentState} onChange={handleDocumentStateChange}>
         <option value="ALL">ALL</option>
-        <option value="URL_ADDED">URL_ADDED</option>
-        <option value="NEED_MANUAL_REVIEW">NEED_MANUAL_REVIEW</option>
-        <option value="EMBEDDING_EXIST">EMBEDDING_EXIST</option>
-        <option value="READY_FOR_TRANSLATION">READY_FOR_TRANSLATION</option>
         <option value="ERROR">ERROR</option>
+        <option value="TEMPORARY_ERROR">TEMPORARY_ERROR</option>
+        <option value="URL_ADDED">URL_ADDED</option>
+        <option value="NEED_TRANSCRIPTION">NEED_TRANSCRIPTION</option>
+        <option value="TRANSCRIPTION_IN_PROGRESS">TRANSCRIPTION_IN_PROGRESS</option>
+        <option value="TRANSCRIPTION_DONE">TRANSCRIPTION_DONE</option>
+        <option value="NEED_MANUAL_REVIEW">NEED_MANUAL_REVIEW</option>
+        <option value="READY_FOR_EMBEDDING">READY_FOR_EMBEDDING</option>
+        <option value="EMBEDDING_EXIST">EMBEDDING_EXIST</option>
+        <option value="NEED_CLEAN_TEXT">NEED_CLEAN_TEXT</option>
+        <option value="NEED_CLEAN_MD">NEED_CLEAN_MD</option>
+        <option value="TEXT_TO_MD_DONE">TEXT_TO_MD_DONE</option>
+        <option value="MD_SIMPLIFIED">MD_SIMPLIFIED</option>
       </select>
       <input
         type="text"

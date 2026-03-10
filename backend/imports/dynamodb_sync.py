@@ -24,10 +24,12 @@ from datetime import datetime, timedelta
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
+from sqlalchemy.exc import SQLAlchemyError
 
 from library.config_loader import load_config
-from library.stalker_web_document_db import StalkerWebDocumentDB
-from library.stalker_web_document import StalkerDocumentStatus
+from library.db.models import WebDocument
+from library.db.engine import get_session
+from library.models.stalker_document_status import StalkerDocumentStatus
 
 cfg = load_config()
 
@@ -141,22 +143,13 @@ def download_s3_content(s3_client, bucket: str, s3_uuid: str, data_dir: str) -> 
     return text_content, html_content
 
 
-def sync_item_to_postgres(item: dict, text_content: str | None, html_content: str | None, dry_run: bool) -> str:
-    """Insert a DynamoDB item into PostgreSQL. Returns 'added', 'skipped', or 'error'."""
+def sync_item_to_postgres(item: dict, text_content: str | None, html_content: str | None,
+                          dry_run: bool, session=None) -> str:
+    """Insert a DynamoDB item into PostgreSQL via ORM. Returns 'added', 'skipped', or 'error'."""
     url = item.get("url")
     if not url:
         print("  SKIP: no url in item")
         return "error"
-
-    try:
-        doc = StalkerWebDocumentDB(url=url)
-    except Exception as e:
-        print(f"  ERROR checking URL {url}: {e}")
-        return "error"
-
-    if doc.id is not None:
-        print(f"  SKIP: already exists (id={doc.id}): {url}")
-        return "skipped"
 
     if dry_run:
         doc_type = item.get("type", "link")
@@ -165,13 +158,24 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
         return "added"
 
     try:
-        doc.url = url
+        existing = WebDocument.get_by_url(session, url)
+    except Exception as e:
+        print(f"  ERROR checking URL {url}: {e}")
+        return "error"
+
+    if existing is not None:
+        print(f"  SKIP: already exists (id={existing.id}): {url}")
+        return "skipped"
+
+    try:
+        doc = WebDocument(url=url)
         doc.title = item.get("title")
         doc.language = item.get("language")
         doc.source = item.get("source", "own")
         doc.note = item.get("note")
         doc.s3_uuid = item.get("s3_uuid")
         doc.chapter_list = item.get("chapter_list")
+        doc.created_at = item.get("created_at")
 
         doc_type = item.get("type", "link")
         doc.set_document_type(doc_type)
@@ -189,33 +193,14 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
         else:
             doc.document_state = StalkerDocumentStatus.URL_ADDED
 
-        new_id = doc.save()
+        session.add(doc)
+        session.commit()
 
-        # Preserve original created_at and chapter_list via direct SQL UPDATE
-        # (save() doesn't include these in INSERT)
-        dynamo_created_at = item.get("created_at")
-        chapter_list = item.get("chapter_list")
-        if dynamo_created_at or chapter_list:
-            with doc.db_conn:
-                with doc.db_conn.cursor() as cur:
-                    updates = []
-                    values = []
-                    if dynamo_created_at:
-                        updates.append("created_at = %s")
-                        values.append(dynamo_created_at)
-                    if chapter_list:
-                        updates.append("chapter_list = %s")
-                        values.append(chapter_list)
-                    values.append(new_id)
-                    cur.execute(
-                        f"UPDATE web_documents SET {', '.join(updates)} WHERE id = %s",
-                        values,
-                    )
-
-        print(f"  ADDED (id={new_id}): [{doc_type}] {doc.title or url}")
+        print(f"  ADDED (id={doc.id}): [{doc_type}] {doc.title or url}")
         return "added"
 
-    except Exception as e:
+    except SQLAlchemyError as e:
+        session.rollback()
         print(f"  ERROR adding {url}: {e}")
         return "error"
 
@@ -299,26 +284,45 @@ def main():
     skipped = 0
     errors = 0
 
-    for i, item in enumerate(items, 1):
-        url = item.get("url", "(no url)")
-        print(f"\n[{i}/{len(items)}] {url[:100]}")
+    session = None if args.dry_run else get_session()
+    try:
+        for i, item in enumerate(items, 1):
+            url = item.get("url", "(no url)")
+            print(f"\n[{i}/{len(items)}] {url[:100]}")
 
-        # Download S3 content for webpage items with s3_uuid
-        text_content = None
-        html_content = None
-        s3_uuid = item.get("s3_uuid")
-        doc_type = item.get("type", "link")
+            # Check for duplicate before downloading S3 content
+            text_content = None
+            html_content = None
 
-        if s3_uuid and doc_type == "webpage" and not args.skip_s3 and not args.dry_run:
-            text_content, html_content = download_s3_content(s3_client, bucket, s3_uuid, args.data_dir)
+            if not args.dry_run:
+                try:
+                    existing = WebDocument.get_by_url(session, item.get("url", ""))
+                except Exception as e:
+                    print(f"  ERROR checking URL: {e}")
+                    errors += 1
+                    continue
+                if existing is not None:
+                    print(f"  SKIP: already exists (id={existing.id})")
+                    skipped += 1
+                    continue
 
-        result = sync_item_to_postgres(item, text_content, html_content, args.dry_run)
-        if result == "added":
-            added += 1
-        elif result == "skipped":
-            skipped += 1
-        else:
-            errors += 1
+            # Download S3 content for webpage items with s3_uuid
+            s3_uuid = item.get("s3_uuid")
+            doc_type = item.get("type", "link")
+
+            if s3_uuid and doc_type == "webpage" and not args.skip_s3 and not args.dry_run:
+                text_content, html_content = download_s3_content(s3_client, bucket, s3_uuid, args.data_dir)
+
+            result = sync_item_to_postgres(item, text_content, html_content, args.dry_run, session=session)
+            if result == "added":
+                added += 1
+            elif result == "skipped":
+                skipped += 1
+            else:
+                errors += 1
+    finally:
+        if session is not None:
+            session.close()
 
     # Summary
     print("\n=== Summary ===")

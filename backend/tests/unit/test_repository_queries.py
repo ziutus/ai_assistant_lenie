@@ -182,16 +182,6 @@ class TestGetList:
         assert result == []
         session.execute.assert_called_once()
 
-    def test_ai_correction_needed_ignored(self):
-        """ai_correction_needed parameter is accepted but silently ignored."""
-        session = MagicMock()
-        repo = _make_repo(session)
-        session.execute.return_value.all.return_value = []
-
-        result = repo.get_list(ai_correction_needed=True)
-
-        assert result == []
-
     def test_document_state_error_with_enum(self):
         """document_state_error should serialize enum .name or None."""
         session = MagicMock()
@@ -566,15 +556,7 @@ class TestLoadNeighbors:
         assert doc.next_type == "link"
         assert doc.previous_type == "youtube"
 
-    def test_raises_without_session(self):
-        """load_neighbors() requires ORM session — raises RuntimeError without one."""
-        import unittest.mock as um
-        # Create repo without session by patching psycopg2.connect
-        with um.patch("library.stalker_web_documents_db_postgresql.psycopg2.connect"):
-            repo = WebsitesDBPostgreSQL(session=None)
-
-        doc = MagicMock()
-        doc.id = 10
-
-        with pytest.raises(RuntimeError, match="requires an ORM session"):
-            repo.load_neighbors(doc)
+    def test_session_is_required(self):
+        """WebsitesDBPostgreSQL requires a session parameter."""
+        with pytest.raises(TypeError):
+            WebsitesDBPostgreSQL()

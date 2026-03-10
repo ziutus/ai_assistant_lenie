@@ -11,8 +11,10 @@ import html2text
 from library.api.cloudferro.sherlock.sherlock_embedding import sherlock_create_embeddings
 from library.lenie_markdown import get_images_with_links_md, links_correct, process_markdown_and_extract_links, \
     md_square_brackets_in_one_line, md_split_for_emb, md_get_images_as_links, md_remove_markdown
-from library.stalker_web_document import StalkerDocumentStatusError, StalkerDocumentStatus
-from library.stalker_web_document_db import StalkerWebDocumentDB
+from library.models.stalker_document_status import StalkerDocumentStatus
+from library.models.stalker_document_status_error import StalkerDocumentStatusError
+from library.db.engine import get_session
+from library.db.models import WebDocument
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.api.aws.s3_aws import s3_file_exist, s3_take_file
 from library.config_loader import load_config
@@ -83,17 +85,6 @@ def generate_links_regex(links):
     return '|'.join(patterns)
 
 
-wb_db = WebsitesDBPostgreSQL()
-
-# interactive = True
-documents = wb_db.get_documents_by_url("https://biznes.interia.pl/")
-# documents = [ 7456 ]
-# TODO: 7683 - need to correct related liks (//gospodarka/place-w-polsce-sa-duzo-nizsze-niz-na-zachodzie-a-ceny-takie-same-to-bzdura-analiza-7126921300134720a.html)
-# TODO: 7741 - udostępnij artykuł - linki do ustąpienia do regexp: businessinsider_com_pl_2025_1.regex
-# TODO: 7732 - lepszy podział na części do embeddingu
-# TODO: 7687 - poprawić regexp geekweek_interia_pl_7687.regex
-# documents = wb_db.get_list(document_type="webpage", document_state="DOCUMENT_INTO_DATABASE")
-# documents = wb_db.get_list(document_type="webpage", limit=700)
 interactive = False
 find_problems = False
 
@@ -101,8 +92,7 @@ text_to_md_check_only = False
 online = True
 embedding_update = False
 ignore_regexp_issue = True
-# cache_dir_base = "tmp/markdown"
-cache_dir_base = r"C:\Users\ziutus\tmp\markdown"
+cache_dir_base = cfg.get("CACHE_DIR") or "tmp/markdown"
 split_limit = 200
 
 
@@ -199,395 +189,394 @@ page_rules_map = {
 }
 
 if __name__ == '__main__':
+    session = get_session()
+    wb_db = WebsitesDBPostgreSQL(session=session)
 
+    # interactive = True
+    documents = wb_db.get_documents_by_url("https://biznes.interia.pl/")
+    # documents = [7456]
+    # TODO: 7683 - need to correct related liks
+    # TODO: 7741 - udostępnij artykuł - linki do ustąpienia do regexp: businessinsider_com_pl_2025_1.regex
+    # TODO: 7732 - lepszy podział na części do embeddingu
+    # TODO: 7687 - poprawić regexp geekweek_interia_pl_7687.regex
+    # documents = wb_db.get_list(document_type="webpage", document_state="DOCUMENT_INTO_DATABASE")
+    # documents = wb_db.get_list(document_type="webpage", limit=700)
 
-    if not os.path.exists(cache_dir_base):
-        logger.debug(f"Creating cache directory {cache_dir_base}")
-        os.makedirs(cache_dir_base)
+    try:
+        if not os.path.exists(cache_dir_base):
+            logger.debug(f"Creating cache directory {cache_dir_base}")
+            os.makedirs(cache_dir_base)
 
-    print(f"Documents to analyze: {len(documents)}")
+        print(f"Documents to analyze: {len(documents)}")
 
-    for document_tmp in documents:
-        if type(document_tmp) is dict:
-            document_id = document_tmp["id"]
-        else:
-            document_id = document_tmp
-
-        logger.info(f"Working on document_id {document_id}")
-        web_doc = StalkerWebDocumentDB(document_id=document_id)
-
-        if web_doc.document_state == StalkerDocumentStatus.ERROR and web_doc.document_state_error == StalkerDocumentStatusError.ERROR_DOWNLOAD:
-            logger.info("Ignoring document as is error is ERROR_DOWNLOAD...")
-            continue
-
-        # if web_doc.document_state == StalkerDocumentStatus.MD_SIMPLIFIED:
-        #     logger.info("Ignoring document as is MD_SIMPLIFIED")
-        #     continue
-
-
-        cache_dir = f"{cache_dir_base}/{document_id}"
-        if not os.path.exists(cache_dir):
-            logger.debug(f"Creating cache directory {cache_dir}")
-            os.makedirs(cache_dir)
-
-
-
-        if web_doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR and not ignore_regexp_issue:
-            logger.info("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
-            continue
-
-        metadata = {"document_id": document_id}
-        cache_file_html = f"{cache_dir}/{document_id}.html"
-        cache_file_step_1_md = f"{cache_dir}/{document_id}_step_1_all.md"
-        cache_file_step_2_md = f"{cache_dir}/{document_id}_step_2_1_article.md"
-
-        logger.info("Step 1: preparing markdown from HTML file")
-        logger.debug("Taking markdown content from local cache or from remote cache (S3)")
-
-        if not os.path.isfile(cache_file_step_1_md) and not os.path.isfile(cache_file_html):
-            logger.debug("Taking raw html file from cache in Amazon S3")
-
-            if not web_doc.s3_uuid:
-                logger.debug("Doesn't exist s3_uuid, exiting...")
-                continue
-
-            if not s3_file_exist(S3_BUCKET_NAME, web_doc.s3_uuid + ".html"):
-                logger.debug("I can't find file in S3 cache")
-                continue
-
-            logger.debug("the HTML file exist in S3 cache")
-            if s3_take_file(S3_BUCKET_NAME, web_doc.s3_uuid + ".html", cache_file_html):
-                logger.debug("The HTML file has been copy to local cache")
+        for document_tmp in documents:
+            if type(document_tmp) is dict:
+                document_id = document_tmp["id"]
             else:
-                logger.debug("Can't download file from S3 cache, exiting...")
+                document_id = document_tmp
+
+            logger.info(f"Working on document_id {document_id}")
+            doc = WebDocument.get_by_id(session, document_id)
+            if doc is None:
+                logger.warning(f"Document {document_id} not found, skipping")
                 continue
 
-        if os.path.isfile(cache_file_step_1_md):
-            logger.debug("DEBUG: 1a. Taking raw markdown file from cache")
-            with open(cache_file_step_1_md, "r", encoding="utf-8") as f:
-                result = f.read()
-        else:
-            logger.debug("DEBUG: 1b. Taking raw html file from cache")
-            mdit = MarkItDown()
-            result = mdit.convert(cache_file_html).text_content
+            if doc.document_state == StalkerDocumentStatus.ERROR and doc.document_state_error == StalkerDocumentStatusError.ERROR_DOWNLOAD:
+                logger.info("Ignoring document as is error is ERROR_DOWNLOAD...")
+                continue
 
-        md_size = len(result)
-        html_size = os.path.getsize(cache_file_html)
+            cache_dir = f"{cache_dir_base}/{document_id}"
+            if not os.path.exists(cache_dir):
+                logger.debug(f"Creating cache directory {cache_dir}")
+                os.makedirs(cache_dir)
 
-        logger.debug(f"Rozmiar HTML: {html_size} bajtów")
+            if doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR and not ignore_regexp_issue:
+                logger.info("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
+                continue
 
-        reduction_percentage = calculate_reduction(html_size, md_size)
-        logger.debug(f"MarkItDown reduction: {reduction_percentage:.2f}%")
-        markdown_text = result
+            metadata = {"document_id": document_id}
+            cache_file_html = f"{cache_dir}/{document_id}.html"
+            cache_file_step_1_md = f"{cache_dir}/{document_id}_step_1_all.md"
+            cache_file_step_2_md = f"{cache_dir}/{document_id}_step_2_1_article.md"
 
-        if reduction_percentage < 30:
-            logger.debug("Looks like MarkItDown didn't converted to markdown, choosing next metod: html2text")
-            with open(cache_file_html, "r", encoding="utf-8") as f:
-                html = f.read()
+            logger.info("Step 1: preparing markdown from HTML file")
+            logger.debug("Taking markdown content from local cache or from remote cache (S3)")
 
-                markdown = convert(html)
-                md_size_2 = len(markdown)
+            if not os.path.isfile(cache_file_step_1_md) and not os.path.isfile(cache_file_html):
+                logger.debug("Taking raw html file from cache in Amazon S3")
 
-                reduction_percentage = calculate_reduction(html_size, md_size_2)
-                logger.debug(f"Markdown reduction: {reduction_percentage:.2f}%")
-                markdown_text = markdown
+                if not doc.s3_uuid:
+                    logger.debug("Doesn't exist s3_uuid, exiting...")
+                    continue
 
-                if reduction_percentage < 30:
+                if not s3_file_exist(S3_BUCKET_NAME, doc.s3_uuid + ".html"):
+                    logger.debug("I can't find file in S3 cache")
+                    continue
 
-                    h = html2text.HTML2Text()
-                    h.ignore_links = False
-                    h.ignore_images = False
-                    markdown_content = h.handle(html)
+                logger.debug("the HTML file exist in S3 cache")
+                if s3_take_file(S3_BUCKET_NAME, doc.s3_uuid + ".html", cache_file_html):
+                    logger.debug("The HTML file has been copy to local cache")
+                else:
+                    logger.debug("Can't download file from S3 cache, exiting...")
+                    continue
 
-                    markdown_size = len(markdown_content)
-                    reduction_html2text_percentage = calculate_reduction(html_size, markdown_size)
+            if os.path.isfile(cache_file_step_1_md):
+                logger.debug("DEBUG: 1a. Taking raw markdown file from cache")
+                with open(cache_file_step_1_md, "r", encoding="utf-8") as f:
+                    result = f.read()
+            else:
+                logger.debug("DEBUG: 1b. Taking raw html file from cache")
+                mdit = MarkItDown()
+                result = mdit.convert(cache_file_html).text_content
 
-                    logger.debug(f"html2Text reduction: {reduction_html2text_percentage:.2f}%")
+            md_size = len(result)
+            html_size = os.path.getsize(cache_file_html)
 
-                    markdown_text = markdown_content
+            logger.debug(f"Rozmiar HTML: {html_size} bajtów")
 
-        with open(cache_file_step_1_md, 'w', encoding="utf-8") as file:
-            file.write(markdown_text)
-            logger.info("Transformation from text to markdown completed")
+            reduction_percentage = calculate_reduction(html_size, md_size)
+            logger.debug(f"MarkItDown reduction: {reduction_percentage:.2f}%")
+            markdown_text = result
 
-        if reduction_percentage < 30 or reduction_percentage >= 98:
-            logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
-            web_doc.set_document_state("ERROR")
-            web_doc.set_document_state_error("TEXT_TO_MD_ERROR")
-            web_doc.save()
-            continue
+            if reduction_percentage < 30:
+                logger.debug("Looks like MarkItDown didn't converted to markdown, choosing next metod: html2text")
+                with open(cache_file_html, "r", encoding="utf-8") as f:
+                    html = f.read()
 
-        web_doc.set_document_state("TEXT_TO_MD_DONE")
-        web_doc.save()
+                    markdown = convert(html)
+                    md_size_2 = len(markdown)
 
-        logger.info("Step 2: taking article content from markdown (ignoring portal links, disclaimers, user comments etc")
-        logger.debug("Taking URL from database")
-        logger.debug(f"URL: {web_doc.url}\n")
+                    reduction_percentage = calculate_reduction(html_size, md_size_2)
+                    logger.debug(f"Markdown reduction: {reduction_percentage:.2f}%")
+                    markdown_text = markdown
 
-        metadata["url"] = web_doc.url
+                    if reduction_percentage < 30:
 
-        found_rules = False
-        regexp_rules_file = None
-        extracted_text: str = ""
-        for page_rules in page_regexp_map:
-            if web_doc.url.find(page_rules) != -1:
-                logger.debug("I found rules for this page, let's check if they are working")
-                # pprint(page_regexp_map[page_rules])
+                        h = html2text.HTML2Text()
+                        h.ignore_links = False
+                        h.ignore_images = False
+                        markdown_content = h.handle(html)
 
-                for rules_file in page_regexp_map[page_rules]:
-                    logger.debug(f"Checking file: {rules_file}")
-                    regexp_page = load_regex_from_file(rules_file)
-                    # print(f"TRACE: regexp_page: {regexp_page}")
-                    match = re.search(regexp_page, markdown_text, re.VERBOSE | re.DOTALL)
+                        markdown_size = len(markdown_content)
+                        reduction_html2text_percentage = calculate_reduction(html_size, markdown_size)
 
-                    if match:
-                        logger.debug(f"Regex defined in {rules_file} for finding article body is working.")
-                        groups = match.groupdict()
+                        logger.debug(f"html2Text reduction: {reduction_html2text_percentage:.2f}%")
 
-                        if 'before' in groups:
-                            pprint(match.group('before'))
+                        markdown_text = markdown_content
 
-                        if 'author' in groups and match.group('author'):
-                            print("autor:>" + match.group('author').strip() + "<")
-                        if 'created' in groups and match.group('created'):
-                            print("created:" + match.group('created'))
-                        if 'updated' in groups and match.group('updated'):
-                            print("aktualizacja:" + match.group('updated'))
-                        if 'title' in groups and match.group('title'):
-                            print("tytuł:" + match.group('title'))
+            with open(cache_file_step_1_md, 'w', encoding="utf-8") as file:
+                file.write(markdown_text)
+                logger.info("Transformation from text to markdown completed")
 
-                        extracted_text = match.group('article_text').strip() if match else "Nie znaleziono treści"
-                        found_rules = True
-                        regexp_rules_file = rules_file
-                        # exit(0)
-                        break
+            if reduction_percentage < 30 or reduction_percentage >= 98:
+                logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
+                doc.document_state = StalkerDocumentStatus.ERROR
+                doc.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR
+                session.commit()
+                continue
+
+            doc.document_state = StalkerDocumentStatus.NEED_CLEAN_MD
+            session.commit()
+
+            logger.info("Step 2: taking article content from markdown (ignoring portal links, disclaimers, user comments etc")
+            logger.debug("Taking URL from database")
+            logger.debug(f"URL: {doc.url}\n")
+
+            metadata["url"] = doc.url
+
+            found_rules = False
+            regexp_rules_file = None
+            extracted_text: str = ""
+            for page_rules in page_regexp_map:
+                if doc.url.find(page_rules) != -1:
+                    logger.debug("I found rules for this page, let's check if they are working")
+
+                    for rules_file in page_regexp_map[page_rules]:
+                        logger.debug(f"Checking file: {rules_file}")
+                        regexp_page = load_regex_from_file(rules_file)
+                        match = re.search(regexp_page, markdown_text, re.VERBOSE | re.DOTALL)
+
+                        if match:
+                            logger.debug(f"Regex defined in {rules_file} for finding article body is working.")
+                            groups = match.groupdict()
+
+                            if 'before' in groups:
+                                pprint(match.group('before'))
+
+                            if 'author' in groups and match.group('author'):
+                                print("autor:>" + match.group('author').strip() + "<")
+                            if 'created' in groups and match.group('created'):
+                                print("created:" + match.group('created'))
+                            if 'updated' in groups and match.group('updated'):
+                                print("aktualizacja:" + match.group('updated'))
+                            if 'title' in groups and match.group('title'):
+                                print("tytuł:" + match.group('title'))
+
+                            extracted_text = match.group('article_text').strip() if match else "Nie znaleziono treści"
+                            found_rules = True
+                            regexp_rules_file = rules_file
+                            break
+                        else:
+                            logger.debug(f"Nie znaleziono dopasowania z regułami z pliku {rules_file}.")
+                            doc.document_state = StalkerDocumentStatus.ERROR
+                            doc.document_state_error = StalkerDocumentStatusError.REGEX_ERROR
+                            session.commit()
+                            continue
+
+            if not found_rules:
+                logger.error(f"Can't find rules to analyze page {doc.url}, time to check next one...")
+
+                if find_problems:
+                    exit(1)
+
+                if interactive:
+                    print("Naciśnij Enter, aby zakończyć program...")
+                    input()
+
+                doc.document_state = StalkerDocumentStatus.ERROR
+                doc.document_state_error = StalkerDocumentStatusError.REGEX_ERROR
+                session.commit()
+                continue
+
+            logger.debug(f"DEBUG: will use regex rule file: {regexp_rules_file}")
+            metadata["regexp_rules_file"] = regexp_rules_file
+
+            with open(cache_file_step_2_md, 'w', encoding="utf-8") as file:
+                file.write(extracted_text)
+
+            doc.document_state = StalkerDocumentStatus.MD_SIMPLIFIED
+            session.commit()
+
+            if text_to_md_check_only:
+                continue
+
+            markdown = extracted_text
+
+            logger.info("Changing windows line breaks to linux")
+            markdown = re.sub(r'\r\n', '\n', markdown)
+
+            with open(f"{cache_dir}/{document_id}_step_2_2_linux_eol.md", 'w', encoding="utf-8") as file:
+                file.write(markdown)
+
+            logger.info("\nStep 3 - correcting links multiline issue")
+
+            logger.debug(" Putting links into one line")
+            markdown = links_correct(markdown)
+            with open(f"{cache_dir}/{document_id}_step_3_1_links_one_line.md", 'w', encoding="utf-8") as file:
+                file.write(markdown)
+
+            logger.debug(" Putting square brackets into one line")
+            markdown = md_square_brackets_in_one_line(markdown)
+            with open(f"{cache_dir}/{document_id}_step_3_2_square_brackets_one_line.md", 'w', encoding="utf-8") as file:
+                file.write(markdown)
+
+            logger.info("\nStep 4 - converting markdown to text and creating metadata part for links and images")
+
+            markdown, metadata["images_links"], metadata["links_as_images"] = md_get_images_as_links(markdown)
+            logger.debug("4.0 Extracting images as links from markdown")
+            with open(f"{cache_dir}/{document_id}_step_4_0_without_links_as_images.md", 'w', encoding="utf-8") as file:
+                file.write(markdown)
+
+            logger.debug("4.1 Extracting images from markdown")
+            markdown, metadata["images"] = get_images_with_links_md(markdown)
+
+            with open(f"{cache_dir}/{document_id}_step_4_1_without_images.md", 'w', encoding="utf-8") as file:
+                file.write(markdown)
+
+            logger.debug("Removing NBSP from markdown")
+            markdown = markdown.replace('\xa0', ' ')
+
+            logger.debug("Formating text by removing multiple empty lines and spaces")
+            markdown = re.sub(' +', ' ', markdown)
+            markdown = re.sub(r'\n*##', '\n\n##', markdown)
+
+            logger.debug("Removing links from markdown and adding into metadata part")
+            markdown, metadata["links"] = process_markdown_and_extract_links(markdown)
+
+            with open(f"{cache_dir}/{document_id}_step_4_2_without_links.md", 'w', encoding="utf-8") as file:
+                logger.debug("Writing markdown to file from step 4")
+                file.write(markdown)
+
+            logger.info("\nStep 5: cleaning text for each big portal from external links inside text (not needed for embedding)")
+
+            logger.debug("Onet: Extracting links with images from markdown")
+            output_json = onet_see_also_process_markdown_and_extract_links_with_images(markdown)
+            metadata["links_onet"] = output_json['links']
+            markdown = output_json['markdown']
+
+            logger.debug("Removing info strings")
+            markdown = markdown.replace("*Dalsza część artykułu pod materiałem wideo*", "")
+
+            if doc.url.startswith("https://www.onet.pl/") or doc.url.startswith("https://wiadomosci.onet.pl/"):
+                logger.info("Removing info strings for onet.pl")
+
+                markdown = re.sub(r"^\s+\*\s+\*\*Tekst\spublikujemy\sdzięki\suprzejmości\sserwisu.*$", "", markdown, flags=re.MULTILINE)
+
+                linie = markdown.splitlines()
+                wynik = []
+                for linia in linie:
+                    if linia.startswith("**") and linia.endswith("**"):
+                        if wynik and wynik[-1] != '\n':
+                            wynik.append("")
+                        wynik.append(linia)
+                    elif linia.startswith("## "):
+                        if wynik and wynik[-1] != '\n':
+                            wynik.append("")
+                        wynik.append(linia)
                     else:
-                        logger.debug(f"Nie znaleziono dopasowania z regułami z pliku {rules_file}.")
-                        web_doc.set_document_state("ERROR")
-                        web_doc.set_document_state_error("REGEX_ERROR")
-                        web_doc.save()
-                        continue
+                        wynik.append(linia)
+                markdown = "\n".join(wynik)
 
-        if not found_rules:
-            logger.error(f"Can't find rules to analyze page {web_doc.url}, time to check next one...")
+                # wiadomosci.onet.pl
+                markdown = re.sub(r'^\*\*CZYTAJ\sWIĘCEJ:.*$', '', markdown, flags=re.MULTILINE)
+                markdown = re.sub(r'^Kontynuuj\sczytanie\sod\smiejsca,\sw\sktórym\sskończyłeś\.$', '', markdown, flags=re.MULTILINE)
 
-            if find_problems:
-                exit(1)
+                markdown = re.sub(r'^\s\*\s\*\*Przeczytaj:\*\*.*$', '', markdown, flags=re.MULTILINE)
+                markdown = re.sub(r'^\s\*\s\*\*Przeczytaj\stakże:\*\*.*$', '', markdown, flags=re.MULTILINE)
+
+                markdown = re.sub(r'^\s\*\s\*\*Czytaj\swięcej:\*\*.*$', '', markdown, flags=re.MULTILINE)
+
+                markdown = re.sub(r'^\s\*\s\*\*Zobacz:\*\*.*$', '', markdown, flags=re.MULTILINE)
+                markdown = re.sub(r'^\s\*\s\*\*Zobacz\stakże:\*\*.*$', '', markdown, flags=re.MULTILINE)
+                markdown = re.sub(r'^\s\*\s\*\*Zobacz\srównież:\*\*.*$', '', markdown, flags=re.MULTILINE)
+                markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
+                markdown = re.sub(r"^##\sZobacz\srównież$", "", markdown, flags=re.MULTILINE)
+                markdown = re.sub(r"^\s\*\sDużo\sczytania,\sa\smało\sczasu\?\sSprawdź\sskrót\sartykułu\s*$", "", markdown, flags=re.MULTILINE)
+
+                markdown = re.sub(r"^\s*reklama\s*\n", "", markdown, flags=re.MULTILINE | re.DOTALL)
+
+
+                markdown = re.sub(r"s*reklama$", "", markdown)
+
+
+                markdown = re.sub(r"^\s+\* link\[\d+\]:.*$", "", markdown, flags=re.MULTILINE)
+
+                markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
+
+                markdown = re.sub(r'^\s*Dalszy\sciąg\smateriału\spod\swideo\s*$', '', markdown, flags=re.MULTILINE)
+
+                markdown = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown, flags=re.MULTILINE)
+
+            with open(f"{cache_dir}/{document_id}_step_5_without_portal_adding.md", 'w', encoding="utf-8") as file:
+                logger.debug("Writing markdown to file from step 5")
+                file.write(markdown)
+
+            logger.debug("Writing final metadata file")
+            with open(f"{cache_dir}/{document_id}_metadata.json", 'w', encoding="utf-8") as file:
+                file.write(json.dumps(metadata, indent=4))
+
+
+            logger.debug("Step 6: cleaning markdown document for embedding")
+
+            logger.debug("Removing img from markdown")
+            markdown = re.sub(r"picture\[\d+\]:.*", '', markdown)
+
+            logger.debug("Removing links from markdown")
+            markdown = re.sub(r"link\[\d+]:", '', markdown)
+
+            markdown = re.sub(r'\*\*', '', markdown)
+
+
+            markdown = re.sub(r'^\s+$', '\n', markdown)
+
+            # from unknown reason below code doesnt' work
+            markdown = re.sub(r'^>\s', '', markdown, re.MULTILINE)
+            # TODO: repalce with better code:
+            lines = markdown.splitlines()
+            lines2 = []
+            for line in lines:
+                if line.startswith("> "):
+                    line = line.replace("> ", "")
+                lines2.append(line)
+            markdown = "\n".join(lines2)
+
+            markdown = re.sub(r'\*\*\n+\s*', '**\n', markdown)
+
+            markdown = re.sub('\n{3,10}', '\n\n', markdown)
+
+            with open(f"{cache_dir}/{document_id}_step_6.md", "w", encoding="utf-8") as f:
+                f.write(markdown)
+
+            logger.info(f"Raw text has {len(markdown.split())} words")
+            parts = md_split_for_emb(markdown)
+            logger.info(f"Text has been split into {len(parts)} parts")
+
+            print("\n>FINAL DATA<\n")
+            print(f"used a regule file: {regexp_rules_file}")
+            parts_embeddings = []
+            for i, part in enumerate(parts):
+                print("\n####")
+                print(f"part {i+1} has {len(part.split())} words")
+                print(">Tekst before cleaning:")
+                print(part)
+                print(">Tekst after cleaning:")
+                part = md_remove_markdown(part).strip()
+                print(part)
+                parts_embeddings.append(part)
 
             if interactive:
                 print("Naciśnij Enter, aby zakończyć program...")
                 input()
 
-            web_doc.set_document_state("ERROR")
-            web_doc.set_document_state_error("REGEX_ERROR")
-            web_doc.save()
-            continue
+            if embedding_update:
+                embedds = sherlock_create_embeddings(parts_embeddings)
+                logger.info(f"Status code from embedding function: {embedds.status_code}")
 
-        logger.debug(f"DEBUG: will use regex rule file: {regexp_rules_file}")
-        metadata["regexp_rules_file"] = regexp_rules_file
+                if not doc.language:
+                    doc.language = 'pl'
 
-        with open(cache_file_step_2_md, 'w', encoding="utf-8") as file:
-            file.write(extracted_text)
+                for embedd in embedds.embedding:
+                    wb_db.embedding_add(
+                        website_id=doc.id,
+                        embedding=embedd["embedding"],
+                        language=doc.language,
+                        text=parts[embedd["index"]],
+                        text_original=parts[embedd["index"]],
+                        model="BAAI/bge-multilingual-gemma2",
+                    )
+                session.commit()
 
-        web_doc.set_document_state("MD_SIMPLIFIED")
-        web_doc.save()
-
-        if text_to_md_check_only:
-            continue
-
-        markdown = extracted_text
-
-        logger.info("Changing windows line breaks to linux")
-        markdown = re.sub(r'\r\n', '\n', markdown)
-
-        with open(f"{cache_dir}/{document_id}_step_2_2_linux_eol.md", 'w', encoding="utf-8") as file:
-            file.write(markdown)
-
-        logger.info("\nStep 3 - correcting links multiline issue")
-
-        logger.debug(" Putting links into one line")
-        markdown = links_correct(markdown)
-        with open(f"{cache_dir}/{document_id}_step_3_1_links_one_line.md", 'w', encoding="utf-8") as file:
-            file.write(markdown)
-
-        logger.debug(" Putting square brackets into one line")
-        markdown = md_square_brackets_in_one_line(markdown)
-        with open(f"{cache_dir}/{document_id}_step_3_2_square_brackets_one_line.md", 'w', encoding="utf-8") as file:
-            file.write(markdown)
-
-        logger.info("\nStep 4 - converting markdown to text and creating metadata part for links and images")
-
-        markdown, metadata["images_links"], metadata["links_as_images"] = md_get_images_as_links(markdown)
-        logger.debug("4.0 Extracting images as links from markdown")
-        with open(f"{cache_dir}/{document_id}_step_4_0_without_links_as_images.md", 'w', encoding="utf-8") as file:
-            file.write(markdown)
-
-        logger.debug("4.1 Extracting images from markdown")
-        markdown, metadata["images"] = get_images_with_links_md(markdown)
-
-        with open(f"{cache_dir}/{document_id}_step_4_1_without_images.md", 'w', encoding="utf-8") as file:
-            file.write(markdown)
-
-        logger.debug("Removing NBSP from markdown")
-        markdown = markdown.replace(' ', ' ')
-
-        logger.debug("Formating text by removing multiple empty lines and spaces")
-        # new_markdown = re.sub('\n+', '\n', new_markdown)
-        markdown = re.sub(' +', ' ', markdown)
-        markdown = re.sub(r'\n*##', '\n\n##', markdown)
-
-        logger.debug("Removing links from markdown and adding into metadata part")
-        markdown, metadata["links"] = process_markdown_and_extract_links(markdown)
-
-        with open(f"{cache_dir}/{document_id}_step_4_2_without_links.md", 'w', encoding="utf-8") as file:
-            logger.debug("Writing markdown to file from step 4")
-            file.write(markdown)
-
-        logger.info("\nStep 5: cleaning text for each big portal from external links inside text (not needed for embedding)")
-
-        logger.debug("Onet: Extracting links with images from markdown")
-        output_json = onet_see_also_process_markdown_and_extract_links_with_images(markdown)
-        metadata["links_onet"] = output_json['links']
-        markdown = output_json['markdown']
-
-        logger.debug("Removing info strings")
-        markdown = markdown.replace("*Dalsza część artykułu pod materiałem wideo*", "")
-
-        if web_doc.url.startswith("https://www.onet.pl/") or web_doc.url.startswith("https://wiadomosci.onet.pl/"):
-            logger.info("Removing info strings for onet.pl")
-
-            markdown = re.sub(r"^\s+\*\s+\*\*Tekst\spublikujemy\sdzięki\suprzejmości\sserwisu.*$", "", markdown, flags=re.MULTILINE)
-
-            linie = markdown.splitlines()
-            wynik = []
-            for linia in linie:
-                if linia.startswith("**") and linia.endswith("**"):
-                    if wynik and wynik[-1] != '\n':
-                        wynik.append("")
-                    wynik.append(linia)
-                elif linia.startswith("## "):
-                    if wynik and wynik[-1] != '\n':
-                        wynik.append("")
-                    wynik.append(linia)
-                else:
-                    wynik.append(linia)
-            markdown = "\n".join(wynik)
-
-            # wiadomosci.onet.pl
-            markdown = re.sub(r'^\*\*CZYTAJ\sWIĘCEJ:.*$', '', markdown, flags=re.MULTILINE)
-            markdown = re.sub(r'^Kontynuuj\sczytanie\sod\smiejsca,\sw\sktórym\sskończyłeś\.$', '', markdown, flags=re.MULTILINE)
-            #  ;)  ;)  ‹ wróć
-            # markdown = re.sub(r'^.*;\).*;\).*\s+‹\swróć\s*$', '', markdown, flags=re.MULTILINE)
-            # match = re.search(r'^(.*);\)(.*);\)(.*)\s+‹\swróć\s*$', markdown, re.MULTILINE)
-            # if match:
-            #     print("wiadomosci.onet.pl, match:")
-            #     print(f">{match.group(1)}<")
-            #     print(f">{match.group(2)}<")
-            #     print(f">{match.group(3)}<")
-
-            markdown = re.sub(r'^\s\*\s\*\*Przeczytaj:\*\*.*$', '', markdown, flags=re.MULTILINE)
-            markdown = re.sub(r'^\s\*\s\*\*Przeczytaj\stakże:\*\*.*$', '', markdown, flags=re.MULTILINE)
-
-            markdown = re.sub(r'^\s\*\s\*\*Czytaj\swięcej:\*\*.*$', '', markdown, flags=re.MULTILINE)
-
-            markdown = re.sub(r'^\s\*\s\*\*Zobacz:\*\*.*$', '', markdown, flags=re.MULTILINE)
-            markdown = re.sub(r'^\s\*\s\*\*Zobacz\stakże:\*\*.*$', '', markdown, flags=re.MULTILINE)
-            markdown = re.sub(r'^\s\*\s\*\*Zobacz\srównież:\*\*.*$', '', markdown, flags=re.MULTILINE)
-            markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
-            markdown = re.sub(r"^##\sZobacz\srównież$", "", markdown, flags=re.MULTILINE)
-            markdown = re.sub(r"^\s\*\sDużo\sczytania,\sa\smało\sczasu\?\sSprawdź\sskrót\sartykułu\s*$", "", markdown, flags=re.MULTILINE)
-
-            markdown = re.sub(r"^\s*reklama\s*\n", "", markdown, flags=re.MULTILINE | re.DOTALL)
-
-
-            markdown = re.sub(r"s*reklama$", "", markdown)
-
-
-            markdown = re.sub(r"^\s+\* link\[\d+\]:.*$", "", markdown, flags=re.MULTILINE)
-
-            markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
-
-            markdown = re.sub(r'^\s*Dalszy\sciąg\smateriału\spod\swideo\s*$', '', markdown, flags=re.MULTILINE)
-
-            markdown = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown, flags=re.MULTILINE)
-
-        with open(f"{cache_dir}/{document_id}_step_5_without_portal_adding.md", 'w', encoding="utf-8") as file:
-            logger.debug("Writing markdown to file from step 5")
-            file.write(markdown)
-
-        logger.debug("Writing final metadata file")
-        with open(f"{cache_dir}/{document_id}_metadata.json", 'w', encoding="utf-8") as file:
-            file.write(json.dumps(metadata, indent=4))
-
-
-        logger.debug("Step 6: cleaning markdown document for embedding")
-
-        logger.debug("Removing img from markdown")
-        markdown = re.sub(r"picture\[\d+\]:.*", '', markdown)
-
-        logger.debug("Removing links from markdown")
-        markdown = re.sub(r"link\[\d+]:", '', markdown)
-
-        markdown = re.sub(r'\*\*', '', markdown)
-
-
-        markdown = re.sub(r'^\s+$', '\n', markdown)
-
-        # from unknown reason below code doesnt' work
-        markdown = re.sub(r'^>\s', '', markdown, re.MULTILINE)
-        # TODO: repalce with better code:
-        lines = markdown.splitlines()
-        lines2 = []
-        for line in lines:
-            if line.startswith("> "):
-                line = line.replace("> ", "")
-            lines2.append(line)
-        markdown = "\n".join(lines2)
-
-        markdown = re.sub(r'\*\*\n+\s*', '**\n', markdown)
-
-        markdown = re.sub('\n{3,10}', '\n\n', markdown)
-
-        with open(f"{cache_dir}/{document_id}_step_6.md", "w", encoding="utf-8") as f:
-            f.write(markdown)
-
-        logger.info(f"Raw text has {len(markdown.split())} words")
-        parts = md_split_for_emb(markdown)
-        logger.info(f"Text has been split into {len(parts)} parts")
-
-        print("\n>FINAL DATA<\n")
-        print(f"used a regule file: {regexp_rules_file}")
-        parts_embeddings = []
-        for i, part in enumerate(parts):
-            print("\n####")
-            print(f"part {i+1} has {len(part.split())} words")
-            print(">Tekst before cleaning:")
-            print(part)
-            print(">Tekst after cleaning:")
-            part = md_remove_markdown(part).strip()
-            print(part)
-            parts_embeddings.append(part)
-
-        if interactive:
-            print("Naciśnij Enter, aby zakończyć program...")
-            input()
-
-        if embedding_update:
-            embedds = sherlock_create_embeddings(parts_embeddings)
-            logger.info(f"Status code from embedding function: {embedds.status_code}")
-
-            if not web_doc.language:
-                web_doc.language = 'pl'
-
-            for embedd in embedds.embedding:
-                web_doc.embedding_add_simple("BAAI/bge-multilingual-gemma2", embedd["embedding"], parts[embedd["index"]])
-
-        #     wb_db = WebsitesDBPostgreSQL()
-        #     web_doc = StalkerWebDocumentDB(document_id=document_id)
-        #     web_doc.embedding_add_by_parts(model=EMBEDDING_MODEL, parts=parts_txt)
-        #     web_doc.text_md = markdown_text
-        #     web_doc.text = markdown_to_text(markdown_text)
-        #     web_doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
-        #     web_doc.save()
+    finally:
+        session.close()
 
 exit(0)

@@ -88,6 +88,53 @@ docker-clean:   ## Remove old Docker images matching 'lenie'
 	chmod +x infra/docker/docker_images_clean.sh
 	infra/docker/docker_images_clean.sh --remove-name lenie
 
+# NAS registry (private Docker registry at 192.168.200.7:5005)
+NAS_REGISTRY ?= 192.168.200.7:5005
+
+nas-build-server: ## Build backend image for NAS registry
+	docker build -t $(NAS_REGISTRY)/lenie-ai-server:latest -f backend/Dockerfile .
+
+nas-build-frontend: ## Build frontend image for NAS registry
+	docker build -t $(NAS_REGISTRY)/lenie-ai-frontend:latest -f web_interface_react/Dockerfile .
+
+nas-build-app2: ## Build app2 image for NAS registry
+	docker build -t $(NAS_REGISTRY)/lenie-ai-app2:latest -f web_interface_app2/Dockerfile .
+
+nas-build-all: ## Build all images for NAS registry
+	$(MAKE) nas-build-server
+	$(MAKE) nas-build-frontend
+	$(MAKE) nas-build-app2
+
+nas-push-server: ## Push backend image to NAS registry
+	docker push $(NAS_REGISTRY)/lenie-ai-server:latest
+
+nas-push-frontend: ## Push frontend image to NAS registry
+	docker push $(NAS_REGISTRY)/lenie-ai-frontend:latest
+
+nas-push-app2: ## Push app2 image to NAS registry
+	docker push $(NAS_REGISTRY)/lenie-ai-app2:latest
+
+nas-push-all: ## Push all images to NAS registry
+	$(MAKE) nas-push-server
+	$(MAKE) nas-push-frontend
+	$(MAKE) nas-push-app2
+
+nas-release-server: ## Build and push backend image to NAS registry
+	$(MAKE) nas-build-server
+	$(MAKE) nas-push-server
+
+nas-release-frontend: ## Build and push frontend image to NAS registry
+	$(MAKE) nas-build-frontend
+	$(MAKE) nas-push-frontend
+
+nas-release-app2: ## Build and push app2 image to NAS registry
+	$(MAKE) nas-build-app2
+	$(MAKE) nas-push-app2
+
+nas-release-all: ## Build and push all images to NAS registry
+	$(MAKE) nas-build-all
+	$(MAKE) nas-push-all
+
 # AWS operations (requires .env with AWS variables)
 aws-start-openvpn:  ## Start OpenVPN EC2 and update Route53 DNS
 	python infra/aws/tools/aws_ec2_route53.py --instance-id $(OPENVPN_OWN_AWS_INSTANCE_ID) --hosted-zone-id $(AWS_HOSTED_ZONE_ID) --domain-name $(OPENVPN_OWN_DOMAIN_NAME)
