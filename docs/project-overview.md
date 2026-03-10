@@ -23,7 +23,7 @@ The system consists of a Python/Flask REST API backend, a React frontend applica
 ## Parts Summary
 
 ### Backend API (`backend/`)
-Flask REST API with 19 endpoints for document CRUD, AI operations (embedding generation, similarity search), and content processing (webpage download, text cleanup, YouTube transcription). Multi-provider LLM abstraction supporting OpenAI, AWS Bedrock, Google Vertex AI, and CloudFerro Bielik.
+Flask REST API with 20 endpoints for document CRUD, AI operations (embedding generation, similarity search), and content processing (webpage download, text cleanup, YouTube transcription). Multi-provider LLM abstraction supporting OpenAI, AWS Bedrock, Google Vertex AI, and CloudFerro Bielik.
 
 ### Main Frontend (`web_interface_react/`)
 React 18 SPA with 7 pages for document management. Features include document list with filtering, vector similarity search, and per-type editors (link, webpage, youtube, movie) with AI tools (split for embedding, clean text). Supports two backend modes: AWS Serverless and Docker.

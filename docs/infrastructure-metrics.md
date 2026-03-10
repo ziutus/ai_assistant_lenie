@@ -1,12 +1,12 @@
 # Infrastructure Metrics — Single Source of Truth
 
-> Last verified: 2026-02-23 | Post-Sprint 5 (Epic 18: Lambda consolidation ec2-manager + rds-manager)
+> Last verified: 2026-03-10 | Post-Sprint 10 (B-93: /document_states endpoint)
 
 This file is the authoritative source for infrastructure counts. All other documentation files should reference or be consistent with values here.
 
 ## Flask Server (Docker / Kubernetes)
 
-**Entry point:** `backend/server.py` | **Total endpoints: 19**
+**Entry point:** `backend/server.py` | **Total endpoints: 20**
 
 | # | Path | Method | Category |
 |---|------|--------|----------|
@@ -23,12 +23,13 @@ This file is the authoritative source for infrastructure counts. All other docum
 | 11 | `/website_download_text_content` | POST | Content Processing |
 | 12 | `/website_text_remove_not_needed` | POST | Content Processing |
 | 13 | `/website_split_for_embedding` | POST | Content Processing |
-| 14 | `/healthz` | GET | Health & Info |
-| 15 | `/metrics` | GET | Health & Info |
-| 16 | `/startup` | GET | Health & Info |
-| 17 | `/readiness` | GET | Health & Info |
-| 18 | `/liveness` | GET | Health & Info |
-| 19 | `/version` | GET | Health & Info |
+| 14 | `/document_states` | GET | Metadata |
+| 15 | `/healthz` | GET | Health & Info |
+| 16 | `/metrics` | GET | Health & Info |
+| 17 | `/startup` | GET | Health & Info |
+| 18 | `/readiness` | GET | Health & Info |
+| 19 | `/liveness` | GET | Health & Info |
+| 20 | `/version` | GET | Health & Info |
 
 All routes except `/startup`, `/readiness`, `/liveness`, `/version` require `x-api-key` header.
 
