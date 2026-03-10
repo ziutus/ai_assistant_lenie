@@ -6,7 +6,7 @@ Flask REST API backend for Project Lenie. Provides document management, AI/LLM o
 
 ```
 backend/
-├── server.py                              # Main Flask application (19 endpoints)
+├── server.py                              # Main Flask application (20 endpoints)
 ├── pyproject.toml                         # Dependencies, build config, tool settings
 ├── uv.lock                                # Frozen dependency lock file
 ├── Dockerfile                             # Multi-stage Docker build (Python 3.11-slim + uv)
@@ -36,7 +36,7 @@ backend/
 
 ## Main Application (`server.py`)
 
-Flask + Flask-CORS application exposing 19 REST API endpoints. **Version**: 0.3.13.0.
+Flask + Flask-CORS application exposing 20 REST API endpoints. **Version**: 0.3.13.0.
 
 ### API Endpoints
 
@@ -45,7 +45,7 @@ Flask + Flask-CORS application exposing 19 REST API endpoints. **Version**: 0.3.
 | **Document CRUD** | `/url_add`, `/website_list`, `/website_get`, `/website_save`, `/website_delete` |
 | **AI Operations** | `/ai_get_embedding`, `/website_similar` |
 | **Content Processing** | `/website_download_text_content`, `/website_text_remove_not_needed`, `/website_split_for_embedding` |
-| **Metadata** | `/website_is_paid`, `/website_get_next_to_correct` |
+| **Metadata** | `/website_is_paid`, `/website_get_next_to_correct`, `/document_states` |
 | **Health & Info** | `/` (root), `/healthz`, `/startup`, `/readiness`, `/liveness`, `/version`, `/metrics` |
 
 All routes (except health checks) require `x-api-key` header validated against `STALKER_API_KEY` env var.

@@ -363,7 +363,7 @@ development_status:
 
   # --- Epic 30: Database Lookup Tables & Search Extensions ---
   epic-30: in-progress  # B-97 done (NAS), remaining stories in backlog
-  B-93-synchronize-document-states-from-backend-to-frontend: review  # Backend GET /document_states endpoint + frontend dynamic dropdowns. Eliminates hardcoded enum subsets in list.tsx.
+  B-93-synchronize-document-states-from-backend-to-frontend: done  # Backend GET /document_states endpoint + frontend dynamic dropdowns. Eliminates hardcoded enum subsets in list.tsx. Code review: 4 fixes (H1 docs count 19→20, M1 err:unknown, M2 AbortController, M3 loading init).
   B-94-create-lookup-tables-and-seed-data: backlog  # 4 lookup tables (document_status_types, document_status_error_types, document_types, embedding_models) + Alembic migration. ADR-010.
   B-95-add-foreign-key-constraints-to-web-documents-and-websites-embeddings: backlog  # FK constraints on document_state, document_state_error, document_type, embedding model. Depends on B-94.
   B-96-update-sqlalchemy-orm-models-for-lookup-table-relationships: backlog  # ORM models for lookup tables, ForeignKey + relationship() instead of SAEnum. Depends on B-95.
