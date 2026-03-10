@@ -1255,3 +1255,96 @@ so that when the project has multiple users, I can analyze usage patterns by geo
 
 **Priority:** LOW
 **Status:** backlog
+
+### B-99: URL Normalization, Tracking Parameter Removal, and Duplicate Detection in `/url_add`
+
+As a **user**,
+I want URLs to be cleaned of tracking parameters and normalized before storage,
+so that duplicate documents are not created for the same page with different tracking suffixes, and the `/url_add` endpoint rejects or updates existing URLs instead of silently creating duplicates.
+
+**Origin:** Two separate issues discovered during code analysis:
+
+1. **`/url_add` has no duplicate detection** — unlike `/website_save` (which uses `WebDocument.get_by_url()`), `/url_add` always creates a new record. Submitting the same URL twice (e.g., first as "link", then as "webpage") results in two database rows for the same page. The `url` column in `web_documents` has no `UNIQUE` constraint.
+
+2. **No URL cleaning** — URLs are stored exactly as received. The same article shared via Facebook (`?fbclid=...`), Google Ads (`?gclid=...`), or a newsletter (`?utm_source=...`) is treated as a different document each time. Only YouTube URLs are cleaned (via `clean_youtube_url()` in `youtube_processing.py`).
+
+**Problem examples:**
+```
+# These all point to the same article but create separate records:
+https://example.com/article
+https://example.com/article?fbclid=ABC123
+https://example.com/article?utm_source=twitter&utm_medium=social
+https://example.com/article?gclid=XYZ789&msclkid=DEF456
+https://example.com/article#section1
+```
+
+**Proposed solution:**
+
+**Part 1: URL Cleaning Function**
+
+Create `backend/library/url_cleaner.py` with a `clean_url(url: str) -> str` function that:
+
+1. **Removes tracking parameters** — strip all known tracking/session query params:
+   - Facebook: `fbclid`, `fb_action_ids`, `fb_action_types`, `fb_ref`, `fb_source`
+   - Google: `gclid`, `gclsrc`, `dclid`, `gad_source`
+   - UTM: `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`, `utm_id`
+   - Microsoft: `msclkid`
+   - HubSpot: `hsa_*`, `__hstc`, `__hssc`, `__hsfp`, `_hsenc`, `_hsmi`
+   - Mailchimp: `mc_cid`, `mc_eid`
+   - Session/analytics: `_ga`, `_gl`, `_gac`, `PHPSESSID`, `sid`, `sessionid`
+   - General: `ref`, `referrer`, `source` (configurable — some sites use these meaningfully)
+
+2. **Normalizes URL structure**:
+   - Remove trailing slashes (except root `/`)
+   - Lowercase scheme and hostname
+   - Remove default ports (`:80` for HTTP, `:443` for HTTPS)
+   - Sort remaining query parameters alphabetically (for consistent comparison)
+   - Remove empty fragment identifiers (`#`)
+
+3. **Preserves meaningful parameters** — do NOT strip:
+   - YouTube `v` parameter (already handled by `clean_youtube_url()`)
+   - Pagination: `page`, `p`, `offset`
+   - Search: `q`, `query`, `search`
+   - Content identifiers: `id`, `article_id`, `post_id`
+
+4. **Configurable** — tracking parameter list stored in `backend/data/tracking_params.json` for easy updates without code changes.
+
+**Part 2: Duplicate Detection in `/url_add`**
+
+1. Call `clean_url()` on the incoming URL before any processing
+2. Check if the cleaned URL already exists via `WebDocument.get_by_url(session, cleaned_url)`
+3. If found:
+   - If same `document_type` → return existing document ID with HTTP 200 and a flag `"existing": true`
+   - If different `document_type` (e.g., existing "link", new "webpage") → update the type and return document ID with `"updated": true`
+4. If not found → create new document as today
+
+**Part 3: Apply Cleaning to All Entry Points**
+
+- `/url_add` endpoint in `server.py`
+- `/website_save` endpoint in `server.py`
+- Chrome extension `popup.js` (optional — clean client-side before sending)
+- Import scripts (`unknown_news_import.py`, `dynamodb_sync.py`)
+- SQS Lambda handler (`sqs-weblink-put-into`)
+
+**Part 4: Database Migration**
+
+1. One-time cleanup script to normalize existing URLs in `web_documents`
+2. Detect and merge duplicates created by tracking parameters
+3. Add `UNIQUE` constraint on `url` column (after deduplication)
+
+**Technical notes:**
+- Python's `urllib.parse` (already used in `youtube_processing.py`) is sufficient — no external library needed
+- Consider using [url-normalize](https://pypi.org/project/url-normalize/) if edge cases grow complex
+- The `clean_youtube_url()` function in `youtube_processing.py` should delegate to the new generic `clean_url()` + YouTube-specific logic
+
+**Acceptance Criteria:**
+- `clean_url()` strips all listed tracking parameters from URLs
+- `/url_add` returns existing document (not duplicate) when URL already exists after cleaning
+- `/url_add` updates `document_type` when re-submitting existing URL with different type
+- YouTube URL cleaning continues to work correctly
+- Existing URLs in database are migrated (one-time script)
+- `UNIQUE` constraint on `url` column prevents future duplicates
+- Unit tests cover: tracking param removal, normalization, duplicate detection, type upgrade
+
+**Priority:** MEDIUM
+**Status:** backlog
