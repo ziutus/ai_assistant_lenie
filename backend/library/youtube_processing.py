@@ -12,8 +12,12 @@ from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 
 from library.api.aws.s3_aws import s3_file_exist
 from library.api.aws.transcript import aws_transcript
-from library.stalker_web_document import StalkerDocumentStatus, StalkerDocumentType
-from library.stalker_web_document_db import StalkerWebDocumentDB
+from sqlalchemy.orm import Session
+
+from library.db.models import WebDocument
+from library.models.stalker_document_status import StalkerDocumentStatus
+from library.models.stalker_document_status_error import StalkerDocumentStatusError
+from library.models.stalker_document_type import StalkerDocumentType
 from library.stalker_youtube_file import StalkerYoutubeFile
 from library.text_detect_language import compare_language, text_language_detect
 from library.text_transcript import youtube_titles_split_with_chapters, youtube_titles_to_text
@@ -33,6 +37,7 @@ def clean_youtube_url(url: str) -> str:
 
 
 def process_youtube_url(
+    session: Session,
     youtube_url: str,
     language: str | None = None,
     chapter_list: str | None = None,
@@ -41,13 +46,19 @@ def process_youtube_url(
     force_reprocess: bool = False,
     cache_dir: str | None = None,
     transcript_provider: str | None = None,
-) -> StalkerWebDocumentDB:
+    ai_summary_needed: bool = False,
+    llm_model: str | None = None,
+    skip_captions: bool = False,
+) -> "WebDocument":
     """Process a YouTube URL: fetch metadata, download captions/transcription, store in DB.
 
     If the URL already exists in the database, the existing document is updated.
     If not, a new document is created.
 
-    Returns the StalkerWebDocumentDB instance with all processed data.
+    The caller owns the session lifecycle — this function commits per-document
+    but never closes the session.
+
+    Returns the WebDocument ORM instance with all processed data.
     """
 
     t_start = time.time()
@@ -64,11 +75,12 @@ def process_youtube_url(
         os.makedirs(cache_dir)
 
     # Load or create document in DB
-    web_document = StalkerWebDocumentDB(url=youtube_url)
+    web_document = WebDocument.get_by_url(session, youtube_url)
 
-    if web_document.id is None:
-        # New document — set fields and save (INSERT)
+    if web_document is None:
+        # New document — create via ORM
         logger.info(f"New YouTube URL, creating document: {youtube_url}")
+        web_document = WebDocument(url=youtube_url)
         web_document.set_document_type("youtube")
         web_document.source = source
         if language:
@@ -77,7 +89,8 @@ def process_youtube_url(
             web_document.chapter_list = chapter_list
         if note:
             web_document.note = note
-        web_document.save()
+        session.add(web_document)
+        session.commit()
     else:
         logger.info(f"Document already exists in DB with ID: {web_document.id}")
 
@@ -107,14 +120,14 @@ def process_youtube_url(
         web_document.text_raw = youtube_file.text
         web_document.document_type = StalkerDocumentType.youtube
         web_document.document_length = youtube_file.length_seconds
-        web_document.save()
+        session.commit()
 
     logger.info(f"Video ID: {youtube_file.video_id}")
 
     # Set status to NEED_TRANSCRIPTION
     logger.info("Setting status NEED_TRANSCRIPTION")
     web_document.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION
-    web_document.save()
+    session.commit()
 
     # Default language
     if not web_document.language:
@@ -123,6 +136,13 @@ def process_youtube_url(
         web_document.language = default_lang
 
     # Try YouTube captions first
+    if web_document.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION and skip_captions:
+        logger.info("Skipping YouTube captions (skip_captions=True, likely IP blocked)")
+        web_document.document_state = StalkerDocumentStatus.TEMPORARY_ERROR
+        web_document.document_state_error = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR
+        session.commit()
+        return web_document
+
     if web_document.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION:
         t0 = time.time()
         logger.info("Trying to use captions from YouTube")
@@ -152,11 +172,15 @@ def process_youtube_url(
                 if not compare_language(language_detected, web_document.language):
                     logger.info(
                         f"Language detected >{language_detected}< differs from expected >{web_document.language}<, "
-                        f"need transcription"
+                        f"captions language mismatch"
                     )
-                    web_document.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION
+                    web_document.text = youtube_titles_to_text(transcript_text)
+                    web_document.text_raw = web_document.text
                     web_document.language = language_detected
-                    web_document.save()
+                    web_document.document_state = StalkerDocumentStatus.ERROR
+                    web_document.document_state_error = StalkerDocumentStatusError.CAPTIONS_LANGUAGE_MISMATCH
+                    session.commit()
+                    return web_document
                 else:
                     if transcript_text and web_document.chapter_list:
                         string_all = youtube_titles_split_with_chapters(
@@ -164,28 +188,40 @@ def process_youtube_url(
                         )
                         web_document.text = string_all
                         web_document.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-                        web_document.save()
+                        session.commit()
                     elif transcript_text:
                         web_document.text = youtube_titles_to_text(transcript_text)
                         web_document.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-                        web_document.save()
+                        session.commit()
 
                 web_document.text_raw = web_document.text
-                web_document.save()
+                session.commit()
 
         except TranscriptsDisabled:
             logger.info(f"The video at {web_document.url} has its transcripts disabled.")
             web_document.youtube_captions = False
-            web_document.save()
+            session.commit()
 
         except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
+            logger.error(f"An unexpected error occurred while fetching captions: {e}")
+            session.rollback()
+            web_document.document_state = StalkerDocumentStatus.TEMPORARY_ERROR
+            web_document.document_state_error = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR
+            session.commit()
+            return web_document
 
         logger.info(f"YouTube captions step: {time.time() - t0:.2f}s")
 
-    # If still NEED_TRANSCRIPTION — use external transcription provider
+    # If still NEED_TRANSCRIPTION — check if paid transcription is authorized
     t0 = time.time()
     if web_document.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION:
+        if not web_document.transcript_needed:
+            logger.info("YouTube captions not available and transcript_needed=False — skipping paid transcription")
+            web_document.document_state = StalkerDocumentStatus.ERROR
+            web_document.document_state_error = StalkerDocumentStatusError.NO_CAPTIONS_AVAILABLE
+            session.commit()
+            return web_document
+
         logger.info(f"Status: {web_document.document_state}")
         logger.info(f"Title: {web_document.title}")
         logger.info(f"Description: {youtube_file.description}")
@@ -219,7 +255,7 @@ def process_youtube_url(
                 web_document.transcript_job_id = transcript.id
                 logger.info(f"[DONE] Transcript job ID: >{transcript.id}<")
                 web_document.document_state = StalkerDocumentStatus.TRANSCRIPTION_IN_PROGRESS
-                web_document.save()
+                session.commit()
 
             transcript = aai.Transcript.get_by_id(web_document.transcript_job_id)
             if transcript.status == aai.TranscriptStatus.error:
@@ -234,14 +270,14 @@ def process_youtube_url(
                 web_document.text_raw = transcript.text
                 web_document.text = text_raw
                 web_document.document_state = StalkerDocumentStatus.TRANSCRIPTION_DONE
-                web_document.save()
+                session.commit()
             else:
                 logger.info(f"Transcription status: {transcript.status}")
 
         elif transcript_provider == "aws":
             media_format = mimetypes.guess_type(youtube_file.path)[0]
 
-            session = boto3.Session(
+            boto_session = boto3.Session(
                 aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
                 aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
                 region_name=os.getenv("AWS_REGION"),
@@ -249,7 +285,7 @@ def process_youtube_url(
 
             logger.info("Checking if file to transcription is on S3...")
             if not s3_file_exist(s3_bucket_transcript, youtube_file.filename):
-                s3_client = session.client(service_name='s3', region_name='us-east-1')
+                s3_client = boto_session.client(service_name='s3', region_name='us-east-1')
                 logger.info("Uploading file to S3...")
                 with open(youtube_file.path, 'rb') as file:
                     s3_client.upload_fileobj(file, s3_bucket_transcript, youtube_file.filename)
@@ -269,7 +305,7 @@ def process_youtube_url(
                     file.write(response.content)
 
                 web_document.text_raw = response.content
-                web_document.save()
+                session.commit()
                 logger.info("[DONE]")
             else:
                 logger.info(f"Transcription status: {response['status']}")

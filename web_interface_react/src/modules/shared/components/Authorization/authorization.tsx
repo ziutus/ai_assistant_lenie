@@ -20,11 +20,13 @@ const Authorization = () => {
   const { fetchSqsSize } = useSqs();
   const navigate = useNavigate();
 
-  // Auto-check infrastructure status on mount
+  // Auto-check infrastructure status on mount (AWS only — Docker/NAS has no infra endpoints)
   React.useEffect(() => {
-    handleDBStatusGet();
-    handleVPNServerStatusGet();
-    fetchSqsSize();
+    if (apiType === "AWS Serverless") {
+      handleDBStatusGet();
+      handleVPNServerStatusGet();
+      fetchSqsSize();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -83,78 +85,80 @@ const Authorization = () => {
         </button>
       </div>
 
-      <form id={'database-form'} className={classes.grid}>
-        <div> SQS queue length: {sqsLength}
-          <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => fetchSqsSize()}> Check size</button>
-        </div>
+      {apiType === "AWS Serverless" && (
+        <form id={'database-form'} className={classes.grid}>
+          <div> SQS queue length: {sqsLength}
+            <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => fetchSqsSize()}> Check size</button>
+          </div>
 
-        <div className={classes.dbStatus}>
-          <p>
-            DataBase status:{' '}
-            <span className={generateClass()}>{databaseStatus}</span>
-          </p>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            {!!isLoading && <div className={'loader'}></div>}
-            {databaseStatus === 'stopped' && (
-              <button
-                disabled={isLoading}
-                type={'button'}
-                className={'button'}
-                onClick={() => handleDBStart()}
-              >
-                Start
-              </button>
-            )}
-            {databaseStatus === 'available' && (
-              <button
-                disabled={isLoading}
-                type={'button'}
-                className={'button'}
-                onClick={() => handleDBStop()}
-              >
-                Stop
-              </button>
-            )}
-            <button
-              disabled={isLoading}
-              type={'button'}
-              className={'button'}
-              onClick={() => handleDBStatusGet()}
+          <div className={classes.dbStatus}>
+            <p>
+              DataBase status:{' '}
+              <span className={generateClass()}>{databaseStatus}</span>
+            </p>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
             >
-              Check status
-            </button>
+              {!!isLoading && <div className={'loader'}></div>}
+              {databaseStatus === 'stopped' && (
+                <button
+                  disabled={isLoading}
+                  type={'button'}
+                  className={'button'}
+                  onClick={() => handleDBStart()}
+                >
+                  Start
+                </button>
+              )}
+              {databaseStatus === 'available' && (
+                <button
+                  disabled={isLoading}
+                  type={'button'}
+                  className={'button'}
+                  onClick={() => handleDBStop()}
+                >
+                  Stop
+                </button>
+              )}
+              <button
+                disabled={isLoading}
+                type={'button'}
+                className={'button'}
+                onClick={() => handleDBStatusGet()}
+              >
+                Check status
+              </button>
+            </div>
           </div>
-        </div>
 
-        <div className={classes.vpnServerStatus}>
-          <p>
-            VPN Server status:{' '}
-            <span className={generateClassVpnServer()}>{vpnServerStatus}</span>
-          </p>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            {!!isLoadingVpnServer && <div className={'loader'}></div>}
-            {vpnServerStatus === 'stopped' && (
-              <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => handleVPNServerStart()}> Start </button>
-            )}
-            {vpnServerStatus === 'running' && (
-              <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => handleVPNServerStop()}> Stop </button>
-            )}
-            <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => handleVPNServerStatusGet()}> Check status</button>
+          <div className={classes.vpnServerStatus}>
+            <p>
+              VPN Server status:{' '}
+              <span className={generateClassVpnServer()}>{vpnServerStatus}</span>
+            </p>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+              }}
+            >
+              {!!isLoadingVpnServer && <div className={'loader'}></div>}
+              {vpnServerStatus === 'stopped' && (
+                <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => handleVPNServerStart()}> Start </button>
+              )}
+              {vpnServerStatus === 'running' && (
+                <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => handleVPNServerStop()}> Stop </button>
+              )}
+              <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => handleVPNServerStatusGet()}> Check status</button>
+            </div>
           </div>
-        </div>
-      </form>
+        </form>
+      )}
       <div>
         <span> Document type: {selectedDocumentType} </span>
         <span> Document status: {selectedDocumentState}</span>

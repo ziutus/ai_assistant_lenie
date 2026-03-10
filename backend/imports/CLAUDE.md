@@ -18,14 +18,14 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 
 **Resource discovery via SSM Parameter Store.** DynamoDB table name and S3 bucket name are resolved from SSM using the project/environment convention (`/{project}/{env}/dynamodb/documents/name`, `/{project}/{env}/s3/website-content/name`). CLI overrides (`--table`, `--bucket`) skip the SSM lookup.
 
-**Data access: DynamoDB + S3 → Direct database connection**. Reads from DynamoDB (DateIndex GSI) and S3, writes via `StalkerWebDocumentDB.save()` with direct SQL for `created_at` and `chapter_list` preservation.
+**Data access: DynamoDB + S3 → ORM (SQLAlchemy)**. Reads from DynamoDB (DateIndex GSI) and S3, writes via `WebDocument` ORM model with `session.add()` + `session.commit()`. All fields including `created_at` and `chapter_list` are set via ORM attribute assignment.
 
 **How it works:**
 1. Resolves DynamoDB table name and S3 bucket from SSM Parameter Store (or CLI overrides)
 2. Queries DynamoDB `DateIndex` GSI day-by-day from `--since` date to today (handles pagination)
-3. For each item, checks if URL already exists in local PostgreSQL (duplicate detection via `StalkerWebDocumentDB`)
+3. For each item, checks if URL already exists in local PostgreSQL (duplicate detection via `WebDocument.get_by_url()`)
 4. For `webpage` type items with `s3_uuid`: downloads `{uuid}.txt` and `{uuid}.html` from S3, saves locally to `data/`
-5. Inserts new documents via `StalkerWebDocumentDB.save()`, then preserves original `created_at` and `chapter_list` via direct SQL UPDATE
+5. Inserts new documents via ORM: `WebDocument(url=url)` → set attributes → `session.add(doc)` + `session.commit()`
 6. Sets `document_state` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
 
 **DynamoDB → PostgreSQL field mapping:**
@@ -71,7 +71,7 @@ Before executing any operations, the script displays source (AWS profile, region
 
 Imports curated technology/science links from [unknow.news](https://unknow.news/) — a Polish newsletter aggregating interesting articles.
 
-**Data access: Direct database connection** (not via REST API). Uses `StalkerWebDocumentDB` and `WebsitesDBPostgreSQL` with `psycopg2` — the same DB layer as the Flask backend. This means the script requires direct PostgreSQL connectivity and the same `POSTGRESQL_*` environment variables as the backend.
+**Data access: ORM (SQLAlchemy)** (not via REST API). Uses `WebDocument` ORM model and `WebsitesDBPostgreSQL(session=session)` for database access. Requires direct PostgreSQL connectivity and the same `POSTGRESQL_*` environment variables as the backend.
 
 **How it works:**
 1. Downloads `archiwum.json` from `https://unknow.news/archiwum.json` (full archive of curated links)
@@ -83,9 +83,9 @@ Imports curated technology/science links from [unknow.news](https://unknow.news/
    - Sponsored entries (title matching "sponsorowane")
 5. For each new URL:
    - In `--dry-run` mode: prints what would be added without DB writes
-   - Checks if it already exists in the database (by URL lookup via `StalkerWebDocumentDB`)
+   - Checks if it already exists in the database (by URL lookup via `WebDocument.get_by_url()`)
    - If it exists: corrects missing `date_from` field if needed
-   - If it's new: creates a document with status `READY_FOR_TRANSLATION`, type `link`, language `pl`, source `https://unknow.news/`
+   - If it's new: creates a document with type `link` (or `youtube` for YouTube URLs), language `pl`, source `https://unknow.news/`
 6. Stops after `--limit` documents are added (if specified)
 
 **Imported document fields:**
@@ -94,7 +94,7 @@ Imports curated technology/science links from [unknow.news](https://unknow.news/
 - `summary` — short description (`info` field from JSON)
 - `language` — always `pl` (Polish)
 - `document_type` — `StalkerDocumentType.link`
-- `document_state` — `StalkerDocumentStatus.READY_FOR_TRANSLATION`
+- `document_state` — `StalkerDocumentStatus.READY_FOR_EMBEDDING` (link) or `StalkerDocumentStatus.URL_ADDED` (youtube)
 - `source` — `https://unknow.news/`
 - `date_from` — publication date from the feed
 
@@ -121,5 +121,6 @@ cd backend
 ## Architecture Notes
 
 - These scripts bypass the REST API intentionally — they are meant for batch import operations run locally or as scheduled jobs, not through the web interface.
-- Documents are created with `READY_FOR_TRANSLATION` status, meaning they enter the processing pipeline at the translation step (since the source content is in Polish and may need English translation for embedding).
-- The `StalkerWebDocumentDB` constructor performs a URL lookup on instantiation, so creating the object also serves as a duplicate check.
+- Both scripts use ORM models (`WebDocument` from `library.db.models`) with `get_session()` from `library.db.engine` for database access. Session lifecycle follows the pattern: `session = get_session()` → `try` → per-document `session.commit()` → `finally` → `session.close()`.
+- Duplicate detection uses `WebDocument.get_by_url(session, url)` — returns existing document or `None`.
+- `unknown_news_import.py` creates link documents with `READY_FOR_EMBEDDING` status and YouTube documents with `URL_ADDED` status.

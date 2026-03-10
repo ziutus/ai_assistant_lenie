@@ -6,6 +6,9 @@ Core library for Project Lenie providing document processing, LLM abstraction, e
 
 ```
 library/
+├── db/               # SQLAlchemy ORM layer
+│   ├── models.py     # WebDocument, WebsiteEmbedding ORM models
+│   └── engine.py     # Engine & session factories (get_session, get_scoped_session)
 ├── models/           # Data classes and enums (domain objects)
 ├── website/          # HTML download, parsing, paywall detection, content cleanup
 ├── api/              # External service integrations
@@ -16,9 +19,9 @@ library/
 │   └── asemblyai/    # Speech-to-text transcription
 ├── ai.py             # LLM provider abstraction (routes to api/*)
 ├── embedding.py      # Embedding provider abstraction (routes to api/*)
-├── stalker_web_document.py      # Core document domain model
-├── stalker_web_document_db.py   # Document model with DB persistence (extends above)
-├── stalker_web_documents_db_postgresql.py  # Query layer (list, search, similarity)
+├── stalker_web_document.py      # Re-export: WebDocument as StalkerWebDocument
+├── stalker_web_document_db.py   # Re-export: WebDocument as StalkerWebDocumentDB
+├── stalker_web_documents_db_postgresql.py  # Query layer (ORM, list, search, similarity)
 ├── text_functions.py        # Text processing & splitting utilities
 ├── text_detect_language.py  # Language detection abstraction
 ├── text_transcript.py       # Transcript/chapter parsing utilities
@@ -33,9 +36,11 @@ library/
 
 ### Domain Model & Database
 
-- **`stalker_web_document.py`** — `StalkerWebDocument` class: ~30 attributes covering URL, text content (raw/English/markdown), metadata, processing state. Methods: `validate()`, `set_document_type()`, `set_document_state()`.
-- **`stalker_web_document_db.py`** — `StalkerWebDocumentDB(StalkerWebDocument)`: adds `save()`, `delete()`, `embedding_add(model)` (high-level: generates and stores embedding), `embedding_add_simple()`, `embedding_delete()`. Loads document from DB on construction. Custom ORM (no SQLAlchemy), uses `psycopg2` directly. Currently `embedding_add()` supports `link` document type (uses title+summary as text); other types raise `NotImplementedError`.
-- **`stalker_web_documents_db_postgresql.py`** — `WebsitesDBPostgreSQL`: connection management + queries: `get_list()` (paginated/filtered), `get_similar()` (pgvector cosine search), `get_next_to_correct()`, `get_count()`.
+- **`stalker_web_document.py`** — Re-export: `from library.db.models import WebDocument as StalkerWebDocument`. Kept for backward compatibility.
+- **`stalker_web_document_db.py`** — Re-export: `from library.db.models import WebDocument as StalkerWebDocumentDB`. Kept for backward compatibility.
+- **`db/models.py`** — `WebDocument` SQLAlchemy ORM model: ~30 attributes covering URL, text content (raw/English/markdown), metadata, processing state. Methods: `get_by_id()`, `get_by_url()`, `populate_neighbors()`. `WebsiteEmbedding` model for vector embeddings.
+- **`db/engine.py`** — SQLAlchemy engine and session factories: `get_session()`, `get_scoped_session()`.
+- **`stalker_web_documents_db_postgresql.py`** — `WebsitesDBPostgreSQL`: query layer using SQLAlchemy session. Requires `session` parameter. Methods: `get_list()` (paginated/filtered), `get_similar()` (pgvector cosine search), `get_next_to_correct()`, `get_count()`, `embedding_add()`, `embedding_delete()`.
 
 **Database tables:** `public.web_documents` (28 columns), `public.websites_embeddings` (vector similarity).
 
@@ -111,7 +116,7 @@ Supported models:
 ## Patterns & Conventions
 
 - **Provider abstraction**: `ai.py` and `embedding.py` act as routers — they inspect the model name and delegate to the appropriate `api/*` module. New providers should follow this pattern.
-- **Custom ORM**: Database access uses raw `psycopg2` queries, not SQLAlchemy. `StalkerWebDocumentDB` handles single-document CRUD; `WebsitesDBPostgreSQL` handles queries and vector search. Both support optional SSL via `POSTGRESQL_SSLMODE` env var (required for AWS RDS).
+- **SQLAlchemy ORM**: Database access uses SQLAlchemy ORM (`db/models.py`, `db/engine.py`). `WebDocument` model handles single-document CRUD; `WebsitesDBPostgreSQL` handles queries and vector search. Connection supports optional SSL via `POSTGRESQL_SSLMODE` env var (required for AWS RDS).
 - **Data classes**: Models in `models/` are plain Python classes (not dataclasses or Pydantic). They use `__init__` with explicit attributes.
 - **Environment-driven config**: All API keys and connection strings come from environment variables (loaded via `dotenv`).
 - **Site-specific rules**: Website content cleanup uses regex rules defined in `data/site_rules.json` and `website/website_text_clean_regexp.py`, targeted at Polish news sites.
