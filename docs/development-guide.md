@@ -14,6 +14,44 @@
 | PostgreSQL | 18 | Database (via Docker or standalone) |
 | Git | latest | Version control |
 
+## Recommended Local Tools
+
+Development tools installed on the developer's Windows machine:
+
+| Tool | Version | Install | Purpose |
+|------|---------|---------|---------|
+| `psql` | 18.3 | [PostgreSQL 18 installer](https://www.postgresql.org/download/windows/) | Direct database access (NAS, AWS RDS) |
+| `uv` | latest | `pip install uv` or [installer](https://docs.astral.sh/uv/) | Python package & project manager |
+| `uvx` | (part of uv) | — | Run Python tools without installing (pytest, ruff) |
+| `ruff` | latest | `uvx ruff` | Python linter & formatter |
+| `pre-commit` | latest | `uv tool install pre-commit` | Git pre-commit hooks (secret detection) |
+| `docker` | latest | [Docker Desktop](https://www.docker.com/products/docker-desktop/) | Container builds, local stack |
+| `gh` | latest | `winget install GitHub.cli` | GitHub CLI (PRs, issues) |
+
+### PostgreSQL client tools (`psql`)
+
+Installed at `C:\Program Files\PostgreSQL\18\bin\`. Not in PATH by default in Git Bash.
+
+```bash
+# Connect to NAS database
+PGPASSWORD=postgres "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h 192.168.200.7 -p 5434 -U postgres -d lenie-ai
+
+# Or add to PATH (add to ~/.bashrc):
+export PATH="/c/Program Files/PostgreSQL/18/bin:$PATH"
+```
+
+Other useful tools from the PostgreSQL package:
+- `pg_dump` — database export/backup
+- `pg_restore` — database import/restore
+- `createdb` / `dropdb` — database management
+
+### WSL tools
+
+For scripts requiring Linux (deploy, imports):
+- `ssh` — NAS access (`admin@192.168.200.7`)
+- `scp` — file transfer to/from NAS
+- `uv` — Python package manager (`~/.local/bin/uv`)
+
 ## Quick Start (Docker)
 
 ```bash
@@ -301,7 +339,7 @@ For batch processing scripts that access AWS RDS:
 - **Pre-commit**: TruffleHog for secret detection
 - **Makefile targets**: `aws-*` (AWS), `gcloud-*` (GCloud), no prefix (local)
 - **API auth**: All routes except health checks require `x-api-key` header
-- **Database**: Raw psycopg2 (no ORM)
+- **Database**: SQLAlchemy ORM (see [ADR-004a](architecture-decisions.md#adr-004a-migrate-to-sqlalchemy-orm--pydantic-schemas))
 - **Commits**: CI/CD varies by tool (CircleCI, GitLab CI, Jenkins)
 
 ## Line Endings (.gitattributes)
