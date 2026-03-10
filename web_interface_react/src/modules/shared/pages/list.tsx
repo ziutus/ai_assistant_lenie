@@ -1,5 +1,6 @@
 import React from "react";
 import { useList } from "../hooks/useList";
+import { useDocumentStates } from "../hooks/useDocumentStates";
 import { NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { useManageLLM } from "../hooks/useManageLLM";
@@ -7,6 +8,7 @@ import { useFormik } from 'formik';
 
 const List = () => {
     const { isLoading, isError, data, message, handleGetList, dataAllLength } = useList();
+    const { states: fetchedStates, types: fetchedTypes } = useDocumentStates();
 
   const formik: any = useFormik({
     initialValues: {
@@ -54,27 +56,16 @@ const List = () => {
 
       <select value={selectedDocumentType} onChange={handleTypeChange}>
         <option value="ALL">ALL</option>
-        <option value="webpage">webpage</option>
-        <option value="link">link</option>
-        <option value="youtube">youtube</option>
-        <option value="movie">movie</option>
+        {fetchedTypes.map((t) => (
+          <option key={t} value={t}>{t}</option>
+        ))}
       </select>
 
       <select value={selectedDocumentState} onChange={handleDocumentStateChange}>
         <option value="ALL">ALL</option>
-        <option value="ERROR">ERROR</option>
-        <option value="TEMPORARY_ERROR">TEMPORARY_ERROR</option>
-        <option value="URL_ADDED">URL_ADDED</option>
-        <option value="NEED_TRANSCRIPTION">NEED_TRANSCRIPTION</option>
-        <option value="TRANSCRIPTION_IN_PROGRESS">TRANSCRIPTION_IN_PROGRESS</option>
-        <option value="TRANSCRIPTION_DONE">TRANSCRIPTION_DONE</option>
-        <option value="NEED_MANUAL_REVIEW">NEED_MANUAL_REVIEW</option>
-        <option value="READY_FOR_EMBEDDING">READY_FOR_EMBEDDING</option>
-        <option value="EMBEDDING_EXIST">EMBEDDING_EXIST</option>
-        <option value="NEED_CLEAN_TEXT">NEED_CLEAN_TEXT</option>
-        <option value="NEED_CLEAN_MD">NEED_CLEAN_MD</option>
-        <option value="TEXT_TO_MD_DONE">TEXT_TO_MD_DONE</option>
-        <option value="MD_SIMPLIFIED">MD_SIMPLIFIED</option>
+        {fetchedStates.map((s) => (
+          <option key={s} value={s}>{s}</option>
+        ))}
       </select>
       <input
         type="text"

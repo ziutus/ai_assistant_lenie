@@ -16,6 +16,9 @@ from library.models.webpage_parse_result import WebPageParseResult
 from library.website.website_paid import website_is_paid
 from library.text_functions import split_text_for_embedding
 from library.ai_intent_parser import parse_intent
+from library.models.stalker_document_status import StalkerDocumentStatus
+from library.models.stalker_document_type import StalkerDocumentType
+from library.models.stalker_document_status_error import StalkerDocumentStatusError
 
 logging.basicConfig(level=logging.INFO)
 
@@ -334,6 +337,23 @@ def website_count():
     repo = WebsitesDBPostgreSQL(session)
     counts = repo.get_count_by_type()
     return {"status": "success", "counts": counts}, 200
+
+
+@app.route('/document_states', methods=['GET', 'OPTIONS'])
+def get_document_states():
+    logging.debug("Getting document states, types, and errors")
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    response = {
+        "status": "success",
+        "message": "Document states retrieved",
+        "encoding": "utf8",
+        "states": [s.name for s in StalkerDocumentStatus],
+        "types": [t.name for t in StalkerDocumentType],
+        "errors": [e.name for e in StalkerDocumentStatusError],
+    }
+    return response, 200
 
 
 @app.route('/website_is_paid', methods=['POST'])
