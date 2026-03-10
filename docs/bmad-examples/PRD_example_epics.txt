@@ -1,0 +1,985 @@
+
+ ▐▛███▜▌   Claude Code v2.1.71
+▝▜█████▛▘  Opus 4.6 · Claude Max
+  ▘▘ ▝▝    ~\git\_lenie-all\lenie-server-2025
+
+❯ /clear                                                                        
+  ⎿  (no content)
+
+❯  /bmad-bmm-check-implementation-readiness                                     
+
+● Skill(bmad-bmm-check-implementation-readiness)
+  ⎿  Initializing…
+  ⎿  Error: Skill bmad-bmm-check-implementation-readiness cannot be used with 
+     Skill tool due to disable-model-invocation
+
+● Skill bmad-bmm-check-implementation-readiness ma flagę
+  disable-model-invocation, więc nie mogę go uruchomić bezpośrednio. Sprawdzę
+  jego definicję i wykonam sprawdzenie ręcznie.
+
+● Searched for 6 patterns, read 4 files (ctrl+o to expand)
+
+● Rozumiem. Rozpoczynam workflow Check Implementation Readiness zgodnie z
+  instrukcjami.
+
+  ---
+  Rozpoczynam Document Discovery — inwentaryzację wszystkich plików
+  projektowych.
+
+  Będę:
+  1. Szukać wszystkich wymaganych dokumentów (PRD, Architecture, Epics, UX)
+  2. Grupować shardowane dokumenty razem
+  3. Identyfikować duplikaty (wersje pełne + shardowane)
+  4. Przedstawić wyniki do potwierdzenia
+
+● Searched for 8 patterns (ctrl+o to expand)
+
+● Sprawdzam jeszcze archiwum PRD.
+
+● Searched for 1 pattern (ctrl+o to expand)
+
+● ---
+  Document Discovery Complete
+
+  PRD Documents
+
+  Whole Documents:
+  - prd.md (aktualny)
+  - prd-validation-report.md (raport walidacyjny)
+
+  Archived PRDs:
+  - 6 zarchiwizowanych wersji PRD w archive/ (sprint 1–6)
+
+  Brak duplikatów — PRD nie jest shardowany.
+
+  Architecture Documents
+
+  Whole Documents:
+  - architecture.md
+
+  Brak duplikatów — brak wersji shardowanej.
+
+  Epics & Stories Documents
+
+  Whole Documents:
+  - epics.md
+
+  Sharded Documents:
+  - Folder: epics/
+    - index.md
+    - epic-20.md
+    - backlog.md
+
+  ⚠️ CRITICAL ISSUE: Duplikat formatu dokumentu Epics
+  - Epics istnieje zarówno jako epics.md (pełny dokument) ORAZ folder epics/
+  (shardowany)
+  - Musisz wybrać, której wersji użyć do oceny
+
+  Archived Epics:
+  - 3 zarchiwizowane wersje w archive/
+
+  UX Design Documents
+
+  ⚠️ WARNING: Brak dokumentu UX
+  - Dokument UX Design nie został znaleziony
+  - Wpłynie to na kompletność oceny
+
+  ---
+  Wymagane działania:
+  1. Duplikat Epics — który format jest aktualny? epics.md czy folder epics/?
+  Proszę wskazać, lub usunąć/przenieść nieaktualną wersję.
+  2. Brak UX — czy dokument UX Design istnieje w innej lokalizacji, czy projekt
+  nie wymaga tego dokumentu?
+
+  Gotowy do kontynuacji? [C] Kontynuuj po rozwiązaniu powyższych kwestii
+
+✻ Sautéed for 1m 20s
+
+❯ epics.md jest aktualny, w epics/ jest backlog, trzeba go zostawic, index.md   
+zawiera informacje  o dawnych sprintach. to jest chyba stary ipcs               
+@_bmad-output/planning-artifacts/epics/epic-20.md                               
+  ⎿  Read _bmad-output\planning-artifacts\epics\epic-20.md (211 lines)
+
+● Rozumiem. Podsumowując sytuację z Epics:
+
+  - epics.md — aktualny dokument do oceny ✅
+  - epics/backlog.md — backlog, zostaje (dokument uzupełniający)
+  - epics/index.md — stare sprinty (archiwalne)
+  - epics/epic-20.md — stary/nieaktualny plik
+
+  Do oceny implementation readiness użyję epics.md jako główny dokument Epics, z
+   epics/backlog.md jako uzupełnienie.
+
+  Zostaje jeszcze kwestia dokumentu UX Design — nie został znaleziony. Czy:
+  - Projekt nie wymaga dokumentu UX?
+  - Istnieje w innej lokalizacji?
+
+  Select an Option: [C] Kontynuuj do File Validation
+
+❯ na razie pracujemy na backend, UX nie jest potrzebny na razie. bedziemy o tym 
+ rozmawiac pozniej                                                              
+
+● Rozumiem — UX pomijamy na tym etapie.
+
+  Zapisuję inwentarz dokumentów i przechodzę do następnego kroku.
+
+● Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Write(_bmad-output\planning-artifacts\implementation-readiness-report-2026-03-
+       07.md)
+  ⎿  Wrote 36 lines to _bmad-output\planning-artifacts\implementation-readi
+     ness-report-2026-03-07.md
+       1 ---
+       2 stepsCompleted:
+       3   - step-01-document-discovery
+       4 documentsIncluded:
+       5   prd: _bmad-output/planning-artifacts/prd.md
+       6   architecture: _bmad-output/planning-artifacts/architecture.md
+       7   epics: _bmad-output/planning-artifacts/epics.md
+       8   backlog: _bmad-output/planning-artifacts/epics/backlog.md
+       9   prd-validation: _bmad-output/planning-artifacts/prd-validation
+         -report.md
+      10 documentsExcluded:
+     … +26 lines (ctrl+o to expand)
+
+● Inwentarz zapisany. Ładuję krok 2 — analiza PRD.
+
+● Read 1 file (ctrl+o to expand)
+
+● Rozpoczynam Analizę PRD — ekstrakcję wszystkich wymagań.
+
+  Wczytuję kompletny dokument PRD.
+
+● Read 1 file (ctrl+o to expand)
+
+● PRD przeczytany w całości. Teraz wyodrębniam wymagania i dodaję je do raportu.
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(_bmad-output\planning-artifacts\implementation-readiness-report-2026-03
+        -07.md)
+  ⎿  Added 1 line
+      1  ---
+      2  stepsCompleted:
+      3    - step-01-document-discovery
+      4 +  - step-02-prd-analysis                                        
+      5  documentsIncluded:
+      6    prd: _bmad-output/planning-artifacts/prd.md
+      7    architecture: _bmad-output/planning-artifacts/architecture.md
+
+● Update(_bmad-output\planning-artifacts\implementation-readiness-report-2026-03
+        -07.md)
+  ⎿  Added 125 lines
+       35  
+       36  ### UX Design
+       37  - Not applicable at this stage (backend focus)
+       38 +                                                              
+       39 +## PRD Analysis                                               
+       40 +                                                              
+       41 +### Functional Requirements                                   
+       42 +                                                              
+       43 +**ORM Model Definition:**                                     
+       44 +- FR1: Developer can define database table structure as a Pyth
+          +on ORM model class in a single file                           
+       45 +- FR2: Developer can define column types, constraints, default
+          +s, and nullability as model field attributes                  
+       46 +- FR3: Developer can define relationships between models (one-
+          +to-many, many-to-one) using ORM relationship declarations     
+       47 +- FR4: Developer can define Single Table Inheritance hierarchy
+          + on `web_documents` with document type as discriminator       
+       48 +- FR5: Developer can add domain methods (validate, analyze, se
+          +t_document_type, set_document_state) directly on the ORM model
+       49 +                                                              
+       50 +**Schema Migration:**                                         
+       51 +- FR6: Developer can auto-generate migration scripts from ORM 
+          +model changes via Alembic                                     
+       52 +- FR7: Developer can apply migrations to the database with a s
+          +ingle command (`alembic upgrade head`)                        
+       53 +- FR8: Developer can roll back migrations to a previous versio
+          +n (`alembic downgrade`)                                       
+       54 +- FR9: Developer can initialize Alembic on an existing databas
+          +e by stamping the current state as baseline                   
+       55 +                                                              
+       56 +**Session & Connection Management:**                          
+       57 +- FR10: Flask application can obtain thread-local database ses
+          +sions scoped to the request lifecycle                         
+       58 +- FR11: Flask application can automatically clean up sessions 
+          +on request teardown                                           
+       59 +- FR12: Import scripts and batch pipeline can obtain, commit, 
+          +and close their own database sessions (script-scoped lifecycle
+          +)                                                             
+       60 +- FR13: Engine can detect and recover from stale database conn
+          +ections (`pool_pre_ping`)                                     
+       61 +                                                              
+       62 +**Document Persistence:**                                     
+       63 +- FR14: Consumer can create a new document by instantiating an
+          + ORM model and committing to session                          
+       64 +- FR15: Consumer can update an existing document by modifying 
+          +ORM model attributes and committing                           
+       65 +- FR16: Consumer can delete a document via session, with casca
+          +de deletion of related embeddings                             
+       66 +- FR17: Consumer can look up a document by URL for duplicate d
+          +etection                                                      
+       67 +- FR18: Consumer can look up a document by ID                 
+       68 +- FR19: Consumer can serialize a document to a dictionary for 
+          +API responses                                                 
+       69 +                                                              
+       70 +**Embedding Operations:**                                     
+       71 +- FR20: Consumer can add a vector embedding to a document via 
+          +ORM relationship                                              
+       72 +- FR21: Consumer can delete embeddings for a document filtered
+          + by model name                                                
+       73 +- FR22: Repository can find documents needing embeddings (oute
+          +r join on `websites_embeddings`)                              
+       74 +- FR23: Repository can perform similarity search using `pgvect
+          +or-python` `cosine_distance()` operator                       
+       75 +                                                              
+       76 +**Repository Queries:**                                       
+       77 +- FR24: Repository can list documents with dynamic filters (do
+          +cument_type, document_state, source, project, limit, offset)  
+       78 +- FR25: Repository can count documents by type and/or state   
+       79 +- FR26: Repository can find documents ready for download (URL_
+          +ADDED state, webpage/link type)                               
+       80 +- FR27: Repository can find YouTube documents just added (URL_
+          +ADDED state, youtube type)                                    
+       81 +- FR28: Repository can find documents with completed transcrip
+          +tions                                                         
+       82 +- FR29: Repository can find the next document to correct (navi
+          +gation by ID and type)                                        
+       83 +- FR30: Repository can retrieve the last imported date for a g
+          +iven source                                                   
+       84 +                                                              
+       85 +**Import Script Compatibility:**                              
+       86 +- FR31: `dynamodb_sync.py` can create documents from DynamoDB 
+          +items using ORM models                                        
+       87 +- FR32: `dynamodb_sync.py` can set `created_at` and `chapter_l
+          +ist` via normal ORM attribute assignment (no direct SQL)      
+       88 +- FR33: `unknown_news_import.py` can create documents from JSO
+          +N feed entries using ORM models                               
+       89 +- FR34: `unknown_news_import.py` can detect and skip duplicate
+          + URLs via ORM query                                           
+       90 +                                                              
+       91 +**Batch Pipeline Compatibility:**                             
+       92 +- FR35: `web_documents_do_the_needful_new.py` can process SQS 
+          +messages and create documents via ORM                         
+       93 +- FR36: `web_documents_do_the_needful_new.py` can generate and
+          + store embeddings via ORM relationship                        
+       94 +- FR37: `web_documents_do_the_needful_new.py` can update docum
+          +ent state through the processing lifecycle                    
+       95 +- FR38: YouTube processing pipeline can store transcript text 
+          +and metadata via ORM                                          
+       96 +                                                              
+       97 +**Flask API Compatibility:**                                  
+       98 +- FR39: `/website_list` endpoint can return filtered, paginate
+          +d document lists via repository                               
+       99 +- FR40: `/website_get` endpoint can return a single document w
+          +ith neighbor navigation via repository                        
+      100 +- FR41: `/website_save` endpoint can create or update document
+          +s via ORM model                                               
+      101 +- FR42: `/website_delete` endpoint can remove documents with c
+          +ascade embedding deletion via ORM                             
+      102 +- FR43: `/website_similar` endpoint can perform vector similar
+          +ity search via `pgvector-python`                              
+      103 +                                                              
+      104 +**Total FRs: 43**                                             
+      105 +                                                              
+      106 +### Non-Functional Requirements                               
+      107 +                                                              
+      108 +**Code Quality:**                                             
+      109 +- NFR1: Zero raw `cursor.execute()` calls in production code —
+          + all database operations via SQLAlchemy ORM or `pgvector-pytho
+          +n` operators                                                  
+      110 +- NFR2: Code passes `ruff check backend/` with zero warnings (
+          +line-length=120)                                              
+      111 +- NFR3: All existing unit tests pass without modification (tes
+          +ts that don't touch DB layer)                                 
+      112 +- NFR4: ORM models use type hints (`Mapped[type]`) for IDE aut
+          +ocompletion and static analysis                               
+      113 +                                                              
+      114 +**Backward Compatibility:**                                   
+      115 +- NFR5: Enum classes (`StalkerDocumentStatus`, `StalkerDocumen
+          +tType`, `StalkerDocumentStatusError`) are preserved with ident
+          +ical values                                                   
+      116 +- NFR6: Database schema after migration is identical to before
+          + — Alembic baseline produces no diff against existing DDL scri
+          +pts                                                           
+      117 +                                                              
+      118 +**Maintainability:**                                          
+      119 +- NFR7: Adding a new column requires changes in exactly one fi
+          +le (`backend/library/db/models.py`)                           
+      120 +- NFR8: Adding a new table requires changes in exactly one fil
+          +e plus one Alembic migration command                          
+      121 +- NFR9: No dead code from old architecture remains (`stalker_w
+          +eb_document_db.py` wrapper fully removed)                     
+      122 +                                                              
+      123 +**Dependency Management:**                                    
+      124 +- NFR10: New dependencies (`sqlalchemy`, `pgvector`, `alembic`
+          +) added to `pyproject.toml` with version pins                 
+      125 +- NFR11: `uv lock` produces a valid lock file after dependency
+          + changes                                                      
+      126 +- NFR12: `.venv_wsl` synchronized after dependency changes    
+      127 +                                                              
+      128 +**Total NFRs: 12**                                            
+      129 +                                                              
+      130 +### Additional Requirements                                   
+      131 +                                                              
+      132 +**Assumptions:**                                              
+      133 +- Existing database schema in `backend/database/init/03-create
+          +-table.sql` and `04-create-table.sql` matches the live databas
+          +e                                                             
+      134 +- `pgvector-python` `cosine_distance()` produces identical res
+          +ults to raw SQL `<=>` operator                                
+      135 +- No production data exists — big-bang rewrite is safe        
+      136 +- `psycopg2-binary` works as SQLAlchemy's PostgreSQL driver wi
+          +thout additional configuration                                
+      137 +- The `langauge` typo in `websites_embeddings` has already bee
+          +n fixed                                                       
+      138 +                                                              
+      139 +**Constraints:**                                              
+      140 +- Lambda/AWS compatibility deferred (SQLAlchemy adds ~30MB to 
+          +Lambda layers)                                                
+      141 +- Flask-SQLAlchemy extension NOT used — plain SQLAlchemy with 
+          +manual session management                                     
+      142 +- Database schema preserved exactly — no new columns/tables in
+          + this sprint                                                  
+      143 +- Pydantic v2 schemas explicitly out of scope                 
+      144 +                                                              
+      145 +**Dependencies:**                                             
+      146 +- SQLAlchemy >= 2.0, pgvector >= 0.3.0, Alembic >= 1.13, Postg
+          +reSQL 18 with pgvector                                        
+      147 +                                                              
+      148 +### PRD Completeness Assessment                               
+      149 +                                                              
+      150 +The PRD is well-structured and thorough:                      
+      151 +- 43 functional requirements covering all layers (ORM, migrati
+          +ons, sessions, persistence, embeddings, queries, imports, pipe
+          +line, API)                                                    
+      152 +- 12 non-functional requirements covering code quality, backwa
+          +rd compatibility, maintainability, and dependencies           
+      153 +- Clear success criteria with measurable outcomes             
+      154 +- 4 user journeys covering all major workflows                
+      155 +- Explicit out-of-scope items and risk mitigation strategies  
+      156 +- Technical architecture and data flow diagrams included      
+      157 +                                                              
+      158 +**Potential gaps to validate in epic coverage:**              
+      159 +- FR35 mentions SQS messages — need to verify this is covered 
+          +in epics                                                      
+      160 +- Session management patterns (FR10-FR13) need dedicated stori
+          +es                                                            
+      161 +- Enum preservation (NFR5) needs explicit verification step   
+      162 +- `.venv_wsl` sync (NFR12) needs to be part of a story's accep
+          +tance criteria                                                
+
+● Analiza PRD zakończona. Wyodrębniono 43 FR i 12 NFR. Przechodzę do kroku 3 —
+  walidacja pokrycia epics.
+
+● Read 1 file (ctrl+o to expand)
+
+● Rozpoczynam Walidację Pokrycia Epics. Wczytuję dokument epics.
+
+● Read 1 file (ctrl+o to expand)
+
+● Doskonale. Dokument epics zawiera kompletną mapę pokrycia FR. Wszystkie 43 FR
+  są pokryte w epicach. Aktualizuję raport.
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(_bmad-output\planning-artifacts\implementation-readiness-report-2026-03
+        -07.md)
+  ⎿  Added 1 line
+      2  stepsCompleted:
+      3    - step-01-document-discovery
+      4    - step-02-prd-analysis
+      5 +  - step-03-epic-coverage-validation                            
+      6  documentsIncluded:
+      7    prd: _bmad-output/planning-artifacts/prd.md
+      8    architecture: _bmad-output/planning-artifacts/architecture.md
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(_bmad-output\planning-artifacts\implementation-readiness-report-2026-03
+        -07.md)
+  ⎿  Added 91 lines
+      161  - Session management patterns (FR10-FR13) need dedicated stori
+           es
+      162  - Enum preservation (NFR5) needs explicit verification step
+      163  - `.venv_wsl` sync (NFR12) needs to be part of a story's accep
+           tance criteria
+      164 +                                                              
+      165 +## Epic Coverage Validation                                   
+      166 +                                                              
+      167 +### Coverage Matrix                                           
+      168 +                                                              
+      169 +| FR | PRD Requirement | Epic Coverage | Status |             
+      170 +|----|----------------|---------------|--------|              
+      171 +| FR1 | Define table structure as ORM model class | Epic 1 - S
+          +tory 1.2 | Covered |                                          
+      172 +| FR2 | Define column types, constraints, defaults | Epic 1 - 
+          +Story 1.2 | Covered |                                         
+      173 +| FR3 | Define relationships between models | Epic 1 - Story 1
+          +.2 | Covered |                                                
+      174 +| FR4 | Define STI hierarchy on web_documents | Epic 1 - Story
+          + 1.2 | Covered |                                              
+      175 +| FR5 | Add domain methods on ORM model | Epic 1 - Story 1.2 |
+          + Covered |                                                    
+      176 +| FR6 | Auto-generate migration scripts via Alembic | Epic 1 -
+          + Story 1.3 | Covered |                                        
+      177 +| FR7 | Apply migrations with single command | Epic 1 - Story 
+          +1.3 | Covered |                                               
+      178 +| FR8 | Roll back migrations | Epic 1 - Story 1.3 | Covered | 
+      179 +| FR9 | Initialize Alembic on existing database | Epic 1 - Sto
+          +ry 1.3 | Covered |                                            
+      180 +| FR10 | Thread-local sessions for Flask | Epic 1 - Story 1.1 
+          ++ 1.3 | Covered |                                             
+      181 +| FR11 | Auto cleanup sessions on teardown | Epic 1 - Story 1.
+          +3 | Covered |                                                 
+      182 +| FR12 | Script-scoped sessions for imports/batch | Epic 1 - S
+          +tory 1.1 | Covered |                                          
+      183 +| FR13 | Stale connection recovery (pool_pre_ping) | Epic 1 - 
+          +Story 1.1 | Covered |                                         
+      184 +| FR14 | Create document via ORM | Epic 2 - Story 2.1 | Covere
+          +d |                                                           
+      185 +| FR15 | Update document via ORM attributes | Epic 2 - Story 2
+          +.1 | Covered |                                                
+      186 +| FR16 | Delete document with cascade | Epic 2 - Story 2.1 | C
+          +overed |                                                      
+      187 +| FR17 | Look up document by URL | Epic 2 - Story 2.1 | Covere
+          +d |                                                           
+      188 +| FR18 | Look up document by ID | Epic 2 - Story 2.1 | Covered
+          + |                                                            
+      189 +| FR19 | Serialize document to dict for API | Epic 2 - Story 2
+          +.1 | Covered |                                                
+      190 +| FR20 | Add embedding via ORM relationship | Epic 3 - Story 3
+          +.1 | Covered |                                                
+      191 +| FR21 | Delete embeddings by model name | Epic 3 - Story 3.1 
+          +| Covered |                                                   
+      192 +| FR22 | Find documents needing embeddings | Epic 3 - Story 3.
+          +1 | Covered |                                                 
+      193 +| FR23 | Similarity search via cosine_distance() | Epic 3 - St
+          +ory 3.2 | Covered |                                           
+      194 +| FR24 | List documents with dynamic filters | Epic 2 - Story 
+          +2.2 | Covered |                                               
+      195 +| FR25 | Count documents by type/state | Epic 2 - Story 2.2 | 
+          +Covered |                                                     
+      196 +| FR26 | Find documents ready for download | Epic 2 - Story 2.
+          +2 | Covered |                                                 
+      197 +| FR27 | Find YouTube documents just added | Epic 2 - Story 2.
+          +2 | Covered |                                                 
+      198 +| FR28 | Find documents with completed transcriptions | Epic 2
+          + - Story 2.2 | Covered |                                      
+      199 +| FR29 | Find next document to correct | Epic 2 - Story 2.2 | 
+          +Covered |                                                     
+      200 +| FR30 | Retrieve last imported date for source | Epic 2 - Sto
+          +ry 2.2 | Covered |                                            
+      201 +| FR31 | dynamodb_sync.py creates documents via ORM | Epic 4 -
+          + Story 4.1 | Covered |                                        
+      202 +| FR32 | dynamodb_sync.py sets created_at via ORM | Epic 4 - S
+          +tory 4.1 | Covered |                                          
+      203 +| FR33 | unknown_news_import.py creates documents via ORM | Ep
+          +ic 4 - Story 4.1 | Covered |                                  
+      204 +| FR34 | unknown_news_import.py detects duplicates via ORM | E
+          +pic 4 - Story 4.1 | Covered |                                 
+      205 +| FR35 | Batch pipeline processes SQS messages via ORM | Epic 
+          +4 - Story 4.2 | Covered |                                     
+      206 +| FR36 | Batch pipeline stores embeddings via ORM | Epic 4 - S
+          +tory 4.2 | Covered |                                          
+      207 +| FR37 | Batch pipeline updates document state via ORM | Epic 
+          +4 - Story 4.2 | Covered |                                     
+      208 +| FR38 | YouTube pipeline stores transcript via ORM | Epic 4 -
+          + Story 4.2 | Covered |                                        
+      209 +| FR39 | /website_list returns filtered lists via repository |
+          + Epic 2 - Story 2.3 | Covered |                               
+      210 +| FR40 | /website_get returns document with navigation | Epic 
+          +2 - Story 2.3 | Covered |                                     
+      211 +| FR41 | /website_save creates/updates via ORM | Epic 2 - Stor
+          +y 2.3 | Covered |                                             
+      212 +| FR42 | /website_delete removes with cascade | Epic 2 - Story
+          + 2.3 | Covered |                                              
+      213 +| FR43 | /website_similar performs vector search | Epic 3 - St
+          +ory 3.2 | Covered |                                           
+      214 +                                                              
+      215 +### Missing Requirements                                      
+      216 +                                                              
+      217 +No missing FRs identified. All 43 functional requirements have
+          + traceable epic/story coverage.                               
+      218 +                                                              
+      219 +### NFR Coverage                                              
+      220 +                                                              
+      221 +| NFR | Epic Coverage | Status |                              
+      222 +|-----|--------------|--------|                               
+      223 +| NFR1 | Epic 2 (partial) + Epic 3 (partial) + Epic 4 (complet
+          +e) | Covered |                                                
+      224 +| NFR2 | Epic 4 - Story 4.3 | Covered |                       
+      225 +| NFR3 | Epic 4 - Story 4.3 | Covered |                       
+      226 +| NFR4 | Epic 1 - Story 1.2 | Covered |                       
+      227 +| NFR5 | Epic 1 - Story 1.2 + Epic 2 - Story 2.1 | Covered |  
+      228 +| NFR6 | Epic 1 - Story 1.3 | Covered |                       
+      229 +| NFR7 | Epic 1 - Story 1.2 | Covered |                       
+      230 +| NFR8 | Epic 1 - Story 1.3 | Covered |                       
+      231 +| NFR9 | Epic 4 - Story 4.3 | Covered |                       
+      232 +| NFR10 | Epic 1 - Story 1.1 | Covered |                      
+      233 +| NFR11 | Epic 1 - Story 1.1 | Covered |                      
+      234 +| NFR12 | Epic 1 - Story 1.1 | Covered |                      
+      235 +                                                              
+      236 +### Coverage Statistics                                       
+      237 +                                                              
+      238 +- Total PRD FRs: 43                                           
+      239 +- FRs covered in epics: 43                                    
+      240 +- Coverage percentage: **100%**                               
+      241 +- Total PRD NFRs: 12                                          
+      242 +- NFRs covered in epics: 12                                   
+      243 +- NFR coverage: **100%**                                      
+      244 +                                                              
+      245 +### Observations                                              
+      246 +                                                              
+      247 +1. FR coverage is complete with a clear traceability matrix in
+          + the epics document                                           
+      248 +2. Each epic builds logically on the previous one (Epic 1 -> 2
+          + -> 3 -> 4)                                                   
+      249 +3. NFR1 (zero raw cursor.execute) is progressively addressed a
+          +cross Epics 2, 3, and 4, with final verification in Story 4.3 
+      250 +4. The previously flagged potential gaps are resolved:        
+      251 +   - FR35 (SQS) is explicitly covered in Story 4.2            
+      252 +   - FR10-FR13 (sessions) are split across Stories 1.1 and 1.3
+      253 +   - NFR5 (enum preservation) is covered in Stories 1.2 and 2.
+          +1                                                             
+      254 +   - NFR12 (.venv_wsl sync) is covered in Story 1.1 AC        
+
+● Pokrycie epics zwalidowane — 100% FR i NFR pokryte. Przechodzę do kroku 4 (UX
+  alignment). Ponieważ UX nie jest potrzebny, sprawdzę co krok mówi i przeskoczę
+   do następnego.
+
+● Read 1 file (ctrl+o to expand)
+
+● PRD dotyczy migracji backendu (bazy danych), nie ma komponentów UI w zakresie
+  tego sprintu. Dodaję krótką notę i przechodzę dalej.
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(_bmad-output\planning-artifacts\implementation-readiness-report-2026-03
+        -07.md)
+  ⎿  Added 14 lines
+      252     - FR10-FR13 (sessions) are split across Stories 1.1 and 1.3
+      253     - NFR5 (enum preservation) is covered in Stories 1.2 and 2.
+           1
+      254     - NFR12 (.venv_wsl sync) is covered in Story 1.1 AC
+      255 +                                                              
+      256 +## UX Alignment Assessment                                    
+      257 +                                                              
+      258 +### UX Document Status                                        
+      259 +                                                              
+      260 +Not Found — no UX document exists.                            
+      261 +                                                              
+      262 +### Assessment                                                
+      263 +                                                              
+      264 +This PRD covers a backend database access layer migration (raw
+          + psycopg2 -> SQLAlchemy ORM). The scope is entirely backend — 
+          +no new UI components, screens, or user-facing changes are part
+          + of this sprint. The existing React frontend is a consumer of 
+          +the API but is not modified. API response format backward comp
+          +atibility is covered by NFR5 and Story 2.3.                   
+      265 +                                                              
+      266 +### Warnings                                                  
+      267 +                                                              
+      268 +None. UX documentation is not required for this backend-only m
+          +igration scope. User confirmed UX is not needed at this stage.
+
+● Update(_bmad-output\planning-artifacts\implementation-readiness-report-2026-03
+        -07.md)
+  ⎿  Added 1 line
+      3    - step-01-document-discovery
+      4    - step-02-prd-analysis
+      5    - step-03-epic-coverage-validation
+      6 +  - step-04-ux-alignment                                        
+      7  documentsIncluded:
+      8    prd: _bmad-output/planning-artifacts/prd.md
+      9    architecture: _bmad-output/planning-artifacts/architecture.md
+
+● Przechodzę do kroku 5 — przegląd jakości epics.
+
+● Read 1 file (ctrl+o to expand)
+
+● Przeprowadzam przegląd jakości epics — rygorystyczna walidacja przeciwko
+  najlepszym praktykom.
+
+  Mam już pełny dokument epics w pamięci. Przeczytam jeszcze architekturę dla
+  kontekstu.
+
+● Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Mam wystarczający kontekst. Architektura potwierdza: brownfield, brak starter
+  template, praca w istniejącym backendzie Flask. Teraz przeprowadzam
+  rygorystyczny przegląd jakości epics.
+
+● Update(_bmad-output\planning-artifacts\implementation-readiness-report-2026-03
+        -07.md)
+  ⎿  Added 156 lines
+      267  ### Warnings
+      268  
+      269  None. UX documentation is not required for this backend-only m
+           igration scope. User confirmed UX is not needed at this stage.
+      270 +                                                              
+      271 +## Epic Quality Review                                        
+      272 +                                                              
+      273 +### Epic Structure Validation                                 
+      274 +                                                              
+      275 +#### A. User Value Focus                                      
+      276 +                                                              
+      277 +| Epic | Title | User-Centric? | Assessment |                 
+      278 +|------|-------|---------------|------------|                 
+      279 +| Epic 1 | ORM Foundation & Schema Management | Borderline | D
+          +escription says "Developer can define database schema..." — fr
+          +ames value from developer perspective. Acceptable for single-d
+          +eveloper project where developer IS the user. |               
+      280 +| Epic 2 | Document CRUD & API Serving | Yes | "Developer can 
+          +create, update, delete, and query documents... all Flask API e
+          +ndpoints return identical data formats" — clear user value. | 
+      281 +| Epic 3 | Vector Embeddings & Similarity Search | Yes | "Deve
+          +loper can manage vector embeddings... perform similarity searc
+          +h" — clear functional capability. |                           
+      282 +| Epic 4 | Data Pipeline Migration & Cleanup | Yes | "Import s
+          +cripts and batch pipeline work with ORM models... Old wrapper 
+          +code fully removed" — delivers working pipeline + clean codeba
+          +se. |                                                         
+      283 +                                                              
+      284 +**Finding:** Epic 1 is the most "technical milestone"-like epi
+          +c. However, for a database migration project where the develop
+          +er is the sole user, "can define schema in one file and auto-g
+          +enerate migrations" IS the primary user value. The epic descri
+          +ption frames it correctly from the developer's perspective. **
+          +No violation** — but borderline.                              
+      285 +                                                              
+      286 +#### B. Epic Independence                                     
+      287 +                                                              
+      288 +| Test | Result |                                             
+      289 +|------|--------|                                             
+      290 +| Epic 1 stands alone | Yes — produces working ORM models, eng
+          +ine, sessions, Alembic. Does not need Epic 2/3/4. |           
+      291 +| Epic 2 uses only Epic 1 output | Yes — uses ORM models and s
+          +ession factories from Epic 1. |                               
+      292 +| Epic 3 uses only Epic 1+2 output | Yes — uses ORM models (Ep
+          +ic 1) and repository pattern (Epic 2). |                      
+      293 +| Epic 4 uses only Epic 1+2+3 output | Yes — uses all previous
+          + layers to migrate consumers. |                               
+      294 +| No backward dependencies | Yes — Epic 2 does NOT need Epic 3
+          +. Epic 3 does NOT need Epic 4. |                              
+      295 +| No circular dependencies | Yes — strict linear chain: 1 -> 2
+          + -> 3 -> 4. |                                                 
+      296 +                                                              
+      297 +**No violations.**                                            
+      298 +                                                              
+      299 +### Story Quality Assessment                                  
+      300 +                                                              
+      301 +#### A. Story Sizing                                          
+      302 +                                                              
+      303 +| Story | Size Assessment | Independent? |                    
+      304 +|-------|----------------|-------------|                      
+      305 +| 1.1 | Appropriate — engine + session factories | Yes (first 
+          +story, no deps) |                                             
+      306 +| 1.2 | Large but cohesive — ORM models + domain methods | Dep
+          +ends on 1.1 (engine) — OK |                                   
+      307 +| 1.3 | Appropriate — Alembic + Flask integration | Depends on
+          + 1.1 + 1.2 — OK |                                             
+      308 +| 2.1 | Appropriate — CRUD operations | Depends on Epic 1 — OK
+          + |                                                            
+      309 +| 2.2 | Large — 10+ repository methods | Depends on 2.1 — OK |
+      310 +| 2.3 | Appropriate — Flask route updates | Depends on 2.1 + 2
+          +.2 — OK |                                                     
+      311 +| 3.1 | Appropriate — embedding CRUD | Depends on Epic 1+2 — O
+          +K |                                                           
+      312 +| 3.2 | Appropriate — similarity search + endpoint | Depends o
+          +n 3.1 — OK |                                                  
+      313 +| 4.1 | Appropriate — 2 import scripts | Depends on Epic 1+2 —
+          + OK |                                                         
+      314 +| 4.2 | Appropriate — batch pipeline + YouTube | Depends on Ep
+          +ic 1+2+3 — OK |                                               
+      315 +| 4.3 | Appropriate — cleanup + verification | Depends on all 
+          +previous — OK (final story) |                                 
+      316 +                                                              
+      317 +**No forward dependencies detected.** All dependencies flow ba
+          +ckward (later stories depend on earlier ones).                
+      318 +                                                              
+      319 +#### B. Acceptance Criteria Review                            
+      320 +                                                              
+      321 +| Criterion | Assessment |                                    
+      322 +|-----------|-----------|                                     
+      323 +| Given/When/Then format | All stories use proper BDD structur
+          +e |                                                           
+      324 +| Testable | Yes — each AC has specific, verifiable expected o
+          +utcome |                                                      
+      325 +| Complete | Generally good. Error conditions covered implicit
+          +ly (cascade delete, duplicate detection, stale connections) | 
+      326 +| Specific | Yes — exact method names, column counts, date for
+          +mats specified |                                              
+      327 +                                                              
+      328 +**Minor observations:**                                       
+      329 +- Story 2.2 has 10 ACs for 7 repository methods — well-structu
+          +red                                                           
+      330 +- Story 1.2 has 9 ACs covering models, domain methods, dict() 
+          +format, relationships — thorough                              
+      331 +- Story 4.3 has clear "zero occurrences" and "all tests pass" 
+          +verification criteria                                         
+      332 +                                                              
+      333 +### Dependency Analysis                                       
+      334 +                                                              
+      335 +#### Within-Epic Dependencies                                 
+      336 +                                                              
+      337 +**Epic 1:** 1.1 (engine) -> 1.2 (models need engine/Base) -> 1
+          +.3 (Alembic needs models, Flask needs sessions)               
+      338 +- Logical and correct. No skips.                              
+      339 +                                                              
+      340 +**Epic 2:** 2.1 (CRUD) -> 2.2 (queries use same patterns) -> 2
+          +.3 (Flask routes use repository)                              
+      341 +- Logical and correct. 2.3 depends on both 2.1 and 2.2.       
+      342 +                                                              
+      343 +**Epic 3:** 3.1 (embedding CRUD) -> 3.2 (similarity search use
+          +s embeddings)                                                 
+      344 +- Logical and correct.                                        
+      345 +                                                              
+      346 +**Epic 4:** 4.1 (imports) -> 4.2 (batch pipeline) -> 4.3 (clea
+          +nup after everything migrated)                                
+      347 +- Logical. 4.3 MUST be last (verification of complete migratio
+          +n).                                                           
+      348 +                                                              
+      349 +#### Database/Entity Creation Timing                          
+      350 +                                                              
+      351 +This is a brownfield migration — no new tables are created. OR
+          +M models map existing tables. All models are defined in Story 
+          +1.2 because:                                                  
+      352 +- They map an existing schema (not creating new tables)       
+      353 +- All consumers need the same models                          
+      354 +- Splitting model creation across stories would create artific
+          +ial complexity                                                
+      355 +                                                              
+      356 +**This is correct for a migration project.** The "create table
+          +s when first needed" rule applies to greenfield projects creat
+          +ing new schema.                                               
+      357 +                                                              
+      358 +### Brownfield Project Indicators                             
+      359 +                                                              
+      360 +| Indicator | Present? |                                      
+      361 +|-----------|---------|                                       
+      362 +| Integration with existing systems | Yes — Flask API, import 
+          +scripts, batch pipeline |                                     
+      363 +| Migration stories | Yes — entire project is migration |     
+      364 +| Compatibility stories | Yes — backward-compatible dict(), en
+          +um preservation |                                             
+      365 +| No starter template needed | Yes — confirmed in architecture
+          + |                                                            
+      366 +                                                              
+      367 +### Best Practices Compliance Checklist                       
+      368 +                                                              
+      369 +**Epic 1:**                                                   
+      370 +- [x] Epic delivers developer value (schema changes without fe
+          +ar)                                                           
+      371 +- [x] Epic functions independently                            
+      372 +- [x] Stories appropriately sized                             
+      373 +- [x] No forward dependencies                                 
+      374 +- [x] Models map existing tables (brownfield — correct approac
+          +h)                                                            
+      375 +- [x] Clear acceptance criteria                               
+      376 +- [x] FR traceability (FR1-FR13)                              
+      377 +                                                              
+      378 +**Epic 2:**                                                   
+      379 +- [x] Epic delivers developer value (CRUD + API working)      
+      380 +- [x] Epic functions with only Epic 1 output                  
+      381 +- [x] Stories appropriately sized                             
+      382 +- [x] No forward dependencies                                 
+      383 +- [x] Clear acceptance criteria                               
+      384 +- [x] FR traceability (FR14-FR19, FR24-FR30, FR39-FR42)       
+      385 +                                                              
+      386 +**Epic 3:**                                                   
+      387 +- [x] Epic delivers developer value (embeddings + search worki
+          +ng)                                                           
+      388 +- [x] Epic functions with Epic 1+2 output                     
+      389 +- [x] Stories appropriately sized                             
+      390 +- [x] No forward dependencies                                 
+      391 +- [x] Clear acceptance criteria                               
+      392 +- [x] FR traceability (FR20-FR23, FR43)                       
+      393 +                                                              
+      394 +**Epic 4:**                                                   
+      395 +- [x] Epic delivers developer value (pipelines working + clean
+          + code)                                                        
+      396 +- [x] Epic functions with Epic 1+2+3 output                   
+      397 +- [x] Stories appropriately sized                             
+      398 +- [x] No forward dependencies                                 
+      399 +- [x] Clear acceptance criteria                               
+      400 +- [x] FR traceability (FR31-FR38, NFR1-3, NFR9)               
+      401 +                                                              
+      402 +### Quality Findings Summary                                  
+      403 +                                                              
+      404 +#### Critical Violations                                      
+      405 +                                                              
+      406 +None found.                                                   
+      407 +                                                              
+      408 +#### Major Issues                                             
+      409 +                                                              
+      410 +None found.                                                   
+      411 +                                                              
+      412 +#### Minor Concerns                                           
+      413 +                                                              
+      414 +1. **Story 2.2 is the largest story** with 10+ acceptance crit
+          +eria covering 7 repository methods. Consider splitting into "b
+          +asic queries" (get_list, get_count) and "state-based lookups" 
+          +(get_ready_for_download, get_youtube_just_added, etc.) if impl
+          +ementation complexity warrants it. However, for a solo develop
+          +er, keeping them together is pragmatic.                       
+      415 +                                                              
+      416 +2. **Epic 1 title** ("ORM Foundation & Schema Management") is 
+          +slightly technical. A more user-centric title could be "Schema
+          + Changes Without Fear" or "Developer Can Define and Evolve Dat
+          +abase Schema." This is a minor style concern — the epic descri
+          +ption properly frames developer value.                        
+      417 +                                                              
+      418 +3. **Missing explicit error handling ACs** — Stories generally
+          + cover happy paths well. Some edge cases that could benefit fr
+          +om explicit ACs:                                              
+      419 +   - What happens when `get_engine()` cannot connect to the da
+          +tabase?                                                       
+      420 +   - What happens when `alembic revision --autogenerate` detec
+          +ts drift from DDL?                                            
+      421 +   - These are implied by FR13 (pool_pre_ping) and NFR6 (no Al
+          +embic drift), but not explicitly stated as story ACs.         
+      422 +                                                              
+      423 +### Overall Epic Quality Rating: **Strong**                   
+      424 +                                                              
+      425 +The epics are well-structured for a brownfield migration proje
+          +ct. Linear dependency chain is appropriate. Stories are proper
+          +ly sized with thorough BDD acceptance criteria. FR/NFR traceab
+          +ility is complete (100% coverage with explicit mapping table).
+          + No critical or major violations of best practices.           
+
+● Update(_bmad-output\planning-artifacts\implementation-readiness-report-2026-03
+        -07.md)
+  ⎿  Added 1 line
+       4    - step-02-prd-analysis
+       5    - step-03-epic-coverage-validation
+       6    - step-04-ux-alignment
+       7 +  - step-05-epic-quality-review                                
+       8  documentsIncluded:
+       9    prd: _bmad-output/planning-artifacts/prd.md
+      10    architecture: _bmad-output/planning-artifacts/architecture.md
+
+● Przegląd jakości epics zakończony — brak krytycznych ani poważnych problemów.
+  3 drobne uwagi. Przechodzę do kroku 6 — końcowa ocena gotowości.
+
+● Read 2 files (ctrl+o to expand)
+
+● Update(_bmad-output\planning-artifacts\implementation-readiness-report-2026-03
+        -07.md)
+  ⎿  Added 53 lines
+      424  ### Overall Epic Quality Rating: **Strong**
+      425  
+      426  The epics are well-structured for a brownfield migration proje
+           ct. Linear dependency chain is appropriate. Stories are proper
+           ly sized with thorough BDD acceptance criteria. FR/NFR traceab
+           ility is complete (100% coverage with explicit mapping table).
+            No critical or major violations of best practices.
+      427 +                                                              
+      428 +## Summary and Recommendations                                
+      429 +                                                              
+      430 +### Overall Readiness Status                                  
+      431 +                                                              
+      432 +**READY**                                                     
+      433 +                                                              
+      434 +The project artifacts (PRD, Architecture, Epics & Stories) are
+          + complete, aligned, and ready for implementation.             
+      435 +                                                              
+      436 +### Critical Issues Requiring Immediate Action                
+      437 +                                                              
+      438 +None. No critical issues were identified during the assessment
+          +.                                                             
+      439 +                                                              
+      440 +### Issues Summary                                            
+      441 +                                                              
+      442 +| Severity | Count | Category |                               
+      443 +|----------|-------|----------|                               
+      444 +| Critical | 0 | — |                                          
+      445 +| Major | 0 | — |                                             
+      446 +| Minor | 3 | Epic quality (style, sizing, error handling) |  
+      447 +                                                              
+      448 +### Minor Issues (Optional Improvements)                      
+      449 +                                                              
+      450 +1. **Story 2.2 sizing** — Consider splitting if implementation
+          + reveals it's too large. This is a pragmatic judgment call dur
+          +ing implementation.                                           
+      451 +2. **Epic 1 title** — Could be more user-centric. Style-only c
+          +oncern.                                                       
+      452 +3. **Error handling ACs** — Consider adding explicit ACs for d
+          +atabase connection failure and Alembic drift scenarios.       
+      453 +                                                              
+      454 +### Strengths                                                 
+      455 +                                                              
+      456 +- **100% FR coverage** — All 43 functional requirements tracea
+          +ble to specific epic/story                                    
+      457 +- **100% NFR coverage** — All 12 non-functional requirements h
+          +ave explicit epic assignments                                 
+      458 +- **Complete FR coverage map** in epics document with explicit
+          + table                                                        
+      459 +- **BDD acceptance criteria** — All stories use proper Given/W
+          +hen/Then structure                                            
+      460 +- **Clear dependency chain** — Epic 1 -> 2 -> 3 -> 4, no circu
+          +lar or forward dependencies                                   
+      461 +- **Architecture alignment** — Additional architecture require
+          +ments (wrapper elimination, session injection, transaction bou
+          +ndaries, etc.) are incorporated into story ACs                
+      462 +- **PRD validation** — PRD scored 5/5 in prior validation with
+          + 0 critical issues                                            
+      463 +- **Brownfield-appropriate structure** — Models defined upfron
+          +t (correct for migration), compatibility stories included     
+      464 +                                                              
+      465 +### Recommended Next Steps                                    
+      466 +                                                              
+      467 +1. Begin implementation with **Epic 1, Story 1.1** (Dependenci
+          +es, Engine & Session Factories)                               
+      468 +2. Optionally split **Story 2.2** during implementation if it 
+          +proves too large                                              
+      469 +3. Optionally add error handling ACs for connection failure an
+          +d Alembic drift (minor improvement)                           
+      470 +4. Use the FR Coverage Map in `epics.md` as a traceability che
+          +cklist during implementation                                  
+      471 +                                                              
+      472 +### Final Note                                                
+      473 +                                                              
+      474 +This assessment identified 3 minor issues across 1 category (e
+          +pic quality). All are optional improvements — none block imple
+          +mentation. The artifacts are well-prepared: PRD is thorough (4
+          +3 FR, 12 NFR), architecture provides detailed technical decisi
+          +ons with implementation sequence, and epics decompose requirem
+          +ents into 11 stories across 4 epics with full BDD acceptance c
+          +riteria. The project is **ready to implement**.               
+      475 +                                                              
+      476 +---                                                           
+      477 +                                                              
+      478 +**Assessment completed:** 2026-03-07                          
+      479 +**Assessor:** Implementation Readiness Workflow (BMad Method) 
+
+● Update(_bmad-output\planning-artifacts\implementation-readiness-report-2026-03
+        -07.md)
+  ⎿  Added 1 line
+       5    - step-03-epic-coverage-validation
+       6    - step-04-ux-alignment
+       7    - step-05-epic-quality-review
+       8 +  - step-06-final-assessment                                   
+       9  documentsIncluded:
+      10    prd: _bmad-output/planning-artifacts/prd.md
+      11    architecture: _bmad-output/planning-artifacts/architecture.md
+
+● ---
+  Implementation Readiness Assessment Complete
+
+  Raport wygenerowany:
+  _bmad-output/planning-artifacts/implementation-readiness-report-2026-03-07.md
+
+  Podsumowanie:
+
+  - Status: READY — projekt gotowy do implementacji
+  - 0 krytycznych i 0 poważnych problemów
+  - 3 drobne uwagi (opcjonalne ulepszenia — nie blokują implementacji)
+  - 100% pokrycie FR (43/43) i 100% pokrycie NFR (12/12)
+  - Epics dobrze ustrukturyzowane z pełną tracabilnością
+
+  Następny krok: Rozpocząć implementację od Epic 1, Story 1.1 (Dependencies,
+  Engine & Session Factories).
+
+✻ Sautéed for 4m 27s

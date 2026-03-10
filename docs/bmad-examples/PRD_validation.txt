@@ -1,0 +1,3023 @@
+
+ ▐▛███▜▌   Claude Code v2.1.71
+▝▜█████▛▘  Opus 4.6 · Claude Max
+  ▘▘ ▝▝    ~\git\_lenie-all\lenie-server-2025
+
+❯ /clear                                                                        
+  ⎿  (no content)
+
+❯ /bmad-bmm-validate-prd                                                        
+
+● Read 3 files (ctrl+o to expand)
+
+● Teraz wczytam plik z PRD purpose oraz wyszukam PRD do walidacji.
+
+● Read 1 file (ctrl+o to expand)
+
+● Searched for 2 patterns (ctrl+o to expand)
+
+● Tryb walidacji: Walidacja istniejącego PRD według standardów BMAD.
+
+  Znalazłem PRD: _bmad-output/planning-artifacts/prd.md — używam go do
+  walidacji.
+
+  Wczytuję PRD...
+
+● Read 1 file (ctrl+o to expand)
+
+● Teraz wczytam dokumenty wejściowe z frontmattera PRD.
+
+● Read 4 files (ctrl+o to expand)
+
+● Wszystkie dokumenty wejściowe zostały załadowane pomyślnie. Oto podsumowanie:
+
+  Załadowałem następujące dokumenty z frontmattera PRD:
+
+  - .claude/exports/plan-sqlalchemy-migration.md — plan migracji SQLAlchemy
+  (research) ✓
+  - docs/architecture-backend.md — architektura backendu ✓
+  - docs/data-models-backend.md — modele danych ✓
+  - docs/architecture-decisions.md — decyzje architektoniczne (ADR-001 do
+  ADR-008) ✓
+
+  Czy chcesz dołączyć dodatkowe dokumenty referencyjne do tej walidacji?
+
+  Mogą to być:
+  - Dodatkowe dokumenty z badań lub kontekstu
+  - Dokumentacja projektu nie wymieniona w frontmatterze
+  - Standardy lub wymagania compliance
+  - Analiza konkurencyjna lub benchmarki
+
+  Podaj ścieżki do dodatkowych dokumentów lub wpisz none aby kontynuować.
+
+✻ Churned for 44s
+
+❯ none                                                                          
+
+● Write(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Error writing file
+
+● Read 1 file (ctrl+o to expand)
+
+● Istnieje już poprzedni raport walidacji (z 2026-02-27) dla innej wersji PRD.
+  Nadpiszę go nowym raportem dla aktualnego PRD (migracja SQLAlchemy).
+
+● Write(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 13 lines, removed 489 lines
+        1  ---
+        2  validationTarget: '_bmad-output/planning-artifacts/prd.md'
+        3 -validationDate: '2026-02-27'                                  
+        3 +validationDate: '2026-03-07'                                  
+        4  inputDocuments:
+        5 -  - _bmad-output/planning-artifacts/prd.md                    
+        6 -  - docs/index.md                                             
+        7 -  - docs/api-contracts-backend.md                             
+        5 +  - .claude/exports/plan-sqlalchemy-migration.md              
+        6    - docs/architecture-backend.md
+        9 -  - docs/architecture-infra.md                                
+       10 -  - _bmad-output/planning-artifacts/archive/prd-sprint4-infra-
+          -consolidation-2026-02-27.md                                   
+       11 -validationStepsCompleted:                                     
+       12 -  - step-v-01-discovery                                       
+       13 -  - step-v-02-format-detection                                
+       14 -  - step-v-03-density-validation                              
+       15 -  - step-v-04-brief-coverage-validation                       
+       16 -  - step-v-05-measurability-validation                        
+       17 -  - step-v-06-traceability-validation                         
+       18 -  - step-v-07-implementation-leakage-validation               
+       19 -  - step-v-08-domain-compliance-validation                    
+       20 -  - step-v-09-project-type-validation                         
+       21 -  - step-v-10-smart-validation                                
+       22 -  - step-v-11-holistic-quality-validation                     
+       23 -  - step-v-12-completeness-validation                         
+       24 -  - step-v-13-report-complete                                 
+       25 -validationStatus: COMPLETE                                    
+       26 -holisticQualityRating: '5/5 - Excellent'                      
+       27 -overallStatus: 'Pass'                                         
+        7 +  - docs/data-models-backend.md                               
+        8 +  - docs/architecture-decisions.md                            
+        9 +validationStepsCompleted: []                                  
+       10 +validationStatus: IN_PROGRESS                                 
+       11  ---
+       12  
+       13  # PRD Validation Report
+       14  
+       15  **PRD Being Validated:** _bmad-output/planning-artifacts/prd.m
+           d
+       33 -**Validation Date:** 2026-02-27                               
+       16 +**Validation Date:** 2026-03-07                               
+       17  
+       18  ## Input Documents
+       19  
+       37 -- PRD: prd.md (Lenie Slack Bot) ✓                             
+       38 -- Input Document: docs/index.md (Project Documentation Index) 
+          -✓                                                             
+       39 -- Input Document: docs/api-contracts-backend.md (API Contracts
+          - — Backend) ✓                                                 
+       40 -- Input Document: docs/architecture-backend.md (Architecture —
+          - Backend API) ✓                                               
+       41 -- Input Document: docs/architecture-infra.md (Architecture — I
+          -nfrastructure) ✓                                              
+       42 -- Input Document: _bmad-output/planning-artifacts/archive/prd-
+          -sprint4-infra-consolidation-2026-02-27.md (Previous PRD — Spri
+          -nt 4) ✓                                                       
+       20 +- PRD: prd.md (SQLAlchemy ORM Migration)                      
+       21 +- Research: plan-sqlalchemy-migration.md (Migration Plan)     
+       22 +- Project Doc: architecture-backend.md (Backend Architecture) 
+       23 +- Project Doc: data-models-backend.md (Data Models)           
+       24 +- Project Doc: architecture-decisions.md (ADRs)               
+       25  
+       26  ## Validation Findings
+       27  
+       46 -## Format Detection                                           
+       47 -                                                              
+       48 -**PRD Structure (## Level 2 Headers):**                       
+       49 -1. Executive Summary                                          
+       50 -2. Project Classification                                     
+       51 -3. Success Criteria                                           
+       52 -4. Product Scope                                              
+       53 -5. User Journeys                                              
+       54 -6. Technical Context                                          
+       55 -7. Project Scoping & Risk Mitigation                          
+       56 -8. Functional Requirements                                    
+       57 -9. Non-Functional Requirements                                
+       58 -                                                              
+       59 -**BMAD Core Sections Present:**                               
+       60 -- Executive Summary: Present                                  
+       61 -- Success Criteria: Present                                   
+       62 -- Product Scope: Present                                      
+       63 -- User Journeys: Present                                      
+       64 -- Functional Requirements: Present                            
+       65 -- Non-Functional Requirements: Present                        
+       66 -                                                              
+       67 -**Format Classification:** BMAD Standard                      
+       68 -**Core Sections Present:** 6/6                                
+       69 -                                                              
+       70 -**Additional Sections (beyond core):**                        
+       71 -- Project Classification — project type, domain, complexity, d
+          -eployment scope                                               
+       72 -- Technical Context — architectural position, repo structure, 
+          -API communication, secrets, Docker deployment                 
+       73 -- Project Scoping & Risk Mitigation — MVP strategy, technical/
+          -dependency/process risks                                      
+       74 -                                                              
+       75 -## Information Density Validation                             
+       76 -                                                              
+       77 -**Anti-Pattern Violations:**                                  
+       78 -                                                              
+       79 -**Conversational Filler:** 0 occurrences                      
+       80 -**Wordy Phrases:** 0 occurrences                              
+       81 -**Redundant Phrases:** 0 occurrences                          
+       82 -                                                              
+       83 -**Total Violations:** 0                                       
+       84 -                                                              
+       85 -**Severity Assessment:** Pass                                 
+       86 -                                                              
+       87 -**Recommendation:** PRD demonstrates excellent information den
+          -sity with zero violations. Language is direct, concise, and ac
+          -tive throughout. "User can...", "Developer can..." patterns us
+          -ed consistently. No filler phrases detected.                  
+       88 -                                                              
+       89 -## Product Brief Coverage                                     
+       90 -                                                              
+       91 -**Status:** N/A - No Product Brief was provided as input      
+       92 -                                                              
+       93 -## Measurability Validation                                   
+       94 -                                                              
+       95 -### Functional Requirements                                   
+       96 -                                                              
+       97 -**Total FRs Analyzed:** 25                                    
+       98 -                                                              
+       99 -**Format Violations:** 0                                      
+      100 -All 25 FRs use "[Actor] can [capability]" or "[Actor] [behavio
+          -r]" with clear actors (User, Bot, Developer).                 
+      101 -                                                              
+      102 -**Subjective Adjectives Found:** 1 (minor)                    
+      103 -- FR18: "user-friendly error messages" — subjective adjective,
+          - but qualified with "(no stack traces, actionable suggestions)
+          -" which makes it testable                                     
+      104 -                                                              
+      105 -**Vague Quantifiers Found:** 0                                
+      106 -                                                              
+      107 -**Implementation Leakage:** 0                                 
+      108 -All technology references (Slack Bolt SDK, Socket Mode, Docker
+          - Compose profiles, HashiCorp Vault, SSM, `python-json-logger`)
+          - are domain vocabulary for a Slack bot integration project — n
+          -ot implementation prescriptions.                              
+      109 -                                                              
+      110 -**FR Violations Total:** 1 (minor warning)                    
+      111 -                                                              
+      112 -### Non-Functional Requirements                               
+      113 -                                                              
+      114 -**Total NFRs Analyzed:** 18                                   
+      115 -                                                              
+      116 -**Missing Metrics:** 0                                        
+      117 -All NFRs specify measurable criteria (e.g., "within 3 seconds"
+          -, "zero warnings", ">80% coverage", "5-second timeout").      
+      118 -                                                              
+      119 -**Incomplete Template:** 0                                    
+      120 -                                                              
+      121 -**Missing Context:** 0                                        
+      122 -                                                              
+      123 -**Minor observations (not violations):**                      
+      124 -- NFR9: "gracefully" qualified with specific behavior "(logs w
+          -arning, returns user-friendly error instead of crashing)"     
+      125 -- NFR14: "Clear module separation" qualified with specific fil
+          -e names (`commands.py`, `api_client.py`)                      
+      126 -                                                              
+      127 -**NFR Violations Total:** 0                                   
+      128 -                                                              
+      129 -### Overall Assessment                                        
+      130 -                                                              
+      131 -**Total Requirements:** 43 (25 FRs + 18 NFRs)                 
+      132 -**Total Violations:** 1 (minor warning — FR18 subjective adjec
+          -tive)                                                         
+      133 -                                                              
+      134 -**Severity:** Pass                                            
+      135 -                                                              
+      136 -**Recommendation:** Requirements demonstrate excellent measura
+          -bility. One minor FR18 "user-friendly" adjective is qualified 
+          -with concrete criteria. All NFRs have specific metrics or test
+          -able conditions.                                              
+      137 -                                                              
+      138 -## Traceability Validation                                    
+      139 -                                                              
+      140 -### Chain Validation                                          
+      141 -                                                              
+      142 -**Executive Summary → Success Criteria:** Intact ✓            
+      143 -- Slack Bot vision (NL interface, 5 phases, Docker/NAS, dual p
+          -urpose) fully reflected in all 4 Success Criteria dimensions  
+      144 -- Learning/portfolio objectives in Exec Summary → Business Suc
+          -cess criteria ✓                                               
+      145 -                                                              
+      146 -**Success Criteria → User Journeys:** Intact ✓                
+      147 -- "User pastes a link" → Journey 1 (Adding Content) ✓         
+      148 -- "User asks a question" → Journey 2 (Duplicates) + Journey 3 
+          -(Status) ✓                                                    
+      149 -- "All 3 Slack methods" → Journeys show slash commands (Phase 
+          -1), DM/mentions in Growth scope ✓                             
+      150 -- "Mobile with zero loss" → Journey 1 explicitly references mo
+          -bile/commute ✓                                                
+      151 -- Error handling → Journey 4 ✓                                
+      152 -- Setup/documentation → Journey 5 ✓                           
+      153 -                                                              
+      154 -**User Journeys → Functional Requirements:** Intact ✓         
+      155 -- Journey 1 (Adding Content) → FR1, FR6, FR7 ✓                
+      156 -- Journey 2 (Checking Duplicates) → FR2, FR3, FR6 ✓           
+      157 -- Journey 3 (System Status) → FR4, FR5, FR6 ✓                 
+      158 -- Journey 4 (Error Handling) → FR18, FR19, FR20 ✓             
+      159 -- Journey 5 (First Time Setup) → FR21, FR22, FR23, FR24, FR25 
+          -✓                                                             
+      160 -- FR8-FR14 (Growth Phases 2-4) → Product Scope phases, journey
+          -s extend same use cases with different interaction modes      
+      161 -- FR15-FR17 (Phase 5 Nice-to-Have) → Vision scope, explicitly 
+          -deferred                                                      
+      162 -                                                              
+      163 -**Scope → FR Alignment:** Intact ✓                            
+      164 -- MVP Phase 1 (5 slash commands, Docker container, docs) → FR1
+          --FR7, FR21-FR25                                               
+      165 -- Phase 2 (DM) → FR8, FR9                                     
+      166 -- Phase 3 (App Mentions) → FR10, FR11                         
+      167 -- Phase 4 (Conversational LLM) → FR12, FR13, FR14             
+      168 -- Phase 5 (Proactive Monitoring) → FR15, FR16, FR17           
+      169 -                                                              
+      170 -### Orphan Elements                                           
+      171 -                                                              
+      172 -**Orphan Functional Requirements:** 0                         
+      173 -**Unsupported Success Criteria:** 0                           
+      174 -**User Journeys Without FRs:** 0                              
+      175 -                                                              
+      176 -### Traceability Matrix                                       
+      177 -                                                              
+      178 -| Scope Phase | Exec Summary | Success Criteria | Journeys | F
+          -Rs | NFRs |                                                   
+      179 -|------------|-------------|-----------------|----------|-----
+          -|------|                                                      
+      180 -| Phase 1 MVP (Slash Commands) | ✅ | User/Business/Technical/
+          -Measurable | J1-J5 | FR1-FR7, FR18-FR25 | NFR1-NFR18 |        
+      181 -| Phase 2 (DM) | ✅ | User Success | J1 (implicit DM) | FR8-FR
+          -9 | — |                                                       
+      182 -| Phase 3 (App Mentions) | ✅ | User Success | — (extends J1-J
+          -3) | FR10-FR11 | — |                                          
+      183 -| Phase 4 (Conversational LLM) | ✅ | — (learning milestone) |
+          - — (extends J1-J3) | FR12-FR14 | — |                          
+      184 -| Phase 5 (Proactive Monitoring) | ✅ Nice-to-Have | — (future
+          -) | — (future journey) | FR15-FR17 | — |                      
+      185 -                                                              
+      186 -**Total Traceability Issues:** 0                              
+      187 -                                                              
+      188 -**Severity:** Pass                                            
+      189 -                                                              
+      190 -**Recommendation:** Traceability chain is fully intact. All 25
+          - FRs trace to user journeys and/or Product Scope phases. Zero 
+          -orphan requirements. 5 journeys comprehensively cover Phase 1 
+          -MVP; Growth phases logically extend the same use cases.       
+      191 -                                                              
+      192 -## Implementation Leakage Validation                          
+      193 -                                                              
+      194 -### Domain Context Note                                       
+      195 -                                                              
+      196 -This PRD defines a Slack Bot integration project deployed on D
+          -ocker/NAS. Key domain vocabulary:                             
+      197 -- **Slack, Slack Bolt SDK, Socket Mode** — THE integration pla
+          -tform (not an implementation choice)                          
+      198 -- **Docker Compose profiles** — deployment scope explicitly li
+          -mited to Docker/NAS                                           
+      199 -- **HashiCorp Vault, SSM** — secret management platforms (depl
+          -oyment/ops requirement)                                       
+      200 -- **REST API, HTTP, `x-api-key`** — existing backend communica
+          -tion protocol                                                 
+      201 -                                                              
+      202 -### Leakage by Category                                       
+      203 -                                                              
+      204 -**Frontend Frameworks:** 0 violations                         
+      205 -**Backend Frameworks:** 0 violations                          
+      206 -**Databases:** 0 violations                                   
+      207 -**Cloud Platforms:** 0 violations                             
+      208 -                                                              
+      209 -**Infrastructure:** 0 violations                              
+      210 -- Docker Compose profiles in FR21 are deployment requirements 
+          -(deployment scope = Docker/NAS only)                          
+      211 -- Vault/SSM in FR22 are operational requirements for secret ma
+          -nagement                                                      
+      212 -                                                              
+      213 -**Libraries:** 0 true violations, 2 borderline instances      
+      214 -- NFR10: "Slack Bolt SDK version pinned in `pyproject.toml`" —
+          - SDK is domain vocabulary; `pyproject.toml` is a specific file
+          - name                                                         
+      215 -- NFR15: "`python-json-logger`" — specific library name; shoul
+          -d be "JSON structured logging" without naming the library     
+      216 -                                                              
+      217 -**Other Implementation Details:** 3 borderline instances      
+      218 -- NFR11: "`ruff check` with zero warnings (line-length=120)" —
+          - names specific linting tool (established project standard fro
+          -m CLAUDE.md)                                                  
+      219 -- NFR13: "`api_client.py` and command handlers have unit tests
+          - with >80% coverage" — names specific file; should be "API cli
+          -ent module"                                                   
+      220 -- NFR14: "`commands.py` decoupled from HTTP client (`api_clien
+          -t.py`)" — names specific files; should be "Slack interaction l
+          -ogic decoupled from HTTP client logic"                        
+      221 -                                                              
+      222 -### Summary                                                   
+      223 -                                                              
+      224 -**Total Implementation Leakage Violations:** 0 true violations
+          -, 5 borderline instances in NFRs                              
+      225 -                                                              
+      226 -**Severity:** Pass (with note)                                
+      227 -                                                              
+      228 -**Recommendation:** FRs are clean — zero implementation leakag
+          -e. NFRs contain 5 borderline references to specific files, too
+          -ls, and libraries. In strict BMAD terms, NFRs should reference
+          - capabilities ("linting tool", "API client module", "structure
+          -d logging") not specific implementations (`ruff`, `api_client.
+          -py`, `python-json-logger`). However, for a solo developer proj
+          -ect where the PRD feeds directly into implementation, these re
+          -ferences are practical and intentional — they reduce ambiguity
+          -. Consider abstracting file names if the PRD will be consumed 
+          -by multiple developers.                                       
+      229 -                                                              
+      230 -**Note:** Slack Bolt SDK, Socket Mode, and Docker Compose prof
+          -iles are domain vocabulary for this project — not implementati
+          -on leakage.                                                   
+      231 -                                                              
+      232 -## Domain Compliance Validation                               
+      233 -                                                              
+      234 -**Domain:** personal_ai_knowledge_management                  
+      235 -**Complexity:** Low (general/standard)                        
+      236 -**Assessment:** N/A - No special domain compliance requirement
+          -s                                                             
+      237 -                                                              
+      238 -**Note:** Personal developer tooling / knowledge management pr
+          -oject without regulatory compliance requirements. No healthcar
+          -e, fintech, govtech, or other regulated domain concerns.      
+      239 -                                                              
+      240 -## Project-Type Compliance Validation                         
+      241 -                                                              
+      242 -**Project Type (from frontmatter):** chatbot_integration      
+      243 -                                                              
+      244 -### Classification Context Note                               
+      245 -                                                              
+      246 -`chatbot_integration` is not a standard project-types.csv entr
+          -y. This is a custom classification appropriate for a Slack Bot
+          - that integrates with an existing REST API. Closest standard t
+          -ypes: `api_backend` (API consumer) + `cli_tool` (command-based
+          - interaction). Validation uses a hybrid checklist derived from
+          - both.                                                        
+      247 -                                                              
+      248 -### Required Sections (inferred for chatbot_integration)      
+      249 -                                                              
+      250 -**Command structure / interaction model:** Present ✓ — FR6-FR1
+          -1 define slash commands, DM commands, app mentions; Technical 
+          -Context lists all 5 commands with backend endpoint mapping    
+      251 -**API communication:** Present ✓ — Technical Context section p
+          -rovides full API Communication table (bot command → endpoint →
+          - method → auth)                                               
+      252 -**User interaction patterns:** Present ✓ — 5 User Journeys cov
+          -ering add content, check duplicates, system status, error hand
+          -ling, first-time setup                                        
+      253 -**Error handling model:** Present ✓ — FR18-FR20 and Journey 4 
+          -cover error communication                                     
+      254 -**Deployment model:** Present ✓ — Docker Deployment section wi
+          -th compose.yaml snippet and `--profile slack`                 
+      255 -                                                              
+      256 -### Excluded Sections (Should Not Be Present for chatbot_integ
+          -ration)                                                       
+      257 -                                                              
+      258 -**browser_matrix:** Absent ✓                                  
+      259 -**responsive_design:** Absent ✓                               
+      260 -**seo_strategy:** Absent ✓                                    
+      261 -**visual_design / UX UI:** Absent ✓                           
+      262 -**native_features / device_permissions:** Absent ✓            
+      263 -**cli_commands (standalone CLI):** Absent ✓                   
+      264 -                                                              
+      265 -### Compliance Summary                                        
+      266 -                                                              
+      267 -**Required Sections:** 5/5 present                            
+      268 -**Excluded Sections Present:** 0 violations                   
+      269 -                                                              
+      270 -**Severity:** Pass                                            
+      271 -                                                              
+      272 -**Recommendation:** PRD is well-structured for a chatbot integ
+          -ration project. All relevant sections for command-based bot ar
+          -chitecture are present. No inappropriate web app or mobile sec
+          -tions included.                                               
+      273 -                                                              
+      274 -## SMART Requirements Validation                              
+      275 -                                                              
+      276 -**Total Functional Requirements:** 25                         
+      277 -                                                              
+      278 -### Scoring Summary                                           
+      279 -                                                              
+      280 -**All scores >= 3:** 100% (25/25)                             
+      281 -**All scores >= 4:** 96% (24/25)                              
+      282 -**Overall Average Score:** 4.85/5.0                           
+      283 -                                                              
+      284 -### Scoring Table                                             
+      285 -                                                              
+      286 -| FR # | Specific | Measurable | Attainable | Relevant | Trace
+          -able | Average | Flag |                                       
+      287 -|------|----------|------------|------------|----------|------
+          ------|---------|------|                                       
+      288 -| FR1 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      289 -| FR2 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      290 -| FR3 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      291 -| FR4 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      292 -| FR5 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      293 -| FR6 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      294 -| FR7 | 4 | 4 | 5 | 5 | 5 | 4.6 | |                           
+      295 -| FR8 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      296 -| FR9 | 4 | 4 | 5 | 5 | 5 | 4.6 | |                           
+      297 -| FR10 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      298 -| FR11 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      299 -| FR12 | 4 | 3 | 4 | 5 | 5 | 4.2 | |                          
+      300 -| FR13 | 4 | 4 | 4 | 5 | 5 | 4.4 | |                          
+      301 -| FR14 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      302 -| FR15 | 5 | 5 | 5 | 4 | 4 | 4.6 | |                          
+      303 -| FR16 | 5 | 5 | 5 | 4 | 4 | 4.6 | |                          
+      304 -| FR17 | 5 | 5 | 5 | 5 | 4 | 4.8 | |                          
+      305 -| FR18 | 4 | 4 | 5 | 5 | 5 | 4.6 | |                          
+      306 -| FR19 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      307 -| FR20 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      308 -| FR21 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      309 -| FR22 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      310 -| FR23 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      311 -| FR24 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      312 -| FR25 | 5 | 4 | 5 | 5 | 5 | 4.8 | |                          
+      313 -                                                              
+      314 -**Legend:** 1=Poor, 3=Acceptable, 5=Excellent                 
+      315 -**Flag:** X = Score < 3 in one or more categories             
+      316 -                                                              
+      317 -### Improvement Suggestions                                   
+      318 -                                                              
+      319 -**No FRs scored below 3 in any category.** Minor improvement o
+          -pportunities:                                                 
+      320 -                                                              
+      321 -- **FR7 (Specific=4):** "formatted text messages" — specify wh
+          -at formatting means (e.g., "Slack Block Kit messages" or "plai
+          -n text with key-value pairs")                                 
+      322 -- **FR9 (Specific=4, Measurable=4):** "parses DM text to ident
+          -ify the intended command" — specify parsing rules or example i
+          -nputs/outputs                                                 
+      323 -- **FR12 (Measurable=3):** "natural language instead of struct
+          -ured commands" — define what constitutes successful NL underst
+          -anding (e.g., "correctly interprets 90% of test queries from a
+          - predefined set")                                             
+      324 -- **FR13 (Specific=4):** "appropriate backend API call" — "app
+          -ropriate" is subjective; specify expected mapping accuracy or 
+          -define the intent→endpoint mapping table                      
+      325 -- **FR18 (Specific=4):** "user-friendly" — already qualified w
+          -ith "(no stack traces, actionable suggestions)" which mitigate
+          -s the subjectivity                                            
+      326 -                                                              
+      327 -### Overall Assessment                                        
+      328 -                                                              
+      329 -**Severity:** Pass (0% flagged FRs — none below threshold)    
+      330 -                                                              
+      331 -**Recommendation:** Functional Requirements demonstrate excell
+          -ent SMART quality. 64% score 5.0 across all categories. Only F
+          -R12 (Phase 4 — Conversational LLM) has a Measurable score of 3
+          -, which is acceptable for a future-phase requirement where NL 
+          -understanding metrics are harder to predefine.                
+      332 -                                                              
+      333 -## Holistic Quality Assessment                                
+      334 -                                                              
+      335 -### Document Flow & Coherence                                 
+      336 -                                                              
+      337 -**Assessment:** Excellent                                     
+      338 -                                                              
+      339 -**Strengths:**                                                
+      340 -- Outstanding narrative arc: vision (NL interface for knowledg
+          -e base) → differentiation ("What Makes This Special" — 3 conve
+          -rging values) → phased approach (5 phases teaching distinct Sl
+          -ack API capabilities) → detailed requirements (25 FRs + 18 NFR
+          -s)                                                            
+      341 -- Compelling dual purpose: practical UX upgrade AND structured
+          - learning project — both motivations are woven throughout     
+      342 -- Technical Context section with command→endpoint mapping tabl
+          -e provides crystal-clear integration blueprint                
+      343 -- User Journeys are vivid and realistic — "tram commute" scena
+          -rio (Journey 1), "colleague sends link" (Journey 2) ground the
+          - product in real usage                                        
+      344 -- 5-phase progression is pedagogically sound: each phase teach
+          -es one Slack API capability (slash commands → events → mention
+          -s → LLM → proactive)                                          
+      345 -- Clean, lean structure — 9 sections with no bloat, high infor
+          -mation density throughout                                     
+      346 -- Error handling elevated to its own User Journey (Journey 4) 
+          -— shows operational maturity                                  
+      347 -                                                              
+      348 -**Areas for Improvement:**                                    
+      349 -- No explicit "Assumptions & Dependencies" section (e.g., Slac
+          -k free plan sufficiency, NAS resource availability, backend AP
+          -I stability)                                                  
+      350 -- No explicit "Out of Scope" subsection (scope is clear from P
+          -roduct Scope but not stated negatively)                       
+      351 -- Phase 4 FR12 (natural language understanding) is the weakest
+          - requirement — hard to measure NL success                     
+      352 -                                                              
+      353 -### Dual Audience Effectiveness                               
+      354 -                                                              
+      355 -**For Humans:**                                               
+      356 -- Executive-friendly: Excellent — "What Makes This Special" is
+          - immediately compelling; dual purpose (practical + learning) r
+          -esonates                                                      
+      357 -- Developer clarity: Excellent — repo structure, API mapping t
+          -able, Docker setup snippet, all 5 commands specified          
+      358 -- Stakeholder decision-making: Excellent — 5-phase plan with c
+          -lear dependencies and risk mitigations                        
+      359 -                                                              
+      360 -**For LLMs:**                                                 
+      361 -- Machine-readable structure: Excellent — clean ## headers, co
+          -nsistent FR/NFR numbering, YAML frontmatter with classificatio
+          -n                                                             
+      362 -- Architecture readiness: Excellent — Technical Context sectio
+          -n provides integration blueprint; API table maps commands to e
+          -ndpoints                                                      
+      363 -- Epic/Story readiness: Excellent — FRs grouped by phase (8 gr
+          -oups), each phase maps directly to an epic; NFRs grouped by qu
+          -ality attribute                                               
+      364 -                                                              
+      365 -**Dual Audience Score:** 5/5                                  
+      366 -                                                              
+      367 -### BMAD PRD Principles Compliance                            
+      368 -                                                              
+      369 -| Principle | Status | Notes |                                
+      370 -|-----------|--------|-------|                                
+      371 -| Information Density | Met | 0 violations — language is direc
+          -t and concise throughout |                                    
+      372 -| Measurability | Met | 25 FRs avg 4.85/5 SMART, 18 NFRs with 
+          -specific metrics |                                            
+      373 -| Traceability | Met | All chains intact, 0 orphan FRs, comple
+          -te matrix |                                                   
+      374 -| Domain Awareness | Met | Correctly scoped for personal AI KM
+          -, no regulatory concerns |                                    
+      375 -| Zero Anti-Patterns | Met | 0 filler, 0 vague quantifiers, 5 
+          -borderline NFR file references (intentional) |                
+      376 -| Dual Audience | Met | Clean for both humans and LLMs |      
+      377 -| Markdown Format | Met | Proper ## headers, tables, numbered 
+          -FRs/NFRs, YAML frontmatter |                                  
+      378 -                                                              
+      379 -**Principles Met:** 7/7                                       
+      380 -                                                              
+      381 -### Overall Quality Rating                                    
+      382 -                                                              
+      383 -**Rating:** 5/5 - Excellent: Exemplary, ready for production u
+          -se                                                            
+      384 -                                                              
+      385 -**Scale:**                                                    
+      386 -- **5/5 - Excellent: Exemplary, ready for production use** <--
+          - This PRD                                                     
+      387 -- 4/5 - Good: Strong with minor improvements needed           
+      388 -- 3/5 - Adequate: Acceptable but needs refinement             
+      389 -- 2/5 - Needs Work: Significant gaps or issues                
+      390 -- 1/5 - Problematic: Major flaws, needs substantial revision  
+      391 -                                                              
+      392 -### Top 3 Improvements                                        
+      393 -                                                              
+      394 -1. **FR12 measurability — define NL understanding success crit
+          -eria**                                                        
+      395 -   Add specific acceptance criteria for Phase 4 natural langua
+          -ge understanding (e.g., "correctly interprets 90% of test quer
+          -ies from a predefined set of 20 queries covering all 5 command
+          - types"). Currently Measurable=3 — the weakest score in the en
+          -tire PRD.                                                     
+      396 -                                                              
+      397 -2. **Add Assumptions & Dependencies section**                 
+      398 -   Document explicit assumptions: (1) Slack free plan supports
+          - all Phase 1 features (slash commands, Socket Mode, DMs), (2) 
+          -NAS has sufficient CPU/memory for an additional Docker contain
+          -er, (3) Backend REST API endpoints are stable and won't change
+          - during bot development, (4) HashiCorp Vault is operational on
+          - NAS for secrets.                                             
+      399 -                                                              
+      400 -3. **Abstract specific file names in NFRs**                   
+      401 -   NFR13 (`api_client.py`), NFR14 (`commands.py`, `api_client.
+          -py`), NFR15 (`python-json-logger`) reference specific files/li
+          -braries. For stricter BMAD compliance, abstract to capability 
+          -descriptions ("API client module", "Slack interaction module",
+          - "structured logging library"). Alternatively, add a note that
+          - file-level specificity is intentional for solo developer cont
+          -ext.                                                          
+      402 -                                                              
+      403 -### Summary                                                   
+      404 -                                                              
+      405 -**This PRD is:** An exemplary Slack Bot integration document t
+          -hat uniquely combines practical UX upgrade with structured lea
+          -rning objectives, featuring vivid user journeys, complete trac
+          -eability (25 FRs across 5 phases), excellent information densi
+          -ty, and a pedagogically sound 5-phase progression — needs only
+          - minor refinements to FR12 measurability and an explicit Assum
+          -ptions section.                                               
+      406 -                                                              
+      407 -## Completeness Validation                                    
+      408 -                                                              
+      409 -### Template Completeness                                     
+      410 -                                                              
+      411 -**Template Variables Found:** 0                               
+      412 -No template variables remaining. ✓                            
+      413 -                                                              
+      414 -### Content Completeness by Section                           
+      415 -                                                              
+      416 -**Executive Summary:** Complete ✓ — vision, dual purpose, 5 ph
+          -ases, "What Makes This Special" differentiation, target vision
+      417 -**Success Criteria:** Complete ✓ — 4 dimensions (User, Busines
+          -s, Technical, Measurable) all with specific metrics           
+      418 -**Product Scope:** Complete ✓ — MVP Phase 1 (5 items), Growth 
+          -Phases 2-4, Vision Phase 5                                    
+      419 -**User Journeys:** Complete ✓ — 5 journeys with Requirements S
+          -ummary table mapping capabilities to FRs                      
+      420 -**Functional Requirements:** Complete ✓ — 25 FRs in 8 groups c
+          -overing all phases                                            
+      421 -**Non-Functional Requirements:** Complete ✓ — 18 NFRs in 5 gro
+          -ups (Performance, Security, Integration, Code Quality, Reliabi
+          -lity)                                                         
+      422 -**Project Classification:** Complete ✓ — 6-dimension classific
+          -ation table                                                   
+      423 -**Technical Context:** Complete ✓ — architectural position, re
+          -po structure, API mapping table, secrets, logging, Docker depl
+          -oyment, implementation considerations                         
+      424 -**Project Scoping & Risk Mitigation:** Complete ✓ — MVP strate
+          -gy, 3 risk categories with mitigations                        
+      425 -                                                              
+      426 -### Section-Specific Completeness                             
+      427 -                                                              
+      428 -**Success Criteria Measurability:** All measurable — "within 3
+          - seconds", "zero functionality loss", "5 slash commands", ">80
+          -% coverage", etc.                                             
+      429 -**User Journeys Coverage:** Yes — covers sole user (Ziutus) ac
+          -ross 5 distinct scenarios (add content, check duplicates, syst
+          -em status, error handling, first-time setup)                  
+      430 -**FRs Cover MVP Scope:** Yes ✓ — all 5 slash commands (FR1-FR7
+          -), deployment (FR21-FR23), documentation (FR25), error handlin
+          -g (FR18-FR20), startup confirmation (FR24)                    
+      431 -**NFRs Have Specific Criteria:** All — every NFR has a testabl
+          -e condition or metric                                         
+      432 -                                                              
+      433 -### Frontmatter Completeness                                  
+      434 -                                                              
+      435 -**stepsCompleted:** Present ✓ (12 steps completed)            
+      436 -**classification:** Present ✓ (projectType, domain, complexity
+          -, projectContext, deploymentScope, modularity)                
+      437 -**inputDocuments:** Present ✓ (5 documents tracked)           
+      438 -**lastEdited:** Present ✓ (2026-02-27)                        
+      439 -**workflowType:** Present ✓ (prd)                             
+      440 -                                                              
+      441 -**Frontmatter Completeness:** 5/5                             
+      442 -                                                              
+      443 -### Completeness Summary                                      
+      444 -                                                              
+      445 -**Overall Completeness:** 100% (9/9 sections complete)        
+      446 -                                                              
+      447 -**Critical Gaps:** 0                                          
+      448 -**Minor Gaps:** 0                                             
+      449 -                                                              
+      450 -**Severity:** Pass                                            
+      451 -                                                              
+      452 -**Recommendation:** PRD is complete with all required sections
+          - and content present. No template variables, no missing sectio
+          -ns, no incomplete content. Frontmatter fully populated.       
+      453 -                                                              
+      454 ----                                                           
+      455 -                                                              
+      456 -## Final Validation Summary                                   
+      457 -                                                              
+      458 -### Overall Status: Pass                                      
+      459 -                                                              
+      460 -PRD is exemplary and ready for downstream work (architecture, 
+          -epics, stories). Minor improvements suggested but not blocking
+          -.                                                             
+      461 -                                                              
+      462 -### Quick Results                                             
+      463 -                                                              
+      464 -| Check | Result |                                            
+      465 -|-------|--------|                                            
+      466 -| Format | BMAD Standard (6/6 core sections + 3 additional) | 
+      467 -| Information Density | Pass (0 violations) |                 
+      468 -| Product Brief Coverage | N/A (no brief provided) |          
+      469 -| Measurability | Pass (1 minor FR warning — FR18 "user-friend
+          -ly") |                                                        
+      470 -| Traceability | Pass (0 issues — all chains intact, 0 orphans
+          -) |                                                           
+      471 -| Implementation Leakage | Pass (0 true violations, 5 borderli
+          -ne NFR instances) |                                           
+      472 -| Domain Compliance | N/A (low complexity domain) |           
+      473 -| Project-Type Compliance | Pass (5/5 required sections, 0 exc
+          -luded violations) |                                           
+      474 -| SMART Quality | Pass (100% acceptable, avg 4.85/5, 0% flagge
+          -d) |                                                          
+      475 -| Holistic Quality | 5/5 — Excellent |                        
+      476 -| Completeness | 100% — Pass |                                
+      477 -                                                              
+      478 -### Critical Issues: 0                                        
+      479 -                                                              
+      480 -### Warnings: 1                                               
+      481 -                                                              
+      482 -1. **FR12 Measurability (Measurable=3)** — "natural language i
+          -nstead of structured commands" lacks quantifiable success crit
+          -eria for NL understanding. Non-blocking — this is a Phase 4 fu
+          -ture requirement.                                             
+      483 -                                                              
+      484 -### Minor Observations: 5                                     
+      485 -                                                              
+      486 -1. **FR18** — "user-friendly" adjective (qualified with concre
+          -te criteria)                                                  
+      487 -2. **FR7** — "formatted text messages" could specify formattin
+          -g type                                                        
+      488 -3. **FR9** — DM text parsing rules undefined                  
+      489 -4. **NFR13, NFR14, NFR15** — specific file names and library n
+          -ames in NFRs (intentional for solo developer project)         
+      490 -5. **No Assumptions & Dependencies section** — implicit assump
+          -tions not documented                                          
+      491 -                                                              
+      492 -### Strengths                                                 
+      493 -                                                              
+      494 -- Perfect traceability — all 25 FRs trace to user journeys and
+          - Product Scope phases, 0 orphans                              
+      495 -- Excellent SMART quality — 100% of FRs score >= 3, average 4.
+          -85/5, 64% score perfect 5.0                                   
+      496 -- Zero information padding — active voice throughout, zero fil
+          -ler phrases                                                   
+      497 -- Compelling dual purpose — practical UX upgrade AND structure
+          -d learning project                                            
+      498 -- Vivid user journeys — realistic scenarios (tram commute, col
+          -league link sharing)                                          
+      499 -- Pedagogically sound 5-phase progression — each phase teaches
+          - a distinct Slack API capability                              
+      500 -- Crystal-clear integration blueprint — command→endpoint mappi
+          -ng table in Technical Context                                 
+      501 -- Strong error handling — elevated to its own User Journey (Jo
+          -urney 4)                                                      
+      502 -- Complete frontmatter — 12 workflow steps, 6-dimension classi
+          -fication, 5 input documents                                   
+      503 -                                                              
+      504 -### Holistic Quality: 5/5 — Excellent                         
+       28 +[Findings will be appended as validation progresses]          
+
+● Setup zakończony!
+
+  PRD do walidacji: _bmad-output/planning-artifacts/prd.md
+
+  Załadowane dokumenty wejściowe:
+  - PRD: prd.md (SQLAlchemy ORM Migration) ✓
+  - Research: 1 (plan-sqlalchemy-migration.md) ✓
+  - Project Docs: 3 (architecture-backend.md, data-models-backend.md,
+  architecture-decisions.md) ✓
+  - Dodatkowe referencje: 0 (none)
+
+  Raport walidacji: _bmad-output/planning-artifacts/prd-validation-report.md
+
+  Gotowy do rozpoczęcia walidacji.
+
+  ---
+  Wybierz opcję: [A] Advanced Elicitation [P] Party Mode [C] Kontynuuj do Format
+   Detection
+
+❯ C                                                                             
+
+● Read 1 file (ctrl+o to expand)
+
+● Analizuję strukturę PRD...
+
+  Struktura PRD (nagłówki ## Level 2):
+  1. Executive Summary
+  2. Project Classification
+  3. Success Criteria
+  4. User Journeys
+  5. Technical Context
+  6. Project Scoping & Risk Mitigation
+  7. Functional Requirements
+  8. Non-Functional Requirements
+
+  Sprawdzanie sekcji BMAD Core:
+
+  ┌─────────────────────┬───────────────────────────────────────────────────┐
+  │     Sekcja BMAD     │                      Status                       │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ Executive Summary   │ Present ✓                                         │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ Success Criteria    │ Present ✓                                         │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │                     │ Present ✓ (jako "Project Scoping & Risk           │
+  │ Product Scope       │ Mitigation" — zawiera MVP Strategy, Feature Set,  │
+  │                     │ Post-MVP phases)                                  │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ User Journeys       │ Present ✓                                         │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ Functional          │ Present ✓                                         │
+  │ Requirements        │                                                   │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ Non-Functional      │ Present ✓                                         │
+  │ Requirements        │                                                   │
+  └─────────────────────┴───────────────────────────────────────────────────┘
+
+  Klasyfikacja: BMAD Standard — 6/6 sekcji core obecnych. Sekcja "Product Scope"
+   występuje pod wariantem nazwy "Project Scoping & Risk Mitigation" z pełną
+  zawartością (MVP strategy, feature set, post-MVP phases, risk mitigation).
+
+  Dodatkowe sekcje (poza core):
+  - Project Classification — typ projektu, domena, złożoność, kontekst
+  - Technical Context — architektura docelowa, session management, decyzje
+  technologiczne, data flow, zależności, pliki
+
+  Aktualizuję raport walidacji i przechodzę do systematycznych sprawdzeń...
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 3 lines, removed 1 line
+       6    - docs/architecture-backend.md
+       7    - docs/data-models-backend.md
+       8    - docs/architecture-decisions.md
+       9 -validationStepsCompleted: []                                   
+       9 +validationStepsCompleted:                                      
+      10 +  - step-v-01-discovery                                        
+      11 +  - step-v-02-format-detection                                 
+      12  validationStatus: IN_PROGRESS
+      13  ---
+      14  
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 26 lines, removed 1 line
+      27  
+      28  ## Validation Findings
+      29  
+      30 -[Findings will be appended as validation progresses]           
+      30 +## Format Detection                                            
+      31 +                                                               
+      32 +**PRD Structure (## Level 2 Headers):**                        
+      33 +1. Executive Summary                                           
+      34 +2. Project Classification                                      
+      35 +3. Success Criteria                                            
+      36 +4. User Journeys                                               
+      37 +5. Technical Context                                           
+      38 +6. Project Scoping & Risk Mitigation                           
+      39 +7. Functional Requirements                                     
+      40 +8. Non-Functional Requirements                                 
+      41 +                                                               
+      42 +**BMAD Core Sections Present:**                                
+      43 +- Executive Summary: Present                                   
+      44 +- Success Criteria: Present                                    
+      45 +- Product Scope: Present (as "Project Scoping & Risk Mitigation
+         +" — contains MVP Strategy, Feature Set, Post-MVP phases)       
+      46 +- User Journeys: Present                                       
+      47 +- Functional Requirements: Present                             
+      48 +- Non-Functional Requirements: Present                         
+      49 +                                                               
+      50 +**Format Classification:** BMAD Standard                       
+      51 +**Core Sections Present:** 6/6                                 
+      52 +                                                               
+      53 +**Additional Sections (beyond core):**                         
+      54 +- Project Classification — project type, domain, complexity, de
+         +ployment scope                                                 
+      55 +- Technical Context — target architecture, session management, 
+         +technology decisions, data flows, dependencies, file inventory 
+
+● Format wykryty: BMAD Standard (6/6 sekcji core)
+
+  Przechodzę do systematycznych sprawdzeń walidacyjnych...
+
+● Read 1 file (ctrl+o to expand)
+
+● Skanowanie PRD pod kątem anti-patternów gęstości informacyjnej...
+
+  Wyniki skanowania:
+
+  Conversational filler: Przeskanowano wzorce "The system will allow users
+  to...", "It is important to note that...", "In order to", "For the purpose
+  of", "With regard to" — 0 wystąpień. PRD konsekwentnie używa aktywnej formy:
+  "Developer can...", "Consumer can...", "Repository can...".
+
+  Wordy phrases: Przeskanowano wzorce "Due to the fact that", "In the event of",
+   "At this point in time", "In a manner that" — 0 wystąpień.
+
+  Redundant phrases: Przeskanowano wzorce "Future plans", "Past history",
+  "Absolutely essential", "Completely finish" — 0 wystąpień.
+
+  Total violations: 0 | Severity: Pass
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 1 line
+       9  validationStepsCompleted:
+      10    - step-v-01-discovery
+      11    - step-v-02-format-detection
+      12 +  - step-v-03-density-validation                               
+      13  validationStatus: IN_PROGRESS
+      14  ---
+      15  
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 14 lines
+      54  **Additional Sections (beyond core):**
+      55  - Project Classification — project type, domain, complexity, de
+          ployment scope
+      56  - Technical Context — target architecture, session management, 
+          technology decisions, data flows, dependencies, file inventory
+      57 +                                                               
+      58 +## Information Density Validation                              
+      59 +                                                               
+      60 +**Anti-Pattern Violations:**                                   
+      61 +                                                               
+      62 +**Conversational Filler:** 0 occurrences                       
+      63 +**Wordy Phrases:** 0 occurrences                               
+      64 +**Redundant Phrases:** 0 occurrences                           
+      65 +                                                               
+      66 +**Total Violations:** 0                                        
+      67 +                                                               
+      68 +**Severity Assessment:** Pass                                  
+      69 +                                                               
+      70 +**Recommendation:** PRD demonstrates excellent information dens
+         +ity with zero violations. Language is direct, concise, and uses
+         + active voice throughout. "Developer can...", "Consumer can..."
+         +, "Repository can..." patterns used consistently. No filler phr
+         +ases detected.                                                 
+
+● Walidacja gęstości informacyjnej zakończona — Pass
+
+  Przechodzę do następnego sprawdzenia...
+
+● Read 1 file (ctrl+o to expand)
+
+● Brak Product Brief wśród dokumentów wejściowych (frontmatter PRD: briefs: 0).
+
+  Product Brief Coverage: Pominięto (brak Product Brief)
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 1 line
+      10    - step-v-01-discovery
+      11    - step-v-02-format-detection
+      12    - step-v-03-density-validation
+      13 +  - step-v-04-brief-coverage-validation                        
+      14  validationStatus: IN_PROGRESS
+      15  ---
+      16  
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 4 lines
+      69  **Severity Assessment:** Pass
+      70  
+      71  **Recommendation:** PRD demonstrates excellent information dens
+          ity with zero violations. Language is direct, concise, and uses
+           active voice throughout. "Developer can...", "Consumer can..."
+          , "Repository can..." patterns used consistently. No filler phr
+          ases detected.
+      72 +                                                               
+      73 +## Product Brief Coverage                                      
+      74 +                                                               
+      75 +**Status:** N/A - No Product Brief was provided as input       
+
+● Przechodzę do następnego sprawdzenia...
+
+● Read 1 file (ctrl+o to expand)
+
+● Analizuję mierzalność wszystkich wymagań funkcjonalnych i niefunkcjonalnych...
+
+  Analiza Functional Requirements (FR1-FR43):
+
+  Sprawdzenie: Format "[Actor] can [capability]"
+  Wynik: 43/43 zgodne — "Developer can...", "Consumer can...", "Repository
+    can...", "Flask application can..."
+  ────────────────────────────────────────
+  Sprawdzenie: Subjective adjectives (easy, fast, intuitive...)
+  Wynik: 0 wystąpień
+  ────────────────────────────────────────
+  Sprawdzenie: Vague quantifiers (multiple, several, some...)
+  Wynik: 0 wystąpień
+  ────────────────────────────────────────
+  Sprawdzenie: Implementation leakage
+  Wynik: 0 true violations — technology names (SQLAlchemy, pgvector-python,
+    Alembic, cosine_distance()) are domain vocabulary for a migration PRD;
+  script
+     filenames (FR31-FR38) define migration scope
+
+  Analiza Non-Functional Requirements (NFR1-NFR12):
+
+  ┌───────┬─────────────────────────────────────┬───────────────────────────┐
+  │  NFR  │               Metric                │         Testable?         │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR1  │ "Zero raw cursor.execute() calls"   │ Yes — code search         │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR2  │ "ruff check backend/ with zero      │ Yes — tool exit code      │
+  │       │ warnings"                           │                           │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR3  │ "All existing unit tests pass"      │ Yes — pytest exit code    │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR4  │ "type hints (Mapped[type])"         │ Yes — code inspection     │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR5  │ "Enum classes preserved with        │ Yes — import test         │
+  │       │ identical values"                   │                           │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR6  │ "Database schema identical to       │ Yes — Alembic diff        │
+  │       │ before"                             │                           │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR7  │ "Changes in exactly one file"       │ Yes — count files         │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR8  │ "One file plus one Alembic command" │ Yes — count steps         │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR9  │ "No dead code remains"              │ Yes — grep for old        │
+  │       │                                     │ classes                   │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR10 │ "Dependencies added with version    │ Yes — pyproject.toml      │
+  │       │ pins"                               │ inspection                │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR11 │ "uv lock produces valid lock file"  │ Yes — exit code           │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR12 │ ".venv_wsl synchronized"            │ Yes — import test         │
+  └───────┴─────────────────────────────────────┴───────────────────────────┘
+
+  Missing metrics: 0 | Incomplete template: 0 | Missing context: 0
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 1 line
+      11    - step-v-02-format-detection
+      12    - step-v-03-density-validation
+      13    - step-v-04-brief-coverage-validation
+      14 +  - step-v-05-measurability-validation                         
+      15  validationStatus: IN_PROGRESS
+      16  ---
+      17  
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 40 lines
+       74  ## Product Brief Coverage
+       75  
+       76  **Status:** N/A - No Product Brief was provided as input
+       77 +                                                              
+       78 +## Measurability Validation                                   
+       79 +                                                              
+       80 +### Functional Requirements                                   
+       81 +                                                              
+       82 +**Total FRs Analyzed:** 43                                    
+       83 +                                                              
+       84 +**Format Violations:** 0                                      
+       85 +All 43 FRs follow "[Actor] can [capability]" pattern with clea
+          +r actors (Developer, Consumer, Repository, Flask application) 
+          +and actionable capabilities.                                  
+       86 +                                                              
+       87 +**Subjective Adjectives Found:** 0                            
+       88 +                                                              
+       89 +**Vague Quantifiers Found:** 0                                
+       90 +                                                              
+       91 +**Implementation Leakage:** 0 true violations                 
+       92 +Technology names (SQLAlchemy, pgvector-python, Alembic, `cosin
+          +e_distance()`) are domain vocabulary for a migration PRD. Scri
+          +pt filenames in FR31-FR38 (`dynamodb_sync.py`, `unknown_news_i
+          +mport.py`, `web_documents_do_the_needful_new.py`) define the m
+          +igration scope — naming the exact files being rewritten. Endpo
+          +int names in FR39-FR43 (`/website_list`, `/website_get`, etc.)
+          + are API contract identifiers.                                
+       93 +                                                              
+       94 +**FR Violations Total:** 0                                    
+       95 +                                                              
+       96 +### Non-Functional Requirements                               
+       97 +                                                              
+       98 +**Total NFRs Analyzed:** 12                                   
+       99 +                                                              
+      100 +**Missing Metrics:** 0                                        
+      101 +All 12 NFRs specify measurable criteria: "zero calls" (NFR1), 
+          +"zero warnings" (NFR2), "all tests pass" (NFR3), "exactly one 
+          +file" (NFR7-NFR8), "no dead code" (NFR9), "valid lock file" (N
+          +FR11).                                                        
+      102 +                                                              
+      103 +**Incomplete Template:** 0                                    
+      104 +                                                              
+      105 +**Missing Context:** 0                                        
+      106 +                                                              
+      107 +**NFR Violations Total:** 0                                   
+      108 +                                                              
+      109 +### Overall Assessment                                        
+      110 +                                                              
+      111 +**Total Requirements:** 55 (43 FRs + 12 NFRs)                 
+      112 +**Total Violations:** 0                                       
+      113 +                                                              
+      114 +**Severity:** Pass                                            
+      115 +                                                              
+      116 +**Recommendation:** Requirements demonstrate excellent measura
+          +bility. All 43 FRs use consistent "[Actor] can [capability]" f
+          +ormat. All 12 NFRs have specific, testable metrics. Zero subje
+          +ctive adjectives, zero vague quantifiers. Technology reference
+          +s are domain vocabulary appropriate for a database migration P
+          +RD.                                                           
+
+● Walidacja mierzalności zakończona — Total Violations: 0 (Pass)
+
+  Przechodzę do następnego sprawdzenia...
+
+● Read 1 file (ctrl+o to expand)
+
+● Analizuję łańcuch traceability...
+
+  Executive Summary → Success Criteria: Intact ✓
+  - "Adding or removing a column requires 5+ changes" → User Success:
+  "single-location change"
+  - "Alembic generates migration scripts" → User Success: "auto-generated
+  migration"
+  - "Eliminates fear of changing schema" → User Success: "without anxiety"
+  - "Unblocks evolution of the data model" → Business Success: "unblocks future
+  work"
+  - "Three-class simplified to two layers" → Technical Success: "old classes
+  removed"
+
+  Success Criteria → User Journeys: Intact ✓
+  - User Success (single-location, no anxiety) → Journey 1 (Schema Modification)
+  - Technical Success (import scripts work) → Journey 2 (Import Run)
+  - Technical Success (batch pipeline works) → Journey 3 (Embeddings Pipeline)
+  - Technical Success (Flask endpoints identical) → Journey 4 (API Request)
+  - Measurable (zero cursor.execute()) → Journeys 2-4
+
+  User Journeys → FRs: Intact ✓
+  - Journey 1 → FR1-FR9 (ORM Model + Schema Migration)
+  - Journey 2 → FR14-FR19, FR31-FR34 (Persistence + Import)
+  - Journey 3 → FR20-FR23, FR24-FR30, FR35-FR38 (Embeddings + Repository +
+  Pipeline)
+  - Journey 4 → FR10-FR13, FR24, FR39-FR43 (Session + Repository + Flask API)
+
+  Scope → FR Alignment: Intact ✓
+  All 8 MVP feature set items map to FRs.
+
+  Orphan FRs: 0 | Unsupported Success Criteria: 0 | Journeys without FRs: 0
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 1 line
+      12    - step-v-03-density-validation
+      13    - step-v-04-brief-coverage-validation
+      14    - step-v-05-measurability-validation
+      15 +  - step-v-06-traceability-validation                          
+      16  validationStatus: IN_PROGRESS
+      17  ---
+      18  
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 64 lines
+      115  **Severity:** Pass
+      116  
+      117  **Recommendation:** Requirements demonstrate excellent measura
+           bility. All 43 FRs use consistent "[Actor] can [capability]" f
+           ormat. All 12 NFRs have specific, testable metrics. Zero subje
+           ctive adjectives, zero vague quantifiers. Technology reference
+           s are domain vocabulary appropriate for a database migration P
+           RD.
+      118 +                                                              
+      119 +## Traceability Validation                                    
+      120 +                                                              
+      121 +### Chain Validation                                          
+      122 +                                                              
+      123 +**Executive Summary -> Success Criteria:** Intact             
+      124 +- "Adding or removing a column requires 5+ changes" -> User Su
+          +ccess: "single-location change"                               
+      125 +- "Alembic generates migration scripts" -> User Success: "auto
+          +-generated migration"                                         
+      126 +- "Eliminates fear of changing schema" -> User Success: "witho
+          +ut anxiety"                                                   
+      127 +- "Unblocks evolution of the data model" -> Business Success: 
+          +"unblocks future work"                                        
+      128 +- "Three-class simplified to two layers" -> Technical Success:
+          + "old classes removed"                                        
+      129 +                                                              
+      130 +**Success Criteria -> User Journeys:** Intact                 
+      131 +- User Success (single-location, no anxiety) -> Journey 1 (Sch
+          +ema Modification)                                             
+      132 +- Technical Success (import scripts work) -> Journey 2 (Import
+          + Run)                                                         
+      133 +- Technical Success (batch pipeline works) -> Journey 3 (Embed
+          +dings Pipeline)                                               
+      134 +- Technical Success (Flask endpoints identical) -> Journey 4 (
+          +API Request)                                                  
+      135 +- Measurable Outcomes (zero cursor.execute()) -> Journeys 2-4 
+      136 +                                                              
+      137 +**User Journeys -> Functional Requirements:** Intact          
+      138 +- Journey 1 (Schema Modification) -> FR1-FR9 (ORM Model Defini
+          +tion + Schema Migration)                                      
+      139 +- Journey 2 (Import Run) -> FR14-FR19 (Document Persistence) +
+          + FR31-FR34 (Import Script Compatibility)                      
+      140 +- Journey 3 (Embeddings Pipeline) -> FR20-FR23 (Embedding Oper
+          +ations) + FR24-FR30 (Repository Queries) + FR35-FR38 (Batch Pi
+          +peline)                                                       
+      141 +- Journey 4 (API Request) -> FR10-FR13 (Session Management) + 
+          +FR24 (Repository list) + FR39-FR43 (Flask API)                
+      142 +                                                              
+      143 +**Scope -> FR Alignment:** Intact                             
+      144 +All 8 MVP Feature Set items map directly to FR groups:        
+      145 +1. ORM models -> FR1-FR5                                      
+      146 +2. Engine + session management -> FR10-FR13                   
+      147 +3. Alembic initialized -> FR6-FR9                             
+      148 +4. Repository rewritten -> FR24-FR30                          
+      149 +5. Import scripts working -> FR31-FR34                        
+      150 +6. Batch pipeline working -> FR35-FR38                        
+      151 +7. Flask endpoints functional -> FR39-FR43                    
+      152 +8. Old wrapper classes removed -> NFR9                        
+      153 +                                                              
+      154 +### Orphan Elements                                           
+      155 +                                                              
+      156 +**Orphan Functional Requirements:** 0                         
+      157 +**Unsupported Success Criteria:** 0                           
+      158 +**User Journeys Without FRs:** 0                              
+      159 +                                                              
+      160 +### Traceability Matrix                                       
+      161 +                                                              
+      162 +| Scope Item | Exec Summary | Success Criteria | Journeys | FR
+          +s | NFRs |                                                    
+      163 +|-----------|-------------|-----------------|----------|-----|
+          +------|                                                       
+      164 +| ORM Models | "SQLAlchemy 2.x ORM" | User Success | J1 | FR1-
+          +FR5 | NFR4, NFR7 |                                            
+      165 +| Schema Migration | "Alembic schema migrations" | User Succes
+          +s | J1 | FR6-FR9 | NFR6 |                                     
+      166 +| Session Management | "simplified to two layers" | Technical 
+          +Success | J4 | FR10-FR13 | -- |                               
+      167 +| Document Persistence | "SQLAlchemy generates all SQL" | Tech
+          +nical Success | J2 | FR14-FR19 | NFR1 |                       
+      168 +| Embedding Operations | "pgvector-python native operators" | 
+          +Measurable | J3 | FR20-FR23 | NFR1 |                          
+      169 +| Repository Queries | "simplified to two layers" | Technical 
+          +Success | J3, J4 | FR24-FR30 | -- |                           
+      170 +| Import Scripts | "import scripts function correctly" | Techn
+          +ical Success | J2 | FR31-FR34 | -- |                          
+      171 +| Batch Pipeline | "batch processing pipeline works" | Technic
+          +al Success | J3 | FR35-FR38 | -- |                            
+      172 +| Flask API | "endpoints return identical data" | Technical Su
+          +ccess | J4 | FR39-FR43 | NFR5 |                               
+      173 +| Code Cleanup | "old classes removed" | Technical Success | -
+          +- | -- | NFR9 |                                               
+      174 +| Code Quality | "ruff check zero warnings" | Technical Succes
+          +s | -- | -- | NFR2, NFR3 |                                    
+      175 +| Dependencies | "new dependencies" | -- | -- | -- | NFR10-NFR
+          +12 |                                                          
+      176 +                                                              
+      177 +**Total Traceability Issues:** 0                              
+      178 +                                                              
+      179 +**Severity:** Pass                                            
+      180 +                                                              
+      181 +**Recommendation:** Traceability chain is fully intact. All 43
+          + FRs trace to user journeys and MVP scope items. Zero orphan r
+          +equirements. 4 journeys comprehensively cover all migration sc
+          +enarios (schema modification, data import, batch processing, A
+          +PI serving). Every Success Criterion is supported by at least 
+          +one journey.                                                  
+
+● Walidacja traceability zakończona — Total Issues: 0 (Pass)
+
+  Przechodzę do następnego sprawdzenia...
+
+● Read 1 file (ctrl+o to expand)
+
+● Skanowanie FRs i NFRs pod kątem implementation leakage...
+
+  Kontekst domenowy:
+  Ten PRD definiuje migrację technologiczną. Technologie docelowe (SQLAlchemy,
+  Alembic, pgvector-python) stanowią słownictwo domenowe — to CZEGO dotyczy PRD,
+   nie JAK to zbudować. Analogicznie do PRD integracji Slack Bot wymieniającego
+  Slack.
+
+  Wyniki skanowania FRs:
+
+  ┌────────────────────┬────────────┬───────────────────────────────────────┐
+  │     Kategoria      │ Violations │              Borderline               │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Frontend           │ 0          │ 0                                     │
+  │ Frameworks         │            │                                       │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Backend Frameworks │ 0          │ 0 (Flask in FR10-FR11 = existing      │
+  │                    │            │ context)                              │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Databases          │ 0          │ 0                                     │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Cloud Platforms    │ 0          │ 0                                     │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Infrastructure     │ 0          │ 0                                     │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Libraries          │ 0          │ 2                                     │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Other              │ 0          │ 3                                     │
+  └────────────────────┴────────────┴───────────────────────────────────────┘
+
+  Borderline instances w FRs (nie true violations):
+  - FR7: "alembic upgrade head" — specific command syntax; could be "apply
+  migrations with a single command"
+  - FR8: "alembic downgrade" — specific command syntax
+  - FR23: "pgvector-python cosine_distance() operator" — specific library +
+  method name; could be "native vector similarity search operator"
+  - FR31-FR38: Specific script filenames — define migration scope, acceptable
+  for brownfield project
+  - FR39-FR43: Endpoint names — API contract identifiers, acceptable
+
+  Wyniki skanowania NFRs:
+
+  ┌───────┬────────────────────┬────────────────────────────────────────────┐
+  │  NFR  │  Implementation    │                 Assessment                 │
+  │       │        term        │                                            │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR1  │ cursor.execute()   │ Naming the anti-pattern to eliminate —     │
+  │       │                    │ acceptable                                 │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR2  │ ruff check         │ Established project standard — borderline  │
+  │       │ backend/           │                                            │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR4  │ Mapped[type]       │ SQLAlchemy-specific — borderline           │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR5  │ Class names        │ Specific classes being preserved —         │
+  │       │                    │ borderline                                 │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR10 │ pyproject.toml     │ Specific file — borderline                 │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR11 │ uv lock            │ Specific tool command — borderline         │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR12 │ .venv_wsl          │ Specific file — borderline                 │
+  └───────┴────────────────────┴────────────────────────────────────────────┘
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 1 line
+      13    - step-v-04-brief-coverage-validation
+      14    - step-v-05-measurability-validation
+      15    - step-v-06-traceability-validation
+      16 +  - step-v-07-implementation-leakage-validation                
+      17  validationStatus: IN_PROGRESS
+      18  ---
+      19  
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 43 lines
+      180  **Severity:** Pass
+      181  
+      182  **Recommendation:** Traceability chain is fully intact. All 43
+            FRs trace to user journeys and MVP scope items. Zero orphan r
+           equirements. 4 journeys comprehensively cover all migration sc
+           enarios (schema modification, data import, batch processing, A
+           PI serving). Every Success Criterion is supported by at least 
+           one journey.
+      183 +                                                              
+      184 +## Implementation Leakage Validation                          
+      185 +                                                              
+      186 +### Domain Context Note                                       
+      187 +                                                              
+      188 +This PRD defines a technology migration from raw psycopg2 to S
+          +QLAlchemy ORM. Key domain vocabulary:                         
+      189 +- **SQLAlchemy, ORM, mapped_column(), session** — THE target t
+          +echnology (not an implementation choice — it IS the product)  
+      190 +- **Alembic** — THE migration tool being adopted (domain subje
+          +ct)                                                           
+      191 +- **pgvector-python** — THE vector operations library replacin
+          +g raw SQL                                                     
+      192 +- **Flask** — existing application framework (deployment conte
+          +xt)                                                           
+      193 +- **psycopg2** — existing driver being replaced (migration sou
+          +rce context)                                                  
+      194 +                                                              
+      195 +### Leakage by Category                                       
+      196 +                                                              
+      197 +**Frontend Frameworks:** 0 violations                         
+      198 +**Backend Frameworks:** 0 violations                          
+      199 +**Databases:** 0 violations                                   
+      200 +**Cloud Platforms:** 0 violations                             
+      201 +**Infrastructure:** 0 violations                              
+      202 +                                                              
+      203 +**Libraries:** 0 true violations, 3 borderline instances in FR
+          +s                                                             
+      204 +- FR7: "`alembic upgrade head`" — specific command syntax; cou
+          +ld be "apply migrations with a single command"                
+      205 +- FR8: "`alembic downgrade`" — specific command syntax; could 
+          +be "roll back migrations to a previous version"               
+      206 +- FR23: "`pgvector-python` `cosine_distance()` operator" — spe
+          +cific library + method name; could be "native vector similarit
+          +y search operator"                                            
+      207 +                                                              
+      208 +**Other Implementation Details:** 0 true violations, 7 borderl
+          +ine instances in NFRs                                         
+      209 +- NFR1: `cursor.execute()` — naming the anti-pattern being eli
+          +minated                                                       
+      210 +- NFR2: `ruff check backend/` — established project linting st
+          +andard (CLAUDE.md)                                            
+      211 +- NFR4: `Mapped[type]` — SQLAlchemy-specific type annotation  
+      212 +- NFR5: `StalkerDocumentStatus`, `StalkerDocumentType`, `Stalk
+          +erDocumentStatusError` — specific class names being preserved 
+      213 +- NFR10: `pyproject.toml` — specific file name                
+      214 +- NFR11: `uv lock` — specific tool command                    
+      215 +- NFR12: `.venv_wsl` — specific environment file              
+      216 +                                                              
+      217 +### Summary                                                   
+      218 +                                                              
+      219 +**Total Implementation Leakage Violations:** 0 true violations
+          +, 10 borderline instances (3 FRs + 7 NFRs)                    
+      220 +                                                              
+      221 +**Severity:** Pass (with note)                                
+      222 +                                                              
+      223 +**Recommendation:** FRs and NFRs contain zero true implementat
+          +ion leakage violations. Technology names (SQLAlchemy, Alembic,
+          + pgvector-python) are domain vocabulary for a migration PRD — 
+          +they define WHAT is being built. 10 borderline instances refer
+          +ence specific commands, file names, and tool names. In strict 
+          +BMAD terms, FRs should avoid command-level specificity (FR7 "a
+          +lembic upgrade head" -> "apply migrations with a single comman
+          +d"). However, for a solo developer project where the PRD feeds
+          + directly into implementation by Claude Code, this specificity
+          + reduces ambiguity and is a pragmatic choice.                 
+      224 +                                                              
+      225 +**Note:** If this PRD were consumed by multiple teams or used 
+          +for vendor evaluation, abstracting specific commands and file 
+          +names would be recommended.                                   
+
+● Walidacja implementation leakage zakończona — 0 true violations (Pass)
+
+  Przechodzę do następnego sprawdzenia...
+
+● Read 1 file (ctrl+o to expand)
+
+● PRD frontmatter: domain: personal_ai_knowledge_management, complexity: low.
+  Domena niskozłożonościowa — pomijam szczegółowe sprawdzenia compliance.
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 1 line
+      14    - step-v-05-measurability-validation
+      15    - step-v-06-traceability-validation
+      16    - step-v-07-implementation-leakage-validation
+      17 +  - step-v-08-domain-compliance-validation                     
+      18  validationStatus: IN_PROGRESS
+      19  ---
+      20  
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 8 lines
+      224  **Recommendation:** FRs and NFRs contain zero true implementat
+           ion leakage violations. Technology names (SQLAlchemy, Alembic,
+            pgvector-python) are domain vocabulary for a migration PRD — 
+           they define WHAT is being built. 10 borderline instances refer
+           ence specific commands, file names, and tool names. In strict 
+           BMAD terms, FRs should avoid command-level specificity (FR7 "a
+           lembic upgrade head" -> "apply migrations with a single comman
+           d"). However, for a solo developer project where the PRD feeds
+            directly into implementation by Claude Code, this specificity
+            reduces ambiguity and is a pragmatic choice.
+      225  
+      226  **Note:** If this PRD were consumed by multiple teams or used 
+           for vendor evaluation, abstracting specific commands and file 
+           names would be recommended.
+      227 +                                                              
+      228 +## Domain Compliance Validation                               
+      229 +                                                              
+      230 +**Domain:** personal_ai_knowledge_management                  
+      231 +**Complexity:** Low (general/standard)                        
+      232 +**Assessment:** N/A - No special domain compliance requirement
+          +s                                                             
+      233 +                                                              
+      234 +**Note:** Personal developer tooling / knowledge management pr
+          +oject without regulatory compliance requirements. No healthcar
+          +e, fintech, govtech, or other regulated domain concerns.      
+
+● Domain Compliance Validation: Pominięto (low complexity)
+
+  Przechodzę do następnego sprawdzenia...
+
+● Read 2 files (ctrl+o to expand)
+
+● Project type z frontmattera: api_backend
+
+  Analizuję zgodność z wymaganiami dla api_backend...
+
+  Required sections (z project-types.csv):
+
+  ┌────────────────┬─────────────┬──────────────────────────────────────────┐
+  │     Sekcja     │   Status    │                  Uwagi                   │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │                │ Present     │ FR39-FR43 specyfikują endpointy Flask    │
+  │ endpoint_specs │ (partial)   │ API; Technical Context opisuje target    │
+  │                │             │ architecture                             │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │ auth_model     │ N/A         │ Auth (x-api-key) nie zmienia się w tej   │
+  │                │             │ migracji — nie jest przedmiotem PRD      │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │                │             │ Technical Context opisuje architekturę   │
+  │ data_schemas   │ Present     │ ORM; PRD referencuje 28-kolumnowy        │
+  │                │             │ schemat                                  │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │ error_codes    │ N/A         │ Wewnętrzna migracja — error codes nie są │
+  │                │             │  przedmiotem                             │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │ rate_limits    │ N/A         │ Wewnętrzna migracja — rate limits się    │
+  │                │             │ nie zmieniają                            │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │ api_docs       │ N/A         │ Wewnętrzna migracja — API docs nie są    │
+  │                │             │ przedmiotem                              │
+  └────────────────┴─────────────┴──────────────────────────────────────────┘
+
+  Skip sections (z project-types.csv):
+
+  ┌───────────────┬──────────────────────────────────────────────────────────┐
+  │    Sekcja     │                          Status                          │
+  ├───────────────┼──────────────────────────────────────────────────────────┤
+  │ ux_ui         │ Absent ✓                                                 │
+  ├───────────────┼──────────────────────────────────────────────────────────┤
+  │ visual_design │ Absent ✓                                                 │
+  ├───────────────┼──────────────────────────────────────────────────────────┤
+  │               │ Present — ale opisują workflow developera (schema        │
+  │ user_journeys │ modification, import run, embeddings pipeline, API       │
+  │               │ request), nie end-user UX                                │
+  └───────────────┴──────────────────────────────────────────────────────────┘
+
+  Uwaga kontekstowa: CSV definiuje user_journeys jako skip dla api_backend, ale
+  BMAD PRD core wymaga User Journeys jako obowiązkowej sekcji (6/6 core). W tym
+  PRD User Journeys opisują scenariusze operacyjne developera/operatora — nie
+  tradycyjne ścieżki użytkownika UI. Jest to napięcie w frameworku, nie
+  naruszenie w PRD.
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 1 line
+      15    - step-v-06-traceability-validation
+      16    - step-v-07-implementation-leakage-validation
+      17    - step-v-08-domain-compliance-validation
+      18 +  - step-v-09-project-type-validation                          
+      19  validationStatus: IN_PROGRESS
+      20  ---
+      21  
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 32 lines
+      233  **Assessment:** N/A - No special domain compliance requirement
+           s
+      234  
+      235  **Note:** Personal developer tooling / knowledge management pr
+           oject without regulatory compliance requirements. No healthcar
+           e, fintech, govtech, or other regulated domain concerns.
+      236 +                                                              
+      237 +## Project-Type Compliance Validation                         
+      238 +                                                              
+      239 +**Project Type (from frontmatter):** api_backend (database acc
+          +ess layer migration)                                          
+      240 +                                                              
+      241 +### Classification Context Note                               
+      242 +                                                              
+      243 +This PRD is classified as `api_backend` but specifically defin
+          +es a database access layer migration — not a new API design. T
+          +he API surface itself (`/website_list`, `/website_get`, etc.) 
+          +is unchanged. Consequently, several api_backend required secti
+          +ons (rate_limits, error_codes, api_docs) are not applicable be
+          +cause the API contract is preserved, not redesigned.          
+      244 +                                                              
+      245 +### Required Sections (for api_backend)                       
+      246 +                                                              
+      247 +**endpoint_specs:** Present (partial) — FR39-FR43 specify all 
+          +5 Flask API endpoints with expected behavior. Technical Contex
+          +t section describes target architecture. Full endpoint specs n
+          +ot needed because API contract is unchanged.                  
+      248 +**auth_model:** N/A — Authentication (x-api-key header) is not
+          + changing in this migration. Not in scope.                    
+      249 +**data_schemas:** Present — Technical Context describes ORM mo
+          +del architecture, session management, data flows. PRD referenc
+          +es 28-column web_documents schema and 8-column websites_embedd
+          +ings schema.                                                  
+      250 +**error_codes:** N/A — Internal migration; error codes are not
+          + changing.                                                    
+      251 +**rate_limits:** N/A — Internal migration; rate limits are not
+          + in scope.                                                    
+      252 +**api_docs:** N/A — API documentation is not the subject of th
+          +is migration.                                                 
+      253 +                                                              
+      254 +### Excluded Sections (Should Not Be Present for api_backend) 
+      255 +                                                              
+      256 +**ux_ui:** Absent ✓                                           
+      257 +**visual_design:** Absent ✓                                   
+      258 +**user_journeys:** Present — but describes developer/operator 
+          +workflows (schema modification, import run, embeddings pipelin
+          +e, API request), not end-user UX flows. BMAD PRD core requires
+          + User Journeys as mandatory section (6/6 core). This is a fram
+          +ework tension between project-types.csv (skip for api_backend)
+          + and BMAD core (always required). The PRD correctly includes d
+          +eveloper journeys as the primary audience.                    
+      259 +                                                              
+      260 +### Compliance Summary                                        
+      261 +                                                              
+      262 +**Required Sections:** 2/6 present (4 N/A for migration scope)
+      263 +**Excluded Sections Present:** 0 true violations (user_journey
+          +s is a BMAD core requirement)                                 
+      264 +                                                              
+      265 +**Severity:** Pass                                            
+      266 +                                                              
+      267 +**Recommendation:** PRD is well-structured for a database migr
+          +ation within an api_backend project. The N/A sections (auth_mo
+          +del, error_codes, rate_limits, api_docs) are correctly exclude
+          +d because the API contract is preserved, not redesigned. User 
+          +Journeys describing developer workflows are appropriate and al
+          +ign with BMAD core requirements.                              
+
+● Project-Type Compliance Validation zakończona — Pass
+
+  Przechodzę do następnego sprawdzenia...
+
+● Read 1 file (ctrl+o to expand)
+
+● Oceniam 43 wymagania funkcjonalne wg kryteriów SMART...
+
+  Wszystkie FRs przeanalizowane. Wyniki:
+
+  - All scores >= 3: 100% (43/43)
+  - All scores >= 4: 100% (43/43)
+  - Overall Average Score: 4.98/5.0
+
+  Jedyny FR poniżej perfect score:
+  - FR12 (S:4, M:4) — "Standalone scripts can obtain and manage their own
+  database sessions" — "standalone scripts" nieco ogólne (które skrypty?),
+  "manage" nieco nieprecyzyjne
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 1 line
+      16    - step-v-07-implementation-leakage-validation
+      17    - step-v-08-domain-compliance-validation
+      18    - step-v-09-project-type-validation
+      19 +  - step-v-10-smart-validation                                 
+      20  validationStatus: IN_PROGRESS
+      21  ---
+      22  
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 73 lines
+      266  **Severity:** Pass
+      267  
+      268  **Recommendation:** PRD is well-structured for a database migr
+           ation within an api_backend project. The N/A sections (auth_mo
+           del, error_codes, rate_limits, api_docs) are correctly exclude
+           d because the API contract is preserved, not redesigned. User 
+           Journeys describing developer workflows are appropriate and al
+           ign with BMAD core requirements.
+      269 +                                                              
+      270 +## SMART Requirements Validation                              
+      271 +                                                              
+      272 +**Total Functional Requirements:** 43                         
+      273 +                                                              
+      274 +### Scoring Summary                                           
+      275 +                                                              
+      276 +**All scores >= 3:** 100% (43/43)                             
+      277 +**All scores >= 4:** 100% (43/43)                             
+      278 +**Overall Average Score:** 4.98/5.0                           
+      279 +                                                              
+      280 +### Scoring Table                                             
+      281 +                                                              
+      282 +| FR # | Specific | Measurable | Attainable | Relevant | Trace
+          +able | Average | Flag |                                       
+      283 +|------|----------|------------|------------|----------|------
+          +-----|---------|------|                                       
+      284 +| FR1 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      285 +| FR2 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      286 +| FR3 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      287 +| FR4 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      288 +| FR5 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      289 +| FR6 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      290 +| FR7 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      291 +| FR8 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      292 +| FR9 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                           
+      293 +| FR10 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      294 +| FR11 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      295 +| FR12 | 4 | 4 | 5 | 5 | 5 | 4.6 | |                          
+      296 +| FR13 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      297 +| FR14 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      298 +| FR15 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      299 +| FR16 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      300 +| FR17 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      301 +| FR18 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      302 +| FR19 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      303 +| FR20 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      304 +| FR21 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      305 +| FR22 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      306 +| FR23 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      307 +| FR24 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      308 +| FR25 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      309 +| FR26 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      310 +| FR27 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      311 +| FR28 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      312 +| FR29 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      313 +| FR30 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      314 +| FR31 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      315 +| FR32 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      316 +| FR33 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      317 +| FR34 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      318 +| FR35 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      319 +| FR36 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      320 +| FR37 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      321 +| FR38 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      322 +| FR39 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      323 +| FR40 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      324 +| FR41 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      325 +| FR42 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      326 +| FR43 | 5 | 5 | 5 | 5 | 5 | 5.0 | |                          
+      327 +                                                              
+      328 +**Legend:** 1=Poor, 3=Acceptable, 5=Excellent                 
+      329 +**Flag:** X = Score < 3 in one or more categories             
+      330 +                                                              
+      331 +### Improvement Suggestions                                   
+      332 +                                                              
+      333 +**No FRs scored below 3 in any category.** One minor improveme
+          +nt opportunity:                                               
+      334 +                                                              
+      335 +- **FR12 (Specific=4, Measurable=4):** "Standalone scripts can
+          + obtain and manage their own database sessions" — could name t
+          +he specific scripts (import scripts, batch pipeline) and defin
+          +e "manage" explicitly (create, commit, close). Minor — the con
+          +text makes the intent clear.                                  
+      336 +                                                              
+      337 +### Overall Assessment                                        
+      338 +                                                              
+      339 +**Severity:** Pass (0% flagged FRs — none below threshold)    
+      340 +                                                              
+      341 +**Recommendation:** Functional Requirements demonstrate except
+          +ional SMART quality. 42/43 FRs score perfect 5.0 across all ca
+          +tegories. FR12 has minor specificity gap (4.6 average) — non-b
+          +locking. All FRs name clear actors (Developer, Consumer, Repos
+          +itory, Flask application, specific scripts), define testable c
+          +apabilities, and trace to user journeys.                      
+
+● SMART Requirements Validation zakończona — 100% acceptable, avg 4.98/5.0 
+  (Pass)
+
+  Przechodzę do następnego sprawdzenia...
+
+● Read 1 file (ctrl+o to expand)
+
+● Przeprowadzam holistyczną ocenę jakości PRD...
+
+  Document Flow & Coherence: Excellent
+
+  Dokument buduje klarowną narrację: problem (5+ ręcznych zmian przy każdej
+  kolumnie) → rozwiązanie (SQLAlchemy ORM) → scenariusze użycia (4 vivid
+  journeys) → szczegółowe wymagania (43 FRs + 12 NFRs). Sekcja "What Makes This
+  Special" krystalizuje wartość: "eliminates the fear of changing the database
+  schema."
+
+  Dual Audience: 5/5
+
+  Dla ludzi: Executive-level narrative compelling, developer clarity exceptional
+   (architecture diagrams, file inventory, session management strategies).
+  Dla LLM: Clean ## headers, consistent FR/NFR numbering, YAML frontmatter, 9 FR
+   groups map directly to implementation epics.
+
+  BMAD Principles: 7/7 Met
+
+  Rating: 5/5 — Excellent
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 1 line
+      17    - step-v-08-domain-compliance-validation
+      18    - step-v-09-project-type-validation
+      19    - step-v-10-smart-validation
+      20 +  - step-v-11-holistic-quality-validation                      
+      21  validationStatus: IN_PROGRESS
+      22  ---
+      23  
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 75 lines
+      340  **Severity:** Pass (0% flagged FRs — none below threshold)
+      341  
+      342  **Recommendation:** Functional Requirements demonstrate except
+           ional SMART quality. 42/43 FRs score perfect 5.0 across all ca
+           tegories. FR12 has minor specificity gap (4.6 average) — non-b
+           locking. All FRs name clear actors (Developer, Consumer, Repos
+           itory, Flask application, specific scripts), define testable c
+           apabilities, and trace to user journeys.
+      343 +                                                              
+      344 +## Holistic Quality Assessment                                
+      345 +                                                              
+      346 +### Document Flow & Coherence                                 
+      347 +                                                              
+      348 +**Assessment:** Excellent                                     
+      349 +                                                              
+      350 +**Strengths:**                                                
+      351 +- Powerful problem narrative: "Adding a column requires 5+ man
+          +ual changes, column positions counted by hand" — makes the pai
+          +n visceral and the solution compelling                        
+      352 +- "What Makes This Special" subsection crystallizes the value 
+          +proposition: "eliminates the fear of changing the database sch
+          +ema"                                                          
+      353 +- User Journeys use story structure (Opening Scene / Rising Ac
+          +tion / Climax / Resolution) — vivid, realistic, and grounded i
+          +n actual developer workflow                                   
+      354 +- Journey Requirements Summary table provides clean capability
+          +-to-FR mapping                                                
+      355 +- Technical Context is comprehensive — architecture diagrams, 
+          +session management strategies, data flows, dependencies, file 
+          +inventory                                                     
+      356 +- FR grouping mirrors the target architecture layers (ORM Mode
+          +ls -> Migration -> Session -> Persistence -> Embeddings -> Rep
+          +ository -> Import -> Pipeline -> API)                         
+      357 +- Risk Mitigation is pragmatic — 5 specific risks with concret
+          +e mitigations (not generic "monitor and adjust")              
+      358 +- Lean structure — 8 sections, no bloat, every section earns i
+          +ts place                                                      
+      359 +                                                              
+      360 +**Areas for Improvement:**                                    
+      361 +- No explicit "Out of Scope" subsection — Pydantic v2, Lambda 
+          +compatibility, ElasticSearch are mentioned as deferred across 
+          +multiple sections but not consolidated into a clear boundary s
+          +tatement                                                      
+      362 +- Technical Context section is unusually detailed for a PRD — 
+          +data flow diagrams, session management table, file inventory b
+          +order on architecture document territory. Pragmatic for a solo
+          + developer + Claude Code implementation, but in a multi-team c
+          +ontext some content would belong in a separate architecture do
+          +c                                                             
+      363 +- No "Assumptions & Dependencies" section — implicit assumptio
+          +ns include: existing DB schema matches DDL scripts, pgvector-p
+          +ython produces identical similarity results, no production dat
+          +a at risk, psycopg2-binary works as SQLAlchemy driver         
+      364 +                                                              
+      365 +### Dual Audience Effectiveness                               
+      366 +                                                              
+      367 +**For Humans:**                                               
+      368 +- Executive-friendly: Excellent — "fear of changing schema" na
+          +rrative, clear business value (minutes vs anxious hour), dual-
+          +phase roadmap                                                 
+      369 +- Developer clarity: Excellent — architecture diagrams, file i
+          +nventory, specific scripts named, session management strategie
+          +s per context                                                 
+      370 +- Stakeholder decision-making: Excellent — 4 success criteria 
+          +dimensions, phased approach (MVP + 2 post-MVP phases), 5 risk 
+          +mitigations                                                   
+      371 +                                                              
+      372 +**For LLMs:**                                                 
+      373 +- Machine-readable structure: Excellent — clean ## headers, co
+          +nsistent FR/NFR numbering, YAML frontmatter with classificatio
+          +n                                                             
+      374 +- Architecture readiness: Excellent — Technical Context sectio
+          +n is an architecture blueprint with code-level detail         
+      375 +- Epic/Story readiness: Excellent — 43 FRs in 9 groups, each g
+          +roup maps to an implementation epic; 12 NFRs in 3 groups provi
+          +de quality gates                                              
+      376 +                                                              
+      377 +**Dual Audience Score:** 5/5                                  
+      378 +                                                              
+      379 +### BMAD PRD Principles Compliance                            
+      380 +                                                              
+      381 +| Principle | Status | Notes |                                
+      382 +|-----------|--------|-------|                                
+      383 +| Information Density | Met | 0 violations — language is direc
+          +t, active voice, zero filler throughout |                     
+      384 +| Measurability | Met | 43 FRs avg 4.98/5 SMART, 12 NFRs with 
+          +specific testable metrics |                                   
+      385 +| Traceability | Met | All chains intact, 0 orphan FRs, comple
+          +te matrix across 4 journeys |                                 
+      386 +| Domain Awareness | Met | Correctly scoped for personal AI KM
+          +, no regulatory concerns, migration-specific risks identified 
+          +|                                                             
+      387 +| Zero Anti-Patterns | Met | 0 filler, 0 vague quantifiers, 10
+          + borderline implementation references (intentional for migrati
+          +on PRD) |                                                     
+      388 +| Dual Audience | Met | Clean for both humans and LLMs, scored
+          + 5/5 |                                                        
+      389 +| Markdown Format | Met | Proper ## headers, tables, numbered 
+          +FRs/NFRs, YAML frontmatter, code blocks for architecture diagr
+          +ams |                                                         
+      390 +                                                              
+      391 +**Principles Met:** 7/7                                       
+      392 +                                                              
+      393 +### Overall Quality Rating                                    
+      394 +                                                              
+      395 +**Rating:** 5/5 - Excellent: Exemplary, ready for production u
+          +se                                                            
+      396 +                                                              
+      397 +**Scale:**                                                    
+      398 +- **5/5 - Excellent: Exemplary, ready for production use** <--
+          + This PRD                                                     
+      399 +- 4/5 - Good: Strong with minor improvements needed           
+      400 +- 3/5 - Adequate: Acceptable but needs refinement             
+      401 +- 2/5 - Needs Work: Significant gaps or issues                
+      402 +- 1/5 - Problematic: Major flaws, needs substantial revision  
+      403 +                                                              
+      404 +### Top 3 Improvements                                        
+      405 +                                                              
+      406 +1. **Add explicit "Out of Scope" subsection**                 
+      407 +   Pydantic v2 schemas, Lambda compatibility, ElasticSearch, J
+          +oined Table Inheritance split are mentioned as deferred across
+          + Executive Summary, Technical Context, and Post-MVP phases. Co
+          +nsolidating into a single "Out of Scope" section next to Produ
+          +ct Scope creates a clear boundary statement and prevents scope
+          + creep during implementation.                                 
+      408 +                                                              
+      409 +2. **Add "Assumptions & Dependencies" section**               
+      410 +   Document explicit assumptions: (1) existing DB schema in `0
+          +3-create-table.sql` / `04-create-table.sql` matches what the O
+          +RM model will generate, (2) pgvector-python `cosine_distance()
+          +` produces identical results to raw `<=>` operator, (3) no pro
+          +duction data exists (safe for big-bang rewrite), (4) psycopg2-
+          +binary works as SQLAlchemy's PostgreSQL driver without additio
+          +nal configuration.                                            
+      411 +                                                              
+      412 +3. **Consider extracting architecture details to a separate te
+          +ch spec**                                                     
+      413 +   Technical Context section (~80 lines) includes session mana
+          +gement table, data flow diagrams, dependency version table, an
+          +d file inventory — content that normally lives in an architect
+          +ure document. For a solo developer + Claude Code workflow this
+          + is pragmatic and reduces context-switching. However, if the P
+          +RD is ever shared or used for architecture review, splitting t
+          +his into a referenced tech spec would keep the PRD focused on 
+          +WHAT (requirements) while the tech spec covers HOW (architectu
+          +re).                                                          
+      414 +                                                              
+      415 +### Summary                                                   
+      416 +                                                              
+      417 +**This PRD is:** An exemplary database migration document that
+          + transforms a routine technology upgrade (psycopg2 -> SQLAlche
+          +my) into a compelling narrative about eliminating developer an
+          +xiety, featuring vivid user journeys, exceptional requirement 
+          +quality (43 FRs at 4.98/5 SMART average), complete traceabilit
+          +y chains, and pragmatic risk mitigation — needing only minor s
+          +tructural additions (Out of Scope, Assumptions) to reach perfe
+          +ction.                                                        
+
+● Holistic Quality Assessment zakończona — Rating: 5/5 Excellent
+
+  Przechodzę do finalnych sprawdzeń...
+
+● Read 1 file (ctrl+o to expand)
+
+● Przeprowadzam finalną walidację kompletności...
+
+  Template variables: 0 — brak pozostałych zmiennych szablonowych.
+
+  Content completeness: Wszystkie 8 sekcji complete.
+
+  Section-specific: Wszystkie kryteria spełnione.
+
+  Frontmatter: 5/5 pól wypełnionych.
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 1 line
+      18    - step-v-09-project-type-validation
+      19    - step-v-10-smart-validation
+      20    - step-v-11-holistic-quality-validation
+      21 +  - step-v-12-completeness-validation                          
+      22  validationStatus: IN_PROGRESS
+      23  ---
+      24  
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 46 lines
+      416  ### Summary
+      417  
+      418  **This PRD is:** An exemplary database migration document that
+            transforms a routine technology upgrade (psycopg2 -> SQLAlche
+           my) into a compelling narrative about eliminating developer an
+           xiety, featuring vivid user journeys, exceptional requirement 
+           quality (43 FRs at 4.98/5 SMART average), complete traceabilit
+           y chains, and pragmatic risk mitigation — needing only minor s
+           tructural additions (Out of Scope, Assumptions) to reach perfe
+           ction.
+      419 +                                                              
+      420 +## Completeness Validation                                    
+      421 +                                                              
+      422 +### Template Completeness                                     
+      423 +                                                              
+      424 +**Template Variables Found:** 0                               
+      425 +No template variables remaining.                              
+      426 +                                                              
+      427 +### Content Completeness by Section                           
+      428 +                                                              
+      429 +**Executive Summary:** Complete — vision, problem statement (5
+          ++ manual changes), solution (SQLAlchemy ORM + Alembic), differ
+          +entiator ("eliminates fear"), "What Makes This Special" subsec
+          +tion                                                          
+      430 +**Project Classification:** Complete — 5-dimension table (proj
+          +ect type, domain, complexity, context, deployment scope)      
+      431 +**Success Criteria:** Complete — 4 dimensions (User, Business,
+          + Technical, Measurable) with specific metrics                 
+      432 +**User Journeys:** Complete — 4 journeys with story structure 
+          ++ Journey Requirements Summary table                          
+      433 +**Technical Context:** Complete — target architecture, session
+          + management, technology decisions, data flows, dependencies, f
+          +ile inventory                                                 
+      434 +**Project Scoping & Risk Mitigation:** Complete — MVP strategy
+          +, feature set, post-MVP phases (2 + 3), 5 risks with mitigatio
+          +ns                                                            
+      435 +**Functional Requirements:** Complete — 43 FRs in 9 groups cov
+          +ering all migration aspects                                   
+      436 +**Non-Functional Requirements:** Complete — 12 NFRs in 3 group
+          +s (Code Quality, Backward Compatibility, Maintainability, Depe
+          +ndency Management)                                            
+      437 +                                                              
+      438 +### Section-Specific Completeness                             
+      439 +                                                              
+      440 +**Success Criteria Measurability:** All measurable — "single-l
+          +ocation change" (User), "reduce time from 5+ files to 1" (Busi
+          +ness), "import scripts exit code 0" (Technical), "1 LOC to add
+          + column" (Measurable)                                         
+      441 +**User Journeys Coverage:** Yes — sole user (Ziutus as develop
+          +er/operator) covered across 4 distinct scenarios (schema modif
+          +ication, data import, embeddings pipeline, API request)       
+      442 +**FRs Cover MVP Scope:** Yes — all 8 MVP feature set items map
+          +ped to FR groups (verified in Traceability Matrix)            
+      443 +**NFRs Have Specific Criteria:** All — every NFR has a testabl
+          +e condition or metric ("zero calls", "zero warnings", "exactly
+          + one file", "no dead code")                                   
+      444 +                                                              
+      445 +### Frontmatter Completeness                                  
+      446 +                                                              
+      447 +**stepsCompleted:** Present (12 steps completed)              
+      448 +**classification:** Present (projectType, domain, complexity, 
+          +projectContext, deploymentScope)                              
+      449 +**inputDocuments:** Present (4 documents tracked)             
+      450 +**lastEdited:** Present (2026-03-07)                          
+      451 +**workflowType:** Present (prd)                               
+      452 +                                                              
+      453 +**Frontmatter Completeness:** 5/5                             
+      454 +                                                              
+      455 +### Completeness Summary                                      
+      456 +                                                              
+      457 +**Overall Completeness:** 100% (8/8 sections complete)        
+      458 +                                                              
+      459 +**Critical Gaps:** 0                                          
+      460 +**Minor Gaps:** 0                                             
+      461 +                                                              
+      462 +**Severity:** Pass                                            
+      463 +                                                              
+      464 +**Recommendation:** PRD is complete with all required sections
+          + and content present. No template variables, no missing sectio
+          +ns, no incomplete content. Frontmatter fully populated. Two op
+          +tional improvements identified in Holistic Assessment (Out of 
+          +Scope subsection, Assumptions & Dependencies section) but thes
+          +e are structural enhancements, not completeness gaps.         
+
+● Completeness Validation zakończona — 100% Complete (Pass)
+
+  Przechodzę do finalnego kroku...
+
+● Read 1 file (ctrl+o to expand)
+
+● Finalizuję raport walidacji...
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 4 lines, removed 1 line
+      19    - step-v-10-smart-validation
+      20    - step-v-11-holistic-quality-validation
+      21    - step-v-12-completeness-validation
+      22 -validationStatus: IN_PROGRESS                                  
+      22 +  - step-v-13-report-complete                                  
+      23 +validationStatus: COMPLETE                                     
+      24 +holisticQualityRating: '5/5 - Excellent'                       
+      25 +overallStatus: 'Pass'                                          
+      26  ---
+      27  
+      28  # PRD Validation Report
+
+● Now let me append the final summary section.
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 47 lines
+      465  **Severity:** Pass
+      466  
+      467  **Recommendation:** PRD is complete with all required sections
+            and content present. No template variables, no missing sectio
+           ns, no incomplete content. Frontmatter fully populated. Two op
+           tional improvements identified in Holistic Assessment (Out of 
+           Scope subsection, Assumptions & Dependencies section) but thes
+           e are structural enhancements, not completeness gaps.
+      468 +                                                              
+      469 +---                                                           
+      470 +                                                              
+      471 +## Final Validation Summary                                   
+      472 +                                                              
+      473 +### Overall Status: Pass                                      
+      474 +                                                              
+      475 +PRD is exemplary and ready for downstream work (architecture, 
+          +epics, stories). Minor improvements suggested but not blocking
+          +.                                                             
+      476 +                                                              
+      477 +### Quick Results                                             
+      478 +                                                              
+      479 +| Check | Result |                                            
+      480 +|-------|--------|                                            
+      481 +| Format | BMAD Standard (6/6 core sections + 2 additional) | 
+      482 +| Information Density | Pass (0 violations) |                 
+      483 +| Product Brief Coverage | N/A (no brief provided) |          
+      484 +| Measurability | Pass (0 violations across 55 requirements) |
+      485 +| Traceability | Pass (0 issues — all chains intact, 0 orphans
+          +) |                                                           
+      486 +| Implementation Leakage | Pass (0 true violations, 10 borderl
+          +ine instances — intentional for migration PRD) |              
+      487 +| Domain Compliance | N/A (low complexity domain) |           
+      488 +| Project-Type Compliance | Pass (appropriate for api_backend 
+          +migration) |                                                  
+      489 +| SMART Quality | Pass (100% acceptable, avg 4.98/5, 0% flagge
+          +d) |                                                          
+      490 +| Holistic Quality | 5/5 — Excellent |                        
+      491 +| Completeness | 100% — Pass |                                
+      492 +                                                              
+      493 +### Critical Issues: 0                                        
+      494 +                                                              
+      495 +### Warnings: 0                                               
+      496 +                                                              
+      497 +### Minor Observations: 3                                     
+      498 +                                                              
+      499 +1. **FR12 specificity** — "Standalone scripts can obtain and m
+          +anage their own database sessions" — could name specific scrip
+          +ts and define "manage" (Specific=4, Measurable=4, avg 4.6)    
+      500 +2. **10 borderline implementation references** — Specific comm
+          +ands (`alembic upgrade head`), file names (`pyproject.toml`, `
+          +.venv_wsl`), tool names (`ruff`, `uv lock`) in FRs/NFRs — inte
+          +ntional for solo developer + Claude Code workflow             
+      501 +3. **Missing optional sections** — No explicit "Out of Scope" 
+          +subsection and no "Assumptions & Dependencies" section (struct
+          +ural enhancements, not completeness gaps)                     
+      502 +                                                              
+      503 +### Strengths                                                 
+      504 +                                                              
+      505 +- Perfect traceability — all 43 FRs trace to 4 user journeys a
+          +nd 8 MVP scope items, 0 orphans                               
+      506 +- Exceptional SMART quality — 42/43 FRs score 5.0/5.0, 1 FR at
+          + 4.6/5.0, average 4.98/5.0                                    
+      507 +- Zero information padding — active voice throughout, zero fil
+          +ler phrases, zero anti-patterns                               
+      508 +- Compelling problem narrative — "eliminates the fear of chang
+          +ing the database schema"                                      
+      509 +- Vivid user journeys — story structure (Opening Scene / Risin
+          +g Action / Climax / Resolution)                               
+      510 +- Comprehensive Technical Context — architecture diagrams, ses
+          +sion strategies, data flows, file inventory                   
+      511 +- Pragmatic risk mitigation — 5 specific risks with concrete m
+          +itigations, not generic statements                            
+      512 +- Complete and consistent frontmatter — 12 workflow steps, 5-d
+          +imension classification                                       
+      513 +                                                              
+      514 +### Holistic Quality: 5/5 — Excellent                         
+
+● ---
+  Walidacja PRD zakończona!
+
+  Overall Status: Pass
+
+  Szybkie wyniki:
+
+  ┌────────────────────────┬──────────────────────────────────────┐
+  │      Sprawdzenie       │                Wynik                 │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Format                 │ BMAD Standard (6/6)                  │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Gęstość informacji     │ Pass (0 violations)                  │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Mierzalność            │ Pass (0 violations, 55 requirements) │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Traceability           │ Pass (0 orphans, all chains intact)  │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Implementation Leakage │ Pass (0 true violations)             │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ SMART Quality          │ Pass (avg 4.98/5.0)                  │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Holistic Quality       │ 5/5 — Excellent                      │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Kompletność            │ 100%                                 │
+  └────────────────────────┴──────────────────────────────────────┘
+
+  Critical Issues: 0 | Warnings: 0
+
+  Top 3 ulepszeń (opcjonalnych):
+  1. Dodaj sekcję "Out of Scope" — skonsoliduj rozproszone informacje o
+  odroczonym Pydantic, Lambda, ElasticSearch
+  2. Dodaj sekcję "Assumptions & Dependencies" — udokumentuj założenia (schemat
+  DB = DDL scripts, pgvector identyczne wyniki, brak danych produkcyjnych)
+  3. Rozważ ekstrakcję szczegółów architektury do osobnego tech spec — Technical
+   Context (~80 linii) zawiera treści na poziomie dokumentu architektonicznego
+
+  Raport zapisany: _bmad-output/planning-artifacts/prd-validation-report.md
+
+  PRD jest gotowy do dalszej pracy (architektura, epiki, stories).
+
+  ---
+  Co chcesz zrobić dalej?
+
+  [R] Review Detailed Findings — przejście przez raport sekcja po sekcji
+  [E] Use Edit Workflow — systematyczne poprawki na podstawie raportu
+  [F] Fix Simpler Items — natychmiastowe poprawki prostych elementów
+  [X] Exit — zakończ walidację
+
+✻ Churned for 8m 41s
+
+❯ F                                                                             
+
+● Na podstawie raportu walidacji, oto proste poprawki do zastosowania:
+
+  1. FR12 — doprecyzowanie — zmienić "Standalone scripts" na konkretne skrypty i
+   zdefiniować "manage"
+  2. Dodanie sekcji "Out of Scope" — skonsolidować rozproszone informacje o
+  Pydantic, Lambda, ElasticSearch, JTI
+  3. Dodanie sekcji "Assumptions & Dependencies" — udokumentować 4 kluczowe
+  założenia
+
+  Które poprawki chcesz zastosować? Możesz wybrać numery (np. 1,2,3 dla
+  wszystkich, 2 dla samego Out of Scope, itp.)
+
+❯ 1,2,3                                                                         
+
+● Read 1 file (ctrl+o to expand)
+
+● Teraz stosuję 3 poprawki.
+
+  Poprawka 1: FR12 — doprecyzowanie
+
+● Update(_bmad-output\planning-artifacts\prd.md)
+  ⎿  Added 1 line, removed 1 line
+      336  
+      337  - FR10: Flask application can obtain thread-local database ses
+           sions scoped to the request lifecycle
+      338  - FR11: Flask application can automatically clean up sessions 
+           on request teardown
+      339 -- FR12: Standalone scripts can obtain and manage their own dat
+          -abase sessions                                                
+      339 +- FR12: Import scripts and batch pipeline can obtain, commit, 
+          +and close their own database sessions (script-scoped lifecycle
+          +)                                                             
+      340  - FR13: Engine can detect and recover from stale database conn
+           ections (`pool_pre_ping`)
+      341  
+      342  ### Document Persistence
+
+● Poprawka 2: Sekcja "Out of Scope"
+
+● Update(_bmad-output\planning-artifacts\prd.md)
+  ⎿  Added 14 lines
+      298  - MCP server for Claude Desktop backed by SQLAlchemy queries
+      299  - ElasticSearch as secondary search backend (if needed)
+      300  
+      301 +### Out of Scope                                              
+      302 +                                                              
+      303 +The following are explicitly excluded from this sprint and def
+          +erred to future work:                                         
+      304 +                                                              
+      305 +- **Pydantic v2 schemas** — API serialization, OpenAPI generat
+          +ion, structured AI outputs (Phase 2)                          
+      306 +- **TypeScript type synchronization** — Pydantic → OpenAPI → `
+          +openapi-typescript` pipeline (Phase 2)                        
+      307 +- **New tables** — `data_sources`, `authors` (Phase 2 — ORM ma
+          +kes these trivial to add later)                               
+      308 +- **Joined Table Inheritance split** — splitting `web_document
+          +s` by document type into separate tables (Phase 3)            
+      309 +- **MCP server** — Claude Desktop integration backed by SQLAlc
+          +hemy queries (Phase 3)                                        
+      310 +- **ElasticSearch** — secondary search backend (Phase 3, if ne
+          +eded)                                                         
+      311 +- **Lambda/AWS compatibility** — SQLAlchemy adds ~30MB to Lamb
+          +da layers; Lambda deployment deferred                         
+      312 +- **Flask-SQLAlchemy extension** — using plain SQLAlchemy with
+          + manual session management instead                            
+      313 +- **Database schema changes** — this migration preserves the e
+          +xisting schema exactly; new columns/tables are future work    
+      314 +                                                              
+      315  ### Risk Mitigation Strategy
+      316  
+      317  **Technical Risk — Big-Bang Migration:**
+
+● Poprawka 3: Sekcja "Assumptions & Dependencies"
+
+● Update(_bmad-output\planning-artifacts\prd.md)
+  ⎿  Added 17 lines
+      329  **Dependency Risk — Lambda Package Size:**
+      330  SQLAlchemy adds ~30MB to Lambda layers. **Mitigation:** Deferr
+           ed — Lambda/AWS is secondary. NAS deployment has no package si
+           ze constraints. Lambda compatibility addressed in a future spr
+           int if needed.
+      331  
+      332 +## Assumptions & Dependencies                                 
+      333 +                                                              
+      334 +### Assumptions                                               
+      335 +                                                              
+      336 +- Existing database schema in `backend/database/init/03-create
+          +-table.sql` and `04-create-table.sql` matches the live databas
+          +e — ORM model will be built from these DDL scripts            
+      337 +- `pgvector-python` `cosine_distance()` operator produces iden
+          +tical similarity search results to the current raw SQL `<=>` o
+          +perator                                                       
+      338 +- No production data exists — the codebase has never run in pr
+          +oduction, making a big-bang rewrite safe                      
+      339 +- `psycopg2-binary` works as SQLAlchemy's PostgreSQL driver wi
+          +thout additional configuration                                
+      340 +- The `langauge` typo in `websites_embeddings` has already bee
+          +n fixed (migration `08-fix-language-typo.sql`) — ORM model use
+          +s correct `language` spelling                                 
+      341 +                                                              
+      342 +### Dependencies                                              
+      343 +                                                              
+      344 +- SQLAlchemy >= 2.0 supports `mapped_column()` declarative sty
+          +le and type-hint native `Mapped[]`                            
+      345 +- `pgvector` Python package >= 0.3.0 provides SQLAlchemy `Vect
+          +or()` type and `cosine_distance()` operator                   
+      346 +- Alembic >= 1.13 supports autogenerate from SQLAlchemy 2.x mo
+          +dels                                                          
+      347 +- PostgreSQL 17+ (Docker/NAS) and 18.1 (RDS) both support pgve
+          +ctor extension                                                
+      348 +                                                              
+      349  ## Functional Requirements
+      350  
+      351  ### ORM Model Definition
+
+● Wszystkie 3 poprawki zastosowane:
+
+  1. FR12 — doprecyzowano: "Import scripts and batch pipeline can obtain,
+  commit, and close their own database sessions (script-scoped lifecycle)"
+  2. Out of Scope — dodano sekcję z 9 wyraźnie wykluczonych elementów (Pydantic,
+   TypeScript sync, nowe tabele, JTI, MCP, ElasticSearch, Lambda,
+  Flask-SQLAlchemy, zmiany schematu)
+  3. Assumptions & Dependencies — dodano sekcję z 5 założeniami i 4
+  zależnościami
+
+  ---
+  Co dalej?
+
+  [R] Review Detailed Findings — przejście przez raport sekcja po sekcji
+  [E] Use Edit Workflow — systematyczne poprawki na podstawie raportu
+  [F] Fix Simpler Items — więcej natychmiastowych poprawek
+  [X] Exit — zakończ walidację
+
+✻ Crunched for 38s
+
+❯ postgres 17 na NAS zostal dzisiaj zmigrowany do Postgres 18                   
+
+● Update(_bmad-output\planning-artifacts\prd.md)
+  ⎿  Added 1 line, removed 1 line
+      344  - SQLAlchemy >= 2.0 supports `mapped_column()` declarative sty
+           le and type-hint native `Mapped[]`
+      345  - `pgvector` Python package >= 0.3.0 provides SQLAlchemy `Vect
+           or()` type and `cosine_distance()` operator
+      346  - Alembic >= 1.13 supports autogenerate from SQLAlchemy 2.x mo
+           dels
+      347 -- PostgreSQL 17+ (Docker/NAS) and 18.1 (RDS) both support pgve
+          -ctor extension                                                
+      347 +- PostgreSQL 18 (Docker/NAS and RDS) supports pgvector extensi
+          +on                                                            
+      348  
+      349  ## Functional Requirements
+      350  
+
+● Zaktualizowałem. Przy okazji — chcesz żebym zaktualizował też CLAUDE.md, gdzie
+   jest wzmianka o wersji PostgreSQL?
+
+  Database: PostgreSQL 18 with pgvector extension [...] (RDS: 18.1, Docker/NAS: 
+  17 — pending upgrade via B-69)
+
+
+❯ tak                                                                           
+
+● Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+● Searched for 1 pattern (ctrl+o to expand)
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      195  
+      196  ## Database
+      197  
+      198 -PostgreSQL 18 with pgvector extension for vector similarity se
+          -arch (RDS: 18.1, Docker/NAS: 17 — pending upgrade via B-69). S
+          -chema defined in `backend/database/init/` (see `backend/databa
+          -se/CLAUDE.md` for full details).                              
+      198 +PostgreSQL 18 with pgvector extension for vector similarity se
+          +arch. Schema defined in `backend/database/init/` (see `backend
+          +/database/CLAUDE.md` for full details).                       
+      199  
+      200  Two tables:
+      201  - **`web_documents`** (28 columns) — documents with content, m
+           etadata, processing state, and multilingual fields
+
+● Gotowe. Usunąłem wzmiankę o wersji 17 i oczekującej migracji B-69 — teraz
+  wszędzie PostgreSQL 18.
+
+  Sprawdzę jeszcze czy są inne odniesienia do pg 17.
+
+● Searched for 1 pattern (ctrl+o to expand)
+
+● Sporo odniesień. Chcesz żebym zaktualizował te dokumenty teraz, czy wolisz to
+  zrobić osobnym commitem/zadaniem? To ~15 plików z referencjami do PostgreSQL
+  17.
+
+❯ teraz                                                                         
+
+● Zaktualizuję aktywne dokumenty (pomijam archiwalne pliki w archive/ i
+  implementation-artifacts/ — to historyczne snapshoty).
+
+● Read 7 files (ctrl+o to expand)
+  ⎿  Loaded backend\CLAUDE.md
+
+● Teraz stosuję wszystkie edycje:
+
+● Update(backend\database\CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      21  
+      22  ## Database: `lenie-ai`
+      23  
+      24 -PostgreSQL 18 with the **pgvector** extension for vector simila
+         -rity search (RDS: 18.1, Docker/NAS: 17 — pending upgrade via B-
+         -69).                                                           
+      24 +PostgreSQL 18 with the **pgvector** extension for vector simila
+         +rity search.                                                   
+      25  
+      26  ### Table: `public.web_documents`
+      27  
+
+● Update(backend\database\CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      103  
+      104  ## Docker Setup
+      105  
+      106 -**Image:** Custom image built from `postgres:17-bookworm` with
+          - `postgresql-17-pgvector` package installed (see `infra/docker
+          -/Postgresql/Dockerfile`).                                     
+      106 +**Image:** Custom image built from `postgres:18-bookworm` with
+          + `postgresql-18-pgvector` package installed (see `infra/docker
+          +/Postgresql/Dockerfile`).                                     
+      107  
+      108  **Compose service** (`infra/docker/compose.yaml`):
+      109  - Image: `lenie-ai-db:latest` (must be built locally first)
+
+● Update(docs\project-overview.md)
+  ⎿  Added 1 line, removed 1 line
+      16  | **Parts** | 4 (backend, main frontend, browser extension, inf
+          rastructure) |
+      17  | **Primary Language** | Python 3.11 (backend), JavaScript/Reac
+          t 18 (frontends) |
+      18  | **Architecture** | Layered REST API + SPA + Serverless |
+      19 -| **Database** | PostgreSQL 18 + pgvector (RDS: 18.1, Docker/NA
+         -S: 17 — pending upgrade) |                                     
+      19 +| **Database** | PostgreSQL 18 + pgvector |                    
+      20  | **Version** | 0.3.13.0 |
+      21  | **License** | MIT |
+      22  
+
+● Update(docs\project-overview.md)
+  ⎿  Added 1 line, removed 1 line
+      40  |----------|-------------|
+      41  | **Backend** | Python 3.11, Flask, psycopg2, uv |
+      42  | **Frontend** | React 18, CRA, React Router v6, Formik, axios 
+          |
+      43 -| **Database** | PostgreSQL 17, pgvector (1536-dim vectors) |  
+      43 +| **Database** | PostgreSQL 18, pgvector (1536-dim vectors) |  
+      44  | **AI/LLM** | OpenAI (GPT-4o), AWS Bedrock (Titan, Nova), Goog
+          le Vertex (Gemini), CloudFerro (Bielik) |
+      45  | **Embeddings** | text-embedding-ada-002, amazon.titan-embed-t
+          ext, BAAI/bge-multilingual-gemma2 |
+      46  | **Content** | BeautifulSoup4, Markdownify, Firecrawl, YouTube
+           Transcript API |
+
+● Update(docs\development-guide.md)
+  ⎿  Added 1 line, removed 1 line
+      11  | Node.js | >= 22 (recommended: 24 LTS) | Frontend build |
+      12  | npm/yarn | latest | Frontend package manager |
+      13  | Docker + Docker Compose | latest | Local development stack |
+      14 -| PostgreSQL | 17 | Database (via Docker or standalone) |      
+      14 +| PostgreSQL | 18 | Database (via Docker or standalone) |      
+      15  | Git | latest | Version control |
+      16  
+      17  ## Quick Start (Docker)
+
+● Update(docs\CICD\NAS_Deployment.md)
+  ⎿  Added 1 line, removed 1 line
+      22  | Admin Panel | `lenie-ai-app2` | `<NAS_IP>:5005/lenie-ai-
+          app2` | 3001 | Admin panel (app2) |
+      23  | Backend | `lenie-ai-server` | `<NAS_IP>:5005/lenie-ai-se
+          rver` | 5055 | Flask API server |
+      24  | Slack Bot | `lenie-ai-slack-bot` | `<NAS_IP>:5005/lenie-
+          ai-slack-bot` | — | Slack Bot (Socket Mode, no exposed port) |
+      25 -| PostgreSQL | `lenie-ai-db` | `<NAS_IP>:5005/lenie-ai-db`
+         - | 5434 | PostgreSQL 17 + pgvector (upgrade to 18 pending — B-6
+         -9) |                                                           
+      25 +| PostgreSQL | `lenie-ai-db` | `<NAS_IP>:5005/lenie-ai-db`
+         + | 5434 | PostgreSQL 18 + pgvector |                           
+      26  | MinIO | `lenie-minio` | `minio/minio:latest` | 9000, 9001 | S
+          3-compatible storage (API + web console) |
+      27  | Vault | `lenie-vault` | `hashicorp/vault:1.21.3` | 8210 | Has
+          hiCorp Vault secrets manager |
+      28  | Registry UI | `lenie-registry-ui` | `joxit/docker-registry-ui
+          :latest` | 8550 | Web UI for Docker registry |
+
+● Update(docs\CICD\NAS_Deployment.md)
+  ⎿  Added 2 lines, removed 2 lines
+      313  ## Database Setup
+      314  
+      315  The database container uses a custom image built from `infra/d
+           ocker/Postgresql/Dockerfile`:
+      316 -- Base: `postgres:17-bookworm`                                
+      317 -- Extension: `postgresql-17-pgvector`                         
+      316 +- Base: `postgres:18-bookworm`                                
+      317 +- Extension: `postgresql-18-pgvector`                         
+      318  - Init scripts from `backend/database/init/` (auto-executed on
+            first run):
+      319    - `01-create-database.sql` — creates `lenie-ai` database
+      320    - `02-create-extension.sql` — installs pgvector extension
+
+● Update(docs\CICD\Docker_Local.md)
+  ⎿  Added 1 line, removed 1 line
+      81  ```
+      82  
+      83  ```bash
+      84 -docker pull pgvector/pgvector:pg17                             
+      84 +docker pull pgvector/pgvector:pg18                             
+      85  ```
+      86  
+      87  ```bash
+
+● Update(docs\CICD\Docker_Local.md)
+  ⎿  Added 1 line, removed 1 line
+      85  ```
+      86  
+      87  ```bash
+      88 -docker run -d --name lenie-ai-db -e POSTGRES_PASSWORD=postgres 
+         --p 5432:5432 pgvector/pgvector:pg17                            
+      88 +docker run -d --name lenie-ai-db -e POSTGRES_PASSWORD=postgres 
+         +-p 5432:5432 pgvector/pgvector:pg18                            
+      89  ```
+      90  
+      91  ```sql
+
+● Update(docs\architecture-infra.md)
+  ⎿  Added 1 line, removed 1 line
+      15  | Service | Image | Port | Description |
+      16  |---------|-------|------|-------------|
+      17  | lenie-ai-server | Built from `backend/Dockerfile` | 5000 | Fl
+          ask REST API |
+      18 -| lenie-ai-db | Custom PostgreSQL 17 + pgvector (upgrade to 18 
+         -pending — B-69) | 5433 | Database |                            
+      18 +| lenie-ai-db | Custom PostgreSQL 18 + pgvector | 5433 | Databa
+         +se |                                                           
+      19  | lenie-ai-fronted | Built from `web_interface_react/Dockerfile
+          ` | 3000 | React frontend |
+      20  
+      21  PostgreSQL uses custom Dockerfile (`infra/docker/Postgresql/Doc
+          kerfile`) based on `postgres:17-bookworm` with `postgresql-17-p
+          gvector` installed.
+
+● Update(docs\architecture-infra.md)
+  ⎿  Added 1 line, removed 1 line
+      18  | lenie-ai-db | Custom PostgreSQL 18 + pgvector | 5433 | Databa
+          se |
+      19  | lenie-ai-fronted | Built from `web_interface_react/Dockerfile
+          ` | 3000 | React frontend |
+      20  
+      21 -PostgreSQL uses custom Dockerfile (`infra/docker/Postgresql/Doc
+         -kerfile`) based on `postgres:17-bookworm` with `postgresql-17-p
+         -gvector` installed.                                            
+      21 +PostgreSQL uses custom Dockerfile (`infra/docker/Postgresql/Doc
+         +kerfile`) based on `postgres:18-bookworm` with `postgresql-18-p
+         +gvector` installed.                                            
+      22  
+      23  ### 2. AWS Serverless
+      24  
+
+● Update(docs\architecture-backend.md)
+  ⎿  Added 1 line, removed 1 line
+      24  |----------|-----------|---------|
+      25  | Language | Python | >= 3.11 |
+      26  | Framework | Flask + Flask-CORS | latest |
+      27 -| Database | PostgreSQL + pgvector | 17 |                      
+      27 +| Database | PostgreSQL + pgvector | 18 |                      
+      28  | ORM | None (raw psycopg2) | — |
+      29  | Package Manager | uv (hatchling build) | latest |
+      30  | LLM | OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bieli
+          k | multi-provider |
+
+● Teraz zaktualizuję backlog — B-69 powinien być oznaczony jako done.
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(_bmad-output\planning-artifacts\epics\backlog.md)
+  ⎿  Added 1 line, removed 1 line
+      357  - NAS deployment works with new image
+      358  - Vector similarity search works correctly
+      359  
+      360 -**Status:** backlog                                           
+      360 +**Status:** done (2026-03-07)                                 
+      361  
+      362  ---
+      363  
+
+● Gotowe. Zaktualizowane pliki (12 edycji w 8 plikach):
+
+  ┌──────────────────────────────┬───────────────────────────────────────────┐
+  │             Plik             │                  Zmiana                   │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ CLAUDE.md                    │ Usunięto "(RDS: 18.1, Docker/NAS: 17 —    │
+  │                              │ pending upgrade via B-69)"                │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ backend/database/CLAUDE.md   │ 17 → 18 (opis + Docker image)             │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/project-overview.md     │ 17 → 18 (2 miejsca)                       │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/development-guide.md    │ 17 → 18                                   │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/CICD/NAS_Deployment.md  │ 17 → 18 (tabela + Docker setup)           │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/CICD/Docker_Local.md    │ pg17 → pg18 (pull + run)                  │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/architecture-infra.md   │ 17 → 18 (tabela + opis Dockerfile)        │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/architecture-backend.md │ 17 → 18                                   │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ backlog.md                   │ B-69 status: backlog → done (2026-03-07)  │
+  └──────────────────────────────┴───────────────────────────────────────────┘
+
+  Pominąłem pliki archiwalne (archive/, implementation-artifacts/) — to
+  historyczne snapshoty.
+
+  ---
+  Co dalej?
+
+  [R] Review Detailed Findings
+  [E] Use Edit Workflow
+  [F] Fix Simpler Items
+  [X] Exit
+
+✻ Baked for 1m 4s
+
+❯ sprawdz jeszcze informacje o vectorach, teraz nie powinno byc szywtno         
+1536-dim vector, teraz to jest zalezne od uzytego embedingu                     
+
+● Searched for 1 pattern (ctrl+o to expand)
+
+● Widzę problem — wiele dokumentów traktuje 1536 jako stały wymiar, ale
+  backend/database/CLAUDE.md:130 już poprawnie opisuje kolumnę jako bezwymiarową
+   (vector bez wymiaru) z osobnymi indeksami per model. Sprawdzę jeszcze DDL.
+
+● Searched for 1 pattern (ctrl+o to expand)
+
+● Potwierdzam — kolumna embedding jest bezwymiarowa, a modele mają różne wymiary
+   (1536, 1024). Aktualizuję dokumenty:
+
+● Update(docs\project-overview.md)
+  ⎿  Added 1 line, removed 1 line
+      40  |----------|-------------|
+      41  | **Backend** | Python 3.11, Flask, psycopg2, uv |
+      42  | **Frontend** | React 18, CRA, React Router v6, Formik, axios 
+          |
+      43 -| **Database** | PostgreSQL 18, pgvector (1536-dim vectors) |  
+      43 +| **Database** | PostgreSQL 18, pgvector (variable-dimension ve
+         +ctors per embedding model) |                                   
+      44  | **AI/LLM** | OpenAI (GPT-4o), AWS Bedrock (Titan, Nova), Goog
+          le Vertex (Gemini), CloudFerro (Bielik) |
+      45  | **Embeddings** | text-embedding-ada-002, amazon.titan-embed-t
+          ext, BAAI/bge-multilingual-gemma2 |
+      46  | **Content** | BeautifulSoup4, Markdownify, Firecrawl, YouTube
+           Transcript API |
+
+● Update(docs\index.md)
+  ⎿  File must be read first
+
+● Update(docs\data-models-backend.md)
+  ⎿  Added 1 line, removed 1 line
+      52  | `langauge` | varchar(10) | — | Language code (intentional typ
+          o kept for compatibility) |
+      53  | `text` | text | — | Processed text that was embedded |
+      54  | `text_original` | text | — | Original text before translation
+           |
+      55 -| `embedding` | vector(1536) | — | Vector (OpenAI ada-002 / Tit
+         -an format) |                                                   
+      55 +| `embedding` | vector | — | Dimensionless vector (supports mul
+         +tiple models: ada-002=1536, Titan v2=1024, bge-m3=1024) |      
+      56  | `model` | varchar(100) | NOT NULL | Embedding model identifie
+          r |
+      57  | `created_at` | timestamp | DEFAULT CURRENT_TIMESTAMP | Timest
+          amp |
+      58  
+
+● Update(docs\data-models-backend.md)
+  ⎿  Added 1 line, removed 1 line
+      146  ### Supporting Models
+      147  
+      148  - **AiResponse** — LLM response: query, model, response_text, 
+           token counts, temperature
+      149 -- **EmbeddingResult** — embedding result: text, embedding (153
+          -6 dims), status, model_id                                     
+      149 +- **EmbeddingResult** — embedding result: text, embedding (dim
+          +ensions vary by model), status, model_id                      
+      150  - **WebPageParseResult** — parsed webpage: url, text_raw, text
+           , title, summary, language
+      151  
+      152  ## AWS DynamoDB (Serverless)
+
+● Update(docs\architecture-backend.md)
+  ⎿  Added 1 line, removed 1 line
+      28  | ORM | None (raw psycopg2) | — |
+      29  | Package Manager | uv (hatchling build) | latest |
+      30  | LLM | OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bieli
+          k | multi-provider |
+      31 -| Embeddings | ada-002, Titan v1/v2, BAAI/bge-multilingual | 15
+         -36-dim |                                                       
+      31 +| Embeddings | ada-002, Titan v1/v2, BAAI/bge-multilingual | 10
+         +24-1536 dim (model-dependent) |                                
+      32  | Content | BeautifulSoup4, Markdownify, Firecrawl | latest |
+      33  | Speech | AssemblyAI, AWS Transcribe | latest |
+      34  | Cloud SDK | boto3 (AWS), google-api-python-client | latest |
+
+● Update(docs\architecture-backend.md)
+  ⎿  Added 1 line, removed 1 line
+      79  2. **Parse**: `webpage_raw_parse(url, html)` → WebPageParseResu
+          lt (text, title, summary, language)
+      80  3. **Clean**: `webpage_text_clean(url, text)` → cleaned text (s
+          ite-specific regex rules)
+      81  4. **Split**: `split_text_for_embedding(text, titles, max_words
+          )` → text chunks
+      82 -5. **Embed**: `get_embedding(model, chunk)` → vector (1536 dims
+         -)                                                              
+      82 +5. **Embed**: `get_embedding(model, chunk)` → vector (dimension
+         +s vary by model)                                               
+      83  6. **Store**: `StalkerWebDocumentDB.save()` + `embedding_add_si
+          mple(vector, model)`
+      84  
+      85  ### Batch Processing
+
+● Update(CLAUDE.md)
+  ⎿  Added 1 line, removed 1 line
+      199  
+      200  Two tables:
+      201  - **`web_documents`** (28 columns) — documents with content, m
+           etadata, processing state, and multilingual fields
+      202 -- **`websites_embeddings`** — vector embeddings (1536 dimensio
+          -ns) with IVFFlat cosine similarity index                      
+      202 +- **`websites_embeddings`** — vector embeddings (dimensionless
+          + column, per-model HNSW partial indexes) with cosine similarit
+          +y search                                                      
+      203  
+      204  Document processing states: `URL_ADDED` → `DOCUMENT_INTO_DATAB
+           ASE` → ... → `EMBEDDING_EXIST` (15 states total, see `backend/
+           library/models/stalker_document_status.py`).
+      205  
+
+● Update(README.md)
+  ⎿  File must be read first
+
+● Read 2 files (ctrl+o to expand)
+
+● Update(docs\index.md)
+  ⎿  Added 1 line, removed 1 line
+       7  - **Type:** Multi-part Monorepo with 4 parts
+       8  - **Primary Languages:** Python 3.11 (backend), JavaScript/Reac
+          t 18 (frontends)
+       9  - **Architecture:** Layered REST API + SPA + Serverless + Multi
+          -cloud IaC
+      10 -- **Database:** PostgreSQL 18 + pgvector (1536-dim vector simil
+         -arity search)                                                  
+      10 +- **Database:** PostgreSQL 18 + pgvector (vector similarity sea
+         +rch)                                                           
+      11  
+      12  ## Quick Reference
+      13  
+
+● Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      73  - **Backend** — Flask REST API (Python 3.11) serving 19 endpoin
+          ts with `x-api-key` auth. Handles document CRUD, text processin
+          g, AI embeddings, and vector similarity search
+      74  - **Web Interface** — React 18 SPA for browsing, editing, and A
+          I-processing documents. Supports two backend modes: AWS Serverl
+          ess (Lambda) and Docker (Flask)
+      75  - **Browser Extension** — Chrome/Kiwi Manifest v3 extension for
+           capturing webpages and sending them to the backend
+      76 -- **Database** — PostgreSQL 18 with pgvector for vector similar
+         -ity search (1536-dim embeddings)                               
+      76 +- **Database** — PostgreSQL 18 with pgvector for vector similar
+         +ity search (multi-model, variable-dimension embeddings)        
+      77  - **AWS Serverless** — API Gateway, Lambda functions, SQS queue
+          s, Step Functions for cost-optimized processing
+      78  - **AI Services** — OpenAI, AWS Bedrock, Google Vertex AI, Clou
+          dFerro Bielik
+      79  - **Docker** — docker compose stack with Flask + PostgreSQL + R
+          eact for local development
+
+● Teraz PRD — tam jest kilka referencji do Vector(1536):
+
+● Update(_bmad-output\planning-artifacts\prd.md)
+  ⎿  Added 1 line, removed 1 line
+      171    v
+      172  ORM Models (library/db/models.py)
+      173    |  - WebDocument (STI base) -> LinkDocument, YouTubeDocument
+           , etc.
+      174 -  |  - WebsiteEmbedding (Vector(1536), cosine_distance())     
+      174 +  |  - WebsiteEmbedding (Vector(), cosine_distance())         
+      175    |  - domain methods: set_document_type(), validate(), analyz
+           e(), dict()
+      176    |
+      177    v
+
+● Update(_bmad-output\planning-artifacts\prd.md)
+  ⎿  Added 1 line, removed 1 line
+      197  | Decision | Choice | Rationale |
+      198  |----------|--------|-----------|
+      199  | ORM style | SQLAlchemy 2.x `mapped_column()` declarative | M
+           odern, type-hint native, best IDE support |
+      200 -| Vector operations | `pgvector-python` native integration | `
+          -cosine_distance()` operator, `Vector(1536)` type — zero raw SQ
+          -L |                                                           
+      200 +| Vector operations | `pgvector-python` native integration | `
+          +cosine_distance()` operator, dimensionless `Vector()` type — z
+          +ero raw SQL |                                                 
+      201  | Inheritance | Single Table Inheritance on `web_documents` | 
+           Matches current schema (one table), prepares for future Joined
+            Table split |
+      202  | Migration tool | Alembic with autogenerate | Reads ORM model
+            diffs, generates migration scripts |
+      203  | DB wrapper | Eliminated | `StalkerWebDocumentDB` wrapper rem
+           oved — ORM model + repository directly |
+
+● Update(_bmad-output\planning-artifacts\prd.md)
+  ⎿  Added 1 line, removed 1 line
+      216  ### Data Flow — Similarity Search
+      217  
+      218  ```
+      219 -Query vector (1536 dims)                                      
+      219 +Query vector (dimensions vary by model)                       
+      220    -> Repository: select(WebsiteEmbedding)
+      221         .order_by(WebsiteEmbedding.embedding.cosine_distance(qu
+           ery_vector))
+      222         .limit(limit)
+
+● Update(_bmad-output\planning-artifacts\prd.md)
+  ⎿  Added 1 line, removed 1 line
+      276  - All four journeys: schema modification, data import, embeddi
+           ngs pipeline, API request
+      277  
+      278  **Must-Have Capabilities:**
+      279 -1. ORM models (`WebDocument` with STI, `WebsiteEmbedding` with
+          - `Vector(1536)`)                                              
+      279 +1. ORM models (`WebDocument` with STI, `WebsiteEmbedding` with
+          + dimensionless `Vector()`)                                    
+      280  2. Engine + session management (`get_engine()`, `get_session()
+           `, `get_scoped_session()`)
+      281  3. Alembic initialized with baseline migration
+      282  4. Repository rewritten with SQLAlchemy queries
+
+● Sprawdzę jeszcze plan migracji i docs/embeddings.md — tam referencje do 1536
+  dotyczą konkretnych modeli (ada-002, Titan v1), więc są poprawne. Ale
+  docs/architecture-backend.md ma jeszcze tabelę modeli:
+
+● Read 1 file (ctrl+o to expand)
+
+● Titan v2 ma faktycznie 1024 wymiarów, nie 1536. Poprawię:
+
+● Update(docs\architecture-backend.md)
+  ⎿  Added 1 line, removed 1 line
+      60  |----------|-------|-----------|
+      61  | OpenAI | text-embedding-ada-002 | 1536 |
+      62  | AWS Bedrock | amazon.titan-embed-text-v1 | 1536 |
+      63 -| AWS Bedrock | amazon.titan-embed-text-v2:0 | 1536 |          
+      63 +| AWS Bedrock | amazon.titan-embed-text-v2:0 | 1024 |          
+      64  | CloudFerro | BAAI/bge-multilingual-gemma2 | varies |
+      65  
+      66  Entry point: `get_embedding(model, text) → EmbeddingResult`
+
+● Gotowe. Podsumowanie zmian wektorowych (10 edycji w 8 plikach):
+
+  ┌──────────────────────────────┬───────────────────────────────────────────┐
+  │             Plik             │                  Zmiana                   │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ CLAUDE.md                    │ "1536 dimensions" → "dimensionless        │
+  │                              │ column, per-model HNSW partial indexes"   │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ README.md                    │ "1536-dim" → "multi-model,                │
+  │                              │ variable-dimension"                       │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/index.md                │ Usunięto "1536-dim"                       │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/project-overview.md     │ "1536-dim vectors" → "variable-dimension  │
+  │                              │ vectors per embedding model"              │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/data-models-backend.md  │ vector(1536) → vector (dimensionless) +   │
+  │                              │ wymiary per model                         │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │                              │ "1536-dim" → "1024-1536 dim               │
+  │ docs/architecture-backend.md │ (model-dependent)", Titan v2: 1536→1024,  │
+  │                              │ pipeline: "vary by model"                 │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ prd.md                       │ 4x Vector(1536) → Vector() dimensionless  │
+  └──────────────────────────────┴───────────────────────────────────────────┘
+
+  Nie ruszałem docs/embeddings.md — tam wymiary są przypisane do konkretnych
+  modeli (poprawne) i indeksy HNSW z castami ::vector(1536) / ::vector(1024)
+  odzwierciedlają faktyczną definicję DDL.
+
+  ---
+  Co dalej?
+
+  [R] Review Detailed Findings
+  [E] Use Edit Workflow
+  [F] Fix Simpler Items
+  [X] Exit
+
+✻ Baked for 1m 18s
+
+❯ czy to wplywa teraz na nasz prd i validacje jego?                             
+
+● Nie wpływa na wynik walidacji. Wyjaśnienie:
+
+  - Overall Status: Pass — bez zmian
+  - Holistic Quality: 5/5 — bez zmian
+  - Wszystkie sprawdzenia (density, measurability, traceability, SMART) — wyniki
+   identyczne
+
+  Zmiany które zastosowaliśmy (FR12, Out of Scope, Assumptions, Vector
+  dimensions) to poprawki po walidacji — one wzmacniają PRD, nie wprowadzają
+  nowych problemów. PRD był już oceniony jako Excellent, a teraz jest jeszcze
+  lepszy.
+
+  Jedyne co warto zrobić to dodać notatkę w raporcie walidacji, że po walidacji
+  zastosowano poprawki. Chcesz żebym to dodał?
+
+❯ tak                                                                           
+
+● Read 1 file (ctrl+o to expand)
+
+● Update(_bmad-output\planning-artifacts\prd-validation-report.md)
+  ⎿  Added 13 lines
+      512  - Complete and consistent frontmatter — 12 workflow steps, 5-d
+           imension classification
+      513  
+      514  ### Holistic Quality: 5/5 — Excellent
+      515 +                                                              
+      516 +---                                                           
+      517 +                                                              
+      518 +## Post-Validation Fixes Applied                              
+      519 +                                                              
+      520 +The following fixes were applied to the PRD after validation c
+          +ompleted (2026-03-07):                                        
+      521 +                                                              
+      522 +1. **FR12 specificity** — Changed "Standalone scripts can obta
+          +in and manage their own database sessions" to "Import scripts 
+          +and batch pipeline can obtain, commit, and close their own dat
+          +abase sessions (script-scoped lifecycle)". Resolves Minor Obse
+          +rvation #1.                                                   
+      523 +2. **Added "Out of Scope" subsection** — Consolidated 9 explic
+          +itly excluded items (Pydantic, TypeScript sync, new tables, JT
+          +I, MCP, ElasticSearch, Lambda, Flask-SQLAlchemy, schema change
+          +s) under Project Scoping & Risk Mitigation. Resolves Minor Obs
+          +ervation #3.                                                  
+      524 +3. **Added "Assumptions & Dependencies" section** — Documented
+          + 5 assumptions (DB schema matches DDL, pgvector identical resu
+          +lts, no production data, psycopg2-binary compatibility, langau
+          +ge typo fixed) and 4 dependencies (SQLAlchemy 2.0+, pgvector 0
+          +.3+, Alembic 1.13+, PostgreSQL 18). Resolves Minor Observation
+          + #3.                                                          
+      525 +4. **Vector dimensions corrected** — Changed all `Vector(1536)
+          +` references to dimensionless `Vector()` to reflect that the e
+          +mbedding column supports multiple models with different dimens
+          +ions (ada-002=1536, Titan v2=1024, bge-m3=1024). Aligns PRD wi
+          +th actual DDL (`04-create-table.sql`) and per-model HNSW parti
+          +al indexes.                                                   
+      526 +                                                              
+      527 +**Impact on validation results:** None — all fixes strengthen 
+          +the PRD without introducing new issues. Overall status remains
+          + Pass, Holistic Quality remains 5/5 Excellent.                
+
+● Dodałem sekcję "Post-Validation Fixes Applied" na końcu raportu z opisem
+  wszystkich 4 poprawek i notatką że nie wpływają na wyniki walidacji.
+
+  ---
+  Co dalej?
+
+  [R] Review Detailed Findings
+  [E] Use Edit Workflow
+  [F] Fix Simpler Items
+  [X] Exit
+
+❯ X                                                                             
+
+● Raport walidacji zapisany:
+  _bmad-output/planning-artifacts/prd-validation-report.md
+
+  Podsumowanie: Pass — PRD jest exemplary (5/5 Excellent) i gotowy do dalszej
+  pracy (architektura, epiki, stories). Po walidacji zastosowano 4 poprawki
+  wzmacniające dokument.
+
+  Sugerowane następne kroki:
+  - Utworzenie architektury technicznej na podstawie PRD
+  - Breakdown na epiki i stories
+  - Rozpoczęcie implementacji migracji SQLAlchemy
