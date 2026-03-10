@@ -1,6 +1,6 @@
 # Story B-93: Synchronize Document States from Backend to Frontend
 
-Status: review
+Status: done
 
 ## Story
 
@@ -166,13 +166,35 @@ No issues encountered during implementation.
 - **Task 3 (Fallback):** Hook catches fetch errors and falls back to `localStorage` cached values. If no cache exists, empty arrays used (dropdowns render only "ALL").
 - **Task 4 (Verification):** Confirmed 16 states (was 13 hardcoded), 6 types (was 4 hardcoded), 17 errors returned. Frontend builds with zero TypeScript errors. No regressions in backend test suite (392 pass, 26 pre-existing failures in unrelated test files).
 
+### Senior Developer Review (AI)
+
+**Reviewer:** Claude Opus 4.6 | **Date:** 2026-03-10
+
+**Issues Found:** 1 High, 3 Medium, 2 Low | **All H+M Fixed**
+
+- **[H1] FIXED** — Endpoint count "19" not updated to "20" in 8+ documentation files (infrastructure-metrics.md SSOT, CLAUDE.md, backend/CLAUDE.md, README.md, project-overview.md, api-contracts-backend.md, source-tree-analysis.md, index.md). Updated all files and added `/document_states` to SSOT table.
+- **[M1] FIXED** — `err: any` TypeScript anti-pattern in useDocumentStates.ts catch block → changed to `err: unknown` with proper type narrowing and `axios.isCancel()` check.
+- **[M2] FIXED** — No AbortController cleanup in useEffect → added AbortController with cleanup return, prevents state updates on unmounted component.
+- **[M3] FIXED** — `loading` initialized as `false` even without cache → changed to `useState(!cached)` so loading=true when no cached data exists.
+- **[L1] NOT FIXED** — `errors` field fetched but unused in frontend. Acceptable — available for future error filter dropdown.
+- **[L2] NOT FIXED** — Redundant localStorage re-read in catch block. Refactored to reuse `loadCached()` helper instead.
+
 ### Change Log
 
 - 2026-03-10: Implemented B-93 — backend endpoint + frontend dynamic dropdowns + localStorage caching + error fallback
+- 2026-03-10: Code review — 4 fixes (H1 docs endpoint count, M1 err:any→unknown, M2 AbortController cleanup, M3 loading init)
 
 ### File List
 
 - `backend/server.py` (modified — added imports + `/document_states` route)
 - `backend/tests/unit/test_flask_endpoints_document_states.py` (new — 7 unit tests)
-- `web_interface_react/src/modules/shared/hooks/useDocumentStates.ts` (new — hook)
+- `web_interface_react/src/modules/shared/hooks/useDocumentStates.ts` (new — hook; review: AbortController, err:unknown, loading init)
 - `web_interface_react/src/modules/shared/pages/list.tsx` (modified — dynamic dropdowns)
+- `docs/infrastructure-metrics.md` (review fix — added `/document_states`, count 19→20)
+- `docs/api-contracts-backend.md` (review fix — count 19→20)
+- `docs/project-overview.md` (review fix — count 19→20)
+- `docs/source-tree-analysis.md` (review fix — count 19→20)
+- `docs/index.md` (review fix — count 19→20)
+- `CLAUDE.md` (review fix — count 19→20)
+- `backend/CLAUDE.md` (review fix — count 19→20, added `/document_states` to Metadata)
+- `README.md` (review fix — count 19→20)

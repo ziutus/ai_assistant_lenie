@@ -90,7 +90,7 @@ See [`docs/development-guide.md`](docs/development-guide.md) for full WSL setup 
 ## Architecture
 
 ### Backend (`backend/`)
-Flask application (`server.py`) exposing REST API with 19 endpoints (see `docs/infrastructure-metrics.md` for full inventory). Python 3.11, dependencies managed via uv, Docker build with `python:3.11-slim`. All routes (except health checks) require `x-api-key` header.
+Flask application (`server.py`) exposing REST API with 20 endpoints (see `docs/infrastructure-metrics.md` for full inventory). Python 3.11, dependencies managed via uv, Docker build with `python:3.11-slim`. All routes (except health checks) require `x-api-key` header.
 
 Key subdirectories: `library/` (core logic & integrations), `database/` (PostgreSQL schema), `imports/` (bulk import scripts), `data/` (site cleanup rules), `tests/` (unit + integration), `test_code/` (experimental scripts). Each has its own `CLAUDE.md`.
 

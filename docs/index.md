@@ -14,7 +14,7 @@
 ### Backend API (`backend/`)
 - **Type:** REST API (Flask)
 - **Tech Stack:** Python 3.11, Flask, psycopg2, uv
-- **Entry Point:** `server.py` (19 endpoints)
+- **Entry Point:** `server.py` (20 endpoints)
 - **Architecture:** Layered API with service pattern
 
 ### Main Frontend (`web_interface_react/`)
