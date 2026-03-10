@@ -324,6 +324,26 @@ groups:
         default: "#general"
         example: "#lenie-bot"
         used_by: [docker]
+      HEALTH_CHECK_ENABLED:
+        description: "Enable/disable scheduled health checks with proactive alerts"
+        type: config
+        required: false
+        default: "false"
+        example: "false"
+        used_by: [docker]
+      HEALTH_CHECK_INTERVAL:
+        description: "Health check interval in seconds"
+        type: config
+        required: false
+        default: "300"
+        example: "300"
+        used_by: [docker]
+      HEALTH_CHECK_USER_ID:
+        description: "Slack user ID to receive health alert DMs (required when HEALTH_CHECK_ENABLED=true)"
+        type: config
+        required_when: "HEALTH_CHECK_ENABLED=true"
+        example: "U0123456789"
+        used_by: [docker]
 
   integrations:
     description: "Third-party service API keys and endpoints"

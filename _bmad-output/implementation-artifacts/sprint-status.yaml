@@ -294,8 +294,8 @@ development_status:
   epic-24-retrospective: optional
 
   # --- Epic 25: Proactive Health Monitoring ---
-  epic-25: backlog
-  25-1-scheduled-health-checks-proactive-alerts: backlog
+  epic-25: in-progress
+  25-1-scheduled-health-checks-proactive-alerts: done
   epic-25-retrospective: optional
 
   # --- Phase 6: Obsidian Integration ---
