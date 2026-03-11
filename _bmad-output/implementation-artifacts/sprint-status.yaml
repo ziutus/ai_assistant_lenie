@@ -335,14 +335,14 @@ development_status:
   26-1-dependencies-engine-session-factories: done  # DONE 2026-03-08. SQLAlchemy 2.0.48 + pgvector 0.4.2 + Alembic 1.18.4. Engine singleton (URL.create), Base (DeclarativeBase), get_session/get_scoped_session/dispose_engine. 15 unit tests. Code review: 5 issues fixed (H2 URL encoding + defaults, M3 weak tests + dispose API).
   26-2-orm-models-web-document-website-embedding: done  # WebDocument (26 cols, STI, domain methods, dict()), 6 STI subclasses, WebsiteEmbedding (8 cols, Vector(), cascade). 104 unit tests. Code review #2: H1 pytest.importorskip, M2 full state test coverage, M3 logging. WSL sync verified.
   26-3-alembic-initialization-flask-session-integration: done  # Code review: 8 issues (1H/4M/3L), all H+M fixed. include_object: table-name check + 5 behavioral tests. 20 tests total, ruff clean.
-  epic-26-retrospective: optional
+  epic-26-retrospective: done  # Combined retro with epics 27, 29, 30: epic-26-27-29-30-retro-2026-03-11.md
 
   # --- Epic 27: Document CRUD & API Serving ---
   epic-27: done
   27-1-document-persistence-crud-via-orm: done
   27-2-repository-queries-list-count-state-lookups: done
   27-3-flask-api-endpoints-crud-routes-via-repository: done
-  epic-27-retrospective: optional
+  epic-27-retrospective: done  # Combined retro: epic-26-27-29-30-retro-2026-03-11.md
 
   # --- Epic 28: Vector Embeddings & Similarity Search ---
   epic-28: done
@@ -355,7 +355,7 @@ development_status:
   29-1-import-scripts-migration: done
   29-2-batch-pipeline-youtube-processing-migration: done
   29-3-old-code-removal-final-verification: done  # DONE 2026-03-10. Removed all legacy psycopg2 branches from WebsitesDBPostgreSQL (630→270 lines). Replaced stalker_web_document.py + stalker_web_document_db.py with ORM re-exports. Migrated 3 experimental scripts. Zero cursor.execute() in production code. 386 tests pass, ruff clean.
-  epic-29-retrospective: optional
+  epic-29-retrospective: done  # Combined retro: epic-26-27-29-30-retro-2026-03-11.md
 
   # ============================================================
   # SPRINT 10: Database Lookup Tables & Search Extensions
@@ -368,7 +368,7 @@ development_status:
   B-95-add-foreign-key-constraints-to-web-documents-and-websites-embeddings: done  # FK constraints on document_state, document_state_error, document_type, embedding model. Depends on B-94. Code review: 5M/3L, 2 fixed (test coverage + schema prefix), 1 deferred (integration test).
   B-96-update-sqlalchemy-orm-models-for-lookup-table-relationships: done  # ORM models for lookup tables, ForeignKey + relationship() instead of SAEnum. Depends on B-95. Includes: B-95/M5 FK constraint integration tests. Code review: 4M/2L fixed (missing setter states, importorskip, File List, CLAUDE.md).
   B-97-install-unaccent-and-pg-trgm-extensions-on-existing-databases: done  # DONE 2026-03-10 (NAS). unaccent('Łódź')→'Lodz', similarity('Warszawa','Warszawie')→0.58. AWS RDS deferred. ADR-009.
-  epic-30-retrospective: optional
+  epic-30-retrospective: done  # Combined retro: epic-26-27-29-30-retro-2026-03-11.md
 
   # ============================================================
   # DONE (completed backlog items — historical record)
