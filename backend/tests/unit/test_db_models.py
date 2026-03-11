@@ -1,7 +1,9 @@
-"""Unit tests for ORM models (WebDocument, WebsiteEmbedding, STI subclasses).
+"""Unit tests for ORM models (WebDocument, WebsiteEmbedding, STI subclasses,
+lookup table models).
 
 Tests model structure, column mappings, STI configuration, domain methods,
-dict() output, and relationships — all without a database connection.
+dict() output, relationships, and lookup table ORM models — all without a
+database connection.
 """
 
 import datetime
@@ -10,10 +12,13 @@ import pytest
 
 sqlalchemy = pytest.importorskip("sqlalchemy")
 from sqlalchemy import inspect, String, Text, Boolean, Integer, Date, DateTime  # noqa: E402
-from sqlalchemy import Enum as SAEnum  # noqa: E402
 
 from library.db.engine import Base  # noqa: E402
 from library.db.models import (  # noqa: E402
+    DocumentStatusType,
+    DocumentStatusErrorType,
+    DocumentType,
+    EmbeddingModel,
     WebDocument,
     WebsiteEmbedding,
     LinkDocument,
@@ -23,9 +28,6 @@ from library.db.models import (  # noqa: E402
     TextMessageDocument,
     TextDocument,
 )
-from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: E402
-from library.models.stalker_document_status_error import StalkerDocumentStatusError  # noqa: E402
-from library.models.stalker_document_type import StalkerDocumentType  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -48,11 +50,100 @@ def _make_doc(**overrides):
     """Create a minimal WebDocument instance for testing domain methods."""
     defaults = {
         "url": "https://example.com",
-        "document_type": StalkerDocumentType.link,
-        "document_state": StalkerDocumentStatus.URL_ADDED,
+        "document_type": "link",
+        "document_state": "URL_ADDED",
     }
     defaults.update(overrides)
     return WebDocument(**defaults)
+
+
+# ---------------------------------------------------------------------------
+# Lookup table ORM models (B-96 Task 9)
+# ---------------------------------------------------------------------------
+
+class TestDocumentStatusType:
+    def test_tablename(self):
+        assert DocumentStatusType.__tablename__ == "document_status_types"
+
+    def test_inherits_base(self):
+        assert issubclass(DocumentStatusType, Base)
+
+    def test_columns(self):
+        cols = _column_names(DocumentStatusType)
+        assert cols == {"id", "name"}
+
+    def test_instantiation(self):
+        obj = DocumentStatusType(name="URL_ADDED")
+        assert obj.name == "URL_ADDED"
+
+    def test_repr(self):
+        obj = DocumentStatusType(id=1, name="URL_ADDED")
+        assert repr(obj) == "DocumentStatusType(id=1, name='URL_ADDED')"
+
+    def test_name_is_unique_not_nullable(self):
+        col = _get_column(DocumentStatusType, "name")
+        assert col.unique
+        assert not col.nullable
+
+
+class TestDocumentStatusErrorType:
+    def test_tablename(self):
+        assert DocumentStatusErrorType.__tablename__ == "document_status_error_types"
+
+    def test_inherits_base(self):
+        assert issubclass(DocumentStatusErrorType, Base)
+
+    def test_columns(self):
+        cols = _column_names(DocumentStatusErrorType)
+        assert cols == {"id", "name"}
+
+    def test_instantiation(self):
+        obj = DocumentStatusErrorType(name="ERROR_DOWNLOAD")
+        assert obj.name == "ERROR_DOWNLOAD"
+
+    def test_repr(self):
+        obj = DocumentStatusErrorType(id=2, name="ERROR_DOWNLOAD")
+        assert repr(obj) == "DocumentStatusErrorType(id=2, name='ERROR_DOWNLOAD')"
+
+
+class TestDocumentType:
+    def test_tablename(self):
+        assert DocumentType.__tablename__ == "document_types"
+
+    def test_inherits_base(self):
+        assert issubclass(DocumentType, Base)
+
+    def test_columns(self):
+        cols = _column_names(DocumentType)
+        assert cols == {"id", "name"}
+
+    def test_instantiation(self):
+        obj = DocumentType(name="link")
+        assert obj.name == "link"
+
+    def test_repr(self):
+        obj = DocumentType(id=3, name="link")
+        assert repr(obj) == "DocumentType(id=3, name='link')"
+
+
+class TestEmbeddingModel:
+    def test_tablename(self):
+        assert EmbeddingModel.__tablename__ == "embedding_models"
+
+    def test_inherits_base(self):
+        assert issubclass(EmbeddingModel, Base)
+
+    def test_columns(self):
+        cols = _column_names(EmbeddingModel)
+        assert cols == {"id", "name"}
+
+    def test_instantiation(self):
+        obj = EmbeddingModel(name="text-embedding-ada-002")
+        assert obj.name == "text-embedding-ada-002"
+
+    def test_repr(self):
+        obj = EmbeddingModel(id=1, name="text-embedding-ada-002")
+        assert repr(obj) == "EmbeddingModel(id=1, name='text-embedding-ada-002')"
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +169,7 @@ class TestWebDocumentColumns:
 
 
 # ---------------------------------------------------------------------------
-# 5.2: Column types match DDL
+# 5.2: Column types match DDL (updated for String+FK)
 # ---------------------------------------------------------------------------
 
 class TestWebDocumentColumnTypes:
@@ -104,23 +195,27 @@ class TestWebDocumentColumnTypes:
         col = _get_column(WebDocument, "created_at")
         assert isinstance(col.type, DateTime)
 
-    def test_document_type_is_enum_varchar50(self):
+    def test_document_type_is_string_with_fk(self):
         col = _get_column(WebDocument, "document_type")
-        assert isinstance(col.type, SAEnum)
-        assert col.type.native_enum is False
+        assert isinstance(col.type, String)
         assert col.type.length == 50
         assert not col.nullable
+        fk = list(col.foreign_keys)[0]
+        assert fk.target_fullname == "document_types.name"
 
-    def test_document_state_is_enum_varchar50(self):
+    def test_document_state_is_string_with_fk(self):
         col = _get_column(WebDocument, "document_state")
-        assert isinstance(col.type, SAEnum)
-        assert col.type.native_enum is False
+        assert isinstance(col.type, String)
+        assert col.type.length == 50
         assert not col.nullable
+        fk = list(col.foreign_keys)[0]
+        assert fk.target_fullname == "document_status_types.name"
 
-    def test_document_state_error_is_enum_nullable(self):
+    def test_document_state_error_is_string_with_fk_nullable(self):
         col = _get_column(WebDocument, "document_state_error")
-        assert isinstance(col.type, SAEnum)
-        assert col.type.native_enum is False
+        assert isinstance(col.type, String)
+        fk = list(col.foreign_keys)[0]
+        assert fk.target_fullname == "document_status_error_types.name"
 
     def test_date_from_is_date(self):
         col = _get_column(WebDocument, "date_from")
@@ -169,17 +264,17 @@ class TestSTIConfiguration:
 
 
 # ---------------------------------------------------------------------------
-# 5.4: All 6 STI subclasses have correct polymorphic_identity
+# 5.4: All 6 STI subclasses have correct polymorphic_identity (now strings)
 # ---------------------------------------------------------------------------
 
 class TestSTISubclasses:
     @pytest.mark.parametrize("cls, identity", [
-        (LinkDocument, StalkerDocumentType.link),
-        (YouTubeDocument, StalkerDocumentType.youtube),
-        (MovieDocument, StalkerDocumentType.movie),
-        (WebpageDocument, StalkerDocumentType.webpage),
-        (TextMessageDocument, StalkerDocumentType.text_message),
-        (TextDocument, StalkerDocumentType.text),
+        (LinkDocument, "link"),
+        (YouTubeDocument, "youtube"),
+        (MovieDocument, "movie"),
+        (WebpageDocument, "webpage"),
+        (TextMessageDocument, "text_message"),
+        (TextDocument, "text"),
     ])
     def test_polymorphic_identity(self, cls, identity):
         mapper = inspect(cls).mapper
@@ -197,19 +292,19 @@ class TestSTISubclasses:
 
 
 # ---------------------------------------------------------------------------
-# 5.5: set_document_type()
+# 5.5: set_document_type() — stores string names
 # ---------------------------------------------------------------------------
 
 class TestSetDocumentType:
     @pytest.mark.parametrize("input_str, expected", [
-        ("movie", StalkerDocumentType.movie),
-        ("youtube", StalkerDocumentType.youtube),
-        ("link", StalkerDocumentType.link),
-        ("webpage", StalkerDocumentType.webpage),
-        ("website", StalkerDocumentType.webpage),
-        ("sms", StalkerDocumentType.text_message),
-        ("text_message", StalkerDocumentType.text_message),
-        ("text", StalkerDocumentType.text),
+        ("movie", "movie"),
+        ("youtube", "youtube"),
+        ("link", "link"),
+        ("webpage", "webpage"),
+        ("website", "webpage"),
+        ("sms", "text_message"),
+        ("text_message", "text_message"),
+        ("text", "text"),
     ])
     def test_valid_types(self, input_str, expected):
         doc = _make_doc()
@@ -223,26 +318,26 @@ class TestSetDocumentType:
 
 
 # ---------------------------------------------------------------------------
-# 5.6: set_document_state()
+# 5.6: set_document_state() — stores string names
 # ---------------------------------------------------------------------------
 
 class TestSetDocumentState:
     @pytest.mark.parametrize("input_str, expected", [
-        ("ERROR", StalkerDocumentStatus.ERROR),
-        ("ERROR_DOWNLOAD", StalkerDocumentStatus.ERROR),
-        ("URL_ADDED", StalkerDocumentStatus.URL_ADDED),
-        ("NEED_TRANSCRIPTION", StalkerDocumentStatus.NEED_TRANSCRIPTION),
-        ("TRANSCRIPTION_DONE", StalkerDocumentStatus.TRANSCRIPTION_DONE),
-        ("TRANSCRIPTION_IN_PROGRESS", StalkerDocumentStatus.TRANSCRIPTION_IN_PROGRESS),
-        ("NEED_MANUAL_REVIEW", StalkerDocumentStatus.NEED_MANUAL_REVIEW),
-        ("READY_FOR_TRANSLATION", StalkerDocumentStatus.READY_FOR_TRANSLATION),
-        ("READY_FOR_EMBEDDING", StalkerDocumentStatus.READY_FOR_EMBEDDING),
-        ("EMBEDDING_EXIST", StalkerDocumentStatus.EMBEDDING_EXIST),
-        ("DOCUMENT_INTO_DATABASE", StalkerDocumentStatus.DOCUMENT_INTO_DATABASE),
-        ("NEED_CLEAN_TEXT", StalkerDocumentStatus.NEED_CLEAN_TEXT),
-        ("NEED_CLEAN_MD", StalkerDocumentStatus.NEED_CLEAN_MD),
-        ("TEXT_TO_MD_DONE", StalkerDocumentStatus.NEED_CLEAN_MD),
-        ("MD_SIMPLIFIED", StalkerDocumentStatus.MD_SIMPLIFIED),
+        ("ERROR", "ERROR"),
+        ("ERROR_DOWNLOAD", "ERROR"),
+        ("URL_ADDED", "URL_ADDED"),
+        ("NEED_TRANSCRIPTION", "NEED_TRANSCRIPTION"),
+        ("TRANSCRIPTION_DONE", "TRANSCRIPTION_DONE"),
+        ("TRANSCRIPTION_IN_PROGRESS", "TRANSCRIPTION_IN_PROGRESS"),
+        ("NEED_MANUAL_REVIEW", "NEED_MANUAL_REVIEW"),
+        ("READY_FOR_TRANSLATION", "READY_FOR_TRANSLATION"),
+        ("READY_FOR_EMBEDDING", "READY_FOR_EMBEDDING"),
+        ("EMBEDDING_EXIST", "EMBEDDING_EXIST"),
+        ("DOCUMENT_INTO_DATABASE", "DOCUMENT_INTO_DATABASE"),
+        ("NEED_CLEAN_TEXT", "NEED_CLEAN_TEXT"),
+        ("NEED_CLEAN_MD", "NEED_CLEAN_MD"),
+        ("TEXT_TO_MD_DONE", "NEED_CLEAN_MD"),
+        ("MD_SIMPLIFIED", "MD_SIMPLIFIED"),
     ])
     def test_valid_states(self, input_str, expected):
         doc = _make_doc()
@@ -256,26 +351,26 @@ class TestSetDocumentState:
 
 
 # ---------------------------------------------------------------------------
-# 5.6b: set_document_state_error()
+# 5.6b: set_document_state_error() — stores string names
 # ---------------------------------------------------------------------------
 
 class TestSetDocumentStateError:
     @pytest.mark.parametrize("input_str, expected", [
-        (None, StalkerDocumentStatusError.NONE),
-        ("NONE", StalkerDocumentStatusError.NONE),
-        ("ERROR_DOWNLOAD", StalkerDocumentStatusError.ERROR_DOWNLOAD),
-        ("LINK_SUMMARY_MISSING", StalkerDocumentStatusError.LINK_SUMMARY_MISSING),
-        ("TITLE_MISSING", StalkerDocumentStatusError.TITLE_MISSING),
-        ("TEXT_MISSING", StalkerDocumentStatusError.TEXT_MISSING),
-        ("TEXT_TRANSLATION_ERROR", StalkerDocumentStatusError.TEXT_TRANSLATION_ERROR),
-        ("TITLE_TRANSLATION_ERROR", StalkerDocumentStatusError.TITLE_TRANSLATION_ERROR),
-        ("SUMMARY_TRANSLATION_ERROR", StalkerDocumentStatusError.SUMMARY_TRANSLATION_ERROR),
-        ("NO_URL_ERROR", StalkerDocumentStatusError.NO_URL_ERROR),
-        ("EMBEDDING_ERROR", StalkerDocumentStatusError.EMBEDDING_ERROR),
-        ("MISSING_TRANSLATION", StalkerDocumentStatusError.MISSING_TRANSLATION),
-        ("TRANSLATION_ERROR", StalkerDocumentStatusError.TRANSLATION_ERROR),
-        ("REGEX_ERROR", StalkerDocumentStatusError.REGEX_ERROR),
-        ("TEXT_TO_MD_ERROR", StalkerDocumentStatusError.TEXT_TO_MD_ERROR),
+        (None, "NONE"),
+        ("NONE", "NONE"),
+        ("ERROR_DOWNLOAD", "ERROR_DOWNLOAD"),
+        ("LINK_SUMMARY_MISSING", "LINK_SUMMARY_MISSING"),
+        ("TITLE_MISSING", "TITLE_MISSING"),
+        ("TEXT_MISSING", "TEXT_MISSING"),
+        ("TEXT_TRANSLATION_ERROR", "TEXT_TRANSLATION_ERROR"),
+        ("TITLE_TRANSLATION_ERROR", "TITLE_TRANSLATION_ERROR"),
+        ("SUMMARY_TRANSLATION_ERROR", "SUMMARY_TRANSLATION_ERROR"),
+        ("NO_URL_ERROR", "NO_URL_ERROR"),
+        ("EMBEDDING_ERROR", "EMBEDDING_ERROR"),
+        ("MISSING_TRANSLATION", "MISSING_TRANSLATION"),
+        ("TRANSLATION_ERROR", "TRANSLATION_ERROR"),
+        ("REGEX_ERROR", "REGEX_ERROR"),
+        ("TEXT_TO_MD_ERROR", "TEXT_TO_MD_ERROR"),
     ])
     def test_valid_errors(self, input_str, expected):
         doc = _make_doc()
@@ -295,7 +390,7 @@ class TestSetDocumentStateError:
 class TestAnalyze:
     def test_skip_when_embedding_exist(self):
         doc = _make_doc(
-            document_state=StalkerDocumentStatus.EMBEDDING_EXIST,
+            document_state="EMBEDDING_EXIST",
             text="some text",
         )
         doc.analyze()
@@ -304,7 +399,7 @@ class TestAnalyze:
     def test_text_raw_copied_from_text_when_missing(self):
         doc = _make_doc(
             text="hello world",
-            document_type=StalkerDocumentType.webpage,
+            document_type="webpage",
         )
         assert doc.text_raw is None
         doc.analyze()
@@ -314,7 +409,7 @@ class TestAnalyze:
         doc = _make_doc(
             text="new text",
             text_raw="original raw",
-            document_type=StalkerDocumentType.webpage,
+            document_type="webpage",
         )
         doc.analyze()
         assert doc.text_raw == "original raw"
@@ -323,7 +418,7 @@ class TestAnalyze:
         doc = _make_doc(
             text="link description",
             text_raw="raw content",
-            document_type=StalkerDocumentType.link,
+            document_type="link",
         )
         doc.analyze()
         assert doc.text is None
@@ -332,7 +427,7 @@ class TestAnalyze:
         doc = _make_doc(
             text="webpage content",
             text_raw="raw content",
-            document_type=StalkerDocumentType.webpage,
+            document_type="webpage",
         )
         doc.analyze()
         assert doc.text == "webpage content"
@@ -344,58 +439,58 @@ class TestAnalyze:
 
 class TestValidate:
     def test_missing_title_sets_need_manual_review(self):
-        doc = _make_doc(title=None, document_type=StalkerDocumentType.movie)
+        doc = _make_doc(title=None, document_type="movie")
         doc.validate()
-        assert doc.document_state == StalkerDocumentStatus.NEED_MANUAL_REVIEW
-        assert doc.document_state_error == StalkerDocumentStatusError.TITLE_MISSING
+        assert doc.document_state == "NEED_MANUAL_REVIEW"
+        assert doc.document_state_error == "TITLE_MISSING"
 
     def test_short_title_sets_need_manual_review(self):
-        doc = _make_doc(title="ab", document_type=StalkerDocumentType.movie)
+        doc = _make_doc(title="ab", document_type="movie")
         doc.validate()
-        assert doc.document_state == StalkerDocumentStatus.NEED_MANUAL_REVIEW
-        assert doc.document_state_error == StalkerDocumentStatusError.TITLE_MISSING
+        assert doc.document_state == "NEED_MANUAL_REVIEW"
+        assert doc.document_state_error == "TITLE_MISSING"
 
     def test_valid_title_no_error(self):
         doc = _make_doc(title="Valid title", summary="Valid summary")
         doc.validate()
-        assert doc.document_state_error == StalkerDocumentStatusError.NONE
+        assert doc.document_state_error == "NONE"
 
     def test_link_missing_summary(self):
         doc = _make_doc(
             title="Valid title",
-            document_type=StalkerDocumentType.link,
+            document_type="link",
             summary=None,
         )
         doc.validate()
-        assert doc.document_state_error == StalkerDocumentStatusError.LINK_SUMMARY_MISSING
+        assert doc.document_state_error == "LINK_SUMMARY_MISSING"
 
     def test_webpage_missing_text(self):
         doc = _make_doc(
             title="Valid title",
-            document_type=StalkerDocumentType.webpage,
+            document_type="webpage",
         )
         doc.validate()
-        assert doc.document_state_error == StalkerDocumentStatusError.TEXT_MISSING
+        assert doc.document_state_error == "TEXT_MISSING"
 
     def test_embedding_exist_skips_validation(self):
         doc = _make_doc(
             title=None,
-            document_state=StalkerDocumentStatus.EMBEDDING_EXIST,
+            document_state="EMBEDDING_EXIST",
         )
         doc.validate()
-        assert doc.document_state_error == StalkerDocumentStatusError.NONE
-        assert doc.document_state == StalkerDocumentStatus.EMBEDDING_EXIST
+        assert doc.document_state_error == "NONE"
+        assert doc.document_state == "EMBEDDING_EXIST"
 
 
 # ---------------------------------------------------------------------------
-# 5.8–5.10: dict()
+# 5.8-5.10: dict()
 # ---------------------------------------------------------------------------
 
 class TestDict:
     def test_dict_has_30_keys(self):
         doc = _make_doc(
             title="Test",
-            document_state_error=StalkerDocumentStatusError.NONE,
+            document_state_error="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
@@ -404,7 +499,7 @@ class TestDict:
     def test_dict_keys(self):
         doc = _make_doc(
             title="Test",
-            document_state_error=StalkerDocumentStatusError.NONE,
+            document_state_error="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
@@ -421,7 +516,7 @@ class TestDict:
 
     def test_dict_formats_created_at(self):
         doc = _make_doc(
-            document_state_error=StalkerDocumentStatusError.NONE,
+            document_state_error="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
@@ -429,15 +524,15 @@ class TestDict:
 
     def test_dict_created_at_none(self):
         doc = _make_doc(
-            document_state_error=StalkerDocumentStatusError.NONE,
+            document_state_error="NONE",
         )
         doc.created_at = None
         result = doc.dict()
         assert result["created_at"] is None
 
-    def test_dict_enum_names(self):
+    def test_dict_string_values(self):
         doc = _make_doc(
-            document_state_error=StalkerDocumentStatusError.NONE,
+            document_state_error="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 1)
         result = doc.dict()
@@ -454,7 +549,7 @@ class TestDict:
 
     def test_dict_navigation_fields(self):
         doc = _make_doc(
-            document_state_error=StalkerDocumentStatusError.NONE,
+            document_state_error="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 1)
         doc.next_id = 42
@@ -484,7 +579,7 @@ class TestWebsiteEmbeddingColumns:
 
 
 # ---------------------------------------------------------------------------
-# 5.12: WebsiteEmbedding FK target
+# 5.12: WebsiteEmbedding FK targets
 # ---------------------------------------------------------------------------
 
 class TestWebsiteEmbeddingFK:
@@ -500,6 +595,11 @@ class TestWebsiteEmbeddingFK:
     def test_model_not_nullable(self):
         col = _get_column(WebsiteEmbedding, "model")
         assert not col.nullable
+
+    def test_model_fk_target(self):
+        col = _get_column(WebsiteEmbedding, "model")
+        fk = list(col.foreign_keys)[0]
+        assert fk.target_fullname == "embedding_models.name"
 
 
 # ---------------------------------------------------------------------------
@@ -527,6 +627,48 @@ class TestEmbeddingsRelationship:
     def test_back_populates(self):
         mapper = inspect(WebsiteEmbedding).mapper
         assert "document" in mapper.relationships
+
+
+# ---------------------------------------------------------------------------
+# Lookup relationship declarations (B-96 Task 9)
+# ---------------------------------------------------------------------------
+
+class TestLookupRelationships:
+    def test_document_type_ref_exists(self):
+        mapper = inspect(WebDocument).mapper
+        assert "document_type_ref" in mapper.relationships
+
+    def test_document_state_ref_exists(self):
+        mapper = inspect(WebDocument).mapper
+        assert "document_state_ref" in mapper.relationships
+
+    def test_document_state_error_ref_exists(self):
+        mapper = inspect(WebDocument).mapper
+        assert "document_state_error_ref" in mapper.relationships
+
+    def test_model_ref_exists_on_embedding(self):
+        mapper = inspect(WebsiteEmbedding).mapper
+        assert "model_ref" in mapper.relationships
+
+    def test_document_type_ref_target(self):
+        mapper = inspect(WebDocument).mapper
+        rel = mapper.relationships["document_type_ref"]
+        assert rel.mapper.class_ is DocumentType
+
+    def test_document_state_ref_target(self):
+        mapper = inspect(WebDocument).mapper
+        rel = mapper.relationships["document_state_ref"]
+        assert rel.mapper.class_ is DocumentStatusType
+
+    def test_document_state_error_ref_target(self):
+        mapper = inspect(WebDocument).mapper
+        rel = mapper.relationships["document_state_error_ref"]
+        assert rel.mapper.class_ is DocumentStatusErrorType
+
+    def test_model_ref_target(self):
+        mapper = inspect(WebsiteEmbedding).mapper
+        rel = mapper.relationships["model_ref"]
+        assert rel.mapper.class_ is EmbeddingModel
 
 
 # ---------------------------------------------------------------------------
@@ -561,24 +703,21 @@ class TestNavigationFields:
 
 
 # ---------------------------------------------------------------------------
-# 5.15: Enums imported from original locations
+# 5.15: Fields store strings (not enums)
 # ---------------------------------------------------------------------------
 
-class TestEnumImports:
-    def test_document_type_enum_is_original(self):
-        from library.models.stalker_document_type import StalkerDocumentType as OrigType
+class TestFieldsAreStrings:
+    def test_document_type_is_string(self):
         doc = _make_doc()
-        assert type(doc.document_type) is OrigType
+        assert isinstance(doc.document_type, str)
 
-    def test_document_state_enum_is_original(self):
-        from library.models.stalker_document_status import StalkerDocumentStatus as OrigStatus
+    def test_document_state_is_string(self):
         doc = _make_doc()
-        assert type(doc.document_state) is OrigStatus
+        assert isinstance(doc.document_state, str)
 
-    def test_document_state_error_enum_is_original(self):
-        from library.models.stalker_document_status_error import StalkerDocumentStatusError as OrigError
-        doc = _make_doc(document_state_error=StalkerDocumentStatusError.NONE)
-        assert type(doc.document_state_error) is OrigError
+    def test_document_state_error_is_string_when_set(self):
+        doc = _make_doc(document_state_error="NONE")
+        assert isinstance(doc.document_state_error, str)
 
 
 # ---------------------------------------------------------------------------

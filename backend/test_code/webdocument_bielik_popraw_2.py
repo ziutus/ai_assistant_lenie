@@ -1,13 +1,12 @@
 from library.ai import ai_ask
-from library.stalker_web_document_db import StalkerWebDocumentDB
-from dotenv import load_dotenv
+from unified_config_loader import load_config
 
 
-load_dotenv()
+load_config()
 
 
 # print(web_doc.text)
-prompt = f"""
+prompt = """
     Popraw interpunkcję i składnę tekstu poniżej:
 
 Rosja w zasadzie przegrała swoją

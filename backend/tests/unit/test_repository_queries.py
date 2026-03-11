@@ -11,8 +11,8 @@ import pytest
 pytest.importorskip("sqlalchemy")
 
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.models.stalker_document_status import StalkerDocumentStatus
-from library.models.stalker_document_type import StalkerDocumentType
+from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: F401
+from library.models.stalker_document_type import StalkerDocumentType  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -71,9 +71,9 @@ class TestGetList:
         mock_row.id = 1
         mock_row.url = "https://example.com"
         mock_row.title = "Test"
-        mock_row.document_type = StalkerDocumentType.webpage
+        mock_row.document_type = "webpage"
         mock_row.created_at = datetime.datetime(2026, 1, 15, 10, 30, 0)
-        mock_row.document_state = StalkerDocumentStatus.URL_ADDED
+        mock_row.document_state = "URL_ADDED"
         mock_row.document_state_error = None
         mock_row.note = "note"
         mock_row.project = "lenie"
@@ -182,20 +182,19 @@ class TestGetList:
         assert result == []
         session.execute.assert_called_once()
 
-    def test_document_state_error_with_enum(self):
-        """document_state_error should serialize enum .name or None."""
+    def test_document_state_error_with_string(self):
+        """document_state_error should be passed through as string or None."""
         session = MagicMock()
         repo = _make_repo(session)
 
-        from library.models.stalker_document_status_error import StalkerDocumentStatusError
         mock_row = MagicMock()
         mock_row.id = 2
         mock_row.url = "https://example.com/2"
         mock_row.title = "Test 2"
-        mock_row.document_type = StalkerDocumentType.link
+        mock_row.document_type = "link"
         mock_row.created_at = datetime.datetime(2026, 2, 1, 8, 0, 0)
-        mock_row.document_state = StalkerDocumentStatus.ERROR
-        mock_row.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD
+        mock_row.document_state = "ERROR"
+        mock_row.document_state_error = "ERROR_DOWNLOAD"
         mock_row.note = None
         mock_row.project = None
         mock_row.s3_uuid = None
@@ -267,9 +266,9 @@ class TestGetCountByType:
         repo = _make_repo(session)
 
         mock_rows = [
-            (StalkerDocumentType.webpage, 80),
-            (StalkerDocumentType.youtube, 40),
-            (StalkerDocumentType.link, 30),
+            ("webpage", 80),
+            ("youtube", 40),
+            ("link", 30),
         ]
         session.execute.return_value.all.return_value = mock_rows
 
@@ -300,7 +299,7 @@ class TestGetReadyForDownload:
         session = MagicMock()
         repo = _make_repo(session)
 
-        row = _make_row(id=1, url="https://example.com", document_type=StalkerDocumentType.webpage, s3_uuid="uuid-1")
+        row = _make_row(id=1, url="https://example.com", document_type="webpage", s3_uuid="uuid-1")
         session.execute.return_value.all.return_value = [row]
 
         result = repo.get_ready_for_download()
@@ -328,9 +327,9 @@ class TestGetYoutubeJustAdded:
         session = MagicMock()
         repo = _make_repo(session)
 
-        row1 = _make_row(id=1, url="https://youtube.com/1", document_type=StalkerDocumentType.youtube,
+        row1 = _make_row(id=1, url="https://youtube.com/1", document_type="youtube",
                          language="en", chapter_list="ch1", ai_summary_needed=True)
-        row2 = _make_row(id=2, url="https://youtube.com/2", document_type=StalkerDocumentType.youtube,
+        row2 = _make_row(id=2, url="https://youtube.com/2", document_type="youtube",
                          language="pl", chapter_list=None, ai_summary_needed=False)
         session.execute.return_value.all.return_value = [row1, row2]
 
@@ -387,7 +386,7 @@ class TestGetNextToCorrect:
         session = MagicMock()
         repo = _make_repo(session)
 
-        mock_row = (11, StalkerDocumentType.webpage)
+        mock_row = (11, "webpage")
         session.execute.return_value.first.return_value = mock_row
 
         result = repo.get_next_to_correct(10)
@@ -407,7 +406,7 @@ class TestGetNextToCorrect:
         session = MagicMock()
         repo = _make_repo(session)
 
-        mock_row = (15, StalkerDocumentType.link)
+        mock_row = (15, "link")
         session.execute.return_value.first.return_value = mock_row
 
         result = repo.get_next_to_correct(10, document_type="link")
@@ -418,7 +417,7 @@ class TestGetNextToCorrect:
         session = MagicMock()
         repo = _make_repo(session)
 
-        mock_row = (20, StalkerDocumentType.youtube)
+        mock_row = (20, "youtube")
         session.execute.return_value.first.return_value = mock_row
 
         result = repo.get_next_to_correct(10, document_state="NEED_MANUAL_REVIEW")
@@ -464,8 +463,8 @@ class TestLoadNeighbors:
         doc = MagicMock()
         doc.id = 10
 
-        next_row = (11, StalkerDocumentType.link)
-        prev_row = (9, StalkerDocumentType.youtube)
+        next_row = (11, "link")
+        prev_row = (9, "youtube")
         session.execute.side_effect = [
             MagicMock(first=MagicMock(return_value=next_row)),
             MagicMock(first=MagicMock(return_value=prev_row)),
@@ -485,7 +484,7 @@ class TestLoadNeighbors:
         doc = MagicMock()
         doc.id = 10
 
-        next_row = (11, StalkerDocumentType.webpage)
+        next_row = (11, "webpage")
         session.execute.side_effect = [
             MagicMock(first=MagicMock(return_value=next_row)),
             MagicMock(first=MagicMock(return_value=None)),
@@ -507,7 +506,7 @@ class TestLoadNeighbors:
 
         session.execute.side_effect = [
             MagicMock(first=MagicMock(return_value=None)),
-            MagicMock(first=MagicMock(return_value=(9, StalkerDocumentType.link))),
+            MagicMock(first=MagicMock(return_value=(9, "link"))),
         ]
 
         repo.load_neighbors(doc)

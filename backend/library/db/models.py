@@ -1,6 +1,8 @@
 """SQLAlchemy ORM models for web_documents and websites_embeddings tables.
 
 Provides:
+- Lookup models: ``DocumentStatusType``, ``DocumentStatusErrorType``,
+  ``DocumentType``, ``EmbeddingModel``
 - ``WebDocument`` — Single Table Inheritance model for web_documents
 - 6 STI subclasses: LinkDocument, YouTubeDocument, MovieDocument, etc.
 - ``WebsiteEmbedding`` — model for websites_embeddings with pgvector support
@@ -13,7 +15,6 @@ from sqlalchemy import (
     Boolean,
     Date,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Integer,
     String,
@@ -31,6 +32,51 @@ from library.models.stalker_document_status_error import StalkerDocumentStatusEr
 from library.models.stalker_document_type import StalkerDocumentType
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Lookup tables (B-94/B-95 — DDL, B-96 — ORM models)
+# ---------------------------------------------------------------------------
+
+
+class DocumentStatusType(Base):
+    __tablename__ = "document_status_types"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"DocumentStatusType(id={self.id!r}, name={self.name!r})"
+
+
+class DocumentStatusErrorType(Base):
+    __tablename__ = "document_status_error_types"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"DocumentStatusErrorType(id={self.id!r}, name={self.name!r})"
+
+
+class DocumentType(Base):
+    __tablename__ = "document_types"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"DocumentType(id={self.id!r}, name={self.name!r})"
+
+
+class EmbeddingModel(Base):
+    __tablename__ = "embedding_models"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"EmbeddingModel(id={self.id!r}, name={self.name!r})"
 
 
 # ---------------------------------------------------------------------------
@@ -56,15 +102,9 @@ class WebDocument(Base):
         DateTime, server_default=sa_text("CURRENT_TIMESTAMP"),
     )
 
-    # Enums — stored as VARCHAR, not native PostgreSQL ENUM types
-    document_type: Mapped[StalkerDocumentType] = mapped_column(
-        SAEnum(
-            StalkerDocumentType,
-            values_callable=lambda x: [e.name for e in x],
-            native_enum=False,
-            length=50,
-        ),
-        nullable=False,
+    # FK columns — reference lookup tables by name (ADR-010)
+    document_type: Mapped[str] = mapped_column(
+        String(50), ForeignKey("document_types.name"), nullable=False,
     )
 
     source: Mapped[str | None] = mapped_column(Text)
@@ -73,24 +113,12 @@ class WebDocument(Base):
     document_length: Mapped[int | None] = mapped_column(Integer)
     chapter_list: Mapped[str | None] = mapped_column(Text)
 
-    document_state: Mapped[StalkerDocumentStatus] = mapped_column(
-        SAEnum(
-            StalkerDocumentStatus,
-            values_callable=lambda x: [e.name for e in x],
-            native_enum=False,
-            length=50,
-        ),
-        nullable=False,
-        server_default="URL_ADDED",
+    document_state: Mapped[str] = mapped_column(
+        String(50), ForeignKey("document_status_types.name"),
+        nullable=False, server_default="URL_ADDED",
     )
-    document_state_error: Mapped[StalkerDocumentStatusError | None] = mapped_column(
-        SAEnum(
-            StalkerDocumentStatusError,
-            values_callable=lambda x: [e.name for e in x],
-            native_enum=False,
-            # No explicit length — DDL column is TEXT, not VARCHAR(50).
-            # Alembic (Story 26.3) must handle this drift consciously.
-        ),
+    document_state_error: Mapped[str | None] = mapped_column(
+        String, ForeignKey("document_status_error_types.name"), nullable=True,
     )
 
     text_raw: Mapped[str | None] = mapped_column(Text)
@@ -102,6 +130,17 @@ class WebDocument(Base):
     project: Mapped[str | None] = mapped_column(String(100))
     text_md: Mapped[str | None] = mapped_column(Text)
     transcript_needed: Mapped[bool | None] = mapped_column(Boolean, server_default=sa_text("false"))
+
+    # Lookup-table relationships (many-to-one)
+    document_type_ref: Mapped["DocumentType"] = relationship(
+        foreign_keys=[document_type],
+    )
+    document_state_ref: Mapped["DocumentStatusType"] = relationship(
+        foreign_keys=[document_state],
+    )
+    document_state_error_ref: Mapped["DocumentStatusErrorType | None"] = relationship(
+        foreign_keys=[document_state_error],
+    )
 
     # Relationship to embeddings
     embeddings: Mapped[list["WebsiteEmbedding"]] = relationship(
@@ -132,7 +171,7 @@ class WebDocument(Base):
         ).first()
         if next_row is not None:
             doc.next_id = next_row[0]
-            doc.next_type = next_row[1].name if hasattr(next_row[1], "name") else next_row[1]
+            doc.next_type = next_row[1]
         else:
             doc.next_id = None
             doc.next_type = None
@@ -145,7 +184,7 @@ class WebDocument(Base):
         ).first()
         if prev_row is not None:
             doc.previous_id = prev_row[0]
-            doc.previous_type = prev_row[1].name if hasattr(prev_row[1], "name") else prev_row[1]
+            doc.previous_type = prev_row[1]
         else:
             doc.previous_id = None
             doc.previous_type = None
@@ -175,17 +214,17 @@ class WebDocument(Base):
 
     def set_document_type(self, document_type: str) -> None:
         if document_type == "movie":
-            self.document_type = StalkerDocumentType.movie
+            self.document_type = StalkerDocumentType.movie.name
         elif document_type == "youtube":
-            self.document_type = StalkerDocumentType.youtube
+            self.document_type = StalkerDocumentType.youtube.name
         elif document_type == "link":
-            self.document_type = StalkerDocumentType.link
+            self.document_type = StalkerDocumentType.link.name
         elif document_type in ["webpage", "website"]:
-            self.document_type = StalkerDocumentType.webpage
+            self.document_type = StalkerDocumentType.webpage.name
         elif document_type in ["sms", "text_message"]:
-            self.document_type = StalkerDocumentType.text_message
+            self.document_type = StalkerDocumentType.text_message.name
         elif document_type in ["text"]:
-            self.document_type = StalkerDocumentType.text
+            self.document_type = StalkerDocumentType.text.name
         else:
             raise ValueError(
                 f"document_type must be either 'movie', 'webpage', 'text_message', 'text' or 'link' not >{document_type}<"
@@ -193,106 +232,103 @@ class WebDocument(Base):
 
     def set_document_state(self, document_state: str) -> None:
         if document_state in ["ERROR_DOWNLOAD", "ERROR"]:
-            self.document_state = StalkerDocumentStatus.ERROR
+            self.document_state = StalkerDocumentStatus.ERROR.name
         elif document_state == "URL_ADDED":
-            self.document_state = StalkerDocumentStatus.URL_ADDED
+            self.document_state = StalkerDocumentStatus.URL_ADDED.name
         elif document_state == "NEED_TRANSCRIPTION":
-            self.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION
+            self.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION.name
         elif document_state == "TRANSCRIPTION_DONE":
-            self.document_state = StalkerDocumentStatus.TRANSCRIPTION_DONE
+            self.document_state = StalkerDocumentStatus.TRANSCRIPTION_DONE.name
         elif document_state == "TRANSCRIPTION_IN_PROGRESS":
-            self.document_state = StalkerDocumentStatus.TRANSCRIPTION_IN_PROGRESS
+            self.document_state = StalkerDocumentStatus.TRANSCRIPTION_IN_PROGRESS.name
         elif document_state == "NEED_MANUAL_REVIEW":
-            self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+            self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
         elif document_state == "READY_FOR_TRANSLATION":
-            self.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION
+            self.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION.name
         elif document_state == "READY_FOR_EMBEDDING":
-            self.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
+            self.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING.name
         elif document_state == "EMBEDDING_EXIST":
-            self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
+            self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
         elif document_state == "DOCUMENT_INTO_DATABASE":
-            self.document_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE
+            self.document_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name
         elif document_state == "NEED_CLEAN_TEXT":
-            self.document_state = StalkerDocumentStatus.NEED_CLEAN_TEXT
+            self.document_state = StalkerDocumentStatus.NEED_CLEAN_TEXT.name
         elif document_state == "NEED_CLEAN_MD":
-            self.document_state = StalkerDocumentStatus.NEED_CLEAN_MD
+            self.document_state = StalkerDocumentStatus.NEED_CLEAN_MD.name
         elif document_state == "TEXT_TO_MD_DONE":
-            self.document_state = StalkerDocumentStatus.NEED_CLEAN_MD
+            self.document_state = StalkerDocumentStatus.NEED_CLEAN_MD.name
         elif document_state == "MD_SIMPLIFIED":
-            self.document_state = StalkerDocumentStatus.MD_SIMPLIFIED
+            self.document_state = StalkerDocumentStatus.MD_SIMPLIFIED.name
         else:
             raise ValueError("document_state must be one of the valid StalkerDocumentStatus values")
 
     def set_document_state_error(self, document_state_error: str | None) -> None:
         if document_state_error is None or document_state_error == "NONE":
-            self.document_state_error = StalkerDocumentStatusError.NONE
+            self.document_state_error = StalkerDocumentStatusError.NONE.name
         elif document_state_error == "ERROR_DOWNLOAD":
-            self.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD
+            self.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD.name
         elif document_state_error == "LINK_SUMMARY_MISSING":
-            self.document_state_error = StalkerDocumentStatusError.LINK_SUMMARY_MISSING
+            self.document_state_error = StalkerDocumentStatusError.LINK_SUMMARY_MISSING.name
         elif document_state_error == "TITLE_MISSING":
-            self.document_state_error = StalkerDocumentStatusError.TITLE_MISSING
+            self.document_state_error = StalkerDocumentStatusError.TITLE_MISSING.name
         elif document_state_error == "TEXT_MISSING":
-            self.document_state_error = StalkerDocumentStatusError.TEXT_MISSING
+            self.document_state_error = StalkerDocumentStatusError.TEXT_MISSING.name
         elif document_state_error == "TEXT_TRANSLATION_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.TEXT_TRANSLATION_ERROR
+            self.document_state_error = StalkerDocumentStatusError.TEXT_TRANSLATION_ERROR.name
         elif document_state_error == "TITLE_TRANSLATION_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.TITLE_TRANSLATION_ERROR
+            self.document_state_error = StalkerDocumentStatusError.TITLE_TRANSLATION_ERROR.name
         elif document_state_error == "SUMMARY_TRANSLATION_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.SUMMARY_TRANSLATION_ERROR
+            self.document_state_error = StalkerDocumentStatusError.SUMMARY_TRANSLATION_ERROR.name
         elif document_state_error == "NO_URL_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.NO_URL_ERROR
+            self.document_state_error = StalkerDocumentStatusError.NO_URL_ERROR.name
         elif document_state_error == "EMBEDDING_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.EMBEDDING_ERROR
+            self.document_state_error = StalkerDocumentStatusError.EMBEDDING_ERROR.name
         elif document_state_error == "MISSING_TRANSLATION":
-            self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION
+            self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION.name
         elif document_state_error == "TRANSLATION_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR
+            self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR.name
         elif document_state_error == "REGEX_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.REGEX_ERROR
+            self.document_state_error = StalkerDocumentStatusError.REGEX_ERROR.name
         elif document_state_error == "TEXT_TO_MD_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR
+            self.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR.name
         else:
             raise ValueError(
                 f"document_state_error must be one of the valid StalkerDocumentStatusError values, not >{document_state_error}<"
             )
 
     def analyze(self) -> None:
-        if self.document_state == StalkerDocumentStatus.EMBEDDING_EXIST:
+        if self.document_state == StalkerDocumentStatus.EMBEDDING_EXIST.name:
             return None
 
         if not self.text_raw:
             logger.info("This is adding new entry, so raw text is equal to text")
             self.text_raw = self.text
 
-        if self.document_type == StalkerDocumentType.link:
+        if self.document_type == StalkerDocumentType.link.name:
             self.text = None
 
     def validate(self) -> None:
-        self.document_state_error = StalkerDocumentStatusError.NONE
+        self.document_state_error = StalkerDocumentStatusError.NONE.name
 
-        if self.document_state == StalkerDocumentStatus.EMBEDDING_EXIST:
+        if self.document_state == StalkerDocumentStatus.EMBEDDING_EXIST.name:
             return None
 
         if not self.title or len(self.title) < 3:
-            self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-            self.document_state_error = StalkerDocumentStatusError.TITLE_MISSING
+            self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+            self.document_state_error = StalkerDocumentStatusError.TITLE_MISSING.name
 
-        if self.document_type == StalkerDocumentType.link:
+        if self.document_type == StalkerDocumentType.link.name:
             if not self.summary or len(self.summary) < 3:
-                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-                self.document_state_error = StalkerDocumentStatusError.LINK_SUMMARY_MISSING
+                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+                self.document_state_error = StalkerDocumentStatusError.LINK_SUMMARY_MISSING.name
 
-        if self.document_type == StalkerDocumentType.webpage:
+        if self.document_type == StalkerDocumentType.webpage.name:
             if not self.text or len(self.text) < 3:
-                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
-                self.document_state_error = StalkerDocumentStatusError.TEXT_MISSING
+                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+                self.document_state_error = StalkerDocumentStatusError.TEXT_MISSING.name
 
     def dict(self):
         created_at_str = self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None
-        document_state_error_name = (
-            self.document_state_error.name if self.document_state_error else "NONE"
-        )
         return {
             "id": self.id,
             "next_id": self.next_id,
@@ -307,14 +343,14 @@ class WebDocument(Base):
             "paywall": self.paywall,
             "title": self.title,
             "created_at": created_at_str,
-            "document_type": self.document_type.name,
+            "document_type": self.document_type,
             "source": self.source,
             "date_from": self.date_from,
             "original_id": self.original_id,
             "document_length": self.document_length,
             "chapter_list": self.chapter_list,
-            "document_state": self.document_state.name,
-            "document_state_error": document_state_error_name,
+            "document_state": self.document_state,
+            "document_state_error": self.document_state_error or "NONE",
             "text_raw": self.text_raw,
             "transcript_job_id": self.transcript_job_id,
             "ai_summary_needed": self.ai_summary_needed,
@@ -333,27 +369,27 @@ class WebDocument(Base):
 
 
 class LinkDocument(WebDocument):
-    __mapper_args__ = {"polymorphic_identity": StalkerDocumentType.link}
+    __mapper_args__ = {"polymorphic_identity": "link"}
 
 
 class YouTubeDocument(WebDocument):
-    __mapper_args__ = {"polymorphic_identity": StalkerDocumentType.youtube}
+    __mapper_args__ = {"polymorphic_identity": "youtube"}
 
 
 class MovieDocument(WebDocument):
-    __mapper_args__ = {"polymorphic_identity": StalkerDocumentType.movie}
+    __mapper_args__ = {"polymorphic_identity": "movie"}
 
 
 class WebpageDocument(WebDocument):
-    __mapper_args__ = {"polymorphic_identity": StalkerDocumentType.webpage}
+    __mapper_args__ = {"polymorphic_identity": "webpage"}
 
 
 class TextMessageDocument(WebDocument):
-    __mapper_args__ = {"polymorphic_identity": StalkerDocumentType.text_message}
+    __mapper_args__ = {"polymorphic_identity": "text_message"}
 
 
 class TextDocument(WebDocument):
-    __mapper_args__ = {"polymorphic_identity": StalkerDocumentType.text}
+    __mapper_args__ = {"polymorphic_identity": "text"}
 
 
 # ---------------------------------------------------------------------------
@@ -373,10 +409,13 @@ class WebsiteEmbedding(Base):
     text: Mapped[str | None] = mapped_column(Text)
     text_original: Mapped[str | None] = mapped_column(Text)
     embedding: Mapped[list | None] = mapped_column(Vector(), nullable=True)
-    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    model: Mapped[str] = mapped_column(
+        String(100), ForeignKey("embedding_models.name"), nullable=False,
+    )
     created_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime, server_default=sa_text("CURRENT_TIMESTAMP"),
     )
 
-    # Relationship back to document
+    # Relationships
     document: Mapped["WebDocument"] = relationship(back_populates="embeddings")
+    model_ref: Mapped["EmbeddingModel"] = relationship(foreign_keys=[model])

@@ -66,8 +66,8 @@ if __name__ == '__main__':
             html = download_raw_html(url=doc.url)
             if not html:
                 print("empty response! [ERROR]")
-                doc.document_state = StalkerDocumentStatus.ERROR
-                doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD
+                doc.document_state = StalkerDocumentStatus.ERROR.name
+                doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD.name
                 session.commit()
                 continue
 

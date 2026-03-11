@@ -20,9 +20,6 @@ from library.db.models import (
     TextDocument,
     WebsiteEmbedding,
 )
-from library.models.stalker_document_status import StalkerDocumentStatus
-from library.models.stalker_document_status_error import StalkerDocumentStatusError
-from library.models.stalker_document_type import StalkerDocumentType
 
 
 # ---------------------------------------------------------------------------
@@ -36,8 +33,8 @@ def _make_doc(**overrides):
         "id": 42,
         "url": "https://example.com/article",
         "title": "Test Article",
-        "document_type": StalkerDocumentType.webpage,
-        "document_state": StalkerDocumentStatus.URL_ADDED,
+        "document_type": "webpage",
+        "document_state": "URL_ADDED",
         "created_at": datetime.datetime(2026, 1, 15, 10, 30, 0),
     }
     defaults.update(overrides)
@@ -77,8 +74,8 @@ class TestGetById:
         session.get.return_value = doc
 
         # Mock execute to return next and previous rows
-        next_row = (11, StalkerDocumentType.link)
-        prev_row = (9, StalkerDocumentType.youtube)
+        next_row = (11, "link")
+        prev_row = (9, "youtube")
         session.execute.side_effect = [
             MagicMock(first=MagicMock(return_value=next_row)),
             MagicMock(first=MagicMock(return_value=prev_row)),
@@ -195,8 +192,8 @@ class TestCreateFlow:
         """Verify WebDocument can be constructed and added to session (interface contract)."""
         doc = WebDocument(
             url="https://example.com/new",
-            document_type=StalkerDocumentType.webpage,
-            document_state=StalkerDocumentStatus.URL_ADDED,
+            document_type="webpage",
+            document_state="URL_ADDED",
         )
         session = MagicMock()
 
@@ -220,14 +217,14 @@ class TestCreateFlow:
         doc.paywall = False
         doc.title = "Test Title"
         doc.created_at = now
-        doc.document_type = StalkerDocumentType.webpage
+        doc.document_type = "webpage"
         doc.source = "manual"
         doc.date_from = datetime.date(2026, 3, 1)
         doc.original_id = "orig-123"
         doc.document_length = 500
         doc.chapter_list = "ch1;ch2"
-        doc.document_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE
-        doc.document_state_error = StalkerDocumentStatusError.NONE
+        doc.document_state = "DOCUMENT_INTO_DATABASE"
+        doc.document_state_error = "NONE"
         doc.text_raw = "Raw text"
         doc.transcript_job_id = "job-abc"
         doc.ai_summary_needed = True
@@ -269,16 +266,16 @@ class TestCreateFlow:
     def test_sti_subclass_sets_correct_document_type(self):
         """Each STI subclass should have correct document_type."""
         cases = [
-            (LinkDocument, StalkerDocumentType.link),
-            (YouTubeDocument, StalkerDocumentType.youtube),
-            (MovieDocument, StalkerDocumentType.movie),
-            (WebpageDocument, StalkerDocumentType.webpage),
-            (TextMessageDocument, StalkerDocumentType.text_message),
-            (TextDocument, StalkerDocumentType.text),
+            (LinkDocument, "link"),
+            (YouTubeDocument, "youtube"),
+            (MovieDocument, "movie"),
+            (WebpageDocument, "webpage"),
+            (TextMessageDocument, "text_message"),
+            (TextDocument, "text"),
         ]
         for cls, expected_type in cases:
-            doc = cls(url="https://test.com", document_state=StalkerDocumentStatus.URL_ADDED)
-            assert doc.document_type == expected_type, f"{cls.__name__} should have type {expected_type.name}"
+            doc = cls(url="https://test.com", document_state="URL_ADDED")
+            assert doc.document_type == expected_type, f"{cls.__name__} should have type {expected_type}"
 
 
 # ===================================================================
@@ -294,9 +291,9 @@ class TestUpdateFlow:
         assert doc.title == "New Title"
 
     def test_update_enum_via_set_document_state(self):
-        doc = _make_doc(document_state=StalkerDocumentStatus.URL_ADDED)
+        doc = _make_doc(document_state="URL_ADDED")
         doc.set_document_state("DOCUMENT_INTO_DATABASE")
-        assert doc.document_state == StalkerDocumentStatus.DOCUMENT_INTO_DATABASE
+        assert doc.document_state == "DOCUMENT_INTO_DATABASE"
 
     def test_none_values_stored_correctly(self):
         doc = _make_doc(title="Has Title", tags="some,tags")
@@ -361,21 +358,21 @@ class TestDictCompatibility:
         assert d["created_at"] is None
 
     def test_enum_format_document_type(self):
-        """document_type should be enum .name string."""
-        doc = _make_doc(document_type=StalkerDocumentType.youtube)
+        """document_type should be a string."""
+        doc = _make_doc(document_type="youtube")
         d = doc.dict()
         assert d["document_type"] == "youtube"
         assert isinstance(d["document_type"], str)
 
     def test_enum_format_document_state(self):
-        """document_state should be enum .name string."""
-        doc = _make_doc(document_state=StalkerDocumentStatus.EMBEDDING_EXIST)
+        """document_state should be a string."""
+        doc = _make_doc(document_state="EMBEDDING_EXIST")
         d = doc.dict()
         assert d["document_state"] == "EMBEDDING_EXIST"
 
     def test_enum_format_document_state_error(self):
-        """document_state_error should be enum .name string, defaulting to 'NONE'."""
-        doc = _make_doc(document_state_error=StalkerDocumentStatusError.TEXT_MISSING)
+        """document_state_error should be a string, defaulting to 'NONE'."""
+        doc = _make_doc(document_state_error="TEXT_MISSING")
         d = doc.dict()
         assert d["document_state_error"] == "TEXT_MISSING"
 
@@ -413,8 +410,8 @@ class TestDictCompatibility:
         doc = WebDocument()
         doc.id = None
         doc.url = "https://x.com"
-        doc.document_type = StalkerDocumentType.link
-        doc.document_state = StalkerDocumentStatus.URL_ADDED
+        doc.document_type = "link"
+        doc.document_state = "URL_ADDED"
         doc.created_at = None
         doc.document_state_error = None
 
@@ -446,14 +443,14 @@ class TestDictCompatibility:
             paywall=True,
             title="Title",
             created_at=now,
-            document_type=StalkerDocumentType.link,
+            document_type="link",
             source="import",
             date_from=datetime.date(2026, 2, 20),
             original_id="orig-1",
             document_length=200,
             chapter_list="ch1",
-            document_state=StalkerDocumentStatus.EMBEDDING_EXIST,
-            document_state_error=StalkerDocumentStatusError.NONE,
+            document_state="EMBEDDING_EXIST",
+            document_state_error="NONE",
             text_raw="Raw",
             transcript_job_id="j1",
             ai_summary_needed=False,

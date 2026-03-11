@@ -97,11 +97,11 @@ def process_entry(entry: dict, session) -> str:
 
     hostname = urlparse(url).hostname or ""
     if hostname in ("youtube.com", "www.youtube.com", "m.youtube.com") or hostname == "youtu.be":
-        doc.document_type = StalkerDocumentType.youtube
-        doc.document_state = StalkerDocumentStatus.URL_ADDED
+        doc.document_type = StalkerDocumentType.youtube.name
+        doc.document_state = StalkerDocumentStatus.URL_ADDED.name
     else:
-        doc.document_type = StalkerDocumentType.link
-        doc.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
+        doc.document_type = StalkerDocumentType.link.name
+        doc.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING.name
 
     doc.source = SOURCE
     doc.date_from = entry['date']
