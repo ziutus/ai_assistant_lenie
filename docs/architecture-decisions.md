@@ -564,12 +564,28 @@ Add a startup check or Alembic migration that inserts missing enum values into l
 - **Negative:** FK constraints may complicate bulk data imports if values are inserted before lookup tables are populated.
 - **Trade-off:** FK references `name` (not `id`) — more readable in raw SQL but slightly less efficient for joins. Acceptable for the table sizes involved (< 20 rows each).
 
+### Why Python Enums Are Kept Alongside DB FK Constraints (B-96)
+
+After completing Phase 2 (ORM model updates with `String` + `ForeignKey`), the question arose: why keep Python enums (`StalkerDocumentType`, `StalkerDocumentStatus`, `StalkerDocumentStatusError`) if the database already enforces valid values via FK constraints?
+
+**Decision:** Keep Python enums as the source of truth. Reasons:
+
+1. **Early validation.** Setter methods (`set_document_type()`, `set_document_state()`, `set_document_state_error()`) raise `ValueError` immediately when called with invalid input. Without enums, the error would only surface at `session.commit()` as an `IntegrityError` — harder to debug and further from the source of the bug.
+
+2. **Input aliases.** Setters accept aliases like `"website"` → `"webpage"`, `"sms"` → `"text_message"`, `"ERROR_DOWNLOAD"` → `"ERROR"`. The database FK cannot handle this mapping — it only validates exact values.
+
+3. **IDE autocomplete.** `StalkerDocumentStatus.EMBEDDING_EXIST` provides autocomplete and typo detection in editors. Raw strings like `"EMBEDDING_EXIST"` do not.
+
+4. **Two-layer defense.** Python enums catch bugs at application level; FK constraints catch bugs at data level (manual SQL, import scripts, other clients). Neither layer alone covers all cases.
+
+The ORM columns store the enum `.name` string (e.g., `StalkerDocumentStatus.ERROR.name` → `"ERROR"`). This keeps the database portable and human-readable while maintaining Python-level type safety.
+
 ### Related Artifacts
 
 - `backend/library/models/stalker_document_status.py` — 16 document states
 - `backend/library/models/stalker_document_status_error.py` — 17 error types
 - `backend/library/models/stalker_document_type.py` — 6 document types
-- `backend/library/db/models.py` — SQLAlchemy ORM models (lines 59-92, `SAEnum` definitions)
+- `backend/library/db/models.py` — SQLAlchemy ORM models with `String` + `ForeignKey` (B-96)
 - `backend/database/init/03-create-table.sql` — `web_documents` table (no FK constraints)
 - `backend/database/init/04-create-table.sql` — `websites_embeddings` table (no FK constraints)
 - `backend/tmp/sql_data/lenie_aws-2026_01_23_05_00_40-dump.sql` — AWS dump with lookup tables and FK constraints

@@ -6,8 +6,8 @@ import pytest
 
 sa = pytest.importorskip("sqlalchemy")
 
-from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: E402
-from library.models.stalker_document_type import StalkerDocumentType  # noqa: E402
+from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: E402, F401
+from library.models.stalker_document_type import StalkerDocumentType  # noqa: E402, F401
 
 
 # ---------------------------------------------------------------------------
@@ -114,8 +114,8 @@ class TestUnknownNewsImportORM:
         entry = _feed_entry(url="https://www.youtube.com/watch?v=abc123")
         process_entry(entry, session)
 
-        assert mock_doc.document_type == StalkerDocumentType.youtube
-        assert mock_doc.document_state == StalkerDocumentStatus.URL_ADDED
+        assert mock_doc.document_type == "youtube"
+        assert mock_doc.document_state == "URL_ADDED"
 
     @patch("imports.unknown_news_import.WebDocument")
     def test_regular_link_type(self, MockWebDoc):
@@ -132,5 +132,5 @@ class TestUnknownNewsImportORM:
         entry = _feed_entry()
         process_entry(entry, session)
 
-        assert mock_doc.document_type == StalkerDocumentType.link
-        assert mock_doc.document_state == StalkerDocumentStatus.READY_FOR_EMBEDDING
+        assert mock_doc.document_type == "link"
+        assert mock_doc.document_state == "READY_FOR_EMBEDDING"

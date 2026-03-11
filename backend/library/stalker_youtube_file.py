@@ -4,7 +4,11 @@ from pprint import pprint
 from urllib.parse import urlparse, parse_qs
 
 from pytubefix import YouTube
-from yt_dlp import YoutubeDL
+
+try:
+    from yt_dlp import YoutubeDL
+except ImportError:
+    YoutubeDL = None
 
 from library.text_transcript import text_split_with_chapters
 
@@ -28,7 +32,7 @@ class StalkerYoutubeFile:
         self.private = False
 
         self.can_pytube: bool = True
-        self.can_YoutubeDL: bool = True
+        self.can_YoutubeDL: bool = YoutubeDL is not None
 
         self.title = None
         self.author = None
@@ -151,7 +155,7 @@ class StalkerYoutubeFile:
                     self.valid = False
                     self.error = "Can't find stream for this youtube video"
                     raise Exception("Can't find stream for this youtube video")
-            elif self.can_YoutubeDL:
+            elif self.can_YoutubeDL and YoutubeDL is not None:
                 ydl_opts = {
                     'cookiefile': 'cookies.txt',
                     'outtmpl': f"{self.directory}/{self.filename}",

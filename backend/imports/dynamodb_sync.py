@@ -189,9 +189,9 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
             doc.text_raw = html_content
 
         if text_content or html_content:
-            doc.document_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE
+            doc.document_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name
         else:
-            doc.document_state = StalkerDocumentStatus.URL_ADDED
+            doc.document_state = StalkerDocumentStatus.URL_ADDED.name
 
         session.add(doc)
         session.commit()

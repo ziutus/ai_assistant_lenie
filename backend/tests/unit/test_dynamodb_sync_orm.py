@@ -6,7 +6,7 @@ import pytest
 
 sa = pytest.importorskip("sqlalchemy")
 
-from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: E402
+from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: E402, F401
 
 
 # ---------------------------------------------------------------------------
@@ -131,7 +131,7 @@ class TestSyncItemToPostgres:
         item = _dynamo_item()
         sync_item_to_postgres(item, "some text", "<html>", dry_run=False, session=session)
 
-        assert mock_doc.document_state == StalkerDocumentStatus.DOCUMENT_INTO_DATABASE
+        assert mock_doc.document_state == "DOCUMENT_INTO_DATABASE"
 
     @patch("imports.dynamodb_sync.WebDocument")
     def test_document_state_without_content(self, MockWebDoc):
@@ -149,7 +149,7 @@ class TestSyncItemToPostgres:
         item = _dynamo_item()
         sync_item_to_postgres(item, None, None, dry_run=False, session=session)
 
-        assert mock_doc.document_state == StalkerDocumentStatus.URL_ADDED
+        assert mock_doc.document_state == "URL_ADDED"
 
     @patch("imports.dynamodb_sync.WebDocument")
     def test_dry_run_no_db_writes(self, MockWebDoc):

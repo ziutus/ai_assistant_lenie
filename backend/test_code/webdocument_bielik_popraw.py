@@ -1,14 +1,19 @@
 from library.ai import ai_ask
-from library.stalker_web_document_db import StalkerWebDocumentDB
-from dotenv import load_dotenv
+from library.db.engine import get_session
+from library.db.models import WebDocument
+from unified_config_loader import load_config
 
 
-load_dotenv()
+load_config()
 
 document_id = 7476
 action = "make_summary"
 
-web_doc = StalkerWebDocumentDB(document_id=document_id)
+session = get_session()
+web_doc = WebDocument.get_by_id(session, document_id)
+if web_doc is None:
+    print(f"Dokument o id={document_id} nie znaleziony.")
+    exit(1)
 
 # print(web_doc.text)
 if action == "correct_text":
@@ -33,7 +38,7 @@ if action == "correct_text":
     user_input = input("Do you want to save the response to the database? (yes/no): ").strip().lower()
     if user_input in ["yes", "y"]:
         web_doc.text = result.response_text
-        web_doc.save()
+        session.commit()
         print("Poprawiony tekst zapisany w bazie danych.")
 
 elif action == "make_summary":
@@ -58,7 +63,7 @@ elif action == "make_summary":
     user_input = input("Do you want to save the response to the database? (yes/no): ").strip().lower()
     if user_input in ["yes", "y"]:
         web_doc.summary = result.response_text
-        web_doc.save()
+        session.commit()
         print("Poprawiony tekst zapisany w bazie danych.")
 else:
     print(f"Nieznana akcja >{action}.")

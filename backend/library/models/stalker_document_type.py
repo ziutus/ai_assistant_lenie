@@ -1,6 +1,10 @@
 from enum import Enum
 
-# Those document types are also defined in Postgresql table: document_types
+
+# Source of truth for valid document types. DB lookup table `document_types` is seeded from
+# these values and enforces them via FK constraint on `web_documents.document_type`.
+# Kept alongside FK for: early validation in setter methods, input aliases ("website"→"webpage",
+# "sms"→"text_message"), IDE autocomplete. See ADR-010 for rationale.
 class StalkerDocumentType(Enum):
     movie = 1
     youtube = 2

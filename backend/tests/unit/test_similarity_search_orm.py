@@ -165,10 +165,9 @@ class TestGetSimilarORM:
 
         session.commit.assert_not_called()
 
-    def test_document_type_enum_serialized_to_string(self):
-        """Verify document_type enum is converted to string name in result dict."""
-        from library.models.stalker_document_type import StalkerDocumentType
-        row = _make_row(document_type=StalkerDocumentType.webpage)
+    def test_document_type_serialized_to_string(self):
+        """Verify document_type string is passed through in result dict."""
+        row = _make_row(document_type="webpage")
         repo, _ = _create_repo_with_session([row])
 
         result = repo.get_similar([0.1], model="m")

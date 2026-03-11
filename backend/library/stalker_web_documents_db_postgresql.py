@@ -34,12 +34,12 @@ class WebsitesDBPostgreSQL:
                 WebDocument.note, WebDocument.project, WebDocument.s3_uuid,
             )
 
-        # Dynamic filters
+        # Dynamic filters — column stores enum name strings directly
         if document_type != "ALL":
-            stmt = stmt.where(WebDocument.document_type == StalkerDocumentType[document_type])
+            stmt = stmt.where(WebDocument.document_type == document_type)
 
         if document_state != "ALL":
-            stmt = stmt.where(WebDocument.document_state == StalkerDocumentStatus[document_state])
+            stmt = stmt.where(WebDocument.document_state == document_state)
 
         if project:
             stmt = stmt.where(WebDocument.project == project)
@@ -70,17 +70,14 @@ class WebsitesDBPostgreSQL:
         rows = self.session.execute(stmt).all()
         result = []
         for row in rows:
-            doc_type = row.document_type
-            doc_state = row.document_state
-            doc_state_error = row.document_state_error
             result.append({
                 "id": row.id,
                 "url": row.url,
                 "title": row.title,
-                "document_type": doc_type.name if hasattr(doc_type, "name") else doc_type,
+                "document_type": row.document_type,
                 "created_at": row.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-                "document_state": doc_state.name if hasattr(doc_state, "name") else doc_state,
-                "document_state_error": doc_state_error.name if hasattr(doc_state_error, "name") else doc_state_error,
+                "document_state": row.document_state,
+                "document_state_error": row.document_state_error,
                 "note": row.note,
                 "project": row.project,
                 "s3_uuid": row.s3_uuid,
@@ -90,25 +87,25 @@ class WebsitesDBPostgreSQL:
     def get_count(self, document_type: str = "ALL") -> int:
         stmt = select(func.count(WebDocument.id))
         if document_type != "ALL":
-            stmt = stmt.where(WebDocument.document_type == StalkerDocumentType[document_type])
+            stmt = stmt.where(WebDocument.document_type == document_type)
         return self.session.execute(stmt).scalar()
 
     def get_count_by_type(self) -> dict[str, int]:
         """Return document counts grouped by type, plus 'ALL' total."""
         stmt = select(WebDocument.document_type, func.count(WebDocument.id)).group_by(WebDocument.document_type)
         rows = self.session.execute(stmt).all()
-        counts = {row[0].name if hasattr(row[0], "name") else row[0]: row[1] for row in rows}
+        counts = {row[0]: row[1] for row in rows}
         counts["ALL"] = sum(counts.values())
         return counts
 
     def get_ready_for_download(self) -> list[tuple]:
         stmt = select(
             WebDocument.id, WebDocument.url, WebDocument.document_type, WebDocument.s3_uuid,
-        ).where(WebDocument.document_state == StalkerDocumentStatus.URL_ADDED)
+        ).where(WebDocument.document_state == StalkerDocumentStatus.URL_ADDED.name)
 
         rows = self.session.execute(stmt).all()
         return [
-            (row.id, row.url, row.document_type.name if hasattr(row.document_type, "name") else row.document_type, row.s3_uuid)
+            (row.id, row.url, row.document_type, row.s3_uuid)
             for row in rows
         ]
 
@@ -117,24 +114,24 @@ class WebsitesDBPostgreSQL:
             WebDocument.id, WebDocument.url, WebDocument.document_type,
             WebDocument.language, WebDocument.chapter_list, WebDocument.ai_summary_needed,
         ).where(
-            WebDocument.document_type == StalkerDocumentType.youtube,
+            WebDocument.document_type == StalkerDocumentType.youtube.name,
             or_(
-                WebDocument.document_state == StalkerDocumentStatus.URL_ADDED,
-                WebDocument.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION,
-                WebDocument.document_state == StalkerDocumentStatus.TEMPORARY_ERROR,
+                WebDocument.document_state == StalkerDocumentStatus.URL_ADDED.name,
+                WebDocument.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION.name,
+                WebDocument.document_state == StalkerDocumentStatus.TEMPORARY_ERROR.name,
             ),
         )
 
         rows = self.session.execute(stmt).all()
         return [
-            (row.id, row.url, row.document_type.name if hasattr(row.document_type, "name") else row.document_type,
+            (row.id, row.url, row.document_type,
              row.language, row.chapter_list, row.ai_summary_needed)
             for row in rows
         ]
 
     def get_transcription_done(self) -> list[int]:
         stmt = select(WebDocument.id).where(
-            WebDocument.document_state == StalkerDocumentStatus.TRANSCRIPTION_DONE,
+            WebDocument.document_state == StalkerDocumentStatus.TRANSCRIPTION_DONE.name,
         ).order_by(WebDocument.id)
 
         rows = self.session.execute(stmt).all()
@@ -145,21 +142,21 @@ class WebsitesDBPostgreSQL:
         stmt = select(WebDocument.id, WebDocument.document_type).where(WebDocument.id > website_id)
 
         if document_type != "ALL":
-            stmt = stmt.where(WebDocument.document_type == StalkerDocumentType[document_type])
+            stmt = stmt.where(WebDocument.document_type == document_type)
 
         if document_state != "ALL":
-            stmt = stmt.where(WebDocument.document_state == StalkerDocumentStatus[document_state])
+            stmt = stmt.where(WebDocument.document_state == document_state)
 
         stmt = stmt.order_by(WebDocument.id.asc()).limit(1)
 
         row = self.session.execute(stmt).first()
         if row is None:
             return -1
-        return (row[0], row[1].name if hasattr(row[1], "name") else row[1])
+        return (row[0], row[1])
 
     def get_last_unknown_news(self) -> datetime.date | None:
         stmt = select(func.max(WebDocument.date_from)).where(
-            WebDocument.document_type == StalkerDocumentType.link,
+            WebDocument.document_type == StalkerDocumentType.link.name,
             WebDocument.source == 'https://unknow.news/',
         )
         return self.session.execute(stmt).scalar()
@@ -230,7 +227,7 @@ class WebsitesDBPostgreSQL:
                 "websites_text_length": r.websites_text_length,
                 "embeddings_text_length": r.embeddings_text_length,
                 "title": r.title,
-                "document_type": r.document_type.name if hasattr(r.document_type, "name") else r.document_type,
+                "document_type": r.document_type,
                 "project": r.project,
             }
             for r in rows
@@ -265,7 +262,7 @@ class WebsitesDBPostgreSQL:
     def get_documents_needing_embedding(self, embedding_model: str) -> list[int]:
         # Documents in READY_FOR_EMBEDDING state
         stmt1 = select(WebDocument.id).where(
-            WebDocument.document_state == StalkerDocumentStatus.READY_FOR_EMBEDDING,
+            WebDocument.document_state == StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
         )
         # Documents in EMBEDDING_EXIST state missing embedding for this model
         stmt2 = (
@@ -278,7 +275,7 @@ class WebsitesDBPostgreSQL:
                 ),
             )
             .where(
-                WebDocument.document_state == StalkerDocumentStatus.EMBEDDING_EXIST,
+                WebDocument.document_state == StalkerDocumentStatus.EMBEDDING_EXIST.name,
                 WebsiteEmbedding.website_id.is_(None),
             )
         )
@@ -295,7 +292,7 @@ class WebsitesDBPostgreSQL:
         stmt = select(WebDocument.id).where(
             WebDocument.text_md.is_(None),
             or_(WebDocument.paywall == False, WebDocument.paywall.is_(None)),  # noqa: E712
-            WebDocument.document_type == StalkerDocumentType.webpage,
+            WebDocument.document_type == StalkerDocumentType.webpage.name,
             WebDocument.id > min_id,
         ).order_by(WebDocument.id)
         rows = self.session.execute(stmt).all()
@@ -312,14 +309,14 @@ class WebsitesDBPostgreSQL:
 
         stmt = select(WebDocument.id).where(
             WebDocument.url.like(f"{escaped_url}%"),
-            WebDocument.document_type == StalkerDocumentType.webpage,
+            WebDocument.document_type == StalkerDocumentType.webpage.name,
             WebDocument.id > min_id,
             or_(
                 and_(
-                    WebDocument.document_state == StalkerDocumentStatus.ERROR,
-                    WebDocument.document_state_error == StalkerDocumentStatusError.REGEX_ERROR,
+                    WebDocument.document_state == StalkerDocumentStatus.ERROR.name,
+                    WebDocument.document_state_error == StalkerDocumentStatusError.REGEX_ERROR.name,
                 ),
-                WebDocument.document_state == StalkerDocumentStatus.URL_ADDED,
+                WebDocument.document_state == StalkerDocumentStatus.URL_ADDED.name,
             ),
         ).order_by(WebDocument.id)
         rows = self.session.execute(stmt).all()
