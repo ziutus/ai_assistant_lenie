@@ -29,6 +29,11 @@ def include_object(object, name, type_, reflected, compare_to):
     """Exclude indexes and known-drift columns from autogenerate."""
     if type_ == "index":
         return False
+    # Exclude lookup tables created by B-94 (raw SQL migration) until B-96 adds ORM models.
+    # Without this filter, autogenerate would suggest DROP TABLE for these tables.
+    _LOOKUP_TABLES = {"document_status_types", "document_status_error_types", "document_types", "embedding_models"}
+    if type_ == "table" and name in _LOOKUP_TABLES:
+        return False
     # Ignore document_state_error type drift (DDL: TEXT, ORM: SAEnum with native_enum=False)
     # VARCHAR without length and TEXT are equivalent in PostgreSQL — no real schema change needed.
     # TODO: Remove this exclusion after standardizing the column type (Epic 29 cleanup).
