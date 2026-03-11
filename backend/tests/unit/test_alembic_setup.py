@@ -205,6 +205,12 @@ class TestIncludeObjectFilter:
         fn = self._load_include_object()
         assert fn(MagicMock(), "web_documents", "table", True, None) is True
 
+    def test_excludes_lookup_tables(self):
+        """Lookup tables (B-94) must be excluded until B-96 adds ORM models."""
+        fn = self._load_include_object()
+        for table in ("document_status_types", "document_status_error_types", "document_types", "embedding_models"):
+            assert fn(MagicMock(), table, "table", True, None) is False, f"{table} should be excluded"
+
 
 # ---------------------------------------------------------------------------
 # Tests: Flask teardown handler
