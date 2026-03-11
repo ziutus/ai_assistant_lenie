@@ -221,7 +221,7 @@ if __name__ == '__main__':
                 logger.warning(f"Document {document_id} not found, skipping")
                 continue
 
-            if doc.document_state == StalkerDocumentStatus.ERROR and doc.document_state_error == StalkerDocumentStatusError.ERROR_DOWNLOAD:
+            if doc.document_state == StalkerDocumentStatus.ERROR.name and doc.document_state_error == StalkerDocumentStatusError.ERROR_DOWNLOAD.name:
                 logger.info("Ignoring document as is error is ERROR_DOWNLOAD...")
                 continue
 
@@ -230,7 +230,7 @@ if __name__ == '__main__':
                 logger.debug(f"Creating cache directory {cache_dir}")
                 os.makedirs(cache_dir)
 
-            if doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR and not ignore_regexp_issue:
+            if doc.document_state_error == StalkerDocumentStatusError.REGEX_ERROR.name and not ignore_regexp_issue:
                 logger.info("Ignoring document as is REGEX_ERROR, to work on it, change ignore_regexp_issue to 'True'")
                 continue
 
@@ -310,12 +310,12 @@ if __name__ == '__main__':
 
             if reduction_percentage < 30 or reduction_percentage >= 98:
                 logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
-                doc.document_state = StalkerDocumentStatus.ERROR
-                doc.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR
+                doc.document_state = StalkerDocumentStatus.ERROR.name
+                doc.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR.name
                 session.commit()
                 continue
 
-            doc.document_state = StalkerDocumentStatus.NEED_CLEAN_MD
+            doc.document_state = StalkerDocumentStatus.NEED_CLEAN_MD.name
             session.commit()
 
             logger.info("Step 2: taking article content from markdown (ignoring portal links, disclaimers, user comments etc")
@@ -358,8 +358,8 @@ if __name__ == '__main__':
                             break
                         else:
                             logger.debug(f"Nie znaleziono dopasowania z regułami z pliku {rules_file}.")
-                            doc.document_state = StalkerDocumentStatus.ERROR
-                            doc.document_state_error = StalkerDocumentStatusError.REGEX_ERROR
+                            doc.document_state = StalkerDocumentStatus.ERROR.name
+                            doc.document_state_error = StalkerDocumentStatusError.REGEX_ERROR.name
                             session.commit()
                             continue
 
@@ -373,8 +373,8 @@ if __name__ == '__main__':
                     print("Naciśnij Enter, aby zakończyć program...")
                     input()
 
-                doc.document_state = StalkerDocumentStatus.ERROR
-                doc.document_state_error = StalkerDocumentStatusError.REGEX_ERROR
+                doc.document_state = StalkerDocumentStatus.ERROR.name
+                doc.document_state_error = StalkerDocumentStatusError.REGEX_ERROR.name
                 session.commit()
                 continue
 
@@ -384,7 +384,7 @@ if __name__ == '__main__':
             with open(cache_file_step_2_md, 'w', encoding="utf-8") as file:
                 file.write(extracted_text)
 
-            doc.document_state = StalkerDocumentStatus.MD_SIMPLIFIED
+            doc.document_state = StalkerDocumentStatus.MD_SIMPLIFIED.name
             session.commit()
 
             if text_to_md_check_only:

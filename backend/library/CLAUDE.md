@@ -19,8 +19,6 @@ library/
 │   └── asemblyai/    # Speech-to-text transcription
 ├── ai.py             # LLM provider abstraction (routes to api/*)
 ├── embedding.py      # Embedding provider abstraction (routes to api/*)
-├── stalker_web_document.py      # Re-export: WebDocument as StalkerWebDocument
-├── stalker_web_document_db.py   # Re-export: WebDocument as StalkerWebDocumentDB
 ├── stalker_web_documents_db_postgresql.py  # Query layer (ORM, list, search, similarity)
 ├── text_functions.py        # Text processing & splitting utilities
 ├── text_detect_language.py  # Language detection abstraction
@@ -36,8 +34,6 @@ library/
 
 ### Domain Model & Database
 
-- **`stalker_web_document.py`** — Re-export: `from library.db.models import WebDocument as StalkerWebDocument`. Kept for backward compatibility.
-- **`stalker_web_document_db.py`** — Re-export: `from library.db.models import WebDocument as StalkerWebDocumentDB`. Kept for backward compatibility.
 - **`db/models.py`** — `WebDocument` SQLAlchemy ORM model: ~30 attributes covering URL, text content (raw/English/markdown), metadata, processing state. Methods: `get_by_id()`, `get_by_url()`, `populate_neighbors()`. `WebsiteEmbedding` model for vector embeddings.
 - **`db/engine.py`** — SQLAlchemy engine and session factories: `get_session()`, `get_scoped_session()`.
 - **`stalker_web_documents_db_postgresql.py`** — `WebsitesDBPostgreSQL`: query layer using SQLAlchemy session. Requires `session` parameter. Methods: `get_list()` (paginated/filtered), `get_similar()` (pgvector cosine search), `get_next_to_correct()`, `get_count()`, `embedding_add()`, `embedding_delete()`.

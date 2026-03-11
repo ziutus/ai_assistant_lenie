@@ -1,7 +1,10 @@
 from enum import Enum
 
-# Those errors status are also defined in Postgresql table: document_status_types
 
+# Source of truth for valid document processing states. DB lookup table `document_status_types`
+# is seeded from these values and enforces them via FK constraint on `web_documents.document_state`.
+# Kept alongside FK for: early validation in setter methods, input aliases ("ERROR_DOWNLOAD"→"ERROR"),
+# IDE autocomplete. See ADR-010 for rationale.
 class StalkerDocumentStatus(Enum):
     ERROR = 1
     URL_ADDED = 2
