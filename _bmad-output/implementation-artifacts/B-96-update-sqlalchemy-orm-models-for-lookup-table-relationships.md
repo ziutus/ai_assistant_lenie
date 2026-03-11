@@ -1,6 +1,6 @@
 # Story B-96: Update SQLAlchemy ORM Models for Lookup Table Relationships
 
-Status: review
+Status: done
 
 ## Story
 
@@ -197,6 +197,7 @@ None — implementation proceeded without blockers.
 
 ### Change Log
 - 2026-03-11: B-96 implementation complete — ORM models for lookup tables, ForeignKey+relationship(), SAEnum→String migration
+- 2026-03-11: Code review fixes — M2: added 3 missing error states to set_document_state_error() (NO_CAPTIONS_AVAILABLE, CAPTIONS_LANGUAGE_MISMATCH, CAPTIONS_FETCH_ERROR). M3: added 2 missing states to set_document_state() (TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS, TEMPORARY_ERROR). M4: added pytest.importorskip("sqlalchemy") to test_alembic_setup.py and test_get_list_query.py (30 errors→0). L2: updated database/CLAUDE.md to reflect ORM migration, removed stale refs.
 
 ### File List
 - backend/library/db/models.py (modified — 4 new lookup models, SAEnum→String+FK, relationships, setter/dict/analyze/validate updates)
@@ -210,8 +211,18 @@ None — implementation proceeded without blockers.
 - backend/web_documents_fix_missing_markdown.py (modified — enum .name usage)
 - backend/imports/unknown_news_import.py (modified — enum .name usage)
 - backend/imports/dynamodb_sync.py (modified — enum .name usage)
-- backend/tests/unit/test_db_models.py (modified — 134 tests for lookup models, String columns, relationships)
-- backend/tests/unit/test_alembic_setup.py (modified — lookup tables now included)
+- backend/library/models/stalker_document_status.py (modified — updated comment to reference ADR-010)
+- backend/library/models/stalker_document_status_error.py (modified — updated comment to reference ADR-010)
+- backend/library/models/stalker_document_type.py (modified — updated comment to reference ADR-010)
+- backend/library/stalker_web_document.py (deleted — re-export stub no longer needed)
+- backend/library/stalker_web_document_db.py (deleted — re-export stub no longer needed)
+- backend/library/CLAUDE.md (modified — documentation update)
+- backend/test_code/webdocument_bielik_popraw.py (modified — migrated from deleted modules + dotenv)
+- backend/test_code/webdocument_bielik_popraw_2.py (modified — migrated from dotenv)
+- backend/database/CLAUDE.md (modified — updated Application Access section for ORM)
+- backend/tests/unit/test_db_models.py (modified — 134+ tests for lookup models, String columns, relationships, added missing state/error tests)
+- backend/tests/unit/test_alembic_setup.py (modified — lookup tables now included, added importorskip)
+- backend/tests/unit/test_get_list_query.py (modified — added importorskip)
 - backend/tests/unit/test_orm_crud.py (modified — string-based comparisons)
 - backend/tests/unit/test_repository_queries.py (modified — string-based mock data)
 - backend/tests/unit/test_dynamodb_sync_orm.py (modified — string-based assertions)
@@ -219,3 +230,5 @@ None — implementation proceeded without blockers.
 - backend/tests/unit/test_similarity_search_orm.py (modified — string-based mock data)
 - backend/tests/unit/test_batch_pipeline_orm.py (modified — utf-8 encoding, enum .name pattern)
 - backend/tests/integration/test_fk_constraints.py (new — FK constraint validation tests)
+- docs/architecture-decisions.md (modified — documentation update)
+- docs/development-guide.md (modified — documentation update)

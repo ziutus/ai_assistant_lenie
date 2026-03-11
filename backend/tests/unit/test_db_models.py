@@ -338,6 +338,8 @@ class TestSetDocumentState:
         ("NEED_CLEAN_MD", "NEED_CLEAN_MD"),
         ("TEXT_TO_MD_DONE", "NEED_CLEAN_MD"),
         ("MD_SIMPLIFIED", "MD_SIMPLIFIED"),
+        ("TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS", "TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS"),
+        ("TEMPORARY_ERROR", "TEMPORARY_ERROR"),
     ])
     def test_valid_states(self, input_str, expected):
         doc = _make_doc()
@@ -371,6 +373,9 @@ class TestSetDocumentStateError:
         ("TRANSLATION_ERROR", "TRANSLATION_ERROR"),
         ("REGEX_ERROR", "REGEX_ERROR"),
         ("TEXT_TO_MD_ERROR", "TEXT_TO_MD_ERROR"),
+        ("NO_CAPTIONS_AVAILABLE", "NO_CAPTIONS_AVAILABLE"),
+        ("CAPTIONS_LANGUAGE_MISMATCH", "CAPTIONS_LANGUAGE_MISMATCH"),
+        ("CAPTIONS_FETCH_ERROR", "CAPTIONS_FETCH_ERROR"),
     ])
     def test_valid_errors(self, input_str, expected):
         doc = _make_doc()

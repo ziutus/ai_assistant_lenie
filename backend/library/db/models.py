@@ -259,6 +259,10 @@ class WebDocument(Base):
             self.document_state = StalkerDocumentStatus.NEED_CLEAN_MD.name
         elif document_state == "MD_SIMPLIFIED":
             self.document_state = StalkerDocumentStatus.MD_SIMPLIFIED.name
+        elif document_state == "TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS":
+            self.document_state = StalkerDocumentStatus.TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS.name
+        elif document_state == "TEMPORARY_ERROR":
+            self.document_state = StalkerDocumentStatus.TEMPORARY_ERROR.name
         else:
             raise ValueError("document_state must be one of the valid StalkerDocumentStatus values")
 
@@ -291,6 +295,12 @@ class WebDocument(Base):
             self.document_state_error = StalkerDocumentStatusError.REGEX_ERROR.name
         elif document_state_error == "TEXT_TO_MD_ERROR":
             self.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR.name
+        elif document_state_error == "NO_CAPTIONS_AVAILABLE":
+            self.document_state_error = StalkerDocumentStatusError.NO_CAPTIONS_AVAILABLE.name
+        elif document_state_error == "CAPTIONS_LANGUAGE_MISMATCH":
+            self.document_state_error = StalkerDocumentStatusError.CAPTIONS_LANGUAGE_MISMATCH.name
+        elif document_state_error == "CAPTIONS_FETCH_ERROR":
+            self.document_state_error = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
         else:
             raise ValueError(
                 f"document_state_error must be one of the valid StalkerDocumentStatusError values, not >{document_state_error}<"
