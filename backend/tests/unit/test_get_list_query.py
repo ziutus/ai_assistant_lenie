@@ -8,6 +8,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
+pytest.importorskip("sqlalchemy")
+
 
 @pytest.fixture
 def mock_session():
