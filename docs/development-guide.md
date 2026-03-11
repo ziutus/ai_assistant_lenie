@@ -340,6 +340,7 @@ For batch processing scripts that access AWS RDS:
 - **Makefile targets**: `aws-*` (AWS), `gcloud-*` (GCloud), no prefix (local)
 - **API auth**: All routes except health checks require `x-api-key` header
 - **Database**: SQLAlchemy ORM (see [ADR-004a](architecture-decisions.md#adr-004a-migrate-to-sqlalchemy-orm--pydantic-schemas))
+- **Enum + FK dual validation**: Python enums (`StalkerDocumentType`, `StalkerDocumentStatus`, `StalkerDocumentStatusError`) are the source of truth for allowed values. ORM columns store enum `.name` strings with FK constraints to lookup tables. Enums provide early validation, input aliases (e.g. `"website"` → `"webpage"`), and IDE autocomplete; FK constraints enforce integrity at DB level. See [ADR-010](architecture-decisions.md#adr-010-database-lookup-tables-with-foreign-keys-for-enum-like-fields) for rationale.
 - **Commits**: CI/CD varies by tool (CircleCI, GitLab CI, Jenkins)
 
 ## Line Endings (.gitattributes)

@@ -190,7 +190,7 @@ if __name__ == '__main__':
                         llm_model=cfg.get("AI_MODEL_SUMMARY"),
                         skip_captions=youtube_captions_blocked,
                     )
-                    if result.document_state_error == StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR \
+                    if result.document_state_error == StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name \
                             and not youtube_captions_blocked:
                         youtube_captions_blocked = True
                         logging.warning("YouTube captions blocked — skipping captions for remaining videos")
@@ -270,7 +270,7 @@ if __name__ == '__main__':
                             print(
                                 "* ALL DONE, updating state to NEED_MANUAL_REVIEW (cleaning of text is needed) as it is >webpage<",
                                 end=" ")
-                            web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                            web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
                             print("[DONE]")
                             session.commit()
 
@@ -288,8 +288,8 @@ if __name__ == '__main__':
                                 if web_doc is None:
                                     web_doc = WebDocument(url=url)
                                     session.add(web_doc)
-                                web_doc.document_state = StalkerDocumentStatus.ERROR
-                                web_doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD
+                                web_doc.document_state = StalkerDocumentStatus.ERROR.name
+                                web_doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD.name
                                 session.commit()
                                 continue
 
@@ -315,8 +315,8 @@ if __name__ == '__main__':
                             web_doc.analyze()
                             web_doc.validate()
 
-                            if web_doc.document_state == StalkerDocumentStatus.URL_ADDED and web_doc.document_type == StalkerDocumentType.link:
-                                web_doc.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
+                            if web_doc.document_state == StalkerDocumentStatus.URL_ADDED.name and web_doc.document_type == StalkerDocumentType.link.name:
+                                web_doc.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING.name
 
                             session.commit()
 
@@ -326,11 +326,11 @@ if __name__ == '__main__':
                             print(str(e))
                             continue
 
-                        if web_doc.document_type == StalkerDocumentType.webpage:
+                        if web_doc.document_type == StalkerDocumentType.webpage.name:
                             print(
                                 "* ALL DONE, updating state to NEED_MANUAL_REVIEW (cleaning of text is needed) as it is >webpage<",
                                 end=" ")
-                            web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+                            web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
                             print("[DONE]")
                             session.commit()
                 finally:
@@ -350,11 +350,11 @@ if __name__ == '__main__':
                 logging.error(f"Document {document['id']} not found")
                 continue
             print(
-                f"Processing  {web_doc.id} {web_doc.document_type.name} ({document_nb} from {markdown_correction_needed_len} "
+                f"Processing  {web_doc.id} {web_doc.document_type} ({document_nb} from {markdown_correction_needed_len} "
                 f"{progress}%): "
                 f"{web_doc.url}")
             web_doc.text_md = webpage_text_clean(web_doc.url, web_doc.text_md)
-            web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW
+            web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
             session.commit()
 
         print("Step 4: For youtube video setup status ready for translation if transcription is done")
@@ -371,10 +371,10 @@ if __name__ == '__main__':
                 if web_doc is None:
                     logging.error(f"Document {website_id} not found")
                     continue
-                print(f"Processing  {web_doc.id} {web_doc.document_type.name} ({website_nb} from {transcirption_done_len} "
+                print(f"Processing  {web_doc.id} {web_doc.document_type} ({website_nb} from {transcirption_done_len} "
                       f"{progress}%): "
                       f"{web_doc.url}")
-                web_doc.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING
+                web_doc.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING.name
                 session.commit()
                 website_nb += 1
 
@@ -394,7 +394,7 @@ if __name__ == '__main__':
                   f" {doc.document_type} url: {doc.url}")
 
             # Build text for embedding (same logic as StalkerWebDocumentDB.embedding_add)
-            if doc.document_type == StalkerDocumentType.link:
+            if doc.document_type == StalkerDocumentType.link.name:
                 text = doc.title or ""
                 if doc.summary:
                     text = (text + " " + doc.summary).strip() if text else doc.summary
@@ -411,7 +411,7 @@ if __name__ == '__main__':
             websites.embedding_delete(doc.id, model)
             result = get_embedding(model, text)
             websites.embedding_add(doc.id, result.embedding, doc.language, text, text, model)
-            doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
+            doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
             session.commit()
             website_nb += 1
 
@@ -450,8 +450,8 @@ if __name__ == '__main__':
                 html = download_raw_html(url=web_doc.url)
                 if not html:
                     print("empty response! [ERROR]")
-                    web_doc.document_state = StalkerDocumentStatus.ERROR
-                    web_doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD
+                    web_doc.document_state = StalkerDocumentStatus.ERROR.name
+                    web_doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD.name
                     session.commit()
                     continue
 

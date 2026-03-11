@@ -1,6 +1,9 @@
-# This errors status are also defined in Postgresql table: document_status_error_types
 from enum import Enum
 
+
+# Source of truth for valid document error states. DB lookup table `document_status_error_types`
+# is seeded from these values and enforces them via FK constraint on `web_documents.document_state_error`.
+# Kept alongside FK for: early validation in setter methods, IDE autocomplete. See ADR-010.
 class StalkerDocumentStatusError(Enum):
     NONE = 1
     ERROR_DOWNLOAD = 2
