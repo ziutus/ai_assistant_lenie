@@ -203,7 +203,7 @@ Two tables:
 
 Document processing states: `URL_ADDED` → `DOCUMENT_INTO_DATABASE` → ... → `EMBEDDING_EXIST` (15 states total, see `backend/library/models/stalker_document_status.py`).
 
-Access layer: raw `psycopg2` queries (no ORM). Connection via `POSTGRESQL_HOST/DATABASE/USER/PASSWORD/PORT` env vars.
+Access layer: SQLAlchemy 2.0 ORM (`backend/library/db/models.py`, `backend/library/db/engine.py`). Connection via `POSTGRESQL_HOST/DATABASE/USER/PASSWORD/PORT` env vars.
 
 ## File Export Convention
 

@@ -217,11 +217,12 @@ groups:
         example: "lenie-s3-tmp"
         used_by: [docker, lambda, local]
       AWS_S3_TRANSCRIPT:
-        description: "S3 bucket name for video/audio transcripts"
+        description: "DEPRECATED (ADR-011) — was used for AWS Transcribe S3 upload, removed"
         type: config
         required: false
+        status: deprecated
         example: "stalker-video-to-text"
-        used_by: [docker, lambda, local]
+        used_by: []
       AWS_QUEUE_URL_ADD:
         description: "SQS queue URL for url_add async processing"
         type: config
@@ -404,11 +405,19 @@ groups:
     description: "Media processing settings"
     variables:
       TRANSCRIPT_PROVIDER:
-        description: "Speech-to-text provider (assemblyai | aws_transcribe)"
+        description: "DEPRECATED (ADR-011) — only AssemblyAI is supported, this variable is no longer used"
         type: config
         required: false
+        status: deprecated
         default: "assemblyai"
         example: "assemblyai"
+        used_by: []
+      TRANSCRIPTION_BALANCE_USD:
+        description: "Initial transcription budget in USD for tracking remaining balance"
+        type: config
+        required: false
+        default: "50.00"
+        example: "50.00"
         used_by: [docker, local]
       YOUTUBE_DEFAULT_LANGUAGE:
         description: "Default language for YouTube transcript extraction"

@@ -1,27 +1,23 @@
 import json
 import logging
+import math
 import os
-import mimetypes
 import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 import assemblyai as aai
-import boto3
-import requests
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 
-from library.api.aws.s3_aws import s3_file_exist
-from library.api.aws.transcript import aws_transcript
 from sqlalchemy.orm import Session
 
-from library.db.models import WebDocument
+from library.db.models import WebDocument, TranscriptionLog
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.models.stalker_document_type import StalkerDocumentType
 from library.stalker_youtube_file import StalkerYoutubeFile
 from library.text_detect_language import compare_language, text_language_detect
 from library.text_transcript import youtube_titles_split_with_chapters, youtube_titles_to_text
-from library.transcript import transcript_price
+from library.transcript import transcript_price, get_assemblyai_price_per_minute
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +41,6 @@ def process_youtube_url(
     source: str = "own",
     force_reprocess: bool = False,
     cache_dir: str | None = None,
-    transcript_provider: str | None = None,
     ai_summary_needed: bool = False,
     llm_model: str | None = None,
     skip_captions: bool = False,
@@ -68,8 +63,6 @@ def process_youtube_url(
 
     # Config from env vars with parameter fallbacks
     cache_dir = cache_dir or os.getenv("CACHE_DIR", "cache")
-    transcript_provider = transcript_provider or os.getenv("TRANSCRIPT_PROVIDER", "assemblyai")
-    s3_bucket_transcript = os.getenv("AWS_S3_TRANSCRIPT")
 
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)
@@ -242,75 +235,63 @@ def process_youtube_url(
                 youtube_file.download_video()
                 logger.info("[DONE]")
 
-        if transcript_provider == "assemblyai":
-            logger.info("Using >assemblyai< as transcript source")
-            aai.settings.api_key = os.getenv("ASSEMBLYAI")
+        # AssemblyAI is the sole transcription provider (ADR-011)
+        logger.info("Using >assemblyai< as transcript source")
+        aai.settings.api_key = os.getenv("ASSEMBLYAI")
 
-            config = aai.TranscriptionConfig(language_code=web_document.language)
+        config = aai.TranscriptionConfig(language_code=web_document.language)
 
-            if not web_document.transcript_job_id:
-                transcriber = aai.Transcriber(config=config)
-                logger.info("Making transcription...")
-                transcript = transcriber.transcribe(youtube_file.path)
-                web_document.transcript_job_id = transcript.id
-                logger.info(f"[DONE] Transcript job ID: >{transcript.id}<")
-                web_document.document_state = StalkerDocumentStatus.TRANSCRIPTION_IN_PROGRESS.name
-                session.commit()
-
-            transcript = aai.Transcript.get_by_id(web_document.transcript_job_id)
-            if transcript.status == aai.TranscriptStatus.error:
-                logger.error(f"Transcription failed: {transcript.error}")
-            elif transcript.status == "completed":
-                text_raw = ""
-                for paragraph in transcript.get_paragraphs():
-                    if paragraph.text and len(paragraph.text) > 0:
-                        text_raw += paragraph.text + "\n\n"
-
-                logger.debug(text_raw)
-                web_document.text_raw = transcript.text
-                web_document.text = text_raw
-                web_document.document_state = StalkerDocumentStatus.TRANSCRIPTION_DONE.name
-                session.commit()
-            else:
-                logger.info(f"Transcription status: {transcript.status}")
-
-        elif transcript_provider == "aws":
-            media_format = mimetypes.guess_type(youtube_file.path)[0]
-
-            boto_session = boto3.Session(
-                aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-                aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-                region_name=os.getenv("AWS_REGION"),
-            )
-
-            logger.info("Checking if file to transcription is on S3...")
-            if not s3_file_exist(s3_bucket_transcript, youtube_file.filename):
-                s3_client = boto_session.client(service_name='s3', region_name='us-east-1')
-                logger.info("Uploading file to S3...")
-                with open(youtube_file.path, 'rb') as file:
-                    s3_client.upload_fileobj(file, s3_bucket_transcript, youtube_file.filename)
-                logger.info("[DONE]")
-
+        if not web_document.transcript_job_id:
+            transcriber = aai.Transcriber(config=config)
             logger.info("Making transcription...")
-            response = aws_transcript(
-                s3_bucket=s3_bucket_transcript, s3_key=youtube_file.filename, media_format=media_format
+            transcript = transcriber.transcribe(youtube_file.path)
+            web_document.transcript_job_id = transcript.id
+            logger.info(f"[DONE] Transcript job ID: >{transcript.id}<")
+            web_document.document_state = StalkerDocumentStatus.TRANSCRIPTION_IN_PROGRESS.name
+            session.commit()
+
+        transcript = aai.Transcript.get_by_id(web_document.transcript_job_id)
+        if transcript.status == aai.TranscriptStatus.error:
+            error_msg = transcript.error or ""
+            logger.error(f"Transcription failed: {error_msg}")
+            web_document.document_state = StalkerDocumentStatus.ERROR.name
+            if "insufficient" in error_msg.lower() or "funds" in error_msg.lower():
+                web_document.document_state_error = StalkerDocumentStatusError.TRANSCRIPTION_INSUFFICIENT_FUNDS.name
+                logger.warning("AssemblyAI: insufficient funds — check balance")
+            else:
+                web_document.document_state_error = StalkerDocumentStatusError.TRANSCRIPTION_ERROR.name
+            session.commit()
+        elif transcript.status == "completed":
+            text_raw = ""
+            for paragraph in transcript.get_paragraphs():
+                if paragraph.text and len(paragraph.text) > 0:
+                    text_raw += paragraph.text + "\n\n"
+
+            logger.debug(text_raw)
+            web_document.text_raw = transcript.text
+            web_document.text = text_raw
+            web_document.document_state = StalkerDocumentStatus.TRANSCRIPTION_DONE.name
+
+            # Log transcription usage
+            audio_duration = getattr(transcript, 'audio_duration', None) or 0
+            speech_model_used = getattr(transcript, 'speech_model_used', None)
+            cost = math.ceil(audio_duration / 60) * get_assemblyai_price_per_minute(speech_model_used)
+            log_entry = TranscriptionLog(
+                document_id=web_document.id,
+                provider="assemblyai",
+                speech_model=speech_model_used,
+                audio_duration_seconds=audio_duration,
+                cost_usd=round(cost, 4),
+                transcript_job_id=web_document.transcript_job_id,
+            )
+            session.add(log_entry)
+            logger.info(
+                f"Transcription logged: {audio_duration}s, model={speech_model_used}, cost=${cost:.4f}"
             )
 
-            if response['status'] == "COMPLETED" or response['status'] == "success":
-                remote_file = response['remote_file']
-                logger.info("Downloading transcript to local file")
-                response = requests.get(remote_file)
-
-                with open(youtube_file.transcript_file, 'wb') as file:
-                    file.write(response.content)
-
-                web_document.text_raw = response.content
-                session.commit()
-                logger.info("[DONE]")
-            else:
-                logger.info(f"Transcription status: {response['status']}")
+            session.commit()
         else:
-            logger.error(f"Unknown transcript provider: {transcript_provider}")
+            logger.info(f"Transcription status: {transcript.status}")
 
         logger.info(f"External transcription step: {time.time() - t0:.2f}s")
 
