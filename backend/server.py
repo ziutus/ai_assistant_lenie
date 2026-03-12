@@ -8,7 +8,7 @@ import uuid
 
 from library.config_loader import load_config
 from library.db.engine import get_scoped_session
-from library.db.models import WebDocument
+from library.db.models import WebDocument, TranscriptionLog
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_transcript import chapters_text_to_list
 from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
@@ -774,6 +774,17 @@ def ai_parse_intent():
         "args": result["args"],
         "confidence": result["confidence"],
     }, 200
+
+
+@app.route('/transcription_usage', methods=['GET'])
+def transcription_usage():
+    """Return transcription usage summary and remaining budget."""
+    session = get_scoped_session()
+    summary = TranscriptionLog.get_usage_summary(session)
+    balance_initial = float(cfg.get("TRANSCRIPTION_BALANCE_USD", "50.00") or "50.00")
+    summary["balance_initial_usd"] = balance_initial
+    summary["balance_remaining_usd"] = round(balance_initial - summary["total_spent_usd"], 4)
+    return {"status": "success", **summary}, 200
 
 
 @app.route('/healthz', methods=['GET'])

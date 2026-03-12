@@ -1,5 +1,6 @@
 import json
 import logging
+import math
 import os
 import mimetypes
 import time
@@ -21,7 +22,8 @@ from library.models.stalker_document_type import StalkerDocumentType
 from library.stalker_youtube_file import StalkerYoutubeFile
 from library.text_detect_language import compare_language, text_language_detect
 from library.text_transcript import youtube_titles_split_with_chapters, youtube_titles_to_text
-from library.transcript import transcript_price
+from library.transcript import transcript_price, get_assemblyai_price_per_minute
+from library.db.models import TranscriptionLog
 
 logger = logging.getLogger(__name__)
 
@@ -259,7 +261,15 @@ def process_youtube_url(
 
             transcript = aai.Transcript.get_by_id(web_document.transcript_job_id)
             if transcript.status == aai.TranscriptStatus.error:
-                logger.error(f"Transcription failed: {transcript.error}")
+                error_msg = transcript.error or ""
+                logger.error(f"Transcription failed: {error_msg}")
+                web_document.document_state = StalkerDocumentStatus.ERROR.name
+                if "insufficient" in error_msg.lower() or "funds" in error_msg.lower():
+                    web_document.document_state_error = StalkerDocumentStatusError.TRANSCRIPTION_INSUFFICIENT_FUNDS.name
+                    logger.warning("AssemblyAI: insufficient funds — check balance")
+                else:
+                    web_document.document_state_error = StalkerDocumentStatusError.TRANSCRIPTION_ERROR.name
+                session.commit()
             elif transcript.status == "completed":
                 text_raw = ""
                 for paragraph in transcript.get_paragraphs():
@@ -270,6 +280,24 @@ def process_youtube_url(
                 web_document.text_raw = transcript.text
                 web_document.text = text_raw
                 web_document.document_state = StalkerDocumentStatus.TRANSCRIPTION_DONE.name
+
+                # Log transcription usage
+                audio_duration = getattr(transcript, 'audio_duration', None) or 0
+                speech_model_used = getattr(transcript, 'speech_model_used', None)
+                cost = math.ceil(audio_duration / 60) * get_assemblyai_price_per_minute(speech_model_used)
+                log_entry = TranscriptionLog(
+                    document_id=web_document.id,
+                    provider="assemblyai",
+                    speech_model=speech_model_used,
+                    audio_duration_seconds=audio_duration,
+                    cost_usd=round(cost, 4),
+                    transcript_job_id=web_document.transcript_job_id,
+                )
+                session.add(log_entry)
+                logger.info(
+                    f"Transcription logged: {audio_duration}s, model={speech_model_used}, cost=${cost:.4f}"
+                )
+
                 session.commit()
             else:
                 logger.info(f"Transcription status: {transcript.status}")

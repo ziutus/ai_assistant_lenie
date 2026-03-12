@@ -72,7 +72,7 @@ Managed via **uv** package manager. Python >= 3.11, build system: hatchling.
 ### Key Dependencies
 
 - **Web**: flask, flask-cors, requests
-- **Database**: psycopg2-binary, neo4j
+- **Database**: sqlalchemy, psycopg2-binary (as SQLAlchemy driver), neo4j
 - **AI/LLM**: openai, boto3 (Bedrock), google-api-python-client
 - **Content**: beautifulsoup4, firecrawl-py, markdownify, youtube-transcript-api
 - **Speech**: assemblyai, pypdf
