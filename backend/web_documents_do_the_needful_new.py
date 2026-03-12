@@ -2,26 +2,19 @@ import argparse
 import json
 import logging
 import os
+import time
 import uuid
 
-from markitdown import MarkItDown
-import boto3
+script_start = time.monotonic()
+print("=== web_documents_do_the_needful_new.py ===")
+
 from library.config_loader import load_config
 
-# Importacja własnych modułów
-from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
-
-from library.db.models import WebDocument
-from library.db.engine import get_session
-from library.embedding import get_embedding
-from library.models.stalker_document_status import StalkerDocumentStatus
-from library.models.stalker_document_type import StalkerDocumentType
-from library.models.stalker_document_status_error import StalkerDocumentStatusError
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.youtube_processing import process_youtube_url
-
 # Ładowanie konfiguracji (obsługuje .env, Vault, AWS SSM)
+print("Loading configuration...", end=" ", flush=True)
+t0 = time.monotonic()
 cfg = load_config()
+print(f"done ({time.monotonic() - t0:.1f}s)")
 
 logging.basicConfig(level=logging.INFO)  # Change level as per your need
 
@@ -64,6 +57,51 @@ if __name__ == '__main__':
 
     print(f"Using >{cfg.get('EMBEDDING_MODEL')}< for embedding")
 
+    print(f"Initialization done in {time.monotonic() - script_start:.1f}s")
+    print()
+
+    print("Setting up Webshare proxy...", end=" ", flush=True)
+    t0 = time.monotonic()
+    webshare_api_key = cfg.get("WEBSHARE_API_KEY")
+    webshare_proxy_available = False
+    if webshare_api_key:
+        try:
+            from library.webshare_ip_auth import ensure_ip_authorized, check_bandwidth
+            ensure_ip_authorized(webshare_api_key)
+            bw = check_bandwidth(webshare_api_key)
+            print(f"Webshare proxy: {bw['used_mb']} MB used / {bw['limit_mb']:.0f} MB limit — {bw['remaining_mb']} MB remaining")
+            webshare_proxy_available = bw["available"]
+            if not webshare_proxy_available:
+                print("WARNING: Webshare bandwidth exhausted — YouTube captions will use direct connection")
+        except Exception as e:
+            print(f"WARNING: Webshare setup failed: {e}")
+    elif cfg.get("WEBSHARE_PROXY_USERNAME"):
+        print("WARNING: WEBSHARE_PROXY_USERNAME is set but WEBSHARE_API_KEY is missing — IP auto-authorization disabled")
+        webshare_proxy_available = True  # credentials set, assume usable without API check
+    else:
+        print("skipped (no API key)", end="")
+    print(f" ({time.monotonic() - t0:.1f}s)")
+
+    if not cfg.get("AWS_S3_WEBSITE_CONTENT"):
+        print("The S3 bucket for text and html files is not set, exiting.")
+        exit(1)
+
+    if not os.path.exists(cfg.get('CACHE_DIR')):
+        os.makedirs(cfg.get('CACHE_DIR'))
+
+    print("AWS REGION: ", cfg.get("AWS_REGION"))
+
+    # Create boto3 session at top level — needed by Step 1 (SQS) and Step 2b (S3)
+    print("Creating AWS boto3 session...", end=" ", flush=True)
+    t0 = time.monotonic()
+    import boto3
+    boto_session = boto3.session.Session(
+        aws_access_key_id=cfg.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=cfg.get("AWS_SECRET_ACCESS_KEY"),
+        region_name=cfg.get("AWS_REGION")
+    )
+    print(f"done ({time.monotonic() - t0:.1f}s)")
+
     aws_session = boto3.Session(region_name=cfg.get("AWS_REGION"))
     try:
         sts = aws_session.client("sts")
@@ -77,10 +115,6 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"WARNING: Could not determine AWS identity: {e}")
 
-    if not cfg.get("AWS_S3_WEBSITE_CONTENT"):
-        print("The S3 bucket for text and html files is not set, exiting.")
-        exit(1)
-
     s3_check = aws_session.client("s3")
     try:
         s3_check.head_bucket(Bucket=cfg.get("AWS_S3_WEBSITE_CONTENT"))
@@ -88,22 +122,29 @@ if __name__ == '__main__':
         print(f"S3 bucket '{cfg.get('AWS_S3_WEBSITE_CONTENT')}' is not accessible: {e}")
         exit(1)
 
-    if not os.path.exists(cfg.get('CACHE_DIR')):
-        os.makedirs(cfg.get('CACHE_DIR'))
-
-    print("AWS REGION: ", cfg.get("AWS_REGION"))
-
-    # Create boto3 session at top level — needed by Step 1 (SQS) and Step 2b (S3)
-    boto_session = boto3.session.Session(
-        aws_access_key_id=cfg.get("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=cfg.get("AWS_SECRET_ACCESS_KEY"),
-        region_name=cfg.get("AWS_REGION")
-    )
+    # ORM & domain imports (deferred to reduce startup time)
+    print("Loading ORM & domain modules...", end=" ", flush=True)
+    t0 = time.monotonic()
+    from library.db.models import WebDocument
+    from library.db.engine import get_session
+    from library.embedding import get_embedding
+    from library.models.stalker_document_status import StalkerDocumentStatus
+    from library.models.stalker_document_type import StalkerDocumentType
+    from library.models.stalker_document_status_error import StalkerDocumentStatusError
+    from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+    print(f"done ({time.monotonic() - t0:.1f}s)")
 
     # ORM session — single session for entire script
+    print("Connecting to database...", end=" ", flush=True)
+    t0 = time.monotonic()
     session = get_session()
+    print(f"done ({time.monotonic() - t0:.1f}s)")
+
+    print(f"\nTotal startup time: {time.monotonic() - script_start:.1f}s")
+    print("=" * 50)
     try:
-        print("Step 1: Taking pages to put into RDS database")
+        print("\nStep 1: Taking pages to put into RDS database")
+        step_start = time.monotonic()
         if not args.clean_sqs:
             print("ignoring cleaning the SQS queue")
         else:
@@ -179,12 +220,16 @@ if __name__ == '__main__':
                         session.rollback()
                         print(f'An error occurred: {e}')
 
+        print(f"Step 1 completed in {time.monotonic() - step_start:.1f}s")
+
         websites = WebsitesDBPostgreSQL(session=session)
 
-        print("Step 2 a: putting youtube movies data into database")
+        print("\nStep 2a: putting youtube movies data into database")
+        step_start = time.monotonic()
         if not process_types["youtube"]:
             print("ignoring youtube movies")
         else:
+            from library.youtube_processing import process_youtube_url
             youtube_captions_blocked = False
             website_data = websites.get_youtube_just_added()
             logging.info(f"Entries to analyze: {len(website_data)}")
@@ -213,10 +258,14 @@ if __name__ == '__main__':
                     session.rollback()
                     logging.error(f"Error processing document {movie[0]}: {e}")
 
-        print("Step 2 b: Downloading websites (or taking from S3) and putting data into database")
+        print(f"Step 2a completed in {time.monotonic() - step_start:.1f}s")
+
+        print("\nStep 2b: Downloading websites (or taking from S3) and putting data into database")
+        step_start = time.monotonic()
         if not process_types["webpage"]:
             print("ignoring webpages")
         else:
+            from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
 
             website_data = websites.get_ready_for_download()
             websites_data_len = len(website_data)
@@ -260,6 +309,7 @@ if __name__ == '__main__':
                             with open(f"{page_file}", 'w', encoding="utf-8") as file:
                                 file.write(content)
 
+                            from markitdown import MarkItDown
                             md = MarkItDown()
                             result = md.convert(page_file)
 
@@ -353,7 +403,11 @@ if __name__ == '__main__':
 
                 website_nb += 1
 
-        print("Step 3: Making correction of text and markdown entries")
+        print(f"Step 2b completed in {time.monotonic() - step_start:.1f}s")
+
+        print("\nStep 3: Making correction of text and markdown entries")
+        step_start = time.monotonic()
+        from library.website.website_download_context import webpage_text_clean
         markdown_correction_needed = websites.get_list(document_state='NEED_CLEAN_MD')
         markdown_correction_needed_len = len(markdown_correction_needed)
         document_nb = 1
@@ -372,7 +426,10 @@ if __name__ == '__main__':
             web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
             session.commit()
 
-        print("Step 4: For youtube video setup status ready for translation if transcription is done")
+        print(f"Step 3 completed in {time.monotonic() - step_start:.1f}s")
+
+        print("\nStep 4: For youtube video setup status ready for translation if transcription is done")
+        step_start = time.monotonic()
         if not process_types["youtube"]:
             print("ignoring youtube movies translation for transcription done")
         else:
@@ -393,7 +450,10 @@ if __name__ == '__main__':
                 session.commit()
                 website_nb += 1
 
-        print(f"Step 5: adding embeddings (model: {cfg.get('EMBEDDING_MODEL')})")
+        print(f"Step 4 completed in {time.monotonic() - step_start:.1f}s")
+
+        print(f"\nStep 5: adding embeddings (model: {cfg.get('EMBEDDING_MODEL')})")
+        step_start = time.monotonic()
         embedding_needed = websites.get_documents_needing_embedding(cfg.get('EMBEDDING_MODEL'))
         embedding_needed_len = len(embedding_needed)
         print(f"entries to analyze: {embedding_needed_len}")
@@ -430,8 +490,12 @@ if __name__ == '__main__':
             session.commit()
             website_nb += 1
 
-        print("Step 6: adding missing markdown entries")
+        print(f"Step 5 completed in {time.monotonic() - step_start:.1f}s")
+
+        print("\nStep 6: adding missing markdown entries")
+        step_start = time.monotonic()
         if missing_markdown_correct:
+            from library.website.website_download_context import download_raw_html
             # TODO: sprawdzić, dlaczego jest problem z pobraniem poniższych stron
             problems = [38, 89, 150, 157, 191, 208, 220, 311, 371, 376, 396,
                         443, 456, 465, 470, 486, 497, 499, 503, 531, 553, 581, 592, 600, 601, 602, 611, 662,
@@ -499,6 +563,7 @@ if __name__ == '__main__':
                 with open(f"{page_file}", 'w', encoding="utf-8") as file:
                     file.write(html)
 
+                from markitdown import MarkItDown
                 md = MarkItDown()
                 result = md.convert(page_file)
 
@@ -515,6 +580,8 @@ if __name__ == '__main__':
 
                 session.commit()
 
-        print("All done, exiting with status 0")
+        print(f"Step 6 completed in {time.monotonic() - step_start:.1f}s")
+
+        print(f"\nAll done in {time.monotonic() - script_start:.1f}s, exiting with status 0")
     finally:
         session.close()
