@@ -4,6 +4,8 @@ from pprint import pprint
 from urllib.parse import parse_qs
 
 from library.config_loader import load_config
+from library.db.engine import get_scoped_session
+from library.db.models import WebDocument
 from library.stalker_web_document_db import StalkerWebDocumentDB
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_functions import split_text_for_embedding
@@ -111,13 +113,28 @@ def lambda_handler(event, _):
         return prepare_return(response, 200)
 
     if event['path'] == '/website_get':
-        if 'id' not in event['queryStringParameters']:
-            return prepare_return('Missing ID parameter', 500)
+        query_params = event.get('queryStringParameters') or {}
+        if 'id' not in query_params:
+            return prepare_return({"status": "error", "message": "Missing ID parameter"}, 400)
 
-        document_id = event['queryStringParameters']['id']
-        web_document = StalkerWebDocumentDB(document_id=int(document_id), reach=True)
+        document_id = query_params['id']
 
-        return prepare_return(web_document.dict(), 200)
+        try:
+            document_id_int = int(document_id)
+        except (ValueError, TypeError):
+            return prepare_return({"status": "error", "message": "Invalid ID parameter — must be a positive integer"}, 400)
+
+        if document_id_int <= 0:
+            return prepare_return({"status": "error", "message": "Invalid ID parameter — must be a positive integer"}, 400)
+
+        session = get_scoped_session()
+        try:
+            doc = WebDocument.get_by_id(session, document_id_int, reach=True)
+            if doc is None:
+                return prepare_return({"status": "error", "message": "Document not found"}, 404)
+            return prepare_return(doc.dict(), 200)
+        finally:
+            get_scoped_session().remove()
 
     if event['path'] == '/website_get_next_to_correct':
         if 'id' not in event['queryStringParameters']:
