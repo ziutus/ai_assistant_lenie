@@ -11,7 +11,6 @@ data:
   POSTGRESQL_PORT: "{{ .Values.envConfig.POSTGRESQL_PORT }}"
   BACKEND_TYPE: "{{ .Values.envConfig.BACKEND_TYPE }}"
   AWS_REGION: "{{ .Values.envConfig.AWS_REGION }}"
-  AWS_S3_TRANSCRIPT: "{{ .Values.envConfig.AWS_S3_TRANSCRIPT }}"
   AWS_QUEUE_URL_ADD: "{{ .Values.envConfig.AWS_QUEUE_URL_ADD }}"
   EMBEDDING_MODEL2: "{{ .Values.envConfig.EMBEDDING_MODEL2 }}"
   EMBEDDING_MODEL: "{{ .Values.envConfig.EMBEDDING_MODEL }}"

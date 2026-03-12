@@ -1,12 +1,10 @@
 from library.api.asemblyai.asemblyai_transcript import transcript_assemblyai
-from library.api.aws.transcript import aws_transcript
 import math
 
 # Prices last verified: 2026-03-12 from https://www.assemblyai.com/pricing
 # No API available for price checking — manual verification required
 # Keys for AssemblyAI use speech_model_used values from API response: best, slam-1, universal
 transcript_prices_by_minute = {
-    'AWS': 0.02400,
     'OpenAI': 0.006,  # https://openai.com/api/pricing/
     'assemblyai_best': 0.0035,      # $0.21/hr — Universal-3 Pro (speech_model_used="best")
     'assemblyai_universal': 0.0025, # $0.15/hr — Universal-2 (speech_model_used="universal")
@@ -34,17 +32,9 @@ def get_assemblyai_price_per_minute(speech_model_used: str | None) -> float:
     return transcript_prices_by_minute[key]
 
 
-def transcript(transcript_file_local: str, media_format: str, language_code: str = None,
-               transcript_file_remote: str = None,
-               s3_bucket=None, provider: str = 'aws'):
-    if provider == 'local':
-        print(f"functionality to analyze local file: {transcript_file_local} should be implemented")
-        return None
-
-    if provider == 'aws':
-        return aws_transcript(s3_bucket=s3_bucket, s3_key=transcript_file_remote, language_code=language_code,
-                              media_format=media_format)
-
+def transcript(transcript_file_local: str, language_code: str = None,
+               provider: str = 'assemblyai'):
+    """Transcribe audio file. Only AssemblyAI is supported (ADR-011)."""
     if provider == 'assemblyai':
         return transcript_assemblyai(transcript_file_local, language_code)
 
