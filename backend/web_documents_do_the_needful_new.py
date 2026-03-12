@@ -64,8 +64,28 @@ if __name__ == '__main__':
 
     print(f"Using >{cfg.get('EMBEDDING_MODEL')}< for embedding")
 
+    aws_session = boto3.Session(region_name=cfg.get("AWS_REGION"))
+    try:
+        sts = aws_session.client("sts")
+        identity = sts.get_caller_identity()
+        actual_account = identity['Account']
+        print(f"AWS account: {actual_account}, identity: {identity['Arn']}")
+        expected_account = cfg.get("AWS_ACCOUNT_ID")
+        if expected_account and actual_account != expected_account:
+            print(f"ERROR: AWS account mismatch! Expected: {expected_account}, got: {actual_account}")
+            exit(1)
+    except Exception as e:
+        print(f"WARNING: Could not determine AWS identity: {e}")
+
     if not cfg.get("AWS_S3_WEBSITE_CONTENT"):
         print("The S3 bucket for text and html files is not set, exiting.")
+        exit(1)
+
+    s3_check = aws_session.client("s3")
+    try:
+        s3_check.head_bucket(Bucket=cfg.get("AWS_S3_WEBSITE_CONTENT"))
+    except Exception as e:
+        print(f"S3 bucket '{cfg.get('AWS_S3_WEBSITE_CONTENT')}' is not accessible: {e}")
         exit(1)
 
     if not os.path.exists(cfg.get('CACHE_DIR')):

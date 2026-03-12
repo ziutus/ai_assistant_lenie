@@ -200,6 +200,11 @@ groups:
   aws:
     description: "AWS credentials and resource identifiers"
     variables:
+      AWS_ACCOUNT_ID:
+        description: "Expected AWS account ID — validated at startup to prevent using wrong credentials"
+        type: config
+        required: false
+        used_by: [docker, local]
       AWS_ACCESS_KEY_ID:
         description: "AWS access key ID for SDK calls"
         type: secret
