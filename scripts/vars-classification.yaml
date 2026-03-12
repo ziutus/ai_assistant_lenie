@@ -354,6 +354,16 @@ groups:
         type: secret
         required: false
         used_by: [docker, local]
+      WEBSHARE_PROXY_USERNAME:
+        description: "Webshare rotating residential proxy username for YouTube captions"
+        type: secret
+        required: false
+        used_by: [docker, local]
+      WEBSHARE_PROXY_PASSWORD:
+        description: "Webshare rotating residential proxy password for YouTube captions"
+        type: secret
+        required: false
+        used_by: [docker, local]
       FIRECRAWL_API_KEY:
         description: "Firecrawl API key for web scraping"
         type: secret
