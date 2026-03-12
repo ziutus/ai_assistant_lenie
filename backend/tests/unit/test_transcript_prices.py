@@ -11,7 +11,6 @@ import math
 # --- Extracted price data and logic (mirrors library/transcript.py) ---
 
 TRANSCRIPT_PRICES_BY_MINUTE = {
-    'AWS': 0.02400,
     'OpenAI': 0.006,
     'assemblyai_best': 0.0035,
     'assemblyai_universal': 0.0025,

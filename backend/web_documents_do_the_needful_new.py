@@ -68,10 +68,6 @@ if __name__ == '__main__':
         print("The S3 bucket for text and html files is not set, exiting.")
         exit(1)
 
-    if not cfg.get("AWS_S3_TRANSCRIPT"):
-        print("The S3 bucket for stranscript files is not set, exiting.")
-        exit(1)
-
     if not os.path.exists(cfg.get('CACHE_DIR')):
         os.makedirs(cfg.get('CACHE_DIR'))
 
@@ -186,7 +182,6 @@ if __name__ == '__main__':
                         chapter_list=web_document.chapter_list,
                         ai_summary_needed=web_document.ai_summary_needed,
                         cache_dir=cfg.get('CACHE_DIR'),
-                        transcript_provider=cfg.get('TRANSCRIPT_PROVIDER'),
                         llm_model=cfg.get("AI_MODEL_SUMMARY"),
                         skip_captions=youtube_captions_blocked,
                     )

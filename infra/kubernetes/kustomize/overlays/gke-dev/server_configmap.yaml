@@ -10,7 +10,6 @@ data:
   POSTGRESQL_PORT: "5432"
   BACKEND_TYPE: "postgresql"
   AWS_REGION: "us-east-1"
-  AWS_S3_TRANSCRIPT: "lenie-dev-video-to-text"
   AWS_QUEUE_URL_ADD: "https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites"
   EMBEDDING_MODEL2: "text-embedding-ada-002"
   EMBEDDING_MODEL: "amazon.titan-embed-text-v1"
