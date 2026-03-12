@@ -17,8 +17,10 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    Numeric,
     String,
     Text,
+    func,
     select,
     text as sa_text,
 )
@@ -301,6 +303,10 @@ class WebDocument(Base):
             self.document_state_error = StalkerDocumentStatusError.CAPTIONS_LANGUAGE_MISMATCH.name
         elif document_state_error == "CAPTIONS_FETCH_ERROR":
             self.document_state_error = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
+        elif document_state_error == "TRANSCRIPTION_ERROR":
+            self.document_state_error = StalkerDocumentStatusError.TRANSCRIPTION_ERROR.name
+        elif document_state_error == "TRANSCRIPTION_INSUFFICIENT_FUNDS":
+            self.document_state_error = StalkerDocumentStatusError.TRANSCRIPTION_INSUFFICIENT_FUNDS.name
         else:
             raise ValueError(
                 f"document_state_error must be one of the valid StalkerDocumentStatusError values, not >{document_state_error}<"
@@ -429,3 +435,68 @@ class WebsiteEmbedding(Base):
     # Relationships
     document: Mapped["WebDocument"] = relationship(back_populates="embeddings")
     model_ref: Mapped["EmbeddingModel"] = relationship(foreign_keys=[model])
+
+
+# ---------------------------------------------------------------------------
+# TranscriptionLog — tracks transcription usage and costs
+# ---------------------------------------------------------------------------
+
+
+class TranscriptionLog(Base):
+    __tablename__ = "transcription_log"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="SET NULL"), nullable=True,
+    )
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    speech_model: Mapped[str | None] = mapped_column(String(100))
+    audio_duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    cost_usd: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False)
+    transcript_job_id: Mapped[str | None] = mapped_column(String(255))
+    created_at: Mapped[datetime.datetime | None] = mapped_column(
+        DateTime, server_default=sa_text("CURRENT_TIMESTAMP"),
+    )
+
+    document: Mapped["WebDocument | None"] = relationship(foreign_keys=[document_id])
+
+    @classmethod
+    def get_usage_summary(cls, session: Session, provider: str | None = None) -> dict:
+        """Return aggregated transcription usage: total cost, duration, count, grouped by provider."""
+        query = select(
+            cls.provider,
+            func.sum(cls.cost_usd).label("spent_usd"),
+            func.sum(cls.audio_duration_seconds).label("total_seconds"),
+            func.count(cls.id).label("count"),
+        ).group_by(cls.provider)
+
+        if provider:
+            query = query.where(cls.provider == provider)
+
+        rows = session.execute(query).all()
+
+        total_spent = 0.0
+        total_seconds = 0
+        total_count = 0
+        by_provider = {}
+
+        for row in rows:
+            spent = float(row.spent_usd or 0)
+            seconds = int(row.total_seconds or 0)
+            count = int(row.count or 0)
+            total_spent += spent
+            total_seconds += seconds
+            total_count += count
+            by_provider[row.provider] = {
+                "spent_usd": round(spent, 4),
+                "minutes": seconds // 60,
+                "count": count,
+            }
+
+        return {
+            "total_spent_usd": round(total_spent, 4),
+            "total_seconds": total_seconds,
+            "total_minutes": total_seconds // 60,
+            "transactions_count": total_count,
+            "by_provider": by_provider,
+        }

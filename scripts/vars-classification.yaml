@@ -410,6 +410,13 @@ groups:
         default: "assemblyai"
         example: "assemblyai"
         used_by: [docker, local]
+      TRANSCRIPTION_BALANCE_USD:
+        description: "Initial transcription budget in USD for tracking remaining balance"
+        type: config
+        required: false
+        default: "50.00"
+        example: "50.00"
+        used_by: [docker, local]
       YOUTUBE_DEFAULT_LANGUAGE:
         description: "Default language for YouTube transcript extraction"
         type: config
