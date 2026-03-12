@@ -411,8 +411,16 @@ def website_get_by_id():
         return {"status": "error",
                 "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
 
+    try:
+        link_id_int = int(link_id)
+    except (ValueError, TypeError):
+        return {"status": "error", "message": "Invalid ID parameter — must be a positive integer"}, 400
+
+    if link_id_int <= 0:
+        return {"status": "error", "message": "Invalid ID parameter — must be a positive integer"}, 400
+
     session = get_scoped_session()
-    doc = WebDocument.get_by_id(session, int(link_id), reach=True)
+    doc = WebDocument.get_by_id(session, link_id_int, reach=True)
     if doc is None:
         return {"status": "error", "message": "Document not found"}, 404
     return doc.dict(), 200
