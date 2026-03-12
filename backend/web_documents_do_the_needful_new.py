@@ -68,7 +68,12 @@ if __name__ == '__main__':
     try:
         sts = aws_session.client("sts")
         identity = sts.get_caller_identity()
-        print(f"AWS account: {identity['Account']}, identity: {identity['Arn']}")
+        actual_account = identity['Account']
+        print(f"AWS account: {actual_account}, identity: {identity['Arn']}")
+        expected_account = cfg.get("AWS_ACCOUNT_ID")
+        if expected_account and actual_account != expected_account:
+            print(f"ERROR: AWS account mismatch! Expected: {expected_account}, got: {actual_account}")
+            exit(1)
     except Exception as e:
         print(f"WARNING: Could not determine AWS identity: {e}")
 
