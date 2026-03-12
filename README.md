@@ -81,6 +81,16 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture reference.
 
+## License
+
+This project is licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
+
+- **What this means:** You can freely view, copy, modify, and use the code. Production use is permitted as long as you are not offering it as a competing managed/hosted service.
+- **Anti-cloud-provider clause:** Providing the functionality of this software to third parties as a managed service, platform service, or SaaS offering is not permitted under this license.
+- **Change Date:** On **2030-03-12**, the license automatically converts to the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), a fully permissive open-source license.
+
+BSL 1.1 is a "source-available" license created by MariaDB and adopted by companies such as HashiCorp, Sentry, and CockroachDB. It is not OSI-approved as "open-source." For details, see the [BSL 1.1 FAQ](https://mariadb.com/bsl-faq-mariadb/).
+
 ## Supported Platforms
 
 | Platform | Support |

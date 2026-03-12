@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Project Lenie is a personal AI assistant for collecting, managing, and searching data using LLMs. Named after the protagonist from Peter Watts' novel "Starfish," it helps users collect links/references, download and store webpage content, transcribe YouTube videos, and assess information reliability.
 
-**Current version**: 0.3.13.0 | **Status**: Active development
+**Current version**: 0.3.13.0 | **Status**: Active development | **License**: [BSL 1.1](LICENSE) (converts to Apache 2.0 on 2030-03-12)
 
 ## Common Commands
 
