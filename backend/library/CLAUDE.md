@@ -13,10 +13,10 @@ library/
 ├── website/          # HTML download, parsing, paywall detection, content cleanup
 ├── api/              # External service integrations
 │   ├── openai/       # OpenAI chat completions & embeddings
-│   ├── aws/          # Bedrock, S3, Comprehend, Transcribe
+│   ├── aws/          # Bedrock, S3, Comprehend
 │   ├── google/       # Vertex AI (Gemini)
 │   ├── cloudferro/sherlock/  # Bielik Polish LLM & embeddings
-│   └── asemblyai/    # Speech-to-text transcription
+│   └── asemblyai/    # Speech-to-text transcription (sole provider, ADR-011)
 ├── ai.py             # LLM provider abstraction (routes to api/*)
 ├── embedding.py      # Embedding provider abstraction (routes to api/*)
 ├── stalker_web_documents_db_postgresql.py  # Query layer (ORM, list, search, similarity)
@@ -78,7 +78,7 @@ Supported models:
 - **`text_functions.py`** — `split_text_for_embedding()`, regex-based text removal (`remove_last_occurrence_and_after`, `remove_before_regex`, `remove_after_regex`), SHA256 hashing.
 - **`lenie_markdown.py`** — `md_split_for_emb()` (recursive hierarchical splitting: H1→H2→H3→bold→paragraphs→sentences), link/image extraction, markdown cleanup.
 - **`document_markdown.py`** — `DocumentMarkDown` class: converts inline images and links to numbered references.
-- **`text_transcript.py`** — Chapter/timestamp parsing, transcript splitting by chapters (for YouTube and AWS Transcribe).
+- **`text_transcript.py`** — Chapter/timestamp parsing, transcript splitting by chapters (for YouTube).
 
 ### Website Processing (`website/`)
 
@@ -95,7 +95,6 @@ Supported models:
 | `aws/bedrock_ask.py` | `query_aws_bedrock()`, `aws_bedrock_describe_image()` | AWS credentials |
 | `aws/bedrock_embedding.py` | `get_embedding()` (Titan v1), `get_embedding2()` (Titan v2) | AWS credentials |
 | `aws/s3_aws.py` | `s3_file_exist()`, `s3_take_file()` | AWS credentials |
-| `aws/transcript.py` | `aws_transcript()` | AWS credentials |
 | `aws/text_detect_language_aws.py` | `detect_text_language_aws()` (Comprehend) | AWS credentials |
 | `aws/credentionals.py` | `validate_credentials()` (STS) | AWS credentials |
 | `google/google_vertexai.py` | `connect_to_google_llm_with_role()` | `GCP_PROJECT_ID`, `GCP_LOCATION` |
@@ -105,7 +104,7 @@ Supported models:
 
 ### Other Modules
 
-- **`transcript.py`** — Transcription router (`aws`, `assemblyai`, `local`) + `transcript_price()` cost calculator.
+- **`transcript.py`** — Transcription via AssemblyAI (sole provider, ADR-011) + `transcript_price()` cost calculator + `get_assemblyai_price_per_minute()` per-model pricing.
 - **`google_auth.py`** — Google OAuth 2.0 credential management with token caching.
 - **`stalker_youtube_file.py`** — `StalkerYoutubeFile`: YouTube URL validation, metadata via `pytubefix`/`yt-dlp`, video download, transcript loading/splitting by chapters.
 
