@@ -1,0 +1,109 @@
+
+
+❯ /clear                                                                        
+  ⎿  (no content)
+
+❯ /bmad-agent-bmm-pm skonczylem przeglad PRD co teraz?                          
+
+
+● Cześć Ziutus! 👋 Tu John, Twój Product Manager.
+
+  Widzę, że skończyłeś przegląd PRD — świetnie! Zanim przejdziemy dalej, powiem
+  Ci co masz do dyspozycji. Oto moje menu:
+
+  ---
+  1. [MH] Wyświetl ponownie menu pomocy
+  2. [CH] Porozmawiaj ze mną o czymkolwiek
+  3. [CP] Stwórz PRD — prowadzone tworzenie dokumentu wymagań produktowych
+  4. [VP] Walidacja PRD — sprawdzenie czy PRD jest kompletny, spójny i dobrze
+  zorganizowany
+  5. [EP] Edytuj PRD — aktualizacja istniejącego dokumentu wymagań
+  6. [CE] Stwórz Epiki i Stories — specyfikacje napędzające development
+  7. [IR] Gotowość do implementacji — sprawdzenie czy PRD, UX, architektura i
+  epiki są ze sobą zsynchronizowane
+  8. [CC] Korekta kursu — gdy w trakcie implementacji odkryjesz potrzebę dużych
+  zmian
+  9. [PM] Party Mode
+  10. [DA] Zwolnij agenta
+
+  ---
+  Skoro skończyłeś przegląd PRD, naturalnym następnym krokiem byłoby:
+  - [VP] Walidacja PRD — jeśli chcesz upewnić się, że PRD jest kompletny i
+  spójny przed przejściem dalej
+  - [EP] Edytuj PRD — jeśli podczas przeglądu znalazłeś rzeczy do poprawienia
+  - [CE] Stwórz Epiki i Stories — jeśli PRD jest gotowy i chcesz przejść do
+  planowania implementacji
+
+  W każdej chwili możesz wpisać /bmad-help, np. /bmad-help co powinienem zrobić 
+  po przeglądzie PRD?
+
+  Co wybierasz?
+
+❯ po walidacji PRD nie trzeba architektury robic? bo wlasnie walidacje          
+skonczylem                                                                      
+
+● Masz absolutną rację, Ziutus! Standardowy flow BMad wygląda tak:
+
+  1. ✅ Stwórz PRD — zrobione
+  2. ✅ Walidacja PRD — właśnie skończone
+  3. 👉 Architektura — to jest następny krok!
+  4. Epiki i Stories
+  5. Sprawdzenie gotowości do implementacji
+
+  Architektura to jednak nie moja działka jako PM-a. Do tego potrzebujesz agenta
+   Architekta, który zaprojektuje rozwiązanie techniczne w oparciu o Twój PRD.
+
+  Proponuję:
+  - Zwolnij mnie (DA) i wywołaj agenta Architekta — to on przeprowadzi Cię przez
+   tworzenie dokumentu architektury
+  - Prawdopodobnie komenda to /bmad-agent-bmm-architect lub podobna
+
+  Jeśli nie jesteś pewien jak go wywołać, wpisz /bmad-help — podpowie Ci
+  następny krok i dokładną komendę.
+
+  Chcesz żebym Cię zwolnił, czy masz jeszcze jakieś pytania do mnie jako PM-a?
+
+❯ /bmad-help zrobilem PRD i walidacje PRD, jakim poleceniem zrobic Arcitektura  
+teraz?                                                                          
+
+
+● Znalazłem odpowiedź! Oto Twój następny krok:
+
+  ---
+  Następny krok: Stworzenie Architektury (wymagane ✅)
+
+  To jest krok wymagany (required=true) w fazie 3 (solutioning), sekwencja 10 —
+  czyli pierwszy krok po zakończeniu planowania PRD.
+
+  Komenda:
+  /bmad-bmm-create-architecture
+
+  Agent: 🏗️ Winston (Architect)
+
+  Opis: Prowadzony workflow do udokumentowania decyzji technicznych —
+  architektura, wybory technologiczne, infrastruktura.
+
+  ---
+  Pełna ścieżka dalej (faza 3 - solutioning):
+
+  #: 1
+  Krok: Stworzenie Architektury
+  Komenda: /bmad-bmm-create-architecture
+  Agent: 🏗️ Winston
+  Wymagany: ✅ tak
+  ────────────────────────────────────────
+  #: 2
+  Krok: Stworzenie Epików i Stories
+  Komenda: /bmad-bmm-create-epics-and-stories
+  Agent: 📋 John (PM)
+  Wymagany: ✅ tak
+  ────────────────────────────────────────
+  #: 3
+  Krok: Sprawdzenie gotowości do implementacji
+  Komenda: /bmad-bmm-check-implementation-readiness
+  Agent: 🏗️ Winston
+  Wymagany: ✅ tak
+
+  ---
+  Ważne: Uruchom architekturę w nowym oknie kontekstu (nowa konwersacja). Jeśli
+  masz dostęp do innego LLM wysokiej jakości, rozważ użycie go do walidacji.
