@@ -1,0 +1,792 @@
+
+
+❯ /clear                                                                        
+  ⎿  (no content)
+
+❯ /bmad-bmm-validate-prd                                                        
+
+
+● Teraz wczytam plik z PRD purpose oraz wyszukam PRD do walidacji.
+
+
+● Tryb walidacji: Walidacja istniejącego PRD według standardów BMAD.
+
+  Znalazłem PRD: _bmad-output/planning-artifacts/prd.md — używam go do
+  walidacji.
+
+  Wczytuję PRD...
+
+
+● Teraz wczytam dokumenty wejściowe z frontmattera PRD.
+
+
+● Wszystkie dokumenty wejściowe zostały załadowane pomyślnie. Oto podsumowanie:
+
+  Załadowałem następujące dokumenty z frontmattera PRD:
+
+  - .claude/exports/plan-sqlalchemy-migration.md — plan migracji SQLAlchemy
+  (research) ✓
+  - docs/architecture-backend.md — architektura backendu ✓
+  - docs/data-models-backend.md — modele danych ✓
+  - docs/architecture-decisions.md — decyzje architektoniczne (ADR-001 do
+  ADR-008) ✓
+
+  Czy chcesz dołączyć dodatkowe dokumenty referencyjne do tej walidacji?
+
+  Mogą to być:
+  - Dodatkowe dokumenty z badań lub kontekstu
+  - Dokumentacja projektu nie wymieniona w frontmatterze
+  - Standardy lub wymagania compliance
+  - Analiza konkurencyjna lub benchmarki
+
+  Podaj ścieżki do dodatkowych dokumentów lub wpisz none aby kontynuować.
+
+
+❯ none                                                                          
+
+  [--- Write: prd-validation-report.md — diff removed for readability ---]
+
+● Istnieje już poprzedni raport walidacji (z 2026-02-27) dla innej wersji PRD.
+  Nadpiszę go nowym raportem dla aktualnego PRD (migracja SQLAlchemy).
+
+  [--- Write: prd-validation-report.md — diff removed for readability ---]
+
+● Setup zakończony!
+
+  PRD do walidacji: _bmad-output/planning-artifacts/prd.md
+
+  Załadowane dokumenty wejściowe:
+  - PRD: prd.md (SQLAlchemy ORM Migration) ✓
+  - Research: 1 (plan-sqlalchemy-migration.md) ✓
+  - Project Docs: 3 (architecture-backend.md, data-models-backend.md,
+  architecture-decisions.md) ✓
+  - Dodatkowe referencje: 0 (none)
+
+  Raport walidacji: _bmad-output/planning-artifacts/prd-validation-report.md
+
+  Gotowy do rozpoczęcia walidacji.
+
+  ---
+  Wybierz opcję: [A] Advanced Elicitation [P] Party Mode [C] Kontynuuj do Format
+   Detection
+
+❯ C                                                                             
+
+
+● Analizuję strukturę PRD...
+
+  Struktura PRD (nagłówki ## Level 2):
+  1. Executive Summary
+  2. Project Classification
+  3. Success Criteria
+  4. User Journeys
+  5. Technical Context
+  6. Project Scoping & Risk Mitigation
+  7. Functional Requirements
+  8. Non-Functional Requirements
+
+  Sprawdzanie sekcji BMAD Core:
+
+  ┌─────────────────────┬───────────────────────────────────────────────────┐
+  │     Sekcja BMAD     │                      Status                       │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ Executive Summary   │ Present ✓                                         │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ Success Criteria    │ Present ✓                                         │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │                     │ Present ✓ (jako "Project Scoping & Risk           │
+  │ Product Scope       │ Mitigation" — zawiera MVP Strategy, Feature Set,  │
+  │                     │ Post-MVP phases)                                  │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ User Journeys       │ Present ✓                                         │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ Functional          │ Present ✓                                         │
+  │ Requirements        │                                                   │
+  ├─────────────────────┼───────────────────────────────────────────────────┤
+  │ Non-Functional      │ Present ✓                                         │
+  │ Requirements        │                                                   │
+  └─────────────────────┴───────────────────────────────────────────────────┘
+
+  Klasyfikacja: BMAD Standard — 6/6 sekcji core obecnych. Sekcja "Product Scope"
+   występuje pod wariantem nazwy "Project Scoping & Risk Mitigation" z pełną
+  zawartością (MVP strategy, feature set, post-MVP phases, risk mitigation).
+
+  Dodatkowe sekcje (poza core):
+  - Project Classification — typ projektu, domena, złożoność, kontekst
+  - Technical Context — architektura docelowa, session management, decyzje
+  technologiczne, data flow, zależności, pliki
+
+  Aktualizuję raport walidacji i przechodzę do systematycznych sprawdzeń...
+
+
+  [--- Update: prd-validation-report.md — 2 edits, diffs removed for readability ---]
+
+● Format wykryty: BMAD Standard (6/6 sekcji core)
+
+  Przechodzę do systematycznych sprawdzeń walidacyjnych...
+
+
+● Skanowanie PRD pod kątem anti-patternów gęstości informacyjnej...
+
+  Wyniki skanowania:
+
+  Conversational filler: Przeskanowano wzorce "The system will allow users
+  to...", "It is important to note that...", "In order to", "For the purpose
+  of", "With regard to" — 0 wystąpień. PRD konsekwentnie używa aktywnej formy:
+  "Developer can...", "Consumer can...", "Repository can...".
+
+  Wordy phrases: Przeskanowano wzorce "Due to the fact that", "In the event of",
+   "At this point in time", "In a manner that" — 0 wystąpień.
+
+  Redundant phrases: Przeskanowano wzorce "Future plans", "Past history",
+  "Absolutely essential", "Completely finish" — 0 wystąpień.
+
+  Total violations: 0 | Severity: Pass
+
+  [--- Update: prd-validation-report.md — 2 edits, diffs removed for readability ---]
+
+● Walidacja gęstości informacyjnej zakończona — Pass
+
+  Przechodzę do następnego sprawdzenia...
+
+
+● Brak Product Brief wśród dokumentów wejściowych (frontmatter PRD: briefs: 0).
+
+  Product Brief Coverage: Pominięto (brak Product Brief)
+
+  [--- Update: prd-validation-report.md — 2 edits, diffs removed for readability ---]
+
+● Przechodzę do następnego sprawdzenia...
+
+
+● Analizuję mierzalność wszystkich wymagań funkcjonalnych i niefunkcjonalnych...
+
+  Analiza Functional Requirements (FR1-FR43):
+
+  Sprawdzenie: Format "[Actor] can [capability]"
+  Wynik: 43/43 zgodne — "Developer can...", "Consumer can...", "Repository
+    can...", "Flask application can..."
+  ────────────────────────────────────────
+  Sprawdzenie: Subjective adjectives (easy, fast, intuitive...)
+  Wynik: 0 wystąpień
+  ────────────────────────────────────────
+  Sprawdzenie: Vague quantifiers (multiple, several, some...)
+  Wynik: 0 wystąpień
+  ────────────────────────────────────────
+  Sprawdzenie: Implementation leakage
+  Wynik: 0 true violations — technology names (SQLAlchemy, pgvector-python,
+    Alembic, cosine_distance()) are domain vocabulary for a migration PRD;
+  script
+     filenames (FR31-FR38) define migration scope
+
+  Analiza Non-Functional Requirements (NFR1-NFR12):
+
+  ┌───────┬─────────────────────────────────────┬───────────────────────────┐
+  │  NFR  │               Metric                │         Testable?         │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR1  │ "Zero raw cursor.execute() calls"   │ Yes — code search         │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR2  │ "ruff check backend/ with zero      │ Yes — tool exit code      │
+  │       │ warnings"                           │                           │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR3  │ "All existing unit tests pass"      │ Yes — pytest exit code    │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR4  │ "type hints (Mapped[type])"         │ Yes — code inspection     │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR5  │ "Enum classes preserved with        │ Yes — import test         │
+  │       │ identical values"                   │                           │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR6  │ "Database schema identical to       │ Yes — Alembic diff        │
+  │       │ before"                             │                           │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR7  │ "Changes in exactly one file"       │ Yes — count files         │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR8  │ "One file plus one Alembic command" │ Yes — count steps         │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR9  │ "No dead code remains"              │ Yes — grep for old        │
+  │       │                                     │ classes                   │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR10 │ "Dependencies added with version    │ Yes — pyproject.toml      │
+  │       │ pins"                               │ inspection                │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR11 │ "uv lock produces valid lock file"  │ Yes — exit code           │
+  ├───────┼─────────────────────────────────────┼───────────────────────────┤
+  │ NFR12 │ ".venv_wsl synchronized"            │ Yes — import test         │
+  └───────┴─────────────────────────────────────┴───────────────────────────┘
+
+  Missing metrics: 0 | Incomplete template: 0 | Missing context: 0
+
+  [--- Update: prd-validation-report.md — 2 edits, diffs removed for readability ---]
+
+● Walidacja mierzalności zakończona — Total Violations: 0 (Pass)
+
+  Przechodzę do następnego sprawdzenia...
+
+
+● Analizuję łańcuch traceability...
+
+  Executive Summary → Success Criteria: Intact ✓
+  - "Adding or removing a column requires 5+ changes" → User Success:
+  "single-location change"
+  - "Alembic generates migration scripts" → User Success: "auto-generated
+  migration"
+  - "Eliminates fear of changing schema" → User Success: "without anxiety"
+  - "Unblocks evolution of the data model" → Business Success: "unblocks future
+  work"
+  - "Three-class simplified to two layers" → Technical Success: "old classes
+  removed"
+
+  Success Criteria → User Journeys: Intact ✓
+  - User Success (single-location, no anxiety) → Journey 1 (Schema Modification)
+  - Technical Success (import scripts work) → Journey 2 (Import Run)
+  - Technical Success (batch pipeline works) → Journey 3 (Embeddings Pipeline)
+  - Technical Success (Flask endpoints identical) → Journey 4 (API Request)
+  - Measurable (zero cursor.execute()) → Journeys 2-4
+
+  User Journeys → FRs: Intact ✓
+  - Journey 1 → FR1-FR9 (ORM Model + Schema Migration)
+  - Journey 2 → FR14-FR19, FR31-FR34 (Persistence + Import)
+  - Journey 3 → FR20-FR23, FR24-FR30, FR35-FR38 (Embeddings + Repository +
+  Pipeline)
+  - Journey 4 → FR10-FR13, FR24, FR39-FR43 (Session + Repository + Flask API)
+
+  Scope → FR Alignment: Intact ✓
+  All 8 MVP feature set items map to FRs.
+
+  Orphan FRs: 0 | Unsupported Success Criteria: 0 | Journeys without FRs: 0
+
+  [--- Update: prd-validation-report.md — 2 edits, diffs removed for readability ---]
+
+● Walidacja traceability zakończona — Total Issues: 0 (Pass)
+
+  Przechodzę do następnego sprawdzenia...
+
+
+● Skanowanie FRs i NFRs pod kątem implementation leakage...
+
+  Kontekst domenowy:
+  Ten PRD definiuje migrację technologiczną. Technologie docelowe (SQLAlchemy,
+  Alembic, pgvector-python) stanowią słownictwo domenowe — to CZEGO dotyczy PRD,
+   nie JAK to zbudować. Analogicznie do PRD integracji Slack Bot wymieniającego
+  Slack.
+
+  Wyniki skanowania FRs:
+
+  ┌────────────────────┬────────────┬───────────────────────────────────────┐
+  │     Kategoria      │ Violations │              Borderline               │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Frontend           │ 0          │ 0                                     │
+  │ Frameworks         │            │                                       │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Backend Frameworks │ 0          │ 0 (Flask in FR10-FR11 = existing      │
+  │                    │            │ context)                              │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Databases          │ 0          │ 0                                     │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Cloud Platforms    │ 0          │ 0                                     │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Infrastructure     │ 0          │ 0                                     │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Libraries          │ 0          │ 2                                     │
+  ├────────────────────┼────────────┼───────────────────────────────────────┤
+  │ Other              │ 0          │ 3                                     │
+  └────────────────────┴────────────┴───────────────────────────────────────┘
+
+  Borderline instances w FRs (nie true violations):
+  - FR7: "alembic upgrade head" — specific command syntax; could be "apply
+  migrations with a single command"
+  - FR8: "alembic downgrade" — specific command syntax
+  - FR23: "pgvector-python cosine_distance() operator" — specific library +
+  method name; could be "native vector similarity search operator"
+  - FR31-FR38: Specific script filenames — define migration scope, acceptable
+  for brownfield project
+  - FR39-FR43: Endpoint names — API contract identifiers, acceptable
+
+  Wyniki skanowania NFRs:
+
+  ┌───────┬────────────────────┬────────────────────────────────────────────┐
+  │  NFR  │  Implementation    │                 Assessment                 │
+  │       │        term        │                                            │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR1  │ cursor.execute()   │ Naming the anti-pattern to eliminate —     │
+  │       │                    │ acceptable                                 │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR2  │ ruff check         │ Established project standard — borderline  │
+  │       │ backend/           │                                            │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR4  │ Mapped[type]       │ SQLAlchemy-specific — borderline           │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR5  │ Class names        │ Specific classes being preserved —         │
+  │       │                    │ borderline                                 │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR10 │ pyproject.toml     │ Specific file — borderline                 │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR11 │ uv lock            │ Specific tool command — borderline         │
+  ├───────┼────────────────────┼────────────────────────────────────────────┤
+  │ NFR12 │ .venv_wsl          │ Specific file — borderline                 │
+  └───────┴────────────────────┴────────────────────────────────────────────┘
+
+  [--- Update: prd-validation-report.md — 2 edits, diffs removed for readability ---]
+
+● Walidacja implementation leakage zakończona — 0 true violations (Pass)
+
+  Przechodzę do następnego sprawdzenia...
+
+
+● PRD frontmatter: domain: personal_ai_knowledge_management, complexity: low.
+  Domena niskozłożonościowa — pomijam szczegółowe sprawdzenia compliance.
+
+  [--- Update: prd-validation-report.md — 2 edits, diffs removed for readability ---]
+
+● Domain Compliance Validation: Pominięto (low complexity)
+
+  Przechodzę do następnego sprawdzenia...
+
+
+● Project type z frontmattera: api_backend
+
+  Analizuję zgodność z wymaganiami dla api_backend...
+
+  Required sections (z project-types.csv):
+
+  ┌────────────────┬─────────────┬──────────────────────────────────────────┐
+  │     Sekcja     │   Status    │                  Uwagi                   │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │                │ Present     │ FR39-FR43 specyfikują endpointy Flask    │
+  │ endpoint_specs │ (partial)   │ API; Technical Context opisuje target    │
+  │                │             │ architecture                             │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │ auth_model     │ N/A         │ Auth (x-api-key) nie zmienia się w tej   │
+  │                │             │ migracji — nie jest przedmiotem PRD      │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │                │             │ Technical Context opisuje architekturę   │
+  │ data_schemas   │ Present     │ ORM; PRD referencuje 28-kolumnowy        │
+  │                │             │ schemat                                  │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │ error_codes    │ N/A         │ Wewnętrzna migracja — error codes nie są │
+  │                │             │  przedmiotem                             │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │ rate_limits    │ N/A         │ Wewnętrzna migracja — rate limits się    │
+  │                │             │ nie zmieniają                            │
+  ├────────────────┼─────────────┼──────────────────────────────────────────┤
+  │ api_docs       │ N/A         │ Wewnętrzna migracja — API docs nie są    │
+  │                │             │ przedmiotem                              │
+  └────────────────┴─────────────┴──────────────────────────────────────────┘
+
+  Skip sections (z project-types.csv):
+
+  ┌───────────────┬──────────────────────────────────────────────────────────┐
+  │    Sekcja     │                          Status                          │
+  ├───────────────┼──────────────────────────────────────────────────────────┤
+  │ ux_ui         │ Absent ✓                                                 │
+  ├───────────────┼──────────────────────────────────────────────────────────┤
+  │ visual_design │ Absent ✓                                                 │
+  ├───────────────┼──────────────────────────────────────────────────────────┤
+  │               │ Present — ale opisują workflow developera (schema        │
+  │ user_journeys │ modification, import run, embeddings pipeline, API       │
+  │               │ request), nie end-user UX                                │
+  └───────────────┴──────────────────────────────────────────────────────────┘
+
+  Uwaga kontekstowa: CSV definiuje user_journeys jako skip dla api_backend, ale
+  BMAD PRD core wymaga User Journeys jako obowiązkowej sekcji (6/6 core). W tym
+  PRD User Journeys opisują scenariusze operacyjne developera/operatora — nie
+  tradycyjne ścieżki użytkownika UI. Jest to napięcie w frameworku, nie
+  naruszenie w PRD.
+
+  [--- Update: prd-validation-report.md — 2 edits, diffs removed for readability ---]
+
+● Project-Type Compliance Validation zakończona — Pass
+
+  Przechodzę do następnego sprawdzenia...
+
+
+● Oceniam 43 wymagania funkcjonalne wg kryteriów SMART...
+
+  Wszystkie FRs przeanalizowane. Wyniki:
+
+  - All scores >= 3: 100% (43/43)
+  - All scores >= 4: 100% (43/43)
+  - Overall Average Score: 4.98/5.0
+
+  Jedyny FR poniżej perfect score:
+  - FR12 (S:4, M:4) — "Standalone scripts can obtain and manage their own
+  database sessions" — "standalone scripts" nieco ogólne (które skrypty?),
+  "manage" nieco nieprecyzyjne
+
+  [--- Update: prd-validation-report.md — 2 edits, diffs removed for readability ---]
+
+● SMART Requirements Validation zakończona — 100% acceptable, avg 4.98/5.0 
+  (Pass)
+
+  Przechodzę do następnego sprawdzenia...
+
+
+● Przeprowadzam holistyczną ocenę jakości PRD...
+
+  Document Flow & Coherence: Excellent
+
+  Dokument buduje klarowną narrację: problem (5+ ręcznych zmian przy każdej
+  kolumnie) → rozwiązanie (SQLAlchemy ORM) → scenariusze użycia (4 vivid
+  journeys) → szczegółowe wymagania (43 FRs + 12 NFRs). Sekcja "What Makes This
+  Special" krystalizuje wartość: "eliminates the fear of changing the database
+  schema."
+
+  Dual Audience: 5/5
+
+  Dla ludzi: Executive-level narrative compelling, developer clarity exceptional
+   (architecture diagrams, file inventory, session management strategies).
+  Dla LLM: Clean ## headers, consistent FR/NFR numbering, YAML frontmatter, 9 FR
+   groups map directly to implementation epics.
+
+  BMAD Principles: 7/7 Met
+
+  Rating: 5/5 — Excellent
+
+  [--- Update: prd-validation-report.md — 2 edits, diffs removed for readability ---]
+
+● Holistic Quality Assessment zakończona — Rating: 5/5 Excellent
+
+  Przechodzę do finalnych sprawdzeń...
+
+
+● Przeprowadzam finalną walidację kompletności...
+
+  Template variables: 0 — brak pozostałych zmiennych szablonowych.
+
+  Content completeness: Wszystkie 8 sekcji complete.
+
+  Section-specific: Wszystkie kryteria spełnione.
+
+  Frontmatter: 5/5 pól wypełnionych.
+
+  [--- Update: prd-validation-report.md — 2 edits, diffs removed for readability ---]
+
+● Completeness Validation zakończona — 100% Complete (Pass)
+
+  Przechodzę do finalnego kroku...
+
+
+● Finalizuję raport walidacji...
+
+  [--- Update: prd-validation-report.md — diff removed for readability ---]
+
+● Now let me append the final summary section.
+
+  [--- Update: prd-validation-report.md — diff removed for readability ---]
+
+● ---
+  Walidacja PRD zakończona!
+
+  Overall Status: Pass
+
+  Szybkie wyniki:
+
+  ┌────────────────────────┬──────────────────────────────────────┐
+  │      Sprawdzenie       │                Wynik                 │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Format                 │ BMAD Standard (6/6)                  │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Gęstość informacji     │ Pass (0 violations)                  │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Mierzalność            │ Pass (0 violations, 55 requirements) │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Traceability           │ Pass (0 orphans, all chains intact)  │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Implementation Leakage │ Pass (0 true violations)             │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ SMART Quality          │ Pass (avg 4.98/5.0)                  │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Holistic Quality       │ 5/5 — Excellent                      │
+  ├────────────────────────┼──────────────────────────────────────┤
+  │ Kompletność            │ 100%                                 │
+  └────────────────────────┴──────────────────────────────────────┘
+
+  Critical Issues: 0 | Warnings: 0
+
+  Top 3 ulepszeń (opcjonalnych):
+  1. Dodaj sekcję "Out of Scope" — skonsoliduj rozproszone informacje o
+  odroczonym Pydantic, Lambda, ElasticSearch
+  2. Dodaj sekcję "Assumptions & Dependencies" — udokumentuj założenia (schemat
+  DB = DDL scripts, pgvector identyczne wyniki, brak danych produkcyjnych)
+  3. Rozważ ekstrakcję szczegółów architektury do osobnego tech spec — Technical
+   Context (~80 linii) zawiera treści na poziomie dokumentu architektonicznego
+
+  Raport zapisany: _bmad-output/planning-artifacts/prd-validation-report.md
+
+  PRD jest gotowy do dalszej pracy (architektura, epiki, stories).
+
+  ---
+  Co chcesz zrobić dalej?
+
+  [R] Review Detailed Findings — przejście przez raport sekcja po sekcji
+  [E] Use Edit Workflow — systematyczne poprawki na podstawie raportu
+  [F] Fix Simpler Items — natychmiastowe poprawki prostych elementów
+  [X] Exit — zakończ walidację
+
+
+❯ F                                                                             
+
+● Na podstawie raportu walidacji, oto proste poprawki do zastosowania:
+
+  1. FR12 — doprecyzowanie — zmienić "Standalone scripts" na konkretne skrypty i
+   zdefiniować "manage"
+  2. Dodanie sekcji "Out of Scope" — skonsolidować rozproszone informacje o
+  Pydantic, Lambda, ElasticSearch, JTI
+  3. Dodanie sekcji "Assumptions & Dependencies" — udokumentować 4 kluczowe
+  założenia
+
+  Które poprawki chcesz zastosować? Możesz wybrać numery (np. 1,2,3 dla
+  wszystkich, 2 dla samego Out of Scope, itp.)
+
+❯ 1,2,3                                                                         
+
+
+● Teraz stosuję 3 poprawki.
+
+  Poprawka 1: FR12 — doprecyzowanie
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+● Poprawka 2: Sekcja "Out of Scope"
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+● Poprawka 3: Sekcja "Assumptions & Dependencies"
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+● Wszystkie 3 poprawki zastosowane:
+
+  1. FR12 — doprecyzowano: "Import scripts and batch pipeline can obtain,
+  commit, and close their own database sessions (script-scoped lifecycle)"
+  2. Out of Scope — dodano sekcję z 9 wyraźnie wykluczonych elementów (Pydantic,
+   TypeScript sync, nowe tabele, JTI, MCP, ElasticSearch, Lambda,
+  Flask-SQLAlchemy, zmiany schematu)
+  3. Assumptions & Dependencies — dodano sekcję z 5 założeniami i 4
+  zależnościami
+
+  ---
+  Co dalej?
+
+  [R] Review Detailed Findings — przejście przez raport sekcja po sekcji
+  [E] Use Edit Workflow — systematyczne poprawki na podstawie raportu
+  [F] Fix Simpler Items — więcej natychmiastowych poprawek
+  [X] Exit — zakończ walidację
+
+
+❯ postgres 17 na NAS zostal dzisiaj zmigrowany do Postgres 18                   
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+● Zaktualizowałem. Przy okazji — chcesz żebym zaktualizował też CLAUDE.md, gdzie
+   jest wzmianka o wersji PostgreSQL?
+
+  Database: PostgreSQL 18 with pgvector extension [...] (RDS: 18.1, Docker/NAS: 
+  17 — pending upgrade via B-69)
+
+
+❯ tak                                                                           
+
+
+  [--- Update: CLAUDE.md — diff removed for readability ---]
+
+● Gotowe. Usunąłem wzmiankę o wersji 17 i oczekującej migracji B-69 — teraz
+  wszędzie PostgreSQL 18.
+
+  Sprawdzę jeszcze czy są inne odniesienia do pg 17.
+
+
+● Sporo odniesień. Chcesz żebym zaktualizował te dokumenty teraz, czy wolisz to
+  zrobić osobnym commitem/zadaniem? To ~15 plików z referencjami do PostgreSQL
+  17.
+
+❯ teraz                                                                         
+
+● Zaktualizuję aktywne dokumenty (pomijam archiwalne pliki w archive/ i
+  implementation-artifacts/ — to historyczne snapshoty).
+
+
+● Teraz stosuję wszystkie edycje:
+
+  [--- Update: CLAUDE.md — 2 edits, diffs removed for readability ---]
+
+  [--- Update: project-overview.md — 2 edits, diffs removed for readability ---]
+
+  [--- Update: development-guide.md — diff removed for readability ---]
+
+  [--- Update: NAS_Deployment.md — 2 edits, diffs removed for readability ---]
+
+  [--- Update: Docker_Local.md — 2 edits, diffs removed for readability ---]
+
+  [--- Update: architecture-infra.md — 2 edits, diffs removed for readability ---]
+
+  [--- Update: architecture-backend.md — diff removed for readability ---]
+
+● Teraz zaktualizuję backlog — B-69 powinien być oznaczony jako done.
+
+
+  [--- Update: backlog.md — diff removed for readability ---]
+
+● Gotowe. Zaktualizowane pliki (12 edycji w 8 plikach):
+
+  ┌──────────────────────────────┬───────────────────────────────────────────┐
+  │             Plik             │                  Zmiana                   │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ CLAUDE.md                    │ Usunięto "(RDS: 18.1, Docker/NAS: 17 —    │
+  │                              │ pending upgrade via B-69)"                │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ backend/database/CLAUDE.md   │ 17 → 18 (opis + Docker image)             │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/project-overview.md     │ 17 → 18 (2 miejsca)                       │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/development-guide.md    │ 17 → 18                                   │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/CICD/NAS_Deployment.md  │ 17 → 18 (tabela + Docker setup)           │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/CICD/Docker_Local.md    │ pg17 → pg18 (pull + run)                  │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/architecture-infra.md   │ 17 → 18 (tabela + opis Dockerfile)        │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/architecture-backend.md │ 17 → 18                                   │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ backlog.md                   │ B-69 status: backlog → done (2026-03-07)  │
+  └──────────────────────────────┴───────────────────────────────────────────┘
+
+  Pominąłem pliki archiwalne (archive/, implementation-artifacts/) — to
+  historyczne snapshoty.
+
+  ---
+  Co dalej?
+
+  [R] Review Detailed Findings
+  [E] Use Edit Workflow
+  [F] Fix Simpler Items
+  [X] Exit
+
+
+❯ sprawdz jeszcze informacje o vectorach, teraz nie powinno byc szywtno         
+1536-dim vector, teraz to jest zalezne od uzytego embedingu                     
+
+
+● Widzę problem — wiele dokumentów traktuje 1536 jako stały wymiar, ale
+  backend/database/CLAUDE.md:130 już poprawnie opisuje kolumnę jako bezwymiarową
+   (vector bez wymiaru) z osobnymi indeksami per model. Sprawdzę jeszcze DDL.
+
+
+● Potwierdzam — kolumna embedding jest bezwymiarowa, a modele mają różne wymiary
+   (1536, 1024). Aktualizuję dokumenty:
+
+  [--- Update: project-overview.md — diff removed for readability ---]
+
+  [--- Update: index.md — diff removed for readability ---]
+
+  [--- Update: data-models-backend.md — 2 edits, diffs removed for readability ---]
+
+  [--- Update: architecture-backend.md — 2 edits, diffs removed for readability ---]
+
+  [--- Update: CLAUDE.md — diff removed for readability ---]
+
+  [--- Update: README.md — diff removed for readability ---]
+
+  [--- Update: index.md — diff removed for readability ---]
+
+  [--- Update: README.md — diff removed for readability ---]
+
+● Teraz PRD — tam jest kilka referencji do Vector(1536):
+
+  [--- Update: prd.md — 4 edits, diffs removed for readability ---]
+
+● Sprawdzę jeszcze plan migracji i docs/embeddings.md — tam referencje do 1536
+  dotyczą konkretnych modeli (ada-002, Titan v1), więc są poprawne. Ale
+  docs/architecture-backend.md ma jeszcze tabelę modeli:
+
+
+● Titan v2 ma faktycznie 1024 wymiarów, nie 1536. Poprawię:
+
+  [--- Update: architecture-backend.md — diff removed for readability ---]
+
+● Gotowe. Podsumowanie zmian wektorowych (10 edycji w 8 plikach):
+
+  ┌──────────────────────────────┬───────────────────────────────────────────┐
+  │             Plik             │                  Zmiana                   │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ CLAUDE.md                    │ "1536 dimensions" → "dimensionless        │
+  │                              │ column, per-model HNSW partial indexes"   │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ README.md                    │ "1536-dim" → "multi-model,                │
+  │                              │ variable-dimension"                       │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/index.md                │ Usunięto "1536-dim"                       │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/project-overview.md     │ "1536-dim vectors" → "variable-dimension  │
+  │                              │ vectors per embedding model"              │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ docs/data-models-backend.md  │ vector(1536) → vector (dimensionless) +   │
+  │                              │ wymiary per model                         │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │                              │ "1536-dim" → "1024-1536 dim               │
+  │ docs/architecture-backend.md │ (model-dependent)", Titan v2: 1536→1024,  │
+  │                              │ pipeline: "vary by model"                 │
+  ├──────────────────────────────┼───────────────────────────────────────────┤
+  │ prd.md                       │ 4x Vector(1536) → Vector() dimensionless  │
+  └──────────────────────────────┴───────────────────────────────────────────┘
+
+  Nie ruszałem docs/embeddings.md — tam wymiary są przypisane do konkretnych
+  modeli (poprawne) i indeksy HNSW z castami ::vector(1536) / ::vector(1024)
+  odzwierciedlają faktyczną definicję DDL.
+
+  ---
+  Co dalej?
+
+  [R] Review Detailed Findings
+  [E] Use Edit Workflow
+  [F] Fix Simpler Items
+  [X] Exit
+
+
+❯ czy to wplywa teraz na nasz prd i validacje jego?                             
+
+● Nie wpływa na wynik walidacji. Wyjaśnienie:
+
+  - Overall Status: Pass — bez zmian
+  - Holistic Quality: 5/5 — bez zmian
+  - Wszystkie sprawdzenia (density, measurability, traceability, SMART) — wyniki
+   identyczne
+
+  Zmiany które zastosowaliśmy (FR12, Out of Scope, Assumptions, Vector
+  dimensions) to poprawki po walidacji — one wzmacniają PRD, nie wprowadzają
+  nowych problemów. PRD był już oceniony jako Excellent, a teraz jest jeszcze
+  lepszy.
+
+  Jedyne co warto zrobić to dodać notatkę w raporcie walidacji, że po walidacji
+  zastosowano poprawki. Chcesz żebym to dodał?
+
+❯ tak                                                                           
+
+
+  [--- Update: prd-validation-report.md — diff removed for readability ---]
+
+● Dodałem sekcję "Post-Validation Fixes Applied" na końcu raportu z opisem
+  wszystkich 4 poprawek i notatką że nie wpływają na wyniki walidacji.
+
+  ---
+  Co dalej?
+
+  [R] Review Detailed Findings
+  [E] Use Edit Workflow
+  [F] Fix Simpler Items
+  [X] Exit
+
+❯ X                                                                             
+
+● Raport walidacji zapisany:
+  _bmad-output/planning-artifacts/prd-validation-report.md
+
+  Podsumowanie: Pass — PRD jest exemplary (5/5 Excellent) i gotowy do dalszej
+  pracy (architektura, epiki, stories). Po walidacji zastosowano 4 poprawki
+  wzmacniające dokument.
+
+  Sugerowane następne kroki:
+  - Utworzenie architektury technicznej na podstawie PRD
+  - Breakdown na epiki i stories
+  - Rozpoczęcie implementacji migracji SQLAlchemy
