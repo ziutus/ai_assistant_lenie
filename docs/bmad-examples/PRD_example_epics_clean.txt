@@ -1,0 +1,194 @@
+
+
+❯ /clear                                                                        
+  ⎿  (no content)
+
+❯  /bmad-bmm-check-implementation-readiness                                     
+
+     Skill tool due to disable-model-invocation
+
+● Skill bmad-bmm-check-implementation-readiness ma flagę
+  disable-model-invocation, więc nie mogę go uruchomić bezpośrednio. Sprawdzę
+  jego definicję i wykonam sprawdzenie ręcznie.
+
+
+● Rozumiem. Rozpoczynam workflow Check Implementation Readiness zgodnie z
+  instrukcjami.
+
+  ---
+  Rozpoczynam Document Discovery — inwentaryzację wszystkich plików
+  projektowych.
+
+  Będę:
+  1. Szukać wszystkich wymaganych dokumentów (PRD, Architecture, Epics, UX)
+  2. Grupować shardowane dokumenty razem
+  3. Identyfikować duplikaty (wersje pełne + shardowane)
+  4. Przedstawić wyniki do potwierdzenia
+
+
+● Sprawdzam jeszcze archiwum PRD.
+
+
+● ---
+  Document Discovery Complete
+
+  PRD Documents
+
+  Whole Documents:
+  - prd.md (aktualny)
+  - prd-validation-report.md (raport walidacyjny)
+
+  Archived PRDs:
+  - 6 zarchiwizowanych wersji PRD w archive/ (sprint 1–6)
+
+  Brak duplikatów — PRD nie jest shardowany.
+
+  Architecture Documents
+
+  Whole Documents:
+  - architecture.md
+
+  Brak duplikatów — brak wersji shardowanej.
+
+  Epics & Stories Documents
+
+  Whole Documents:
+  - epics.md
+
+  Sharded Documents:
+  - Folder: epics/
+    - index.md
+    - epic-20.md
+    - backlog.md
+
+  ⚠️ CRITICAL ISSUE: Duplikat formatu dokumentu Epics
+  - Epics istnieje zarówno jako epics.md (pełny dokument) ORAZ folder epics/
+  (shardowany)
+  - Musisz wybrać, której wersji użyć do oceny
+
+  Archived Epics:
+  - 3 zarchiwizowane wersje w archive/
+
+  UX Design Documents
+
+  ⚠️ WARNING: Brak dokumentu UX
+  - Dokument UX Design nie został znaleziony
+  - Wpłynie to na kompletność oceny
+
+  ---
+  Wymagane działania:
+  1. Duplikat Epics — który format jest aktualny? epics.md czy folder epics/?
+  Proszę wskazać, lub usunąć/przenieść nieaktualną wersję.
+  2. Brak UX — czy dokument UX Design istnieje w innej lokalizacji, czy projekt
+  nie wymaga tego dokumentu?
+
+  Gotowy do kontynuacji? [C] Kontynuuj po rozwiązaniu powyższych kwestii
+
+
+❯ epics.md jest aktualny, w epics/ jest backlog, trzeba go zostawic, index.md   
+zawiera informacje  o dawnych sprintach. to jest chyba stary ipcs               
+@_bmad-output/planning-artifacts/epics/epic-20.md                               
+  ⎿  Read _bmad-output\planning-artifacts\epics\epic-20.md (211 lines)
+
+● Rozumiem. Podsumowując sytuację z Epics:
+
+  - epics.md — aktualny dokument do oceny ✅
+  - epics/backlog.md — backlog, zostaje (dokument uzupełniający)
+  - epics/index.md — stare sprinty (archiwalne)
+  - epics/epic-20.md — stary/nieaktualny plik
+
+  Do oceny implementation readiness użyję epics.md jako główny dokument Epics, z
+   epics/backlog.md jako uzupełnienie.
+
+  Zostaje jeszcze kwestia dokumentu UX Design — nie został znaleziony. Czy:
+  - Projekt nie wymaga dokumentu UX?
+  - Istnieje w innej lokalizacji?
+
+  Select an Option: [C] Kontynuuj do File Validation
+
+❯ na razie pracujemy na backend, UX nie jest potrzebny na razie. bedziemy o tym 
+ rozmawiac pozniej                                                              
+
+● Rozumiem — UX pomijamy na tym etapie.
+
+  Zapisuję inwentarz dokumentów i przechodzę do następnego kroku.
+
+
+  [--- Write: implementation-readiness-report-2026-03-07.md — diff removed for readability ---]
+
+● Inwentarz zapisany. Ładuję krok 2 — analiza PRD.
+
+
+● Rozpoczynam Analizę PRD — ekstrakcję wszystkich wymagań.
+
+  Wczytuję kompletny dokument PRD.
+
+
+● PRD przeczytany w całości. Teraz wyodrębniam wymagania i dodaję je do raportu.
+
+
+  [--- Update: implementation-readiness-report-2026-03-07.md — 2 edits, diffs removed for readability ---]
+
+● Analiza PRD zakończona. Wyodrębniono 43 FR i 12 NFR. Przechodzę do kroku 3 —
+  walidacja pokrycia epics.
+
+
+● Rozpoczynam Walidację Pokrycia Epics. Wczytuję dokument epics.
+
+
+● Doskonale. Dokument epics zawiera kompletną mapę pokrycia FR. Wszystkie 43 FR
+  są pokryte w epicach. Aktualizuję raport.
+
+
+  [--- Update: implementation-readiness-report-2026-03-07.md — 2 edits, diffs removed for readability ---]
+
+● Pokrycie epics zwalidowane — 100% FR i NFR pokryte. Przechodzę do kroku 4 (UX
+  alignment). Ponieważ UX nie jest potrzebny, sprawdzę co krok mówi i przeskoczę
+   do następnego.
+
+
+● PRD dotyczy migracji backendu (bazy danych), nie ma komponentów UI w zakresie
+  tego sprintu. Dodaję krótką notę i przechodzę dalej.
+
+
+  [--- Update: implementation-readiness-report-2026-03-07.md — 2 edits, diffs removed for readability ---]
+
+● Przechodzę do kroku 5 — przegląd jakości epics.
+
+
+● Przeprowadzam przegląd jakości epics — rygorystyczna walidacja przeciwko
+  najlepszym praktykom.
+
+  Mam już pełny dokument epics w pamięci. Przeczytam jeszcze architekturę dla
+  kontekstu.
+
+
+● Mam wystarczający kontekst. Architektura potwierdza: brownfield, brak starter
+  template, praca w istniejącym backendzie Flask. Teraz przeprowadzam
+  rygorystyczny przegląd jakości epics.
+
+  [--- Update: implementation-readiness-report-2026-03-07.md — 2 edits, diffs removed for readability ---]
+
+● Przegląd jakości epics zakończony — brak krytycznych ani poważnych problemów.
+  3 drobne uwagi. Przechodzę do kroku 6 — końcowa ocena gotowości.
+
+
+  [--- Update: implementation-readiness-report-2026-03-07.md — 2 edits, diffs removed for readability ---]
+
+● ---
+  Implementation Readiness Assessment Complete
+
+  Raport wygenerowany:
+  _bmad-output/planning-artifacts/implementation-readiness-report-2026-03-07.md
+
+  Podsumowanie:
+
+  - Status: READY — projekt gotowy do implementacji
+  - 0 krytycznych i 0 poważnych problemów
+  - 3 drobne uwagi (opcjonalne ulepszenia — nie blokują implementacji)
+  - 100% pokrycie FR (43/43) i 100% pokrycie NFR (12/12)
+  - Epics dobrze ustrukturyzowane z pełną tracabilnością
+
+  Następny krok: Rozpocząć implementację od Epic 1, Story 1.1 (Dependencies,
+  Engine & Session Factories).
+

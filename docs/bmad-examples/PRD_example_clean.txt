@@ -1,0 +1,1559 @@
+
+
+❯ /clear                                                                        
+  ⎿  (no content)
+
+❯ /bmad-agent-bmm-pm @.claude/exports/plan-sqlalchemy-migration.md              
+  ⎿  Read .claude\exports\plan-sqlalchemy-migration.md (149 lines)
+
+
+● ---
+  📋 Cześć, Ziutus!
+
+  Jestem John, Twój Product Manager. Widzę, że przekazałeś mi plan migracji na
+  SQLAlchemy ORM + Pydantic Schemas (B-92) — solidny dokument techniczny.
+
+  Oto co mogę dla Ciebie zrobić:
+
+  1. [MH] Wyświetl ponownie menu pomocy
+  2. [CH] Porozmawiaj z agentem o czymkolwiek
+  3. [CP] Stwórz PRD — ekspercka facylitacja tworzenia dokumentu wymagań
+  produktowych
+  4. [VP] Walidacja PRD — sprawdź kompletność, spójność i organizację PRD
+  5. [EP] Edytuj PRD — zaktualizuj istniejący dokument wymagań
+  6. [CE] Stwórz Epiki i Stories — specyfikacje napędzające development
+  7. [IR] Gotowość do implementacji — upewnij się, że PRD, UX, architektura i
+  epiki są zsynchronizowane
+  8. [CC] Korekta kursu — co robić gdy w trakcie implementacji pojawia się
+  potrzeba dużych zmian
+  9. [PM] Party Mode
+  10. [DA] Pożegnaj agenta
+
+  W każdej chwili możesz wpisać /bmad-help, żeby uzyskać poradę co robić dalej.
+  Np. /bmad-help gdzie powinienem zacząć z tym planem migracji na SQLAlchemy.
+
+  Co chciałbyś zrobić?
+
+❯ chce omowic bardzo duza zmiane: @.claude/exports/plan-sqlalchemy-migration.md 
+  ⎿  Read .claude\exports\plan-sqlalchemy-migration.md (149 lines)
+
+● Świetnie, Ziutus — porozmawiajmy o tym planie migracji. Przeczytałem go już na
+   wejściu.
+
+  Zanim wejdziemy w szczegóły, muszę zadać kilka kluczowych pytań, bo ten plan
+  to poważna zmiana architektury — dotyka warstwy danych, która jest kręgosłupem
+   całego systemu.
+
+  ---
+  Pytania na start:
+
+  1. DLACZEGO teraz?
+  Plan mówi, że "dodanie kolumny wymaga zmian w 5+ miejscach". Ile razy w
+  ostatnich 2-3 miesiącach faktycznie dodawałeś kolumny? Czy ten ból jest realny
+   i częsty, czy raczej przewidywany? Bo jeśli to się zdarza raz na kwartał, to
+  koszt migracji może nie być uzasadniony.
+
+  2. Zakres vs. ryzyko:
+  Plan dotyka praktycznie każdego pliku w warstwie danych —
+  stalker_web_document_db.py, stalker_web_documents_db_postgresql.py,
+  stalker_web_document.py, server.py, plus nowe pliki. To nie jest refactor — to
+   przepisanie core'u. Jakie masz zabezpieczenia? Testy integracyjne pokrywają
+  obecne zachowanie?
+
+  3. Trzy cele naraz:
+  Plan łączy:
+  - SQLAlchemy ORM (eliminacja redundancji)
+  - Pydantic schemas (serializacja API)
+  - Alembic (migracje schematu)
+
+  Czy rozważałeś robienie tego sekwencyjnie zamiast w jednym wielkim epiku? Np.
+  najpierw Pydantic schemas na istniejącym kodzie, potem ORM, potem Alembic?
+
+  4. Lambda cold start:
+  Sam plan wspomina ryzyko wzrostu rozmiaru paczki Lambda. Mierzyłeś obecny
+  rozmiar? SQLAlchemy to ~30MB — to może być deal-breaker dla cold startów.
+
+  ---
+  Co jest Twoją główną motywacją — redukcja boilerplate'u, Pydantic dla
+  OpenAPI/TypeScript, czy coś innego? Zacznijmy od DLACZEGO, a potem ocenimy czy
+   plan jest właściwą odpowiedzią.
+
+❯ 1. spodziewam sie dodania nowych tabel, dodania lub usuwania kolumn (np.      
+kazdy dokument w bazie moze miec autora, teraz nie sliedzimy autorow w osobnej  
+tabeli, nie mamy jego biografii itp)  2. jestesmy na etapie pisania kodu od     
+nowa, kod zostanie sprawdzony przez dodawanie nowych danych. 3. nie wiem,       
+przedyskutujmy to 4. lambdy schodza na dalszy plan. najwazniejsze jest by       
+projekt dzialal na loklanym labie czyli NAS. zdalny setup na AWS w chwili       
+obecnej to glownie proxy pozwalajace zbierac dane z komputera, telefonu lub     
+tabletu. Analiza danych jednak bedzie odbywac sie lokalnie na NAS (a raczej nas 
+ bedzie baza danych a claude dekstop i obsydian bedzie glownym uzyciem). AWS    
+zostaje na przyszlosc jako ostatni etap czyli wspoldzielenie rozwiazania z      
+innymi chcacymi placic.                                                         
+
+● Dzięki, Ziutus — to zmienia obraz znacząco. Podsumowuję co słyszę:
+
+  - Ból jest realny i rośnie — nowe tabele (autorzy, biografie) są na horyzoncie
+  - Kod jest przepisywany — więc ryzyko regresji jest niższe, bo nie
+  refaktorujesz "działającej produkcji"
+  - NAS + Claude Desktop + Obsidian to główny use case — AWS to drugorzędny
+  kanał zbierania danych
+
+  ---
+  Dyskusja o sekwencji (punkt 3)
+
+  Masz trzy narzędzia w tym planie, każde rozwiązuje inny problem:
+
+  ┌─────────────────┬───────────────────────────────────────────────────────┐
+  │    Narzędzie    │               Problem który rozwiązuje                │
+  ├─────────────────┼───────────────────────────────────────────────────────┤
+  │ SQLAlchemy ORM  │ Redundancja przy dodawaniu/usuwaniu kolumn            │
+  ├─────────────────┼───────────────────────────────────────────────────────┤
+  │ Pydantic        │ Serializacja API, OpenAPI → TypeScript, structured    │
+  │ schemas         │ outputs AI                                            │
+  ├─────────────────┼───────────────────────────────────────────────────────┤
+  │ Alembic         │ Wersjonowanie zmian schematu DB                       │
+  └─────────────────┴───────────────────────────────────────────────────────┘
+
+  Pytanie: Czy musisz je wdrażać razem, czy mogą iść niezależnie?
+
+  Moja analiza:
+
+  Opcja A — Wszystko naraz (jak w planie):
+  - Zaleta: jedno przepisanie, spójna architektura od razu
+  - Ryzyko: duży scope, trudniej debugować jeśli coś nie gra
+
+  Opcja B — Sekwencyjnie:
+  1. Faza 1: SQLAlchemy ORM + Alembic — to naturalna para, bo Alembic czyta
+  modele ORM. Rozwiązuje Twój główny ból (kolumny w jednym miejscu + migracje)
+  2. Faza 2: Pydantic schemas — dodajesz później, kiedy API stabilizuje się i
+  faktycznie potrzebujesz OpenAPI → TypeScript
+
+  Opcja C — Odwrócona:
+  1. Faza 1: Pydantic schemas na istniejącym kodzie — natychmiast zyskujesz
+  structured outputs dla Claude Desktop
+  2. Faza 2: SQLAlchemy + Alembic — później
+
+  ---
+  Kluczowe pytanie:
+
+  Powiedziałeś, że Claude Desktop + Obsidian to główne użycie. To znaczy, że
+  Pydantic structured outputs (punkt 3 w planie — response format dla AI) mogą
+  być ważniejsze niż myślałem.
+
+  Jak dokładnie Claude Desktop komunikuje się z Twoim systemem? Przez API Flask?
+   Przez MCP? Bezpośrednio z bazą? Bo to wpływa na to, co powinno iść pierwsze:
+
+  - Jeśli Claude Desktop → Flask API → DB — to ORM + Pydantic razem mają sens
+  - Jeśli Claude Desktop → bezpośrednio baza/pliki — to Pydantic dla structured
+  outputs jest ważniejsze niż ORM
+
+  Co wybierasz i jak wygląda ten flow z Claude Desktop?
+
+❯ flow na razie nie ma bo nie mamy danych w bazie danych. czeka nas jeszcze     
+duza praca z oczyszczaniem artykulow z stron inernetowych z zbednych rzeczy     
+(linki na gorze strony jak zobacz inne dzialy serwisu, czy noty prawne i        
+komnetarze na dole), na razie dzialamy z testowymi danymi typu linki oraz       
+zaczynamy prace z tesktami z youtube (co jest raczej bez reklam i zbedych       
+tresci).                                                                        
+
+● OK, rozumiem — jesteście na wczesnym etapie. Dane dopiero wchodzą, pipeline
+  czyszczenia treści jeszcze przed wami. To ważny kontekst.
+
+  Co to zmienia w priorytetach:
+
+  Skoro nie ma jeszcze ustalonego flow z Claude Desktop i dane dopiero się 
+  zbierają, to:
+
+  1. Pydantic structured outputs — nie pilne, bo nie ma jeszcze z czym rozmawiać
+   przez AI
+  2. Pydantic → OpenAPI → TypeScript — nie pilne, bo frontend jest drugorzędny
+  wobec NAS/Obsidian
+  3. SQLAlchemy ORM — to jest Twój realny ból, bo schemat bazy będzie się często
+   zmieniał w miarę jak odkrywasz co trzeba przechowywać (autorzy, biografie,
+  czyszczenie treści pewnie doda nowe kolumny/flagi)
+  4. Alembic — naturalny partner ORM, szczególnie gdy schemat jest niestabilny
+
+  Moja rekomendacja:
+
+  Opcja B — SQLAlchemy ORM + Alembic najpierw, Pydantic później.
+
+  Powody:
+  - Schemat będzie się zmieniał często (nowe tabele, kolumny) — to jest
+  dokładnie ten ból który ORM + Alembic rozwiązuje
+  - Pydantic możesz dodać w dowolnym momencie obok ORM — nie wymaga
+  przepisywania
+  - Mniejszy scope = szybciej skończysz i wrócisz do właściwej pracy
+  (czyszczenie treści, YouTube)
+
+  Pytania zanim zamkniemy temat scope'u:
+
+  1. Plan wspomina nową tabelę autorów. Czy masz już pomysł jakie inne nowe 
+  tabele mogą się pojawić? (tagi, kategorie, źródła, oceny wiarygodności?) To
+  wpływa na to jak zaprojektować Base i relacje.
+
+  2. Obecny kod ma dwie klasy: StalkerWebDocument (model) i StalkerWebDocumentDB
+   (wrapper DB) i stalker_web_documents_db_postgresql (query functions). Plan
+  proponuje utrzymać wrapper. Czy naprawdę potrzebujesz tę warstwę pośrednią,
+  czy to dobry moment żeby ją wyeliminować i mieć po prostu ORM model +
+  repository?
+
+  3. Ile masz teraz testów jednostkowych pokrywających warstwę danych? Zero,
+  kilka, dużo? To determinuje jak agresywnie możesz przepisywać.
+
+❯ nie mam na razie pomyslow, zastanawiam sie nawet czy glowna tabela nie        
+powinna zostac podzielona ze wzgledu na typy danych (np. linki niepotrzebuja    
+spisu tresci i rozdzialow).  2. Kiedys byl pomysl aby oprocz bazy danych        
+postgresql wspierac np. elastic search bo podobno on fajnie pracuje z tekstem.  
+natomiast jest do dalszy plan, obecnie postgresql to jedyna baza danych, ktora  
+planuje uzywac. stad jest osobna klasa na DB i osobna abstrakcja na dokument.   
+
+● Dwa bardzo ważne tematy. Rozpakujmy je:
+
+  ---
+  Temat 1: Podział tabeli web_documents po typach
+
+  To jest klasyczny dylemat: single-table vs. table-per-type. Masz 28 kolumn, z
+  których część ma sens tylko dla pewnych typów (np. transcript_needed tylko dla
+   YouTube, spis treści tylko dla webpage).
+
+  Ale uwaga — to decyzja, którą SQLAlchemy ORM obsługuje elegancko przez
+  dziedziczenie:
+
+  - Single Table Inheritance — jedna tabela, kolumna type jako dyskryminator,
+  nieużywane kolumny = NULL
+  - Joined Table Inheritance — wspólna tabela documents + podtabele
+  youtube_documents, link_documents itd.
+
+  Nie musisz decydować teraz. Jeśli zaczniesz od Single Table Inheritance (czyli
+   jak jest dziś), to przejście na Joined Table to migracja Alembic + zmiana w 
+  modelu ORM, bez przepisywania logiki biznesowej. Właśnie po to robimy tę
+  migrację.
+
+  Moja rekomendacja: zacznij jak jest (jedna tabela), ale w modelu ORM od razu
+  użyj dziedziczenia — WebDocument jako bazowa klasa, LinkDocument,
+  YouTubeDocument itd. jako podklasy. Wtedy podział tabeli w przyszłości to
+  zmiana konfiguracji, nie architektury.
+
+  ---
+  Temat 2: Warstwa abstrakcji na DB
+
+  Mówisz, że wrapper istnieje na wypadek zmiany backendu (ElasticSearch). Ale
+  sam mówisz, że to daleki plan i PostgreSQL to jedyna baza.
+
+  Zasada YAGNI — You Ain't Gonna Need It. Utrzymywanie abstrakcji "na wszelki
+  wypadek" to koszt który płacisz przy każdej zmianie, teraz:
+  - Każda nowa kolumna = zmiana w ORM modelu + zmiana w wrapperze
+  - Każda nowa metoda = implementacja w dwóch miejscach
+  - Debugowanie przez dodatkową warstwę
+
+  Moja rekomendacja: Wyrzuć wrapper. Zostaw:
+  - ORM model (WebDocument) — definicja danych + metody domenowe
+  - Repository (obecny stalker_web_documents_db_postgresql.py) — złożone query
+  (listy, wyszukiwanie, statystyki)
+
+  Jeśli kiedyś ElasticSearch wejdzie do gry, wyciągniesz interfejs wtedy — mając
+   już dojrzały kod łatwiej zrobić abstrakcję niż wymyślać ją z góry.
+
+  ---
+  Podsumowując dotychczasową dyskusję:
+
+  Wyłania się zrewidowany plan:
+
+  1. SQLAlchemy ORM z dziedziczeniem modeli (przygotowanie na podział tabeli)
+  2. Alembic (migracje schematu)
+  3. Eliminacja wrappera StalkerWebDocumentDB — ORM model + repository
+  bezpośrednio
+  4. Pydantic — odłożone na później
+
+  Zanim zapiszę to jako zrewidowany plan, jedno ostatnie pytanie: Nie zapytałem 
+  o testy (pytanie 3 z poprzedniej rundy). Ile masz testów pokrywających obecną
+  warstwę danych? To determinuje czy możemy agresywnie wyrzucić wrapper, czy
+  trzeba zachować ostrożność.
+
+❯ testom nie ufam natomiast to jest wczesny etap, mozemy zadzialac agresywanie  
+bo rozwiazanie nigdy tak naprawde nie dzialalo                                  
+
+● Idealnie — to jest najlepszy moment na agresywne zmiany. Czyste pole.
+
+  Finalna rekomendacja scope'u B-92:
+
+  W scope:
+  1. SQLAlchemy ORM z dziedziczeniem modeli (WebDocument → LinkDocument,
+  YouTubeDocument itd.)
+  2. Alembic do migracji schematu
+  3. Eliminacja wrappera StalkerWebDocumentDB — zostaje ORM model + repository
+  4. Uproszczenie warstwy — z 3 klas (model + wrapper + queries) do 2 (ORM model
+   + repository)
+
+  Poza scope (osobny ticket na później):
+  - Pydantic schemas (API serializacja, OpenAPI → TypeScript, structured AI
+  outputs)
+  - Podział tabeli na podtypy (Joined Table Inheritance) — ORM będzie gotowe,
+  migracja gdy pojawi się realna potrzeba
+  - ElasticSearch — jeśli kiedykolwiek
+
+  ---
+  Co dalej?
+
+  Mogę Ci pomóc na kilka sposobów:
+
+  1. [CP] Stworzyć PRD dla tej zrewidowanej wersji B-92 — formalny dokument z
+  wymaganiami, kryteriami akceptacji, ryzykami
+  2. [CE] Stworzyć Epiki i Stories — rozbić to na konkretne zadania
+  implementacyjne
+  3. [CH] Kontynuować dyskusję — jeśli chcesz jeszcze coś doprecyzować
+
+  Co wolisz? Jeśli chcesz szybko przejść do kodu, to epiki i stories mogą być
+  wystarczające. Jeśli chcesz mieć pełną dokumentację decyzji (szczególnie
+  dlaczego wyrzucamy wrapper, dlaczego Pydantic odłożone), to PRD najpierw.
+
+❯ CP                                                                            
+
+
+● Świetnie, Ziutus! Uruchamiam workflow tworzenia PRD.
+
+  Create Mode: Tworzenie nowego PRD od podstaw.
+
+  ---
+  Krok 1 z 11 — Inicjalizacja
+
+  Sprawdzam stan workflow i szukam dokumentów wejściowych...
+
+
+● Znalazłem istniejący stan. Oto raport:
+
+  ---
+  Ziutus, analiza stanu workspace:
+
+  Istniejący PRD: _bmad-output/planning-artifacts/prd.md — UKOŃCZONY
+  (step-12-complete)
+  - Dotyczy: Notion Changelog (skrypt PoC)
+  - To jest inny temat niż migracja SQLAlchemy
+
+  Dokumenty wejściowe odkryte:
+  - Product briefs: 0 plików (nie znaleziono)
+  - Research: 0 plików (nie znaleziono)
+  - Project docs: 42 pliki w docs/ ✓ (brownfield project)
+  - Plan migracji: .claude/exports/plan-sqlalchemy-migration.md ✓ (przekazany
+  jako argument)
+
+  📋 Uwaga: To jest brownfield project — istniejąca dokumentacja projektowa jest
+   dostępna.
+
+  ---
+  Kwestia do rozstrzygnięcia:
+
+  Mamy ukończony PRD dla Notion Changelog. Zgodnie z konwencją projektu,
+  powinienem go zarchiwizować do _bmad-output/planning-artifacts/archive/ przed
+  utworzeniem nowego PRD dla migracji SQLAlchemy.
+
+  Proponuję archiwizację jako:
+  _bmad-output/planning-artifacts/archive/prd-sprint6-notion-changelog-2026-03-0
+  7.md
+
+  Dla nowego PRD załaduję jako kontekst:
+  - .claude/exports/plan-sqlalchemy-migration.md (plan migracji — już wczytany)
+  - docs/architecture-backend.md (architektura backendu)
+  - docs/data-models-backend.md (modele danych)
+  - docs/architecture-decisions.md (ADR-y, w tym ADR-004 o raw psycopg2)
+
+  Czy chcesz dodać jakieś inne dokumenty, albo masz uwagi do powyższego zanim
+  przejdę dalej?
+
+  [C] Continue — Zarchiwizuj stary PRD, załaduj dokumenty i utwórz nowy PRD
+
+
+❯ C                                                                             
+
+● Archiwizuję stary PRD i ładuję dokumenty kontekstowe.
+
+
+● Kontekst załadowany. Archiwizuję stary PRD i tworzę nowy dokument.
+
+  [--- Write: prd-sprint6-notion-changelog-2026-03-07.md — diff removed for readability ---]
+
+  [--- Write: prd.md — diff removed for readability ---]
+
+● Witaj Ziutus! Przygotowałem Twój workspace PRD dla lenie-server-2025.
+
+  Setup dokumentu:
+  - Utworzono: _bmad-output/planning-artifacts/prd.md z szablonu
+  - Zarchiwizowano: poprzedni PRD (Notion Changelog) do
+  archive/prd-sprint6-notion-changelog-2026-03-07.md
+  - Zainicjalizowano frontmatter ze stanem workflow
+
+  Dokumenty wejściowe odkryte:
+  - Product briefs: 0 plików (nie znaleziono)
+  - Research: 1 plik — .claude/exports/plan-sqlalchemy-migration.md (plan
+  migracji)
+  - Project docs: 3 pliki — architecture-backend.md, data-models-backend.md,
+  architecture-decisions.md (w tym ADR-004 i ADR-004a)
+
+  Pliki zaladowane:
+  - .claude/exports/plan-sqlalchemy-migration.md — oryginalny plan migracji
+  (referencja)
+  - docs/architecture-backend.md — obecna architektura warstwy danych
+  - docs/data-models-backend.md — schemat DB (28 kolumn web_documents, 8 kolumn
+  websites_embeddings)
+  - docs/architecture-decisions.md — ADR-004 (raw psycopg2) superseded by
+  ADR-004a (SQLAlchemy)
+
+  Uwaga: To jest brownfield project. Istniejąca dokumentacja projektowa została
+  załadowana. W następnym kroku zapytam konkretnie o zmiany, które chcesz
+  wprowadzić do istniejącego systemu.
+
+  Masz inne dokumenty, które chciałbyś dołączyć, albo przechodzimy dalej?
+
+  [C] Continue — Zapisz i przejdź do Project Discovery (Krok 2 z 11)
+
+
+❯ C                                                                             
+
+
+● Krok 2 z 13 — Project Discovery
+
+  ---
+  Z kroku 1 mam załadowane:
+  - Product briefs: 0
+  - Research: 1 (plan migracji SQLAlchemy)
+  - Brainstorming: 0
+  - Project docs: 3 (architektura, modele danych, ADR-y)
+
+  To jest brownfield project — skupiam się na zrozumieniu co chcesz zmienić.
+
+  ---
+  Ziutus, na podstawie naszej wcześniejszej rozmowy i załadowanych dokumentów,
+  mam już dość dobre zrozumienie tego co robisz. Pozwól, że podsumuję co
+  słyszałem i potwierdzimy klasyfikację.
+
+  Co robisz: Przepisujesz warstwę dostępu do danych w backendzie Lenie. Zamiast
+  ręcznych zapytań psycopg2 z redundancją w 5+ miejscach, wprowadzasz SQLAlchemy
+   ORM z Alembic do migracji schematu. Przy okazji upraszczasz architekturę — z
+  3 klas (model + wrapper DB + query layer) do 2 (ORM model + repository).
+  Wrapper StalkerWebDocumentDB znika, bo jego jedynym uzasadnieniem była
+  abstrakcja na wypadek zmiany backendu (ElasticSearch), co nie jest aktualnym
+  priorytetem.
+
+  Dlaczego teraz: Schemat bazy będzie się szybko zmieniał — nowe tabele
+  (autorzy), nowe/usuwane kolumny, ewentualny podział tabeli po typach
+  dokumentów. Obecna architektura sprawia, że każda zmiana to ręczna edycja w
+  wielu miejscach. Kod jest na wczesnym etapie — nigdy tak naprawdę nie działał
+  produkcyjnie — więc to najlepszy moment na agresywne zmiany.
+
+  Scope zrewidowany (vs. oryginalny plan):
+  - W scope: SQLAlchemy ORM (z dziedziczeniem modeli), Alembic, eliminacja
+  wrappera
+  - Poza scope: Pydantic schemas (odłożone), podział tabeli (ORM gotowe, ale
+  migracja gdy potrzeba)
+
+  ---
+  Słyszę to jako:
+
+  - Project Type: api_backend — migracja warstwy DB w Flask REST API
+  - Domain: Personal AI knowledge management
+  - Complexity: Low — jeden użytkownik, brak wymogów regulacyjnych, wczesny etap
+  - Project Context: Brownfield — przepisanie istniejącej warstwy danych
+  - Deployment Scope: Backend refactor (Docker + NAS jako primary)
+
+  Zgadza się? Chcesz coś doprecyzować?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Product Vision
+   (Step 2b of 13)
+
+
+❯ C                                                                             
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+● Krok 2b z 13 — Product Vision Discovery
+
+  ---
+  Ustaliliśmy, że to api_backend w domenie personal AI knowledge management, o
+  niskiej złożoności, w kontekście brownfield. Teraz odkryjmy co czyni tę zmianę
+   wyjątkową.
+
+  Ziutus, mam kilka pytań, żeby zrozumieć wizję stojącą za tą migracją:
+
+  1. Co sprawia, że ta zmiana jest naprawdę wartościowa?
+  Wiem, że chodzi o eliminację redundancji przy zmianie schematu. Ale głębiej —
+  co ta migracja Ci odblokuje? Czy chodzi głównie o szybkość dodawania nowych
+  tabel/kolumn, czy jest coś większego — np. możliwość szybszego
+  eksperymentowania z nowymi typami danych, łatwiejsze onboardowanie nowych
+  źródeł wiedzy?
+
+  2. Jak wygląda "sukces" tej migracji?
+  Wyobraź sobie, że migracja jest skończona. Dostajesz pomysł: "chcę śledzić
+  autorów artykułów w osobnej tabeli z biografiami". Co się wtedy dzieje? Jak
+  wygląda Twoja praca krok po kroku?
+
+  3. Dlaczego teraz, a nie za 3 miesiące?
+  Powiedziałeś, że kod nigdy naprawdę nie działał. Ale czy jest coś konkretnego,
+   co Cię pcha do zrobienia tego teraz — zanim np. zajmiesz się czyszczeniem
+  treści z artykułów?
+
+
+❯ szybsze wprowadzanie zmian opisujacych rzeczywistosc, chcialbym np. dodac     
+tabele z zrodlami danych, tak aby przy dodawaniu nowego dokumentu moc wybierac  
+i edytowac liste zrodel a nie miec na sztywno zapisanych kilku wyborow 2.       
+suckces to bezproblemowe modyfikowanie tabel w bazie danych, teraz martwie sie  
+czy poprawnie policze ktore pole w wyniku select jest np. autorem 3. dzisiaj    
+przy eleminacji niepotrzebnych kolumn w bazie danych martwilem sie czy wsystkie 
+ select update i insert beda dzialac poprawnie                                  
+
+● Ziutus, to jest bardzo czytelne. Słyszę trzy rzeczy:
+
+  Problem powierzchniowy: Ręczne liczenie pozycji kolumn w SELECT, ręczne
+  synchronizowanie INSERT/UPDATE/SELECT przy każdej zmianie schematu. To jest
+  kruche i stresujące.
+
+  Problem głębszy: Baza danych nie opisuje rzeczywistości tak, jak byś chciał.
+  Chcesz modelować świat (źródła danych, autorzy, dynamiczne listy) ale obecna
+  architektura sprawia, że każda nowa tabela czy kolumna to ryzyko i stres
+  zamiast kreatywnej pracy.
+
+  Wizja: Baza danych jako elastyczny model rzeczywistości, który łatwo
+  rozszerzasz w miarę jak odkrywasz nowe wymiary wiedzy. Dodanie tabeli źródeł,
+  autorów z biografiami, dynamicznych list — to powinny być proste, bezstresowe
+  operacje: definiujesz model ORM, Alembic generuje migrację, gotowe.
+
+  ---
+  Oto co rozumiem jako wizję i wyróżnik:
+
+  Wizja: Warstwa danych, która rośnie razem z Twoim rozumieniem domeny — bez
+  strachu, że zmiana schematu zepsuje istniejący kod. Dodajesz tabelę, kolumnę
+  lub relację w jednym miejscu (model ORM), a reszta się dopasowuje.
+
+  Co czyni to wyjątkowym: To nie jest typowa migracja "bo ORM jest lepszy". To
+  odblokowanie zdolności do eksperymentowania z modelem danych — źródła,
+  autorzy, typy dokumentów — bez kosztu mentalnego ręcznego zarządzania SQL-em.
+
+  Rdzeń: Eliminacja strachu przed zmianą schematu. Dziś każda zmiana to "czy
+  policzyłem dobrze kolumny w SELECT?". Po migracji to "dodaję pole w modelu,
+  Alembic robi resztę".
+
+  Trafia to w sedno? Czegoś brakuje?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Executive
+  Summary (Step 2c of 13)
+
+❯ C                                                                             
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+● Krok 2c z 13 — Executive Summary Generation
+
+  ---
+  Na podstawie naszej klasyfikacji (krok 2) i odkrycia wizji (krok 2b),
+  przygotowałem Executive Summary. Przejrzyj i daj znać czy chcesz coś zmienić:
+
+  ---
+  Executive Summary
+
+  The backend data access layer of Project Lenie currently uses raw psycopg2
+  queries with manual SQL construction. Adding or removing a column requires
+  synchronized changes in 5+ locations: SELECT column lists, INSERT statements,
+  UPDATE clauses, dict() serialization, __clean_values(), and the domain model
+  constructor. Column positions are counted by hand — a single miscount silently
+   corrupts data mapping. This fragility blocks the evolution of the data model:
+   new tables (data sources, authors with biographies) and schema changes
+  (splitting web_documents by document type) carry disproportionate risk and
+  mental overhead.
+
+  This PRD defines the migration from raw psycopg2 to SQLAlchemy 2.x ORM with
+  Alembic schema migrations. Columns are defined once in a declarative ORM model
+   — SQLAlchemy generates all SQL automatically. Alembic auto-generates
+  migration scripts from model diffs, replacing unversioned DDL scripts. The
+  existing three-class architecture (StalkerWebDocument base model +
+  StalkerWebDocumentDB persistence wrapper + WebsitesDBPostgreSQL query layer)
+  is simplified to two layers: ORM model (data definition + domain methods) and
+  repository (complex queries). The intermediate StalkerWebDocumentDB wrapper —
+  originally designed to abstract over potential future database backends
+  (ElasticSearch) — is eliminated, as PostgreSQL is the only planned backend.
+
+  ORM model inheritance (Single Table Inheritance) prepares for future table
+  splitting by document type without requiring architectural changes — the split
+   becomes an Alembic migration, not a rewrite. Pydantic v2 schemas for API
+  serialization and structured AI outputs are explicitly out of scope and
+  deferred to a future sprint.
+
+  What Makes This Special
+
+  This is not a technology upgrade for its own sake. The migration eliminates
+  the fear of changing the database schema. Today, every schema change triggers
+  anxiety: "did I count the columns correctly in SELECT?" After the migration,
+  adding a table, column, or relationship is a single-location change in the ORM
+   model — Alembic handles the rest. This unblocks rapid experimentation with
+  the data model at a stage where the project is actively discovering what
+  reality it needs to represent (data sources, authors, document type
+  hierarchies). The code has never run in production, making this the
+  lowest-risk moment for an aggressive rewrite.
+
+  Project Classification
+
+  ┌────────────────┬────────────────────────────────────────────────────────┐
+  │   Dimension    │                         Value                          │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │ Project Type   │ API backend (database access layer migration)          │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │ Domain         │ Personal AI knowledge management                       │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │ Complexity     │ Low (single user, no regulatory requirements,          │
+  │                │ early-stage codebase)                                  │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │ Project        │ Brownfield — rewriting existing data layer in Flask    │
+  │ Context        │ backend                                                │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │ Deployment     │ Backend refactor (Docker + NAS primary, AWS secondary) │
+  │ Scope          │                                                        │
+  └────────────────┴────────────────────────────────────────────────────────┘
+
+  ---
+  Jak oceniasz ten draft? Chcesz coś zmienić, dodać lub wyciąć?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Success
+  Criteria (Step 3 of 13)
+
+
+❯ C                                                                             
+
+
+  [--- Update: prd.md — 2 edits, diffs removed for readability ---]
+
+● Krok 3 z 11 — Success Criteria Definition
+
+  ---
+  Mamy Executive Summary i klasyfikację. Teraz definiujemy co znaczy "sukces" —
+  dla Ciebie jako użytkownika, dla projektu, i technicznie.
+
+  Z naszej wcześniejszej rozmowy wyłapałem już silne sygnały sukcesu. Pozwól, że
+   je potwierdzę i pogłębimy:
+
+  Sukces użytkownika — co słyszałem:
+  - Dodanie nowej tabeli/kolumny = zmiana w jednym miejscu (model ORM), bez
+  strachu
+  - Koniec z ręcznym liczeniem pozycji kolumn w SELECT
+  - Bezproblemowe modyfikowanie schematu (Twoje słowa: "bezproblemowe
+  modyfikowanie tabel")
+
+  Pytania pogłębiające:
+
+  1. Wyobraź sobie, że za miesiąc chcesz dodać tabelę data_sources z relacją do
+  web_documents. Jak wygląda sukces? Czy wystarczy "zdefiniowałem model, Alembic
+   wygenerował migrację, działa" — czy jest coś więcej? Np. "i od razu mogę
+  wybrać źródło z listy w UI"?
+
+  2. Business success — w tym projekcie to raczej osobisty ROI. Czy główna
+  metryka to "ile czasu oszczędzam na zmianach schematu" czy raczej "ile nowych
+  tabel/kolumn mogę dodać w danym tygodniu bez ryzyka"?
+
+  3. Technical success — co musi przejść, żebyś uznał migrację za ukończoną?
+  Np.:
+  - Wszystkie istniejące endpointy Flask działają jak wcześniej?
+  - Alembic potrafi wygenerować migrację z modelu?
+  - Stare klasy (StalkerWebDocument, StalkerWebDocumentDB) usunięte?
+  - Testy przechodzą?
+
+
+❯ 2. ile czasu oszczedzam, najwiekszym limitem w rozwoju tego projektu to moj   
+wlasny czas. 1. i od razu moge wybrac zrodlo z listy w UI, stad w zalozeniach   
+jest synchronizacja python i typescript w przyszlosci, szybsze i dokladniejsze  
+wprowadzanie zmian w wielu miejscach. 3. dane pobrane przez skrypty importujace 
+ @backend/imports/dynamodb_sync.py oraz @backend/imports/unknown_news_import.py 
+ poprawnie laduja dane do bazy danych a skrypt                                  
+@backend/web_documents_do_the_needful_new.py poprwnie tworzy embedingi (teraz   
+dla links bo tylko to jest teraz do konca wspierane). poprawnie sa tez          
+pobieranie i wkladane do bazy danych teksty z filmow youtube                    
+  ⎿  Read backend\imports\dynamodb_sync.py (333 lines)
+  ⎿  Read backend\imports\unknown_news_import.py (210 lines)
+  ⎿  Read backend\web_documents_do_the_needful_new.py (445 lines)
+  ⎿  Loaded backend\CLAUDE.md
+  ⎿  Loaded backend\imports\CLAUDE.md
+
+● Doskonałe odpowiedzi, Ziutus. Mam teraz pełny obraz sukcesu. Oto draft sekcji
+  Success Criteria i Product Scope:
+
+  ---
+  Success Criteria
+
+  User Success
+
+  - Adding a new table or column is a single-location change in the ORM model —
+  no manual SQL synchronization across SELECT/INSERT/UPDATE/dict/clean
+  - Alembic generates the migration script automatically from model diff — no
+  hand-written DDL
+  - The developer (Ziutus) can modify the schema without anxiety about
+  miscounted column positions or broken queries
+
+  Business Success
+
+  - Developer time is the primary constraint. The migration must reduce time
+  spent on schema changes from "careful manual work across 5+ files" to "one
+  field in a model, one Alembic command"
+  - Unblocks future work: new tables (data sources, authors), TypeScript type
+  synchronization (Pydantic → OpenAPI → TypeScript), and UI-driven data entry
+  (e.g., selecting a source from a dynamic list)
+
+  Technical Success
+
+  - Import scripts function correctly after migration:
+    - backend/imports/dynamodb_sync.py — loads documents from DynamoDB + S3 into
+   PostgreSQL
+    - backend/imports/unknown_news_import.py — imports curated links from
+  unknow.news
+  - Batch processing pipeline works end-to-end:
+    - backend/web_documents_do_the_needful_new.py — correctly creates embeddings
+   for link documents (currently the only fully supported type)
+    - YouTube video text is correctly fetched and stored in the database
+  - Flask API endpoints (/website_list, /website_get, /website_save,
+  /website_delete, /website_similar) return identical data formats as before the
+   migration
+  - All existing unit tests pass
+  - ruff check backend/ reports zero warnings
+  - Old classes (StalkerWebDocument, StalkerWebDocumentDB, StalkerWebDocumentDB
+  wrapper layer) are removed — no dead code left behind
+
+  Measurable Outcomes
+
+  - Lines of code to add a new column: 1 (ORM model field) + 1 (Alembic
+  autogenerate) vs. current 5+ manual edits
+  - Import scripts run end-to-end with exit code 0 on test data
+  - Zero raw cursor.execute() calls remaining in production code (except
+  pgvector <=> operator via text())
+
+  Product Scope
+
+  MVP
+
+  1. SQLAlchemy 2.x ORM models for web_documents and websites_embeddings tables
+  with Single Table Inheritance on web_documents
+  2. Alembic initialized with baseline migration (existing schema = model)
+  3. StalkerWebDocumentDB wrapper eliminated — ORM model handles persistence
+  directly
+  4. Repository layer (stalker_web_documents_db_postgresql.py) rewritten to use
+  SQLAlchemy sessions
+  5. All Flask API endpoints functional with identical response formats
+  6. All import and batch scripts functional (dynamodb_sync.py,
+  unknown_news_import.py, web_documents_do_the_needful_new.py)
+  7. YouTube processing pipeline functional (transcript fetch + DB storage)
+
+  Growth Features (Post-MVP)
+
+  - Pydantic v2 schemas for API serialization and OpenAPI generation
+  - TypeScript type synchronization pipeline (Pydantic → OpenAPI →
+  openapi-typescript)
+  - Pydantic structured outputs for LLM calls (Claude Desktop, OpenAI, Bedrock)
+  - New tables: data_sources (dynamic source list), authors (with biographies)
+
+  Vision (Future)
+
+  - Joined Table Inheritance — split web_documents by document type (links,
+  webpages, YouTube) with type-specific columns
+  - Full MCP server exposing Lenie data to Claude Desktop via SQLAlchemy queries
+  - ElasticSearch as secondary search backend (if needed — repository pattern
+  enables this)
+
+  ---
+  Jak oceniasz? Chcesz coś doprecyzować lub zmienić?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to User Journey
+  Mapping (Step 4 of 11)
+
+
+❯ C                                                                             
+
+
+  [--- Update: prd.md — 2 edits, diffs removed for readability ---]
+
+● Krok 4 z 11 — User Journey Mapping
+
+  ---
+  To jest migracja warstwy danych — "użytkownikami" są głównie Ty (developer) i
+  istniejące skrypty/endpointy, które konsumują tę warstwę. Zidentyfikowałem
+  następujących "aktorów" w systemie:
+
+  1. Ziutus — developer modyfikujący schemat bazy (główna persona)
+  2. Ziutus — operator uruchamiający skrypty importu (dynamodb_sync.py,
+  unknown_news_import.py)
+  3. Batch pipeline (web_documents_do_the_needful_new.py) — automatyczny
+  konsument
+  4. Flask API — endpointy obsługujące frontend React
+
+  Czy powinienem uwzględnić jeszcze kogoś? Np. przyszły MCP server dla Claude
+  Desktop? Albo Lambda functions w AWS?
+
+  Zanim napiszę narracje — chcę się upewnić, że mam komplet aktorów. Kto jeszcze
+   wchodzi w interakcję z warstwą danych?
+
+
+❯ teraz to komplet                                                              
+
+● Świetnie. Oto draft User Journeys:
+
+  ---
+  User Journeys
+
+  Journey 1: "New Column Without Fear" — Developer Modifying the Schema
+
+  Persona: Ziutus — sole developer of Project Lenie, working evenings and
+  weekends on a personal AI knowledge management system.
+
+  Opening Scene: Ziutus decides that documents need an author field linked to a
+  new authors table with biographies. In the old world, this meant: add column
+  to SQL init script, update SELECT column list (count positions carefully),
+  update INSERT, update UPDATE, update dict(), update __clean_values(), update
+  the domain model constructor, and pray nothing was miscounted.
+
+  Rising Action: Ziutus opens backend/library/db/models.py and adds a single
+  field: author_id: Mapped[int | None] = 
+  mapped_column(ForeignKey("authors.id")). He creates a new Author model class
+  with name, bio, url fields. He runs alembic revision --autogenerate -m "add 
+  authors table" — Alembic inspects the model diff and generates the migration
+  script with CREATE TABLE authors and ALTER TABLE web_documents ADD COLUMN 
+  author_id.
+
+  Climax: alembic upgrade head — the database schema matches the model. No
+  manual column counting. No cross-referencing 5 files. The ORM handles SELECT,
+  INSERT, UPDATE automatically. Ziutus writes zero SQL.
+
+  Resolution: The entire operation took minutes instead of an anxious hour.
+  Ziutus moves on to building the UI for selecting authors from a list — the
+  part he actually cares about — instead of wrestling with SQL plumbing.
+
+  Journey 2: "The Import Run" — Operator Running Data Import Scripts
+
+  Persona: Ziutus — running the weekly unknow.news import to pull curated Polish
+   tech links into the knowledge base.
+
+  Opening Scene: Ziutus runs cd backend && ./imports/unknown_news_import.py 
+  --since 2026-03-01. The script starts, connects to PostgreSQL, downloads the
+  unknow.news archive JSON, and begins processing entries.
+
+  Rising Action: For each new URL, the script creates an ORM model instance via
+  WebDocument(url=entry['url']). The session queries the database to check for
+  duplicates. New documents are populated with fields (title, summary, language,
+   source, date_from, document_type, document_state) and added to the session.
+  session.commit() persists them — SQLAlchemy generates the INSERT with exactly
+  the right columns.
+
+  Climax: The script processes 47 new entries. Summary: "Added: 47, Exist: 112,
+  Ignored: 1,834." Exit code 0. The output format is identical to before the
+  migration — Ziutus notices no difference in behavior.
+
+  Resolution: The import works exactly as before but the underlying code is
+  simpler. If Ziutus later adds an author column to web_documents, the import
+  script doesn't need any changes — the new column defaults to NULL and the ORM
+  handles the rest.
+
+  Journey 3: "Embeddings Pipeline" — Batch Processing End-to-End
+
+  Persona: web_documents_do_the_needful_new.py — the batch pipeline script,
+  orchestrated by Ziutus.
+
+  Opening Scene: Ziutus runs the pipeline with --only-links. The script needs
+  to: find link documents in READY_FOR_EMBEDDING state, generate embeddings via
+  the configured model, and store vectors in websites_embeddings.
+
+  Rising Action: The repository method get_documents_needing_embedding(model)
+  executes a SQLAlchemy query with an outer join on websites_embeddings —
+  replacing a hand-written SQL string with a composable query object. For each
+  document, the script loads the ORM model by ID, calls embedding_add(model),
+  which creates a WebsiteEmbedding instance and adds it to the document's
+  embeddings relationship. session.commit() persists both the embedding and the
+  document state update in a single transaction.
+
+  Climax: 23 link documents processed, embeddings generated and stored. The
+  pgvector <=> operator for similarity search still works via text() raw SQL
+  within SQLAlchemy — the one place where raw SQL is intentionally preserved.
+
+  Resolution: The pipeline produces identical results. The embedding storage
+  code is shorter and safer — no manual cursor.execute() with hand-built INSERT
+  statements. The websites_embeddings table is managed through the ORM
+  relationship, so cascade deletes work automatically.
+
+  Journey 4: "API Request" — Flask Endpoint Serving the Frontend
+
+  Persona: React frontend making a GET /website_list?document_type=link&limit=20
+   request.
+
+  Opening Scene: A user opens the Lenie React UI and navigates to the document
+  list filtered by "links." The frontend sends an authenticated request to the
+  Flask backend.
+
+  Rising Action: The Flask route handler calls the repository method
+  get_list(document_type='link', limit=20). The repository builds a SQLAlchemy
+  select() query with dynamic filters — where(WebDocument.document_type == 
+  'link'), .limit(20), .order_by(WebDocument.created_at.desc()). The session
+  executes the query and returns ORM model instances.
+
+  Climax: Each WebDocument instance is serialized via its dict() method —
+  producing the exact same JSON structure as the old
+  StalkerWebDocumentDB.dict(). The API response format is byte-for-byte
+  compatible with the frontend's expectations.
+
+  Resolution: The frontend displays the list. Zero changes needed in the React
+  code. The API contract is preserved while the implementation underneath is
+  completely rewritten.
+
+  Journey Requirements Summary
+
+  ┌────────────────┬────────────────────────────────────────────────────────┐
+  │    Journey     │                 Capabilities Required                  │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │ Schema         │ ORM model definition, Alembic autogenerate, migration  │
+  │ Modification   │ execution                                              │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │                │ ORM instance creation, session-based persistence,      │
+  │ Data Import    │ duplicate detection by URL, backward-compatible field  │
+  │                │ mapping                                                │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │ Embeddings     │ Repository queries with joins, ORM relationship        │
+  │ Pipeline       │ management (document → embeddings), pgvector           │
+  │                │ integration via text(), transaction management         │
+  ├────────────────┼────────────────────────────────────────────────────────┤
+  │ API Request    │ Repository with dynamic filters, ORM-to-dict           │
+  │                │ serialization, response format backward compatibility  │
+  └────────────────┴────────────────────────────────────────────────────────┘
+
+  ---
+  Jak oceniasz te journey? Pokrywają Twoje scenariusze użycia?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Domain
+  Requirements (Step 5 of 11)
+
+
+❯ C                                                                             
+
+  [--- Update: prd.md — 2 edits, diffs removed for readability ---]
+
+● Złożoność domeny z kroku 2 to low. Ten krok jest opcjonalny dla domen o
+  niskiej złożoności.
+
+  Ziutus, nie mamy wymogów regulacyjnych, certyfikacji ani złożonych integracji
+  domenowych. Proponuję pominąć ten krok.
+
+  Select: [C] Pomiń i przejdź do Innovation Focus (Step 6 of 13) [D] Przeprowadź
+   eksplorację domeny mimo to
+
+
+❯ C                                                                             
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+● Ten krok dotyczy odkrywania innowacyjnych aspektów produktu. Skanuję sygnały
+  innowacji...
+
+  Ziutus, ta migracja to doskonałe wykonanie sprawdzonego podejścia (SQLAlchemy
+  ORM to standard branżowy), nie przełomowa innowacja. Nie ma tu nowego
+  protokołu, nowej kompozycji API ani nowatorskiego wzorca — i to jest w
+  porządku. Wiele udanych zmian to solidna egzekucja, nie wynalazek.
+
+  Nie wykryłem sygnałów innowacji wymagających głębszej eksploracji. Proponuję
+  pominąć tę sekcję.
+
+  Select: [A] Advanced Elicitation — spróbujmy znaleźć innowacyjne kąty [C]
+  Continue — pomiń i przejdź do Project Type Analysis (Step 7 of 11)
+
+❯ C                                                                             
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+● Krok 7 z 11 — Project-Type Deep Dive (API Backend)
+
+  ---
+  Dla typu api_backend CSV wskazuje kluczowe pytania: Endpoints? Authentication?
+   Data formats? Rate limits? Versioning? SDK? Oraz sekcje do pominięcia: ux_ui,
+   visual_design, user_journeys (już mamy).
+
+  Ale w naszym przypadku to nie jest nowe API — to migracja warstwy danych pod
+  istniejącym API. Dlatego dostosuję pytania do kontekstu. Kilka rzeczy chcę
+  potwierdzić:
+
+  1. Architektura docelowa:
+  Z naszej rozmowy wynika dwuwarstwowa struktura:
+  - ORM model (backend/library/db/models.py) — WebDocument, WebsiteEmbedding,
+  dziedziczenie STI
+  - Repository (backend/library/stalker_web_documents_db_postgresql.py) —
+  złożone query
+
+  Sesja SQLAlchemy zarządzana w Flask przez @app.teardown_appcontext. Skrypty
+  batch tworzą własne sesje.
+
+  Czy to zgadza się z Twoją wizją, czy widzisz to inaczej?
+
+  2. pgvector:
+  Similarity search (get_similar()) używa operatora <=>. Plan zakłada użycie
+  text() raw SQL w SQLAlchemy dla tego operatora. Alternatywa: pgvector-python
+  daje natywny cosine_distance() w SQLAlchemy. Które podejście wolisz?
+
+  3. Kompatybilność API:
+  Endpointy Flask muszą zwracać identyczne formaty JSON. Czy planujesz
+  jakiekolwiek zmiany w formacie odpowiedzi przy okazji migracji, czy ściśle
+  backward-compatible?
+
+❯ porozmawiajmy o pgvector-python, czy nie byloby lepsze tutaj? 2. nie planuje  
+zmian ale z drugiej strony fronted mozna dostosowac. na razie najwazniejsze     
+jest by konsumencji czyli skrypty importujace i modyfikujace dane dzialaly, API 
+ mozna poprawiac nawet pozniej                                                  
+
+● pgvector-python — zdecydowanie lepszy wybór
+
+  pgvector-python daje Ci natywną integrację z SQLAlchemy:
+
+  Co zyskujesz:
+  - Typ kolumny: Vector(1536) zamiast ręcznego definiowania typu
+  - Operator cosine distance:
+  WebsiteEmbedding.embedding.cosine_distance(query_vector) zamiast
+  text("embedding <=> :vec")
+  - Indeksy: index = Index('...', embedding, postgresql_using='ivfflat', 
+  postgresql_with={'lists': 100}, postgresql_ops={'embedding': 
+  'vector_cosine_ops'}) — definicja w modelu ORM, Alembic zarządza
+  - Brak text() raw SQL — cały kod jest czystym SQLAlchemy, zero wyjątków
+
+  Przykład query:
+
+  # Zamiast raw SQL:
+  # cursor.execute("SELECT ... FROM websites_embeddings ORDER BY embedding <=> 
+  %s LIMIT %s", [vector, limit])
+
+  # Masz:
+  stmt = (
+      select(WebsiteEmbedding)
+      .order_by(WebsiteEmbedding.embedding.cosine_distance(query_vector))
+      .limit(limit)
+  )
+  results = session.execute(stmt).scalars().all()
+
+  Koszt: jedna dodatkowa zależność (pgvector>=0.3.0), ~50KB.
+
+  Moja rekomendacja: Użyj pgvector-python. Eliminujesz jedyny planowany wyjątek
+  od reguły "zero raw SQL". Cała warstwa danych jest spójna — czyste SQLAlchemy,
+   zero text(), zero cursor.execute().
+
+  Zgadzasz się?
+
+  ---
+  Kompatybilność API — zrewidowana
+
+  Rozumiem — priorytet to:
+  1. Skrypty importu i batch — muszą działać identycznie (to jest warunek
+  konieczny)
+  2. Flask API — może ewoluować, frontend się dostosuje (to jest nice-to-have
+  backward compatibility)
+
+  To upraszcza sprawę — dict() na modelu ORM nie musi być byte-for-byte
+  kompatybilny ze starym formatem. Może zwracać czystszą strukturę, a frontend
+  się dostosuje.
+
+  Chcesz jeszcze coś doprecyzować w kwestii architektury technicznej, czy mogę
+  przygotować draft sekcji Technical Context?
+
+❯ uzyjmy pgvector-python i idziemy do draft-u                                   
+
+● Świetnie. Oto draft sekcji Technical Context:
+
+  ---
+  Technical Context
+
+  Architectural Position
+
+  Database access layer migration within the existing Flask backend. Replaces
+  raw psycopg2 queries with SQLAlchemy 2.x ORM. All consumers (Flask API, import
+   scripts, batch pipeline) use the same ORM models and session management.
+
+  Target Architecture
+
+  Flask Route / Script
+    |
+    v
+  Repository (stalker_web_documents_db_postgresql.py)
+    |  - complex queries: get_list(), get_similar(), get_count()
+    |  - uses SQLAlchemy select(), func.count(), joins
+    |
+    v
+  ORM Models (library/db/models.py)
+    |  - WebDocument (STI base) -> LinkDocument, YouTubeDocument, etc.
+    |  - WebsiteEmbedding (Vector(1536), cosine_distance())
+    |  - domain methods: set_document_type(), validate(), analyze(), dict()
+    |
+    v
+  SQLAlchemy Engine (library/db/engine.py)
+    |  - get_engine() with pool_pre_ping=True
+    |  - get_session() for scripts
+    |  - get_scoped_session() for Flask (thread-local)
+    |
+    v
+  PostgreSQL 18 + pgvector
+
+  Session Management
+
+  ┌─────────────┬───────────────────────────────────────────────────────────┐
+  │   Context   │                         Strategy                          │
+  ├─────────────┼───────────────────────────────────────────────────────────┤
+  │ Flask API   │ get_scoped_session() — thread-local,                      │
+  │             │ @app.teardown_appcontext calls session.remove()           │
+  ├─────────────┼───────────────────────────────────────────────────────────┤
+  │ Import      │ get_session() — script-scoped, explicit session.close()   │
+  │ scripts     │ at exit                                                   │
+  ├─────────────┼───────────────────────────────────────────────────────────┤
+  │ Batch       │ get_session() — script-scoped, commit per document        │
+  │ pipeline    │                                                           │
+  └─────────────┴───────────────────────────────────────────────────────────┘
+
+  Key Technology Decisions
+
+  ┌──────────────┬───────────────────────┬──────────────────────────────────┐
+  │   Decision   │        Choice         │            Rationale             │
+  ├──────────────┼───────────────────────┼──────────────────────────────────┤
+  │              │ SQLAlchemy 2.x        │ Modern, type-hint native, best   │
+  │ ORM style    │ mapped_column()       │ IDE support                      │
+  │              │ declarative           │                                  │
+  ├──────────────┼───────────────────────┼──────────────────────────────────┤
+  │ Vector       │ pgvector-python       │ cosine_distance() operator,      │
+  │ operations   │ native integration    │ Vector(1536) type — zero raw SQL │
+  ├──────────────┼───────────────────────┼──────────────────────────────────┤
+  │              │ Single Table          │ Matches current schema (one      │
+  │ Inheritance  │ Inheritance on        │ table), prepares for future      │
+  │              │ web_documents         │ Joined Table split               │
+  ├──────────────┼───────────────────────┼──────────────────────────────────┤
+  │ Migration    │ Alembic with          │ Reads ORM model diffs, generates │
+  │ tool         │ autogenerate          │  migration scripts               │
+  ├──────────────┼───────────────────────┼──────────────────────────────────┤
+  │              │                       │ StalkerWebDocumentDB wrapper     │
+  │ DB wrapper   │ Eliminated            │ removed — ORM model + repository │
+  │              │                       │  directly                        │
+  ├──────────────┼───────────────────────┼──────────────────────────────────┤
+  │              │ Deferred (out of      │ Not needed until API             │
+  │ Pydantic     │ scope)                │ serialization or structured AI   │
+  │              │                       │ outputs become priority          │
+  └──────────────┴───────────────────────┴──────────────────────────────────┘
+
+  Data Flow — Import Script
+
+  DynamoDB/JSON feed
+    -> Script creates WebDocument(url=...)
+    -> session.add(doc) + session.commit()
+    -> SQLAlchemy generates INSERT with correct columns
+    -> New columns auto-default to NULL (no script changes needed)
+
+  Data Flow — Similarity Search
+
+  Query vector (1536 dims)
+    -> Repository: select(WebsiteEmbedding)
+         .order_by(WebsiteEmbedding.embedding.cosine_distance(query_vector))
+         .limit(limit)
+    -> pgvector IVFFlat index (cosine similarity)
+    -> ORM instances returned
+
+  Dependencies (new)
+
+  ┌────────────┬────────────┬────────────────────────────────────────┐
+  │  Package   │  Version   │                Purpose                 │
+  ├────────────┼────────────┼────────────────────────────────────────┤
+  │ sqlalchemy │ >=2.0,<3.0 │ ORM, query builder, session management │
+  ├────────────┼────────────┼────────────────────────────────────────┤
+  │ pgvector   │ >=0.3.0    │ Vector type, cosine_distance operator  │
+  ├────────────┼────────────┼────────────────────────────────────────┤
+  │ alembic    │ >=1.13     │ Schema migration management            │
+  └────────────┴────────────┴────────────────────────────────────────┘
+
+  Existing psycopg2-binary retained as SQLAlchemy driver.
+
+  Files — Summary
+
+  New:
+  - backend/library/db/__init__.py
+  - backend/library/db/engine.py — engine, session factories, Base
+  - backend/library/db/models.py — WebDocument (STI), WebsiteEmbedding
+  - backend/alembic.ini
+  - backend/alembic/env.py
+  - backend/alembic/versions/ — migration scripts
+
+  Rewritten:
+  - backend/library/stalker_web_documents_db_postgresql.py — SQLAlchemy session
+  queries
+  - backend/imports/dynamodb_sync.py — ORM model instead of wrapper
+  - backend/imports/unknown_news_import.py — ORM model instead of wrapper
+  - backend/web_documents_do_the_needful_new.py — ORM model instead of wrapper
+  - backend/server.py — add teardown_appcontext, update route handlers
+
+  Removed:
+  - backend/library/stalker_web_document_db.py — wrapper eliminated
+  - backend/library/stalker_web_document.py — replaced by ORM model (re-export
+  enums only)
+
+  Implementation Considerations
+
+  - StalkerDocumentStatus, StalkerDocumentType, StalkerDocumentStatusError enums
+   are preserved as-is — they are used across the codebase and stored as strings
+   in the database
+  - The langauge typo in websites_embeddings has been fixed in migration
+  08-fix-language-typo.sql — ORM model uses correct language spelling
+  - dynamodb_sync.py has a direct SQL UPDATE for created_at and chapter_list
+  (line 210) — this becomes a normal ORM attribute assignment + commit
+  - pgvector HNSW/IVFFlat partial indexes: managed by Alembic migrations, not
+  defined in ORM model
+
+  ---
+  Jak oceniasz? Coś do zmiany lub dodania?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Scoping (Step
+  8 of 11)
+
+
+❯ C                                                                             
+
+  [--- Update: prd.md — 2 edits, diffs removed for readability ---]
+
+● Krok 8 z 11 — Scoping Exercise
+
+  ---
+  Ziutus, mamy już solidne MVP zdefiniowane w kroku 3 (Product Scope).
+  Przeglądam całe PRD do tej pory i widzę, że scope jest dość jasny. Zanim
+  wygeneruję sekcję, jedno pytanie o ryzyka:
+
+  Największe ryzyko techniczne jakie widzę to ten moment, kiedy wszystkie
+  konsumencji (3 skrypty + Flask API) muszą przejść na nową warstwę
+  jednocześnie. Nie da się tego robić plik po pliku, bo stare klasy i nowe ORM
+  nie mogą współistnieć łatwo (dwa sposoby zarządzania połączeniami DB).
+
+  Pytanie: Czy akceptujesz podejście "big bang" — przepisujemy wszystko naraz,
+  testujemy na świeżych danych, i jeśli coś nie działa, debugujemy? Biorąc pod
+  uwagę, że kod "nigdy naprawdę nie działał", to wydaje się bezpieczne. Ale chcę
+   to potwierdzić.
+
+
+❯ akceptuje                                                                     
+
+● Oto draft sekcji Scoping & Risk Mitigation:
+
+  ---
+  Project Scoping & Risk Mitigation
+
+  MVP Strategy
+
+  Approach: Big-bang rewrite of the data access layer. All consumers (Flask API,
+   import scripts, batch pipeline) migrate to SQLAlchemy ORM simultaneously. The
+   codebase has never run in production, so there is no live system to break —
+  this is the safest moment for an aggressive rewrite.
+
+  Resource Requirements: Solo developer (Ziutus), Claude Code as implementation
+  partner.
+
+  MVP Feature Set (Phase 1)
+
+  Core Journeys Supported:
+  - All four journeys: schema modification, data import, embeddings pipeline,
+  API request
+
+  Must-Have Capabilities:
+  1. ORM models (WebDocument with STI, WebsiteEmbedding with Vector(1536))
+  2. Engine + session management (get_engine(), get_session(),
+  get_scoped_session())
+  3. Alembic initialized with baseline migration
+  4. Repository rewritten with SQLAlchemy queries
+  5. All import scripts (dynamodb_sync.py, unknown_news_import.py) working with
+  ORM
+  6. Batch pipeline (web_documents_do_the_needful_new.py) working with ORM
+  7. Flask endpoints functional
+  8. Old wrapper classes removed
+
+  Post-MVP Features
+
+  Phase 2 (Growth):
+  - Pydantic v2 schemas for API serialization
+  - TypeScript type synchronization (Pydantic → OpenAPI → openapi-typescript)
+  - New tables: data_sources, authors
+  - Pydantic structured outputs for LLM calls
+
+  Phase 3 (Expansion):
+  - Joined Table Inheritance (split web_documents by document type)
+  - MCP server for Claude Desktop backed by SQLAlchemy queries
+  - ElasticSearch as secondary search backend (if needed)
+
+  Risk Mitigation Strategy
+
+  Technical Risk — Big-Bang Migration:
+  All consumers switch to SQLAlchemy simultaneously. No gradual migration path.
+  Mitigation: The code has never run in production. Verification is done by
+  running import scripts on test data and confirming correct database state. If
+  something breaks, the old code is in git history.
+
+  Technical Risk — pgvector Compatibility:
+  pgvector-python must produce identical similarity search results to the
+  current raw SQL <=> operator. Mitigation: Run get_similar() with known test
+  vectors before and after migration, compare results.
+
+  Technical Risk — Session Lifecycle:
+  SQLAlchemy sessions in Flask must be properly scoped (thread-local) and
+  cleaned up. Leaked sessions cause connection pool exhaustion. Mitigation:
+  @app.teardown_appcontext with session.remove() — standard Flask-SQLAlchemy
+  pattern.
+
+  Technical Risk — Alembic Baseline:
+  Existing database schema must match the ORM model exactly for alembic stamp 
+  head to work. Any drift causes migration failures. Mitigation: Compare alembic
+   revision --autogenerate output against existing DDL scripts
+  (backend/database/init/03-create-table.sql, 04-create-table.sql). Fix any
+  discrepancies before stamping.
+
+  Dependency Risk — Lambda Package Size:
+  SQLAlchemy adds ~30MB to Lambda layers. Mitigation: Deferred — Lambda/AWS is
+  secondary. NAS deployment has no package size constraints. Lambda
+  compatibility addressed in a future sprint if needed.
+
+  ---
+  Jak oceniasz? Coś do zmiany?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Functional
+  Requirements (Step 9 of 11)
+
+❯ C                                                                             
+
+
+  [--- Update: prd.md — 2 edits, diffs removed for readability ---]
+
+● Krok 9 z 11 — Functional Requirements
+
+  ---
+  Ziutus, to jest kluczowa sekcja — kontrakt na zdolności systemu. Syntezuję
+  wszystkie odkrycia z poprzednich kroków. Oto draft:
+
+  ---
+  Functional Requirements
+
+  ORM Model Definition
+
+  - FR1: Developer can define database table structure as a Python ORM model
+  class in a single file
+  - FR2: Developer can define column types, constraints, defaults, and
+  nullability as model field attributes
+  - FR3: Developer can define relationships between models (one-to-many,
+  many-to-one) using ORM relationship declarations
+  - FR4: Developer can define Single Table Inheritance hierarchy on
+  web_documents with document type as discriminator
+  - FR5: Developer can add domain methods (validate, analyze, set_document_type,
+   set_document_state) directly on the ORM model
+
+  Schema Migration
+
+  - FR6: Developer can auto-generate migration scripts from ORM model changes
+  via Alembic
+  - FR7: Developer can apply migrations to the database with a single command
+  (alembic upgrade head)
+  - FR8: Developer can roll back migrations to a previous version (alembic 
+  downgrade)
+  - FR9: Developer can initialize Alembic on an existing database by stamping
+  the current state as baseline
+
+  Session & Connection Management
+
+  - FR10: Flask application can obtain thread-local database sessions scoped to
+  the request lifecycle
+  - FR11: Flask application can automatically clean up sessions on request
+  teardown
+  - FR12: Standalone scripts can obtain and manage their own database sessions
+  - FR13: Engine can detect and recover from stale database connections
+  (pool_pre_ping)
+
+  Document Persistence
+
+  - FR14: Consumer can create a new document by instantiating an ORM model and
+  committing to session
+  - FR15: Consumer can update an existing document by modifying ORM model
+  attributes and committing
+  - FR16: Consumer can delete a document via session, with cascade deletion of
+  related embeddings
+  - FR17: Consumer can look up a document by URL for duplicate detection
+  - FR18: Consumer can look up a document by ID
+  - FR19: Consumer can serialize a document to a dictionary for API responses
+
+  Embedding Operations
+
+  - FR20: Consumer can add a vector embedding to a document via ORM relationship
+  - FR21: Consumer can delete embeddings for a document filtered by model name
+  - FR22: Repository can find documents needing embeddings (outer join on
+  websites_embeddings)
+  - FR23: Repository can perform similarity search using pgvector-python
+  cosine_distance() operator
+
+  Repository Queries
+
+  - FR24: Repository can list documents with dynamic filters (document_type,
+  document_state, source, project, limit, offset)
+  - FR25: Repository can count documents by type and/or state
+  - FR26: Repository can find documents ready for download (URL_ADDED state,
+  webpage/link type)
+  - FR27: Repository can find YouTube documents just added (URL_ADDED state,
+  youtube type)
+  - FR28: Repository can find documents with completed transcriptions
+  - FR29: Repository can find the next document to correct (navigation by ID and
+   type)
+  - FR30: Repository can retrieve the last imported date for a given source
+
+  Import Script Compatibility
+
+  - FR31: dynamodb_sync.py can create documents from DynamoDB items using ORM
+  models
+  - FR32: dynamodb_sync.py can set created_at and chapter_list via normal ORM
+  attribute assignment (no direct SQL)
+  - FR33: unknown_news_import.py can create documents from JSON feed entries
+  using ORM models
+  - FR34: unknown_news_import.py can detect and skip duplicate URLs via ORM
+  query
+
+  Batch Pipeline Compatibility
+
+  - FR35: web_documents_do_the_needful_new.py can process SQS messages and
+  create documents via ORM
+  - FR36: web_documents_do_the_needful_new.py can generate and store embeddings
+  via ORM relationship
+  - FR37: web_documents_do_the_needful_new.py can update document state through
+  the processing lifecycle
+  - FR38: YouTube processing pipeline can store transcript text and metadata via
+   ORM
+
+  Flask API Compatibility
+
+  - FR39: /website_list endpoint can return filtered, paginated document lists
+  via repository
+  - FR40: /website_get endpoint can return a single document with neighbor
+  navigation via repository
+  - FR41: /website_save endpoint can create or update documents via ORM model
+  - FR42: /website_delete endpoint can remove documents with cascade embedding
+  deletion via ORM
+  - FR43: /website_similar endpoint can perform vector similarity search via
+  pgvector-python
+
+  ---
+  To jest kontrakt zdolności — wszystko co nie jest tu wymienione, nie zostanie
+  zaimplementowane. Widzisz jakieś braki? Coś czego potrzebujesz a co tu nie
+  jest?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Non-Functional
+   Requirements (Step 10 of 11)
+
+
+❯ C                                                                             
+
+  [--- Update: prd.md — 2 edits, diffs removed for readability ---]
+
+● Krok 10 z 12 — Non-Functional Requirements
+
+  ---
+  Ocena kontekstu NFR dla tej migracji:
+
+  - Performance: Nie dotyczy — nie zmieniamy wymagań wydajnościowych, SQLAlchemy
+   generuje podobne SQL
+  - Security: Minimalne — sekrety DB już zarządzane przez config_loader, nic się
+   nie zmienia
+  - Scalability: Nie dotyczy — jeden użytkownik, NAS
+  - Accessibility: Nie dotyczy — warstwa danych
+  - Integration: Nie dotyczy — te same systemy zewnętrzne
+
+  Ale widzę kilka NFR-ów specyficznych dla tej migracji. Oto draft:
+
+  ---
+  Non-Functional Requirements
+
+  Code Quality
+
+  - NFR1: Zero raw cursor.execute() calls in production code — all database
+  operations via SQLAlchemy ORM or pgvector-python operators
+  - NFR2: Code passes ruff check backend/ with zero warnings (line-length=120)
+  - NFR3: All existing unit tests pass without modification (tests that don't
+  touch DB layer)
+  - NFR4: ORM models use type hints (Mapped[type]) for IDE autocompletion and
+  static analysis
+
+  Backward Compatibility
+
+  - NFR5: Enum classes (StalkerDocumentStatus, StalkerDocumentType,
+  StalkerDocumentStatusError) are preserved with identical values — no import
+  changes needed in consumers
+  - NFR6: Database schema after migration is identical to before — Alembic
+  baseline produces no diff against existing DDL scripts
+
+  Maintainability
+
+  - NFR7: Adding a new column requires changes in exactly one file
+  (backend/library/db/models.py)
+  - NFR8: Adding a new table requires changes in exactly one file plus one
+  Alembic migration command
+  - NFR9: No dead code from old architecture remains (stalker_web_document_db.py
+   wrapper fully removed)
+
+  Dependency Management
+
+  - NFR10: New dependencies (sqlalchemy, pgvector, alembic) added to
+  pyproject.toml with version pins
+  - NFR11: uv lock produces a valid lock file after dependency changes
+  - NFR12: .venv_wsl synchronized after dependency changes
+
+  ---
+  Jak oceniasz? Chcesz coś dodać lub zmienić?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Polish
+  Document (Step 11 of 12)
+
+
+❯ C                                                                             
+
+  [--- Update: prd.md — 2 edits, diffs removed for readability ---]
+
+● Krok 11 z 12 — Document Polish
+
+  ---
+  Załadowałem cały dokument PRD i wytyczne jakości. Przeprowadzam przegląd:
+
+  Znalezione problemy:
+
+  1. Duplikacja scope: Product Scope (krok 3) i MVP Feature Set (krok 8)
+  częściowo się pokrywają — obie sekcje definiują MVP, Growth i Vision.
+  Skonsoliduję w jedną sekcję Project Scoping & Risk Mitigation (krok 8 jest
+  pełniejsza).
+  2. Journey 3 nieaktualna: Wspomina text() raw SQL dla pgvector, ale
+  zdecydowaliśmy się na pgvector-python native. Poprawię.
+  3. Journey 4 nieaktualna: Mówi o "byte-for-byte compatible" API, ale
+  ustaliliśmy że API może ewoluować. Poprawię.
+  4. Journey Requirements Summary: Wspomina pgvector integration via text() —
+  poprawię na pgvector-python cosine_distance().
+  5. Measurable Outcomes: Mówi "except pgvector <=> operator via text()" — to
+  już nieaktualne.
+
+  Przygotowuję spoliszowany dokument z tymi poprawkami. Chwilę...
+
+
+● Teraz aplikuję poprawki — usuwam duplikację Product Scope (sekcja z kroku 3
+  pokrywa się z Project Scoping z kroku 8) i aktualizuję nieaktualne odniesienia
+   do text() raw SQL.
+
+  [--- Update: prd.md — 4 edits, diffs removed for readability ---]
+
+● Now update frontmatter:
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+● Gotowe. Oto podsumowanie zmian w polishu:
+
+  Usunięta duplikacja:
+  - Sekcja "Product Scope" (MVP/Growth/Vision) usunięta — ta sama treść istnieje
+   pełniej w "Project Scoping & Risk Mitigation" → "MVP Feature Set", "Post-MVP
+  Features"
+
+  Zaktualizowane odniesienia (pgvector):
+  - Journey 3 (Embeddings Pipeline): text() raw SQL → pgvector-python native
+  cosine_distance()
+  - Journey Requirements Summary: pgvector integration via text() →
+  pgvector-python cosine_distance()
+  - Measurable Outcomes: usunięty wyjątek "except pgvector <=> via text()"
+
+  Zaktualizowana kompatybilność API (Journey 4):
+  - "byte-for-byte compatible" → "functionally equivalent, frontend may need
+  minor adjustments"
+
+  Zachowane: Wszystkie FR-y (43), NFR-y (12), success criteria, risk mitigation,
+   technical context — zero utraty informacji.
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Complete PRD
+  (Step 12 of 12)
+
