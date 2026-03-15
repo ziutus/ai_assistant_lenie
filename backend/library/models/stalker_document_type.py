@@ -12,4 +12,5 @@ class StalkerDocumentType(Enum):
     webpage = 4
     text_message = 5
     text = 6
+    email = 7
 
