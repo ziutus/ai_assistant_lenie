@@ -78,6 +78,15 @@ This document serves as the index for all epics in lenie-server-2025. Individual
 - Epic 28: Vector Embeddings & Similarity Search — [epic-28.md](epic-28.md)
 - Epic 29: Data Pipeline Migration & Cleanup — [epic-29.md](epic-29.md)
 
+### Sprint 10: Database Lookup Tables & Search Extensions (DONE)
+
+- Epic 30: Database Lookup Tables & Search Extensions (B-93, B-94, B-95, B-96, B-97)
+
+### Sprint 11: Code Quality, Security & Service Layer
+
+- Epic 31: Security Fixes & Project Governance (B-87, B-85, B-86)
+- Epic 32: Service Layer Extraction (B-56)
+
 ## Backlog Items
 
 - **B-50:** API Type Synchronization Pipeline (Pydantic → OpenAPI → TypeScript) — backlog

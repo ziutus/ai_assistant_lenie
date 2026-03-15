@@ -109,6 +109,8 @@ class WebDocument(Base):
         String(50), ForeignKey("document_types.name"), nullable=False,
     )
 
+    # How the user discovered this content (e.g. "own", "unknow.news", "friend").
+    # Used to evaluate recommendation source quality over time — NOT who created the content.
     source: Mapped[str | None] = mapped_column(Text)
     date_from: Mapped[datetime.date | None] = mapped_column(Date)
     original_id: Mapped[str | None] = mapped_column(Text)
@@ -126,6 +128,7 @@ class WebDocument(Base):
     text_raw: Mapped[str | None] = mapped_column(Text)
     transcript_job_id: Mapped[str | None] = mapped_column(Text)
     ai_summary_needed: Mapped[bool | None] = mapped_column(Boolean, server_default=sa_text("false"))
+    # Content creator: YouTube channel name, article author, etc. — metadata about who made it.
     author: Mapped[str | None] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
     s3_uuid: Mapped[str | None] = mapped_column(String(100))

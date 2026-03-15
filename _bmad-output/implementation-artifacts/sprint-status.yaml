@@ -378,7 +378,7 @@ development_status:
   epic-31: in-progress
   31-1-add-bsl-1-1-license: done  # B-87: Add Business Source License 1.1 to repository. Anti-cloud-provider clause, auto-converts to Apache 2.0/MPL 2.0 after 4 years.
   31-2-fix-website-get-404-for-nonexistent-id: done  # B-85: GET /website_get?id=<nonexistent> returns 500 instead of 404. Fixed: proper 404/400, Lambda ORM migration, 8 unit tests. Code review: 8 issues (3H/4M/1L), H+M fixed.
-  31-3-parameterize-sql-in-remaining-db-methods: backlog  # B-86: SQL injection fix in get_similar(), get_documents_by_url(), get_documents_md_needed(). Replace f-string interpolation with %s parameterized queries.
+  31-3-parameterize-sql-in-remaining-db-methods: review  # B-86: SQL injection fix in get_similar(), get_documents_by_url(), get_documents_md_needed(). Replace f-string interpolation with %s parameterized queries.
   epic-31-retrospective: optional
 
   # --- Epic 32: Service Layer Extraction ---

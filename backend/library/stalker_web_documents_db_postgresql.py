@@ -155,9 +155,12 @@ class WebsitesDBPostgreSQL:
         return (row[0], row[1])
 
     def get_last_unknown_news(self) -> datetime.date | None:
+        return self.get_last_by_source('https://unknow.news/')
+
+    def get_last_by_source(self, source: str) -> datetime.date | None:
+        """Return the most recent date_from for documents with a given source."""
         stmt = select(func.max(WebDocument.date_from)).where(
-            WebDocument.document_type == StalkerDocumentType.link.name,
-            WebDocument.source == 'https://unknow.news/',
+            WebDocument.source == source,
         )
         return self.session.execute(stmt).scalar()
 
@@ -306,9 +309,10 @@ class WebsitesDBPostgreSQL:
         """
         min_id = int(min_id)
         escaped_url = url.replace("%", "\\%").replace("_", "\\_")
+        pattern = f"{escaped_url}%"
 
         stmt = select(WebDocument.id).where(
-            WebDocument.url.like(f"{escaped_url}%"),
+            WebDocument.url.like(pattern),
             WebDocument.document_type == StalkerDocumentType.webpage.name,
             WebDocument.id > min_id,
             or_(
