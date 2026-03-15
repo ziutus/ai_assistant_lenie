@@ -69,7 +69,8 @@ INSERT INTO public.document_types (name) VALUES
     ('link'),
     ('webpage'),
     ('text_message'),
-    ('text')
+    ('text'),
+    ('email')
 ON CONFLICT (name) DO NOTHING;
 
 -- embedding_models (7 rows)
