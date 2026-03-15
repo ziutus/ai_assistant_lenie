@@ -188,9 +188,9 @@ def html_to_text(html_content: str) -> str:
     """Convert HTML email to readable plain text, preserving links."""
     text = html_content
     # Remove <head>, <style>, <script> blocks entirely
-    text = re.sub(r"<head\b[^>]*>.*?</head>", "", text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r"<style\b[^>]*>.*?</style>", "", text, flags=re.IGNORECASE | re.DOTALL)
-    text = re.sub(r"<script\b[^>]*>.*?</script>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"<head\b[^>]*>.*?</head\b[^>]*>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"<style\b[^>]*>.*?</style\b[^>]*>", "", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"<script\b[^>]*>.*?</script\b[^>]*>", "", text, flags=re.IGNORECASE | re.DOTALL)
     # Remove HTML comments
     text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
     # <br> -> newline
