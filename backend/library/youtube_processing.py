@@ -108,6 +108,7 @@ def process_youtube_url(
     if web_document.document_state == StalkerDocumentStatus.URL_ADDED.name and youtube_file.can_pytube:
         logger.info("Updating document metadata from YouTube")
         web_document.title = youtube_file.title
+        web_document.author = youtube_file.author
         web_document.url = youtube_file.url
         web_document.original_id = youtube_file.video_id
         web_document.text = youtube_file.text

@@ -148,6 +148,15 @@ pre-commit run         # Pre-commit hooks (includes TruffleHog secret detection)
 
 Tool config in `pyproject.toml`: ruff line-length=120, excludes `.git`, `__pycache__`, `venv`, `node_modules`.
 
+## Key Field Semantics: `source` vs `author`
+
+These two fields on `web_documents` serve distinct purposes:
+
+- **`source`** — How the user *discovered* the content: `"own"` (found it themselves), `"unknow.news"` (from unknow.news newsletter), `"friend"` (personal recommendation), etc. This enables evaluating recommendation source quality over time (e.g. "links from source X tend to be low quality").
+- **`author`** — Who *created* the content: YouTube channel name, article author, blog name, etc. This is content metadata, not a discovery channel.
+
+Example: A YouTube video by "Good Times Bad Times Polska" found via unknow.news newsletter → `source="unknow.news"`, `author="Good Times Bad Times Polska"`.
+
 ## Subdirectory Documentation
 
 Each subdirectory has its own `CLAUDE.md` with detailed documentation:

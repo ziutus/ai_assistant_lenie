@@ -1348,3 +1348,88 @@ Create `backend/library/url_cleaner.py` with a `clean_url(url: str) -> str` func
 
 **Priority:** MEDIUM
 **Status:** backlog
+
+---
+
+### B-100: Replace Long-Term AWS Access Keys with IAM Roles Anywhere
+
+As a **developer**,
+I want to replace static cloud credentials (AWS Access Keys, GCP Service Account Keys) with certificate-based authentication via IAM Roles Anywhere (AWS) and Workload Identity Federation (GCP),
+so that on-premises workloads (NAS, local dev) use short-lived temporary credentials instead of long-term keys, reducing the blast radius of credential leaks.
+
+**Origin:** Security improvement — currently the project uses multiple long-term AWS Access Keys and GCP Service Account Key JSON files stored in `.env` files and Vault for accessing cloud services (S3, SQS, Bedrock, Vertex AI, etc.) from on-premises workloads (NAS QNAP, Windows/WSL dev machine). Both AWS and GCP offer certificate-based authentication that replaces these with automatically rotating temporary credentials at zero cost.
+
+**Current state:**
+- NAS backend and import scripts use Access Keys from `.env` / Vault to access S3, SQS, Bedrock, RDS
+- Vault auto-unseal user (`lenie-vault-nas-unseal` on account 639...) has a static Access Key for KMS
+- Developer machine uses AWS profiles with long-term keys for CloudFormation deploys, S3 frontend deploys, SSM access
+- Multiple Access Keys across 3 AWS accounts need periodic manual rotation
+- GCP Service Account Key JSON used for Google Vertex AI (Gemini) access — static file stored locally
+
+**Proposed solution:**
+
+**Phase 1: Certificate Authority Setup**
+1. Configure Vault PKI secrets engine as the Certificate Authority (Vault already runs on NAS)
+2. Create a dedicated PKI role for Lenie workloads with appropriate TTL (e.g., 24h certificates)
+3. Generate root/intermediate CA certificates
+
+**Phase 2: AWS IAM Roles Anywhere Configuration**
+1. Create Trust Anchor in each AWS account, uploading the Vault CA certificate
+2. Create IAM Roles Anywhere Profiles linked to existing IAM roles:
+   - NAS backend role (S3, SQS, Bedrock, RDS access)
+   - Vault unseal role (KMS Encrypt/Decrypt on account 639...)
+   - Developer deploy role (CloudFormation, S3, SSM, CloudFront)
+3. Create CloudFormation template for Trust Anchor + Profile resources (add to `infra/aws/cloudformation/templates/`)
+
+**Phase 3: Workload Migration (NAS)**
+1. Install `aws_signing_helper` on NAS (QNAP container)
+2. Configure `~/.aws/config` with `credential_process` pointing to signing helper
+3. Set up automatic certificate renewal via Vault (cron or systemd timer)
+4. Update `backend/.env` — remove AWS Access Key/Secret Key variables
+5. Verify: import scripts, backend S3 access, SQS operations
+
+**Phase 4: Workload Migration (Developer Machine)**
+1. Install `aws_signing_helper` on Windows/WSL
+2. Configure AWS profiles to use `credential_process` instead of static keys
+3. Verify: `deploy.sh`, CloudFormation deploys, frontend S3 deploys
+4. Update documentation ([`docs/security/secrets-management.md`](../../docs/security/secrets-management.md), [`docs/CICD/Vault_Setup.md`](../../docs/CICD/Vault_Setup.md))
+
+**Phase 5: GCP Workload Identity Federation**
+1. Create Workload Identity Pool in GCP project
+2. Register Vault CA certificate as Trust Anchor (same CA as for AWS)
+3. Configure certificate-based mTLS authentication for on-premises workloads
+4. Replace GCP Service Account Key JSON with federated token flow
+5. Verify: Vertex AI (Gemini) API calls work with certificate auth
+6. Delete Service Account Key JSON from local storage and Vault
+
+**Phase 6: Cleanup**
+1. Deactivate and delete old Access Keys from IAM
+2. Remove `lenie-vault-nas-unseal` IAM user (replaced by Roles Anywhere)
+3. Update [`scripts/vars-classification.yaml`](../../scripts/vars-classification.yaml) — mark AWS key variables as deprecated
+4. Update [`CLAUDE.md`](../../CLAUDE.md) with new auth approach
+
+**Cost:** $0 — IAM Roles Anywhere and GCP Workload Identity Federation are both free; Vault PKI (already deployed) serves as CA for both clouds.
+
+**Technical notes:**
+- Vault PKI engine docs: `vault secrets enable pki`
+- `aws_signing_helper` is an open-source binary from AWS, available for Linux (NAS) and Windows
+- `credential_process` in `~/.aws/config` is natively supported by all AWS SDKs (boto3, AWS CLI)
+- CloudTrail logs certificate serial number for each session — better auditability than Access Key ID
+- Certificate revocation at Vault CA instantly blocks access without touching AWS IAM
+- Relationship to [B-78](backlog.md#b-78-vault-auto-unseal-via-aws-kms-for-nas-deployment): B-78 sets up Vault on NAS; this task can leverage it for PKI CA
+- GCP Workload Identity Federation with X.509: [docs](https://docs.google.com/iam/docs/workload-identity-federation-with-x509-certificates)
+- One Vault PKI CA serves both AWS and GCP — single certificate infrastructure for multi-cloud
+
+**Acceptance Criteria:**
+- Vault PKI engine is configured and issues certificates for Lenie workloads
+- Trust Anchors and Profiles are created in all relevant AWS accounts (CloudFormation managed)
+- NAS backend and import scripts authenticate via IAM Roles Anywhere (no static Access Keys)
+- Vault auto-unseal uses certificate-based auth instead of static IAM user
+- Developer machine deploys work with `credential_process` (CloudFormation, S3, CloudFront)
+- All old Access Keys are deactivated and deleted
+- GCP Vertex AI (Gemini) calls work via Workload Identity Federation (no Service Account Key JSON)
+- Documentation updated with new setup instructions
+- No static cloud credentials (AWS Access Keys, GCP Service Account Keys) remain in `.env`, Vault, or any config files
+
+**Priority:** LOW
+**Status:** backlog

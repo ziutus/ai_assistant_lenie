@@ -1,0 +1,138 @@
+feeds:
+- name: unknow.news
+  type: json_api
+  url: https://unknow.news/archiwum.json
+  cache_path: tmp/archiwum.json
+  language: pl
+  auto_import: true
+  source_id: https://unknow.news/
+  default_state: READY_FOR_EMBEDDING
+  field_mapping:
+    url: url
+    title: title
+    summary: info
+    date: date
+  skip_url_patterns:
+  - https://uw7.org/un
+  - http://uw7.org/un
+  skip_title_patterns:
+  - ^sponsorowane
+- name: Na Wschód od Bliskiego Wschodu
+  type: youtube_channel
+  channel_id: UC3ASzYY9kNCVsXeWynr0OjQ
+  language: pl
+  project: geopolityka
+  tags:
+  - bliski-wschód
+  - geopolityka
+  - iran
+- name: malak.cloud
+  type: wordpress
+  url: https://malak.cloud/feed/
+  language: pl
+  project: technologia
+  tags:
+  - aws
+  - cloud
+  - devops
+- name: Gazeta.pl Wiadomości
+  type: rss
+  url: https://www.gazeta.pl/pub/rss/wiadomosci.htm
+  language: pl
+  project: news
+  tags:
+  - polska
+  - polityka
+  - wiadomości
+  disabled: true
+- name: Polsat News
+  type: rss
+  url: https://www.polsatnews.pl/rss/wszystkie.xml
+  language: pl
+  project: news
+  tags:
+  - polska
+  - polityka
+  - wiadomości
+  disabled: true
+- name: AWS News Blog
+  type: rss
+  url: https://aws.amazon.com/blogs/aws/feed/
+  language: en
+  project: technologia
+  tags:
+  - aws
+  - cloud
+- name: AWS Architecture Blog
+  type: rss
+  url: https://aws.amazon.com/blogs/architecture/feed/
+  language: en
+  project: technologia
+  tags:
+  - aws
+  - cloud
+  - architecture
+- name: AWS Security Blog
+  type: rss
+  url: https://aws.amazon.com/blogs/security/feed/
+  language: en
+  project: technologia
+  tags:
+  - aws
+  - cloud
+  - security
+- name: AWS DevOps Blog
+  type: rss
+  url: https://aws.amazon.com/blogs/devops/feed/
+  language: en
+  project: technologia
+  tags:
+  - aws
+  - cloud
+  - devops
+- name: AWS Compute Blog
+  type: rss
+  url: https://aws.amazon.com/blogs/compute/feed/
+  language: en
+  project: technologia
+  tags:
+  - aws
+  - cloud
+  - compute
+  - lambda
+- name: AWS Database Blog
+  type: rss
+  url: https://aws.amazon.com/blogs/database/feed/
+  language: en
+  project: technologia
+  tags:
+  - aws
+  - cloud
+  - database
+  - rds
+  disabled: true
+- name: AWS What's New
+  type: rss
+  url: https://aws.amazon.com/about-aws/whats-new/recent/feed/
+  language: en
+  project: technologia
+  tags:
+  - aws
+  - cloud
+  - releases
+  skip_title_patterns:
+  - Asia Pacific \(
+  - Europe \(
+  - South America \(
+  - Africa \(
+  - Middle East \(
+  - Canada \(
+  - Israel \(
+  - US East \(
+  - US West \(
+  - AWS GovCloud
+  - in additional .*(R|r)egions
+  - in additional AWS Regions
+  - to \d+ Regions
+  - in the .* AWS Region
+  - Amazon WorkSpace

@@ -25,8 +25,8 @@ Primary document storage table.
 | `summary_english` | text | — | Translated summary |
 | `language` | varchar(10) | — | Detected language code |
 | `tags` | text | — | Comma-separated tags |
-| `source` | text | — | Source identifier |
-| `author` | text | — | Author name |
+| `source` | text | — | How the user discovered this content (e.g. "own", "unknow.news", "friend") — used to evaluate recommendation quality |
+| `author` | text | — | Content creator (YouTube channel name, article author) — metadata about who made the content |
 | `note` | text | — | User notes |
 | `paywall` | boolean | DEFAULT false | Paywall indicator |
 | `date_from` | date | — | Publication date |
