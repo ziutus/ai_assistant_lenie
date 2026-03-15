@@ -11,7 +11,7 @@ services:
     depends_on:
       - lenie-ai-db
     # For vault/aws backends, .env needs only bootstrap vars (SECRETS_BACKEND, SECRETS_ENV, etc.).
-    # For env backend, .env needs ALL variables. See docs/secrets-management.md for details.
+    # For env backend, .env needs ALL variables. See docs/security/secrets-management.md for details.
     # Generate backend-specific .env: python scripts/env_to_vault.py generate env-example --backend <env|vault|aws>
     env_file: .env
     volumes:

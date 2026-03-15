@@ -97,9 +97,10 @@ context_*.txt
 /.claude/plans/
 /.claude/settings.local.json
 
-# Import script data cache (crawled webpages)
+# Import script data cache and state
 backend/imports/data/
 backend/imports/.claude/
+backend/imports/feeds_state.yaml
 
 # Temporary planning notes
 planowanie_slack_part_2.txt
