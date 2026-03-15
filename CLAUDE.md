@@ -181,7 +181,7 @@ Restoration tracked in backlog: B-70 (prerequisites), B-71–B-74 (per-tool pipe
 
 ## Environment Variables
 
-Configuration is managed by the **config_loader** module (`backend/library/config_loader.py`) with three backends: `env` (default), `vault` (HashiCorp Vault), `aws` (AWS SSM). See [`docs/secrets-management.md`](docs/secrets-management.md) for full architecture, setup instructions, and troubleshooting.
+Configuration is managed by the **config_loader** module (`backend/library/config_loader.py`) with three backends: `env` (default), `vault` (HashiCorp Vault), `aws` (AWS SSM). See [`docs/security/secrets-management.md`](docs/security/secrets-management.md) for full architecture, setup instructions, and troubleshooting.
 
 Bootstrap variables (always in `.env`, regardless of backend):
 - `SECRETS_BACKEND` - Secret backend to use: `env`, `vault`, `aws`. Default: `env`

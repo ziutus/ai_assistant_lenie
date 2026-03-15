@@ -62,7 +62,7 @@ SLACK_APP_TOKEN=xapp-your-app-token
 
 **For Vault or AWS SSM backends:**
 
-See [docs/secrets-management.md](../docs/secrets-management.md) for instructions on storing secrets in Vault or AWS SSM Parameter Store.
+See [docs/security/secrets-management.md](../docs/security/secrets-management.md) for instructions on storing secrets in Vault or AWS SSM Parameter Store.
 
 ### Step 6: Start the Bot
 
