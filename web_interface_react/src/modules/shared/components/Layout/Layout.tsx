@@ -62,6 +62,16 @@ const SideNavigation = ({ isMenuOpen, toggleMenu }: SideNavigationProps) => {
             >
               Youtube (Alfa)
             </NavLink>
+            <NavLink
+              to="/email"
+              className={({ isActive }) =>
+                isActive
+                  ? `${classes.subLink} ${classes.activeLink}`
+                  : `${classes.subLink} ${classes.link}`
+              }
+            >
+              Email (Alfa)
+            </NavLink>
           </div>
         ) : null}
         <NavLink

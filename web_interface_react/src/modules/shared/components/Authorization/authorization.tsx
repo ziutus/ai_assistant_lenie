@@ -19,6 +19,21 @@ const Authorization = () => {
 
   const { fetchSqsSize } = useSqs();
   const navigate = useNavigate();
+  const [backendVersion, setBackendVersion] = React.useState<string | null>(null);
+
+  // Fetch backend version on mount
+  React.useEffect(() => {
+    if (apiUrl) {
+      fetch(`${apiUrl}/version`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.status === "success" && data.app_version) {
+            setBackendVersion(data.app_version);
+          }
+        })
+        .catch(() => setBackendVersion(null));
+    }
+  }, [apiUrl]);
 
   // Auto-check infrastructure status on mount (AWS only — Docker/NAS has no infra endpoints)
   React.useEffect(() => {
@@ -67,6 +82,7 @@ const Authorization = () => {
       <div style={{ marginBottom: "10px", fontSize: "13px" }}>
         <span style={{ color: "#28a745", fontWeight: 500 }}>Connected</span>
         {" "}({apiType}) — {apiUrl}
+        {backendVersion && <span style={{ marginLeft: "10px", color: "#6c757d" }}>Backend v{backendVersion}</span>}
         <button
           type="button"
           className="button"
