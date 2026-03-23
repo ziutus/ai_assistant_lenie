@@ -10,7 +10,7 @@ COPY shared/ ../shared/
 COPY web_interface_react/ .
 RUN npm run build
 
-FROM nginx:alpine
+FROM nginx:stable-bookworm
 COPY --from=build-stage /app/build /usr/share/nginx/html
 COPY --from=build-stage /app/nginx.conf /etc/nginx/conf.d/default.conf
 
