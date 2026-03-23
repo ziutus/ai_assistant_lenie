@@ -229,6 +229,113 @@ No GCloud deployment exists yet — this section will be updated when GCloud sup
 
 ---
 
+## LLM Observability
+
+### Why Monitor LLM Calls?
+
+LLM API calls are a significant cost driver and a critical point of failure. Unlike traditional API calls, they have variable cost (per-token billing), unpredictable latency, and quality that can degrade silently (model updates, prompt drift).
+
+Key monitoring goals:
+- **Costs** — token usage and billing per provider/model
+- **Debugging** — exact prompts and responses for troubleshooting
+- **Quality** — detecting regressions in model outputs
+- **Rate limits** — alerts when approaching provider limits
+- **Latency** — tracking response times across providers
+
+### Chosen Tool: Langfuse
+
+**Why Langfuse** (over alternatives like Helicone, LangSmith, OpenLLMetry):
+
+| Criterion | Langfuse | Helicone | LangSmith |
+|-----------|----------|----------|-----------|
+| Integration method | SDK / `@observe()` decorator | Proxy (URL redirect) | LangChain callback |
+| Multi-provider support | Any provider (SDK-based) | OpenAI-compatible only | Best with LangChain |
+| AWS Bedrock (`boto3`) | ✅ works (wraps any function) | ❌ not proxy-compatible | Requires LangChain wrapper |
+| Google Vertex AI (native SDK) | ✅ works (wraps any function) | ❌ not proxy-compatible | Requires LangChain wrapper |
+| Self-hosting | Docker Compose (5 min) | Possible but harder | No |
+| Free tier | 50k units/month, 30 days retention | 10k requests, 7 days | Limited |
+| Prompt management | ✅ versioning, A/B tests | ✅ | ✅ |
+| Evaluations (LLM-as-judge) | ✅ | ❌ | ✅ |
+| MCP server | ✅ native | ❌ | ❌ |
+
+**Key reason for choice:** The project uses 5 LLM providers with different SDKs (OpenAI, boto3, vertexai, OpenAI-compatible). Helicone's proxy approach only works for OpenAI-compatible APIs. Langfuse's SDK-based approach wraps any function regardless of the underlying transport, making it the only tool that covers all providers uniformly.
+
+See also: [ADR-013](./architecture-decisions.md#adr-013-custom-llm-provider-abstraction--keep-own-interface-evaluate-litellm-for-future)
+
+### Integration Plan
+
+Langfuse is already installed (`pyproject.toml:32`) and configured (`vars-classification.yaml`: `LANGFUSE_HOST`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_PUBLIC_KEY`). Activation requires:
+
+**Step 1 — Uncomment and enable in `openai_my.py`:**
+```python
+from langfuse.decorators import observe
+```
+
+**Step 2 — Add `@observe()` decorator to key functions:**
+
+```python
+# backend/library/ai.py
+from langfuse.decorators import observe
+
+@observe()
+def ai_ask(model, prompt, system_prompt=None, ...):
+    # Existing routing logic — Langfuse traces automatically
+    ...
+```
+
+```python
+# backend/library/embedding.py
+from langfuse.decorators import observe
+
+@observe()
+def get_embedding(text, model=None, ...):
+    ...
+```
+
+**Step 3 — Set environment variables:**
+```
+LANGFUSE_HOST=https://cloud.langfuse.com  # or self-hosted URL
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+```
+
+### What Gets Traced
+
+With `@observe()` on `ai_ask()` and `get_embedding()`:
+
+| Data | Captured | Notes |
+|------|----------|-------|
+| Model name | ✅ | Automatic from OpenAI SDK; manual `langfuse_context.update_current_observation()` for Bedrock/Vertex |
+| Input (prompt) | ✅ | Full prompt text |
+| Output (response) | ✅ | Full response text |
+| Token usage | ✅ (OpenAI, Sherlock, ArkLabs) | Automatic for OpenAI-compatible; requires manual reporting for Bedrock/Vertex |
+| Latency | ✅ | Automatic |
+| Cost | ✅ (estimated) | Langfuse calculates based on model pricing tables |
+| Errors | ✅ | Exceptions are captured automatically |
+
+**Note:** For AWS Bedrock and Google Vertex AI, token counts must be extracted from the provider response and passed to Langfuse manually via `langfuse_context.update_current_observation(usage={"input": N, "output": M})`. This is because these SDKs don't follow the OpenAI response format that Langfuse auto-parses.
+
+### Self-Hosting Option
+
+For full data control, Langfuse can be self-hosted via Docker Compose:
+
+```yaml
+# Add to existing docker-compose.yml or separate file
+services:
+  langfuse:
+    image: langfuse/langfuse:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://...
+      - NEXTAUTH_SECRET=...
+      - SALT=...
+```
+
+Self-hosting eliminates the 50k units/month limit and keeps all prompt/response data on-premises.
+
+---
+
 ## Tools Inventory
 
 ### Installed but Unused Tools
@@ -236,7 +343,7 @@ No GCloud deployment exists yet — this section will be updated when GCloud sup
 | Tool | Location | Status | Decision |
 |------|----------|--------|----------|
 | **aws-xray-sdk** | `pyproject.toml:63` (docker extra), `pyproject.toml:82` (all extra) | Dependency installed in Docker and all extras. **NOT imported or used** in any application code. | **Keep for now** — needed when X-Ray instrumentation is implemented in Lambda application code. Remove if X-Ray approach is abandoned. |
-| **Langfuse** | `pyproject.toml:32` (base dependency), `library/api/openai/openai_my.py:5` (commented import: `# from langfuse.decorators import observe`) | Dependency installed. Import and `@observe()` decorator commented out (line 5, 14). | **Keep for now** — useful for LLM call tracing and cost tracking. Activate when LLM observability becomes a priority. |
+| **Langfuse** | `pyproject.toml:32` (base dependency), `library/api/openai/openai_my.py:5` (commented import: `# from langfuse.decorators import observe`) | Dependency installed. Import and `@observe()` decorator commented out (line 5, 14). | **Activate** — chosen as LLM observability tool. See [LLM Observability](#llm-observability) section for integration plan. |
 | **Prometheus `/metrics`** | `server.py:695-697` | Endpoint exists but implementation is `pass` (returns `None`, causing Flask 500 error). `prometheus_client` library is **NOT installed**. | **Keep stub** — implement with `prometheus_client` when Kubernetes monitoring is set up. The route registration ensures the path is reserved for future use. |
 
 ### Removed Tools
