@@ -488,6 +488,32 @@ Clean unused Docker images on NAS:
 $DOCKER system prune -a
 ```
 
+### docker push fails with "file integrity checksum failed"
+
+Known issue with Docker Desktop on Windows — `docker push` (and `docker save`) may fail with `file integrity checksum failed for "etc/apk/..."` for images using Alpine-based base images (e.g. `nginx:alpine`). The Docker Desktop storage layer becomes corrupted.
+
+**Fix:** Prune builder cache and rebuild with fresh base images:
+
+```bash
+docker builder prune -f
+docker build --no-cache --pull -t 192.168.200.7:5005/lenie-ai-frontend:latest -f web_interface_react/Dockerfile .
+docker push 192.168.200.7:5005/lenie-ai-frontend:latest
+```
+
+If the problem persists, restart Docker Desktop (Settings → Resources → Restart).
+
+**Alternative (bypass registry):** Transfer image directly via SSH:
+
+```bash
+docker save 192.168.200.7:5005/lenie-ai-frontend:latest | \
+  ssh admin@192.168.200.7 \
+  "/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker load"
+```
+
+### WSL integration for make targets
+
+The `make nas-*` targets in the Makefile require WSL with Docker integration. Docker Desktop WSL integration must be enabled for the specific WSL distribution (Settings → Resources → WSL integration → enable Ubuntu-24.04/Fedora). Without this, `docker` commands inside WSL fail with "cannot connect to docker daemon".
+
 ### Registry troubleshooting
 
 ```bash
