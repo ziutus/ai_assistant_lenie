@@ -6,6 +6,7 @@ import Link from "./modules/shared/pages/link";
 import Webpage from "./modules/shared/pages/webpage";
 import Youtube from "./modules/shared/pages/youtube";
 import Movie from "./modules/shared/pages/movie";
+import Email from "./modules/shared/pages/email";
 import Search from "./modules/shared/pages/search";
 import List from "./modules/shared/pages/list";
 import UploadFile from "./modules/shared/pages/file";
@@ -37,6 +38,7 @@ function App() {
                   <Route path="/link/:id?" element={<Link />} />
                   <Route path="/movie/:id?" element={<Movie />} />
                   <Route path="/youtube/:id?" element={<Youtube />} />
+                  <Route path="/email/:id?" element={<Email />} />
                   <Route path="/list" element={<List />} />
                   <Route path="/search" element={<Search />} />
                   <Route path="/upload-file" element={<UploadFile />} />
