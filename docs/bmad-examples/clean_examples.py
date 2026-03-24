@@ -7,7 +7,8 @@ Usage:
     python clean_examples.py                    # Process all .txt files in this directory
     python clean_examples.py file1.txt file2.txt  # Process specific files
 
-Output files are saved with _clean suffix (e.g. PRD_arch_clean.txt).
+Input files are read from raw/ subdirectory.
+Output files are saved with _clean suffix in clean/ subdirectory.
 """
 
 import re
@@ -252,7 +253,9 @@ def clean_file(input_path: Path) -> Path:
             blank_count = 0
             final_lines.append(line)
 
-    output_path = input_path.with_stem(input_path.stem + '_clean')
+    clean_dir = input_path.parent.parent / 'clean'
+    clean_dir.mkdir(exist_ok=True)
+    output_path = clean_dir / (input_path.stem + '_clean' + input_path.suffix)
     output_path.write_text('\n'.join(final_lines) + '\n', encoding='utf-8')
     return output_path
 
@@ -260,12 +263,12 @@ def clean_file(input_path: Path) -> Path:
 def main():
     script_dir = Path(__file__).parent
 
+    raw_dir = script_dir / 'raw'
+
     if len(sys.argv) > 1:
         files = [Path(f) for f in sys.argv[1:]]
     else:
-        files = sorted(script_dir.glob('*.txt'))
-        # Exclude already cleaned files
-        files = [f for f in files if not f.stem.endswith('_clean')]
+        files = sorted(raw_dir.glob('*.txt'))
 
     if not files:
         print("No .txt files found to process.")
