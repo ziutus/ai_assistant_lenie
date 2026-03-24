@@ -60,6 +60,7 @@ def main():
             source=args.source,
             ai_summary_needed=args.summary,
             force_reprocess=args.force,
+            webshare_api_key=cfg.get("WEBSHARE_API_KEY"),
         )
     except Exception as e:
         logging.error(f"Error processing YouTube URL: {e}")
