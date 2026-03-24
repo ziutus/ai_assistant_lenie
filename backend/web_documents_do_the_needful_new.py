@@ -75,9 +75,6 @@ if __name__ == '__main__':
                 print("WARNING: Webshare bandwidth exhausted — YouTube captions will use direct connection")
         except Exception as e:
             print(f"WARNING: Webshare setup failed: {e}")
-    elif cfg.get("WEBSHARE_PROXY_USERNAME"):
-        print("WARNING: WEBSHARE_PROXY_USERNAME is set but WEBSHARE_API_KEY is missing — IP auto-authorization disabled")
-        webshare_proxy_available = True  # credentials set, assume usable without API check
     else:
         print("skipped (no API key)", end="")
     print(f" ({time.monotonic() - t0:.1f}s)")
@@ -249,6 +246,7 @@ if __name__ == '__main__':
                         cache_dir=cfg.get('CACHE_DIR'),
                         llm_model=cfg.get("AI_MODEL_SUMMARY"),
                         skip_captions=youtube_captions_blocked,
+                        webshare_api_key=cfg.get("WEBSHARE_API_KEY"),
                     )
                     if result.document_state_error == StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name \
                             and not youtube_captions_blocked:

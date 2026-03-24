@@ -7,7 +7,6 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 import assemblyai as aai
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
-from youtube_transcript_api.proxies import WebshareProxyConfig
 
 from sqlalchemy.orm import Session
 
@@ -45,6 +44,7 @@ def process_youtube_url(
     ai_summary_needed: bool = False,
     llm_model: str | None = None,
     skip_captions: bool = False,
+    webshare_api_key: str | None = None,
 ) -> "WebDocument":
     """Process a YouTube URL: fetch metadata, download captions/transcription, store in DB.
 
@@ -146,15 +146,14 @@ def process_youtube_url(
             if yt_language == 'pl-PL':
                 yt_language = 'pl'
 
-            proxy_user = os.environ.get("WEBSHARE_PROXY_USERNAME")
-            proxy_pass = os.environ.get("WEBSHARE_PROXY_PASSWORD")
-            if proxy_user and proxy_pass:
-                proxy_config = WebshareProxyConfig(
-                    proxy_username=proxy_user,
-                    proxy_password=proxy_pass,
+            if webshare_api_key:
+                from youtube_transcript_api.proxies import GenericProxyConfig
+                proxy_config = GenericProxyConfig(
+                    http_url="http://p.webshare.io:80/",
+                    https_url="http://p.webshare.io:80/",
                 )
                 ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
-                logger.info("Using Webshare proxy for YouTube captions")
+                logger.info("Using Webshare proxy for YouTube captions (IP auth)")
             else:
                 ytt_api = YouTubeTranscriptApi()
             transcript_list = ytt_api.list(youtube_file.video_id)
