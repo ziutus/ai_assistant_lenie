@@ -359,13 +359,8 @@ groups:
         type: secret
         required: false
         used_by: [docker, local]
-      WEBSHARE_PROXY_USERNAME:
-        description: "Webshare rotating residential proxy username for YouTube captions"
-        type: secret
-        required: false
-        used_by: [docker, local]
-      WEBSHARE_PROXY_PASSWORD:
-        description: "Webshare rotating residential proxy password for YouTube captions"
+      WEBSHARE_API_KEY:
+        description: "Webshare API key for IP-based proxy authorization and bandwidth monitoring"
         type: secret
         required: false
         used_by: [docker, local]

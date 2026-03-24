@@ -30,7 +30,7 @@ From the developer machine:
 scp docs/CICD/vault.hcl admin@192.168.200.7:/share/vault/config/vault.hcl
 ```
 
-Configuration (`vault.hcl`):
+Configuration (`vault.hcl`) — includes KMS auto-unseal (see [Auto-Unseal with AWS KMS](#auto-unseal-with-aws-kms)):
 
 ```hcl
 storage "file" {
@@ -42,7 +42,13 @@ listener "tcp" {
   tls_disable = 1
 }
 
+seal "awskms" {
+  region     = "eu-central-1"
+  kms_key_id = "0c6a400d-096b-4b9c-9098-7a0ec7a74f15"
+}
+
 ui = true
+disable_mlock = true
 api_addr = "http://0.0.0.0:8200"
 ```
 
