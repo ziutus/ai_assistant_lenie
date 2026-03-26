@@ -637,6 +637,20 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
             else:
                 print("  Nie udało się pobrać treści artykułu.")
 
+        # Pokaż istniejącą notatkę jeśli jest
+        note_file = os.path.join(NOTES_DIR, f"{doc.id}_note.md")
+        if os.path.isfile(note_file):
+            with open(note_file, "r", encoding="utf-8") as f:
+                content = f.read()
+            # Wyciągnij sekcję "Moja notatka"
+            if "## Moja notatka" in content:
+                note_part = content.split("## Moja notatka")[1].split("## Treść artykułu")[0].strip()
+                print(f"\n  NOTATKA:")
+                for line in note_part.splitlines():
+                    print(f"     {line}")
+            else:
+                print(f"\n  NOTATKA: {note_file}")
+
         print()
         print("  [n]ext  [p]rev  [v]iew  [d]b save  [s]ave note  [o]bsidian  [c]ompare  [q]uit")
 
