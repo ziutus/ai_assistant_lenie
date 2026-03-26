@@ -37,19 +37,27 @@ NOTES_DIR = os.path.join(_BACKEND_DIR, "tmp", "article_notes")
 
 
 def _detect_h2_ads(text: str) -> set:
-    """Wykryj nagłówki H2 z obrazkiem/video zaraz po nich (wstawki reklamowe).
+    """Wykryj nagłówki H2 z obrazkiem/video/playerem zaraz po nich (wstawki).
     Musi być wywołane PRZED usuwaniem obrazków."""
     lines = text.splitlines()
     h2_ad_titles = set()
+    video_player_markers = {"Przewiń wstecz", "Odtwórz/Pauza", "Przewiń naprzód", "Wycisz"}
     for i, line in enumerate(lines):
         stripped = line.strip().replace('\xa0', ' ')
         if stripped.startswith("## "):
-            next_nonempty = [lines[j].strip() for j in range(i + 1, min(i + 4, len(lines)))
+            next_nonempty = [lines[j].strip() for j in range(i + 1, min(i + 10, len(lines)))
                              if lines[j].strip()]
-            if next_nonempty and (next_nonempty[0].startswith("![")
-                                  or next_nonempty[0].startswith("[![")
-                                  or "wpimg.pl" in next_nonempty[0]
-                                  or "v.wp.pl" in next_nonempty[0]):
+            if not next_nonempty:
+                continue
+            # H2 + obrazek/video embed
+            if (next_nonempty[0].startswith("![")
+                    or next_nonempty[0].startswith("[![")
+                    or "wpimg.pl" in next_nonempty[0]
+                    or "v.wp.pl" in next_nonempty[0]
+                    or next_nonempty[0].startswith("[](blob:")):
+                h2_ad_titles.add(stripped)
+            # H2 + kontrolki video playera w kolejnych liniach
+            elif any(m in set(next_nonempty) for m in video_player_markers):
                 h2_ad_titles.add(stripped)
     return h2_ad_titles
 
@@ -113,6 +121,15 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
         # Frazy portalowe wspólne
         if stripped in ("Dalszy ciąg materiału pod wideo", "REKLAMAKONIEC REKLAMY",
                         "REKLAMA", "Lubię to", "[ ]"):
+            continue
+
+        # Kontrolki video playera
+        if stripped in ("Przewiń wstecz", "Odtwórz/Pauza", "Przewiń naprzód", "Wycisz",
+                        "Ustawienia", "NA ŻYWO", "Oglądaj z dźwiękiem", "Zamknij",
+                        "Włącz / wyłącz pełny ekran"):
+            continue
+        # Timestamp video: "00:09 / 00:16"
+        if re.match(r'^\d{2}:\d{2}\s*/\s*\d{2}:\d{2}$', stripped):
             continue
         # Warianty "Dalsza część artykułu pod wideo" (z kursywą, dwukropkiem)
         if "dalsza część artykułu pod wideo" in stripped.lower() or \
