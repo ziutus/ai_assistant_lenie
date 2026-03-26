@@ -106,6 +106,7 @@ PORTAL_FOOTER_MARKERS = {
         "MONEY NA SKR",
     ],
     "wp": [
+        "Wybrane dla Ciebie",
         "### Wybrane dla Ciebie",
         "**Masz newsa, zdjęcie lub filmik?",
         "**Czytaj także:**",
