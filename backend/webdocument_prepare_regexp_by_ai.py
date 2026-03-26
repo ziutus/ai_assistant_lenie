@@ -1,273 +1,91 @@
-import os.path
-import re
-import json
-import logging
-from pprint import pprint
+"""
+Skrypt do przygotowania reguł regex dla artykułów za pomocą LLM.
 
-from markitdown import MarkItDown
-from html2markdown import convert
-import html2text
+Pobiera HTML z S3, konwertuje do markdown, a następnie:
+1. Próbuje wyekstrahować artykuł za pomocą LLM (Bielik)
+2. Generuje plik .regex.draft do ręcznej weryfikacji
+3. Zapisuje wyekstrahowany artykuł i metadane do cache
+
+Użycie:
+    uv run python webdocument_prepare_regexp_by_ai.py 8779 8786
+"""
+
+import sys
+import os.path
+import logging
 
 from library.db.engine import get_session
 from library.db.models import WebDocument
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.api.aws.s3_aws import s3_file_exist, s3_take_file
 from library.config_loader import load_config
+from library.article_extractor import process_article_with_llm_fallback
+from library.document_prepare import prepare_markdown, save_document_info
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-cfg = load_config()
 
-S3_BUCKET_NAME = cfg.get("AWS_S3_WEBSITE_CONTENT")
-EMBEDDING_MODEL = cfg.get("EMBEDDING_MODEL")
+def parse_document_ids():
+    """Parsuj ID dokumentów z argumentów CLI."""
+    if len(sys.argv) < 2:
+        print(f"Użycie: {sys.argv[0]} <document_id> [document_id ...]")
+        print(f"Przykład: {sys.argv[0]} 8779 8786")
+        sys.exit(1)
 
-# cache dir for S3 downloads and markdown output
-cache_dir_base = cfg.get("CACHE_DIR") or "tmp/markdown"
+    ids = []
+    for arg in sys.argv[1:]:
+        try:
+            ids.append(int(arg))
+        except ValueError:
+            print(f"Błąd: '{arg}' nie jest prawidłowym ID dokumentu")
+            sys.exit(1)
+    return ids
 
-def calculate_reduction(html_size, markdown_size):
-    return ((html_size - markdown_size) / html_size) * 100
-
-# regex for money.pl article extraction with author capture
-# Use the first H1 as the article start and detect the footer blocks as the end.
-MONEY_ARTICLE_REGEX_PRE = r'(?ms)^#\s+.+\n'
-MONEY_ARTICLE_REGEX_POST = (
-    r'(?ms)\n(?:\* \* \*\s*)?(?:\s*\n)*'
-    r'(?:WALUTY __|KALKULATORY __|KREDYTY __|GIE'
-    r'|MONEY NA SKR|MNIEJ TEMAT|Odkryj|Najnowsze)'
-)
 
 if __name__ == '__main__':
+    documents = parse_document_ids()
+
+    cfg = load_config()
+    cache_dir_base = cfg.get("CACHE_DIR") or "tmp/markdown"
+
     session = get_session()
-    wb_db = WebsitesDBPostgreSQL(session=session)
 
-    documents = [11618]
+    logger.info(f"Documents to process: {documents}")
 
-    # documents = wb_db.get_documents_by_url("https://www.money.pl/")
-
-    pprint(documents)
     try:
         for document_id in documents:
             doc = WebDocument.get_by_id(session, document_id)
             if doc is None:
-                logger.warning(f"document_id: {document_id} Document not found, skipping")
+                logger.warning(f"document_id: {document_id} Not found, skipping")
                 continue
 
-            if not doc.s3_uuid:
-                logger.warning(f"document_id: {document_id} Missing s3_uuid, skipping")
-                continue
-
-            if not os.path.exists(cache_dir_base):
-                os.makedirs(cache_dir_base)
+            logger.info(f"document_id: {document_id} URL: {doc.url}")
+            logger.info(f"document_id: {document_id} Title: {doc.title}")
+            logger.info(f"document_id: {document_id} State: {doc.document_state}")
 
             cache_dir = os.path.join(cache_dir_base, str(document_id))
-            if not os.path.exists(cache_dir):
-                os.makedirs(cache_dir)
+            os.makedirs(cache_dir, exist_ok=True)
 
-            cache_file_html = os.path.join(cache_dir, f"{document_id}.html")
-            cache_file_md = os.path.join(cache_dir, f"{document_id}.md")
-            cache_file_text = os.path.join(cache_dir, f"{document_id}.txt")
+            save_document_info(document_id, doc, cache_dir)
 
-            if not os.path.isfile(cache_file_text):
-                logger.info(f"document_id: {document_id} Text file does not exist: {cache_file_text}, skipping")
+            markdown_text = prepare_markdown(document_id, doc, cache_dir)
+            if markdown_text is None:
                 continue
 
-            # save information to json file in chache dir
-            cache_file_info = os.path.join(cache_dir, f"{document_id}_info.json")
-            doc_info = {
-                "id": doc.id,
-                "url": doc.url,
-                "title": doc.title,
-                "language": doc.language,
-                "s3_uuid": doc.s3_uuid,
-                "created_at": doc.created_at.strftime("%Y-%m-%d %H:%M:%S") if doc.created_at else None,
-                "document_type": doc.document_type if doc.document_type else None,
-                "document_state": doc.document_state if doc.document_state else None,
-            }
-            with open(cache_file_info, "w", encoding="utf-8") as f:
-                json.dump(doc_info, f, ensure_ascii=False, indent=2)
-            logger.info(f"document_id: {document_id} Document info saved to {cache_file_info}")
-
-            if os.path.isfile(cache_file_md):
-                logger.info(f"document_id: {document_id} Using cached markdown file: {cache_file_md}")
-                with open(cache_file_md, "r", encoding="utf-8") as f:
-                    markdown_text = f.read()
-            else:
-                if not os.path.isfile(cache_file_html):
-                    logger.debug(f"document_id: {document_id} Downloading HTML file from S3")
-                    s3_key = f"{doc.s3_uuid}.html"
-                    if not s3_file_exist(S3_BUCKET_NAME, s3_key):
-                        logger.error(f"document_id: {document_id} HTML file not found in S3: {s3_key}")
-                        continue
-
-                    if not s3_take_file(S3_BUCKET_NAME, s3_key, cache_file_html):
-                        logger.error(f"document_id: {document_id} Failed to download HTML from S3: {s3_key}")
-                        continue
-
-                logger.info(f"document_id: {document_id} Converting HTML to markdown")
-                mdit = MarkItDown()
-                result = mdit.convert(cache_file_html).text_content
-
-                html_size = os.path.getsize(cache_file_html)
-                md_size = len(result)
-                reduction_percentage = calculate_reduction(html_size, md_size)
-                markdown_text = result
-
-                if reduction_percentage < 30:
-                    logger.debug(f"document_id: {document_id} MarkItDown reduction too small, trying html2markdown")
-                    with open(cache_file_html, "r", encoding="utf-8") as f:
-                        html = f.read()
-
-                    markdown = convert(html)
-                    md_size_2 = len(markdown)
-                    reduction_percentage = calculate_reduction(html_size, md_size_2)
-                    markdown_text = markdown
-
-                    if reduction_percentage < 30:
-                        logger.debug(f"document_id: {document_id} html2markdown reduction too small, trying html2text")
-                        h = html2text.HTML2Text()
-                        h.ignore_links = False
-                        h.ignore_images = False
-                        markdown_text = h.handle(html)
-
-                with open(cache_file_md, "w", encoding="utf-8") as f:
-                    f.write(markdown_text)
-                    logger.info(f"document_id: {document_id} Markdown saved to {cache_file_md}")
-
-                doc.text_md = markdown_text
-                session.commit()
-
-            pre_match = re.search(MONEY_ARTICLE_REGEX_PRE, markdown_text)
-
-            if not pre_match:
-                logger.warning(f"document_id: {document_id} Money.pl regex PRE did not match the markdown content")
-                post_match = None
-            else:
-                post_match = re.search(MONEY_ARTICLE_REGEX_POST, markdown_text[pre_match.end():])
-                if not post_match:
-                    logger.warning(f"document_id: {document_id} Money.pl regex POST did not match the markdown content")
-
-            if not pre_match or not post_match:
-                try:
-                    with open(cache_file_text, "r", encoding="utf-8") as f:
-                        cache_text = f.read().strip()
-                except OSError as exc:
-                    logger.warning(f"document_id: {document_id} Failed to read cache_file_text: {exc}")
-                    continue
-
-                if not cache_text:
-                    logger.warning(f"document_id: {document_id} cache_file_text is empty")
-                    continue
-
-                # Find first line
-                first_line = next((line.strip() for line in cache_text.splitlines() if line.strip()), "")
-                if not first_line:
-                    logger.warning(f"document_id: {document_id} cache_file_text has no non-empty lines")
-                    continue
-
-                match_source = "first_line"
-                match_text = first_line
-                match_index = markdown_text.find(match_text)
-
-                # Find last line
-                last_line = next((line.strip() for line in reversed(cache_text.splitlines()) if line.strip()), "")
-                if not last_line:
-                    logger.warning(f"document_id: {document_id} cache_file_text has no last line")
-                    continue
-
-                match_end_text = last_line
-                match_end_index = markdown_text.find(match_end_text)
-                match_end = match_end_index + len(match_end_text) if match_end_index != -1 else -1
-
-                if match_index == -1 and match_text:
-                    underscored = f"_{match_text}_"
-                    match_index = markdown_text.find(underscored)
-                    if match_index != -1:
-                        match_source = "underscored"
-                        match_text = underscored
-                        match_end = match_index + len(match_text)
-
-                if match_index == -1 and cache_text:
-                    words = [w for w in cache_text.split() if w]
-                    if words:
-                        whitespace_pattern = r"\s+".join(re.escape(w) for w in words)
-                        soft_pattern = rf"_?{whitespace_pattern}_?"
-                        soft_match = re.search(soft_pattern, markdown_text, flags=re.MULTILINE)
-                        if soft_match:
-                            match_source = "soft_regex"
-                            match_text = soft_match.group(0)
-                            match_index = soft_match.start()
-                            match_end = soft_match.end()
-
-                if match_index == -1:
-                    logger.warning(f"document_id: {document_id} cache_file_text not found in markdown")
-                    continue
-
-                logger.info(
-                    "document_id: %s cache_file_text match source=%s length=%s start=%s end=%s",
-                    document_id,
-                    match_source,
-                    len(match_text),
-                    match_index,
-                    match_end,
-                )
-
-                markdown_lines = markdown_text.splitlines()
-                line_start = markdown_text.count("\n", 0, match_index)
-                line_end = markdown_text.count("\n", 0, match_end if match_end != -1 else match_index)
-
-                start = max(0, line_start - 10)
-                end = min(len(markdown_lines), line_start + 10 + 1)
-                start_context = "\n".join(f"{i + 1:04d}: {markdown_lines[i]}" for i in range(start, end))
-                logger.info(
-                    "document_id: %s Markdown context around start of cache_file_text (lines %s..%s):\n%s",
-                    document_id,
-                    start + 1,
-                    end,
-                    start_context,
-                )
-
-                end_start = max(0, line_end - 10)
-                end_end = min(len(markdown_lines), line_end + 10 + 1)
-                end_context = "\n".join(f"{i + 1:04d}: {markdown_lines[i]}" for i in range(end_start, end_end))
-                logger.info(
-                    "document_id: %s Markdown context around end of cache_file_text (lines %s..%s):\n%s",
-                    document_id,
-                    end_start + 1,
-                    end_end,
-                    end_context,
-                )
-
-                continue
-
-            article_chunk = markdown_text[pre_match.end():pre_match.end() + post_match.start()]
-
-            author_regex_link = (
-                r'(?ms)\[(?P<author>[^\]]+)\]\(https?://www\.money\.pl/archiwum/autor/[^)]+\)\s*\n'
-                r'(?:[^\n]*\n){0,6}?\s*\n(?P<article_text>\S[\s\S]*)'
+            result = process_article_with_llm_fallback(
+                markdown_text=markdown_text,
+                document_id=document_id,
+                cache_dir=cache_dir,
+                url=doc.url,
             )
-            author_regex_underscore = (
-                r'(?ms)(?P<article_text>.*?\n_(?P<author>[^,_\n]+?)(?:,\s*(?P<author_desc>[^_\n]+))?_\s*)'
-            )
-            match = re.search(author_regex_link, article_chunk) or re.search(author_regex_underscore, article_chunk)
-            if match:
-                logger.info(f"document_id: {document_id} Money.pl author regex matched the markdown content")
-                article_text = match.group("article_text").strip()
-                author = match.group("author").strip()
-                author = re.sub(r'^Rozmaw\\S+\\s+', '', author, flags=re.IGNORECASE)
-                author_desc = match.groupdict().get("author_desc")
-                author_desc = author_desc.strip() if author_desc else ""
 
-                cache_file_article = os.path.join(cache_dir, f"{document_id}_article.md")
-                with open(cache_file_article, "w", encoding="utf-8") as f:
-                    f.write(article_text)
-
-                cache_file_author = os.path.join(cache_dir, f"{document_id}_author.json")
-                with open(cache_file_author, "w", encoding="utf-8") as f:
-                    f.write(json.dumps({"author": author, "author_desc": author_desc}, ensure_ascii=False, indent=2))
-
-                logger.info(f"document_id: {document_id} Article and author extracted to {cache_file_article}")
+            if result:
+                lines = [l for l in result.splitlines() if l.strip()]
+                logger.info(f"document_id: {document_id} Extracted: {len(result)} chars, {len(lines)} non-empty lines")
+                logger.info(f"document_id: {document_id} FIRST: {lines[0][:100]}")
+                logger.info(f"document_id: {document_id} LAST:  {lines[-1][:100]}")
             else:
-                logger.warning(f"document_id: {document_id} Money.pl author regex did not match the markdown content")
+                logger.error(f"document_id: {document_id} Extraction FAILED")
+
     finally:
         session.close()
