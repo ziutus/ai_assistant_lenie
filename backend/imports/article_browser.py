@@ -677,6 +677,20 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     doc.text = text_only
     doc.document_state = StalkerDocumentStatus.MD_SIMPLIFIED.name
 
+    # Zapisz autora z LLM markers jeśli dostępny
+    cfg = load_config()
+    cache_dir_base = cfg.get("CACHE_DIR") or "tmp/markdown"
+    import glob as glob_mod
+    markers_files = glob_mod.glob(os.path.join(cache_dir_base, str(doc.id), "*_llm_markers.json"))
+    if markers_files and not doc.author:
+        import json
+        with open(markers_files[0], "r", encoding="utf-8") as f:
+            markers_data = json.load(f)
+        author = markers_data.get("markers", {}).get("author")
+        if author:
+            doc.author = author
+            print(f"    Autor: {author}")
+
     try:
         session.commit()
         print(f"  Tekst zapisany. Status: MD_SIMPLIFIED")
