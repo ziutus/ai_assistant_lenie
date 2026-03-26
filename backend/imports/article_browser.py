@@ -101,6 +101,9 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
                 or stripped in h2_ad_titles or stripped_no_links in h2_ad_titles:
             skip_section = True
             continue
+        # H2 z [linkN] = "Zobacz też" link, nie treść artykułu
+        if stripped.startswith("## ") and re.search(r'\[link\d+\]$', stripped):
+            continue
         if skip_section:
             # "Więcej w Strefie Premium" — koniec sekcji, ale też pomiń tę linię
             if "Więcej w Strefie Premium" in stripped:
