@@ -143,6 +143,10 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
         if stripped.startswith("[img") and not any(c.isalpha() for c in re.sub(r'\[img\d+[^\]]*\]', '', stripped)):
             continue
 
+        # "Zobacz też" z obrazkiem: [[imgN: tytuł] tytuł](url)
+        if stripped.startswith("[[img") and stripped.endswith(")"):
+            continue
+
         cleaned.append(line)
 
     return cleaned
@@ -195,17 +199,23 @@ def _clean_lines_money(lines: list[str]) -> list[str]:
 
 def _clean_lines_wp(lines: list[str]) -> list[str]:
     """Czyszczenie specyficzne dla wp.pl/o2.pl."""
-    skip = {"Skomentuj", "Udostępnij"}
+    skip_exact = {"Skomentuj", "Udostępnij"}
+    skip_startswith = ("Udostępnij na X", "Dźwięk został wygenerowany",
+                       "Źródło zdjęć:", "Źródło artykułu:", "oprac.")
     cleaned = []
     for line in lines:
         stripped = line.strip()
-        if stripped in skip:
+        if stripped in skip_exact:
             continue
-        if stripped.startswith("Udostępnij na X"):
-            continue
-        if stripped.startswith("Dźwięk został wygenerowany"):
+        if any(stripped.startswith(s) for s in skip_startswith):
             continue
         if re.match(r'^\d+\s+komentarz', stripped):
+            continue
+        # Samodzielna data: "23 marca 2026, 06:15"
+        if re.match(r'^\d{1,2}\s+\w+\s+\d{4},?\s+\d{1,2}:\d{2}$', stripped):
+            continue
+        # Tagi jako tekst: "drony holandia nato armia +1"
+        if re.match(r'^[\w\sąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+\+\d+$', stripped):
             continue
         cleaned.append(line)
     return cleaned
