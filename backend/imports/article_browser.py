@@ -587,11 +587,9 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     from library.models.stalker_document_status import StalkerDocumentStatus
     from library.embedding import get_embedding
     from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-    from library.config_loader import load_config
 
     text_only = article["text"]
-    cfg = load_config()
-    embedding_model = cfg.get("EMBEDDING_MODEL") or "BAAI/bge-m3"
+    embedding_model = "BAAI/bge-m3"
 
     print(f"  Zapisuję do bazy danych (ID: {doc.id})...")
     print(f"    Tekst: {len(text_only)} znaków")
