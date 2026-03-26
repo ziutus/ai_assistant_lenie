@@ -199,8 +199,9 @@ def _clean_lines_money(lines: list[str]) -> list[str]:
         # Samodzielna data: "24 marca 2026, 12:26"
         if re.match(r'^\d{1,2}\s+\w+\s+\d{4},?\s+\d{1,2}:\d{2}$', stripped):
             continue
-        # Linia z samymi tagami (tekst bez linków): "gospodarka elektrownia atomowa rosja +1"
-        if re.match(r'^[\w\sąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+\+\d+$', stripped):
+        # Tagi: "gospodarka elektrownia atomowa rosja +1" lub z markerami [linkN]
+        tag_line = re.sub(r'\[link\d+\]', '', stripped).strip()
+        if re.match(r'^[\w\sąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+\+\d+$', tag_line):
             continue
         # "Zobacz też" — linia z [imgN: tytuł] i link do innego artykułu money.pl
         if re.match(r'^\[?\[img\d+:.*\].*money\.pl/', stripped):
@@ -226,8 +227,9 @@ def _clean_lines_wp(lines: list[str]) -> list[str]:
         # Samodzielna data: "23 marca 2026, 06:15"
         if re.match(r'^\d{1,2}\s+\w+\s+\d{4},?\s+\d{1,2}:\d{2}$', stripped):
             continue
-        # Tagi jako tekst: "iran rakiety balistyczne europa +3"
-        if re.match(r'^[\w\sąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+\+\d+$', stripped):
+        # Tagi: "iran rakiety balistyczne europa +3" lub z markerami "iran [link3] rakiety +3"
+        tag_line = re.sub(r'\[link\d+\]', '', stripped).strip()
+        if re.match(r'^[\w\sąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+\+\d+$', tag_line):
             continue
         # Autor wp.pl: "Imię Nazwisko, dziennikarz/ka Wirtualnej Polski"
         if "dziennikarz" in stripped.lower() and "wirtualnej polski" in stripped.lower():
