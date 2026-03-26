@@ -281,9 +281,20 @@ def clean_article_text(text: str, url: str = "") -> dict:
 
     text = re.sub(r'\[([^\]]*)\]\(([^)]+)\)', replace_link, text)
 
-    # 6. Usuń stare referencje z webdocument_md_decode
+    # 6. Usuń stare referencje z webdocument_md_decode i osierocone markery
     text = re.sub(r'picture\[\d+\]:"[^"]*"', '', text)
     text = re.sub(r'link\[\d+\]:[^\n]*', '', text)
+    # Osierocone [imgN] / [imgN: opis] — markery bez odpowiadającego obrazka
+    # (np. z tekstu zapisanego do DB lub po odfiltrowaniu emotek)
+    def _clean_orphan_img(m):
+        try:
+            idx = int(re.search(r'\d+', m.group(0)).group())
+            if idx < len(extracted_images):
+                return m.group(0)  # zachowaj — ma odpowiadający obrazek
+        except (ValueError, AttributeError):
+            pass
+        return ""  # usuń osierocony
+    text = re.sub(r'\[img\d+(?::[^\]]*)?\]', _clean_orphan_img, text)
 
     # 7. Normalizacja
     text = text.replace('\xa0', ' ')
