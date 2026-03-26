@@ -359,7 +359,7 @@ def get_article_text(doc, session) -> Optional[dict]:
         from library.document_prepare import prepare_markdown, save_document_info
         os.makedirs(cache_dir, exist_ok=True)
         save_document_info(doc.id, doc, cache_dir)
-        markdown_text = prepare_markdown(doc.id, doc, cache_dir)
+        markdown_text = prepare_markdown(doc.id, doc, cache_dir, verbose=True)
         if not markdown_text:
             print(f"  Nie udało się pobrać artykułu z S3.")
             return None
