@@ -140,7 +140,7 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
             continue
 
         # Linia z samymi [imgN] markerami (osierocone po usunięciu kontekstu)
-        if re.match(r'^(\[img\d+[^\]]*\]\s*)+$', stripped):
+        if stripped.startswith("[img") and not any(c.isalpha() for c in re.sub(r'\[img\d+[^\]]*\]', '', stripped)):
             continue
 
         cleaned.append(line)
