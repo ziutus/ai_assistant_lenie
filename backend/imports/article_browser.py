@@ -274,8 +274,10 @@ def clean_article_text(text: str, url: str = "") -> dict:
     def replace_image(m):
         alt = m.group(1).strip()
         img_url = m.group(2).strip()
-        # Pomijaj emotki i ikony portalu
+        # Pomijaj emotki, ikony portalu i bannery reklamowe
         if any(p in img_url for p in _skip_image_patterns):
+            return ""
+        if alt and alt.lower().startswith("misja ai"):
             return ""
         # Pomijaj duplikaty (ten sam URL)
         if img_url in _seen_image_urls:
