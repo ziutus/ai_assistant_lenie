@@ -261,6 +261,11 @@ def clean_article_text(text: str, url: str = "") -> dict:
             return ""
         if _is_portal_internal_link(link_url):
             return link_text
+        # Onet premium numerowane linki: "**1** ### Tytuł", "Więcej w Strefie Premium"
+        if re.match(r'^\*\*\d+\*\*\s+###', link_text):
+            return link_text
+        if "Więcej w Strefie Premium" in link_text:
+            return link_text
         idx = len(extracted_links)
         extracted_links.append({"text": link_text, "url": link_url})
         return f"{link_text} [link{idx}]"
