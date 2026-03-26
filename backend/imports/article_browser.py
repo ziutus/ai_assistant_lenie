@@ -72,7 +72,7 @@ _PORTAL_INTERNAL_LINK_PATTERNS = [
     r'onet\.pl/autorzy/',             # onet autorzy
     r'/archiwum/autor/',              # money.pl autorzy
     r'/autor/',                        # wp.pl autorzy
-    r'[,%]temat[,%]',                   # wp.pl tagi: /iran,temat,598... lub %2Ctemat%2C
+    r'(%2C|,)temat(%2C|,)',             # wp.pl tagi: /iran,temat,598... lub %2Ctemat%2C
 ]
 
 
