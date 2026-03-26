@@ -330,11 +330,46 @@ def _article_full_text(article: dict) -> str:
     return "\n".join(parts)
 
 
+def _read_existing_note(doc_id: int) -> str | None:
+    """Odczytaj istniejącą notatkę użytkownika (sekcja 'Moja notatka')."""
+    note_file = os.path.join(NOTES_DIR, f"{doc_id}_note.md")
+    if not os.path.isfile(note_file):
+        return None
+    with open(note_file, "r", encoding="utf-8") as f:
+        content = f.read()
+    if "## Moja notatka" in content:
+        return content.split("## Moja notatka")[1].split("## Treść artykułu")[0].strip()
+    return None
+
+
 def action_save_note(doc, article_text: str) -> Optional[str]:
-    """Zapisz notatkę użytkownika + treść artykułu do pliku.
+    """Zapisz/edytuj notatkę użytkownika + treść artykułu do pliku.
 
     Returns: ścieżka do pliku lub None
     """
+    existing_note = _read_existing_note(doc.id)
+
+    if existing_note:
+        print(f"\n  Istniejąca notatka:")
+        for line in existing_note.splitlines():
+            print(f"     {line}")
+        print()
+        print("  [e]dytuj — napisz nową treść (zastąpi obecną)")
+        print("  [d]opisz — dopisz nowy tekst pod istniejącym")
+        print("  [Enter]  — anuluj")
+        try:
+            choice = input("  > ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print()
+            return None
+
+        if choice not in ("e", "edytuj", "d", "dopisz"):
+            print("  Anulowano.")
+            return None
+        append_mode = choice in ("d", "dopisz")
+    else:
+        append_mode = False
+
     print("  Napisz co Cię zainteresowało (kilka linii, pusta linia kończy):")
     note_lines = []
     while True:
@@ -351,9 +386,14 @@ def action_save_note(doc, article_text: str) -> Optional[str]:
         print("  Pusta notatka — nie zapisano.")
         return None
 
-    note_text = "\n".join(note_lines)
+    new_text = "\n".join(note_lines)
     # Napraw surrogaty z WSL/Windows terminal
-    note_text = note_text.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
+    new_text = new_text.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
+
+    if append_mode and existing_note:
+        note_text = existing_note + "\n\n" + new_text
+    else:
+        note_text = new_text
 
     os.makedirs(NOTES_DIR, exist_ok=True)
     note_file = os.path.join(NOTES_DIR, f"{doc.id}_note.md")
