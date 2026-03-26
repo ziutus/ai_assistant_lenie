@@ -118,7 +118,6 @@ PORTAL_FOOTER_MARKERS = {
     ],
     "businessinsider": [
         "Dziękujemy, że przeczytałaś/eś",
-        "## Czytaj także w BUSINESS INSIDER",
         "## Autor",
     ],
 }

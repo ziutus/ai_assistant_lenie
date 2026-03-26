@@ -591,12 +591,20 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                start_id: Optional[int] = None, limit: int = 50, auto_view: bool = False,
                check_urls: bool = False):
     """Interaktywny przegląd artykułów."""
-    filtered = _get_documents(session, limit=limit, since=since, portal=portal)
-
     if start_id:
-        # Znajdź pozycję startową
-        start_idx = next((i for i, d in enumerate(filtered) if d.id == start_id), 0)
-        filtered = filtered[start_idx:]
+        # Gdy podano --id, zacznij od tego dokumentu (nawet jeśli nie jest na liście)
+        doc = WebDocument.get_by_id(session, start_id)
+        if doc is None:
+            print(f"Dokument {start_id} nie znaleziony.")
+            return
+        filtered = [doc]
+        # Dodaj kolejne dokumenty z listy (po start_id)
+        all_docs = _get_documents(session, limit=limit, since=since, portal=portal)
+        for d in all_docs:
+            if d.id != start_id:
+                filtered.append(d)
+    else:
+        filtered = _get_documents(session, limit=limit, since=since, portal=portal)
 
     if not filtered:
         print("Brak artykułów do przeglądu.")
