@@ -237,9 +237,18 @@ def clean_article_text(text: str, url: str = "") -> dict:
     h2_ad_titles = _detect_h2_ads(text)
 
     # 3. Wyodrębnij obrazki → markery [imgN]
+    # Pomijaj emotki portali (onet emotion svg, onet service logos)
+    _skip_image_patterns = [
+        "onetmobilemainpage/emotion/",
+        "onetmobilemainpage/onet30/subServiceLogos/",
+    ]
+
     def replace_image(m):
         alt = m.group(1).strip()
         img_url = m.group(2).strip()
+        # Pomijaj emotki i ikony portalu — usuń bez śladu
+        if any(p in img_url for p in _skip_image_patterns):
+            return ""
         idx = len(extracted_images)
         extracted_images.append({"alt": alt, "url": img_url})
         return f"[img{idx}: {alt}]" if alt else f"[img{idx}]"
