@@ -302,13 +302,18 @@ def clean_article_text(text: str, url: str = "") -> dict:
 
 
 def get_article_text(doc, session) -> Optional[dict]:
-    """Pobierz wyekstrahowany tekst artykułu z cache lub przez LLM.
+    """Pobierz wyekstrahowany tekst artykułu z DB, cache lub przez LLM.
     Zwraca dict: {text, links, images} lub None."""
+
+    # 1. Jeśli tekst jest w bazie (MD_SIMPLIFIED, EMBEDDING_EXIST) — użyj go
+    if doc.text and len(doc.text) > 100 and doc.document_state in ("MD_SIMPLIFIED", "EMBEDDING_EXIST"):
+        return clean_article_text(doc.text, doc.url)
+
     cfg = load_config()
     cache_dir_base = cfg.get("CACHE_DIR") or "tmp/markdown"
     cache_dir = os.path.join(cache_dir_base, str(doc.id))
 
-    # Szukaj w cache (kolejność: step_2 > llm_extracted > step_1)
+    # 2. Szukaj w cache (kolejność: step_2 > llm_extracted > step_1)
     for suffix in ["_step_2_1_article.md", "_llm_extracted_article.md", "_step_1_all.md"]:
         cache_file = os.path.join(cache_dir, f"{doc.id}{suffix}")
         if os.path.isfile(cache_file):
