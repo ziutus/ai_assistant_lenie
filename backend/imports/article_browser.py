@@ -72,7 +72,7 @@ _PORTAL_INTERNAL_LINK_PATTERNS = [
     r'onet\.pl/autorzy/',             # onet autorzy
     r'/archiwum/autor/',              # money.pl autorzy
     r'/autor/',                        # wp.pl autorzy
-    r',temat,',                        # wp.pl tagi: /iran,temat,598...
+    r'[,%]temat[,%]',                   # wp.pl tagi: /iran,temat,598... lub %2Ctemat%2C
 ]
 
 
@@ -315,9 +315,11 @@ def clean_article_text(text: str, url: str = "") -> dict:
             return link_text
         if "Więcej w Strefie Premium" in link_text:
             return link_text
-        # "Zobacz też" z obrazkiem: "[imgN...] ## Tytuł" lub "[imgN] Tytuł"
+        # "Zobacz też" z obrazkiem lub nagłówkiem H2/H3
         if re.match(r'^\[img\d+', link_text):
             return link_text
+        if link_text.startswith("## ") or link_text.startswith("### "):
+            return ""
         # Reklamy natywne z gigantycznym tracking URL (>200 znaków, encoded)
         if len(link_url) > 200:
             return ""
