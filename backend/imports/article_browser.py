@@ -19,6 +19,8 @@ import textwrap
 from datetime import datetime
 from typing import Optional
 
+from sqlalchemy import text as text_sql
+
 from library.config_loader import load_config
 from library.db.engine import get_session
 from library.db.models import WebDocument
@@ -587,6 +589,21 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     if confirm != "y":
         print("  Anulowano.")
         return False
+
+    # Odśwież połączenie z bazą (mogło wygasnąć przy długim przeglądaniu)
+    try:
+        session.execute(text_sql("SELECT 1"))
+    except Exception:
+        session.rollback()
+        print("  Odświeżam połączenie z bazą...")
+        try:
+            session.execute(text_sql("SELECT 1"))
+        except Exception as e:
+            print(f"  BŁĄD: nie mogę połączyć się z bazą: {e}")
+            return False
+
+    # Odśwież obiekt dokumentu po reconnect
+    session.refresh(doc)
 
     # Backup oryginalnego tekstu jeśli istnieje
     if doc.text and not doc.text_raw:
