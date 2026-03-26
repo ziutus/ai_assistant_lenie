@@ -69,14 +69,14 @@ _PORTAL_INTERNAL_LINK_PATTERNS = [
     r'0%2C128956\.html\?tag=',        # wyborcza.pl tagi
     r'wiadomosci\.onet\.pl/[\w-]+$',  # onet tagi
     r'onet\.pl/premium$',             # onet "Więcej w Strefie Premium"
+    r'onet\.pl/autorzy/',             # onet autorzy
+    r'/archiwum/autor/',              # money.pl autorzy
+    r'/autor/',                        # wp.pl autorzy
 ]
 
 
 def _is_portal_internal_link(url: str) -> bool:
-    """Czy link jest wewnętrznym linkiem portalu (tag, kategoria)?
-    Linki do autorów (/archiwum/autor/, /autorzy/) NIE są wewnętrzne."""
-    if "/archiwum/autor/" in url or "/autorzy/" in url:
-        return False
+    """Czy link jest wewnętrznym linkiem portalu (tag, kategoria, autor)?"""
     return any(re.search(p, url) for p in _PORTAL_INTERNAL_LINK_PATTERNS)
 
 
