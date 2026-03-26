@@ -72,6 +72,7 @@ _PORTAL_INTERNAL_LINK_PATTERNS = [
     r'onet\.pl/autorzy/',             # onet autorzy
     r'/archiwum/autor/',              # money.pl autorzy
     r'/autor/',                        # wp.pl autorzy
+    r',temat,',                        # wp.pl tagi: /iran,temat,598...
 ]
 
 
@@ -260,17 +261,25 @@ def clean_article_text(text: str, url: str = "") -> dict:
     h2_ad_titles = _detect_h2_ads(text)
 
     # 3. Wyodrębnij obrazki → markery [imgN]
-    # Pomijaj emotki portali (onet emotion svg, onet service logos)
+    # Pomijaj emotki, ikony, tracking pixele, duplikaty
     _skip_image_patterns = [
         "onetmobilemainpage/emotion/",
         "onetmobilemainpage/onet30/subServiceLogos/",
     ]
+    _seen_image_urls = set()
 
     def replace_image(m):
         alt = m.group(1).strip()
         img_url = m.group(2).strip()
-        # Pomijaj emotki i ikony portalu — usuń bez śladu
+        # Pomijaj emotki i ikony portalu
         if any(p in img_url for p in _skip_image_patterns):
+            return ""
+        # Pomijaj duplikaty (ten sam URL)
+        if img_url in _seen_image_urls:
+            return ""
+        _seen_image_urls.add(img_url)
+        # Pomijaj obrazki bez alt i bez rozszerzenia (prawdopodobnie tracking pixel)
+        if not alt and not any(img_url.lower().endswith(ext) for ext in ('.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp')):
             return ""
         idx = len(extracted_images)
         extracted_images.append({"alt": alt, "url": img_url})
@@ -859,7 +868,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                 print(f"\n  NOTATKA: {note_file}")
 
         print()
-        print("  [n]ext  [p]rev  [v]iew  [d]b save  [s]ave note  [o]bsidian  [c]ompare  [q]uit")
+        print("  [n]ext  [p]rev  [v]iew  [r]efresh  [d]b save  [s]ave note  [o]bsidian  [c]ompare  [q]uit")
 
         while True:
             try:
@@ -879,6 +888,18 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                     print("  Jesteś na pierwszym artykule.")
                     continue
                 break
+
+            elif action in ("r", "refresh"):
+                # Usuń cache LLM extracted i ponów analizę
+                cache_dir_base_r = (load_config().get("CACHE_DIR") or "tmp/markdown")
+                cache_dir_r = os.path.join(cache_dir_base_r, str(doc.id))
+                import glob as glob_mod
+                for f in glob_mod.glob(os.path.join(cache_dir_r, "*_llm_extracted_article.md")):
+                    os.remove(f)
+                    print(f"  Usunięto cache: {os.path.basename(f)}")
+                article = None  # wymuś ponowną analizę
+                print("  Cache wyczyszczony. Użyj [v] żeby zobaczyć ponownie wyekstrahowany tekst.")
+                continue
 
             elif action in ("v", "view"):
                 if article is None:
