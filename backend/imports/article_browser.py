@@ -146,6 +146,10 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
         if stripped.startswith("[img") and not any(c.isalpha() for c in re.sub(r'\[img\d+[^\]]*\]', '', stripped)):
             continue
 
+        # "Zobacz też" z obrazkiem: [[imgN...] tytuł](url) lub [[imgN...] tytuł [linkN]
+        if stripped.startswith("[[img"):
+            continue
+
         cleaned.append(line)
 
     return cleaned
@@ -291,6 +295,9 @@ def clean_article_text(text: str, url: str = "") -> dict:
         if re.match(r'^\*\*\d+\*\*\s+###', link_text):
             return link_text
         if "Więcej w Strefie Premium" in link_text:
+            return link_text
+        # "Zobacz też" z obrazkiem: "[imgN...] ## Tytuł" lub "[imgN] Tytuł"
+        if re.match(r'^\[img\d+', link_text):
             return link_text
         idx = len(extracted_links)
         extracted_links.append({"text": link_text, "url": link_url})
