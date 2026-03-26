@@ -164,6 +164,15 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
             continue
         if stripped.startswith("Audio generowane"):
             continue
+        # Data publikacji: "17 marca 2026, 12:31"
+        if re.match(r'^\d{1,2}\s+\w+\s+\d{4},?\s+\d{1,2}:\d{2}$', stripped):
+            continue
+        # Czas czytania: "1 min czytania", "5 min czytania"
+        if re.match(r'^\d+\s+min\s+czytania$', stripped):
+            continue
+        # Reakcje: "[img1][img2]1,6 tys." lub "[img0][img1]385"
+        if re.match(r'^(\[img\d+\])+[\d,]+(\s*tys\.)?$', stripped):
+            continue
         cleaned.append(line)
     return cleaned
 
