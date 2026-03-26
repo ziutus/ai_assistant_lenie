@@ -68,6 +68,7 @@ _PORTAL_INTERNAL_LINK_PATTERNS = [
     r'/tag/',                          # wp.pl/o2.pl tagi
     r'0%2C128956\.html\?tag=',        # wyborcza.pl tagi
     r'wiadomosci\.onet\.pl/[\w-]+$',  # onet tagi
+    r'onet\.pl/premium$',             # onet "Więcej w Strefie Premium"
 ]
 
 
