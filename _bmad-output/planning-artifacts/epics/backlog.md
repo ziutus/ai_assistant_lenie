@@ -1433,3 +1433,34 @@ so that on-premises workloads (NAS, local dev) use short-lived temporary credent
 
 **Priority:** LOW
 **Status:** backlog
+
+---
+
+### B-101: Track Obsidian Note Status for Articles
+
+As a **knowledge worker**,
+I want to know which articles from the database have already been processed into Obsidian notes,
+so that I can focus on unprocessed articles during review and avoid duplicating work.
+
+**Origin:** During article_browser.py review sessions, there's no way to tell if an article was already used to create/update an Obsidian note. After reviewing 50+ articles, it's easy to lose track.
+
+**Context / decisions to make:**
+- **New DB field vs. new status vs. separate tracking table?** A new column `obsidian_note_path` (TEXT, nullable) on `web_documents` is simplest but couples Obsidian to the DB schema. A separate `article_notes` table might be cleaner. A new status value (e.g., `OBSIDIAN_NOTE_CREATED`) requires Alembic migration for the lookup table.
+- **One article → many notes?** An article about Russia+Vietnam might update both `Rosja.md` and `Wietnam.md`. Need to support multiple paths per article.
+- **Bidirectional linking?** Should Obsidian notes also reference back to other articles that contributed? (Currently done manually via `Lenie AI id=XXXX`)
+- **Integration with article_browser.py:** `--list` and `--review` should be filterable by obsidian status (e.g., `--no-obsidian` to show only unprocessed articles)
+
+**Possible approaches:**
+1. New column `obsidian_note_paths` (TEXT/JSON) on `web_documents` — simple, requires Alembic migration
+2. New join table `article_obsidian_notes` (article_id, note_path, created_at) — normalized, supports many-to-many
+3. Track via local files only (e.g., `tmp/article_notes/{id}_note.md` existence) — no DB change, but fragile
+
+**Acceptance Criteria:**
+- After creating/updating an Obsidian note from an article, the system records which note(s) were created
+- `article_browser.py --list` shows obsidian status per article
+- `article_browser.py --review --no-obsidian` filters to articles not yet processed
+- Multiple Obsidian notes per article are supported
+- Alembic migration is created if DB schema changes are needed
+
+**Priority:** MEDIUM
+**Status:** backlog
