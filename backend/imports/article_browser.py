@@ -502,6 +502,46 @@ def action_view(article: dict, check_urls: bool = False):
     print(summary + "]")
 
 
+def action_save_to_db(doc, article: dict, session) -> bool:
+    """Zapisz oczyszczony tekst artykułu do bazy danych i ustaw status MD_SIMPLIFIED."""
+    from library.models.stalker_document_status import StalkerDocumentStatus
+
+    full_text = _article_full_text(article)
+    text_only = article["text"]
+
+    print(f"  Zapisuję do bazy danych (ID: {doc.id})...")
+    print(f"    Tekst: {len(text_only)} znaków")
+    print(f"    Linki: {len(article['links'])}")
+    print(f"    Obrazki: {len(article['images'])}")
+    print(f"    Status: {doc.document_state} → MD_SIMPLIFIED")
+
+    try:
+        confirm = input("  Potwierdzasz? [y/N]: ").strip().lower()
+    except (KeyboardInterrupt, EOFError):
+        print()
+        return False
+
+    if confirm != "y":
+        print("  Anulowano.")
+        return False
+
+    # Backup oryginalnego tekstu jeśli istnieje
+    if doc.text and not doc.text_raw:
+        doc.text_raw = doc.text
+
+    doc.text = text_only
+    doc.document_state = StalkerDocumentStatus.MD_SIMPLIFIED.name
+
+    try:
+        session.commit()
+        print(f"  Zapisano. Status: MD_SIMPLIFIED")
+        return True
+    except Exception as e:
+        session.rollback()
+        print(f"  BŁĄD zapisu: {e}")
+        return False
+
+
 def _get_documents(session, limit: int = 50, since: Optional[str] = None,
                    portal: Optional[str] = None, state: Optional[str] = None) -> list:
     """Pobierz dokumenty z bazy z filtrami. Zwraca listę obiektów WebDocument."""
@@ -557,6 +597,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
     print(f"\n{len(filtered)} artykułów do przeglądu. Komendy:")
     print("  [n]ext / Enter  - następny artykuł")
     print("  [v]iew          - pokaż treść artykułu")
+    print("  [d]b            - zapisz oczyszczony tekst do bazy danych")
     print("  [s]ave          - zapisz notatkę (co mnie zainteresowało) + artykuł do pliku")
     print("  [o]bsidian      - stwórz/zaktualizuj notatkę Obsidian teraz (Claude Code)")
     print("  [c]ompare       - porównaj z istniejącymi notatkami (Claude Code)")
@@ -586,7 +627,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
 
         while True:
             try:
-                action = input(f"  [{idx}] [n/v/s/o/c/q]: ").strip().lower()
+                action = input(f"  [{idx}] [n/v/d/s/o/c/q]: ").strip().lower()
             except (KeyboardInterrupt, EOFError):
                 print("\nPrzegląd zakończony.")
                 return
@@ -599,6 +640,15 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                     article = get_article_text(doc, session)
                 if article:
                     action_view(article, check_urls=check_urls)
+                else:
+                    print("  Nie udało się pobrać treści artykułu.")
+                continue
+
+            elif action in ("d", "db"):
+                if article is None:
+                    article = get_article_text(doc, session)
+                if article:
+                    action_save_to_db(doc, article, session)
                 else:
                     print("  Nie udało się pobrać treści artykułu.")
                 continue
