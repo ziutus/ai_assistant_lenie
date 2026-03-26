@@ -95,7 +95,10 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
         stripped = line.strip()
 
         # Sekcje do pominięcia (premium, wstawki H2+img)
-        if stripped in skip_section_markers or stripped in h2_ad_titles:
+        # Po replace_link linia może mieć [linkN] na końcu — usuń przed porównaniem
+        stripped_no_links = re.sub(r'\s*\[link\d+\]', '', stripped).strip()
+        if stripped in skip_section_markers or stripped_no_links in skip_section_markers \
+                or stripped in h2_ad_titles or stripped_no_links in h2_ad_titles:
             skip_section = True
             continue
         if skip_section:
