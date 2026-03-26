@@ -129,8 +129,10 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
                         "Ustawienia", "NA ŻYWO", "Oglądaj z dźwiękiem", "Zamknij",
                         "Włącz / wyłącz pełny ekran"):
             continue
-        # Timestamp video: "00:09 / 00:16"
+        # Timestamp video: "00:09 / 00:16" lub samodzielne "Oglądaj" + czas
         if re.match(r'^\d{2}:\d{2}\s*/\s*\d{2}:\d{2}$', stripped):
+            continue
+        if re.match(r'^Ogl[aą]daj\s*$', stripped) or re.match(r'^\d{2}:\d{2}$', stripped):
             continue
         # Warianty "Dalsza część artykułu pod wideo" (z kursywą, dwukropkiem)
         if "dalsza część artykułu pod wideo" in stripped.lower() or \
@@ -204,18 +206,33 @@ def _clean_lines_money(lines: list[str]) -> list[str]:
 
 
 def _clean_lines_wp(lines: list[str]) -> list[str]:
-    """Czyszczenie specyficzne dla wp.pl/o2.pl."""
-    skip = {"Skomentuj", "Udostępnij"}
+    """Czyszczenie specyficzne dla wp.pl/o2.pl/tech.wp.pl."""
+    skip_exact = {"Skomentuj", "Udostępnij"}
+    skip_startswith = ("Udostępnij na X", "Dźwięk został wygenerowany",
+                       "Źródło zdjęć:", "Źródło artykułu:", "oprac.")
     cleaned = []
     for line in lines:
         stripped = line.strip()
-        if stripped in skip:
+        if stripped in skip_exact:
             continue
-        if stripped.startswith("Udostępnij na X"):
-            continue
-        if stripped.startswith("Dźwięk został wygenerowany"):
+        if any(stripped.startswith(s) for s in skip_startswith):
             continue
         if re.match(r'^\d+\s+komentarz', stripped):
+            continue
+        # Samodzielna data: "23 marca 2026, 06:15"
+        if re.match(r'^\d{1,2}\s+\w+\s+\d{4},?\s+\d{1,2}:\d{2}$', stripped):
+            continue
+        # Tagi jako tekst: "iran rakiety balistyczne europa +3"
+        if re.match(r'^[\w\sąćęłńóśźżĄĆĘŁŃÓŚŹŻ]+\+\d+$', stripped):
+            continue
+        # Autor wp.pl: "Imię Nazwisko, dziennikarz/ka Wirtualnej Polski"
+        if "dziennikarz" in stripped.lower() and "wirtualnej polski" in stripped.lower():
+            continue
+        # Banner "Misja AI" itp.
+        if stripped.startswith("Misja AI"):
+            continue
+        # Reklamy z gigantycznym tracking URL (>300 znaków)
+        if stripped.startswith("[") and stripped.endswith(")") and len(stripped) > 300:
             continue
         cleaned.append(line)
     return cleaned
