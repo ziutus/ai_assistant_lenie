@@ -567,18 +567,38 @@ def action_view(article: dict, check_urls: bool = False):
     print(summary + "]")
 
 
-def action_save_to_db(doc, article: dict, session) -> bool:
-    """Zapisz oczyszczony tekst artykułu do bazy danych i ustaw status MD_SIMPLIFIED."""
-    from library.models.stalker_document_status import StalkerDocumentStatus
+def _refresh_db_connection(session):
+    """Odśwież połączenie z bazą (mogło wygasnąć przy długim przeglądaniu)."""
+    try:
+        session.execute(text_sql("SELECT 1"))
+        return True
+    except Exception:
+        session.rollback()
+        try:
+            session.execute(text_sql("SELECT 1"))
+            return True
+        except Exception as e:
+            print(f"  BŁĄD: nie mogę połączyć się z bazą: {e}")
+            return False
 
-    full_text = _article_full_text(article)
+
+def action_save_to_db(doc, article: dict, session) -> bool:
+    """Zapisz oczyszczony tekst do bazy, stwórz embedding, ustaw status."""
+    from library.models.stalker_document_status import StalkerDocumentStatus
+    from library.embedding import get_embedding
+    from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+    from library.config_loader import load_config
+
     text_only = article["text"]
+    cfg = load_config()
+    embedding_model = cfg.get("EMBEDDING_MODEL") or "BAAI/bge-m3"
 
     print(f"  Zapisuję do bazy danych (ID: {doc.id})...")
     print(f"    Tekst: {len(text_only)} znaków")
     print(f"    Linki: {len(article['links'])}")
     print(f"    Obrazki: {len(article['images'])}")
-    print(f"    Status: {doc.document_state} → MD_SIMPLIFIED")
+    print(f"    Embedding model: {embedding_model}")
+    print(f"    Status: {doc.document_state} → MD_SIMPLIFIED → EMBEDDING_EXIST")
 
     try:
         confirm = input("  Potwierdzasz? [y/N]: ").strip().lower()
@@ -590,22 +610,11 @@ def action_save_to_db(doc, article: dict, session) -> bool:
         print("  Anulowano.")
         return False
 
-    # Odśwież połączenie z bazą (mogło wygasnąć przy długim przeglądaniu)
-    try:
-        session.execute(text_sql("SELECT 1"))
-    except Exception:
-        session.rollback()
-        print("  Odświeżam połączenie z bazą...")
-        try:
-            session.execute(text_sql("SELECT 1"))
-        except Exception as e:
-            print(f"  BŁĄD: nie mogę połączyć się z bazą: {e}")
-            return False
-
-    # Odśwież obiekt dokumentu po reconnect
+    if not _refresh_db_connection(session):
+        return False
     session.refresh(doc)
 
-    # Backup oryginalnego tekstu jeśli istnieje
+    # 1. Zapisz tekst
     if doc.text and not doc.text_raw:
         doc.text_raw = doc.text
 
@@ -614,11 +623,43 @@ def action_save_to_db(doc, article: dict, session) -> bool:
 
     try:
         session.commit()
-        print(f"  Zapisano. Status: MD_SIMPLIFIED")
-        return True
+        print(f"  Tekst zapisany. Status: MD_SIMPLIFIED")
     except Exception as e:
         session.rollback()
-        print(f"  BŁĄD zapisu: {e}")
+        print(f"  BŁĄD zapisu tekstu: {e}")
+        return False
+
+    # 2. Twórz embedding
+    print(f"  Tworzę embedding...")
+    try:
+        wb_db = WebsitesDBPostgreSQL(session=session)
+        # Usuń stare embeddingi dla tego dokumentu
+        wb_db.embedding_delete(doc.id, embedding_model)
+        session.commit()
+
+        emb_result = get_embedding(embedding_model, text_only)
+
+        if not doc.language:
+            doc.language = 'pl'
+
+        wb_db.embedding_add(
+            website_id=doc.id,
+            embedding=emb_result.embedding,
+            language=doc.language,
+            text=text_only,
+            text_original=text_only,
+            model=embedding_model,
+        )
+
+        doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
+        session.commit()
+        print(f"  Embedding zapisany. Status: EMBEDDING_EXIST")
+        return True
+
+    except Exception as e:
+        session.rollback()
+        print(f"  BŁĄD embeddingu: {e}")
+        print(f"  Tekst został zapisany (MD_SIMPLIFIED), ale embedding nie. Spróbuj ponownie.")
         return False
 
 
