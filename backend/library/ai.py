@@ -8,6 +8,7 @@ def get_all_models_info():
         "gpt-3.5-turbo": {"need_translation": True},
         "Bielik-11B-v2.3-Instruct": {"need_translation": False},
         "Bielik-11B-v3.0-Instruct": {"need_translation": False},
+        "arklabs/Bielik-11B-v3.0-Instruct": {"need_translation": False},
         "gemini-2.0-flash-lite-001": {"need_translation": False},
     }
 
@@ -72,6 +73,11 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
     elif model in ["Bielik-11B-v2.3-Instruct", "Bielik-11B-v3.0-Instruct"]:
         from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
         return sherlock_get_completion(query, model=model)
+    elif model.startswith("arklabs/"):
+        from library.api.arklabs.arklabs_completion import arklabs_get_completion
+        actual_model = model.removeprefix("arklabs/")
+        return arklabs_get_completion(query, model=actual_model, temperature=temperature,
+                                      max_tokens=max_token_count)
     elif model in ['gemini-2.0-flash-lite-001']:
         import library.api.google.google_vertexai as google_vertexai
         return google_vertexai.connect_to_google_llm_with_role(query, model)
