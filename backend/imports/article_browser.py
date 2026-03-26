@@ -86,12 +86,19 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
         if stripped in skip_section_markers or stripped in h2_ad_titles:
             skip_section = True
             continue
-        if skip_section and stripped and (stripped.startswith("**") or
-                                          (len(stripped) > 50 and not stripped.startswith("[")
-                                           and not stripped.startswith("!"))):
-            skip_section = False
         if skip_section:
-            continue
+            # "Więcej w Strefie Premium" — koniec sekcji, ale też pomiń tę linię
+            if "Więcej w Strefie Premium" in stripped:
+                skip_section = False
+                continue
+            # Koniec sekcji: pytanie dziennikarza (**Tekst**) lub długi akapit
+            # Ale nie **1**, **2** itp. (numeracja w sekcji premium)
+            if stripped and stripped.startswith("**") and not re.match(r'^\*\*\d+\*\*', stripped):
+                skip_section = False
+            elif stripped and len(stripped) > 80 and not stripped.startswith("[") and not stripped.startswith("!"):
+                skip_section = False
+            else:
+                continue
 
         # picture[N]:, link[N]:
         if re.match(r'^(picture|link)\[\d+\]:', stripped):
@@ -129,6 +136,12 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
     for line in lines:
         stripped = line.strip()
         if stripped in skip:
+            continue
+        # Wstawki premium: "**1** ### Tytuł [linkN]**2** ### ..."
+        if re.match(r'^\*\*\d+\*\*\s+###\s+', stripped):
+            continue
+        # "Więcej w Strefie Premium [linkN]"
+        if "Więcej w Strefie Premium" in stripped:
             continue
         if stripped.startswith("Audio generowane"):
             continue
