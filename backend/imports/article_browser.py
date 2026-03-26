@@ -313,6 +313,9 @@ def clean_article_text(text: str, url: str = "") -> dict:
         # "Zobacz też" z obrazkiem: "[imgN...] ## Tytuł" lub "[imgN] Tytuł"
         if re.match(r'^\[img\d+', link_text):
             return link_text
+        # Reklamy natywne z gigantycznym tracking URL (>200 znaków, encoded)
+        if len(link_url) > 200:
+            return ""
         idx = len(extracted_links)
         extracted_links.append({"text": link_text, "url": link_url})
         return f"{link_text} [link{idx}]"
