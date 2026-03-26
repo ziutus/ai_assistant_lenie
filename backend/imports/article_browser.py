@@ -511,11 +511,11 @@ def action_view(article: dict, check_urls: bool = False):
                 alt = img.get("alt", "")
                 desc = f" — {alt}" if alt else ""
                 print(f"    [img{i}]{desc}")
-                print(f"           {img['url'][:100]}")
+                print(f"           {img['url']}")
         if dead_images:
             print(f"\n  Obrazki niedostępne ({len(dead_images)}):")
             for i, img in dead_images:
-                print(f"    [img{i}] {img['_status']} — {img['url'][:80]}")
+                print(f"    [img{i}] {img['_status']} — {img['url']}")
 
     if links:
         if check_urls:
@@ -535,12 +535,12 @@ def action_view(article: dict, check_urls: bool = False):
         if active_links:
             print(f"\n  Linki ({len(active_links)}):")
             for i, link in active_links:
-                print(f"    [link{i}] {link['text'][:60]}")
-                print(f"            {link['url'][:100]}")
+                print(f"    [link{i}] {link['text']}")
+                print(f"            {link['url']}")
         if dead_links:
             print(f"\n  Linki niedostępne ({len(dead_links)}):")
             for i, link in dead_links:
-                print(f"    [link{i}] {link['_status']} — {link['text'][:40]} — {link['url'][:60]}")
+                print(f"    [link{i}] {link['_status']} — {link['text']} — {link['url']}")
 
     total_imgs = len(images)
     total_links = len(links)
