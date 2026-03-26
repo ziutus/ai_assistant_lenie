@@ -610,27 +610,21 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
         print("Brak artykułów do przeglądu.")
         return
 
-    print(f"\n{len(filtered)} artykułów do przeglądu. Komendy:")
-    print("  [n]ext / Enter  - następny artykuł")
-    print("  [v]iew          - pokaż treść artykułu")
-    print("  [d]b            - zapisz oczyszczony tekst do bazy danych")
-    print("  [s]ave          - zapisz notatkę (co mnie zainteresowało) + artykuł do pliku")
-    print("  [o]bsidian      - stwórz/zaktualizuj notatkę Obsidian teraz (Claude Code)")
-    print("  [c]ompare       - porównaj z istniejącymi notatkami (Claude Code)")
-    print("  [q]uit          - zakończ")
-    print()
+    print(f"{len(filtered)} artykułów do przeglądu.\n")
 
-    for idx, doc in enumerate(filtered, 1):
+    idx = 0
+    while 0 <= idx < len(filtered):
+        doc = filtered[idx]
         date_str = doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else "????"
         detected_portal = _detect_portal(doc.url) or "?"
 
-        print(f"\n--- [{idx}/{len(filtered)}] ID: {doc.id} ---")
+        os.system("cls" if os.name == "nt" else "clear")
+        print(f"--- [{idx + 1}/{len(filtered)}] ID: {doc.id} ---")
         print(f"  Tytuł:   {doc.title}")
         print(f"  Data:    {date_str}")
         print(f"  Portal:  {detected_portal}")
         print(f"  URL:     {doc.url}")
         print(f"  Stan:    {doc.document_state}")
-        print()
 
         article = None  # lazy load (dict: text, links, images)
 
@@ -641,14 +635,26 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
             else:
                 print("  Nie udało się pobrać treści artykułu.")
 
+        print()
+        print("  [n]ext  [p]rev  [v]iew  [d]b save  [s]ave note  [o]bsidian  [c]ompare  [q]uit")
+
         while True:
             try:
-                action = input(f"  [{idx}] [n/v/d/s/o/c/q]: ").strip().lower()
+                action = input(f"  [{idx + 1}] > ").strip().lower()
             except (KeyboardInterrupt, EOFError):
                 print("\nPrzegląd zakończony.")
                 return
 
             if action in ("n", "next", ""):
+                idx += 1
+                break
+
+            elif action in ("p", "prev", "previous"):
+                if idx > 0:
+                    idx -= 1
+                else:
+                    print("  Jesteś na pierwszym artykule.")
+                    continue
                 break
 
             elif action in ("v", "view"):
@@ -701,7 +707,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                 return
 
             else:
-                print("  Nieznana komenda. Użyj: n, o, c, v, q")
+                print("  Nieznana komenda. Użyj: n, p, v, d, s, o, c, q")
 
 
 def cmd_notes():
