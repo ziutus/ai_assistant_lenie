@@ -305,6 +305,7 @@ def extract_article_markers_with_llm(markdown_text: str, url: str = "",
             max_tokens=800,
             temperature=0.1,
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
+            stateful=True,
         )
 
         logger.info(f"LLM extraction tokens: prompt={response.prompt_tokens}, "
