@@ -92,6 +92,8 @@ text_to_md_check_only = False
 online = True
 embedding_update = False
 ignore_regexp_issue = True
+llm_fallback_enabled = True
+llm_fallback_model = "speakleash/Bielik-11B-v3.0-Instruct"
 cache_dir_base = cfg.get("CACHE_DIR") or "tmp/markdown"
 split_limit = 200
 
@@ -364,19 +366,37 @@ if __name__ == '__main__':
                             continue
 
             if not found_rules:
-                logger.error(f"Can't find rules to analyze page {doc.url}, time to check next one...")
+                logger.error(f"Can't find rules to analyze page {doc.url}, trying LLM fallback...")
 
-                if find_problems:
-                    exit(1)
+                if llm_fallback_enabled:
+                    from library.article_extractor import process_article_with_llm_fallback
+                    llm_result = process_article_with_llm_fallback(
+                        markdown_text=markdown_text,
+                        document_id=document_id,
+                        cache_dir=cache_dir,
+                        url=doc.url,
+                        model=llm_fallback_model,
+                    )
+                    if llm_result:
+                        extracted_text = llm_result
+                        found_rules = True
+                        regexp_rules_file = "LLM_FALLBACK"
+                        logger.info(f"LLM fallback succeeded for document {document_id}")
+                    else:
+                        logger.error(f"LLM fallback also failed for document {document_id}")
 
-                if interactive:
-                    print("Naciśnij Enter, aby zakończyć program...")
-                    input()
+                if not found_rules:
+                    if find_problems:
+                        exit(1)
 
-                doc.document_state = StalkerDocumentStatus.ERROR.name
-                doc.document_state_error = StalkerDocumentStatusError.REGEX_ERROR.name
-                session.commit()
-                continue
+                    if interactive:
+                        print("Naciśnij Enter, aby zakończyć program...")
+                        input()
+
+                    doc.document_state = StalkerDocumentStatus.ERROR.name
+                    doc.document_state_error = StalkerDocumentStatusError.REGEX_ERROR.name
+                    session.commit()
+                    continue
 
             logger.debug(f"DEBUG: will use regex rule file: {regexp_rules_file}")
             metadata["regexp_rules_file"] = regexp_rules_file
