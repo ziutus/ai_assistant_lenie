@@ -76,6 +76,7 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
     skip_section_markers = {
         "### Więcej pogłębionych treści", "### Więcej treści premium dla Ciebie",
         "## Top 5 treści Premium", "## Najlepsze w premium",
+        "## Czytaj także w BUSINESS INSIDER",
     }
 
     for line in lines:
@@ -103,6 +104,13 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
         # Frazy portalowe wspólne
         if stripped in ("Dalszy ciąg materiału pod wideo", "REKLAMAKONIEC REKLAMY",
                         "REKLAMA", "Lubię to", "[ ]"):
+            continue
+        # Warianty "Dalsza część artykułu pod wideo" (z kursywą, dwukropkiem)
+        if "dalsza część artykułu pod wideo" in stripped.lower() or \
+           "dalszy ciąg materiału pod wideo" in stripped.lower():
+            continue
+        # "Czytaj także:" + link na tej samej lub następnej linii
+        if stripped.startswith("**Czytaj także:**") or stripped.startswith("**Czytaj również:**"):
             continue
 
         # Linia z samymi [imgN] markerami (osierocone po usunięciu kontekstu)
