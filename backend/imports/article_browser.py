@@ -352,6 +352,8 @@ def action_save_note(doc, article_text: str) -> Optional[str]:
         return None
 
     note_text = "\n".join(note_lines)
+    # Napraw surrogaty z WSL/Windows terminal
+    note_text = note_text.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
 
     os.makedirs(NOTES_DIR, exist_ok=True)
     note_file = os.path.join(NOTES_DIR, f"{doc.id}_note.md")
