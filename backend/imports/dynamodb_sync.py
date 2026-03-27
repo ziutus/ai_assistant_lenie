@@ -14,6 +14,7 @@ Usage:
     ./imports/dynamodb_sync.py --since 2026-02-20 --limit 10
     ./imports/dynamodb_sync.py --since 2026-02-20 --skip-s3
     ./imports/dynamodb_sync.py --since 2026-02-20 --env dev --project lenie
+    ./imports/dynamodb_sync.py --since 2026-02-20 --data-dir /custom/cache
 """
 
 import argparse
@@ -111,61 +112,74 @@ def get_dynamodb_items(table_name: str, since_date: str) -> list[dict]:
     return all_items
 
 
-def download_s3_content(s3_client, bucket: str, s3_uuid: str, data_dir: str) -> tuple[str | None, str | None]:
-    """Download .txt and .html from S3, save locally, return (text_content, html_content)."""
+def fetch_s3_content(s3_client, bucket: str, s3_uuid: str) -> tuple[str | None, str | None]:
+    """Fetch .txt and .html from S3 into memory (no disk write)."""
     text_content = None
     html_content = None
 
     for ext, label in [(".txt", "text"), (".html", "html")]:
         key = f"{s3_uuid}{ext}"
-        local_path = os.path.join(data_dir, key)
 
         try:
             response = s3_client.get_object(Bucket=bucket, Key=key)
             content = response["Body"].read().decode("utf-8")
-
-            os.makedirs(data_dir, exist_ok=True)
-            with open(local_path, "w", encoding="utf-8") as f:
-                f.write(content)
 
             if ext == ".txt":
                 text_content = content
             else:
                 html_content = content
 
-            print(f"  S3: downloaded {key} ({len(content)} chars)")
+            print(f"  S3: fetched {key} ({len(content)} chars)")
         except ClientError as e:
             if e.response["Error"]["Code"] == "NoSuchKey":
                 print(f"  S3: {key} not found (skipping)")
             else:
-                print(f"  S3: error downloading {key}: {e}")
+                print(f"  S3: error fetching {key}: {e}")
 
     return text_content, html_content
 
 
+def save_cache_files(doc_id: int, text_content: str | None, html_content: str | None, cache_dir: str):
+    """Save S3 content to cache in document_prepare convention: {cache_dir}/{doc_id}/{doc_id}.ext"""
+    doc_dir = os.path.join(cache_dir, str(doc_id))
+    os.makedirs(doc_dir, exist_ok=True)
+
+    if html_content:
+        path = os.path.join(doc_dir, f"{doc_id}.html")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html_content)
+        print(f"  Cache: saved {path} ({len(html_content)} chars)")
+
+    if text_content:
+        path = os.path.join(doc_dir, f"{doc_id}.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text_content)
+        print(f"  Cache: saved {path} ({len(text_content)} chars)")
+
+
 def sync_item_to_postgres(item: dict, text_content: str | None, html_content: str | None,
-                          dry_run: bool, session=None) -> str:
-    """Insert a DynamoDB item into PostgreSQL via ORM. Returns 'added', 'skipped', or 'error'."""
+                          dry_run: bool, session=None) -> tuple[str, int | None]:
+    """Insert a DynamoDB item into PostgreSQL via ORM. Returns ('added'/'skipped'/'error', doc_id or None)."""
     url = item.get("url")
     if not url:
         print("  SKIP: no url in item")
-        return "error"
+        return "error", None
 
     if dry_run:
         doc_type = item.get("type", "link")
         title = item.get("title", "(no title)")
         print(f"  DRY-RUN: would add [{doc_type}] {title[:80]}")
-        return "added"
+        return "added", None
 
     try:
         existing = WebDocument.get_by_url(session, url)
     except Exception as e:
         print(f"  ERROR checking URL {url}: {e}")
-        return "error"
+        return "error", None
 
     if existing is not None:
         print(f"  SKIP: already exists (id={existing.id}): {url}")
-        return "skipped"
+        return "skipped", None
 
     try:
         doc = WebDocument(url=url)
@@ -197,12 +211,12 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
         session.commit()
 
         print(f"  ADDED (id={doc.id}): [{doc_type}] {doc.title or url}")
-        return "added"
+        return "added", doc.id
 
     except SQLAlchemyError as e:
         session.rollback()
         print(f"  ERROR adding {url}: {e}")
-        return "error"
+        return "error", None
 
 
 def main():
@@ -216,9 +230,13 @@ def main():
     parser.add_argument("--env", default="dev", help="Environment for SSM path (default: dev)")
     parser.add_argument("--table", default=None, help="DynamoDB table name override (skips SSM lookup)")
     parser.add_argument("--bucket", default=None, help="S3 bucket name override (skips SSM lookup)")
-    parser.add_argument("--data-dir", default="data", help="Local dir for S3 files (default: data/)")
+    parser.add_argument("--data-dir", default=None, help="Cache dir for S3 files (default: CACHE_DIR config or tmp/markdown)")
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
     args = parser.parse_args()
+
+    # Resolve cache dir default from config
+    if args.data_dir is None:
+        args.data_dir = cfg.get("CACHE_DIR") or "tmp/markdown"
 
     # Validate date format
     try:
@@ -306,14 +324,19 @@ def main():
                     skipped += 1
                     continue
 
-            # Download S3 content for webpage items with s3_uuid
+            # Fetch S3 content into memory (no disk write yet)
             s3_uuid = item.get("s3_uuid")
             doc_type = item.get("type", "link")
 
             if s3_uuid and doc_type == "webpage" and not args.skip_s3 and not args.dry_run:
-                text_content, html_content = download_s3_content(s3_client, bucket, s3_uuid, args.data_dir)
+                text_content, html_content = fetch_s3_content(s3_client, bucket, s3_uuid)
 
-            result = sync_item_to_postgres(item, text_content, html_content, args.dry_run, session=session)
+            result, doc_id = sync_item_to_postgres(item, text_content, html_content, args.dry_run, session=session)
+
+            # Save cache files after successful insert (doc_id now available)
+            if result == "added" and doc_id and (text_content or html_content):
+                save_cache_files(doc_id, text_content, html_content, args.data_dir)
+
             if result == "added":
                 added += 1
             elif result == "skipped":
