@@ -136,3 +136,12 @@ feeds:
   - to \d+ Regions
   - in the .* AWS Region
   - Amazon WorkSpace
+- name: Niebezpiecznik.pl
+  type: rss
+  url: https://niebezpiecznik.pl/feed/
+  language: pl
+  project: technologia
+  tags:
+  - security
+  - cyberbezpieczeństwo
+  - polska
