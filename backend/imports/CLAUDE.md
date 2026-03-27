@@ -24,9 +24,10 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 1. Resolves DynamoDB table name and S3 bucket from SSM Parameter Store (or CLI overrides)
 2. Queries DynamoDB `DateIndex` GSI day-by-day from `--since` date to today (handles pagination)
 3. For each item, checks if URL already exists in local PostgreSQL (duplicate detection via `WebDocument.get_by_url()`)
-4. For `webpage` type items with `s3_uuid`: downloads `{uuid}.txt` and `{uuid}.html` from S3, saves locally to `data/`
+4. For `webpage` type items with `s3_uuid`: fetches `{uuid}.txt` and `{uuid}.html` from S3 into memory
 5. Inserts new documents via ORM: `WebDocument(url=url)` → set attributes → `session.add(doc)` + `session.commit()`
-6. Sets `document_state` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
+6. After insert, saves S3 content to cache as `{CACHE_DIR}/{doc.id}/{doc.id}.html` (same convention as `document_prepare.py`, so downstream tools can reuse cached files without re-downloading from S3)
+7. Sets `document_state` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
 
 **DynamoDB → PostgreSQL field mapping:**
 - `url` → `url`, `type` → `document_type`, `title` → `title`, `language` → `language`
@@ -53,7 +54,7 @@ cd backend
 - `--env ENV` — environment for SSM path (default: `dev`)
 - `--table TABLE` — DynamoDB table name override (skips SSM lookup)
 - `--bucket BUCKET` — S3 bucket name override (skips SSM lookup)
-- `--data-dir PATH` — local dir for S3 files (default: `data/`)
+- `--data-dir PATH` — cache dir for S3 files (default: `CACHE_DIR` config or `tmp/markdown`)
 - `-y`, `--yes` — skip confirmation prompt (for automation)
 
 Before executing any operations, the script displays source (AWS profile, region) and target (PostgreSQL host/db/port/user) information, then asks for confirmation (`Continue? [y/N]`). Use `-y` to skip the prompt.
