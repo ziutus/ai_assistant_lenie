@@ -65,3 +65,9 @@ Quick reference of all backlog items. For full specifications (acceptance criter
 | B-89 | Fix ReDoS Vulnerability in webdocument_prepare_regexp_by_ai.py | backlog | — |
 | B-90 | Add Timeout to All requests Calls (6 locations) | backlog | — |
 | B-91 | Migrate SQL F-Strings to Parameterized Queries | backlog | — | **Note:** Migration to psycopg3 would solve this — psycopg3 uses server-side parameter binding by default, making f-string SQL construction unnecessary. Consider combining with psycopg2→psycopg3 migration. See [technology-choices.md](technology-choices.md#psycopg2-raw-sql-no-orm). |
+
+## Data Architecture — Graph Relationships
+
+| ID | Title | Status | Depends on |
+|----|-------|--------|------------|
+| B-102 | Evaluate Neo4j AuraDB Free for Document Relationship Graph | backlog | B-92 |
