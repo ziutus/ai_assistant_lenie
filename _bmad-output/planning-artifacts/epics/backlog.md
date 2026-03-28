@@ -1464,3 +1464,43 @@ so that I can focus on unprocessed articles during review and avoid duplicating 
 
 **Priority:** MEDIUM
 **Status:** backlog
+
+---
+
+## Data Architecture — Graph Relationships
+
+### B-102: Evaluate Neo4j AuraDB Free for Document Relationship Graph
+
+As a **knowledge worker**,
+I want document-to-document relationships (citations, links, topic connections) stored and queryable as a graph,
+so that I can discover knowledge paths, visualize topic clusters, and find related documents beyond vector similarity.
+
+**Origin:** The project already extracts links from markdown content (`lenie_markdown.py`, `document_markdown.py`) but discards them — they are not persisted as relationships. Fields like `tags`, `source`, and `author` are flat text with no structure. The `neo4j` package is already in `pyproject.toml` but unused. Neo4j AuraDB Free (GCP) offers a zero-cost entry point for graph database evaluation.
+
+**Context / decisions to make:**
+- **Start with PostgreSQL or go straight to Neo4j?** A simple `document_links` table in PostgreSQL with recursive CTEs may suffice for 1-2 hop queries. Neo4j becomes compelling at 3+ hops, complex traversals, or when building a Knowledge Graph with typed relationships.
+- **AuraDB Free tier limits:** 200K nodes, 400K relationships, 1 database instance, no backup, GCP only. Sufficient for evaluation and initial production with current data volume.
+- **Hybrid architecture:** Keep PostgreSQL + pgvector for document storage and similarity search; use Neo4j only for relationship graph. Sync via document IDs.
+- **What relationships to model?** Candidates:
+  - `(doc)-[:LINKS_TO]->(doc)` — extracted from markdown content
+  - `(doc)-[:TAGGED_WITH]->(tag)` — normalized tags (currently comma-separated text)
+  - `(doc)-[:FROM_SOURCE]->(source)` — recommendation source tracking
+  - `(doc)-[:BY_AUTHOR]->(author)` — author graph
+  - `(tag)-[:CHILD_OF]->(tag)` — tag hierarchy/taxonomy
+  - `(doc)-[:SIMILAR_TO {score}]->(doc)` — materialized similarity edges
+
+**Evaluation phases:**
+1. **Phase 1 — PostgreSQL baseline:** Create `document_links` table, persist extracted links, test recursive CTE queries for traversal depth 1-3
+2. **Phase 2 — Neo4j prototype:** Set up AuraDB Free instance, import documents as nodes and links as edges, compare query expressiveness and performance vs PostgreSQL
+3. **Phase 3 — Decision:** Based on phases 1-2, decide whether to adopt Neo4j for production or stay with PostgreSQL for relationship queries
+
+**Acceptance Criteria:**
+- Extracted links from markdown are persisted (in PostgreSQL or Neo4j) instead of being discarded
+- At least one graph query is implemented: "show documents linked to document X within N hops"
+- Performance comparison documented for traversal queries (PostgreSQL recursive CTE vs Neo4j Cypher)
+- Decision recorded as an ADR with rationale
+- If Neo4j adopted: connection configuration added to config_loader, AuraDB Free instance provisioned
+
+**Priority:** LOW
+**Status:** backlog
+**Related:** B-92 (SQLAlchemy ORM migration), B-99 (URL normalization/duplicate detection)
