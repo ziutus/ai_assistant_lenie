@@ -58,8 +58,7 @@ def _create_backend(name: str):
     if name == "aws":
         return AWSSSMBackend()
     logger.error(
-        "Unknown SECRETS_BACKEND value: '%s'. Valid options: %s",
-        name,
+        "Unknown SECRETS_BACKEND value. Valid options: %s",
         ", ".join(sorted(_KNOWN_BACKENDS)),
     )
     sys.exit(1)
@@ -98,7 +97,7 @@ def load_config() -> Config:
         logger.info("Config: loaded .env from %s", dotenv_path)
 
     backend_name = os.environ.get("SECRETS_BACKEND", "env")
-    logger.debug("Config: using '%s' backend", backend_name)
+    logger.debug("Config: backend selected")
     backend = _create_backend(backend_name)
     _config = Config(backend.load())
 

@@ -78,9 +78,8 @@ def webpage_text_clean(url: str, content: str):
             for regex in site_rules[url_path]["remove_string_regexp"]:
                 content = remove_text_regex(content, regex)
 
-    content = re.sub(r'\n\s+\n', '\n\n', content)
-    content = re.sub(r'\n\n+', '\n\n', content)
-    content = re.sub(r'\n+$', '', content)
-    content = re.sub(r'^\n+', '', content)
+    content = re.sub(r'\n[^\S\n]+\n', '\n\n', content)
+    content = re.sub(r'\n{2,}', '\n\n', content)
+    content = content.strip('\n')
 
     return content
