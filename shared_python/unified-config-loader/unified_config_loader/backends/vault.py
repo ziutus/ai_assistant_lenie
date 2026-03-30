@@ -41,7 +41,7 @@ class VaultBackend:
                 sys.exit(1)
 
             secret_path = f"{project_code}/{secrets_env}"
-            logger.info("Vault: reading secret at secret/%s", secret_path)
+            logger.debug("Vault: reading secret at secret/***")
             response = client.secrets.kv.v2.read_secret_version(
                 path=secret_path,
                 mount_point="secret",

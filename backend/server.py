@@ -1,7 +1,7 @@
 import os
 from pprint import pprint
 
-from flask import Flask, Response, request, abort
+from flask import Flask, Response, request, abort, jsonify
 from flask_cors import CORS
 import logging
 import uuid
@@ -197,11 +197,10 @@ def url_add():
                         s3.put_object(Bucket=bucket_name, Key=file_name, Body=text)
                         logging.info(f"Successfully uploaded {file_name} to {bucket_name}")
                     except Exception as e:
-                        error_message = f"Failed to upload {file_name} to {bucket_name}: {str(e)}"
-                        logging.error(error_message)
+                        logging.error("Failed to upload %s to %s: %s", file_name, bucket_name, e)
                         return {
                             'status': 'error',
-                            'message': error_message
+                            'message': "Failed to upload text file to storage"
                         }, 500
                 else:
                     # Zapis lokalny
@@ -212,11 +211,10 @@ def url_add():
                             f.write(text)
                         logging.info(f"Successfully saved {file_name} to /app/data/")
                     except Exception as e:
-                        error_message = f"Failed to save {file_name} to /app/data/: {str(e)}"
-                        logging.error(error_message)
+                        logging.error("Failed to save %s to /app/data/: %s", file_name, e)
                         return {
                             'status': 'error',
-                            'message': error_message
+                            'message': "Failed to save text file locally"
                         }, 500
 
 
@@ -230,11 +228,10 @@ def url_add():
                         s3.put_object(Bucket=bucket_name, Key=file_name, Body=html)
                         logging.info(f"Successfully uploaded {file_name} to {bucket_name}")
                     except Exception as e:
-                        error_message = f"Failed to upload {file_name} to {bucket_name}: {str(e)}"
-                        logging.error(error_message)
+                        logging.error("Failed to upload %s to %s: %s", file_name, bucket_name, e)
                         return {
                             'status': 'error',
-                            'message': error_message
+                            'message': "Failed to upload HTML file to storage"
                         }, 500
                 else:
                     # Zapis lokalny
@@ -245,11 +242,10 @@ def url_add():
                             f.write(html)
                         logging.info(f"Successfully saved {file_name} to /app/data/")
                     except Exception as e:
-                        error_message = f"Failed to save {file_name} to /app/data/: {str(e)}"
-                        logging.error(error_message)
+                        logging.error("Failed to save %s to /app/data/: %s", file_name, e)
                         return {
                             'status': 'error',
-                            'message': error_message
+                            'message': "Failed to save HTML file locally"
                         }, 500
 
             else:
@@ -286,19 +282,17 @@ def url_add():
 
         except Exception as e:
             session.rollback()
-            error_message = f"Failed to save to database: {str(e)}"
-            logging.error(error_message)
+            logging.error("Failed to save to database: %s", e)
             return {
                 'status': 'error',
-                'message': error_message
+                'message': "Failed to save document to database"
             }, 500
 
     except Exception as e:
-        error_message = f"Unexpected error: {str(e)}"
-        logging.error(error_message)
+        logging.error("Unexpected error in /url_add: %s", e)
         return {
             'status': 'error',
-            'message': error_message
+            'message': "An unexpected error occurred"
         }, 500
 
 
@@ -395,7 +389,7 @@ def website_check_is_paid():
 
     logging.debug(response)
 
-    return response, 200
+    return jsonify(response), 200
 
 
 @app.route('/website_get', methods=['GET'])
@@ -478,8 +472,8 @@ def ai_get_embedding():
     import library.embedding as embedding
     embedds = embedding.get_embedding(model=cfg.require("EMBEDDING_MODEL"), text=text)
 
-    return {"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
-            "embedding": embedds}, 200
+    return jsonify({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
+            "embedding": embedds}), 200
 
 
 @app.route('/website_similar', methods=['POST'])
@@ -512,8 +506,8 @@ def search_similar():
     embedds = embedding.get_embedding(model=cfg.require("EMBEDDING_MODEL"), text=text)
 
     if embedds.status != "success" or len(embedds.embedding) == 0:
-        return {"status": embedds.status, "message": "Error during getting embedding for text", "encoding": "utf8", "text": text,
-                "websites": []}, 500
+        return jsonify({"status": embedds.status, "message": "Error during getting embedding for text", "encoding": "utf8", "text": text,
+                "websites": []}), 500
 
     if not limit:
         limit = 3
@@ -521,8 +515,8 @@ def search_similar():
     repo = WebsitesDBPostgreSQL(session=get_scoped_session())
     websites_list = repo.get_similar(embedds.embedding, cfg.require("EMBEDDING_MODEL"), limit=int(limit))
 
-    return {"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
-            "websites": websites_list}, 200
+    return jsonify({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
+            "websites": websites_list}), 200
 
 
 @app.route('/website_download_text_content', methods=['POST'])
@@ -573,7 +567,7 @@ def website_download_text_content():
         "language": result.language
     }
 
-    return response, 200
+    return jsonify(response), 200
 
     # else:
     #     print_debug(f"Nie udało się pobrać strony. Kod statusu: {response.status_code}")
@@ -623,7 +617,7 @@ def website_text_remove_not_needed():
         "message": "Text cleaned"
     }
     logging.debug(response)
-    return response, 200
+    return jsonify(response), 200
 
 
 @app.route('/website_split_for_embedding', methods=['POST'])
@@ -657,7 +651,7 @@ def website_split_for_embedding():
         "message": "Text corrected"
     }
     logging.debug(response)
-    return response, 200
+    return jsonify(response), 200
 
 
 @app.route('/website_delete', methods=['GET'])
@@ -737,7 +731,7 @@ def website_save():
             doc.set_document_type(document_type)
     except Exception as e:
         logging.error(f"Wrong document type: {e}")
-        return {"status": "error", "message": f"Wrong document type: {request.form.get('document_type')}."}, 500
+        return jsonify({"status": "error", "message": "Invalid document type provided."}), 400
 
     doc.analyze()
 

@@ -77,7 +77,7 @@ def list_secrets(client, path, mount_point="kv"):
 
 vault_client = get_vault_client(cfg.get("VAULT_URL"), token=cfg.get("VAULT_TOKEN"))
 CLOUDFERRO_SHERLOCK_KEY=get_secret(vault_client, "lenie-ai/dev/cloudferro", "SHERLOCK_KEY")
-print(CLOUDFERRO_SHERLOCK_KEY)
+print(f"CLOUDFERRO_SHERLOCK_KEY loaded: {'set' if CLOUDFERRO_SHERLOCK_KEY else 'empty'}")
 
 pprint(list_secrets(vault_client, "lenie-ai/dev"))
 
