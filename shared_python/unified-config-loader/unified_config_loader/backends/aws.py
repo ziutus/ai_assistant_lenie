@@ -49,7 +49,7 @@ class AWSSSMBackend:
             sys.exit(1)
 
         if not params:
-            logger.warning("AWS SSM: no parameters found under %s", prefix)
+            logger.warning("AWS SSM: no parameters found under the configured prefix")
 
         result = {k: os.environ[k] for k in BOOTSTRAP_VARS if k in os.environ}
         result.update(params)

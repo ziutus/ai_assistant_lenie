@@ -13,10 +13,11 @@ export function loadConnectionConfig(): {
   apiKey: string | undefined;
 } {
   const apiType = (localStorage.getItem(KEYS.apiType) as ApiType) || "AWS Serverless";
+  const storedKey = localStorage.getItem(KEYS.apiKey);
   return {
     apiType,
     apiUrl: localStorage.getItem(KEYS.apiUrl) || DEFAULT_API_URLS[apiType],
-    apiKey: localStorage.getItem(KEYS.apiKey) || undefined,
+    apiKey: storedKey ? atob(storedKey) : undefined,
   };
 }
 
@@ -27,7 +28,7 @@ export function saveConnectionConfig(config: {
 }): void {
   localStorage.setItem(KEYS.apiType, config.apiType);
   localStorage.setItem(KEYS.apiUrl, config.apiUrl);
-  localStorage.setItem(KEYS.apiKey, config.apiKey);
+  localStorage.setItem(KEYS.apiKey, btoa(config.apiKey));
 }
 
 export function clearConnectionConfig(): void {
