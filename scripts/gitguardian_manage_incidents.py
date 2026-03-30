@@ -162,8 +162,7 @@ def format_incident(inc: dict) -> str:
     date = str(inc.get("date", "?"))[:10]
     severity = inc.get("severity", "?")
     tags = inc.get("tags", [])
-    secret = inc.get("secret", {})
-    validity = secret.get("validity_status", "?") if isinstance(secret, dict) else "?"
+    validity = inc.get("validity_status", "?")
     occ_count = inc.get("occurrences_count", "?")
 
     sources = []
