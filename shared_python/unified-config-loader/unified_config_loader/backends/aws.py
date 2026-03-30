@@ -27,7 +27,7 @@ class AWSSSMBackend:
             sys.exit(1)
 
         prefix = f"/{project_code}/{secrets_env}/"
-        logger.info("AWS SSM: reading parameters under %s (region: %s)", prefix, aws_region)
+        logger.debug("AWS SSM: reading parameters (region: %s)", aws_region)
 
         try:
             session = boto3.Session(region_name=aws_region)
@@ -45,7 +45,7 @@ class AWSSSMBackend:
                     params[key] = param["Value"]
 
         except Exception as exc:
-            logger.error("Failed to load config from AWS SSM (%s): %s", prefix, exc)
+            logger.error("Failed to load config from AWS SSM: %s", exc)
             sys.exit(1)
 
         if not params:
