@@ -205,8 +205,9 @@ class TestCreateFlow:
         assert doc.id == 100
 
     def test_all_columns_persisted_via_dict(self):
-        """Create a document with all 26 columns and verify via dict()."""
+        """Create a document with all 28 columns and verify via dict()."""
         now = datetime.datetime(2026, 3, 1, 12, 0, 0)
+        reviewed = datetime.datetime(2026, 3, 15, 9, 0, 0)
         doc = WebDocument()
         doc.id = 1
         doc.summary = "Test summary"
@@ -234,6 +235,8 @@ class TestCreateFlow:
         doc.project = "lenie"
         doc.text_md = "# Markdown"
         doc.transcript_needed = False
+        doc.reviewed_at = reviewed
+        doc.obsidian_note_paths = ["02-wiedza/Test.md"]
 
         d = doc.dict()
         assert d["id"] == 1
@@ -262,6 +265,8 @@ class TestCreateFlow:
         assert d["project"] == "lenie"
         assert d["text_md"] == "# Markdown"
         assert d["transcript_needed"] is False
+        assert d["reviewed_at"] == "2026-03-15T09:00:00"
+        assert d["obsidian_note_paths"] == ["02-wiedza/Test.md"]
 
     def test_sti_subclass_sets_correct_document_type(self):
         """Each STI subclass should have correct document_type."""
@@ -423,6 +428,7 @@ class TestDictCompatibility:
             "document_length", "chapter_list", "document_state", "document_state_error",
             "text_raw", "transcript_job_id", "ai_summary_needed", "author",
             "note", "s3_uuid", "project", "text_md", "transcript_needed",
+            "reviewed_at", "obsidian_note_paths",
         }
         assert set(d.keys()) == expected_keys
 

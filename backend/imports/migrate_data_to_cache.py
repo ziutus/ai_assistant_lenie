@@ -8,7 +8,7 @@ Usage:
     cd backend
     python imports/migrate_data_to_cache.py
     python imports/migrate_data_to_cache.py --dry-run
-    python imports/migrate_data_to_cache.py --source-dir data --target-dir tmp/markdown
+    python imports/migrate_data_to_cache.py --source-dir data --target-dir tmp/markdown  # example with explicit path
 """
 
 import argparse
@@ -36,13 +36,13 @@ def get_s3_uuid_to_doc_id_map(session, s3_uuids: list[str]) -> dict[str, int]:
 def main():
     parser = argparse.ArgumentParser(description="Migrate S3 files from data/ to cache dir")
     parser.add_argument("--source-dir", default="data", help="Source directory with UUID-named files (default: data)")
-    parser.add_argument("--target-dir", default=None, help="Target cache dir (default: CACHE_DIR config or tmp/markdown)")
+    parser.add_argument("--target-dir", default=None, help="Target cache dir (default: os.path.join(CACHE_DIR, 'markdown'))")
     parser.add_argument("--dry-run", action="store_true", help="Preview only, no file moves")
     parser.add_argument("--delete-source", action="store_true", help="Delete source files after successful move")
     args = parser.parse_args()
 
     if args.target_dir is None:
-        args.target_dir = cfg.get("CACHE_DIR") or "tmp/markdown"
+        args.target_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
 
     if not os.path.isdir(args.source_dir):
         print(f"ERROR: source directory '{args.source_dir}' does not exist")

@@ -83,8 +83,9 @@ if __name__ == '__main__':
         print("The S3 bucket for text and html files is not set, exiting.")
         exit(1)
 
-    if not os.path.exists(cfg.get('CACHE_DIR')):
-        os.makedirs(cfg.get('CACHE_DIR'))
+    cache_dir = os.path.join(cfg.get('CACHE_DIR') or "tmp", "markdown")
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
 
     print("AWS REGION: ", cfg.get("AWS_REGION"))
 
@@ -243,7 +244,7 @@ if __name__ == '__main__':
                         language=web_document.language,
                         chapter_list=web_document.chapter_list,
                         ai_summary_needed=web_document.ai_summary_needed,
-                        cache_dir=cfg.get('CACHE_DIR'),
+                        cache_dir=os.path.join(cfg.get('CACHE_DIR') or "tmp", "youtube_to_text"),
                         llm_model=cfg.get("AI_MODEL_SUMMARY"),
                         skip_captions=youtube_captions_blocked,
                         webshare_api_key=cfg.get("WEBSHARE_API_KEY"),
@@ -303,19 +304,21 @@ if __name__ == '__main__':
                             obj = s3.get_object(Bucket=cfg.get('AWS_S3_WEBSITE_CONTENT'), Key=f"{s3_uuid}.html")
                             content = obj['Body'].read().decode('utf-8')
 
-                            page_file = f"tmp/{s3_uuid}.html"
-                            with open(f"{page_file}", 'w', encoding="utf-8") as file:
+                            doc_cache_dir = os.path.join(cache_dir, str(s3_uuid))
+                            os.makedirs(doc_cache_dir, exist_ok=True)
+                            page_file = os.path.join(doc_cache_dir, f"{s3_uuid}.html")
+                            with open(page_file, 'w', encoding="utf-8") as file:
                                 file.write(content)
 
                             from markitdown import MarkItDown
                             md = MarkItDown()
                             result = md.convert(page_file)
 
-                            md_file = f"tmp/{s3_uuid}.md"
-                            with open(f"{md_file}", 'w', encoding="utf-8") as file:
+                            md_file = os.path.join(doc_cache_dir, f"{s3_uuid}.md")
+                            with open(md_file, 'w', encoding="utf-8") as file:
                                 file.write(result.text_content)
 
-                            md_clean_file = f"tmp/{s3_uuid}_clean.md"
+                            md_clean_file = os.path.join(doc_cache_dir, f"{s3_uuid}_clean.md")
                             md_cleaned = result.text_content
 
                             md_cleaned = webpage_text_clean(url, md_cleaned)
@@ -557,19 +560,21 @@ if __name__ == '__main__':
                     print(error_message)
                     continue
 
-                page_file = f"tmp/{s3_uuid}.html"
-                with open(f"{page_file}", 'w', encoding="utf-8") as file:
+                doc_cache_dir = os.path.join(cache_dir, str(s3_uuid))
+                os.makedirs(doc_cache_dir, exist_ok=True)
+                page_file = os.path.join(doc_cache_dir, f"{s3_uuid}.html")
+                with open(page_file, 'w', encoding="utf-8") as file:
                     file.write(html)
 
                 from markitdown import MarkItDown
                 md = MarkItDown()
                 result = md.convert(page_file)
 
-                md_file = f"tmp/{s3_uuid}.md"
-                with open(f"{md_file}", 'w', encoding="utf-8") as file:
+                md_file = os.path.join(doc_cache_dir, f"{s3_uuid}.md")
+                with open(md_file, 'w', encoding="utf-8") as file:
                     file.write(result.text_content)
 
-                md_clean_file = f"tmp/{s3_uuid}_clean.md"
+                md_clean_file = os.path.join(doc_cache_dir, f"{s3_uuid}_clean.md")
                 md_cleaned = result.text_content
 
                 # md_cleaned = webpage_text_clean(web_doc.url, md_cleaned)

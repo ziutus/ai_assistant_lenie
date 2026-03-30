@@ -1,10 +1,38 @@
-"""Unit tests for dynamodb_sync.py ORM migration (Story 29.1, Task 1)."""
+"""Unit tests for dynamodb_sync.py ORM migration (Story 29.1, Task 1).
 
+Pre-mocks boto3 and related modules so that importing dynamodb_sync does
+not fail when botocore/s3transfer are broken or unavailable.
+"""
+
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 sa = pytest.importorskip("sqlalchemy")
+
+# ---------------------------------------------------------------------------
+# Pre-mock boto3 and its transitive dependencies so dynamodb_sync can be
+# imported without a working botocore installation.
+# ---------------------------------------------------------------------------
+_boto3_mock = MagicMock()
+_boto3_ddb_mock = MagicMock()
+_boto3_ddb_cond_mock = MagicMock()
+_boto3_ddb_cond_mock.Key = MagicMock()
+
+_botocore_mock = MagicMock()
+_botocore_exc_mock = MagicMock()
+_botocore_exc_mock.ClientError = type("ClientError", (Exception,), {})
+
+for _name, _mock in [
+    ("boto3", _boto3_mock),
+    ("boto3.dynamodb", _boto3_ddb_mock),
+    ("boto3.dynamodb.conditions", _boto3_ddb_cond_mock),
+    ("botocore", _botocore_mock),
+    ("botocore.exceptions", _botocore_exc_mock),
+]:
+    if _name not in sys.modules:
+        sys.modules[_name] = _mock
 
 from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: E402, F401
 
@@ -57,7 +85,7 @@ class TestSyncItemToPostgres:
         item = _dynamo_item()
         result = sync_item_to_postgres(item, None, None, dry_run=False, session=session)
 
-        assert result == "added"
+        assert result == ("added", 42)
         MockWebDoc.get_by_url.assert_called_once_with(session, "https://example.com/article")
         session.add.assert_called_once_with(mock_doc)
         session.commit.assert_called_once()
@@ -75,7 +103,7 @@ class TestSyncItemToPostgres:
         item = _dynamo_item()
         result = sync_item_to_postgres(item, None, None, dry_run=False, session=session)
 
-        assert result == "skipped"
+        assert result == ("skipped", None)
         session.add.assert_not_called()
         session.commit.assert_not_called()
 
@@ -161,7 +189,7 @@ class TestSyncItemToPostgres:
         item = _dynamo_item()
         result = sync_item_to_postgres(item, None, None, dry_run=True, session=session)
 
-        assert result == "added"
+        assert result == ("added", None)
         session.add.assert_not_called()
         session.commit.assert_not_called()
         MockWebDoc.get_by_url.assert_not_called()

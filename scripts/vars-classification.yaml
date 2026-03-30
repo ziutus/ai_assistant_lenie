@@ -405,6 +405,11 @@ groups:
         type: secret
         required: false
         used_by: [local]
+      APIFY_API_TOKEN:
+        description: "Apify API token for LinkedIn profile scraping"
+        type: secret
+        required: false
+        used_by: [local]
       NOTION_PAGE_ID:
         description: "Notion page ID where changelog is published"
         type: config

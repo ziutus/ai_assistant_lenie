@@ -24,6 +24,7 @@ from sqlalchemy import (
     select,
     text as sa_text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from pgvector.sqlalchemy import Vector
@@ -135,6 +136,10 @@ class WebDocument(Base):
     project: Mapped[str | None] = mapped_column(String(100))
     text_md: Mapped[str | None] = mapped_column(Text)
     transcript_needed: Mapped[bool | None] = mapped_column(Boolean, server_default=sa_text("false"))
+
+    # Review & Obsidian tracking (Story 33.4, ADR-014)
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    obsidian_note_paths: Mapped[list] = mapped_column(JSONB, server_default=sa_text("'[]'"))
 
     # Lookup-table relationships (many-to-one)
     document_type_ref: Mapped["DocumentType"] = relationship(
@@ -379,6 +384,8 @@ class WebDocument(Base):
             "project": self.project,
             "text_md": self.text_md,
             "transcript_needed": self.transcript_needed,
+            "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
+            "obsidian_note_paths": self.obsidian_note_paths or [],
         }
 
 
@@ -503,3 +510,35 @@ class TranscriptionLog(Base):
             "transactions_count": total_count,
             "by_provider": by_provider,
         }
+
+
+# ---------------------------------------------------------------------------
+# ImportLog — tracks import script operations
+# ---------------------------------------------------------------------------
+
+
+class ImportLog(Base):
+    __tablename__ = "import_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    script_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    started_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'running'"))
+    since_date: Mapped[datetime.date | None] = mapped_column(Date)
+    until_date: Mapped[datetime.date | None] = mapped_column(Date)
+    items_found: Mapped[int | None] = mapped_column(Integer, server_default=sa_text("0"))
+    items_added: Mapped[int | None] = mapped_column(Integer, server_default=sa_text("0"))
+    items_skipped: Mapped[int | None] = mapped_column(Integer, server_default=sa_text("0"))
+    items_error: Mapped[int | None] = mapped_column(Integer, server_default=sa_text("0"))
+    parameters: Mapped[dict | None] = mapped_column(JSONB, server_default=sa_text("'{}'"))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    def __repr__(self) -> str:
+        return (
+            f"ImportLog(id={self.id!r}, script_name={self.script_name!r}, "
+            f"status={self.status!r}, started_at={self.started_at!r})"
+        )

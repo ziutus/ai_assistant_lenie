@@ -2,6 +2,8 @@ import os
 import markdown
 from bs4 import BeautifulSoup
 
+from library.config_loader import load_config
+
 
 def markdown_to_text(markdown_string):
     # Konwertujemy Markdown do HTML
@@ -14,17 +16,21 @@ def markdown_to_text(markdown_string):
     return text
 
 
+cfg = load_config()
+
 documents = ["6713"]
-cache_directory = "tmp/markdown_output"
+cache_directory = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
 
 for document_id in documents:
-    filname_json = f"{cache_directory}/{document_id}.json"
+    filname_json = os.path.join(cache_directory, f"{document_id}.json")
 
-    if os.path.exists(f"{cache_directory}/{document_id}_manual.md"):
+    manual_md = os.path.join(cache_directory, f"{document_id}_manual.md")
+    default_md = os.path.join(cache_directory, f"{document_id}.md")
+    if os.path.exists(manual_md):
         print("Manual correction exist, using it")
-        filename_md = f"{cache_directory}/{document_id}_manual.md"
-    elif os.path.exists(f"{cache_directory}/{document_id}.md"):
-        filename_md = f"{cache_directory}/{document_id}.md"
+        filename_md = manual_md
+    elif os.path.exists(default_md):
+        filename_md = default_md
     else:
         print(f"No markdown files for document_id: {document_id}, skipping it")
         continue
@@ -33,7 +39,7 @@ for document_id in documents:
         markdown_text = file.read()
 
     text = markdown_to_text(markdown_text)
-    with open(f"{cache_directory}/{document_id}.txt", "w", encoding="utf-8") as file:
+    with open(os.path.join(cache_directory, f"{document_id}.txt"), "w", encoding="utf-8") as file:
         file.write(text)
 
     len_text = len(markdown_text)
