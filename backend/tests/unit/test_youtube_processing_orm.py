@@ -6,13 +6,36 @@ Verifies that process_youtube_url():
 - Uses WebDocument ORM model instead of StalkerWebDocumentDB
 - Calls session.commit() instead of save()
 - Returns WebDocument instance
+
+Pre-mocks boto3 so that importing library.youtube_processing (which
+transitively imports boto3 via text_detect_language) does not fail
+when botocore/s3transfer are broken or unavailable.
 """
+
+import sys
+from types import ModuleType
+from unittest.mock import MagicMock
 
 import pytest
 
 sa = pytest.importorskip("sqlalchemy")
 
-from unittest.mock import MagicMock, patch, PropertyMock  # noqa: E402
+# ---------------------------------------------------------------------------
+# Pre-mock boto3 and transitive deps before any library import
+# ---------------------------------------------------------------------------
+_BOTO_MODS = [
+    "boto3", "boto3.dynamodb", "boto3.dynamodb.conditions",
+    "botocore", "botocore.exceptions", "botocore.compat",
+    "s3transfer",
+]
+for _mod_name in _BOTO_MODS:
+    if _mod_name not in sys.modules:
+        _mock_mod = MagicMock(spec=ModuleType)
+        if _mod_name == "botocore.exceptions":
+            _mock_mod.ClientError = type("ClientError", (Exception,), {})
+        sys.modules[_mod_name] = _mock_mod
+
+from unittest.mock import patch, PropertyMock  # noqa: E402
 from sqlalchemy.orm import Session  # noqa: E402
 
 

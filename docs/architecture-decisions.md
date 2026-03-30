@@ -790,3 +790,14 @@ The question arose whether to replace this custom layer with a framework like **
 - `backend/library/api/arklabs/arklabs_embedding.py` — ArkLabs embedding integration
 - `docs/observability.md` — LLM observability strategy (Langfuse)
 - `docs/technology-choices.md` — Multi-provider abstraction rationale
+
+## ADR-014: Article Review Tracking — Columns Now, Join Table for Multi-User
+
+**Date:** 2026-03-28
+**Status:** Accepted
+**Decision Makers:** Ziutus
+**Full document:** [adr-014-article-review-tracking.md](adr-014-article-review-tracking.md)
+
+### Summary
+
+Track article review status and Obsidian note creation using two new columns on `web_documents` (`reviewed_at`, `obsidian_note_path`) for the current single-user system. Migrate to a `user_document_reviews` join table when multi-user authentication (B-33) is implemented in Phase 9. This avoids polluting the `document_state` processing pipeline with user-action states, which are orthogonal to technical document processing.

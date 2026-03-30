@@ -44,6 +44,9 @@ class TestGetDocumentsByUrlParameterization:
         compiled = stmt.compile(compile_kwargs={"literal_binds": False})
         sql_text = str(compiled)
         assert "DROP TABLE" not in sql_text
+        # Verify payload is in bound parameters, not in SQL text
+        params = compiled.params
+        assert any("DROP TABLE" in str(v) for v in params.values())
 
     def test_percent_wildcard_escaped(self, db_instance):
         """% in URL should be escaped to prevent LIKE wildcard expansion."""
@@ -69,15 +72,14 @@ class TestGetDocumentsByUrlParameterization:
         assert result == []
         db_instance.session.execute.assert_called_once()
 
-    def test_pattern_uses_variable_not_fstring_in_like(self, db_instance):
-        """Verify the pattern variable is used (not inline f-string)."""
-        import inspect
-        from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-
-        source = inspect.getsource(WebsitesDBPostgreSQL.get_documents_by_url)
-        # Should have `pattern = f"...` and `.like(pattern,` — not `.like(f"`
-        assert '.like(f"' not in source
-        assert "pattern = f" in source or "pattern = f'" in source
+    def test_like_uses_escape_parameter(self, db_instance):
+        """Verify .like() is called with escape='\\' for proper wildcard escaping."""
+        db_instance.get_documents_by_url("https://example.com/100%25done")
+        stmt = db_instance.session.execute.call_args[0][0]
+        compiled = stmt.compile(compile_kwargs={"literal_binds": False})
+        sql_text = str(compiled)
+        # PostgreSQL LIKE with escape clause should appear in compiled SQL
+        assert "ESCAPE" in sql_text.upper()
 
 
 class TestGetSimilarParameterization:
@@ -97,6 +99,8 @@ class TestGetSimilarParameterization:
         compiled = stmt.compile(compile_kwargs={"literal_binds": False})
         sql_text = str(compiled)
         assert "DROP TABLE" not in sql_text
+        params = compiled.params
+        assert any("DROP TABLE" in str(v) for v in params.values())
 
     def test_malicious_project_string(self, db_instance):
         """Project name with SQL injection payload should be safe."""
@@ -113,6 +117,8 @@ class TestGetSimilarParameterization:
         compiled = stmt.compile(compile_kwargs={"literal_binds": False})
         sql_text = str(compiled)
         assert "DELETE FROM" not in sql_text
+        params = compiled.params
+        assert any("DELETE FROM" in str(v) for v in params.values())
 
     def test_none_embedding_returns_none(self, db_instance):
         """None embedding should return None without executing SQL."""

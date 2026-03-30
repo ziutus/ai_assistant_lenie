@@ -8,6 +8,7 @@ Usage:
     python web_documents_fix_missing_markdown.py
 """
 
+import os
 import uuid
 
 import boto3
@@ -95,15 +96,17 @@ if __name__ == '__main__':
                 print(error_message)
                 exit(1)
 
-            page_file = f"tmp/{s3_uuid}.html"
-            with open(f"{page_file}", 'w', encoding="utf-8") as file:
+            doc_cache_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown", str(s3_uuid))
+            os.makedirs(doc_cache_dir, exist_ok=True)
+            page_file = os.path.join(doc_cache_dir, f"{s3_uuid}.html")
+            with open(page_file, 'w', encoding="utf-8") as file:
                 file.write(html)
 
             md = MarkItDown()
             result = md.convert(page_file)
 
-            md_file = f"tmp/{s3_uuid}.md"
-            with open(f"{md_file}", 'w', encoding="utf-8") as file:
+            md_file = os.path.join(doc_cache_dir, f"{s3_uuid}.md")
+            with open(md_file, 'w', encoding="utf-8") as file:
                 file.write(result.text_content)
 
             md_cleaned = result.text_content

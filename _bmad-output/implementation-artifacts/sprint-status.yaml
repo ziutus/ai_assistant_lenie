@@ -1,4 +1,4 @@
-# generated: 2026-03-12
+# generated: 2026-03-28
 # project: lenie-server-2025
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-03-12
+generated: 2026-03-28
 project: lenie-server-2025
 project_key: NOKEY
 tracking_system: file-system
@@ -244,6 +244,7 @@ development_status:
   # --- Code Quality ---
   # B-86: moved to Sprint 11, Epic 31 (story 31-3)
   B-81-expand-code-duplication-control: backlog  # pylint duplicate-code added to Makefile (make duplicate-check). Next: jscpd for cross-language (Python+TS), expand scope, CI integration, fix known duplicates (connect_kwargs, serialization).
+  B-103-cleanup-article-browser-lint-issues: backlog  # 21 ruff issues in article_browser.py: missing StalkerDocumentStatus import (4x F821), unused md_get_images_as_links import (F401), 13x f-string without placeholders (F541), ambiguous variable name 'l' (E741). Found during 33-4 code review.
 
   # --- Phase 2.5: API Contract & Type Safety ---
   B-50-api-type-synchronization-pydantic-openapi-ts: backlog  # Pydantic → OpenAPI → generated TS types. Fixes backend-frontend drift: id type mismatch, missing fields (13 in WebDocument, 5 in ListItem, 7 in SearchResult), untyped enums. Strategy: docs/api-type-sync-strategy.md. 5 phases: Pydantic models, Flask route integration, OpenAPI gen, TS gen, CI check.
@@ -318,6 +319,9 @@ development_status:
   # --- Observability & Cost Management ---
   B-89-api-usage-cost-and-limits-dashboard: backlog  # Admin panel (app2) showing external API usage, costs, and remaining limits/quotas. Covers: OpenAI, AWS Bedrock, CloudFerro Bielik, AssemblyAI, Firecrawl, Google Vertex AI, AWS Textract. Display per-provider: calls made, tokens/units consumed, estimated cost, free-tier/package limits remaining. Backend endpoint to aggregate usage data. Future: alerts when approaching limits.
 
+  # --- Data Model & Cross-Instance Identity ---
+  B-102-rename-s3-uuid-to-uuid-global-document-identifier: backlog  # ADR-015: Rename s3_uuid→uuid, auto-generate for all docs, UNIQUE+NOT NULL. Enables stable Obsidian references and cross-instance sync. Alembic migration + backfill + code rename (15 files). AWS Lambda update deferred (docs/aws-sync-backlog.md).
+
   # --- Phase 9: Multiuser ---
   B-33-implement-user-authentication-with-aws-cognito: backlog  # Cognito User Pool, integracja z API Gateway (Cognito Authorizer).
   B-34-add-user-ownership-to-database-schema: backlog  # Kolumna user_id w web_documents i websites_embeddings, migracja danych.
@@ -375,11 +379,11 @@ development_status:
   # ============================================================
 
   # --- Epic 31: Security Fixes & Project Governance ---
-  epic-31: in-progress
+  epic-31: done
   31-1-add-bsl-1-1-license: done  # B-87: Add Business Source License 1.1 to repository. Anti-cloud-provider clause, auto-converts to Apache 2.0/MPL 2.0 after 4 years.
   31-2-fix-website-get-404-for-nonexistent-id: done  # B-85: GET /website_get?id=<nonexistent> returns 500 instead of 404. Fixed: proper 404/400, Lambda ORM migration, 8 unit tests. Code review: 8 issues (3H/4M/1L), H+M fixed.
-  31-3-parameterize-sql-in-remaining-db-methods: review  # B-86: SQL injection fix in get_similar(), get_documents_by_url(), get_documents_md_needed(). Replace f-string interpolation with %s parameterized queries.
-  epic-31-retrospective: optional
+  31-3-parameterize-sql-in-remaining-db-methods: done  # B-86: SQL injection fix in get_similar(), get_documents_by_url(), get_documents_md_needed(). Replace f-string interpolation with %s parameterized queries. Code review: 6 issues (1H/3M/2L), H+M fixed.
+  epic-31-retrospective: done
 
   # --- Epic 32: Service Layer Extraction ---
   epic-32: backlog
@@ -387,6 +391,18 @@ development_status:
   32-2-extract-search-service-for-similarity-queries: backlog  # B-56: Extract search/similarity logic into SearchService. Prepares clean interface for MCP (B-57).
   32-3-migrate-import-scripts-to-service-layer: backlog  # B-56: Migrate import scripts (dynamodb_sync, unknown_news_import, batch pipeline) to use service layer instead of direct ORM.
   epic-32-retrospective: optional
+
+  # ============================================================
+  # SPRINT 12: Import Pipeline Maturity
+  # ============================================================
+
+  # --- Epic 33: Import Pipeline Maturity — Cache, Logging & Review Tracking ---
+  epic-33: in-progress
+  33-1-consolidate-cache-directories-under-single-cache-dir: done
+  33-2-create-import-logs-table-for-operation-tracking: done  # Code review #2 passed. NAS verified: table + 3 runs. Scope note: 33-3 auto-detect logic implemented early (documented).
+  33-3-auto-detect-since-in-dynamodb-sync-from-import-logs: done
+  33-4-add-article-review-and-obsidian-note-tracking: done  # B-101, ADR-014: reviewed_at TIMESTAMP + obsidian_note_paths JSONB on web_documents. Multi-user migration to join tables in Phase 9. Code review: 5 fixes (limit/filter, path validation, filter tests, naming).
+  epic-33-retrospective: optional
 
   # ============================================================
   # DONE (completed backlog items — historical record)

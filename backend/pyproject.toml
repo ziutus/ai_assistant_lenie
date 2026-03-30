@@ -39,6 +39,7 @@ dependencies = [
     "pgvector>=0.3.0",
     "alembic>=1.13",
     "markitdown>=0.1.4",
+    "apify-client>=2.5.0",
 ]
 
 [project.optional-dependencies]

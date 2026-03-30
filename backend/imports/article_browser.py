@@ -8,6 +8,11 @@ Usage:
     python imports/article_browser.py --review --since 2026-03-20         # Interactive review
     python imports/article_browser.py --review --portal onet.pl           # Filter by portal
     python imports/article_browser.py --review --id 8786                  # Start from specific article
+    python imports/article_browser.py --show --id 8799                    # Display article and exit (non-interactive)
+    python imports/article_browser.py --show --id 8799 --check-urls       # Display with link validation
+    python imports/article_browser.py --list --state NEED_MANUAL_REVIEW   # Articles needing manual review
+    python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format ids    # Just IDs (for scripting)
+    python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format short  # IDs + titles
 """
 
 import argparse
@@ -122,13 +127,17 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
         if re.match(r'^(picture|link)\[\d+\]:', stripped):
             continue
 
+        # Markdown horizontal rules (---, ***, ___) — artefakty z konwersji HTML
+        if re.match(r'^[-*_]{3,}\s*$', stripped):
+            continue
+
         # Puste linie z samą liczbą (reakcje)
         if stripped.isdigit():
             continue
 
         # Frazy portalowe wspólne
         if stripped in ("Dalszy ciąg materiału pod wideo", "REKLAMAKONIEC REKLAMY",
-                        "REKLAMA", "Lubię to", "[ ]"):
+                        "REKLAMA", "Lubię to", "[ ]", "Rozwiń", "Zwiń"):
             continue
 
         # Kontrolki video playera
@@ -378,7 +387,7 @@ def get_article_text(doc, session) -> Optional[dict]:
         return clean_article_text(doc.text, doc.url)
 
     cfg = load_config()
-    cache_dir_base = cfg.get("CACHE_DIR") or "tmp/markdown"
+    cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
     cache_dir = os.path.join(cache_dir_base, str(doc.id))
 
     # 2. Szukaj w cache (kolejność: step_2 > llm_extracted > step_1)
@@ -727,7 +736,7 @@ def action_save_to_db(doc, article: dict, session) -> bool:
 
     # Zapisz autora z LLM markers jeśli dostępny
     cfg = load_config()
-    cache_dir_base = cfg.get("CACHE_DIR") or "tmp/markdown"
+    cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
     import glob as glob_mod
     markers_files = glob_mod.glob(os.path.join(cache_dir_base, str(doc.id), "*_llm_markers.json"))
     if markers_files and not doc.author:
@@ -782,10 +791,14 @@ def action_save_to_db(doc, article: dict, session) -> bool:
 
 
 def _get_documents(session, limit: int = 50, since: Optional[str] = None,
-                   portal: Optional[str] = None, state: Optional[str] = None) -> list:
+                   portal: Optional[str] = None, state: Optional[str] = None,
+                   not_reviewed: bool = False, no_obsidian: bool = False) -> list:
     """Pobierz dokumenty z bazy z filtrami. Zwraca listę obiektów WebDocument."""
+    has_python_filters = any([portal, state, since, not_reviewed, no_obsidian])
+    db_limit = limit * 10 if has_python_filters else limit
+
     wb_db = WebsitesDBPostgreSQL(session=session)
-    doc_dicts = wb_db.get_list(document_type="webpage", limit=limit)
+    doc_dicts = wb_db.get_list(document_type="webpage", limit=db_limit)
 
     results = []
     for d in doc_dicts:
@@ -800,27 +813,152 @@ def _get_documents(session, limit: int = 50, since: Optional[str] = None,
             since_date = datetime.strptime(since, "%Y-%m-%d").date()
             if doc.created_at and doc.created_at.date() < since_date:
                 continue
+        if not_reviewed and doc.reviewed_at is not None:
+            continue
+        if no_obsidian and (doc.obsidian_note_paths or []) != []:
+            continue
         results.append(doc)
+        if len(results) >= limit:
+            break
     return results
 
 
 def cmd_list(session, since: Optional[str] = None, portal: Optional[str] = None,
-             state: Optional[str] = None, limit: int = 30):
+             state: Optional[str] = None, limit: int = 30, fmt: str = "table",
+             not_reviewed: bool = False, no_obsidian: bool = False):
     """Wyświetl listę artykułów z bazy."""
-    documents = _get_documents(session, limit=limit, since=since, portal=portal, state=state)
+    documents = _get_documents(session, limit=limit, since=since, portal=portal, state=state,
+                               not_reviewed=not_reviewed, no_obsidian=no_obsidian)
+
+    if fmt == "ids":
+        # Compact format: one ID per line — useful as input for scripts/Claude Code
+        for doc in documents:
+            print(doc.id)
+        return
+
+    if fmt == "short":
+        # ID + title — useful as input for Claude Code
+        for doc in documents:
+            title = (doc.title or "brak tytułu")[:100]
+            print(f"{doc.id}\t{title}")
+        return
 
     print(f"\nArtykuły w bazie ({len(documents)}):\n")
 
     for doc in documents:
         date_str = doc.created_at.strftime("%Y-%m-%d") if doc.created_at else "????"
         state_short = (doc.document_state or "?")[:15]
-        title = (doc.title or "brak tytułu")[:80]
-        print(f"  {doc.id:5d}  [{date_str}] [{state_short:15s}] {title}")
+        title = (doc.title or "brak tytułu")[:70]
+        reviewed = doc.reviewed_at.strftime("%Y-%m-%d") if doc.reviewed_at else "-"
+        obsidian_count = len(doc.obsidian_note_paths or [])
+        print(f"  {doc.id:5d}  [{date_str}] [{state_short:15s}] R:{reviewed:10s} O:{obsidian_count} {title}")
+
+
+def action_mark_reviewed(doc, session):
+    """Oznacz artykuł jako przejrzany (reviewed_at = NOW())."""
+    try:
+        doc.reviewed_at = datetime.now()
+        session.commit()
+        print(f"  Oznaczono jako przejrzany: {doc.reviewed_at.strftime('%Y-%m-%d %H:%M')}")
+    except Exception as e:
+        session.rollback()
+        print(f"  BŁĄD oznaczania: {e}")
+
+
+def action_track_obsidian_path(doc, session):
+    """Zapytaj użytkownika o ścieżkę notatki Obsidian i zapisz w DB."""
+    try:
+        note_path = input("  Ścieżka notatki Obsidian (pusta = pomiń): ").strip()
+    except (KeyboardInterrupt, EOFError):
+        return
+
+    if not note_path:
+        return
+
+    if os.path.isabs(note_path):
+        print("  UWAGA: ścieżka powinna być względna do vault Obsidian, nie absolutna.")
+        return
+    if not note_path.endswith(".md"):
+        print("  UWAGA: ścieżka notatki Obsidian powinna kończyć się na .md")
+        return
+
+    try:
+        paths = list(doc.obsidian_note_paths or [])
+        paths.append(note_path)
+        doc.obsidian_note_paths = paths
+        if not doc.reviewed_at:
+            doc.reviewed_at = datetime.now()
+        session.commit()
+        print(f"  Zapisano ścieżkę Obsidian ({len(paths)} notatek). Reviewed: {doc.reviewed_at.strftime('%Y-%m-%d %H:%M')}")
+    except Exception as e:
+        session.rollback()
+        print(f"  BŁĄD zapisu ścieżki: {e}")
+
+
+def action_mark_review(doc, session):
+    """Przełącz status artykułu na NEED_MANUAL_REVIEW lub cofnij do poprzedniego."""
+    current = doc.document_state
+    if current == StalkerDocumentStatus.NEED_MANUAL_REVIEW.name:
+        print(f"  Aktualny status: NEED_MANUAL_REVIEW")
+        print("  [1] MD_SIMPLIFIED  [2] DOCUMENT_INTO_DATABASE  [3] Anuluj")
+        try:
+            choice = input("  Nowy status > ").strip()
+        except (KeyboardInterrupt, EOFError):
+            return
+        new_state = {
+            "1": StalkerDocumentStatus.MD_SIMPLIFIED.name,
+            "2": StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name,
+        }.get(choice)
+        if not new_state:
+            print("  Anulowano.")
+            return
+    else:
+        new_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+        print(f"  Oznaczam do ręcznej poprawki: {current} → {new_state}")
+
+    try:
+        doc.document_state = new_state
+        session.commit()
+        print(f"  Status zmieniony na: {new_state}")
+    except Exception as e:
+        session.rollback()
+        print(f"  BŁĄD zmiany statusu: {e}")
+
+
+def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False):
+    """Wyświetl artykuł (metadane + treść) i zakończ — tryb nieinteraktywny."""
+    if article_id is None:
+        print("ERROR: --show wymaga --id <ARTICLE_ID>")
+        sys.exit(1)
+
+    doc = WebDocument.get_by_id(session, article_id)
+    if doc is None:
+        print(f"Dokument {article_id} nie znaleziony.")
+        sys.exit(1)
+
+    date_str = doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else "????"
+    detected_portal = _detect_portal(doc.url) or "?"
+
+    print(f"--- ID: {doc.id} ---")
+    print(f"  Tytuł:   {doc.title}")
+    print(f"  Data:    {date_str}")
+    print(f"  Portal:  {detected_portal}")
+    print(f"  URL:     {doc.url}")
+    print(f"  Stan:    {doc.document_state}")
+    print(f"  Typ:     {doc.document_type}")
+    print(f"  Język:   {doc.language}")
+    print(f"  Źródło:  {doc.source}")
+
+    article = get_article_text(doc, session)
+    if article:
+        action_view(article, check_urls=check_urls)
+    else:
+        print("\n  Nie udało się pobrać treści artykułu.")
 
 
 def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = None,
                start_id: Optional[int] = None, limit: int = 50, auto_view: bool = False,
-               check_urls: bool = False):
+               check_urls: bool = False, not_reviewed: bool = False, no_obsidian: bool = False):
     """Interaktywny przegląd artykułów."""
     if start_id:
         # Gdy podano --id, zacznij od tego dokumentu (nawet jeśli nie jest na liście)
@@ -830,12 +968,14 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
             return
         filtered = [doc]
         # Dodaj kolejne dokumenty z listy (po start_id)
-        all_docs = _get_documents(session, limit=limit, since=since, portal=portal)
+        all_docs = _get_documents(session, limit=limit, since=since, portal=portal,
+                                  not_reviewed=not_reviewed, no_obsidian=no_obsidian)
         for d in all_docs:
             if d.id != start_id:
                 filtered.append(d)
     else:
-        filtered = _get_documents(session, limit=limit, since=since, portal=portal)
+        filtered = _get_documents(session, limit=limit, since=since, portal=portal,
+                                  not_reviewed=not_reviewed, no_obsidian=no_obsidian)
 
     if not filtered:
         print("Brak artykułów do przeglądu.")
@@ -881,7 +1021,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                 print(f"\n  NOTATKA: {note_file}")
 
         print()
-        print("  [n]ext  [p]rev  [v]iew  [r]efresh  [d]b save  [s]ave note  [o]bsidian  [c]ompare  [q]uit")
+        print("  [n]ext  [p]rev  [v]iew  [r]efresh  [w]rite to db  [s]ave note  [d]one/reviewed  [m]ark review  [o]bsidian  [c]ompare  [q]uit")
 
         while True:
             try:
@@ -904,7 +1044,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
 
             elif action in ("r", "refresh"):
                 # Usuń cache LLM extracted i ponów analizę
-                cache_dir_base_r = (load_config().get("CACHE_DIR") or "tmp/markdown")
+                cache_dir_base_r = os.path.join(load_config().get("CACHE_DIR") or "tmp", "markdown")
                 cache_dir_r = os.path.join(cache_dir_base_r, str(doc.id))
                 import glob as glob_mod
                 for f in glob_mod.glob(os.path.join(cache_dir_r, "*_llm_extracted_article.md")):
@@ -923,13 +1063,17 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                     print("  Nie udało się pobrać treści artykułu.")
                 continue
 
-            elif action in ("d", "db"):
+            elif action in ("w", "write"):
                 if article is None:
                     article = get_article_text(doc, session)
                 if article:
                     action_save_to_db(doc, article, session)
                 else:
                     print("  Nie udało się pobrać treści artykułu.")
+                continue
+
+            elif action in ("d", "done"):
+                action_mark_reviewed(doc, session)
                 continue
 
             elif action in ("s", "save"):
@@ -946,6 +1090,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                     article = get_article_text(doc, session)
                 if article:
                     action_obsidian(doc, _article_full_text(article))
+                    action_track_obsidian_path(doc, session)
                 else:
                     print("  Nie udało się pobrać treści artykułu.")
                 break
@@ -959,12 +1104,16 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                     print("  Nie udało się pobrać treści artykułu.")
                 continue
 
+            elif action in ("m", "mark"):
+                action_mark_review(doc, session)
+                continue
+
             elif action in ("q", "quit"):
                 print("Przegląd zakończony.")
                 return
 
             else:
-                print("  Nieznana komenda. Użyj: n, p, v, d, s, o, c, q")
+                print("  Nieznana komenda. Użyj: n, p, v, d, s, m, o, c, q")
 
 
 def cmd_notes():
@@ -999,6 +1148,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--list", action="store_true", help="Lista artykułów")
     group.add_argument("--review", action="store_true", help="Interaktywny przegląd")
+    group.add_argument("--show", action="store_true", help="Wyświetl artykuł i zakończ (wymaga --id)")
     group.add_argument("--notes", action="store_true", help="Pokaż zapisane notatki do przetworzenia")
 
     parser.add_argument("--since", default=None, help="Data od (YYYY-MM-DD)")
@@ -1008,6 +1158,10 @@ def main():
     parser.add_argument("--view", action="store_true", help="Automatycznie pokaż treść przy --review")
     parser.add_argument("--check-urls", action="store_true", help="Sprawdź dostępność obrazków i linków")
     parser.add_argument("--limit", type=int, default=50, help="Maks. artykułów (domyślnie 50)")
+    parser.add_argument("--format", choices=["table", "ids", "short"], default="table",
+                        help="Format wyjścia --list: table (domyślnie), ids (same ID), short (ID + tytuł)")
+    parser.add_argument("--not-reviewed", action="store_true", help="Tylko nieprzejrzane artykuły (reviewed_at IS NULL)")
+    parser.add_argument("--no-obsidian", action="store_true", help="Tylko bez notatek Obsidian (obsidian_note_paths = [])")
     args = parser.parse_args()
 
     if args.notes:
@@ -1018,13 +1172,17 @@ def main():
     session = get_session()
 
     try:
-        if args.list:
+        if args.show:
+            cmd_show(session, article_id=args.id, check_urls=args.check_urls)
+        elif args.list:
             cmd_list(session, since=args.since, portal=args.portal,
-                     state=args.state, limit=args.limit)
+                     state=args.state, limit=args.limit, fmt=args.format,
+                     not_reviewed=args.not_reviewed, no_obsidian=args.no_obsidian)
         elif args.review:
             cmd_review(session, since=args.since, portal=args.portal,
                        start_id=args.id, limit=args.limit, auto_view=args.view,
-                       check_urls=args.check_urls)
+                       check_urls=args.check_urls,
+                       not_reviewed=args.not_reviewed, no_obsidian=args.no_obsidian)
     finally:
         session.close()
 
