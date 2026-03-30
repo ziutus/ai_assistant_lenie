@@ -94,7 +94,7 @@ embedding_update = False
 ignore_regexp_issue = True
 llm_fallback_enabled = True
 llm_fallback_model = "speakleash/Bielik-11B-v3.0-Instruct"
-cache_dir_base = cfg.get("CACHE_DIR") or "tmp/markdown"
+cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
 split_limit = 200
 
 
@@ -227,7 +227,7 @@ if __name__ == '__main__':
                 logger.info("Ignoring document as is error is ERROR_DOWNLOAD...")
                 continue
 
-            cache_dir = f"{cache_dir_base}/{document_id}"
+            cache_dir = os.path.join(cache_dir_base, str(document_id))
             if not os.path.exists(cache_dir):
                 logger.debug(f"Creating cache directory {cache_dir}")
                 os.makedirs(cache_dir)
@@ -237,9 +237,9 @@ if __name__ == '__main__':
                 continue
 
             metadata = {"document_id": document_id}
-            cache_file_html = f"{cache_dir}/{document_id}.html"
-            cache_file_step_1_md = f"{cache_dir}/{document_id}_step_1_all.md"
-            cache_file_step_2_md = f"{cache_dir}/{document_id}_step_2_1_article.md"
+            cache_file_html = os.path.join(cache_dir, f"{document_id}.html")
+            cache_file_step_1_md = os.path.join(cache_dir, f"{document_id}_step_1_all.md")
+            cache_file_step_2_md = os.path.join(cache_dir, f"{document_id}_step_2_1_article.md")
 
             logger.info("Step 1: preparing markdown from HTML file")
             logger.debug("Taking markdown content from local cache or from remote cache (S3)")
@@ -415,32 +415,32 @@ if __name__ == '__main__':
             logger.info("Changing windows line breaks to linux")
             markdown = re.sub(r'\r\n', '\n', markdown)
 
-            with open(f"{cache_dir}/{document_id}_step_2_2_linux_eol.md", 'w', encoding="utf-8") as file:
+            with open(os.path.join(cache_dir, f"{document_id}_step_2_2_linux_eol.md"), 'w', encoding="utf-8") as file:
                 file.write(markdown)
 
             logger.info("\nStep 3 - correcting links multiline issue")
 
             logger.debug(" Putting links into one line")
             markdown = links_correct(markdown)
-            with open(f"{cache_dir}/{document_id}_step_3_1_links_one_line.md", 'w', encoding="utf-8") as file:
+            with open(os.path.join(cache_dir, f"{document_id}_step_3_1_links_one_line.md"), 'w', encoding="utf-8") as file:
                 file.write(markdown)
 
             logger.debug(" Putting square brackets into one line")
             markdown = md_square_brackets_in_one_line(markdown)
-            with open(f"{cache_dir}/{document_id}_step_3_2_square_brackets_one_line.md", 'w', encoding="utf-8") as file:
+            with open(os.path.join(cache_dir, f"{document_id}_step_3_2_square_brackets_one_line.md"), 'w', encoding="utf-8") as file:
                 file.write(markdown)
 
             logger.info("\nStep 4 - converting markdown to text and creating metadata part for links and images")
 
             markdown, metadata["images_links"], metadata["links_as_images"] = md_get_images_as_links(markdown)
             logger.debug("4.0 Extracting images as links from markdown")
-            with open(f"{cache_dir}/{document_id}_step_4_0_without_links_as_images.md", 'w', encoding="utf-8") as file:
+            with open(os.path.join(cache_dir, f"{document_id}_step_4_0_without_links_as_images.md"), 'w', encoding="utf-8") as file:
                 file.write(markdown)
 
             logger.debug("4.1 Extracting images from markdown")
             markdown, metadata["images"] = get_images_with_links_md(markdown)
 
-            with open(f"{cache_dir}/{document_id}_step_4_1_without_images.md", 'w', encoding="utf-8") as file:
+            with open(os.path.join(cache_dir, f"{document_id}_step_4_1_without_images.md"), 'w', encoding="utf-8") as file:
                 file.write(markdown)
 
             logger.debug("Removing NBSP from markdown")
@@ -453,7 +453,7 @@ if __name__ == '__main__':
             logger.debug("Removing links from markdown and adding into metadata part")
             markdown, metadata["links"] = process_markdown_and_extract_links(markdown)
 
-            with open(f"{cache_dir}/{document_id}_step_4_2_without_links.md", 'w', encoding="utf-8") as file:
+            with open(os.path.join(cache_dir, f"{document_id}_step_4_2_without_links.md"), 'w', encoding="utf-8") as file:
                 logger.debug("Writing markdown to file from step 4")
                 file.write(markdown)
 
@@ -517,12 +517,12 @@ if __name__ == '__main__':
 
                 markdown = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown, flags=re.MULTILINE)
 
-            with open(f"{cache_dir}/{document_id}_step_5_without_portal_adding.md", 'w', encoding="utf-8") as file:
+            with open(os.path.join(cache_dir, f"{document_id}_step_5_without_portal_adding.md"), 'w', encoding="utf-8") as file:
                 logger.debug("Writing markdown to file from step 5")
                 file.write(markdown)
 
             logger.debug("Writing final metadata file")
-            with open(f"{cache_dir}/{document_id}_metadata.json", 'w', encoding="utf-8") as file:
+            with open(os.path.join(cache_dir, f"{document_id}_metadata.json"), 'w', encoding="utf-8") as file:
                 file.write(json.dumps(metadata, indent=4))
 
 
@@ -554,7 +554,7 @@ if __name__ == '__main__':
 
             markdown = re.sub('\n{3,10}', '\n\n', markdown)
 
-            with open(f"{cache_dir}/{document_id}_step_6.md", "w", encoding="utf-8") as f:
+            with open(os.path.join(cache_dir, f"{document_id}_step_6.md"), "w", encoding="utf-8") as f:
                 f.write(markdown)
 
             logger.info(f"Raw text has {len(markdown.split())} words")

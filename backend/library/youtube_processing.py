@@ -8,6 +8,8 @@ from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 import assemblyai as aai
 from youtube_transcript_api import YouTubeTranscriptApi, TranscriptsDisabled
 
+from library.config_loader import load_config
+
 from sqlalchemy.orm import Session
 
 from library.db.models import WebDocument, TranscriptionLog
@@ -62,8 +64,10 @@ def process_youtube_url(
     # Clean URL — remove playlist, timestamp and other extra params
     youtube_url = clean_youtube_url(youtube_url)
 
-    # Config from env vars with parameter fallbacks
-    cache_dir = cache_dir or os.getenv("CACHE_DIR", "cache")
+    # Config from caller or config fallback
+    if not cache_dir:
+        cfg = load_config()
+        cache_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "youtube_to_text")
 
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir)

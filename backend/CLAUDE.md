@@ -102,7 +102,7 @@ Standalone scripts for bulk document operations. Run manually, not part of the F
 | `web_documents_do_the_needful_new.py` | Full pipeline: download webpage content, transcribe YouTube videos (AssemblyAI/AWS Transcribe), detect language, generate embeddings, store to PostgreSQL + S3 | **Yes** |
 | `webdocument_md_decode.py` | Markdown decoding, link extraction and correction, prepare content for embedding | **Yes** |
 | `webdocument_prepare_regexp_by_ai.py` | Generate site-specific regex patterns for article extraction using LLM | **Yes** |
-| `markdown_to_embedding.py` | Convert markdown files from `tmp/markdown_output/` into embeddings. Supports manual corrections via `{id}_manual.md` files | No |
+| `markdown_to_embedding.py` | Convert markdown files from `{CACHE_DIR}/markdown/` into embeddings. Supports manual corrections via `{id}_manual.md` files | No |
 
 ### Database connectivity requirement
 

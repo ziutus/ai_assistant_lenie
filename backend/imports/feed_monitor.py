@@ -26,6 +26,7 @@ import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Optional
@@ -35,9 +36,12 @@ import requests
 import yaml
 from sqlalchemy.exc import OperationalError as SAOperationalError
 
+from sqlalchemy import select
+
 from library.config_loader import load_config
 from library.db.engine import get_session
-from library.db.models import WebDocument
+from library.db.models import ImportLog, WebDocument
+from library.import_log_tracker import ImportLogTracker
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_type import StalkerDocumentType
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
@@ -371,7 +375,21 @@ def determine_since_date(feed_config: dict, session, explicit_since: Optional[st
         websites = WebsitesDBPostgreSQL(session=session)
         last_date = websites.get_last_by_source(source_name)
         if last_date:
-            print(f"  Last import in DB: {last_date}")
+            # Show import_logs date as informational context
+            try:
+                log_date = session.scalar(
+                    select(ImportLog.until_date)
+                    .where(ImportLog.script_name == "feed_monitor")
+                    .where(ImportLog.status == "success")
+                    .order_by(ImportLog.finished_at.desc())
+                    .limit(1)
+                )
+                if log_date:
+                    print(f"  Last import in DB: {last_date} (import_logs: {log_date})")
+                else:
+                    print(f"  Last import in DB: {last_date}")
+            except Exception:
+                print(f"  Last import in DB: {last_date}")
             return last_date
 
     # Try state file
@@ -588,78 +606,107 @@ def cmd_import(feeds: list[dict], since: Optional[str] = None, source_filter: Op
     added = 0
     errors = 0
 
-    # --- Auto-import feeds (no user interaction) ---
-    if auto_items:
-        print(f"\n{'='*60}")
-        print(f"Auto-importing {len(auto_items)} items:")
-        print(f"{'='*60}")
+    # Set up import log tracking
+    if session and not dry_run:
+        tracker_params = {"source_filter": source_filter, "limit": limit}
+        if since:
+            tracker_params["since"] = since
+        tracker_ctx = ImportLogTracker("feed_monitor", tracker_params)
+    else:
+        tracker_ctx = nullcontext()
 
-        for idx, feed, entry in auto_items:
-            if limit and added >= limit:
-                print(f"Limit reached ({limit})")
-                break
+    try:
+        with tracker_ctx as tracker:
+            if tracker and since:
+                try:
+                    tracker.set_dates(
+                        since_date=datetime.strptime(since, "%Y-%m-%d").date(),
+                        until_date=datetime.now().date(),
+                    )
+                except ValueError:
+                    pass  # since not in expected format — skip dates
 
-            if dry_run:
-                print(f"  DRY-RUN: [{entry['published'][:10]}] {entry['title'][:80]}")
-                added += 1
-                continue
+            # --- Auto-import feeds (no user interaction) ---
+            if auto_items:
+                print(f"\n{'='*60}")
+                print(f"Auto-importing {len(auto_items)} items:")
+                print(f"{'='*60}")
 
-            result = _import_entry(session, feed, entry)
-            if result == "added":
-                added += 1
-                print(f"  Added: {entry['title'][:70]}")
-            elif result == "error":
-                errors += 1
+                for idx, feed, entry in auto_items:
+                    if limit and added >= limit:
+                        print(f"Limit reached ({limit})")
+                        break
 
-    # --- Curated feeds (interactive selection) ---
-    if curated_items:
-        # Re-number for display
-        display_items = [(i + 1, f, e) for i, (_, f, e) in enumerate(curated_items)]
+                    if dry_run:
+                        print(f"  DRY-RUN: [{entry['published'][:10]}] {entry['title'][:80]}")
+                        added += 1
+                        continue
 
-        print(f"\n{'='*60}")
-        print(f"New items for review ({len(display_items)}):")
-        print(f"{'='*60}\n")
+                    result = _import_entry(session, feed, entry)
+                    if result == "added":
+                        added += 1
+                        print(f"  Added: {entry['title'][:70]}")
+                    elif result == "error":
+                        errors += 1
 
-        for idx, feed, entry in display_items:
-            date_str = entry["published"][:10] if entry["published"] else "????"
-            doc_type = detect_document_type(entry["url"])
-            print(f"  {idx:3d}. [{date_str}] [{doc_type}] {entry['title'][:80]}")
-            print(f"       Source: {feed['name']}")
-            print(f"       {entry['url']}")
-            if entry.get("summary"):
-                print(f"       {entry['summary'][:120]}")
-            print()
+            # --- Curated feeds (interactive selection) ---
+            if curated_items:
+                # Re-number for display
+                display_items = [(i + 1, f, e) for i, (_, f, e) in enumerate(curated_items)]
 
-        if dry_run:
-            print("DRY-RUN mode — no changes made.")
-        else:
-            print("Which items to import?")
-            print("  Enter numbers (e.g.: 1,3,5 or 1-5 or 'all' or 'none'):")
-            try:
-                selection = input("> ").strip()
-            except (KeyboardInterrupt, EOFError):
-                print("\nCancelled.")
-                session.close()
-                return
+                print(f"\n{'='*60}")
+                print(f"New items for review ({len(display_items)}):")
+                print(f"{'='*60}\n")
 
-            selected_indices = _parse_selection(selection, {idx for idx, _, _ in display_items})
+                for idx, feed, entry in display_items:
+                    date_str = entry["published"][:10] if entry["published"] else "????"
+                    doc_type = detect_document_type(entry["url"])
+                    print(f"  {idx:3d}. [{date_str}] [{doc_type}] {entry['title'][:80]}")
+                    print(f"       Source: {feed['name']}")
+                    print(f"       {entry['url']}")
+                    if entry.get("summary"):
+                        print(f"       {entry['summary'][:120]}")
+                    print()
 
-            for idx, feed, entry in display_items:
-                if idx not in selected_indices:
-                    continue
-                if limit and added >= limit:
-                    print(f"Limit reached ({limit})")
-                    break
+                if dry_run:
+                    print("DRY-RUN mode — no changes made.")
+                else:
+                    print("Which items to import?")
+                    print("  Enter numbers (e.g.: 1,3,5 or 1-5 or 'all' or 'none'):")
+                    try:
+                        selection = input("> ").strip()
+                    except (KeyboardInterrupt, EOFError):
+                        print("\nCancelled.")
+                        if session:
+                            session.close()
+                        return
 
-                result = _import_entry(session, feed, entry)
-                if result == "added":
-                    added += 1
-                    print(f"  Added: {entry['title'][:70]}")
-                elif result == "error":
-                    errors += 1
+                    selected_indices = _parse_selection(selection, {idx for idx, _, _ in display_items})
 
-    if session:
-        session.close()
+                    for idx, feed, entry in display_items:
+                        if idx not in selected_indices:
+                            continue
+                        if limit and added >= limit:
+                            print(f"Limit reached ({limit})")
+                            break
+
+                        result = _import_entry(session, feed, entry)
+                        if result == "added":
+                            added += 1
+                            print(f"  Added: {entry['title'][:70]}")
+                        elif result == "error":
+                            errors += 1
+
+            if tracker:
+                tracker.set_counts(
+                    found=len(all_items),
+                    added=added,
+                    skipped=existing_count,
+                    error=errors,
+                )
+    finally:
+        if session:
+            session.close()
 
     # Update state for all checked feeds
     for name in checked_feeds:
@@ -890,9 +937,9 @@ def cmd_review(feeds: list[dict], since: Optional[str] = None, source_filter: Op
                 result = _import_entry(session, feed, entry)
                 if result == "added":
                     added += 1
-                    print(f"  -> Added to Lenie (id assigned by DB)")
+                    print("  -> Added to Lenie (id assigned by DB)")
                 else:
-                    print(f"  -> Error adding entry")
+                    print("  -> Error adding entry")
                 break
 
             elif action in ("d", "discuss"):
@@ -930,7 +977,7 @@ def cmd_review(feeds: list[dict], since: Optional[str] = None, source_filter: Op
 
             elif action in ("e", "explain"):
                 url = entry["url"]
-                print(f"  Opening Claude Code...")
+                print("  Opening Claude Code...")
                 try:
                     subprocess.run(
                         ["claude", "-p", f"Pobierz i wyjasn mi po polsku ten artykul: {url}"],

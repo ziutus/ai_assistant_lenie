@@ -38,7 +38,8 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 **Running:**
 ```bash
 cd backend
-./imports/dynamodb_sync.py --since 2026-02-20
+./imports/dynamodb_sync.py                                  # auto-detect --since from last successful run
+./imports/dynamodb_sync.py --since 2026-02-20               # explicit date
 ./imports/dynamodb_sync.py --since 2026-02-20 --dry-run
 ./imports/dynamodb_sync.py --since 2026-02-20 --limit 10
 ./imports/dynamodb_sync.py --since 2026-02-20 --skip-s3
@@ -46,7 +47,7 @@ cd backend
 ```
 
 **Arguments:**
-- `--since YYYY-MM-DD` (required) — sync documents from this date onward
+- `--since YYYY-MM-DD` (optional) — sync from this date. If omitted, auto-detected from last successful run in `import_logs`
 - `--dry-run` — preview only, no DB writes or S3 downloads
 - `--limit N` — max documents to sync (for testing)
 - `--skip-s3` — metadata only, skip S3 file downloads
@@ -54,7 +55,7 @@ cd backend
 - `--env ENV` — environment for SSM path (default: `dev`)
 - `--table TABLE` — DynamoDB table name override (skips SSM lookup)
 - `--bucket BUCKET` — S3 bucket name override (skips SSM lookup)
-- `--data-dir PATH` — cache dir for S3 files (default: `CACHE_DIR` config or `tmp/markdown`)
+- `--data-dir PATH` — cache dir for S3 files (default: `os.path.join(CACHE_DIR, 'markdown')`)
 - `-y`, `--yes` — skip confirmation prompt (for automation)
 
 Before executing any operations, the script displays source (AWS profile, region) and target (PostgreSQL host/db/port/user) information, then asks for confirmation (`Continue? [y/N]`). Use `-y` to skip the prompt.

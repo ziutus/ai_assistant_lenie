@@ -1,6 +1,6 @@
 # Story 31.3: Parameterize SQL in Remaining DB Methods
 
-Status: review
+Status: done
 
 ## Story
 
@@ -149,10 +149,28 @@ None — no issues encountered during implementation.
 ### Change Log
 
 - 2026-03-13: Parameterized SQL in `get_documents_by_url()`, audited codebase (clean), added 14 SQL injection prevention tests.
+- 2026-03-28: Code review fixes — added `escape="\\"` to all `.like()`/`.ilike()` calls (`get_documents_by_url`, `get_list`), replaced fragile `inspect.getsource()` test with ESCAPE clause assertion, added bound-parameter verification to SQL injection tests.
+
+### Senior Developer Review (AI)
+
+**Reviewer:** Claude Opus 4.6 | **Date:** 2026-03-28
+
+**Issues Found:** 1 High, 3 Medium, 2 Low
+
+| ID | Severity | Description | Resolution |
+|----|----------|-------------|------------|
+| H1 | HIGH | `.like()`/`.ilike()` missing `escape="\\"` — wildcard escaping incomplete | **Fixed**: added `escape="\\"` to all 6 calls |
+| M1 | MEDIUM | Undocumented `get_last_by_source()` refactor in commit scope | Noted — already committed, out of scope |
+| M2 | MEDIUM | Test uses `inspect.getsource()` — fragile source code inspection | **Fixed**: replaced with ESCAPE clause SQL assertion |
+| M3 | MEDIUM | SQL injection tests check `str(compiled)` without verifying bound params | **Fixed**: added `compiled.params` verification |
+| L1 | LOW | Mixed Polish/English docstrings in same file | Deferred |
+| L2 | LOW | Story changes in mega-commit (26 files) | Deferred — historical |
+
+**Fixed:** 3 (H1, M2, M3) | **Deferred:** 3 (M1, L1, L2)
 
 ### File List
 
-- `backend/library/stalker_web_documents_db_postgresql.py` — Modified: `get_documents_by_url()` pattern fix (line 309-311)
-- `backend/tests/unit/test_sql_parameterization.py` — **NEW**: 14 unit tests for SQL parameterization
-- `_bmad-output/implementation-artifacts/31-3-parameterize-sql-in-remaining-db-methods.md` — Modified: task checkboxes, Dev Agent Record, status
+- `backend/library/stalker_web_documents_db_postgresql.py` — Modified: `get_documents_by_url()` pattern fix (line 309-311), added `escape="\\"` to `.like()` and all `.ilike()` calls in `get_list()`
+- `backend/tests/unit/test_sql_parameterization.py` — **NEW**: 14 unit tests for SQL parameterization; review fixes: replaced source inspection test, added bound-param assertions
+- `_bmad-output/implementation-artifacts/31-3-parameterize-sql-in-remaining-db-methods.md` — Modified: task checkboxes, Dev Agent Record, status, review notes
 - `_bmad-output/implementation-artifacts/sprint-status.yaml` — Modified: story status updated
