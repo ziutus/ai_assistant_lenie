@@ -98,7 +98,7 @@ def load_config() -> Config:
         logger.info("Config: loaded .env from %s", dotenv_path)
 
     backend_name = os.environ.get("SECRETS_BACKEND", "env")
-    logger.info("Config: using '%s' backend", backend_name)
+    logger.debug("Config: using '%s' backend", backend_name)
     backend = _create_backend(backend_name)
     _config = Config(backend.load())
 

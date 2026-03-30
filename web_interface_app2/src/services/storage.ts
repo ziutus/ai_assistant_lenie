@@ -12,19 +12,19 @@ const KEYS = {
 export const DEFAULT_API_URL = DEFAULT_API_URLS["AWS Serverless"];
 
 export function loadAuth(): AuthState | null {
-  const apiKey = localStorage.getItem(KEYS.apiKey);
-  if (!apiKey) return null;
+  const storedKey = localStorage.getItem(KEYS.apiKey);
+  if (!storedKey) return null;
 
   return {
     username: localStorage.getItem(KEYS.username) || '',
-    apiKey,
+    apiKey: atob(storedKey),
     apiUrl: localStorage.getItem(KEYS.apiUrl) || DEFAULT_API_URL,
   };
 }
 
 export function saveAuth(state: AuthState): void {
   localStorage.setItem(KEYS.username, state.username);
-  localStorage.setItem(KEYS.apiKey, state.apiKey);
+  localStorage.setItem(KEYS.apiKey, btoa(state.apiKey));
   localStorage.setItem(KEYS.apiUrl, state.apiUrl);
 }
 

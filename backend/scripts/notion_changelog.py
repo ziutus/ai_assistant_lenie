@@ -12,6 +12,7 @@ Usage:
 
 import argparse
 import io
+import logging
 import sys
 from datetime import datetime
 
@@ -138,7 +139,7 @@ def main():
     args = parser.parse_args()
 
     config = load_config()
-    print(f"Config backend: {config.get('SECRETS_BACKEND', 'env')}")
+    logging.debug("Config backend: %s", config.get('SECRETS_BACKEND', 'env'))
 
     db_host = config.get("POSTGRESQL_HOST", "localhost")
     db_port = config.get("POSTGRESQL_PORT", "5432")
