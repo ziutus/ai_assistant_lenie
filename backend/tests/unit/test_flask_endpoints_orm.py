@@ -444,11 +444,13 @@ class TestUrlAdd:
         mock_doc.id = 100
         with patch("server.get_scoped_session", return_value=mock_session):
             with patch("server.WebDocument", return_value=mock_doc):
-                resp = client.post("/url_add", json={
-                    "url": "https://example.com",
-                    "type": "link",
-                    "title": "Test Link",
-                }, headers=API_HEADERS, content_type="application/json")
+                with patch("server.cfg") as mock_cfg:
+                    mock_cfg.get.return_value = None  # disable S3 (avoids boto3 import)
+                    resp = client.post("/url_add", json={
+                        "url": "https://example.com",
+                        "type": "link",
+                        "title": "Test Link",
+                    }, headers=API_HEADERS, content_type="application/json")
 
         assert resp.status_code == 200
         data = resp.get_json()
@@ -471,12 +473,14 @@ class TestUrlAdd:
         mock_doc.id = 101
         with patch("server.get_scoped_session", return_value=mock_session):
             with patch("server.WebDocument", return_value=mock_doc):
-                resp = client.post("/url_add", json={
-                    "url": "https://example.com/article",
-                    "type": "link",
-                    "title": "An Article",
-                    "source": "manual",
-                }, headers=API_HEADERS, content_type="application/json")
+                with patch("server.cfg") as mock_cfg:
+                    mock_cfg.get.return_value = None  # disable S3 (avoids boto3 import)
+                    resp = client.post("/url_add", json={
+                        "url": "https://example.com/article",
+                        "type": "link",
+                        "title": "An Article",
+                        "source": "manual",
+                    }, headers=API_HEADERS, content_type="application/json")
 
         assert resp.status_code == 200
         data = resp.get_json()

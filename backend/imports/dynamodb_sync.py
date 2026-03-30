@@ -9,7 +9,8 @@ using the project/environment convention: /{project}/{env}/...
 
 Usage:
     cd backend
-    ./imports/dynamodb_sync.py --since 2026-02-20
+    ./imports/dynamodb_sync.py                                  # auto-detect --since from last successful run
+    ./imports/dynamodb_sync.py --since 2026-02-20               # explicit date
     ./imports/dynamodb_sync.py --since 2026-02-20 --dry-run
     ./imports/dynamodb_sync.py --since 2026-02-20 --limit 10
     ./imports/dynamodb_sync.py --since 2026-02-20 --skip-s3
@@ -17,19 +18,28 @@ Usage:
     ./imports/dynamodb_sync.py --since 2026-02-20 --data-dir /custom/cache
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import sys
-from datetime import datetime, timedelta
+from contextlib import nullcontext
+from datetime import date, datetime, timedelta
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 import boto3
 from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
 from library.config_loader import load_config
-from library.db.models import WebDocument
 from library.db.engine import get_session
+from library.db.models import ImportLog, WebDocument
+from library.import_log_tracker import ImportLogTracker
 from library.models.stalker_document_status import StalkerDocumentStatus
 
 cfg = load_config()
@@ -219,10 +229,26 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
         return "error", None
 
 
+def get_last_successful_sync_date(session: "Session") -> date | None:
+    """Get until_date from the most recent successful dynamodb_sync run.
+
+    Uses finished_at (not started_at) for ordering — ensures we get the most
+    recently *completed* run, not just the most recently *started* one.
+    """
+    result = session.scalar(
+        select(ImportLog.until_date)
+        .where(ImportLog.script_name == "dynamodb_sync")
+        .where(ImportLog.status == "success")
+        .order_by(ImportLog.finished_at.desc())
+        .limit(1)
+    )
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description="Sync documents from DynamoDB + S3 to local PostgreSQL")
-    parser.add_argument("--since", required=True, metavar="YYYY-MM-DD",
-                        help="Sync documents from this date, e.g. --since 2026-02-20")
+    parser.add_argument("--since", required=False, default=None, metavar="YYYY-MM-DD",
+                        help="Sync from this date (YYYY-MM-DD). If omitted, auto-detected from last successful run.")
     parser.add_argument("--dry-run", action="store_true", help="Preview only, no DB writes or S3 downloads")
     parser.add_argument("--limit", type=int, default=0, help="Max documents to sync (0 = unlimited)")
     parser.add_argument("--skip-s3", action="store_true", help="Skip S3 file downloads (metadata only)")
@@ -230,20 +256,44 @@ def main():
     parser.add_argument("--env", default="dev", help="Environment for SSM path (default: dev)")
     parser.add_argument("--table", default=None, help="DynamoDB table name override (skips SSM lookup)")
     parser.add_argument("--bucket", default=None, help="S3 bucket name override (skips SSM lookup)")
-    parser.add_argument("--data-dir", default=None, help="Cache dir for S3 files (default: CACHE_DIR config or tmp/markdown)")
+    parser.add_argument("--data-dir", default=None, help="Cache dir for S3 files (default: os.path.join(CACHE_DIR, 'markdown'))")
     parser.add_argument("-y", "--yes", action="store_true", help="Skip confirmation prompt")
     args = parser.parse_args()
 
     # Resolve cache dir default from config
     if args.data_dir is None:
-        args.data_dir = cfg.get("CACHE_DIR") or "tmp/markdown"
+        args.data_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
 
-    # Validate date format
+    # Auto-detect last successful sync date (one DB connection for both paths)
+    auto_date = None
     try:
-        datetime.strptime(args.since, "%Y-%m-%d")
-    except ValueError:
-        print(f"ERROR: invalid date format '{args.since}', expected YYYY-MM-DD")
-        sys.exit(1)
+        detect_session = get_session()
+        try:
+            auto_date = get_last_successful_sync_date(detect_session)
+        finally:
+            detect_session.close()
+    except (SQLAlchemyError, OSError) as e:
+        if args.since is None:
+            print(f"ERROR: Cannot connect to database for auto-detection: {e}")
+            print("Please provide --since YYYY-MM-DD explicitly, or fix the database connection.")
+            sys.exit(1)
+
+    if args.since is None:
+        if auto_date is None:
+            print("ERROR: No previous sync found. Please provide --since YYYY-MM-DD for the first run.")
+            sys.exit(1)
+        args.since = auto_date.strftime("%Y-%m-%d")
+        print(f"Auto-detected --since {args.since} from last successful sync")
+    else:
+        try:
+            datetime.strptime(args.since, "%Y-%m-%d")
+        except ValueError:
+            print(f"ERROR: invalid date format '{args.since}', expected YYYY-MM-DD")
+            sys.exit(1)
+        if auto_date:
+            print(f"Using explicit --since {args.since} (overriding auto-detected {auto_date})")
+        else:
+            print(f"Using explicit --since {args.since}")
 
     print("=== DynamoDB -> PostgreSQL sync ===")
     print(f"Project: {args.project}, Environment: {args.env}")
@@ -303,46 +353,66 @@ def main():
     errors = 0
 
     session = None if args.dry_run else get_session()
+    if session and not args.dry_run:
+        tracker_params = {
+            "since": args.since,
+            "limit": args.limit,
+            "skip_s3": args.skip_s3,
+            "project": args.project,
+            "env": args.env,
+        }
+        tracker_ctx = ImportLogTracker("dynamodb_sync", tracker_params)
+    else:
+        tracker_ctx = nullcontext()
+
     try:
-        for i, item in enumerate(items, 1):
-            url = item.get("url", "(no url)")
-            print(f"\n[{i}/{len(items)}] {url[:100]}")
+        with tracker_ctx as tracker:
+            if tracker:
+                since_date = datetime.strptime(args.since, "%Y-%m-%d").date()
+                tracker.set_dates(since_date=since_date, until_date=datetime.now().date())
 
-            # Check for duplicate before downloading S3 content
-            text_content = None
-            html_content = None
+            for i, item in enumerate(items, 1):
+                url = item.get("url", "(no url)")
+                print(f"\n[{i}/{len(items)}] {url[:100]}")
 
-            if not args.dry_run:
-                try:
-                    existing = WebDocument.get_by_url(session, item.get("url", ""))
-                except Exception as e:
-                    print(f"  ERROR checking URL: {e}")
-                    errors += 1
-                    continue
-                if existing is not None:
-                    print(f"  SKIP: already exists (id={existing.id})")
+                # Check for duplicate before downloading S3 content
+                text_content = None
+                html_content = None
+
+                if not args.dry_run:
+                    try:
+                        existing = WebDocument.get_by_url(session, item.get("url", ""))
+                    except Exception as e:
+                        print(f"  ERROR checking URL: {e}")
+                        errors += 1
+                        continue
+                    if existing is not None:
+                        print(f"  SKIP: already exists (id={existing.id})")
+                        skipped += 1
+                        continue
+
+                # Fetch S3 content into memory (no disk write yet)
+                s3_uuid = item.get("s3_uuid")
+                doc_type = item.get("type", "link")
+
+                if s3_uuid and doc_type == "webpage" and not args.skip_s3 and not args.dry_run:
+                    text_content, html_content = fetch_s3_content(s3_client, bucket, s3_uuid)
+
+                result, doc_id = sync_item_to_postgres(item, text_content, html_content, args.dry_run, session=session)
+
+                # Save cache files after successful insert (doc_id now available)
+                if result == "added" and doc_id and (text_content or html_content):
+                    save_cache_files(doc_id, text_content, html_content, args.data_dir)
+
+                if result == "added":
+                    added += 1
+                elif result == "skipped":
                     skipped += 1
-                    continue
+                else:
+                    errors += 1
 
-            # Fetch S3 content into memory (no disk write yet)
-            s3_uuid = item.get("s3_uuid")
-            doc_type = item.get("type", "link")
-
-            if s3_uuid and doc_type == "webpage" and not args.skip_s3 and not args.dry_run:
-                text_content, html_content = fetch_s3_content(s3_client, bucket, s3_uuid)
-
-            result, doc_id = sync_item_to_postgres(item, text_content, html_content, args.dry_run, session=session)
-
-            # Save cache files after successful insert (doc_id now available)
-            if result == "added" and doc_id and (text_content or html_content):
-                save_cache_files(doc_id, text_content, html_content, args.data_dir)
-
-            if result == "added":
-                added += 1
-            elif result == "skipped":
-                skipped += 1
-            else:
-                errors += 1
+            if tracker:
+                tracker.set_counts(found=len(items), added=added, skipped=skipped, error=errors)
     finally:
         if session is not None:
             session.close()

@@ -84,6 +84,8 @@ def _detect_portal(url: str) -> str | None:
         return "interia"
     if "businessinsider.com.pl" in url_lower:
         return "businessinsider"
+    if "national-geographic.pl" in url_lower:
+        return "natgeo"
     return None
 
 
@@ -121,6 +123,12 @@ PORTAL_FOOTER_MARKERS = {
         "Dziękujemy, że przeczytałaś/eś",
         "## Autor",
     ],
+    "natgeo": [
+        "#### Nasza autorka",
+        "#### Nasz autor",
+        "Redakcja poleca",
+        "### ZAPISZ SIĘ NA NEWSLETTER",
+    ],
 }
 
 # Wzorce wewnątrz artykułu do pominięcia per portal (sekcje reklamowe/premium)
@@ -135,6 +143,9 @@ PORTAL_SKIP_SECTIONS = {
     "wp": [],
     "interia": [],
     "businessinsider": [],
+    "natgeo": [
+        "### Więcej pogłębionych treści",
+    ],
 }
 
 # Jednolinijkowe frazy do pominięcia per portal
@@ -158,6 +169,12 @@ PORTAL_SKIP_LINES = {
     "businessinsider": [
         "Udostępnij artykuł",
         "Dalszy ciąg materiału pod wideo",
+    ],
+    "natgeo": [
+        "Udostępnij na facebook",
+        "Udostępnij na twitter",
+        "E-mail do przyjaciela",
+        "REKLAMA",
     ],
 }
 

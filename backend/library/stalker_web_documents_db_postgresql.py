@@ -54,11 +54,11 @@ class WebsitesDBPostgreSQL:
             escaped = search_in_documents.replace("%", "\\%").replace("_", "\\_")
             pattern = f"%{escaped}%"
             stmt = stmt.where(or_(
-                WebDocument.url.ilike(pattern),
-                WebDocument.text.ilike(pattern),
-                WebDocument.title.ilike(pattern),
-                WebDocument.summary.ilike(pattern),
-                WebDocument.chapter_list.ilike(pattern),
+                WebDocument.url.ilike(pattern, escape="\\"),
+                WebDocument.text.ilike(pattern, escape="\\"),
+                WebDocument.title.ilike(pattern, escape="\\"),
+                WebDocument.summary.ilike(pattern, escape="\\"),
+                WebDocument.chapter_list.ilike(pattern, escape="\\"),
             ))
 
         if count:
@@ -312,7 +312,7 @@ class WebsitesDBPostgreSQL:
         pattern = f"{escaped_url}%"
 
         stmt = select(WebDocument.id).where(
-            WebDocument.url.like(pattern),
+            WebDocument.url.like(pattern, escape="\\"),
             WebDocument.document_type == StalkerDocumentType.webpage.name,
             WebDocument.id > min_id,
             or_(

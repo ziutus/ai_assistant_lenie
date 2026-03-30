@@ -46,7 +46,7 @@ if __name__ == '__main__':
     documents = parse_document_ids()
 
     cfg = load_config()
-    cache_dir_base = cfg.get("CACHE_DIR") or "tmp/markdown"
+    cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
 
     session = get_session()
 
