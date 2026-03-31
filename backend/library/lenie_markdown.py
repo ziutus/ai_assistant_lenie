@@ -61,18 +61,17 @@ def links_correct(text):
     inside_link = False
     i=0
     while i < len(text):
-        if text[i] == "h" and text[i+1] == "t" and text[i+2] == "t" and text[i+3] == "p" and text[i+4] == "s" and \
-            text[i+5] == ":" and text[i+6] == "/" and text[i+7] == "/":
+        if i + 7 < len(text) and text[i:i+8] == "https://":
             inside_link = True
-            i+=8
+            i += 8
             text_new = text_new + "https://"
             continue
 
-        if inside_link and text[i] == " " or text[i] == ")" or text[i] == "]":
+        if inside_link and (text[i] == " " or text[i] == ")" or text[i] == "]"):
             inside_link = False
 
-        if inside_link and text[i] == '\r' and text[i+1] == '\n':
-            i+=2
+        if inside_link and text[i] == '\r' and i + 1 < len(text) and text[i+1] == '\n':
+            i += 2
             continue
 
         if inside_link and text[i] == '\n':
