@@ -12,16 +12,22 @@ Execute ALL steps below in order. Do NOT skip step 4 (database update).
 
 ### Step 1: Fetch article from database
 
-Run Python via `uv run` in the `backend/` directory to get article content:
-- Title, URL, date, state, language, source
-- Full text (`text_md` or `text` or `text_raw`)
-- Current `reviewed_at` and `obsidian_note_paths` values
+Use article_browser.py `--dump` mode — it outputs UTF-8 JSON with all metadata and full text:
+
+```bash
+cd backend && .venv/Scripts/python imports/article_browser.py --dump --id <ARTICLE_ID>
+```
+
+The JSON contains: `id`, `title`, `url`, `created_at`, `document_state`, `document_type`, `language`, `source`, `author`, `reviewed_at`, `obsidian_note_paths`, `text_length`, `text`.
 
 Display article metadata to the user.
 
 ### Step 2: Search Obsidian vault for related notes
 
-Search `C:\Users\ziutus\Obsydian\personal\02-wiedza` using Grep and Glob for notes related to the article's topic. Check keywords from the article title and content. Report what was found.
+Search `C:\Users\ziutus\Obsydian\personal\02-wiedza` using Grep and Glob for notes related to the article's topic:
+1. First search country files in `Kraje/**/*.md` (Glob + Grep)
+2. Then search by keywords from the article title and content
+3. Report what was found
 
 ### Step 3: Discuss with user and create/update notes
 
@@ -39,31 +45,39 @@ Wait for user input on what to create/update. Then create/update the Obsidian .m
 
 ### Step 4: Update database (MANDATORY — never skip)
 
-After creating/updating Obsidian notes, ALWAYS run Python to update the article in the database:
+After creating/updating Obsidian notes, ALWAYS update the article in the database.
+Use article_browser.py's ORM session pattern:
 
-```python
-# Append new note paths to obsidian_note_paths
+```bash
+cd backend && .venv/Scripts/python -c "
+from datetime import datetime
+from library.db.engine import get_session
+from library.db.models import WebDocument
+session = get_session()
+doc = WebDocument.get_by_id(session, <ARTICLE_ID>)
 paths = list(doc.obsidian_note_paths or [])
-paths.append("relative/path/to/note.md")  # relative to vault root
+paths.append('relative/path/to/note.md')
 doc.obsidian_note_paths = paths
-
-# Set reviewed_at if not already set
 if not doc.reviewed_at:
     doc.reviewed_at = datetime.now()
-
 session.commit()
+print(f'obsidian_note_paths: {doc.obsidian_note_paths}')
+print(f'reviewed_at: {doc.reviewed_at}')
+session.close()
+"
 ```
 
 Report the updated `obsidian_note_paths` and `reviewed_at` to confirm success.
 
 ### Step 5: Update cross-references (if applicable)
 
-If the article topic relates to existing notes (e.g., `Wojny dronowe.md`, country files), add a brief entry with a link to the new note using `[[Note Name]]` syntax.
+If the article topic relates to existing notes (e.g., country files, topic notes), add a brief entry with a link to the new note using `[[Note Name]]` syntax. Also update notes about countries/organizations mentioned in the article (e.g., if the article mentions Russia or China cooperation, update Rosja.md and Chiny.md too).
 
 ## Important
 
 - All notes and communication in **Polish**
 - Obsidian vault root: `C:\Users\ziutus\Obsydian\personal`
 - Knowledge directory: `C:\Users\ziutus\Obsydian\personal\02-wiedza`
-- Database runs in `backend/` directory, use `uv run` to execute Python
+- **NEVER use `uv run`** — it does not work in this project (hatchling build error)
+- Run commands from `backend/` dir: `cd backend && .venv/Scripts/python ...`
 - Always include source with Lenie AI id

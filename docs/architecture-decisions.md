@@ -801,3 +801,14 @@ The question arose whether to replace this custom layer with a framework like **
 ### Summary
 
 Track article review status and Obsidian note creation using two new columns on `web_documents` (`reviewed_at`, `obsidian_note_path`) for the current single-user system. Migrate to a `user_document_reviews` join table when multi-user authentication (B-33) is implemented in Phase 9. This avoids polluting the `document_state` processing pipeline with user-action states, which are orthogonal to technical document processing.
+
+## ADR-016: CloudFormation as Primary IaC — Evaluate CDK for Future Comparison
+
+**Date:** 2026-03-31
+**Status:** Accepted (CloudFormation); Proposed (CDK evaluation)
+**Decision Makers:** Ziutus
+**Full document:** [adr-016-cloudformation-vs-cdk.md](adr-016-cloudformation-vs-cdk.md)
+
+### Summary
+
+CloudFormation remains the primary IaC tool (29 battle-tested templates). A future CDK evaluation is planned — reimplement a self-contained pipeline (SQS + Lambda + DynamoDB) in CDK to compare developer experience, boilerplate, type safety, and testing. Not started — scheduled for Phase 5 of the [AWS Roadmap](aws-roadmap.md), after AWS restoration and CI/CD. See full document for evaluation plan and comparison criteria.
