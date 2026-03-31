@@ -10,6 +10,7 @@ Usage:
     python imports/article_browser.py --review --id 8786                  # Start from specific article
     python imports/article_browser.py --show --id 8799                    # Display article and exit (non-interactive)
     python imports/article_browser.py --show --id 8799 --check-urls       # Display with link validation
+    python imports/article_browser.py --dump --id 8805                    # JSON output for Claude Code
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW   # Articles needing manual review
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format ids    # Just IDs (for scripting)
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format short  # IDs + titles
@@ -714,12 +715,12 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     print(f"    Status: {doc.document_state} → MD_SIMPLIFIED → EMBEDDING_EXIST")
 
     try:
-        confirm = input("  Potwierdzasz? [y/N]: ").strip().lower()
+        confirm = input("  Potwierdzasz? [Y/n]: ").strip().lower()
     except (KeyboardInterrupt, EOFError):
         print()
         return False
 
-    if confirm != "y":
+    if confirm == "n":
         print("  Anulowano.")
         return False
 
@@ -925,6 +926,45 @@ def action_mark_review(doc, session):
         print(f"  BŁĄD zmiany statusu: {e}")
 
 
+def cmd_dump(session, article_id: Optional[int] = None):
+    """Wypisz artykuł jako JSON na stdout — do użycia przez Claude Code slash commands.
+
+    Zawiera metadane + pełny tekst (preferuje text_md > text > text_raw).
+    Wyjście jest UTF-8 JSON, bez interakcji, bez efektów ubocznych.
+    """
+    import json
+
+    if article_id is None:
+        print(json.dumps({"error": "--dump wymaga --id <ARTICLE_ID>"}), file=sys.stderr)
+        sys.exit(1)
+
+    doc = WebDocument.get_by_id(session, article_id)
+    if doc is None:
+        print(json.dumps({"error": f"Dokument {article_id} nie znaleziony."}), file=sys.stderr)
+        sys.exit(1)
+
+    text = doc.text_md or doc.text or doc.text_raw or ""
+
+    result = {
+        "id": doc.id,
+        "title": doc.title,
+        "url": doc.url,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "document_state": doc.document_state,
+        "document_type": doc.document_type,
+        "language": doc.language,
+        "source": doc.source,
+        "author": doc.author,
+        "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
+        "obsidian_note_paths": doc.obsidian_note_paths or [],
+        "text_length": len(text),
+        "text": text,
+    }
+
+    sys.stdout.reconfigure(encoding="utf-8")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False):
     """Wyświetl artykuł (metadane + treść) i zakończ — tryb nieinteraktywny."""
     if article_id is None:
@@ -948,6 +988,13 @@ def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False
     print(f"  Typ:     {doc.document_type}")
     print(f"  Język:   {doc.language}")
     print(f"  Źródło:  {doc.source}")
+    obsidian_paths = doc.obsidian_note_paths or []
+    if obsidian_paths:
+        print(f"  Obsidian: {len(obsidian_paths)} notatek")
+        for op in obsidian_paths:
+            print(f"    - {op}")
+    reviewed_str = doc.reviewed_at.strftime("%Y-%m-%d %H:%M") if doc.reviewed_at else "nie"
+    print(f"  Reviewed: {reviewed_str}")
 
     article = get_article_text(doc, session)
     if article:
@@ -996,6 +1043,13 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
         print(f"  Portal:  {detected_portal}")
         print(f"  URL:     {doc.url}")
         print(f"  Stan:    {doc.document_state}")
+        obsidian_paths = doc.obsidian_note_paths or []
+        if obsidian_paths:
+            print(f"  Obsidian: {len(obsidian_paths)} notatek")
+            for op in obsidian_paths:
+                print(f"    - {op}")
+        reviewed_str = doc.reviewed_at.strftime("%Y-%m-%d %H:%M") if doc.reviewed_at else "nie"
+        print(f"  Reviewed: {reviewed_str}")
 
         article = None  # lazy load (dict: text, links, images)
 
@@ -1149,6 +1203,7 @@ def main():
     group.add_argument("--list", action="store_true", help="Lista artykułów")
     group.add_argument("--review", action="store_true", help="Interaktywny przegląd")
     group.add_argument("--show", action="store_true", help="Wyświetl artykuł i zakończ (wymaga --id)")
+    group.add_argument("--dump", action="store_true", help="Wypisz artykuł jako JSON (do użycia przez Claude Code)")
     group.add_argument("--notes", action="store_true", help="Pokaż zapisane notatki do przetworzenia")
 
     parser.add_argument("--since", default=None, help="Data od (YYYY-MM-DD)")
@@ -1172,7 +1227,9 @@ def main():
     session = get_session()
 
     try:
-        if args.show:
+        if args.dump:
+            cmd_dump(session, article_id=args.id)
+        elif args.show:
             cmd_show(session, article_id=args.id, check_urls=args.check_urls)
         elif args.list:
             cmd_list(session, since=args.since, portal=args.portal,
