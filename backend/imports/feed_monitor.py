@@ -41,6 +41,7 @@ from sqlalchemy import select
 from library.config_loader import load_config
 from library.db.engine import get_session
 from library.db.models import ImportLog, WebDocument
+from library.document_service import DocumentService
 from library.import_log_tracker import ImportLogTracker
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_type import StalkerDocumentType
@@ -626,6 +627,8 @@ def cmd_import(feeds: list[dict], since: Optional[str] = None, source_filter: Op
                 except ValueError:
                     pass  # since not in expected format — skip dates
 
+            import_service = DocumentService(session) if session else None
+
             # --- Auto-import feeds (no user interaction) ---
             if auto_items:
                 print(f"\n{'='*60}")
@@ -642,7 +645,7 @@ def cmd_import(feeds: list[dict], since: Optional[str] = None, source_filter: Op
                         added += 1
                         continue
 
-                    result = _import_entry(session, feed, entry)
+                    result = _import_entry(session, feed, entry, service=import_service)
                     if result == "added":
                         added += 1
                         print(f"  Added: {entry['title'][:70]}")
@@ -690,7 +693,7 @@ def cmd_import(feeds: list[dict], since: Optional[str] = None, source_filter: Op
                             print(f"Limit reached ({limit})")
                             break
 
-                        result = _import_entry(session, feed, entry)
+                        result = _import_entry(session, feed, entry, service=import_service)
                         if result == "added":
                             added += 1
                             print(f"  Added: {entry['title'][:70]}")
@@ -721,28 +724,38 @@ def cmd_import(feeds: list[dict], since: Optional[str] = None, source_filter: Op
         print(f"Errors: {errors}")
 
 
-def _import_entry(session, feed_config: dict, entry: dict) -> str:
-    """Import a single entry into the database. Returns 'added' or 'error'."""
+def _import_entry(session, feed_config: dict, entry: dict, service=None) -> str:
+    """Import a single entry into the database via DocumentService. Returns 'added' or 'error'."""
     url = entry["url"]
     doc_type = detect_document_type(url)
+    doc_state = resolve_default_state(feed_config, doc_type)
 
-    doc = WebDocument(url=url)
-    doc.title = entry["title"]
+    metadata = {
+        "title": entry["title"],
+        "language": feed_config.get("language", "pl"),
+        "source": feed_config.get("source_id", feed_config["name"]),
+        "project": feed_config.get("project"),
+    }
+
     if entry.get("summary"):
-        doc.summary = entry["summary"]
-    doc.language = feed_config.get("language", "pl")
-    doc.document_type = doc_type
-    doc.source = feed_config.get("source_id", feed_config["name"])
-    doc.project = feed_config.get("project")
-    doc.document_state = resolve_default_state(feed_config, doc_type)
+        metadata["summary"] = entry["summary"]
 
     pub_date = parse_date(entry["published"])
     if pub_date:
-        doc.date_from = pub_date
+        metadata["date_from"] = pub_date
 
-    session.add(doc)
     try:
-        session.commit()
+        if service is None:
+            service = DocumentService(session)
+        doc, status = service.import_document(
+            url=url,
+            document_type=doc_type,
+            document_state=doc_state,
+            skip_if_exists=True,
+            **metadata,
+        )
+        if status == "skipped":
+            return "skipped"
         return "added"
     except SAOperationalError as e:
         session.rollback()

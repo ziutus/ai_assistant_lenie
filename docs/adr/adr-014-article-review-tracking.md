@@ -172,7 +172,7 @@ ALTER TABLE web_documents DROP COLUMN obsidian_note_paths;
 - [B-101: Track Obsidian Note Status for Articles](../\_bmad-output/planning-artifacts/epics/backlog.md)
 - [B-33: Implement user authentication with AWS Cognito](../\_bmad-output/implementation-artifacts/sprint-status.yaml)
 - [B-34: Add user ownership to database schema](../\_bmad-output/implementation-artifacts/sprint-status.yaml)
-- [ADR-004a: Migrate to SQLAlchemy ORM](architecture-decisions.md) — ORM model changes follow this pattern
-- [ADR-010: Database Lookup Tables with Foreign Keys](architecture-decisions.md) — Alembic migration pattern
+- [ADR-004a: Migrate to SQLAlchemy ORM](adr-004a-sqlalchemy-orm-migration.md) — ORM model changes follow this pattern
+- [ADR-010: Database Lookup Tables with Foreign Keys](adr-010-database-lookup-tables.md) — Alembic migration pattern
 - `backend/imports/article_browser.py` — primary consumer
 - `backend/library/db/models.py` — ORM model to extend

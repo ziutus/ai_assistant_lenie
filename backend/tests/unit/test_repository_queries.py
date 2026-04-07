@@ -77,7 +77,7 @@ class TestGetList:
         mock_row.document_state_error = None
         mock_row.note = "note"
         mock_row.project = "lenie"
-        mock_row.s3_uuid = "uuid-1"
+        mock_row.uuid = "uuid-1"
 
         session.execute.return_value.all.return_value = [mock_row]
 
@@ -93,7 +93,7 @@ class TestGetList:
         assert result[0]["document_state_error"] is None
         assert result[0]["note"] == "note"
         assert result[0]["project"] == "lenie"
-        assert result[0]["s3_uuid"] == "uuid-1"
+        assert result[0]["uuid"] == "uuid-1"
 
     def test_single_filter_document_type(self):
         session = MagicMock()
@@ -197,7 +197,7 @@ class TestGetList:
         mock_row.document_state_error = "ERROR_DOWNLOAD"
         mock_row.note = None
         mock_row.project = None
-        mock_row.s3_uuid = None
+        mock_row.uuid = None
 
         session.execute.return_value.all.return_value = [mock_row]
 
@@ -299,7 +299,7 @@ class TestGetReadyForDownload:
         session = MagicMock()
         repo = _make_repo(session)
 
-        row = _make_row(id=1, url="https://example.com", document_type="webpage", s3_uuid="uuid-1")
+        row = _make_row(id=1, url="https://example.com", document_type="webpage", uuid="uuid-1")
         session.execute.return_value.all.return_value = [row]
 
         result = repo.get_ready_for_download()

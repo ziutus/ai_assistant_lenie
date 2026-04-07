@@ -8,7 +8,7 @@ import uuid
 script_start = time.monotonic()
 print("=== web_documents_do_the_needful_new.py ===")
 
-from library.config_loader import load_config
+from library.config_loader import load_config  # noqa: E402
 
 # Ładowanie konfiguracji (obsługuje .env, Vault, AWS SSM)
 print("Loading configuration...", end=" ", flush=True)
@@ -125,10 +125,11 @@ if __name__ == '__main__':
     t0 = time.monotonic()
     from library.db.models import WebDocument
     from library.db.engine import get_session
-    from library.embedding import get_embedding
+    from library.document_service import DocumentService
     from library.models.stalker_document_status import StalkerDocumentStatus
     from library.models.stalker_document_type import StalkerDocumentType
     from library.models.stalker_document_status_error import StalkerDocumentStatusError
+    from library.search_service import SearchService
     from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
     print(f"done ({time.monotonic() - t0:.1f}s)")
 
@@ -147,6 +148,7 @@ if __name__ == '__main__':
             print("ignoring cleaning the SQS queue")
         else:
             sqs = boto_session.client('sqs')
+            doc_service = DocumentService(session)
 
             while True:
                 response = sqs.receive_message(
@@ -173,8 +175,34 @@ if __name__ == '__main__':
                         if 'chapterList' in link_data:
                             print(link_data["chapterList"])
 
-                        existing = WebDocument.get_by_url(session, link_data["url"])
-                        if existing is not None:
+                        # Map camelCase SQS fields to snake_case metadata
+                        metadata = {}
+                        metadata["source"] = link_data.get("source", "own")
+                        if 'chapterList' in link_data:
+                            metadata["chapter_list"] = link_data["chapterList"]
+                        if 'chapter_list' in link_data:
+                            metadata["chapter_list"] = link_data["chapter_list"]
+                        if 'language' in link_data:
+                            metadata["language"] = link_data["language"]
+                        if 'makeAISummary' in link_data:
+                            metadata["ai_summary_needed"] = link_data["makeAISummary"]
+                        if 'note' in link_data:
+                            metadata["note"] = link_data["note"]
+                        if 's3_uuid' in link_data:
+                            metadata["s3_uuid"] = link_data["s3_uuid"]
+                        if 'title' in link_data:
+                            metadata["title"] = link_data["title"]
+                        if 'paywall' in link_data:
+                            metadata["paywall"] = link_data["paywall"]
+
+                        doc, status = doc_service.import_document(
+                            url=link_data["url"],
+                            document_type=link_data["type"],
+                            skip_if_exists=True,
+                            **metadata,
+                        )
+
+                        if status == "skipped":
                             print("This Url exist in, ignoring ")
                             sqs.delete_message(
                                 QueueUrl=cfg.get('AWS_QUEUE_URL_ADD'),
@@ -182,32 +210,7 @@ if __name__ == '__main__':
                             )
                             continue
 
-                        print("DEBUG: Adding Web Document", end=" ")
-                        web_doc = WebDocument(url=link_data["url"])
-                        web_doc.set_document_type(link_data["type"])
-                        web_doc.source = link_data["source"]
-                        if 'chapterList' in link_data:
-                            web_doc.chapter_list = link_data["chapterList"]
-                        if 'language' in link_data:
-                            web_doc.language = link_data["language"]
-                        if 'makeAISummary' in link_data:
-                            web_doc.ai_summary_needed = link_data["makeAISummary"]
-                        if 'note' in link_data:
-                            web_doc.note = link_data["note"]
-                        if 's3_uuid' in link_data:
-                            web_doc.s3_uuid = link_data["s3_uuid"]
-                        if 'title' in link_data:
-                            web_doc.title = link_data["title"]
-                        if 'paywall' in link_data:
-                            web_doc.paywall = link_data["paywall"]
-                        if 'chapter_list' in link_data:
-                            web_doc.chapter_list = link_data["chapter_list"]
-                        if 'source' in link_data:
-                            web_doc.source = link_data["source"]
-
-                        session.add(web_doc)
-                        session.commit()
-                        print(f"Added to database with ID {web_doc.id}")
+                        print(f"Added to database with ID {doc.id}")
                         print("[DONE]")
 
                         sqs.delete_message(
@@ -460,6 +463,7 @@ if __name__ == '__main__':
         print(f"entries to analyze: {embedding_needed_len}")
         website_nb = 1
         model = cfg.get('EMBEDDING_MODEL')
+        search_service = SearchService(session)
         for website_id in embedding_needed:
             doc = WebDocument.get_by_id(session, website_id)
             if doc is None:
@@ -485,7 +489,7 @@ if __name__ == '__main__':
                 continue
 
             websites.embedding_delete(doc.id, model)
-            result = get_embedding(model, text)
+            result = search_service.get_embedding(text)
             websites.embedding_add(doc.id, result.embedding, doc.language, text, text, model)
             doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
             session.commit()

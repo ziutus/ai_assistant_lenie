@@ -55,7 +55,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `original_id` | `text` | External identifier (e.g. YouTube video ID) |
 | `transcript_job_id` | `text` | Transcription service job ID |
 | `ai_summary_needed` | `boolean` | Flag: needs AI summary (default: false) |
-| `s3_uuid` | `varchar(100)` | S3 object key for stored content |
+| `uuid` | `varchar(100) NOT NULL DEFAULT gen_random_uuid()` | Global document identifier (ADR-015), UNIQUE |
 | `project` | `varchar(100)` | Project/collection grouping |
 
 **Indexes:** `document_type`, `document_state`, `created_at`, `url`, `project`, `source`, `date_from`, `paywall`, `ai_summary_needed`.

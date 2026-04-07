@@ -38,7 +38,7 @@ class TestWebsiteList:
         mock_list = [{"id": 1, "url": "https://example.com", "title": "Test",
                        "document_type": "webpage", "created_at": "2026-03-09 10:30:45",
                        "document_state": "URL_ADDED", "document_state_error": "NONE",
-                       "note": None, "project": None, "s3_uuid": None}]
+                       "note": None, "project": None, "uuid": None}]
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
             with patch("server.WebsitesDBPostgreSQL") as MockRepo:
@@ -116,13 +116,15 @@ class TestWebsiteGet:
             "original_id": None, "document_length": None, "chapter_list": None,
             "document_state": "URL_ADDED", "document_state_error": "NONE",
             "text_raw": None, "transcript_job_id": None, "ai_summary_needed": False,
-            "author": None, "note": None, "s3_uuid": None, "project": None,
+            "author": None, "note": None, "uuid": None, "project": None,
             "text_md": None, "transcript_needed": False,
         }
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebDocument") as MockWD:
-                MockWD.get_by_id.return_value = mock_doc
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = mock_doc
+                MockDS.return_value = mock_service
 
                 resp = client.get("/website_get?id=42", headers=API_HEADERS)
 
@@ -130,13 +132,15 @@ class TestWebsiteGet:
         data = resp.get_json()
         assert data["id"] == 42
         assert data["next_id"] == 43
-        MockWD.get_by_id.assert_called_once_with(mock_session, 42, reach=True)
+        mock_service.get_document.assert_called_once_with(42)
 
     def test_not_found_returns_404(self, client):
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebDocument") as MockWD:
-                MockWD.get_by_id.return_value = None
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = None
+                MockDS.return_value = mock_service
 
                 resp = client.get("/website_get?id=999", headers=API_HEADERS)
 
@@ -195,11 +199,12 @@ class TestWebsiteGetNextToCorrect:
 
 class TestWebsiteDelete:
     def test_delete_existing(self, client):
-        mock_doc = MagicMock()
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebDocument") as MockWD:
-                MockWD.get_by_id.return_value = mock_doc
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.delete_document.return_value = True
+                MockDS.return_value = mock_service
 
                 resp = client.get("/website_delete?id=42", headers=API_HEADERS)
 
@@ -207,36 +212,35 @@ class TestWebsiteDelete:
         data = resp.get_json()
         assert data["status"] == "success"
         assert data["message"] == "Page has been deleted from database"
-        mock_session.delete.assert_called_once_with(mock_doc)
-        mock_session.commit.assert_called_once()
+        mock_service.delete_document.assert_called_once_with(42)
 
     def test_delete_nonexistent(self, client):
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebDocument") as MockWD:
-                MockWD.get_by_id.return_value = None
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.delete_document.return_value = False
+                MockDS.return_value = mock_service
 
                 resp = client.get("/website_delete?id=999", headers=API_HEADERS)
 
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["message"] == "Page doesn't exist in database"
-        mock_session.delete.assert_not_called()
 
     def test_delete_error_rollback(self, client):
-        mock_doc = MagicMock()
         mock_session = MagicMock()
-        mock_session.commit.side_effect = Exception("DB constraint error")
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebDocument") as MockWD:
-                MockWD.get_by_id.return_value = mock_doc
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.delete_document.side_effect = Exception("DB constraint error")
+                MockDS.return_value = mock_service
 
                 resp = client.get("/website_delete?id=42", headers=API_HEADERS)
 
         assert resp.status_code == 500
         data = resp.get_json()
         assert data["status"] == "error"
-        mock_session.rollback.assert_called_once()
 
     def test_delete_missing_id_returns_400(self, client):
         resp = client.get("/website_delete", headers=API_HEADERS)
@@ -249,54 +253,44 @@ class TestWebsiteDelete:
 
 
 class TestWebsiteSimilar:
-    def test_orm_session_used(self, client):
-        """Verify /website_similar creates WebsitesDBPostgreSQL with ORM session."""
-        mock_embedding_result = MagicMock()
-        mock_embedding_result.status = "success"
-        mock_embedding_result.embedding = [0.1, 0.2, 0.3]
-
+    def test_search_service_used(self, client):
+        """Verify /website_similar delegates to SearchService."""
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebsitesDBPostgreSQL") as MockRepo:
-                repo_instance = MagicMock()
-                repo_instance.get_similar.return_value = [{"website_id": 1, "similarity": 0.9}]
-                MockRepo.return_value = repo_instance
+            with patch("server.SearchService") as MockService:
+                service_instance = MagicMock()
+                service_instance.search_similar.return_value = [{"website_id": 1, "similarity": 0.9}]
+                MockService.return_value = service_instance
 
-                with patch("library.embedding.get_embedding", return_value=mock_embedding_result):
-                    resp = client.post("/website_similar", json={
-                        "search": "test query",
-                        "limit": 5,
-                    }, headers=API_HEADERS, content_type="application/json")
+                resp = client.post("/website_similar", json={
+                    "search": "test query",
+                    "limit": 5,
+                }, headers=API_HEADERS, content_type="application/json")
 
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "success"
-        # ORM instance created with session argument
-        MockRepo.assert_called_once_with(session=mock_session)
+        MockService.assert_called_once_with(mock_session)
+        service_instance.search_similar.assert_called_once_with("test query", limit=5)
 
     def test_returns_correct_json_structure(self, client):
         """Verify endpoint returns status, message, websites keys."""
-        mock_embedding_result = MagicMock()
-        mock_embedding_result.status = "success"
-        mock_embedding_result.embedding = [0.1, 0.2, 0.3]
-
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebsitesDBPostgreSQL") as MockRepo:
-                repo_instance = MagicMock()
-                repo_instance.get_similar.return_value = [
+            with patch("server.SearchService") as MockService:
+                service_instance = MagicMock()
+                service_instance.search_similar.return_value = [
                     {"website_id": 1, "text": "t", "similarity": 0.9, "id": 10,
                      "url": "https://example.com", "language": "en", "text_original": "t",
                      "websites_text_length": 100, "embeddings_text_length": 50,
                      "title": "Test", "document_type": "webpage", "project": None}
                 ]
-                MockRepo.return_value = repo_instance
+                MockService.return_value = service_instance
 
-                with patch("library.embedding.get_embedding", return_value=mock_embedding_result):
-                    resp = client.post("/website_similar", json={
-                        "search": "test query",
-                        "limit": 3,
-                    }, headers=API_HEADERS, content_type="application/json")
+                resp = client.post("/website_similar", json={
+                    "search": "test query",
+                    "limit": 3,
+                }, headers=API_HEADERS, content_type="application/json")
 
         assert resp.status_code == 200
         data = resp.get_json()
@@ -307,32 +301,83 @@ class TestWebsiteSimilar:
 
     def test_limit_cast_to_int(self, client):
         """Verify limit parameter from form/args (string) is cast to int."""
-        mock_embedding_result = MagicMock()
-        mock_embedding_result.status = "success"
-        mock_embedding_result.embedding = [0.1, 0.2, 0.3]
-
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebsitesDBPostgreSQL") as MockRepo:
-                repo_instance = MagicMock()
-                repo_instance.get_similar.return_value = []
-                MockRepo.return_value = repo_instance
+            with patch("server.SearchService") as MockService:
+                service_instance = MagicMock()
+                service_instance.search_similar.return_value = []
+                MockService.return_value = service_instance
 
-                with patch("library.embedding.get_embedding", return_value=mock_embedding_result):
-                    resp = client.post("/website_similar", data={
-                        "search": "test query",
-                        "limit": "7",
-                    }, headers=API_HEADERS)
+                resp = client.post("/website_similar", data={
+                    "search": "test query",
+                    "limit": "7",
+                }, headers=API_HEADERS)
 
         assert resp.status_code == 200
-        # Verify limit was passed as int, not string
-        call_kwargs = repo_instance.get_similar.call_args
-        limit_arg = call_kwargs.kwargs.get("limit") or call_kwargs[1].get("limit")
-        if limit_arg is None:
-            # positional arg: get_similar(embedding, model, limit=...)
-            limit_arg = call_kwargs[0][2] if len(call_kwargs[0]) > 2 else None
-        assert isinstance(limit_arg, int)
-        assert limit_arg == 7
+        service_instance.search_similar.assert_called_once_with("test query", limit=7)
+
+
+# ---------------------------------------------------------------------------
+# /ai_get_embedding
+# ---------------------------------------------------------------------------
+
+
+class TestAiGetEmbedding:
+    def test_search_service_used(self, client):
+        """Verify /ai_get_embedding delegates to SearchService."""
+        mock_embedding = {"text": "test text", "embedding": [0.1, 0.2], "status": "success"}
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.SearchService") as MockService:
+                service_instance = MagicMock()
+                service_instance.get_embedding.return_value = mock_embedding
+                MockService.return_value = service_instance
+
+                resp = client.post("/ai_get_embedding", json={
+                    "search": "test text",
+                }, headers=API_HEADERS, content_type="application/json")
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "success"
+        assert data["text"] == "test text"
+        MockService.assert_called_once_with(mock_session)
+        service_instance.get_embedding.assert_called_once_with("test text")
+
+    def test_error_returns_500(self, client):
+        """Verify /ai_get_embedding returns 500 when embedding generation fails."""
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.SearchService") as MockService:
+                service_instance = MagicMock()
+                service_instance.get_embedding.side_effect = RuntimeError("API connection failed")
+                MockService.return_value = service_instance
+
+                resp = client.post("/ai_get_embedding", json={
+                    "search": "test text",
+                }, headers=API_HEADERS, content_type="application/json")
+
+        assert resp.status_code == 500
+        data = resp.get_json()
+        assert data["status"] == "error"
+        assert "API connection failed" in data["message"]
+
+    def test_form_data_accepted(self, client):
+        """Verify /ai_get_embedding accepts form data input."""
+        mock_embedding = {"text": "form text", "embedding": [0.1], "status": "success"}
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.SearchService") as MockService:
+                service_instance = MagicMock()
+                service_instance.get_embedding.return_value = mock_embedding
+                MockService.return_value = service_instance
+
+                resp = client.post("/ai_get_embedding", data={
+                    "search": "form text",
+                }, headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        service_instance.get_embedding.assert_called_once_with("form text")
 
 
 # ---------------------------------------------------------------------------
@@ -346,8 +391,10 @@ class TestWebsiteSave:
         mock_doc.id = 42
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebDocument") as MockWD:
-                MockWD.get_by_id.return_value = mock_doc
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.save_document.return_value = mock_doc
+                MockDS.return_value = mock_service
 
                 resp = client.post("/website_save", data={
                     "url": "https://example.com",
@@ -362,17 +409,17 @@ class TestWebsiteSave:
         data = resp.get_json()
         assert data["status"] == "success"
         assert "42" in data["message"]
-        mock_session.commit.assert_called_once()
+        mock_service.save_document.assert_called_once()
 
     def test_create_new_doc(self, client):
+        mock_doc = MagicMock()
+        mock_doc.id = 100
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebDocument") as MockWD:
-                MockWD.get_by_id.return_value = None
-                MockWD.get_by_url.return_value = None
-                new_doc = MagicMock()
-                new_doc.id = 100
-                MockWD.return_value = new_doc
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.save_document.return_value = mock_doc
+                MockDS.return_value = mock_service
 
                 resp = client.post("/website_save", data={
                     "url": "https://new.example.com",
@@ -383,17 +430,15 @@ class TestWebsiteSave:
                 }, headers=API_HEADERS)
 
         assert resp.status_code == 200
-        mock_session.add.assert_called_once_with(new_doc)
-        mock_session.commit.assert_called_once()
+        mock_service.save_document.assert_called_once()
 
     def test_error_handling(self, client):
         mock_session = MagicMock()
-        mock_session.commit.side_effect = Exception("DB error")
-        mock_doc = MagicMock()
-        mock_doc.id = 42
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebDocument") as MockWD:
-                MockWD.get_by_id.return_value = mock_doc
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.save_document.side_effect = Exception("DB error")
+                MockDS.return_value = mock_service
 
                 resp = client.post("/website_save", data={
                     "url": "https://example.com",
@@ -416,8 +461,10 @@ class TestWebsiteSave:
         mock_doc.id = 42
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebDocument") as MockWD:
-                MockWD.get_by_id.return_value = mock_doc
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.save_document.return_value = mock_doc
+                MockDS.return_value = mock_service
 
                 resp = client.post("/website_save", data={
                     "url": "https://example.com",
@@ -429,7 +476,9 @@ class TestWebsiteSave:
                 }, headers=API_HEADERS)
 
         assert resp.status_code == 200
-        mock_doc.analyze.assert_called_once()
+        # Verify save_document was called with only provided attributes
+        call_kwargs = mock_service.save_document.call_args
+        assert "text" not in call_kwargs.kwargs
 
 
 # ---------------------------------------------------------------------------
@@ -443,25 +492,33 @@ class TestUrlAdd:
         mock_doc = MagicMock()
         mock_doc.id = 100
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebDocument", return_value=mock_doc):
-                with patch("server.cfg") as mock_cfg:
-                    mock_cfg.get.return_value = None  # disable S3 (avoids boto3 import)
-                    resp = client.post("/url_add", json={
-                        "url": "https://example.com",
-                        "type": "link",
-                        "title": "Test Link",
-                    }, headers=API_HEADERS, content_type="application/json")
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.create_document.return_value = mock_doc
+                MockDS.return_value = mock_service
+
+                resp = client.post("/url_add", json={
+                    "url": "https://example.com",
+                    "type": "link",
+                    "title": "Test Link",
+                }, headers=API_HEADERS, content_type="application/json")
 
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "success"
         assert data["document_id"] == 100
-        mock_session.add.assert_called_once_with(mock_doc)
-        mock_session.commit.assert_called_once()
+        mock_service.create_document.assert_called_once()
 
     def test_missing_required_params(self, client):
-        resp = client.post("/url_add", json={"url": "https://example.com"},
-                           headers=API_HEADERS, content_type="application/json")
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.create_document.side_effect = ValueError("Missing required parameter(s): 'url' or 'type'")
+                MockDS.return_value = mock_service
+
+                resp = client.post("/url_add", json={"url": "https://example.com"},
+                                   headers=API_HEADERS, content_type="application/json")
         assert resp.status_code == 400
         data = resp.get_json()
         assert "Missing required" in data["message"]
@@ -472,20 +529,19 @@ class TestUrlAdd:
         mock_doc = MagicMock()
         mock_doc.id = 101
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebDocument", return_value=mock_doc):
-                with patch("server.cfg") as mock_cfg:
-                    mock_cfg.get.return_value = None  # disable S3 (avoids boto3 import)
-                    resp = client.post("/url_add", json={
-                        "url": "https://example.com/article",
-                        "type": "link",
-                        "title": "An Article",
-                        "source": "manual",
-                    }, headers=API_HEADERS, content_type="application/json")
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.create_document.return_value = mock_doc
+                MockDS.return_value = mock_service
+
+                resp = client.post("/url_add", json={
+                    "url": "https://example.com/article",
+                    "type": "link",
+                    "title": "An Article",
+                    "source": "manual",
+                }, headers=API_HEADERS, content_type="application/json")
 
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "success"
-        mock_doc.set_document_type.assert_called_once_with("link")
-        mock_doc.set_document_state.assert_called_once_with("URL_ADDED")
-        mock_session.add.assert_called_once()
-        mock_session.commit.assert_called_once()
+        mock_service.create_document.assert_called_once()
