@@ -157,7 +157,7 @@ class TestWebDocumentColumns:
         "source", "date_from", "original_id", "document_length",
         "chapter_list", "document_state", "document_state_error",
         "text_raw", "transcript_job_id", "ai_summary_needed",
-        "author", "note", "s3_uuid", "project", "text_md",
+        "author", "note", "uuid", "project", "text_md",
         "transcript_needed", "reviewed_at", "obsidian_note_paths",
     }
 
@@ -225,8 +225,8 @@ class TestWebDocumentColumnTypes:
         col = _get_column(WebDocument, "document_length")
         assert isinstance(col.type, Integer)
 
-    def test_s3_uuid_is_string_100(self):
-        col = _get_column(WebDocument, "s3_uuid")
+    def test_uuid_is_string_100(self):
+        col = _get_column(WebDocument, "uuid")
         assert isinstance(col.type, String)
         assert col.type.length == 100
 
@@ -514,7 +514,7 @@ class TestDict:
             "created_at", "document_type", "source", "date_from", "original_id",
             "document_length", "chapter_list", "document_state",
             "document_state_error", "text_raw", "transcript_job_id",
-            "ai_summary_needed", "author", "note", "s3_uuid", "project",
+            "ai_summary_needed", "author", "note", "uuid", "project",
             "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths",
         }

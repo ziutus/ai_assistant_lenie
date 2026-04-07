@@ -31,7 +31,7 @@ class WebsitesDBPostgreSQL:
             stmt = select(
                 WebDocument.id, WebDocument.url, WebDocument.title, WebDocument.document_type,
                 WebDocument.created_at, WebDocument.document_state, WebDocument.document_state_error,
-                WebDocument.note, WebDocument.project, WebDocument.s3_uuid,
+                WebDocument.note, WebDocument.project, WebDocument.uuid,
             )
 
         # Dynamic filters — column stores enum name strings directly
@@ -80,7 +80,7 @@ class WebsitesDBPostgreSQL:
                 "document_state_error": row.document_state_error,
                 "note": row.note,
                 "project": row.project,
-                "s3_uuid": row.s3_uuid,
+                "uuid": row.uuid,
             })
         return result
 
@@ -100,12 +100,12 @@ class WebsitesDBPostgreSQL:
 
     def get_ready_for_download(self) -> list[tuple]:
         stmt = select(
-            WebDocument.id, WebDocument.url, WebDocument.document_type, WebDocument.s3_uuid,
+            WebDocument.id, WebDocument.url, WebDocument.document_type, WebDocument.uuid,
         ).where(WebDocument.document_state == StalkerDocumentStatus.URL_ADDED.name)
 
         rows = self.session.execute(stmt).all()
         return [
-            (row.id, row.url, row.document_type, row.s3_uuid)
+            (row.id, row.url, row.document_type, row.uuid)
             for row in rows
         ]
 
