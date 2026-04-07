@@ -69,8 +69,10 @@ class TestWebsiteGetValidation:
 
     def test_nonexistent_id_returns_404(self, client):
         """Valid numeric ID that does not exist in DB should return 404 (AC #1)."""
-        with patch("server.WebDocument") as mock_wd:
-            mock_wd.get_by_id.return_value = None
+        with patch("server.DocumentService") as MockDS:
+            mock_service = MagicMock()
+            mock_service.get_document.return_value = None
+            MockDS.return_value = mock_service
             resp = client.get("/website_get?id=999999", headers=API_HEADERS)
         assert resp.status_code == 404
         data = resp.get_json()
@@ -81,8 +83,10 @@ class TestWebsiteGetValidation:
         """Valid ID that exists should return 200 with document data."""
         mock_doc = MagicMock()
         mock_doc.dict.return_value = {"id": 1, "url": "https://example.com"}
-        with patch("server.WebDocument") as mock_wd:
-            mock_wd.get_by_id.return_value = mock_doc
+        with patch("server.DocumentService") as MockDS:
+            mock_service = MagicMock()
+            mock_service.get_document.return_value = mock_doc
+            MockDS.return_value = mock_service
             resp = client.get("/website_get?id=1", headers=API_HEADERS)
         assert resp.status_code == 200
         data = resp.get_json()

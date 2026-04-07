@@ -1,20 +1,14 @@
-import os
-from pprint import pprint
-
 from flask import Flask, Response, request, abort, jsonify
 from flask_cors import CORS
 import logging
-import uuid
 
 from library.config_loader import load_config
 from library.db.engine import get_scoped_session
-from library.db.models import WebDocument, TranscriptionLog
+from library.db.models import TranscriptionLog
+from library.document_service import DocumentService
+from library.search_service import SearchService
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.text_transcript import chapters_text_to_list
-from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
-from library.models.webpage_parse_result import WebPageParseResult
 from library.website.website_paid import website_is_paid
-from library.text_functions import split_text_for_embedding
 from library.ai_intent_parser import parse_intent
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_type import StalkerDocumentType
@@ -113,187 +107,54 @@ def root():
 
 @app.route('/url_add', methods=['POST', 'OPTIONS'])
 def url_add():
-    """
-    Dodaje nowy URL do systemu z zapisywaniem treści HTML do S3 i danych do bazy
-    Funkcjonalność analogiczna do lambda_handler w lambda_function.py
-    """
-
+    """Dodaje nowy URL do systemu z zapisywaniem treści HTML do S3 i danych do bazy."""
     if request.method == 'OPTIONS':
-        response = {
-            'status': 'OK',
-            'message': 'CORS preflight'
-        }
-        return response, 200
-
-    # Pobranie zmiennych środowiskowych
-    bucket_name = cfg.get("AWS_S3_WEBSITE_CONTENT")
-
-    use_aws_s3 = True
-    if bucket_name is None:
-        use_aws_s3 = False
-
-    logging.info(f"Using AWS S3: {use_aws_s3}")
+        return {'status': 'OK', 'message': 'CORS preflight'}, 200
 
     try:
-        # Pobranie danych z requestu
         url_data = request.get_json()
-
         if not url_data:
-            return {
-                'status': 'error',
-                'message': 'No JSON data provided'
-            }, 400
+            return {'status': 'error', 'message': 'No JSON data provided'}, 400
 
-        # Logowanie danych (z ograniczeniem dla długich treści)
         url_data_print = url_data.copy()
         if 'text' in url_data_print:
             url_data_print['text'] = url_data_print['text'][:50]
         if 'html' in url_data_print:
             url_data_print['html'] = url_data_print['html'][:50]
-
         logging.info('Data received by API', extra={"body": url_data_print})
 
-        # Pobranie parametrów
-        target_url = url_data.get("url")
-        url_type = url_data.get("type")
-        note = url_data.get("note", "default_note")
-        text = url_data.get("text", "")
-        html = url_data.get("html", "")
-        title = url_data.get("title", "")
-        language = url_data.get("language", "")
-        paywall = url_data.get("paywall", False)
-        source = url_data.get("source", "own")
-        ai_summary = url_data.get("ai_summary", False)
-        chapter_list = url_data.get("chapter_list", False)
+        session = get_scoped_session()
+        service = DocumentService(session)
+        doc = service.create_document(
+            url=url_data.get("url", ""),
+            url_type=url_data.get("type", ""),
+            text=url_data.get("text", ""),
+            html=url_data.get("html", ""),
+            title=url_data.get("title", ""),
+            language=url_data.get("language", ""),
+            note=url_data.get("note", "default_note"),
+            paywall=url_data.get("paywall", False),
+            source=url_data.get("source", "own"),
+            ai_summary=url_data.get("ai_summary", False),
+            chapter_list=url_data.get("chapter_list", False),
+        )
+        return {
+            'status': 'success',
+            'message': f'Successfully saved document with ID: {doc.id}',
+            'document_id': doc.id
+        }, 200
 
-        if not target_url or not url_type:
-            error_message = "Missing required parameter(s): 'url' or 'type'"
-            logging.error(error_message)
-            return {
-                'status': 'error',
-                'message': error_message
-            }, 400
-
-        s3_uuid = None
-
-        if use_aws_s3:
-            # Inicjalizacja klienta S3
-            # Import biblioteki AWS (analogicznie do lambda)
-            import boto3
-            s3 = boto3.client('s3')
-
-
-        if url_type == 'webpage':
-            # Generowanie UUID i zapis do S3
-            uid = str(uuid.uuid4())
-            s3_uuid = uid
-
-            # Zapis tekstu do S3
-            if text:
-                file_name = f"{uid}.txt"
-
-                if use_aws_s3:
-                    try:
-                        s3.put_object(Bucket=bucket_name, Key=file_name, Body=text)
-                        logging.info(f"Successfully uploaded {file_name} to {bucket_name}")
-                    except Exception as e:
-                        logging.error("Failed to upload %s to %s: %s", file_name, bucket_name, e)
-                        return {
-                            'status': 'error',
-                            'message': "Failed to upload text file to storage"
-                        }, 500
-                else:
-                    # Zapis lokalny
-                    try:
-                        os.makedirs('/app/data', exist_ok=True)
-                        local_file_path = f"/app/data/{file_name}"
-                        with open(local_file_path, 'w', encoding='utf-8') as f:
-                            f.write(text)
-                        logging.info(f"Successfully saved {file_name} to /app/data/")
-                    except Exception as e:
-                        logging.error("Failed to save %s to /app/data/: %s", file_name, e)
-                        return {
-                            'status': 'error',
-                            'message': "Failed to save text file locally"
-                        }, 500
-
-
-
-            # Zapis HTML do S3
-            if html:
-                file_name = f"{uid}.html"
-
-                if use_aws_s3:
-                    try:
-                        s3.put_object(Bucket=bucket_name, Key=file_name, Body=html)
-                        logging.info(f"Successfully uploaded {file_name} to {bucket_name}")
-                    except Exception as e:
-                        logging.error("Failed to upload %s to %s: %s", file_name, bucket_name, e)
-                        return {
-                            'status': 'error',
-                            'message': "Failed to upload HTML file to storage"
-                        }, 500
-                else:
-                    # Zapis lokalny
-                    try:
-                        os.makedirs('/app/data', exist_ok=True)
-                        local_file_path = f"/app/data/{file_name}"
-                        with open(local_file_path, 'w', encoding='utf-8') as f:
-                            f.write(html)
-                        logging.info(f"Successfully saved {file_name} to /app/data/")
-                    except Exception as e:
-                        logging.error("Failed to save %s to /app/data/: %s", file_name, e)
-                        return {
-                            'status': 'error',
-                            'message': "Failed to save HTML file locally"
-                        }, 500
-
-            else:
-                logging.info("Missing HTML part!")
-
-        # Zapis do bazy danych
-        try:
-            session = get_scoped_session()
-            doc = WebDocument(url=target_url)
-            doc.set_document_type(url_type)
-            doc.note = note
-            doc.title = title
-            doc.language = language
-            doc.paywall = paywall
-            doc.source = source
-            doc.ai_summary_needed = ai_summary
-            # Skip ai_correction_needed — column does NOT exist in DB or ORM model
-            doc.chapter_list = chapter_list
-            doc.s3_uuid = s3_uuid
-
-            # Ustawienie stanu dokumentu
-            doc.set_document_state("URL_ADDED")
-
-            session.add(doc)
-            session.commit()
-
-            logging.info(f"Successfully saved document to database with ID: {doc.id}")
-
-            return {
-                'status': 'success',
-                'message': f'Successfully saved document with ID: {doc.id}',
-                'document_id': doc.id
-            }, 200
-
-        except Exception as e:
-            session.rollback()
-            logging.error("Failed to save to database: %s", e)
-            return {
-                'status': 'error',
-                'message': "Failed to save document to database"
-            }, 500
-
+    except ValueError as e:
+        logging.error("Validation error in /url_add: %s", e)
+        return {'status': 'error', 'message': str(e)}, 400
+    except RuntimeError as e:
+        logging.error("Storage error in /url_add: %s", e)
+        session.rollback()
+        return {'status': 'error', 'message': str(e)}, 500
     except Exception as e:
         logging.error("Unexpected error in /url_add: %s", e)
-        return {
-            'status': 'error',
-            'message': "An unexpected error occurred"
-        }, 500
+        session.rollback()
+        return {'status': 'error', 'message': "An unexpected error occurred"}, 500
 
 
 @app.route('/website_list', methods=['GET'])
@@ -395,15 +256,10 @@ def website_check_is_paid():
 @app.route('/website_get', methods=['GET'])
 def website_get_by_id():
     logging.debug("Getting website by id")
-    logging.debug(request.args)
 
     link_id = request.args.get('id')
-    logging.debug(link_id)
-
     if not link_id:
-        logging.debug("Missing data. Make sure you provide 'id'")
-        return {"status": "error",
-                "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
+        return {"status": "error", "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
 
     try:
         link_id_int = int(link_id)
@@ -414,7 +270,8 @@ def website_get_by_id():
         return {"status": "error", "message": "Invalid ID parameter — must be a positive integer"}, 400
 
     session = get_scoped_session()
-    doc = WebDocument.get_by_id(session, link_id_int, reach=True)
+    service = DocumentService(session)
+    doc = service.get_document(link_id_int)
     if doc is None:
         return {"status": "error", "message": "Document not found"}, 404
     return doc.dict(), 200
@@ -454,23 +311,37 @@ def website_get_next_to_correct():
 
     return response, 200
 
+
+def _parse_search_text(req):
+    """Extract search text from request (form, JSON, or args)."""
+    if req.form:
+        return req.form.get('search')
+    elif req.json:
+        return req.json.get('search')
+    else:
+        return req.args.get('search')
+
+
+def _parse_search_params(req):
+    """Extract search text and limit from request (form, JSON, or args)."""
+    if req.form:
+        return req.form.get('search'), req.form.get('limit')
+    elif req.json:
+        return req.json.get('search'), req.json.get('limit')
+    else:
+        return req.args.get('search'), req.args.get('limit')
+
+
 @app.route('/ai_get_embedding', methods=['POST'])
 def ai_get_embedding():
-    if request.form:
-        logging.debug("Using form")
-        logging.debug(request.form)
-        text = request.form.get('search')
-    elif request.json:
-        logging.debug("Using json")
-        logging.debug(request.json)
-        text = request.json['search']
-    else:
-        logging.debug("Using args")
-        logging.debug(request.args)
-        text = request.args.get('search')
+    text = _parse_search_text(request)
 
-    import library.embedding as embedding
-    embedds = embedding.get_embedding(model=cfg.require("EMBEDDING_MODEL"), text=text)
+    service = SearchService(get_scoped_session())
+    try:
+        embedds = service.get_embedding(text)
+    except Exception as e:
+        logging.error("Error generating embedding: %s", e)
+        return jsonify({"status": "error", "message": str(e), "encoding": "utf8", "text": text}), 500
 
     return jsonify({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
             "embedding": embedds}), 200
@@ -478,42 +349,15 @@ def ai_get_embedding():
 
 @app.route('/website_similar', methods=['POST'])
 def search_similar():
-    if request.form:
-        print("Searching using form")
-        pprint(request.form)
-        logging.debug("Using form")
-        logging.debug(request.form)
-        text = request.form.get('search')
-        limit = request.form.get('limit')
-    elif request.json:
-        print("Searching using json")
-        pprint(request.json)
-        logging.debug("Using json")
-        logging.debug(request.json)
-        text = request.json['search']
-        limit = request.json['limit']
-    else:
-        print("Searching using args")
-        pprint(request.args)
-        logging.debug("Using args")
-        logging.debug(request.args)
-        text = request.args.get('search')
-        limit = request.args.get('limit')
+    text, limit = _parse_search_params(request)
 
-    logging.info(f"searching embedding for {text}")
-
-    import library.embedding as embedding
-    embedds = embedding.get_embedding(model=cfg.require("EMBEDDING_MODEL"), text=text)
-
-    if embedds.status != "success" or len(embedds.embedding) == 0:
-        return jsonify({"status": embedds.status, "message": "Error during getting embedding for text", "encoding": "utf8", "text": text,
+    session = get_scoped_session()
+    service = SearchService(session)
+    try:
+        websites_list = service.search_similar(text, limit=int(limit) if limit else 3)
+    except RuntimeError as e:
+        return jsonify({"status": "error", "message": str(e), "encoding": "utf8", "text": text,
                 "websites": []}), 500
-
-    if not limit:
-        limit = 3
-
-    repo = WebsitesDBPostgreSQL(session=get_scoped_session())
-    websites_list = repo.get_similar(embedds.embedding, cfg.require("EMBEDDING_MODEL"), limit=int(limit))
 
     return jsonify({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
             "websites": websites_list}), 200
@@ -523,170 +367,83 @@ def search_similar():
 def website_download_text_content():
     logging.debug("Downloading text content")
     if request.form:
-        logging.debug(request.form)
         url = request.form.get('url')
     elif request.json:
-        logging.debug(request.json)
         url = request.json['url']
     else:
-        logging.debug("Missing data. Make sure you provide 'url'")
-        return {"status": "error",
-                "message": "Brakujące dane. Upewnij się, że dostarczasz 'url'"}, 400
+        return {"status": "error", "message": "Brakujące dane. Upewnij się, że dostarczasz 'url'"}, 400
 
-    logging.debug(url)
     if not url:
-        logging.debug("Missing data. Make sure you provide 'url'")
-        return {"status": "error",
-                "message": "Brakujące dane. Upewnij się, że dostarczasz 'url'"}, 400
+        return {"status": "error", "message": "Brakujące dane. Upewnij się, że dostarczasz 'url'"}, 400
 
-    logging.debug(f"DEBUG: downloading content of page: {url}")
-    raw_html = download_raw_html(url)
-    if not raw_html:
-        logging.debug("ERROR: Empty response from target page")
-        response = {
-            "status": "error",
-            "message": "empty response from download raw html function",
-            "encoding": "utf8",
-        }
+    service = DocumentService(get_scoped_session())
+    try:
+        result = service.download_and_parse(url)
+    except RuntimeError as e:
+        return {"status": "error", "message": str(e), "encoding": "utf8"}, 500
 
-        return response, 500
-
-    result: WebPageParseResult = webpage_raw_parse(url, raw_html)
-
-    logging.debug(f"Zawartość: {result.text[:500]}")  # Wydrukowanie tylko pierwszych 500 znaków zawartości
-
-    response = {
+    return jsonify({
         "status": "success",
         "message": "page downloaded",
         "encoding": "utf8",
-        "text": result.text,
-        "content": result.text,
-        "title": result.title,
-        "summary": result.summary,
-        "url": f"{url}",
-        "language": result.language
-    }
-
-    return jsonify(response), 200
-
-    # else:
-    #     print_debug(f"Nie udało się pobrać strony. Kod statusu: {response.status_code}")
-    #
-    #     response = {
-    #         "status": "failed",
-    #         "message": "page downloading failed",
-    #         "encoding": "utf8",
-    #         "url": f"{url}"
-    #     }
-    #
-    #     return response, 500
+        "text": result["text"],
+        "content": result["text"],
+        "title": result["title"],
+        "summary": result["summary"],
+        "url": url,
+        "language": result["language"],
+    }), 200
 
 
 @app.route('/website_text_remove_not_needed', methods=['POST'])
 def website_text_remove_not_needed():
-    if request.form:
-        logging.debug("Using form")
-
-    logging.debug("website_text_remove_not_needed")
-    logging.debug(request.form)
-
     text = request.form.get('text')
     url = request.form.get('url')
 
-    # debug_needed = False
-    # if debug_needed:
-    #     with open('debug.txt', 'w', encoding='utf-8') as debug_file:
-    #         debug_file.write(f"text: {text}\n")
-    #         debug_file.write(f"url: {url}\n")
-    #         logging.info("Debug data written into file debug.txt")
-
     if not text:
-        logging.debug("Missing data. Make sure you provide 'text'")
-        return {"status": "error",
-                "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
-
+        return {"status": "error", "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
     if not url:
-        logging.debug("Missing data. Make sure you provide 'url'")
-        return {"status": "error",
-                "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
+        return {"status": "error", "message": "Brakujące dane. Upewnij się, że dostarczasz 'url'"}, 400
 
-    response = {
+    service = DocumentService(get_scoped_session())
+    return jsonify({
         "status": "success",
-        "text": webpage_text_clean(url, text),
+        "text": service.clean_text(url, text),
         "encoding": "utf8",
-        "message": "Text cleaned"
-    }
-    logging.debug(response)
-    return jsonify(response), 200
+        "message": "Text cleaned",
+    }), 200
 
 
 @app.route('/website_split_for_embedding', methods=['POST'])
 def website_split_for_embedding():
-    if request.form:
-        logging.debug("Using form")
-
-    logging.debug("Split for Embedding")
-    logging.debug(request.form)
-
     text = request.form.get('text')
-    pprint(text)
-
     chapters_list_text = request.form.get('chapter_list')
 
-    chapters_list = chapters_text_to_list(chapters_list_text)
-    chapter_list_simple = []
-
-    for chapter in chapters_list:
-        chapter_list_simple.append(chapter['title'])
-
     if not text:
-        logging.debug("Missing data. Make sure you provide 'text'")
-        return {"status": "error",
-                "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
+        return {"status": "error", "message": "Brakujące dane. Upewnij się, że dostarczasz 'text'"}, 400
 
-    response = {
+    service = DocumentService(get_scoped_session())
+    return jsonify({
         "status": "success",
-        "text": split_text_for_embedding(text, chapter_list_simple),
+        "text": service.split_for_embedding(text, chapters_list_text),
         "encoding": "utf8",
-        "message": "Text corrected"
-    }
-    logging.debug(response)
-    return jsonify(response), 200
+        "message": "Text corrected",
+    }), 200
 
 
 @app.route('/website_delete', methods=['GET'])
 def website_delete():
-    logging.debug("Deleting website")
-    logging.debug(request.form)
-
     link_id = request.args.get('id')
-    logging.debug(link_id)
-
     if not link_id:
-        logging.debug("Missing data. Make sure you provide 'id'")
-        return {"status": "error",
-                "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
+        return {"status": "error", "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
 
     session = get_scoped_session()
-    doc = WebDocument.get_by_id(session, int(link_id))
-
-    if doc is None:
-        response = {
-            "status": "success",
-            "message": "Page doesn't exist in database",
-            "encoding": "utf8",
-        }
-        return response, 200
-
+    service = DocumentService(session)
     try:
-        session.delete(doc)
-        session.commit()
-        response = {
-            "status": "success",
-            "message": "Page has been deleted from database",
-            "encoding": "utf8",
-        }
-        return response, 200
+        deleted = service.delete_document(int(link_id))
+        if not deleted:
+            return {"status": "success", "message": "Page doesn't exist in database", "encoding": "utf8"}, 200
+        return {"status": "success", "message": "Page has been deleted from database", "encoding": "utf8"}, 200
     except Exception as e:
         session.rollback()
         logging.error("Failed to delete document: %s", e)
@@ -695,49 +452,31 @@ def website_delete():
 
 @app.route('/website_save', methods=['POST'])
 def website_save():
-    logging.debug("Saving website (adding or updating)")
-    logging.debug(request.form)
-
     url = request.form.get('url')
-    logging.debug(url)
     if not url:
-        logging.debug("Missing data. Make sure you provide 'url'")
         return {"status": "error", "message": "Missing data. Make sure you provide 'url'"}, 400
 
     link_id = request.form.get('id')
-    session = get_scoped_session()
-
-    if link_id:
-        doc = WebDocument.get_by_id(session, int(link_id))
-    else:
-        doc = WebDocument.get_by_url(session, url)
-
-    if doc is None:
-        doc = WebDocument(url=url)
-        session.add(doc)
-
-    document_state = request.form.get('document_state')
-    if document_state is not None:
-        doc.set_document_state(document_state)
-
+    attrs = {}
     for attr in ('text', 'title', 'language', 'tags', 'summary', 'source', 'author', 'note'):
         value = request.form.get(attr)
         if value is not None:
-            setattr(doc, attr, value)
+            attrs[attr] = value
 
+    session = get_scoped_session()
+    service = DocumentService(session)
     try:
-        document_type = request.form.get('document_type')
-        if document_type is not None:
-            doc.set_document_type(document_type)
-    except Exception as e:
-        logging.error(f"Wrong document type: {e}")
-        return jsonify({"status": "error", "message": "Invalid document type provided."}), 400
-
-    doc.analyze()
-
-    try:
-        session.commit()
+        doc = service.save_document(
+            url=url,
+            link_id=int(link_id) if link_id else None,
+            document_state=request.form.get('document_state'),
+            document_type=request.form.get('document_type'),
+            **attrs,
+        )
         return {"status": "success", "message": f"Dane strony {doc.id} zaktualizowane pomyślnie."}, 200
+    except ValueError as e:
+        logging.error("Validation error in /website_save: %s", e)
+        return jsonify({"status": "error", "message": "Invalid document type provided."}), 400
     except Exception as e:
         session.rollback()
         logging.error("Failed to save document: %s", e)
