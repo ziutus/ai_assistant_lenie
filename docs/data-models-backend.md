@@ -36,7 +36,7 @@ Primary document storage table.
 | `original_id` | text | — | External ID (YouTube video ID, etc.) |
 | `transcript_job_id` | text | — | Transcription service job ID |
 | `ai_summary_needed` | boolean | DEFAULT false | Flag for AI summary generation |
-| `s3_uuid` | varchar(100) | — | S3 object key |
+| `uuid` | varchar(100) | NOT NULL DEFAULT gen_random_uuid(), UNIQUE | Global document identifier (ADR-015) |
 | `project` | varchar(100) | — | Project/collection grouping |
 
 **Indexes**: document_type, document_state, created_at, url, project, source, date_from, paywall, ai_summary_needed
