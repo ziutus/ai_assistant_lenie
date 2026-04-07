@@ -67,7 +67,7 @@
 
 ## Phase 5: IaC Comparison — CloudFormation vs CDK
 
-**Status:** Not started. See [ADR-016](adr-016-cloudformation-vs-cdk.md) for decision context.
+**Status:** Not started. See [ADR-016](adr/adr-016-cloudformation-vs-cdk.md) for decision context.
 
 **Plan:**
 1. Pick a self-contained subset of infrastructure (e.g., SQS + Lambda + DynamoDB pipeline)

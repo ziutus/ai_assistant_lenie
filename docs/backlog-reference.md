@@ -66,6 +66,20 @@ Quick reference of all backlog items. For full specifications (acceptance criter
 | B-90 | Add Timeout to All requests Calls (6 locations) | backlog | — |
 | B-91 | Migrate SQL F-Strings to Parameterized Queries | backlog | — | **Note:** Migration to psycopg3 would solve this — psycopg3 uses server-side parameter binding by default, making f-string SQL construction unnecessary. Consider combining with psycopg2→psycopg3 migration. See [technology-choices.md](technology-choices.md#psycopg2-raw-sql-no-orm). |
 
+## Document Processing Pipeline Consolidation
+
+| ID | Title | Status | Depends on |
+|----|-------|--------|------------|
+| B-103 | Consolidate Document Processing Pipeline (do_the_needful + md_decode + article_browser) | backlog | — |
+
+**Epic B-103** — Trzy skrypty (`web_documents_do_the_needful_new.py`, `webdocument_md_decode.py`, `imports/article_browser.py`) mają nakładające się odpowiedzialności w ekstrakcji artykułów z markdown. Główne problemy:
+
+1. **`text_md` zapisywany z pełnym markdown** (cała strona z nawigacją) zamiast wyekstrahowanego artykułu — `do_the_needful` Step 2b zapisuje surowy markdown, a `md_decode` Step 2 wyciąga sam artykuł ale tylko do cache, nie nadpisuje `text_md`
+2. **Duplikacja ekstrakcji** — `md_decode` ma ekstrakcję regexp+LLM, `article_browser` ma własną ekstrakcję LLM (niezależną)
+3. **Brak jednego pipeline** — flow: `dynamodb_sync` → `do_the_needful` → `md_decode` → `article_browser` wymaga ręcznego uruchamiania 4 skryptów
+
+Cel: jeden spójny pipeline gdzie `text_md` zawiera wyekstrahowany artykuł (z formatowaniem h1/h2/h3), a `text` czystą treść. Ekstrakcja (regexp + LLM fallback) w jednym miejscu, reużywana przez wszystkie skrypty.
+
 ## Data Architecture — Graph Relationships
 
 | ID | Title | Status | Depends on |
