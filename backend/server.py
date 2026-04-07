@@ -146,11 +146,11 @@ def url_add():
 
     except ValueError as e:
         logging.error("Validation error in /url_add: %s", e)
-        return {'status': 'error', 'message': str(e)}, 400
+        return {'status': 'error', 'message': 'Invalid request data'}, 400
     except RuntimeError as e:
         logging.error("Storage error in /url_add: %s", e)
         session.rollback()
-        return {'status': 'error', 'message': str(e)}, 500
+        return {'status': 'error', 'message': 'A storage error occurred while processing the request'}, 500
     except Exception as e:
         logging.error("Unexpected error in /url_add: %s", e)
         session.rollback()
@@ -341,7 +341,7 @@ def ai_get_embedding():
         embedds = service.get_embedding(text)
     except Exception as e:
         logging.error("Error generating embedding: %s", e)
-        return jsonify({"status": "error", "message": str(e), "encoding": "utf8", "text": text}), 500
+        return jsonify({"status": "error", "message": "Error generating embedding", "encoding": "utf8", "text": text}), 500
 
     return jsonify({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
             "embedding": embedds}), 200
@@ -355,8 +355,9 @@ def search_similar():
     service = SearchService(session)
     try:
         websites_list = service.search_similar(text, limit=int(limit) if limit else 3)
-    except RuntimeError as e:
-        return jsonify({"status": "error", "message": str(e), "encoding": "utf8", "text": text,
+    except RuntimeError:
+        logging.exception("Error searching for similar documents")
+        return jsonify({"status": "error", "message": "Error searching for similar documents", "encoding": "utf8", "text": text,
                 "websites": []}), 500
 
     return jsonify({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
@@ -379,8 +380,9 @@ def website_download_text_content():
     service = DocumentService(get_scoped_session())
     try:
         result = service.download_and_parse(url)
-    except RuntimeError as e:
-        return {"status": "error", "message": str(e), "encoding": "utf8"}, 500
+    except RuntimeError:
+        logging.exception("Error while downloading and parsing URL %s", url)
+        return {"status": "error", "message": "Internal server error while processing the URL", "encoding": "utf8"}, 500
 
     return jsonify({
         "status": "success",
