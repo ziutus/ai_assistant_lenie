@@ -1469,7 +1469,7 @@ so that I can focus on unprocessed articles during review and avoid duplicating 
 
 ## Data Architecture — Graph Relationships
 
-### B-102: Evaluate Neo4j AuraDB Free for Document Relationship Graph
+### B-104: Evaluate Neo4j AuraDB Free for Document Relationship Graph
 
 As a **knowledge worker**,
 I want document-to-document relationships (citations, links, topic connections) stored and queryable as a graph,

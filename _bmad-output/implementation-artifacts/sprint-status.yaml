@@ -1,4 +1,4 @@
-# generated: 2026-03-28
+# generated: 2026-04-05
 # project: lenie-server-2025
 # project_key: NOKEY
 # tracking_system: file-system
@@ -33,7 +33,7 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: 2026-03-28
+generated: 2026-04-05
 project: lenie-server-2025
 project_key: NOKEY
 tracking_system: file-system
@@ -320,7 +320,8 @@ development_status:
   B-89-api-usage-cost-and-limits-dashboard: backlog  # Admin panel (app2) showing external API usage, costs, and remaining limits/quotas. Covers: OpenAI, AWS Bedrock, CloudFerro Bielik, AssemblyAI, Firecrawl, Google Vertex AI, AWS Textract. Display per-provider: calls made, tokens/units consumed, estimated cost, free-tier/package limits remaining. Backend endpoint to aggregate usage data. Future: alerts when approaching limits.
 
   # --- Data Model & Cross-Instance Identity ---
-  B-102-rename-s3-uuid-to-uuid-global-document-identifier: backlog  # ADR-015: Rename s3_uuid→uuid, auto-generate for all docs, UNIQUE+NOT NULL. Enables stable Obsidian references and cross-instance sync. Alembic migration + backfill + code rename (15 files). AWS Lambda update deferred (docs/aws-sync-backlog.md).
+  # B-102: moved to Sprint 13, Epic 34 (stories 34-1, 34-2)
+  B-104-evaluate-postgresql-document-relationship-graph: backlog  # Phase 1 only: document_links table, persist extracted links from markdown, recursive CTE queries for traversal depth 1-3. Neo4j evaluation (Phase 2-3) deferred. Origin: backlog.md B-102 (renumbered to B-104 to resolve collision).
 
   # --- Phase 9: Multiuser ---
   B-33-implement-user-authentication-with-aws-cognito: backlog  # Cognito User Pool, integracja z API Gateway (Cognito Authorizer).
@@ -386,11 +387,11 @@ development_status:
   epic-31-retrospective: done
 
   # --- Epic 32: Service Layer Extraction ---
-  epic-32: backlog
-  32-1-extract-document-service-from-flask-routes: backlog  # B-56: Extract business logic (save, delete, download flow) from server.py routes into DocumentService. Eliminates duplication for MCP server.
-  32-2-extract-search-service-for-similarity-queries: backlog  # B-56: Extract search/similarity logic into SearchService. Prepares clean interface for MCP (B-57).
-  32-3-migrate-import-scripts-to-service-layer: backlog  # B-56: Migrate import scripts (dynamodb_sync, unknown_news_import, batch pipeline) to use service layer instead of direct ORM.
-  epic-32-retrospective: optional
+  epic-32: done
+  32-1-extract-document-service-from-flask-routes: done  # B-56: Extract business logic (save, delete, download flow) from server.py routes into DocumentService. Eliminates duplication for MCP server. Code review: 5 fixes (H1 rollback, M1 error msg, M2 test mock, M3 rollback, M4 None check).
+  32-2-extract-search-service-for-similarity-queries: done  # B-56: Extract search/similarity logic into SearchService. Prepares clean interface for MCP (B-57). Code review: 4M fixed (double load_config, missing error handling, missing tests, .get() docs).
+  32-3-migrate-import-scripts-to-service-layer: done  # B-56: Migrate import scripts (dynamodb_sync, unknown_news_import, batch pipeline) to use service layer instead of direct ORM. Code review: 4 fixes (H1 unknown-attr warning, M1 service-per-loop, M2 ruff noqa, M3 test count).
+  epic-32-retrospective: done
 
   # ============================================================
   # SPRINT 12: Import Pipeline Maturity
@@ -403,6 +404,16 @@ development_status:
   33-3-auto-detect-since-in-dynamodb-sync-from-import-logs: done
   33-4-add-article-review-and-obsidian-note-tracking: done  # B-101, ADR-014: reviewed_at TIMESTAMP + obsidian_note_paths JSONB on web_documents. Multi-user migration to join tables in Phase 9. Code review: 5 fixes (limit/filter, path validation, filter tests, naming).
   epic-33-retrospective: done
+
+  # ============================================================
+  # SPRINT 13: Data Architecture Improvements
+  # ============================================================
+
+  # --- Epic 34: Global Document Identifier (B-102) ---
+  epic-34: in-progress
+  34-1-alembic-migration-rename-s3-uuid-to-uuid: done  # B-102: Rename column s3_uuid→uuid, backfill UUIDs for all existing docs, add UNIQUE+NOT NULL constraint. ADR-015.
+  34-2-backend-frontend-code-rename-s3-uuid-to-uuid: backlog  # B-102: Rename s3_uuid→uuid in ORM models, services, routes, import scripts, shared types, React components (~15+ files).
+  epic-34-retrospective: optional
 
   # ============================================================
   # DONE (completed backlog items — historical record)
