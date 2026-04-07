@@ -132,7 +132,10 @@ class WebDocument(Base):
     # Content creator: YouTube channel name, article author, etc. — metadata about who made it.
     author: Mapped[str | None] = mapped_column(Text)
     note: Mapped[str | None] = mapped_column(Text)
-    s3_uuid: Mapped[str | None] = mapped_column(String(100))
+    uuid: Mapped[str] = mapped_column(
+        String(100), nullable=False, unique=True,
+        server_default=func.gen_random_uuid(),
+    )
     project: Mapped[str | None] = mapped_column(String(100))
     text_md: Mapped[str | None] = mapped_column(Text)
     transcript_needed: Mapped[bool | None] = mapped_column(Boolean, server_default=sa_text("false"))
@@ -380,7 +383,7 @@ class WebDocument(Base):
             "ai_summary_needed": self.ai_summary_needed,
             "author": self.author,
             "note": self.note,
-            "s3_uuid": self.s3_uuid,
+            "uuid": self.uuid,
             "project": self.project,
             "text_md": self.text_md,
             "transcript_needed": self.transcript_needed,

@@ -170,12 +170,6 @@ groups:
         required: true
         example: "BAAI/bge-multilingual-gemma2"
         used_by: [docker, lambda, local]
-      EMBEDDING_MODEL2:
-        description: "Secondary/fallback embedding model"
-        type: config
-        required: false
-        example: "text-embedding-ada-002"
-        used_by: [docker, local]
       AI_MODEL_SUMMARY:
         description: "LLM model for generating summaries"
         type: config
@@ -419,14 +413,6 @@ groups:
   media:
     description: "Media processing settings"
     variables:
-      TRANSCRIPT_PROVIDER:
-        description: "DEPRECATED (ADR-011) — only AssemblyAI is supported, this variable is no longer used"
-        type: config
-        required: false
-        status: deprecated
-        default: "assemblyai"
-        example: "assemblyai"
-        used_by: []
       TRANSCRIPTION_BALANCE_USD:
         description: "Initial transcription budget in USD for tracking remaining balance"
         type: config

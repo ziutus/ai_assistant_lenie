@@ -57,16 +57,16 @@ def _unknow_news_feed_config(**overrides):
 
 
 class TestFeedMonitorImportEntry:
-    """Tests for _import_entry from feed_monitor.py."""
+    """Tests for _import_entry from feed_monitor.py (uses DocumentService)."""
 
-    @patch("imports.feed_monitor.WebDocument")
-    def test_new_document_created(self, MockWebDoc):
-        """New document is created via ORM with correct fields."""
+    @patch("imports.feed_monitor.DocumentService")
+    def test_new_document_created(self, MockDocService):
+        """New document is created via DocumentService with correct fields."""
         session = _make_session()
 
         mock_doc = MagicMock()
         mock_doc.id = 10
-        MockWebDoc.return_value = mock_doc
+        MockDocService.return_value.import_document.return_value = (mock_doc, "added")
 
         from imports.feed_monitor import _import_entry
 
@@ -75,21 +75,20 @@ class TestFeedMonitorImportEntry:
         result = _import_entry(session, feed_config, entry)
 
         assert result == "added"
-        session.add.assert_called_once_with(mock_doc)
-        session.commit.assert_called_once()
-        assert mock_doc.title == "Test News Article"
-        assert mock_doc.summary == "Short description of the article"
-        assert mock_doc.language == "pl"
-        assert mock_doc.source == "https://unknow.news/"
+        call_kwargs = MockDocService.return_value.import_document.call_args
+        assert call_kwargs[1]["title"] == "Test News Article"
+        assert call_kwargs[1]["summary"] == "Short description of the article"
+        assert call_kwargs[1]["language"] == "pl"
+        assert call_kwargs[1]["source"] == "https://unknow.news/"
 
-    @patch("imports.feed_monitor.WebDocument")
-    def test_youtube_url_detection(self, MockWebDoc):
+    @patch("imports.feed_monitor.DocumentService")
+    def test_youtube_url_detection(self, MockDocService):
         """YouTube URLs get document_type=youtube."""
         session = _make_session()
 
         mock_doc = MagicMock()
         mock_doc.id = 11
-        MockWebDoc.return_value = mock_doc
+        MockDocService.return_value.import_document.return_value = (mock_doc, "added")
 
         from imports.feed_monitor import _import_entry
 
@@ -97,16 +96,17 @@ class TestFeedMonitorImportEntry:
         feed_config = _unknow_news_feed_config()
         _import_entry(session, feed_config, entry)
 
-        assert mock_doc.document_type == "youtube"
+        call_args = MockDocService.return_value.import_document.call_args
+        assert call_args[1]["document_type"] == "youtube"
 
-    @patch("imports.feed_monitor.WebDocument")
-    def test_regular_link_type(self, MockWebDoc):
+    @patch("imports.feed_monitor.DocumentService")
+    def test_regular_link_type(self, MockDocService):
         """Regular URLs get document_type=link."""
         session = _make_session()
 
         mock_doc = MagicMock()
         mock_doc.id = 12
-        MockWebDoc.return_value = mock_doc
+        MockDocService.return_value.import_document.return_value = (mock_doc, "added")
 
         from imports.feed_monitor import _import_entry
 
@@ -114,7 +114,8 @@ class TestFeedMonitorImportEntry:
         feed_config = _unknow_news_feed_config()
         _import_entry(session, feed_config, entry)
 
-        assert mock_doc.document_type == "link"
+        call_args = MockDocService.return_value.import_document.call_args
+        assert call_args[1]["document_type"] == "link"
 
 
 class TestCheckExisting:

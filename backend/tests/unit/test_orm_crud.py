@@ -231,7 +231,7 @@ class TestCreateFlow:
         doc.ai_summary_needed = True
         doc.author = "Author Name"
         doc.note = "A note"
-        doc.s3_uuid = "uuid-123"
+        doc.uuid = "uuid-123"
         doc.project = "lenie"
         doc.text_md = "# Markdown"
         doc.transcript_needed = False
@@ -261,7 +261,7 @@ class TestCreateFlow:
         assert d["ai_summary_needed"] is True
         assert d["author"] == "Author Name"
         assert d["note"] == "A note"
-        assert d["s3_uuid"] == "uuid-123"
+        assert d["uuid"] == "uuid-123"
         assert d["project"] == "lenie"
         assert d["text_md"] == "# Markdown"
         assert d["transcript_needed"] is False
@@ -427,7 +427,7 @@ class TestDictCompatibility:
             "created_at", "document_type", "source", "date_from", "original_id",
             "document_length", "chapter_list", "document_state", "document_state_error",
             "text_raw", "transcript_job_id", "ai_summary_needed", "author",
-            "note", "s3_uuid", "project", "text_md", "transcript_needed",
+            "note", "uuid", "project", "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths",
         }
         assert set(d.keys()) == expected_keys
@@ -462,7 +462,7 @@ class TestDictCompatibility:
             ai_summary_needed=False,
             author="Auth",
             note="Note",
-            s3_uuid="s3-1",
+            uuid="s3-1",
             project="lenie",
             text_md="md",
             transcript_needed=True,

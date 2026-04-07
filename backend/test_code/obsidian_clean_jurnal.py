@@ -19,9 +19,11 @@ from bs4 import BeautifulSoup
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from library.website.website_download_context import webpage_raw_parse
+from library.config_loader import load_config
 
+cfg = load_config()
 JOURNAL_DIR = r"C:\Users\ziutus\Obsydian\personal\Journal"
-TMP_DIR = "tmp"
+CACHE_DIR = cfg.get("CACHE_DIR") or "tmp"
 
 TARGET_CONTENT = "# DONE"
 DEFAULT_HEADERS = {
@@ -289,7 +291,7 @@ def download_storytel_pages_with_playwright():
     Extracts metadata from JSON-LD structured data.
     """
     journal_path = Path(JOURNAL_DIR)
-    tmp_path = Path(TMP_DIR)
+    tmp_path = Path(CACHE_DIR)
 
     if not journal_path.exists():
         print(f"Directory does not exist: {JOURNAL_DIR}")
@@ -297,7 +299,7 @@ def download_storytel_pages_with_playwright():
 
     if not tmp_path.exists():
         tmp_path.mkdir(parents=True)
-        print(f"Created tmp directory: {TMP_DIR}")
+        print(f"Created tmp directory: {CACHE_DIR}")
 
     # Pattern to match Storytel links (with or without UTM parameters)
     # Match URL until whitespace, closing parenthesis, or end of line
@@ -407,7 +409,7 @@ def download_storytel_pages():
     Uses requests library (legacy method).
     """
     journal_path = Path(JOURNAL_DIR)
-    tmp_path = Path(TMP_DIR)
+    tmp_path = Path(CACHE_DIR)
 
     if not journal_path.exists():
         print(f"Directory does not exist: {JOURNAL_DIR}")
@@ -415,7 +417,7 @@ def download_storytel_pages():
 
     if not tmp_path.exists():
         tmp_path.mkdir(parents=True)
-        print(f"Created tmp directory: {TMP_DIR}")
+        print(f"Created tmp directory: {CACHE_DIR}")
 
     # Pattern to match Storytel links (with or without UTM parameters)
     # Match URL until whitespace, closing parenthesis, or end of line

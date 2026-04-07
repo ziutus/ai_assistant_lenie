@@ -29,7 +29,7 @@ create table web_documents
     ai_summary_needed    boolean     default false,
     author               text,
     note                 text,
-    s3_uuid              varchar(100),
+    uuid                 varchar(100) NOT NULL DEFAULT gen_random_uuid(),
     project              varchar(100),
     text_md              text,
     transcript_needed    boolean     default false
@@ -45,6 +45,9 @@ CREATE INDEX IF NOT EXISTS idx_web_documents_source ON public.web_documents(sour
 CREATE INDEX IF NOT EXISTS idx_web_documents_date_from ON public.web_documents(date_from);
 CREATE INDEX IF NOT EXISTS idx_web_documents_paywall ON public.web_documents(paywall);
 CREATE INDEX IF NOT EXISTS idx_web_documents_ai_flag ON public.web_documents(ai_summary_needed);
+
+-- Unique constraint for uuid (global document identifier, ADR-015)
+ALTER TABLE public.web_documents ADD CONSTRAINT uq_web_documents_uuid UNIQUE (uuid);
 
 -- Potwierdzenie utworzenia tabel
 SELECT 'Table web_documents created successfully in lenie-ai database' as status;

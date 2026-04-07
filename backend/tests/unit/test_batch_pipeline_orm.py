@@ -89,23 +89,23 @@ class TestBatchPipelineNoLegacyImports:
         assert has_get_session_import, \
             "web_documents_do_the_needful_new.py must import get_session from library.db.engine"
 
-    def test_imports_get_embedding(self):
-        """get_embedding should be imported from library.embedding."""
+    def test_imports_search_service(self):
+        """SearchService should be imported from library.search_service."""
         import ast
 
         with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         tree = ast.parse(source)
-        has_get_embedding_import = False
+        has_search_service_import = False
         for node in ast.walk(tree):
-            if isinstance(node, ast.ImportFrom) and node.module == "library.embedding":
+            if isinstance(node, ast.ImportFrom) and node.module == "library.search_service":
                 for alias in node.names:
-                    if alias.name == "get_embedding":
-                        has_get_embedding_import = True
+                    if alias.name == "SearchService":
+                        has_search_service_import = True
 
-        assert has_get_embedding_import, \
-            "web_documents_do_the_needful_new.py must import get_embedding from library.embedding"
+        assert has_search_service_import, \
+            "web_documents_do_the_needful_new.py must import SearchService from library.search_service"
 
     def test_no_save_calls(self):
         """No .save() calls should remain in the batch pipeline."""

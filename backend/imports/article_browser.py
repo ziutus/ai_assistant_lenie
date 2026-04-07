@@ -25,6 +25,48 @@ import textwrap
 from datetime import datetime
 from typing import Optional
 
+
+def _getch_action(prompt: str) -> str:
+    """Read a single keypress without Enter for known single-char actions.
+
+    Falls back to input() if getch is not available or key is not a recognized action.
+    """
+    _SINGLE_KEYS = set("npvrwsdmocq")
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            ch = msvcrt.getwch()
+        else:
+            import tty
+            import termios
+            fd = sys.stdin.fileno()
+            old = termios.tcgetattr(fd)
+            try:
+                tty.setraw(fd)
+                ch = sys.stdin.read(1)
+            finally:
+                termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+        if ch in ("\r", "\n"):
+            print()
+            return ""
+        if ch == "\x03":  # Ctrl+C
+            raise KeyboardInterrupt
+        if ch == "\x04":  # Ctrl+D
+            raise EOFError
+
+        if ch.lower() in _SINGLE_KEYS:
+            print(ch)  # echo the character
+            return ch.lower()
+
+        # Not a single-key action — show what was typed and read the rest via input()
+        return (ch + input()).strip().lower()
+    except (ImportError, OSError):
+        # Fallback: no terminal control available (e.g. piped input)
+        return input().strip().lower()
+
 from sqlalchemy import text as text_sql
 
 from library.config_loader import load_config
@@ -714,16 +756,6 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     print(f"    Embedding model: {embedding_model}")
     print(f"    Status: {doc.document_state} → MD_SIMPLIFIED → EMBEDDING_EXIST")
 
-    try:
-        confirm = input("  Potwierdzasz? [Y/n]: ").strip().lower()
-    except (KeyboardInterrupt, EOFError):
-        print()
-        return False
-
-    if confirm == "n":
-        print("  Anulowano.")
-        return False
-
     if not _refresh_db_connection(session):
         return False
     session.refresh(doc)
@@ -926,10 +958,11 @@ def action_mark_review(doc, session):
         print(f"  BŁĄD zmiany statusu: {e}")
 
 
-def cmd_dump(session, article_id: Optional[int] = None):
+def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
     """Wypisz artykuł jako JSON na stdout — do użycia przez Claude Code slash commands.
 
-    Zawiera metadane + pełny tekst (preferuje text_md > text > text_raw).
+    --dump: tekst z pola `text` (czysta treść bez formatowania)
+    --dump-md: tekst z pola `text_md` (markdown z formatowaniem h1/h2/h3)
     Wyjście jest UTF-8 JSON, bez interakcji, bez efektów ubocznych.
     """
     import json
@@ -943,7 +976,10 @@ def cmd_dump(session, article_id: Optional[int] = None):
         print(json.dumps({"error": f"Dokument {article_id} nie znaleziony."}), file=sys.stderr)
         sys.exit(1)
 
-    text = doc.text_md or doc.text or doc.text_raw or ""
+    if use_md:
+        text = doc.text_md or doc.text or ""
+    else:
+        text = doc.text or doc.text_raw or ""
 
     result = {
         "id": doc.id,
@@ -1075,11 +1111,12 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                 print(f"\n  NOTATKA: {note_file}")
 
         print()
+        print(f"  ID: {doc.id}  Status: {doc.document_state}")
         print("  [n]ext  [p]rev  [v]iew  [r]efresh  [w]rite to db  [s]ave note  [d]one/reviewed  [m]ark review  [o]bsidian  [c]ompare  [q]uit")
 
         while True:
             try:
-                action = input(f"  [{idx + 1}] > ").strip().lower()
+                action = _getch_action(f"  [{idx + 1}] > ")
             except (KeyboardInterrupt, EOFError):
                 print("\nPrzegląd zakończony.")
                 return
@@ -1097,15 +1134,20 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                 break
 
             elif action in ("r", "refresh"):
-                # Usuń cache LLM extracted i ponów analizę
+                # Usuń cache LLM extracted i ponów ekstrakcję
                 cache_dir_base_r = os.path.join(load_config().get("CACHE_DIR") or "tmp", "markdown")
                 cache_dir_r = os.path.join(cache_dir_base_r, str(doc.id))
                 import glob as glob_mod
                 for f in glob_mod.glob(os.path.join(cache_dir_r, "*_llm_extracted_article.md")):
                     os.remove(f)
                     print(f"  Usunięto cache: {os.path.basename(f)}")
-                article = None  # wymuś ponowną analizę
-                print("  Cache wyczyszczony. Użyj [v] żeby zobaczyć ponownie wyekstrahowany tekst.")
+                article = None
+                print("  Cache wyczyszczony. Pobieram tekst ponownie...")
+                article = get_article_text(doc, session)
+                if article:
+                    action_view(article, check_urls=check_urls)
+                else:
+                    print("  Nie udało się pobrać treści artykułu. Spróbuj [r]efresh ponownie za chwilę (problem z API).")
                 continue
 
             elif action in ("v", "view"):
@@ -1114,7 +1156,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                 if article:
                     action_view(article, check_urls=check_urls)
                 else:
-                    print("  Nie udało się pobrać treści artykułu.")
+                    print("  Nie udało się pobrać treści artykułu. Spróbuj [r]efresh ponownie za chwilę (problem z API).")
                 continue
 
             elif action in ("w", "write"):
@@ -1203,7 +1245,8 @@ def main():
     group.add_argument("--list", action="store_true", help="Lista artykułów")
     group.add_argument("--review", action="store_true", help="Interaktywny przegląd")
     group.add_argument("--show", action="store_true", help="Wyświetl artykuł i zakończ (wymaga --id)")
-    group.add_argument("--dump", action="store_true", help="Wypisz artykuł jako JSON (do użycia przez Claude Code)")
+    group.add_argument("--dump", action="store_true", help="Wypisz artykuł jako JSON — pole text (czysta treść)")
+    group.add_argument("--dump-md", action="store_true", help="Wypisz artykuł jako JSON — pole text_md (markdown z formatowaniem)")
     group.add_argument("--notes", action="store_true", help="Pokaż zapisane notatki do przetworzenia")
 
     parser.add_argument("--since", default=None, help="Data od (YYYY-MM-DD)")
@@ -1228,7 +1271,9 @@ def main():
 
     try:
         if args.dump:
-            cmd_dump(session, article_id=args.id)
+            cmd_dump(session, article_id=args.id, use_md=False)
+        elif args.dump_md:
+            cmd_dump(session, article_id=args.id, use_md=True)
         elif args.show:
             cmd_show(session, article_id=args.id, check_urls=args.check_urls)
         elif args.list:
