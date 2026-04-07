@@ -39,6 +39,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from library.config_loader import load_config
 from library.db.engine import get_session
 from library.db.models import ImportLog, WebDocument
+from library.document_service import DocumentService
 from library.import_log_tracker import ImportLogTracker
 from library.models.stalker_document_status import StalkerDocumentStatus
 
@@ -168,8 +169,8 @@ def save_cache_files(doc_id: int, text_content: str | None, html_content: str | 
 
 
 def sync_item_to_postgres(item: dict, text_content: str | None, html_content: str | None,
-                          dry_run: bool, session=None) -> tuple[str, int | None]:
-    """Insert a DynamoDB item into PostgreSQL via ORM. Returns ('added'/'skipped'/'error', doc_id or None)."""
+                          dry_run: bool, session=None, service=None) -> tuple[str, int | None]:
+    """Insert a DynamoDB item into PostgreSQL via DocumentService. Returns ('added'/'skipped'/'error', doc_id or None)."""
     url = item.get("url")
     if not url:
         print("  SKIP: no url in item")
@@ -181,44 +182,45 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
         print(f"  DRY-RUN: would add [{doc_type}] {title[:80]}")
         return "added", None
 
+    doc_type = item.get("type", "link")
+
+    # Convert paywall to bool before passing to service
+    paywall = item.get("paywall", False)
+    paywall_bool = paywall in (True, "true", "True", 1, "1")
+
+    # Determine document_state based on content availability
+    if text_content or html_content:
+        doc_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name
+    else:
+        doc_state = StalkerDocumentStatus.URL_ADDED.name
+
+    # Build metadata dict for import_document
+    metadata = {}
+    for field in ("title", "language", "note", "s3_uuid", "chapter_list", "created_at"):
+        value = item.get(field)
+        if value is not None:
+            metadata[field] = value
+    metadata["source"] = item.get("source", "own")
+    metadata["paywall"] = paywall_bool
+    if text_content:
+        metadata["text"] = text_content
+    if html_content:
+        metadata["text_raw"] = html_content
+
     try:
-        existing = WebDocument.get_by_url(session, url)
-    except Exception as e:
-        print(f"  ERROR checking URL {url}: {e}")
-        return "error", None
+        if service is None:
+            service = DocumentService(session)
+        doc, status = service.import_document(
+            url=url,
+            document_type=doc_type,
+            document_state=doc_state,
+            skip_if_exists=True,
+            **metadata,
+        )
 
-    if existing is not None:
-        print(f"  SKIP: already exists (id={existing.id}): {url}")
-        return "skipped", None
-
-    try:
-        doc = WebDocument(url=url)
-        doc.title = item.get("title")
-        doc.language = item.get("language")
-        doc.source = item.get("source", "own")
-        doc.note = item.get("note")
-        doc.s3_uuid = item.get("s3_uuid")
-        doc.chapter_list = item.get("chapter_list")
-        doc.created_at = item.get("created_at")
-
-        doc_type = item.get("type", "link")
-        doc.set_document_type(doc_type)
-
-        paywall = item.get("paywall", False)
-        doc.paywall = paywall in (True, "true", "True", 1, "1")
-
-        if text_content:
-            doc.text = text_content
-        if html_content:
-            doc.text_raw = html_content
-
-        if text_content or html_content:
-            doc.document_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name
-        else:
-            doc.document_state = StalkerDocumentStatus.URL_ADDED.name
-
-        session.add(doc)
-        session.commit()
+        if status == "skipped":
+            print(f"  SKIP: already exists (id={doc.id}): {url}")
+            return "skipped", None
 
         print(f"  ADDED (id={doc.id}): [{doc_type}] {doc.title or url}")
         return "added", doc.id
@@ -273,10 +275,9 @@ def main():
         finally:
             detect_session.close()
     except (SQLAlchemyError, OSError) as e:
-        if args.since is None:
-            print(f"ERROR: Cannot connect to database for auto-detection: {e}")
-            print("Please provide --since YYYY-MM-DD explicitly, or fix the database connection.")
-            sys.exit(1)
+        print(f"ERROR: Cannot connect to database: {e}")
+        print("Fix the database connection before running this script.")
+        sys.exit(1)
 
     if args.since is None:
         if auto_date is None:
@@ -353,6 +354,7 @@ def main():
     errors = 0
 
     session = None if args.dry_run else get_session()
+    doc_service = DocumentService(session) if session else None
     if session and not args.dry_run:
         tracker_params = {
             "since": args.since,
@@ -373,7 +375,7 @@ def main():
 
             for i, item in enumerate(items, 1):
                 url = item.get("url", "(no url)")
-                print(f"\n[{i}/{len(items)}] {url[:100]}")
+                print(f"\n[{i}/{len(items)}] {url}")
 
                 # Check for duplicate before downloading S3 content
                 text_content = None
@@ -398,7 +400,7 @@ def main():
                 if s3_uuid and doc_type == "webpage" and not args.skip_s3 and not args.dry_run:
                     text_content, html_content = fetch_s3_content(s3_client, bucket, s3_uuid)
 
-                result, doc_id = sync_item_to_postgres(item, text_content, html_content, args.dry_run, session=session)
+                result, doc_id = sync_item_to_postgres(item, text_content, html_content, args.dry_run, session=session, service=doc_service)
 
                 # Save cache files after successful insert (doc_id now available)
                 if result == "added" and doc_id and (text_content or html_content):
