@@ -78,6 +78,13 @@ def webpage_text_clean(url: str, content: str):
             for regex in site_rules[url_path]["remove_string_regexp"]:
                 content = remove_text_regex(content, regex)
 
+    # Apply global rules (key "_global") — common ad/boilerplate patterns across all sites
+    global_rules = site_rules.get("_global", {})
+    for data_string in global_rules.get("remove_string", []):
+        content = content.replace(data_string, "")
+    for regex in global_rules.get("remove_string_regexp", []):
+        content = remove_text_regex(content, regex)
+
     content = re.sub(r'\n[^\S\n]+\n', '\n\n', content)
     content = re.sub(r'\n{2,}', '\n\n', content)
     content = content.strip('\n')
