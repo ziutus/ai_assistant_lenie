@@ -22,7 +22,8 @@ from typing import Optional
 from urllib.request import urlopen, Request
 from urllib.error import URLError
 
-CACHE_DIR = os.path.join(os.path.dirname(__file__), "tmp")
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CACHE_DIR = os.environ.get("CACHE_DIR") or os.path.join(_BACKEND_DIR, "tmp")
 CACHE_FILE = os.path.join(CACHE_DIR, "freedom_house.csv")
 
 # OWID indicator IDs for Freedom House data
