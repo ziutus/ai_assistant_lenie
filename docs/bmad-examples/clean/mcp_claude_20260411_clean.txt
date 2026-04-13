@@ -1,0 +1,2940 @@
+
+❯ /clear                                                                        
+  ⎿  (no content)
+
+❯ /bmad-agent-bmm-pm                                                            
+
+  Read 2 files (ctrl+o to expand)
+
+● Cześć Ziutus! 📋
+
+  Jestem John, Twój Product Manager. Specjalizuję się w tworzeniu PRD poprzez
+  wywiady z użytkownikami, odkrywanie wymagań i dopasowywanie oczekiwań
+  interesariuszy. Zadam dużo pytań "DLACZEGO?" — bo to klucz do zrozumienia, co
+  naprawdę jest potrzebne.
+
+  Oto co mogę dla Ciebie zrobić:
+
+  1. [MH] Wyświetl ponownie menu pomocy
+  2. [CH] Porozmawiaj ze mną o czymkolwiek
+  3. [CP] Stwórz PRD — prowadzony wywiad prowadzący do dokumentu wymagań
+  produktu
+  4. [VP] Waliduj PRD — sprawdź kompletność, spójność i organizację PRD
+  5. [EP] Edytuj PRD — zaktualizuj istniejący dokument wymagań
+  6. [CE] Stwórz Epiki i Story — specyfikacje napędzające development
+  7. [IR] Gotowość do implementacji — sprawdź spójność PRD, UX, architektury i
+  epików
+  8. [CC] Korekta kursu — gdy w trakcie implementacji odkryjesz potrzebę dużych
+  zmian
+  9. [PM] Party Mode 🎉
+  10. [DA] Pożegnaj agenta
+
+  W każdej chwili możesz wpisać /bmad-help, żeby uzyskać poradę co robić dalej.
+  Możesz też połączyć to z opisem, np. /bmad-help where should I start with an 
+  idea I have that does XYZ.
+
+  Co chcesz zrobić?
+
+❯ 2                                                                             
+
+● Jasne, Ziutus! Jestem do Twojej dyspozycji.
+
+  O czym chciałbyś porozmawiać? Mogę pomóc z:
+
+  - Strategią produktową i priorytetyzacją
+  - Analizą rynku i konkurencji
+  - Wymaganiami użytkowników i walidacją pomysłów
+  - Planowaniem roadmapy
+  - Czymkolwiek innym związanym z projektem Lenie
+
+  Śmiało, o co chodzi?
+
+❯ chcialbym moc korzystac z rozwiazania lenie-ai, czyli tego projektu, na       
+  komorce w kliencie claude. jak kojarze sa te same rzeczy, z ktorych mozna     
+  skorzystac na kliencie webowym. jest tam opcja: Add custom connector          
+  BETA                                                                          
+  Connect Claude to your data and tools. Learn more about connectors or get     
+  started with pre-built ones.                                                  
+                                                                                
+  Name                                                                          
+  Remote MCP server URL                                                         
+                                                                                
+  Advanced settings                                                             
+  OAuth Client ID (optional)                                                    
+  OAuth Client Secret (optional)                                                
+  Only use connectors from developers you trust. Anthropic does not control     
+  which tools developers make available and cannot verify that they will work   
+  as intended or that they won't change.                                        
+                                                                                
+  Building an MCP server? Report issues and subscribe to updates here.          
+  pamietajac ze uzywam chmury AWS jak i lokalnego NAS (ale sa pewnie uslugi     
+  wystawiajace wewnetrzna usluge na publicznym adresie IP) jak moge dodac       
+  wsparcie lenie-ai do clienta claude? czy to ma cos wspolnego z serwerem MCP,  
+  ktory jest w planach?                                                         
+
+  (ctrl+o to expand)
+
+● Świetne pytanie, Ziutus! To jest dokładnie w temacie tego, co macie
+  zaplanowane w projekcie. Pozwól, że rozłożę to na czynniki pierwsze.
+
+  Tak, to MA związek z planowanym serwerem MCP
+
+  W ADR-005 już podjęliście decyzję architektoniczną: Lenie-AI ma być serwerem 
+  MCP — Claude (Desktop/Code/mobilny) odpytuje Lenie jako bazę wiedzy, a sam
+  robi analizę AI. Pipeline: Lenie (zbieranie) → Claude (analiza) → Obsidian 
+  (organizacja).
+
+  Serwis layer (DocumentService, SearchService) jest już przygotowany — bez
+  zależności od Flaska, gotowy do opakowania w MCP tools.
+
+  Co potrzebujesz, żeby to działało w kliencie Claude na telefonie
+
+  Custom Connector w claude.ai = Remote MCP Server (transport SSE/streamable
+  HTTP). Żeby Claude mógł się połączyć, serwer MCP musi być publicznie dostępny
+  pod HTTPS URL.
+
+  Opcja 1: AWS (rekomendowana — masz już infrastrukturę)
+
+  - API Gateway + Lambda — najtańsze, serverless, HTTPS out-of-the-box
+  - Opakujesz DocumentService/SearchService w MCP SDK i wystawiasz przez Lambda
+  - API Gateway daje Ci gotowy publiczny URL + obsługę OAuth/API keys
+  - Pasuje do istniejącego wzorca app-server-db / app-server-internet
+
+  Opcja 2: NAS + tunel publiczny
+
+  - Cloudflare Tunnel (darmowy) lub ngrok — wystawiają lokalny serwis na
+  publicznym HTTPS
+  - Serwer MCP działa na NAS obok istniejącego backendu
+  - Zaleta: zero kosztów AWS, szybki start
+  - Wada: zależność od dostępności NAS i tunelu, kwestie bezpieczeństwa
+
+  Opcja 3: Hybryda
+
+  - MCP server na AWS (zawsze dostępny), ale dane synchronizowane z NAS
+  - Najlepsza dostępność, ale większa złożoność
+
+  Kluczowe pytania, na które musimy odpowiedzieć
+
+  Zanim rzucimy się w implementację, jako PM muszę zapytać DLACZEGO i CO:
+
+  1. Jakie operacje chcesz wykonywać z telefonu? Tylko wyszukiwanie i czytanie
+  dokumentów? Czy też dodawanie nowych linków, uruchamianie przetwarzania?
+  2. Jak często będziesz z tego korzystał mobilnie? Codziennie, kilka razy w
+  tygodniu? To wpływa na wybór infrastruktury (Lambda = płacisz za użycie, NAS =
+   darmowe ale mniej niezawodne).
+  3. Czy dostępność 24/7 jest krytyczna? NAS może być niedostępny (restart, brak
+   prądu), Lambda — zawsze działa.
+  4. Czy to ma być tylko Twoje narzędzie, czy planujesz dać dostęp innym? To
+  wpływa na wymagania auth (OAuth w Custom Connector).
+
+  ---
+  Odpowiedz na te pytania, a pomogę Ci wybrać najlepszą ścieżkę i zaplanować
+  minimalny scope do pierwszego działającego MVP. Co o tym sądzisz?
+
+
+❯ chce dac mozliwosc edycji i poprawnia dokumentow w bazie obsidian. czyli czy  
+  nie potrzebuje trzymac kopii notatek z obsiad w bazie postgresql? i           
+  synchronizowac je?                                                            
+
+● Dobre pytanie — i zanim odpowiem, muszę zrozumieć kilka rzeczy, bo odpowiedź
+  zależy od tego, gdzie fizycznie leżą pliki Obsidian i skąd MCP server ma do 
+  nich sięgać.
+
+  Stan faktyczny
+
+  Twój vault Obsidian jest teraz na: C:\Users\ziutus\Obsydian\personal — czyli
+  lokalny dysk Windows. Claude na telefonie nie ma do tego dostępu.
+
+  Czy PostgreSQL jako warstwa pośrednia jest potrzebna?
+
+  Nie koniecznie. To zależy od architektury. Oto opcje:
+
+  Opcja A: Obsidian vault na NAS + MCP server na NAS
+
+  - Przenosisz vault (lub sync) na NAS (192.168.200.7)
+  - MCP server na NAS ma bezpośredni dostęp do plików .md
+  - Claude przez MCP: czyta, edytuje, tworzy pliki — bezpośrednio
+  - Wystawiasz przez Cloudflare Tunnel
+  - Nie potrzebujesz PostgreSQL do notatek
+  - Obsidian na PC synchronizujesz z NAS (Syncthing, rsync, Obsidian Sync)
+
+  Opcja B: Notatki w PostgreSQL + sync
+
+  - Kopiujesz notatki do bazy, sync dwukierunkowy
+  - MCP server (Lambda lub NAS) czyta/pisze do DB
+  - Osobny proces synchronizuje DB ↔ pliki .md
+  - Dużo złożoności: konflikty edycji, formatowanie markdown, frontmatter, sync
+  w obie strony
+  - Jedyna zaleta: pełnotekstowe wyszukiwanie + embeddingi w jednym miejscu
+
+  Opcja C: S3 jako storage (hybryda AWS)
+
+  - Sync vault do S3
+  - Lambda MCP czyta/pisze pliki z S3
+  - Sync S3 ↔ lokalny vault (rclone, aws s3 sync)
+  - Prostsze niż PostgreSQL, serverless
+
+  Moja rekomendacja jako PM
+
+  Opcja A (NAS + bezpośredni dostęp do plików) — bo:
+
+  1. Obsidian to pliki markdown — trzymanie ich w bazie to wymuszanie
+  kwadratowego klocka w okrągły otwór
+  2. Sync dwukierunkowy DB ↔ pliki to koszmar — konflikty, utracone zmiany, edge
+   case'y
+  3. Masz już NAS z działającym backendem
+  4. Obsidian ma natywne pluginy do sync z różnymi backendami
+
+  Ale zanim podejmiemy decyzję — pytania:
+
+  1. Czy używasz Obsidian Sync, czy vault jest tylko lokalny? Jeśli lokalny —
+  jak syncujesz między urządzeniami?
+  2. Czy na telefonie masz Obsidian? Jeśli tak — może wystarczy, że Claude
+  edytuje pliki, a Obsidian sam je zsynchronizuje?
+  3. Czy potrzebujesz wyszukiwania semantycznego (embeddingi) po notatkach 
+  Obsidian? Bo to jedyny powód, dla którego PostgreSQL miałby sens — ale nawet
+  wtedy baza trzymałaby tylko indeks, nie treść.
+  4. Co dokładnie znaczy "edycja i poprawianie"? Poprawianie literówek?
+  Uzupełnianie notatek o nowe informacje z Lenie? Restrukturyzacja?
+
+  Te odpowiedzi określą, czy w ogóle potrzebujesz warstwy bazodanowej, czy
+  wystarczy prosty MCP server operujący na plikach.
+
+
+❯ uzywam o obsidian sync, mam obsidian na telefonie. czy claude bedzie moglo    
+  edytowac pliki obsidian (dac mu dostep?) 3. na razie nie potrzebuje notatek.  
+  4. dodawanie nowej wiedzy na podstawie artykulow z lenie-ai. czyli moze byc   
+  duzo zmian w obsidian. co wazne, nie bedzie (przy jednym uzytkowniku)         
+  jednoczesnych zmian z komputera i telefonu. jednoczesnie bedzie tylko jedno   
+  zrodlo zmian                                                                  
+
+● To świetnie upraszcza sprawę! Skoro masz Obsidian Sync i nie ma jednoczesnych
+  edycji, architektura jest prosta:
+
+  Przepływ
+
+  Claude (telefon) → Remote MCP server (NAS) → edytuje pliki .md → Obsidian Sync
+   → wszystkie urządzenia
+                                              → czyta artykuły z Lenie
+  PostgreSQL (NAS:5434)
+
+  Co trzeba zrobić
+
+  1. Zsynchronizować vault Obsidian na NAS — Syncthing lub Obsidian Sync (NAS
+  jako dodatkowe urządzenie, albo prosty rsync z PC)
+  2. MCP server na NAS — ma dostęp do obu rzeczy:
+    - Pliki .md vaultu (czytanie + zapis)
+    - Lenie PostgreSQL na localhost:5434 (czytanie artykułów)
+  3. Cloudflare Tunnel — wystawia MCP server na publiczny HTTPS URL (darmowy)
+  4. Custom Connector w claude.ai — wpisujesz URL tunelu
+
+  MCP Tools (MVP)
+
+  Minimalny zestaw narzędzi, które MCP server wystawiłby Claude'owi:
+
+  ┌─────────────────────┬───────────────────────────────────────────────┐
+  │        Tool         │                    Co robi                    │
+  ├─────────────────────┼───────────────────────────────────────────────┤
+  │ lenie_search        │ Szuka artykułów w Lenie po słowach kluczowych │
+  ├─────────────────────┼───────────────────────────────────────────────┤
+  │ lenie_get_article   │ Pobiera pełną treść artykułu z Lenie          │
+  ├─────────────────────┼───────────────────────────────────────────────┤
+  │ obsidian_read_note  │ Czyta notatkę z vaultu                        │
+  ├─────────────────────┼───────────────────────────────────────────────┤
+  │ obsidian_write_note │ Tworzy/nadpisuje notatkę                      │
+  ├─────────────────────┼───────────────────────────────────────────────┤
+  │ obsidian_list_notes │ Listuje notatki w folderze                    │
+  ├─────────────────────┼───────────────────────────────────────────────┤
+  │ obsidian_search     │ Szuka tekstu w notatkach (grep)               │
+  └─────────────────────┴───────────────────────────────────────────────┘
+
+  Claude na telefonie mówisz: "Przeczytaj artykuł X z Lenie i dodaj kluczowe 
+  informacje do notatki o Ukrainie" — i Claude sam:
+  1. Pobiera artykuł przez lenie_get_article
+  2. Czyta istniejącą notatkę przez obsidian_read_note
+  3. Aktualizuje notatkę przez obsidian_write_note
+  4. Obsidian Sync rozsyła zmianę na telefon i PC
+
+  Kluczowa kwestia: sync vaultu na NAS
+
+  Masz kilka opcji:
+
+  - Syncthing (darmowy, P2P) — PC ↔ NAS, automatyczny, dwukierunkowy
+  - rsync cron — prostsze, jednokierunkowe (PC → NAS), wystarczy jeśli z NAS
+  tylko czytasz/piszesz przez MCP
+  - Folder NAS jako network drive — Obsidian wskazuje na share NAS zamiast
+  lokalnego dysku
+
+  DLACZEGO pytam: skoro Claude przez MCP będzie pisał do vaultu na NAS, zmiany
+  muszą wrócić na PC. Syncthing (dwukierunkowy) rozwiązuje to automatycznie.
+
+  Następne kroki
+
+  Czy chcesz, żebym:
+  1. Sformalizował to w PRD — żebyśmy mieli pełny scope, ryzyka, MVP definition?
+  2. Od razu przeszedł do planowania technicznego — architektura MCP servera,
+  wybór SDK, Cloudflare Tunnel setup?
+
+  I jedno pytanie: czy QNAP ma Docker? Bo najprościej byłoby MCP server odpalić
+  jako kontener obok istniejącego backendu.
+
+
+❯ 1, Qnap ma docker a takze mozliwosc wirtualizacji maszyn linuksowych.         
+  dlaczego o to pytasz? czy brakje jakies wiedzy dostepnej o tym?               
+
+● Pytam o Docker na QNAP, bo MCP server trzeba gdzieś uruchomić — kontener
+  Docker na NAS to najprostsza opcja (obok istniejącego stacku). Ale masz rację,
+   powinienem był sprawdzić co już wiem o NAS.
+
+  Zanim zacznę PRD — muszę zebrać kontekst. Pozwól, że przejrzę istniejące
+  dokumenty.
+
+● 3 Explore agents finished (ctrl+o to expand)
+   ├─ NAS infrastructure docs · 0 tool uses
+   │  ⎿  Done
+   ├─ Existing PRD and architecture · 0 tool uses
+   │  ⎿  Done
+   └─ Obsidian workflow in project · 0 tool uses
+      ⎿  Done
+
+● Mam pełny obraz. Masz już solidną infrastrukturę NAS (9 kontenerów Docker,
+  deploy script, registry) i działającą integrację Obsidian (article_browser,
+  obsidian_note_paths w DB, slash command). Zaczynam tworzenie PRD.
+
+  Read 3 files (ctrl+o to expand)
+
+● Istniejący PRD jest ukończony (step-12-complete). Zgodnie z konwencją,
+  najpierw zarchiwizuję obecny PRD, a potem zaczniemy nowy.
+
+  Listed 1 directory (ctrl+o to expand)
+
+● Bash(cp _bmad-output/planning-artifacts/prd.md "_bmad-output/planning-artifact
+      s/archive/prd-sprint9-sqlalchemy-orm-2026-04-10.md")
+  ⎿  Done
+
+● Zarchiwizowałem obecny PRD. Teraz szukam dokumentów wejściowych do nowego PRD.
+
+  Searched for 3 patterns, read 1 file (ctrl+o to expand)
+
+● Teraz przygotuję raport inicjalizacji. Pozwól, że wczytam kluczowe dokumenty
+  projektowe, które posłużą jako kontekst.
+
+  Read 3 files (ctrl+o to expand)
+
+● Mam pełny kontekst. Teraz tworzę dokument PRD.
+
+  [--- Write: prd.md — diff removed for readability ---]
+
+● Witaj Ziutus! Przygotowałem workspace PRD dla lenie-server-2025.
+
+  Document Setup:
+  - Utworzono: _bmad-output/planning-artifacts/prd.md z szablonu
+  - Zarchiwizowano poprzedni PRD:
+  archive/prd-sprint9-sqlalchemy-orm-2026-04-10.md
+  - Frontmatter zainicjalizowany ze stanem workflow
+
+  Input Documents Discovered:
+  - Product briefs: 0 plików (brak)
+  - Research: 0 plików (brak)
+  - Brainstorming: 0 plików (brak)
+  - Project docs: 4 pliki ✓ załadowane (brownfield project)
+
+  Załadowane pliki:
+  - docs/adr/adr-005-remove-ai-ask-mcp-architecture.md — decyzja
+  architektoniczna MCP
+  - docs/CICD/NAS_Deployment.md — infrastruktura NAS/Docker
+  - README.md — wizja i roadmapa projektu
+  - _bmad-output/planning-artifacts/architecture.md — architektura systemu
+
+  📋 Uwaga: To jest brownfield project. Istniejąca dokumentacja została
+  załadowana. W następnym kroku zapytam o szczegóły nowej funkcjonalności, którą
+   chcesz dodać do istniejącego systemu.
+
+  Masz jakieś dodatkowe dokumenty, które powinienem uwzględnić, czy przechodzimy
+   dalej?
+
+  [C] Continue — Zapisz i przejdź do Project Discovery (Krok 2 z 11)
+
+
+❯ czy poprzedni PRD przenioslech do archiwum?                                   
+
+● Tak, zarchiwizowałem go do:
+
+  _bmad-output/planning-artifacts/archive/prd-sprint9-sqlalchemy-orm-2026-04-10.
+  md
+
+  Widać to w logach powyżej — zrobiłem cp przed nadpisaniem pliku. Chcesz
+  zweryfikować?
+
+  [C] Continue — Zapisz i przejdź do Project Discovery (Krok 2 z 11)
+
+❯ C                                                                             
+
+  Read 3 files (ctrl+o to expand)
+
+● Z kroku 1 mam załadowane:
+  - Product briefs: 0
+  - Research: 0
+  - Brainstorming: 0
+  - Project docs: 4 ✓
+
+  To jest brownfield project — mamy istniejący system z bogatą infrastrukturą.
+  Skupię się na tym, co chcesz dodać.
+
+  Na podstawie naszej dotychczasowej rozmowy i załadowanych dokumentów, oto co
+  rozumiem:
+
+  Chcesz dodać serwer MCP na NAS, który umożliwi Claude'owi (na telefonie, przez
+   Custom Connector) dostęp do dwóch rzeczy:
+  1. Lenie-AI — wyszukiwanie i czytanie artykułów z PostgreSQL
+  2. Obsidian vault — czytanie, tworzenie i edycja notatek markdown
+
+  To nie jest typowy web_app ani api_backend. To bardziej integration/protocol 
+  server — adapter między Claude (MCP klient) a istniejącymi systemami (DB +
+  filesystem).
+
+  Zanim zaklasyfikuję, muszę doprecyzować kilka rzeczy:
+
+  1. Scope tego PRD — czy obejmujemy TYLKO serwer MCP + Cloudflare Tunnel? Czy
+  też synchronizację vaultu Obsidian na NAS (Syncthing/rsync)?
+  2. Czy to ma być nowy mikroserwis (osobny kontener Docker na NAS obok
+  istniejących 9) czy rozszerzenie istniejącego backendu Flask o protokół MCP?
+  3. Czy widzisz inne narzędzia MCP poza search/read/write? Np. uruchamianie
+  przetwarzania dokumentów, pobieranie nowych stron, sprawdzanie statusu?
+
+❯ 1. tez synchronizacje. 2. nie wiem. 3. synchronizacje miedzy dynamodb a baza  
+  lokalna (patrz skrypt backend/imports/dynamodb_sync.py) chociaz nie wiem czy  
+  nie powinno to byc zwiazane z mozliwoscia wystawienia wlasnego backend-u      
+  (zamiast api-gw z AWS) i wtedy skrypt nie bylby potrzebny                     
+
+● Dobre punkty. Zanim zaklasyfikuję, chcę drążyć dalej — bo widzę, że scope się
+  rozszerza i muszę zrozumieć DLACZEGO za każdym elementem.
+
+  Synchronizacja DynamoDB ↔ PostgreSQL — to mnie intryguje. Obecnie artykuły z
+  telefonu (przez extension) idą przez AWS (API GW → SQS → DynamoDB), a potem
+  dynamodb_sync.py ściąga je do lokalnej bazy. Gdybyś miał publiczny backend na
+  NAS (przez tunel), extension mógłby pisać bezpośrednio do PostgreSQL i
+  DynamoDB odpada.
+
+  To by oznaczało, że ten PRD potencjalnie dotyka trzech dużych zmian:
+  1. MCP server — Claude na telefonie czyta/pisze Lenie + Obsidian
+  2. Publiczny backend na NAS — zastępuje API Gateway + Lambda, eliminuje
+  DynamoDB sync
+  3. Sync vaultu Obsidian na NAS — żeby MCP miał dostęp do plików
+
+  Pytania, które muszę zadać:
+
+  1. Czy chcesz utrzymywać równolegle oba backendy (AWS Lambda + NAS), czy celem
+   jest migracja na NAS jako jedyny backend? Bo to fundamentalnie zmienia scope
+  — jedno to "dodaj MCP", drugie to "przenieś infrastrukturę".
+  2. Koszt AWS jest motywatorem? Czy powodem rozważania "NAS zamiast API GW"
+  jest koszt, uproszczenie architektury, czy po prostu fakt, że NAS już działa
+  24/7?
+  3. Dostępność — NAS na domowej sieci jest zależny od prądu, internetu,
+  routera. Jeśli backend na NAS padnie, extension na telefonie przestaje
+  działać. Czy to akceptowalne, czy chcesz zachować AWS jako fallback?
+  4. Bezpieczeństwo — wystawianie backendu z danymi na publiczny internet przez
+  tunel to inna kategoria ryzyka niż API Gateway z WAF. Czy to Ci nie
+  przeszkadza, czy trzeba to zaadresować?
+
+  Odpowiedzi na te pytania zadecydują, czy robimy jeden PRD z trzema epics, czy
+  jeden PRD z wąskim scope (MCP + Obsidian sync) i osobny PRD na migrację
+  infrastruktury.
+
+❯ 1. czy jest sens utrzymywac 2 backendy? 2. koszt nie jest motytwatorem. koszt 
+   backendu na AWS jest znikomy i mozna go ogarniac przy pomocy kredytow AWS (w 
+   wiekszosci). 3. z dostepnoscia masz racje. byc moze AWS api GW + dynamodb    
+  warto trzymac ze wzgledu na bezpieczenstwo i awaryjnosc (ale wtedy musimy     
+  miec skrypt sychronizacji albo synchronizacje robic reczenie (jak teraz)). 4. 
+   czy wystawienie samego MCP tez nie jest problematycznie z punktu widzenia    
+  bezpieczenstwa?                                                               
+
+● Świetne odpowiedzi — widzę, że myślisz pragmatycznie. Rozpakujmy to.
+
+  Ad 1 — Dwa backendy: Nie, nie ma sensu utrzymywać dwóch identycznych
+  backendów. Ale to, co masz teraz, to nie są dwa identyczne backendy — AWS
+  obsługuje ingestion (przyjmowanie linków z telefonu), a NAS obsługuje
+  everything else (przetwarzanie, UI, analiza). To rozsądny podział i nie widzę
+  powodu go zmieniać.
+
+  Ad 3 — AWS jako ingestion layer: Dokładnie. API GW + SQS + DynamoDB to świetny
+   "skrzynka pocztowa" — zawsze dostępna, tania, bezpieczna. NAS może być
+  offline, a linki i tak się nie zgubią. Kwestia synchronizacji DynamoDB →
+  PostgreSQL to osobny problem — ale nie blokuje MCP.
+
+  Ad 4 — Bezpieczeństwo MCP: Trafne pytanie! Tak, wystawienie MCP na publiczny 
+  internet to ten sam problem co wystawienie backendu. MCP server daje
+  Claude'owi możliwość czytania artykułów z bazy i pisania plików na dysku NAS.
+  Gdyby ktoś uzyskał dostęp do tego URL, miałby:
+  - Odczyt całej bazy Lenie
+  - Zapis do vaultu Obsidian (potencjalnie destrukcyjny)
+
+  ALE — Claude Custom Connector wspiera OAuth. To znaczy, że dostęp do MCP jest
+  chroniony tokenem, nie jest to goły endpoint. Cloudflare Tunnel też oferuje
+  Cloudflare Access (zero-trust auth) jako dodatkową warstwę. Więc stack
+  bezpieczeństwa to:
+
+  Internet → Cloudflare Tunnel + Access (zero-trust) → OAuth token validation →
+  MCP server
+
+  To jest porównywalny poziom bezpieczeństwa do API Gateway + API key, choć
+  wymaga starannej konfiguracji.
+
+  ---
+  Moja konkluzja jako PM:
+
+  Widzę teraz jasny scope tego PRD:
+
+  W scope:
+  - MCP server na NAS (nowy kontener Docker) — narzędzia do Lenie + Obsidian
+  - Sync vaultu Obsidian na NAS (Syncthing)
+  - Cloudflare Tunnel + Access jako warstwa dostępowa
+  - OAuth flow dla Claude Custom Connector
+  - Ulepszenie dynamodb_sync.py (żeby sync był bardziej niezawodny/automatyczny,
+   bo MCP nie eliminuje potrzeby synca)
+
+  Poza scope:
+  - Migracja backendu z AWS na NAS (nie ma sensu, AWS ingestion zostaje)
+  - Eliminacja DynamoDB (nadal pełni rolę "skrzynki pocztowej")
+  - Nowy publiczny backend zastępujący API GW
+
+  Klasyfikacja:
+
+  - Project Type: api_backend (MCP server to w gruncie rzeczy API backend z
+  innym protokołem)
+  - Domain: Personal AI Knowledge Management
+  - Complexity: medium (nowy protokół MCP + bezpieczeństwo + sync plików, ale
+  jeden użytkownik, znana infrastruktura)
+  - Project Context: Brownfield
+
+  Czy ta klasyfikacja i scope brzmią dobrze?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Product Vision
+   (Step 2b of 13)
+
+❯ c                                                                             
+
+  Read 1 file (ctrl+o to expand)
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+● Klasyfikacja zapisana. Przechodzimy do odkrywania wizji produktu.
+
+  ---
+  Ustaliliśmy, że to api_backend w domenie personal AI knowledge management,
+  złożoność medium, projekt brownfield.
+
+  Teraz chcę zrozumieć, co sprawia, że ta zmiana jest wyjątkowa. Mam kilka
+  pytań:
+
+  Jaki jest prawdziwy problem, który rozwiązujesz?
+
+  Z naszej rozmowy widzę, że chodzi o coś więcej niż "dostęp z telefonu". Dziś
+  masz pipeline: zbierasz artykuły → przetwarzasz → tworzysz notatki w Obsidian.
+   Ale ten pipeline wymaga komputera i Claude Code. Na telefonie możesz tylko
+  dodawać linki (extension), ale nie możesz pracować z zebraną wiedzą.
+
+  Czy dobrze rozumiem, że kluczowy problem to: "Zebrałem wiedzę, ale mogę z niej
+   korzystać tylko przy komputerze"?
+
+  Co by się zmieniło w Twoim codziennym workflow, gdyby to działało?
+
+  Wyobraź sobie, że masz to już gotowe. Siedzisz w tramwaju z telefonem. Co
+  konkretnie robisz? Np.:
+  - "Przeczytałem 5 artykułów rano, teraz proszę Claude'a o stworzenie notatek"
+  - "Pytam Claude'a co mam nowego w Lenie o Ukrainie i proszę o aktualizację
+  notatki"
+  - "Sprawdzam czy sync z DynamoDB się wykonał"
+
+  Jakie scenariusze widzisz?
+
+
+❯ spedzam czas z dzieckiem gdy ono oglada bajki (nie chce byc samo) wiec ja     
+  moge wykorzystac to gapienie sie w telefon. jade tramwajem na spotkanie albo  
+  z odprowadzania dziecka do przedszkola i mam 5 minut na ogarniecie telefonu   
+  (zamiast skrolowania fb), jezele w lozku i nie chce mi sie wstac to moge      
+  ogarnac baze wiedzy. nie chce poswiecac czasu przy komputerze na to, bo wtedy 
+   moge usiasc i poprogrmowac albo robic cos podobnego                          
+
+● To jest bardzo czytelny use case. Rozumiem teraz dokładnie DLACZEGO.
+
+  Masz fragmenty czasu — 5-15 minut, telefon w ręku, głowa wolna — i chcesz je
+  zamienić w produktywną pracę ze zgromadzoną wiedzą. Przy komputerze masz czas
+  na programowanie, który jest cenniejszy.
+
+  To zmienia perspektywę na to, jak powinien wyglądać MCP server. Kluczowe 
+  ograniczenie to telefon + krótkie sesje, więc:
+  - Interakcja musi być konwersacyjna — mówisz Claude'owi co zrobić, on robi
+  - Nie przeglądasz list artykułów ręcznie — Claude podsumowuje, proponuje, Ty
+  akceptujesz
+  - Operacje muszą być atomowe — jeśli przerwiesz po 3 minutach, nic nie zostaje
+   w połowie
+
+  Kilka doprecyzowań:
+
+  1. Skąd wiesz, nad czym pracować? Czy Claude sam powinien proponować "masz 3
+  nowe artykuły o Polsce, chcesz je ogarnąć?", czy zawsze Ty mówisz temat?
+  2. Jak wygląda "ogarnięcie artykułu" krok po kroku? Np.: Claude czyta artykuł
+  z Lenie → proponuje do jakiej notatki Obsidian dodać → pokazuje propozycję
+  zmian → zatwierdzasz → zapisuje? Czy inaczej?
+  3. Czy chcesz też przeglądać/czytać swoje notatki Obsidian przez Claude'a (np.
+   "pokaż mi co mam o Turcji"), czy to robisz w samym Obsidian na telefonie?
+
+❯ /exit                                                                         
+  ⎿  See ya!
+
+❯ /voice                                                                        
+  ⎿  Voice mode disabled.
+
+❯ /voice                                                                        
+  ⎿  Voice mode enabled. Hold Space to record. Dictation language: pl (/config
+     to change).
+
+❯ Claude powinien samodzielnie pobrać informacje o najnowszych artykułach z     
+  bazy danych. 2. Jest obecnie slash komenda, która popiera artykuł z z bazy.   
+  Proponuje kilka punktówI zapisuje do bazy 3. Nie korzystam na razie z Claude  
+  do przeglądania                                                               
+
+● Świetnie, to doprecyzowuje obraz. Podsumowuję co rozumiem o wizji:
+
+  Wizja: Zamienić fragmenty czasu z telefonem (tramwaj, bajki z dzieckiem, rano
+  w łóżku) w produktywną pracę z bazą wiedzy — bez potrzeby siadania do
+  komputera.
+
+  Co czyni to wyjątkowym: Claude sam jest proaktywny — pobiera nowe artykuły,
+  proponuje notatki, Ty tylko zatwierdzasz lub korygujesz. Minimum wysiłku,
+  maksimum efektu w 5-minutowych sesjach.
+
+  Kluczowy workflow:
+  1. Claude sam widzi najnowsze artykuły z Lenie (przez MCP tool)
+  2. Proponuje do jakiej notatki Obsidian dodać i jakie punkty (jak obecna slash
+   komenda /obsidian-note)
+  3. Ty zatwierdzasz lub korygujesz
+  4. Claude zapisuje do vaultu Obsidian (przez MCP tool)
+
+  Core insight: To nie jest "dostęp z telefonu do Lenie" — to przeniesienie 
+  istniejącego workflow z Claude Code na Claude mobilny. Slash komenda
+  /obsidian-note już robi dokładnie to, co chcesz — ale wymaga komputera. MCP
+  server ma umożliwić ten sam flow na telefonie.
+
+  Poza scope (na razie): Przeglądanie notatek Obsidian przez Claude'a — do tego
+  używasz Obsidian na telefonie bezpośrednio.
+
+  Czy to dobrze oddaje wizję? Coś brakuje lub jest nie tak?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Executive
+  Summary (Step 2c of 13)
+
+❯ C                                                                             
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+● Na podstawie naszej rozmowy przygotowałem Executive Summary. Dokument
+  wyjściowy jest po angielsku (zgodnie z document_output_language):
+
+  ---
+  Executive Summary
+
+  Lenie-AI is a personal knowledge management system that collects, processes,
+  and stores web articles, YouTube transcriptions, and links in a PostgreSQL
+  database with vector search capabilities. The system currently operates
+  through a Flask REST API, React SPA, and Chrome/Kiwi browser extension, with
+  Claude Code serving as the AI analysis layer via local MCP tools.
+
+  This PRD defines the next evolution: exposing Lenie-AI and an Obsidian vault 
+  as a Remote MCP server on the NAS, accessible from Claude's mobile client
+  (claude.ai Custom Connector). The goal is to unlock the existing knowledge
+  workflow — article review, note creation, knowledge consolidation — during
+  short mobile sessions (5-15 minutes) that currently go unused: commuting,
+  waiting with a child, or before getting out of bed.
+
+  The AWS ingestion layer (API Gateway → SQS → DynamoDB) remains unchanged as a
+  reliable, always-available "mailbox" for capturing links from mobile browsers.
+   DynamoDB-to-PostgreSQL synchronization continues as a separate concern, with
+  improvements to reliability and automation in scope.
+
+  What Makes This Special
+
+  This is not "mobile access to a database." It is transferring an existing 
+  AI-assisted knowledge workflow from desktop to mobile — the same workflow that
+   today runs through Claude Code's /obsidian-note slash command. Claude
+  proactively fetches new articles from Lenie, proposes Obsidian note updates
+  with key points, and the user approves or adjusts. The interaction model is
+  conversational and atomic: each 5-minute session produces concrete knowledge
+  artifacts without requiring the user to manage files, navigate UIs, or
+  remember where things are stored.
+
+  The core insight: the user's computer time is reserved for programming and
+  high-value creative work. Knowledge management should happen during otherwise
+  idle moments, driven by an AI that knows the knowledge base and can act on it
+  autonomously.
+
+  Project Classification
+
+  - Project Type: API backend (MCP server — protocol adapter between Claude and
+  existing systems)
+  - Domain: Personal AI Knowledge Management
+  - Complexity: Medium (new protocol + security layer + file sync, but single
+  user, known infrastructure)
+  - Project Context: Brownfield — extends existing NAS Docker stack (9
+  containers), Lenie backend, and Obsidian integration
+
+  ---
+  Przejrzyj draft. Chcesz coś zmienić, dodać, doprecyzować?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Success
+  Criteria (Step 3 of 13)
+
+
+❯ C                                                                             
+
+  Read 1 file (ctrl+o to expand)
+
+  [--- Update: prd.md — 2 edits, diffs removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+● Executive Summary zapisany. Przechodzimy do definiowania kryteriów sukcesu.
+
+  ---
+  Z tego co ustaliliśmy o produkcie, widzę kilka naturalnych wskaźników sukcesu,
+   ale chcę to zbudować z Tobą. Zacznijmy od sukcesu użytkownika.
+
+  Powiedziałeś, że kluczowy moment to te 5-15 minut z telefonem. Chcę zrozumieć,
+   kiedy poczujesz że to działa:
+
+  1. Moment "aha!" — jak wyobrażasz sobie pierwszą sesję, która sprawia że
+  mówisz "o, to działa"? Np. otwierasz Claude'a na telefonie, mówisz "co mam
+  nowego w Lenie?" i dostajesz listę + propozycje notatek?
+  2. Mierzalny wynik — co jest konkretnym efektem udanej 5-minutowej sesji?
+  Jedna zaktualizowana notatka Obsidian? Trzy przejrzane artykuły? Coś innego?
+  3. Kiedy to byłoby "nie warte zachodu"? Np. gdyby setup trwał 30 sekund za
+  każdym razem? Gdyby Claude nie widział nowych artykułów? Gdyby notatki się nie
+   synchronizowały?
+
+
+❯ 1. dokladnie, otwieram cluade no telefonie i dostaje liste nowych artykulow   
+  do analizy (powiedzenia co mnie zainteresowalo tam). 2. mierzalny wynik to    
+  dodana albo zaktulalizowana notatka w obsidian 3. gdyby notatki sie nie       
+  synchronizowaly a uruchomienie trwaloby zbyt dlugo                            
+
+● Jasne. Teraz sukces biznesowy — wiem, że to projekt osobisty, nie komercyjny,
+  więc "biznesowy" rozumiem jako: czy to spełnia swoje zadanie w Twoim życiu?
+
+  1. Częstotliwość użycia — jak często wyobrażasz sobie, że będziesz z tego
+  korzystał? Codziennie? Kilka razy w tygodniu? Ile artykułów przerabiasz typowo
+   w tygodniu?
+  2. Utrzymanie — ile czasu jesteś gotów poświęcić na utrzymanie tej
+  infrastruktury (Cloudflare Tunnel, Syncthing, kontener MCP)? Zero (ma działać
+  samo), godzinę miesięcznie, więcej?
+  3. DynamoDB sync — jak często teraz uruchamiasz dynamodb_sync.py? Ręcznie co
+  kilka dni? Czy automatyzacja tego jest ważna dla sukcesu, czy wystarczy że
+  działa jak teraz?
+
+❯ Skrypt synchronizacyjny odpalam ręcznie co gdy mam czas na analizę notatek.   
+  Użycie notatek, użycie o rozwiązania trwa byłoby kilka razy dziennie.         
+  Poświęcić kilka godzin miesiąca, żeby utrzymać infrastrukturę. To także dla   
+  mnie nauka nowych rzeczy,                                                     
+
+● Rozumiem — to jest też projekt edukacyjny obok użytkowego. Dobre, to wpływa na
+   decyzje architektoniczne (np. Cloudflare Tunnel zamiast gotowego rozwiązania
+  = okazja do nauki).
+
+  Teraz sukces techniczny. Mam propozycję na podstawie naszej rozmowy — powiedz
+  czy to trafne:
+
+  1. Czas uruchomienia sesji — od otwarcia Claude'a na telefonie do pierwszej
+  odpowiedzi z danymi z Lenie. Jaki czas jest akceptowalny? 2-3 sekundy? 5? 10?
+  2. Niezawodność synca Obsidian — notatka zapisana przez MCP musi pojawić się w
+   Obsidian na telefonie. Jaki czas opóźnienia jest OK? Minuty? Godziny?
+  3. Dostępność NAS — czy akceptujesz, że czasem MCP nie będzie dostępny
+  (restart NAS, brak prądu), czy chcesz jakiś monitoring/alert?
+
+❯ Sukces techniczny jest na razie nieokreślony. Bardziej interesuje mnie, to w  
+  ogólne jest możliwe. Określmy to, że to jest MVP I ocenimy dalej czy jest     
+  sens iść w tą integrację.                                                     
+
+● Idealne podejście PM-owe — zwaliduj hipotezę zanim optymalizujesz. Czyli
+  sukces techniczny MVP to po prostu: działa end-to-end, czas i niezawodność 
+  ocenimy po fakcie.
+
+  Mam wystarczająco dużo, żeby przygotować draft. Oto propozycja:
+
+  ---
+  Success Criteria
+
+  User Success
+
+  - User opens Claude on mobile, asks about new articles, and receives a list
+  from Lenie within a single conversational turn
+  - User reviews an article summary and approves an Obsidian note update in
+  under 5 minutes
+  - Updated note appears in Obsidian on all devices via Obsidian Sync
+  - The workflow feels like a natural conversation, not a technical operation
+
+  Business Success (Personal Project)
+
+  - Used multiple times daily during otherwise idle moments (commute, waiting,
+  morning routine)
+  - Knowledge base in Obsidian grows consistently without dedicating computer
+  time to it
+  - Infrastructure maintenance stays within a few hours per month — and doubles
+  as a learning opportunity (Cloudflare Tunnel, MCP protocol, Docker
+  orchestration)
+  - DynamoDB sync reliability improves (currently manual, ad-hoc)
+
+  Technical Success
+
+  - MVP validation: the end-to-end flow works — Claude on mobile reads from
+  Lenie PostgreSQL and writes to Obsidian vault via Remote MCP server on NAS
+  - Detailed performance and reliability targets deferred to post-MVP evaluation
+
+  Measurable Outcomes
+
+  - MVP gate: Claude on mobile successfully creates or updates one Obsidian note
+   from a Lenie article, and the change propagates to all devices
+  - Adoption signal: user naturally reaches for the phone workflow instead of
+  deferring knowledge work to computer time
+
+  Product Scope
+
+  MVP — Minimum Viable Product
+
+  - MCP server on NAS with core tools: lenie_search, lenie_get_article,
+  obsidian_read_note, obsidian_write_note, obsidian_list_notes
+  - Cloudflare Tunnel exposing MCP server over HTTPS
+  - OAuth or token-based authentication for Claude Custom Connector
+  - Obsidian vault synced to NAS (Syncthing or equivalent)
+  - Claude Custom Connector configured in claude.ai
+
+  Growth Features (Post-MVP)
+
+  - Automated DynamoDB → PostgreSQL synchronization (replacing manual
+  dynamodb_sync.py runs)
+  - Obsidian semantic search tool (obsidian_search)
+  - Proactive article suggestions ("you have 3 new unreviewed articles about
+  Poland")
+  - Monitoring and alerting for NAS/tunnel availability
+
+  Vision (Future)
+
+  - Full Lenie MCP tool suite (document processing, embedding generation,
+  content download)
+  - Elimination of DynamoDB sync through direct NAS backend ingestion (if tunnel
+   proves reliable enough)
+  - Multi-vault Obsidian support
+  - Integration with other MCP clients beyond Claude (e.g., future AI
+  assistants)
+
+  ---
+  Co myślisz? Coś do poprawienia, dodania?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to User Journey
+  Mapping (Step 4 of 11)
+
+❯ Czy Obsydian List Node narzędzie ma możliwość pobrania listy artykułów nie    
+  dodanych do rozwiązania obsydian?                                             
+
+● Dobre pytanie. Nie — obsidian_list_notes listowałby pliki w vaulcie Obsidian,
+  a to czego potrzebujesz to lista artykułów z Lenie, które nie mają jeszcze 
+  notatki w Obsidian.
+
+  To jest query do PostgreSQL — filtrowanie po obsidian_note_paths = '[]'
+  (puste) i/lub reviewed_at IS NULL. Dokładnie to, co robi article_browser.py z
+  flagami --no-obsidian i --not-reviewed.
+
+  Więc potrzebujemy osobnego narzędzia MCP, np.:
+
+  ┌───────────────────────────┬──────────────────────────────────────────────┐
+  │           Tool            │                   Co robi                    │
+  ├───────────────────────────┼──────────────────────────────────────────────┤
+  │                           │ Pobiera artykuły bez notatki Obsidian        │
+  │ lenie_unreviewed_articles │ (obsidian_note_paths = []) lub nieprzejrzane │
+  │                           │  (reviewed_at IS NULL)                       │
+  └───────────────────────────┴──────────────────────────────────────────────┘
+
+  To jest kluczowe narzędzie — bo właśnie od niego zaczynasz sesję na telefonie:
+   "co mam nowego do ogarnięcia?".
+
+  Zaktualizuję MVP scope o to narzędzie. Poza tym — czy reszta Success Criteria
+  i Scope jest OK?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to User Journey
+  Mapping (Step 4 of 11)
+
+❯ c                                                                             
+
+  Read 1 file (ctrl+o to expand)
+
+  [--- Update: prd.md — 2 edits, diffs removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+● Content zapisany. Przechodzimy do mapowania user journeys.
+
+  ---
+  To jest projekt jednego użytkownika (Ty), ale system ma kilka typów
+  interakcji. Na podstawie naszej rozmowy widzę następujące "role":
+
+  1. Użytkownik mobilny (Ty na telefonie) — główny use case tego PRD:
+  przeglądanie artykułów, tworzenie/aktualizacja notatek Obsidian przez Claude'a
+  2. Użytkownik desktopowy (Ty przy komputerze) — istniejący workflow: Claude
+  Code + /obsidian-note, programowanie, administracja
+  3. Operator infrastruktury (Ty) — utrzymanie NAS, tunelu, synca, kontenerów
+  Docker
+
+  Czy brakuje jakiejś roli? Np. czy widzisz scenariusz, gdzie ktoś inny korzysta
+   z systemu, albo gdzie jakiś automatyczny proces jest "użytkownikiem" (np.
+  cron job synchronizujący DynamoDB)?
+
+  Zacznijmy od Journey 1: Użytkownik mobilny — opowiedz mi typowy scenariusz
+  krok po kroku. Gdzie jesteś, co robisz, co otwierasz, co mówisz Claude'owi?
+
+
+❯ Sytuacja pierwsza jadę tropowałem mam 10 minut wolnego, mówię Claudowi        
+  pobierz mi najnowszy artykuł z bazy lenie, I przejrzyjmy go razem.            
+
+● Świetnie, mam otwarcie. Kontynuujmy tę historię:
+
+  Claude pobiera artykuł przez lenie_unreviewed_articles → lenie_get_article.
+  Wyświetla podsumowanie. Co dalej?
+
+  1. Czytasz całość czy podsumowanie? Claude pokazuje Ci streszczenie artykułu,
+  czy wolisz sam przejrzeć pełną treść?
+  2. Decyzja — co się dzieje po przeczytaniu? Mówisz "dodaj do notatki o Turcji"
+   i Claude sam wie gdzie to wrzucić? Czy proponuje Ci opcje?
+  3. A jeśli artykuł Cię nie interesuje? Mówisz "skip" i idziesz do następnego?
+  Czy oznaczasz jako przejrzany żeby nie wracał?
+
+❯ 1. jedna uwaga, swieze artykuly wymagaja oczyszczenia z reklam, komentarzy i  
+  innych smieci, robi to skrypt @backend/imports/article_browser.py tak wiec    
+  lenie_unreviewed_articles zawiera artykuly, ktora ja jakos kojarze czyli      
+  najpierw przeczytalem i uznalem za interesujace a pozniej pomoglem oczyscic   
+  tresc (by nie zbierac smieci). stad podusmowanie powinno byc wystarczajace    
+  (bo swiezy artykul powiniem kojarzyc) artykul moze miec tez moja notke, co    
+  mnie zainteresowalo w tym artykule. 2. Claude proponuje zmianę w artykułach.  
+  Claude nie robi automatycznych zmian. 3. I artykuł jest przejrzany Być może   
+  jest zbyt duży, aby go omawiać w tym czasie.                                  
+
+● Teraz mam pełny obraz tego journey. Podsumowuję:
+
+  - Artykuły w lenie_unreviewed_articles to już oczyszczone i wstępnie 
+  przejrzane artykuły — znasz je, bo sam je wcześniej oczyściłeś w
+  article_browser.py
+  - Claude pokazuje podsumowanie + Twoją notatkę (co Cię zainteresowało)
+  - Claude proponuje zmiany w notatkach Obsidian, Ty zatwierdzasz
+  - Artykuł może być za duży na 5-minutową sesję — wtedy oznaczasz jako
+  przejrzany i wracasz później
+
+  Teraz Journey 2: Operator infrastruktury — wyobraź sobie, że coś nie działa.
+  Otwierasz Claude'a na telefonie i MCP nie odpowiada. Co robisz? Czy chcesz
+  żeby system Cię sam informował (np. alert na Slacku), czy sprawdzasz ręcznie
+  gdy coś nie działa?
+
+  I Journey 3 — czy jest scenariusz z komputera, który zmienia się dzięki temu
+  PRD? Np. dynamodb_sync.py staje się automatyczny i nie musisz go ręcznie
+  odpalać?
+
+❯ Jak oznaczam artykuły do przejrzenia I wrócenia później w obecnym schemacie?  
+
+● Dobre pytanie — sprawdzę jak to działa w article_browser.py.
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+  ⎿  Loaded backend\CLAUDE.md
+  ⎿  Loaded backend\imports\CLAUDE.md
+
+● W obecnym schemacie masz dwa mechanizmy:
+
+  1. action_mark_reviewed() (linia 890) — ustawia reviewed_at = NOW(). Oznacza
+  że artykuł przejrzałeś.
+  2. action_mark_review() (linia 931) — ustawia status na NEED_MANUAL_REVIEW —
+  czyli "wrócę do tego później".
+
+  Ale nie widzę mechanizmu typu "przejrzany, ale notatka Obsidian jeszcze nie 
+  gotowa — wrócę". Dziś masz binarnie:
+  - reviewed_at = NULL → nieprzejrzany
+  - reviewed_at = data + obsidian_note_paths = [] → przejrzany, ale bez notatki
+  - reviewed_at = data + obsidian_note_paths = [...] → przejrzany z notatką
+
+  Więc na telefonie, jeśli artykuł jest za duży, Claude mógłby po prostu
+  oznaczyć go jako reviewed (przejrzany) ale bez tworzenia notatki — i pojawi
+  się znowu gdy filtrujesz po --no-obsidian. Nie trzeba nowego mechanizmu.
+
+  Czy tak to widzisz, czy chciałbyś jakiś dodatkowy status typu "in progress" /
+  "wrócę później"?
+
+❯ Na razie go nie oznaczajmy. Automatycznie wróci do puli artykułów do          
+  przejrzenia.                                                                  
+
+● Proste i skuteczne — jeśli nie oznaczysz, zostaje w puli reviewed_at IS NULL.
+  Żadnych nowych statusów.
+
+  OK, mam wystarczająco na journey. Oto draft:
+
+  ---
+  User Journeys
+
+  Journey 1: Mobile Knowledge Worker — "10 minut w tramwaju"
+
+  Ziutus jedzie tramwajem po odprowadzeniu dziecka do przedszkola. Ma 10 minut i
+   telefon w ręku.
+
+  Opening: Otwiera Claude'a na claude.ai. Pisze: "Pobierz mi najnowsze artykuły
+  z Lenie, przejrzyjmy je razem."
+
+  Rising Action: Claude wywołuje lenie_unreviewed_articles i zwraca listę
+  artykułów bez notatki Obsidian. Ziutus wybiera jeden. Claude pobiera pełną
+  treść przez lenie_get_article, wyświetla podsumowanie i notatkę użytkownika
+  (co go zainteresowało). Ziutus czyta podsumowanie — kojarzy artykuł, bo
+  wcześniej sam go oczyścił w article_browser.py.
+
+  Climax: Claude proponuje: "Dodałbym te 3 punkty do notatki
+  Kraje/Turcja/Polityka.md i utworzył nową sekcję o sankcjach." Pokazuje
+  propozycję zmian. Ziutus mówi "OK, ale zmień punkt 2 na..." Claude koryguje i
+  zapisuje przez obsidian_write_note. Aktualizuje reviewed_at i
+  obsidian_note_paths w bazie Lenie.
+
+  Resolution: Notatka Obsidian zaktualizowana, artykuł oznaczony. Obsidian Sync
+  propaguje zmianę. Ziutus może otworzyć Obsidian na telefonie i zobaczyć efekt.
+   Cała operacja zajęła 4 minuty — zostaje czas na drugi artykuł.
+
+  Edge case — artykuł za duży: Ziutus mówi "ten jest za długi, przejdźmy do
+  następnego." Artykuł nie jest oznaczany — wraca do puli automatycznie.
+
+  Journey 2: Mobile Knowledge Worker — "Wieczór przy bajkach"
+
+  Ziutus siedzi z dzieckiem, które ogląda bajki. Ma 15 minut i nie chce być
+  nieobecny, ale może korzystać z telefonu.
+
+  Opening: Otwiera Claude'a. "Co mam nowego w Lenie?"
+
+  Rising Action: Claude zwraca 5 nieprzejrzanych artykułów. Ziutus przegląda
+  podsumowania jedno po drugim. Dwa go interesują, trzy nie.
+
+  Climax: Dla interesujących artykułów Claude proponuje aktualizacje notatek
+  Obsidian. Ziutus zatwierdza propozycje z drobnymi korektami. Dla
+  nieinteresujących mówi "oznacz jako przejrzany" — Claude ustawia reviewed_at
+  bez tworzenia notatki.
+
+  Resolution: 2 notatki zaktualizowane, 3 artykuły oznaczone jako przejrzane.
+  Baza wiedzy rośnie bez siadania do komputera.
+
+  Journey 3: Infrastructure Operator — "Coś nie działa"
+
+  Ziutus otwiera Claude'a na telefonie, ale MCP nie odpowiada.
+
+  Opening: Claude wyświetla błąd połączenia z MCP serverem.
+
+  Rising Action: Ziutus sprawdza czy NAS jest online (ping, QNAP app). Jeśli NAS
+   działa — problem z tunelem Cloudflare lub kontenerem MCP. Ziutus loguje się
+  na NAS przez SSH lub QNAP app i restartuje kontener.
+
+  Resolution: MCP server wraca. To się zdarza rzadko (restart NAS, aktualizacja
+  QTS). Akceptowalne w MVP — monitoring i alerty to Growth feature.
+
+  Journey Requirements Summary
+
+  Journey: 1 & 2 (Mobile Knowledge)
+  Required MCP Tools: lenie_unreviewed_articles, lenie_get_article,
+  lenie_search,
+    obsidian_read_note, obsidian_write_note, obsidian_list_notes
+  Infrastructure: MCP server, Cloudflare Tunnel, Obsidian vault sync, Claude
+    Custom Connector
+  ────────────────────────────────────────
+  Journey: 3 (Operator)
+  Required MCP Tools: —
+  Infrastructure: SSH access to NAS, Docker CLI, monitoring (post-MVP)
+
+  ---
+  Co myślisz? Brakuje jakiegoś scenariusza?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Domain
+  Requirements (Step 5 of 11)
+
+
+❯ Status NEED_MANUAL_REVIEW był zarezerwowany Na sytuację, gdy artykuł miał być 
+   automatycznie wyczyszczony z reklam I nie niepotrzebnego spamu, ale          
+  automatyczne czyszczenie się nie udało. czy to cos wyjasnia? powinno byc      
+  gdzies zapisane do zapamietania? w dokumentacji statusow? kodzie obslugujacym 
+   statusy?                                                                     
+
+● Dobre pytanie — sprawdzę co jest udokumentowane.
+
+  Searched for 1 pattern (ctrl+o to expand)
+
+● Widzę problem. Dokumentacja jest nieprecyzyjna:
+
+  - backend/database/CLAUDE.md:91 — mówi tylko: "requires human review"
+  - docs/data-models-backend.md:73 — to samo: "Requires human review"
+  - backend/library/models/stalker_document_status.py — brak komentarza
+
+  Ale kod w web_documents_do_the_needful_new.py jasno pokazuje prawdziwe
+  znaczenie: "cleaning of text is needed" — ustawiany gdy automatyczne
+  czyszczenie treści się nie powiodło lub treść wymaga ręcznego oczyszczenia z
+  reklam/spamu.
+
+  Tak, powinno być lepiej udokumentowane. Ale to jest osobne zadanie — nie część
+   tego PRD. Proponuję:
+
+  1. Nie robimy tego teraz — to nie blokuje MCP PRD
+  2. Zapiszę to w pamięci jako kontekst, który wpływa na rozumienie workflow
+
+  Co do journeys — mój draft jest poprawny. action_mark_review() w
+  article_browser.py używa NEED_MANUAL_REVIEW jako toggle (do czyszczenia), a
+  nie jako "wrócę do artykułu później". W mobilnym workflow artykuł po prostu
+  nie jest oznaczany i wraca do puli — tak jak powiedziałeś.
+
+  Chcesz żebym stworzył ticket/notatkę o doprecyzowaniu dokumentacji statusu
+  NEED_MANUAL_REVIEW, czy zostawiamy na później?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Domain
+  Requirements (Step 5 of 11)
+❯ czy to duze zadania, poprawienie dokumentacji czy mozemy to zrobic od razu?   
+
+● To jest dosłownie 3 edycje — dodanie jednozdaniowego komentarza w 3 miejscach.
+   Mogę to zrobić w minutę, równolegle z workflow PRD.
+
+  Read 1 file (ctrl+o to expand)
+  ⎿  Loaded backend\library\CLAUDE.md
+
+● Małe zadanie — 3 edycje. Robię od razu:
+
+  [--- Update: stalker_document_status.py — diff removed for readability ---]
+
+  Read 2 files (ctrl+o to expand)
+
+  [--- Update: CLAUDE.md — diff removed for readability ---]
+
+  [--- Update: data-models-backend.md — diff removed for readability ---]
+
+● Gotowe. Trzy edycje:
+  - backend/library/models/stalker_document_status.py — komentarz przy enum
+  - backend/database/CLAUDE.md — opis statusu
+  - docs/data-models-backend.md — opis w tabeli
+
+  Wracamy do PRD. Journeys wyglądają OK?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Domain
+  Requirements (Step 5 of 11)
+
+
+❯  Climax: Dla interesujących artykułów Claude proponuje aktualizacje notatek   
+  Obsidian. Ziutus zatwierdza propozycje z drobnymi korektami. Dla              
+  nieinteresujących mówi "oznacz jako przejrzany" — Claude ustawia reviewed_at  
+  bez tworzenia notatki. - jezeli artykul Jest nieinteresujący. Powinien zostać 
+   usunięty z bazy danej holeni. Co otrzymać nieinteresujące artykuły?          
+  Przejrzany jest zgodne z historią, o której rozmawialiśmy? Miało być bez      
+  oznaczeń. Miały wracać do puli.                                               
+
+● Masz rację, poprawiam dwie rzeczy:
+
+  1. Nieinteresujący artykuł = usunięcie z bazy Lenie, nie oznaczanie jako
+  przejrzany
+  2. Za duży artykuł = bez oznaczeń, wraca do puli automatycznie
+
+  Zaktualizowany Journey 2 climax:
+
+  ▎ Climax: Dla interesujących artykułów Claude proponuje aktualizacje notatek 
+  ▎ Obsidian. Ziutus zatwierdza propozycje z drobnymi korektami. Dla 
+  ▎ nieinteresujących mówi "usuń" — Claude kasuje artykuł z bazy Lenie. Jeśli 
+  ▎ artykuł jest za duży na bieżącą sesję, Ziutus przechodzi do następnego bez 
+  ▎ żadnego oznaczania — artykuł wraca do puli nieprzejrzanych.
+
+  To oznacza, że potrzebujemy dodatkowego MCP tool: lenie_delete_article. Dodaję
+   do listy MVP tools.
+
+  Czy reszta journeys jest OK, czy coś jeszcze do poprawienia?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Domain
+  Requirements (Step 5 of 11)
+
+❯ C                                                                             
+
+  Read 1 file (ctrl+o to expand)
+
+  [--- Update: prd.md — 3 edits, diffs removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+● Journeys i tools zapisane. Teraz krok 5 — Domain Requirements.
+
+  Złożoność domeny z klasyfikacji to medium. Domena
+  personal_ai_knowledge_management nie jest regulowana (brak HIPAA, GDPR w
+  sensie formalnym — to projekt osobisty, jeden użytkownik).
+
+  Ale widzę kilka specyficznych wymagań domenowych, które warto zaadresować:
+
+  1. Bezpieczeństwo MCP — publiczny endpoint dający dostęp do bazy danych i
+  systemu plików na NAS
+  2. Integralność danych Obsidian — MCP zapisuje pliki do vaultu, który
+  synchronizuje się na wiele urządzeń. Błędny zapis może uszkodzić notatki.
+  3. Zależność od zewnętrznych usług — Cloudflare Tunnel, Obsidian Sync,
+  claude.ai Custom Connector — łańcuch zależności
+
+  Czy chcesz przejść przez te wymagania domenowe, czy uważasz że to zbyt
+  oczywiste i wolisz przeskoczyć do Innovation?
+
+  Select: [C] Skip — przejdź do Innovation [D] Przejdźmy przez domain
+  requirements
+
+
+❯ D                                                                             
+
+● OK, przejdźmy przez to. Zacznijmy od najważniejszego:
+
+  Bezpieczeństwo MCP servera na NAS.
+
+  MCP server wystawiony przez Cloudflare Tunnel daje Claude'owi (i potencjalnie
+  komukolwiek z URL-em) możliwość:
+  - Czytania wszystkich artykułów z PostgreSQL
+  - Usuwania artykułów z bazy
+  - Czytania i pisania plików markdown w vaulcie Obsidian
+
+  Jakie zabezpieczenia widzisz jako wystarczające na MVP?
+
+  1. Autentykacja — Claude Custom Connector wspiera OAuth. Czy chcesz pełny
+  OAuth flow (np. przez Cloudflare Access), czy wystarczy prosty token/API key?
+  2. Ograniczenie scope'u — czy MCP powinien mieć dostęp tylko do wybranych
+  folderów Obsidian (np. 02-wiedza/), czy do całego vaultu? Czy operacja delete
+  na bazie powinna wymagać potwierdzenia?
+  3. Sieć — Cloudflare Tunnel domyślnie wystawia URL publicznie. Cloudflare
+  Access może dodać zero-trust layer (np. email OTP). Czy to wystarczająca
+  warstwa?
+
+❯ Dla MCP wystarczy token Wystarczy token albo API key I jeżeli jest to         
+  wystarczające zabezpieczenie. W naszym przypadku. 2. dostep tylko do          
+  02-wiedza/, Delete nie wymaga potwierdzenia. 3. Omówmy to więcej, bo nie mam  
+  pomysłu.                                                                      
+
+● Ad 3 — Warstwa sieciowa.
+
+  Masz kilka opcji, od najprostszej:
+
+  Opcja A: Sam Cloudflare Tunnel (zero config)
+  - Tunnel wystawia URL typu lenie-mcp.twojanazwa.com
+  - Zabezpieczenie: tylko token MCP w nagłówku
+  - Ryzyko: jeśli ktoś pozna URL, może próbować brute-force'ować token
+  - Ale: URL jest losowy dopóki sam go nie opublikujesz
+
+  Opcja B: Cloudflare Tunnel + Access (zero-trust)
+  - Przed dotarciem do MCP servera, Cloudflare wymaga dodatkowej autentykacji
+  (np. email OTP, Google login)
+  - Pytanie: czy Claude Custom Connector poradzi sobie z dodatkową warstwą auth?
+   To trzeba sprawdzić — może być blocker.
+
+  Opcja C: Cloudflare Tunnel + IP allowlist
+  - Ograniczasz dostęp do IP Anthropic (claude.ai servers)
+  - Problem: Anthropic nie publikuje listy IP swoich serwerów MCP
+
+  Moja rekomendacja na MVP: Opcja A — sam tunnel + token. Powody:
+  - URL nie jest publicznie znany
+  - Token w nagłówku to ten sam poziom co Twój obecny x-api-key na Flask API
+  - Opcja B może nie działać z Custom Connector (OAuth + dodatkowy auth =
+  potencjalny konflikt)
+  - To jest osobisty projekt, jeden użytkownik — stosunek ryzyka do złożoności
+  jest korzystny
+
+  Gdyby token wyciekł — zmieniasz go w 30 sekund. Dane w bazie to publiczne
+  artykuły, nie sekrety.
+
+  Czy to akceptowalne podejście? Chcesz głębiej eksplorować Opcję B, czy idziemy
+   z "tunnel + token na MVP"?
+
+❯ Z czystej ciekawości sprawdźmy opcję B. Co może zrobić Claude w takim         
+  przypadku?                                                                    
+
+● Web Search("Claude custom connector MCP Cloudflare Access zero-trust
+            authentication compatibility 2026")
+  ⎿  Did 1 search in 8s
+
+● Web Search("claude.ai custom connector remote MCP server authentication OAuth
+            requirements 2026")
+  ⎿  Did 1 search in 8s
+
+● Web Search("Cloudflare MCP Server Portal zero trust protect remote MCP server
+            tutorial setup 2026")
+  ⎿  Did 1 search in 9s
+● Ciekawe wyniki. Są dwie drogi z Cloudflare:
+
+  Opcja B1: Cloudflare MCP Server Portal (zero-trust)
+
+  Cloudflare ma dedykowane rozwiązanie: MCP Server Portals (Open Beta). Działa
+  tak:
+  1. Rejestrujesz swój MCP server w Cloudflare Zero Trust Dashboard
+  2. Cloudflare dodaje warstwę OAuth przed Twoim serwerem
+  3. Claude łączy się z portalem Cloudflare, loguje się przez Twojego identity
+  providera (np. Google login)
+  4. Dopiero po autoryzacji ruch trafia do Twojego MCP servera na NAS
+
+  Zaleta: Twój MCP server nie musi implementować OAuth sam — Cloudflare robi to
+  za niego. Dostajesz też logi, DLP, centralne zarządzanie politykami.
+
+  Wymóg: Domena musi być w active zone w Cloudflare (musisz mieć domenę
+  zarządzaną przez Cloudflare DNS).
+
+  Opcja B2: OAuth na MCP serverze (Auth0, własna implementacja)
+
+  Claude wymaga OAuth 2.1 z PKCE. Możesz:
+  - Użyć Auth0 (darmowy tier) jako providera OAuth
+  - Zaimplementować OAuth endpoints w MCP serverze
+
+  Wada: Dużo więcej pracy, sam musisz zarządzać tokenami.
+
+  Porównanie dla MVP
+
+  ┌──────────────────┬─────────────────┬───────────────────┬───────────────┐
+  │                  │ Opcja A (tunnel │     Opcja B1      │   Opcja B2    │
+  │                  │     + token)    │   (Cloudflare     │    (OAuth     │
+  │                  │                 │      Portal)      │    własny)    │
+  ├──────────────────┼─────────────────┼───────────────────┼───────────────┤
+  │ Złożoność setup  │ Niska           │ Średnia           │ Wysoka        │
+  ├──────────────────┼─────────────────┼───────────────────┼───────────────┤
+  │ Bezpieczeństwo   │ Token w         │ Zero-trust +      │ OAuth 2.1     │
+  │                  │ nagłówku        │ OAuth             │               │
+  ├──────────────────┼─────────────────┼───────────────────┼───────────────┤
+  │ Wymaga domeny    │ Nie             │ Tak (Cloudflare   │ Nie           │
+  │                  │                 │ DNS)              │               │
+  ├──────────────────┼─────────────────┼───────────────────┼───────────────┤
+  │ Claude           │ ✓ (authless)    │ ✓ (OAuth flow)    │ ✓ (OAuth      │
+  │ compatibility    │                 │                   │ flow)         │
+  ├──────────────────┼─────────────────┼───────────────────┼───────────────┤
+  │ Czas             │ Godziny         │ Dzień-dwa         │ Dni           │
+  │ implementacji    │                 │                   │               │
+  └──────────────────┴─────────────────┴───────────────────┴───────────────┘
+
+  Pytanie: Czy masz domenę zarządzaną przez Cloudflare? Bo jeśli tak, Opcja B1
+  jest atrakcyjna — dostajesz zero-trust za darmo, bez implementowania OAuth
+  sam.
+
+  Sources:
+  - https://support.claude.com/en/articles/11503834-build-custom-connectors-via-
+  remote-mcp-servers
+  - https://blog.cloudflare.com/zero-trust-mcp-server-portals/
+  - https://developers.cloudflare.com/cloudflare-one/access-controls/ai-controls
+  /mcp-portals/
+  - https://atlassc.net/2026/04/03/implementing-oauth-2-1-claude-connector-for-m
+  cp-server
+  - https://auth0.com/blog/secure-and-deploy-remote-mcp-servers-with-auth0-and-c
+  loudflare/
+
+
+❯ Czy do opcji B1 mogę wydzielić pod domenę? W chwili obecnej domena jest       
+  zarządzana w AWS.                                                             
+
+● Tak, możesz. Są dwie drogi:
+
+  Droga 1: Subdomena delegowana do Cloudflare
+  - W AWS Route53 tworzysz NS record dla np. mcp.lenie-ai.eu wskazujący na
+  Cloudflare nameservery
+  - W Cloudflare dodajesz tylko tę subdomenę jako zone
+  - Reszta domeny (app.dev.lenie-ai.eu, www.lenie-ai.eu) zostaje w AWS bez zmian
+
+  Droga 2: Przeniesienie całej domeny na Cloudflare DNS
+  - Przenosisz nameservery całej domeny na Cloudflare
+  - Odtwarzasz istniejące rekordy DNS w Cloudflare
+  - Większa zmiana, ale pełna kontrola Cloudflare nad całą domeną
+
+  Ale uwaga — sprawdziłem dokumentację MCP Server Portals i wymóg brzmi:
+  "Domains must belong to an active zone in your Cloudflare account." Cloudflare
+   free plan pozwala na dodanie pełnej domeny jako zone, ale nie obsługuje 
+  partial zones (subdomena jako osobna zone) — to jest feature płatnego planu
+  Enterprise.
+
+  Więc realnie masz opcje:
+  1. Przenieść całą domenę lenie-ai.eu na Cloudflare DNS (darmowe, ale duża
+  zmiana — CloudFront, S3, API GW muszą dalej działać)
+  2. Kupić osobną tanią domenę (np. lenie-mcp.eu za ~3 EUR/rok) i zarządzać nią
+  przez Cloudflare — zero wpływu na istniejącą infrastrukturę
+  3. Zostać przy Opcji A (tunnel + token) na MVP i wrócić do B1 później
+
+  Co myślisz? Osobna domena za 3 EUR to chyba najczystsze rozwiązanie na start?
+
+❯ Ten projekt jest także edukacyjny. Więc chyba przyszedł czas, żeby nauczyć    
+  się oferty I możliwości Cloudflare. Skorzystam z opcji za domenę ze 3 euro.   
+
+● Świetne podejście — izolowana domena, zero ryzyka dla produkcji, okazja do
+  nauki Cloudflare.
+
+  OK, mam wystarczająco na domain requirements. Oto draft:
+
+  ---
+  Domain-Specific Requirements
+
+  Security — MCP Server Access
+
+  The MCP server exposes read/write access to PostgreSQL (articles) and the
+  Obsidian vault filesystem. Security layers:
+
+  1. Network layer: Cloudflare Tunnel — MCP server is never directly exposed to
+  the internet. All traffic routed through Cloudflare's edge network.
+  2. Authentication layer: Cloudflare MCP Server Portal (Zero Trust) —
+  OAuth-based authentication before traffic reaches the MCP server. Identity
+  provider login required (e.g., Google).
+  3. Application layer: API token validation in the MCP server as
+  defense-in-depth.
+
+  Domain setup: Dedicated low-cost domain (e.g., lenie-mcp.eu, ~3 EUR/year)
+  managed entirely by Cloudflare DNS. Production domain lenie-ai.eu remains on
+  AWS Route53 — zero impact on existing infrastructure.
+
+  Data Integrity — Obsidian Vault
+
+  - MCP server has write access restricted to 02-wiedza/ directory only — no
+  access to journal, templates, or other vault areas
+  - Obsidian Sync handles propagation to all devices — MCP server writes files,
+  does not manage sync
+  - Single-user guarantee: no concurrent edits from multiple sources (user
+  confirmed)
+  - Delete operations on Lenie articles do not require confirmation (user
+  preference)
+
+  Infrastructure Dependencies
+
+  ┌──────────────────┬───────────────────┬──────────────────────────────────┐
+  │    Dependency    │  Failure Impact   │          MVP Mitigation          │
+  ├──────────────────┼───────────────────┼──────────────────────────────────┤
+  │ NAS (QNAP)       │ MCP server        │ Accept downtime — personal       │
+  │                  │ unavailable       │ project                          │
+  ├──────────────────┼───────────────────┼──────────────────────────────────┤
+  │ Cloudflare       │ MCP server        │ Tunnel auto-reconnects; manual   │
+  │ Tunnel           │ unreachable       │ restart if needed                │
+  ├──────────────────┼───────────────────┼──────────────────────────────────┤
+  │ Obsidian Sync    │ Notes not         │ Independent of MCP — Obsidian    │
+  │                  │ propagated        │ handles retry                    │
+  ├──────────────────┼───────────────────┼──────────────────────────────────┤
+  │ Claude Custom    │ Cannot initiate   │ No mitigation — depends on       │
+  │ Connector        │ workflow          │ Anthropic                        │
+  ├──────────────────┼───────────────────┼──────────────────────────────────┤
+  │ PostgreSQL on    │ Articles          │ Already monitored via existing   │
+  │ NAS              │ unavailable       │ Docker healthchecks              │
+  └──────────────────┴───────────────────┴──────────────────────────────────┘
+
+  Educational Value
+
+  This domain serves dual purpose — functional tool and learning platform.
+  Technologies to explore:
+  - Cloudflare ecosystem (DNS, Tunnel, Zero Trust, MCP Server Portals)
+  - MCP protocol implementation (Python SDK)
+  - Docker service orchestration on NAS
+  - File synchronization (Syncthing or equivalent)
+
+  Infrastructure maintenance budget: a few hours per month, treated as learning
+  investment.
+
+  ---
+  Jak wygląda? Coś do zmiany?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Innovation
+  (Step 6 of 13)
+
+❯ Chciałbym jeszcze omówić obsydian Synk Jak to będzie wyglądało na nas?        
+
+● Dobre pytanie. Obsidian Sync to usługa Obsidian (płatna, end-to-end encrypted)
+   — synchronizuje vault między urządzeniami przez serwery Obsidian. Problem:
+  NAS nie jest urządzeniem Obsidian.
+
+  Obsidian Sync działa tylko w aplikacji Obsidian (desktop, mobile). Nie ma CLI,
+   API, ani demona, który mógłby działać na NAS w tle.
+
+  Więc mamy kilka opcji jak dostarczyć vault na NAS:
+
+  Opcja 1: Syncthing (PC ↔ NAS)
+
+  - Syncthing działa na PC i NAS (QNAP ma paczkę Syncthing)
+  - Synchronizacja dwukierunkowa: PC → NAS (Twoje zmiany z Obsidian) i NAS → PC
+  (zmiany z MCP)
+  - Obsidian Sync synchronizuje PC ↔ telefon (osobno)
+  - Przepływ zmian z MCP: NAS → Syncthing → PC → Obsidian Sync → telefon
+
+  Opcja 2: Folder sieciowy (SMB/NFS)
+
+  - Vault leży fizycznie na NAS (share SMB)
+  - Obsidian na PC otwiera vault z udziału sieciowego
+  - MCP server na NAS ma bezpośredni dostęp
+  - Problem: Obsidian na desktopie nie działa dobrze z wolnymi udziałami
+  sieciowymi (lagi, problemy z indeksowaniem)
+
+  Opcja 3: Git-based sync
+
+  - Vault w repo Git na NAS
+  - PC robi push/pull, MCP server robi commit + push
+  - Problem: wymaga manualnych commitów lub automatyzacji, konflikty merge
+
+  Opcja 4: Rclone / rsync (jednokierunkowy cron)
+
+  - Cron na PC lub NAS co X minut kopiuje zmiany
+  - Prostsze niż Syncthing, ale bez natychmiastowej synchronizacji
+  - Opóźnienie zależy od interwału crona
+
+  Moja rekomendacja: Opcja 1 (Syncthing)
+
+  Powody:
+  - Dwukierunkowa synchronizacja w real-time
+  - QNAP ma oficjalną paczkę Syncthing (lub kontener Docker)
+  - Sprawdzony, stabilny, zero kosztów
+  - Nie koliduje z Obsidian Sync (inne warstwy — Syncthing syncuje pliki PC↔NAS,
+   Obsidian Sync syncuje PC↔telefon)
+
+  Pełny łańcuch synchronizacji:
+
+  MCP server (pisze plik na NAS)
+      → Syncthing (NAS → PC, sekundy)
+          → Obsidian Sync (PC → telefon, sekundy)
+
+  Łączne opóźnienie: kilkanaście sekund od zapisu MCP do pojawienia się w
+  Obsidian na telefonie.
+
+  Pytania:
+  1. Czy QNAP ma już Syncthing zainstalowany, czy to będzie nowy setup?
+  2. Czy akceptujesz ten łańcuch (MCP → Syncthing → Obsidian Sync), czy wolisz
+  coś prostszego?
+
+❯ Czy te opcje nie wymagają aby komputer był zawsze włączony?                   
+
+● Masz rację — wszystkie 4 opcje wymagają włączonego PC jako pośrednika, bo
+  Obsidian Sync nie działa na NAS.
+
+  Łańcuch MCP → NAS → Syncthing → PC → Obsidian Sync → telefon działa tylko gdy
+  PC jest online. Jeśli siedzisz w tramwaju i Claude zapisze notatkę na NAS —
+  zobaczysz ją w Obsidian na telefonie dopiero gdy wrócisz do domu i włączysz
+  komputer.
+
+  To jest problem. Pomyślmy inaczej:
+
+  Opcja 5: Obsidian Sync jako jedyny sync — MCP korzysta z API/pluginu
+
+  Obsidian ma plugin https://github.com/remotely-save/remotely-save i podobne,
+  które syncują vault do S3, WebDAV, Dropbox. Gdyby vault był na S3 lub WebDAV 
+  na NAS, MCP server mógłby pisać bezpośrednio tam.
+
+  Problem: Obsidian Sync jest E2E encrypted — nie da się pisać do niego z
+  zewnątrz bez klucza.
+
+  Opcja 6: Porzuć Obsidian Sync, przejdź na Syncthing wszędzie
+
+  - Syncthing na: NAS, PC, telefon (Android ma Syncthing)
+  - Vault leży na NAS jako "master"
+  - Syncthing synchronizuje NAS ↔ PC i NAS ↔ telefon
+  - MCP pisze na NAS → Syncthing → telefon (bezpośrednio, bez PC)
+  - Koszt: rezygnacja z płatnego Obsidian Sync, nauka Syncthing na Android
+
+  Opcja 7: Vault na NAS, Obsidian na telefonie przez WebDAV
+
+  - Plugin https://github.com/remotely-save/remotely-save w Obsidian obsługuje
+  WebDAV
+  - NAS QNAP ma wbudowany WebDAV server
+  - MCP pisze pliki na NAS → Obsidian na telefonie czyta przez WebDAV
+  - Ale: wymagałoby wystawienia WebDAV na zewnątrz (kolejny tunel) lub
+  działałoby tylko na LAN
+
+  Opcja 8: Vault master na NAS + Syncthing NAS ↔ telefon
+
+  - Vault fizycznie na NAS
+  - Syncthing: NAS ↔ telefon (Android), NAS ↔ PC
+  - PC nie musi być włączony — telefon syncuje bezpośrednio z NAS
+  - MCP pisze na NAS → Syncthing → telefon (sekundy)
+  - Wymaga: Syncthing na Android + Cloudflare Tunnel (lub LAN) dla synca
+  telefon↔NAS
+
+  Hmm, ale Syncthing telefon ↔ NAS wymaga widoczności sieciowej. Na LAN działa,
+  poza domem — potrzebny tunel.
+
+  Chyba najczystsza opcja to Opcja 6 lub 8 — Syncthing wszędzie, NAS jako hub,
+  PC nie musi być włączony. Jak myślisz? Czy rezygnacja z Obsidian Sync jest
+  akceptowalna, czy wolisz je zachować?
+
+❯ Linux                                                                         
+  AppImage                                                                      
+  Snap                                                                          
+  Deb                                                                           
+  AppImage (AArch64, ARM64)                                                     
+  Flatpak Community maintained                                                  
+
+● Rozumiem — pokazujesz, że Obsidian jest dostępny na Linux. Czyli jest jeszcze
+  jedna opcja:
+
+  Opcja 9: Obsidian na NAS w maszynie wirtualnej Linux
+
+  - QNAP ma wirtualizację (Virtualization Station)
+  - Odpalasz lekką VM Linux na NAS
+  - Instalujesz Obsidian (AppImage/Flatpak) + logujesz się do Obsidian Sync
+  - Vault jest na NAS, synchronizowany przez Obsidian Sync do telefonu i PC
+  - MCP server pisze pliki do tego samego vaultu na NAS
+  - Obsidian na VM wykrywa zmiany → Obsidian Sync → telefon
+
+  Łańcuch:
+  MCP server (pisze plik na NAS)
+      → Obsidian na VM Linux (wykrywa zmianę, sekundy)
+          → Obsidian Sync → telefon + PC
+
+  Zalety:
+  - PC nie musi być włączony
+  - Zachowujesz Obsidian Sync (płacisz za niego, więc warto go używać)
+  - Zero nowych narzędzi (bez Syncthing)
+  - Dwukierunkowy sync działa natychmiast
+
+  Wady:
+  - VM na NAS zużywa RAM (Obsidian ~200-300 MB) — ale masz 16 GB
+  - Obsidian wymaga GUI — trzeba odpalić headless X server (Xvfb) lub lekki
+  desktop
+  - Dodatkowe utrzymanie (aktualizacje Obsidian w VM)
+
+  Alternatywa bez GUI: Obsidian może nie wymagać pełnego GUI do samego synca.
+  Ale to trzeba sprawdzić — może działać headless, może nie.
+
+  Czy to jest kierunek, o który Ci chodziło? Masz doświadczenie z Virtualization
+   Station na QNAP?
+
+❯ skoro jest pakiet DEB to czy nie da sie go zainstalowac jako kontener? czy    
+  obsidian nie wydal ostatnio cli ? to mogloby oznaczac prace hedless,          
+  sprawdzmy to                                                                  
+
+● Web Search("Obsidian CLI command line tool headless sync 2026")
+  ⎿  Did 1 search in 8s
+
+● Web Search("Obsidian Docker container headless sync vault 2026")
+  ⎿  Did 1 search in 7s
+
+● Strzał w dziesiątkę, Ziutus! Obsidian wydał oficjalny headless client w lutym
+  2026 — i jest gotowy Docker image!
+
+  Rozwiązanie: obsidian-headless jako kontener Docker na NAS
+
+  - https://github.com/obsidianmd/obsidian-headless — oficjalny CLI od Obsidian,
+   Node.js 22, działa bez GUI
+  - https://github.com/Belphemur/obsidian-headless-sync-docker — gotowy Docker
+  image z s6-overlay, ciągły sync w tle
+  - Wymaga: Obsidian Sync subskrypcja + login credentials
+
+  Łańcuch synchronizacji (bez PC!):
+
+  MCP server (pisze plik na NAS)
+      → obsidian-headless kontener (wykrywa zmianę, sync w tle)
+          → Obsidian Sync → telefon + PC
+
+  Co to oznacza:
+  - Żadnego Syncthing — nie potrzebny
+  - PC nie musi być włączony — NAS syncuje bezpośrednio z Obsidian Sync
+  - Dwukierunkowy — zmiany z telefonu/PC też trafiają na NAS
+  - E2E encrypted — tak jak normalny Obsidian Sync
+  - Kolejny kontener Docker w compose.nas.yaml obok istniejących 9
+
+  A co więcej — jest nawet https://github.com/alexjbarnes/vault-sync — headless 
+  Obsidian Sync client z wbudowanym MCP serverem do użycia z AI assistants.
+  Dokładnie Twój use case!
+
+  Chcesz żebym zaktualizował Domain Requirements o to rozwiązanie, czy chcesz
+  najpierw przejrzeć te repozytoria?
+
+  Sources:
+  - https://github.com/obsidianmd/obsidian-headless
+  - https://help.obsidian.md/sync/headless
+  - https://github.com/Belphemur/obsidian-headless-sync-docker
+  - https://github.com/alexjbarnes/vault-sync
+  - https://obsidian.md/cli
+
+❯ to chyba nie jest oficjalny obraz  -                                          
+  https://github.com/Belphemur/obsidian-headless-sync-docker — gotowy Docker    
+  image z s6-overlay, ciągły sync w tle - ale mozemy go uzyc.  natomiast        
+  zaczyna mnie ciekawic opcja syncthing. jak to synchronizuje miedzy telefonem  
+  komorkowym a NAS, gdy jestem poza domem?                                      
+
+● Masz rację — Belphemur to community image, nie oficjalny. Ale bazuje na
+  oficjalnym obsidian-headless, więc solidna baza.
+
+  Co do Syncthing — dobre pytanie, bo to zmienia ocenę:
+
+  Syncthing telefon ↔ NAS poza domem
+
+  Syncthing wymaga bezpośredniej łączności sieciowej między urządzeniami.
+  Domyślnie używa:
+
+  1. Relay servers (publiczne, prowadzone przez community) — gdy urządzenia nie
+  widzą się bezpośrednio, ruch idzie przez relay. Działa out-of-the-box, ale:
+    - Wolniejsze (przepustowość relay ~1-10 Mbps)
+    - Zależne od dostępności relay serverów
+    - Dane są szyfrowane E2E, więc relay nie widzi treści
+  2. NAT traversal (STUN/hole punching) — Syncthing próbuje ustanowić
+  bezpośrednie połączenie P2P. Działa często, ale nie zawsze (podwójny NAT,
+  restrykcyjne firewalle).
+  3. Własny relay/discovery server — możesz postawić na AWS lub wystawić przez
+  Cloudflare Tunnel
+
+  Porównanie dla Twojego case'u
+
+  ┌────────────────┬──────────────────────────┬────────────────────────────┐
+  │                │    obsidian-headless     │         Syncthing          │
+  │                │         (Docker)         │                            │
+  ├────────────────┼──────────────────────────┼────────────────────────────┤
+  │ Sync poza      │ ✓ przez Obsidian Sync    │ ✓ przez relay servers      │
+  │ domem          │ (ich serwery)            │ (community)                │
+  ├────────────────┼──────────────────────────┼────────────────────────────┤
+  │ Niezawodność   │ Wysoka (płatna usługa    │ Zmienna (relay może być    │
+  │                │ Obsidian)                │ wolny/niedostępny)         │
+  ├────────────────┼──────────────────────────┼────────────────────────────┤
+  │ Wymaga PC      │ Nie                      │ Nie (NAS ↔ telefon         │
+  │                │                          │ bezpośrednio)              │
+  ├────────────────┼──────────────────────────┼────────────────────────────┤
+  │                │ Obsidian Sync            │                            │
+  │ Koszt          │ subskrypcja (już         │ Darmowy                    │
+  │                │ płacisz)                 │                            │
+  ├────────────────┼──────────────────────────┼────────────────────────────┤
+  │ E2E encryption │ ✓                        │ ✓                          │
+  ├────────────────┼──────────────────────────┼────────────────────────────┤
+  │ Setup          │ 1 kontener Docker        │ 1 kontener Docker +        │
+  │                │                          │ Syncthing na telefonie     │
+  ├────────────────┼──────────────────────────┼────────────────────────────┤
+  │ Dwukierunkowy  │ ✓                        │ ✓                          │
+  ├────────────────┼──────────────────────────┼────────────────────────────┤
+  │ Obsługa        │ Obsidian rozwiązuje      │ Syncthing tworzy conflict  │
+  │ konfliktów     │ konflikty                │ files                      │
+  └────────────────┴──────────────────────────┴────────────────────────────┘
+
+  Moja zaktualizowana rekomendacja
+
+  obsidian-headless w Docker jest prostsze i lepsze dla Ciebie, bo:
+  - Już płacisz za Obsidian Sync — wykorzystaj to
+  - Sync działa natychmiast poza domem przez serwery Obsidian (niezawodne)
+  - Nie musisz instalować Syncthing na telefonie
+  - Jeden kontener Docker, zero dodatkowej konfiguracji sieciowej
+  - Obsidian obsługuje konflikty plików lepiej niż Syncthing
+
+  Syncthing miałby sens gdybyś nie miał Obsidian Sync. Ale skoro płacisz — po co
+   budować to samo od nowa?
+
+  Czy to rozstrzyga kwestię synca, czy chcesz jeszcze coś porównać?
+
+❯ zrobmy jak mowisz ale obsydian sync mam oplacony do Obsidian Sync yearly      
+  subscription (Standard 1 GB plan)                                             
+  2025-11-02. zostawmy to porownanie i moze zadanie w backlog na wrzesien by    
+  przeanalizowac, czy jest sens placic na przyszly rok.                         
+
+● Dobra decyzja. Subskrypcja ważna do 2025-11-02 — czyli już wygasła (dziś jest
+  2026-04-11). Czy nadal masz aktywny Obsidian Sync, czy działa na grace period
+  / odnowiłeś?
+
+  To ważne, bo jeśli Sync wygasł, to obsidian-headless nie będzie syncował — i
+  wtedy Syncthing staje się jedyną opcją.
+
+❯ to jest data platnosci, bedzie wazny przez rok                                
+
+● OK, czyli ważny do 2026-11-02. Mamy ponad pół roku. Zaktualizuję domain
+  requirements i notuję zadanie backlogowe.
+
+  Oto zaktualizowany draft Domain Requirements:
+
+  ---
+  Domain-Specific Requirements
+
+  Security — MCP Server Access
+
+  The MCP server exposes read/write access to PostgreSQL (articles) and the
+  Obsidian vault filesystem. Security layers:
+
+  1. Network layer: Cloudflare Tunnel — MCP server is never directly exposed to
+  the internet. All traffic routed through Cloudflare's edge network.
+  2. Authentication layer: Cloudflare MCP Server Portal (Zero Trust) —
+  OAuth-based authentication before traffic reaches the MCP server. Identity
+  provider login required (e.g., Google).
+  3. Application layer: API token validation in the MCP server as
+  defense-in-depth.
+
+  Domain setup: Dedicated low-cost domain (~3 EUR/year) managed entirely by
+  Cloudflare DNS. Production domain lenie-ai.eu remains on AWS Route53 — zero
+  impact on existing infrastructure.
+
+  Data Integrity — Obsidian Vault
+
+  - MCP server has write access restricted to 02-wiedza/ directory only — no
+  access to journal, templates, or other vault areas
+  - Single-user guarantee: no concurrent edits from multiple sources
+  - Delete operations on Lenie articles do not require confirmation
+
+  Obsidian Vault Synchronization
+
+  Solution: obsidian-headless (official Obsidian CLI) running as a Docker
+  container on NAS, using existing Obsidian Sync subscription (Standard 1 GB
+  plan, valid until 2026-11-02).
+
+  Sync chain (no PC required):
+  MCP server writes file on NAS
+      → obsidian-headless container detects change
+          → Obsidian Sync → phone + PC (seconds)
+
+  - No Syncthing needed — Obsidian Sync handles all device synchronization
+  - E2E encrypted, bidirectional, conflict resolution handled by Obsidian
+  - Community Docker image available:
+  https://github.com/Belphemur/obsidian-headless-sync-docker
+
+  Backlog (September 2026): Evaluate whether to renew Obsidian Sync or migrate
+  to Syncthing before subscription expires (2026-11-02).
+
+  Infrastructure Dependencies
+
+  ┌──────────────────┬───────────────────┬──────────────────────────────────┐
+  │    Dependency    │  Failure Impact   │          MVP Mitigation          │
+  ├──────────────────┼───────────────────┼──────────────────────────────────┤
+  │ NAS (QNAP)       │ MCP server        │ Accept downtime — personal       │
+  │                  │ unavailable       │ project                          │
+  ├──────────────────┼───────────────────┼──────────────────────────────────┤
+  │ Cloudflare       │ MCP server        │ Tunnel auto-reconnects; manual   │
+  │ Tunnel           │ unreachable       │ restart if needed                │
+  ├──────────────────┼───────────────────┼──────────────────────────────────┤
+  │ Obsidian Sync    │ Notes not         │ Independent of MCP — Obsidian    │
+  │                  │ propagated        │ handles retry                    │
+  ├──────────────────┼───────────────────┼──────────────────────────────────┤
+  │ Claude Custom    │ Cannot initiate   │ No mitigation — depends on       │
+  │ Connector        │ workflow          │ Anthropic                        │
+  ├──────────────────┼───────────────────┼──────────────────────────────────┤
+  │ PostgreSQL on    │ Articles          │ Already monitored via existing   │
+  │ NAS              │ unavailable       │ Docker healthchecks              │
+  └──────────────────┴───────────────────┴──────────────────────────────────┘
+
+  Educational Value
+
+  Technologies to explore: Cloudflare ecosystem (DNS, Tunnel, Zero Trust, MCP
+  Server Portals), MCP protocol (Python SDK), Docker orchestration on NAS,
+  Obsidian headless sync.
+
+  Infrastructure maintenance budget: a few hours per month, treated as learning
+  investment.
+
+  ---
+  Wygląda OK?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Innovation
+  (Step 6 of 13)
+
+❯ c                                                                             
+
+  Read 1 file (ctrl+o to expand)
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+● Domain requirements zapisane. Teraz krok 6 — Innovation Discovery.
+
+  Sprawdzam sygnały innowacyjności. Typ projektu to api_backend, sygnały z CSV:
+  "API composition; New protocol".
+
+  Widzę jeden wyraźny sygnał: MCP jako nowy protokół — to jest stosunkowo nowa
+  technologia (2024-2026), a użycie go do połączenia bazy wiedzy z AI
+  assistentem na telefonie jest niestandardowym zastosowaniem. Ale nie nazwałbym
+   tego przełomową innowacją — to raczej wczesne adopcja nowej technologii w
+  osobistym workflow.
+
+  Nie wykrywam głębokich sygnałów innowacyjności typu "nikt tego nie robił" —
+  projekt łączy istniejące technologie (MCP, Cloudflare Tunnel, Obsidian
+  headless) w praktyczny sposób.
+
+  Nie widzę potrzeby rozbudowanej sekcji Innovation. Czy chcesz eksplorować
+  innowacyjne aspekty, czy idziemy dalej?
+
+  Select: [A] Advanced Elicitation — poszukajmy innowacyjnych kątów [C] Continue
+   — pomiń innowację, przejdź do Project Type Analysis (Step 7 of 11)
+
+
+❯ c                                                                             
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+● Innowacja pominięta. Teraz krok 7 — Project Type Deep Dive.
+
+  Typ projektu: api_backend. Key questions z CSV: "Endpoints needed? 
+  Authentication method? Data formats? Rate limits? Versioning? SDK needed?"
+
+  W kontekście MCP servera te pytania tłumaczą się na MCP tools zamiast REST
+  endpoints. Przejdźmy przez nie:
+
+  1. MCP Tools (odpowiednik "Endpoints") — mamy zdefiniowane w MVP:
+
+  ┌───────────────────────────┬──────────┬────────────────────┐
+  │           Tool            │ Operacja │   Źródło danych    │
+  ├───────────────────────────┼──────────┼────────────────────┤
+  │ lenie_unreviewed_articles │ READ     │ PostgreSQL         │
+  ├───────────────────────────┼──────────┼────────────────────┤
+  │ lenie_search              │ READ     │ PostgreSQL         │
+  ├───────────────────────────┼──────────┼────────────────────┤
+  │ lenie_get_article         │ READ     │ PostgreSQL         │
+  ├───────────────────────────┼──────────┼────────────────────┤
+  │ lenie_delete_article      │ DELETE   │ PostgreSQL         │
+  ├───────────────────────────┼──────────┼────────────────────┤
+  │ obsidian_read_note        │ READ     │ Filesystem (vault) │
+  ├───────────────────────────┼──────────┼────────────────────┤
+  │ obsidian_write_note       │ WRITE    │ Filesystem (vault) │
+  ├───────────────────────────┼──────────┼────────────────────┤
+  │ obsidian_list_notes       │ READ     │ Filesystem (vault) │
+  └───────────────────────────┴──────────┴────────────────────┘
+
+  Czy brakuje czegoś? Np. lenie_mark_reviewed (oznacz artykuł jako przejrzany po
+   utworzeniu notatki)?
+
+  2. Authentication — ustaliliśmy: Cloudflare Zero Trust + API token. Czy MCP
+  server powinien walidować token sam, czy polegamy w 100% na Cloudflare?
+
+  3. Data formats — MCP protocol definiuje format (JSON-RPC). Ale jaki format
+  zwracać dla artykułów? Pełny markdown? Podsumowanie + metadata? Oba?
+
+❯ czy obsidian_write_note obejmuje usuwanie notatek? czy obejmuje zapis do      
+  kilku notatek? co bedzie jezeli zdecyduje ze np. artykul o temat_A powinien   
+  byc polaczony z temat_B a temat_B powinen byc przeredagowany? jak webdzie     
+  wygladal flow?                                                                
+● Świetne pytania — pokazują prawdziwy workflow, nie uproszczony. Rozpakujmy to:
+
+  Obecny obsidian_write_note — za mało
+
+  Jedno narzędzie "write" nie wystarczy. Potrzebujesz:
+
+  ┌──────────────────────┬───────────────────────────────────────────────────┐
+  │         Tool         │                      Co robi                      │
+  ├──────────────────────┼───────────────────────────────────────────────────┤
+  │ obsidian_read_note   │ Czyta jedną notatkę                               │
+  ├──────────────────────┼───────────────────────────────────────────────────┤
+  │ obsidian_write_note  │ Tworzy nową notatkę lub nadpisuje istniejącą      │
+  ├──────────────────────┼───────────────────────────────────────────────────┤
+  │ obsidian_update_note │ Edytuje fragment notatki (np. dodaje sekcję, nie  │
+  │                      │ nadpisuje całości)                                │
+  ├──────────────────────┼───────────────────────────────────────────────────┤
+  │ obsidian_delete_note │ Usuwa notatkę                                     │
+  ├──────────────────────┼───────────────────────────────────────────────────┤
+  │ obsidian_list_notes  │ Listuje notatki w folderze                        │
+  └──────────────────────┴───────────────────────────────────────────────────┘
+
+  Twój scenariusz — artykuł łączy temat_A i temat_B
+
+  Wyobraźmy sobie flow: czytasz artykuł o tureckich sankcjach, który ma wpływ na
+   politykę europejską.
+
+  Ty: "Przejrzyjmy ten artykuł"
+  Claude: [lenie_get_article] → pokazuje podsumowanie
+
+  Ty: "Dodaj informacje o sankcjach do notatki o Turcji
+       i zaktualizuj notatkę o UE — dodaj link do Turcji
+       i przeredaguj sekcję o sankcjach"
+
+  Claude:
+    1. [obsidian_read_note] → czyta Kraje/Turcja/Polityka.md
+    2. [obsidian_read_note] → czyta Kraje/UE/Sankcje.md
+    3. Proponuje zmiany w OBU notatkach — pokazuje diff
+
+  Ty: "OK, ale w notatce o UE zmień sformułowanie na..."
+
+  Claude:
+    4. [obsidian_update_note] → aktualizuje Kraje/Turcja/Polityka.md
+    5. [obsidian_update_note] → aktualizuje Kraje/UE/Sankcje.md
+    6. [lenie_mark_reviewed] → oznacza artykuł + zapisuje ścieżki obu notatek
+
+  Kluczowe pytanie: update vs write
+
+  obsidian_write_note — nadpisuje cały plik. Proste, ale ryzykowne przy dużych
+  notatkach — Claude musi zwrócić pełną treść.
+
+  obsidian_update_note — edytuje fragment. Np. "dodaj tę sekcję po nagłówku ##
+  Sankcje" lub "zamień akapit X na Y". Bardziej precyzyjne, mniejsze ryzyko
+  utraty treści.
+
+  Jak wolisz? Opcje:
+
+  A) Tylko write (nadpisuje całość) — prostsze, Claude zawsze zwraca pełny plik.
+   Ryzyko: przy dużych notatkach Claude może zgubić treść.
+
+  B) write + update — write do nowych notatek, update do edycji istniejących.
+  Bardziej niezawodne, ale trudniejsze w implementacji (trzeba określić jak
+  identyfikować fragment do edycji).
+
+  C) Tylko write na MVP, update w Growth — zaczynamy prosto, uczymy się
+  ograniczeń, dodajemy update gdy wiemy czego brakuje.
+
+  Co wybierasz?
+
+❯ skoro uzywam platnego obsidian sync, to jest mozliwosc okreslenia z obsidian  
+  cli, co zostalo zmienione? jakie opcje do przegladnia historii edycji daje    
+  obsidian sync?                                                                
+
+● Web Search("Obsidian Sync version history file recovery restore previous
+            version 2026")
+  ⎿  Did 1 search in 7s
+
+● Web Search("obsidian-headless CLI sync history diff changes API 2026")
+  ⎿  Did 1 search in 5s
+
+● Dobre pytanie. Oto co znalazłem:
+
+  Obsidian Sync — Version History
+
+  - Standard plan (Twój): historia wersji przechowywana przez 1 miesiąc
+  - Każda zmiana pliku tworzy wersję, którą można przejrzeć i przywrócić
+  - Przywrócona wersja staje się bieżącą i syncuje się na wszystkie urządzenia
+  - Dostępne z GUI Obsidian: File Explorer → prawym → Open version history
+
+  obsidian-headless CLI — brak dostępu do historii
+
+  CLI obsługuje tylko synchronizację — pull, push, continuous sync, conflict
+  merging. Nie ma komend do:
+  - Przeglądania historii wersji
+  - Wyświetlania diffów
+  - Przywracania poprzednich wersji
+
+  Więc jeśli MCP server przez obsidian_write_note nadpisze notatkę błędnie:
+  - Recovery: otwierasz Obsidian na telefonie lub PC → version history →
+  przywracasz
+  - Okno bezpieczeństwa: 1 miesiąc (Standard plan)
+
+  Co to oznacza dla naszego flow
+
+  To jest siatka bezpieczeństwa, ale nie narzędzie operacyjne. Nie da się z
+  poziomu MCP sprawdzić "co się zmieniło". Więc:
+
+  1. Claude musi pokazywać propozycje zmian przed zapisem (już ustaliliśmy)
+  2. Jeśli Claude nadpisze coś źle — masz 1 miesiąc na przywrócenie z Obsidian
+  GUI
+  3. Na MVP wystarczy obsidian_write_note (nadpisuje plik) — bo Claude zawsze
+  pokazuje diff i czeka na akceptację
+
+  Wracając do Twojego pytania o write vs update:
+
+  Skoro masz version history jako backup, proponuję Opcję C — tylko write na 
+  MVP. Claude czyta pełną notatkę, modyfikuje w pamięci, pokazuje Ci propozycję,
+   po akceptacji nadpisuje cały plik. Jeśli coś pójdzie nie tak — przywracasz z
+  historii.
+
+  Czy to akceptowalne podejście?
+
+  Sources:
+  - https://help.obsidian.md/Obsidian+Sync/Version+history
+  - https://github.com/obsidianmd/obsidian-headless
+  - https://help.obsidian.md/sync/headless
+
+
+❯ skoro mcp bedzie dzialac na serwerze nas, to moze bedzie jakos zapisywal      
+  wersje? byc moze mozemy stworzyc w bazie danych tabele z historia wersji?     
+
+● To świetny pomysł — i prostszy niż się wydaje. MCP server ma dostęp do plików,
+   więc przed każdym zapisem może:
+
+  1. Czytaj obecną treść pliku
+  2. Zapisz ją jako wersję (PostgreSQL + timestamp)
+  3. Nadpisz plik nową treścią
+
+  Tabela obsidian_note_versions
+
+  ┌────────────┬─────────────┬───────────────────────────────────────────────┐
+  │  Kolumna   │     Typ     │                     Opis                      │
+  ├────────────┼─────────────┼───────────────────────────────────────────────┤
+  │ id         │ SERIAL PK   │                                               │
+  ├────────────┼─────────────┼───────────────────────────────────────────────┤
+  │ note_path  │ TEXT        │ Ścieżka względna do vaultu (np.               │
+  │            │             │ 02-wiedza/Kraje/Turcja.md)                    │
+  ├────────────┼─────────────┼───────────────────────────────────────────────┤
+  │ content    │ TEXT        │ Pełna treść przed zmianą                      │
+  ├────────────┼─────────────┼───────────────────────────────────────────────┤
+  │ changed_by │ TEXT        │ mcp_server / manual                           │
+  ├────────────┼─────────────┼───────────────────────────────────────────────┤
+  │ article_id │ INTEGER FK  │ Opcjonalnie — który artykuł Lenie spowodował  │
+  │            │             │ zmianę                                        │
+  ├────────────┼─────────────┼───────────────────────────────────────────────┤
+  │ created_at │ TIMESTAMPTZ │ Kiedy zapisano wersję                         │
+  └────────────┴─────────────┴───────────────────────────────────────────────┘
+
+  Korzyści
+
+  - Pełna kontrola — nie zależysz od retencji Obsidian Sync (1 miesiąc)
+  - Audyt — wiesz który artykuł spowodował jaką zmianę w jakiej notatce
+  - Rollback przez MCP — nowe narzędzie obsidian_restore_note mogłoby przywrócić
+   wersję bez otwierania Obsidian GUI
+  - Tanie — notatki markdown to kilka KB, nawet setki wersji zajmą megabajty
+
+  Pytania
+
+  1. Czy wersjonować tylko zmiany z MCP, czy też śledzić zmiany ręczne? (Ręczne
+  wymagałoby file watchera — dużo większa złożoność, chyba nie warto na MVP)
+  2. Retencja — trzymać wersje bez limitu, czy np. ostatnie 50 wersji per
+  notatka?
+  3. Czy to MVP czy Growth? Implementacja jest prosta (jeden INSERT przed każdym
+   write), ale dodaje tabelę do bazy i migrację Alembic.
+
+❯ Wyjaśnię trzecie pytanie.                                                     
+
+● Słucham.
+
+❯ wyjanij 3 pytanie                                                             
+
+● Pytam czy wersjonowanie notatek powinno być:
+
+  - W MVP — implementujemy od razu, bo uważamy że zapis bez historii jest zbyt
+  ryzykowny (Claude nadpisuje pliki, a odzyskanie z Obsidian GUI jest niewygodne
+   z telefonu)
+  - W Growth — na start ufamy Obsidian Sync version history jako siatce
+  bezpieczeństwa, a wersjonowanie w bazie dodajemy później gdy poznamy realne
+  problemy
+
+  Moim zdaniem: MVP. To jest jeden INSERT przed każdym zapisem — minimalny koszt
+   implementacji, a daje Ci spokój ducha że żadna zmiana nie przepadnie.
+  Szczególnie że to wczesna faza i Claude może popełniać błędy w edycji notatek.
+
+  Co myślisz?
+
+❯ Tak, dodajemy to od razu do MVP.                                              
+
+● Jasne. Zaktualizuję tools i tabelę. Teraz wrócę do pozostałych pytań z kroku
+  7:
+
+  2. Authentication — MCP server sam waliduje token jako defense-in-depth
+  (oprócz Cloudflare). Czy ten token powinien być ten sam STALKER_API_KEY co
+  Flask backend, czy osobny?
+
+  3. Data formats — gdy Claude pobiera artykuł przez lenie_get_article, co
+  powinien dostać?
+  - A) Pełna treść markdown + metadata (tytuł, data, źródło, notatka)
+  - B) Tylko metadata + podsumowanie (jeśli istnieje) — pełną treść na żądanie
+  osobnym toolem
+  - C) Wszystko naraz — artykuły są już oczyszczone, więc pełna treść nie jest
+  przesadnie duża
+
+❯ Czy nie byłoby pomocne zapisać także polecenie użytkownika, aby później       
+  zrobić automatyczny audyt przy pomocy Claud. czy zmiana byla poprawna?        
+
+● Świetny pomysł! Rozszerzamy tabelę o kontekst decyzji:
+
+  ┌────────────────┬─────────────┬───────────────────────────────────────────┐
+  │    Kolumna     │     Typ     │                   Opis                    │
+  ├────────────────┼─────────────┼───────────────────────────────────────────┤
+  │ id             │ SERIAL PK   │                                           │
+  ├────────────────┼─────────────┼───────────────────────────────────────────┤
+  │ note_path      │ TEXT        │ Ścieżka notatki                           │
+  ├────────────────┼─────────────┼───────────────────────────────────────────┤
+  │ content_before │ TEXT        │ Treść przed zmianą                        │
+  ├────────────────┼─────────────┼───────────────────────────────────────────┤
+  │ content_after  │ TEXT        │ Treść po zmianie                          │
+  ├────────────────┼─────────────┼───────────────────────────────────────────┤
+  │ user_prompt    │ TEXT        │ Co użytkownik poprosił Claude'a ("dodaj   │
+  │                │             │ info o sankcjach do notatki o Turcji")    │
+  ├────────────────┼─────────────┼───────────────────────────────────────────┤
+  │ article_id     │ INTEGER FK  │ Który artykuł był źródłem                 │
+  ├────────────────┼─────────────┼───────────────────────────────────────────┤
+  │ changed_by     │ TEXT        │ mcp_server                                │
+  ├────────────────┼─────────────┼───────────────────────────────────────────┤
+  │ created_at     │ TIMESTAMPTZ │ Timestamp                                 │
+  └────────────────┴─────────────┴───────────────────────────────────────────┘
+
+  Mając content_before, content_after i user_prompt możesz później odpalić
+  audyt:
+
+  "Przejrzyj ostatnie 20 zmian w notatkach.
+  Dla każdej sprawdź: czy content_after realizuje to,
+  o co prosił user_prompt? Czy nie utracono treści z content_before?"
+
+  To mogłoby być nawet Growth feature — automatyczny cron na Claude Code
+  sprawdzający jakość zmian.
+
+  Czy to MVP czy Growth? Sam audyt to Growth, ale zapisywanie danych do audytu
+  (prompt + before/after) to MVP — bo potem nie odtworzysz tych informacji.
+
+  Wracam do pytań, na które jeszcze nie odpowiedziałeś:
+
+  1. Token — ten sam STALKER_API_KEY co Flask, czy osobny dla MCP?
+  2. Data format artykułu — pełna treść + metadata od razu, czy podsumowanie
+  najpierw?
+
+❯ Audyt nie jest potrzebny na poziomie MVP. Ale dopiszmy to do Backlog.         
+
+● Notuję — audyt w backlogu, ale dane do niego zbieramy od MVP.
+
+  Odpowiedz jeszcze na:
+
+  1. Token — ten sam STALKER_API_KEY co Flask, czy osobny dla MCP?
+  2. Data format artykułu — pełna treść + metadata od razu, czy podsumowanie
+  najpierw?
+
+❯ Czy autoryzacja nie miała dokonywać się przez cloudflare?                     
+
+● Masz rację — Cloudflare MCP Server Portal robi autoryzację (Zero Trust +
+  OAuth). Token na poziomie MCP servera miał być defense-in-depth — dodatkowa
+  warstwa gdyby Cloudflare zawiódł.
+
+  Ale to MVP — pytanie czy ta dodatkowa warstwa jest warta wysiłku. Jeśli
+  Cloudflare robi auth, to MCP server nie musi. Upraszczamy:
+
+  - MVP: Cloudflare Zero Trust jako jedyna warstwa auth
+  - Growth: Opcjonalny API token w MCP serverze jako defense-in-depth
+
+  Akceptujesz to uproszczenie?
+
+  I jeszcze pytanie o data format: gdy Claude pobiera artykuł — pełna treść +
+  metadata od razu, czy najpierw podsumowanie?
+
+❯ Czy klient Anthropic potrafiłby wysłać dodatkową warstwę?                     
+
+● Dobre pytanie. Claude Custom Connector obsługuje:
+  - Authless (bez auth) — po prostu URL
+  - OAuth 2.1 — pełny flow z tokenem
+
+  Nie ma opcji "OAuth + dodatkowy API key w nagłówku". Custom Connector wysyła
+  to, co Cloudflare/OAuth mu da — nie ma pola na dodatkowy token.
+
+  Więc defense-in-depth na poziomie MCP servera odpada — Claude nie ma jak
+  wysłać drugiego tokenu. Cloudflare Zero Trust jest jedyną warstwą i to jest
+  OK.
+
+  Zostaje pytanie o data format artykułu. Co Claude dostaje z lenie_get_article?
+
+  - A) Pełna treść markdown + metadata (tytuł, data, źródło, język, notatka
+  użytkownika) — wszystko naraz
+  - B) Metadata + podsumowanie, pełną treść osobnym toolem
+  lenie_get_article_content
+
+  Artykuły są oczyszczone, więc nie powinny być ogromne. Ale jeśli artykuł ma 10
+   stron — Claude na telefonie dostaje dużo tekstu na raz. Co wolisz?
+
+❯ Może przy liście artykułów powinna być jego wielkość pokazana.?               
+
+● Tak! lenie_unreviewed_articles zwraca listę z rozmiarem, np.:
+
+  1. "Tureckie sankcje wobec UE" — wp.pl — 2.1 KB — notatka: "ciekawe dane o
+  eksporcie"
+  2. "Wybory w Gruzji" — bbc.com — 15.4 KB — notatka: "porównać z sytuacją w
+  2024"
+  3. "React Server Components" — blog.vercel.com — 8.7 KB — brak notatki
+
+  Wtedy wiesz w tramwaju: artykuł 2.1 KB ogarnę w 3 minuty, 15.4 KB zostawię na
+  dłuższą sesję.
+
+  A lenie_get_article zwraca pełną treść + metadata od razu — skoro już wybrałeś
+   artykuł znając jego rozmiar, to chcesz całość.
+
+  Czy tak to widzisz?
+
+❯ tak                                                                           
+
+● OK, mam komplet informacji na project type. Oto draft:
+
+  ---
+  MCP Server Specific Requirements
+
+  Project-Type Overview
+
+  Remote MCP server deployed as a Docker container on NAS, exposing Lenie
+  knowledge base and Obsidian vault to Claude mobile client via Cloudflare MCP
+  Server Portal.
+
+  MCP Tools Specification
+
+  Lenie Tools (PostgreSQL)
+
+  ┌───────────────────────────┬───────────┬──────────────────────────────────┐
+  │           Tool            │ Operation │             Returns              │
+  ├───────────────────────────┼───────────┼──────────────────────────────────┤
+  │                           │           │ List: title, source, size (KB),  │
+  │ lenie_unreviewed_articles │ READ      │ user note, date. Filter:         │
+  │                           │           │ reviewed_at IS NULL or           │
+  │                           │           │ obsidian_note_paths = []         │
+  ├───────────────────────────┼───────────┼──────────────────────────────────┤
+  │ lenie_search              │ READ      │ Search results matching          │
+  │                           │           │ keyword/phrase                   │
+  ├───────────────────────────┼───────────┼──────────────────────────────────┤
+  │                           │           │ Full markdown content + metadata │
+  │ lenie_get_article         │ READ      │  (title, date, source, language, │
+  │                           │           │  user note, obsidian_note_paths) │
+  ├───────────────────────────┼───────────┼──────────────────────────────────┤
+  │ lenie_delete_article      │ DELETE    │ Confirmation of deletion         │
+  ├───────────────────────────┼───────────┼──────────────────────────────────┤
+  │ lenie_mark_reviewed       │ UPDATE    │ Sets reviewed_at = NOW() and     │
+  │                           │           │ appends to obsidian_note_paths   │
+  └───────────────────────────┴───────────┴──────────────────────────────────┘
+
+  Obsidian Tools (Filesystem — restricted to 02-wiedza/)
+
+  ┌──────────────────────┬───────────────┬───────────────────────────────────┐
+  │         Tool         │   Operation   │              Returns              │
+  ├──────────────────────┼───────────────┼───────────────────────────────────┤
+  │ obsidian_read_note   │ READ          │ Full markdown content of a note   │
+  ├──────────────────────┼───────────────┼───────────────────────────────────┤
+  │                      │               │ Writes file, saves version to     │
+  │ obsidian_write_note  │ CREATE/UPDATE │ obsidian_note_versions table      │
+  │                      │               │ before overwriting                │
+  ├──────────────────────┼───────────────┼───────────────────────────────────┤
+  │ obsidian_list_notes  │ READ          │ List of notes in folder/subfolder │
+  ├──────────────────────┼───────────────┼───────────────────────────────────┤
+  │ obsidian_delete_note │ DELETE        │ Removes note file                 │
+  └──────────────────────┴───────────────┴───────────────────────────────────┘
+
+  Note Version History (MVP)
+
+  Table obsidian_note_versions — automatic versioning before every MCP write:
+
+  ┌────────────────┬───────────────────────┬──────────────────────────────┐
+  │     Column     │         Type          │         Description          │
+  ├────────────────┼───────────────────────┼──────────────────────────────┤
+  │ id             │ SERIAL PK             │                              │
+  ├────────────────┼───────────────────────┼──────────────────────────────┤
+  │ note_path      │ TEXT                  │ Relative path within vault   │
+  ├────────────────┼───────────────────────┼──────────────────────────────┤
+  │ content_before │ TEXT                  │ Content before change        │
+  ├────────────────┼───────────────────────┼──────────────────────────────┤
+  │ content_after  │ TEXT                  │ Content after change         │
+  ├────────────────┼───────────────────────┼──────────────────────────────┤
+  │ user_prompt    │ TEXT                  │ What user asked Claude to do │
+  ├────────────────┼───────────────────────┼──────────────────────────────┤
+  │ article_id     │ INTEGER FK (nullable) │ Source Lenie article         │
+  ├────────────────┼───────────────────────┼──────────────────────────────┤
+  │ changed_by     │ TEXT                  │ mcp_server                   │
+  ├────────────────┼───────────────────────┼──────────────────────────────┤
+  │ created_at     │ TIMESTAMPTZ           │ Timestamp                    │
+  └────────────────┴───────────────────────┴──────────────────────────────┘
+
+  Backlog: Automated quality audit — Claude reviews recent changes to verify
+  content_after correctly implements user_prompt without losing content_before
+  data.
+
+  Authentication
+
+  Cloudflare MCP Server Portal (Zero Trust) is the sole authentication layer.
+  OAuth flow managed entirely by Cloudflare — MCP server does not implement its
+  own auth. Claude Custom Connector does not support additional auth headers
+  beyond OAuth.
+
+  Data Format
+
+  - Article lists: metadata + size in KB + user note (no full content)
+  - Article detail: full markdown content + all metadata in single response
+  - Obsidian notes: raw markdown
+
+  Implementation Considerations
+
+  - MCP protocol: Python SDK (mcp package), JSON-RPC transport over
+  SSE/streamable HTTP
+  - Database access: reuse existing DocumentService and SearchService (already
+  decoupled from Flask)
+  - Filesystem access: restricted to vault path {OBSIDIAN_VAULT_PATH}/02-wiedza/
+  - Docker: new container in compose.nas.yaml, connects to existing lenie-ai-db
+  on lenie-net network
+
+  ---
+  Jak wygląda?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Scoping (Step
+  8 of 11)
+
+❯ c                                                                             
+
+  Read 1 file (ctrl+o to expand)
+
+  [--- Update: prd.md — 2 edits, diffs removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+● Krok 8 — Scoping. Przeglądam cały dotychczasowy PRD i oceniam scope.
+
+  Mamy już dużo ustaleń rozproszonych po różnych sekcjach (Success Criteria,
+  Journeys, Domain, Project Type). Teraz konsoliduję to w jedną spójną mapę
+  scope'u.
+
+  Moja ocena: To jest medium MVP — kilka niezależnych komponentów (MCP server,
+  Cloudflare, obsidian-headless, vault sync), ale każdy z nich jest dobrze
+  zdefiniowany i ograniczony.
+
+  Widzę że sekcja "Product Scope" z kroku 3 (Success Criteria) pokrywa już
+  MVP/Growth/Vision na wysokim poziomie. Teraz doprecyzuję ją w kontekście
+  wszystkiego co ustaliliśmy:
+
+  ---
+  Project Scoping & Phased Development
+
+  MVP Strategy & Philosophy
+
+  MVP Approach: Problem-solving MVP — validate that the mobile knowledge
+  workflow (article review → Obsidian note creation) works end-to-end through
+  MCP, before optimizing speed, reliability, or adding features.
+
+  MVP Gate: Claude on mobile successfully reads an article from Lenie,
+  creates/updates an Obsidian note, and the change propagates to all devices via
+   Obsidian Sync.
+
+  Resource Requirements: Single developer (Ziutus), estimated a few weekends of
+  focused work. Technologies: Python (MCP SDK), Docker, Cloudflare (new),
+  obsidian-headless (new).
+
+  MVP Feature Set (Phase 1)
+
+  Core User Journeys Supported:
+  - Journey 1: "10 minut w tramwaju" — full flow
+  - Journey 2: "Wieczór przy bajkach" — full flow
+
+  Must-Have Capabilities:
+
+  ┌────────────────────┬──────────────────────────────┬─────────────────────┐
+  │     Component      │             What             │    Why essential    │
+  ├────────────────────┼──────────────────────────────┼─────────────────────┤
+  │                    │ 10 tools (5 Lenie + 4        │ Core functionality  │
+  │ MCP Server         │ Obsidian + 1 mark_reviewed)  │ — without this      │
+  │                    │                              │ nothing works       │
+  ├────────────────────┼──────────────────────────────┼─────────────────────┤
+  │                    │ obsidian_note_versions table │ Safety net for file │
+  │ Note versioning    │  with before/after/prompt    │  writes + future    │
+  │                    │                              │ audit data          │
+  ├────────────────────┼──────────────────────────────┼─────────────────────┤
+  │                    │ Docker container syncing     │ Without this, notes │
+  │ obsidian-headless  │ vault on NAS                 │  don't reach phone  │
+  │                    │                              │ without PC          │
+  ├────────────────────┼──────────────────────────────┼─────────────────────┤
+  │                    │                              │ Without this,       │
+  │ Cloudflare Tunnel  │ HTTPS exposure of MCP server │ Claude can't reach  │
+  │                    │                              │ NAS                 │
+  ├────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ Cloudflare MCP     │                              │ Without this, MCP   │
+  │ Portal             │ Zero Trust OAuth             │ server is           │
+  │                    │                              │ unprotected         │
+  ├────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ Dedicated domain   │ ~3 EUR/year for Cloudflare   │ Required by MCP     │
+  │                    │ DNS                          │ Server Portal       │
+  ├────────────────────┼──────────────────────────────┼─────────────────────┤
+  │ Claude Custom      │ Config in claude.ai          │ Entry point for the │
+  │ Connector          │                              │  user               │
+  └────────────────────┴──────────────────────────────┴─────────────────────┘
+
+  Explicitly out of MVP:
+  - DynamoDB sync automation (current manual process continues)
+  - Obsidian semantic search
+  - Proactive article suggestions
+  - Monitoring/alerting
+  - Quality audit of note changes
+  - Defense-in-depth token in MCP server
+
+  Post-MVP Features
+
+  Phase 2 (Growth):
+  - Automated DynamoDB → PostgreSQL sync (cron or event-driven)
+  - obsidian_search tool (grep/semantic search across notes)
+  - Proactive suggestions ("3 new articles about Poland")
+  - NAS/tunnel monitoring with Slack alerts
+  - Automated quality audit of note changes (using stored prompts + diffs)
+  - obsidian_update_note tool (partial edits instead of full file overwrite)
+
+  Phase 3 (Expansion):
+  - Full Lenie MCP tool suite (document processing, embedding generation,
+  content download)
+  - Direct NAS backend ingestion (if tunnel proves reliable — could eliminate
+  DynamoDB sync)
+  - Multi-vault Obsidian support
+  - Integration with other MCP clients
+
+  Risk Mitigation Strategy
+
+  Technical Risks:
+  - MCP protocol is new — mitigated by using official Python SDK and existing
+  community examples
+  - Cloudflare MCP Portal is in Open Beta — mitigated by having fallback to
+  simple tunnel + authless (Opcja A) if Portal doesn't work
+  - obsidian-headless is new (Feb 2026) — mitigated by community Docker image;
+  fallback to Syncthing if headless proves unreliable
+  - Claude overwrites Obsidian notes incorrectly — mitigated by
+  obsidian_note_versions table (full before/after history)
+
+  Resource Risks:
+  - Single developer, side project — mitigated by clear MVP boundary and
+  educational value (learning is acceptable even if MVP takes longer)
+  - Obsidian Sync subscription expires 2026-11-02 — evaluate in September
+  whether to renew or migrate to Syncthing
+
+  ---
+  Jak wygląda? Coś do zmiany?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Functional
+  Requirements (Step 9 of 11)
+
+
+❯ C                                                                             
+
+  [--- Update: prd.md — 2 edits, diffs removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+● Scoping zapisany. Teraz krok 9 — Functional Requirements.
+
+  To jest kontrakt zdolności — lista tego co produkt MUSI umieć. Co nie jest tu
+  wymienione, nie będzie istnieć. Przeglądam cały PRD i syntezuję wymagania:
+
+  ---
+  Functional Requirements
+
+  Article Discovery & Review
+
+  - FR1: User can retrieve a list of unreviewed articles (not yet reviewed or
+  without Obsidian notes), showing title, source, size in KB, user note, and
+  date
+  - FR2: User can retrieve the full markdown content and metadata of a specific
+  article
+  - FR3: User can search articles by keyword or phrase
+  - FR4: User can delete an article from the database
+  - FR5: User can mark an article as reviewed and associate it with Obsidian
+  note paths
+
+  Obsidian Note Management
+
+  - FR6: User can read the full content of an Obsidian note within 02-wiedza/
+  - FR7: User can create a new Obsidian note within 02-wiedza/
+  - FR8: User can overwrite an existing Obsidian note within 02-wiedza/
+  - FR9: User can delete an Obsidian note within 02-wiedza/
+  - FR10: User can list notes in a folder or subfolder within 02-wiedza/
+
+  Note Version History
+
+  - FR11: System automatically saves the previous version of a note before every
+   write operation
+  - FR12: System records the user prompt, content before, content after, and
+  source article for each note change
+  - FR13: User can view the version history of a specific note
+
+  Vault Synchronization
+
+  - FR14: System continuously synchronizes the Obsidian vault on NAS with all
+  user devices via Obsidian Sync
+  - FR15: Changes written by MCP server propagate to phone and PC without
+  requiring PC to be online
+
+  Network Access & Security
+
+  - FR16: MCP server is accessible from the internet via Cloudflare Tunnel
+  - FR17: Access to MCP server requires authentication via Cloudflare MCP Server
+   Portal (Zero Trust OAuth)
+  - FR18: MCP server filesystem access is restricted to the 02-wiedza/ vault
+  directory
+
+  Claude Integration
+
+  - FR19: User can configure a Custom Connector in claude.ai pointing to the MCP
+   server
+  - FR20: Claude on mobile can invoke all MCP tools (Lenie and Obsidian) through
+   the Custom Connector
+
+  ---
+  Uwaga: Ta lista jest wiążąca. Każda funkcja nie wymieniona tutaj nie będzie
+  istnieć w produkcie, chyba że ją jawnie dodamy.
+
+  Czy czegoś brakuje? Widzisz jakąś zdolność, o której rozmawialiśmy, a której
+  tu nie ma?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Non-Functional
+   Requirements (Step 10 of 11)
+
+
+❯ jezeli artykulow jeszcze nie przejrzanych jest 2000 jak zarareguje flow?      
+
+● Dobre pytanie. 2000 artykułów w lenie_unreviewed_articles — Claude dostaje
+  ogromną listę i nie wiadomo od czego zacząć. To nie działa.
+
+  Potrzebujemy:
+
+  FR1 rozszerzony: User can retrieve a paginated list of unreviewed articles,
+  with filtering and sorting options:
+  - Limit — np. ostatnie 10, 20, 50
+  - Sortowanie — najnowsze, najstarsze, najmniejsze (szybkie do ogarnięcia)
+  - Filtrowanie — po źródle (unknow.news, own), po typie (webpage, youtube,
+  link), po dacie
+
+  Wtedy w tramwaju mówisz: "Pokaż mi 5 najnowszych artykułów" albo "Co mam 
+  nowego z unknow.news z ostatniego tygodnia?"
+
+  Dodaję też nowe FR:
+
+  - FR21: User can specify pagination (limit, offset) when listing articles
+  - FR22: User can filter articles by source, type, date range
+  - FR23: User can sort articles by date, size
+
+  Czy widzisz inne filtry, które byłyby przydatne? Np. po języku, po obecności
+  notatki użytkownika?
+
+❯ jakie sa domysle filtry?                                                      
+
+● Sprawdzę co jest dostępne w istniejącym kodzie.
+
+  Searched for 2 patterns, read 1 file (ctrl+o to expand)
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ chodzilo mi co sie stanie, jezeli zapytam "jakie mamy nowe artykuly?" albo    
+  "Co mamy do przejrzenia i analizy w lenie-ai?"                                
+
+● A, rozumiem — nie pytasz o filtry techniczne, tylko co się stanie domyślnie
+  gdy Claude wywoła lenie_unreviewed_articles bez parametrów.
+
+  Obecny get_list ma domyślny limit=100. Ale 100 artykułów to nadal za dużo na
+  odpowiedź Claude'a na telefonie.
+
+  Proponuję:
+
+  Domyślne zachowanie lenie_unreviewed_articles:
+  - Limit: 10 najnowszych nieprzejrzanych
+  - Sortowanie: najnowsze najpierw (ostatnio dodane)
+  - Na końcu: informacja "Showing 10 of 247 unreviewed articles"
+
+  Claude widzi 10 artykułów, Ty wybierasz. Jeśli chcesz więcej — mówisz "pokaż
+  następne" albo "pokaż artykuły z unknow.news".
+
+  Czy 10 to dobra liczba domyślna? Czy wolisz 5 (mniej tekstu na telefonie) albo
+   20?
+
+❯ zrobmy 6 arytkulow                                                            
+
+● OK, 6 artykułów domyślnie. Zaktualizuję FR1:
+
+  ▎ FR1: User can retrieve a list of unreviewed articles (limit 6 by default, 
+  ▎ newest first), showing title, source, size in KB, user note, date, and total
+  ▎  count of unreviewed articles. User can request more or apply filters.
+
+  Coś jeszcze do poprawienia w functional requirements, czy idziemy dalej?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Non-Functional
+   Requirements (Step 10 of 11)
+
+❯ pokaz cala liste jescze raz                                                   
+
+● Functional Requirements
+
+  Article Discovery & Review
+
+  - FR1: User can retrieve a list of unreviewed articles (limit 6 by default,
+  newest first), showing title, source, size in KB, user note, date, and total
+  count of unreviewed articles. User can request more or apply filters (source,
+  type, date range, size).
+  - FR2: User can retrieve the full markdown content and metadata of a specific
+  article
+  - FR3: User can search articles by keyword or phrase
+  - FR4: User can delete an article from the database
+  - FR5: User can mark an article as reviewed and associate it with Obsidian
+  note paths
+
+  Obsidian Note Management
+
+  - FR6: User can read the full content of an Obsidian note within 02-wiedza/
+  - FR7: User can create a new Obsidian note within 02-wiedza/
+  - FR8: User can overwrite an existing Obsidian note within 02-wiedza/
+  - FR9: User can delete an Obsidian note within 02-wiedza/
+  - FR10: User can list notes in a folder or subfolder within 02-wiedza/
+
+  Note Version History
+
+  - FR11: System automatically saves the previous version of a note before every
+   write operation
+  - FR12: System records the user prompt, content before, content after, and
+  source article for each note change
+  - FR13: User can view the version history of a specific note
+
+  Vault Synchronization
+
+  - FR14: System continuously synchronizes the Obsidian vault on NAS with all
+  user devices via Obsidian Sync
+  - FR15: Changes written by MCP server propagate to phone and PC without
+  requiring PC to be online
+
+  Network Access & Security
+
+  - FR16: MCP server is accessible from the internet via Cloudflare Tunnel
+  - FR17: Access to MCP server requires authentication via Cloudflare MCP Server
+   Portal (Zero Trust OAuth)
+  - FR18: MCP server filesystem access is restricted to the 02-wiedza/ vault
+  directory
+
+  Claude Integration
+
+  - FR19: User can configure a Custom Connector in claude.ai pointing to the MCP
+   server
+  - FR20: Claude on mobile can invoke all MCP tools (Lenie and Obsidian) through
+   the Custom Connector
+
+  ---
+  Brakuje czegoś?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Non-Functional
+   Requirements (Step 10 of 11)
+
+❯ c                                                                             
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+● Functional requirements zapisane. Teraz krok 10 — Non-Functional Requirements.
+
+  Oceniam kontekst produktu:
+
+  - Performance — tak, ale MVP. Odpowiedź MCP powinna być rozsądna, nie
+  ultra-szybka
+  - Security — tak, omówione w Domain Requirements (Cloudflare Zero Trust)
+  - Scalability — nie — jeden użytkownik, nie dotyczy
+  - Accessibility — nie — osobisty projekt, telefon
+  - Integration — tak — Cloudflare, Obsidian Sync, PostgreSQL, Claude Custom
+  Connector
+  - Reliability — częściowo — akceptujemy downtime NAS, ale nie utratę danych
+
+  Oto draft z istotnych kategorii:
+
+  ---
+  Non-Functional Requirements
+
+  Performance
+
+  - NFR1: MCP tool responses complete within 5 seconds for article list and note
+   read operations
+  - NFR2: Article list (lenie_unreviewed_articles) with default limit of 6
+  returns within 2 seconds
+  - NFR3: Note write operations (including version save to DB) complete within 3
+   seconds
+  - Note: These are initial estimates — to be validated and adjusted post-MVP
+
+  Security
+
+  - NFR4: All traffic between Claude and MCP server is encrypted via HTTPS
+  (Cloudflare Tunnel)
+  - NFR5: MCP server cannot access filesystem outside 02-wiedza/ directory (path
+   traversal prevention)
+  - NFR6: No credentials or secrets stored in MCP server Docker image —
+  environment variables only
+
+  Data Integrity
+
+  - NFR7: Every note write operation creates a version record in
+  obsidian_note_versions before overwriting — no exceptions
+  - NFR8: Database transactions for article operations are atomic — partial
+  writes are not allowed
+  - NFR9: Note version history is retained indefinitely (no automatic purging)
+
+  Integration
+
+  - NFR10: MCP server implements MCP protocol compatible with Claude Custom
+  Connector (streamable HTTP transport)
+  - NFR11: obsidian-headless container syncs vault changes to Obsidian Sync
+  within 60 seconds of file write
+  - NFR12: MCP server connects to existing PostgreSQL on lenie-net Docker
+  network without additional configuration
+
+  ---
+  Chcesz coś zmienić lub dodać? Czy te numery wydają Ci się sensowne?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Polish
+  Document (Step 11 of 12)
+
+
+❯ c                                                                             
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+  Read 1 file (ctrl+o to expand)
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+  Read 2 files (ctrl+o to expand)
+
+● NFR zapisane. Teraz krok 11 — Polish. Przeglądam cały dokument i optymalizuję.
+
+  Read 1 file (ctrl+o to expand)
+
+● Przejrzałem cały dokument. Widzę kilka rzeczy do poprawienia:
+
+  Zmiany do wprowadzenia:
+
+  1. Duplikacja w Product Scope vs Project Scoping — sekcja "Product Scope"
+  (linia 84-106) pokrywa się z "Project Scoping & Phased Development" (linia
+  265-327). Konsoliduję — usuwam "Product Scope" i zostawiam pełniejszą wersję
+  "Project Scoping".
+  2. Niespójność w Domain Requirements — linia 161 mówi o "API token validation
+  as defense-in-depth", ale ustaliliśmy że Claude Custom Connector nie wspiera
+  dodatkowego tokenu. Usuwam punkt 3.
+  3. Niespójność w Product Scope MVP — lista tools jest nieaktualna (brak
+  lenie_mark_reviewed, obsidian_delete_note). Sekcja Project Scoping ma poprawną
+   tabelę.
+  4. Flow — sekcje idą logicznie, ale brakuje płynnych przejść. Dodam kontekst.
+
+  Zapisuję wypolerowaną wersję:
+
+  [--- Write: prd.md — diff removed for readability ---]
+
+● Dokument wypolerowany. Oto co zmieniłem:
+
+  Konsolidacja:
+  - Usunięto zduplikowaną sekcję "Product Scope" (linia 84-106) — pełniejsza
+  wersja w "Project Scoping & Phased Development" zawiera te same informacje +
+  więcej szczegółów
+
+  Niespójności naprawione:
+  - Usunięto punkt 3 z Domain Requirements/Security ("API token as
+  defense-in-depth") — ustaliliśmy że Claude nie wspiera dodatkowego tokenu
+  - Journey Requirements Summary — dodano brakujące tools (lenie_mark_reviewed,
+  obsidian_delete_note)
+  - lenie_unreviewed_articles w tabeli tools — dodano informację o domyślnym
+  limicie 6 i paginacji
+  - Journey 1 — dodano wzmiankę o automatycznym wersjonowaniu przy zapisie
+  - Journey 2 — dodano scenariusz z wieloma notatkami i artykuł za duży
+
+  Flow:
+  - Usunięto sekcję Authentication z MCP Server Requirements (duplikacja z
+  Domain Requirements)
+  - Dodano cross-reference w Data Integrity do tabeli wersjonowania
+
+  Chcesz przejrzeć pełny dokument, czy idziemy do finalizacji?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Complete PRD
+  (Step 12 of 12)
+
+❯ lenie_mark_reviewed co robi ten tool?                                         
+
+● lenie_mark_reviewed ustawia reviewed_at = NOW() i dopisuje ścieżki notatek
+  Obsidian do obsidian_note_paths w bazie Lenie.
+
+  Używany jest na końcu flow — po tym jak Claude zapisze notatkę do Obsidian.
+  Oznacza artykuł jako "przerobiony" i łączy go z notatkami, które z niego
+  powstały.
+
+  Pytanie: czy to powinien być osobny tool wywoływany przez Claude'a, czy
+  automatyczna operacja wewnątrz obsidian_write_note?
+
+  Jeśli automatyczna — po każdym zapisie notatki system sam aktualizuje artykuł
+  w bazie. Claude nie musi pamiętać o dodatkowym kroku.
+
+  Jeśli osobny tool — Claude ma kontrolę kiedy oznaczyć artykuł (np. po
+  zapisaniu do wielu notatek, oznaczy raz na końcu).
+
+  Biorąc pod uwagę Twój scenariusz z Turcją/UE (jeden artykuł → dwie notatki),
+  chyba lepiej jako osobny tool — Claude najpierw zapisuje obie notatki, a potem
+   raz wywołuje lenie_mark_reviewed ze ścieżkami obu notatek.
+
+  Czy tak to widzisz?
+
+❯ jezeli edytujemy notatke to mozemy automatycznie w tabeli oznaczyc ze dany    
+  artykul jest powiazany z notatka. a pozniej dodac kolejny wpis jezeli dotyka  
+  nowej notatki. wolalbym uniknac wiekszej ilosci tooli ale mozemy to           
+  przedyskutowac                                                                
+
+● Masz rację — mniej tools = prostszy system. Pomyślmy:
+
+  Automatyczny flow w obsidian_write_note:
+  1. Zapisz wersję do obsidian_note_versions
+  2. Nadpisz plik
+  3. Jeśli w kontekście jest article_id → automatycznie dodaj note_path do
+  obsidian_note_paths tego artykułu
+
+  Problem: A kiedy ustawić reviewed_at? Opcje:
+
+  A) Automatycznie przy pierwszym powiązaniu notatki z artykułem — ale wtedy
+  artykuł jest "przejrzany" po pierwszej notatce, nawet jeśli planujesz drugą
+
+  B) Nigdy automatycznie — reviewed_at ustawia się tylko gdy użytkownik powie
+  "oznacz jako przejrzany". Ale nie mamy osobnego toola...
+
+  C) Claude mówi to konwersacyjnie: "Skończyliśmy z tym artykułem?" → Ty: "tak"
+  → Claude wywołuje obsidian_write_note z flagą mark_as_reviewed=true przy
+  ostatnim zapisie
+
+  Opcja C łączy obie rzeczy — mniej tools, a Claude kontroluje flow
+  konwersacyjnie. obsidian_write_note dostaje opcjonalne parametry article_id i
+  mark_as_reviewed.
+
+  Wtedy eliminujemy lenie_mark_reviewed jako osobny tool. Zostaje 9 tools
+  zamiast 10.
+
+  Pasuje?
+
+❯ a jak wyglada flow, gdy bede chcial jeszce poprwacowac nad artykulem,         
+  zrobilem kilka edycji notatek ale skonczyl mi sie czas? np. wysiadam z        
+  tramwaju?                                                                     
+
+● Prosta sytuacja — zamykasz Claude'a w połowie pracy. Co się stało do tej pory:
+
+  1. Notatki zapisane przez obsidian_write_note — są bezpieczne, pliki na dysku,
+   zsynchronizowane
+  2. obsidian_note_paths — automatycznie powiązane z artykułem (bo opcja C)
+  3. reviewed_at — nie ustawiony, bo nie powiedziałeś "skończyliśmy"
+
+  Artykuł wraca do puli nieprzejrzanych. Następnym razem w tramwaju mówisz:
+  "Kontynuujmy ten artykuł o Turcji" — Claude pobiera go, widzi że ma już
+  powiązane notatki, czyta je i kontynuuje pracę.
+
+  Czyli flow jest naturalny — brak reviewed_at = "w toku". Nie trzeba żadnego
+  dodatkowego statusu.
+
+  To potwierdza opcję C — mark_as_reviewed jest jawną decyzją na koniec, nie
+  automatem. Usuwam lenie_mark_reviewed jako osobny tool. Zaktualizuję PRD.
+
+  Pasuje? Czy chcesz przejść do finalizacji?
+
+  Select: [A] Advanced Elicitation [P] Party Mode [C] Continue to Complete PRD
+  (Step 12 of 12)
+
+❯ C                                                                             
+
+  Read 1 file (ctrl+o to expand)
+
+● Zaktualizuję PRD — usuwam lenie_mark_reviewed jako osobny tool i przenoszę tę
+  logikę do obsidian_write_note.
+
+  [--- Update: prd.md — 5 edits, diffs removed for readability ---]
+
+● Now let me read the step-12 to finalize.
+
+  Read 1 file (ctrl+o to expand)
+
+  [--- Update: prd.md — diff removed for readability ---]
+
+● PRD ukończony! Oto podsumowanie:
+
+  Dokument zawiera:
+
+  ┌──────────────────────┬──────────────────────────────────────────────────┐
+  │        Sekcja        │                       Opis                       │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ Executive Summary    │ Wizja MCP servera na NAS dla mobilnego workflow  │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ Project              │ API backend, brownfield, medium complexity       │
+  │ Classification       │                                                  │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ Success Criteria     │ User/Business/Technical success + mierzalne      │
+  │                      │ outcomes                                         │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ User Journeys        │ 3 journey (tramwaj, bajki, awaria infra)         │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ Domain Requirements  │ Security (Cloudflare Zero Trust), Obsidian sync  │
+  │                      │ (headless), dependencies                         │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ MCP Server           │ 9 tools, tabela wersjonowania, data formats      │
+  │ Requirements         │                                                  │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ Project Scoping      │ MVP / Growth / Expansion + risk mitigation       │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ Functional           │ 20 FR w 6 obszarach zdolności                    │
+  │ Requirements         │                                                  │
+  ├──────────────────────┼──────────────────────────────────────────────────┤
+  │ Non-Functional       │ 12 NFR (performance, security, data integrity,   │
+  │ Requirements         │ integration)                                     │
+  └──────────────────────┴──────────────────────────────────────────────────┘
+
+  Kluczowe decyzje podjęte w trakcie:
+
+  - obsidian-headless zamiast Syncthing (bo masz Obsidian Sync)
+  - Cloudflare MCP Server Portal jako jedyna warstwa auth (osobna domena ~3 EUR)
+  - 9 tools zamiast 10 (review logic wbudowany w obsidian_write_note)
+  - Tabela obsidian_note_versions z user_prompt — dane do przyszłego audytu
+  - Domyślnie 6 artykułów z informacją o łącznej liczbie
+
+  Co dalej?
+
+  1. [VP] Validate PRD — sprawdź kompletność i spójność dokumentu
+  2. Architektura — zaprojektuj MCP server, Docker setup, Cloudflare config
+  3. [CE] Create Epics and Stories — rozbij PRD na implementowalne zadania
+
+  Wypolerowany PRD jest w _bmad-output/planning-artifacts/prd.md. Co chcesz
+  zrobić dalej, Ziutus?
+

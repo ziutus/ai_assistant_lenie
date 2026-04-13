@@ -24,7 +24,7 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 1. Resolves DynamoDB table name and S3 bucket from SSM Parameter Store (or CLI overrides)
 2. Queries DynamoDB `DateIndex` GSI day-by-day from `--since` date to today (handles pagination)
 3. For each item, checks if URL already exists in local PostgreSQL (duplicate detection via `WebDocument.get_by_url()`)
-4. For `webpage` type items with `s3_uuid`: fetches `{uuid}.txt` and `{uuid}.html` from S3 into memory
+4. For `webpage` type items with `uuid`: fetches `{uuid}.txt` and `{uuid}.html` from S3 into memory
 5. Inserts new documents via ORM: `WebDocument(url=url)` → set attributes → `session.add(doc)` + `session.commit()`
 6. After insert, saves S3 content to cache as `{CACHE_DIR}/{doc.id}/{doc.id}.html` (same convention as `document_prepare.py`, so downstream tools can reuse cached files without re-downloading from S3)
 7. Sets `document_state` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
@@ -32,7 +32,7 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 **DynamoDB → PostgreSQL field mapping:**
 - `url` → `url`, `type` → `document_type`, `title` → `title`, `language` → `language`
 - `source` → `source` (default "own"), `note` → `note`, `paywall` → `paywall`
-- `chapter_list` → `chapter_list`, `s3_uuid` → `s3_uuid`, `created_at` → `created_at`
+- `chapter_list` → `chapter_list`, `s3_uuid` → `uuid` (backward-compat: reads both `uuid` and `s3_uuid` from DynamoDB), `created_at` → `created_at`
 - S3 `{uuid}.txt` → `text`, S3 `{uuid}.html` → `text_raw`
 
 **Running:**

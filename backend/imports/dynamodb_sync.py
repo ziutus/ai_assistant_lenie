@@ -123,13 +123,13 @@ def get_dynamodb_items(table_name: str, since_date: str) -> list[dict]:
     return all_items
 
 
-def fetch_s3_content(s3_client, bucket: str, s3_uuid: str) -> tuple[str | None, str | None]:
+def fetch_s3_content(s3_client, bucket: str, doc_uuid: str) -> tuple[str | None, str | None]:
     """Fetch .txt and .html from S3 into memory (no disk write)."""
     text_content = None
     html_content = None
 
     for ext, label in [(".txt", "text"), (".html", "html")]:
-        key = f"{s3_uuid}{ext}"
+        key = f"{doc_uuid}{ext}"
 
         try:
             response = s3_client.get_object(Bucket=bucket, Key=key)
@@ -196,10 +196,14 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
 
     # Build metadata dict for import_document
     metadata = {}
-    for field in ("title", "language", "note", "s3_uuid", "chapter_list", "created_at"):
+    for field in ("title", "language", "note", "chapter_list", "created_at"):
         value = item.get(field)
         if value is not None:
             metadata[field] = value
+    # DynamoDB still uses "s3_uuid"; ORM attribute is now "uuid" (ADR-015)
+    uuid_value = item.get("uuid") or item.get("s3_uuid")
+    if uuid_value is not None:
+        metadata["uuid"] = uuid_value
     metadata["source"] = item.get("source", "own")
     metadata["paywall"] = paywall_bool
     if text_content:
@@ -394,11 +398,11 @@ def main():
                         continue
 
                 # Fetch S3 content into memory (no disk write yet)
-                s3_uuid = item.get("s3_uuid")
+                doc_uuid = item.get("uuid") or item.get("s3_uuid")
                 doc_type = item.get("type", "link")
 
-                if s3_uuid and doc_type == "webpage" and not args.skip_s3 and not args.dry_run:
-                    text_content, html_content = fetch_s3_content(s3_client, bucket, s3_uuid)
+                if doc_uuid and doc_type == "webpage" and not args.skip_s3 and not args.dry_run:
+                    text_content, html_content = fetch_s3_content(s3_client, bucket, doc_uuid)
 
                 result, doc_id = sync_item_to_postgres(item, text_content, html_content, args.dry_run, session=session, service=doc_service)
 

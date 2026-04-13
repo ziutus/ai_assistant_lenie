@@ -15,431 +15,383 @@ stepsCompleted:
   - step-11-polish
   - step-12-complete
 inputDocuments:
-  - .claude/exports/plan-sqlalchemy-migration.md
-  - docs/architecture-backend.md
-  - docs/data-models-backend.md
-  - docs/architecture-decisions.md
+  - docs/adr/adr-005-remove-ai-ask-mcp-architecture.md
+  - docs/CICD/NAS_Deployment.md
+  - README.md
+  - _bmad-output/planning-artifacts/architecture.md
 documentCounts:
   briefs: 0
-  research: 1
+  research: 0
   brainstorming: 0
-  projectDocs: 3
+  projectDocs: 4
 classification:
   projectType: api_backend
   domain: personal_ai_knowledge_management
-  complexity: low
+  complexity: medium
   projectContext: brownfield
-  deploymentScope: backend_refactor
-workflowType: 'prd'
-lastEdited: '2026-03-07'
 ---
 
 # Product Requirements Document - lenie-server-2025
 
 **Author:** Ziutus
-**Date:** 2026-03-07
+**Date:** 2026-04-10 (revised 2026-04-12 — addressed all validation warnings)
 
 ## Executive Summary
 
-The backend data access layer of Project Lenie currently uses raw `psycopg2` queries with manual SQL construction. Adding or removing a column requires synchronized changes in 5+ locations: SELECT column lists, INSERT statements, UPDATE clauses, `dict()` serialization, `__clean_values()`, and the domain model constructor. Column positions are counted by hand — a single miscount silently corrupts data mapping. This fragility blocks the evolution of the data model: new tables (data sources, authors with biographies) and schema changes (splitting `web_documents` by document type) carry disproportionate risk and mental overhead.
+Lenie-AI is a personal knowledge management system that collects, processes, and stores web articles, YouTube transcriptions, and links in a PostgreSQL database with vector search capabilities. The system currently operates through a Flask REST API, React SPA, and Chrome/Kiwi browser extension, with Claude Code serving as the AI analysis layer via local MCP tools.
 
-This PRD defines the migration from raw psycopg2 to SQLAlchemy 2.x ORM with Alembic schema migrations. Columns are defined once in a declarative ORM model — SQLAlchemy generates all SQL automatically. Alembic auto-generates migration scripts from model diffs, replacing unversioned DDL scripts. The existing three-class architecture (StalkerWebDocument base model + StalkerWebDocumentDB persistence wrapper + WebsitesDBPostgreSQL query layer) is simplified to two layers: ORM model (data definition + domain methods) and repository (complex queries). The intermediate `StalkerWebDocumentDB` wrapper — originally designed to abstract over potential future database backends (ElasticSearch) — is eliminated, as PostgreSQL is the only planned backend.
+This PRD defines the next evolution: **exposing Lenie-AI and an Obsidian vault as a Remote MCP server on the NAS**, accessible from Claude's mobile client (claude.ai Custom Connector). The goal is to unlock the existing knowledge workflow — article review, note creation, knowledge consolidation — during short mobile sessions (5-15 minutes) that currently go unused: commuting, waiting with a child, or before getting out of bed.
 
-ORM model inheritance (Single Table Inheritance) prepares for future table splitting by document type without requiring architectural changes — the split becomes an Alembic migration, not a rewrite. Pydantic v2 schemas for API serialization and structured AI outputs are explicitly out of scope and deferred to a future sprint.
+The AWS ingestion layer (API Gateway → SQS → DynamoDB) remains unchanged as a reliable, always-available "mailbox" for capturing links from mobile browsers. DynamoDB-to-PostgreSQL synchronization continues as a separate concern, with improvements to reliability and automation in scope.
 
 ### What Makes This Special
 
-This is not a technology upgrade for its own sake. The migration eliminates the fear of changing the database schema. Today, every schema change triggers anxiety: "did I count the columns correctly in SELECT?" After the migration, adding a table, column, or relationship is a single-location change in the ORM model — Alembic handles the rest. This unblocks rapid experimentation with the data model at a stage where the project is actively discovering what reality it needs to represent (data sources, authors, document type hierarchies). The code has never run in production, making this the lowest-risk moment for an aggressive rewrite.
+This is not "mobile access to a database." It is **transferring an existing AI-assisted knowledge workflow from desktop to mobile** — the same workflow that today runs through Claude Code's `/obsidian-note` slash command. Claude proactively fetches new articles from Lenie, proposes Obsidian note updates with key points, and the user approves or adjusts. The interaction model is conversational and atomic: each 5-minute session produces concrete knowledge artifacts without requiring the user to manage files, navigate UIs, or remember where things are stored.
+
+The core insight: the user's computer time is reserved for programming and high-value creative work. Knowledge management should happen during otherwise idle moments, driven by an AI that knows the knowledge base and can act on it autonomously.
 
 ## Project Classification
 
-| Dimension | Value |
-|-----------|-------|
-| **Project Type** | API backend (database access layer migration) |
-| **Domain** | Personal AI knowledge management |
-| **Complexity** | Low (single user, no regulatory requirements, early-stage codebase) |
-| **Project Context** | Brownfield — rewriting existing data layer in Flask backend |
-| **Deployment Scope** | Backend refactor (Docker + NAS primary, AWS secondary) |
+- **Project Type:** API backend (MCP server — protocol adapter between Claude and existing systems)
+- **Domain:** Personal AI Knowledge Management
+- **Complexity:** Medium (new protocol + security layer + file sync, but single user, known infrastructure)
+- **Project Context:** Brownfield — extends existing NAS Docker stack (9 containers), Lenie backend, and Obsidian integration
 
 ## Success Criteria
 
 ### User Success
 
-- Adding a new table or column is a single-location change in the ORM model — no manual SQL synchronization across SELECT/INSERT/UPDATE/dict/clean
-- Alembic generates the migration script automatically from model diff — no hand-written DDL
-- The developer (Ziutus) can modify the schema without anxiety about miscounted column positions or broken queries
+- User opens Claude on mobile, asks about new articles, and receives a list from Lenie within a single conversational turn
+- User reviews an article summary and approves an Obsidian note update in under 5 minutes
+- Updated note appears in Obsidian on all devices via Obsidian Sync
+- The workflow feels like a natural conversation, not a technical operation
 
-### Business Success
+### Business Success (Personal Project)
 
-- Developer time is the primary constraint. The migration must reduce time spent on schema changes from "careful manual work across 5+ files" to "one field in a model, one Alembic command"
-- Unblocks future work: new tables (data sources, authors), TypeScript type synchronization (Pydantic → OpenAPI → TypeScript), and UI-driven data entry (e.g., selecting a source from a dynamic list)
+- Used multiple times daily during otherwise idle moments (commute, waiting, morning routine)
+- Knowledge base in Obsidian grows consistently without dedicating computer time to it
+- Infrastructure maintenance stays within a few hours per month — and doubles as a learning opportunity (Cloudflare Tunnel, MCP protocol, Docker orchestration)
+- DynamoDB sync reliability improves (currently manual, ad-hoc)
 
 ### Technical Success
 
-- Import scripts function correctly after migration:
-  - `backend/imports/dynamodb_sync.py` — loads documents from DynamoDB + S3 into PostgreSQL
-  - `backend/imports/unknown_news_import.py` — imports curated links from unknow.news
-- Batch processing pipeline works end-to-end:
-  - `backend/web_documents_do_the_needful_new.py` — correctly creates embeddings for link documents (currently the only fully supported type)
-  - YouTube video text is correctly fetched and stored in the database
-- Flask API endpoints (`/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_similar`) return identical data formats as before the migration
-- All existing unit tests pass
-- `ruff check backend/` reports zero warnings
-- Old classes (`StalkerWebDocument`, `StalkerWebDocumentDB`, `StalkerWebDocumentDB` wrapper layer) are removed — no dead code left behind
+- MVP validation: the end-to-end flow works — Claude on mobile reads from Lenie PostgreSQL and writes to Obsidian vault via Remote MCP server on NAS
+- Detailed performance and reliability targets deferred to post-MVP evaluation
 
 ### Measurable Outcomes
 
-- Lines of code to add a new column: 1 (ORM model field) + 1 (Alembic autogenerate) vs. current 5+ manual edits
-- Import scripts run end-to-end with exit code 0 on test data
-- Zero raw `cursor.execute()` calls remaining in production code — all vector operations use `pgvector-python` native operators
+- **MVP gate:** Claude on mobile successfully creates or updates one Obsidian note from a Lenie article, and the change propagates to all devices
+- **Adoption signal:** user naturally reaches for the phone workflow instead of deferring knowledge work to computer time
 
 ## User Journeys
 
-### Journey 1: "New Column Without Fear" — Developer Modifying the Schema
+### Journey 1: Mobile Knowledge Worker — "10 minut w tramwaju"
 
-**Persona:** Ziutus — sole developer of Project Lenie, working evenings and weekends on a personal AI knowledge management system.
+**Ziutus** jedzie tramwajem po odprowadzeniu dziecka do przedszkola. Ma 10 minut i telefon w ręku.
 
-**Opening Scene:** Ziutus decides that documents need an `author` field linked to a new `authors` table with biographies. In the old world, this meant: add column to SQL init script, update SELECT column list (count positions carefully), update INSERT, update UPDATE, update `dict()`, update `__clean_values()`, update the domain model constructor, and pray nothing was miscounted.
+**Opening:** Otwiera Claude'a na claude.ai. Pisze: "Pobierz mi najnowsze artykuły z Lenie, przejrzyjmy je razem."
 
-**Rising Action:** Ziutus opens `backend/library/db/models.py` and adds a single field: `author_id: Mapped[int | None] = mapped_column(ForeignKey("authors.id"))`. He creates a new `Author` model class with `name`, `bio`, `url` fields. He runs `alembic revision --autogenerate -m "add authors table"` — Alembic inspects the model diff and generates the migration script with `CREATE TABLE authors` and `ALTER TABLE web_documents ADD COLUMN author_id`.
+**Rising Action:** Claude wywołuje `lenie_unreviewed_articles` i zwraca listę 6 najnowszych artykułów bez notatki Obsidian (z informacją o łącznej liczbie nieprzejrzanych). Ziutus wybiera jeden. Claude pobiera pełną treść przez `lenie_get_article`, wyświetla podsumowanie i notatkę użytkownika (co go zainteresowało). Ziutus czyta podsumowanie — kojarzy artykuł, bo wcześniej sam go oczyścił w `article_browser.py`.
 
-**Climax:** `alembic upgrade head` — the database schema matches the model. No manual column counting. No cross-referencing 5 files. The ORM handles SELECT, INSERT, UPDATE automatically. Ziutus writes zero SQL.
+**Climax:** Claude proponuje: "Dodałbym te 3 punkty do notatki `Kraje/Turcja/Polityka.md` i utworzył nową sekcję o sankcjach." Pokazuje propozycję zmian. Ziutus mówi "OK, ale zmień punkt 2 na..." Claude koryguje i zapisuje przez `obsidian_write_note` (system automatycznie wersjonuje poprzednią treść). Aktualizuje `reviewed_at` i `obsidian_note_paths` w bazie Lenie.
 
-**Resolution:** The entire operation took minutes instead of an anxious hour. Ziutus moves on to building the UI for selecting authors from a list — the part he actually cares about — instead of wrestling with SQL plumbing.
+**Resolution:** Notatka Obsidian zaktualizowana, artykuł oznaczony. Obsidian Sync propaguje zmianę na wszystkie urządzenia (bez potrzeby włączonego PC). Cała operacja zajęła 4 minuty — zostaje czas na drugi artykuł.
 
-### Journey 2: "The Import Run" — Operator Running Data Import Scripts
+**Edge case — artykuł za duży:** Ziutus mówi "ten jest za długi, przejdźmy do następnego." Artykuł nie jest oznaczany — wraca do puli automatycznie.
 
-**Persona:** Ziutus — running the weekly unknow.news import to pull curated Polish tech links into the knowledge base.
+**Edge case — sprawdzenie historii zmian:** Następnego dnia Ziutus otwiera notatkę `Kraje/Turcja/Polityka.md` i widzi, że jakaś sekcja wygląda inaczej niż pamięta. Pyta Claude'a: "pokaż mi co ostatnio zmieniłeś w tej notatce". Claude wywołuje `obsidian_note_history` i pokazuje listę ostatnich zmian (data, prompt który wywołał zmianę, diff przed/po). Ziutus widzi że to jego własna instrukcja sprzed dwóch dni i spokojnie wraca do pracy. Transparency notes versioning daje zaufanie do AI workflow.
 
-**Opening Scene:** Ziutus runs `cd backend && ./imports/unknown_news_import.py --since 2026-03-01`. The script starts, connects to PostgreSQL, downloads the unknow.news archive JSON, and begins processing entries.
+### Journey 2: Mobile Knowledge Worker — "Wieczór przy bajkach"
 
-**Rising Action:** For each new URL, the script creates an ORM model instance via `WebDocument(url=entry['url'])`. The session queries the database to check for duplicates. New documents are populated with fields (`title`, `summary`, `language`, `source`, `date_from`, `document_type`, `document_state`) and added to the session. `session.commit()` persists them — SQLAlchemy generates the INSERT with exactly the right columns.
+**Ziutus** siedzi z dzieckiem, które ogląda bajki. Ma 15 minut i nie chce być nieobecny, ale może korzystać z telefonu.
 
-**Climax:** The script processes 47 new entries. Summary: "Added: 47, Exist: 112, Ignored: 1,834." Exit code 0. The output format is identical to before the migration — Ziutus notices no difference in behavior.
+**Opening:** Otwiera Claude'a. "Co mam nowego w Lenie?"
 
-**Resolution:** The import works exactly as before but the underlying code is simpler. If Ziutus later adds an `author` column to `web_documents`, the import script doesn't need any changes — the new column defaults to NULL and the ORM handles the rest.
+**Rising Action:** Claude zwraca 6 nieprzejrzanych artykułów z rozmiarem. Ziutus przegląda podsumowania jedno po drugim. Dwa go interesują, trzy nie, jeden jest za duży.
 
-### Journey 3: "Embeddings Pipeline" — Batch Processing End-to-End
+**Climax:** Dla interesujących artykułów Claude proponuje aktualizacje notatek Obsidian (może aktualizować kilka notatek jednocześnie — np. artykuł o sankcjach wpływa na notatkę o Turcji i o UE). Ziutus zatwierdza propozycje z drobnymi korektami. Dla nieinteresujących mówi "usuń" — Claude kasuje artykuł z bazy Lenie przez `lenie_delete_article`. Za duży artykuł zostaje bez oznaczenia — wraca do puli.
 
-**Persona:** `web_documents_do_the_needful_new.py` — the batch pipeline script, orchestrated by Ziutus.
+**Resolution:** 2 notatki zaktualizowane, 3 artykuły usunięte, 1 odłożony. Baza wiedzy rośnie bez siadania do komputera.
 
-**Opening Scene:** Ziutus runs the pipeline with `--only-links`. The script needs to: find link documents in `READY_FOR_EMBEDDING` state, generate embeddings via the configured model, and store vectors in `websites_embeddings`.
+### Journey 3: Infrastructure Operator — "Coś nie działa"
 
-**Rising Action:** The repository method `get_documents_needing_embedding(model)` executes a SQLAlchemy query with an outer join on `websites_embeddings` — replacing a hand-written SQL string with a composable query object. For each document, the script loads the ORM model by ID, calls `embedding_add(model)`, which creates a `WebsiteEmbedding` instance and adds it to the document's `embeddings` relationship. `session.commit()` persists both the embedding and the document state update in a single transaction.
+**Ziutus** otwiera Claude'a na telefonie, ale MCP nie odpowiada.
 
-**Climax:** 23 link documents processed, embeddings generated and stored. The pgvector similarity search uses `pgvector-python`'s native `cosine_distance()` operator — zero raw SQL anywhere in the codebase.
+**Opening:** Claude wyświetla błąd połączenia z MCP serverem.
 
-**Resolution:** The pipeline produces identical results. The embedding storage code is shorter and safer — no manual `cursor.execute()` with hand-built INSERT statements. The `websites_embeddings` table is managed through the ORM relationship, so cascade deletes work automatically.
+**Rising Action:** Ziutus sprawdza czy NAS jest online (ping, QNAP app). Jeśli NAS działa — problem z tunelem Cloudflare lub kontenerem MCP. Ziutus loguje się na NAS przez SSH lub QNAP app i restartuje kontener.
 
-### Journey 4: "API Request" — Flask Endpoint Serving the Frontend
-
-**Persona:** React frontend making a `GET /website_list?document_type=link&limit=20` request.
-
-**Opening Scene:** A user opens the Lenie React UI and navigates to the document list filtered by "links." The frontend sends an authenticated request to the Flask backend.
-
-**Rising Action:** The Flask route handler calls the repository method `get_list(document_type='link', limit=20)`. The repository builds a SQLAlchemy `select()` query with dynamic filters — `where(WebDocument.document_type == 'link')`, `.limit(20)`, `.order_by(WebDocument.created_at.desc())`. The session executes the query and returns ORM model instances.
-
-**Climax:** Each `WebDocument` instance is serialized via its `dict()` method. The API response format is functionally equivalent to the old output — the frontend may need minor adjustments if field naming evolves, but the data is correct and complete.
-
-**Resolution:** The frontend displays the list. The API contract is preserved at the data level while the implementation underneath is completely rewritten. Any future format improvements (cleaner field names, nested objects) can be made incrementally.
+**Resolution:** MCP server wraca. To się zdarza rzadko (restart NAS, aktualizacja QTS). Akceptowalne w MVP — monitoring i alerty to Growth feature.
 
 ### Journey Requirements Summary
 
-| Journey | Capabilities Required |
-|---------|----------------------|
-| Schema Modification | ORM model definition, Alembic autogenerate, migration execution |
-| Data Import | ORM instance creation, session-based persistence, duplicate detection by URL, backward-compatible field mapping |
-| Embeddings Pipeline | Repository queries with joins, ORM relationship management (document → embeddings), `pgvector-python` `cosine_distance()`, transaction management |
-| API Request | Repository with dynamic filters, ORM-to-dict serialization, response format backward compatibility |
+| Journey | Required MCP Tools | Infrastructure |
+|---------|-------------------|----------------|
+| 1 & 2 (Mobile Knowledge) | `lenie_unreviewed_articles`, `lenie_get_article`, `lenie_delete_article`, `lenie_search`, `obsidian_read_note`, `obsidian_write_note`, `obsidian_list_notes`, `obsidian_delete_note`, `obsidian_note_history` | MCP server, Cloudflare Tunnel, Obsidian vault sync, Claude Custom Connector |
+| 3 (Operator) | — | SSH access to NAS, Docker CLI, monitoring (post-MVP) |
 
-## Technical Context
+## Domain-Specific Requirements
 
-### Architectural Position
+### Security — MCP Server Access
 
-Database access layer migration within the existing Flask backend. Replaces raw `psycopg2` queries with SQLAlchemy 2.x ORM. All consumers (Flask API, import scripts, batch pipeline) use the same ORM models and session management.
+The MCP server exposes read/write access to PostgreSQL (articles) and the Obsidian vault filesystem. Security layers:
 
-### Target Architecture
+1. **Network layer:** Cloudflare Tunnel — MCP server is never directly exposed to the internet. All traffic routed through Cloudflare's edge network.
+2. **Authentication layer:** Cloudflare MCP Server Portal (Zero Trust) — OAuth-based authentication before traffic reaches the MCP server. Identity provider login required (e.g., Google). This is the sole authentication layer — Claude Custom Connector does not support additional auth headers beyond OAuth.
 
+**Domain setup:** Dedicated low-cost domain (~3 EUR/year) managed entirely by Cloudflare DNS. Production domain `lenie-ai.eu` remains on AWS Route53 — zero impact on existing infrastructure.
+
+### Data Integrity — Obsidian Vault
+
+- MCP server has write access restricted to `02-wiedza/` directory only — no access to journal, templates, or other vault areas
+- Single-user guarantee: no concurrent edits from multiple sources
+- Delete operations on Lenie articles do not require confirmation
+- Every write operation automatically versioned in `obsidian_note_versions` table (see MCP Server Specific Requirements)
+
+### Obsidian Vault Synchronization
+
+**Solution:** `obsidian-headless` (official Obsidian CLI, released Feb 2026) running as a Docker container on NAS, using existing Obsidian Sync subscription (Standard 1 GB plan, valid until 2026-11-02).
+
+**Sync chain (no PC required):**
 ```
-Flask Route / Script
-  |
-  v
-Repository (stalker_web_documents_db_postgresql.py)
-  |  - complex queries: get_list(), get_similar(), get_count()
-  |  - uses SQLAlchemy select(), func.count(), joins
-  |
-  v
-ORM Models (library/db/models.py)
-  |  - WebDocument (STI base) -> LinkDocument, YouTubeDocument, etc.
-  |  - WebsiteEmbedding (Vector(), cosine_distance())
-  |  - domain methods: set_document_type(), validate(), analyze(), dict()
-  |
-  v
-SQLAlchemy Engine (library/db/engine.py)
-  |  - get_engine() with pool_pre_ping=True
-  |  - get_session() for scripts
-  |  - get_scoped_session() for Flask (thread-local)
-  |
-  v
-PostgreSQL 18 + pgvector
+MCP server writes file on NAS
+    → obsidian-headless container detects change
+        → Obsidian Sync → phone + PC (seconds)
 ```
 
-### Session Management
+- No Syncthing needed — Obsidian Sync handles all device synchronization
+- E2E encrypted, bidirectional, conflict resolution handled by Obsidian
+- Community Docker image available: [obsidian-headless-sync-docker](https://github.com/Belphemur/obsidian-headless-sync-docker)
 
-| Context | Strategy |
-|---------|----------|
-| Flask API | `get_scoped_session()` — thread-local, `@app.teardown_appcontext` calls `session.remove()` |
-| Import scripts | `get_session()` — script-scoped, explicit `session.close()` at exit |
-| Batch pipeline | `get_session()` — script-scoped, commit per document |
+**Backlog (September 2026):** Evaluate whether to renew Obsidian Sync or migrate to Syncthing before subscription expires (2026-11-02).
 
-### Key Technology Decisions
+### Infrastructure Dependencies
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| ORM style | SQLAlchemy 2.x `mapped_column()` declarative | Modern, type-hint native, best IDE support |
-| Vector operations | `pgvector-python` native integration | `cosine_distance()` operator, dimensionless `Vector()` type — zero raw SQL |
-| Inheritance | Single Table Inheritance on `web_documents` | Matches current schema (one table), prepares for future Joined Table split |
-| Migration tool | Alembic with autogenerate | Reads ORM model diffs, generates migration scripts |
-| DB wrapper | Eliminated | `StalkerWebDocumentDB` wrapper removed — ORM model + repository directly |
-| Pydantic | Deferred (out of scope) | Not needed until API serialization or structured AI outputs become priority |
+| Dependency | Failure Impact | MVP Mitigation |
+|------------|---------------|----------------|
+| NAS (QNAP) | MCP server unavailable | Accept downtime — personal project |
+| Cloudflare Tunnel | MCP server unreachable | Tunnel auto-reconnects; manual restart if needed |
+| Obsidian Sync | Notes not propagated | Independent of MCP — Obsidian handles retry |
+| Claude Custom Connector | Cannot initiate workflow | No mitigation — depends on Anthropic |
+| PostgreSQL on NAS | Articles unavailable | Already monitored via existing Docker healthchecks |
 
-### Data Flow — Import Script
+### Educational Value
 
-```
-DynamoDB/JSON feed
-  -> Script creates WebDocument(url=...)
-  -> session.add(doc) + session.commit()
-  -> SQLAlchemy generates INSERT with correct columns
-  -> New columns auto-default to NULL (no script changes needed)
-```
+Technologies to explore: Cloudflare ecosystem (DNS, Tunnel, Zero Trust, MCP Server Portals), MCP protocol (Python SDK), Docker orchestration on NAS, Obsidian headless sync.
 
-### Data Flow — Similarity Search
+Infrastructure maintenance budget: a few hours per month, treated as learning investment.
 
-```
-Query vector (dimensions vary by model)
-  -> Repository: select(WebsiteEmbedding)
-       .order_by(WebsiteEmbedding.embedding.cosine_distance(query_vector))
-       .limit(limit)
-  -> pgvector IVFFlat index (cosine similarity)
-  -> ORM instances returned
-```
+## MCP Server Specific Requirements
 
-### Dependencies (new)
+### Project-Type Overview
 
-| Package | Version | Purpose |
-|---------|---------|---------|
-| `sqlalchemy` | >=2.0,<3.0 | ORM, query builder, session management |
-| `pgvector` | >=0.3.0 | Vector type, cosine_distance operator |
-| `alembic` | >=1.13 | Schema migration management |
+Remote MCP server deployed as a Docker container on NAS, exposing Lenie knowledge base and Obsidian vault to Claude mobile client via Cloudflare MCP Server Portal.
 
-Existing `psycopg2-binary` retained as SQLAlchemy driver.
+### API Documentation
 
-### Files — Summary
+This section is the canonical API contract for the MCP server. Downstream consumers (Claude Custom Connector, future MCP clients, integration tests) should reference these subsections:
 
-**New:**
-- `backend/library/db/__init__.py`
-- `backend/library/db/engine.py` — engine, session factories, Base
-- `backend/library/db/models.py` — WebDocument (STI), WebsiteEmbedding
-- `backend/alembic.ini`
-- `backend/alembic/env.py`
-- `backend/alembic/versions/` — migration scripts
+| Concern | Subsection | Purpose |
+|---------|------------|---------|
+| **Tool catalog** | [MCP Tools Specification](#mcp-tools-specification) | All available tools with operation type, parameters, and return shape |
+| **Data schemas** | [MCP Tools Specification](#mcp-tools-specification) returns + [Note Version History](#note-version-history-mvp) | Field-level structure of responses and persisted records |
+| **Error contract** | [Error Handling](#error-handling) | Error codes, triggers, and user-facing message patterns |
+| **Throughput & limits** | [Rate Limits & Concurrency](#rate-limits--concurrency) | Concurrency model and (lack of) rate limiting in MVP |
+| **Wire format** | [Data Format](#data-format) | Encoding conventions for article lists, details, and notes |
+| **Protocol** | [Implementation Considerations](#implementation-considerations) | MCP transport, SDK, integration points |
 
-**Rewritten:**
-- `backend/library/stalker_web_documents_db_postgresql.py` — SQLAlchemy session queries
-- `backend/imports/dynamodb_sync.py` — ORM model instead of wrapper
-- `backend/imports/unknown_news_import.py` — ORM model instead of wrapper
-- `backend/web_documents_do_the_needful_new.py` — ORM model instead of wrapper
-- `backend/server.py` — add `teardown_appcontext`, update route handlers
+**API Versioning:** MVP exposes a single unbumped version. Breaking changes in tool signatures or error codes will be tracked via the MCP server's own version string (returned on connection handshake) starting in Phase 2. Until then, the Custom Connector is assumed to be in lockstep with server deployment.
 
-**Removed:**
-- `backend/library/stalker_web_document_db.py` — wrapper eliminated
-- `backend/library/stalker_web_document.py` — replaced by ORM model (re-export enums only)
+**Stability contract:** Tool names, parameter names, and error codes documented in this section are the stable surface. Internal implementation details (table column names, Docker network names, container choices in NFRs) may change without API version bump.
+
+### MCP Tools Specification
+
+#### Lenie Tools (PostgreSQL)
+
+| Tool | Operation | Returns |
+|------|-----------|---------|
+| `lenie_unreviewed_articles` | READ | List (default 6, newest first): title, source, size (KB), user note, date, total unreviewed count. Filter: `reviewed_at IS NULL` or `obsidian_note_paths = []`. Supports pagination and filters (source, type, date range). |
+| `lenie_search` | READ | Search results matching keyword/phrase |
+| `lenie_get_article` | READ | Full markdown content + metadata (title, date, source, language, user note, obsidian_note_paths) |
+| `lenie_delete_article` | DELETE | Confirmation of deletion |
+
+#### Obsidian Tools (Filesystem — restricted to `02-wiedza/`)
+
+| Tool | Operation | Returns |
+|------|-----------|---------|
+| `obsidian_read_note` | READ | Full markdown content of a note |
+| `obsidian_write_note` | CREATE/UPDATE | Writes file, saves version to `obsidian_note_versions` table before overwriting. Optional params: `article_id` (auto-links note path to article's `obsidian_note_paths`), `mark_as_reviewed` (sets `reviewed_at = NOW()` on the article — used when user confirms work on article is complete). |
+| `obsidian_list_notes` | READ | List of notes in folder/subfolder |
+| `obsidian_delete_note` | DELETE | Removes note file |
+| `obsidian_note_history` | READ | List of past versions for a note (date, user prompt, diff before/after). Default limit 10, newest first. |
+
+### Note Version History (MVP)
+
+Table `obsidian_note_versions` — automatic versioning before every MCP write:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | SERIAL PK | |
+| `note_path` | TEXT | Relative path within vault |
+| `content_before` | TEXT | Content before change |
+| `content_after` | TEXT | Content after change |
+| `user_prompt` | TEXT | What user asked Claude to do |
+| `article_id` | INTEGER FK (nullable) | Source Lenie article |
+| `changed_by` | TEXT | `mcp_server` |
+| `created_at` | TIMESTAMPTZ | Timestamp |
+
+**Backlog:** Automated quality audit — Claude reviews recent changes to verify `content_after` correctly implements `user_prompt` without losing `content_before` data.
+
+### Data Format
+
+- Article lists: metadata + size in KB + user note (no full content)
+- Article detail: full markdown content + all metadata in single response
+- Obsidian notes: raw markdown
+
+### Error Handling
+
+MCP tools return structured errors with code, human-readable message, and optional details. Claude surfaces these to the user conversationally.
+
+| Error Code | Trigger | User-Facing Message Pattern |
+|------------|---------|------------------------------|
+| `article_not_found` | `lenie_get_article` / `lenie_delete_article` with non-existent UUID | "Nie znalazłem artykułu o tym ID — możliwe że został wcześniej usunięty." |
+| `note_not_found` | `obsidian_read_note` / `obsidian_note_history` with non-existent path | "Nie ma notatki pod tą ścieżką w `02-wiedza/`." |
+| `note_path_invalid` | Path traversal attempt (`..`, absolute path, outside `02-wiedza/`) | "Ścieżka jest poza dozwolonym obszarem `02-wiedza/`." (operacja odrzucona, próba zalogowana) |
+| `vault_write_failed` | Filesystem error during `obsidian_write_note` (permissions, disk full, sync conflict) | "Nie udało się zapisać notatki — sprawdź miejsce na dysku i status Obsidian Sync." |
+| `database_unavailable` | PostgreSQL connection failure | "Baza Lenie jest niedostępna — sprawdź czy NAS i kontener `lenie-ai-db` działają." |
+| `version_save_failed` | DB write to versioning store failed before note overwrite | "Wstrzymałem zapis notatki — nie mogłem zapisać wersji historycznej. Notatka nie została zmieniona." (NFR7 — no overwrite without version save) |
+
+### Rate Limits & Concurrency
+
+Single-user personal project — no rate limiting in MVP. Concurrent request handling delegated to MCP SDK and FastAPI defaults. Post-MVP consideration: if multiple Claude conversations run in parallel, evaluate need for per-tool semaphores around `obsidian_write_note` to prevent vault sync conflicts.
 
 ### Implementation Considerations
 
-- `StalkerDocumentStatus`, `StalkerDocumentType`, `StalkerDocumentStatusError` enums are preserved as-is — they are used across the codebase and stored as strings in the database
-- The `langauge` typo in `websites_embeddings` has been fixed in migration `08-fix-language-typo.sql` — ORM model uses correct `language` spelling
-- `dynamodb_sync.py` has a direct SQL UPDATE for `created_at` and `chapter_list` (line 210) — this becomes a normal ORM attribute assignment + commit
-- pgvector HNSW/IVFFlat partial indexes: managed by Alembic migrations, not defined in ORM model
+- MCP protocol: Python SDK (`mcp` package), JSON-RPC transport over SSE/streamable HTTP
+- Database access: reuse existing `DocumentService` and `SearchService` (already decoupled from Flask)
+- Filesystem access: restricted to vault path `{OBSIDIAN_VAULT_PATH}/02-wiedza/`
+- Docker: new container in `compose.nas.yaml`, connects to existing `lenie-ai-db` on `lenie-net` network
 
-## Project Scoping & Risk Mitigation
+## Project Scoping & Phased Development
 
-### MVP Strategy
+### MVP Strategy & Philosophy
 
-**Approach:** Big-bang rewrite of the data access layer. All consumers (Flask API, import scripts, batch pipeline) migrate to SQLAlchemy ORM simultaneously. The codebase has never run in production, so there is no live system to break — this is the safest moment for an aggressive rewrite.
+**MVP Approach:** Problem-solving MVP — validate that the mobile knowledge workflow (article review → Obsidian note creation) works end-to-end through MCP, before optimizing speed, reliability, or adding features.
 
-**Resource Requirements:** Solo developer (Ziutus), Claude Code as implementation partner.
+**MVP Gate:** Claude on mobile successfully reads an article from Lenie, creates/updates an Obsidian note, and the change propagates to all devices via Obsidian Sync.
+
+**Resource Requirements:** Single developer (Ziutus), estimated a few weekends of focused work. Technologies: Python (MCP SDK), Docker, Cloudflare (new), obsidian-headless (new).
 
 ### MVP Feature Set (Phase 1)
 
-**Core Journeys Supported:**
-- All four journeys: schema modification, data import, embeddings pipeline, API request
+**Core User Journeys Supported:**
+- Journey 1: "10 minut w tramwaju" — full flow
+- Journey 2: "Wieczór przy bajkach" — full flow
 
 **Must-Have Capabilities:**
-1. ORM models (`WebDocument` with STI, `WebsiteEmbedding` with dimensionless `Vector()`)
-2. Engine + session management (`get_engine()`, `get_session()`, `get_scoped_session()`)
-3. Alembic initialized with baseline migration
-4. Repository rewritten with SQLAlchemy queries
-5. All import scripts (`dynamodb_sync.py`, `unknown_news_import.py`) working with ORM
-6. Batch pipeline (`web_documents_do_the_needful_new.py`) working with ORM
-7. Flask endpoints functional
-8. Old wrapper classes removed
+
+| Component | What | Why essential |
+|-----------|------|---------------|
+| MCP Server | 10 tools (4 Lenie + 5 Obsidian + history reader, with review logic built into `obsidian_write_note`) | Core functionality — without this nothing works |
+| Note versioning | `obsidian_note_versions` table with before/after/prompt | Safety net for file writes + future audit data |
+| obsidian-headless | Docker container syncing vault on NAS | Without this, notes don't reach phone without PC |
+| Cloudflare Tunnel | HTTPS exposure of MCP server | Without this, Claude can't reach NAS |
+| Cloudflare MCP Portal | Zero Trust OAuth | Without this, MCP server is unprotected |
+| Dedicated domain | ~3 EUR/year for Cloudflare DNS | Required by MCP Server Portal |
+| Claude Custom Connector | Config in claude.ai | Entry point for the user |
+
+**Explicitly out of MVP:**
+- DynamoDB sync automation (current manual process continues)
+- Obsidian semantic search
+- Proactive article suggestions
+- Monitoring/alerting
+- Quality audit of note changes
+- Defense-in-depth token in MCP server
 
 ### Post-MVP Features
 
 **Phase 2 (Growth):**
-- Pydantic v2 schemas for API serialization
-- TypeScript type synchronization (Pydantic → OpenAPI → `openapi-typescript`)
-- New tables: `data_sources`, `authors`
-- Pydantic structured outputs for LLM calls
+- Automated DynamoDB → PostgreSQL sync (cron or event-driven)
+- `obsidian_search` tool (grep/semantic search across notes)
+- Proactive suggestions ("3 new articles about Poland")
+- NAS/tunnel monitoring with Slack alerts
+- Automated quality audit of note changes (using stored prompts + diffs)
+- `obsidian_update_note` tool (partial edits instead of full file overwrite)
 
 **Phase 3 (Expansion):**
-- Joined Table Inheritance (split `web_documents` by document type)
-- MCP server for Claude Desktop backed by SQLAlchemy queries
-- ElasticSearch as secondary search backend (if needed)
-
-### Out of Scope
-
-The following are explicitly excluded from this sprint and deferred to future work:
-
-- **Pydantic v2 schemas** — API serialization, OpenAPI generation, structured AI outputs (Phase 2)
-- **TypeScript type synchronization** — Pydantic → OpenAPI → `openapi-typescript` pipeline (Phase 2)
-- **New tables** — `data_sources`, `authors` (Phase 2 — ORM makes these trivial to add later)
-- **Joined Table Inheritance split** — splitting `web_documents` by document type into separate tables (Phase 3)
-- **MCP server** — Claude Desktop integration backed by SQLAlchemy queries (Phase 3)
-- **ElasticSearch** — secondary search backend (Phase 3, if needed)
-- **Lambda/AWS compatibility** — SQLAlchemy adds ~30MB to Lambda layers; Lambda deployment deferred
-- **Flask-SQLAlchemy extension** — using plain SQLAlchemy with manual session management instead
-- **Database schema changes** — this migration preserves the existing schema exactly; new columns/tables are future work
+- Full Lenie MCP tool suite (document processing, embedding generation, content download)
+- Direct NAS backend ingestion (if tunnel proves reliable — could eliminate DynamoDB sync)
+- Multi-vault Obsidian support
+- Integration with other MCP clients
 
 ### Risk Mitigation Strategy
 
-**Technical Risk — Big-Bang Migration:**
-All consumers switch to SQLAlchemy simultaneously. No gradual migration path. **Mitigation:** The code has never run in production. Verification is done by running import scripts on test data and confirming correct database state. If something breaks, the old code is in git history.
+**Technical Risks:**
+- *MCP protocol is new* — mitigated by using official Python SDK and existing community examples
+- *Cloudflare MCP Portal is in Open Beta* — mitigated by having fallback to simple tunnel + authless if Portal doesn't work
+- *obsidian-headless is new (Feb 2026)* — mitigated by community Docker image; fallback to Syncthing if headless proves unreliable
+- *Claude overwrites Obsidian notes incorrectly* — mitigated by `obsidian_note_versions` table (full before/after history)
 
-**Technical Risk — pgvector Compatibility:**
-`pgvector-python` must produce identical similarity search results to the current raw SQL `<=>` operator. **Mitigation:** Run `get_similar()` with known test vectors before and after migration, compare results.
-
-**Technical Risk — Session Lifecycle:**
-SQLAlchemy sessions in Flask must be properly scoped (thread-local) and cleaned up. Leaked sessions cause connection pool exhaustion. **Mitigation:** `@app.teardown_appcontext` with `session.remove()` — standard Flask-SQLAlchemy pattern.
-
-**Technical Risk — Alembic Baseline:**
-Existing database schema must match the ORM model exactly for `alembic stamp head` to work. Any drift causes migration failures. **Mitigation:** Compare `alembic revision --autogenerate` output against existing DDL scripts (`backend/database/init/03-create-table.sql`, `04-create-table.sql`). Fix any discrepancies before stamping.
-
-**Dependency Risk — Lambda Package Size:**
-SQLAlchemy adds ~30MB to Lambda layers. **Mitigation:** Deferred — Lambda/AWS is secondary. NAS deployment has no package size constraints. Lambda compatibility addressed in a future sprint if needed.
-
-## Assumptions & Dependencies
-
-### Assumptions
-
-- Existing database schema in `backend/database/init/03-create-table.sql` and `04-create-table.sql` matches the live database — ORM model will be built from these DDL scripts
-- `pgvector-python` `cosine_distance()` operator produces identical similarity search results to the current raw SQL `<=>` operator
-- No production data exists — the codebase has never run in production, making a big-bang rewrite safe
-- `psycopg2-binary` works as SQLAlchemy's PostgreSQL driver without additional configuration
-- The `langauge` typo in `websites_embeddings` has already been fixed (migration `08-fix-language-typo.sql`) — ORM model uses correct `language` spelling
-
-### Dependencies
-
-- SQLAlchemy >= 2.0 supports `mapped_column()` declarative style and type-hint native `Mapped[]`
-- `pgvector` Python package >= 0.3.0 provides SQLAlchemy `Vector()` type and `cosine_distance()` operator
-- Alembic >= 1.13 supports autogenerate from SQLAlchemy 2.x models
-- PostgreSQL 18 (Docker/NAS and RDS) supports pgvector extension
+**Resource Risks:**
+- Single developer, side project — mitigated by clear MVP boundary and educational value (learning is acceptable even if MVP takes longer)
+- Obsidian Sync subscription expires 2026-11-02 — evaluate in September whether to renew or migrate to Syncthing
 
 ## Functional Requirements
 
-### ORM Model Definition
+### Article Discovery & Review
 
-- FR1: Developer can define database table structure as a Python ORM model class in a single file
-- FR2: Developer can define column types, constraints, defaults, and nullability as model field attributes
-- FR3: Developer can define relationships between models (one-to-many, many-to-one) using ORM relationship declarations
-- FR4: Developer can define Single Table Inheritance hierarchy on `web_documents` with document type as discriminator
-- FR5: Developer can add domain methods (validate, analyze, set_document_type, set_document_state) directly on the ORM model
+- FR1: User can retrieve a list of unreviewed articles (limit 6 by default, newest first), showing title, source, size in KB, user note, date, and total count of unreviewed articles. User can request more or apply filters (source, type, date range, size).
+- FR2: User can retrieve the full markdown content and metadata of a specific article
+- FR3: User can search articles by keyword or phrase across title, content, and user note. Results return title, source, snippet showing match context, and relevance ordering (most relevant first).
+- FR4: User can delete an article from the database
+- FR5: When writing an Obsidian note linked to an article, system automatically associates the note path with the article. User can mark the article as reviewed when work on it is complete.
 
-### Schema Migration
+### Obsidian Note Management
 
-- FR6: Developer can auto-generate migration scripts from ORM model changes via Alembic
-- FR7: Developer can apply migrations to the database with a single command (`alembic upgrade head`)
-- FR8: Developer can roll back migrations to a previous version (`alembic downgrade`)
-- FR9: Developer can initialize Alembic on an existing database by stamping the current state as baseline
+- FR6: User can read the full content of an Obsidian note within `02-wiedza/`
+- FR7: User can create a new Obsidian note within `02-wiedza/`
+- FR8: User can overwrite an existing Obsidian note within `02-wiedza/`
+- FR9: User can delete an Obsidian note within `02-wiedza/`
+- FR10: User can list notes in a folder or subfolder within `02-wiedza/`
 
-### Session & Connection Management
+### Note Version History
 
-- FR10: Flask application can obtain thread-local database sessions scoped to the request lifecycle
-- FR11: Flask application can automatically clean up sessions on request teardown
-- FR12: Import scripts and batch pipeline can obtain, commit, and close their own database sessions (script-scoped lifecycle)
-- FR13: Engine can detect and recover from stale database connections (`pool_pre_ping`)
+- FR11: System automatically saves the previous version of a note before every write operation
+- FR12: System records the user prompt, content before, content after, and source article for each note change
+- FR13: User can retrieve the version history of a specific note (date, user prompt, content before/after) to audit how the note evolved over time
 
-### Document Persistence
+### Claude Integration
 
-- FR14: Consumer can create a new document by instantiating an ORM model and committing to session
-- FR15: Consumer can update an existing document by modifying ORM model attributes and committing
-- FR16: Consumer can delete a document via session, with cascade deletion of related embeddings
-- FR17: Consumer can look up a document by URL for duplicate detection
-- FR18: Consumer can look up a document by ID
-- FR19: Consumer can serialize a document to a dictionary for API responses
-
-### Embedding Operations
-
-- FR20: Consumer can add a vector embedding to a document via ORM relationship
-- FR21: Consumer can delete embeddings for a document filtered by model name
-- FR22: Repository can find documents needing embeddings (outer join on `websites_embeddings`)
-- FR23: Repository can perform similarity search using `pgvector-python` `cosine_distance()` operator
-
-### Repository Queries
-
-- FR24: Repository can list documents with dynamic filters (document_type, document_state, source, project, limit, offset)
-- FR25: Repository can count documents by type and/or state
-- FR26: Repository can find documents ready for download (URL_ADDED state, webpage/link type)
-- FR27: Repository can find YouTube documents just added (URL_ADDED state, youtube type)
-- FR28: Repository can find documents with completed transcriptions
-- FR29: Repository can find the next document to correct (navigation by ID and type)
-- FR30: Repository can retrieve the last imported date for a given source
-
-### Import Script Compatibility
-
-- FR31: `dynamodb_sync.py` can create documents from DynamoDB items using ORM models
-- FR32: `dynamodb_sync.py` can set `created_at` and `chapter_list` via normal ORM attribute assignment (no direct SQL)
-- FR33: `unknown_news_import.py` can create documents from JSON feed entries using ORM models
-- FR34: `unknown_news_import.py` can detect and skip duplicate URLs via ORM query
-
-### Batch Pipeline Compatibility
-
-- FR35: `web_documents_do_the_needful_new.py` can process SQS messages and create documents via ORM
-- FR36: `web_documents_do_the_needful_new.py` can generate and store embeddings via ORM relationship
-- FR37: `web_documents_do_the_needful_new.py` can update document state through the processing lifecycle
-- FR38: YouTube processing pipeline can store transcript text and metadata via ORM
-
-### Flask API Compatibility
-
-- FR39: `/website_list` endpoint can return filtered, paginated document lists via repository
-- FR40: `/website_get` endpoint can return a single document with neighbor navigation via repository
-- FR41: `/website_save` endpoint can create or update documents via ORM model
-- FR42: `/website_delete` endpoint can remove documents with cascade embedding deletion via ORM
-- FR43: `/website_similar` endpoint can perform vector similarity search via `pgvector-python`
+- FR14: User can configure a Custom Connector in claude.ai pointing to the MCP server
+- FR15: Claude on mobile can invoke all MCP tools (Lenie and Obsidian) through the Custom Connector
 
 ## Non-Functional Requirements
 
-### Code Quality
+### Performance
 
-- NFR1: Zero raw `cursor.execute()` calls in production code — all database operations via SQLAlchemy ORM or `pgvector-python` operators
-- NFR2: Code passes `ruff check backend/` with zero warnings (line-length=120)
-- NFR3: All existing unit tests pass without modification (tests that don't touch DB layer)
-- NFR4: ORM models use type hints (`Mapped[type]`) for IDE autocompletion and static analysis
+- NFR1: MCP tool responses complete within 5 seconds for article list and note read operations, as measured by MCP server response logging in production
+- NFR2: Article list (`lenie_unreviewed_articles`) with default limit of 6 returns within 2 seconds, as measured by MCP server response logging
+- NFR3: Note write operations (including version save to DB) complete within 3 seconds, as measured by MCP server response logging including DB write timing
+- *Note: These are initial estimates — to be validated and adjusted post-MVP*
 
-### Backward Compatibility
+### Security
 
-- NFR5: Enum classes (`StalkerDocumentStatus`, `StalkerDocumentType`, `StalkerDocumentStatusError`) are preserved with identical values — no import changes needed in consumers
-- NFR6: Database schema after migration is identical to before — Alembic baseline produces no diff against existing DDL scripts
+- NFR4: All traffic between Claude and MCP server is encrypted via HTTPS (Cloudflare Tunnel), verified by tunnel configuration audit
+- NFR5: MCP server cannot access filesystem outside `02-wiedza/` directory (path traversal prevention), verified by integration tests with traversal attempts
+- NFR6: No credentials or secrets stored in MCP server Docker image — environment variables only, verified by image inspection in CI
+- NFR7: Access to MCP server requires authentication via Cloudflare MCP Server Portal (Zero Trust OAuth) before reaching the server
+- NFR8: MCP server is reachable from the public internet via Cloudflare Tunnel (no direct port exposure on NAS)
 
-### Maintainability
+### Data Integrity
 
-- NFR7: Adding a new column requires changes in exactly one file (`backend/library/db/models.py`)
-- NFR8: Adding a new table requires changes in exactly one file plus one Alembic migration command
-- NFR9: No dead code from old architecture remains (`stalker_web_document_db.py` wrapper fully removed)
+- NFR9: Every note write operation creates a version record in `obsidian_note_versions` before overwriting — no exceptions
+- NFR10: Database transactions for article operations are atomic — partial writes are not allowed
+- NFR11: Note version history is retained indefinitely (no automatic purging)
 
-### Dependency Management
+### Integration
 
-- NFR10: New dependencies (`sqlalchemy`, `pgvector`, `alembic`) added to `pyproject.toml` with version pins
-- NFR11: `uv lock` produces a valid lock file after dependency changes
-- NFR12: `.venv_wsl` synchronized after dependency changes
+- NFR12: MCP server implements MCP protocol compatible with Claude Custom Connector (streamable HTTP transport)
+- NFR13: obsidian-headless container syncs vault changes to Obsidian Sync within 60 seconds of file write, as measured by file modification timestamp comparison between NAS and synced device
+- NFR14: Vault changes written by MCP server propagate to phone and PC without requiring PC to be online (NAS-driven sync chain)
+- NFR15: Obsidian vault on NAS is continuously synchronized with all user devices via Obsidian Sync (bidirectional, conflict resolution by Obsidian)
+- NFR16: MCP server connects to existing PostgreSQL on `lenie-net` Docker network without additional configuration

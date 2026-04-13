@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """One-time migration: move S3 files from data/ to CACHE_DIR/{doc_id}/{doc_id}.ext
 
-Reads UUID-named files from data/, queries PostgreSQL for doc.id by s3_uuid,
+Reads UUID-named files from data/, queries PostgreSQL for doc.id by doc_uuid,
 and moves files to the cache directory convention used by document_prepare.py.
 
 Usage:
@@ -26,11 +26,11 @@ from library.db.engine import get_session
 cfg = load_config()
 
 
-def get_s3_uuid_to_doc_id_map(session, s3_uuids: list[str]) -> dict[str, int]:
-    """Query DB for doc.id by s3_uuid. Returns {s3_uuid: doc_id} mapping."""
-    stmt = select(WebDocument.id, WebDocument.s3_uuid).where(WebDocument.s3_uuid.in_(s3_uuids))
+def get_uuid_to_doc_id_map(session, uuids: list[str]) -> dict[str, int]:
+    """Query DB for doc.id by uuid. Returns {uuid: doc_id} mapping."""
+    stmt = select(WebDocument.id, WebDocument.uuid).where(WebDocument.uuid.in_(uuids))
     rows = session.execute(stmt).all()
-    return {row.s3_uuid: row.id for row in rows}
+    return {row.uuid: row.id for row in rows}
 
 
 def main():
@@ -54,14 +54,14 @@ def main():
         print(f"No .html/.txt files found in {args.source_dir}")
         return
 
-    # Extract unique s3_uuids from filenames
-    s3_uuids = set()
+    # Extract unique uuids from filenames
+    uuids = set()
     for f in files:
         basename = os.path.basename(f)
-        s3_uuid = os.path.splitext(basename)[0]
-        s3_uuids.add(s3_uuid)
+        file_uuid = os.path.splitext(basename)[0]
+        uuids.add(file_uuid)
 
-    print(f"Found {len(files)} files ({len(s3_uuids)} unique UUIDs) in {args.source_dir}")
+    print(f"Found {len(files)} files ({len(uuids)} unique UUIDs) in {args.source_dir}")
     print(f"Target: {args.target_dir}")
     if args.dry_run:
         print("Mode: DRY-RUN")
@@ -70,27 +70,27 @@ def main():
     # Query DB for mapping
     session = get_session()
     try:
-        uuid_to_id = get_s3_uuid_to_doc_id_map(session, list(s3_uuids))
+        uuid_to_id = get_uuid_to_doc_id_map(session, list(uuids))
     finally:
         session.close()
 
-    print(f"DB mapping: {len(uuid_to_id)}/{len(s3_uuids)} UUIDs found in database\n")
+    print(f"DB mapping: {len(uuid_to_id)}/{len(uuids)} UUIDs found in database\n")
 
     moved = 0
     skipped = 0
     not_found = 0
 
-    for s3_uuid in sorted(s3_uuids):
-        doc_id = uuid_to_id.get(s3_uuid)
+    for file_uuid in sorted(uuids):
+        doc_id = uuid_to_id.get(file_uuid)
         if doc_id is None:
-            print(f"  SKIP: {s3_uuid} — not found in database")
+            print(f"  SKIP: {file_uuid} — not found in database")
             not_found += 1
             continue
 
         doc_dir = os.path.join(args.target_dir, str(doc_id))
 
         for ext in [".html", ".txt"]:
-            src = os.path.join(args.source_dir, f"{s3_uuid}{ext}")
+            src = os.path.join(args.source_dir, f"{file_uuid}{ext}")
             if not os.path.isfile(src):
                 continue
 
