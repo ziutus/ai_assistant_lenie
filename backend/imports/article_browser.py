@@ -14,6 +14,7 @@ Usage:
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW   # Articles needing manual review
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format ids    # Just IDs (for scripting)
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format short  # IDs + titles
+    python imports/article_browser.py --review --not-cleaned                           # Only articles not yet cleaned by regexp+LLM
 """
 
 import argparse
@@ -24,6 +25,8 @@ import sys
 import textwrap
 from datetime import datetime
 from typing import Optional
+
+from library.models.stalker_document_status import StalkerDocumentStatus
 
 
 def _getch_action(prompt: str) -> str:
@@ -825,9 +828,10 @@ def action_save_to_db(doc, article: dict, session) -> bool:
 
 def _get_documents(session, limit: int = 50, since: Optional[str] = None,
                    portal: Optional[str] = None, state: Optional[str] = None,
-                   not_reviewed: bool = False, no_obsidian: bool = False) -> list:
+                   not_reviewed: bool = False, no_obsidian: bool = False,
+                   not_cleaned: bool = False) -> list:
     """Pobierz dokumenty z bazy z filtrami. Zwraca listę obiektów WebDocument."""
-    has_python_filters = any([portal, state, since, not_reviewed, no_obsidian])
+    has_python_filters = any([portal, state, since, not_reviewed, no_obsidian, not_cleaned])
     db_limit = limit * 10 if has_python_filters else limit
 
     wb_db = WebsitesDBPostgreSQL(session=session)
@@ -850,6 +854,12 @@ def _get_documents(session, limit: int = 50, since: Optional[str] = None,
             continue
         if no_obsidian and (doc.obsidian_note_paths or []) != []:
             continue
+        if not_cleaned and doc.document_state in (
+            StalkerDocumentStatus.MD_SIMPLIFIED.name,
+            StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
+            StalkerDocumentStatus.EMBEDDING_EXIST.name,
+        ):
+            continue
         results.append(doc)
         if len(results) >= limit:
             break
@@ -858,10 +868,12 @@ def _get_documents(session, limit: int = 50, since: Optional[str] = None,
 
 def cmd_list(session, since: Optional[str] = None, portal: Optional[str] = None,
              state: Optional[str] = None, limit: int = 30, fmt: str = "table",
-             not_reviewed: bool = False, no_obsidian: bool = False):
+             not_reviewed: bool = False, no_obsidian: bool = False,
+             not_cleaned: bool = False):
     """Wyświetl listę artykułów z bazy."""
     documents = _get_documents(session, limit=limit, since=since, portal=portal, state=state,
-                               not_reviewed=not_reviewed, no_obsidian=no_obsidian)
+                               not_reviewed=not_reviewed, no_obsidian=no_obsidian,
+                               not_cleaned=not_cleaned)
 
     if fmt == "ids":
         # Compact format: one ID per line — useful as input for scripts/Claude Code
@@ -930,6 +942,7 @@ def action_track_obsidian_path(doc, session):
 
 def action_mark_review(doc, session):
     """Przełącz status artykułu na NEED_MANUAL_REVIEW lub cofnij do poprzedniego."""
+    from library.models.stalker_document_status import StalkerDocumentStatus
     current = doc.document_state
     if current == StalkerDocumentStatus.NEED_MANUAL_REVIEW.name:
         print(f"  Aktualny status: NEED_MANUAL_REVIEW")
@@ -1041,7 +1054,8 @@ def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False
 
 def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = None,
                start_id: Optional[int] = None, limit: int = 50, auto_view: bool = False,
-               check_urls: bool = False, not_reviewed: bool = False, no_obsidian: bool = False):
+               check_urls: bool = False, not_reviewed: bool = False, no_obsidian: bool = False,
+               not_cleaned: bool = False):
     """Interaktywny przegląd artykułów."""
     if start_id:
         # Gdy podano --id, zacznij od tego dokumentu (nawet jeśli nie jest na liście)
@@ -1052,13 +1066,15 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
         filtered = [doc]
         # Dodaj kolejne dokumenty z listy (po start_id)
         all_docs = _get_documents(session, limit=limit, since=since, portal=portal,
-                                  not_reviewed=not_reviewed, no_obsidian=no_obsidian)
+                                  not_reviewed=not_reviewed, no_obsidian=no_obsidian,
+                                  not_cleaned=not_cleaned)
         for d in all_docs:
             if d.id != start_id:
                 filtered.append(d)
     else:
         filtered = _get_documents(session, limit=limit, since=since, portal=portal,
-                                  not_reviewed=not_reviewed, no_obsidian=no_obsidian)
+                                  not_reviewed=not_reviewed, no_obsidian=no_obsidian,
+                                  not_cleaned=not_cleaned)
 
     if not filtered:
         print("Brak artykułów do przeglądu.")
@@ -1260,6 +1276,7 @@ def main():
                         help="Format wyjścia --list: table (domyślnie), ids (same ID), short (ID + tytuł)")
     parser.add_argument("--not-reviewed", action="store_true", help="Tylko nieprzejrzane artykuły (reviewed_at IS NULL)")
     parser.add_argument("--no-obsidian", action="store_true", help="Tylko bez notatek Obsidian (obsidian_note_paths = [])")
+    parser.add_argument("--not-cleaned", action="store_true", help="Tylko nieoczyszczone artykuły (tekst nie przeszedł przez regexp + LLM)")
     args = parser.parse_args()
 
     if args.notes:
@@ -1279,12 +1296,14 @@ def main():
         elif args.list:
             cmd_list(session, since=args.since, portal=args.portal,
                      state=args.state, limit=args.limit, fmt=args.format,
-                     not_reviewed=args.not_reviewed, no_obsidian=args.no_obsidian)
+                     not_reviewed=args.not_reviewed, no_obsidian=args.no_obsidian,
+                     not_cleaned=args.not_cleaned)
         elif args.review:
             cmd_review(session, since=args.since, portal=args.portal,
                        start_id=args.id, limit=args.limit, auto_view=args.view,
                        check_urls=args.check_urls,
-                       not_reviewed=args.not_reviewed, no_obsidian=args.no_obsidian)
+                       not_reviewed=args.not_reviewed, no_obsidian=args.no_obsidian,
+                       not_cleaned=args.not_cleaned)
     finally:
         session.close()
 

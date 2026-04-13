@@ -12,7 +12,7 @@ class StalkerDocumentStatus(Enum):
     TRANSCRIPTION_IN_PROGRESS = 4
     TRANSCRIPTION_DONE = 5
     TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS = 6
-    NEED_MANUAL_REVIEW = 7
+    NEED_MANUAL_REVIEW = 7  # regexp + LLM extraction failed to produce clean article text — needs manual review
     READY_FOR_TRANSLATION = 8  # deprecated — kept for DB compatibility
     READY_FOR_EMBEDDING = 9
     EMBEDDING_EXIST = 10
