@@ -14,7 +14,8 @@ Usage:
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW   # Articles needing manual review
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format ids    # Just IDs (for scripting)
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format short  # IDs + titles
-    python imports/article_browser.py --review --not-cleaned                           # Only articles not yet cleaned by regexp+LLM
+    python imports/article_browser.py --review --not-cleaned                           # Fast flow: articles still cleanable by regexp+LLM (excludes NEED_MANUAL_REVIEW)
+    python imports/article_browser.py --review --view --manual-review                 # Slow flow: dedicated pass over articles that need manual text cleanup (alias for --state NEED_MANUAL_REVIEW)
 """
 
 import argparse
@@ -28,13 +29,22 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
+__version__ = "0.3.2"
+# Changelog:
+#   0.3.2 — menu akcji drukowane przed każdym promptem (widoczne też po [v]/[b]/[r])
+#   0.3.1 — [b] rozszerza kontekst HEAD/TAIL o +400 znaków (kolejne ~2 zdania) na każde naciśnięcie
+#   0.3.0 — boundaries inline: HEAD przed tekstem, TAIL po tekście (wizualna ciągłość)
+#   0.2.1 — boundaries auto-fetch step_1 z S3 gdy brak w cache; klawisz [b] bez Entera
+#   0.2.0 — dodano --manual-review skrót, boundaries auto-view, zapis _step_1_all.md z S3
+#   0.1.0 — wersja bazowa
+
 
 def _getch_action(prompt: str) -> str:
     """Read a single keypress without Enter for known single-char actions.
 
     Falls back to input() if getch is not available or key is not a recognized action.
     """
-    _SINGLE_KEYS = set("npvrwsdmocq")
+    _SINGLE_KEYS = set("bnpvrwsdmocq")
     sys.stdout.write(prompt)
     sys.stdout.flush()
     try:
@@ -466,6 +476,11 @@ def get_article_text(doc, session) -> Optional[dict]:
         if not markdown_text:
             print(f"  Nie udało się pobrać artykułu z S3.")
             return None
+        # Zapisz surowy markdown jako step_1 — potrzebny do [b]oundaries (porównanie raw vs clean)
+        step1_path = os.path.join(cache_dir, f"{doc.id}_step_1_all.md")
+        if not os.path.isfile(step1_path):
+            with open(step1_path, "w", encoding="utf-8") as f:
+                f.write(markdown_text)
 
     # Próba ekstrakcji przez LLM
     print(f"  Ekstrakcja artykułu przez LLM...")
@@ -656,14 +671,20 @@ def _check_url_status(url: str) -> str:
         return "ERR"
 
 
-def action_view(article: dict, check_urls: bool = False):
-    """Wyświetl treść artykułu z listą linków i obrazków na dole."""
+def action_view(article: dict, check_urls: bool = False, cut_context: Optional[dict] = None):
+    """Wyświetl treść artykułu z listą linków i obrazków na dole.
+
+    Jeśli cut_context jest podany, HEAD jest drukowany przed tekstem (pokazując
+    co wycięto PRZED artykułem), a TAIL po tekście (co wycięto PO).
+    """
     text = article["text"]
     links = article["links"]
     images = article["images"]
 
     print("\n" + "=" * 60)
+    _print_cut_head(cut_context)
     print(text)
+    _print_cut_tail(cut_context)
     print("=" * 60)
 
     if images:
@@ -725,6 +746,140 @@ def action_view(article: dict, check_urls: bool = False):
         if dead_count:
             summary += f", {dead_count} niedostępnych"
     print(summary + "]")
+
+
+def _trim_to_sentences(text: str, max_chars: int, from_end: bool) -> str:
+    """Obetnij tekst do ~2 zdań, preferując granicę na kropce/znaku interpunkcyjnym."""
+    text = text.strip()
+    if len(text) <= max_chars:
+        return text
+    if from_end:
+        snippet = text[-max_chars:]
+        # Spróbuj przyciąć do początku pierwszego pełnego zdania
+        m = re.search(r"[.!?]\s+", snippet)
+        if m:
+            snippet = snippet[m.end():]
+        return "…" + snippet
+    else:
+        snippet = text[:max_chars]
+        m = None
+        for match in re.finditer(r"[.!?](\s+|$)", snippet):
+            m = match
+        if m:
+            snippet = snippet[:m.end()]
+        return snippet + "…"
+
+
+def compute_cut_context(doc, article: dict, context_chars: int = 400) -> Optional[dict]:
+    """Policz HEAD/TAIL kontekst (tekst wycięty przed/po oczyszczonym artykule).
+
+    Zwraca dict {head, head_len, tail, tail_len, error} lub None (twardy błąd).
+    head/tail mogą być pustymi stringami — znaczy 'nic nie wycięto na tym końcu'.
+    """
+    cfg = load_config()
+    cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
+    cache_dir = os.path.join(cache_dir_base, str(doc.id))
+    raw_file = os.path.join(cache_dir, f"{doc.id}_step_1_all.md")
+
+    # Jeśli step_1 brakuje — pobierz z S3 i zapisz
+    if not os.path.isfile(raw_file):
+        try:
+            from library.document_prepare import prepare_markdown, save_document_info
+            os.makedirs(cache_dir, exist_ok=True)
+            save_document_info(doc.id, doc, cache_dir)
+            raw_md = prepare_markdown(doc.id, doc, cache_dir, verbose=False)
+            if not raw_md:
+                return {"error": "nie udało się pobrać surowego markdownu z S3"}
+            with open(raw_file, "w", encoding="utf-8") as f:
+                f.write(raw_md)
+        except Exception as e:
+            return {"error": f"błąd pobierania: {e}"}
+
+    with open(raw_file, "r", encoding="utf-8") as f:
+        raw = f.read()
+
+    clean = (article.get("text") or "").strip()
+    if not clean:
+        return {"error": "brak oczyszczonego tekstu"}
+
+    def _anchor(s: str, n: int = 60) -> str:
+        return re.sub(r"\s+", " ", s[:n]).strip()
+
+    head_anchor = _anchor(clean, 60)
+    tail_anchor = _anchor(clean[-60:], 60)
+    raw_flat = re.sub(r"\s+", " ", raw)
+
+    def _find_fuzzy(needle: str, haystack_flat: str, raw_text: str) -> Optional[tuple]:
+        if not needle:
+            return None
+        pos_flat = haystack_flat.find(needle)
+        if pos_flat < 0:
+            short = needle[:30]
+            pos_flat = haystack_flat.find(short)
+            if pos_flat < 0:
+                return None
+            needle_len = len(short)
+        else:
+            needle_len = len(needle)
+        first_word = needle.split(" ", 1)[0]
+        start = raw_text.find(first_word, max(0, pos_flat - 20))
+        if start < 0:
+            start = raw_text.find(first_word)
+        if start < 0:
+            return None
+        return (start, start + needle_len)
+
+    head_pos = _find_fuzzy(head_anchor, raw_flat, raw)
+    tail_pos = _find_fuzzy(tail_anchor, raw_flat, raw)
+
+    result = {"error": None, "head": "", "head_len": 0, "tail": "", "tail_len": 0,
+              "head_found": head_pos is not None, "tail_found": tail_pos is not None}
+
+    if head_pos is not None:
+        head_cut = raw[:head_pos[0]]
+        result["head_len"] = len(head_cut)
+        if head_cut.strip():
+            result["head"] = _trim_to_sentences(head_cut, context_chars, from_end=True)
+
+    if tail_pos is not None:
+        tail_cut = raw[tail_pos[1]:]
+        result["tail_len"] = len(tail_cut)
+        if tail_cut.strip():
+            result["tail"] = _trim_to_sentences(tail_cut, context_chars, from_end=False)
+
+    return result
+
+
+def _print_cut_head(ctx: Optional[dict]):
+    """Wydrukuj blok HEAD — tekst wycięty przed właściwym artykułem."""
+    if ctx is None:
+        return
+    if ctx.get("error"):
+        print(f"\n  [boundaries niedostępne: {ctx['error']}]")
+        return
+    print()
+    if not ctx["head_found"]:
+        print("  ▲ [nie znaleziono początku oczyszczonego tekstu w raw]")
+    elif ctx["head_len"] == 0:
+        print("  ▲ [nic nie wycięto przed — artykuł zaczyna się od początku raw]")
+    else:
+        print(f"  ▲▲▲ WYCIĘTO PRZED ({ctx['head_len']} znaków) ▲▲▲")
+        print(ctx["head"])
+        print("  ▲▲▲ ─── koniec wyciętego — początek artykułu ─── ▲▲▲")
+
+
+def _print_cut_tail(ctx: Optional[dict]):
+    """Wydrukuj blok TAIL — tekst wycięty po właściwym artykule."""
+    if ctx is None or ctx.get("error"):
+        return
+    if not ctx["tail_found"]:
+        print("\n  ▼ [nie znaleziono końca oczyszczonego tekstu w raw]")
+    elif ctx["tail_len"] == 0:
+        print("\n  ▼ [nic nie wycięto po — artykuł kończy się na końcu raw]")
+    else:
+        print("  ▼▼▼ ─── koniec artykułu — początek wyciętego ─── ▼▼▼")
+        print(ctx["tail"])
+        print(f"  ▼▼▼ WYCIĘTO PO ({ctx['tail_len']} znaków) ▼▼▼")
 
 
 def _refresh_db_connection(session):
@@ -858,6 +1013,9 @@ def _get_documents(session, limit: int = 50, since: Optional[str] = None,
             StalkerDocumentStatus.MD_SIMPLIFIED.name,
             StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
             StalkerDocumentStatus.EMBEDDING_EXIST.name,
+            # NEED_MANUAL_REVIEW is excluded from the fast flow — these articles need
+            # dedicated manual text cleanup. Use `--state NEED_MANUAL_REVIEW` for that pass.
+            StalkerDocumentStatus.NEED_MANUAL_REVIEW.name,
         ):
             continue
         results.append(doc)
@@ -1104,11 +1262,13 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
         print(f"  Reviewed: {reviewed_str}")
 
         article = None  # lazy load (dict: text, links, images)
+        boundary_chars = 400  # reset kontekstu HEAD/TAIL przy każdym nowym artykule
 
         if auto_view:
             article = get_article_text(doc, session)
             if article:
-                action_view(article, check_urls=check_urls)
+                ctx = compute_cut_context(doc, article, context_chars=boundary_chars)
+                action_view(article, check_urls=check_urls, cut_context=ctx)
             else:
                 print("  Nie udało się pobrać treści artykułu.")
 
@@ -1127,10 +1287,10 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                 print(f"\n  NOTATKA: {note_file}")
 
         print()
-        print(f"  ID: {doc.id}  Status: {doc.document_state}")
-        print("  [n]ext  [p]rev  [v]iew  [r]efresh  [w]rite to db  [s]ave note  [d]one/reviewed  [m]ark review  [o]bsidian  [c]ompare  [q]uit")
 
         while True:
+            print(f"  ID: {doc.id}  Status: {doc.document_state}   (article_browser v{__version__})")
+            print("  [n]ext  [p]rev  [v]iew  [b]oundaries  [r]efresh  [w]rite to db  [s]ave note  [d]one/reviewed  [m]ark review  [o]bsidian  [c]ompare  [q]uit")
             try:
                 action = _getch_action(f"  [{idx + 1}] > ")
             except (KeyboardInterrupt, EOFError):
@@ -1161,7 +1321,8 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                 print("  Cache wyczyszczony. Pobieram tekst ponownie...")
                 article = get_article_text(doc, session)
                 if article:
-                    action_view(article, check_urls=check_urls)
+                    ctx = compute_cut_context(doc, article)
+                    action_view(article, check_urls=check_urls, cut_context=ctx)
                 else:
                     print("  Nie udało się pobrać treści artykułu. Spróbuj [r]efresh ponownie za chwilę (problem z API).")
                 continue
@@ -1170,9 +1331,22 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                 if article is None:
                     article = get_article_text(doc, session)
                 if article:
-                    action_view(article, check_urls=check_urls)
+                    ctx = compute_cut_context(doc, article, context_chars=boundary_chars)
+                    action_view(article, check_urls=check_urls, cut_context=ctx)
                 else:
                     print("  Nie udało się pobrać treści artykułu. Spróbuj [r]efresh ponownie za chwilę (problem z API).")
+                continue
+
+            elif action in ("b", "boundaries"):
+                if article is None:
+                    article = get_article_text(doc, session)
+                if article:
+                    boundary_chars += 400  # +~2 zdania na każde naciśnięcie
+                    ctx = compute_cut_context(doc, article, context_chars=boundary_chars)
+                    action_view(article, check_urls=check_urls, cut_context=ctx)
+                    print(f"  [HEAD/TAIL rozszerzone do ~{boundary_chars} znaków — naciśnij [b] aby zobaczyć więcej]")
+                else:
+                    print("  Nie udało się pobrać treści artykułu.")
                 continue
 
             elif action in ("w", "write"):
@@ -1254,6 +1428,7 @@ def cmd_notes():
 
 
 def main():
+    print(f"article_browser v{__version__}")
     parser = argparse.ArgumentParser(
         description="Przeglądaj artykuły z Lenie DB i twórz notatki Obsidian")
 
@@ -1276,8 +1451,15 @@ def main():
                         help="Format wyjścia --list: table (domyślnie), ids (same ID), short (ID + tytuł)")
     parser.add_argument("--not-reviewed", action="store_true", help="Tylko nieprzejrzane artykuły (reviewed_at IS NULL)")
     parser.add_argument("--no-obsidian", action="store_true", help="Tylko bez notatek Obsidian (obsidian_note_paths = [])")
-    parser.add_argument("--not-cleaned", action="store_true", help="Tylko nieoczyszczone artykuły (tekst nie przeszedł przez regexp + LLM)")
+    parser.add_argument("--not-cleaned", action="store_true", help="Tylko nieoczyszczone artykuły, które da się jeszcze przetworzyć automatycznie (regexp + LLM). Pomija NEED_MANUAL_REVIEW — dla tych użyj --manual-review")
+    parser.add_argument("--manual-review", action="store_true", help="Wolny flow: tylko artykuły w stanie NEED_MANUAL_REVIEW (skrót do --state NEED_MANUAL_REVIEW)")
     args = parser.parse_args()
+
+    # --manual-review to wygodny skrót do --state NEED_MANUAL_REVIEW
+    if args.manual_review:
+        if args.state and args.state != StalkerDocumentStatus.NEED_MANUAL_REVIEW.name:
+            parser.error("--manual-review nie może być użyte razem z innym --state")
+        args.state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
 
     if args.notes:
         cmd_notes()
