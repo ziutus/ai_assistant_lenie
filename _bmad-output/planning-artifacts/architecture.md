@@ -15,8 +15,15 @@ sprint6:
   status: 'complete'
   startedAt: '2026-03-07'
   completedAt: '2026-03-07'
-  status: 'in-progress'
-  startedAt: '2026-03-07'
+sprint10:
+  stepsCompleted: [2, 3, 4, 5, 6, 7, 8]
+  lastStep: 8
+  status: 'complete'
+  startedAt: '2026-04-12'
+  completedAt: '2026-04-13'
+  sprintName: 'MCP Server — mobile knowledge workflow'
+  prdRef: '_bmad-output/planning-artifacts/prd.md'
+  prdValidationRating: '5/5 Excellent (2026-04-12)'
 inputDocuments:
   - _bmad-output/planning-artifacts/prd.md
   - _bmad-output/planning-artifacts/prd-validation-report.md
@@ -1661,7 +1668,7 @@ def load_neighbors(self, doc: WebDocument) -> None:
     "ai_summary_needed": False,
     "author": None,
     "note": None,
-    "s3_uuid": None,
+    "uuid": None,
     "project": None,
     "text_md": None,
     "transcript_needed": False,
@@ -1685,7 +1692,7 @@ def load_neighbors(self, doc: WebDocument) -> None:
     "document_state_error": "NONE",
     "note": None,
     "project": None,
-    "s3_uuid": None
+    "uuid": None
 }
 ```
 
@@ -2057,3 +2064,905 @@ Phase F (consumers):   dynamodb_sync.py + unknown_news_import.py + web_documents
 Phase G (Alembic):     alembic init + env.py config + stamp head
 Phase H (verify):      pytest + ruff + manual test + .venv_wsl sync
 ```
+
+## Sprint 10 — Project Context Analysis
+
+### Sprint Scope
+
+**Sprint name:** MCP Server — mobile knowledge workflow
+**PRD:** [_bmad-output/planning-artifacts/prd.md](prd.md) (revised 2026-04-12, validated 5/5 Excellent)
+**Goal:** Expose Lenie-AI knowledge base and Obsidian vault as Remote MCP server on NAS, accessible from Claude mobile (claude.ai Custom Connector). Unlock article-review and Obsidian-note workflows during short mobile sessions (5-15 minutes).
+
+### Requirements Overview
+
+**Functional Requirements (15 FRs across 4 capability areas):**
+
+- **Article Discovery & Review (FR1-FR5):** List unreviewed articles, fetch full content, search across title/content/note, delete, link notes to articles with review marking
+- **Obsidian Note Management (FR6-FR10):** CRUD on notes within `02-wiedza/` (read, create, overwrite, delete, list)
+- **Note Version History (FR11-FR13):** Auto-save before write, record prompt+before+after+article, retrieve history
+- **Claude Integration (FR14-FR15):** Custom Connector configuration, MCP tool invocation from mobile
+
+**Non-Functional Requirements (16 NFRs across 4 quality areas):**
+
+- **Performance (NFR1-NFR3):** Response time targets (5s/2s/3s) with measurement via response logging
+- **Security (NFR4-NFR8):** HTTPS via Cloudflare Tunnel, path traversal prevention, no secrets in image, OAuth via Cloudflare Portal, no direct port exposure
+- **Data Integrity (NFR9-NFR11):** Mandatory version-before-overwrite, atomic DB transactions, indefinite version retention
+- **Integration (NFR12-NFR16):** MCP protocol compatibility, vault sync <60s, NAS-driven sync chain, Obsidian Sync continuous, PostgreSQL connection on existing network
+
+**Scale & Complexity:**
+
+- Primary domain: API backend (specifically: MCP protocol adapter)
+- Complexity level: Medium — single user + brownfield + fixed infrastructure, but introduces new protocol stack and security layer
+- Estimated new architectural components: 3 containers (MCP server, obsidian-headless, Cloudflare Tunnel client) + 1 new database table
+
+### Technical Constraints & Dependencies
+
+**Hardware:**
+
+- NAS: QNAP TS-453Be (modest CPU/RAM, Docker host)
+- Coexistence with existing 9-container NAS Docker stack (must not disrupt)
+
+**External services in scope:**
+
+- Cloudflare DNS + Tunnel + MCP Server Portal (Zero Trust OAuth) — new
+- Obsidian Sync (Standard plan, valid until 2026-11-02) — existing subscription
+- claude.ai Custom Connector — entry point
+
+**Brownfield reuse requirements:**
+
+- `lenie-ai-db` (PostgreSQL 18 + pgvector) on `lenie-net` Docker network — existing
+- `DocumentService` / `SearchService` from `library/` — currently coupled to Flask, requires extraction decision
+- Existing Alembic migration system for new `obsidian_note_versions` table
+
+**New stack additions:**
+
+- Python `mcp` SDK (JSON-RPC over SSE/streamable HTTP)
+- `obsidian-headless` container (community Docker image, Feb 2026 release)
+- Cloudflare client (`cloudflared`) for tunnel
+
+**Maturity risks (with PRD-documented fallbacks):**
+
+- MCP protocol (new) — mitigated by official Python SDK + community examples
+- Cloudflare MCP Portal (Open Beta) — fallback: simple tunnel + custom auth header
+- obsidian-headless (Feb 2026) — fallback: Syncthing migration
+
+### Cross-Cutting Concerns Identified
+
+1. **Structured error handling** — 6 error codes from PRD must be implemented as a single source of truth (probably an enum + response envelope) so Claude can surface them conversationally
+2. **Path security boundary** — `02-wiedza/` enforcement must be a single, audited utility called by every Obsidian tool (not duplicated per tool)
+3. **Atomic versioning ordering** — DB version write must succeed before file overwrite; failure mode (`version_save_failed`) explicitly cancels write — implies transaction-like coordinator pattern
+4. **Configuration & secrets management** — leverages existing `unified_config_loader` (Vault/AWS/env backends); MCP server must not bake any secrets into image
+5. **Stability contract enforcement** — tool names / param names / error codes are the public API surface (per PRD API Documentation); table/network/container names are internal and may change without API version bump
+6. **Service decoupling for reuse** — `DocumentService` / `SearchService` must be Flask-independent (likely already mostly there per PRD's "already decoupled" note, but needs verification)
+7. **Sync chain reliability** — file-write → obsidian-headless detects → Obsidian Sync → devices; failure at any link silently degrades user experience without alerting (monitoring is post-MVP)
+
+## Sprint 10 — Starter Template Evaluation
+
+### Primary Technology Domain
+
+**API backend (MCP protocol adapter)** — specialized stack, not generic web/API:
+
+- Python 3.11 (project-wide standard)
+- `mcp` SDK v1.12.4+ (official `modelcontextprotocol/python-sdk`, High reputation, ~307 documented snippets)
+- FastMCP high-level API — decorator-based (`@mcp.tool()`, `@mcp.resource()`, `@mcp.prompt()`)
+- Streamable HTTP transport (SDK-recommended for production)
+
+### Starter Options Considered
+
+| Option | Verdict | Rationale |
+|--------|---------|-----------|
+| `create-mcp-server` CLI scaffolding | Reject | No official Python CLI equivalent (unlike Node ecosystem). SDK provides examples, not scaffolding. |
+| External Python starter (cookiecutter, kopier) | Reject | Brownfield project has established conventions (uv, pyproject, ruff, pytest, `library/` services) — external scaffolding would conflict |
+| Fork/copy `examples/servers/simple-tool` from MCP SDK repo | Partial | Useful as reference, but copying structure duplicates conventions already in project |
+| **FastMCP high-level API + existing project conventions** | **Selected** | Minimal dependencies; decorator-based registration matches PRD's clean tool definitions; integrates with existing pyproject.toml/uv workflow |
+
+### Selected Approach: **No external starter — extend existing project conventions**
+
+**Rationale:**
+
+1. **Brownfield hygiene** — project has mature conventions (`backend/library/` services, `backend/tests/unit/` + `tests/integration/`, Alembic migrations, uv, ruff/pytest). External starter would force duplication or conflict.
+2. **MCP SDK is a library, not a framework** — no scaffolding needed. `FastMCP` instance + decorators + transport = complete server in a single file + tool modules.
+3. **Transport: Streamable HTTP stateless + JSON responses** — SDK docs explicitly recommend for production. Fits Cloudflare Tunnel behind OAuth (each request independent, scales trivially).
+4. **Deploy: Docker container** following existing `compose.nas.yaml` pattern.
+
+### Initialization (Implementation Story 1)
+
+This is a brownfield extension — there is no "CLI create command". The first implementation story performs:
+
+```bash
+# 1. Create new backend subdirectory for MCP server
+mkdir -p backend/mcp_server/{tools,tests}
+
+# 2. Add MCP SDK to dependencies
+cd backend && uv add mcp
+
+# 3. Sync WSL venv (per project convention from CLAUDE.md)
+wsl bash -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && cd /mnt/c/Users/ziutus/git/_lenie-all/lenie-server-2025/backend && uv sync --python .venv_wsl/bin/python --active"
+
+# 4. Create Docker service in infra/docker/compose.nas.yaml
+# 5. Implement stateless HTTP server skeleton with mcp SDK
+```
+
+### Architectural Decisions Provided by Selected Approach
+
+**Language & Runtime:**
+
+- Python 3.11 (project-wide standard)
+- `mcp` SDK v1.12.4+ as primary framework dependency
+- `uv` for dependency management (project convention)
+
+**Entry point pattern:**
+
+- `FastMCP` instance with decorator-registered tools
+- `stateless_http=True, json_response=True` for production HTTP mode
+- `mcp.run(transport="streamable-http")` as launch command
+- Listens on HTTP port behind Cloudflare Tunnel (no direct internet exposure, per NFR8)
+
+**Project Structure (within `backend/`):**
+
+```text
+backend/mcp_server/
+├── __init__.py
+├── main.py                    # FastMCP instance, entry point, transport config
+├── tools/
+│   ├── __init__.py
+│   ├── lenie.py               # 4 Lenie tools (unreviewed_articles, get, search, delete)
+│   ├── obsidian.py            # 5 Obsidian tools (read, write, list, delete, history)
+│   └── _common.py             # shared tool helpers
+├── errors.py                  # Error enum + response envelope (cross-cutting #1)
+├── path_security.py           # 02-wiedza/ boundary enforcer (cross-cutting #2)
+└── tests/
+    ├── unit/                  # tool logic, path validation, error mapping
+    └── integration/           # end-to-end with real PG + tmp vault
+```
+
+**Services reuse:**
+
+- Import `DocumentService` / `SearchService` from `backend/library/` (per PRD's "already decoupled from Flask" claim)
+- Flask-independence verification required as early story acceptance criterion
+
+**Testing (follows existing project conventions):**
+
+- `pytest` framework, `pytest` command from project root
+- Unit tests per tool: path validation, error mapping, service invocation with mocks
+- Integration tests against real PostgreSQL on NAS (per MEMORY: "use NAS database for DB changes")
+- Command pattern: `cd backend && PYTHONPATH=. uvx pytest tests/unit/ -v` (per project convention)
+
+**Deployment:**
+
+- New Docker service in `infra/docker/compose.nas.yaml`
+- Connected to existing `lenie-net` Docker network (for `lenie-ai-db` access, NFR16)
+- Volume-mounted vault at `{OBSIDIAN_VAULT_PATH}/02-wiedza/` (read/write restricted by path_security.py)
+- Env vars only for secrets (via existing `unified_config_loader`, NFR6)
+- Cloudflare Tunnel (`cloudflared`) as separate container or sidecar, routing to MCP server HTTP port
+
+**Note:** Project initialization (directory + dependencies + Docker service skeleton) is the first implementation story, before any tool logic.
+
+## Sprint 10 — Core Architectural Decisions
+
+### Decision Priority Analysis
+
+**Critical Decisions (Block Implementation):** D1, D2, D4, D6, D8
+**Important Decisions (Shape Architecture):** D5, D7, D9, D10, D11
+**Nice-to-Have:** D3, D12
+
+**Already Decided (upstream — not re-evaluated):**
+
+- Language: Python 3.11, dependency manager: uv (project convention)
+- MCP framework: official `mcp` SDK v1.12.4+ with FastMCP API (Step 3)
+- Transport: Streamable HTTP stateless + JSON responses (Step 3)
+- Database: PostgreSQL 18 + pgvector, ORM: SQLAlchemy 2.0 (Sprint 9)
+- Network auth: Cloudflare Zero Trust OAuth (PRD NFR7)
+- Secrets management: env vars via `unified_config_loader` (project convention, PRD NFR6)
+- Testing: pytest (project convention)
+- Deployment: Docker on NAS via `compose.nas.yaml` (project convention)
+
+### Data Architecture
+
+**D1 — `obsidian_note_versions` table: SQLAlchemy ORM model + Alembic migration**
+
+- **Decision:** Define model in `backend/library/db/models.py` alongside existing models (post-Sprint 9 convention). Schema per PRD (id, note_path, content_before, content_after, user_prompt, article_id FK, changed_by, created_at).
+- **Rationale:** Consistent with post-Sprint 9 SQLAlchemy ORM adoption. Alembic handles schema evolution. No raw SQL in tool code.
+- **Affects:** FR11, FR12, FR13, NFR9, NFR10, NFR11 — all version history functionality
+- **Migration story:** Dedicated implementation story for Alembic migration, before any tool that writes versions
+
+**D2 — Transactional ordering: DB-first, then filesystem (Option A)**
+
+- **Decision:** `obsidian_write_note` sequence: (1) BEGIN DB transaction → (2) INSERT version record → (3) COMMIT → (4) overwrite file. If step 4 fails, raise `vault_write_failed` — version record stays in DB as "attempted change" (orphan).
+- **Rationale:** Simplest pattern satisfying NFR9 (no overwrite without version save). Orphan records are harmless (represent attempted writes, useful for audit/debugging). Two-phase commit would be overkill for single-user system with low write volume.
+- **Affects:** NFR9, FR8 (overwrite), FR11 (auto-save), error codes `version_save_failed` and `vault_write_failed`
+- **Implementation note:** Log orphan detection as WARNING (file mtime < latest version.created_at for same path indicates failed overwrite)
+- **Cascading implication:** Error code `version_save_failed` must abort the whole operation before any file touch
+
+**D3 — Version retention: indefinite, no automatic purging in MVP**
+
+- **Decision:** Per NFR11 — keep all versions forever in MVP. No partition, no TTL, no pruning job.
+- **Rationale:** Single user, realistic <10k versions/year. Table partitioning or pruning can be added in Phase 2 if size becomes a concern. Keeps MVP simple.
+- **Affects:** NFR11 only
+
+### Authentication & Security
+
+**D4 — Path traversal prevention: `pathlib.Path.resolve()` + `.is_relative_to()`**
+
+- **Decision:** Single helper `path_security.ensure_within_vault(relative_path: str) -> Path` called by EVERY Obsidian tool before any filesystem access. Uses `Path.resolve(strict=False)` then `resolved.is_relative_to(VAULT_ROOT / "02-wiedza")` (Python 3.9+).
+- **Rationale:** `resolve()` follows symlinks and normalizes `..`, catching traversal attempts after path normalization. `is_relative_to()` is stdlib, explicit, and testable. Single source of truth satisfies cross-cutting concern #2.
+- **Affects:** NFR5, all Obsidian tools (FR6-FR10, FR13)
+- **Test coverage required:** `..` traversal, absolute paths, symlink escape, unicode edge cases, null bytes
+- **Cascading implication:** `note_path_invalid` error code raised exclusively by this helper
+
+**D5 — MCP server auth stance: trust upstream, log user identity**
+
+- **Decision:** MCP server is auth-blind. Relies on Cloudflare MCP Portal to reject unauthenticated requests upstream. Logs `Cf-Access-Authenticated-User-Email` header value (if present) for audit trail, but does NOT verify the `Cf-Access-Jwt-Assertion` JWT.
+- **Rationale:** Defense-in-depth token validation is explicitly out of MVP (per PRD). Single-user system — identity is informational, not authorizational. NFR8 (no direct port exposure) is the primary security boundary.
+- **Affects:** NFR7, NFR8, audit logging approach
+- **Explicit security assumption (must be documented in deployment runbook):** MCP server port MUST NEVER be exposed beyond `lenie-net` Docker network. If Cloudflare Tunnel fails, server becomes unreachable (fail-closed), not unauthenticated-open.
+
+### API & Communication
+
+**D6 — Error response envelope: native MCP protocol errors (JSON-RPC)**
+
+- **Decision:** Use `mcp.McpError` class from SDK. Create `backend/mcp_server/errors.py` with 6 error codes as Enum + helper functions (`raise_article_not_found(uuid)`, `raise_note_not_found(path)`, etc.). Each helper raises `McpError` with a JSON-RPC error code in the `-32000 to -32099` server-reserved range and a human-readable message matching PRD's user-facing pattern.
+- **Rationale:** Claude Custom Connector natively parses JSON-RPC errors. No extra wrapping needed. Single source of truth for error codes matches cross-cutting concern #1.
+- **Affects:** All 6 PRD error codes (`article_not_found`, `note_not_found`, `note_path_invalid`, `vault_write_failed`, `database_unavailable`, `version_save_failed`), all tools
+- **Cascading implication:** Error code ↔ JSON-RPC code mapping is frozen in `errors.py` (part of stability contract per PRD API Documentation)
+
+**D7 — Tool parameter validation: native FastMCP Pydantic**
+
+- **Decision:** Use Python type hints on tool function signatures; FastMCP auto-generates Pydantic validators. No manual validation code.
+- **Rationale:** Zero extra code, consistent with FastMCP idioms, type hints double as documentation. Complex validation (e.g., UUID format) via Pydantic `Field(pattern=...)` or custom validators as needed.
+- **Affects:** All 10 MCP tools
+- **Limitation:** Custom error messages for validation failures are Pydantic defaults — acceptable for MVP, can be customized later
+
+### Integration / Service Reuse
+
+**D8 — Service reuse: direct import from `backend/library/`, verified Flask-independence**
+
+- **Decision:** Import `DocumentService`, `SearchService` directly in MCP tool modules. First implementation story includes acceptance criterion: "verify service imports and basic invocation work without Flask app context active."
+- **Rationale:** PRD asserts services are "already decoupled from Flask." If verification fails, escalate to a refactor story (B — extract to cleaner package). Avoids premature adapter layer (C) unless actual coupling is discovered.
+- **Affects:** All Lenie tools (FR1-FR4)
+- **Risk:** Discovery of hidden Flask coupling (e.g., `current_app`, `request` globals used inside services) — mitigated by explicit verification step
+- **Cascading implication:** May generate additional refactor story if coupling found
+
+**D9 — `obsidian_note_history` query pattern: SQLAlchemy query with server-side diff generation**
+
+- **Decision:** `SELECT * FROM obsidian_note_versions WHERE note_path=:path ORDER BY created_at DESC LIMIT :limit` (default 10). Generate unified diff on the server using `difflib.unified_diff()` from `content_before` vs `content_after`. Return: list of `{date, user_prompt, diff, article_id}` — NOT full content.
+- **Rationale:** Server-side diff generation avoids shipping full note contents over MCP for every history lookup (can be tens of KB per version for long notes). Diff is much smaller and more immediately useful to the user. Full content remains accessible via separate query if needed.
+- **Affects:** FR13, new tool `obsidian_note_history`
+- **Payload estimate:** ~2-5 KB per version vs 10-50 KB if returning full content
+
+### Infrastructure & Deployment
+
+**D10 — `cloudflared` tunnel: sidecar container in `compose.nas.yaml`**
+
+- **Decision:** Separate container `cloudflared` in `compose.nas.yaml`, connected to `lenie-net`, routing public traffic to `mcp-server:<port>`. Config via token in env var (mounted from `unified_config_loader`).
+- **Rationale:** Matches Cloudflare's official recommended pattern. Separate responsibility (tunnel lifecycle vs MCP logic). Restart of one doesn't affect the other. Clear observability (logs per container).
+- **Affects:** NFR4, NFR8
+- **Alternative rejected:** Running `cloudflared` on NAS host directly (Option B) — couples to NAS OS, harder to reproduce in non-prod environments
+
+**D11 — `obsidian-headless` image: pinned tag from community repository**
+
+- **Decision:** Use [`Belphemur/obsidian-headless-sync-docker`](https://github.com/Belphemur/obsidian-headless-sync-docker) with a pinned version tag (e.g., `v1.0.0` or latest stable semver at implementation time). Never use `:latest` tag. Document tag choice + release date in `compose.nas.yaml` comment.
+- **Rationale:** Community image from new project (Feb 2026). Pinning prevents silent breakage from upstream changes. Upgrade is an explicit PR. Fallback path (Syncthing migration) documented in PRD risk mitigation.
+- **Affects:** NFR13, NFR14, NFR15 (sync chain)
+- **Risk monitoring:** Check repository activity monthly; if unmaintained, trigger Syncthing fallback evaluation before Obsidian Sync subscription expires (2026-11-02)
+
+**D12 — Health check: HTTP `/healthz` endpoint alongside MCP tools**
+
+- **Decision:** Expose plain HTTP `GET /healthz` returning `200 OK` (no auth required, routed BEFORE OAuth gate via Cloudflare bypass rule OR exposed on separate internal port). FastMCP uses Starlette internally — add a raw route via the underlying app.
+- **Rationale:** Enables Docker `healthcheck:` directive → automatic container restart on hung process. Minimal implementation cost. Not an MCP tool (doesn't require Claude invocation).
+- **Affects:** Deployment resilience; no PRD requirement but directly supports NFR1-3 (performance via auto-recovery)
+- **Implementation note:** `/healthz` is NOT part of the MCP API surface — it's an operational endpoint. Documented in deployment runbook, not in PRD API Documentation.
+
+### Decision Impact Analysis
+
+**Implementation Sequence (recommended story ordering):**
+
+1. **Project initialization** — `backend/mcp_server/` skeleton, `uv add mcp`, Docker service placeholder (before any logic)
+2. **Service reuse verification** (D8) — validates PRD assumption; may fork into refactor story if coupling found
+3. **Alembic migration for `obsidian_note_versions`** (D1)
+4. **Error module + enum** (D6) — `backend/mcp_server/errors.py`
+5. **Path security helper** (D4) — `backend/mcp_server/path_security.py` with exhaustive tests
+6. **Lenie tools** (FR1-FR4) — simpler, no filesystem
+7. **Obsidian read-only tools** (FR6, FR10) — uses D4
+8. **Obsidian write tools** (FR7, FR8, FR9) — uses D2 coordinator pattern
+9. **Note history tool** (FR13) — uses D9 query + diff
+10. **Review-mark logic** (FR5) — tied to `obsidian_write_note`
+11. **Health endpoint** (D12) + Docker healthcheck
+12. **Cloudflare Tunnel sidecar** (D10) + obsidian-headless container (D11) in compose
+13. **End-to-end integration test** — full sync chain on NAS
+
+**Cross-Component Dependencies:**
+
+- D2 (ordering) ↔ D6 (errors): `version_save_failed` must be raised by coordinator BEFORE file touch
+- D4 (path security) → D6 (errors): `note_path_invalid` raised exclusively by path helper
+- D8 (service reuse) may block or fork tool implementation if coupling discovered
+- D10 (tunnel) + D12 (healthz): healthz routing must bypass OAuth (Cloudflare Access bypass rule on `/healthz` path) OR be exposed on internal-only port
+- D11 (obsidian-headless) is independent of MCP server — runs as peer, not child
+
+**Deferred / Out of Sprint 10 Scope (deferred to Phase 2 per PRD):**
+
+- Rate limiting (D-deferred): PRD declares single-user MVP exclusion
+- Monitoring / alerting (D-deferred): PRD Phase 2
+- Automated quality audit of note changes (D-deferred): PRD backlog
+- `obsidian_update_note` partial edits (D-deferred): PRD Phase 2
+- Defense-in-depth MCP auth token (D-deferred): PRD explicit MVP exclusion
+
+## Sprint 10 — Implementation Patterns & Consistency Rules
+
+### Pattern Categories Defined
+
+**Critical conflict points identified:** 8 MCP-specific areas where AI agents could diverge without explicit patterns (tool naming, parameter naming, return shape, error raising, path format, service invocation, session lifecycle, diff format).
+
+**Scope of this section:** Patterns specific to MCP server sprint. Existing project patterns (general naming, testing, deployment) remain governed by earlier sprint sections — not re-defined here.
+
+### Naming Patterns (MCP-specific)
+
+**Tool naming:**
+
+- Format: `<scope>_<verb>_<noun>` in `snake_case`
+- Scope is `lenie` or `obsidian` (prefix locks tool to data source)
+- Examples: `lenie_get_article`, `obsidian_write_note`, `obsidian_note_history`
+- Tool names are the public API surface (PRD stability contract) — NEVER rename without API version bump
+
+**Tool parameter naming:**
+
+- `snake_case` for all parameters (Python + JSON-RPC friendly)
+- Common params: `article_uuid: str`, `note_path: str`, `limit: int = 10`, `offset: int = 0`
+- Path parameters are ALWAYS vault-relative, NEVER absolute
+- Forbidden: `camelCase` param names
+
+**Tool return key naming:**
+
+- `snake_case` keys throughout response payloads
+- Timestamps: ISO 8601 UTC strings (e.g. `"2026-04-13T10:30:00Z"`), never epoch integers
+- Null fields: include key with `null` value, don't omit the key (predictability for Claude)
+
+### Structure Patterns
+
+**Tool module organization:**
+
+- One Python module per tool scope: `tools/lenie.py`, `tools/obsidian.py`
+- Each module defines its tools using `@mcp.tool()` decorators, registered at module import
+- Shared helpers in `tools/_common.py` (session factory, response builders)
+- NO tool logic outside `tools/` subdirectory
+
+**Error handling organization:**
+
+- ALL errors raised via helpers in `backend/mcp_server/errors.py`
+- NEVER raise raw `Exception`, `ValueError`, `FileNotFoundError` from tool code — catch at boundary, convert via helpers
+- Pattern: `try: ... except FileNotFoundError: raise_note_not_found(path)`
+
+**Path security enforcement:**
+
+- EVERY Obsidian tool begins with `resolved = ensure_within_vault(note_path)`
+- NEVER construct filesystem paths manually in tool code — always via helper result
+- Bypass of `ensure_within_vault` is an architectural violation (flagged in code review / lint rule)
+
+### Format Patterns
+
+**Tool return shape:**
+
+- Return plain Python `dict` / `list[dict]` — FastMCP serializes via `json.dumps` default encoder
+- Do NOT return Pydantic models from tools (SDK handles serialization natively; explicit models add noise)
+- List endpoints return `{"items": [...], "total": N, "limit": L, "offset": O}` envelope — NOT bare list
+- Single-item GETs return flat `dict` — NOT wrapped in `{"data": ...}`
+
+**Error response format:**
+
+- Raised as `McpError(code=<jsonrpc_code>, message=<human_msg>)` via helpers
+- JSON-RPC code range: `-32001` to `-32006` (one per our 6 error codes; mapping frozen in `errors.py`)
+- Human message in Polish (matches Claude conversation language + PRD user-facing patterns)
+
+**Diff format (FR13 / `obsidian_note_history`):**
+
+- Unified diff as single string (result of `"\n".join(difflib.unified_diff(...))`)
+- Include fromfile/tofile labels: `version_<created_at>` / `version_<next_created_at>` or `current`
+- Default context lines: 3 (Python difflib default)
+
+**Pagination parameters:**
+
+- All list-returning tools accept `limit: int` and `offset: int`
+- Defaults: `limit=10` (except `lenie_unreviewed_articles`: `limit=6` per PRD FR1)
+- Max limit enforced: 100 (prevent accidental full-table scans via Claude prompts)
+- Returned envelope always includes `total` (full count before pagination)
+
+### Communication Patterns
+
+**Logging:**
+
+- Python `logging` module, logger name = module `__name__`
+- Log levels:
+  - `INFO` — tool invocations: `tool_name`, `user_email` (from Cf header), param summary (excluding sensitive content)
+  - `WARNING` — orphan version records detected, path traversal attempts rejected
+  - `ERROR` — unexpected exceptions before conversion to `McpError`
+- Format: structured (key=value or JSON), timestamp UTC
+- NEVER log full article content or note content (privacy, log size)
+
+**SQLAlchemy session lifecycle:**
+
+- One session per tool invocation (request-scoped)
+- Pattern: `with session_factory() as session: ...` inside tool function
+- NEVER cache sessions across tool calls
+- Rationale: FastMCP tool calls are stateless (matches D3 `stateless_http=True`)
+
+### Process Patterns
+
+**Service invocation priority (decision ladder):**
+
+1. **PREFER:** existing `DocumentService` / `SearchService` methods from `backend/library/`
+2. **IF not covered:** add method to existing service (not new service)
+3. **IF truly new domain:** SQLAlchemy ORM query in tool module via session
+4. **NEVER:** raw SQL strings in MCP tool code (inconsistent with Sprint 9 ORM adoption)
+
+**Write coordination pattern (D2 implementation):**
+
+```python
+# Pseudocode for obsidian_write_note
+with session_factory() as session:
+    # Phase 1: DB version write
+    existing_content = read_file_if_exists(resolved_path)
+    version = ObsidianNoteVersion(
+        note_path=relative_path,
+        content_before=existing_content,
+        content_after=new_content,
+        user_prompt=user_prompt,
+        article_id=article_id,
+        changed_by="mcp_server",
+    )
+    session.add(version)
+    try:
+        session.commit()
+    except SQLAlchemyError as e:
+        raise_version_save_failed(e)
+    # Phase 2: file write (only after DB commit)
+    try:
+        resolved_path.write_text(new_content, encoding="utf-8")
+    except OSError as e:
+        raise_vault_write_failed(e)
+    # Phase 3: mark reviewed (optional, separate DB op)
+    if mark_as_reviewed and article_id:
+        doc_service.mark_reviewed(article_id, session=session)
+```
+
+**Input validation:**
+
+- FastMCP + Pydantic via type hints handles structural validation
+- Domain validation (UUID format, path format) in tool body, raising appropriate `McpError`
+- NEVER silently coerce invalid input — always error with clear message
+
+### Enforcement Guidelines
+
+**All AI Agents MUST:**
+
+- Use tool naming `<scope>_<verb>_<noun>` with `lenie`/`obsidian` scope prefix
+- Raise errors only via helpers in `errors.py` (never raw exceptions from tools)
+- Wrap every filesystem access with `ensure_within_vault()`
+- Prefer existing services (`DocumentService` / `SearchService`) over new SQL
+- Return plain `dict`/`list`, never Pydantic models from tools
+- Include `total` + `limit` + `offset` envelope for list returns
+- Use per-invocation SQLAlchemy session, not global/cached
+
+**Pattern Enforcement:**
+
+- `ruff` rules in `backend/pyproject.toml` should include E/F/N for naming
+- Custom code review checklist items:
+  - "Does every `tools/obsidian/*` function call `ensure_within_vault` before filesystem access?"
+  - "Are all error raises routed through `errors.py` helpers?"
+  - "Does every write tool follow the 3-phase coordinator pattern?"
+- Pattern violations go to PR reviewers with link to this section
+
+### Pattern Examples
+
+**Good — Lenie tool:**
+
+```python
+@mcp.tool()
+def lenie_get_article(article_uuid: str) -> dict:
+    """Retrieve full article content and metadata."""
+    with session_factory() as session:
+        doc_service = DocumentService(session=session)
+        article = doc_service.get_by_uuid(article_uuid)
+        if article is None:
+            raise_article_not_found(article_uuid)
+        return {
+            "uuid": article.uuid,
+            "title": article.title,
+            "content_markdown": article.content_markdown,
+            "source": article.source,
+            "language": article.language,
+            "date": article.created_at.isoformat() + "Z",
+            "user_note": article.user_note,
+            "obsidian_note_paths": article.obsidian_note_paths or [],
+        }
+```
+
+**Good — Obsidian tool with path security:**
+
+```python
+@mcp.tool()
+def obsidian_read_note(note_path: str) -> dict:
+    """Read full content of a note within 02-wiedza/."""
+    resolved = ensure_within_vault(note_path)
+    if not resolved.exists():
+        raise_note_not_found(note_path)
+    return {
+        "path": note_path,
+        "content": resolved.read_text(encoding="utf-8"),
+        "modified_at": datetime.fromtimestamp(
+            resolved.stat().st_mtime, tz=UTC
+        ).isoformat(),
+    }
+```
+
+**Anti-pattern — raw exception leak:**
+
+```python
+# WRONG: exception leaks to MCP transport as generic error
+@mcp.tool()
+def obsidian_read_note(note_path: str) -> dict:
+    full_path = Path(VAULT_ROOT) / note_path  # no path security
+    return {"content": full_path.read_text()}  # FileNotFoundError leaks
+```
+
+**Anti-pattern — Pydantic return model:**
+
+```python
+# WRONG: Pydantic model adds serialization noise, inconsistent with pattern
+class ArticleResponse(BaseModel):
+    uuid: str
+    title: str
+
+@mcp.tool()
+def lenie_get_article(article_uuid: str) -> ArticleResponse:  # return dict instead
+    ...
+```
+
+**Anti-pattern — raw SQL:**
+
+```python
+# WRONG: raw SQL bypasses Sprint 9 ORM adoption; SQL injection risk
+@mcp.tool()
+def lenie_search(query: str) -> dict:
+    rows = session.execute(f"SELECT * FROM web_documents WHERE title LIKE '%{query}%'")
+```
+
+## Sprint 10 — Project Structure & Boundaries
+
+### Scope of this Section
+
+**Brownfield sprint — only NEW footprint documented.** Existing project structure (backend layout, frontend apps, docs organization, testing conventions) remains governed by Sprint 1-6 architecture sections. This section adds the MCP server subtree + infrastructure touchpoints.
+
+### New Directory Structure
+
+```text
+backend/
+└── mcp_server/                          # NEW — entry point: backend.mcp_server.main
+    ├── __init__.py
+    ├── main.py                          # FastMCP instance, transport config, health endpoint, entry point
+    ├── errors.py                        # 6 error codes enum + raise_* helpers (cross-cutting #1)
+    ├── path_security.py                 # ensure_within_vault() boundary enforcer (cross-cutting #2)
+    ├── logging_config.py                # structured logging setup (per Sprint 10 patterns)
+    ├── config.py                        # env var loading via unified_config_loader
+    ├── tools/
+    │   ├── __init__.py
+    │   ├── _common.py                   # session_factory, response envelopes, shared helpers
+    │   ├── lenie.py                     # FR1-FR5: 4 Lenie tools (unreviewed_articles, get, search, delete)
+    │   └── obsidian.py                  # FR6-FR13: 6 Obsidian tools (read, write, list, delete, history, + write coord)
+    └── tests/
+        ├── unit/
+        │   ├── test_path_security.py    # NFR5: path traversal, symlink, unicode edge cases
+        │   ├── test_errors.py           # error helper → McpError code mapping
+        │   ├── test_lenie_tools.py      # with mocked DocumentService/SearchService
+        │   └── test_obsidian_tools.py   # with tmp vault + mocked DB session
+        └── integration/
+            ├── test_write_coordinator.py # D2 full flow: DB commit → file write, failure modes
+            ├── test_lenie_tools_db.py    # against NAS postgres per MEMORY convention
+            └── test_end_to_end.py        # optional: full MCP protocol round-trip
+
+backend/library/db/
+└── models.py                            # MODIFIED — add ObsidianNoteVersion SQLAlchemy model (D1)
+
+backend/alembic/versions/
+└── <rev>_add_obsidian_note_versions.py  # NEW — Alembic migration for new table (D1)
+
+infra/docker/
+└── compose.nas.yaml                     # MODIFIED — add 3 services: mcp-server, cloudflared, obsidian-headless
+
+infra/docker/mcp-server/
+├── Dockerfile                           # NEW — python:3.11-slim + uv + copy backend/mcp_server/
+└── README.md                            # NEW — deployment runbook (env vars, tunnel token, vault mount)
+```
+
+### File-to-Requirement Mapping
+
+| Requirement | File(s) | Notes |
+|-------------|---------|-------|
+| FR1 `lenie_unreviewed_articles` | `tools/lenie.py::lenie_unreviewed_articles` | uses DocumentService |
+| FR2 `lenie_get_article` | `tools/lenie.py::lenie_get_article` | |
+| FR3 `lenie_search` | `tools/lenie.py::lenie_search` | uses SearchService |
+| FR4 `lenie_delete_article` | `tools/lenie.py::lenie_delete_article` | |
+| FR5 mark-as-reviewed | `tools/obsidian.py::obsidian_write_note` (embedded in write coord) | optional `mark_as_reviewed` param |
+| FR6 `obsidian_read_note` | `tools/obsidian.py::obsidian_read_note` | uses `ensure_within_vault` |
+| FR7 create + FR8 overwrite | `tools/obsidian.py::obsidian_write_note` | single tool, semantics distinguished by existence check |
+| FR9 `obsidian_delete_note` | `tools/obsidian.py::obsidian_delete_note` | uses `ensure_within_vault` |
+| FR10 `obsidian_list_notes` | `tools/obsidian.py::obsidian_list_notes` | |
+| FR11 auto-save version | `tools/obsidian.py` write coordinator (D2) | |
+| FR12 version record fields | `library/db/models.py::ObsidianNoteVersion` | |
+| FR13 `obsidian_note_history` | `tools/obsidian.py::obsidian_note_history` | uses difflib (D9) |
+| FR14 Custom Connector config | `infra/docker/mcp-server/README.md` (deployment runbook) | user-facing setup docs, not code |
+| FR15 Claude invokes tools | Inherent in FastMCP transport | no dedicated code |
+| NFR1-3 response logging | `logging_config.py` + middleware in `main.py` | structured INFO logs per tool |
+| NFR4 HTTPS | `compose.nas.yaml` (cloudflared sidecar) | infrastructure, not code |
+| NFR5 path traversal | `path_security.py::ensure_within_vault` | single enforcement point |
+| NFR6 no secrets in image | `Dockerfile` (no COPY of .env) + `config.py` reads env only | |
+| NFR7 OAuth auth | `compose.nas.yaml` (Cloudflare Portal) | infrastructure |
+| NFR8 no direct port | `compose.nas.yaml` (no `ports:`, only `expose:`) | infrastructure |
+| NFR9 version-before-overwrite | `tools/obsidian.py` write coordinator (D2) | enforced ordering |
+| NFR10 atomic DB tx | SQLAlchemy session + explicit commit | per tool |
+| NFR11 indefinite retention | D3 — no cleanup code, no scheduled jobs | |
+| NFR12 MCP protocol | `main.py` via FastMCP SDK | |
+| NFR13 vault sync <60s | `compose.nas.yaml` (obsidian-headless container) | infrastructure |
+| NFR14 sync without PC | Inherent in NAS-driven sync chain | infrastructure |
+| NFR15 continuous Obsidian Sync | `compose.nas.yaml` obsidian-headless + existing Obsidian Sync subscription | infrastructure |
+| NFR16 lenie-net network | `compose.nas.yaml` (networks: lenie-net) | infrastructure |
+
+### Architectural Boundaries
+
+**API Boundary:**
+
+- Public: MCP tools invoked via streamable HTTP by Claude Custom Connector
+- Entry: Cloudflare Tunnel → `mcp-server` container port → FastMCP app
+- Surface: 10 tools defined in `tools/lenie.py` + `tools/obsidian.py`
+- Exit: no outbound calls from MCP server to external services (internal PostgreSQL + local filesystem only)
+
+**Component Boundaries:**
+
+- `mcp_server/` is a PEER of existing `backend/server.py` (Flask) and other backend entry points — NOT child, NOT parent
+- Shares: `backend/library/db/` (ORM models, engine, session), `backend/library/services/` (DocumentService, SearchService), `backend/library/config_loader.py`
+- Does NOT share: Flask-specific code, Lambda-specific code, frontend code
+- NEW table `obsidian_note_versions` is exclusively written by `mcp_server/` (no other backend subsystem writes to it)
+
+**Service Boundaries:**
+
+- `DocumentService` / `SearchService` are consumed as Python libraries by MCP tools (direct import)
+- No HTTP/RPC call between MCP server and Flask server (both read/write the same DB, but don't talk to each other)
+- Clean separation: Flask handles web UI backend (`/website_list`, etc.); MCP handles Claude mobile workflow
+
+**Data Boundaries:**
+
+- PostgreSQL tables touched by MCP server: `web_documents` (read, update `reviewed_at` / `obsidian_note_paths`), `obsidian_note_versions` (write only)
+- Filesystem boundary: `{OBSIDIAN_VAULT_PATH}/02-wiedza/` — read/write permitted, everything else out of bounds (NFR5)
+- No cache layer in MVP (Redis/etc.) — direct DB reads acceptable at single-user scale
+
+**Network Boundaries:**
+
+- `mcp-server` container on `lenie-net` (shared with `lenie-ai-db`)
+- `cloudflared` container on `lenie-net` (sidecar for tunnel)
+- `obsidian-headless` container on `lenie-net` (for potential future config access) + vault volume
+- NO external exposure from NAS (NFR8): all inbound via Cloudflare Tunnel only
+
+### Integration Points
+
+**Internal Communication:**
+
+- MCP tool → `DocumentService.get_by_uuid()` / `search()` / etc. (Python direct call)
+- MCP tool → `ObsidianNoteVersion` SQLAlchemy model via session
+- MCP tool → filesystem via `ensure_within_vault` + `Path` methods
+- `main.py` → FastMCP SDK → HTTP transport
+- Docker health check → `mcp-server:<port>/healthz`
+
+**External Integrations:**
+
+- **Inbound:** Cloudflare Tunnel → `cloudflared` container → `mcp-server` (stateless HTTP)
+- **Outbound:** None from MCP server itself. (`obsidian-headless` talks to Obsidian Sync cloud service independently.)
+
+**Data Flow:**
+
+```
+Claude mobile
+    → claude.ai Custom Connector
+        → Cloudflare Edge (TLS termination + OAuth via MCP Portal)
+            → Cloudflare Tunnel
+                → cloudflared container
+                    → mcp-server container (FastMCP app)
+                        → DocumentService / SearchService → PostgreSQL (web_documents)
+                        → ObsidianNoteVersion ORM → PostgreSQL (obsidian_note_versions)
+                        → ensure_within_vault + Path I/O → NAS filesystem (02-wiedza/)
+                            → obsidian-headless detects change
+                                → Obsidian Sync cloud
+                                    → phone, PC, other devices
+```
+
+### File Organization Patterns
+
+**Configuration Files (existing conventions extended):**
+
+- `backend/pyproject.toml` — adds `mcp` dependency
+- `.env` — adds MCP-specific bootstrap vars (`VAULT_ROOT` path, `MCP_LOG_LEVEL`)
+- `scripts/vars-classification.yaml` — adds MCP var classifications per project convention
+- `infra/docker/compose.nas.yaml` — adds 3 service definitions
+
+**Source Organization:**
+
+- New package under `backend/mcp_server/` — parallels `backend/library/`, `backend/imports/`, etc.
+- Tool logic strictly contained in `tools/` subdirectory
+- Cross-cutting concerns (errors, path security, logging) as top-level modules
+
+**Test Organization:**
+
+- `backend/mcp_server/tests/` — parallels existing `backend/tests/` convention
+- Unit tests: `tests/unit/` (fast, mocked)
+- Integration tests: `tests/integration/` (against NAS PostgreSQL, tmp vault)
+- Test command pattern: `cd backend && PYTHONPATH=. uvx pytest mcp_server/tests/unit/ -v` (matches project convention from MEMORY)
+
+**Asset Organization:**
+
+- No static assets (API backend, no frontend)
+- Runbooks / deployment docs in `infra/docker/mcp-server/README.md`
+
+### Development Workflow Integration
+
+**Development Server Structure:**
+
+- Local: `cd backend && uvx python -m mcp_server.main` runs FastMCP server on localhost
+- Can be tested with MCP inspector CLI: `npx @modelcontextprotocol/inspector uv run mcp_server/main.py`
+- NO production OAuth locally — localhost runs auth-free
+
+**Build Process Structure:**
+
+- Docker build: `docker build -f infra/docker/mcp-server/Dockerfile -t lenie-mcp-server:$(git rev-parse --short HEAD) backend/`
+- Same image tag strategy as existing backend services (git SHA tags)
+
+**Deployment Structure:**
+
+- `compose.nas.yaml` pins `mcp-server` image via tag
+- Cloudflare Tunnel token from Vault (via `unified_config_loader` → env var in compose)
+- `obsidian-headless` image pinned to version (D11)
+- Single `docker compose -f compose.nas.yaml up -d mcp-server cloudflared obsidian-headless` command deploys new sprint components
+
+## Sprint 10 — Architecture Validation Results
+
+### Coherence Validation
+
+**Decision Compatibility:**
+
+- MCP SDK v1.12.4 + FastMCP API + Streamable HTTP stateless + SQLAlchemy 2.0 session-per-request: all compatible, no version conflicts
+- Cross-cutting patterns D2 (write coordinator) + D6 (error envelope) + D4 (path security) cooperate cleanly: error codes `version_save_failed`, `vault_write_failed`, `note_path_invalid` all raised from their respective modules
+- D10 cloudflared sidecar + D12 healthz endpoint have separable responsibilities (tunnel vs liveness)
+
+**Pattern Consistency:**
+
+- Tool naming `<scope>_<verb>_<noun>` consistently applied across all 10 tools
+- Error raising through `errors.py` helpers enforced via pattern rule + code review checklist
+- `ensure_within_vault()` wrapping every Obsidian filesystem access enforced via pattern rule
+- SQLAlchemy session lifecycle per tool invocation matches FastMCP `stateless_http=True` transport mode
+
+**Structure Alignment:**
+
+- `backend/mcp_server/` positioned as peer to existing `backend/server.py`, `backend/imports/` — matches project convention
+- Reuse of `backend/library/db/` and `backend/library/services/` follows Service Invocation Priority Ladder (patterns section)
+- No circular dependencies: MCP server depends on library, never inverse
+
+### Requirements Coverage Validation
+
+**Functional Requirements:** 15/15 mapped to specific files (see File-to-Requirement Mapping table in Project Structure section)
+
+**Non-Functional Requirements:** 16/16 addressed
+
+- NFR1-3 (performance): response logging middleware in `main.py` + `logging_config.py`
+- NFR4-8 (security): cloudflared sidecar, `path_security.py`, Dockerfile env-var-only, Cloudflare Portal, no direct port
+- NFR9-11 (data integrity): D2 write coordinator, SQLAlchemy explicit commit, D3 no cleanup
+- NFR12-16 (integration): FastMCP SDK, obsidian-headless container, shared `lenie-net` Docker network
+
+**Error Codes:** 6/6 defined in `errors.py` with JSON-RPC code mapping (-32001 to -32006)
+
+**Cross-Cutting Concerns:** 7/7 covered (structured errors, path security, atomic ordering, config, stability contract, service decoupling, sync chain — last deferred to Phase 2 per PRD)
+
+### Implementation Readiness Validation
+
+**Decision Completeness:** 12/12 critical and important decisions documented with rationale, affected components, and cascading implications
+
+**Structure Completeness:** Complete directory tree with per-file responsibility; all new files and modifications to existing files identified
+
+**Pattern Completeness:** 8/8 MCP-specific conflict areas addressed with good/anti-pattern examples
+
+### Gap Analysis Results & Resolutions
+
+**Critical Gaps (blocking):** 0 — architecture implementable as documented
+
+**Important Gaps (resolved during validation):**
+
+1. **D12 `/healthz` routing — resolved to internal-only port**
+   - Decision: healthz listens on `127.0.0.1:<internal_port>` accessible only to Docker healthcheck command; NOT exposed via Cloudflare Tunnel
+   - Rationale: simpler (no Cloudflare Access bypass rule), safer (healthz never public), Docker daemon polls locally
+   - Affects: `main.py` (separate internal listener), `Dockerfile` (HEALTHCHECK instruction)
+
+2. **FastMCP session vs SQLAlchemy session — naming convention added**
+   - Decision: always name SQLAlchemy session variables `db_session` (never `session`) in tool code to avoid conflation with FastMCP internal session concept
+   - Addition to Patterns section: enforcement via code review checklist
+
+**Minor Gaps (resolved):**
+
+3. **E2E integration test moved from "optional" to mandatory**
+   - Rationale: PRD MVP gate requires "Claude on mobile successfully creates or updates one Obsidian note" — E2E test is the verification mechanism
+   - Updated: implementation sequence item 13 is now mandatory
+
+4. **Log retention — Docker default rotation added to compose**
+   - Decision: `logging: driver: json-file, options: max-size: 10m, max-file: 3` on all 3 new services in `compose.nas.yaml`
+   - Prevents log growth on NAS without requiring external log aggregation
+
+### Architecture Completeness Checklist
+
+**Requirements Analysis:**
+
+- [x] Project context analyzed (Sprint 10 scope, brownfield extension)
+- [x] Scale and complexity assessed (medium complexity, single-user, fixed infrastructure)
+- [x] Technical constraints identified (NAS hardware, coexistence with 9-container stack)
+- [x] Cross-cutting concerns mapped (7 concerns, all addressed)
+
+**Architectural Decisions:**
+
+- [x] 12 critical/important decisions documented with versions
+- [x] Technology stack fully specified (Python 3.11, mcp v1.12.4+, SQLAlchemy 2.0, FastMCP, Cloudflare stack)
+- [x] Integration patterns defined (D2 coordinator, direct service imports)
+- [x] Performance considerations addressed (NFR1-3 with measurement methods)
+
+**Implementation Patterns:**
+
+- [x] Naming conventions established (tool, param, return key naming)
+- [x] Structure patterns defined (tool module organization, error handling organization)
+- [x] Communication patterns specified (logging, session lifecycle)
+- [x] Process patterns documented (service ladder, write coordinator, input validation)
+
+**Project Structure:**
+
+- [x] Complete directory structure defined (`mcp_server/` subtree, modifications to existing files)
+- [x] Component boundaries established (peer to Flask, consumer of `library/`)
+- [x] Integration points mapped (data flow diagram, internal + external)
+- [x] Requirements-to-structure mapping complete (31/31 requirements mapped)
+
+### Architecture Readiness Assessment
+
+**Overall Status:** READY FOR IMPLEMENTATION
+
+**Confidence Level:** High — all critical decisions resolved, all requirements covered, all cross-cutting concerns addressed, 2 important gaps + 2 minor gaps resolved during validation
+
+**Key Strengths:**
+
+- Clean brownfield extension — MCP server as peer, not invasive refactor of existing code
+- Strong cross-cutting enforcement — single source of truth for errors (`errors.py`), path security (`path_security.py`), service invocation (priority ladder)
+- Explicit decision ordering in 13-step implementation sequence prevents blocked stories
+- Stability contract separates public surface (tool/param/error names) from internal details (table/network/container names) — supports future refactoring without API version bump
+
+**Areas for Future Enhancement (Phase 2+):**
+
+- Monitoring and alerting for sync chain failures (PRD Phase 2)
+- Automated quality audit of note changes using `obsidian_note_versions` data (PRD Phase 2 / backlog)
+- `obsidian_update_note` partial-edit tool (PRD Phase 2)
+- `obsidian_search` semantic search (PRD Phase 2)
+- Rate limiting when concurrent Claude sessions become common (PRD deferred)
+
+### Implementation Handoff
+
+**AI Agent Guidelines:**
+
+- Follow all architectural decisions (D1-D12) exactly as documented
+- Apply Implementation Patterns consistently — especially the 7 "All AI Agents MUST" enforcement rules
+- Respect project structure: new code in `backend/mcp_server/`, shared code imported from `backend/library/`
+- Reference this document (Sprint 10 sections) for any ambiguity before inventing approaches
+
+**First Implementation Priority (ordered story list):**
+
+1. Project initialization — `backend/mcp_server/` skeleton, `uv add mcp`, Docker service placeholder
+2. Service reuse verification (D8) — validates PRD assumption about Flask decoupling
+3. Alembic migration for `obsidian_note_versions` (D1)
+4. Error module + enum (D6) — `backend/mcp_server/errors.py`
+5. Path security helper (D4) — `backend/mcp_server/path_security.py` with exhaustive tests
+6. Lenie tools (FR1-FR4) — simpler, no filesystem
+7. Obsidian read-only tools (FR6, FR10) — uses D4
+8. Obsidian write tools (FR7, FR8, FR9) — uses D2 coordinator pattern
+9. Note history tool (FR13) — uses D9 query + diff
+10. Review-mark logic (FR5) — tied to `obsidian_write_note`
+11. Health endpoint (D12, internal-only port) + Docker healthcheck
+12. Cloudflare Tunnel sidecar (D10) + obsidian-headless container (D11) in compose + log rotation
+13. **End-to-end integration test (MANDATORY)** — full sync chain on NAS, validates PRD MVP gate

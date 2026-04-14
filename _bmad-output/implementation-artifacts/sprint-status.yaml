@@ -410,10 +410,10 @@ development_status:
   # ============================================================
 
   # --- Epic 34: Global Document Identifier (B-102) ---
-  epic-34: in-progress
+  epic-34: done
   34-1-alembic-migration-rename-s3-uuid-to-uuid: done  # B-102: Rename column s3_uuid→uuid, backfill UUIDs for all existing docs, add UNIQUE+NOT NULL constraint. ADR-015.
-  34-2-backend-frontend-code-rename-s3-uuid-to-uuid: backlog  # B-102: Rename s3_uuid→uuid in ORM models, services, routes, import scripts, shared types, React components (~15+ files).
-  epic-34-retrospective: optional
+  34-2-backend-frontend-code-rename-s3-uuid-to-uuid: done  # B-102: Rename s3_uuid→uuid in batch scripts, import scripts, test code, and documentation (~66 occurrences in 7 Python files + 4 doc files). Frontend: 0 occurrences.
+  epic-34-retrospective: done
 
   # ============================================================
   # DONE (completed backlog items — historical record)
