@@ -613,8 +613,8 @@ def main_storytel() -> None:
         print(f"Added: {title}")
 
 
-def migrate_s3_uuid_to_storage_uuid(db: Optional[firestore.Client] = None, dry_run: bool = True):
-    """Zamienia pole s3_uuid na storage_uuid w istniejących artykułach."""
+def migrate_uuid_to_storage_uuid(db: Optional[firestore.Client] = None, dry_run: bool = True):
+    """Zamienia pole uuid na storage_uuid w istniejących artykułach."""
     if db is None:
         if not project_id or not database:
             raise ValueError("Missing required environment variables")
@@ -632,17 +632,17 @@ def migrate_s3_uuid_to_storage_uuid(db: Optional[firestore.Client] = None, dry_r
         total_count += 1
         doc_data = doc.to_dict()
 
-        # Sprawdź czy dokument ma pole s3_uuid
+        # Sprawdź czy dokument ma pole s3_uuid (nazwa pola w Firestore, nie Python attr)
         if 's3_uuid' in doc_data:
-            s3_uuid_value = doc_data['s3_uuid']
+            uuid_value = doc_data['s3_uuid']
 
             if dry_run:
-                print(f"[DRY RUN] Zamieniono by s3_uuid na storage_uuid w dokumencie: {doc.id} (wartość: {s3_uuid_value})")
+                print(f"[DRY RUN] Zamieniono by s3_uuid na storage_uuid w dokumencie: {doc.id} (wartość: {uuid_value})")
             else:
                 # Usuń stare pole i dodaj nowe
                 update_data = {
                     's3_uuid': firestore.DELETE_FIELD,
-                    'storage_uuid': s3_uuid_value
+                    'storage_uuid': uuid_value
                 }
                 batch.update(doc.reference, update_data)
                 batch_count += 1
@@ -807,11 +807,11 @@ if __name__ == "__main__":
     # 1. Migracja artykułów z DynamoDB do Firestore
     migrate_articles()
 
-    # 2. Migracja s3_uuid -> storage_uuid
+    # 2. Migracja uuid -> storage_uuid
     # Najpierw uruchom w trybie test (dry_run=True)
-    # migrate_s3_uuid_to_storage_uuid(dry_run=True)
+    # migrate_uuid_to_storage_uuid(dry_run=True)
     # Po sprawdzeniu wyników uruchom faktyczną migrację (dry_run=False)
-    # migrate_s3_uuid_to_storage_uuid(dry_run=False)
+    # migrate_uuid_to_storage_uuid(dry_run=False)
 
     # 3. Czyszczenie pustych pól
     # Najpierw uruchom w trybie test (dry_run=True)

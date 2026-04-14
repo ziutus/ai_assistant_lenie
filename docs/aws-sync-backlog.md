@@ -14,13 +14,14 @@ Przy każdej zmianie, która wpływa na kod Lambda, schemat DynamoDB, schemat RD
 
 ### DB schema
 
-- [ ] **Rename `s3_uuid` → `uuid` + auto-generate for all documents**
+- [x] **Rename `s3_uuid` → `uuid` + auto-generate for all documents** ✅ Backend complete (Story 34-1 + 34-2)
   - Alembic migration: `ALTER TABLE web_documents RENAME COLUMN s3_uuid TO uuid`
   - Set `DEFAULT gen_random_uuid()`, `NOT NULL` (after backfill), `UNIQUE`
   - Backfill: `UPDATE web_documents SET uuid = gen_random_uuid() WHERE uuid IS NULL`
   - ORM model: `uuid: Mapped[str]` with `server_default=func.gen_random_uuid()`
+  - Backend code rename complete (Story 34-2): all batch scripts, import scripts, service layer, and docs updated. Only Lambda code remains.
   - *Reason*: UUID needed as global document identifier across instances (NAS, AWS RDS). `s3_uuid` was only set for S3-uploaded webpages, not all documents.
-  - *Sprint*: TBD
+  - *Sprint*: 13 (Epic 34)
   - *Added*: 2026-03-30
 
 - [ ] **Table `import_logs`** (story 33-2)

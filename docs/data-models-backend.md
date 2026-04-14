@@ -70,7 +70,7 @@ Vector embeddings for similarity search.
 | 4 | TRANSCRIPTION_IN_PROGRESS | Transcription running |
 | 5 | TRANSCRIPTION_DONE | Transcription completed |
 | 6 | TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS | Transcription split by chapters |
-| 7 | NEED_MANUAL_REVIEW | Requires human review |
+| 7 | NEED_MANUAL_REVIEW | Automatic text cleanup failed — needs manual removal of ads/comments/spam |
 | 8 | READY_FOR_TRANSLATION | Text ready for translation |
 | 9 | READY_FOR_EMBEDDING | Content ready for embedding generation |
 | 10 | EMBEDDING_EXIST | Final state — embeddings generated |

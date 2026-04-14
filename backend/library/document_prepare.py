@@ -43,11 +43,11 @@ def prepare_markdown(document_id, doc, cache_dir, verbose: bool = False) -> str 
             return f.read()
 
     if not os.path.isfile(cache_file_html):
-        if not doc.s3_uuid:
-            _log("Brak s3_uuid — nie mogę pobrać HTML")
+        if not doc.uuid:
+            _log("Brak uuid — nie mogę pobrać HTML")
             return None
 
-        s3_key = f"{doc.s3_uuid}.html"
+        s3_key = f"{doc.uuid}.html"
         _log(f"[1/3] Sprawdzam HTML w S3...")
         if not s3_file_exist(s3_bucket, s3_key):
             _log("HTML nie znaleziony w S3")
@@ -96,7 +96,7 @@ def save_document_info(document_id, doc, cache_dir):
         "url": doc.url,
         "title": doc.title,
         "language": doc.language,
-        "s3_uuid": doc.s3_uuid,
+        "uuid": doc.uuid,
         "created_at": doc.created_at.strftime("%Y-%m-%d %H:%M:%S") if doc.created_at else None,
         "document_type": doc.document_type if doc.document_type else None,
         "document_state": doc.document_state if doc.document_state else None,

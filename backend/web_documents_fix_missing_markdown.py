@@ -85,8 +85,8 @@ if __name__ == '__main__':
                     print("Encoding detection failed, using replacement characters.")
                     html = html.decode("latin-1", errors="replace")
 
-            s3_uuid = str(uuid.uuid4())
-            file_name = f"{s3_uuid}.html"
+            doc_uuid = str(uuid.uuid4())
+            file_name = f"{doc_uuid}.html"
 
             try:
                 s3.put_object(Bucket=cfg.get("AWS_S3_WEBSITE_CONTENT"), Key=file_name, Body=html)
@@ -96,23 +96,23 @@ if __name__ == '__main__':
                 print(error_message)
                 exit(1)
 
-            doc_cache_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown", str(s3_uuid))
+            doc_cache_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown", str(doc_uuid))
             os.makedirs(doc_cache_dir, exist_ok=True)
-            page_file = os.path.join(doc_cache_dir, f"{s3_uuid}.html")
+            page_file = os.path.join(doc_cache_dir, f"{doc_uuid}.html")
             with open(page_file, 'w', encoding="utf-8") as file:
                 file.write(html)
 
             md = MarkItDown()
             result = md.convert(page_file)
 
-            md_file = os.path.join(doc_cache_dir, f"{s3_uuid}.md")
+            md_file = os.path.join(doc_cache_dir, f"{doc_uuid}.md")
             with open(md_file, 'w', encoding="utf-8") as file:
                 file.write(result.text_content)
 
             md_cleaned = result.text_content
 
             doc.text_md = md_cleaned
-            doc.s3_uuid = s3_uuid
+            doc.uuid = doc_uuid
 
             session.commit()
 

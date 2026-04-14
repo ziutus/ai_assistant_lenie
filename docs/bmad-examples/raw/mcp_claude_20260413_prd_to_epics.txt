@@ -1,0 +1,1364 @@
+╭─── Claude Code v2.1.101 ─────────────────────────────────────────────────────╮
+│                                                    │ Recent activity         │
+│               Welcome back Krzysztof!              │ No recent activity      │
+│                                                    │ ─────────────────────── │
+│                       ▐▛███▜▌                      │ What's new              │
+│                      ▝▜█████▛▘                     │ Added `/team-onboardin… │
+│                        ▘▘ ▝▝                       │ Added OS CA certificat… │
+│        Opus 4.6 (1M context) · Claude Max ·        │ `/ultraplan` and other… │
+│        krzysztof@itsnap.eu's Organization          │ /release-notes for more │
+│         ~\git\_lenie-all\lenie-server-2025         │                         │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+❯ /clear                                                                        
+  ⎿  (no content)
+
+❯ /bmad-bmm-create-epics-and-stories                                            
+
+  Read 3 files, listed 1 directory (ctrl+o to expand)
+
+● Witaj Ziutus! Rozpoczynam workflow create-epics-and-stories (Krok 1: Walidacja
+   dokumentów i ekstrakcja wymagań).
+
+  Znalezione dokumenty wejściowe
+
+  PRD: _bmad-output/planning-artifacts/prd.md ✅
+  Architecture: _bmad-output/planning-artifacts/architecture.md ✅
+  UX Design: brak (projekt ma głównie backend + istniejący frontend — UX
+  prawdopodobnie nie jest wymagany)
+
+  ⚠️ Uwaga: istnieje już epics.md oraz katalog epics/ z poprzednich iteracji.
+  Workflow zastąpi epics.md nową zawartością z szablonu.
+
+  Pytania przed kontynuacją
+
+  1. Czy jest jakiś dodatkowy dokument do uwzględnienia w analizie (np.
+  brainstorm, raporty walidacji, notatki MCP)? Widzę m.in.:
+    - prd-validation-report.md
+    - brainstorm_graph_database.txt
+    - mcp_claude_20260412_prd_validacja.txt
+    - mcp_obsidian_architecture.txt
+  2. Czy coś ze znalezionych dokumentów wykluczyć z analizy?
+  3. Co z istniejącym epics.md? Czy zarchiwizować (zgodnie z Twoją konwencją PRD
+   archiving → archive/epics-sprint{N}-{name}-{date}.md) przed nadpisaniem? Jaki
+   sprint/nazwę nadać?
+
+  Czekam na odpowiedzi przed przystąpieniem do ekstrakcji FR/NFR.
+
+✻ Brewed for 51s
+
+❯ pliki txt to zapisy sesji. pominac. epics.md nalezy zarchiwizowac. sprwadz    
+  tresc i zaproponuj                                                            
+
+  Read 1 file (ctrl+o to expand)
+
+● Zawartość epics.md:
+
+  - Sprint 10: MCP Server — mobile knowledge workflow
+  - Status: in-progress, rozpoczęty 2026-04-13 (dzisiaj)
+  - Zawiera już 15 FR + 16 NFR z PRD (step-01 wykonany)
+
+  ⚠️ Zwróć uwagę: ten plik został utworzony dzisiaj (frontmatter startedAt: 
+  2026-04-13). Czy na pewno chcesz go archiwizować i startować od nowa, czy może
+   jednak kontynuować od kroku 02 (projektowanie epików)?
+
+  Propozycja nazwy archiwum (zgodnie z konwencją)
+
+  _bmad-output/planning-artifacts/archive/epics-sprint10-mcp-server-2026-04-13.m
+  d
+
+  Pytania
+
+  1. Archiwizować czy kontynuować? Bieżący epics.md ma już wykonany krok 01
+  (ekstrakcja FR/NFR) — jeśli archiwizujemy, robię to samo od zera. Jeśli
+  kontynuujemy, przechodzę do kroku 02.
+  2. Jeśli archiwizować — czy nazwa epics-sprint10-mcp-server-2026-04-13.md OK?
+  3. Jaki sprint/temat nadać nowej iteracji (sprint 11?, temat?)
+
+❯ mozemy go wykorzystac. uruchomilem teraz nowa sesje, bo chcialem wyczyscic    
+  kontekst                                                                      
+
+● Rozumiem — kontynuujemy istniejący epics.md (Sprint 10: MCP Server). Krok 01
+  już ukończony, przechodzę do kroku 02: projektowanie epików.
+
+  Read 2 files (ctrl+o to expand)
+
+● Krok 2: Projekt struktury epików — propozycja
+
+  Analizuję 15 FR i grupuję wg wartości dla użytkownika (nie warstw
+  technicznych). 13-krokowa sekwencja z Architecture mapuje się naturalnie na 4
+  epiki, z których każdy dostarcza samodzielną wartość:
+
+  ---
+  Epic 1: MCP Foundation — Claude mobile reads Lenie articles
+
+  Cel użytkownika: Po jednorazowej konfiguracji Custom Connector użytkownik z
+  telefonu przegląda, szuka, czyta i kasuje artykuły Lenie przez Claude.
+  FR: FR1, FR2, FR3, FR4, FR14, FR15
+  Zawiera: project init (backend/mcp_server/), service reuse verification (D8),
+  error module (D6), health endpoint (D12), Cloudflare Tunnel sidecar +
+  auth-blind logging (D5, D10), 4 narzędzia Lenie, log rotation.
+  Standalone: ✅ — dostarcza MVP "article triage z telefonu" bez Obsidiana.
+
+  Epic 2: Obsidian vault read access
+
+  Cel użytkownika: Przeglądanie folderów i czytanie istniejących notatek w
+  02-wiedza/ z Claude mobile (np. referencja wiedzy podczas rozmowy).
+  FR: FR6, FR10
+  Zawiera: path security helper (D4) + exhaustive tests, read-only Obsidian
+  tools (obsidian_read_note, obsidian_list_notes).
+  Standalone: ✅ — użyteczne samodzielnie; buduje na Epic 1 infrastrukturze, ale
+   nie wymaga Epic 3/4.
+
+  Epic 3: Obsidian note authoring with version history
+
+  Cel użytkownika: Tworzenie, nadpisywanie, usuwanie notatek z automatycznym
+  wersjonowaniem i audytem historii (diffy).
+  FR: FR7, FR8, FR9, FR11, FR12, FR13
+  Zawiera: Alembic migration + ORM ObsidianNoteVersion (D1), write coordinator
+  pattern (D2), note history z difflib.unified_diff (D9),
+  write/overwrite/delete/history tools.
+  Standalone: ✅ — pełny CRUD + audit bez zamykania pętli review.
+
+  Epic 4: End-to-end review workflow & multi-device sync
+
+  Cel użytkownika: Domknięcie pętli artykuł→notatka: zapis notatki auto-linkuje
+  do artykułu źródłowego, mark-as-reviewed, zmiany propagują na wszystkie
+  urządzenia przez Obsidian Sync bez udziału PC.
+  FR: FR5
+  Zawiera: review-mark logic wpięty w obsidian_write_note, obsidian-headless
+  container (D11), obowiązkowy E2E test (PRD MVP gate).
+  Standalone: ✅ — zamyka MVP; zależy od Epic 1 (artykuły) i Epic 3 (write), ale
+   nie od przyszłych epików.
+
+  ---
+  FR Coverage Map
+
+  ┌───────────────┬────────┬──────────────────────────────────────────────┐
+  │      FR       │  Epic  │                     Opis                     │
+  ├───────────────┼────────┼──────────────────────────────────────────────┤
+  │ FR1–FR4       │ Epic 1 │ Lenie tools: list/get/search/delete articles │
+  ├───────────────┼────────┼──────────────────────────────────────────────┤
+  │ FR5           │ Epic 4 │ Auto-link note→article + mark reviewed       │
+  ├───────────────┼────────┼──────────────────────────────────────────────┤
+  │ FR6, FR10     │ Epic 2 │ Obsidian read-only (read/list)               │
+  ├───────────────┼────────┼──────────────────────────────────────────────┤
+  │ FR7, FR8, FR9 │ Epic 3 │ Obsidian write/overwrite/delete              │
+  ├───────────────┼────────┼──────────────────────────────────────────────┤
+  │ FR11, FR12    │ Epic 3 │ Auto-save version + record metadata          │
+  ├───────────────┼────────┼──────────────────────────────────────────────┤
+  │ FR13          │ Epic 3 │ Version history + diffs                      │
+  ├───────────────┼────────┼──────────────────────────────────────────────┤
+  │ FR14, FR15    │ Epic 1 │ Custom Connector config + tool invocation    │
+  └───────────────┴────────┴──────────────────────────────────────────────┘
+
+  Pokrycie: 15/15 FR ✅
+
+  ---
+  Pytania:
+  1. Czy podział na 4 epiki Ci odpowiada, czy preferujesz inne granice (np.
+  łączenie Epic 2+3 w jeden "Obsidian", albo wydzielenie foundation z Epic 1)?
+  2. Czy E2E test powinien być w Epic 4 (zamyka MVP) czy rozbity na test
+  per-epic?
+  3. Zatwierdzasz strukturę do przejścia na krok 03 (tworzenie stories)?
+
+✻ Churned for 1m 5s
+
+❯ 1                                                                             
+
+● Rozumiem — odpowiedź na pytanie 1: struktura 4 epików OK.
+
+  A co z pozostałymi?
+  - Pytanie 2: E2E test w Epic 4 (zamyka MVP) — OK, czy rozbić?
+  - Pytanie 3: Zatwierdzasz przejście do kroku 03 (stories)?
+
+  Jeśli domyślnie tak na oba — zapiszę strukturę do epics.md i pokażę menu [A] 
+  Advanced Elicitation [P] Party Mode [C] Continue.
+
+❯ oba na tak                                                                    
+
+● Update(_bmad-output\planning-artifacts\epics.md)
+  ⎿  Added 42 lines, removed 2 lines
+      112  
+      113  ### FR Coverage Map
+      114  
+      115 -{{requirements_coverage_map}}                                 
+      115 +| FR | Epic | Description |                                   
+      116 +|----|------|-------------|                                   
+      117 +| FR1 | Epic 1 | `lenie_unreviewed_articles` — list unreviewed
+          + articles with filters |                                      
+      118 +| FR2 | Epic 1 | `lenie_get_article` — fetch full markdown + m
+          +etadata |                                                     
+      119 +| FR3 | Epic 1 | `lenie_search_articles` — keyword/phrase sear
+          +ch with snippets |                                            
+      120 +| FR4 | Epic 1 | `lenie_delete_article` — remove article from 
+          +DB |                                                          
+      121 +| FR5 | Epic 4 | Auto-link note path to article on write + mar
+          +k-as-reviewed |                                               
+      122 +| FR6 | Epic 2 | `obsidian_read_note` — read note content in `
+          +02-wiedza/` |                                                 
+      123 +| FR7 | Epic 3 | `obsidian_create_note` — create new note |   
+      124 +| FR8 | Epic 3 | `obsidian_write_note` — overwrite existing no
+          +te |                                                          
+      125 +| FR9 | Epic 3 | `obsidian_delete_note` — delete note |       
+      126 +| FR10 | Epic 2 | `obsidian_list_notes` — list folder/subfolde
+          +r contents |                                                  
+      127 +| FR11 | Epic 3 | Automatic pre-write version save via D2 writ
+          +e coordinator |                                               
+      128 +| FR12 | Epic 3 | Record user prompt + content before/after + 
+          +source article |                                              
+      129 +| FR13 | Epic 3 | `obsidian_note_history` — retrieve version h
+          +istory with unified diffs |                                   
+      130 +| FR14 | Epic 1 | Custom Connector configuration against MCP s
+          +erver |                                                       
+      131 +| FR15 | Epic 1 | Claude mobile invokes MCP tools through Cust
+          +om Connector |                                                
+      132  
+      133 +Coverage: 15/15 FRs mapped.                                   
+      134 +                                                              
+      135  ## Epic List
+      136  
+      119 -{{epics_list}}                                                
+      137 +### Epic 1: MCP Foundation — Claude Mobile Reads Lenie Article
+          +s                                                             
+      138 +After a one-time Custom Connector configuration, the user can 
+          +browse, search, read, and delete unreviewed Lenie articles fro
+          +m Claude mobile. Establishes the MCP server foundation (projec
+          +t skeleton, service reuse verification, error module, health e
+          +ndpoint, Cloudflare Tunnel, auth-blind logging, log rotation) 
+          +alongside the four Lenie tools.                               
+      139 +**FRs covered:** FR1, FR2, FR3, FR4, FR14, FR15               
+      140 +**Architecture decisions in scope:** D5, D6, D7, D8, D10, D12 
+          ++ log rotation                                                
+      141 +**Implementation sequence items:** 1, 2, 4, 6, 11, 12 (Cloudfl
+          +are Tunnel portion)                                           
+      142 +                                                              
+      143 +### Epic 2: Obsidian Vault Read Access                        
+      144 +User can browse folders and read existing notes in `02-wiedza/
+          +` from Claude mobile (e.g., to reference prior knowledge durin
+          +g a conversation). Introduces the path security helper that ev
+          +ery subsequent Obsidian tool will reuse.                      
+      145 +**FRs covered:** FR6, FR10                                    
+      146 +**Architecture decisions in scope:** D4                       
+      147 +**Implementation sequence items:** 5, 7                       
+      148 +                                                              
+      149 +### Epic 3: Obsidian Note Authoring with Version History      
+      150 +User can create, overwrite, and delete notes in `02-wiedza/` w
+          +ith automatic pre-write versioning (user prompt, content befor
+          +e/after, source article) and can retrieve server-generated uni
+          +fied diffs for audit.                                         
+      151 +**FRs covered:** FR7, FR8, FR9, FR11, FR12, FR13              
+      152 +**Architecture decisions in scope:** D1, D2, D9               
+      153 +**Implementation sequence items:** 3, 8, 9                    
+      154 +                                                              
+      155 +### Epic 4: End-to-End Review Workflow & Multi-Device Sync    
+      156 +User closes the article→note loop on mobile: writing a note au
+          +to-links to the source article, `mark_reviewed` flips article 
+          +state, and vault changes propagate to phone and PC via Obsidia
+          +n Sync without PC needing to be online. Delivers the PRD MVP g
+          +ate via a mandatory end-to-end integration test.              
+      157 +**FRs covered:** FR5                                          
+      158 +**Architecture decisions in scope:** D11 (obsidian-headless) +
+          + E2E test mandate                                             
+      159 +**Implementation sequence items:** 10, 12 (obsidian-headless p
+          +ortion), 13                                                   
+
+● Update(_bmad-output\planning-artifacts\epics.md)
+  ⎿  Added 1 line
+      1  ---
+      2  stepsCompleted:
+      3    - step-01-validate-prerequisites
+      4 +  - step-02-design-epics                                        
+      5  sprintNumber: 10
+      6  sprintName: 'MCP Server — mobile knowledge workflow'
+      7  status: in-progress
+
+● Zapisałem strukturę 4 epików + FR coverage map do epics.md i zaktualizowałem
+  stepsCompleted.
+
+  Select an Option: [A] Advanced Elicitation [P] Party Mode [C] Continue
+
+✻ Sautéed for 38s
+
+❯ C                                                                             
+
+  Read 1 file (ctrl+o to expand)
+
+● Przechodzę do kroku 03 — tworzenie stories. Przetwarzam epiki sekwencyjnie.
+
+  ---
+  Epic 1: MCP Foundation — Claude Mobile Reads Lenie Articles
+
+  Cel: Po jednorazowej konfiguracji Custom Connector użytkownik z Claude mobile
+  przegląda, szuka, czyta i kasuje artykuły Lenie.
+  FR: FR1–FR4, FR14, FR15
+  NFR istotne: NFR1, NFR2 (performance), NFR4, NFR5 (w przyszłych epikach),
+  NFR6, NFR7, NFR8, NFR12, NFR16
+  Architecture decisions: D5, D6, D7, D8, D10, D12 + log rotation
+
+  Proponowany podział na stories (8 stories)
+
+  #: 1.1
+  Tytuł: Project skeleton & FastMCP bootstrap
+  FR/AD: seq #1, D7
+  Uzasadnienie: backend/mcp_server/ + uv add mcp, podstawowy FastMCP serwer
+    (stateless_http, json_response), placeholder service w compose.nas.yaml.
+  Cel:
+     ruchomy MCP server bez narzędzi.
+  ────────────────────────────────────────
+  #: 1.2
+  Tytuł: Service reuse verification (Flask decoupling)
+  FR/AD: seq #2, D8
+  Uzasadnienie: Test importu DocumentService/SearchService bez inicjalizacji
+    Flasha — walidacja kluczowego założenia PRD. Odrębna story bo AC = "test
+    passes"; nie potrzebuje narzędzi.
+  ────────────────────────────────────────
+  #: 1.3
+  Tytuł: Error module with 6-code taxonomy
+  FR/AD: seq #4, D6
+  Uzasadnienie: backend/mcp_server/errors.py mapujący kody → JSON-RPC
+    -32001..-32006, używany przez wszystkie późniejsze tools.
+  ────────────────────────────────────────
+  #: 1.4
+  Tytuł: Tool: lenie_unreviewed_articles
+  FR/AD: FR1, NFR2
+  Uzasadnienie: Lista nieprzejrzanych (domyślnie 6, filtry, envelope
+    {items,total,limit,offset}).
+  ────────────────────────────────────────
+  #: 1.5
+  Tytuł: Tool: lenie_get_article
+  FR/AD: FR2
+  Uzasadnienie: Pełny markdown + metadata po id/uuid.
+  ────────────────────────────────────────
+  #: 1.6
+  Tytuł: Tool: lenie_search_articles
+  FR/AD: FR3
+  Uzasadnienie: Keyword search z snippet + relevance ordering.
+  ────────────────────────────────────────
+  #: 1.7
+  Tytuł: Tool: lenie_delete_article
+  FR/AD: FR4
+  Uzasadnienie: Usunięcie artykułu.
+  ────────────────────────────────────────
+  #: 1.8
+  Tytuł: Health endpoint + Docker healthcheck
+  FR/AD: seq #11, D12
+  Uzasadnienie: /healthz na 127.0.0.1 (internal-only), HEALTHCHECK directive.
+  ────────────────────────────────────────
+  #: 1.9
+  Tytuł: Cloudflare Tunnel sidecar + auth-blind logging + log rotation
+  FR/AD: seq #12 (część), D5, D10
+  Uzasadnienie: cloudflared jako odrębny kontener, logowanie
+    Cf-Access-Authenticated-User-Email, log rotation na 3 nowych serwisach.
+    Zamyka Epic 1 — FR14/FR15 spełnione (Claude mobile rzeczywiście dobija do
+    narzędzi).
+
+  Uwagi o zależnościach (standalone w obrębie epiku):
+  - 1.1 → fundament dla wszystkich
+  - 1.2 niezależna od 1.3+ (wykonalna od razu po 1.1)
+  - 1.3 blokuje 1.4–1.7 (tools używają helperów błędów)
+  - 1.4–1.7 wzajemnie niezależne (można w dowolnej kolejności po 1.3)
+  - 1.8 niezależna od tools
+  - 1.9 zamyka epik — Custom Connector z claude.ai trafia przez Tunnel do
+  działających narzędzi (FR14, FR15 weryfikowalne E2E)
+
+  ---
+  Pytania:
+  1. Czy taki podział Ci pasuje (8 stories), czy coś połączyć/rozbić?
+  2. Czy każde z 4 narzędzi Lenie ma być osobną story (1.4–1.7), czy zbite w
+  jedną "Lenie tools set" (prostsze, ale większa)?
+  3. Jakiego typu użytkownika użyć w As a ...? Proponuję: "knowledge worker" (bo
+   to jednoosobowy projekt, ale story mają być generyczne).
+
+  Po akceptacji wygeneruję pełne treści stories z Given/When/Then ACs.
+
+✻ Brewed for 51s
+
+❯ 1. pasuje 2. jedna 3. ok                                                      
+
+● Dopisuję 6 stories do Epic 1 (zmerdżowane narzędzia Lenie w 1.4).
+
+  Read 1 file (ctrl+o to expand)
+● Update(_bmad-output\planning-artifacts\epics.md)
+  ⎿  Added 107 lines
+      158  **FRs covered:** FR5
+      159  **Architecture decisions in scope:** D11 (obsidian-headless) +
+            E2E test mandate
+      160  **Implementation sequence items:** 10, 12 (obsidian-headless p
+           ortion), 13
+      161 +                                                              
+      162 +---                                                           
+      163 +                                                              
+      164 +## Epic 1: MCP Foundation — Claude Mobile Reads Lenie Articles
+      165 +                                                              
+      166 +**Goal:** After a one-time Custom Connector configuration, the
+          + knowledge worker can browse, search, read, and delete unrevie
+          +wed Lenie articles from Claude mobile. Establishes the MCP ser
+          +ver foundation (project skeleton, service-reuse verification, 
+          +error taxonomy, health endpoint, Cloudflare Tunnel, auth-blind
+          + logging, log rotation) alongside the four Lenie tools.       
+      167 +                                                              
+      168 +### Story 1.1: Project skeleton & FastMCP bootstrap           
+      169 +                                                              
+      170 +As a knowledge worker,                                        
+      171 +I want a running MCP server skeleton reachable over HTTP insid
+          +e the `lenie-net` Docker network,                             
+      172 +So that subsequent stories can register tools against a workin
+          +g transport layer.                                            
+      173 +                                                              
+      174 +**Acceptance Criteria:**                                      
+      175 +                                                              
+      176 +**Given** an empty `backend/mcp_server/` subtree              
+      177 +**When** I add the `mcp` SDK (v1.12.4+) via `uv add mcp` and c
+          +reate a minimal FastMCP server configured with `stateless_http
+          +=True, json_response=True` on `streamable-http` transport     
+      178 +**Then** a new `mcp-server` service in `infra/docker/compose.n
+          +as.yaml` starts successfully and joins `lenie-net` (NFR16)    
+      179 +**And** the project layout follows `backend/mcp_server/` as a 
+          +peer to `backend/server.py` and `backend/imports/`            
+      180 +**And** the server exposes an MCP endpoint answering initializ
+          +e requests but registers zero tools at this point             
+      181 +**And** `uv lock` is updated and `.venv_wsl` is re-synced per 
+          +the project's WSL workflow                                    
+      182 +**And** no secrets or credentials are embedded in the Docker i
+          +mage (NFR6)                                                   
+      183 +                                                              
+      184 +### Story 1.2: Service-reuse verification (Flask decoupling)  
+      185 +                                                              
+      186 +As a knowledge worker,                                        
+      187 +I want proof that `DocumentService` and `SearchService` can be
+          + imported and used without initializing Flask,                
+      188 +So that the PRD assumption about sharing business logic betwee
+          +n Flask and MCP is validated before we build tools on top of i
+          +t (D8).                                                       
+      189 +                                                              
+      190 +**Acceptance Criteria:**                                      
+      191 +                                                              
+      192 +**Given** the existing `backend/library/` service classes     
+      193 +**When** an automated test imports `DocumentService` and `Sear
+          +chService` in a process that never imports `flask` or instanti
+          +ates `server.py`                                              
+      194 +**Then** both services instantiate and execute a read-only met
+          +hod against the development database without raising          
+      195 +**And** the test runs under `cd backend && PYTHONPATH=. uvx py
+          +test tests/integration/ -v` in CI                             
+      196 +**And** the test fails loudly (not skipped) if any Flask impor
+          +t sneaks into the service import graph                        
+      197 +**And** the verification result is documented in the MCP serve
+          +r README or module docstring                                  
+      198 +                                                              
+      199 +### Story 1.3: Error module with 6-code taxonomy              
+      200 +                                                              
+      201 +As a knowledge worker,                                        
+      202 +I want every MCP tool to raise errors through a single helper 
+          +module mapping domain error codes to JSON-RPC codes,          
+      203 +So that Claude receives consistent, machine-parseable errors r
+          +egardless of which tool failed (D6).                          
+      204 +                                                              
+      205 +**Acceptance Criteria:**                                      
+      206 +                                                              
+      207 +**Given** no error module exists in `backend/mcp_server/`     
+      208 +**When** I create `backend/mcp_server/errors.py` exposing help
+          +ers for the six defined codes (`article_not_found`, `note_not_
+          +found`, `note_path_invalid`, `vault_write_failed`, `database_u
+          +navailable`, `version_save_failed`)                           
+      209 +**Then** each helper raises an exception that FastMCP serializ
+          +es to JSON-RPC codes `-32001` through `-32006` respectively   
+      210 +**And** the module has unit tests covering all six codes and a
+          +sserting the JSON-RPC code + message shape                    
+      211 +**And** the module exposes no raw exception classes to tool co
+          +de — only helper functions that raise                         
+      212 +                                                              
+      213 +### Story 1.4: Lenie article tools (list, get, search, delete)
+      214 +                                                              
+      215 +As a knowledge worker using Claude mobile,                    
+      216 +I want four Lenie tools to discover, read, search, and delete 
+          +unreviewed articles,                                          
+      217 +So that I can triage my reading queue entirely from my phone (
+          +FR1–FR4).                                                     
+      218 +                                                              
+      219 +**Acceptance Criteria:**                                      
+      220 +                                                              
+      221 +**Given** Stories 1.1–1.3 are complete and PostgreSQL is reach
+          +able on `lenie-net`                                           
+      222 +**When** the MCP server registers `lenie_unreviewed_articles`,
+          + `lenie_get_article`, `lenie_search_articles`, and `lenie_dele
+          +te_article` using FastMCP + Pydantic type hints (D7)          
+      223 +**Then** each tool follows the naming convention `<scope>_<ver
+          +b>_<noun>` in `snake_case` and uses a `db_session` variable (o
+          +ne session per invocation)                                    
+      224 +**And** `lenie_unreviewed_articles` returns `{"items": [...], 
+          +"total": N, "limit": L, "offset": O}` with default `limit=6`, 
+          +newest first, supporting filters for source, type, date range,
+          + and size (FR1), and completes within 2 seconds at default lim
+          +it (NFR2)                                                     
+      225 +**And** `lenie_get_article` returns the full markdown content 
+          +and metadata for a given article id/uuid, raising `article_not
+          +_found` via the error module when missing (FR2)               
+      226 +**And** `lenie_search_articles` performs keyword/phrase search
+          + across title, content, and user note, returning title, source
+          +, match snippet, and relevance ordering (FR3)                 
+      227 +**And** `lenie_delete_article` removes the article row atomica
+          +lly (NFR10) and raises `article_not_found` when the id/uuid do
+          +es not match (FR4)                                            
+      228 +**And** all tools return plain `dict`/`list[dict]` with ISO 86
+          +01 UTC timestamps (never epoch integers)                      
+      229 +**And** all tools implement service invocation priority: exist
+          +ing `DocumentService`/`SearchService` first, then added servic
+          +e method, then ORM query — never raw SQL                      
+      230 +**And** each tool invocation logs at `INFO` with tool name, us
+          +er email (from `Cf-Access-Authenticated-User-Email` header whe
+          +n present), and non-sensitive param summary                   
+      231 +**And** tool list/read operations complete within 5 seconds as
+          + measured by response logging (NFR1)                          
+      232 +                                                              
+      233 +### Story 1.5: Health endpoint and Docker healthcheck         
+      234 +                                                              
+      235 +As a knowledge worker,                                        
+      236 +I want the MCP server to expose a `/healthz` endpoint bound to
+          + `127.0.0.1` that Docker uses for health checks,              
+      237 +So that the container is restarted automatically when the serv
+          +er becomes unresponsive, without exposing health data through 
+          +the tunnel (D12).                                             
+      238 +                                                              
+      239 +**Acceptance Criteria:**                                      
+      240 +                                                              
+      241 +**Given** the MCP server from Story 1.1 is running            
+      242 +**When** I add a `/healthz` endpoint bound to `127.0.0.1` only
+          + (not advertised through `streamable-http`) returning `200 OK`
+          + with a small JSON status body                                
+      243 +**Then** the `mcp-server` service in `compose.nas.yaml` declar
+          +es a Docker `HEALTHCHECK` directive invoking the endpoint on l
+          +oopback                                                       
+      244 +**And** `docker ps` reports the container as `healthy` when th
+          +e server accepts requests and `unhealthy` after configurable c
+          +onsecutive failures                                           
+      245 +**And** the `/healthz` endpoint is unreachable from outside th
+          +e container (not exposed via Cloudflare Tunnel)               
+      246 +**And** the endpoint does not require authentication and does 
+          +not leak database or filesystem state beyond a liveness status
+      247 +                                                              
+      248 +### Story 1.6: Cloudflare Tunnel sidecar, auth-blind logging, 
+          +and log rotation                                              
+      249 +                                                              
+      250 +As a knowledge worker,                                        
+      251 +I want Claude mobile to reach the MCP server via an authentica
+          +ted Cloudflare Tunnel, with every tool invocation logging the 
+          +authenticated user email and with container logs rotated to av
+          +oid disk bloat,                                               
+      252 +So that I can configure a Custom Connector in claude.ai and ac
+          +tually invoke tools end-to-end from my phone (FR14, FR15).    
+      253 +                                                              
+      254 +**Acceptance Criteria:**                                      
+      255 +                                                              
+      256 +**Given** stories 1.1, 1.3, 1.4, and 1.5 are complete         
+      257 +**When** I add a `cloudflared` sidecar container in `compose.n
+          +as.yaml` routing public tunnel traffic to `mcp-server:<port>` 
+          +(D10) and the MCP server logs `Cf-Access-Authenticated-User-Em
+          +ail` header values on every tool invocation (D5)              
+      258 +**Then** no MCP server port is exposed directly on the NAS hos
+          +t — only the tunnel accepts public traffic (NFR8)             
+      259 +**And** all traffic between Claude and the MCP server is HTTPS
+          +-encrypted through the tunnel (NFR4)                          
+      260 +**And** access is gated by Cloudflare MCP Server Portal (Zero 
+          +Trust OAuth) before any request reaches the server (NFR7)     
+      261 +**And** the MCP server itself is auth-blind — it trusts the `C
+          +f-Access-Authenticated-User-Email` header but performs no auth
+          +entication logic of its own (D5)                              
+      262 +**And** all three new Docker services (`mcp-server`, `cloudfla
+          +red`, plus any obsidian-headless placeholder) declare `logging
+          +: driver: json-file, options: { max-size: 10m, max-file: 3 }` 
+      263 +**And** a Custom Connector configured in claude.ai against the
+          + tunnel URL successfully initializes and lists all four `lenie
+          +_*` tools (FR14)                                              
+      264 +**And** Claude mobile can invoke each of the four Lenie tools 
+          +through the Custom Connector and receive valid responses (FR15
+          +)                                                             
+      265 +**And** the MCP server implements an MCP protocol version comp
+          +atible with Claude Custom Connector over `streamable-http` (NF
+          +R12)                                                          
+      266 +                                                              
+      267 +---                                                           
+
+● Epic 1 ukończony — 6 stories
+
+  ┌─────┬────────────────────────────────────────┬──────────────────────────┐
+  │  #  │                 Story                  │          FR/AD           │
+  ├─────┼────────────────────────────────────────┼──────────────────────────┤
+  │ 1.1 │ Project skeleton & FastMCP bootstrap   │ seq #1, NFR6, NFR16      │
+  ├─────┼────────────────────────────────────────┼──────────────────────────┤
+  │ 1.2 │ Service-reuse verification (Flask      │ seq #2, D8               │
+  │     │ decoupling)                            │                          │
+  ├─────┼────────────────────────────────────────┼──────────────────────────┤
+  │ 1.3 │ Error module with 6-code taxonomy      │ seq #4, D6               │
+  ├─────┼────────────────────────────────────────┼──────────────────────────┤
+  │ 1.4 │ Lenie article tools                    │ FR1-4, NFR1, NFR2,       │
+  │     │ (list/get/search/delete)               │ NFR10, D7                │
+  ├─────┼────────────────────────────────────────┼──────────────────────────┤
+  │ 1.5 │ Health endpoint + Docker healthcheck   │ seq #11, D12             │
+  ├─────┼────────────────────────────────────────┼──────────────────────────┤
+  │ 1.6 │ Cloudflare Tunnel + auth-blind logging │ FR14, FR15, NFR4, NFR7,  │
+  │     │  + log rotation                        │ NFR8, NFR12, D5, D10     │
+  └─────┴────────────────────────────────────────┴──────────────────────────┘
+
+  Pokrycie Epic 1: FR1, FR2, FR3, FR4, FR14, FR15 ✅
+
+  Zależności wewnątrz Epic 1: 1.1 → {1.2, 1.3, 1.5} (niezależne), 1.3 → 1.4,
+  {1.1–1.5} → 1.6 (tunel zamyka epik). Żadna story nie zależy od przyszłej.
+
+  ---
+  Czy zatwierdzasz Epic 1 i przechodzimy do Epic 2 (Obsidian vault read access)?
+
+✻ Baked for 1m 25s
+
+❯ zatwierdzam                                                                   
+
+● Epic 2: Obsidian Vault Read Access
+
+  Cel: Użytkownik z Claude mobile przegląda foldery i czyta istniejące notatki w
+   02-wiedza/.
+  FR: FR6, FR10 | AD: D4 | NFR: NFR5 (path traversal prevention)
+
+  Proponowany podział (2 stories)
+
+  ┌─────┬────────────────────────┬──────────────────────────────────────────┐
+  │  #  │         Tytuł          │                  Zakres                  │
+  ├─────┼────────────────────────┼──────────────────────────────────────────┤
+  │     │                        │ backend/mcp_server/path_security.py z    │
+  │ 2.1 │ Path security helper   │ wyczerpującymi testami (absolute paths,  │
+  │     │ ensure_within_vault    │ .., symlinks, null bytes). Używany przez │
+  │     │                        │  KAŻDE późniejsze Obsidian tool (D4).    │
+  ├─────┼────────────────────────┼──────────────────────────────────────────┤
+  │     │ Obsidian read-only     │ FR6 + FR10. Każdy input path przechodzi  │
+  │ 2.2 │ tools                  │ przez helper z 2.1. Zwraca treść /       │
+  │     │ (obsidian_read_note,   │ listing z metadanymi, timestamps ISO     │
+  │     │ obsidian_list_notes)   │ 8601 UTC.                                │
+  └─────┴────────────────────────┴──────────────────────────────────────────┘
+
+  Zależność: 2.1 blokuje 2.2. Żadnych zależności od przyszłych stories.
+
+  Zatwierdzasz podział — przechodzę do zapisania, czy chcesz coś zmienić (np.
+  rozbić 2.2 na dwa narzędzia osobno)?
+
+❯ zatwierdzam                                                                   
+
+● Update(_bmad-output\planning-artifacts\epics.md)
+  ⎿  Added 40 lines
+      265  **And** the MCP server implements an MCP protocol version comp
+           atible with Claude Custom Connector over `streamable-http` (NF
+           R12)
+      266  
+      267  ---
+      268 +                                                              
+      269 +## Epic 2: Obsidian Vault Read Access                         
+      270 +                                                              
+      271 +**Goal:** The knowledge worker can browse folders and read exi
+          +sting notes in `02-wiedza/` from Claude mobile — useful alone 
+          +(e.g., referencing prior knowledge in a conversation) before a
+          +ny write capability lands.                                    
+      272 +                                                              
+      273 +### Story 2.1: Path security helper `ensure_within_vault`     
+      274 +                                                              
+      275 +As a knowledge worker,                                        
+      276 +I want every Obsidian tool to route path arguments through a s
+          +ingle security helper that rejects traversal, absolute paths, 
+          +and symlink escapes,                                          
+      277 +So that no MCP tool can read or modify files outside `02-wiedz
+          +a/` (D4, NFR5).                                               
+      278 +                                                              
+      279 +**Acceptance Criteria:**                                      
+      280 +                                                              
+      281 +**Given** no path security module exists in `backend/mcp_serve
+          +r/`                                                           
+      282 +**When** I create `backend/mcp_server/path_security.py` exposi
+          +ng `ensure_within_vault(relative_path: str) -> Path`          
+      283 +**Then** the helper resolves the path relative to the configur
+          +ed vault root and returns the resolved absolute `Path` only wh
+          +en it stays within the vault root after full symlink resolutio
+          +n                                                             
+      284 +**And** the helper raises a domain error mapped to `note_path_
+          +invalid` (via the Story 1.3 error module) for: absolute paths,
+          + paths containing `..` components that escape the root, paths 
+          +containing null bytes, symlinks pointing outside the vault, an
+          +d paths escaping via Windows/WSL drive-letter tricks          
+      285 +**And** the helper logs every rejection at `WARNING` with the 
+          +offending path (truncated if long) and the authenticated user 
+          +email                                                         
+      286 +**And** unit tests cover every rejection class with concrete m
+          +alicious inputs and at least one positive control (valid neste
+          +d path)                                                       
+      287 +**And** the helper is the only sanctioned way for tools to res
+          +olve vault paths — enforced via code review (documented in mod
+          +ule docstring)                                                
+      288 +                                                              
+      289 +### Story 2.2: Obsidian read-only tools (`obsidian_read_note`,
+          + `obsidian_list_notes`)                                       
+      290 +                                                              
+      291 +As a knowledge worker using Claude mobile,                    
+      292 +I want to list folder contents and read note bodies within `02
+          +-wiedza/`,                                                    
+      293 +So that I can reference my existing knowledge notes from my ph
+          +one without opening Obsidian (FR6, FR10).                     
+      294 +                                                              
+      295 +**Acceptance Criteria:**                                      
+      296 +                                                              
+      297 +**Given** Story 2.1 is complete and the Obsidian vault is moun
+          +ted into the `mcp-server` container at the configured vault ro
+          +ot                                                            
+      298 +**When** the MCP server registers `obsidian_read_note(path: st
+          +r)` and `obsidian_list_notes(folder: str)` following the `<sco
+          +pe>_<verb>_<noun>` naming convention                          
+      299 +**Then** both tools pass every caller-supplied path through `e
+          +nsure_within_vault` before any filesystem access (D4)         
+      300 +**And** `obsidian_read_note` returns the full note content plu
+          +s metadata (path relative to vault root, size in bytes, last-m
+          +odified timestamp as ISO 8601 UTC), raising `note_not_found` v
+          +ia the error module when the file is missing                  
+      301 +**And** `obsidian_list_notes` returns `{"items": [...], "total
+          +": N, "limit": L, "offset": O}` where each item contains relat
+          +ive path, type (`file`/`folder`), size, and last-modified time
+          +stamp in ISO 8601 UTC                                         
+      302 +**And** both tools use FastMCP + Pydantic type hints for param
+          +eter validation (D7) and raise domain errors through the Story
+          + 1.3 error module (never raw exceptions)                      
+      303 +**And** both tools log invocations at `INFO` with tool name, u
+          +ser email, and param summary                                  
+      304 +**And** neither tool reveals absolute host paths in return val
+          +ues or error messages (only vault-relative paths)             
+      305 +**And** list/read operations complete within 5 seconds as meas
+          +ured by response logging (NFR1)                               
+      306 +                                                              
+      307 +---                                                           
+
+● Epic 2 ukończony — 2 stories
+
+  ┌─────┬───────────────────────────────────────────────────┬───────────────┐
+  │  #  │                       Story                       │     FR/AD     │
+  ├─────┼───────────────────────────────────────────────────┼───────────────┤
+  │ 2.1 │ Path security helper ensure_within_vault          │ D4, NFR5      │
+  ├─────┼───────────────────────────────────────────────────┼───────────────┤
+  │ 2.2 │ Obsidian read-only tools (obsidian_read_note,     │ FR6, FR10,    │
+  │     │ obsidian_list_notes)                              │ D7, NFR1      │
+  └─────┴───────────────────────────────────────────────────┴───────────────┘
+
+  Pokrycie Epic 2: FR6, FR10 ✅
+
+  ---
+  Epic 3: Obsidian Note Authoring with Version History
+
+  Cel: Tworzenie/nadpisywanie/usuwanie notatek z automatycznym wersjonowaniem i
+  audytem historii (unified diffs).
+  FR: FR7, FR8, FR9, FR11, FR12, FR13 | AD: D1, D2, D9 | NFR: NFR3, NFR9, NFR11
+
+  Proponowany podział (4 stories)
+
+  ┌─────┬────────────────────────────┬──────────────────────────────────────┐
+  │  #  │           Tytuł            │                Zakres                │
+  ├─────┼────────────────────────────┼──────────────────────────────────────┤
+  │     │ Alembic migration +        │ D1, seq #3. Nowa tabela              │
+  │ 3.1 │ ObsidianNoteVersion ORM    │ obsidian_note_versions, model        │
+  │     │ model                      │ SQLAlchemy.                          │
+  ├─────┼────────────────────────────┼──────────────────────────────────────┤
+  │     │ Write coordinator          │ FR8, FR11, FR12, D2, NFR3, NFR9.     │
+  │ 3.2 │ (obsidian_write_note —     │ Pattern: DB version insert → commit  │
+  │     │ overwrite)                 │ → file overwrite; orphan versions    │
+  │     │                            │ logged jako WARNING.                 │
+  ├─────┼────────────────────────────┼──────────────────────────────────────┤
+  │     │                            │ FR7, FR9. Też przechodzą przez write │
+  │ 3.3 │ obsidian_create_note +     │  coordinator (D2) — create zapisuje  │
+  │     │ obsidian_delete_note       │ wersję pustą jako "before", delete   │
+  │     │                            │ zapisuje treść przed usunięciem.     │
+  ├─────┼────────────────────────────┼──────────────────────────────────────┤
+  │     │ Note history tool          │ FR13, D9. Server-side                │
+  │ 3.4 │ (obsidian_note_history +   │ difflib.unified_diff, default limit  │
+  │     │ unified diffs)             │ 10, newest first. NFR11: brak purga. │
+  └─────┴────────────────────────────┴──────────────────────────────────────┘
+
+  Zależności: 3.1 → 3.2, 3.3, 3.4. 3.2/3.3/3.4 wzajemnie niezależne po 3.1.
+
+  Pytania:
+  1. Czy łączyć FR7+FR9 w jednej story (3.3) jest OK, czy rozbić?
+  2. Czy obsidian_write_note w 3.2 to tylko overwrite istniejącej (FR8), a
+  create osobno w 3.3? Tak sugeruje PRD/Architecture — potwierdzasz?
+
+✻ Worked for 38s
+
+❯ 1. ok, 2. tak                                                                 
+
+● Update(_bmad-output\planning-artifacts\epics.md)
+  ⎿  Added 80 lines
+      305  **And** list/read operations complete within 5 seconds as meas
+           ured by response logging (NFR1)
+      306  
+      307  ---
+      308 +                                                              
+      309 +## Epic 3: Obsidian Note Authoring with Version History       
+      310 +                                                              
+      311 +**Goal:** The knowledge worker can create, overwrite, and dele
+          +te notes in `02-wiedza/` from Claude mobile, with every write 
+          +automatically preceded by a version record (user prompt, conte
+          +nt before/after, source article), and can retrieve server-gene
+          +rated unified diffs for audit.                                
+      312 +                                                              
+      313 +### Story 3.1: Alembic migration and `ObsidianNoteVersion` ORM
+          + model                                                        
+      314 +                                                              
+      315 +As a knowledge worker,                                        
+      316 +I want a dedicated table to store every pre-write snapshot of 
+          +an Obsidian note along with the triggering context,           
+      317 +So that subsequent write tools can persist immutable version h
+          +istory before overwriting any file (D1).                      
+      318 +                                                              
+      319 +**Acceptance Criteria:**                                      
+      320 +                                                              
+      321 +**Given** no `obsidian_note_versions` table exists in the data
+          +base                                                          
+      322 +**When** I add `ObsidianNoteVersion` to `backend/library/db/mo
+          +dels.py` and create a dedicated Alembic migration             
+      323 +**Then** the table stores, at minimum: primary key, note path 
+          +(relative to vault root), user prompt, content before (nullabl
+          +e for create), content after (nullable for delete), source art
+          +icle id/uuid (nullable), authenticated user email, and created
+          +-at timestamp (UTC)                                           
+      324 +**And** indexes support efficient history queries by note path
+          + and by created-at DESC                                       
+      325 +**And** the migration runs cleanly `up` and `down` against the
+          + NAS PostgreSQL (`192.168.200.7:5434`, database `lenie-ai`) — 
+          +verification is done against NAS, not local Docker            
+      326 +**And** the migration does not alter the `web_documents` or `w
+          +ebsites_embeddings` tables                                    
+      327 +**And** the ORM model is importable under the `cd backend && P
+          +YTHONPATH=. uvx pytest` workflow and covered by a round-trip u
+          +nit test (insert + select)                                    
+      328 +**And** the `.venv_wsl` is resynced if any new Python dependen
+          +cy is introduced by the migration                             
+      329 +                                                              
+      330 +### Story 3.2: Write coordinator for `obsidian_write_note` (ov
+          +erwrite)                                                      
+      331 +                                                              
+      332 +As a knowledge worker,                                        
+      333 +I want overwriting an existing note to first persist a version
+          + record and only then write the file,                         
+      334 +So that no pre-write state can be lost and orphan versions are
+          + detectable if the file write fails (FR8, FR11, FR12, D2, NFR9
+          +).                                                            
+      335 +                                                              
+      336 +**Acceptance Criteria:**                                      
+      337 +                                                              
+      338 +**Given** Stories 2.1 and 3.1 are complete                    
+      339 +**When** the MCP server registers `obsidian_write_note(path: s
+          +tr, content: str, user_prompt: str, source_article_id: str | N
+          +one)` using FastMCP + Pydantic (D7)                           
+      340 +**Then** the path passes through `ensure_within_vault` before 
+          +any DB or filesystem access (D4)                              
+      341 +**And** the tool raises `note_not_found` via the Story 1.3 err
+          +or module if the file does not already exist (create is handle
+          +d by Story 3.3)                                               
+      342 +**And** the write coordinator executes in this exact order: (1
+          +) read current file content, (2) INSERT into `obsidian_note_ve
+          +rsions` with content-before = current content and content-afte
+          +r = new content, (3) COMMIT the DB transaction, (4) overwrite 
+          +the file on disk; no file write occurs before DB commit (NFR9)
+      343 +**And** if the DB INSERT or COMMIT fails, the tool raises `ver
+          +sion_save_failed` and does not touch the file                 
+      344 +**And** if the file write fails after a successful DB commit, 
+          +the tool raises `vault_write_failed` and logs an orphan versio
+          +n record detection at `WARNING` (content-after exists in DB bu
+          +t not on disk)                                                
+      345 +**And** the full operation (including version save) completes 
+          +within 3 seconds as measured by response logging that includes
+          + DB write timing (NFR3)                                       
+      346 +**And** tool invocations are logged at `INFO` with tool name, 
+          +user email, note path, and prompt length (prompt content itsel
+          +f not logged verbatim)                                        
+      347 +**And** the tool returns a plain `dict` describing the resulti
+          +ng note (path, new size, last-modified ISO 8601 UTC timestamp,
+          + version id)                                                  
+      348 +                                                              
+      349 +### Story 3.3: Create and delete tools (`obsidian_create_note`
+          +, `obsidian_delete_note`)                                     
+      350 +                                                              
+      351 +As a knowledge worker,                                        
+      352 +I want to create new notes and delete existing ones from Claud
+          +e mobile with the same versioning guarantees as overwrite,    
+      353 +So that every state transition of a note is captured in histor
+          +y, including initial creation and final deletion (FR7, FR9, FR
+          +11, FR12, NFR9).                                              
+      354 +                                                              
+      355 +**Acceptance Criteria:**                                      
+      356 +                                                              
+      357 +**Given** Stories 2.1, 3.1, and 3.2 are complete              
+      358 +**When** the MCP server registers `obsidian_create_note(path, 
+          +content, user_prompt, source_article_id)` and `obsidian_delete
+          +_note(path, user_prompt)`                                     
+      359 +**Then** both tools route path arguments through `ensure_withi
+          +n_vault` (D4) and raise via the error module (D6)             
+      360 +**And** `obsidian_create_note` raises `note_path_invalid` thro
+          +ugh the error module if a file already exists at the target pa
+          +th (no silent overwrite — that is Story 3.2's job)            
+      361 +**And** `obsidian_create_note` follows the D2 coordinator patt
+          +ern with content-before = NULL and content-after = the new con
+          +tent, committing the version record before writing the file (N
+          +FR9)                                                          
+      362 +**And** `obsidian_delete_note` raises `note_not_found` via the
+          + error module if the file does not exist                      
+      363 +**And** `obsidian_delete_note` follows the D2 coordinator patt
+          +ern with content-before = current content and content-after = 
+          +NULL, committing the version record before deleting the file f
+          +rom disk (NFR9)                                               
+      364 +**And** both tools complete within 3 seconds including version
+          + save (NFR3)                                                  
+      365 +**And** both tools log invocations at `INFO` and detect orphan
+          + versions at `WARNING` when a filesystem operation fails after
+          + a successful DB commit                                       
+      366 +**And** each tool returns a plain `dict` with the resulting st
+          +ate (path, version id, and for create: new size + last-modifie
+          +d timestamp)                                                  
+      367 +                                                              
+      368 +### Story 3.4: Note history with server-side unified diffs (`o
+          +bsidian_note_history`)                                        
+      369 +                                                              
+      370 +As a knowledge worker,                                        
+      371 +I want to retrieve the version history of a note with ready-to
+          +-read unified diffs between consecutive versions,             
+      372 +So that I can audit how a note evolved without computing diffs
+          + on the client (FR13, D9, NFR11).                             
+      373 +                                                              
+      374 +**Acceptance Criteria:**                                      
+      375 +                                                              
+      376 +**Given** Stories 3.1–3.3 are complete and at least one note h
+          +as multiple versions                                          
+      377 +**When** the MCP server registers `obsidian_note_history(path:
+          + str, limit: int = 10, offset: int = 0)`                      
+      378 +**Then** the path passes through `ensure_within_vault` (D4)   
+      379 +**And** the tool returns `{"items": [...], "total": N, "limit"
+          +: L, "offset": O}` with items ordered newest first            
+      380 +**And** each item contains: version id, created-at (ISO 8601 U
+          +TC), authenticated user email, user prompt, source article id 
+          +(nullable), and a `diff` field containing a server-generated `
+          +difflib.unified_diff` between content-before and content-after
+      381 +**And** diff generation happens server-side — the client never
+          + receives raw content-before/content-after in the normal histo
+          +ry response                                                   
+      382 +**And** default `limit=10` and pagination works (`offset` para
+          +meter honored)                                                
+      383 +**And** no version records are purged automatically — history 
+          +is retained indefinitely (NFR11)                              
+      384 +**And** the tool raises `note_not_found` if no versions exist 
+          +for the given path (and the file itself does not exist either)
+      385 +**And** the tool logs invocations at `INFO` with tool name, us
+          +er email, note path, and the returned item count              
+      386 +                                                              
+      387 +---                                                           
+
+● Epic 3 ukończony — 4 stories
+
+  ┌─────┬─────────────────────────────────────────┬─────────────────────────┐
+  │  #  │                  Story                  │          FR/AD          │
+  ├─────┼─────────────────────────────────────────┼─────────────────────────┤
+  │ 3.1 │ Alembic migration + ObsidianNoteVersion │ D1                      │
+  │     │  ORM                                    │                         │
+  ├─────┼─────────────────────────────────────────┼─────────────────────────┤
+  │ 3.2 │ Write coordinator (obsidian_write_note  │ FR8, FR11, FR12, D2,    │
+  │     │ overwrite)                              │ NFR3, NFR9              │
+  ├─────┼─────────────────────────────────────────┼─────────────────────────┤
+  │ 3.3 │ Create + delete tools                   │ FR7, FR9, FR11, FR12,   │
+  │     │                                         │ NFR3, NFR9              │
+  ├─────┼─────────────────────────────────────────┼─────────────────────────┤
+  │ 3.4 │ Note history + unified diffs            │ FR13, D9, NFR11         │
+  └─────┴─────────────────────────────────────────┴─────────────────────────┘
+
+  Pokrycie Epic 3: FR7, FR8, FR9, FR11, FR12, FR13 ✅
+
+  ---
+  Epic 4: End-to-End Review Workflow & Multi-Device Sync
+
+  Cel: Domknięcie pętli artykuł→notatka: zapis notatki auto-linkuje do artykułu,
+   mark_reviewed flipuje status, zmiany propagują na wszystkie urządzenia przez
+  Obsidian Sync bez potrzeby PC online. Zawiera obowiązkowy E2E test walidujący
+  PRD MVP gate.
+  FR: FR5 | AD: D11 + E2E mandate | NFR: NFR13, NFR14, NFR15
+
+  Proponowany podział (3 stories)
+
+  #: 4.1
+  Tytuł: Auto-link note path to article + mark_reviewed
+  Zakres: FR5. Przy każdym obsidian_write_note/obsidian_create_note z
+    source_article_id — zapis path do web_documents.obsidian_note_paths +
+    reviewed_at. Nowy tool lenie_mark_reviewed (lub flag w write tools).
+  ────────────────────────────────────────
+  #: 4.2
+  Tytuł: obsidian-headless sync container + log rotation
+  Zakres: D11, NFR13, NFR14, NFR15. Pinned
+    Belphemur/obsidian-headless-sync-docker tag, mount vault, log rotation.
+  ────────────────────────────────────────
+  #: 4.3
+  Tytuł: Mandatory E2E integration test (PRD MVP gate)
+  Zakres: Validation resolution. Full chain: Claude mobile → MCP → DB+vault →
+    Obsidian Sync → drugi device. Dowód MVP gate.
+
+  Pytania:
+  1. Czy mark_reviewed jako osobne narzędzie (lenie_mark_reviewed), czy
+  auto-flip przy write z source_article_id, czy oba (auto-flip + ręczny tool)?
+  2. E2E test — czy jest to uruchomienie manualne (runbook) czy automat w CI?
+  (Biorąc pod uwagę że CI jest wyłączone — runbook?)
+
+✻ Crunched for 54s
+
+❯ 1. oba, 2. manualnie                                                          
+
+● Update(_bmad-output\planning-artifacts\epics.md)
+  ⎿  Added 68 lines
+      385  **And** the tool logs invocations at `INFO` with tool name, us
+           er email, note path, and the returned item count
+      386  
+      387  ---
+      388 +                                                              
+      389 +## Epic 4: End-to-End Review Workflow & Multi-Device Sync     
+      390 +                                                              
+      391 +**Goal:** The knowledge worker closes the article→note loop on
+          + mobile — writing a note auto-links it to the source article, 
+          +`mark_reviewed` flips article state, and vault changes propaga
+          +te to phone and PC via Obsidian Sync without PC needing to be 
+          +online. Delivers the PRD MVP gate via a mandatory manual end-t
+          +o-end integration test.                                       
+      392 +                                                              
+      393 +### Story 4.1: Auto-link note path to article and `lenie_mark_
+          +reviewed` tool                                                
+      394 +                                                              
+      395 +As a knowledge worker,                                        
+      396 +I want writing an Obsidian note with a source article to autom
+          +atically associate the note path with that article, and I want
+          + an explicit tool to mark an article as reviewed,             
+      397 +So that the article→note relationship is captured without manu
+          +al bookkeeping and I can flip review state either implicitly (
+          +via note write) or explicitly (via a dedicated tool) (FR5).   
+      398 +                                                              
+      399 +**Acceptance Criteria:**                                      
+      400 +                                                              
+      401 +**Given** Stories 3.2 and 3.3 are complete and `web_documents`
+          + has the `obsidian_note_paths` and `reviewed_at` columns popul
+          +ated by the existing schema                                   
+      402 +**When** `obsidian_write_note` or `obsidian_create_note` is in
+          +voked with a non-null `source_article_id`                     
+      403 +**Then** the article row referenced by `source_article_id` has
+          + the written note path appended to `obsidian_note_paths` (idem
+          +potent — no duplicate entries if the same path is already pres
+          +ent)                                                          
+      404 +**And** the note-path association is written atomically in the
+          + same DB transaction as the version record (NFR10) — partial w
+          +rites are not permitted                                       
+      405 +**And** the tool raises `article_not_found` via the Story 1.3 
+          +error module when `source_article_id` does not match any artic
+          +le                                                            
+      406 +**When** the MCP server additionally registers `lenie_mark_rev
+          +iewed(article_id: str)`                                       
+      407 +**Then** the tool sets `reviewed_at` on the referenced article
+          + to the current UTC timestamp and returns the updated article 
+          +stub (id, reviewed_at)                                        
+      408 +**And** `lenie_mark_reviewed` raises `article_not_found` via t
+          +he error module when the id does not match                    
+      409 +**And** both auto-link behavior and explicit marking coexist: 
+          +`obsidian_write_note`/`obsidian_create_note` with `source_arti
+          +cle_id` append to `obsidian_note_paths` but do NOT automatical
+          +ly set `reviewed_at` — `reviewed_at` only flips when `lenie_ma
+          +rk_reviewed` is explicitly invoked                            
+      410 +**And** all three tools log invocations at `INFO` with tool na
+          +me, user email, article id, and (for write tools) note path   
+      411 +**And** unit and integration tests cover: successful auto-link
+          +, idempotent re-link, missing article → error, explicit mark-r
+          +eviewed, and the interaction ordering (auto-link does not impl
+          +y reviewed)                                                   
+      412 +                                                              
+      413 +### Story 4.2: `obsidian-headless` sync sidecar container with
+          + log rotation                                                 
+      414 +                                                              
+      415 +As a knowledge worker,                                        
+      416 +I want an `obsidian-headless` Docker container running on the 
+          +NAS that continuously syncs the vault to Obsidian Sync,       
+      417 +So that changes written by the MCP server propagate to my phon
+          +e and PC through NAS-driven sync without requiring my PC to be
+          + online (D11, NFR13, NFR14, NFR15).                           
+      418 +                                                              
+      419 +**Acceptance Criteria:**                                      
+      420 +                                                              
+      421 +**Given** Epic 1 has introduced `compose.nas.yaml` with `mcp-s
+          +erver` and `cloudflared` services                             
+      422 +**When** I add an `obsidian-headless` service to `compose.nas.
+          +yaml` using a pinned community image tag from `Belphemur/obsid
+          +ian-headless-sync-docker` (never `:latest`) (D11)             
+      423 +**Then** the container mounts the same Obsidian vault volume t
+          +hat `mcp-server` writes to, with matching file permissions so 
+          +both containers can coexist on the vault                      
+      424 +**And** the container is configured with the required Obsidian
+          + Sync credentials via environment variables (no credentials in
+          + the image — NFR6) and the actual values are stored in Vault/S
+          +SM (not `.env` beyond bootstrap) per the project's secrets wor
+          +kflow                                                         
+      425 +**And** the container declares `logging: driver: json-file, op
+          +tions: { max-size: 10m, max-file: 3 }` (log rotation resolutio
+          +n)                                                            
+      426 +**And** a file modification written by `mcp-server` to the vau
+          +lt propagates to Obsidian Sync within 60 seconds, as measured 
+          +by comparing file modification timestamps between the NAS and 
+          +a synced device (NFR13)                                       
+      427 +**And** the sync chain works with the PC offline — a change wr
+          +itten via MCP from the phone reaches another synced device wit
+          +hout the PC ever being online during the window (NFR14)       
+      428 +**And** the Obsidian vault on the NAS is continuously bidirect
+          +ionally synchronized with all configured devices via Obsidian 
+          +Sync (NFR15)                                                  
+      429 +**And** a deployment runbook entry in the docs/ tree documents
+          + how to obtain/rotate the Obsidian Sync credentials for this c
+          +ontainer                                                      
+      430 +**And** container startup and successful sync initialization a
+          +re observable in container logs (used as manual health check, 
+          +since Obsidian Sync exposes no health endpoint)               
+      431 +                                                              
+      432 +### Story 4.3: Manual end-to-end integration test (PRD MVP gat
+          +e)                                                            
+      433 +                                                              
+      434 +As a knowledge worker,                                        
+      435 +I want a documented manual end-to-end test that validates the 
+          +full sync chain — Claude mobile → MCP → DB + vault → Obsidian 
+          +Sync → second device,                                         
+      436 +So that I can explicitly verify the PRD MVP gate has been met 
+          +before calling Sprint 10 done (E2E test mandate from validatio
+          +n).                                                           
+      437 +                                                              
+      438 +**Acceptance Criteria:**                                      
+      439 +                                                              
+      440 +**Given** Stories 1.1–4.2 are complete and deployed to the NAS
+          + stack                                                        
+      441 +**When** a runbook is added under `docs/` (e.g. `docs/CICD/NAS
+          +_MCP_E2E_Test.md` or similar) describing the MVP-gate verifica
+          +tion procedure                                                
+      442 +**Then** the runbook is executed manually (no CI automation — 
+          +CI is currently inactive per project docs) and records pass/fa
+          +il in an attached checklist                                   
+      443 +**And** the runbook covers at least these verification steps, 
+          +in order:                                                     
+      444 +  1. Claude mobile (via Custom Connector) invokes `lenie_unrev
+          +iewed_articles` and receives a list of unreviewed articles    
+      445 +  2. Claude mobile invokes `lenie_get_article` on one article 
+          +and receives its full markdown                                
+      446 +  3. Claude mobile invokes `obsidian_create_note` or `obsidian
+          +_write_note` against `02-wiedza/` with that article's id as `s
+          +ource_article_id` and a user prompt                           
+      447 +  4. The new/updated note appears on a second synced device (e
+          +.g., laptop Obsidian client) within 60 seconds (NFR13)        
+      448 +  5. The article's `obsidian_note_paths` column in the NAS Pos
+          +tgreSQL now contains the written note path (verified via `psql
+          +` against NAS: `PGPASSWORD=postgres "/c/Program Files/PostgreS
+          +QL/18/bin/psql.exe" -h 192.168.200.7 -p 5434 -U postgres -d le
+          +nie-ai`)                                                      
+      449 +  6. A version row exists in `obsidian_note_versions` with mat
+          +ching user prompt and source article id                       
+      450 +  7. Claude mobile invokes `lenie_mark_reviewed` for the same 
+          +article and `reviewed_at` is now set in the DB                
+      451 +  8. The entire round-trip (steps 3 → 4) completes with the PC
+          + kept offline, proving NAS-driven sync (NFR14)                
+      452 +**And** the runbook explicitly calls out that this test is man
+          +ual and mandatory before declaring the MVP gate met — it is no
+          +t optional and must be re-run after any change that touches th
+          +e sync chain                                                  
+      453 +**And** a pass of this runbook is the formal definition of Spr
+          +int 10 acceptance                                             
+      454 +                                                              
+      455 +---                                                           
+
+● Update(_bmad-output\planning-artifacts\epics.md)
+  ⎿  Added 1 line
+      2  stepsCompleted:
+      3    - step-01-validate-prerequisites
+      4    - step-02-design-epics
+      5 +  - step-03-create-stories                                      
+      6  sprintNumber: 10
+      7  sprintName: 'MCP Server — mobile knowledge workflow'
+      8  status: in-progress
+
+● Epic 4 ukończony — 3 stories
+
+  ┌─────┬───────────────────────────────────────────┬───────────────────────┐
+  │  #  │                   Story                   │         FR/AD         │
+  ├─────┼───────────────────────────────────────────┼───────────────────────┤
+  │ 4.1 │ Auto-link + lenie_mark_reviewed           │ FR5, NFR10            │
+  ├─────┼───────────────────────────────────────────┼───────────────────────┤
+  │ 4.2 │ obsidian-headless sync container + log    │ D11, NFR13, NFR14,    │
+  │     │ rotation                                  │ NFR15                 │
+  ├─────┼───────────────────────────────────────────┼───────────────────────┤
+  │ 4.3 │ Manual E2E integration test (MVP gate)    │ E2E mandate, NFR13,   │
+  │     │                                           │ NFR14                 │
+  └─────┴───────────────────────────────────────────┴───────────────────────┘
+
+  Pokrycie Epic 4: FR5 ✅
+
+  ---
+  Podsumowanie — wszystkie 4 epiki, 15 stories
+
+  ┌───────────────────────────────┬─────────┬───────────────────────────────┐
+  │             Epic              │ Stories │          FR covered           │
+  ├───────────────────────────────┼─────────┼───────────────────────────────┤
+  │ 1. MCP Foundation + Lenie     │ 6       │ FR1, FR2, FR3, FR4, FR14,     │
+  │                               │         │ FR15                          │
+  ├───────────────────────────────┼─────────┼───────────────────────────────┤
+  │ 2. Obsidian read access       │ 2       │ FR6, FR10                     │
+  ├───────────────────────────────┼─────────┼───────────────────────────────┤
+  │ 3. Obsidian authoring +       │ 4       │ FR7, FR8, FR9, FR11, FR12,    │
+  │ history                       │         │ FR13                          │
+  ├───────────────────────────────┼─────────┼───────────────────────────────┤
+  │ 4. E2E workflow + sync        │ 3       │ FR5                           │
+  └───────────────────────────────┴─────────┴───────────────────────────────┘
+
+  Pokrycie FR: 15/15 ✅
+
+  ---
+  Select an Option: [A] Advanced Elicitation [P] Party Mode [C] Continue (do
+  kroku 04 — final validation)
+
+✻ Brewed for 54s
+
+❯ C                                                                             
+
+  Read 1 file (ctrl+o to expand)
+
+● Krok 4: Walidacja końcowa
+
+  1. FR Coverage — 15/15 ✅
+
+  Wszystkie FR zmapowane w coverage map; każde AC odnosi się do konkretnego FR.
+
+  2. NFR Coverage — 16/16 ✅
+
+  ┌──────┬──────────┬───────┬──────────┐
+  │ NFR  │  Story   │  NFR  │  Story   │
+  ├──────┼──────────┼───────┼──────────┤
+  │ NFR1 │ 1.4, 2.2 │ NFR9  │ 3.2, 3.3 │
+  ├──────┼──────────┼───────┼──────────┤
+  │ NFR2 │ 1.4      │ NFR10 │ 1.4, 4.1 │
+  ├──────┼──────────┼───────┼──────────┤
+  │ NFR3 │ 3.2, 3.3 │ NFR11 │ 3.4      │
+  ├──────┼──────────┼───────┼──────────┤
+  │ NFR4 │ 1.6      │ NFR12 │ 1.6      │
+  ├──────┼──────────┼───────┼──────────┤
+  │ NFR5 │ 2.1      │ NFR13 │ 4.2, 4.3 │
+  ├──────┼──────────┼───────┼──────────┤
+  │ NFR6 │ 1.1, 4.2 │ NFR14 │ 4.2, 4.3 │
+  ├──────┼──────────┼───────┼──────────┤
+  │ NFR7 │ 1.6      │ NFR15 │ 4.2      │
+  ├──────┼──────────┼───────┼──────────┤
+  │ NFR8 │ 1.6      │ NFR16 │ 1.1      │
+  └──────┴──────────┴───────┴──────────┘
+
+  3. Architecture compliance ✅
+
+  - Brownfield (brak starter) → Story 1.1 = skeleton + uv add mcp ✓
+  - D1-D12 pokryte w odpowiednich stories ✓
+  - Implementation sequence #1–13 zachowana w kolejności stories
+
+  4. Story quality ✅
+
+  - Wszystkie Given/When/Then
+  - Każda rozmiarem na pojedynczą sesję dev-agenta
+  - Referencje do FR/NFR/AD
+  - Brak forward-dependencies
+
+  5. Database/entity creation — just-in-time ✅
+
+  Jedyna nowa tabela obsidian_note_versions utworzona w Story 3.1 dopiero gdy
+  potrzebna (nie upfront).
+
+  6. Epic independence ✅
+
+  - Epic 1 samodzielne (Lenie article triage z mobile)
+  - Epic 2 samodzielne (read-only vault access)
+  - Epic 3 buduje na Epic 2 (path security), ale nie wymaga Epic 4
+  - Epic 4 zamyka MVP — wymaga Epic 1 (artykuły) + Epic 3 (write), ale nie
+  odwrotnie
+
+  7. Within-epic dependencies — forward-free ✅
+
+  - Epic 1: 1.1 → {1.2, 1.3, 1.5} → 1.4 (po 1.3) → 1.6
+  - Epic 2: 2.1 → 2.2
+  - Epic 3: 3.1 → {3.2, 3.3, 3.4}
+  - Epic 4: {4.1, 4.2} → 4.3
+
+● Update(_bmad-output\planning-artifacts\epics.md)
+  ⎿  Added 3 lines
+       3    - step-01-validate-prerequisites
+       4    - step-02-design-epics
+       5    - step-03-create-stories
+       6 +  - step-04-final-validation                                   
+       7 +status: complete                                               
+       8 +completedAt: '2026-04-13'                                      
+       9  sprintNumber: 10
+      10  sprintName: 'MCP Server — mobile knowledge workflow'
+      11  status: in-progress
+
+● Update(_bmad-output\planning-artifacts\epics.md)
+  ⎿  Error editing file
+
+● Update(_bmad-output\planning-artifacts\epics.md)
+  ⎿  Added 2 lines, removed 1 line
+       8  completedAt: '2026-04-13'
+       9  sprintNumber: 10
+      10  sprintName: 'MCP Server — mobile knowledge workflow'
+      11 -status: in-progress                                            
+      11 +status: complete                                               
+      12  startedAt: '2026-04-13'
+      13 +completedAt: '2026-04-13'                                      
+      14  inputDocuments:
+      15    - _bmad-output/planning-artifacts/prd.md
+      16    - _bmad-output/planning-artifacts/architecture.md
+
+● Walidacja przeszła wszystkie bramki. Frontmatter zaktualizowany (status: 
+  complete, completedAt: 2026-04-13, wszystkie 4 kroki w stepsCompleted).
+
+  All validations complete! [C] Complete Workflow
+
+  ---
+  Podsumowanie workflow
+
+  Output: _bmad-output/planning-artifacts/epics.md
+  - 4 epiki organizowane wg wartości dla użytkownika
+  - 15 stories z kompletnymi Given/When/Then ACs
+  - 15/15 FR i 16/16 NFR pokryte
+  - D1–D12 z Architecture wplecione w konkretne stories
+  - PRD MVP gate reprezentowany przez Story 4.3 (manual E2E runbook)
+
+  Chętnie odpowiem na pytania dotyczące stworzonych epików i stories, albo
+  pomogę z kolejnym krokiem (np. tworzenie Story Context XML dla dev-agenta, PR
+  z archiwizacją poprzedniego epics, commit zmian).
+
+✻ Cooked for 46s
+❯ C                                                                             
+
+● Workflow create-epics-and-stories zakończony ✅
+
+  ---
+  Artefakt
+
+  _bmad-output/planning-artifacts/epics.md — Sprint 10: MCP Server — mobile 
+  knowledge workflow
+
+  Statystyki
+
+  - 4 epiki (User-value organized)
+  - 15 stories z Given/When/Then ACs
+  - 15/15 FR + 16/16 NFR pokryte
+  - 12/12 architecture decisions (D1–D12) wplecione w stories
+  - 13/13 kroków implementation sequence zmapowane
+
+  Co dalej — typowe następne kroki BMad
+
+  1. Commit + feature branch — zgodnie z Twoim workflow (feat/sprint10-mcp-epics
+   lub podobny)
+  2. Story Context XML per story — generowanie kontekstu dla dev-agenta (kolejny
+   workflow BMad, jeśli istnieje w instalacji)
+  3. Sharding — jeśli wolisz epics.md rozbity na pliki per-epic (bmad-shard-doc
+  skill)
+  4. Start dev-pracy — Story 1.1 (Project skeleton & FastMCP bootstrap) jako
+  pierwszy ticket
+
+  Chętnie pomogę z którymkolwiek z powyższych lub odpowiem na pytania o
+  konkretną story. Co robimy?

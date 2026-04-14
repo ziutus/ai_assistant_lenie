@@ -88,7 +88,7 @@ URL_ADDED → DOCUMENT_INTO_DATABASE → NEED_CLEAN_TEXT → NEED_CLEAN_MD → T
 
 Special states:
 - `NEED_TRANSCRIPTION` / `TRANSCRIPTION_IN_PROGRESS` / `TRANSCRIPTION_DONE` — for audio/video content
-- `NEED_MANUAL_REVIEW` — requires human review
+- `NEED_MANUAL_REVIEW` — automatic text cleanup failed; needs manual removal of ads, comments, and spam
 - `ERROR` — processing failed (details in `document_state_error`)
 
 ## Document Types

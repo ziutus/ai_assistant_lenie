@@ -99,7 +99,7 @@ class WebDocumentResponse(BaseModel):
     document_length: int | None = None
     transcript_job_id: str | None = None
     ai_summary_needed: bool | None = None
-    s3_uuid: str | None = None
+    uuid: str | None = None
     project: str | None = None
 
 class WebDocumentListItem(BaseModel):
@@ -112,7 +112,7 @@ class WebDocumentListItem(BaseModel):
     document_state_error: str | None = None
     note: str | None = None
     project: str | None = None
-    s3_uuid: str | None = None
+    uuid: str | None = None
 
 class SearchResultItem(BaseModel):
     id: int

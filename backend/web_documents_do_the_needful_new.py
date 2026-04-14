@@ -188,8 +188,9 @@ if __name__ == '__main__':
                             metadata["ai_summary_needed"] = link_data["makeAISummary"]
                         if 'note' in link_data:
                             metadata["note"] = link_data["note"]
-                        if 's3_uuid' in link_data:
-                            metadata["s3_uuid"] = link_data["s3_uuid"]
+                        uuid_val = link_data.get("uuid") or link_data.get("s3_uuid")
+                        if uuid_val:
+                            metadata["uuid"] = uuid_val
                         if 'title' in link_data:
                             metadata["title"] = link_data["title"]
                         if 'paywall' in link_data:
@@ -280,7 +281,7 @@ if __name__ == '__main__':
                 website_id = int(page_info[0])
                 url = page_info[1]
                 website_document_type = page_info[2]
-                s3_uuid = page_info[3]
+                doc_uuid = page_info[3]
                 progress = round((website_nb / websites_data_len) * 100)
 
                 print(f"Processing >{website_document_type}< {website_id} ({website_nb} from {websites_data_len} {progress}%):"
@@ -291,10 +292,10 @@ if __name__ == '__main__':
                         print(f"Document type is not webpage or link: {website_document_type}, ignoring")
                         continue
 
-                    if website_document_type == "webpage" and s3_uuid:
+                    if website_document_type == "webpage" and doc_uuid:
                         try:
-                            print(f"* Reading text of article from S3 bucket >{cfg.get('AWS_S3_WEBSITE_CONTENT')}< and file: >{s3_uuid}.txt<", end=" ")
-                            obj = s3.get_object(Bucket=cfg.get("AWS_S3_WEBSITE_CONTENT"), Key=f"{s3_uuid}.txt")
+                            print(f"* Reading text of article from S3 bucket >{cfg.get('AWS_S3_WEBSITE_CONTENT')}< and file: >{doc_uuid}.txt<", end=" ")
+                            obj = s3.get_object(Bucket=cfg.get("AWS_S3_WEBSITE_CONTENT"), Key=f"{doc_uuid}.txt")
                             content = obj['Body'].read().decode('utf-8')
                             web_doc = WebDocument.get_by_url(session, url)
                             if web_doc is None:
@@ -303,13 +304,13 @@ if __name__ == '__main__':
                             web_doc.text = content
                             print('[DONE]')
 
-                            print(f"* Reading text of article from S3 bucket >{cfg.get('AWS_S3_WEBSITE_CONTENT')}< and file: >{s3_uuid}.html<", end=" ")
-                            obj = s3.get_object(Bucket=cfg.get('AWS_S3_WEBSITE_CONTENT'), Key=f"{s3_uuid}.html")
+                            print(f"* Reading text of article from S3 bucket >{cfg.get('AWS_S3_WEBSITE_CONTENT')}< and file: >{doc_uuid}.html<", end=" ")
+                            obj = s3.get_object(Bucket=cfg.get('AWS_S3_WEBSITE_CONTENT'), Key=f"{doc_uuid}.html")
                             content = obj['Body'].read().decode('utf-8')
 
-                            doc_cache_dir = os.path.join(cache_dir, str(s3_uuid))
+                            doc_cache_dir = os.path.join(cache_dir, str(doc_uuid))
                             os.makedirs(doc_cache_dir, exist_ok=True)
-                            page_file = os.path.join(doc_cache_dir, f"{s3_uuid}.html")
+                            page_file = os.path.join(doc_cache_dir, f"{doc_uuid}.html")
                             with open(page_file, 'w', encoding="utf-8") as file:
                                 file.write(content)
 
@@ -317,11 +318,11 @@ if __name__ == '__main__':
                             md = MarkItDown()
                             result = md.convert(page_file)
 
-                            md_file = os.path.join(doc_cache_dir, f"{s3_uuid}.md")
+                            md_file = os.path.join(doc_cache_dir, f"{doc_uuid}.md")
                             with open(md_file, 'w', encoding="utf-8") as file:
                                 file.write(result.text_content)
 
-                            md_clean_file = os.path.join(doc_cache_dir, f"{s3_uuid}_clean.md")
+                            md_clean_file = os.path.join(doc_cache_dir, f"{doc_uuid}_clean.md")
                             md_cleaned = result.text_content
 
                             md_cleaned = webpage_text_clean(url, md_cleaned)
@@ -553,8 +554,8 @@ if __name__ == '__main__':
                         print("Encoding detection failed, using replacement characters.")
                         html = html.decode("latin-1", errors="replace")
 
-                s3_uuid = str(uuid.uuid4())
-                file_name = f"{s3_uuid}.html"
+                doc_uuid = str(uuid.uuid4())
+                file_name = f"{doc_uuid}.html"
 
                 try:
                     s3_client.put_object(Bucket=cfg.get("AWS_S3_WEBSITE_CONTENT"), Key=file_name, Body=html)
@@ -564,9 +565,9 @@ if __name__ == '__main__':
                     print(error_message)
                     continue
 
-                doc_cache_dir = os.path.join(cache_dir, str(s3_uuid))
+                doc_cache_dir = os.path.join(cache_dir, str(doc_uuid))
                 os.makedirs(doc_cache_dir, exist_ok=True)
-                page_file = os.path.join(doc_cache_dir, f"{s3_uuid}.html")
+                page_file = os.path.join(doc_cache_dir, f"{doc_uuid}.html")
                 with open(page_file, 'w', encoding="utf-8") as file:
                     file.write(html)
 
@@ -574,16 +575,16 @@ if __name__ == '__main__':
                 md = MarkItDown()
                 result = md.convert(page_file)
 
-                md_file = os.path.join(doc_cache_dir, f"{s3_uuid}.md")
+                md_file = os.path.join(doc_cache_dir, f"{doc_uuid}.md")
                 with open(md_file, 'w', encoding="utf-8") as file:
                     file.write(result.text_content)
 
-                md_clean_file = os.path.join(doc_cache_dir, f"{s3_uuid}_clean.md")
+                md_clean_file = os.path.join(doc_cache_dir, f"{doc_uuid}_clean.md")
                 md_cleaned = result.text_content
 
                 # md_cleaned = webpage_text_clean(web_doc.url, md_cleaned)
                 web_doc.text_md = md_cleaned
-                web_doc.s3_uuid = s3_uuid
+                web_doc.uuid = doc_uuid
 
                 session.commit()
 

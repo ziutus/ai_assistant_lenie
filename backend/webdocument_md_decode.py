@@ -247,16 +247,16 @@ if __name__ == '__main__':
             if not os.path.isfile(cache_file_step_1_md) and not os.path.isfile(cache_file_html):
                 logger.debug("Taking raw html file from cache in Amazon S3")
 
-                if not doc.s3_uuid:
-                    logger.debug("Doesn't exist s3_uuid, exiting...")
+                if not doc.uuid:
+                    logger.debug("Doesn't exist uuid, exiting...")
                     continue
 
-                if not s3_file_exist(S3_BUCKET_NAME, doc.s3_uuid + ".html"):
+                if not s3_file_exist(S3_BUCKET_NAME, doc.uuid + ".html"):
                     logger.debug("I can't find file in S3 cache")
                     continue
 
                 logger.debug("the HTML file exist in S3 cache")
-                if s3_take_file(S3_BUCKET_NAME, doc.s3_uuid + ".html", cache_file_html):
+                if s3_take_file(S3_BUCKET_NAME, doc.uuid + ".html", cache_file_html):
                     logger.debug("The HTML file has been copy to local cache")
                 else:
                     logger.debug("Can't download file from S3 cache, exiting...")
