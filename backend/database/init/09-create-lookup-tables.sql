@@ -56,7 +56,7 @@ INSERT INTO public.document_status_error_types (name) VALUES
     ('CAPTIONS_FETCH_ERROR')
 ON CONFLICT (name) DO NOTHING;
 
--- document_types (6 rows)
+-- document_types (8 rows)
 -- Source: backend/library/models/stalker_document_type.py
 CREATE TABLE IF NOT EXISTS public.document_types (
     id SERIAL PRIMARY KEY,
@@ -70,7 +70,8 @@ INSERT INTO public.document_types (name) VALUES
     ('webpage'),
     ('text_message'),
     ('text'),
-    ('email')
+    ('email'),
+    ('social_media_post')
 ON CONFLICT (name) DO NOTHING;
 
 -- embedding_models (7 rows)
