@@ -238,9 +238,11 @@ class WebDocument(Base):
             self.document_type = StalkerDocumentType.text_message.name
         elif document_type in ["text"]:
             self.document_type = StalkerDocumentType.text.name
+        elif document_type in ["social_media_post", "social"]:
+            self.document_type = StalkerDocumentType.social_media_post.name
         else:
             raise ValueError(
-                f"document_type must be either 'movie', 'webpage', 'text_message', 'text' or 'link' not >{document_type}<"
+                f"document_type must be one of 'movie', 'webpage', 'text_message', 'text', 'link', 'social_media_post' not >{document_type}<"
             )
 
     def set_document_state(self, document_state: str) -> None:
@@ -419,6 +421,10 @@ class TextMessageDocument(WebDocument):
 
 class TextDocument(WebDocument):
     __mapper_args__ = {"polymorphic_identity": "text"}
+
+
+class SocialMediaPostDocument(WebDocument):
+    __mapper_args__ = {"polymorphic_identity": "social_media_post"}
 
 
 # ---------------------------------------------------------------------------
