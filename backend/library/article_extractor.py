@@ -327,14 +327,21 @@ def extract_article_markers_with_llm(markdown_text: str, url: str = "",
                                      model: str = "speakleash/Bielik-11B-v3.0-Instruct") -> dict | None:
     """Wyślij markdown do ARK Labs (Bielik) i pobierz markery granic artykułu.
 
+    Tryb stateful/stateless kontrolowany przez zmienną ARK_LABS_STATEFUL (domyślnie 0=stateless).
+    Stateful: tańszy input ($0.01/1M), ale podatny na 429 przy retry.
+    Stateless: droższy ($0.49/1M input), ale niezawodny.
+
     Returns:
         dict z polami: title, author, date, article_first_sentence, article_last_sentence, tags
         lub None w przypadku błędu
     """
     from library.api.arklabs.arklabs_completion import arklabs_get_completion
 
+    use_stateful = os.environ.get("ARK_LABS_STATEFUL", "0") == "1"
+
     portal = _detect_portal(url)
     logger.info(f"Detected portal: {portal or 'unknown'} (url: {url[:60]})")
+    logger.info(f"ARK Labs mode: {'stateful' if use_stateful else 'stateless'}")
 
     trimmed = _trim_markdown_navigation(markdown_text)
     cleaned = _clean_markdown_for_llm(trimmed, portal=portal)
@@ -351,7 +358,7 @@ def extract_article_markers_with_llm(markdown_text: str, url: str = "",
             max_tokens=800,
             temperature=0.1,
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
-            stateful=True,
+            stateful=use_stateful,
         )
 
         logger.info(f"LLM extraction tokens: prompt={response.prompt_tokens}, "
