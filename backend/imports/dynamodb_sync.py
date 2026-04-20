@@ -212,6 +212,7 @@ def process_article_content(doc_id: int, url: str, cache_base_dir: str,
         document_id=doc_id,
         cache_dir=doc_cache_dir,
         url=url,
+        arklabs_first=True,
     )
 
     if result:
