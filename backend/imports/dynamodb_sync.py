@@ -192,6 +192,7 @@ def process_article_content(doc_id: int, url: str, cache_base_dir: str,
 
     os.makedirs(doc_cache_dir, exist_ok=True)
     save_document_info(doc_id, doc, doc_cache_dir)
+    print(f"  Process: converting HTML to markdown...")
     markdown_text = prepare_markdown(doc_id, doc, doc_cache_dir, verbose=True)
 
     if not markdown_text:
@@ -204,9 +205,10 @@ def process_article_content(doc_id: int, url: str, cache_base_dir: str,
             f.write(markdown_text)
 
     if skip_llm:
-        print(f"  Process: markdown OK ({len(markdown_text)} chars), LLM skipped")
+        print(f"  Process: markdown OK ({len(markdown_text)} chars), LLM skipped (--skip-llm)")
         return True, False
 
+    print(f"  Process: running LLM extraction (ARK Labs primary, CloudFerro fallback)...")
     result = process_article_with_llm_fallback(
         markdown_text=markdown_text,
         document_id=doc_id,
