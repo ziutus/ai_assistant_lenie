@@ -583,35 +583,60 @@ def _escape_for_regex(line: str) -> str:
 
 def process_article_with_llm_fallback(markdown_text: str, document_id: int,
                                        cache_dir: str, url: str,
-                                       model: str = "speakleash/Bielik-11B-v3.0-Instruct") -> str | None:
+                                       model: str = "speakleash/Bielik-11B-v3.0-Instruct",
+                                       arklabs_first: bool = False) -> str | None:
     """Główna funkcja fallback: ekstrakcja artykułu przez LLM + generowanie regex draft.
+
+    arklabs_first=True: ARK Labs primary (taniej, stateful $0.01/1M input),
+                        CloudFerro fallback — zalecane dla importu wsadowego.
+    arklabs_first=False: CloudFerro primary (bardziej niezawodny),
+                         ARK Labs fallback — domyślne dla interaktywnego przeglądu.
 
     Returns: wyodrębniony tekst artykułu lub None
     """
-    logger.info(f"document_id: {document_id} Starting LLM fallback extraction")
+    logger.info(f"document_id: {document_id} Starting LLM fallback extraction "
+                f"(primary: {'ARK Labs' if arklabs_first else 'CloudFerro'})")
 
-    # 1. Wyślij do CloudFerro Sherlock (Bielik) po markery (max 2 próby) — primary provider
+    if arklabs_first:
+        primary_name = "ARK Labs"
+        fallback_name = "CloudFerro"
+
+        def _primary(text, url):
+            return extract_article_markers_with_llm(text, url=url, model=model)
+
+        def _fallback(text, url):
+            return _extract_markers_via_cloudferro(text, url=url)
+    else:
+        primary_name = "CloudFerro"
+        fallback_name = "ARK Labs"
+
+        def _primary(text, url):
+            return _extract_markers_via_cloudferro(text, url=url)
+
+        def _fallback(text, url):
+            return extract_article_markers_with_llm(text, url=url, model=model)
+
     markers = None
     for attempt in range(2):
-        markers = _extract_markers_via_cloudferro(markdown_text, url=url)
+        markers = _primary(markdown_text, url)
         if markers is not None:
             break
-        logger.warning(f"document_id: {document_id} CloudFerro attempt {attempt + 1} failed, "
+        logger.warning(f"document_id: {document_id} {primary_name} attempt {attempt + 1} failed, "
                        f"{'retrying' if attempt == 0 else 'giving up'}")
 
-    # 2. Fallback do ARK Labs, gdy CloudFerro niedostępny
     if markers is None:
-        logger.info(f"document_id: {document_id} Falling back to ARK Labs (Bielik-11B-v3.0-Instruct)")
+        logger.info(f"document_id: {document_id} Falling back to {fallback_name}")
         for attempt in range(2):
-            markers = extract_article_markers_with_llm(markdown_text, url=url, model=model)
+            markers = _fallback(markdown_text, url)
             if markers is not None:
-                logger.info(f"document_id: {document_id} ARK Labs fallback succeeded")
+                logger.info(f"document_id: {document_id} {fallback_name} fallback succeeded")
                 break
-            logger.warning(f"document_id: {document_id} ARK Labs attempt {attempt + 1} failed, "
+            logger.warning(f"document_id: {document_id} {fallback_name} attempt {attempt + 1} failed, "
                            f"{'retrying' if attempt == 0 else 'giving up'}")
 
     if markers is None:
-        logger.error(f"document_id: {document_id} LLM extraction returned no markers after all attempts (CloudFerro + ARK Labs fallback)")
+        logger.error(f"document_id: {document_id} LLM extraction returned no markers after all attempts "
+                     f"({primary_name} + {fallback_name} fallback)")
         return None
 
     logger.info(f"document_id: {document_id} LLM markers: title={markers.get('title', 'N/A')}, "
