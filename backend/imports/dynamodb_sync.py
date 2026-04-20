@@ -208,13 +208,12 @@ def process_article_content(doc_id: int, url: str, cache_base_dir: str,
         print(f"  Process: markdown OK ({len(markdown_text)} chars), LLM skipped (--skip-llm)")
         return True, False
 
-    print(f"  Process: running LLM extraction (ARK Labs primary, CloudFerro fallback)...")
+    print(f"  Process: running LLM extraction (CloudFerro primary, ARK Labs fallback)...")
     result = process_article_with_llm_fallback(
         markdown_text=markdown_text,
         document_id=doc_id,
         cache_dir=doc_cache_dir,
         url=url,
-        arklabs_first=True,
     )
 
     if result:
