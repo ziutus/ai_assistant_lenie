@@ -618,17 +618,21 @@ def process_article_with_llm_fallback(markdown_text: str, document_id: int,
 
     markers = None
     for attempt in range(2):
+        print(f"  [LLM] document_id={document_id} {primary_name} attempt {attempt + 1}/2 — sending request...")
         markers = _primary(markdown_text, url)
         if markers is not None:
+            print(f"  [LLM] document_id={document_id} {primary_name} OK")
             break
         logger.warning(f"document_id: {document_id} {primary_name} attempt {attempt + 1} failed, "
                        f"{'retrying' if attempt == 0 else 'giving up'}")
 
     if markers is None:
-        logger.info(f"document_id: {document_id} Falling back to {fallback_name}")
+        print(f"  [LLM] document_id={document_id} {primary_name} failed — falling back to {fallback_name}...")
         for attempt in range(2):
+            print(f"  [LLM] document_id={document_id} {fallback_name} attempt {attempt + 1}/2 — sending request...")
             markers = _fallback(markdown_text, url)
             if markers is not None:
+                print(f"  [LLM] document_id={document_id} {fallback_name} OK")
                 logger.info(f"document_id: {document_id} {fallback_name} fallback succeeded")
                 break
             logger.warning(f"document_id: {document_id} {fallback_name} attempt {attempt + 1} failed, "
