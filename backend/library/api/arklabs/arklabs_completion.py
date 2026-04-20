@@ -20,6 +20,12 @@ def _get_stateful_session() -> http_requests.Session:
     return _stateful_session
 
 
+def _reset_stateful_session() -> None:
+    """Reset the stateful session (e.g. after timeout or 429 — server may still hold the old session)."""
+    global _stateful_session
+    _stateful_session = None
+
+
 def arklabs_get_completion(prompt: str, model: str = "speakleash/Bielik-11B-v3.0-Instruct",
                            max_tokens: int = 1000, temperature: float = 0.1,
                            system_prompt: str = None,
@@ -83,8 +89,12 @@ def _completion_stateful(ai_response, prompt, model, max_tokens,
         "temperature": temperature,
     }
 
-    response = session.post(url, json=payload, headers=headers, timeout=120)
-    response.raise_for_status()
+    try:
+        response = session.post(url, json=payload, headers=headers, timeout=120)
+        response.raise_for_status()
+    except (http_requests.exceptions.Timeout, http_requests.exceptions.HTTPError) as e:
+        _reset_stateful_session()
+        raise
     data = response.json()
 
     ai_response.id = data.get("id")
