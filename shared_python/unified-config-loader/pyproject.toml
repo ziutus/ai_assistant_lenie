@@ -30,6 +30,9 @@ dev = [
     "ruff",
 ]
 
+[tool.uv]
+exclude-newer = "7 days"
+
 [tool.ruff]
 line-length = 120
 exclude = [".git", "__pycache__", ".venv"]
