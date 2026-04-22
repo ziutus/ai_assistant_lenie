@@ -294,9 +294,42 @@ def _truncate_for_llm(text: str, max_chars: int = 15000) -> str:
     return text[:max_chars] + "\n\n[...tekst przycięty...]"
 
 
+CLOUDFERRO_FALLBACK_MODEL = "Bielik-11B-v2.3-Instruct"
+
+
+def _parse_llm_json_response(response_text: str) -> dict | None:
+    """Parsuje odpowiedź LLM do dict z markerami granic artykułu.
+
+    Usuwa ewentualne ```json``` wrappery, sprawdza wymagane pola.
+    Returns: dict markerów lub None przy błędzie parsowania/brakujących polach.
+    """
+    response_text = response_text.strip()
+    if response_text.startswith("```"):
+        response_text = re.sub(r'^```(?:json)?\s*', '', response_text)
+        response_text = re.sub(r'\s*```$', '', response_text)
+
+    try:
+        markers = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        logger.error(f"LLM response is not valid JSON: {e}\nResponse: {response_text[:200]}")
+        return None
+
+    required_fields = ["article_first_sentence", "article_last_sentence"]
+    missing = [f for f in required_fields if not markers.get(f)]
+    if missing:
+        logger.warning(f"LLM response missing required fields: {missing}. Response: {response_text[:200]}")
+        return None
+
+    return markers
+
+
 def extract_article_markers_with_llm(markdown_text: str, url: str = "",
                                      model: str = "speakleash/Bielik-11B-v3.0-Instruct") -> dict | None:
-    """Wyślij markdown do LLM i pobierz markery granic artykułu.
+    """Wyślij markdown do ARK Labs (Bielik) i pobierz markery granic artykułu.
+
+    Tryb stateful/stateless kontrolowany przez zmienną ARK_LABS_STATEFUL (domyślnie 0=stateless).
+    Stateful: tańszy input ($0.01/1M), ale podatny na 429 przy retry.
+    Stateless: droższy ($0.49/1M input), ale niezawodny.
 
     Returns:
         dict z polami: title, author, date, article_first_sentence, article_last_sentence, tags
@@ -304,8 +337,11 @@ def extract_article_markers_with_llm(markdown_text: str, url: str = "",
     """
     from library.api.arklabs.arklabs_completion import arklabs_get_completion
 
+    use_stateful = os.environ.get("ARK_LABS_STATEFUL", "0") == "1"
+
     portal = _detect_portal(url)
     logger.info(f"Detected portal: {portal or 'unknown'} (url: {url[:60]})")
+    logger.info(f"ARK Labs mode: {'stateful' if use_stateful else 'stateless'}")
 
     trimmed = _trim_markdown_navigation(markdown_text)
     cleaned = _clean_markdown_for_llm(trimmed, portal=portal)
@@ -322,35 +358,52 @@ def extract_article_markers_with_llm(markdown_text: str, url: str = "",
             max_tokens=800,
             temperature=0.1,
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
-            stateful=True,
+            stateful=use_stateful,
         )
 
         logger.info(f"LLM extraction tokens: prompt={response.prompt_tokens}, "
                      f"completion={response.completion_tokens}, total={response.total_tokens}")
 
-        response_text = response.response_text.strip()
+        return _parse_llm_json_response(response.response_text)
 
-        # Wyczyść odpowiedź - usuń ewentualne ```json``` wrappery
-        if response_text.startswith("```"):
-            response_text = re.sub(r'^```(?:json)?\s*', '', response_text)
-            response_text = re.sub(r'\s*```$', '', response_text)
-
-        markers = json.loads(response_text)
-
-        # Walidacja: wymagane pola
-        required_fields = ["article_first_sentence", "article_last_sentence"]
-        missing = [f for f in required_fields if not markers.get(f)]
-        if missing:
-            logger.warning(f"LLM response missing fields: {missing}. Response: {response_text[:200]}")
-            return None
-
-        return markers
-
-    except json.JSONDecodeError as e:
-        logger.error(f"LLM response is not valid JSON: {e}\nResponse: {response.response_text}")
-        return None
     except Exception as e:
         logger.error(f"LLM extraction failed: {e}")
+        return None
+
+
+def _extract_markers_via_cloudferro(markdown_text: str, url: str = "") -> dict | None:
+    """Wyślij markdown do CloudFerro Sherlock (Bielik) i pobierz markery granic artykułu.
+
+    Używane jako fallback gdy ARK Labs jest niedostępny (timeout, 429).
+    Returns: dict markerów lub None w przypadku błędu.
+    """
+    from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
+
+    portal = _detect_portal(url)
+    trimmed = _trim_markdown_navigation(markdown_text)
+    cleaned = _clean_markdown_for_llm(trimmed, portal=portal)
+    cleaned = _truncate_for_llm(cleaned)
+
+    logger.info(f"CloudFerro fallback input: {len(markdown_text)} -> cleaned {len(cleaned)} chars")
+
+    prompt = EXTRACTION_USER_PROMPT_TEMPLATE.format(markdown_text=cleaned)
+
+    try:
+        response = sherlock_get_completion(
+            prompt=prompt,
+            model=CLOUDFERRO_FALLBACK_MODEL,
+            max_tokens=800,
+            temperature=0.1,
+            system_prompt=EXTRACTION_SYSTEM_PROMPT,
+        )
+
+        logger.info(f"CloudFerro extraction tokens: prompt={response.prompt_tokens}, "
+                     f"completion={response.completion_tokens}, total={response.total_tokens}")
+
+        return _parse_llm_json_response(response.response_text)
+
+    except Exception as e:
+        logger.error(f"CloudFerro extraction failed: {e}")
         return None
 
 
@@ -537,24 +590,64 @@ def _escape_for_regex(line: str) -> str:
 
 def process_article_with_llm_fallback(markdown_text: str, document_id: int,
                                        cache_dir: str, url: str,
-                                       model: str = "speakleash/Bielik-11B-v3.0-Instruct") -> str | None:
+                                       model: str = "speakleash/Bielik-11B-v3.0-Instruct",
+                                       arklabs_first: bool = False) -> str | None:
     """Główna funkcja fallback: ekstrakcja artykułu przez LLM + generowanie regex draft.
+
+    arklabs_first=True: ARK Labs primary (taniej, stateful $0.01/1M input),
+                        CloudFerro fallback — zalecane dla importu wsadowego.
+    arklabs_first=False: CloudFerro primary (bardziej niezawodny),
+                         ARK Labs fallback — domyślne dla interaktywnego przeglądu.
 
     Returns: wyodrębniony tekst artykułu lub None
     """
-    logger.info(f"document_id: {document_id} Starting LLM fallback extraction")
+    logger.info(f"document_id: {document_id} Starting LLM fallback extraction "
+                f"(primary: {'ARK Labs' if arklabs_first else 'CloudFerro'})")
 
-    # 1. Wyślij do LLM po markery (max 2 próby)
+    if arklabs_first:
+        primary_name = "ARK Labs"
+        fallback_name = "CloudFerro"
+
+        def _primary(text, url):
+            return extract_article_markers_with_llm(text, url=url, model=model)
+
+        def _fallback(text, url):
+            return _extract_markers_via_cloudferro(text, url=url)
+    else:
+        primary_name = "CloudFerro"
+        fallback_name = "ARK Labs"
+
+        def _primary(text, url):
+            return _extract_markers_via_cloudferro(text, url=url)
+
+        def _fallback(text, url):
+            return extract_article_markers_with_llm(text, url=url, model=model)
+
     markers = None
     for attempt in range(2):
-        markers = extract_article_markers_with_llm(markdown_text, url=url, model=model)
+        print(f"  [LLM] document_id={document_id} {primary_name} attempt {attempt + 1}/2 — sending request...")
+        markers = _primary(markdown_text, url)
         if markers is not None:
+            print(f"  [LLM] document_id={document_id} {primary_name} OK")
             break
-        logger.warning(f"document_id: {document_id} LLM attempt {attempt + 1} failed, "
+        logger.warning(f"document_id: {document_id} {primary_name} attempt {attempt + 1} failed, "
                        f"{'retrying' if attempt == 0 else 'giving up'}")
 
     if markers is None:
-        logger.error(f"document_id: {document_id} LLM extraction returned no markers after 2 attempts")
+        print(f"  [LLM] document_id={document_id} {primary_name} failed — falling back to {fallback_name}...")
+        for attempt in range(2):
+            print(f"  [LLM] document_id={document_id} {fallback_name} attempt {attempt + 1}/2 — sending request...")
+            markers = _fallback(markdown_text, url)
+            if markers is not None:
+                print(f"  [LLM] document_id={document_id} {fallback_name} OK")
+                logger.info(f"document_id: {document_id} {fallback_name} fallback succeeded")
+                break
+            logger.warning(f"document_id: {document_id} {fallback_name} attempt {attempt + 1} failed, "
+                           f"{'retrying' if attempt == 0 else 'giving up'}")
+
+    if markers is None:
+        logger.error(f"document_id: {document_id} LLM extraction returned no markers after all attempts "
+                     f"({primary_name} + {fallback_name} fallback)")
         return None
 
     logger.info(f"document_id: {document_id} LLM markers: title={markers.get('title', 'N/A')}, "
