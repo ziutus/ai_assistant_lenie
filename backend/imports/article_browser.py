@@ -97,6 +97,22 @@ OBSIDIAN_KNOWLEDGE_DIR = os.path.join(OBSIDIAN_VAULT, "02-wiedza")
 NOTES_DIR = os.path.join(_BACKEND_DIR, "tmp", "article_notes")
 
 
+def _get_cache_status(doc_id: int) -> str:
+    """Zwraca jednoliniowy status plików cache dla artykułu: [md ✓/—] [llm ✓/—] [regexp ✓/—]"""
+    cfg = load_config()
+    cache_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown", str(doc_id))
+    checks = [
+        ("md",     f"{doc_id}_step_1_all.md"),
+        ("llm",    f"{doc_id}_llm_extracted_article.md"),
+        ("regexp", f"{doc_id}_step_2_1_article.md"),
+    ]
+    parts = []
+    for label, filename in checks:
+        mark = "✓" if os.path.isfile(os.path.join(cache_dir, filename)) else "—"
+        parts.append(f"[{label} {mark}]")
+    return "  ".join(parts)
+
+
 def _detect_h2_ads(text: str) -> set:
     """Wykryj nagłówki H2 z obrazkiem/video/playerem zaraz po nich (wstawki).
     Musi być wywołane PRZED usuwaniem obrazków."""
@@ -1192,6 +1208,7 @@ def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False
     print(f"  Portal:  {detected_portal}")
     print(f"  URL:     {doc.url}")
     print(f"  Stan:    {doc.document_state}")
+    print(f"  Cache:   {_get_cache_status(doc.id)}")
     print(f"  Typ:     {doc.document_type}")
     print(f"  Język:   {doc.language}")
     print(f"  Źródło:  {doc.source}")
@@ -1243,6 +1260,15 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
     idx = 0
     while 0 <= idx < len(filtered):
         doc = filtered[idx]
+        # Odśwież połączenie i przeładuj obiekt (mogło wygasnąć po długiej operacji
+        # jak zapis embeddingu; session.commit() wygasza obiekty → lazy-load → błąd)
+        if not _refresh_db_connection(session):
+            print("  BŁĄD: utracono połączenie z bazą. Przerwano przeglądanie.")
+            break
+        try:
+            session.refresh(doc)
+        except Exception as e:
+            print(f"  OSTRZEŻENIE: nie udało się odświeżyć dokumentu {doc.id}: {e}")
         date_str = doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else "????"
         detected_portal = _detect_portal(doc.url) or "?"
 
@@ -1253,6 +1279,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
         print(f"  Portal:  {detected_portal}")
         print(f"  URL:     {doc.url}")
         print(f"  Stan:    {doc.document_state}")
+        print(f"  Cache:   {_get_cache_status(doc.id)}")
         obsidian_paths = doc.obsidian_note_paths or []
         if obsidian_paths:
             print(f"  Obsidian: {len(obsidian_paths)} notatek")

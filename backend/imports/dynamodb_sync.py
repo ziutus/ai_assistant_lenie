@@ -168,6 +168,62 @@ def save_cache_files(doc_id: int, text_content: str | None, html_content: str | 
         print(f"  Cache: saved {path} ({len(text_content)} chars)")
 
 
+def process_article_content(doc_id: int, url: str, cache_base_dir: str,
+                             session, skip_llm: bool = False) -> tuple[bool, bool]:
+    """Convert HTML to markdown and optionally run LLM article extraction.
+
+    Saves files to cache only — no DB writes.
+    Returns (markdown_ok, llm_ok).
+    """
+    from library.db.models import WebDocument
+    from library.document_prepare import prepare_markdown, save_document_info
+    from library.article_extractor import process_article_with_llm_fallback
+
+    doc_cache_dir = os.path.join(cache_base_dir, str(doc_id))
+    html_file = os.path.join(doc_cache_dir, f"{doc_id}.html")
+
+    if not os.path.isfile(html_file):
+        print(f"  Process: no HTML in cache, skipping")
+        return False, False
+
+    doc = WebDocument.get_by_id(session, doc_id)
+    if doc is None:
+        return False, False
+
+    os.makedirs(doc_cache_dir, exist_ok=True)
+    save_document_info(doc_id, doc, doc_cache_dir)
+    print(f"  Process: converting HTML to markdown...")
+    markdown_text = prepare_markdown(doc_id, doc, doc_cache_dir, verbose=True)
+
+    if not markdown_text:
+        print(f"  Process: markdown conversion failed")
+        return False, False
+
+    step1_path = os.path.join(doc_cache_dir, f"{doc_id}_step_1_all.md")
+    if not os.path.isfile(step1_path):
+        with open(step1_path, "w", encoding="utf-8") as f:
+            f.write(markdown_text)
+
+    if skip_llm:
+        print(f"  Process: markdown OK ({len(markdown_text)} chars), LLM skipped (--skip-llm)")
+        return True, False
+
+    print(f"  Process: running LLM extraction (CloudFerro primary, ARK Labs fallback)...")
+    result = process_article_with_llm_fallback(
+        markdown_text=markdown_text,
+        document_id=doc_id,
+        cache_dir=doc_cache_dir,
+        url=url,
+    )
+
+    if result:
+        print(f"  Process: LLM OK ({len(result)} chars)")
+        return True, True
+
+    print(f"  Process: LLM failed — no article markers extracted")
+    return True, False
+
+
 def sync_item_to_postgres(item: dict, text_content: str | None, html_content: str | None,
                           dry_run: bool, session=None, service=None) -> tuple[str, int | None]:
     """Insert a DynamoDB item into PostgreSQL via DocumentService. Returns ('added'/'skipped'/'error', doc_id or None)."""
@@ -258,6 +314,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Preview only, no DB writes or S3 downloads")
     parser.add_argument("--limit", type=int, default=0, help="Max documents to sync (0 = unlimited)")
     parser.add_argument("--skip-s3", action="store_true", help="Skip S3 file downloads (metadata only)")
+    parser.add_argument("--skip-llm", action="store_true", help="Skip LLM article extraction (still converts HTML to markdown)")
     parser.add_argument("--project", default="lenie", help="Project code for SSM path (default: lenie)")
     parser.add_argument("--env", default="dev", help="Environment for SSM path (default: dev)")
     parser.add_argument("--table", default=None, help="DynamoDB table name override (skips SSM lookup)")
@@ -307,6 +364,8 @@ def main():
         print("Mode: DRY-RUN (no changes)")
     if args.skip_s3:
         print("S3 downloads: skipped")
+    if args.skip_llm:
+        print("LLM extraction: skipped (markdown only)")
     if args.limit:
         print(f"Limit: {args.limit}")
 
@@ -356,6 +415,8 @@ def main():
     added = 0
     skipped = 0
     errors = 0
+    md_converted = 0
+    llm_extracted = 0
 
     session = None if args.dry_run else get_session()
     doc_service = DocumentService(session) if session else None
@@ -410,6 +471,20 @@ def main():
                 if result == "added" and doc_id and (text_content or html_content):
                     save_cache_files(doc_id, text_content, html_content, args.data_dir)
 
+                # Convert HTML to markdown + LLM extraction (webpage only, saves to cache)
+                if result == "added" and doc_id and doc_type == "webpage" and not args.skip_s3:
+                    md_ok, llm_ok = process_article_content(
+                        doc_id=doc_id,
+                        url=item.get("url", ""),
+                        cache_base_dir=args.data_dir,
+                        session=session,
+                        skip_llm=args.skip_llm,
+                    )
+                    if md_ok:
+                        md_converted += 1
+                    if llm_ok:
+                        llm_extracted += 1
+
                 if result == "added":
                     added += 1
                 elif result == "skipped":
@@ -429,6 +504,9 @@ def main():
     print(f"Added: {added}")
     print(f"Skipped (already exist): {skipped}")
     print(f"Errors: {errors}")
+    if md_converted or llm_extracted:
+        print(f"Markdown converted: {md_converted}")
+        print(f"LLM extracted: {llm_extracted}")
 
 
 if __name__ == "__main__":
