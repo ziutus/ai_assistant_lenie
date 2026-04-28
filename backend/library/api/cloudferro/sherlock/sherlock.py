@@ -3,7 +3,9 @@ from library.config_loader import load_config
 from library.models.ai_response import AiResponse
 
 
-def sherlock_get_completion(prompt: str, model: str = "Bielik-11B-v2.3-Instruct", max_tokens=1000) -> AiResponse:
+def sherlock_get_completion(prompt: str, model: str = "Bielik-11B-v3.0-Instruct",
+                            max_tokens=1000, temperature: float = 0.1,
+                            system_prompt: str | None = None) -> AiResponse:
 
     ai_response = AiResponse(query=prompt, model=model)
     cfg = load_config()
@@ -13,12 +15,16 @@ def sherlock_get_completion(prompt: str, model: str = "Bielik-11B-v2.3-Instruct"
         base_url="https://api-sherlock.cloudferro.com/openai/v1"
     )
 
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+
     chat_response = client.chat.completions.create(
         model=model,
-        messages=[
-            {"role": "user", "content": prompt}
-        ],
+        messages=messages,
         max_tokens=max_tokens,
+        temperature=temperature,
     )
 
     ai_response.id = chat_response.id

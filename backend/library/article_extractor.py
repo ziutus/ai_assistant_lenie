@@ -108,6 +108,7 @@ PORTAL_FOOTER_MARKERS = {
         "MONEY NA SKR",
     ],
     "wp": [
+        "NEWSLETTERZapisz się do newslettera WP Premium",
         "Wybrane dla Ciebie",
         "### Wybrane dla Ciebie",
         "**Masz newsa, zdjęcie lub filmik?",
@@ -128,6 +129,17 @@ PORTAL_FOOTER_MARKERS = {
         "#### Nasz autor",
         "Redakcja poleca",
         "### ZAPISZ SIĘ NA NEWSLETTER",
+    ],
+}
+
+# Markery końca nawigacji/początku artykułu per portal.
+# Artykuł zaczyna się od pierwszej niepustej linii PO dopasowanym markerze.
+# Stosowane gdy artykuł pochodzi z surowego markdown strony (step_1_all.md),
+# a nie z ekstrakcji LLM/regexp — usuwają nawigację bez użycia LLM.
+PORTAL_START_AFTER_MARKERS: dict[str, list[str]] = {
+    "wp": [
+        "Prawdziwe dziennikarstwo. Niezależna redakcja. ZA DARMO.",
+        "ZAPISZUDOSTĘPNIJ",
     ],
 }
 
@@ -198,6 +210,28 @@ def _find_footer_line(text: str, portal: str | None) -> int | None:
         stripped = line.strip()
         for marker in markers:
             if stripped.startswith(marker):
+                return i
+
+    return None
+
+
+def _find_start_line(text: str, portal: str | None) -> int | None:
+    """Znajdź numer linii markera końca nawigacji (artykuł zaczyna się PO tej linii).
+
+    Używane gdy tekst pochodzi z surowego markdown strony (step_1_all.md), a nie
+    z ekstrakcji LLM/regexp. Szuka pierwszego dopasowania — markery są ułożone
+    w kolejności od najbardziej specyficznych do ogólnych.
+    Marker jest dopasowywany jako substring linii (nie startswith), bo może być
+    częścią linku markdown.
+    """
+    if not portal or portal not in PORTAL_START_AFTER_MARKERS:
+        return None
+
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        for marker in PORTAL_START_AFTER_MARKERS[portal]:
+            if marker in stripped:
                 return i
 
     return None
@@ -294,7 +328,7 @@ def _truncate_for_llm(text: str, max_chars: int = 15000) -> str:
     return text[:max_chars] + "\n\n[...tekst przycięty...]"
 
 
-CLOUDFERRO_FALLBACK_MODEL = "Bielik-11B-v2.3-Instruct"
+CLOUDFERRO_FALLBACK_MODEL = "Bielik-11B-v3.0-Instruct"
 
 
 def _parse_llm_json_response(response_text: str) -> dict | None:
