@@ -334,7 +334,7 @@ def _clean_lines_wp(lines: list[str]) -> list[str]:
 
 def clean_article_text(text: str, url: str = "") -> dict:
     """Wyczyść wyekstrahowany markdown. Zwraca dict: {text, links, images}."""
-    from library.article_extractor import _detect_portal, _find_footer_line
+    from library.article_extractor import _detect_portal, _find_footer_line, _find_start_line
 
     extracted_links = []
     extracted_images = []
@@ -382,6 +382,17 @@ def clean_article_text(text: str, url: str = "") -> dict:
     footer_line = _find_footer_line(text, portal)
     if footer_line is not None:
         text = "\n".join(text.splitlines()[:footer_line])
+
+    # 4b. Odetnij nawigację przed artykułem (marker końca nawigacji/początku treści).
+    # Aktywne tylko gdy tekst pochodzi z surowego markdown (step_1_all.md) — LLM/regexp
+    # same wycinają nawigację, tu potrzebne dla fallbacku na surowy plik.
+    start_line = _find_start_line(text, portal)
+    if start_line is not None:
+        lines_tmp = text.splitlines()
+        new_start = start_line + 1
+        while new_start < len(lines_tmp) and not lines_tmp[new_start].strip():
+            new_start += 1
+        text = "\n".join(lines_tmp[new_start:])
 
     # 5. Wyodrębnij linki → markery [linkN] (portalowe → sam tekst)
     def replace_link(m):
@@ -462,8 +473,10 @@ def get_article_text(doc, session) -> Optional[dict]:
     cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
     cache_dir = os.path.join(cache_dir_base, str(doc.id))
 
-    # 2. Szukaj w cache (kolejność: step_2 > llm_extracted > step_1)
-    for suffix in ["_step_2_1_article.md", "_llm_extracted_article.md", "_step_1_all.md"]:
+    # 2. Szukaj wyekstrahowanego artykułu w cache (regexp > LLM).
+    # _step_1_all.md celowo pominięty — to surowy markdown całej strony, nie tekst artykułu.
+    # Trafia do LLM jako wejście (niżej), nie jest zwracany bezpośrednio.
+    for suffix in ["_step_2_1_article.md", "_llm_extracted_article.md"]:
         cache_file = os.path.join(cache_dir, f"{doc.id}{suffix}")
         if os.path.isfile(cache_file):
             with open(cache_file, "r", encoding="utf-8") as f:
@@ -1170,6 +1183,7 @@ def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
 
     result = {
         "id": doc.id,
+        "uuid": str(doc.uuid) if doc.uuid else None,
         "title": doc.title,
         "url": doc.url,
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
@@ -1180,6 +1194,8 @@ def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
         "author": doc.author,
         "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
         "obsidian_note_paths": doc.obsidian_note_paths or [],
+        "chapter_list": doc.chapter_list,
+        "video_description": doc.video_description,
         "text_length": len(text),
         "text": text,
     }

@@ -32,6 +32,7 @@ declare -A SVC_IMAGE=(
     [backend]="lenie-ai-server:latest"
     [db]="lenie-ai-db:latest"
     [slack-bot]="lenie-ai-slack-bot:latest"
+    [mcp-server]="lenie-mcp-server:latest"
 )
 declare -A SVC_REGISTRY_IMAGE=(
     [frontend]="${REGISTRY}/lenie-ai-frontend:latest"
@@ -39,6 +40,7 @@ declare -A SVC_REGISTRY_IMAGE=(
     [backend]="${REGISTRY}/lenie-ai-server:latest"
     [db]="${REGISTRY}/lenie-ai-db:latest"
     [slack-bot]="${REGISTRY}/lenie-ai-slack-bot:latest"
+    [mcp-server]="${REGISTRY}/lenie-mcp-server:latest"
 )
 declare -A SVC_DOCKERFILE=(
     [frontend]="web_interface_react/Dockerfile"
@@ -46,6 +48,7 @@ declare -A SVC_DOCKERFILE=(
     [backend]="backend/Dockerfile"
     [db]="infra/docker/Postgresql/Dockerfile"
     [slack-bot]="slack_bot/Dockerfile"
+    [mcp-server]="infra/docker/Dockerfile.mcp"
 )
 declare -A SVC_COMPOSE_NAME=(
     [frontend]="lenie-ai-frontend"
@@ -54,6 +57,7 @@ declare -A SVC_COMPOSE_NAME=(
     [db]="lenie-ai-db"
     [slack-bot]="lenie-ai-slack-bot"
     [minio]="lenie-minio"
+    [mcp-server]="lenie-mcp-server"
 )
 
 ALL_SERVICES="db backend frontend app2"
@@ -197,9 +201,9 @@ show_status() {
 usage() {
     echo "Usage: $0 [OPTIONS] [service ...]"
     echo ""
-    echo "Services: frontend, app2, backend, db, slack-bot, minio, all (default: core services)"
+    echo "Services: frontend, app2, backend, db, slack-bot, minio, mcp-server, all (default: core services)"
     echo "  Note: 'all' deploys core services only (db, backend, frontend, app2)."
-    echo "  slack-bot and minio must be deployed explicitly."
+    echo "  slack-bot, minio and mcp-server must be deployed explicitly."
     echo ""
     echo "Options:"
     echo "  --skip-build      Skip Docker build, push existing local image"
@@ -232,7 +236,7 @@ while [[ $# -gt 0 ]]; do
         --sync-compose)  SYNC_COMPOSE="true"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
-        frontend|app2|backend|db|slack-bot|minio) SERVICES="$SERVICES $1"; shift ;;
+        frontend|app2|backend|db|slack-bot|minio|mcp-server) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
 done
@@ -284,6 +288,7 @@ echo "  Backend API: http://${NAS_HOST}:5055"
 echo "  PostgreSQL:  ${NAS_HOST}:5434"
 echo "  Vault UI:    http://${NAS_HOST}:8210/ui"
 echo "  MinIO Console: http://${NAS_HOST}:9001"
+echo "  MCP Server:  http://${NAS_HOST}:8080"
 echo ""
 echo "  Registry:    http://${REGISTRY}/v2/_catalog"
 echo ""
