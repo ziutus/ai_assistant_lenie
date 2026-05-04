@@ -49,6 +49,19 @@ def main():
     t_start = time.time()
     logging.info("Script started")
 
+    webshare_api_key = cfg.get("WEBSHARE_API_KEY")
+    if webshare_api_key:
+        try:
+            from library.webshare_ip_auth import ensure_ip_authorized, check_bandwidth
+            ensure_ip_authorized(webshare_api_key)
+            bw = check_bandwidth(webshare_api_key)
+            if not bw["available"]:
+                logging.warning("Webshare bandwidth exhausted — proxy disabled")
+                webshare_api_key = None
+        except Exception as e:
+            logging.warning(f"Webshare IP auth failed: {e} — proceeding without proxy")
+            webshare_api_key = None
+
     session = get_session()
     try:
         web_document = process_youtube_url(
@@ -60,8 +73,18 @@ def main():
             source=args.source,
             ai_summary_needed=args.summary,
             force_reprocess=args.force,
-            webshare_api_key=cfg.get("WEBSHARE_API_KEY"),
+            webshare_api_key=webshare_api_key,
         )
+
+        # Collect attributes while session is still open
+        elapsed = time.time() - t_start
+        doc_id = web_document.id
+        doc_title = web_document.title
+        doc_url = web_document.url
+        doc_language = web_document.language
+        doc_state = web_document.document_state
+        doc_text_len = len(web_document.text) if web_document.text else 0
+        doc_summary = web_document.summary
     except Exception as e:
         logging.error(f"Error processing YouTube URL: {e}")
         sys.exit(1)
@@ -70,16 +93,14 @@ def main():
 
     # Print summary
     print("\n--- Document Summary ---")
-    print(f"  ID:       {web_document.id}")
-    print(f"  Title:    {web_document.title}")
-    print(f"  URL:      {web_document.url}")
-    print(f"  Language: {web_document.language}")
-    print(f"  Status:   {web_document.document_state}")
-    text_len = len(web_document.text) if web_document.text else 0
-    print(f"  Text length: {text_len} characters")
-    if web_document.summary:
-        print(f"  Summary:  {web_document.summary[:200]}...")
-    elapsed = time.time() - t_start
+    print(f"  ID:       {doc_id}")
+    print(f"  Title:    {doc_title}")
+    print(f"  URL:      {doc_url}")
+    print(f"  Language: {doc_language}")
+    print(f"  Status:   {doc_state}")
+    print(f"  Text length: {doc_text_len} characters")
+    if doc_summary:
+        print(f"  Summary:  {doc_summary[:200]}...")
     print(f"  Elapsed:  {elapsed:.2f}s")
     print("------------------------")
 
