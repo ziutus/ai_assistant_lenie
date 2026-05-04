@@ -128,6 +128,26 @@ services:
     networks:
       - lenie-net
 
+  lenie-mcp-server:
+    image: 192.168.200.7:5005/lenie-mcp-server:latest
+    container_name: lenie-mcp-server
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - /share/Container/lenie-env/mcp_server.env
+    networks:
+      - lenie-net
+    depends_on:
+      lenie-ai-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
 networks:
   lenie-net:
     name: lenie-net
