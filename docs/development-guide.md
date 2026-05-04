@@ -190,6 +190,122 @@ python server.py
 make build && make dev
 ```
 
+### Debugging with debugpy
+
+[debugpy](https://github.com/microsoft/debugpy) is Microsoft's Python debugger implementing the DAP (Debug Adapter Protocol). It allows attaching an IDE (VS Code, PyCharm) to a running process — including one inside Docker.
+
+#### When to use debugpy
+
+| Scenario | debugpy works? | Alternative |
+|---|---|---|
+| Flask in Docker (local) | **Yes** | — |
+| Flask run directly | **Yes** | — |
+| AWS Lambda | **No** | SAM local + debugpy (see below) |
+| Google Cloud Functions | **No** | Functions Framework locally |
+
+> **PyCharm vs VS Code:** Both IDEs now support debugpy. PyCharm 2026.1 added debugpy as an optional backend (previously used its own pydevd engine). VS Code uses debugpy by default. The `debugpy.listen()` setup below works with both.
+
+#### Setup for Docker (local development)
+
+1. Add to dependencies:
+
+```bash
+cd backend && uv add debugpy --optional dev
+```
+
+2. Add to `server.py` (behind an env flag to avoid affecting production):
+
+```python
+import debugpy
+
+if os.getenv("DEBUG_MODE") == "1":
+    debugpy.listen(("0.0.0.0", 5678))
+    # debugpy.wait_for_client()  # Uncomment to pause startup until IDE connects
+```
+
+> **Flask reloader note:** Flask's auto-reloader forks two processes, which confuses debugpy. When using debugpy, disable the reloader:
+> ```python
+> app.run(debug=True, use_reloader=False)
+> ```
+
+3. Expose the debugpy port in `infra/docker/compose.yaml` (dev only — do NOT add to production compose):
+
+```yaml
+services:
+  lenie-ai-server:
+    ports:
+      - "5001:5000"
+      - "5678:5678"   # debugpy
+    environment:
+      DEBUG_MODE: "1"
+```
+
+4. Configure your IDE:
+
+#### VS Code (`.vscode/launch.json`)
+
+```json
+{
+  "configurations": [
+    {
+      "name": "Attach to Docker (debugpy)",
+      "type": "debugpy",
+      "request": "attach",
+      "connect": { "host": "localhost", "port": 5678 },
+      "pathMappings": [{
+        "localRoot": "${workspaceFolder}/backend",
+        "remoteRoot": "/app"
+      }]
+    }
+  ]
+}
+```
+
+#### PyCharm 2026.1+ (Attach to DAP)
+
+PyCharm 2026.1 introduced native debugpy support via the **Attach to DAP** run configuration — no plugin or manual connection management needed:
+
+1. _Run → Edit Configurations → + → Python Debugger → Attach to DAP_
+2. Set **Host**: `localhost`, **Port**: `5678`
+3. Run the configuration while the container is running with `DEBUG_MODE=1`
+
+> **Enable debugpy backend in PyCharm:** By default PyCharm still uses pydevd. To switch:
+> _Settings → Python → Debugger → Debugger mode → debugpy_
+> This is required for the Attach to DAP configuration to work correctly.
+
+#### AWS Lambda — local debugging with SAM
+
+AWS Lambda does not support persistent TCP connections, so debugpy cannot attach to a deployed function. For local Lambda debugging use AWS SAM with debugpy:
+
+```bash
+# Start Lambda container locally with debugpy port exposed
+sam local invoke --debug-port 5678 MyFunction
+
+# Or for API Gateway emulation
+sam local start-api --debug-port 5678
+```
+
+SAM starts the Lambda Runtime Interface Emulator in a Docker container and exposes port 5678. Use the same VS Code launch config as above (with `remoteRoot: "/var/task"`).
+
+For deployed Lambdas use CloudWatch Logs + AWS X-Ray tracing (via [AWS Lambda Powertools](https://docs.powertools.aws.dev/lambda/python/)):
+
+```python
+from aws_lambda_powertools import Logger, Tracer
+logger = Logger()
+tracer = Tracer()
+```
+
+#### Google Cloud Functions — local debugging
+
+Cloud Functions also don't support persistent TCP connections when deployed. Run the function locally via Functions Framework:
+
+```bash
+pip install functions-framework
+functions-framework --target=my_function --debug
+```
+
+Then attach debugpy normally to the local process.
+
 ### Testing
 
 ```bash
