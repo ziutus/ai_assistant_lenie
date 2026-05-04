@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import os
+import re
 import time
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
@@ -22,6 +23,20 @@ from library.text_transcript import youtube_titles_split_with_chapters, youtube_
 from library.transcript import transcript_price, get_assemblyai_price_per_minute
 
 logger = logging.getLogger(__name__)
+
+_CHAPTER_LINE_RE = re.compile(r'^(\d+:)?\d{1,2}:\d{2}\s+\S')
+
+
+def parse_chapters_from_description(description: str) -> str | None:
+    """Extract chapter timestamps from YouTube video description.
+
+    Matches lines like '0:00 Intro', '1:49 Topic', '1:01:36 Title'.
+    Returns newline-joined chapter lines, or None if fewer than 2 found.
+    """
+    if not description:
+        return None
+    lines = [line.strip() for line in description.splitlines() if _CHAPTER_LINE_RE.match(line.strip())]
+    return '\n'.join(lines) if len(lines) >= 2 else None
 
 
 def clean_youtube_url(url: str) -> str:
@@ -119,6 +134,13 @@ def process_youtube_url(
         web_document.text_raw = youtube_file.text
         web_document.document_type = StalkerDocumentType.youtube.name
         web_document.document_length = youtube_file.length_seconds
+        if youtube_file.description:
+            web_document.video_description = youtube_file.description
+            if not web_document.chapter_list:
+                parsed_chapters = parse_chapters_from_description(youtube_file.description)
+                if parsed_chapters:
+                    web_document.chapter_list = parsed_chapters
+                    logger.info(f"Auto-parsed {len(parsed_chapters.splitlines())} chapters from description")
         session.commit()
 
     logger.info(f"Video ID: {youtube_file.video_id}")
