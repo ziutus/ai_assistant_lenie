@@ -22,6 +22,7 @@ create table web_documents
     original_id          text,
     document_length      integer,
     chapter_list         text,
+    video_description    text,
     document_state       varchar(50) default 'URL_ADDED'::character varying not null,
     document_state_error text,
     text_raw             text,

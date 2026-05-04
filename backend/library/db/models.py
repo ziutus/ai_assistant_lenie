@@ -117,6 +117,7 @@ class WebDocument(Base):
     original_id: Mapped[str | None] = mapped_column(Text)
     document_length: Mapped[int | None] = mapped_column(Integer)
     chapter_list: Mapped[str | None] = mapped_column(Text)
+    video_description: Mapped[str | None] = mapped_column(Text)
 
     document_state: Mapped[str] = mapped_column(
         String(50), ForeignKey("document_status_types.name"),
@@ -378,6 +379,7 @@ class WebDocument(Base):
             "original_id": self.original_id,
             "document_length": self.document_length,
             "chapter_list": self.chapter_list,
+            "video_description": self.video_description,
             "document_state": self.document_state,
             "document_state_error": self.document_state_error or "NONE",
             "text_raw": self.text_raw,
