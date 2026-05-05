@@ -10,7 +10,8 @@ Usage:
     python imports/article_browser.py --review --id 8786                  # Start from specific article
     python imports/article_browser.py --show --id 8799                    # Display article and exit (non-interactive)
     python imports/article_browser.py --show --id 8799 --check-urls       # Display with link validation
-    python imports/article_browser.py --dump --id 8805                    # JSON output for Claude Code
+    python imports/article_browser.py --meta --id 8805                    # JSON metadata only (no text) — cheap token usage
+    python imports/article_browser.py --dump --id 8805                    # JSON output for Claude Code (includes full text)
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW   # Articles needing manual review
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format ids    # Just IDs (for scripting)
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format short  # IDs + titles
@@ -29,8 +30,9 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
-__version__ = "0.3.2"
+__version__ = "0.3.3"
 # Changelog:
+#   0.3.3 — dodano --meta: JSON z metadanymi bez pola text (oszczędność tokenów dla Claude Code)
 #   0.3.2 — menu akcji drukowane przed każdym promptem (widoczne też po [v]/[b]/[r])
 #   0.3.1 — [b] rozszerza kontekst HEAD/TAIL o +400 znaków (kolejne ~2 zdania) na każde naciśnięcie
 #   0.3.0 — boundaries inline: HEAD przed tekstem, TAIL po tekście (wizualna ciągłość)
@@ -1158,6 +1160,47 @@ def action_mark_review(doc, session):
         print(f"  BŁĄD zmiany statusu: {e}")
 
 
+def cmd_meta(session, article_id: Optional[int] = None):
+    """Wypisz metadane artykułu jako JSON bez pola text — tanie wywołanie dla Claude Code.
+
+    Używane jako Step 1a w slash command /obsidian-note: sprawdź document_state
+    przed podjęciem decyzji czy pobierać pełny tekst (--dump).
+    """
+    import json
+
+    if article_id is None:
+        print(json.dumps({"error": "--meta wymaga --id <ARTICLE_ID>"}), file=sys.stderr)
+        sys.exit(1)
+
+    doc = WebDocument.get_by_id(session, article_id)
+    if doc is None:
+        print(json.dumps({"error": f"Dokument {article_id} nie znaleziony."}), file=sys.stderr)
+        sys.exit(1)
+
+    result = {
+        "id": doc.id,
+        "uuid": str(doc.uuid) if doc.uuid else None,
+        "title": doc.title,
+        "url": doc.url,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "document_state": doc.document_state,
+        "document_type": doc.document_type,
+        "language": doc.language,
+        "source": doc.source,
+        "author": doc.author,
+        "note": doc.note,
+        "summary": doc.summary,
+        "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
+        "obsidian_note_paths": doc.obsidian_note_paths or [],
+        "chapter_list": doc.chapter_list,
+        "video_description": doc.video_description,
+        "text_length": len(doc.text or doc.text_raw or ""),
+    }
+
+    sys.stdout.reconfigure(encoding="utf-8")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
     """Wypisz artykuł jako JSON na stdout — do użycia przez Claude Code slash commands.
 
@@ -1192,6 +1235,8 @@ def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
         "language": doc.language,
         "source": doc.source,
         "author": doc.author,
+        "note": doc.note,
+        "summary": doc.summary,
         "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
         "obsidian_note_paths": doc.obsidian_note_paths or [],
         "chapter_list": doc.chapter_list,
@@ -1479,6 +1524,7 @@ def main():
     group.add_argument("--list", action="store_true", help="Lista artykułów")
     group.add_argument("--review", action="store_true", help="Interaktywny przegląd")
     group.add_argument("--show", action="store_true", help="Wyświetl artykuł i zakończ (wymaga --id)")
+    group.add_argument("--meta", action="store_true", help="Wypisz metadane artykułu jako JSON bez tekstu — tanie wywołanie (wymaga --id)")
     group.add_argument("--dump", action="store_true", help="Wypisz artykuł jako JSON — pole text (czysta treść)")
     group.add_argument("--dump-md", action="store_true", help="Wypisz artykuł jako JSON — pole text_md (markdown z formatowaniem)")
     group.add_argument("--notes", action="store_true", help="Pokaż zapisane notatki do przetworzenia")
@@ -1512,7 +1558,9 @@ def main():
     session = get_session()
 
     try:
-        if args.dump:
+        if args.meta:
+            cmd_meta(session, article_id=args.id)
+        elif args.dump:
             cmd_dump(session, article_id=args.id, use_md=False)
         elif args.dump_md:
             cmd_dump(session, article_id=args.id, use_md=True)
