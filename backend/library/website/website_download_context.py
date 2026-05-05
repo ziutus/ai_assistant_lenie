@@ -1,4 +1,5 @@
 import re
+from urllib.parse import urlparse
 
 import requests
 from bs4 import BeautifulSoup
@@ -15,6 +16,10 @@ def load_site_rules(file_path: str) -> dict:
 
 
 def download_raw_html(url: str) -> bytes | None:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"Unsupported URL scheme: {parsed.scheme!r}. Only http and https are allowed.")
+
     response = requests.get(url)
 
     if response.status_code == 200:
