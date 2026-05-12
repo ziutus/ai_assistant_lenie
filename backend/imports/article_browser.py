@@ -83,6 +83,7 @@ def _getch_action(prompt: str) -> str:
         return input().strip().lower()
 
 from sqlalchemy import text as text_sql
+from sqlalchemy.exc import InternalError as SqlInternalError
 
 from library.config_loader import load_config
 from library.db.engine import get_session
@@ -1025,7 +1026,12 @@ def _get_documents(session, limit: int = 50, since: Optional[str] = None,
 
     results = []
     for d in doc_dicts:
-        doc = WebDocument.get_by_id(session, d["id"])
+        try:
+            doc = WebDocument.get_by_id(session, d["id"])
+        except SqlInternalError as e:
+            session.rollback()
+            print(f"  OSTRZEŻENIE: pominięto dokument id={d['id']} — korupcja bloku DB: {e.orig}")
+            continue
         if doc is None:
             continue
         if portal and portal not in (doc.url or ""):
