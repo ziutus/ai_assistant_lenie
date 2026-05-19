@@ -34,11 +34,18 @@ Display the metadata to the user.
 
 **Step 1b — check `document_state` before fetching text:**
 
+Check `document_type` from Step 1a to decide the rule:
+
+**For `youtube` or `movie`:**
+- Transcription is stored in `text` in the DB regardless of state — `--dump` always returns it.
+- If `text_length` from `--meta` is 0 → warn: "Brak transkrypcji dla tego dokumentu YouTube. Nie można utworzyć notatki."
+- Otherwise → proceed directly to `--dump`.
+
+**For `webpage`, `link`, or other types:**
 - If `document_state` is `URL_ADDED` or `DOCUMENT_INTO_DATABASE` → **STOP and warn the user**:
   > "Artykuł ma status `{state}` — tekst jest surowy (zawiera szum nawigacyjny strony, reklamy itp.) i zużyje znacznie więcej tokenów niż czysty artykuł. Pobierać mimo to?"
   Proceed only if user confirms.
-
-- If `document_state` is `DOCUMENT_CLEANED` or any later state → fetch full text:
+- If `document_state` is `DOCUMENT_CLEANED` or any later state → proceed to `--dump`.
 
 ```bash
 .venv/Scripts/python imports/article_browser.py --dump --id <ARTICLE_ID>
