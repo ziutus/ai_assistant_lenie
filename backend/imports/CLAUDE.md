@@ -1,13 +1,18 @@
 # Backend Imports — CLAUDE.md
 
-Standalone import scripts for bulk-loading documents from external sources into the Lenie database.
+Standalone CLI scripts that add or manage documents in the Lenie database, bypassing the REST API. Covers both single-item ad-hoc tools and bulk import pipelines.
 
 ## Directory Structure
 
 ```
 imports/
 ├── dynamodb_sync.py          # Sync documents from DynamoDB + S3 to local PostgreSQL
-└── unknown_news_import.py    # Import curated links from unknow.news
+├── unknown_news_import.py    # Import curated links from unknow.news
+├── youtube_add.py            # Ad-hoc: process a single YouTube video
+├── email_import.py           # Ad-hoc: import a Gmail email (via gws CLI)
+├── article_browser.py        # Interactive browser / review tool for DB articles
+├── feed_monitor.py           # Monitor RSS/Atom feeds and import new entries
+└── freedom_house_import.py   # Import Freedom House country ratings
 ```
 
 ## Scripts
@@ -120,9 +125,74 @@ cd backend
 - `tmp/` directory must exist (for caching the downloaded JSON)
 - Network access to `https://unknow.news/`
 
+### `youtube_add.py`
+
+Ad-hoc CLI tool for processing a single YouTube video: adds it to the database, fetches metadata (title, language), downloads captions or transcription, and optionally generates an AI summary.
+
+**Data access: ORM (SQLAlchemy)** via `process_youtube_url()` from `library.youtube_processing`.
+
+**How it works:**
+1. Optionally authenticates Webshare proxy (checks bandwidth, disables if exhausted)
+2. Calls `process_youtube_url()` with the provided URL and options
+3. Prints a summary (ID, title, URL, language, state, text length, elapsed time)
+
+**Running:**
+```bash
+cd backend
+python imports/youtube_add.py <URL>
+python imports/youtube_add.py <URL> --language pl --note "..." --source own
+python imports/youtube_add.py <URL> --summary --force
+python imports/youtube_add.py <URL> --chapters-file chapters.txt -v
+```
+
+**Arguments:**
+- `url` — YouTube video URL (required)
+- `--language CODE` — language code (e.g. `pl`, `en`); auto-detected if omitted
+- `--note TEXT` — note to attach to the document
+- `--source ID` — source identifier (default: `own`)
+- `--chapters TEXT` — chapter list as inline text
+- `--chapters-file PATH` — path to file with chapter list
+- `--summary` — generate AI summary after processing
+- `--force` — reprocess even if embeddings already exist
+- `-v`, `--verbose` — enable debug logging
+
+**Prerequisites:**
+- `.env` file with `POSTGRESQL_*` variables and LLM API keys
+- Optional: `WEBSHARE_API_KEY` for proxy support
+
+### `email_import.py`
+
+Ad-hoc CLI tool for importing a Gmail email into Lenie. Uses the `gws` CLI (Google Workspace CLI) to fetch the email, extracts links from the body, and stores the document in the database.
+
+**Data access: ORM (SQLAlchemy)** — direct DB writes via `WebDocument` model.
+
+**Prerequisite:** `gws` CLI must be installed and authenticated:
+```bash
+npm install -g @googleworkspace/cli
+gws auth setup
+```
+
+**Running:**
+```bash
+cd backend
+python imports/email_import.py --search "subject:AI Flash #78"
+python imports/email_import.py --id 19ce7076beeaf054
+python imports/email_import.py --id 19ce7076beeaf054 --source "newsletter:AI Flash" --note "AI news digest"
+python imports/email_import.py --search "from:campus@campusai.pl" --list
+python imports/email_import.py --id 19ce7076beeaf054 --dry-run
+```
+
+**Arguments:**
+- `--id ID` — Gmail message ID to import
+- `--search QUERY` — Gmail search query to find messages
+- `--list` — list matching messages without importing
+- `--source TEXT` — source identifier for the imported document
+- `--note TEXT` — note to attach to the document
+- `--dry-run` — preview only, no DB writes
+
 ## Architecture Notes
 
-- These scripts bypass the REST API intentionally — they are meant for batch import operations run locally or as scheduled jobs, not through the web interface.
-- Both scripts use ORM models (`WebDocument` from `library.db.models`) with `get_session()` from `library.db.engine` for database access. Session lifecycle follows the pattern: `session = get_session()` → `try` → per-document `session.commit()` → `finally` → `session.close()`.
+- All scripts bypass the REST API intentionally — they are meant for local or scheduled operations, not the web interface.
+- Scripts use ORM models (`WebDocument` from `library.db.models`) with `get_session()` from `library.db.engine`. Session lifecycle: `session = get_session()` → `try` → `session.commit()` → `finally` → `session.close()`.
 - Duplicate detection uses `WebDocument.get_by_url(session, url)` — returns existing document or `None`.
 - `unknown_news_import.py` creates link documents with `READY_FOR_EMBEDDING` status and YouTube documents with `URL_ADDED` status.

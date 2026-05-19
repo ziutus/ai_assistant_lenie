@@ -17,7 +17,7 @@ backend/
 │   └── CLAUDE.md                          # ↳ Detailed docs
 ├── database/                              # PostgreSQL schema & initialization
 │   └── CLAUDE.md                          # ↳ Detailed docs
-├── imports/                               # Bulk data import scripts
+├── imports/                               # CLI tools & import scripts (bypass REST API)
 │   └── CLAUDE.md                          # ↳ Detailed docs
 ├── data/                                  # Site-specific cleanup rules & regex patterns
 │   └── CLAUDE.md                          # ↳ Detailed docs
@@ -28,6 +28,7 @@ backend/
 │
 ├── markdown_to_embedding.py              # Batch: markdown files → embeddings
 ├── web_documents_do_the_needful_new.py   # Batch: download, transcribe, embed documents
+├── web_documents_fix_missing_markdown.py # Batch: fix documents with missing markdown
 ├── webdocument_md_decode.py              # Batch: markdown decoding & link processing
 ├── webdocument_prepare_regexp_by_ai.py   # AI-driven regex pattern generation
 │
@@ -100,13 +101,16 @@ Standalone scripts for bulk document operations. Run manually, not part of the F
 | Script | Purpose | DB Access |
 |--------|---------|-----------|
 | `web_documents_do_the_needful_new.py` | Full pipeline: download webpage content, transcribe YouTube videos (AssemblyAI/AWS Transcribe), detect language, generate embeddings, store to PostgreSQL + S3 | **Yes** |
+| `web_documents_fix_missing_markdown.py` | Fix documents that are missing markdown content | **Yes** |
 | `webdocument_md_decode.py` | Markdown decoding, link extraction and correction, prepare content for embedding | **Yes** |
 | `webdocument_prepare_regexp_by_ai.py` | Generate site-specific regex patterns for article extraction using LLM | **Yes** |
 | `markdown_to_embedding.py` | Convert markdown files from `{CACHE_DIR}/markdown/` into embeddings. Supports manual corrections via `{id}_manual.md` files | No |
 
+Ad-hoc single-item tools and bulk import scripts live in [`imports/`](imports/CLAUDE.md): `youtube_add.py`, `email_import.py`, `dynamodb_sync.py`, `unknown_news_import.py`, `article_browser.py`, `feed_monitor.py`, `freedom_house_import.py`.
+
 ### Database connectivity requirement
 
-Scripts marked **Yes** use `WebsitesDBPostgreSQL` with SQLAlchemy ORM session (`get_session()` from `library.db.engine`). The same applies to `imports/unknown_news_import.py`.
+Scripts marked **Yes** use `WebsitesDBPostgreSQL` with SQLAlchemy ORM session (`get_session()` from `library.db.engine`). The same applies to all scripts in `imports/`.
 
 - **Local/Docker**: Connect to local PostgreSQL (`lenie-ai-db` on port 5433) — works out of the box.
 - **AWS RDS**: The database runs inside a private VPC and is not publicly accessible. To connect from a local machine, start the OpenVPN EC2 instance first:
@@ -165,7 +169,7 @@ Each subdirectory has its own `CLAUDE.md` with detailed documentation:
 |-----------|-----------|--------|
 | `library/` | [library/CLAUDE.md](library/CLAUDE.md) | Domain models, LLM abstraction, embedding generation, text processing, external API integrations |
 | `database/` | [database/CLAUDE.md](database/CLAUDE.md) | PostgreSQL schema, pgvector setup, `web_documents` and `websites_embeddings` tables, 15 processing states |
-| `imports/` | [imports/CLAUDE.md](imports/CLAUDE.md) | Bulk import scripts (unknow.news), direct DB access pattern |
+| `imports/` | [imports/CLAUDE.md](imports/CLAUDE.md) | CLI tools & import scripts: `youtube_add.py`, `email_import.py`, `dynamodb_sync.py`, `unknown_news_import.py`, `article_browser.py`, `feed_monitor.py` |
 | `data/` | [data/CLAUDE.md](data/CLAUDE.md) | Site-specific cleanup rules (`site_rules.json`), regex patterns for Polish news portals |
 | `tests/` | [tests/CLAUDE.md](tests/CLAUDE.md) | Unit tests (9 files: markdown, text, paywall) and integration tests (5 files: REST API endpoints) |
 | `test_code/` | [test_code/CLAUDE.md](test_code/CLAUDE.md) | Experimental scripts: RAG pipeline, LLM provider testing, Bielik text processing, cloud migrations |
