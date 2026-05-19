@@ -30,8 +30,9 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
-__version__ = "0.3.3"
+__version__ = "0.3.4"
 # Changelog:
+#   0.3.4 — get_article_text: early return dla youtube/movie (transkrypcja z DB, bez S3)
 #   0.3.3 — dodano --meta: JSON z metadanymi bez pola text (oszczędność tokenów dla Claude Code)
 #   0.3.2 — menu akcji drukowane przed każdym promptem (widoczne też po [v]/[b]/[r])
 #   0.3.1 — [b] rozszerza kontekst HEAD/TAIL o +400 znaków (kolejne ~2 zdania) na każde naciśnięcie
@@ -467,6 +468,13 @@ def clean_article_text(text: str, url: str = "") -> dict:
 def get_article_text(doc, session) -> Optional[dict]:
     """Pobierz wyekstrahowany tekst artykułu z DB, cache lub przez LLM.
     Zwraca dict: {text, links, images} lub None."""
+
+    # YouTube/movie: transkrypcja jest w doc.text — brak HTML w S3
+    if doc.document_type in ("youtube", "movie"):
+        if doc.text and len(doc.text) > 100:
+            return {"text": doc.text.strip(), "links": [], "images": []}
+        print("  Brak transkrypcji dla dokumentu YouTube.")
+        return None
 
     # 1. Jeśli tekst jest w bazie (MD_SIMPLIFIED, EMBEDDING_EXIST) — użyj go
     if doc.text and len(doc.text) > 100 and doc.document_state in ("MD_SIMPLIFIED", "EMBEDDING_EXIST"):
