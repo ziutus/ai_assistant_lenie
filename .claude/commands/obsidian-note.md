@@ -26,8 +26,8 @@ Execute ALL steps below in order. Do NOT skip step 5 (database update).
 
 **Step 1a — metadata only (no text field, cheap):**
 
-```bash
-.venv/Scripts/python imports/article_browser.py --meta --id <ARTICLE_ID>
+```powershell
+cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/article_browser.py --meta --id <ARTICLE_ID>
 ```
 
 Display the metadata to the user.
@@ -47,8 +47,8 @@ Check `document_type` from Step 1a to decide the rule:
   Proceed only if user confirms.
 - If `document_state` is `DOCUMENT_CLEANED` or any later state → proceed to `--dump`.
 
-```bash
-.venv/Scripts/python imports/article_browser.py --dump --id <ARTICLE_ID>
+```powershell
+cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/article_browser.py --dump --id <ARTICLE_ID>
 ```
 
 The `--dump` JSON adds one extra field to `--meta`: `text` (full article content).
@@ -147,8 +147,8 @@ Wait for user input on what to create/update. Then create/update the Obsidian .m
 After creating/updating Obsidian notes, ALWAYS update the article in the database.
 Use article_browser.py's ORM session pattern:
 
-```bash
-.venv/Scripts/python -c "
+```powershell
+cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python -c @"
 from datetime import datetime
 from library.db.engine import get_session
 from library.db.models import WebDocument
@@ -163,7 +163,7 @@ session.commit()
 print(f'obsidian_note_paths: {doc.obsidian_note_paths}')
 print(f'reviewed_at: {doc.reviewed_at}')
 session.close()
-"
+"@
 ```
 
 **For multi-note sessions (YouTube):** append paths one by one after each note is saved, OR append all at once at the end of the session.
@@ -180,7 +180,7 @@ If the article topic relates to existing notes (e.g., country files, topic notes
 - Obsidian vault root: `C:\Users\ziutus\Obsydian\personal`
 - Knowledge directory: `C:\Users\ziutus\Obsydian\personal\02-wiedza`
 - **NEVER use `uv run`** — it does not work in this project (hatchling build error)
-- Run Python commands directly: `.venv/Scripts/python ...` (bash working dir is already `backend/` — do NOT prefix with `cd backend &&`)
+- Run Python commands via **PowerShell** with absolute cd: `cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python ...` — cd to absolute path is idempotent (works regardless of current directory; never use `cd backend &&` in Bash which fails when CWD is already backend)
 - Always include source with Lenie AI **uuid** (not numeric id) — `doc.uuid` from database
 - **Always propose note content before saving** — wait for user approval
 - **Financial angle is mandatory** for tech/geopolitics/project notes — include or mark as TODO
