@@ -4,7 +4,8 @@ site_rules = {
         "remove_before": ["PomorskieWrocławKoronawirus", "PomorskieWrocławKoronawirus"],
         "remove_after": [r"Elementem\swspółczesnej\swojny\sjest\swojna\sinformacyjna",
                              r"Masz newsa,\s+zdjęcie\s+lub\s+filmik\?\s+Prześlij\s+nam\s+przez\s+dziejesie\.wp\.pl\s+Oceń\s+jakość\s+naszego\s+artykułu",# noqa
-                         r"### Wybrane dla Ciebie"# noqa
+                         r"### Wybrane dla Ciebie",# noqa
+                         r"PREMIUM\s+Zapisz\s+się\s+na\s+newsletter!"# noqa
         ], # noqa
         "remove_string": ["Wyłączono komentarze", "Dalsza część artykułu pod materiałem wideo"],# noqa
         "remove_string_regexp": [r"\n\s*Trwa\sładowanie\swpisu:\sfacebook\s*\n", r"\n\s*Rozwin\s*\n"] # noqa
