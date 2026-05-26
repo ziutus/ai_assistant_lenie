@@ -416,6 +416,53 @@ development_status:
   epic-34-retrospective: done
 
   # ============================================================
+  # SPRINT 14: MCP Server MVP — Mobile Knowledge Workflow
+  # ============================================================
+
+  # --- Epic 35 (MCP-A): MCP Server Foundation ---
+  epic-35: in-progress
+  35-1-python-project-structure-mcp-sdk-dependencies: done
+  35-2-dockerfile-docker-compose-integration: done
+  35-3-environment-configuration-health-check-endpoint: done
+  epic-35-retrospective: optional
+
+  # --- Epic 36 (MCP-B): Lenie Read Tools ---
+  epic-36: in-progress
+  36-1-lenie-unreviewed-articles-tool: done
+  36-2-lenie-get-article-tool: done
+  36-3-lenie-search-tool: backlog
+  epic-36-retrospective: optional
+
+  # --- Epic 37 (MCP-C): Lenie Write Tools ---
+  epic-37: backlog
+  37-1-lenie-delete-article-tool: backlog
+  37-2-article-obsidian-linking-helpers: backlog
+  epic-37-retrospective: optional
+
+  # --- Epic 38 (MCP-D): Obsidian Tools + Version History ---
+  epic-38: backlog
+  38-1-obsidian-note-versions-table-alembic-migration: backlog
+  38-2-obsidian-read-note-obsidian-list-notes-tools: backlog
+  38-3-obsidian-write-note-tool-versioning: backlog
+  38-4-obsidian-delete-note-tool: backlog
+  38-5-obsidian-note-history-tool: backlog
+  epic-38-retrospective: optional
+
+  # --- Epic 39 (MCP-E): Cloudflare Infrastructure ---
+  epic-39: backlog
+  39-1-dedicated-domain-cloudflare-dns-setup: backlog
+  39-2-cloudflare-tunnel-configuration: backlog
+  39-3-cloudflare-mcp-server-portal-zero-trust-oauth: backlog
+  epic-39-retrospective: optional
+
+  # --- Epic 40 (MCP-F): End-to-End Integration ---
+  epic-40: backlog
+  40-1-obsidian-headless-container-nas-docker-stack: backlog
+  40-2-claude-custom-connector-configuration: backlog
+  40-3-end-to-end-acceptance-test-mvp-gate: backlog
+  epic-40-retrospective: optional
+
+  # ============================================================
   # DONE (completed backlog items — historical record)
   # ============================================================
   # B-17 removed: web_add_url_react archived and deleted from repo
