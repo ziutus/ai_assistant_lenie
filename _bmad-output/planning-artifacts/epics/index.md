@@ -61,15 +61,15 @@ This document serves as the index for all epics in lenie-server-2025. Individual
 
 ### Sprint 7: Slack Bot MVP & Config Loader Migration (IN PROGRESS)
 
-- Epic 21: Slack Bot MVP — Slash Commands — [epics.md](../epics.md#epic-21-slack-bot-mvp--slash-commands)
+- Epic 21: Slack Bot MVP — Slash Commands — [archived](../archive/epics-whole-2026-04-15.md#epic-21-slack-bot-mvp--slash-commands)
 - B-79: Migrate Standalone Scripts to config_loader — [backlog.md](backlog.md#b-79-migrate-standalone-scripts-to-config-loader)
 
 ### Future Sprint 8: Slack Bot Enhancements
 
-- Epic 22: Direct Message Interaction — [epics.md](../epics.md#epic-22-direct-message-interaction)
-- Epic 23: Channel App Mentions — [epics.md](../epics.md#epic-23-channel-app-mentions)
-- Epic 24: Conversational LLM Intelligence — [epics.md](../epics.md#epic-24-conversational-llm-intelligence)
-- Epic 25: Proactive Health Monitoring — [epics.md](../epics.md#epic-25-proactive-health-monitoring)
+- Epic 22: Direct Message Interaction — [archived](../archive/epics-whole-2026-04-15.md#epic-22-direct-message-interaction)
+- Epic 23: Channel App Mentions — [archived](../archive/epics-whole-2026-04-15.md#epic-23-channel-app-mentions)
+- Epic 24: Conversational LLM Intelligence — [archived](../archive/epics-whole-2026-04-15.md#epic-24-conversational-llm-intelligence)
+- Epic 25: Proactive Health Monitoring — [archived](../archive/epics-whole-2026-04-15.md#epic-25-proactive-health-monitoring)
 
 ### Sprint 9: SQLAlchemy ORM Migration
 
@@ -86,6 +86,16 @@ This document serves as the index for all epics in lenie-server-2025. Individual
 
 - Epic 31: Security Fixes & Project Governance (B-87, B-85, B-86)
 - Epic 32: Service Layer Extraction (B-56)
+- Epic 33: Import Pipeline Maturity — Cache Consolidation, Operation Logging & Article Review Tracking — [epic-33.md](epic-33.md)
+
+### Sprint 14: MCP Server MVP — Mobile Knowledge Workflow
+
+- Epic 35 (MCP-A): MCP Server Foundation — Python SDK, Docker container — [epic-35.md](epic-35.md)
+- Epic 36 (MCP-B): Lenie Read Tools — lenie_unreviewed_articles, lenie_get_article, lenie_search — [epic-36.md](epic-36.md)
+- Epic 37 (MCP-C): Lenie Write Tools — lenie_delete_article, article-obsidian linking — [epic-37.md](epic-37.md)
+- Epic 38 (MCP-D): Obsidian Tools + Version History — 5 narzędzi + obsidian_note_versions table — [epic-38.md](epic-38.md)
+- Epic 39 (MCP-E): Cloudflare Infrastructure — domain, Tunnel, MCP Server Portal — [epic-39.md](epic-39.md)
+- Epic 40 (MCP-F): End-to-End Integration — obsidian-headless, Custom Connector, MVP gate — [epic-40.md](epic-40.md)
 
 ## Backlog Items
 
