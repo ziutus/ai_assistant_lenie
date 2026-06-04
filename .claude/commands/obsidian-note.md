@@ -98,27 +98,26 @@ Report which notes were found and what they already contain.
 
 ### Step 4: Check geopolitical control questions (if applicable)
 
-If the article is about **geopolitics** (countries, wars, alliances, military, diplomacy, regions), read the control questions file:
+Check the `tags` field from the `--dump` output (Step 1b).
 
-`C:\Users\ziutus\Obsydian\personal\02-wiedza\Geopolityka i polityka\_pytania_kontrolne\_Pytania do każdego kraju czy obszaru.md`
+If `tags` is non-empty, fetch only the relevant control questions by running:
 
-Then check which of the questions below are answered by the article. Report only the ones that **are** answered — skip those with no data:
+```powershell
+cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/control_questions.py --tags <tags_from_dump>
+```
 
-- **Czyja to strefa wpływu / do jakiego bloku należy?** — USA, Russia, China orbit? Non-aligned?
-- **Czyjej technologii używa?** — whose weapons, internet infrastructure, nuclear reactors?
-- **Z kim prowadzi konflikty i na jakim poziomie?** — political / proxy / traditional war
-- **Jaka ma armię w porównaniu do innych?** — arms imports, capabilities, suppliers
-- **Jakie ma aspiracje i cele strategiczne?** — what does the country want to achieve?
-- **Jaki jest stan finansów?** — rich, bankrupt, dependent on commodities?
-- **Czy jest regionalnym hegemonem?** — does it dominate the region militarily/politically?
-- **Jaka panuje ideologia?** — imperialism, nationalism, theocracy, democracy?
-- **Jakie są strefy buforowe?** — which countries/territories act as buffers?
-- **Czy kraj jest bliski rewolucji?** — internal stability?
-- **Jaka rolę pełni w systemie międzynarodowym?** — mediator, supplier, client state?
+For example, if `tags` is `wojsko,gospodarka,sojusze`:
+```powershell
+cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/control_questions.py --tags wojsko,gospodarka,sojusze
+```
 
-If any questions are answered, include those answers explicitly in the notes when creating/updating them (as dedicated `##` sections matching the question topic, e.g. `## Aspiracje i cele strategiczne`, `## Konflikty`, `## Stan finansów`).
+The script returns only the `##` sections from the control questions file that are relevant to those tags — a small, focused subset instead of the full list.
 
-If the article is **not** about geopolitics, skip this step entirely.
+Then check which of the returned questions are **answered** by the article. Report only the ones that are answered — skip those with no data.
+
+If any questions are answered, include those answers explicitly in the notes (as dedicated `##` sections matching the question topic, e.g. `## Aspiracje i cele strategiczne`, `## Konflikty`, `## Stan finansów`).
+
+If `tags` is empty, skip this step entirely.
 
 ### Step 5: Discuss with user and create/update notes
 
