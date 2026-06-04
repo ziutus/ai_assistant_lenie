@@ -100,6 +100,13 @@ OBSIDIAN_VAULT = r"C:\Users\ziutus\Obsydian\personal"
 OBSIDIAN_KNOWLEDGE_DIR = os.path.join(OBSIDIAN_VAULT, "02-wiedza")
 NOTES_DIR = os.path.join(_BACKEND_DIR, "tmp", "article_notes")
 
+THEMATIC_TAGS = [
+    "wojsko", "gospodarka", "geopolityka", "ideologia",
+    "religia", "demografia", "etniczne", "soft-power-religijny",
+    "ustroj", "sluzby-specjalne", "technologia", "internet",
+    "finanse-publiczne", "sojusze",
+]
+
 
 def _get_cache_status(doc_id: int) -> str:
     """Zwraca jednoliniowy status plików cache dla artykułu: [md ✓/—] [llm ✓/—] [regexp ✓/—]"""
@@ -207,6 +214,10 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
         if re.match(r'^[-*_]{3,}\s*$', stripped):
             continue
 
+        # Puste nagłówki markdown (np. "####" po usunięciu obrazka z pustym URL)
+        if re.match(r'^#{1,6}\s*$', stripped):
+            continue
+
         # Puste linie z samą liczbą (reakcje)
         if stripped.isdigit():
             continue
@@ -251,9 +262,27 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
     """Czyszczenie specyficzne dla onet.pl/fakt.pl."""
     skip = {"Posłuchaj artykułu", "Skróć artykuł", "- x1 +", "x1", "Obserwuj"}
     cleaned = []
+    in_top_premium = False
     for line in lines:
         stripped = line.strip()
-        if stripped in skip:
+
+        # Sekcja "Top treści w Premium": nagłówek + ponumerowane linki (1 Tytuł [linkN])
+        if stripped == "Top treści w Premium":
+            in_top_premium = True
+            continue
+        if in_top_premium:
+            if not stripped:
+                continue
+            if re.match(r'^\d+\s+\S', stripped) and re.search(r'\[link\d+\]\s*$', stripped):
+                continue
+            in_top_premium = False  # koniec sekcji — przetwórz tę linię normalnie
+
+        # Porównuj treść linii bez prefiksów nagłówkowych (#### Posłuchaj artykułu → Posłuchaj artykułu)
+        stripped_content = re.sub(r'^#{1,6}\s+', '', stripped)
+        if stripped_content in skip:
+            continue
+        # Przyciski prędkości audio playera: x2, x1.75, x1.5, x1.25, x0.75
+        if re.match(r'^x[\d.]+$', stripped):
             continue
         # Wstawki premium: "**1** ### Tytuł [linkN]**2** ### ..."
         if re.match(r'^\*\*\d+\*\*\s+###\s+', stripped):
@@ -362,6 +391,9 @@ def clean_article_text(text: str, url: str = "") -> dict:
     def replace_image(m):
         alt = m.group(1).strip()
         img_url = m.group(2).strip()
+        # Artefakty z konwersji HTML: obrazki z pustym URL → usuń
+        if not img_url:
+            return ""
         # Pomijaj emotki, ikony portalu i bannery reklamowe
         if any(p in img_url for p in _skip_image_patterns):
             return ""
@@ -378,7 +410,7 @@ def clean_article_text(text: str, url: str = "") -> dict:
         extracted_images.append({"alt": alt, "url": img_url})
         return f"[img{idx}: {alt}]" if alt else f"[img{idx}]"
 
-    text = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', replace_image, text)
+    text = re.sub(r'!\[([^\]]*)\]\(([^)]*)\)', replace_image, text)
     # Linki owijające markery img: [[imgN]](url) → [imgN]
     text = re.sub(r'\[(\[img\d+[^\]]*\])\]\([^)]+\)', lambda m: m.group(1), text)
 
@@ -937,6 +969,28 @@ def _refresh_db_connection(session):
             return False
 
 
+def _tag_article_with_llm(text: str, title: str) -> list[str]:
+    """Klasyfikuj artykuł według kategorii tematycznych. Zwraca listę tagów."""
+    from library.ai import ai_ask
+
+    tags_list = ", ".join(THEMATIC_TAGS)
+    prompt = (
+        f"Przeczytaj poniższy artykuł i wybierz kategorie tematyczne, które są w nim WYRAŹNIE omawiane.\n\n"
+        f"Dostępne kategorie: {tags_list}\n\n"
+        f"Zwróć TYLKO listę wybranych kategorii oddzielonych przecinkami, bez żadnych wyjaśnień.\n"
+        f"Jeśli żadna kategoria nie pasuje, zwróć pustą odpowiedź.\n\n"
+        f"TYTUŁ: {title}\n\nTREŚĆ:\n{text[:3000]}"
+    )
+    try:
+        response = ai_ask(prompt, model="Bielik-11B-v3.0-Instruct", temperature=0.0, max_token_count=100)
+        raw = response.response_text.strip().lower()
+        found = [t.strip() for t in raw.split(",") if t.strip() in THEMATIC_TAGS]
+        return found
+    except Exception as e:
+        print(f"  OSTRZEŻENIE: klasyfikacja tematyczna nie powiodła się: {e}")
+        return []
+
+
 def action_save_to_db(doc, article: dict, session) -> bool:
     """Zapisz oczyszczony tekst do bazy, stwórz embedding, ustaw status."""
     from library.models.stalker_document_status import StalkerDocumentStatus
@@ -987,7 +1041,21 @@ def action_save_to_db(doc, article: dict, session) -> bool:
         print(f"  BŁĄD zapisu tekstu: {e}")
         return False
 
-    # 2. Twórz embedding
+    # 2. Klasyfikacja tematyczna
+    print(f"  Klasyfikuję artykuł tematycznie...")
+    article_tags = _tag_article_with_llm(text_only, doc.title or "")
+    if article_tags:
+        doc.tags = ",".join(article_tags)
+        try:
+            session.commit()
+            print(f"  Tagi: {', '.join(article_tags)}")
+        except Exception as e:
+            session.rollback()
+            print(f"  OSTRZEŻENIE: nie udało się zapisać tagów: {e}")
+    else:
+        print(f"  Brak tagów tematycznych.")
+
+    # 3. Twórz embedding
     print(f"  Tworzę embedding...")
     try:
         wb_db = WebsitesDBPostgreSQL(session=session)
@@ -1205,6 +1273,7 @@ def cmd_meta(session, article_id: Optional[int] = None):
         "note": doc.note,
         "summary": doc.summary,
         "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
+        "tags": doc.tags or "",
         "obsidian_note_paths": doc.obsidian_note_paths or [],
         "chapter_list": doc.chapter_list,
         "video_description": doc.video_description,
@@ -1252,6 +1321,7 @@ def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
         "note": doc.note,
         "summary": doc.summary,
         "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
+        "tags": doc.tags or "",
         "obsidian_note_paths": doc.obsidian_note_paths or [],
         "chapter_list": doc.chapter_list,
         "video_description": doc.video_description,
@@ -1292,6 +1362,8 @@ def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False
         print(f"  Obsidian: {len(obsidian_paths)} notatek")
         for op in obsidian_paths:
             print(f"    - {op}")
+    if doc.tags:
+        print(f"  Tagi:    {doc.tags}")
     reviewed_str = doc.reviewed_at.strftime("%Y-%m-%d %H:%M") if doc.reviewed_at else "nie"
     print(f"  Reviewed: {reviewed_str}")
 
@@ -1360,6 +1432,8 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
             print(f"  Obsidian: {len(obsidian_paths)} notatek")
             for op in obsidian_paths:
                 print(f"    - {op}")
+        if doc.tags:
+            print(f"  Tagi:    {doc.tags}")
         reviewed_str = doc.reviewed_at.strftime("%Y-%m-%d %H:%M") if doc.reviewed_at else "nie"
         print(f"  Reviewed: {reviewed_str}")
 

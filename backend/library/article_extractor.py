@@ -150,6 +150,7 @@ PORTAL_SKIP_SECTIONS = {
         "### Więcej pogłębionych treści",
         "### Więcej treści premium dla Ciebie",
         "## Najlepsze w premium",
+        "Top treści w Premium",
     ],
     "money": [],
     "wp": [],
@@ -308,8 +309,12 @@ def _clean_markdown_for_llm(text: str, portal: str | None = None) -> str:
         if stripped.isdigit():
             continue
 
-        # Pomiń frazy per portal
-        if stripped in skip_lines_set:
+        # Pomiń frazy per portal (normalizuj prefix nagłówkowy: #### Posłuchaj → Posłuchaj)
+        stripped_content = re.sub(r'^#{1,6}\s+', '', stripped)
+        if stripped_content in skip_lines_set:
+            continue
+        # Pomiń przyciski prędkości audio playera: x2, x1.75, x1.5, x1.25, x0.75
+        if re.match(r'^x[\d.]+$', stripped):
             continue
 
         # Pomiń linie zaczynające się od "Audio generowane"
