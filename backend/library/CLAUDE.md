@@ -19,6 +19,9 @@ library/
 │   └── asemblyai/    # Speech-to-text transcription (sole provider, ADR-011)
 ├── ai.py             # LLM provider abstraction (routes to api/*)
 ├── embedding.py      # Embedding provider abstraction (routes to api/*)
+├── article_extractor.py     # LLM-based article boundary extraction (Bielik markers + regex drafts)
+├── article_cleaner.py       # Portal artifact cleanup of extracted article markdown ([imgN]/[linkN] markers)
+├── article_tagging.py       # LLM thematic tagging & country extraction (TAGGING_MODEL config)
 ├── stalker_web_documents_db_postgresql.py  # Query layer (ORM, list, search, similarity)
 ├── text_functions.py        # Text processing & splitting utilities
 ├── text_detect_language.py  # Language detection abstraction
@@ -75,6 +78,8 @@ Supported models:
 
 ### Text Processing
 
+- **`article_cleaner.py`** — `clean_article_text(text, url)`: cleans extracted article markdown from portal artifacts (ads, video player controls, premium sections). Replaces images/links with `[imgN]`/`[linkN]` markers and returns them as separate lists. Generic rules + per-portal rules (onet, money, wp). Unit-tested (`tests/unit/test_article_cleaner.py`).
+- **`article_tagging.py`** — `tag_article_with_llm()` (thematic categories from `THEMATIC_TAGS`), `extract_countries_with_llm()` (`kraj-*` tags). Model configurable via `TAGGING_MODEL` (default: Bielik). `COUNTRY_TAG_TRIGGERS` — thematic tags that trigger automatic country extraction.
 - **`text_functions.py`** — `split_text_for_embedding()`, regex-based text removal (`remove_last_occurrence_and_after`, `remove_before_regex`, `remove_after_regex`), SHA256 hashing.
 - **`lenie_markdown.py`** — `md_split_for_emb()` (recursive hierarchical splitting: H1→H2→H3→bold→paragraphs→sentences), link/image extraction, markdown cleanup.
 - **`document_markdown.py`** — `DocumentMarkDown` class: converts inline images and links to numbered references.
@@ -131,5 +136,5 @@ CLOUDFERRO_SHERLOCK_KEY
 ASSEMBLYAI
 
 # App config
-EMBEDDING_MODEL, ENV_DATA, DEBUG
+EMBEDDING_MODEL, TAGGING_MODEL, ENV_DATA, DEBUG
 ```
