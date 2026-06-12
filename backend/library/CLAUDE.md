@@ -20,6 +20,7 @@ library/
 ├── ai.py             # LLM provider abstraction (routes to api/*)
 ├── embedding.py      # Embedding provider abstraction (routes to api/*)
 ├── article_extractor.py     # LLM-based article boundary extraction (Bielik markers + regex drafts)
+├── article_pipeline.py      # Shared pipeline: step_1 raw markdown (cache/S3) + LLM article extraction
 ├── article_cleaner.py       # Portal artifact cleanup of extracted article markdown ([imgN]/[linkN] markers)
 ├── article_tagging.py       # LLM thematic tagging & country extraction (TAGGING_MODEL config)
 ├── stalker_web_documents_db_postgresql.py  # Query layer (ORM, list, search, similarity)
@@ -78,6 +79,7 @@ Supported models:
 
 ### Text Processing
 
+- **`article_pipeline.py`** — shared pipeline used by `imports/dynamodb_sync.py` and `imports/article_browser.py`: `ensure_raw_markdown(doc, cache_dir)` (returns `{id}_step_1_all.md` from cache, or downloads HTML via `document_prepare.prepare_markdown` and persists it), `extract_article(doc, cache_dir, skip_llm, arklabs_first)` (raw markdown + `article_extractor.process_article_with_llm_fallback`; returns `(raw_markdown, extracted_article)` tuple). Dependencies imported lazily (markitdown is an optional extra). Unit-tested (`tests/unit/test_article_pipeline.py`).
 - **`article_cleaner.py`** — `clean_article_text(text, url)`: cleans extracted article markdown from portal artifacts (ads, video player controls, premium sections). Replaces images/links with `[imgN]`/`[linkN]` markers and returns them as separate lists. Generic rules + per-portal rules (onet, money, wp). Unit-tested (`tests/unit/test_article_cleaner.py`).
 - **`article_tagging.py`** — `tag_article_with_llm()` (thematic categories from `THEMATIC_TAGS`), `extract_countries_with_llm()` (`kraj-*` tags). Model configurable via `TAGGING_MODEL` (default: Bielik). `COUNTRY_TAG_TRIGGERS` — thematic tags that trigger automatic country extraction.
 - **`text_functions.py`** — `split_text_for_embedding()`, regex-based text removal (`remove_last_occurrence_and_after`, `remove_before_regex`, `remove_after_regex`), SHA256 hashing.

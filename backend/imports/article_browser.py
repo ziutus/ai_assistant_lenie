@@ -30,8 +30,9 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 # Changelog:
+#   0.4.1 — refaktor: pipeline markdown+LLM → library/article_pipeline.py (wspólny z dynamodb_sync)
 #   0.4.0 — refaktor: czyszczenie → library/article_cleaner.py, tagowanie LLM → library/article_tagging.py
 #           (model z configa TAGGING_MODEL); _get_documents filtruje po stronie SQL (bez heurystyki limit*10)
 #   0.3.6 — [v] wyświetla sam tekst bez granic HEAD/TAIL; [b] nadal pokazuje wycięty kontekst
@@ -93,7 +94,8 @@ from sqlalchemy.exc import InternalError as SqlInternalError
 from library.config_loader import load_config
 from library.db.engine import get_session
 from library.db.models import WebDocument
-from library.article_extractor import process_article_with_llm_fallback, _detect_portal
+from library.article_extractor import _detect_portal
+from library.article_pipeline import ensure_raw_markdown, extract_article
 from library.article_cleaner import clean_article_text
 from library.article_tagging import COUNTRY_TAG_TRIGGERS, extract_countries_with_llm, tag_article_with_llm
 
@@ -149,42 +151,12 @@ def get_article_text(doc, session) -> Optional[dict]:
             if len(text) > 100:
                 return clean_article_text(text, doc.url)
 
-    # Szukaj markdown (step_1 lub .md)
-    md_file = os.path.join(cache_dir, f"{doc.id}.md")
-    step1_file = os.path.join(cache_dir, f"{doc.id}_step_1_all.md")
-    markdown_text = None
-
-    for path in [step1_file, md_file]:
-        if os.path.isfile(path):
-            with open(path, "r", encoding="utf-8") as f:
-                markdown_text = f.read()
-            break
-
-    if not markdown_text:
-        # Automatyczne pobranie z S3 i konwersja do markdown
-        print(f"  Pobieram HTML z S3 i konwertuję do markdown...")
-        from library.document_prepare import prepare_markdown, save_document_info
-        os.makedirs(cache_dir, exist_ok=True)
-        save_document_info(doc.id, doc, cache_dir)
-        markdown_text = prepare_markdown(doc.id, doc, cache_dir, verbose=True)
-        if not markdown_text:
-            print(f"  Nie udało się pobrać artykułu z S3.")
-            return None
-        # Zapisz surowy markdown jako step_1 — potrzebny do [b]oundaries (porównanie raw vs clean)
-        step1_path = os.path.join(cache_dir, f"{doc.id}_step_1_all.md")
-        if not os.path.isfile(step1_path):
-            with open(step1_path, "w", encoding="utf-8") as f:
-                f.write(markdown_text)
-
-    # Próba ekstrakcji przez LLM
-    print(f"  Ekstrakcja artykułu przez LLM...")
-    os.makedirs(cache_dir, exist_ok=True)
-    result = process_article_with_llm_fallback(
-        markdown_text=markdown_text,
-        document_id=doc.id,
-        cache_dir=cache_dir,
-        url=doc.url,
-    )
+    # 3. Surowy markdown (cache/S3 + zapis step_1) i ekstrakcja przez LLM
+    print("  Ekstrakcja artykułu przez LLM...")
+    markdown_text, result = extract_article(doc, cache_dir, verbose=True)
+    if markdown_text is None:
+        print("  Nie udało się pobrać artykułu z S3.")
+        return None
     if result:
         return clean_article_text(result, doc.url)
     return None
@@ -473,24 +445,14 @@ def compute_cut_context(doc, article: dict, context_chars: int = 400) -> Optiona
     cfg = load_config()
     cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
     cache_dir = os.path.join(cache_dir_base, str(doc.id))
-    raw_file = os.path.join(cache_dir, f"{doc.id}_step_1_all.md")
 
-    # Jeśli step_1 brakuje — pobierz z S3 i zapisz
-    if not os.path.isfile(raw_file):
-        try:
-            from library.document_prepare import prepare_markdown, save_document_info
-            os.makedirs(cache_dir, exist_ok=True)
-            save_document_info(doc.id, doc, cache_dir)
-            raw_md = prepare_markdown(doc.id, doc, cache_dir, verbose=False)
-            if not raw_md:
-                return {"error": "nie udało się pobrać surowego markdownu z S3"}
-            with open(raw_file, "w", encoding="utf-8") as f:
-                f.write(raw_md)
-        except Exception as e:
-            return {"error": f"błąd pobierania: {e}"}
-
-    with open(raw_file, "r", encoding="utf-8") as f:
-        raw = f.read()
+    # Czyta step_1 z cache; gdy brakuje — pobiera z S3, konwertuje i zapisuje
+    try:
+        raw = ensure_raw_markdown(doc, cache_dir, verbose=False)
+    except Exception as e:
+        return {"error": f"błąd pobierania: {e}"}
+    if not raw:
+        return {"error": "nie udało się pobrać surowego markdownu z S3"}
 
     clean = (article.get("text") or "").strip()
     if not clean:

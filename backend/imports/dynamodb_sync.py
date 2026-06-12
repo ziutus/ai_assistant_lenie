@@ -168,16 +168,14 @@ def save_cache_files(doc_id: int, text_content: str | None, html_content: str | 
         print(f"  Cache: saved {path} ({len(text_content)} chars)")
 
 
-def process_article_content(doc_id: int, url: str, cache_base_dir: str,
+def process_article_content(doc_id: int, cache_base_dir: str,
                              session, skip_llm: bool = False) -> tuple[bool, bool]:
     """Convert HTML to markdown and optionally run LLM article extraction.
 
     Saves files to cache only — no DB writes.
     Returns (markdown_ok, llm_ok).
     """
-    from library.db.models import WebDocument
-    from library.document_prepare import prepare_markdown, save_document_info
-    from library.article_extractor import process_article_with_llm_fallback
+    from library.article_pipeline import extract_article
 
     doc_cache_dir = os.path.join(cache_base_dir, str(doc_id))
     html_file = os.path.join(doc_cache_dir, f"{doc_id}.html")
@@ -190,34 +188,21 @@ def process_article_content(doc_id: int, url: str, cache_base_dir: str,
     if doc is None:
         return False, False
 
-    os.makedirs(doc_cache_dir, exist_ok=True)
-    save_document_info(doc_id, doc, doc_cache_dir)
-    print(f"  Process: converting HTML to markdown...")
-    markdown_text = prepare_markdown(doc_id, doc, doc_cache_dir, verbose=True)
+    print("  Process: converting HTML to markdown...")
+    if not skip_llm:
+        print("  Process: running LLM extraction (CloudFerro primary, ARK Labs fallback)...")
+    markdown_text, article = extract_article(doc, doc_cache_dir, verbose=True, skip_llm=skip_llm)
 
     if not markdown_text:
         print(f"  Process: markdown conversion failed")
         return False, False
 
-    step1_path = os.path.join(doc_cache_dir, f"{doc_id}_step_1_all.md")
-    if not os.path.isfile(step1_path):
-        with open(step1_path, "w", encoding="utf-8") as f:
-            f.write(markdown_text)
-
     if skip_llm:
         print(f"  Process: markdown OK ({len(markdown_text)} chars), LLM skipped (--skip-llm)")
         return True, False
 
-    print(f"  Process: running LLM extraction (CloudFerro primary, ARK Labs fallback)...")
-    result = process_article_with_llm_fallback(
-        markdown_text=markdown_text,
-        document_id=doc_id,
-        cache_dir=doc_cache_dir,
-        url=url,
-    )
-
-    if result:
-        print(f"  Process: LLM OK ({len(result)} chars)")
+    if article:
+        print(f"  Process: LLM OK ({len(article)} chars)")
         return True, True
 
     print(f"  Process: LLM failed — no article markers extracted")
@@ -475,7 +460,6 @@ def main():
                 if result == "added" and doc_id and doc_type == "webpage" and not args.skip_s3:
                     md_ok, llm_ok = process_article_content(
                         doc_id=doc_id,
-                        url=item.get("url", ""),
                         cache_base_dir=args.data_dir,
                         session=session,
                         skip_llm=args.skip_llm,
