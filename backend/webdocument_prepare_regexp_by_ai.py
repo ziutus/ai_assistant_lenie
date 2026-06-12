@@ -16,7 +16,6 @@ import logging
 
 from library.db.engine import get_session
 from library.db.models import WebDocument
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.config_loader import load_config
 from library.article_extractor import process_article_with_llm_fallback
 from library.document_prepare import prepare_markdown, save_document_info
@@ -80,7 +79,7 @@ if __name__ == '__main__':
             )
 
             if result:
-                lines = [l for l in result.splitlines() if l.strip()]
+                lines = [line for line in result.splitlines() if line.strip()]
                 logger.info(f"document_id: {document_id} Extracted: {len(result)} chars, {len(lines)} non-empty lines")
                 logger.info(f"document_id: {document_id} FIRST: {lines[0][:100]}")
                 logger.info(f"document_id: {document_id} LAST:  {lines[-1][:100]}")
