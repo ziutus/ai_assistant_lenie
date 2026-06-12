@@ -106,7 +106,7 @@ Standalone scripts for bulk document operations. Run manually, not part of the F
 | `webdocument_prepare_regexp_by_ai.py` | Generate site-specific regex patterns for article extraction using LLM | **Yes** |
 | `markdown_to_embedding.py` | Convert markdown files from `{CACHE_DIR}/markdown/` into embeddings. Supports manual corrections via `{id}_manual.md` files | No |
 
-Ad-hoc single-item tools and bulk import scripts live in [`imports/`](imports/CLAUDE.md): `youtube_add.py`, `email_import.py`, `dynamodb_sync.py`, `unknown_news_import.py`, `article_browser.py`, `feed_monitor.py`, `freedom_house_import.py`.
+Ad-hoc single-item tools and bulk import scripts live in [`imports/`](imports/CLAUDE.md): `youtube_add.py`, `dynamodb_sync.py`, `feed_monitor.py`, `article_browser.py`, `freedom_house_import.py`, `control_questions.py`, `migrate_data_to_cache.py` (plus the deprecated `unknown_news_import.py` wrapper).
 
 ### Database connectivity requirement
 
@@ -169,7 +169,7 @@ Each subdirectory has its own `CLAUDE.md` with detailed documentation:
 |-----------|-----------|--------|
 | `library/` | [library/CLAUDE.md](library/CLAUDE.md) | Domain models, LLM abstraction, embedding generation, text processing, external API integrations |
 | `database/` | [database/CLAUDE.md](database/CLAUDE.md) | PostgreSQL schema, pgvector setup, `web_documents` and `websites_embeddings` tables, 15 processing states |
-| `imports/` | [imports/CLAUDE.md](imports/CLAUDE.md) | CLI tools & import scripts: `youtube_add.py`, `email_import.py`, `dynamodb_sync.py`, `unknown_news_import.py`, `article_browser.py`, `feed_monitor.py` |
+| `imports/` | [imports/CLAUDE.md](imports/CLAUDE.md) | CLI tools & import scripts: `youtube_add.py`, `dynamodb_sync.py`, `feed_monitor.py`, `article_browser.py`, `freedom_house_import.py`, `control_questions.py` |
 | `data/` | [data/CLAUDE.md](data/CLAUDE.md) | Site-specific cleanup rules (`site_rules.json`), regex patterns for Polish news portals |
 | `tests/` | [tests/CLAUDE.md](tests/CLAUDE.md) | Unit tests (9 files: markdown, text, paywall) and integration tests (5 files: REST API endpoints) |
 | `test_code/` | [test_code/CLAUDE.md](test_code/CLAUDE.md) | Experimental scripts: RAG pipeline, LLM provider testing, Bielik text processing, cloud migrations |

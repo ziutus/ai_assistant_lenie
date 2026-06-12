@@ -1,18 +1,21 @@
 # Backend Imports — CLAUDE.md
 
-Standalone CLI scripts that add or manage documents in the Lenie database, bypassing the REST API. Covers both single-item ad-hoc tools and bulk import pipelines.
+Standalone CLI scripts that add or manage documents in the Lenie database, bypassing the REST API. Covers single-item ad-hoc tools, bulk import pipelines, and a few standalone helper tools that do not touch the database at all.
 
 ## Directory Structure
 
 ```
 imports/
+├── article_browser.py        # Interactive browser / review tool for DB articles + Obsidian integration
+├── control_questions.py      # Filter control questions from an Obsidian markdown file by tags (no DB)
 ├── dynamodb_sync.py          # Sync documents from DynamoDB + S3 to local PostgreSQL
-├── unknown_news_import.py    # Import curated links from unknow.news
-├── youtube_add.py            # Ad-hoc: process a single YouTube video
-├── email_import.py           # Ad-hoc: import a Gmail email (via gws CLI)
-├── article_browser.py        # Interactive browser / review tool for DB articles
-├── feed_monitor.py           # Monitor RSS/Atom feeds and import new entries
-└── freedom_house_import.py   # Import Freedom House country ratings
+├── feed_monitor.py           # Monitor RSS/Atom/JSON feeds and import new entries
+├── feeds.yaml                # Feed definitions for feed_monitor.py (committed)
+├── feeds_state.yaml          # Per-feed last_checked state (gitignored, created at runtime)
+├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
+├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
+├── unknown_news_import.py    # DEPRECATED wrapper → feed_monitor.py --import --source "unknow.news"
+└── youtube_add.py            # Ad-hoc: process a single YouTube video
 ```
 
 ## Scripts
@@ -23,16 +26,17 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 
 **Resource discovery via SSM Parameter Store.** DynamoDB table name and S3 bucket name are resolved from SSM using the project/environment convention (`/{project}/{env}/dynamodb/documents/name`, `/{project}/{env}/s3/website-content/name`). CLI overrides (`--table`, `--bucket`) skip the SSM lookup.
 
-**Data access: DynamoDB + S3 → ORM (SQLAlchemy)**. Reads from DynamoDB (DateIndex GSI) and S3, writes via `WebDocument` ORM model with `session.add()` + `session.commit()`. All fields including `created_at` and `chapter_list` are set via ORM attribute assignment.
+**Data access: DynamoDB + S3 → ORM (SQLAlchemy)**. Reads from DynamoDB (DateIndex GSI) and S3, writes via `DocumentService.import_document()`. Run history is recorded in `import_logs` via `ImportLogTracker`.
 
 **How it works:**
 1. Resolves DynamoDB table name and S3 bucket from SSM Parameter Store (or CLI overrides)
 2. Queries DynamoDB `DateIndex` GSI day-by-day from `--since` date to today (handles pagination)
 3. For each item, checks if URL already exists in local PostgreSQL (duplicate detection via `WebDocument.get_by_url()`)
 4. For `webpage` type items with `uuid`: fetches `{uuid}.txt` and `{uuid}.html` from S3 into memory
-5. Inserts new documents via ORM: `WebDocument(url=url)` → set attributes → `session.add(doc)` + `session.commit()`
-6. After insert, saves S3 content to cache as `{CACHE_DIR}/{doc.id}/{doc.id}.html` (same convention as `document_prepare.py`, so downstream tools can reuse cached files without re-downloading from S3)
-7. Sets `document_state` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
+5. Inserts new documents via `DocumentService.import_document(skip_if_exists=True)`
+6. After insert, saves S3 content to cache as `{CACHE_DIR}/markdown/{doc.id}/{doc.id}.html` (same convention as `document_prepare.py`, so downstream tools can reuse cached files without re-downloading from S3)
+7. For webpages: converts HTML to markdown (`_step_1_all.md`) and runs LLM article extraction (CloudFerro primary, ARK Labs fallback) unless `--skip-llm`
+8. Sets `document_state` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
 
 **DynamoDB → PostgreSQL field mapping:**
 - `url` → `url`, `type` → `document_type`, `title` → `title`, `language` → `language`
@@ -56,6 +60,7 @@ cd backend
 - `--dry-run` — preview only, no DB writes or S3 downloads
 - `--limit N` — max documents to sync (for testing)
 - `--skip-s3` — metadata only, skip S3 file downloads
+- `--skip-llm` — skip LLM article extraction (still converts HTML to markdown)
 - `--project CODE` — project code for SSM path (default: `lenie`)
 - `--env ENV` — environment for SSM path (default: `dev`)
 - `--table TABLE` — DynamoDB table name override (skips SSM lookup)
@@ -74,56 +79,82 @@ Before executing any operations, the script displays source (AWS profile, region
 - `.env` file with `POSTGRESQL_*` variables
 - AWS credentials (via env vars or AWS profile) with SSM read, DynamoDB read, and S3 read access
 
-### `unknown_news_import.py`
+### `feed_monitor.py`
 
-Imports curated technology/science links from [unknow.news](https://unknow.news/) — a Polish newsletter aggregating interesting articles.
+Monitors RSS/Atom/JSON feeds defined in [`feeds.yaml`](feeds.yaml) and imports selected entries into the database. Replaces the old `unknown_news_import.py` (unknow.news is configured as a `json_api` feed).
 
-**Data access: ORM (SQLAlchemy)** (not via REST API). Uses `WebDocument` ORM model and `WebsitesDBPostgreSQL(session=session)` for database access. Requires direct PostgreSQL connectivity and the same `POSTGRESQL_*` environment variables as the backend.
+**Data access: ORM (SQLAlchemy)** via `DocumentService.import_document()`. Run history is recorded in `import_logs` via `ImportLogTracker`. DB connection is optional for `--check`/`--review` (only used to mark entries as NEW / IN DB).
 
-**How it works:**
-1. Downloads `archiwum.json` from `https://unknow.news/archiwum.json` (full archive of curated links)
-2. Saves it locally to `tmp/archiwum.json` as a cache
-3. Determines the date cutoff: uses `--since` if provided, otherwise queries the database for the most recent entry (`get_last_unknown_news()`). If DB returns None (empty), imports all entries.
-4. Iterates through the JSON entries, skipping:
-   - Entries older than the last imported date (already processed)
-   - Paid/affiliate links (`uw7.org/un` URLs)
-   - Sponsored entries (title matching "sponsorowane")
-5. For each new URL:
-   - In `--dry-run` mode: prints what would be added without DB writes
-   - Checks if it already exists in the database (by URL lookup via `WebDocument.get_by_url()`)
-   - If it exists: corrects missing `date_from` field if needed
-   - If it's new: creates a document with type `link` (or `youtube` for YouTube URLs), language `pl`, source `https://unknow.news/`
-6. Stops after `--limit` documents are added (if specified)
+**Feed types:**
+- `youtube_channel` — YouTube channel Atom feed (built from `channel_id`)
+- `wordpress` / `rss` — RSS 2.0 / Atom feeds
+- `json_api` — JSON API (e.g. unknow.news `archiwum.json`), with per-feed `field_mapping`
 
-**Imported document fields:**
-- `url` — link URL
-- `title` — article title
-- `summary` — short description (`info` field from JSON)
-- `language` — always `pl` (Polish)
-- `document_type` — `StalkerDocumentType.link`
-- `document_state` — `StalkerDocumentStatus.READY_FOR_EMBEDDING` (link) or `StalkerDocumentStatus.URL_ADDED` (youtube)
-- `source` — `https://unknow.news/`
-- `date_from` — publication date from the feed
+**Modes:**
+- `--list` — show configured feeds with type, language, project, tags, flags
+- `--check` — list new items from all (or one) feeds; `--db` marks NEW / IN DB; `--ignored` shows only entries filtered out by skip patterns
+- `--import` — import new items. Feeds with `auto_import: true` are imported without interaction; other feeds show a numbered list for interactive selection (`1,3,5`, `1-5`, `all`, `none`)
+- `--review` — interactive per-entry loop with actions: [n]ext, [a]dd to DB, [d]iscuss (append to `tmp/feed_review_discuss.md` for a later Claude Code session — see the `/feed-review` skill), [i]gnore (add a `skip_title_patterns` regex to `feeds.yaml`), [e]xplain (open `claude -p` on the URL), [q]uit
+
+**Date cutoff priority** (per feed): explicit `--since` → last import date from DB (`auto_import` feeds only) → `last_checked` from `feeds_state.yaml` → default 14 days back. `--since` accepts `YYYY-MM-DD` or natural language (`"last 2 weeks"`, `"3 days ago"`) parsed via dateparser.
+
+**`feeds.yaml` per-feed keys:** `name`, `type`, `url` or `channel_id`, `language`, `project`, `tags`, `auto_import`, `source_id` (value stored in the document `source` field), `default_state` (initial `document_state`, default `URL_ADDED`), `field_mapping` (json_api only), `skip_url_patterns` (prefix match), `skip_title_patterns` (regex, case-insensitive), `cache_path`, `disabled` (skipped unless explicitly selected via `--source`).
+
+**State:** `feeds_state.yaml` (gitignored) stores `last_checked` per feed, updated after each `--check`/`--import`/`--review` run.
 
 **Running:**
 ```bash
 cd backend
-./imports/unknown_news_import.py
-./imports/unknown_news_import.py --since 2026-02-01
-./imports/unknown_news_import.py --since 2026-02-01 --dry-run
-./imports/unknown_news_import.py --since 2026-02-01 --dry-run --limit 5
+python imports/feed_monitor.py --list
+python imports/feed_monitor.py --check --db
+python imports/feed_monitor.py --check --source "malak.cloud" --since 2026-03-01
+python imports/feed_monitor.py --import                              # interactive selection
+python imports/feed_monitor.py --import --source "unknow.news"       # auto-import feed
+python imports/feed_monitor.py --import --dry-run --limit 5
+python imports/feed_monitor.py --review --source 12 --since "last 2 weeks"
 ```
 
-**Arguments:**
-- `--since YYYY-MM-DD` — import entries from this date onward (overrides auto-detection from DB)
-- `--dry-run` — preview only, no DB writes
-- `--limit N` — max documents to add (0 = unlimited, default)
+`--source` accepts a feed name or its number from `--list` output.
 
 **Prerequisites:**
-- PostgreSQL database must be accessible (unless using `--since` with `--dry-run`)
-- `.env` file with `POSTGRESQL_HOST`, `POSTGRESQL_DATABASE`, `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`, `POSTGRESQL_PORT`
-- `tmp/` directory must exist (for caching the downloaded JSON)
-- Network access to `https://unknow.news/`
+- `.env` with `POSTGRESQL_*` variables (for `--import`, and for `--check`/`--review` with `--db`)
+- Network access to the configured feed URLs
+
+### `article_browser.py`
+
+Interactive browser and review tool for articles already in the database. Displays cleaned article text, manages review state, tags, embeddings, and integrates with Claude Code to create/update Obsidian notes. Used by the `/obsidian-note` slash command (`--meta` for a cheap metadata check, then `--dump` for full text).
+
+**Data access: ORM (SQLAlchemy)** + cache files in `{CACHE_DIR}/markdown/{doc_id}/` + S3 fallback (downloads HTML and converts to markdown when cache is missing).
+
+**Modes** (mutually exclusive):
+- `--list` — list articles; `--format table` (default), `ids` (one ID per line, for scripting), `short` (ID + title)
+- `--review` — interactive per-article loop (see actions below); `--view` auto-displays text
+- `--show --id N` — display metadata + article text, non-interactive; `--check-urls` validates links/images via HEAD requests
+- `--meta --id N` — JSON metadata without text (cheap token usage for Claude Code)
+- `--dump --id N` / `--dump-md --id N` — JSON with full text (`text` or `text_md` field)
+- `--notes` — list saved per-article notes from `tmp/article_notes/`
+
+**Filters** (for `--list` / `--review`): `--since`, `--portal` (URL substring), `--state`, `--limit`, `--not-reviewed` (`reviewed_at IS NULL`), `--no-obsidian` (no Obsidian notes yet), `--not-cleaned` (fast flow: states still processable by regexp+LLM, excludes `NEED_MANUAL_REVIEW`), `--manual-review` (slow flow: shortcut for `--state NEED_MANUAL_REVIEW`). All filtering happens SQL-side.
+
+**Text resolution order** (`get_article_text`): youtube/movie → transcript from `doc.text`; `doc.text` if state is `MD_SIMPLIFIED`/`EMBEDDING_EXIST`; cache files (`_step_2_1_article.md` preferred over `_llm_extracted_article.md`); otherwise download HTML from S3, convert to markdown (`_step_1_all.md`) and run LLM extraction. Cleaned via `library/article_cleaner.py`.
+
+**Review actions:** [n]ext, [p]rev, [v]iew, [b]oundaries (show what was cut before/after the cleaned text, expands by ~400 chars per press), [r]efresh (clear LLM cache and re-extract), [w]rite to db (save cleaned text, LLM thematic tags via `library/article_tagging.py`, country tags, embedding → `EMBEDDING_EXIST`), [s]ave note (personal note to `tmp/article_notes/{id}_note.md`), [d]one (set `reviewed_at`), [m]ark review (toggle `NEED_MANUAL_REVIEW` state), [o]bsidian (Claude Code creates/updates an Obsidian note, then records the note path in `obsidian_note_paths`), [c]ompare (Claude Code compares article with existing notes, read-only), [k]raje (extract country tags via LLM), [q]uit.
+
+**Running:**
+```bash
+cd backend
+python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format short
+python imports/article_browser.py --review --not-cleaned
+python imports/article_browser.py --review --view --manual-review
+python imports/article_browser.py --show --id 8799 --check-urls
+python imports/article_browser.py --meta --id 8805
+python imports/article_browser.py --dump --id 8805
+```
+
+**Prerequisites:**
+- `.env` with `POSTGRESQL_*` variables, LLM API keys (extraction/tagging), S3 access for cache misses
+- `claude` CLI on PATH for the [o]bsidian / [c]ompare actions
+- Obsidian vault path is currently hardcoded (`OBSIDIAN_VAULT` constant) — see backlog for moving it to config
 
 ### `youtube_add.py`
 
@@ -160,39 +191,51 @@ python imports/youtube_add.py <URL> --chapters-file chapters.txt -v
 - `.env` file with `POSTGRESQL_*` variables and LLM API keys
 - Optional: `WEBSHARE_API_KEY` for proxy support
 
-### `email_import.py`
+### `unknown_news_import.py` (DEPRECATED)
 
-Ad-hoc CLI tool for importing a Gmail email into Lenie. Uses the `gws` CLI (Google Workspace CLI) to fetch the email, extracts links from the body, and stores the document in the database.
+Thin backward-compatibility wrapper around `feed_monitor.py`. The unknow.news feed is configured in `feeds.yaml` as a `json_api` feed with `auto_import: true`. The wrapper translates the old arguments (`--since`, `--dry-run`, `--limit`) and delegates to:
 
-**Data access: ORM (SQLAlchemy)** — direct DB writes via `WebDocument` model.
-
-**Prerequisite:** `gws` CLI must be installed and authenticated:
 ```bash
-npm install -g @googleworkspace/cli
-gws auth setup
+python imports/feed_monitor.py --import --source "unknow.news"
 ```
+
+Use `feed_monitor.py` directly in new automation; the wrapper exists only so old cron entries / muscle memory keep working and may be removed in the future.
+
+### `freedom_house_import.py`
+
+Standalone query tool for Freedom House "Freedom in the World" country ratings, fetched from the Our World in Data API. **Does not touch the Lenie database** — data is cached as CSV in `{CACHE_DIR}/freedom_house.csv` (default `backend/tmp/`). Supports Polish and English country names (built-in mapping) and generates ready-to-paste markdown blocks for Obsidian country notes.
 
 **Running:**
 ```bash
 cd backend
-python imports/email_import.py --search "subject:AI Flash #78"
-python imports/email_import.py --id 19ce7076beeaf054
-python imports/email_import.py --id 19ce7076beeaf054 --source "newsletter:AI Flash" --note "AI news digest"
-python imports/email_import.py --search "from:campus@campusai.pl" --list
-python imports/email_import.py --id 19ce7076beeaf054 --dry-run
+python imports/freedom_house_import.py --download                 # fetch/update the CSV cache (run first)
+python imports/freedom_house_import.py --country "Korea Północna" # latest data, PL or EN name
+python imports/freedom_house_import.py --country Poland --history # all years
+python imports/freedom_house_import.py --list --status "Not Free"
+python imports/freedom_house_import.py --markdown "Iran"          # markdown block for Obsidian
 ```
 
-**Arguments:**
-- `--id ID` — Gmail message ID to import
-- `--search QUERY` — Gmail search query to find messages
-- `--list` — list matching messages without importing
-- `--source TEXT` — source identifier for the imported document
-- `--note TEXT` — note to attach to the document
-- `--dry-run` — preview only, no DB writes
+### `control_questions.py`
+
+Standalone helper that filters "control questions" (geopolitical analysis prompts) from a markdown file in the Obsidian vault by thematic tags. **Does not touch the Lenie database.** Used when writing country/region notes to pull only the relevant question sections.
+
+**Running:**
+```bash
+python imports/control_questions.py --list-tags
+python imports/control_questions.py --tags wojsko,gospodarka,sojusze
+python imports/control_questions.py --tags geopolityka --file path/to/questions.md
+```
+
+The default questions file path is currently hardcoded (Obsidian vault) — see backlog for moving it to config.
+
+### `migrate_data_to_cache.py`
+
+One-time migration script: copies UUID-named `.html`/`.txt` files from `imports/data/` (legacy S3 download location) into the `{CACHE_DIR}/markdown/{doc_id}/{doc_id}.ext` convention used by `document_prepare.py`. Looks up `doc_id` by `uuid` in PostgreSQL. Files are **copied**, not moved — use `--delete-source` to remove originals after a successful copy. Supports `--dry-run`, `--source-dir`, `--target-dir`.
 
 ## Architecture Notes
 
 - All scripts bypass the REST API intentionally — they are meant for local or scheduled operations, not the web interface.
-- Scripts use ORM models (`WebDocument` from `library.db.models`) with `get_session()` from `library.db.engine`. Session lifecycle: `session = get_session()` → `try` → `session.commit()` → `finally` → `session.close()`.
-- Duplicate detection uses `WebDocument.get_by_url(session, url)` — returns existing document or `None`.
-- `unknown_news_import.py` creates link documents with `READY_FOR_EMBEDDING` status and YouTube documents with `URL_ADDED` status.
+- DB-writing scripts use ORM models (`WebDocument` from `library.db.models`) with `get_session()` from `library.db.engine`. Session lifecycle: `session = get_session()` → `try` → `session.commit()` → `finally` → `session.close()`.
+- Document creation goes through `DocumentService.import_document(skip_if_exists=True)` (`library/document_service.py`), which handles duplicate detection via `WebDocument.get_by_url()`.
+- Bulk import runs (`dynamodb_sync.py`, `feed_monitor.py`) are recorded in the `import_logs` table via `ImportLogTracker` (`library/import_log_tracker.py`); the last successful run is used to auto-detect the `--since` date.
+- `control_questions.py` and `freedom_house_import.py` are standalone tools that never touch the database.
