@@ -5,11 +5,9 @@ import json
 import logging
 from pprint import pprint
 
-from markitdown import MarkItDown
-from html2markdown import convert
-import html2text
-
 from library.api.cloudferro.sherlock.sherlock_embedding import sherlock_create_embeddings
+from library.article_pipeline import ensure_raw_markdown
+from library.document_prepare import calculate_reduction
 from library.lenie_markdown import get_images_with_links_md, links_correct, process_markdown_and_extract_links, \
     md_square_brackets_in_one_line, md_split_for_emb, md_get_images_as_links, md_remove_markdown
 from library.models.stalker_document_status import StalkerDocumentStatus
@@ -17,20 +15,12 @@ from library.models.stalker_document_status_error import StalkerDocumentStatusEr
 from library.db.engine import get_session
 from library.db.models import WebDocument
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.api.aws.s3_aws import s3_file_exist, s3_take_file
 from library.config_loader import load_config
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 cfg = load_config()
-
-S3_BUCKET_NAME = cfg.get("AWS_S3_WEBSITE_CONTENT")
-EMBEDDING_MODEL = cfg.get("EMBEDDING_MODEL")
-
-
-def calculate_reduction(html_size, markdown_size):
-    return ((html_size - markdown_size) / html_size) * 100
 
 
 def onet_see_also_process_markdown_and_extract_links_with_images(markdown_text):
@@ -255,84 +245,30 @@ if __name__ == '__main__':
 
             metadata = {"document_id": document_id}
             cache_file_html = os.path.join(cache_dir, f"{document_id}.html")
-            cache_file_step_1_md = os.path.join(cache_dir, f"{document_id}_step_1_all.md")
             cache_file_step_2_md = os.path.join(cache_dir, f"{document_id}_step_2_1_article.md")
 
             logger.info("Step 1: preparing markdown from HTML file")
-            logger.debug("Taking markdown content from local cache or from remote cache (S3)")
-
-            if not os.path.isfile(cache_file_step_1_md) and not os.path.isfile(cache_file_html):
-                logger.debug("Taking raw html file from cache in Amazon S3")
-
-                if not doc.uuid:
-                    logger.debug("Doesn't exist uuid, exiting...")
-                    continue
-
-                if not s3_file_exist(S3_BUCKET_NAME, doc.uuid + ".html"):
-                    logger.debug("I can't find file in S3 cache")
-                    continue
-
-                logger.debug("the HTML file exist in S3 cache")
-                if s3_take_file(S3_BUCKET_NAME, doc.uuid + ".html", cache_file_html):
-                    logger.debug("The HTML file has been copy to local cache")
-                else:
-                    logger.debug("Can't download file from S3 cache, exiting...")
-                    continue
-
-            if os.path.isfile(cache_file_step_1_md):
-                logger.debug("DEBUG: 1a. Taking raw markdown file from cache")
-                with open(cache_file_step_1_md, "r", encoding="utf-8") as f:
-                    result = f.read()
-            else:
-                logger.debug("DEBUG: 1b. Taking raw html file from cache")
-                mdit = MarkItDown()
-                result = mdit.convert(cache_file_html).text_content
-
-            md_size = len(result)
-            html_size = os.path.getsize(cache_file_html)
-
-            logger.debug(f"Rozmiar HTML: {html_size} bajtów")
-
-            reduction_percentage = calculate_reduction(html_size, md_size)
-            logger.debug(f"MarkItDown reduction: {reduction_percentage:.2f}%")
-            markdown_text = result
-
-            if reduction_percentage < 30:
-                logger.debug("Looks like MarkItDown didn't converted to markdown, choosing next metod: html2text")
-                with open(cache_file_html, "r", encoding="utf-8") as f:
-                    html = f.read()
-
-                    markdown = convert(html)
-                    md_size_2 = len(markdown)
-
-                    reduction_percentage = calculate_reduction(html_size, md_size_2)
-                    logger.debug(f"Markdown reduction: {reduction_percentage:.2f}%")
-                    markdown_text = markdown
-
-                    if reduction_percentage < 30:
-
-                        h = html2text.HTML2Text()
-                        h.ignore_links = False
-                        h.ignore_images = False
-                        markdown_content = h.handle(html)
-
-                        markdown_size = len(markdown_content)
-                        reduction_html2text_percentage = calculate_reduction(html_size, markdown_size)
-
-                        logger.debug(f"html2Text reduction: {reduction_html2text_percentage:.2f}%")
-
-                        markdown_text = markdown_content
-
-            with open(cache_file_step_1_md, 'w', encoding="utf-8") as file:
-                file.write(markdown_text)
-                logger.info("Transformation from text to markdown completed")
-
-            if reduction_percentage < 30 or reduction_percentage >= 98:
-                logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
-                doc.document_state = StalkerDocumentStatus.ERROR.name
-                doc.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR.name
-                session.commit()
+            # Reads step_1 from cache; otherwise downloads HTML (cache/S3),
+            # converts via the MarkItDown -> html2markdown -> html2text cascade
+            # and persists {id}_step_1_all.md (library/article_pipeline).
+            markdown_text = ensure_raw_markdown(doc, cache_dir, verbose=False)
+            if not markdown_text:
+                logger.debug("Can't get markdown (no uuid or HTML not in cache/S3), skipping...")
                 continue
+
+            # Quality gate: a sane conversion shrinks HTML by 30-98%.
+            # Only checkable when the HTML file is present in cache (it is not
+            # when markdown came straight from a cached step_1/md file).
+            if os.path.isfile(cache_file_html):
+                html_size = os.path.getsize(cache_file_html)
+                reduction_percentage = calculate_reduction(html_size, len(markdown_text))
+                logger.debug(f"HTML size: {html_size} B, markdown reduction: {reduction_percentage:.2f}%")
+                if reduction_percentage < 30 or reduction_percentage >= 98:
+                    logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
+                    doc.document_state = StalkerDocumentStatus.ERROR.name
+                    doc.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR.name
+                    session.commit()
+                    continue
 
             doc.document_state = StalkerDocumentStatus.NEED_CLEAN_MD.name
             session.commit()
