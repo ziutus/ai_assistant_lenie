@@ -1,3 +1,4 @@
+import argparse
 import os.path
 import re
 import json
@@ -80,22 +81,7 @@ def load_regex_from_file(file_path):
         return f.read().strip()
 
 
-def generate_links_regex(links):
-    patterns = [re.escape(f'[{link["description"]}]({link["url"]})') for link in links]
-    return '|'.join(patterns)
-
-
-interactive = False
-find_problems = False
-
-text_to_md_check_only = False
-online = True
-embedding_update = False
-ignore_regexp_issue = True
-llm_fallback_enabled = True
-llm_fallback_model = "speakleash/Bielik-11B-v3.0-Instruct"
 cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
-split_limit = 200
 
 
 page_regexp_map = {
@@ -191,18 +177,49 @@ page_rules_map = {
 }
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description="Extract article text from webpage markdown (regexp rules + LLM fallback), "
+                    "clean it and optionally create embeddings.")
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--url-prefix",
+                           help='Process documents whose URL starts with prefix, e.g. "https://biznes.interia.pl/"')
+    selection.add_argument("--ids", type=int, nargs="+", metavar="ID",
+                           help="Explicit document IDs to process")
+    parser.add_argument("--interactive", action="store_true",
+                        help="Pause for Enter after each document")
+    parser.add_argument("--find-problems", action="store_true",
+                        help="Exit immediately when neither regex rules nor LLM fallback match")
+    parser.add_argument("--md-check-only", action="store_true",
+                        help="Stop after article extraction (skip link/image processing and embeddings)")
+    parser.add_argument("--embedding-update", action="store_true",
+                        help="Create and store embeddings for the cleaned parts")
+    parser.add_argument("--skip-regex-errors", action="store_true",
+                        help="Skip documents already marked with REGEX_ERROR")
+    parser.add_argument("--no-llm-fallback", action="store_true",
+                        help="Disable LLM fallback when regex rules do not match")
+    parser.add_argument("--llm-model", default="speakleash/Bielik-11B-v3.0-Instruct",
+                        help="LLM model for fallback extraction")
+    args = parser.parse_args()
+
+    interactive = args.interactive
+    find_problems = args.find_problems
+    text_to_md_check_only = args.md_check_only
+    embedding_update = args.embedding_update
+    ignore_regexp_issue = not args.skip_regex_errors
+    llm_fallback_enabled = not args.no_llm_fallback
+    llm_fallback_model = args.llm_model
+
     session = get_session()
     wb_db = WebsitesDBPostgreSQL(session=session)
 
-    # interactive = True
-    documents = wb_db.get_documents_by_url("https://biznes.interia.pl/")
-    # documents = [7456]
     # TODO: 7683 - need to correct related liks
     # TODO: 7741 - udostępnij artykuł - linki do ustąpienia do regexp: businessinsider_com_pl_2025_1.regex
     # TODO: 7732 - lepszy podział na części do embeddingu
     # TODO: 7687 - poprawić regexp geekweek_interia_pl_7687.regex
-    # documents = wb_db.get_list(document_type="webpage", document_state="DOCUMENT_INTO_DATABASE")
-    # documents = wb_db.get_list(document_type="webpage", limit=700)
+    if args.ids:
+        documents = args.ids
+    else:
+        documents = wb_db.get_documents_by_url(args.url_prefix)
 
     try:
         if not os.path.exists(cache_dir_base):
@@ -505,8 +522,7 @@ if __name__ == '__main__':
 
                 markdown = re.sub(r"^\s*reklama\s*\n", "", markdown, flags=re.MULTILINE | re.DOTALL)
 
-
-                markdown = re.sub(r"s*reklama$", "", markdown)
+                markdown = re.sub(r"\s*reklama\s*$", "", markdown)
 
 
                 markdown = re.sub(r"^\s+\* link\[\d+\]:.*$", "", markdown, flags=re.MULTILINE)
@@ -539,16 +555,9 @@ if __name__ == '__main__':
 
             markdown = re.sub(r'^\s+$', '\n', markdown)
 
-            # from unknown reason below code doesnt' work
-            markdown = re.sub(r'^>\s', '', markdown, re.MULTILINE)
-            # TODO: repalce with better code:
-            lines = markdown.splitlines()
-            lines2 = []
-            for line in lines:
-                if line.startswith("> "):
-                    line = line.replace("> ", "")
-                lines2.append(line)
-            markdown = "\n".join(lines2)
+            # Note: 4th positional arg of re.sub is `count`, not `flags` — that was
+            # why the old `re.sub(r'^>\s', '', markdown, re.MULTILINE)` "didn't work".
+            markdown = re.sub(r'^>\s', '', markdown, flags=re.MULTILINE)
 
             markdown = re.sub(r'\*\*\n+\s*', '**\n', markdown)
 
