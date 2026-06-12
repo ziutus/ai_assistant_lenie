@@ -106,7 +106,7 @@ Standalone scripts for bulk document operations. Run manually, not part of the F
 | `webdocument_prepare_regexp_by_ai.py` | Generate site-specific regex patterns for article extraction using LLM | **Yes** |
 | `markdown_to_embedding.py` | Convert markdown files from `{CACHE_DIR}/markdown/` into embeddings. Supports manual corrections via `{id}_manual.md` files | No |
 
-Ad-hoc single-item tools and bulk import scripts live in [`imports/`](imports/CLAUDE.md): `youtube_add.py`, `dynamodb_sync.py`, `feed_monitor.py`, `article_browser.py`, `freedom_house_import.py`, `control_questions.py`, `migrate_data_to_cache.py` (plus the deprecated `unknown_news_import.py` wrapper).
+Ad-hoc single-item tools and bulk import scripts live in [`imports/`](imports/CLAUDE.md): `youtube_add.py`, `dynamodb_sync.py`, `feed_monitor.py`, `article_browser.py`, `freedom_house_import.py`, `control_questions.py`, `migrate_data_to_cache.py`.
 
 ### Database connectivity requirement
 

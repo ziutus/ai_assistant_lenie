@@ -15,12 +15,11 @@ Usage:
 
 import argparse
 import csv
-import json
 import os
 import sys
 from typing import Optional
-from urllib.request import urlopen, Request
-from urllib.error import URLError
+
+import requests
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CACHE_DIR = os.environ.get("CACHE_DIR") or os.path.join(_BACKEND_DIR, "tmp")
@@ -113,9 +112,9 @@ EN_TO_PL = {v: k for k, v in PL_TO_EN.items()}
 
 def _fetch_json(url: str) -> dict:
     """Fetch JSON from URL."""
-    req = Request(url, headers={"User-Agent": "lenie-ai-freedom-house/1.0"})
-    with urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    response = requests.get(url, headers={"User-Agent": "lenie-ai-freedom-house/1.0"}, timeout=30)
+    response.raise_for_status()
+    return response.json()
 
 
 def _fetch_entity_map(indicator_id: int) -> dict:
@@ -355,7 +354,7 @@ def main():
             cmd_markdown(args.markdown, year=args.year)
         elif args.list:
             cmd_list(status_filter=args.status)
-    except URLError as e:
+    except requests.RequestException as e:
         print(f"Błąd połączenia: {e}", file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:

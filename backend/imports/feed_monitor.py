@@ -579,7 +579,7 @@ def cmd_import(feeds: list[dict], since: Optional[str] = None, source_filter: Op
             existing = check_existing(session, entry["url"])
             if existing:
                 existing_count += 1
-                # Correct missing date_from (like unknown_news_import.py did)
+                # Correct missing date_from (like the old unknow.news importer did)
                 pub_date = parse_date(entry["published"])
                 if pub_date and not existing.date_from:
                     existing.date_from = pub_date

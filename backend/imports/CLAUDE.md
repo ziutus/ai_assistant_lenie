@@ -14,7 +14,6 @@ imports/
 ├── feeds_state.yaml          # Per-feed last_checked state (gitignored, created at runtime)
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
 ├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
-├── unknown_news_import.py    # DEPRECATED wrapper → feed_monitor.py --import --source "unknow.news"
 └── youtube_add.py            # Ad-hoc: process a single YouTube video
 ```
 
@@ -81,7 +80,7 @@ Before executing any operations, the script displays source (AWS profile, region
 
 ### `feed_monitor.py`
 
-Monitors RSS/Atom/JSON feeds defined in [`feeds.yaml`](feeds.yaml) and imports selected entries into the database. Replaces the old `unknown_news_import.py` (unknow.news is configured as a `json_api` feed).
+Monitors RSS/Atom/JSON feeds defined in [`feeds.yaml`](feeds.yaml) and imports selected entries into the database. Replaces the old `unknown_news_import.py` script (removed; unknow.news is configured as a `json_api` feed with `auto_import: true`).
 
 **Data access: ORM (SQLAlchemy)** via `DocumentService.import_document()`. Run history is recorded in `import_logs` via `ImportLogTracker`. DB connection is optional for `--check`/`--review` (only used to mark entries as NEW / IN DB).
 
@@ -190,16 +189,6 @@ python imports/youtube_add.py <URL> --chapters-file chapters.txt -v
 **Prerequisites:**
 - `.env` file with `POSTGRESQL_*` variables and LLM API keys
 - Optional: `WEBSHARE_API_KEY` for proxy support
-
-### `unknown_news_import.py` (DEPRECATED)
-
-Thin backward-compatibility wrapper around `feed_monitor.py`. The unknow.news feed is configured in `feeds.yaml` as a `json_api` feed with `auto_import: true`. The wrapper translates the old arguments (`--since`, `--dry-run`, `--limit`) and delegates to:
-
-```bash
-python imports/feed_monitor.py --import --source "unknow.news"
-```
-
-Use `feed_monitor.py` directly in new automation; the wrapper exists only so old cron entries / muscle memory keep working and may be removed in the future.
 
 ### `freedom_house_import.py`
 

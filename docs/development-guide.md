@@ -103,7 +103,7 @@ After `uv sync`, the project is installed as an editable package and Python reso
 
 ```bash
 cd backend
-./imports/unknown_news_import.py --help
+./imports/feed_monitor.py --help
 ./imports/dynamodb_sync.py --since 2026-02-20 --dry-run
 ```
 
@@ -111,14 +111,14 @@ cd backend
 
 The Windows `.venv` (`backend/.venv/`) **cannot be shared with WSL**. Python virtual environments are platform-specific — compiled packages (e.g., `psycopg2-binary`) produce `.pyd` files on Windows and `.so` files on Linux, and `pyvenv.cfg` stores an absolute path to the system interpreter.
 
-If you need to run backend scripts (e.g., `imports/unknown_news_import.py`) from WSL, create a separate venv:
+If you need to run backend scripts (e.g., `imports/feed_monitor.py`) from WSL, create a separate venv:
 
 ```bash
 cd /mnt/c/Users/<user>/git/_lenie-all/lenie-server-2025/backend
 uv venv .venv_wsl
 source .venv_wsl/bin/activate
 uv sync --active
-./imports/unknown_news_import.py --help
+./imports/feed_monitor.py --help
 ```
 
 > **Why `--active`?** `uv sync` defaults to the project's `.venv` directory. Without `--active`, uv ignores the activated `.venv_wsl` and installs into `.venv` instead.

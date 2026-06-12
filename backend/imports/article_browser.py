@@ -30,8 +30,9 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 # Changelog:
+#   0.4.2 — load_config() raz na poziomie modułu (cfg + CACHE_DIR_BASE zamiast 7 wywołań)
 #   0.4.1 — refaktor: pipeline markdown+LLM → library/article_pipeline.py (wspólny z dynamodb_sync)
 #   0.4.0 — refaktor: czyszczenie → library/article_cleaner.py, tagowanie LLM → library/article_tagging.py
 #           (model z configa TAGGING_MODEL); _get_documents filtruje po stronie SQL (bez heurystyki limit*10)
@@ -62,6 +63,9 @@ _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OBSIDIAN_VAULT = r"C:\Users\ziutus\Obsydian\personal"
 OBSIDIAN_KNOWLEDGE_DIR = os.path.join(OBSIDIAN_VAULT, "02-wiedza")
 NOTES_DIR = os.path.join(_BACKEND_DIR, "tmp", "article_notes")
+
+cfg = load_config()
+CACHE_DIR_BASE = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
 
 
 def _getch_action(prompt: str) -> str:
@@ -108,8 +112,7 @@ def _getch_action(prompt: str) -> str:
 
 def _get_cache_status(doc_id: int) -> str:
     """Zwraca jednoliniowy status plików cache dla artykułu: [md ✓/—] [llm ✓/—] [regexp ✓/—]"""
-    cfg = load_config()
-    cache_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown", str(doc_id))
+    cache_dir = os.path.join(CACHE_DIR_BASE, str(doc_id))
     checks = [
         ("md",     f"{doc_id}_step_1_all.md"),
         ("llm",    f"{doc_id}_llm_extracted_article.md"),
@@ -137,9 +140,7 @@ def get_article_text(doc, session) -> Optional[dict]:
     if doc.text and len(doc.text) > 100 and doc.document_state in ("MD_SIMPLIFIED", "EMBEDDING_EXIST"):
         return clean_article_text(doc.text, doc.url)
 
-    cfg = load_config()
-    cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
-    cache_dir = os.path.join(cache_dir_base, str(doc.id))
+    cache_dir = os.path.join(CACHE_DIR_BASE, str(doc.id))
 
     # 2. Szukaj wyekstrahowanego artykułu w cache (regexp > LLM).
     # _step_1_all.md celowo pominięty — to surowy markdown całej strony, nie tekst artykułu.
@@ -443,9 +444,7 @@ def compute_cut_context(doc, article: dict, context_chars: int = 400) -> Optiona
     Zwraca dict {head, head_len, tail, tail_len, error} lub None (twardy błąd).
     head/tail mogą być pustymi stringami — znaczy 'nic nie wycięto na tym końcu'.
     """
-    cfg = load_config()
-    cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
-    cache_dir = os.path.join(cache_dir_base, str(doc.id))
+    cache_dir = os.path.join(CACHE_DIR_BASE, str(doc.id))
 
     # Czyta step_1 z cache; gdy brakuje — pobiera z S3, konwertuje i zapisuje
     try:
@@ -561,7 +560,6 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 
     text_only = article["text"]
-    cfg = load_config()
     embedding_model = cfg.get("EMBEDDING_MODEL") or "BAAI/bge-m3"
 
     print(f"  Zapisuję do bazy danych (ID: {doc.id})...")
@@ -583,10 +581,8 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     doc.document_state = StalkerDocumentStatus.MD_SIMPLIFIED.name
 
     # Zapisz autora z LLM markers jeśli dostępny
-    cfg = load_config()
-    cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
     import glob as glob_mod
-    markers_files = glob_mod.glob(os.path.join(cache_dir_base, str(doc.id), "*_llm_markers.json"))
+    markers_files = glob_mod.glob(os.path.join(CACHE_DIR_BASE, str(doc.id), "*_llm_markers.json"))
     if markers_files and not doc.author:
         import json
         with open(markers_files[0], "r", encoding="utf-8") as f:
@@ -1062,8 +1058,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
 
             elif action in ("r", "refresh"):
                 # Usuń cache LLM extracted i ponów ekstrakcję
-                cache_dir_base_r = os.path.join(load_config().get("CACHE_DIR") or "tmp", "markdown")
-                cache_dir_r = os.path.join(cache_dir_base_r, str(doc.id))
+                cache_dir_r = os.path.join(CACHE_DIR_BASE, str(doc.id))
                 import glob as glob_mod
                 for f in glob_mod.glob(os.path.join(cache_dir_r, "*_llm_extracted_article.md")):
                     os.remove(f)
@@ -1242,7 +1237,6 @@ def main():
         cmd_notes()
         return
 
-    load_config()
     session = get_session()
 
     try:
