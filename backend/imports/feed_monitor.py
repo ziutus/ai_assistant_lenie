@@ -34,7 +34,7 @@ from urllib.parse import urlparse
 
 import requests
 import yaml
-from sqlalchemy.exc import OperationalError as SAOperationalError
+from sqlalchemy.exc import SQLAlchemyError
 
 from sqlalchemy import select
 
@@ -338,7 +338,9 @@ def resolve_default_state(feed_config: dict, doc_type: str) -> str:
 def check_existing(session, url: str) -> Optional[WebDocument]:
     try:
         return WebDocument.get_by_url(session, url)
-    except SAOperationalError:
+    except SQLAlchemyError:
+        # Rollback, żeby przerwana transakcja nie wywracała kolejnych zapytań
+        session.rollback()
         return None
 
 
@@ -586,7 +588,7 @@ def cmd_import(feeds: list[dict], since: Optional[str] = None, source_filter: Op
                     existing.date_from = pub_date
                     try:
                         session.commit()
-                    except SAOperationalError:
+                    except SQLAlchemyError:
                         session.rollback()
                 continue
         new_items.append((len(new_items) + 1, feed, entry))
@@ -757,7 +759,7 @@ def _import_entry(session, feed_config: dict, entry: dict, service=None) -> str:
         if status == "skipped":
             return "skipped"
         return "added"
-    except SAOperationalError as e:
+    except SQLAlchemyError as e:
         session.rollback()
         print(f"  ERROR: {entry['title'][:70]} — {e}")
         return "error"
