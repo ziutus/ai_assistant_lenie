@@ -1,20 +1,20 @@
-# Architecture — Backend API
+﻿# Architecture â€” Backend API
 
 > Generated: 2026-02-13 | Part: backend | Type: REST API | Framework: Flask
 
 ## Architecture Pattern
 
-**Layered API with Service Pattern**: Flask routes → library services → database layer
+**Layered API with Service Pattern**: Flask routes â†’ library services â†’ database layer
 
 ```
 HTTP Request
-  ↓
-Flask Route (server.py) → check_auth_header() → x-api-key validation
-  ↓
-Library Service (library/*.py) → business logic, LLM routing, text processing
-  ↓
-Data Access (stalker_web_document_db.py, stalker_web_documents_db_postgresql.py) → raw psycopg2
-  ↓
+  â†“
+Flask Route (server.py) â†’ check_auth_header() â†’ x-api-key validation
+  â†“
+Library Service (library/*.py) â†’ business logic, LLM routing, text processing
+  â†“
+Data Access (stalker_web_document_db.py, stalker_web_documents_db_postgresql.py) â†’ raw psycopg2
+  â†“
 PostgreSQL 18 + pgvector
 ```
 
@@ -25,7 +25,7 @@ PostgreSQL 18 + pgvector
 | Language | Python | >= 3.11 |
 | Framework | Flask + Flask-CORS | latest |
 | Database | PostgreSQL + pgvector | 18 |
-| ORM | None (raw psycopg2) | — |
+| ORM | None (raw psycopg2) | â€” |
 | Package Manager | uv (hatchling build) | latest |
 | LLM | OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bielik | multi-provider |
 | Embeddings | ada-002, Titan v1/v2, BAAI/bge-multilingual | 1024-1536 dim (model-dependent) |
@@ -50,7 +50,7 @@ PostgreSQL 18 + pgvector
 | Google Vertex AI | gemini-2.0-flash-lite-001 | `api/google/google_vertexai.py` |
 | CloudFerro | Bielik-11B-v2.3-Instruct | `api/cloudferro/sherlock/sherlock.py` |
 
-Entry point: `ai.ai_ask(query, model, temperature, max_token_count, top_p) → AiResponse` (internal library function, not exposed as REST endpoint)
+Entry point: `ai.ai_ask(query, model, temperature, max_token_count, top_p) â†’ AiResponse` (internal library function, not exposed as REST endpoint)
 
 ### Embedding Abstraction Layer
 
@@ -63,23 +63,23 @@ Entry point: `ai.ai_ask(query, model, temperature, max_token_count, top_p) → A
 | AWS Bedrock | amazon.titan-embed-text-v2:0 | 1024 |
 | CloudFerro | BAAI/bge-multilingual-gemma2 | varies |
 
-Entry point: `get_embedding(model, text) → EmbeddingResult`
+Entry point: `get_embedding(model, text) â†’ EmbeddingResult`
 
 ### Domain Model
 
 ```
 StalkerWebDocument (base, 30 attrs)
-  └── StalkerWebDocumentDB (+ save/delete/embedding ops)
-       └── Uses WebsitesDBPostgreSQL (query layer)
+  â””â”€â”€ StalkerWebDocumentDB (+ save/delete/embedding ops)
+       â””â”€â”€ Uses WebsitesDBPostgreSQL (query layer)
 ```
 
 ### Content Processing Pipeline
 
-1. **Download**: `download_raw_html(url)` → raw bytes
-2. **Parse**: `webpage_raw_parse(url, html)` → WebPageParseResult (text, title, summary, language)
-3. **Clean**: `webpage_text_clean(url, text)` → cleaned text (site-specific regex rules)
-4. **Split**: `split_text_for_embedding(text, titles, max_words)` → text chunks
-5. **Embed**: `get_embedding(model, chunk)` → vector (dimensions vary by model)
+1. **Download**: `download_raw_html(url)` â†’ raw bytes
+2. **Parse**: `webpage_raw_parse(url, html)` â†’ WebPageParseResult (text, title, summary, language)
+3. **Clean**: `webpage_text_clean(url, text)` â†’ cleaned text (site-specific regex rules)
+4. **Split**: `split_text_for_embedding(text, titles, max_words)` â†’ text chunks
+5. **Embed**: `get_embedding(model, chunk)` â†’ vector (dimensions vary by model)
 6. **Store**: `StalkerWebDocumentDB.save()` + `embedding_add_simple(vector, model)`
 
 ### Batch Processing
@@ -88,25 +88,25 @@ Standalone scripts for bulk operations (not part of Flask API):
 
 | Script | Pipeline |
 |--------|----------|
-| `web_documents_do_the_needful_new.py` | SQS polling → DB insert → YouTube processing → language detection → embedding |
-| `webdocument_md_decode.py` | Markdown decoding → link extraction → correction → embedding |
-| `youtube_add.py` | CLI: YouTube URL → metadata → transcript → optional AI summary → DB |
-| `markdown_to_embedding.py` | Local markdown files → embedding generation |
+| `web_documents_do_the_needful_new.py` | SQS polling â†’ DB insert â†’ YouTube processing â†’ language detection â†’ embedding |
+| `webdocument_md_decode.py` | Markdown decoding â†’ link extraction â†’ correction â†’ embedding |
+| `youtube_add.py` | CLI: YouTube URL â†’ metadata â†’ transcript â†’ optional AI summary â†’ DB |
+| `markdown_to_embedding.py` | Local markdown files â†’ embedding generation |
 
 ## Data Architecture
 
 ### PostgreSQL Schema
 
-- **web_documents** (28 columns): Document storage with content, metadata, multilingual fields, processing state
+- **web_documents** (29 columns): Document storage with content, metadata, multilingual fields, processing state
 - **websites_embeddings** (8 columns): Vector embeddings with IVFFlat cosine similarity index
 
 ### Document Lifecycle
 
 ```
-URL_ADDED → DOCUMENT_INTO_DATABASE → NEED_MANUAL_REVIEW → READY_FOR_TRANSLATION → READY_FOR_EMBEDDING → EMBEDDING_EXIST
+URL_ADDED â†’ DOCUMENT_INTO_DATABASE â†’ NEED_MANUAL_REVIEW â†’ READY_FOR_TRANSLATION â†’ READY_FOR_EMBEDDING â†’ EMBEDDING_EXIST
 ```
 
-15 processing states, 14 error states, 6 document types (movie, youtube, link, webpage, text_message, text)
+15 processing states, 14 error states, 8 document types (movie, youtube, link, webpage, text_message, text, email, social_media_post)
 
 ## API Design
 
@@ -121,8 +121,8 @@ Authentication: `x-api-key` header on all routes except health checks.
 
 ## Testing Strategy
 
-- **Unit tests** (9 files): Text processing, markdown operations, paywall detection — no external dependencies
-- **Integration tests** (5 files): REST API endpoint testing — requires PostgreSQL
+- **Unit tests** (9 files): Text processing, markdown operations, paywall detection â€” no external dependencies
+- **Integration tests** (5 files): REST API endpoint testing â€” requires PostgreSQL
 - **Framework**: pytest with unittest.TestCase
 - **Config**: `pyproject.toml [tool.pytest.ini_options]`
 

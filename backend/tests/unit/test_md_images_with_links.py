@@ -1,5 +1,4 @@
 import unittest
-import re
 from library.lenie_markdown import get_images_with_links_md
 
 

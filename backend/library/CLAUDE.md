@@ -42,7 +42,7 @@ library/
 - **`db/engine.py`** — SQLAlchemy engine and session factories: `get_session()`, `get_scoped_session()`.
 - **`stalker_web_documents_db_postgresql.py`** — `WebsitesDBPostgreSQL`: query layer using SQLAlchemy session. Requires `session` parameter. Methods: `get_list()` (paginated/filtered), `get_similar()` (pgvector cosine search), `get_next_to_correct()`, `get_count()`, `embedding_add()`, `embedding_delete()`.
 
-**Database tables:** `public.web_documents` (28 columns), `public.websites_embeddings` (vector similarity).
+**Database tables:** `public.web_documents` (29 columns), `public.websites_embeddings` (vector similarity).
 
 ### Models (`models/`)
 
@@ -50,7 +50,7 @@ library/
 |------|------------|---------|
 | `stalker_document_status.py` | `StalkerDocumentStatus` | 15 processing states (URL_ADDED → EMBEDDING_EXIST) |
 | `stalker_document_status_error.py` | `StalkerDocumentStatusError` | 14 error types |
-| `stalker_document_type.py` | `StalkerDocumentType` | 6 document types (movie, youtube, link, webpage, text_message, text) |
+| `stalker_document_type.py` | `StalkerDocumentType` | 8 document types (movie, youtube, link, webpage, text_message, text, email, social_media_post) |
 | `ai_response.py` | `AiResponse` | LLM response container (text, tokens, model info) |
 | `embedding_result.py` | `EmbeddingResult` | Single embedding result (vector, status, token count) |
 | `embedding_results.py` | `EmbeddingResults` | Batch embedding results |
