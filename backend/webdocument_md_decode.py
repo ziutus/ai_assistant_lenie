@@ -1,14 +1,13 @@
+import argparse
 import os.path
 import re
 import json
 import logging
 from pprint import pprint
 
-from markitdown import MarkItDown
-from html2markdown import convert
-import html2text
-
 from library.api.cloudferro.sherlock.sherlock_embedding import sherlock_create_embeddings
+from library.article_pipeline import ensure_raw_markdown
+from library.document_prepare import calculate_reduction
 from library.lenie_markdown import get_images_with_links_md, links_correct, process_markdown_and_extract_links, \
     md_square_brackets_in_one_line, md_split_for_emb, md_get_images_as_links, md_remove_markdown
 from library.models.stalker_document_status import StalkerDocumentStatus
@@ -16,20 +15,12 @@ from library.models.stalker_document_status_error import StalkerDocumentStatusEr
 from library.db.engine import get_session
 from library.db.models import WebDocument
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.api.aws.s3_aws import s3_file_exist, s3_take_file
 from library.config_loader import load_config
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 cfg = load_config()
-
-S3_BUCKET_NAME = cfg.get("AWS_S3_WEBSITE_CONTENT")
-EMBEDDING_MODEL = cfg.get("EMBEDDING_MODEL")
-
-
-def calculate_reduction(html_size, markdown_size):
-    return ((html_size - markdown_size) / html_size) * 100
 
 
 def onet_see_also_process_markdown_and_extract_links_with_images(markdown_text):
@@ -80,22 +71,7 @@ def load_regex_from_file(file_path):
         return f.read().strip()
 
 
-def generate_links_regex(links):
-    patterns = [re.escape(f'[{link["description"]}]({link["url"]})') for link in links]
-    return '|'.join(patterns)
-
-
-interactive = False
-find_problems = False
-
-text_to_md_check_only = False
-online = True
-embedding_update = False
-ignore_regexp_issue = True
-llm_fallback_enabled = True
-llm_fallback_model = "speakleash/Bielik-11B-v3.0-Instruct"
 cache_dir_base = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
-split_limit = 200
 
 
 page_regexp_map = {
@@ -191,18 +167,49 @@ page_rules_map = {
 }
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(
+        description="Extract article text from webpage markdown (regexp rules + LLM fallback), "
+                    "clean it and optionally create embeddings.")
+    selection = parser.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--url-prefix",
+                           help='Process documents whose URL starts with prefix, e.g. "https://biznes.interia.pl/"')
+    selection.add_argument("--ids", type=int, nargs="+", metavar="ID",
+                           help="Explicit document IDs to process")
+    parser.add_argument("--interactive", action="store_true",
+                        help="Pause for Enter after each document")
+    parser.add_argument("--find-problems", action="store_true",
+                        help="Exit immediately when neither regex rules nor LLM fallback match")
+    parser.add_argument("--md-check-only", action="store_true",
+                        help="Stop after article extraction (skip link/image processing and embeddings)")
+    parser.add_argument("--embedding-update", action="store_true",
+                        help="Create and store embeddings for the cleaned parts")
+    parser.add_argument("--skip-regex-errors", action="store_true",
+                        help="Skip documents already marked with REGEX_ERROR")
+    parser.add_argument("--no-llm-fallback", action="store_true",
+                        help="Disable LLM fallback when regex rules do not match")
+    parser.add_argument("--llm-model", default="speakleash/Bielik-11B-v3.0-Instruct",
+                        help="LLM model for fallback extraction")
+    args = parser.parse_args()
+
+    interactive = args.interactive
+    find_problems = args.find_problems
+    text_to_md_check_only = args.md_check_only
+    embedding_update = args.embedding_update
+    ignore_regexp_issue = not args.skip_regex_errors
+    llm_fallback_enabled = not args.no_llm_fallback
+    llm_fallback_model = args.llm_model
+
     session = get_session()
     wb_db = WebsitesDBPostgreSQL(session=session)
 
-    # interactive = True
-    documents = wb_db.get_documents_by_url("https://biznes.interia.pl/")
-    # documents = [7456]
     # TODO: 7683 - need to correct related liks
     # TODO: 7741 - udostępnij artykuł - linki do ustąpienia do regexp: businessinsider_com_pl_2025_1.regex
     # TODO: 7732 - lepszy podział na części do embeddingu
     # TODO: 7687 - poprawić regexp geekweek_interia_pl_7687.regex
-    # documents = wb_db.get_list(document_type="webpage", document_state="DOCUMENT_INTO_DATABASE")
-    # documents = wb_db.get_list(document_type="webpage", limit=700)
+    if args.ids:
+        documents = args.ids
+    else:
+        documents = wb_db.get_documents_by_url(args.url_prefix)
 
     try:
         if not os.path.exists(cache_dir_base):
@@ -238,84 +245,30 @@ if __name__ == '__main__':
 
             metadata = {"document_id": document_id}
             cache_file_html = os.path.join(cache_dir, f"{document_id}.html")
-            cache_file_step_1_md = os.path.join(cache_dir, f"{document_id}_step_1_all.md")
             cache_file_step_2_md = os.path.join(cache_dir, f"{document_id}_step_2_1_article.md")
 
             logger.info("Step 1: preparing markdown from HTML file")
-            logger.debug("Taking markdown content from local cache or from remote cache (S3)")
-
-            if not os.path.isfile(cache_file_step_1_md) and not os.path.isfile(cache_file_html):
-                logger.debug("Taking raw html file from cache in Amazon S3")
-
-                if not doc.uuid:
-                    logger.debug("Doesn't exist uuid, exiting...")
-                    continue
-
-                if not s3_file_exist(S3_BUCKET_NAME, doc.uuid + ".html"):
-                    logger.debug("I can't find file in S3 cache")
-                    continue
-
-                logger.debug("the HTML file exist in S3 cache")
-                if s3_take_file(S3_BUCKET_NAME, doc.uuid + ".html", cache_file_html):
-                    logger.debug("The HTML file has been copy to local cache")
-                else:
-                    logger.debug("Can't download file from S3 cache, exiting...")
-                    continue
-
-            if os.path.isfile(cache_file_step_1_md):
-                logger.debug("DEBUG: 1a. Taking raw markdown file from cache")
-                with open(cache_file_step_1_md, "r", encoding="utf-8") as f:
-                    result = f.read()
-            else:
-                logger.debug("DEBUG: 1b. Taking raw html file from cache")
-                mdit = MarkItDown()
-                result = mdit.convert(cache_file_html).text_content
-
-            md_size = len(result)
-            html_size = os.path.getsize(cache_file_html)
-
-            logger.debug(f"Rozmiar HTML: {html_size} bajtów")
-
-            reduction_percentage = calculate_reduction(html_size, md_size)
-            logger.debug(f"MarkItDown reduction: {reduction_percentage:.2f}%")
-            markdown_text = result
-
-            if reduction_percentage < 30:
-                logger.debug("Looks like MarkItDown didn't converted to markdown, choosing next metod: html2text")
-                with open(cache_file_html, "r", encoding="utf-8") as f:
-                    html = f.read()
-
-                    markdown = convert(html)
-                    md_size_2 = len(markdown)
-
-                    reduction_percentage = calculate_reduction(html_size, md_size_2)
-                    logger.debug(f"Markdown reduction: {reduction_percentage:.2f}%")
-                    markdown_text = markdown
-
-                    if reduction_percentage < 30:
-
-                        h = html2text.HTML2Text()
-                        h.ignore_links = False
-                        h.ignore_images = False
-                        markdown_content = h.handle(html)
-
-                        markdown_size = len(markdown_content)
-                        reduction_html2text_percentage = calculate_reduction(html_size, markdown_size)
-
-                        logger.debug(f"html2Text reduction: {reduction_html2text_percentage:.2f}%")
-
-                        markdown_text = markdown_content
-
-            with open(cache_file_step_1_md, 'w', encoding="utf-8") as file:
-                file.write(markdown_text)
-                logger.info("Transformation from text to markdown completed")
-
-            if reduction_percentage < 30 or reduction_percentage >= 98:
-                logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
-                doc.document_state = StalkerDocumentStatus.ERROR.name
-                doc.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR.name
-                session.commit()
+            # Reads step_1 from cache; otherwise downloads HTML (cache/S3),
+            # converts via the MarkItDown -> html2markdown -> html2text cascade
+            # and persists {id}_step_1_all.md (library/article_pipeline).
+            markdown_text = ensure_raw_markdown(doc, cache_dir, verbose=False)
+            if not markdown_text:
+                logger.debug("Can't get markdown (no uuid or HTML not in cache/S3), skipping...")
                 continue
+
+            # Quality gate: a sane conversion shrinks HTML by 30-98%.
+            # Only checkable when the HTML file is present in cache (it is not
+            # when markdown came straight from a cached step_1/md file).
+            if os.path.isfile(cache_file_html):
+                html_size = os.path.getsize(cache_file_html)
+                reduction_percentage = calculate_reduction(html_size, len(markdown_text))
+                logger.debug(f"HTML size: {html_size} B, markdown reduction: {reduction_percentage:.2f}%")
+                if reduction_percentage < 30 or reduction_percentage >= 98:
+                    logger.error("ERROR: Something wrong with transformation to markdown, taking next document...")
+                    doc.document_state = StalkerDocumentStatus.ERROR.name
+                    doc.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR.name
+                    session.commit()
+                    continue
 
             doc.document_state = StalkerDocumentStatus.NEED_CLEAN_MD.name
             session.commit()
@@ -505,8 +458,7 @@ if __name__ == '__main__':
 
                 markdown = re.sub(r"^\s*reklama\s*\n", "", markdown, flags=re.MULTILINE | re.DOTALL)
 
-
-                markdown = re.sub(r"s*reklama$", "", markdown)
+                markdown = re.sub(r"\s*reklama\s*$", "", markdown)
 
 
                 markdown = re.sub(r"^\s+\* link\[\d+\]:.*$", "", markdown, flags=re.MULTILINE)
@@ -539,16 +491,9 @@ if __name__ == '__main__':
 
             markdown = re.sub(r'^\s+$', '\n', markdown)
 
-            # from unknown reason below code doesnt' work
-            markdown = re.sub(r'^>\s', '', markdown, re.MULTILINE)
-            # TODO: repalce with better code:
-            lines = markdown.splitlines()
-            lines2 = []
-            for line in lines:
-                if line.startswith("> "):
-                    line = line.replace("> ", "")
-                lines2.append(line)
-            markdown = "\n".join(lines2)
+            # Note: 4th positional arg of re.sub is `count`, not `flags` — that was
+            # why the old `re.sub(r'^>\s', '', markdown, re.MULTILINE)` "didn't work".
+            markdown = re.sub(r'^>\s', '', markdown, flags=re.MULTILINE)
 
             markdown = re.sub(r'\*\*\n+\s*', '**\n', markdown)
 
