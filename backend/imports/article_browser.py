@@ -47,6 +47,23 @@ __version__ = "0.4.1"
 #   0.1.0 — wersja bazowa
 
 
+from sqlalchemy import or_, select, text as text_sql
+from sqlalchemy.exc import InternalError as SqlInternalError
+
+from library.config_loader import load_config
+from library.db.engine import get_session
+from library.db.models import WebDocument
+from library.article_extractor import _detect_portal
+from library.article_pipeline import ensure_raw_markdown, extract_article
+from library.article_cleaner import clean_article_text
+from library.article_tagging import COUNTRY_TAG_TRIGGERS, extract_countries_with_llm, tag_article_with_llm
+
+_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OBSIDIAN_VAULT = r"C:\Users\ziutus\Obsydian\personal"
+OBSIDIAN_KNOWLEDGE_DIR = os.path.join(OBSIDIAN_VAULT, "02-wiedza")
+NOTES_DIR = os.path.join(_BACKEND_DIR, "tmp", "article_notes")
+
+
 def _getch_action(prompt: str) -> str:
     """Read a single keypress without Enter for known single-char actions.
 
@@ -87,22 +104,6 @@ def _getch_action(prompt: str) -> str:
     except (ImportError, OSError):
         # Fallback: no terminal control available (e.g. piped input)
         return input().strip().lower()
-
-from sqlalchemy import or_, select, text as text_sql
-from sqlalchemy.exc import InternalError as SqlInternalError
-
-from library.config_loader import load_config
-from library.db.engine import get_session
-from library.db.models import WebDocument
-from library.article_extractor import _detect_portal
-from library.article_pipeline import ensure_raw_markdown, extract_article
-from library.article_cleaner import clean_article_text
-from library.article_tagging import COUNTRY_TAG_TRIGGERS, extract_countries_with_llm, tag_article_with_llm
-
-_BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OBSIDIAN_VAULT = r"C:\Users\ziutus\Obsydian\personal"
-OBSIDIAN_KNOWLEDGE_DIR = os.path.join(OBSIDIAN_VAULT, "02-wiedza")
-NOTES_DIR = os.path.join(_BACKEND_DIR, "tmp", "article_notes")
 
 
 def _get_cache_status(doc_id: int) -> str:
@@ -206,7 +207,7 @@ def action_save_note(doc, article_text: str) -> Optional[str]:
     existing_note = _read_existing_note(doc.id)
 
     if existing_note:
-        print(f"\n  Istniejąca notatka:")
+        print("\n  Istniejąca notatka:")
         for line in existing_note.splitlines():
             print(f"     {line}")
         print()
@@ -260,13 +261,13 @@ def action_save_note(doc, article_text: str) -> Optional[str]:
         f.write(f"- **URL**: {doc.url}\n")
         f.write(f"- **Data**: {doc.created_at}\n")
         f.write(f"- **Obsidian vault**: {OBSIDIAN_KNOWLEDGE_DIR}\n\n")
-        f.write(f"## Moja notatka\n\n")
+        f.write("## Moja notatka\n\n")
         f.write(f"{note_text}\n\n")
-        f.write(f"## Treść artykułu\n\n")
+        f.write("## Treść artykułu\n\n")
         f.write(f"{article_text}\n")
 
     print(f"  Zapisano: {note_file}")
-    print(f"  Aby pracować nad notatką w Claude Code:")
+    print("  Aby pracować nad notatką w Claude Code:")
     print(f"    claude \"przeczytaj @{note_file} i dodaj do mojego Obsidian vault\"")
     return note_file
 
@@ -597,14 +598,14 @@ def action_save_to_db(doc, article: dict, session) -> bool:
 
     try:
         session.commit()
-        print(f"  Tekst zapisany. Status: MD_SIMPLIFIED")
+        print("  Tekst zapisany. Status: MD_SIMPLIFIED")
     except Exception as e:
         session.rollback()
         print(f"  BŁĄD zapisu tekstu: {e}")
         return False
 
     # 2. Klasyfikacja tematyczna
-    print(f"  Klasyfikuję artykuł tematycznie...")
+    print("  Klasyfikuję artykuł tematycznie...")
     article_tags = tag_article_with_llm(text_only, doc.title or "")
     country_tags = []
     if article_tags and COUNTRY_TAG_TRIGGERS.intersection(article_tags):
@@ -620,10 +621,10 @@ def action_save_to_db(doc, article: dict, session) -> bool:
             session.rollback()
             print(f"  OSTRZEŻENIE: nie udało się zapisać tagów: {e}")
     else:
-        print(f"  Brak tagów tematycznych.")
+        print("  Brak tagów tematycznych.")
 
     # 3. Twórz embedding
-    print(f"  Tworzę embedding...")
+    print("  Tworzę embedding...")
     try:
         wb_db = WebsitesDBPostgreSQL(session=session)
         # Usuń stare embeddingi dla tego dokumentu
@@ -646,13 +647,13 @@ def action_save_to_db(doc, article: dict, session) -> bool:
 
         doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
         session.commit()
-        print(f"  Embedding zapisany. Status: EMBEDDING_EXIST")
+        print("  Embedding zapisany. Status: EMBEDDING_EXIST")
         return True
 
     except Exception as e:
         session.rollback()
         print(f"  BŁĄD embeddingu: {e}")
-        print(f"  Tekst został zapisany (MD_SIMPLIFIED), ale embedding nie. Spróbuj ponownie.")
+        print("  Tekst został zapisany (MD_SIMPLIFIED), ale embedding nie. Spróbuj ponownie.")
         return False
 
 
@@ -791,7 +792,7 @@ def action_mark_review(doc, session):
     from library.models.stalker_document_status import StalkerDocumentStatus
     current = doc.document_state
     if current == StalkerDocumentStatus.NEED_MANUAL_REVIEW.name:
-        print(f"  Aktualny status: NEED_MANUAL_REVIEW")
+        print("  Aktualny status: NEED_MANUAL_REVIEW")
         print("  [1] MD_SIMPLIFIED  [2] DOCUMENT_INTO_DATABASE  [3] Anuluj")
         try:
             choice = input("  Nowy status > ").strip()
@@ -1030,7 +1031,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
             # Wyciągnij sekcję "Moja notatka"
             if "## Moja notatka" in content:
                 note_part = content.split("## Moja notatka")[1].split("## Treść artykułu")[0].strip()
-                print(f"\n  NOTATKA:")
+                print("\n  NOTATKA:")
                 for line in note_part.splitlines():
                     print(f"     {line}")
             else:
@@ -1192,7 +1193,7 @@ def cmd_notes():
     for note_file in notes:
         path = os.path.join(NOTES_DIR, note_file)
         with open(path, "r", encoding="utf-8") as f:
-            first_lines = [l.strip() for l in f.readlines()[:8] if l.strip()]
+            first_lines = [line.strip() for line in f.readlines()[:8] if line.strip()]
 
         title = first_lines[0].removeprefix("# Notatka do artykułu: ") if first_lines else "?"
         print(f"  {note_file}")

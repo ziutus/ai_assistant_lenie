@@ -200,7 +200,7 @@ def download_data():
 def _load_data() -> list:
     """Load cached CSV data."""
     if not os.path.exists(CACHE_FILE):
-        print(f"Brak pliku cache. Uruchom najpierw: python imports/freedom_house_import.py --download",
+        print("Brak pliku cache. Uruchom najpierw: python imports/freedom_house_import.py --download",
               file=sys.stderr)
         sys.exit(1)
 

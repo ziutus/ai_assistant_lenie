@@ -181,7 +181,7 @@ def process_article_content(doc_id: int, cache_base_dir: str,
     html_file = os.path.join(doc_cache_dir, f"{doc_id}.html")
 
     if not os.path.isfile(html_file):
-        print(f"  Process: no HTML in cache, skipping")
+        print("  Process: no HTML in cache, skipping")
         return False, False
 
     doc = WebDocument.get_by_id(session, doc_id)
@@ -194,7 +194,7 @@ def process_article_content(doc_id: int, cache_base_dir: str,
     markdown_text, article = extract_article(doc, doc_cache_dir, verbose=True, skip_llm=skip_llm)
 
     if not markdown_text:
-        print(f"  Process: markdown conversion failed")
+        print("  Process: markdown conversion failed")
         return False, False
 
     if skip_llm:
@@ -205,7 +205,7 @@ def process_article_content(doc_id: int, cache_base_dir: str,
         print(f"  Process: LLM OK ({len(article)} chars)")
         return True, True
 
-    print(f"  Process: LLM failed — no article markers extracted")
+    print("  Process: LLM failed — no article markers extracted")
     return True, False
 
 
