@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""One-time migration: move S3 files from data/ to CACHE_DIR/{doc_id}/{doc_id}.ext
+"""One-time migration: copy S3 files from data/ to CACHE_DIR/{doc_id}/{doc_id}.ext
 
 Reads UUID-named files from data/, queries PostgreSQL for doc.id by doc_uuid,
-and moves files to the cache directory convention used by document_prepare.py.
+and copies files to the cache directory convention used by document_prepare.py.
+Source files are kept unless --delete-source is given.
 
 Usage:
     cd backend
@@ -37,8 +38,8 @@ def main():
     parser = argparse.ArgumentParser(description="Migrate S3 files from data/ to cache dir")
     parser.add_argument("--source-dir", default="data", help="Source directory with UUID-named files (default: data)")
     parser.add_argument("--target-dir", default=None, help="Target cache dir (default: os.path.join(CACHE_DIR, 'markdown'))")
-    parser.add_argument("--dry-run", action="store_true", help="Preview only, no file moves")
-    parser.add_argument("--delete-source", action="store_true", help="Delete source files after successful move")
+    parser.add_argument("--dry-run", action="store_true", help="Preview only, no file copies")
+    parser.add_argument("--delete-source", action="store_true", help="Delete source files after successful copy")
     args = parser.parse_args()
 
     if args.target_dir is None:
@@ -76,7 +77,7 @@ def main():
 
     print(f"DB mapping: {len(uuid_to_id)}/{len(uuids)} UUIDs found in database\n")
 
-    moved = 0
+    copied = 0
     skipped = 0
     not_found = 0
 
@@ -103,23 +104,23 @@ def main():
 
             if args.dry_run:
                 print(f"  DRY-RUN: {src} -> {dst}")
-                moved += 1
+                copied += 1
             else:
                 os.makedirs(doc_dir, exist_ok=True)
                 shutil.copy2(src, dst)
-                print(f"  MOVED: {src} -> {dst}")
-                moved += 1
+                print(f"  COPIED: {src} -> {dst}")
+                copied += 1
 
                 if args.delete_source:
                     os.remove(src)
                     print(f"  DELETED: {src}")
 
     print("\n=== Summary ===")
-    print(f"Moved: {moved}")
+    print(f"Copied: {copied}")
     print(f"Skipped (already exist): {skipped}")
     print(f"Not found in DB: {not_found}")
 
-    if not args.dry_run and not args.delete_source and moved > 0:
+    if not args.dry_run and not args.delete_source and copied > 0:
         print(f"\nSource files kept in {args.source_dir}. Use --delete-source to remove them after migration.")
 
 

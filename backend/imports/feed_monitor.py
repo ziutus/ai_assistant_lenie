@@ -231,15 +231,16 @@ def fetch_entries(feed_config: dict) -> list[dict]:
 # Filtering
 # ---------------------------------------------------------------------------
 
-def apply_skip_filters(entries: list[dict], feed_config: dict) -> list[dict]:
-    """Filter out entries matching skip_url_patterns or skip_title_patterns."""
+def apply_skip_filters(entries: list[dict], feed_config: dict) -> tuple[list[dict], list[dict]]:
+    """Split entries into (kept, ignored) by skip_url_patterns / skip_title_patterns."""
     url_patterns = feed_config.get("skip_url_patterns", [])
     title_patterns = feed_config.get("skip_title_patterns", [])
 
     if not url_patterns and not title_patterns:
-        return entries
+        return entries, []
 
-    filtered = []
+    kept = []
+    ignored = []
     for entry in entries:
         skip = False
         for pattern in url_patterns:
@@ -251,9 +252,11 @@ def apply_skip_filters(entries: list[dict], feed_config: dict) -> list[dict]:
                 if re.search(pattern, entry["title"], re.IGNORECASE):
                     skip = True
                     break
-        if not skip:
-            filtered.append(entry)
-    return filtered
+        if skip:
+            ignored.append(entry)
+        else:
+            kept.append(entry)
+    return kept, ignored
 
 
 def filter_by_date(entries: list[dict], since_date: Optional[date]) -> list[dict]:
@@ -325,14 +328,9 @@ def detect_document_type(url: str) -> str:
     return StalkerDocumentType.link.name
 
 
-def resolve_default_state(feed_config: dict, doc_type: str) -> str:
-    """Determine initial document_state from feed config or defaults."""
-    configured = feed_config.get("default_state")
-    if configured:
-        return configured
-    if doc_type == StalkerDocumentType.youtube.name:
-        return StalkerDocumentStatus.URL_ADDED.name
-    return StalkerDocumentStatus.URL_ADDED.name
+def resolve_default_state(feed_config: dict) -> str:
+    """Determine initial document_state from feed config (default: URL_ADDED)."""
+    return feed_config.get("default_state") or StalkerDocumentStatus.URL_ADDED.name
 
 
 def check_existing(session, url: str) -> Optional[WebDocument]:
@@ -461,8 +459,7 @@ def cmd_check(feeds: list[dict], since: Optional[str] = None, source_filter: Opt
         except Exception as e:
             print(f"  ERROR fetching feed: {e}")
             continue
-        entries = apply_skip_filters(all_entries, feed)
-        ignored_entries = [e for e in all_entries if e not in entries]
+        entries, ignored_entries = apply_skip_filters(all_entries, feed)
 
         effective_since = determine_since_date(feed, session, since, state)
 
@@ -554,7 +551,7 @@ def cmd_import(feeds: list[dict], since: Optional[str] = None, source_filter: Op
             print(f"ERROR: {e}")
             continue
 
-        entries = apply_skip_filters(entries, feed)
+        entries, _ = apply_skip_filters(entries, feed)
 
         # Determine date cutoff
         effective_since = determine_since_date(feed, session, since, state)
@@ -730,7 +727,7 @@ def _import_entry(session, feed_config: dict, entry: dict, service=None) -> str:
     """Import a single entry into the database via DocumentService. Returns 'added' or 'error'."""
     url = entry["url"]
     doc_type = detect_document_type(url)
-    doc_state = resolve_default_state(feed_config, doc_type)
+    doc_state = resolve_default_state(feed_config)
 
     metadata = {
         "title": entry["title"],
@@ -866,7 +863,7 @@ def cmd_review(feeds: list[dict], since: Optional[str] = None, source_filter: Op
             print(f"ERROR: {e}")
             continue
 
-        entries = apply_skip_filters(all_entries, feed)
+        entries, _ = apply_skip_filters(all_entries, feed)
         effective_since = determine_since_date(feed, session, since, state)
         if effective_since:
             entries = filter_by_date(entries, effective_since)

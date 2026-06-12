@@ -75,7 +75,7 @@ Before executing any operations, the script displays source (AWS profile, region
 - `/{project}/{env}/s3/website-content/name` — S3 bucket for webpage content
 
 **Prerequisites:**
-- PostgreSQL database must be accessible (local Docker on port 5433)
+- PostgreSQL database must be accessible (local Docker on port 5433) — not required for `--dry-run` with explicit `--since`
 - `.env` file with `POSTGRESQL_*` variables
 - AWS credentials (via env vars or AWS profile) with SSM read, DynamoDB read, and S3 read access
 

@@ -312,18 +312,21 @@ def main():
     if args.data_dir is None:
         args.data_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
 
-    # Auto-detect last successful sync date (one DB connection for both paths)
+    # Auto-detect last successful sync date. The DB connection doubles as a
+    # fail-fast check before AWS calls; skipped for --dry-run with explicit
+    # --since, which needs no database at all.
     auto_date = None
-    try:
-        detect_session = get_session()
+    if args.since is None or not args.dry_run:
         try:
-            auto_date = get_last_successful_sync_date(detect_session)
-        finally:
-            detect_session.close()
-    except (SQLAlchemyError, OSError) as e:
-        print(f"ERROR: Cannot connect to database: {e}")
-        print("Fix the database connection before running this script.")
-        sys.exit(1)
+            detect_session = get_session()
+            try:
+                auto_date = get_last_successful_sync_date(detect_session)
+            finally:
+                detect_session.close()
+        except (SQLAlchemyError, OSError) as e:
+            print(f"ERROR: Cannot connect to database: {e}")
+            print("Fix the database connection before running this script.")
+            sys.exit(1)
 
     if args.since is None:
         if auto_date is None:
