@@ -60,6 +60,43 @@ def onet_see_also_process_markdown_and_extract_links_with_images(markdown_text):
         "links": result
     }
 
+# Linie-śmieci portalu onet.pl usuwane w całości (re.MULTILINE).
+# Wzorce operują na markdownie PO ekstrakcji linków/obrazków (markery link[N]:)
+# — to inny etap niż library/article_cleaner, który czyści tekst z markerami [linkN].
+_ONET_LINE_PATTERNS = [
+    r"^\s+\*\s+\*\*Tekst\spublikujemy\sdzięki\suprzejmości\sserwisu.*$",
+    r"^\*\*CZYTAJ\sWIĘCEJ:.*$",
+    r"^Kontynuuj\sczytanie\sod\smiejsca,\sw\sktórym\sskończyłeś\.$",
+    # " * **Przeczytaj:**", " * **Zobacz także:**", " * **Czytaj więcej:**" itp.
+    r"^\s\*\s\*\*(?:Przeczytaj|Przeczytaj\stakże|Czytaj\swięcej|Zobacz|Zobacz\stakże|Zobacz\srównież):\*\*.*$",
+    r"^\*\s\*\*.*?\*\*",
+    r"^##\sZobacz\srównież$",
+    r"^\s\*\sDużo\sczytania,\sa\smało\sczasu\?\sSprawdź\sskrót\sartykułu\s*$",
+    r"^\s+\* link\[\d+\]:.*$",
+    r"^\s*Dalszy\sciąg\smateriału\spod\swideo\s*$",
+    r"^\*\*Zobacz także:\*\*.*$",
+]
+
+
+def clean_onet_artifacts(markdown: str) -> str:
+    """Usuń śmieci portalowe onet.pl (CZYTAJ WIĘCEJ, reklama, itp.) z markdownu."""
+    # Pusta linia przed liniami **bold** i nagłówkami ## (czytelność po sklejeniu)
+    lines_out = []
+    for line in markdown.splitlines():
+        if (line.startswith("**") and line.endswith("**")) or line.startswith("## "):
+            if lines_out and lines_out[-1] != '\n':
+                lines_out.append("")
+        lines_out.append(line)
+    markdown = "\n".join(lines_out)
+
+    for pattern in _ONET_LINE_PATTERNS:
+        markdown = re.sub(pattern, "", markdown, flags=re.MULTILINE)
+
+    markdown = re.sub(r"^\s*reklama\s*\n", "", markdown, flags=re.MULTILINE | re.DOTALL)
+    markdown = re.sub(r"\s*reklama\s*$", "", markdown)
+    return markdown
+
+
 def load_regex_from_file(file_path):
     """
     Funkcja wczytująca wyrażenie regularne z zewnętrznego pliku.
@@ -422,52 +459,7 @@ if __name__ == '__main__':
 
             if doc.url.startswith("https://www.onet.pl/") or doc.url.startswith("https://wiadomosci.onet.pl/"):
                 logger.info("Removing info strings for onet.pl")
-
-                markdown = re.sub(r"^\s+\*\s+\*\*Tekst\spublikujemy\sdzięki\suprzejmości\sserwisu.*$", "", markdown, flags=re.MULTILINE)
-
-                linie = markdown.splitlines()
-                wynik = []
-                for linia in linie:
-                    if linia.startswith("**") and linia.endswith("**"):
-                        if wynik and wynik[-1] != '\n':
-                            wynik.append("")
-                        wynik.append(linia)
-                    elif linia.startswith("## "):
-                        if wynik and wynik[-1] != '\n':
-                            wynik.append("")
-                        wynik.append(linia)
-                    else:
-                        wynik.append(linia)
-                markdown = "\n".join(wynik)
-
-                # wiadomosci.onet.pl
-                markdown = re.sub(r'^\*\*CZYTAJ\sWIĘCEJ:.*$', '', markdown, flags=re.MULTILINE)
-                markdown = re.sub(r'^Kontynuuj\sczytanie\sod\smiejsca,\sw\sktórym\sskończyłeś\.$', '', markdown, flags=re.MULTILINE)
-
-                markdown = re.sub(r'^\s\*\s\*\*Przeczytaj:\*\*.*$', '', markdown, flags=re.MULTILINE)
-                markdown = re.sub(r'^\s\*\s\*\*Przeczytaj\stakże:\*\*.*$', '', markdown, flags=re.MULTILINE)
-
-                markdown = re.sub(r'^\s\*\s\*\*Czytaj\swięcej:\*\*.*$', '', markdown, flags=re.MULTILINE)
-
-                markdown = re.sub(r'^\s\*\s\*\*Zobacz:\*\*.*$', '', markdown, flags=re.MULTILINE)
-                markdown = re.sub(r'^\s\*\s\*\*Zobacz\stakże:\*\*.*$', '', markdown, flags=re.MULTILINE)
-                markdown = re.sub(r'^\s\*\s\*\*Zobacz\srównież:\*\*.*$', '', markdown, flags=re.MULTILINE)
-                markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
-                markdown = re.sub(r"^##\sZobacz\srównież$", "", markdown, flags=re.MULTILINE)
-                markdown = re.sub(r"^\s\*\sDużo\sczytania,\sa\smało\sczasu\?\sSprawdź\sskrót\sartykułu\s*$", "", markdown, flags=re.MULTILINE)
-
-                markdown = re.sub(r"^\s*reklama\s*\n", "", markdown, flags=re.MULTILINE | re.DOTALL)
-
-                markdown = re.sub(r"\s*reklama\s*$", "", markdown)
-
-
-                markdown = re.sub(r"^\s+\* link\[\d+\]:.*$", "", markdown, flags=re.MULTILINE)
-
-                markdown = re.sub(r"^\*\s\*\*.*?\*\*", "", markdown, flags=re.MULTILINE)
-
-                markdown = re.sub(r'^\s*Dalszy\sciąg\smateriału\spod\swideo\s*$', '', markdown, flags=re.MULTILINE)
-
-                markdown = re.sub(r'^\*\*Zobacz także:\*\*.*$', '', markdown, flags=re.MULTILINE)
+                markdown = clean_onet_artifacts(markdown)
 
             with open(os.path.join(cache_dir, f"{document_id}_step_5_without_portal_adding.md"), 'w', encoding="utf-8") as file:
                 logger.debug("Writing markdown to file from step 5")
@@ -543,5 +535,3 @@ if __name__ == '__main__':
 
     finally:
         session.close()
-
-exit(0)
