@@ -27,6 +27,7 @@ from library.db.models import (  # noqa: E402
     WebpageDocument,
     TextMessageDocument,
     TextDocument,
+    SocialMediaPostDocument,
 )
 
 
@@ -147,7 +148,7 @@ class TestEmbeddingModel:
 
 
 # ---------------------------------------------------------------------------
-# 5.1: WebDocument has all 26 column attributes
+# 5.1: WebDocument has all column attributes
 # ---------------------------------------------------------------------------
 
 class TestWebDocumentColumns:
@@ -159,10 +160,11 @@ class TestWebDocumentColumns:
         "text_raw", "transcript_job_id", "ai_summary_needed",
         "author", "note", "uuid", "project", "text_md",
         "transcript_needed", "reviewed_at", "obsidian_note_paths",
+        "video_description",
     }
 
     def test_column_count(self):
-        assert len(_column_names(WebDocument)) == 28
+        assert len(_column_names(WebDocument)) == 29
 
     def test_all_column_names(self):
         assert _column_names(WebDocument) == self.EXPECTED_COLUMNS
@@ -264,7 +266,7 @@ class TestSTIConfiguration:
 
 
 # ---------------------------------------------------------------------------
-# 5.4: All 6 STI subclasses have correct polymorphic_identity (now strings)
+# 5.4: All 7 STI subclasses have correct polymorphic_identity (now strings)
 # ---------------------------------------------------------------------------
 
 class TestSTISubclasses:
@@ -275,6 +277,7 @@ class TestSTISubclasses:
         (WebpageDocument, "webpage"),
         (TextMessageDocument, "text_message"),
         (TextDocument, "text"),
+        (SocialMediaPostDocument, "social_media_post"),
     ])
     def test_polymorphic_identity(self, cls, identity):
         mapper = inspect(cls).mapper
@@ -282,13 +285,14 @@ class TestSTISubclasses:
 
     def test_subclasses_do_not_define_own_tablename(self):
         for cls in [LinkDocument, YouTubeDocument, MovieDocument,
-                    WebpageDocument, TextMessageDocument, TextDocument]:
+                    WebpageDocument, TextMessageDocument, TextDocument,
+                    SocialMediaPostDocument]:
             assert "__tablename__" not in cls.__dict__, f"{cls.__name__} should not define __tablename__"
 
-    def test_six_subclasses_registered(self):
+    def test_seven_subclasses_registered(self):
         mapper = inspect(WebDocument).mapper
-        # 6 subclasses in polymorphic_map (base has no identity)
-        assert len(mapper.polymorphic_map) == 6
+        # 7 subclasses in polymorphic_map (base has no identity)
+        assert len(mapper.polymorphic_map) == 7
 
 
 # ---------------------------------------------------------------------------
@@ -492,14 +496,14 @@ class TestValidate:
 # ---------------------------------------------------------------------------
 
 class TestDict:
-    def test_dict_has_32_keys(self):
+    def test_dict_has_33_keys(self):
         doc = _make_doc(
             title="Test",
             document_state_error="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
-        assert len(result) == 32
+        assert len(result) == 33
 
     def test_dict_keys(self):
         doc = _make_doc(
@@ -516,7 +520,7 @@ class TestDict:
             "document_state_error", "text_raw", "transcript_job_id",
             "ai_summary_needed", "author", "note", "uuid", "project",
             "text_md", "transcript_needed",
-            "reviewed_at", "obsidian_note_paths",
+            "reviewed_at", "obsidian_note_paths", "video_description",
         }
         assert set(result.keys()) == expected_keys
 

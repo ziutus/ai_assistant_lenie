@@ -190,6 +190,13 @@ groups:
         default: "Bielik-11B-v2.3-Instruct"
         example: "Bielik-11B-v2.3-Instruct"
         used_by: [docker, local]
+      TAGGING_MODEL:
+        description: "LLM model for article thematic tagging and country extraction (library/article_tagging.py)"
+        type: config
+        required: false
+        default: "Bielik-11B-v3.0-Instruct"
+        example: "Bielik-11B-v3.0-Instruct"
+        used_by: [local]
 
   aws:
     description: "AWS credentials and resource identifiers"

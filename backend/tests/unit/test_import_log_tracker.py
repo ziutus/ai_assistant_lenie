@@ -7,8 +7,8 @@ import pytest
 
 sa = pytest.importorskip("sqlalchemy")
 
-from library.db.models import ImportLog
-from library.import_log_tracker import ImportLogTracker
+from library.db.models import ImportLog  # noqa: E402
+from library.import_log_tracker import ImportLogTracker  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
