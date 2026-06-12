@@ -3,7 +3,6 @@ import json
 import logging
 import os
 import time
-import uuid
 
 script_start = time.monotonic()
 print("=== web_documents_do_the_needful_new.py ===")
@@ -19,8 +18,6 @@ print(f"done ({time.monotonic() - t0:.1f}s)")
 logging.basicConfig(level=logging.INFO)  # Change level as per your need
 
 print(f"aws_xray_enabled: {cfg.get('AWS_XRAY_ENABLED')}")
-
-missing_markdown_correct = False
 
 """
 TODO: add limits for asemblay.ai upload files (check), see: https://www.assemblyai.com/docs/concepts/faq
@@ -100,9 +97,8 @@ if __name__ == '__main__':
     )
     print(f"done ({time.monotonic() - t0:.1f}s)")
 
-    aws_session = boto3.Session(region_name=cfg.get("AWS_REGION"))
     try:
-        sts = aws_session.client("sts")
+        sts = boto_session.client("sts")
         identity = sts.get_caller_identity()
         actual_account = identity['Account']
         print(f"AWS account: {actual_account}, identity: {identity['Arn']}")
@@ -113,7 +109,7 @@ if __name__ == '__main__':
     except Exception as e:
         print(f"WARNING: Could not determine AWS identity: {e}")
 
-    s3_check = aws_session.client("s3")
+    s3_check = boto_session.client("s3")
     try:
         s3_check.head_bucket(Bucket=cfg.get("AWS_S3_WEBSITE_CONTENT"))
     except Exception as e:
@@ -138,6 +134,14 @@ if __name__ == '__main__':
     t0 = time.monotonic()
     session = get_session()
     print(f"done ({time.monotonic() - t0:.1f}s)")
+
+    def get_or_create_document(url: str) -> "WebDocument":
+        """Return existing document for URL or a new one added to the session."""
+        doc = WebDocument.get_by_url(session, url)
+        if doc is None:
+            doc = WebDocument(url=url)
+            session.add(doc)
+        return doc
 
     print(f"\nTotal startup time: {time.monotonic() - script_start:.1f}s")
     print("=" * 50)
@@ -176,25 +180,23 @@ if __name__ == '__main__':
                             print(link_data["chapterList"])
 
                         # Map camelCase SQS fields to snake_case metadata
-                        metadata = {}
-                        metadata["source"] = link_data.get("source", "own")
-                        if 'chapterList' in link_data:
-                            metadata["chapter_list"] = link_data["chapterList"]
-                        if 'chapter_list' in link_data:
-                            metadata["chapter_list"] = link_data["chapter_list"]
-                        if 'language' in link_data:
-                            metadata["language"] = link_data["language"]
-                        if 'makeAISummary' in link_data:
-                            metadata["ai_summary_needed"] = link_data["makeAISummary"]
-                        if 'note' in link_data:
-                            metadata["note"] = link_data["note"]
+                        # (snake_case key wins when both variants are present)
+                        sqs_field_map = {
+                            "chapterList": "chapter_list",
+                            "chapter_list": "chapter_list",
+                            "language": "language",
+                            "makeAISummary": "ai_summary_needed",
+                            "note": "note",
+                            "title": "title",
+                            "paywall": "paywall",
+                        }
+                        metadata = {"source": link_data.get("source", "own")}
+                        for sqs_key, meta_key in sqs_field_map.items():
+                            if sqs_key in link_data:
+                                metadata[meta_key] = link_data[sqs_key]
                         uuid_val = link_data.get("uuid") or link_data.get("s3_uuid")
                         if uuid_val:
                             metadata["uuid"] = uuid_val
-                        if 'title' in link_data:
-                            metadata["title"] = link_data["title"]
-                        if 'paywall' in link_data:
-                            metadata["paywall"] = link_data["paywall"]
 
                         doc, status = doc_service.import_document(
                             url=link_data["url"],
@@ -276,8 +278,7 @@ if __name__ == '__main__':
 
             s3 = boto_session.client('s3')
 
-            website_nb = 1
-            for page_info in website_data:
+            for website_nb, page_info in enumerate(website_data, 1):
                 website_id = int(page_info[0])
                 url = page_info[1]
                 website_document_type = page_info[2]
@@ -297,10 +298,7 @@ if __name__ == '__main__':
                             print(f"* Reading text of article from S3 bucket >{cfg.get('AWS_S3_WEBSITE_CONTENT')}< and file: >{doc_uuid}.txt<", end=" ")
                             obj = s3.get_object(Bucket=cfg.get("AWS_S3_WEBSITE_CONTENT"), Key=f"{doc_uuid}.txt")
                             content = obj['Body'].read().decode('utf-8')
-                            web_doc = WebDocument.get_by_url(session, url)
-                            if web_doc is None:
-                                web_doc = WebDocument(url=url)
-                                session.add(web_doc)
+                            web_doc = get_or_create_document(url)
                             web_doc.text = content
                             print('[DONE]')
 
@@ -354,10 +352,7 @@ if __name__ == '__main__':
                             raw_html = download_raw_html(url)
                             if not raw_html:
                                 print("empty response! [ERROR]")
-                                web_doc = WebDocument.get_by_url(session, url)
-                                if web_doc is None:
-                                    web_doc = WebDocument(url=url)
-                                    session.add(web_doc)
+                                web_doc = get_or_create_document(url)
                                 web_doc.document_state = StalkerDocumentStatus.ERROR.name
                                 web_doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD.name
                                 session.commit()
@@ -368,10 +363,7 @@ if __name__ == '__main__':
 
                             parse_result = webpage_raw_parse(url, raw_html)
 
-                            web_doc = WebDocument.get_by_url(session, url)
-                            if web_doc is None:
-                                web_doc = WebDocument(url=url)
-                                session.add(web_doc)
+                            web_doc = get_or_create_document(url)
 
                             # Apply parse result fields
                             web_doc.text_raw = parse_result.text_raw
@@ -405,8 +397,6 @@ if __name__ == '__main__':
                             session.commit()
                 finally:
                     print(".")
-
-                website_nb += 1
 
         print(f"Step 2b completed in {time.monotonic() - step_start:.1f}s")
 
@@ -498,97 +488,9 @@ if __name__ == '__main__':
 
         print(f"Step 5 completed in {time.monotonic() - step_start:.1f}s")
 
-        print("\nStep 6: adding missing markdown entries")
-        step_start = time.monotonic()
-        if missing_markdown_correct:
-            from library.website.website_download_context import download_raw_html
-            # TODO: sprawdzić, dlaczego jest problem z pobraniem poniższych stron
-            problems = [38, 89, 150, 157, 191, 208, 220, 311, 371, 376, 396,
-                        443, 456, 465, 470, 486, 497, 499, 503, 531, 553, 581, 592, 600, 601, 602, 611, 662,
-                        664, 668, 686, 694, 1013, 6735, 6863, 6878, 6883, 6904, 6913, 6918, 6923, 6926, 6930, 7025]
-
-            # 611 certificate expired
-            # problems = []
-
-            document_id_start = max(problems) if len(problems) > 0 else 0
-            md_needed = websites.get_documents_md_needed(min_id=document_id_start)
-            print(md_needed)
-
-            s3_client = boto3.client('s3')
-
-            for document_id in md_needed:
-                web_doc = WebDocument.get_by_id(session, document_id)
-                if web_doc is None:
-                    logging.error(f"Document {document_id} not found")
-                    continue
-
-                if web_doc.paywall:
-                    print("Need manual download")
-                    continue
-
-                if web_doc.id in problems:
-                    print(f"Skipping problem on {document_id}")
-                    continue
-
-                print(f"Downloading {web_doc.id} {web_doc.url}, md len({len(web_doc.text_md or '')})")
-
-                html = download_raw_html(url=web_doc.url)
-                if not html:
-                    print("empty response! [ERROR]")
-                    web_doc.document_state = StalkerDocumentStatus.ERROR.name
-                    web_doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD.name
-                    session.commit()
-                    continue
-
-                # Detect encoding and handle invalid bytes
-                try:
-                    html = html.decode("utf-8")
-                except UnicodeDecodeError:
-                    import chardet
-
-                    detected_encoding = chardet.detect(html)['encoding']
-                    print(f"Detected encoding: {detected_encoding}")
-                    if detected_encoding:
-                        html = html.decode(detected_encoding, errors="replace")
-                    else:
-                        print("Encoding detection failed, using replacement characters.")
-                        html = html.decode("latin-1", errors="replace")
-
-                doc_uuid = str(uuid.uuid4())
-                file_name = f"{doc_uuid}.html"
-
-                try:
-                    s3_client.put_object(Bucket=cfg.get("AWS_S3_WEBSITE_CONTENT"), Key=file_name, Body=html)
-                    print(f"Successfully uploaded {file_name} to {cfg.get('AWS_S3_WEBSITE_CONTENT')}")
-                except Exception as e:
-                    error_message = f"Failed to upload {file_name} to {cfg.get('AWS_S3_WEBSITE_CONTENT')}: {str(e)}"
-                    print(error_message)
-                    continue
-
-                doc_cache_dir = os.path.join(cache_dir, str(doc_uuid))
-                os.makedirs(doc_cache_dir, exist_ok=True)
-                page_file = os.path.join(doc_cache_dir, f"{doc_uuid}.html")
-                with open(page_file, 'w', encoding="utf-8") as file:
-                    file.write(html)
-
-                from markitdown import MarkItDown
-                md = MarkItDown()
-                result = md.convert(page_file)
-
-                md_file = os.path.join(doc_cache_dir, f"{doc_uuid}.md")
-                with open(md_file, 'w', encoding="utf-8") as file:
-                    file.write(result.text_content)
-
-                md_clean_file = os.path.join(doc_cache_dir, f"{doc_uuid}_clean.md")
-                md_cleaned = result.text_content
-
-                # md_cleaned = webpage_text_clean(web_doc.url, md_cleaned)
-                web_doc.text_md = md_cleaned
-                web_doc.uuid = doc_uuid
-
-                session.commit()
-
-        print(f"Step 6 completed in {time.monotonic() - step_start:.1f}s")
+        # Step 6 (adding missing markdown entries) was removed — it was dead code
+        # behind a hardcoded False flag and duplicated the standalone script
+        # web_documents_fix_missing_markdown.py. Use that script instead.
 
         print(f"\nAll done in {time.monotonic() - script_start:.1f}s, exiting with status 0")
     finally:
