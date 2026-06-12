@@ -8,6 +8,8 @@ Verifies that the batch pipeline:
 - Manages session lifecycle with try/finally
 """
 
+import os
+
 import pytest
 
 sa = pytest.importorskip("sqlalchemy")
@@ -269,27 +271,27 @@ class TestWebsitesDBWithSession:
 class TestYoutubeAddScript:
     """Test youtube_add.py passes session to process_youtube_url."""
 
+    # Path relative to this test file — works regardless of pytest's cwd
+    YOUTUBE_ADD_PATH = os.path.join(
+        os.path.dirname(__file__), "..", "..", "imports", "youtube_add.py"
+    )
+
+    def _source(self) -> str:
+        with open(self.YOUTUBE_ADD_PATH, "r", encoding="utf-8") as f:
+            return f.read()
+
     def test_imports_get_session(self):
         """youtube_add.py should import get_session."""
-        with open("youtube_add.py", "r") as f:
-            source = f.read()
-
-        assert "from library.db.engine import get_session" in source
+        assert "from library.db.engine import get_session" in self._source()
 
     def test_session_passed_to_process_youtube_url(self):
         """youtube_add.py should pass session= to process_youtube_url()."""
-        with open("youtube_add.py", "r") as f:
-            source = f.read()
-
-        assert "session=session" in source, \
+        assert "session=session" in self._source(), \
             "youtube_add.py must pass session=session to process_youtube_url()"
 
     def test_session_close_in_finally(self):
         """youtube_add.py should close session in finally block."""
-        with open("youtube_add.py", "r") as f:
-            source = f.read()
-
-        assert "session.close()" in source
+        assert "session.close()" in self._source()
 
 
 # ---------------------------------------------------------------------------

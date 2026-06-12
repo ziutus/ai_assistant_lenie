@@ -145,13 +145,13 @@ class TestMainAutoDetection:
         assert "No previous sync found" in captured.out
 
     def test_explicit_since_overrides_auto_detection(self, capsys):
-        """6.6 — explicit --since shows override message."""
+        """6.6 — explicit --since (without --dry-run) shows override message."""
         mod = _import_module()
 
         mock_session = MagicMock()
         mock_session.scalar.return_value = datetime.date(2026, 3, 25)
 
-        test_args = ["dynamodb_sync.py", "--since", "2026-03-20", "--dry-run", "-y"]
+        test_args = ["dynamodb_sync.py", "--since", "2026-03-20", "-y"]
         with patch.object(sys, "argv", test_args), \
              patch.object(mod, "get_session", return_value=mock_session), \
              patch.object(mod, "cfg") as mock_cfg, \
@@ -165,6 +165,28 @@ class TestMainAutoDetection:
         captured = capsys.readouterr()
         assert "Using explicit --since 2026-03-20 (overriding auto-detected 2026-03-25)" in captured.out
 
+    def test_explicit_since_with_dry_run_skips_db(self, capsys):
+        """--dry-run with explicit --since must not open any DB connection."""
+        mod = _import_module()
+
+        mock_get_session = MagicMock()
+
+        test_args = ["dynamodb_sync.py", "--since", "2026-03-20", "--dry-run", "-y"]
+        with patch.object(sys, "argv", test_args), \
+             patch.object(mod, "get_session", mock_get_session), \
+             patch.object(mod, "cfg") as mock_cfg, \
+             patch.object(mod, "resolve_resource_names", return_value=("test-table", None)), \
+             patch.object(mod, "get_dynamodb_items", return_value=[]):
+            mock_cfg.get.return_value = "tmp"
+            mock_cfg.require.return_value = "us-east-1"
+
+            mod.main()
+
+        mock_get_session.assert_not_called()
+        captured = capsys.readouterr()
+        assert "Using explicit --since 2026-03-20" in captured.out
+        assert "overriding" not in captured.out
+
     def test_explicit_since_no_previous_run(self, capsys):
         """Explicit --since with no previous run shows simple message."""
         mod = _import_module()
@@ -172,7 +194,7 @@ class TestMainAutoDetection:
         mock_session = MagicMock()
         mock_session.scalar.return_value = None
 
-        test_args = ["dynamodb_sync.py", "--since", "2026-03-20", "--dry-run", "-y"]
+        test_args = ["dynamodb_sync.py", "--since", "2026-03-20", "-y"]
         with patch.object(sys, "argv", test_args), \
              patch.object(mod, "get_session", return_value=mock_session), \
              patch.object(mod, "cfg") as mock_cfg, \

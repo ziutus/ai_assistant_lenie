@@ -4,7 +4,7 @@
 
 ## Database Schema
 
-### Table: web_documents (28 columns)
+### Table: web_documents (29 columns)
 
 Primary document storage table.
 
@@ -12,7 +12,7 @@ Primary document storage table.
 |--------|------|-------------|-------------|
 | `id` | serial | PK | Auto-increment identifier |
 | `url` | text | NOT NULL | Source URL |
-| `document_type` | varchar(50) | NOT NULL | movie, youtube, link, webpage, text_message, text |
+| `document_type` | varchar(50) | NOT NULL | movie, youtube, link, webpage, text_message, text, email, social_media_post |
 | `document_state` | varchar(50) | NOT NULL, DEFAULT 'URL_ADDED' | Processing state (15 states) |
 | `document_state_error` | text | — | Error details when state=ERROR |
 | `title` | text | — | Original title |
@@ -33,6 +33,7 @@ Primary document storage table.
 | `created_at` | timestamp | DEFAULT CURRENT_TIMESTAMP | Row creation time |
 | `document_length` | integer | — | Text length in characters |
 | `chapter_list` | text | — | Chapter/section list (JSON format for videos) |
+| `video_description` | text | — | Full YouTube video description (used for auto-parsing chapter timestamps) |
 | `original_id` | text | — | External ID (YouTube video ID, etc.) |
 | `transcript_job_id` | text | — | Transcription service job ID |
 | `ai_summary_needed` | boolean | DEFAULT false | Flag for AI summary generation |

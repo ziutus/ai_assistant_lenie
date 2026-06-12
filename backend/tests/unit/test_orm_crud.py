@@ -428,7 +428,7 @@ class TestDictCompatibility:
             "document_length", "chapter_list", "document_state", "document_state_error",
             "text_raw", "transcript_job_id", "ai_summary_needed", "author",
             "note", "uuid", "project", "text_md", "transcript_needed",
-            "reviewed_at", "obsidian_note_paths",
+            "reviewed_at", "obsidian_note_paths", "video_description",
         }
         assert set(d.keys()) == expected_keys
 

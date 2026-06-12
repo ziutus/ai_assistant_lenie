@@ -360,7 +360,9 @@ class TestAiGetEmbedding:
         assert resp.status_code == 500
         data = resp.get_json()
         assert data["status"] == "error"
-        assert "API connection failed" in data["message"]
+        # Generic message — internal error details are logged, not leaked to the client
+        assert data["message"] == "Error generating embedding"
+        assert "API connection failed" not in data["message"]
 
     def test_form_data_accepted(self, client):
         """Verify /ai_get_embedding accepts form data input."""
@@ -521,7 +523,9 @@ class TestUrlAdd:
                                    headers=API_HEADERS, content_type="application/json")
         assert resp.status_code == 400
         data = resp.get_json()
-        assert "Missing required" in data["message"]
+        # Generic message — validation details are logged, not leaked to the client
+        assert data["message"] == "Invalid request data"
+        assert "Missing required" not in data["message"]
 
     def test_add_link_type(self, client):
         """Verify url_add for link type succeeds (no S3 upload for links)."""
