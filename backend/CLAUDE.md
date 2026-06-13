@@ -171,5 +171,5 @@ Each subdirectory has its own `CLAUDE.md` with detailed documentation:
 | `database/` | [database/CLAUDE.md](database/CLAUDE.md) | PostgreSQL schema, pgvector setup, `web_documents` and `websites_embeddings` tables, 15 processing states |
 | `imports/` | [imports/CLAUDE.md](imports/CLAUDE.md) | CLI tools & import scripts: `youtube_add.py`, `dynamodb_sync.py`, `feed_monitor.py`, `article_browser.py`, `freedom_house_import.py`, `control_questions.py` |
 | `data/` | [data/CLAUDE.md](data/CLAUDE.md) | Site-specific cleanup rules (`site_rules.json`), regex patterns for Polish news portals |
-| `tests/` | [tests/CLAUDE.md](tests/CLAUDE.md) | Unit tests (9 files: markdown, text, paywall) and integration tests (5 files: REST API endpoints) |
+| `tests/` | [tests/CLAUDE.md](tests/CLAUDE.md) | Unit tests (41 files: ORM, services, Flask endpoints, batch/import scripts, article & markdown processing) and integration tests (6 files: REST API endpoints, FK constraints) |
 | `test_code/` | [test_code/CLAUDE.md](test_code/CLAUDE.md) | Experimental scripts: RAG pipeline, LLM provider testing, Bielik text processing, cloud migrations |
