@@ -47,6 +47,7 @@ backend/test_code/
 | Script | Purpose |
 |--------|---------|
 | `cloudferro_ark_labs_models.py` | List models from CloudFerro Sherlock & ARK Labs APIs |
+| `model_identity_comparison.py` | Ask multiple models N times "what's your name and who made you?" — compares consistency of responses across western and Chinese models (OpenRouter, OpenAI, Bedrock, CloudFerro). Outputs JSON/CSV/TXT summaries. |
 | `models_list.py` | List LLM models using OpenAI client with CloudFerro endpoint |
 | `openroute.py` | Test OpenRouter API (Claude Sonnet 4 models) |
 | `describe_image.py` | Image analysis using AWS Bedrock Claude 3 Haiku |
