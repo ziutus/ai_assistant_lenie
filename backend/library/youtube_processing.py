@@ -173,13 +173,19 @@ def process_youtube_url(
                 yt_language = 'pl'
 
             if webshare_api_key:
-                from youtube_transcript_api.proxies import GenericProxyConfig
-                proxy_config = GenericProxyConfig(
-                    http_url="http://p.webshare.io:80/",
-                    https_url="http://p.webshare.io:80/",
-                )
-                ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
-                logger.info("Using Webshare proxy for YouTube captions (IP auth)")
+                from youtube_transcript_api.proxies import WebshareProxyConfig
+                from library.webshare_ip_auth import get_proxy_credentials
+                creds = get_proxy_credentials(webshare_api_key)
+                if creds:
+                    proxy_config = WebshareProxyConfig(
+                        proxy_username=creds[0],
+                        proxy_password=creds[1],
+                    )
+                    ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
+                    logger.info(f"Using Webshare rotating residential proxy (user: {creds[0]})")
+                else:
+                    ytt_api = YouTubeTranscriptApi()
+                    logger.warning("Webshare credentials unavailable — proceeding without proxy")
             else:
                 ytt_api = YouTubeTranscriptApi()
             transcript_list = ytt_api.list(youtube_file.video_id)
