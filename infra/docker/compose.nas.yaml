@@ -90,6 +90,23 @@ services:
       timeout: 5s
       retries: 3
 
+  lenie-registry:
+    image: registry:2
+    container_name: lenie-registry
+    restart: unless-stopped
+    ports:
+      - "5005:5000"
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+      REGISTRY_HTTP_HEADERS_Access-Control-Allow-Origin: '["*"]'
+      REGISTRY_HTTP_HEADERS_Access-Control-Allow-Methods: '["HEAD","GET","OPTIONS","DELETE"]'
+      REGISTRY_HTTP_HEADERS_Access-Control-Allow-Headers: '["Authorization","Accept","Cache-Control"]'
+      REGISTRY_HTTP_HEADERS_Access-Control-Expose-Headers: '["Docker-Content-Digest"]'
+    volumes:
+      - lenie-registry-data:/var/lib/registry
+    networks:
+      - lenie-net
+
   lenie-registry-ui:
     image: joxit/docker-registry-ui:latest
     container_name: lenie-registry-ui
@@ -103,6 +120,8 @@ services:
       DELETE_IMAGES: "true"
     networks:
       - lenie-net
+    depends_on:
+      - lenie-registry
 
   lenie-vault:
     image: hashicorp/vault:1.21.3
@@ -151,7 +170,7 @@ services:
 networks:
   lenie-net:
     name: lenie-net
-    driver: bridge
+    external: true
 
 volumes:
   lenie-ai-db-data:
@@ -159,4 +178,6 @@ volumes:
   lenie-ai-data:
     external: true
   lenie-minio-data:
+    external: true
+  lenie-registry-data:
     external: true
