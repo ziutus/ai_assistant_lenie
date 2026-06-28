@@ -5,6 +5,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import { saveConnectionConfig } from "../services/storage";
 import type { ApiType } from "../../../types";
 import { DEFAULT_API_URLS } from "../../../types";
+import { lenie_version } from "../constants/variables";
 
 const Connect: React.FC = () => {
   const navigate = useNavigate();
@@ -14,6 +15,7 @@ const Connect: React.FC = () => {
   const [formApiType, setFormApiType] = useState<ApiType>("AWS Serverless");
   const [formApiUrl, setFormApiUrl] = useState(DEFAULT_API_URLS["AWS Serverless"]);
   const [formApiKey, setFormApiKey] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState("");
@@ -105,20 +107,32 @@ const Connect: React.FC = () => {
 
   return (
     <div style={{ maxWidth: "500px", margin: "80px auto", padding: "20px" }}>
-      <h2 style={{ marginBottom: "20px" }}>Connect to Lenie Backend</h2>
+      <h2 style={{ marginBottom: "4px" }}>Connect to Lenie Backend</h2>
+      <div style={{ fontSize: "12px", color: "#6c757d", marginBottom: "20px" }}>
+        Frontend v{lenie_version}
+      </div>
 
       <div style={{ marginBottom: "15px" }}>
         <label htmlFor="connect-api-key" style={{ display: "block", marginBottom: "4px", fontWeight: 500 }}>
           API Key
         </label>
-        <input
-          id="connect-api-key"
-          type="password"
-          value={formApiKey}
-          onChange={(e) => setFormApiKey(e.target.value)}
-          placeholder="Enter your API key"
-          style={{ width: "100%", padding: "8px", fontSize: "14px" }}
-        />
+        <div style={{ display: "flex", gap: "8px" }}>
+          <input
+            id="connect-api-key"
+            type={showApiKey ? "text" : "password"}
+            value={formApiKey}
+            onChange={(e) => setFormApiKey(e.target.value)}
+            placeholder="Enter your API key"
+            style={{ flex: 1, padding: "8px", fontSize: "14px" }}
+          />
+          <button
+            type="button"
+            onClick={() => setShowApiKey(!showApiKey)}
+            style={{ padding: "8px 12px", fontSize: "14px", cursor: "pointer" }}
+          >
+            {showApiKey ? "Hide" : "Show"}
+          </button>
+        </div>
       </div>
 
       <div style={{ marginBottom: "15px" }}>
