@@ -116,7 +116,7 @@ PORTAL_FOOTER_MARKERS = {
         "Oceń jakość naszego artykułu",
     ],
     "interia": [
-        "Masz sugestie, uwagi albo widzisz na stronie błąd",
+        "Masz sugestie, uwagi albo widzisz błąd",
         "INTERIA.PL",
         "Polecjemy",
     ],
@@ -194,9 +194,10 @@ PORTAL_SKIP_LINES = {
 
 def _find_footer_line(text: str, portal: str | None) -> int | None:
     """Znajdź numer linii pierwszego markera stopki portalu w oryginalnym markdown."""
+    # Uwaga: "## Zobacz również" / "## Zobacz także" były tu wcześniej jako universal,
+    # ale Interia (i inne portale) osadzają te sekcje w środku artykułu jako sidebary —
+    # używamy ich tylko w onet-specific (PORTAL_FOOTER_MARKERS["onet"]).
     universal_markers = [
-        "## Zobacz również",
-        "## Zobacz także",
         "Dziękujemy, że przeczytałaś/eś",
         "*Dziękujemy, że przeczytałaś/eś",
     ]
@@ -240,15 +241,11 @@ def _find_start_line(text: str, portal: str | None) -> int | None:
 
 def _cut_at_footer(text: str, portal: str | None) -> str:
     """Odetnij tekst od pierwszego markera stopki portalu."""
-    # Markery uniwersalne (działają dla każdego portalu)
-    universal_markers = [
-        "## Zobacz również",
-        "## Zobacz także",
-    ]
-
-    markers = universal_markers[:]
+    # "## Zobacz również" / "## Zobacz także" nie są universal — Interia osadza je
+    # w środku artykułu jako sidebary; te markery są w onet-specific.
+    markers = []
     if portal and portal in PORTAL_FOOTER_MARKERS:
-        markers = PORTAL_FOOTER_MARKERS[portal] + markers
+        markers = PORTAL_FOOTER_MARKERS[portal][:]
 
     lines = text.splitlines()
     for i, line in enumerate(lines):
