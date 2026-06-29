@@ -1,0 +1,233 @@
+"""LLM-based chunk analysis: rewrite (transcript correction) + summarize.
+
+Extracted from test_code/youtube_batch_analyze.py for use by Flask API endpoints.
+Supports Sherlock (Bielik) and ArkLabs models.
+"""
+
+import json
+import logging
+import re
+
+logger = logging.getLogger(__name__)
+
+REWRITE_MAX_TOKENS = 2_500
+REWRITE_MIN_RATIO = 0.80
+SUMMARY_MAX_TOKENS = 400
+
+SECTION_HEADER_RE = re.compile(r"^### (REKLAMA|TEMAT): ?(.+)$", re.MULTILINE)
+
+_ARKLABS_PREFIX = "arklabs/"
+
+# Filler patterns: unambiguous hesitation sounds in Polish STT output
+_FILLER_SOUND_RE = re.compile(
+    r"\b(y{2,}|e{2,}|m{3,}|a{3,})\b",  # yyy, eee, mmm, aaaa
+    re.IGNORECASE,
+)
+_STANDALONE_Y_RE = re.compile(r"(?<!\w)y(?!\w)", re.IGNORECASE)
+_WORD_REPEAT_RE = re.compile(r"\b(\w+)\s+\1\b", re.IGNORECASE)
+
+
+def extract_speaker_info(intro_text: str, model: str) -> list[dict]:
+    """Ask LLM to identify speakers from the transcript introduction.
+
+    Returns list of dicts: [{"name": "...", "role": "...", "description": "..."}]
+    Returns [] if extraction fails or no speakers found.
+    Ported from test_code/youtube_batch_analyze.py.
+    """
+    prompt = f"""Z poniższego fragmentu transkrypcji podcastu wyekstrahuj informacje o rozmówcach.
+Zwróć TYLKO tablicę JSON bez żadnego dodatkowego tekstu, w formacie:
+[{{"name": "Imię Nazwisko", "role": "prowadzący", "description": "krótki opis stanowiska/roli"}}]
+
+Jeśli nie możesz zidentyfikować rozmówców, zwróć pustą tablicę: []
+
+Fragment transkrypcji:
+{intro_text}"""
+
+    logger.info("extract_speaker_info: len=%d", len(intro_text))
+    response_text, _ = call_model(prompt, model, max_tokens=300)
+    try:
+        match = re.search(r'\[.*\]', response_text, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+    except Exception:
+        logger.warning("extract_speaker_info: failed to parse JSON response")
+    return []
+
+
+def remove_speech_fillers(text: str) -> str:
+    """Remove hesitation sounds and word repetitions from Polish STT transcript.
+
+    Handles: yyy/eee/mmm (unambiguous sounds), standalone 'y', doubled words.
+    Does NOT touch meaningful words — cheaper and more reliable than asking the LLM.
+    """
+    text = _FILLER_SOUND_RE.sub("", text)
+    text = _STANDALONE_Y_RE.sub("", text)
+    text = _WORD_REPEAT_RE.sub(r"\1", text)
+    # Collapse multiple spaces left after removal
+    text = re.sub(r" {2,}", " ", text)
+    text = re.sub(r" ([,.\?!])", r"\1", text)  # fix space before punctuation
+    return text.strip()
+
+
+def call_model(prompt: str, model: str, max_tokens: int) -> tuple[str, int]:
+    """Call the appropriate LLM backend and return (response_text, token_count)."""
+    if model.startswith(_ARKLABS_PREFIX):
+        from library.api.arklabs.arklabs_completion import arklabs_get_completion
+        actual = f"speakleash/{model.removeprefix(_ARKLABS_PREFIX)}"
+        result = arklabs_get_completion(prompt, model=actual, max_tokens=max_tokens, temperature=0.2)
+    else:
+        from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
+        result = sherlock_get_completion(prompt, model=model, max_tokens=max_tokens, temperature=0.2)
+    tokens = getattr(result, "prompt_tokens", 0) or 0
+    return result.response_text, tokens
+
+
+def rewrite_chunk_text(text: str, model: str, position: int = 1, total: int = 1) -> tuple[str, int]:
+    """Pass 1: label section + correct transcript verbatim.
+
+    Applies remove_speech_fillers() before sending to LLM — faster and cheaper than
+    asking the model to do it.
+    Returns (best_response_text, rewrite_ratio_pct).
+    Retries once if output < REWRITE_MIN_RATIO of input length, keeps the longer result.
+    """
+    text = remove_speech_fillers(text)
+    prompt = f"""Fragment {position}/{total} surowej transkrypcji podcastu YouTube.
+Wykonaj DWIE rzeczy — nic więcej:
+
+1. W PIERWSZEJ LINII wpisz etykietę sekcji (tylko jedną z dwóch opcji):
+   ### REKLAMA: nazwa_sponsora      (gdy to blok reklamowy lub sponsorski)
+   ### TEMAT: opis_3_4_słowa        (gdy to merytoryczna treść rozmowy)
+
+2. Przepisz poniższy tekst DOSŁOWNIE — każde słowo musi zostać zachowane. Popraw tylko:
+   - Interpunkcję i podział na zdania.
+   - Oczywiste błędy transkrypcji (zamienione lub zlepione wyrazy).
+   - Zachowaj etykiety [Mówca]: na początku każdej wypowiedzi — nie usuwaj ich.
+   NIE skracaj. NIE streszczaj. NIE pomijaj żadnej informacji.
+
+--- FRAGMENT DO PRZEPISANIA ---
+{text}
+--- KONIEC FRAGMENTU ---"""
+
+    best = ""
+    for attempt in range(1, 3):
+        logger.info("rewrite chunk %d/%d, attempt %d, len=%d", position, total, attempt, len(text))
+        response_text, tokens = call_model(prompt, model, REWRITE_MAX_TOKENS)
+        logger.info("rewrite done: %d chars, %d tokens", len(response_text), tokens)
+        if len(response_text) > len(best):
+            best = response_text
+        if len(response_text) >= len(text) * REWRITE_MIN_RATIO:
+            break
+        ratio_pct = round(len(response_text) / max(len(text), 1) * 100)
+        logger.warning("rewrite too short (%d%% < %d%%), retrying", ratio_pct, round(REWRITE_MIN_RATIO * 100))
+
+    ratio_pct = round(len(best) / max(len(text), 1) * 100)
+    return best, ratio_pct
+
+
+def summarize_chunk_text(corrected_text: str, model: str,
+                         speakers: list[dict] | None = None) -> str:
+    """Pass 2: summarize already-corrected text in 2-3 sentences.
+
+    If speakers list is provided, the prompt includes participant names so the
+    summary can use real names instead of generic 'Rozmówca'.
+    """
+    speakers_ctx = ""
+    if speakers:
+        names = ", ".join(
+            f"{sp['name']}" + (f" ({sp.get('role', '')})" if sp.get("role") else "")
+            for sp in speakers
+        )
+        speakers_ctx = f"Uczestnicy rozmowy: {names}.\n"
+
+    prompt = f"""{speakers_ctx}Napisz streszczenie poniższego fragmentu merytorycznej rozmowy w 2-3 zdaniach.
+Skup się na głównych tezach i wnioskach. Używaj imion rozmówców (nie pisz „Rozmówca"). Odpowiedz po polsku.
+
+--- TEKST ---
+{corrected_text}
+--- KONIEC ---"""
+
+    logger.info("summarize chunk, len=%d, speakers=%d", len(corrected_text), len(speakers or []))
+    response_text, tokens = call_model(prompt, model, SUMMARY_MAX_TOKENS)
+    logger.info("summarize done: %d tokens", tokens)
+    return response_text.strip()
+
+
+def parse_rewritten_chunk(raw: str) -> tuple[str, str, str]:
+    """Extract (section_type, topic, corrected_text) from rewrite LLM output."""
+    header_match = SECTION_HEADER_RE.search(raw)
+    section_type = header_match.group(1) if header_match else "TEMAT"
+    topic = header_match.group(2).strip() if header_match else ""
+    text = raw[header_match.end():].strip() if header_match else raw.strip()
+    return section_type, topic, text
+
+
+def analyze_chunk_semantic(corrected_text: str, model: str,
+                           speakers: list[dict] | None = None) -> dict:
+    """Semantic-only re-analysis: classify + summarize already-corrected text.
+
+    Skips the verbatim rewrite step. Use when corrected_text is already good
+    and only type/topic/summary need to be refreshed.
+    Returns dict with corrected_text unchanged.
+    """
+    speakers_ctx = ""
+    if speakers:
+        names = ", ".join(
+            f"{sp['name']}" + (f" ({sp.get('role', '')})" if sp.get("role") else "")
+            for sp in speakers
+        )
+        speakers_ctx = f"Uczestnicy rozmowy: {names}.\n"
+
+    prompt = f"""{speakers_ctx}Sklasyfikuj poniższy fragment i jeśli to TEMAT — napisz streszczenie.
+
+W PIERWSZEJ LINII wpisz etykietę (tylko jedną z dwóch opcji):
+   ### REKLAMA: nazwa_sponsora      (blok reklamowy lub sponsorski)
+   ### TEMAT: opis_3_4_słowa        (merytoryczna treść rozmowy)
+
+Jeśli TEMAT: w kolejnych liniach napisz streszczenie w 2-3 zdaniach po polsku.
+Używaj imion rozmówców (nie pisz „Rozmówca").
+Jeśli REKLAMA: nie dodawaj nic więcej.
+
+--- TEKST ---
+{corrected_text}
+--- KONIEC ---"""
+
+    logger.info("semantic analysis, len=%d, speakers=%d", len(corrected_text), len(speakers or []))
+    raw, tokens = call_model(prompt, model, SUMMARY_MAX_TOKENS)
+    logger.info("semantic done: %d tokens", tokens)
+
+    section_type, topic, summary_text = parse_rewritten_chunk(raw)
+    return {
+        "type": section_type,
+        "topic": topic,
+        "corrected_text": corrected_text,
+        "summary": summary_text.strip() if section_type == "TEMAT" and summary_text.strip() else None,
+        "rewrite_ratio": None,
+    }
+
+
+def analyze_chunk(original_text: str, model: str,
+                  position: int = 1, total: int = 1,
+                  speakers: list[dict] | None = None) -> dict:
+    """Run full analysis pipeline on a single chunk.
+
+    Returns dict:
+        type          — "TEMAT" | "REKLAMA"
+        topic         — short topic label from LLM
+        corrected_text — rewritten transcript
+        summary        — 2-3 sentence summary (None for REKLAMA)
+        rewrite_ratio  — % of corrected vs original length
+    """
+    raw_rewrite, ratio = rewrite_chunk_text(original_text, model, position, total)
+    section_type, topic, corrected_text = parse_rewritten_chunk(raw_rewrite)
+
+    summary = None
+    if section_type == "TEMAT":
+        summary = summarize_chunk_text(corrected_text or original_text, model, speakers=speakers)
+
+    return {
+        "type": section_type,
+        "topic": topic,
+        "corrected_text": corrected_text,
+        "summary": summary,
+        "rewrite_ratio": ratio,
+    }
