@@ -18,7 +18,7 @@ const List = () => {
     onSubmit: () => {},
   });
 
-  const { selectedDocumentType, setSelectedDocumentType, selectedDocumentState, setSelectedDocumentState, databaseStatus } = React.useContext(AuthorizationContext);
+  const { selectedDocumentType, setSelectedDocumentType, selectedDocumentState, setSelectedDocumentState, databaseStatus, apiType } = React.useContext(AuthorizationContext);
   const { searchInDocument, setSearchInDocument} = React.useContext(AuthorizationContext);
   const { searchType, setSearchType} = React.useContext(AuthorizationContext);
 
@@ -40,7 +40,7 @@ const List = () => {
     handleGetList(selectedDocumentType, selectedDocumentState);
   };
 
-  const dbDown = databaseStatus !== "available";
+  const dbDown = apiType === "AWS Serverless" && databaseStatus !== "available";
 
   return (
     <div>

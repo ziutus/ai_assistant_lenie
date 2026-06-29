@@ -2,15 +2,29 @@ import React from "react";
 import { useParams, NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 
+// ── Types ────────────────────────────────────────────────────────────────────
+
+interface Segment {
+  start: number;
+  text: string;
+}
+
 interface Chunk {
   id: number;
-  order_index: number;
-  text: string;
+  position: number;
   corrected_text: string | null;
   summary: string | null;
   topic: string | null;
-  chunk_type: string | null;
+  type: string | null;
   speaker: string | null;
+  status: string;
+  seg_start: number | null;
+  seg_end: number | null;
+}
+
+interface Speaker {
+  name: string;
+  role: string | null;
 }
 
 interface AnalysisRun {
@@ -20,6 +34,22 @@ interface AnalysisRun {
   chunk_count: number;
 }
 
+interface SplitState {
+  segIdx: number;
+  ts: string;
+  firstType: "TEMAT" | "REKLAMA";
+  secondType: "TEMAT" | "REKLAMA";
+}
+
+interface SegGroup {
+  absIdx: number;
+  start: number;
+  text: string;
+  isSpeakerChange: boolean;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
 const MODELS = [
   "Bielik-11B-v3.0-Instruct",
   "Bielik-4.5B-v3.0-Instruct",
@@ -27,22 +57,150 @@ const MODELS = [
   "gpt-4o",
 ];
 
+const STATUS_CYCLE = ["pending", "approved", "needs_reanalysis"] as const;
+
+function secs2ts(s: number): string {
+  s = Math.floor(s);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  const mm = String(m).padStart(2, "0");
+  const ss = String(sec).padStart(2, "0");
+  return h ? `${String(h).padStart(2, "0")}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+function groupSegments(segs: Segment[], absOffset: number): SegGroup[] {
+  const MAX = 8;
+  const groups: SegGroup[] = [];
+  let curTexts: string[] = [];
+  let curStart: number | null = null;
+  let curIsSc = false;
+  let curFirstRawIdx = 0;
+
+  function flush() {
+    if (curTexts.length > 0 && curStart !== null) {
+      groups.push({ absIdx: absOffset + curFirstRawIdx, start: curStart, text: curTexts.join(" "), isSpeakerChange: curIsSc });
+      curTexts = []; curStart = null; curIsSc = false;
+    }
+  }
+
+  segs.forEach((seg, rawIdx) => {
+    const raw = (seg.text || "").trim();
+    if (!raw) return;
+    const isSc = raw.startsWith(">>");
+    const text = isSc ? raw.slice(2).trim() : raw;
+    if (isSc && curTexts.length > 0) flush();
+    if (curStart === null) { curStart = seg.start; curIsSc = isSc; curFirstRawIdx = rawIdx; }
+    curTexts.push(text);
+    if (/[.?!…]$/.test(text) || curTexts.length >= MAX) flush();
+  });
+  flush();
+  return groups;
+}
+
+function statusColor(status: string): React.CSSProperties {
+  switch (status) {
+    case "approved":         return { background: "#dcfce7", color: "#15803d" };
+    case "needs_reanalysis": return { background: "#fee2e2", color: "#b91c1c" };
+    case "split_requested":  return { background: "#fef9c3", color: "#713f12" };
+    default:                 return { background: "#e2e8f0", color: "#475569" };
+  }
+}
+
+// ── Segments sub-component ───────────────────────────────────────────────────
+
+const SegmentsView: React.FC<{
+  segs: Segment[];
+  videoId: string;
+  chunkId: number;
+  absOffset: number;
+  splitState: SplitState | undefined;
+  onMarkSplit: (chunkId: number, absIdx: number, ts: string) => void;
+}> = ({ segs, videoId, chunkId, absOffset, splitState, onMarkSplit }) => {
+  const groups = groupSegments(segs, absOffset);
+  if (groups.length === 0) return <em style={{ color: "#94a3b8" }}>brak segmentów</em>;
+
+  return (
+    <div>
+      {groups.map(g => {
+        const ts = secs2ts(g.start);
+        const ytUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}&t=${Math.floor(g.start)}` : undefined;
+        const isMarked = splitState?.segIdx === g.absIdx;
+        return (
+          <div
+            key={g.absIdx}
+            style={{
+              position: "relative", marginBottom: 8, paddingRight: 32,
+              ...(isMarked ? { background: "#fff7ed", borderLeft: "3px solid #f97316", paddingLeft: 6, borderRadius: 2 } : {}),
+            }}
+          >
+            <div style={{ fontSize: "0.8em", color: "#94a3b8", marginBottom: 1 }}>
+              {g.isSpeakerChange && <span style={{ marginRight: 4 }}>▶</span>}
+              {ytUrl ? (
+                <a href={ytUrl} target="_blank" rel="noopener noreferrer"
+                  style={{ color: "#c00", fontWeight: "bold", textDecoration: "none" }}>
+                  [{ts}]
+                </a>
+              ) : (
+                <span>[{ts}]</span>
+              )}
+            </div>
+            <span style={{ fontSize: "0.88em", lineHeight: 1.6 }}>{g.text}</span>
+            <button
+              onClick={() => onMarkSplit(chunkId, g.absIdx, ts)}
+              title="Podziel tutaj"
+              style={{
+                position: "absolute", right: 2, top: 2,
+                background: "none", border: "1px solid #e2e8f0", borderRadius: 3,
+                fontSize: "0.82em", cursor: "pointer", padding: "1px 5px", color: "#94a3b8",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "#fef3c7"; e.currentTarget.style.color = "#92400e"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "#94a3b8"; }}
+            >
+              ✂
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
+
+// ── Main component ───────────────────────────────────────────────────────────
+
 const Chunks = () => {
   const { id } = useParams<{ id: string }>();
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
 
-  const [runs, setRuns] = React.useState<AnalysisRun[]>([]);
+  const [runs, setRuns]             = React.useState<AnalysisRun[]>([]);
   const [selectedRun, setSelectedRun] = React.useState<number | null>(null);
-  const [chunks, setChunks] = React.useState<Chunk[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState("");
-  const [jobStatus, setJobStatus] = React.useState<string | null>(null);
-  const [jobId, setJobId] = React.useState<string | null>(null);
-  const [newModel, setNewModel] = React.useState(MODELS[0]);
-  const [chunkSize, setChunkSize] = React.useState(5000);
-  const [showRaw, setShowRaw] = React.useState<Record<number, boolean>>({});
+  const [chunks, setChunks]         = React.useState<Chunk[]>([]);
+  const [segments, setSegments]     = React.useState<Segment[]>([]);
+  const [videoId, setVideoId]       = React.useState("");
+  const [speakers, setSpeakers]     = React.useState<Speaker[]>([]);
+
+  const [loading, setLoading]       = React.useState(false);
+  const [error, setError]           = React.useState("");
+  const [jobStatus, setJobStatus]   = React.useState<string | null>(null);
+  const [jobId, setJobId]           = React.useState<string | null>(null);
+  const [newModel, setNewModel]     = React.useState(MODELS[0]);
+  const [chunkSize, setChunkSize]   = React.useState(5000);
+  const [hideAds, setHideAds]       = React.useState(false);
+
+  const [showCorrected, setShowCorrected] = React.useState<Record<number, boolean>>({});
+  const [topicEdits, setTopicEdits]       = React.useState<Record<number, string>>({});
+  const [savingTopics, setSavingTopics]   = React.useState<Record<number, boolean>>({});
+  const [savedFlash, setSavedFlash]       = React.useState<Record<number, boolean>>({});
+  const [reanalyzing, setReanalyzing]     = React.useState<Record<number, boolean>>({});
+  const [reanalyzingAll, setReanalyzingAll] = React.useState(false);
+  const [splitStates, setSplitStates]     = React.useState<Record<number, SplitState>>({});
+  const [confirmingSplit, setConfirmingSplit] = React.useState<Record<number, boolean>>({});
+  const [extractingSpeakers, setExtractingSpeakers] = React.useState(false);
+  const [hiddenChunks, setHiddenChunks] = React.useState<Set<number>>(new Set());
 
   const headers = { "x-api-key": apiKey ?? "", "Content-Type": "application/json" };
+
+  // ── Fetch ──
 
   const fetchRuns = React.useCallback(async () => {
     if (!id) return;
@@ -51,9 +209,7 @@ const Chunks = () => {
       const data = await r.json();
       const list: AnalysisRun[] = data.runs ?? [];
       setRuns(list);
-      if (list.length > 0 && selectedRun === null) {
-        setSelectedRun(list[0].id);
-      }
+      if (list.length > 0 && selectedRun === null) setSelectedRun(list[0].id);
     } catch {
       setError("Błąd ładowania listy analiz");
     }
@@ -65,7 +221,21 @@ const Chunks = () => {
     try {
       const r = await fetch(`${apiUrl}/analysis_run/${runId}/chunks`, { headers });
       const data = await r.json();
-      setChunks(data.chunks ?? []);
+      const loaded: Chunk[] = data.chunks ?? [];
+      setChunks(loaded);
+      setSegments(data.segments ?? []);
+      setVideoId(data.document?.original_id ?? "");
+      setSpeakers(data.run?.speakers ?? []);
+      const edits: Record<number, string> = {};
+      const correctedDefaults: Record<number, boolean> = {};
+      loaded.forEach(c => {
+        edits[c.id] = c.topic ?? "";
+        correctedDefaults[c.id] = !!c.corrected_text;
+      });
+      setTopicEdits(edits);
+      setShowCorrected(correctedDefaults);
+      setSplitStates({});
+      setHiddenChunks(new Set());
     } catch {
       setError("Błąd ładowania chunków");
     } finally {
@@ -74,28 +244,25 @@ const Chunks = () => {
   }, [apiUrl, apiKey]);
 
   React.useEffect(() => { fetchRuns(); }, [fetchRuns]);
+  React.useEffect(() => { if (selectedRun !== null) fetchChunks(selectedRun); }, [selectedRun, fetchChunks]);
 
-  React.useEffect(() => {
-    if (selectedRun !== null) fetchChunks(selectedRun);
-  }, [selectedRun, fetchChunks]);
+  // ── Job polling ──
 
   const pollJob = React.useCallback((jid: string) => {
     const interval = setInterval(async () => {
       try {
         const r = await fetch(`${apiUrl}/analysis_job/${jid}`, { headers });
         const data = await r.json();
-        setJobStatus(data.status);
-        if (data.status === "done") {
+        setJobStatus(data.job?.status ?? data.status);
+        if (data.job?.status === "done") {
           clearInterval(interval);
           setJobId(null);
           await fetchRuns();
-          if (data.run_id) {
-            setSelectedRun(data.run_id);
-          }
-        } else if (data.status === "failed") {
+          if (data.job.run_id) setSelectedRun(data.job.run_id);
+        } else if (data.job?.status === "failed") {
           clearInterval(interval);
           setJobId(null);
-          setError("Analiza nie powiodła się: " + (data.error ?? ""));
+          setError("Analiza nie powiodła się: " + (data.job.error ?? ""));
         }
       } catch {
         clearInterval(interval);
@@ -104,70 +271,166 @@ const Chunks = () => {
     }, 5000);
   }, [apiUrl, apiKey, fetchRuns]);
 
+  // ── Analysis ──
+
   const startAnalysis = async () => {
     if (!id) return;
-    setError("");
-    setJobStatus("starting");
+    setError(""); setJobStatus("starting");
     try {
       const r = await fetch(`${apiUrl}/document/${id}/analyze_chunks`, {
-        method: "POST",
-        headers,
+        method: "POST", headers,
         body: JSON.stringify({ model: newModel, chunk_size: chunkSize }),
       });
       const data = await r.json();
-      if (data.job_id) {
-        setJobId(data.job_id);
-        setJobStatus("running");
-        pollJob(data.job_id);
-      } else {
-        setError("Nie udało się uruchomić analizy");
-        setJobStatus(null);
+      if (data.job_id) { setJobId(data.job_id); setJobStatus("running"); pollJob(data.job_id); }
+      else { setError("Nie udało się uruchomić analizy"); setJobStatus(null); }
+    } catch { setError("Błąd połączenia"); setJobStatus(null); }
+  };
+
+  // ── Chunk patch ──
+
+  const patchChunk = async (chunkId: number, updates: Record<string, unknown>) => {
+    try {
+      const r = await fetch(`${apiUrl}/chunk/${chunkId}`, {
+        method: "PATCH", headers, body: JSON.stringify(updates),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        setChunks(prev => prev.map(c => c.id === chunkId ? { ...c, ...data.chunk } : c));
       }
+      return data;
     } catch {
-      setError("Błąd połączenia");
-      setJobStatus(null);
+      setError("Błąd zapisu"); return null;
     }
   };
 
-  const toggleRaw = (chunkId: number) => {
-    setShowRaw(prev => ({ ...prev, [chunkId]: !prev[chunkId] }));
+  const saveTopic = async (chunkId: number) => {
+    setSavingTopics(prev => ({ ...prev, [chunkId]: true }));
+    const res = await patchChunk(chunkId, { topic: topicEdits[chunkId] || null });
+    setSavingTopics(prev => ({ ...prev, [chunkId]: false }));
+    if (res?.status === "success") {
+      setSavedFlash(prev => ({ ...prev, [chunkId]: true }));
+      setTimeout(() => setSavedFlash(prev => ({ ...prev, [chunkId]: false })), 1500);
+    }
   };
 
-  const docType = chunks.length > 0 ? null : null;
+  const cycleStatus = (chunk: Chunk) => {
+    const idx = STATUS_CYCLE.indexOf(chunk.status as typeof STATUS_CYCLE[number]);
+    const next = STATUS_CYCLE[(idx + 1) % STATUS_CYCLE.length];
+    patchChunk(chunk.id, { status: next });
+  };
+
+  const toggleType = (chunk: Chunk) => {
+    patchChunk(chunk.id, { type: chunk.type === "TEMAT" ? "REKLAMA" : "TEMAT" });
+  };
+
+  // ── Re-analysis ──
+
+  const reanalyzeChunk = async (chunkId: number, mode: "full" | "semantic") => {
+    setReanalyzing(prev => ({ ...prev, [chunkId]: true }));
+    try {
+      const r = await fetch(`${apiUrl}/chunk/${chunkId}/reanalyze`, {
+        method: "POST", headers, body: JSON.stringify({ mode }),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        setChunks(prev => prev.map(c => c.id === chunkId ? { ...c, ...data.chunk } : c));
+        setTopicEdits(prev => ({ ...prev, [chunkId]: data.chunk.topic ?? "" }));
+        setShowCorrected(prev => ({ ...prev, [chunkId]: !!data.chunk.corrected_text }));
+      } else { setError("Błąd re-analizy"); }
+    } catch { setError("Błąd połączenia przy re-analizie"); }
+    finally { setReanalyzing(prev => ({ ...prev, [chunkId]: false })); }
+  };
+
+  const reanalyzeAll = async () => {
+    const pending = chunks.filter(c => c.status === "needs_reanalysis");
+    if (!pending.length) return;
+    setReanalyzingAll(true);
+    for (const chunk of pending) {
+      await reanalyzeChunk(chunk.id, chunk.corrected_text ? "semantic" : "full");
+    }
+    setReanalyzingAll(false);
+  };
+
+  // ── Split ──
+
+  const markSplit = (chunkId: number, absIdx: number, ts: string) => {
+    setSplitStates(prev => ({
+      ...prev,
+      [chunkId]: { segIdx: absIdx, ts, firstType: "REKLAMA", secondType: "TEMAT" },
+    }));
+  };
+
+  const cancelSplit = (chunkId: number) => {
+    setSplitStates(prev => { const n = { ...prev }; delete n[chunkId]; return n; });
+  };
+
+  const confirmSplit = async (chunkId: number) => {
+    const st = splitStates[chunkId];
+    if (!st) return;
+    setConfirmingSplit(prev => ({ ...prev, [chunkId]: true }));
+    try {
+      const r = await fetch(`${apiUrl}/chunk/${chunkId}/execute_split`, {
+        method: "POST", headers,
+        body: JSON.stringify({ split_at_seg: st.segIdx, split_first_type: st.firstType, split_second_type: st.secondType }),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        setSplitStates(prev => { const n = { ...prev }; delete n[chunkId]; return n; });
+        if (selectedRun !== null) await fetchChunks(selectedRun);
+      } else { setError("Błąd podziału: " + (data.message ?? "")); }
+    } catch { setError("Błąd połączenia przy podziale"); }
+    finally { setConfirmingSplit(prev => ({ ...prev, [chunkId]: false })); }
+  };
+
+  // ── Speakers ──
+
+  const extractSpeakers = async () => {
+    if (!selectedRun) return;
+    setExtractingSpeakers(true);
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}/extract_speakers`, { method: "POST", headers });
+      const data = await r.json();
+      if (data.status === "success") setSpeakers(data.speakers ?? []);
+      else setError("Błąd wykrywania rozmówców");
+    } catch { setError("Błąd połączenia przy wykrywaniu rozmówców"); }
+    finally { setExtractingSpeakers(false); }
+  };
+
+  // ── Progress ──
+
+  const tematChunks = chunks.filter(c => c.type !== "REKLAMA");
+  const approvedCount = tematChunks.filter(c => c.status === "approved").length;
+  const pct = tematChunks.length ? Math.round(approvedCount / tematChunks.length * 100) : 0;
+  const reklamaCount = chunks.filter(c => c.type === "REKLAMA").length;
+  const visibleReklamaCount = chunks.filter(c => c.type === "REKLAMA" && !hiddenChunks.has(c.id)).length;
+  const needsReanalysisCount = chunks.filter(c => c.status === "needs_reanalysis").length;
+  const visibleChunks = chunks.filter(c =>
+    !hiddenChunks.has(c.id) && (!hideAds || c.type !== "REKLAMA")
+  );
+
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
-    <div style={{ maxWidth: 900 }}>
-      <h2 style={{ marginBottom: 6 }}>
-        Przegląd chunków — dokument #{id}
-      </h2>
-      <NavLink to={`/youtube/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>
-        ← Edytuj dokument
-      </NavLink>
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 6, flexWrap: "wrap" }}>
+        <h2 style={{ margin: 0 }}>Przegląd chunków — dokument #{id}</h2>
+        <NavLink to={`/youtube/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Edytuj dokument</NavLink>
+      </div>
 
       {/* Nowa analiza */}
-      <div style={{ margin: "20px 0", padding: "14px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+      <div style={{ margin: "16px 0", padding: "12px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
         <strong style={{ fontSize: "0.9em" }}>Nowa analiza</strong>
-        <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <select value={newModel} onChange={e => setNewModel(e.target.value)} style={{ padding: "5px 8px", fontSize: "0.88em" }}>
+        <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={newModel} onChange={e => setNewModel(e.target.value)} style={{ padding: "4px 8px", fontSize: "0.88em" }}>
             {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
           <label style={{ fontSize: "0.85em" }}>
-            Rozmiar chunka:&nbsp;
-            <input
-              type="number"
-              value={chunkSize}
-              onChange={e => setChunkSize(Number(e.target.value))}
-              style={{ width: 80, padding: "4px 6px", fontSize: "0.88em" }}
-              min={500}
-              max={20000}
-              step={500}
-            />
+            Chunk:&nbsp;
+            <input type="number" value={chunkSize} onChange={e => setChunkSize(Number(e.target.value))}
+              style={{ width: 75, padding: "3px 6px", fontSize: "0.88em" }} min={500} max={20000} step={500} />
           </label>
-          <button
-            className="button"
-            onClick={startAnalysis}
-            disabled={!!jobId}
-          >
+          <button className="button" onClick={startAnalysis} disabled={!!jobId}>
             {jobId ? `Analiza… (${jobStatus})` : "Uruchom analizę"}
           </button>
         </div>
@@ -175,13 +438,9 @@ const Chunks = () => {
 
       {/* Wybór runu */}
       {runs.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: "0.85em", fontWeight: 600 }}>Analiza: </label>
-          <select
-            value={selectedRun ?? ""}
-            onChange={e => setSelectedRun(Number(e.target.value))}
-            style={{ padding: "4px 8px", fontSize: "0.88em" }}
-          >
+          <select value={selectedRun ?? ""} onChange={e => setSelectedRun(Number(e.target.value))} style={{ padding: "4px 8px", fontSize: "0.88em" }}>
             {runs.map(r => (
               <option key={r.id} value={r.id}>
                 #{r.id} — {r.model} ({r.chunk_count} chunków, {new Date(r.created_at).toLocaleString("pl")})
@@ -191,49 +450,202 @@ const Chunks = () => {
         </div>
       )}
 
+      {/* Pasek postępu */}
+      {chunks.length > 0 && (
+        <div style={{ marginBottom: 12, padding: "8px 14px", background: "#0f172a", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ color: "#94a3b8", fontSize: "0.82em" }}>
+            TEMAT: {approvedCount}/{tematChunks.length} zatwierdzonych ({pct}%)
+            {reklamaCount > 0 && ` • ${reklamaCount} reklam${hideAds ? " (ukryte)" : ""}`}
+          </span>
+          <div style={{ flex: 1, minWidth: 80, background: "#334155", borderRadius: 4, height: 8 }}>
+            <div style={{ width: `${pct}%`, height: 8, background: "#22c55e", borderRadius: 4, transition: "width .3s" }} />
+          </div>
+          {needsReanalysisCount > 0 && (
+            <button className="button" onClick={reanalyzeAll} disabled={reanalyzingAll}
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0369a1", color: "#fff", border: "none" }}>
+              {reanalyzingAll ? "Analizuję…" : `Analizuj wszystkie (${needsReanalysisCount})`}
+            </button>
+          )}
+          {reklamaCount > 0 && (visibleReklamaCount > 0 || hideAds) && (
+            <button className="button" onClick={() => setHideAds(h => !h)}
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: hideAds ? "#475569" : "#b91c1c", color: "#fff", border: "none" }}>
+              {hideAds ? `Pokaż reklamy (${reklamaCount})` : `Ukryj reklamy (${visibleReklamaCount})`}
+            </button>
+          )}
+          {hiddenChunks.size > 0 && (
+            <button className="button" onClick={() => setHiddenChunks(new Set())}
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0369a1", color: "#fff", border: "none" }}>
+              Pokaż ukryte ({hiddenChunks.size})
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Pasek rozmówców */}
+      {selectedRun !== null && (
+        <div style={{ marginBottom: 12, padding: "8px 14px", background: "#1e3a5f", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <strong style={{ color: "#fff", fontSize: "0.85em" }}>Rozmówcy:</strong>
+          {speakers.length > 0 ? (
+            <span style={{ fontSize: "0.85em" }}>
+              {speakers.map((sp, i) => (
+                <React.Fragment key={i}>
+                  {i > 0 && <span style={{ color: "#64748b" }}> &nbsp;|&nbsp; </span>}
+                  <strong style={{ color: "#fff" }}>{sp.name}</strong>
+                  {sp.role && <span style={{ color: "#93c5fd" }}> ({sp.role})</span>}
+                </React.Fragment>
+              ))}
+            </span>
+          ) : (
+            <span style={{ color: "#64748b", fontSize: "0.85em", fontStyle: "italic" }}>nie wykryto</span>
+          )}
+          <button className="button" onClick={extractSpeakers} disabled={extractingSpeakers}
+            style={{ marginLeft: "auto", fontSize: "0.82em", padding: "3px 10px" }}>
+            {extractingSpeakers ? "Wykrywam…" : speakers.length > 0 ? `Wykryj ponownie (${speakers.length})` : "Wykryj rozmówców"}
+          </button>
+        </div>
+      )}
+
       {error && <p style={{ color: "#dc2626", marginBottom: 12 }}>{error}</p>}
       {loading && <div className="loader" style={{ marginBottom: 12 }} />}
 
       {/* Chunki */}
-      {chunks.map((chunk, i) => {
+      {visibleChunks.map((chunk, i) => {
         const hasCorrected = !!chunk.corrected_text;
-        const isShowingRaw = showRaw[chunk.id] ?? false;
-        const displayText = (!hasCorrected || isShowingRaw) ? chunk.text : chunk.corrected_text!;
+        const isCorrectedView = showCorrected[chunk.id] ?? hasCorrected;
+        const isReklama = chunk.type === "REKLAMA";
+        const isReanalyzing = reanalyzing[chunk.id] ?? false;
+        const splitSt = splitStates[chunk.id];
+        const chunkSegs = segments.slice(chunk.seg_start ?? 0, chunk.seg_end ?? segments.length);
 
         return (
-          <div key={chunk.id} style={{ marginBottom: 20, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
-            {/* Nagłówek chunka */}
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0", fontSize: "0.82em", color: "#64748b" }}>
-              <span style={{ fontWeight: 600, color: "#334155" }}>#{i + 1}</span>
-              {chunk.topic && <span style={{ background: "#dbeafe", color: "#1d4ed8", padding: "1px 8px", borderRadius: 4 }}>{chunk.topic}</span>}
-              {chunk.chunk_type && chunk.chunk_type !== "NORMAL" && (
-                <span style={{ background: chunk.chunk_type === "REKLAMA" ? "#fee2e2" : "#fef9c3", color: chunk.chunk_type === "REKLAMA" ? "#991b1b" : "#854d0e", padding: "1px 8px", borderRadius: 4 }}>
-                  {chunk.chunk_type}
-                </span>
-              )}
-              {chunk.speaker && <span>🎙 {chunk.speaker}</span>}
-              <span style={{ marginLeft: "auto" }}>
-                {hasCorrected && (
-                  <button
-                    onClick={() => toggleRaw(chunk.id)}
-                    style={{ fontSize: "0.9em", padding: "2px 10px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer" }}
-                  >
-                    {isShowingRaw ? "Pokaż poprawiony" : "Pokaż surowy"}
-                  </button>
-                )}
+          <div key={chunk.id} style={{ marginBottom: 18, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+
+            {/* Nagłówek */}
+            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0", fontSize: "0.82em", flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 600, color: "#334155", minWidth: 24 }}>#{chunk.position}</span>
+
+              {/* Typ — klikalny */}
+              <span
+                onClick={() => toggleType(chunk)}
+                title="Kliknij aby zmienić typ"
+                style={{
+                  cursor: "pointer", padding: "1px 8px", borderRadius: 4, fontWeight: 600,
+                  background: isReklama ? "#fee2e2" : "#dbeafe",
+                  color: isReklama ? "#991b1b" : "#1d4ed8",
+                }}
+              >
+                {chunk.type ?? "?"}
               </span>
+
+              {/* Status — klikalny */}
+              <span
+                onClick={() => cycleStatus(chunk)}
+                title="Kliknij aby zmienić status"
+                style={{ cursor: "pointer", padding: "1px 8px", borderRadius: 4, fontWeight: 500, ...statusColor(chunk.status) }}
+              >
+                {chunk.status}
+              </span>
+
+              {chunk.speaker && <span style={{ color: "#64748b" }}>🎙 {chunk.speaker}</span>}
+
+              {/* Edycja tematu */}
+              <input
+                type="text"
+                value={topicEdits[chunk.id] ?? ""}
+                onChange={e => setTopicEdits(prev => ({ ...prev, [chunk.id]: e.target.value }))}
+                onKeyDown={e => { if (e.key === "Enter") saveTopic(chunk.id); }}
+                placeholder="temat"
+                style={{ flex: 1, minWidth: 100, border: "none", borderBottom: "1px dashed #cbd5e1", background: "transparent", fontSize: "0.88em", padding: "2px 4px", color: "#334155" }}
+              />
+              <button onClick={() => saveTopic(chunk.id)} disabled={savingTopics[chunk.id]}
+                style={{ padding: "2px 10px", borderRadius: 3, border: "none", background: "#3b82f6", color: "#fff", fontSize: "0.78em", cursor: "pointer", fontWeight: "bold" }}>
+                Zapisz
+              </button>
+              {savedFlash[chunk.id] && <span style={{ color: "#15803d", fontSize: "0.78em" }}>✓</span>}
+
+              {/* Re-analiza */}
+              <button onClick={() => reanalyzeChunk(chunk.id, "full")} disabled={isReanalyzing}
+                style={{ padding: "2px 9px", borderRadius: 3, border: "none", background: "#7c3aed", color: "#fff", fontSize: "0.78em", cursor: "pointer", fontWeight: "bold" }}>
+                {isReanalyzing ? "…" : "▶ Pełna"}
+              </button>
+              {hasCorrected && (
+                <button onClick={() => reanalyzeChunk(chunk.id, "semantic")} disabled={isReanalyzing}
+                  style={{ padding: "2px 9px", borderRadius: 3, border: "none", background: "#059669", color: "#fff", fontSize: "0.78em", cursor: "pointer", fontWeight: "bold" }}>
+                  {isReanalyzing ? "…" : "▶ Sem."}
+                </button>
+              )}
+
+              {/* Przełącznik widoku */}
+              {hasCorrected && (
+                <button onClick={() => setShowCorrected(prev => ({ ...prev, [chunk.id]: !prev[chunk.id] }))}
+                  style={{ padding: "2px 9px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em" }}>
+                  {isCorrectedView ? "Surowy" : "Poprawiony"}
+                </button>
+              )}
+              <button
+                onClick={() => setHiddenChunks(prev => new Set([...prev, chunk.id]))}
+                title="Ukryj ten chunk"
+                style={{ padding: "2px 8px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em", color: "#64748b", marginLeft: "auto" }}
+              >
+                ✕
+              </button>
             </div>
 
             {/* Treść */}
-            <div style={{ padding: "12px 14px", fontSize: "0.9em", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-              {displayText}
+            <div style={{ padding: "12px 14px", fontSize: "0.88em", lineHeight: 1.6 }}>
+              {isCorrectedView && hasCorrected ? (
+                <div style={{ whiteSpace: "pre-wrap", color: "#1e293b" }}>{chunk.corrected_text}</div>
+              ) : (
+                <SegmentsView
+                  segs={chunkSegs}
+                  videoId={videoId}
+                  chunkId={chunk.id}
+                  absOffset={chunk.seg_start ?? 0}
+                  splitState={splitSt}
+                  onMarkSplit={markSplit}
+                />
+              )}
             </div>
+
+            {/* Panel podziału */}
+            {splitSt && (
+              <div style={{ margin: "0 14px 14px", padding: "10px 12px", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 5, fontSize: "0.84em" }}>
+                <strong style={{ color: "#92400e" }}>✂ Punkt podziału: [{splitSt.ts}]</strong>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+                  <label>Część 1 (przed):&nbsp;
+                    <select value={splitSt.firstType}
+                      onChange={e => setSplitStates(prev => ({ ...prev, [chunk.id]: { ...prev[chunk.id], firstType: e.target.value as "TEMAT" | "REKLAMA" } }))}
+                      style={{ padding: "2px 6px", borderRadius: 3 }}>
+                      <option value="REKLAMA">REKLAMA</option>
+                      <option value="TEMAT">TEMAT</option>
+                    </select>
+                  </label>
+                  <label>Część 2 (po):&nbsp;
+                    <select value={splitSt.secondType}
+                      onChange={e => setSplitStates(prev => ({ ...prev, [chunk.id]: { ...prev[chunk.id], secondType: e.target.value as "TEMAT" | "REKLAMA" } }))}
+                      style={{ padding: "2px 6px", borderRadius: 3 }}>
+                      <option value="TEMAT">TEMAT</option>
+                      <option value="REKLAMA">REKLAMA</option>
+                    </select>
+                  </label>
+                  <button onClick={() => confirmSplit(chunk.id)} disabled={confirmingSplit[chunk.id]}
+                    style={{ padding: "3px 12px", background: "#f97316", color: "#fff", border: "none", borderRadius: 3, cursor: "pointer", fontWeight: "bold", fontSize: "0.82em" }}>
+                    {confirmingSplit[chunk.id] ? "Dzielę…" : "Wykonaj podział"}
+                  </button>
+                  <button onClick={() => cancelSplit(chunk.id)}
+                    style={{ padding: "3px 10px", background: "#e2e8f0", color: "#475569", border: "none", borderRadius: 3, cursor: "pointer", fontSize: "0.82em" }}>
+                    Anuluj
+                  </button>
+                </div>
+                <div style={{ color: "#92400e", fontSize: "0.8em", marginTop: 4 }}>Kliknij ✂ przy innym akapicie aby zmienić punkt podziału.</div>
+              </div>
+            )}
 
             {/* Podsumowanie */}
             {chunk.summary && (
               <div style={{ padding: "10px 14px", background: "#f8fafc", borderTop: "1px solid #e2e8f0", fontSize: "0.85em", color: "#475569" }}>
-                <span style={{ fontWeight: 600, color: "#64748b", fontSize: "0.8em", textTransform: "uppercase", letterSpacing: "0.05em" }}>Podsumowanie</span>
-                <p style={{ margin: "4px 0 0", lineHeight: 1.5 }}>{chunk.summary}</p>
+                <div style={{ fontWeight: 600, color: "#64748b", fontSize: "0.8em", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 4 }}>Podsumowanie</div>
+                <p style={{ margin: 0, lineHeight: 1.5 }}>{chunk.summary}</p>
               </div>
             )}
           </div>
