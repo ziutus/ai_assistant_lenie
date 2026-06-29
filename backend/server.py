@@ -13,6 +13,7 @@ from library.ai_intent_parser import parse_intent
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_type import StalkerDocumentType
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
+from library.chunk_review_routes import bp as chunk_review_bp
 
 logging.basicConfig(level=logging.INFO)
 
@@ -77,6 +78,8 @@ app = Flask(__name__)
 logging.info("Flask - enabling CORS for all routes")
 CORS(app)  # This will enable CORS for all routes
 
+app.register_blueprint(chunk_review_bp)
+
 
 @app.teardown_appcontext
 def shutdown_session(exception=None):
@@ -86,7 +89,7 @@ def shutdown_session(exception=None):
 
 @app.before_request
 def before_request_func():
-    exempt_paths = ['/healthz', '/startup', '/readiness', '/liveness', '/version']
+    exempt_paths = ['/healthz', '/startup', '/readiness', '/liveness', '/version', '/chunk_review']
     if request.path not in exempt_paths and request.method != 'OPTIONS':
         check_auth_header()
 
