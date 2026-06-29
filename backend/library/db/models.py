@@ -18,13 +18,14 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     Numeric,
+    SmallInteger,
     String,
     Text,
     func,
     select,
     text as sa_text,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
 
 from pgvector.sqlalchemy import Vector
@@ -553,3 +554,108 @@ class ImportLog(Base):
             f"ImportLog(id={self.id!r}, script_name={self.script_name!r}, "
             f"status={self.status!r}, started_at={self.started_at!r})"
         )
+
+
+# ---------------------------------------------------------------------------
+# Document Analysis — runs, chunks, topic sections
+# ---------------------------------------------------------------------------
+
+
+class DocumentAnalysisRun(Base):
+    __tablename__ = "document_analysis_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    chunk_size: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("5000"))
+    synthesis: Mapped[str | None] = mapped_column(Text)
+    speakers: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'"))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="DocumentChunk.position",
+    )
+    topic_sections: Mapped[list["DocumentTopicSection"]] = relationship(
+        back_populates="run",
+        cascade="all, delete-orphan",
+        order_by="DocumentTopicSection.position",
+    )
+
+    def __repr__(self) -> str:
+        return f"DocumentAnalysisRun(id={self.id!r}, document_id={self.document_id!r}, model={self.model!r})"
+
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("document_analysis_runs.id", ondelete="CASCADE"), nullable=False,
+    )
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | REKLAMA
+    topic: Mapped[str | None] = mapped_column(String(500))
+    original_text: Mapped[str] = mapped_column(Text, nullable=False)
+    corrected_text: Mapped[str | None] = mapped_column(Text)
+    summary: Mapped[str | None] = mapped_column(Text)
+    seg_start: Mapped[int | None] = mapped_column(Integer)
+    seg_end: Mapped[int | None] = mapped_column(Integer)
+    rewrite_ratio: Mapped[int | None] = mapped_column(SmallInteger)
+    # status: pending | approved | needs_reanalysis | split_requested | split
+    status: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default=sa_text("'pending'"),
+    )
+    split_at_seg: Mapped[int | None] = mapped_column(Integer)
+    split_first_type: Mapped[str | None] = mapped_column(String(20))
+    split_second_type: Mapped[str | None] = mapped_column(String(20))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    run: Mapped["DocumentAnalysisRun"] = relationship(back_populates="chunks")
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return f"DocumentChunk(id={self.id!r}, run_id={self.run_id!r}, position={self.position!r}, type={self.type!r})"
+
+
+class DocumentTopicSection(Base):
+    __tablename__ = "document_topic_sections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(
+        ForeignKey("document_analysis_runs.id", ondelete="CASCADE"), nullable=False,
+    )
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | REKLAMA
+    title: Mapped[str | None] = mapped_column(String(500))
+    summary: Mapped[str | None] = mapped_column(Text)
+    chunk_positions: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    run: Mapped["DocumentAnalysisRun"] = relationship(back_populates="topic_sections")
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return f"DocumentTopicSection(id={self.id!r}, run_id={self.run_id!r}, position={self.position!r})"
