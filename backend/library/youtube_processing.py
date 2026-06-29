@@ -211,7 +211,7 @@ def process_youtube_url(
                         f"captions language mismatch"
                     )
                     web_document.text = youtube_titles_to_text(transcript_text)
-                    web_document.text_raw = web_document.text
+                    web_document.text_raw = transcript_text
                     web_document.language = language_detected
                     web_document.document_state = StalkerDocumentStatus.ERROR.name
                     web_document.document_state_error = StalkerDocumentStatusError.CAPTIONS_LANGUAGE_MISMATCH.name
@@ -230,7 +230,10 @@ def process_youtube_url(
                         web_document.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
                         session.commit()
 
-                web_document.text_raw = web_document.text
+                # Store raw JSON (with start/duration timestamps) in text_raw.
+                # text holds human-readable plain text; text_raw holds structured data
+                # for tools that need per-segment timestamps (e.g. youtube_batch_analyze.py).
+                web_document.text_raw = transcript_text
                 session.commit()
 
         except TranscriptsDisabled:

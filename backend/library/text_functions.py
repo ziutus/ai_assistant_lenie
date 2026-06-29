@@ -45,6 +45,92 @@ def remove_matching_lines(input_text):
     return '\n'.join(cleaned_lines)
 
 
+_SENT_BOUNDARY = re.compile(r'(?<=[.!?…])\s+')
+
+
+def split_text_into_sentence_chunks(text: str, max_chars: int) -> list[str]:
+    """Split text at sentence boundaries, accumulating up to max_chars per chunk.
+
+    Designed for YouTube transcripts where \\n appears every few words (not at sentence ends).
+    First flattens single newlines to spaces so sentences are not broken by line wrapping,
+    then splits on sentence-ending punctuation.
+
+    Falls back to mid-sentence split only when a single sentence exceeds max_chars.
+    """
+    flat = re.sub(r'\n(?!\n)', ' ', text)
+    flat = re.sub(r' {2,}', ' ', flat)
+
+    sentences = [s.strip() for s in _SENT_BOUNDARY.split(flat) if s.strip()]
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_size = 0
+
+    for sent in sentences:
+        if len(sent) > max_chars:
+            if current:
+                chunks.append(' '.join(current))
+                current = []
+                current_size = 0
+            for i in range(0, len(sent), max_chars):
+                chunks.append(sent[i:i + max_chars])
+        elif current_size + len(sent) + 1 > max_chars and current:
+            chunks.append(' '.join(current))
+            current = [sent]
+            current_size = len(sent)
+        else:
+            current.append(sent)
+            current_size += len(sent) + 1
+
+    if current:
+        chunks.append(' '.join(current))
+
+    return chunks
+
+
+def split_text_into_chunks(text: str, max_chars: int) -> list[str]:
+    """Split text at double-newline boundaries, respecting max_chars per chunk.
+
+    Falls back to single-newline splitting when a single paragraph exceeds max_chars.
+    Suitable for both LLM batch analysis (large chunks) and any other chunking need.
+    """
+    paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+    chunks: list[str] = []
+    current_parts: list[str] = []
+    current_size = 0
+
+    for para in paragraphs:
+        if len(para) > max_chars:
+            if current_parts:
+                chunks.append('\n\n'.join(current_parts))
+                current_parts = []
+                current_size = 0
+            line_parts: list[str] = []
+            line_size = 0
+            for line in [l.strip() for l in para.split('\n') if l.strip()]:
+                if line_size + len(line) + 1 > max_chars and line_parts:
+                    chunks.append('\n'.join(line_parts))
+                    line_parts = [line]
+                    line_size = len(line)
+                else:
+                    line_parts.append(line)
+                    line_size += len(line) + 1
+            if line_parts:
+                chunks.append('\n'.join(line_parts))
+        elif current_size + len(para) + 2 > max_chars and current_parts:
+            chunks.append('\n\n'.join(current_parts))
+            current_parts = [para]
+            current_size = len(para)
+        else:
+            current_parts.append(para)
+            current_size += len(para) + 2
+
+    if current_parts:
+        chunks.append('\n\n'.join(current_parts))
+
+    return chunks
+
+
 def split_text_for_embedding(text, paragraph_titles=[], max_words_in_line=300, max_characters_in_line=1000):
     sentences2 = []
     paragraphs = text.split("\n\n")
