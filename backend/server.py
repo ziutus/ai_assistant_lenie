@@ -89,23 +89,69 @@ def shutdown_session(exception=None):
 
 @app.before_request
 def before_request_func():
-    exempt_paths = ['/healthz', '/startup', '/readiness', '/liveness', '/version', '/chunk_review']
+    exempt_paths = ['/', '/healthz', '/startup', '/readiness', '/liveness', '/version', '/chunk_review']
     if request.path not in exempt_paths and request.method != 'OPTIONS':
         check_auth_header()
 
 @app.route('/', methods=['GET', 'OPTIONS'])
 def root():
-    """
-    Główna trasa aplikacji - endpoint informacyjny
-    """
-    response = {
-        "status": "success",
-        "message": "Stalker Web Documents API",
-        "app_version": APP_VERSION,
-        "app_build_time": BUILD_TIME,
-        "encoding": "utf8"
-    }
-    return response, 200
+    """Landing page — HTML for browsers, JSON for API clients (Accept: application/json)."""
+    if 'application/json' in request.headers.get('Accept', ''):
+        return {
+            "status": "success",
+            "message": "Stalker Web Documents API",
+            "app_version": APP_VERSION,
+            "app_build_time": BUILD_TIME,
+            "encoding": "utf8",
+        }, 200
+
+    from flask import Response
+    html = f"""<!DOCTYPE html>
+<html lang="pl">
+<head><meta charset="UTF-8"><title>Lenie AI API</title>
+<style>
+body{{font-family:Arial,sans-serif;max-width:600px;margin:60px auto;padding:0 20px;color:#222}}
+h1{{font-size:1.3em;color:#1e293b}}
+.meta{{color:#64748b;font-size:0.9em;margin:6px 0 24px}}
+label{{display:block;margin-bottom:6px;font-size:0.9em;font-weight:bold}}
+input{{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:4px;
+  font-size:0.9em;box-sizing:border-box;margin-bottom:10px}}
+.row{{display:flex;gap:8px}}
+.row input{{flex:1}}
+button{{padding:8px 18px;background:#0369a1;color:#fff;border:none;border-radius:4px;
+  font-size:0.9em;cursor:pointer;font-weight:bold}}
+button:hover{{background:#0284c7}}
+.note{{color:#64748b;font-size:0.82em;margin-top:16px}}
+</style>
+</head>
+<body>
+<h1>Lenie AI — API</h1>
+<p class="meta">Wersja: {APP_VERSION}</p>
+<form onsubmit="go(event)">
+  <label>Document ID</label>
+  <div class="row">
+    <input type="number" id="doc-id" placeholder="np. 9158" min="1">
+    <button type="submit">Otwórz przegląd chunków</button>
+  </div>
+  <label>API key (opcjonalnie — możesz wpisać w interfejsie)</label>
+  <input type="password" id="api-key" placeholder="x-api-key">
+</form>
+<p class="note">Klucz API jest zapisywany w localStorage przeglądarki — wystarczy wpisać raz.</p>
+<script>
+function go(e) {{
+  e.preventDefault();
+  const id = document.getElementById('doc-id').value;
+  const key = document.getElementById('api-key').value;
+  if (!id) {{ alert('Podaj Document ID'); return; }}
+  if (key) localStorage.setItem('lenie_api_key', key);
+  location.href = '/chunk_review?doc_id=' + id;
+}}
+const saved = localStorage.getItem('lenie_api_key');
+if (saved) document.getElementById('api-key').value = saved;
+</script>
+</body>
+</html>"""
+    return Response(html, mimetype='text/html')
 
 
 @app.route('/url_add', methods=['POST', 'OPTIONS'])
