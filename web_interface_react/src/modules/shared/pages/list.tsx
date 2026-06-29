@@ -151,6 +151,15 @@ const List = () => {
               >
                 Edit
               </NavLink>
+              {(item.document_type === "youtube" || item.document_type === "movie") && (
+                <NavLink
+                  className={"button"}
+                  style={{ margin: "0 0 0 6px" }}
+                  to={`/chunks/${item.id}`}
+                >
+                  Chunki
+                </NavLink>
+              )}
               <button
                 className={"button"}
                 style={{ margin: "0 0 0 10px" }}
