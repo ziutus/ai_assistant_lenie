@@ -1,14 +1,20 @@
 """Flask blueprint: chunk review API + interactive HTML page.
 
 Endpoints:
-  GET  /analysis_runs?doc_id=<id>         — list runs for a document
-  GET  /analysis_run/<run_id>/chunks      — full run data (chunks + segments)
-  PATCH /chunk/<chunk_id>                 — update status / type / topic / split_at_seg
-  GET  /chunk_review                      — interactive HTML review page
+  GET  /analysis_runs?doc_id=<id>            — list runs for a document
+  POST /document/<doc_id>/analyze_chunks     — create a new analysis run
+  GET  /analysis_run/<run_id>/chunks         — full run data (chunks + segments)
+  POST /analysis_run/<run_id>/extract_speakers
+  PATCH /chunk/<chunk_id>                    — update status / type / topic / split_at_seg
+  POST /chunk/<chunk_id>/execute_split
+  POST /chunk/<chunk_id>/reanalyze
+  GET  /chunk_review                         — interactive HTML review page
 """
 
 import json
 import logging
+import threading
+import uuid
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, abort
@@ -22,6 +28,10 @@ from library.db.models import (
 logger = logging.getLogger(__name__)
 
 bp = Blueprint("chunk_review", __name__)
+
+# In-memory job registry for async analysis runs.
+# Keyed by job_id (short UUID). Lives as long as the server process.
+_analysis_jobs: dict[str, dict] = {}
 
 ALLOWED_STATUSES = {"pending", "approved", "needs_reanalysis", "split_requested", "split"}
 ALLOWED_TYPES = {"TEMAT", "REKLAMA"}
@@ -60,6 +70,87 @@ def _chunk_to_dict(c: DocumentChunk) -> dict:
 # ---------------------------------------------------------------------------
 # API: GET /analysis_runs
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# API: POST /document/<doc_id>/analyze_chunks
+# ---------------------------------------------------------------------------
+
+@bp.route("/document/<int:doc_id>/analyze_chunks", methods=["POST"])
+def analyze_document_chunks(doc_id: int):
+    """Start an async chunk analysis run for an existing document.
+
+    Body (JSON, all optional):
+        model        — LLM model name (default: Bielik-11B-v3.0-Instruct)
+        chunk_size   — max chars per chunk (default: 5000)
+        no_synthesis — skip final synthesis step (default: false)
+
+    Returns immediately with {job_id}. Poll GET /analysis_job/<job_id> for status.
+    """
+    data = request.get_json(silent=True) or {}
+    model = data.get("model", "Bielik-11B-v3.0-Instruct")
+    chunk_size = int(data.get("chunk_size", 5000))
+    no_synthesis = bool(data.get("no_synthesis", False))
+
+    job_id = uuid.uuid4().hex[:8]
+    _analysis_jobs[job_id] = {
+        "status": "running",
+        "doc_id": doc_id,
+        "model": model,
+        "run_id": None,
+        "chunk_count": None,
+        "ad_count": None,
+        "topic_section_count": None,
+        "error": None,
+        "progress": "Startowanie...",
+    }
+
+    def _run_analysis() -> None:
+        from library.db.engine import get_session
+        from library.document_analysis_service import DocumentAnalysisService
+
+        session = get_session()
+        try:
+            def _progress(msg: str) -> None:
+                _analysis_jobs[job_id]["progress"] = msg
+
+            service = DocumentAnalysisService(session)
+            run = service.create_run(
+                doc_id=doc_id,
+                model=model,
+                chunk_size=chunk_size,
+                no_synthesis=no_synthesis,
+                progress_fn=_progress,
+            )
+            ad_count = sum(1 for c in run.chunks if c.type == "REKLAMA")
+            _analysis_jobs[job_id].update({
+                "status": "done",
+                "run_id": run.id,
+                "chunk_count": len(run.chunks),
+                "ad_count": ad_count,
+                "topic_section_count": len(run.topic_sections),
+                "progress": f"Gotowe: {len(run.chunks)} chunków, {len(run.topic_sections)} sekcji",
+            })
+        except ValueError as exc:
+            _analysis_jobs[job_id].update({"status": "failed", "error": str(exc)})
+        except Exception as exc:
+            logger.exception("background analysis failed for doc %d", doc_id)
+            _analysis_jobs[job_id].update({"status": "failed", "error": str(exc)})
+        finally:
+            session.close()
+
+    t = threading.Thread(target=_run_analysis, daemon=True, name=f"analysis-{job_id}")
+    t.start()
+
+    return jsonify({"status": "started", "job_id": job_id, "doc_id": doc_id})
+
+
+@bp.route("/analysis_job/<job_id>", methods=["GET"])
+def get_analysis_job(job_id: str):
+    """Poll status of an async analysis job started by POST /document/<id>/analyze_chunks."""
+    job = _analysis_jobs.get(job_id)
+    if job is None:
+        return jsonify({"status": "error", "message": "Job not found"}), 404
+    return jsonify({"status": "success", "job": job})
 
 @bp.route("/analysis_runs", methods=["GET"])
 def list_runs():
@@ -481,9 +572,13 @@ body{font-family:Arial,sans-serif;background:#f5f5f5;color:#222;font-size:14px}
 .btn-save{margin-left:auto;padding:3px 12px;border-radius:3px;border:none;background:#3b82f6;color:#fff;font-size:0.8em;cursor:pointer;font-weight:bold}
 .btn-save:hover{background:#2563eb}
 .btn-save:disabled{background:#94a3b8;cursor:default}
-.chunk-body{display:grid;grid-template-columns:58% 42%;min-height:60px}
-.tc{padding:10px 14px;border-right:1px solid #e2e8f0;font-size:0.84em;line-height:1.6;overflow-wrap:anywhere}
-.sc-col{padding:10px 14px;background:#f8fafc;font-size:0.84em;line-height:1.6}
+.chunk-body{min-height:60px}
+.tc{padding:10px 14px;font-size:0.84em;line-height:1.6;overflow-wrap:anywhere}
+.summary-box{padding:8px 14px 10px;background:#f8fafc;border-top:1px solid #e2e8f0;
+  font-size:0.84em;line-height:1.6;color:#334155}
+.summary-box em{color:#94a3b8}
+.summary-label{font-size:0.76em;font-weight:bold;color:#64748b;text-transform:uppercase;
+  letter-spacing:.03em;margin-bottom:4px}
 /* segment row */
 .seg{margin:0 0 8px;position:relative;padding-right:28px}
 .seg:hover .split-btn{opacity:1}
@@ -516,9 +611,9 @@ em{color:#94a3b8}
   font-size:0.8em;cursor:pointer;font-weight:bold}
 #btn-analyze-all:hover{background:#0284c7}
 #btn-analyze-all:disabled{background:#94a3b8;cursor:default}
-#btn-view{padding:3px 11px;border-radius:3px;border:none;background:#0f766e;color:#fff;
-  font-size:0.8em;cursor:pointer;font-weight:bold}
-#btn-view:hover{background:#0d9488}
+.btn-view-chunk{padding:2px 8px;border-radius:3px;border:1px solid #94a3b8;background:#f1f5f9;
+  color:#475569;font-size:0.75em;cursor:pointer}
+.btn-view-chunk:hover{background:#e2e8f0}
 #speakers-bar{background:#1e3a5f;color:#bfdbfe;padding:6px 20px;font-size:0.82em;display:none;
   align-items:center;gap:12px;flex-wrap:wrap}
 #speakers-bar strong{color:#fff}
@@ -530,6 +625,20 @@ em{color:#94a3b8}
 .btn-reanalyze-sem:hover{background:#047857}
 .btn-reanalyze-sem:disabled{background:#94a3b8;cursor:default}
 .tc-corrected{white-space:pre-wrap;font-size:0.85em;line-height:1.6;color:#1e293b}
+/* new-run panel */
+#new-run-panel{display:none;background:#0f172a;padding:10px 20px;border-top:1px solid #334155;
+  font-size:0.84em;color:#cbd5e1;flex-wrap:wrap;gap:10px;align-items:center}
+#new-run-panel label{display:flex;align-items:center;gap:6px}
+#new-run-panel select,#new-run-panel input[type=number]{
+  background:#334155;color:#fff;border:1px solid #475569;border-radius:4px;padding:4px 8px;font-size:0.85em}
+#btn-new-run{padding:3px 11px;border-radius:3px;border:none;background:#0369a1;color:#fff;
+  font-size:0.8em;cursor:pointer;font-weight:bold}
+#btn-new-run:hover{background:#0284c7}
+#btn-new-run:disabled{background:#94a3b8;cursor:default}
+#btn-toggle-new-run{padding:3px 9px;border-radius:3px;border:1px solid #475569;background:#1e293b;
+  color:#94a3b8;font-size:0.8em;cursor:pointer}
+#btn-toggle-new-run:hover{background:#334155;color:#fff}
+#new-run-status{color:#fbbf24;font-size:0.82em}
 /* split panel */
 .split-panel{margin-top:10px;padding:10px 12px;background:#fff7ed;border:1px solid #fed7aa;
   border-radius:5px;font-size:0.84em}
@@ -551,15 +660,30 @@ em{color:#94a3b8}
   <label>Run:
     <select id="run-select" onchange="loadRun(this.value)"></select>
   </label>
+  <button id="btn-toggle-new-run" onclick="toggleNewRunPanel()" title="Nowa analiza">+ Nowa</button>
   <label>API key:
     <input type="password" id="api-key-input" placeholder="x-api-key" oninput="saveKey(this.value)">
   </label>
+</div>
+<div id="new-run-panel">
+  <label>Model:
+    <select id="new-run-model">
+      <option value="Bielik-11B-v3.0-Instruct">Bielik-11B v3.0 (Sherlock)</option>
+      <option value="arklabs/Bielik-11B-v3.0-Instruct">Bielik-11B v3.0 (ArkLabs)</option>
+    </select>
+  </label>
+  <label>Chunk:
+    <input type="number" id="new-run-chunk-size" value="5000" min="1000" max="20000" step="500" style="width:80px">
+    znaków
+  </label>
+  <label><input type="checkbox" id="new-run-no-synthesis"> Pomiń syntezę</label>
+  <button id="btn-new-run" onclick="createNewRun()">▶ Utwórz analizę</button>
+  <span id="new-run-status"></span>
 </div>
 <div id="progress-bar">
   <span id="progress-text">Ładowanie...</span>
   <div id="progress-track"><div id="progress-fill" style="width:0%"></div></div>
   <button id="btn-analyze-all" onclick="reanalyzeAll()" style="display:none">Analizuj wszystkie</button>
-  <button id="btn-view" onclick="toggleView()">Pokaż poprawiony</button>
   <button id="btn-ads" class="hide-mode" onclick="toggleAds()">Ukryj reklamy</button>
 </div>
 <div id="speakers-bar">
@@ -576,7 +700,6 @@ let RUN_ID = parseInt(params.get("run_id") || "0");
 let API_KEY = params.get("api_key") || localStorage.getItem("lenie_api_key") || "";
 let _data = null;
 let _hideAds = false;
-let _showCorrected = false;
 const _splitState = {};  // chunkId → {segIdx, ts, firstType, secondType}
 
 document.getElementById("api-key-input").value = API_KEY;
@@ -820,8 +943,15 @@ function renderChunk(chunk, segs, videoId) {
   const chunkSegs = segs.slice(chunk.seg_start ?? 0, chunk.seg_end ?? segs.length);
   const transcript = renderSegments(chunkSegs, videoId, chunk.id, chunk.seg_start ?? 0);
   const splitPanel = renderSplitPanel(chunk.id);
-  const summary = chunk.summary
-    ? `<div class="summary-text">${chunk.summary.replace(/\n/g,"<br>")}</div>`
+
+  // Default: show corrected text when available, fall back to raw transcript
+  const hasCorrected = !!chunk.corrected_text;
+  const rawStyle    = hasCorrected ? 'display:none'  : 'display:block';
+  const corStyle    = hasCorrected ? 'display:block' : 'display:none';
+  const viewBtnLabel = hasCorrected ? "Surowy" : "Poprawiony";
+
+  const summaryContent = chunk.summary
+    ? chunk.summary.replace(/\n/g,"<br>")
     : `<em>${chunk.type === "REKLAMA" ? "brak streszczenia (reklama)" : "brak streszczenia"}</em>`;
 
   return `
@@ -839,17 +969,24 @@ function renderChunk(chunk, segs, videoId) {
     <span class="saved-flash" id="flash-${chunk.id}">✓ zapisano</span>
     <button class="btn-reanalyze" id="reanalyze-${chunk.id}"
             onclick="reanalyzeChunk(${chunk.id},'full')">▶ Pełna</button>
-    ${chunk.corrected_text
+    ${hasCorrected
       ? `<button class="btn-reanalyze-sem" id="reanalyze-sem-${chunk.id}"
                onclick="reanalyzeChunk(${chunk.id},'semantic')">▶ Sem.</button>`
+      : ""}
+    ${hasCorrected
+      ? `<button class="btn-view-chunk" id="btn-view-${chunk.id}"
+               onclick="toggleChunkView(${chunk.id})">${viewBtnLabel}</button>`
       : ""}
   </div>
   <div class="chunk-body">
     <div class="tc">
-      <div class="tc-raw">${transcript}${splitPanel}</div>
-      <div class="tc-corrected" style="display:${_showCorrected ? "block" : "none"}">${(chunk.corrected_text||"(brak poprawionego tekstu)").replace(/\n/g,"<br>")}</div>
+      <div class="tc-raw" style="${rawStyle}">${transcript}${splitPanel}</div>
+      <div class="tc-corrected" style="${corStyle}">${(chunk.corrected_text||"").replace(/\n/g,"<br>")}</div>
     </div>
-    <div class="sc-col">${summary}</div>
+    <div class="summary-box">
+      <div class="summary-label">Streszczenie</div>
+      ${summaryContent}
+    </div>
   </div>
 </div>`;
 }
@@ -876,7 +1013,6 @@ async function reanalyzeChunk(chunkId, mode) {
         const segs = _data.segments || [];
         const videoId = _data.document.original_id || "";
         el.outerHTML = renderChunk(res.chunk, segs, videoId);
-        if (_showCorrected) applyViewToggle();
       }
       updateProgress();
     }
@@ -970,16 +1106,15 @@ async function reanalyzeAll() {
   updateProgress();
 }
 
-function applyViewToggle() {
-  document.querySelectorAll(".tc-raw").forEach(el => el.style.display = _showCorrected ? "none" : "block");
-  document.querySelectorAll(".tc-corrected").forEach(el => el.style.display = _showCorrected ? "block" : "none");
-  const btn = document.getElementById("btn-view");
-  if (btn) btn.textContent = _showCorrected ? "Pokaż surowy" : "Pokaż poprawiony";
-}
-
-function toggleView() {
-  _showCorrected = !_showCorrected;
-  applyViewToggle();
+function toggleChunkView(chunkId) {
+  const raw = document.querySelector(`#chunk-${chunkId} .tc-raw`);
+  const cor = document.querySelector(`#chunk-${chunkId} .tc-corrected`);
+  const btn = document.getElementById(`btn-view-${chunkId}`);
+  if (!raw || !cor || !btn) return;
+  const showingCorrected = cor.style.display !== "none";
+  raw.style.display = showingCorrected ? "block" : "none";
+  cor.style.display = showingCorrected ? "none" : "block";
+  btn.textContent = showingCorrected ? "Poprawiony" : "Surowy";
 }
 
 function toggleAds() {
@@ -1037,6 +1172,65 @@ async function loadRuns() {
     document.getElementById("chunks").innerHTML =
       `<div id="error-msg">Błąd ładowania runów: ${e.message}.<br>Sprawdź czy backend działa i API key jest poprawny.</div>`;
   }
+}
+
+function toggleNewRunPanel() {
+  const panel = document.getElementById("new-run-panel");
+  panel.style.display = panel.style.display === "flex" ? "none" : "flex";
+}
+
+async function createNewRun() {
+  if (!DOC_ID) { alert("Brak doc_id w URL — odśwież stronę z ?doc_id=<id>"); return; }
+  const model = document.getElementById("new-run-model").value;
+  const chunkSize = parseInt(document.getElementById("new-run-chunk-size").value) || 5000;
+  const noSynthesis = document.getElementById("new-run-no-synthesis").checked;
+  const btn = document.getElementById("btn-new-run");
+  const statusEl = document.getElementById("new-run-status");
+
+  btn.disabled = true;
+  btn.textContent = "Analizuję...";
+  statusEl.textContent = "⏳ Startowanie...";
+
+  let jobId = null;
+  try {
+    const res = await apiFetch(`/document/${DOC_ID}/analyze_chunks`, {
+      method: "POST",
+      body: JSON.stringify({model, chunk_size: chunkSize, no_synthesis: noSynthesis}),
+    });
+    if (res.status !== "started") throw new Error(res.message || "Nieznany błąd");
+    jobId = res.job_id;
+  } catch (e) {
+    statusEl.textContent = `✗ Błąd: ${e.message}`;
+    btn.textContent = "▶ Utwórz analizę";
+    btn.disabled = false;
+    return;
+  }
+
+  // Poll until done or failed
+  const poll = setInterval(async () => {
+    try {
+      const res = await apiFetch(`/analysis_job/${jobId}`);
+      const job = res.job;
+      statusEl.textContent = `⏳ ${job.progress || job.status}`;
+
+      if (job.status === "done") {
+        clearInterval(poll);
+        statusEl.textContent =
+          `✓ Gotowe: run #${job.run_id}, ${job.chunk_count} chunków (${job.ad_count} reklam), ${job.topic_section_count} sekcji`;
+        btn.textContent = "▶ Utwórz analizę";
+        btn.disabled = false;
+        await loadRuns();
+      } else if (job.status === "failed") {
+        clearInterval(poll);
+        statusEl.textContent = `✗ Błąd: ${job.error || "nieznany"}`;
+        btn.textContent = "▶ Utwórz analizę";
+        btn.disabled = false;
+      }
+    } catch (e) {
+      // transient network error — keep polling
+      statusEl.textContent = `⏳ Sprawdzam... (${e.message})`;
+    }
+  }, 5000);  // poll every 5 seconds
 }
 
 loadRuns();

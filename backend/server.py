@@ -89,23 +89,118 @@ def shutdown_session(exception=None):
 
 @app.before_request
 def before_request_func():
-    exempt_paths = ['/healthz', '/startup', '/readiness', '/liveness', '/version', '/chunk_review']
+    exempt_paths = ['/', '/healthz', '/startup', '/readiness', '/liveness', '/version', '/chunk_review']
     if request.path not in exempt_paths and request.method != 'OPTIONS':
         check_auth_header()
 
 @app.route('/', methods=['GET', 'OPTIONS'])
 def root():
-    """
-    Główna trasa aplikacji - endpoint informacyjny
-    """
-    response = {
-        "status": "success",
-        "message": "Stalker Web Documents API",
-        "app_version": APP_VERSION,
-        "app_build_time": BUILD_TIME,
-        "encoding": "utf8"
-    }
-    return response, 200
+    """Landing page — HTML for browsers, JSON for API clients (Accept: application/json)."""
+    if 'application/json' in request.headers.get('Accept', ''):
+        return {
+            "status": "success",
+            "message": "Stalker Web Documents API",
+            "app_version": APP_VERSION,
+            "app_build_time": BUILD_TIME,
+            "encoding": "utf8",
+        }, 200
+
+    from flask import Response
+    html = f"""<!DOCTYPE html>
+<html lang="pl">
+<head><meta charset="UTF-8"><title>Lenie AI</title>
+<style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:Arial,sans-serif;background:#f8fafc;color:#1e293b;min-height:100vh;padding:40px 20px}}
+.container{{max-width:700px;margin:0 auto}}
+h1{{font-size:1.6em;font-weight:700;margin-bottom:4px}}
+.version{{color:#94a3b8;font-size:0.85em;margin-bottom:32px}}
+.section{{margin-bottom:28px}}
+.section h2{{font-size:0.8em;font-weight:700;text-transform:uppercase;letter-spacing:.08em;
+  color:#64748b;margin-bottom:12px;padding-bottom:6px;border-bottom:1px solid #e2e8f0}}
+.cards{{display:grid;grid-template-columns:1fr 1fr;gap:10px}}
+.card{{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:16px 18px;
+  text-decoration:none;color:#1e293b;transition:border-color .15s,box-shadow .15s}}
+.card:hover{{border-color:#0369a1;box-shadow:0 2px 8px rgba(3,105,161,.1)}}
+.card-title{{font-size:0.95em;font-weight:600;margin-bottom:3px}}
+.card-desc{{font-size:0.8em;color:#64748b}}
+.card.ext .card-title::after{{content:" ↗";color:#94a3b8;font-weight:400}}
+.api-key-box{{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:16px 18px}}
+label{{font-size:0.85em;font-weight:600;display:block;margin-bottom:6px}}
+input{{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:5px;
+  font-size:0.88em;margin-bottom:8px}}
+.saved{{color:#16a34a;font-size:0.8em}}
+.chunk-row{{display:flex;gap:8px;align-items:flex-end}}
+.chunk-row input{{margin-bottom:0;flex:1}}
+button{{padding:8px 16px;background:#0369a1;color:#fff;border:none;border-radius:5px;
+  font-size:0.88em;cursor:pointer;font-weight:600;white-space:nowrap}}
+button:hover{{background:#0284c7}}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Lenie AI</h1>
+  <p class="version">Wersja {APP_VERSION} &nbsp;·&nbsp; API serwer</p>
+
+  <div class="section">
+    <h2>Interfejsy użytkownika</h2>
+    <div class="cards" id="ui-cards">
+      <a class="card ext" id="link-frontend" href="#"><div class="card-title">Interfejs główny</div><div class="card-desc">Lista dokumentów, wyszukiwanie, edycja</div></a>
+      <a class="card ext" id="link-admin" href="#"><div class="card-title">Panel administracyjny</div><div class="card-desc">Zarządzanie, infrastruktura AWS</div></a>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Narzędzia API</h2>
+    <div class="cards">
+      <a class="card" href="/chunk_review"><div class="card-title">Przegląd chunków</div><div class="card-desc">Analiza fragmentów dokumentu (YouTube, transkrypcje)</div></a>
+      <a class="card" href="/version"><div class="card-title">Wersja API</div><div class="card-desc">Informacje o wersji i czasie budowania</div></a>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Klucz API &amp; szybki dostęp</h2>
+    <div class="api-key-box">
+      <label>API key</label>
+      <input type="password" id="api-key" placeholder="x-api-key">
+      <span class="saved" id="saved-info" style="display:none">✓ Klucz zapisany</span>
+      <label style="margin-top:12px">Otwórz przegląd chunków dla dokumentu</label>
+      <div class="chunk-row">
+        <input type="number" id="doc-id" placeholder="Document ID (np. 9158)" min="1">
+        <button onclick="goChunk()">Otwórz</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(function() {{
+  var host = window.location.hostname;
+  document.getElementById('link-frontend').href = 'http://' + host + ':3000';
+  document.getElementById('link-admin').href   = 'http://' + host + ':3001';
+
+  var saved = localStorage.getItem('lenie_api_key');
+  if (saved) {{
+    document.getElementById('api-key').value = saved;
+    document.getElementById('saved-info').style.display = 'inline';
+  }}
+  document.getElementById('api-key').addEventListener('change', function() {{
+    if (this.value) {{
+      localStorage.setItem('lenie_api_key', this.value);
+      document.getElementById('saved-info').style.display = 'inline';
+    }}
+  }});
+}})();
+function goChunk() {{
+  var id  = document.getElementById('doc-id').value;
+  var key = document.getElementById('api-key').value;
+  if (!id) {{ alert('Podaj Document ID'); return; }}
+  if (key) localStorage.setItem('lenie_api_key', key);
+  location.href = '/chunk_review?doc_id=' + id;
+}}
+</script>
+</body>
+</html>"""
+    return Response(html, mimetype='text/html')
 
 
 @app.route('/url_add', methods=['POST', 'OPTIONS'])
