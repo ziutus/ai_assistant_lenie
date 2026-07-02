@@ -2,15 +2,17 @@
 
 Manual deployment guide for Lenie AI frontend applications to AWS (S3 + CloudFront).
 
+> **2026-07-02:** The `app.dev.lenie-ai.eu` and `app2.dev.lenie-ai.eu` hosting stacks were **deleted** — those frontends required the AWS document API (`app-server-db`), which was decommissioned; they now run only against the Docker/NAS backend. Their `deploy.sh` scripts will fail (SSM parameters gone) until the stacks are restored. Restoration: [aws-serverless-restoration.md](aws-serverless-restoration.md). The sections below describing app/app2 are kept as reference for that restoration.
+
 ## Overview
 
-Three web frontends are hosted via S3 + CloudFront:
+Currently hosted via S3 + CloudFront:
 
-| App | URL | Deploy Script | S3 Bucket |
-|-----|-----|---------------|-----------|
-| React app | `app.dev.lenie-ai.eu` | `web_interface_react/deploy.sh` | `lenie-dev-app-web` |
-| Admin panel | `app2.dev.lenie-ai.eu` | `web_interface_app2/deploy.sh` | `lenie-dev-app2-web` |
-| Landing page | `www.lenie-ai.eu` | *(no script yet)* | `lenie-prod-landing-web` |
+| App | URL | Deploy Script | S3 Bucket | Status |
+|-----|-----|---------------|-----------|--------|
+| Landing page | `www.lenie-ai.eu` | *(no script yet)* | `lenie-prod-landing-web` | active |
+| React app | `app.dev.lenie-ai.eu` | `web_interface_react/deploy.sh` | `lenie-dev-app-web` | **hosting deleted 2026-07-02** |
+| Admin panel | `app2.dev.lenie-ai.eu` | `web_interface_app2/deploy.sh` | `lenie-dev-app2-web` | **hosting deleted 2026-07-02** |
 
 ## Prerequisites
 

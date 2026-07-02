@@ -149,19 +149,7 @@ See `infra/aws/serverless/CLAUDE.md` for detailed comparison and known differenc
 
 ### Frontend Deployment (AWS)
 
-All three frontends are deployed to S3 + CloudFront. Deploy scripts resolve bucket names and distribution IDs from SSM Parameter Store (exported by CloudFormation). See `docs/frontend-deployment.md` for full details.
-
-```bash
-# React app (app.dev.lenie-ai.eu)
-cd web_interface_react && ./deploy.sh
-
-# Admin panel (app2.dev.lenie-ai.eu)
-cd web_interface_app2 && ./deploy.sh
-
-# Common options
-./deploy.sh --skip-build         # Deploy existing build/ only
-./deploy.sh --skip-invalidation  # Skip CloudFront cache invalidation
-```
+**Only the landing page** (`www.lenie-ai.eu`) is hosted on AWS (S3 + CloudFront). The `app.dev.lenie-ai.eu` and `app2.dev.lenie-ai.eu` hosting stacks were deleted 2026-07-02 — those frontends required the AWS document API (`app-server-db`), which was decommissioned; they now run only against the Docker/NAS backend (local dev or NAS deployment). Restoration: [docs/aws-serverless-restoration.md](docs/aws-serverless-restoration.md). See `docs/frontend-deployment.md` for landing page deployment details.
 
 ### CI/CD
 **Currently inactive** — all deployments are manual from the developer's machine. Configuration files from previous experimental setups remain in the repository:
