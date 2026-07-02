@@ -14,18 +14,27 @@ The active ingestion path is untouched and works end-to-end:
 
 | Resource | Purpose |
 |---|---|
-| `lenie-dev-url-add` Lambda | `/url_add` endpoint (Chrome extension) → writes to DynamoDB + S3, enqueues to SQS |
-| `lenie-dev-weblink-put-into-sqs` Lambda | Alternative SQS ingestion path |
-| `lenie-dev-sqs-size` Lambda | `/infra/sqs/size` endpoint (queue length in UI) |
+| `lenie-dev-url-add` Lambda | `/url_add` endpoint (Chrome extension) → writes to DynamoDB + S3 (SQS send removed 2026-07-02; source now in repo at `lambdas/url-add/`) |
 | DynamoDB `lenie_dev_documents` | Sole cloud document store (daily writes) |
 | S3 `lenie-dev-website-content` | Webpage content (`{uuid}.txt` / `{uuid}.html`) |
-| API Gateway `lenie_split` (app) + `lenie_dev_infra` | `/url_add` + `/sqs/size`; custom domain `api.dev.lenie-ai.eu` |
+| API Gateway `lenie_split` (app) | `/url_add` only; custom domain `api.dev.lenie-ai.eu` (root mapping only — `/infra` removed) |
 | CloudFront + S3 hosting | landing page only (`www.lenie-ai.eu`) — app/app2 hosting deleted 2026-07-02, see below |
 | `imports/dynamodb_sync.py` (local) | The actual cloud→local sync path: DynamoDB + S3 → local PostgreSQL |
 
 Sanitized configuration snapshots of the surviving Lambdas (runtime, layers, env **key names**, roles) are in [`infra/aws/serverless/config-snapshots/`](../infra/aws/serverless/config-snapshots/).
 
 ## 2. What was removed and when
+
+### 2026-07-02 (final cleanup pass) — SQS pipeline and infra API
+
+The SQS queue had no consumer since the SQS→RDS pipeline was removed, so the whole chain went:
+
+- **`url-add` Lambda rewritten** — SQS send removed; DynamoDB write is now the critical step (was previously best-effort with the comment "SQS is more important"). The source finally lives in the repo (`lambdas/url-add/` — it previously existed only as a zip in S3). Verified end-to-end three times through `api.dev.lenie-ai.eu` (real POST → document in DynamoDB → test items cleaned up).
+- Deleted stacks: `lenie-dev-sqs-documents` (queue), `lenie-dev-sqs-application-errors` (DLQ + SNS email), `lenie-dev-lambda-weblink-put-into-sqs` (0 invocations in 180 days), `lenie-dev-api-gw-infra` (its last endpoint `/sqs/size` lost purpose with the queue), `lenie-dev-lenie-launch-template` (unused after ec2-lenie removal).
+- `api-gw-custom-domain.yaml`: `/infra` base path mapping removed (had to go **before** deleting the infra API — a BasePathMapping blocks RestApi deletion).
+- Frontend: `useSqs` hook and the SQS queue-length widget removed.
+
+On restore with a new queue consumer: re-add the SQS send in `url-add` (keep DynamoDB as the critical write!), redeploy `sqs-documents.yaml` first, and restore IAM `sqs:SendMessage` in `url-add.yaml`.
 
 ### 2026-07-02 (final cleanup pass) — frontend hosting
 
