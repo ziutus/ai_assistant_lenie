@@ -113,11 +113,7 @@ Ad-hoc single-item tools and bulk import scripts live in [`imports/`](imports/CL
 Scripts marked **Yes** use `WebsitesDBPostgreSQL` with SQLAlchemy ORM session (`get_session()` from `library.db.engine`). The same applies to all scripts in `imports/`.
 
 - **Local/Docker**: Connect to local PostgreSQL (`lenie-ai-db` on port 5433) — works out of the box.
-- **AWS RDS**: The database runs inside a private VPC and is not publicly accessible. To connect from a local machine, start the OpenVPN EC2 instance first:
-  ```bash
-  make aws-start-openvpn   # Start OpenVPN EC2 and update Route53 DNS
-  ```
-  Then connect to OpenVPN before running the scripts. The `.env` file must contain the RDS endpoint as `POSTGRESQL_HOST`.
+- **AWS RDS**: decommissioned 2026-07-02 (unused since ~2026-04; document sync now goes DynamoDB → S3 → local Postgres via `imports/dynamodb_sync.py`). The OpenVPN EC2 instance that provided access to it has also been terminated.
 
 ## Running
 

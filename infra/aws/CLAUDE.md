@@ -5,7 +5,7 @@ AWS infrastructure for Project Lenie. As a hobby project, three IaC approaches a
 - **Terraform** - VPC + bastion host (subset for learning)
 - **CDK** - not yet implemented
 
-Cost optimization is a priority. DynamoDB is used for data that doesn't need complex queries (metadata buffer for new entries before they reach RDS, cross-environment synchronization). RDS is started/stopped on demand via Step Functions and Lambda.
+Cost optimization is a priority. DynamoDB is used for data that doesn't need complex queries — the metadata buffer for new entries, and the source for cross-environment synchronization (`imports/dynamodb_sync.py` pulls into local Postgres). RDS (PostgreSQL) was decommissioned 2026-07-02: it sat idle since ~2026-04 (only DynamoDB was actually being used for document metadata), so the instance, its start/stop Step Function, the OpenVPN bastion used to reach it, and the RDS-password secret were all removed. A final snapshot (`lenie-dev-final-snapshot-20260702`) was kept as a safety net.
 
 ## Architecture Design Principles
 
@@ -15,15 +15,15 @@ AWS API Gateway is the entry point to the cloud solution. As a fully managed ser
 
 ### Scalable Asynchronous Ingestion via SQS
 
-Individual document uploads can be several hundred KB to 1 MB (full webpage content including HTML/JavaScript), and SQS decouples ingestion from processing. Incoming documents are placed in an SQS queue and processed in batches when RDS is started. This pattern serves two purposes: cost optimization (RDS runs only when needed) and learning how to build scalable, decoupled architectures.
+Individual document uploads can be several hundred KB to 1 MB (full webpage content including HTML/JavaScript), and SQS decouples ingestion from processing. **Note:** the original SQS→RDS batch-processing consumer was removed along with RDS (2026-07-02); `sqs-weblink-put-into` still enqueues a message after writing to DynamoDB, but nothing currently consumes the queue — messages simply expire after the 14-day retention window. Follow-up: either wire up a new consumer or stop enqueueing.
 
 ### DynamoDB for Cloud-Local Synchronization
 
-DynamoDB serves as a persistent, always-available store for document metadata. Data sent from mobile devices (phone, tablet) via the Chrome extension lands in DynamoDB immediately, regardless of whether the PostgreSQL database is running. This enables the local database to be synchronized with cloud data at any time — the cloud acts as a continuously available buffer that the local environment can pull from.
+DynamoDB serves as a persistent, always-available store for document metadata. Data sent from mobile devices (phone, tablet) via the Chrome extension lands in DynamoDB immediately. This enables the local database to be synchronized with cloud data at any time via `imports/dynamodb_sync.py` — the cloud acts as a continuously available buffer that the local environment pulls from. This is now the sole cloud→local sync path (RDS is decommissioned).
 
 ### Cost Optimization
 
-No NAT Gateway (saves ~$30/month), RDS started/stopped on demand via Step Functions, DynamoDB PAY_PER_REQUEST billing, budget alerts at $8/month.
+No NAT Gateway (saves ~$30/month), DynamoDB PAY_PER_REQUEST billing, budget alerts at $8/month. RDS (and its Step Functions start/stop automation) was removed entirely 2026-07-02 rather than kept as a stop/start-on-demand resource, since it had gone unused for months.
 
 ### Lambda Serverless Constraints
 
@@ -56,7 +56,7 @@ aws/
 ## Subdirectories
 
 ### cloudformation/
-Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. 30 templates in deploy.ini [dev] + 3 in [common] (40 total .yaml files) organized by layer: networking (VPC), database (RDS, DynamoDB), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (2 REST APIs: app 11 + infra 7 endpoints, custom domain with base path mappings), orchestration (Step Functions), CDN (CloudFront for app, app2, landing page), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for authoritative counts.
+Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. Templates organized by layer: networking (VPC), database (DynamoDB — RDS decommissioned 2026-07-02), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (2 REST APIs: app 11 + infra 1 endpoint, custom domain with base path mappings), CDN (CloudFront for app, app2, landing page), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for authoritative counts.
 
 ### serverless/
 Lambda function source code and Lambda layer build scripts (psycopg2, lenie_all, openai). 8 Lambda functions total: 6 CF-managed (3 simple infrastructure in api-gw-infra.yaml + 3 S3-packaged app functions) and 2 non-CF-managed (`lenie-dev-app-server-db`, `lenie-dev-app-server-internet`). Includes packaging script (`zip_to_s3.sh`). See `serverless/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for full inventory.
@@ -68,13 +68,7 @@ EKS cluster configurations. Main cluster `lenie-ai` (K8s 1.31, spot instances, u
 Terraform configuration (AWS provider ~> 5.0) covering VPC with 4 subnets (2 public + 2 private) and an EC2 bastion host module. Exists primarily for IaC comparison purposes. See `terraform/CLAUDE.md` for details.
 
 ### tools/
-Single CLI script `aws_ec2_route53.py` that starts an EC2 instance, waits for it to be running, retrieves its public IP, and upserts a Route53 A record. Accepts `--instance-id`, `--hosted-zone-id`, `--domain-name` arguments (with env var fallback).
-
-Invoked via Makefile targets from the project root (variables loaded from `.env`):
-
-```bash
-make aws-start-openvpn    # Start OpenVPN EC2 and update DNS
-```
+Single CLI script `aws_ec2_route53.py` that starts an EC2 instance, waits for it to be running, retrieves its public IP, and upserts a Route53 A record. Accepts `--instance-id`, `--hosted-zone-id`, `--domain-name` arguments (with env var fallback). Its Makefile target (`aws-start-openvpn`) was removed 2026-07-02 along with the OpenVPN instance it targeted (RDS decommissioned, so the bastion had no remaining purpose); the script itself is generic and could still be reused for other instances.
 
 Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently in use. See `docs/CICD/Jenkins.md` for restoration instructions.
 
@@ -88,19 +82,16 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 
 | Service | Purpose |
 |---------|---------|
-| VPC | Networking with public/private/DB subnets |
-| RDS (PostgreSQL) | Primary document database with pgvector |
-| DynamoDB | Document metadata buffer, cross-env sync |
-| SQS | Asynchronous document processing queue |
+| VPC | Networking with public/private/DB subnets (a separate, currently-empty leftover VPC also exists — see Known Issues) |
+| DynamoDB | Document metadata store, cross-env sync (now the sole cloud document store — RDS decommissioned 2026-07-02) |
+| SQS | Document processing queue — currently has no consumer since the RDS pipeline was removed (see "Scalable Asynchronous Ingestion via SQS" above) |
 | SNS | Error notifications via email |
 | S3 | Lambda code artifacts, video transcriptions, web content |
-| Lambda | 8 functions (6 CF-managed + 2 non-CF) for infra management and app logic |
-| API Gateway | 2 REST APIs (app: 11 endpoints including /url_add, infra: 7 endpoints) + custom domain `api.{env}.lenie-ai.eu` with base path mappings |
-| Step Functions | SQS-to-RDS workflow with auto DB start/stop |
-| EC2 | Application server, bastion host, OpenVPN (Jenkins previously used, currently inactive) |
+| Lambda | Infra management (`sqs-size`) and app logic (`app-server-db`, `app-server-internet`, `url-add`, etc.) |
+| API Gateway | 2 REST APIs (app: 11 endpoints including /url_add, infra: 1 endpoint — `/sqs/size`) + custom domain `api.{env}.lenie-ai.eu` with base path mappings |
+| EC2 | Application server (currently orphaned/stale CF-tracked instance, see `serverless/CLAUDE.md`) |
 | EKS | Kubernetes cluster (alternative deployment target) |
 | Route53 | DNS for lenie-ai.eu domain |
-| Secrets Manager | Database credentials (auto-generated via `GenerateSecretString`, ARN exported to SSM) |
 | SSM Parameter Store | Cross-stack value sharing |
 | CloudWatch | Logging, Step Function execution monitoring |
 | Budgets | Cost alerts ($8/month threshold) |

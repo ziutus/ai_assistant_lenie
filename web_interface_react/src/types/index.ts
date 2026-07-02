@@ -4,10 +4,6 @@ export type { ApiType, WebDocument, SearchResult, ListItem } from '@lenie/shared
 export { emptyDocument, DEFAULT_API_URLS } from '@lenie/shared/types';
 
 export interface AuthorizationState {
-  databaseStatus: string;
-  setDatabaseStatus: React.Dispatch<React.SetStateAction<string>>;
-  vpnServerStatus: string;
-  setVpnServerStatus: React.Dispatch<React.SetStateAction<string>>;
   apiKey: string | undefined;
   setApiKey: React.Dispatch<React.SetStateAction<string | undefined>>;
   apiUrl: string;

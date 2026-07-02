@@ -8,15 +8,13 @@ export const useList = () => {
   const [message, setMessage] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isError, setIsError] = React.useState(false);
-  const { apiKey, apiUrl, databaseStatus } = React.useContext(AuthorizationContext);
+  const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const { selectedDocumentType, selectedDocumentState} = React.useContext(AuthorizationContext);
 
   React.useEffect(() => {
-    if (databaseStatus === "available") {
-      handleGetList(selectedDocumentType, selectedDocumentState).then(() => null);
-    }
+    handleGetList(selectedDocumentType, selectedDocumentState).then(() => null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [databaseStatus]);
+  }, []);
 
   const handleGetList = async (type: string, documentState: string, searchInDocument?: string) => {
     setIsLoading(true);
