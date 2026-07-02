@@ -81,14 +81,8 @@ Resources:
       RestApiId: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/apigateway/app/id}}'
       Stage: v1
 
-  # Base Path Mapping: /infra -> infra API, stage v1
-  InfraBasePathMapping:
-    Type: AWS::ApiGateway::BasePathMapping
-    Properties:
-      DomainName: !Ref ApiDomainName
-      BasePath: infra
-      RestApiId: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/apigateway/infra/id}}'
-      Stage: v1
+  # /infra base path mapping removed 2026-07-02 — the infra API (last endpoint: /sqs/size)
+  # was deleted along with the SQS pipeline. See docs/aws-serverless-restoration.md
 
   # Route53 A-record alias pointing to API Gateway regional domain
   ApiDnsRecord:

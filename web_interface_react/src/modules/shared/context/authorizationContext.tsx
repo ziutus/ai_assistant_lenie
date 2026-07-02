@@ -9,8 +9,6 @@ export const AuthorizationContext = createContext<AuthorizationState>({
   setApiUrl: () => {},
   apiType: "AWS Serverless",
   setApiType: () => {},
-  sqsLength: -1,
-  setSqsLength: () => {},
   searchInDocument: "",
   setSearchInDocument: () => {},
   searchType: "strict",
@@ -25,7 +23,6 @@ const AuthorizationProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Lazy init from localStorage
   const saved = loadConnectionConfig();
 
-  const [sqsLength, setSqsLength] = React.useState(0);
   const [apiKey, setApiKey] = React.useState<string | undefined>(saved.apiKey);
   const [apiType, setApiType] = React.useState<ApiType>(saved.apiType);
   const [apiUrl, setApiUrl] = React.useState(saved.apiUrl);
@@ -54,8 +51,6 @@ const AuthorizationProvider: React.FC<{ children: React.ReactNode }> = ({ childr
         setApiUrl,
         apiType,
         setApiType,
-        sqsLength,
-        setSqsLength,
         searchInDocument,
         setSearchInDocument,
         selectedDocumentType,

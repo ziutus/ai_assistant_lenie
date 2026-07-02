@@ -132,8 +132,8 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `sqs-documents.yaml` | SQS Queue, SSM Parameters | Document processing queue (14-day retention) |
-| `sqs-application-errors.yaml` | SQS (DLQ), SNS Topic, Subscription | Dead Letter Queue with email notification |
+| ~~`sqs-documents.yaml`~~ | ~~SQS Queue, SSM Parameters~~ | **Stack deleted 2026-07-02** — queue had no consumer since the SQS→RDS pipeline was removed |
+| ~~`sqs-application-errors.yaml`~~ | ~~SQS (DLQ), SNS Topic, Subscription~~ | **Stack deleted 2026-07-02** (DLQ + email for the removed queue) |
 
 ### Storage
 
@@ -162,7 +162,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | ~~`ec2-lenie.yaml`~~ | ~~EC2 (t4g.micro ARM64), SG, IAM~~ | **Stack deleted 2026-07-02** — its instance no longer existed (stack was orphaned). |
 | `lenie-launch-template.yaml` | Launch Template | EC2 launch template |
 | `lambda-rds-start.yaml` | Lambda, IAM Role | REDUNDANT — commented out in deploy.ini; rds-start Lambda is managed by api-gw-infra.yaml. Delete stack `lenie-dev-lambda-rds-start` manually. |
-| `lambda-weblink-put-into-sqs.yaml` | Lambda | Function to put web links into SQS. Note: the queue it writes to has had no consumer since `sqs-to-rds-lambda` was deleted (2026-07-02) — messages just expire after 14 days. |
+| ~~`lambda-weblink-put-into-sqs.yaml`~~ | ~~Lambda~~ | **Stack deleted 2026-07-02** (0 invocations in 180 days; removed with the SQS pipeline) |
 | ~~`sqs-to-rds-lambda.yaml`~~ | ~~Lambda, IAM Role~~ | **Deleted 2026-07-02** (stack `lenie-dev-sqs-to-rds-lambda`). Transferred messages from SQS to RDS; removed along with RDS. |
 | `app-server-internet.yaml` | Lambda, IAM Role | **NOT deployed** — least-privilege reference template kept for restoring the `app-server-internet` Lambda (deleted 2026-07-02; the old manually-created role had `AdministratorAccess`). Commented out in deploy.ini. See [docs/aws-serverless-restoration.md](../../../docs/aws-serverless-restoration.md). |
 | `url-add.yaml` | Lambda, IAM, Logs | URL addition Lambda function (API GW removed — `/url_add` endpoint served via `api-gw-app.yaml`) |
@@ -172,9 +172,9 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `api-gw-account.yaml` | IAM Role, API GW Account, SSM Parameter | Account-level CloudWatch IAM role for API Gateway logging. Sets `cloudwatchRoleArn` on `AWS::ApiGateway::Account` (singleton per account/region). Role ARN exported to SSM at `/${ProjectCode}/${Environment}/apigw/cloudwatch-role-arn`. Must be deployed before any API Gateway templates that use stage logging. |
-| `api-gw-infra.yaml` | REST API, 1 Lambda, 1 IAM Role, SSM | Infrastructure management API — trimmed to a single endpoint (`/sqs/size`, `sqs-size` Lambda) on 2026-07-02. Previously also had `rds-manager` and `ec2-manager` (RDS + OpenVPN start/stop/status), removed when RDS was decommissioned. Paths without `/infra` prefix (routing via custom domain base path mapping). Exports API ID and invoke URL to SSM. |
+| ~~`api-gw-infra.yaml`~~ | ~~REST API, 1 Lambda, 1 IAM Role, SSM~~ | **Stack deleted 2026-07-02** — its last endpoint (`/sqs/size`) lost purpose when the SQS queue was removed. Earlier the same day it had already been trimmed from 7 endpoints (rds-manager/ec2-manager removed with RDS). |
 | `api-gw-app.yaml` | REST API, Stage, Lambda Permission, SSM | Main application API — trimmed to a single endpoint (`/url_add` → `url-add` Lambda) on 2026-07-02 when the app-server-db/internet Lambdas were deleted. Full 11-endpoint version: `git show e9e7e20:infra/aws/cloudformation/templates/api-gw-app.yaml`. Separate `ApiStage` resource manages v1 stage settings (logging, tracing, metrics). Exports API ID, root resource ID, and invoke URL to SSM. |
-| `api-gw-custom-domain.yaml` | ACM Certificate, API GW DomainName, BasePathMappings, Route53, SSM | Custom domain `api.{env}.lenie-ai.eu` with TLS 1.2. Root path (`/`) maps to app API, `/infra` maps to infra API. DNS validation via Route53. |
+| `api-gw-custom-domain.yaml` | ACM Certificate, API GW DomainName, BasePathMapping, Route53, SSM | Custom domain `api.{env}.lenie-ai.eu` with TLS 1.2. Root path (`/`) maps to the app API (`/infra` mapping removed 2026-07-02 with the infra API). DNS validation via Route53. |
 
 **`api-gw-app` stage configuration (managed by CloudFormation):**
 The `v1` stage is managed by a separate `ApiStage` resource (`AWS::ApiGateway::Stage`) in `api-gw-app.yaml`. Stage settings:
@@ -185,7 +185,6 @@ The `v1` stage is managed by a separate `ApiStage` resource (`AWS::ApiGateway::S
 
 These settings apply to all methods/resources via wildcard `MethodSettings` (`HttpMethod: '*'`, `ResourcePath: '/*'`). The `ApiDeployment` resource retains `StageName: v1` (CloudFormation does not support removing it from an existing resource). The required account-level CloudWatch IAM role is managed by `api-gw-account.yaml` (deployed as first entry in Layer 6).
 
-**Note:** `api-gw-infra` does NOT currently have stage logging or tracing configured in its CloudFormation template.
 
 ### Orchestration
 
@@ -260,8 +259,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `dynamodb-documents.yaml` - documents table
 - `s3-website-content.yaml` - website content storage
 - ~~`s3-app-web.yaml`~~ / ~~`s3-app2-web.yaml`~~ - REMOVED 2026-07-02 (frontend hosting, no backend after app-server-db removal)
-- `sqs-documents.yaml` - document processing queue (no consumer since the RDS pipeline was removed — see "Orchestration" above)
-- `sqs-application-errors.yaml` - DLQ with email notification
+- ~~`sqs-documents.yaml`~~ / ~~`sqs-application-errors.yaml`~~ - REMOVED 2026-07-02 (SQS pipeline fully retired)
 - ~~`rds.yaml`~~ - RDS decommissioned 2026-07-02 (was never actually CF-managed despite the template; deleted directly via the RDS API, final snapshot retained)
 
 ### Layer 5: Compute
@@ -271,13 +269,13 @@ Stacks have dependencies between them. When creating a new environment from scra
 - ~~`ec2-lenie.yaml`~~ - REMOVED 2026-07-02 (orphaned: the CF-tracked instance no longer existed)
 - `lenie-launch-template.yaml` - EC2 launch template (still deployed; of limited use now that ec2-lenie is gone — candidate for removal)
 - ~~`lambda-rds-start.yaml`~~ - REDUNDANT, commented out (rds-start Lambda managed by api-gw-infra.yaml)
-- `lambda-weblink-put-into-sqs.yaml` - Lambda for SQS ingestion
+- ~~`lambda-weblink-put-into-sqs.yaml`~~ - REMOVED 2026-07-02 (unused SQS ingestion Lambda)
 - ~~`sqs-to-rds-lambda.yaml`~~ - REMOVED 2026-07-02 (SQS to RDS transfer Lambda, deleted with RDS)
 - `url-add.yaml` - URL addition Lambda (no API Gateway — served via `api-gw-app.yaml`)
 
 ### Layer 6: API
 - `api-gw-account.yaml` - account-level CloudWatch IAM role (prerequisite for API GW logging)
-- `api-gw-infra.yaml` - infrastructure management API (1 endpoint — `/sqs/size` — since RDS/OpenVPN management was removed 2026-07-02)
+- ~~`api-gw-infra.yaml`~~ - REMOVED 2026-07-02 (infra API retired with the SQS pipeline)
 - `api-gw-app.yaml` - main application API (11 endpoints including /url_add)
 - `api-gw-custom-domain.yaml` - custom domain `api.{env}.lenie-ai.eu` with base path mappings (root → app API, `/infra` → infra API)
 
@@ -301,5 +299,5 @@ The landing page is a production resource, not per-environment. Deploy separatel
 
 - All stacks use `CAPABILITY_NAMED_IAM` (creating IAM resources with custom names).
 - SSM Parameters (`AWS::SSM::Parameter`) are used to pass values between stacks (e.g. VPC ID, subnet ID).
-- Lambdas use code from the S3 bucket (`s3-cloudformation`) under the `lambdas/` prefix (e.g., `s3://lenie-dev-cloudformation/lambdas/lenie-dev-sqs-size.zip`). Code must be uploaded before deploying Lambda templates.
+- Lambdas use code from the S3 bucket (`s3-cloudformation`) under the `lambdas/` prefix (e.g., `s3://lenie-dev-cloudformation/lambdas/lenie-dev-url-add.zip`). Code must be uploaded before deploying Lambda templates.
 - Step Function automatically starts and stops RDS to save costs.

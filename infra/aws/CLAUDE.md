@@ -15,7 +15,7 @@ AWS API Gateway is the entry point to the cloud solution. As a fully managed ser
 
 ### Scalable Asynchronous Ingestion via SQS
 
-Individual document uploads can be several hundred KB to 1 MB (full webpage content including HTML/JavaScript), and SQS decouples ingestion from processing. **Note:** the original SQS→RDS batch-processing consumer was removed along with RDS (2026-07-02); `sqs-weblink-put-into` still enqueues a message after writing to DynamoDB, but nothing currently consumes the queue — messages simply expire after the 14-day retention window. Follow-up: either wire up a new consumer or stop enqueueing.
+**Removed 2026-07-02.** The SQS decoupling pattern (ingest → queue → batch-process into RDS when started) was retired together with RDS. `url-add` now writes synchronously to S3 + DynamoDB only — at the current single-user volume this is sufficient. If high-volume ingestion ever returns, restore the queue from `sqs-documents.yaml` and re-add the send in `url-add` (see [docs/aws-serverless-restoration.md](../../docs/aws-serverless-restoration.md)).
 
 ### DynamoDB for Cloud-Local Synchronization
 
@@ -56,10 +56,10 @@ aws/
 ## Subdirectories
 
 ### cloudformation/
-Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. Templates organized by layer: networking (VPC), database (DynamoDB — RDS decommissioned 2026-07-02), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (2 REST APIs: app 11 + infra 1 endpoint, custom domain with base path mappings), CDN (CloudFront for app, app2, landing page), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for authoritative counts.
+Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. Templates organized by layer: database (DynamoDB), storage (S3), compute (Lambda), API Gateway (1 REST API: app with the single `/url_add` endpoint, custom domain), CDN (CloudFront for the landing page), organization (SCPs, Identity Store), and monitoring (budgets). Many templates are retained in the repo but commented out in deploy.ini after the 2026-07-02 decommission (RDS, SQS, VPC, frontend hosting). See `cloudformation/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for authoritative counts.
 
 ### serverless/
-Lambda function source code and Lambda layer build scripts (psycopg2, lenie_all, openai). 3 deployed Lambda functions remain (`url-add`, `sqs-weblink-put-into`, `sqs-size` — all CF-managed). The app-server-db/internet document-serving Lambdas (formerly non-CF-managed) were deleted 2026-07-02; their sources and sanitized config snapshots stay in the repo for restoration. Includes packaging script (`zip_to_s3.sh`). See `serverless/CLAUDE.md` for details and [docs/aws-serverless-restoration.md](../../docs/aws-serverless-restoration.md) for the restoration guide.
+Lambda function source code and Lambda layer build scripts (psycopg2, lenie_all, openai). **1 deployed Lambda function remains: `url-add`** (CF-managed; source in `lambdas/url-add/`). `sqs-weblink-put-into` and `sqs-size` were deleted 2026-07-02 with the SQS pipeline. The app-server-db/internet document-serving Lambdas (formerly non-CF-managed) were deleted 2026-07-02; their sources and sanitized config snapshots stay in the repo for restoration. Includes packaging script (`zip_to_s3.sh`). See `serverless/CLAUDE.md` for details and [docs/aws-serverless-restoration.md](../../docs/aws-serverless-restoration.md) for the restoration guide.
 
 ### eks/
 EKS cluster configurations. Main cluster `lenie-ai` (K8s 1.31, spot instances, us-east-1) and a Karpenter POC cluster. Managed via `eksctl` with addons: EBS CSI Driver, Metrics Server, Stakater Reloader, AWS Load Balancer Controller. Includes automated deployment script for Karpenter setup. See `eks/CLAUDE.md` for details.
@@ -84,11 +84,10 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 |---------|---------|
 | VPC | Only the AWS default VPC remains — the empty CF-managed VPC (`lenie-dev-vpc`) and its SSH security-groups stack were deleted 2026-07-02 |
 | DynamoDB | Document metadata store, cross-env sync (now the sole cloud document store — RDS decommissioned 2026-07-02) |
-| SQS | Document processing queue — currently has no consumer since the RDS pipeline was removed (see "Scalable Asynchronous Ingestion via SQS" above) |
 | SNS | Error notifications via email |
 | S3 | Lambda code artifacts, video transcriptions, web content |
-| Lambda | 3 functions: `url-add` (Chrome extension ingestion), `sqs-weblink-put-into`, `sqs-size`. The app-server-db/internet document-serving Lambdas were deleted 2026-07-02 — see [docs/aws-serverless-restoration.md](../../docs/aws-serverless-restoration.md) |
-| API Gateway | 2 REST APIs (app: 1 endpoint — `/url_add`; infra: 1 endpoint — `/sqs/size`) + custom domain `api.{env}.lenie-ai.eu` with base path mappings |
+| Lambda | 1 function: `url-add` (Chrome extension ingestion → S3 + DynamoDB). All others deleted 2026-07-02 — see [docs/aws-serverless-restoration.md](../../docs/aws-serverless-restoration.md) |
+| API Gateway | 1 REST API (app: single `/url_add` endpoint) + custom domain `api.{env}.lenie-ai.eu` (root mapping only) |
 | EC2 | None running — the orphaned `ec2-lenie` stack was deleted 2026-07-02; only the (unused) launch template stack remains |
 | EKS | Kubernetes cluster (alternative deployment target) |
 | Route53 | DNS for lenie-ai.eu domain |
