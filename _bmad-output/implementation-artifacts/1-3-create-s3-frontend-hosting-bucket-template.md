@@ -138,7 +138,7 @@ Resources:
       "Resource": "arn:aws:s3:::lenie-dev-app-web/*",
       "Condition": {
         "StringEquals": {
-          "AWS:SourceArn": "arn:aws:cloudfront::008971653395:distribution/ETIQTXICZBECA"
+          "AWS:SourceArn": "arn:aws:cloudfront::<AWS_ACCOUNT_ID_PROD>:distribution/ETIQTXICZBECA"
         }
       }
     }

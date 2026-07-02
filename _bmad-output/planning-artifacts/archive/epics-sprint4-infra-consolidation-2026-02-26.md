@@ -152,11 +152,11 @@ So that I can verify I'm deploying to the correct account and abort if something
 
 **Given** `env.sh` is sourced (default)
 **When** the script displays account info
-**Then** account `008971653395` and profile `default` are shown
+**Then** account `<AWS_ACCOUNT_ID_PROD>` and profile `default` are shown
 
 **Given** `env_lenie_2025.sh` is sourced instead
 **When** the script displays account info
-**Then** account `049706517731` and profile `lenie-ai-2025-admin` are shown
+**Then** account `<AWS_ACCOUNT_ID_LEGACY>` and profile `lenie-ai-2025-admin` are shown
 
 **FRs covered:** FR22, FR23, FR24, FR25
 

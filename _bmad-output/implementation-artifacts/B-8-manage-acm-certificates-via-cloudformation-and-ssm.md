@@ -90,7 +90,7 @@ so that certificate lifecycle is tracked by IaC, hardcoded ARNs are eliminated f
   - [x] 7.1 Deploy via WSL: `deploy.sh -p lenie -s dev -y`
   - [x] 7.2 Created `lenie-dev-acm-certificates` (wildcard cert `8c2c0d08-...`), updated `lenie-dev-cloudfront-app`, `lenie-dev-cloudfront-app2`, `lenie-dev-helm`
   - [x] 7.3 DNS validation completed automatically during cert creation
-  - [x] 7.4 Verified SSM parameter `/lenie/dev/acm/cloudfront/arn` = `arn:aws:acm:us-east-1:008971653395:certificate/8c2c0d08-61c1-4e6e-abd9-4c5add6bd4f6`
+  - [x] 7.4 Verified SSM parameter `/lenie/dev/acm/cloudfront/arn` = `arn:aws:acm:us-east-1:<AWS_ACCOUNT_ID_PROD>:certificate/8c2c0d08-61c1-4e6e-abd9-4c5add6bd4f6`
   - [x] 7.5 Verified HTTPS: `app.dev.lenie-ai.eu` (200), `app2.dev.lenie-ai.eu` (200), helm stack UPDATE_COMPLETE (DNS not resolvable from local machine — Route53 record not in helm.yaml template)
 
 - [x] **Task 8: Post-migration cleanup**
@@ -111,10 +111,10 @@ Three ACM certificates used by CloudFront are **manually created** in the AWS Co
 
 | Parameter File | ARN | Domains Covered |
 |---|---|---|
-| `cloudfront-app.json` | `arn:aws:acm:us-east-1:008971653395:certificate/dac6547e-...` | `app.dev.lenie-ai.eu` (individual cert) |
-| `cloudfront-app2.json` | `arn:aws:acm:us-east-1:008971653395:certificate/b8e53a10-...` | `*.dev.lenie-ai.eu` (wildcard) |
-| `helm.json` | `arn:aws:acm:us-east-1:008971653395:certificate/b8e53a10-...` | Same wildcard as app2 |
-| `cloudfront-landing.json` | `arn:aws:acm:us-east-1:008971653395:certificate/086deba9-...` | `www.lenie-ai.eu` (individual cert) |
+| `cloudfront-app.json` | `arn:aws:acm:us-east-1:<AWS_ACCOUNT_ID_PROD>:certificate/dac6547e-...` | `app.dev.lenie-ai.eu` (individual cert) |
+| `cloudfront-app2.json` | `arn:aws:acm:us-east-1:<AWS_ACCOUNT_ID_PROD>:certificate/b8e53a10-...` | `*.dev.lenie-ai.eu` (wildcard) |
+| `helm.json` | `arn:aws:acm:us-east-1:<AWS_ACCOUNT_ID_PROD>:certificate/b8e53a10-...` | Same wildcard as app2 |
+| `cloudfront-landing.json` | `arn:aws:acm:us-east-1:<AWS_ACCOUNT_ID_PROD>:certificate/086deba9-...` | `www.lenie-ai.eu` (individual cert) |
 
 The `api-gw-custom-domain.yaml` (story 17-5) already manages its ACM cert via CloudFormation — that cert is out of scope for B-8.
 

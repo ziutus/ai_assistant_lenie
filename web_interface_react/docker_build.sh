@@ -4,9 +4,10 @@ set -e
 
 DOCKER_IMAGE_NAME="lenie-ai-frontend"
 TAG="0.2.7.1"
-AWS_REPO=" 008971653395.dkr.ecr.us-east-1.amazonaws.com"
 AWS_PROFILE="lenie_admin"
 AWS_REGION="us-east-1"
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --profile ${AWS_PROFILE} --query Account --output text)
+AWS_REPO="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
 AWS_ECR_NAME_SPACE="lenie-ai-frontend"
 
 echo "Building image locally"

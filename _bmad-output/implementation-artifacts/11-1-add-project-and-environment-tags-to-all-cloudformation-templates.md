@@ -276,11 +276,11 @@ None — all changes passed cfn-lint validation on first attempt (except pre-exi
      - `url-add.yaml` — FunctionName, S3Key, BUCKET_NAME, S3 ARN in IAM policy, API name, ApiKey name, UsagePlan name — all changed from `lenie-dev-*` to `!Sub '${ProjectCode}-${Environment}-*'`
      - `sqs-to-rds-lambda.yaml` — FunctionName, S3Key — changed from `lenie-dev-*` to `!Sub '${ProjectCode}-${Environment}-*'`
    - **Not fixed (remaining pre-existing debt):**
-     - `url-add.yaml` — SQS URL and ARN with hardcoded account ID `008971653395` and queue `lenie_websites` (legacy queue, not managed by this project's CF templates)
+     - `url-add.yaml` — SQS URL and ARN with hardcoded account ID `<AWS_ACCOUNT_ID_PROD>` and queue `lenie_websites` (legacy queue, not managed by this project's CF templates)
      - `sqs-to-rds-step-function.yaml:51` — SQS ARN with hardcoded `lenie_websites` queue name
      - `sqs-to-rds-step-function.yaml:61` — Lambda function ARN `lenie-sqs-to-db` (name mismatch with actual FunctionName)
      - `sqs-to-rds-lambda.yaml` — hardcoded subnet IDs, security group ID, RDS hostname, DB credentials, Lambda layer ARNs with account IDs
-     - `lambda-weblink-put-into-sqs.yaml:22` — hardcoded test IAM Role ARN from different account (`049706517731` instead of `008971653395`)
+     - `lambda-weblink-put-into-sqs.yaml:22` — hardcoded test IAM Role ARN from different account (`<AWS_ACCOUNT_ID_LEGACY>` instead of `<AWS_ACCOUNT_ID_PROD>`)
    - **Next sprint item:** S3 bucket name unification — `s3-cloudformation.yaml` creates `${ProjectCode}-2025-${Environment}-cloudformation` but canonical pattern is `${ProjectCode}-${Environment}-cloudformation` (without `2025`). Rename bucket to remove `2025` and update all references.
    - **Deployment note:** Export name change in `sqs-application-errors.yaml` requires coordinated deployment — update `sqs-to-rds-step-function.yaml` first (remove old ImportValue), then update `sqs-application-errors.yaml` export, then re-deploy step-function with new ImportValue. Alternatively, delete and recreate both stacks.
 

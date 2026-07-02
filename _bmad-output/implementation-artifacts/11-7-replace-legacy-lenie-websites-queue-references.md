@@ -7,14 +7,14 @@ Status: done
 ## Story
 
 As a **developer**,
-I want to replace hardcoded references to the legacy `lenie_websites` SQS queue (including account ID `008971653395`) across CloudFormation templates,
+I want to replace hardcoded references to the legacy `lenie_websites` SQS queue (including account ID `<AWS_ACCOUNT_ID_PROD>`) across CloudFormation templates,
 so that all queue references are parameterized and consistent with the project's SSM-based naming convention.
 
 ## Acceptance Criteria
 
-1. **AC1 — url-add.yaml SQS URL parameterized:** The hardcoded `AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites` environment variable in `url-add.yaml` is replaced with an SSM parameter reference consuming `/lenie/dev/sqs/documents/url` (already exported by `sqs-documents.yaml`).
+1. **AC1 — url-add.yaml SQS URL parameterized:** The hardcoded `AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/<AWS_ACCOUNT_ID_PROD>/lenie_websites` environment variable in `url-add.yaml` is replaced with an SSM parameter reference consuming `/lenie/dev/sqs/documents/url` (already exported by `sqs-documents.yaml`).
 
-2. **AC2 — url-add.yaml SQS IAM policy parameterized:** The hardcoded `Resource: "arn:aws:sqs:us-east-1:008971653395:lenie_websites"` in the `SendDataToSQS` IAM policy is replaced with a dynamically constructed ARN using `!Sub` with `${AWS::Region}`, `${AWS::AccountId}`, and a parameterized queue name.
+2. **AC2 — url-add.yaml SQS IAM policy parameterized:** The hardcoded `Resource: "arn:aws:sqs:us-east-1:<AWS_ACCOUNT_ID_PROD>:lenie_websites"` in the `SendDataToSQS` IAM policy is replaced with a dynamically constructed ARN using `!Sub` with `${AWS::Region}`, `${AWS::AccountId}`, and a parameterized queue name.
 
 3. **AC3 — sqs-to-rds-step-function.yaml SQS IAM policy parameterized:** The hardcoded `Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:lenie_websites"` in the `StateMachinePolicy` IAM policy (line 60) is replaced with a parameterized queue name (matching the queue resolved from SSM parameter `SqsDocumentsQueueUrl`).
 
@@ -59,7 +59,7 @@ so that all queue references are parameterized and consistent with the project's
   - [x] 6.1 Run `cfn-lint infra/aws/cloudformation/templates/url-add.yaml` — zero errors ✅
   - [x] 6.2 Run `cfn-lint infra/aws/cloudformation/templates/sqs-to-rds-step-function.yaml` — zero errors ✅
   - [x] 6.3 Run `grep -r "lenie_websites" infra/aws/cloudformation/templates/` — zero matches ✅
-  - [x] 6.4 Verify zero hardcoded account ID `008971653395` remains in either modified template ✅
+  - [x] 6.4 Verify zero hardcoded account ID `<AWS_ACCOUNT_ID_PROD>` remains in either modified template ✅
 
 ## Dev Notes
 
@@ -71,10 +71,10 @@ Three CloudFormation templates reference the legacy SQS queue name `lenie_websit
 
 ```yaml
 # url-add.yaml line 45 — Lambda env var
-AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites
+AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/<AWS_ACCOUNT_ID_PROD>/lenie_websites
 
 # url-add.yaml line 96 — IAM policy
-Resource: "arn:aws:sqs:us-east-1:008971653395:lenie_websites"
+Resource: "arn:aws:sqs:us-east-1:<AWS_ACCOUNT_ID_PROD>:lenie_websites"
 
 # sqs-to-rds-step-function.yaml line 60 — IAM policy
 Resource: !Sub "arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:lenie_websites"
@@ -138,7 +138,7 @@ These are noted for awareness but NOT addressed in this story.
 
 **Anti-patterns to avoid:**
 - Do NOT use `Fn::ImportValue` — project standard is SSM Parameters (note: `url-add.yaml` line 117 already uses ImportValue but that's out of scope)
-- Do NOT hardcode AWS account IDs (`008971653395`)
+- Do NOT hardcode AWS account IDs (`<AWS_ACCOUNT_ID_PROD>`)
 - Do NOT hardcode queue names without parameterization
 - Do NOT use `{{resolve:ssm:...}}` for parameters that can use `AWS::SSM::Parameter::Value<String>` type
 
@@ -193,7 +193,7 @@ cfn-lint infra/aws/cloudformation/templates/sqs-to-rds-step-function.yaml
 grep -r "lenie_websites" infra/aws/cloudformation/templates/
 # Expected: zero matches
 
-grep -r "008971653395" infra/aws/cloudformation/templates/url-add.yaml
+grep -r "<AWS_ACCOUNT_ID_PROD>" infra/aws/cloudformation/templates/url-add.yaml
 # Expected: zero matches
 ```
 
@@ -225,7 +225,7 @@ aws iam get-role-policy --role-name <StateMachineRoleName> --policy-name StateMa
 - Commit: `4a11307 chore: replace resolve:ssm with SSM Parameter types and parameterize Lambda name in step function`
 
 **From Story 7.1 (done) — Update Step Function Schedule:**
-- **Created** SSM parameters manually: `/lenie/dev/sqs/documents/url` = `https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites`
+- **Created** SSM parameters manually: `/lenie/dev/sqs/documents/url` = `https://sqs.us-east-1.amazonaws.com/<AWS_ACCOUNT_ID_PROD>/lenie_websites`
 - This means at that time, the SSM parameter pointed to the legacy `lenie_websites` queue
 - If `sqs-documents.yaml` stack was deployed after Story 7.1, the SSM value may have been overwritten to `lenie-dev-documents`
 
@@ -284,7 +284,7 @@ Claude Opus 4.6
 
 ### Completion Notes List
 
-- Task 1: Queue identity investigation complete. Only `lenie_websites` queue exists (legacy, manually created). Queue `lenie-dev-documents` does NOT exist — `sqs-documents.yaml` CF stack was never deployed. SSM parameter `/lenie/dev/sqs/documents/url` exists (created manually in Story 7.1) and points to `https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites`. No migration needed — single queue scenario.
+- Task 1: Queue identity investigation complete. Only `lenie_websites` queue exists (legacy, manually created). Queue `lenie-dev-documents` does NOT exist — `sqs-documents.yaml` CF stack was never deployed. SSM parameter `/lenie/dev/sqs/documents/url` exists (created manually in Story 7.1) and points to `https://sqs.us-east-1.amazonaws.com/<AWS_ACCOUNT_ID_PROD>/lenie_websites`. No migration needed — single queue scenario.
 - Task 2: Parameterized `url-add.yaml` SQS references. Added `SqsDocumentsUrl` (SSM-backed) parameter for queue URL env var. Added `SqsDocumentsQueueName` (String, no Default — value provided via parameter file, AllowedPattern) parameter for IAM policy ARN. Used Option A (exact queue name) per Dev Notes recommendation.
 - Task 3: Parameterized `sqs-to-rds-step-function.yaml` SQS IAM reference. Used Option B (project-scoped wildcard `${ProjectCode}*`) matching the pattern from Story 11.6 `sqs-to-rds-lambda.yaml`. No new parameter needed.
 - Task 4: Updated `parameters/dev/url-add.json` with `SqsDocumentsUrl` and `SqsDocumentsQueueName` entries. No changes needed for `sqs-to-rds-step-function.json`.
@@ -318,7 +318,7 @@ Claude Opus 4.6
 | 1 | MEDIUM | `SqsDocumentsQueueName` missing Default (deviates from Task 2.3 spec) | Fixed: added `Default: lenie_websites` and `AllowedPattern` — **Note:** Default later removed in Round 2 (violated AC7 grep check); value provided via parameter file only |
 | 2 | MEDIUM | `docs/architecture-infra.md` manual execution command non-functional (placeholder not copy-pasteable) | Fixed: replaced with inline `aws ssm get-parameter` and `aws sts get-caller-identity` |
 | 3 | MEDIUM | `infra/aws/serverless/CLAUDE.md` modified in git but not in story File List | Not this story's change (from Story 10.3/11.4 uncommitted work) — no action needed |
-| 4 | LOW | Hardcoded account ID `008971653395` in `docs/architecture-infra.md` state machine ARN | Fixed: replaced with inline `$(aws sts get-caller-identity)` |
+| 4 | LOW | Hardcoded account ID `<AWS_ACCOUNT_ID_PROD>` in `docs/architecture-infra.md` state machine ARN | Fixed: replaced with inline `$(aws sts get-caller-identity)` |
 | 5 | LOW | No `AllowedPattern` on `SqsDocumentsQueueName` (suggested by Story 11.6 precedent) | Fixed: added `AllowedPattern: '[a-zA-Z0-9_-]+'` |
 | 6 | LOW | SQS URL (SSM) and IAM queue name (parameter file) could diverge if updated independently | Fixed: added YAML comment warning about coupling |
 

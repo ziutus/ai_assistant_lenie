@@ -63,7 +63,7 @@ so that CloudWatch logging for API Gateway is fully codified in IaC and not depe
 
 ### Critical Architecture Context
 
-**Current state:** The API Gateway CloudWatch IAM role exists in AWS as `arn:aws:iam::008971653395:role/cw-ho-tf-dev-apigw` — this was created by Terraform (the `cw-ho-tf-` prefix indicates it). It is NOT managed by CloudFormation. The `AWS::ApiGateway::Account` resource does not exist in any CF template.
+**Current state:** The API Gateway CloudWatch IAM role exists in AWS as `arn:aws:iam::<AWS_ACCOUNT_ID_PROD>:role/cw-ho-tf-dev-apigw` — this was created by Terraform (the `cw-ho-tf-` prefix indicates it). It is NOT managed by CloudFormation. The `AWS::ApiGateway::Account` resource does not exist in any CF template.
 
 **Why this matters:** If this Terraform role is ever deleted, API Gateway CloudWatch logging will silently fail across ALL API Gateways in the account/region, even though `api-gw-app.yaml` has `LoggingLevel: INFO` configured. Moving this to CloudFormation ensures it's tracked, versioned, and deployed alongside other infrastructure.
 
@@ -173,7 +173,7 @@ templates/api-gw-custom-domain.yaml
 ### References
 
 - [Source: _bmad-output/implementation-artifacts/11-10-codify-api-gateway-stage-logging-and-tracing.md:92-98] — CloudWatch IAM role prerequisite documentation
-- [Source: _bmad-output/implementation-artifacts/11-10-codify-api-gateway-stage-logging-and-tracing.md:204] — Role verified as `arn:aws:iam::008971653395:role/cw-ho-tf-dev-apigw`
+- [Source: _bmad-output/implementation-artifacts/11-10-codify-api-gateway-stage-logging-and-tracing.md:204] — Role verified as `arn:aws:iam::<AWS_ACCOUNT_ID_PROD>:role/cw-ho-tf-dev-apigw`
 - [Source: infra/aws/cloudformation/CLAUDE.md:184] — Note about verifying `cloudwatchRoleArn` manually
 - [Source: docs/observability.md] — Gap: api-gw-infra stage lacks logging
 - [Source: infra/aws/cloudformation/deploy.ini:45-48] — Layer 6 API section
@@ -182,7 +182,7 @@ templates/api-gw-custom-domain.yaml
 ### Previous Story Intelligence
 
 **From Story 11-10 (done) — Codify API Gateway Stage Logging and Tracing:**
-- Verified that `cloudwatchRoleArn` is already set to `arn:aws:iam::008971653395:role/cw-ho-tf-dev-apigw`
+- Verified that `cloudwatchRoleArn` is already set to `arn:aws:iam::<AWS_ACCOUNT_ID_PROD>:role/cw-ho-tf-dev-apigw`
 - B-10 was explicitly created as a backlog item from that story
 - `StageDescription` with `LoggingLevel: INFO`, `MetricsEnabled: true`, `DataTraceEnabled: true`, `TracingEnabled: true` was added to `api-gw-app.yaml`
 - cfn-lint validation confirmed the template is valid

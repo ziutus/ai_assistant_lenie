@@ -127,7 +127,7 @@ so that the frontend CDN delivery is managed by IaC and can be recreated from co
 
 | Property | Live Value |
 |----------|-----------|
-| AcmCertificateArn | `arn:aws:acm:us-east-1:008971653395:certificate/dac6547e-4a3c-4a4a-9637-0f7861b1037b` |
+| AcmCertificateArn | `arn:aws:acm:us-east-1:<AWS_ACCOUNT_ID_PROD>:certificate/dac6547e-4a3c-4a4a-9637-0f7861b1037b` |
 | SslSupportMethod | `sni-only` |
 | MinimumProtocolVersion | `TLSv1.2_2021` |
 | CloudFrontDefaultCertificate | `false` |
@@ -250,7 +250,7 @@ aws cloudformation detect-stack-drift \
 
 **CachePolicyId:** `658327ea-f89d-4fab-a63d-7e88639e58f6` is the AWS-managed `CachingOptimized` policy. This is a global AWS-managed resource — the same ID works across all accounts. Hardcode it directly.
 
-**ACM Certificate ARN:** Accept as a parameter — it contains the AWS account ID. Default value: `arn:aws:acm:us-east-1:008971653395:certificate/dac6547e-4a3c-4a4a-9637-0f7861b1037b`. The ACM cert must be in `us-east-1` (CloudFront requirement).
+**ACM Certificate ARN:** Accept as a parameter — it contains the AWS account ID. Default value: `arn:aws:acm:us-east-1:<AWS_ACCOUNT_ID_PROD>:certificate/dac6547e-4a3c-4a4a-9637-0f7861b1037b`. The ACM cert must be in `us-east-1` (CloudFront requirement).
 
 **S3OriginConfig:** Even though OAC is used (not OAI), CloudFormation requires `S3OriginConfig` to be present with an empty `OriginAccessIdentity: ""`. This matches the live configuration.
 
@@ -324,7 +324,7 @@ Future enhancement (Story 6.1 or later): Change origin `DomainName` to consume f
   },
   {
     "ParameterKey": "AcmCertificateArn",
-    "ParameterValue": "arn:aws:acm:us-east-1:008971653395:certificate/dac6547e-4a3c-4a4a-9637-0f7861b1037b"
+    "ParameterValue": "arn:aws:acm:us-east-1:<AWS_ACCOUNT_ID_PROD>:certificate/dac6547e-4a3c-4a4a-9637-0f7861b1037b"
   }
 ]
 ```
@@ -419,7 +419,7 @@ Claude Opus 4.6 (claude-opus-4-6)
 
 - **Task 1**: Inspected live CloudFront distribution `ETIQTXICZBECA` via Cloud Control API. Key discovery: distribution already uses OAC (E2KGNCC028TCML), NOT OAI as architecture doc anticipated. Uses modern CachePolicyId (CachingOptimized) not legacy ForwardedValues. Reviewed `s3-app-web.yaml` (Gen 2+ CF import pattern) and `cloudfront-helm.yaml` (Gen 1 reference — identified anti-patterns to avoid: ProjectName param, OAI, ForwardedValues, CF Exports). Verified CF resource schema for correct property names: `IPV6Enabled`, `OriginAccessControlId`, `CachePolicyId`.
 - **Task 2**: Created `cloudfront-app.yaml` following Gen 2+ canonical pattern. Phase 1 template included AppDistribution (CloudFront Distribution) and AppOriginAccessControl (OAC) resources with DeletionPolicy: Retain and UpdateReplacePolicy: Retain. All distribution config properties matched live exactly: OAC origin, CachingOptimized cache policy, http2, IPV6Enabled, sni-only TLS 1.2, PriceClass_100, single alias app.dev.lenie-ai.eu.
-- **Task 3**: Created parameter file with ProjectCode=lenie, Environment=dev, AcmCertificateArn=arn:aws:acm:us-east-1:008971653395:certificate/dac6547e-4a3c-4a4a-9637-0f7861b1037b.
+- **Task 3**: Created parameter file with ProjectCode=lenie, Environment=dev, AcmCertificateArn=arn:aws:acm:us-east-1:<AWS_ACCOUNT_ID_PROD>:certificate/dac6547e-4a3c-4a4a-9637-0f7861b1037b.
 - **Task 4**: Template validated successfully with `aws cloudformation validate-template` (both Phase 1 and Phase 2 versions).
 - **Task 5**: Two-phase CF import executed successfully. Phase 1: Import change set for both AWS::CloudFront::Distribution and AWS::CloudFront::OriginAccessControl — IMPORT_COMPLETE. Phase 2: Updated template to add SSM Parameters (distribution ID and domain name) and Tags (Environment, Project) on distribution — UPDATE_COMPLETE.
 - **Task 6**: Drift detection reported DRIFTED (1 resource) but only on Tags property — direct verification via `cloudfront list-tags-for-resource` confirmed tags ARE correctly applied (Environment=dev, Project=lenie). SSM Parameters verified: /lenie/dev/cloudfront/app/id=ETIQTXICZBECA, /lenie/dev/cloudfront/app/domain-name=d2gs8xyaaj248p.cloudfront.net. Distribution operational: HTTP 200 on https://app.dev.lenie-ai.eu/, AWS status: Deployed.

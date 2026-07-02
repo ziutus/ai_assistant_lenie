@@ -448,8 +448,8 @@ Extend `scripts/env_to_vault.py` with three new capabilities:
 - `backend/server.py` cfg.require() calls — 15 validated variables with defaults
 
 **AWS accounts:**
-- `008971653395` (profile `default`) = active production account
-- `049706517731` (profile `lenie-ai-2025-admin`) = target migration account
+- `<AWS_ACCOUNT_ID_PROD>` (profile `default`) = active production account
+- `<AWS_ACCOUNT_ID_LEGACY>` (profile `lenie-ai-2025-admin`) = target migration account
 
 **Backend naming convention:** `{location}-{type}`, lowercase + hyphens (e.g., `nas-vault`, `aws-ssm-main`, `aws-ssm-2025`).
 

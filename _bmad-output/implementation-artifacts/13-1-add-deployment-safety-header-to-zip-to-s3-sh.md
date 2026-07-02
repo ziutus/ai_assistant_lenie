@@ -29,11 +29,11 @@ so that I can verify I'm deploying to the correct account and abort if something
 
 4. **Given** `env.sh` is sourced (default)
    **When** the script displays account info
-   **Then** account `008971653395` and profile `default` are shown
+   **Then** account `<AWS_ACCOUNT_ID_PROD>` and profile `default` are shown
 
 5. **Given** `env_lenie_2025.sh` is sourced instead
    **When** the script displays account info
-   **Then** account `049706517731` and profile `lenie-ai-2025-admin` are shown
+   **Then** account `<AWS_ACCOUNT_ID_LEGACY>` and profile `lenie-ai-2025-admin` are shown
 
 ## Tasks / Subtasks
 
@@ -141,10 +141,10 @@ fi
 
 ### Environment Variables Reference
 
-| Variable | env.sh (008971653395) | env_lenie_2025.sh (049706517731) |
+| Variable | env.sh (<AWS_ACCOUNT_ID_PROD>) | env_lenie_2025.sh (<AWS_ACCOUNT_ID_LEGACY>) |
 |----------|----------------------|----------------------------------|
 | `PROFILE` | `default` | `lenie-ai-2025-admin` |
-| `AWS_ACCOUNT_ID` | `008971653395` | `049706517731` |
+| `AWS_ACCOUNT_ID` | `<AWS_ACCOUNT_ID_PROD>` | `<AWS_ACCOUNT_ID_LEGACY>` |
 | `AWS_S3_BUCKET_NAME` | `lenie-dev-cloudformation` | `lenie-2025-dev-cloudformation` |
 | `ENVIRONMENT` | `dev` | `dev` |
 | `PROJECT_NAME` | `lenie` | `lenie` |
@@ -155,7 +155,7 @@ fi
 - Run `./zip_to_s3.sh --yes simple` — verify header displays, no prompt, deployment proceeds
 - Run `./zip_to_s3.sh -y app` — verify flag works with both argument positions
 - Run `./zip_to_s3.sh simple --yes` — verify flag works regardless of position
-- Manually change source to `env_lenie_2025.sh` — verify account `049706517731` is shown
+- Manually change source to `env_lenie_2025.sh` — verify account `<AWS_ACCOUNT_ID_LEGACY>` is shown
 
 ### Project Structure Notes
 

@@ -842,7 +842,7 @@ _Continuation of architecture decisions for Sprint 4. Sprint 1 decisions (canoni
 
 3. **51200 byte CloudFormation inline limit** — api-gw-app.yaml is currently under the limit. Adding /url_add endpoint (~60 lines) must keep it within bounds. Fallback: `aws cloudformation package` for S3-based deployment.
 
-4. **Two AWS accounts** — current production (`008971653395`, env.sh) and target migration (`049706517731`, env_lenie_2025.sh). Scripts must clearly indicate which account they target.
+4. **Two AWS accounts** — current production (`<AWS_ACCOUNT_ID_PROD>`, env.sh) and target migration (`<AWS_ACCOUNT_ID_LEGACY>`, env_lenie_2025.sh). Scripts must clearly indicate which account they target.
 
 5. **Client app hardcoded URLs** — Chrome extension `popup.html` and add-url React app `App.js` have hardcoded API Gateway URLs that must be updated after B-14 consolidation.
 
