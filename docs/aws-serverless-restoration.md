@@ -20,14 +20,20 @@ The active ingestion path is untouched and works end-to-end:
 | DynamoDB `lenie_dev_documents` | Sole cloud document store (daily writes) |
 | S3 `lenie-dev-website-content` | Webpage content (`{uuid}.txt` / `{uuid}.html`) |
 | API Gateway `lenie_split` (app) + `lenie_dev_infra` | `/url_add` + `/sqs/size`; custom domain `api.dev.lenie-ai.eu` |
-| CloudFront + S3 hosting | app, app2, landing page |
+| CloudFront + S3 hosting | landing page only (`www.lenie-ai.eu`) — app/app2 hosting deleted 2026-07-02, see below |
 | `imports/dynamodb_sync.py` (local) | The actual cloud→local sync path: DynamoDB + S3 → local PostgreSQL |
-
-⚠️ Known consequence: the **hosted frontends** (`app.dev.lenie-ai.eu`, `app2.dev.lenie-ai.eu`) can no longer browse documents against the AWS API (those endpoints are gone) — they are only useful pointed at a reachable Docker/NAS backend. The hosting itself (S3+CloudFront) was left in place.
 
 Sanitized configuration snapshots of the surviving Lambdas (runtime, layers, env **key names**, roles) are in [`infra/aws/serverless/config-snapshots/`](../infra/aws/serverless/config-snapshots/).
 
 ## 2. What was removed and when
+
+### 2026-07-02 (final cleanup pass) — frontend hosting
+
+Deleted stacks: `lenie-dev-cloudfront-app` + `lenie-dev-s3-app-web` (`app.dev.lenie-ai.eu`) and `lenie-dev-cloudfront-app2` + `lenie-dev-s3-app2-web` (`app2.dev.lenie-ai.eu`), including their Route53 A-records. Rationale: both hosted frontends required the `app-server-db` document endpoints, which are gone — Docker/NAS is the document UI. Local development and NAS deployment of `web_interface_react`/`web_interface_app2` are unaffected; only the AWS hosting is gone. Buckets were emptied before stack deletion (built artifacts only — rebuilt by `npm run build`). **Kept:** the landing page (`www.lenie-ai.eu`, `lenie-landing-prod-*` stacks), `api-gw-custom-domain` (`api.dev.lenie-ai.eu` — Chrome extension), and `acm-certificates` (wildcard cert also used by the helm CDN). To restore hosting: uncomment the four templates in `deploy.ini`, deploy, then run each app's `./deploy.sh`.
+
+### 2026-07-02 (final cleanup pass) — empty networking stacks
+
+Deleted stacks: `lenie-dev-vpc` (empty CF-managed VPC — all workloads had actually used the AWS **default** VPC), `lenie-dev-security-groups` (SSH SG guarding instances that no longer existed), `lenie-dev-ec2-lenie` (orphaned — its instance no longer existed). Deleting the VPC required peeling several orphaned resources CF didn't own: two manual SGs (`allowSSHfromall`, `webServer`), an unattached ENI, an orphaned route table, and — the hidden final blocker — a **VPC peering connection** (`pcx-…`, default VPC as requester → CF VPC as accepter; note peerings only show up when filtering by *both* requester and accepter VPC). Templates stay in the repo (commented out in `deploy.ini`). On restore, deploy real workloads into the CF-managed VPC from the start, so the topology isn't split between the default and managed VPCs. `lenie-dev-lenie-launch-template` was left deployed (candidate for later removal).
 
 ### 2026-07-02 — RDS and its support infrastructure (PR [#180](https://github.com/ziutus/ai_assistant_lenie/pull/180))
 
