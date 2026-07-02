@@ -201,7 +201,7 @@ Claude Opus 4.6 (claude-opus-4-6)
 
 ### Completion Notes List
 
-- ✅ Task 1: CloudWatch IAM role verified — `cloudwatchRoleArn` is set to `arn:aws:iam::008971653395:role/cw-ho-tf-dev-apigw`. Subtask 1.2 skipped (role already configured).
+- ✅ Task 1: CloudWatch IAM role verified — `cloudwatchRoleArn` is set to `arn:aws:iam::<AWS_ACCOUNT_ID_PROD>:role/cw-ho-tf-dev-apigw`. Subtask 1.2 skipped (role already configured).
 - ✅ Task 2: Added `StageDescription` to `ApiDeployment` in `api-gw-app.yaml` with `TracingEnabled: true`, wildcard `MethodSettings` (LoggingLevel: INFO, MetricsEnabled: true, DataTraceEnabled: true), and production consideration comment.
 - ✅ Task 3: Updated comment block above `ApiDeployment` to reflect stage logging/tracing codification and reference Story B.6.
 - ✅ Task 4: Replaced manual stage configuration note in `infra/aws/cloudformation/CLAUDE.md` with CloudFormation-managed description.

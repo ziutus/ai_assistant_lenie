@@ -255,7 +255,7 @@ development_status:
   B-22-add-max-retry-limit-to-aws-ec2-route53-script: backlog
   B-23-consolidate-lambdas-with-vpc-ipv6-dual-stack: backlog  # BLOCKER: OpenAI API has no IPv6 (no AAAA record as of 2026-02). Options: switch to Bedrock, use NAT64, or wait for OpenAI IPv6 support.
   B-39-delegate-dns-subzones-per-environment: backlog  # Split lenie-ai.eu into delegated subzones (dev, prod). Enables multi-account + multi-cloud. $0.50/month per subzone.
-  B-46-define-strict-scp-policies-for-lenie-account: backlog  # Granular SCPs for 008971653395 — restrict unused services, enforce encryption, block public S3, limit regions.
+  B-46-define-strict-scp-policies-for-lenie-account: backlog  # Granular SCPs for <AWS_ACCOUNT_ID_PROD> — restrict unused services, enforce encryption, block public S3, limit regions.
   B-52-lambda-layer-security-audit: backlog  # Lambda Layer dependencies ~1.5+ years old. Audit, update, rebuild layer ZIP.
   B-53-cors-hardening: backlog  # Replace wildcard Access-Control-Allow-Origin: '*' with explicit allowed origins.
   B-54-lambda-cloudformation-management: backlog  # Replace hardcoded Lambda ARNs with CloudFormation-managed references (SSM/Fn::GetAtt).

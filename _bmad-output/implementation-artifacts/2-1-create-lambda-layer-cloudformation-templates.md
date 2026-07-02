@@ -142,7 +142,7 @@ All three layers share identical configuration pattern:
 
 | Property | lenie_all_layer | lenie_openai | psycopg2_new_layer |
 |----------|----------------|-------------|-------------------|
-| **LayerArn** | `arn:aws:lambda:us-east-1:008971653395:layer:lenie_all_layer` | `arn:aws:lambda:us-east-1:008971653395:layer:lenie_openai` | `arn:aws:lambda:us-east-1:008971653395:layer:psycopg2_new_layer` |
+| **LayerArn** | `arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:lenie_all_layer` | `arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:lenie_openai` | `arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:psycopg2_new_layer` |
 | **Version** | 1 | 1 | 1 |
 | **CompatibleRuntimes** | `python3.11` | `python3.11` | `python3.11` |
 | **Description** | *(empty)* | *(empty)* | *(empty)* |
@@ -239,7 +239,7 @@ Resources:
 ```
 
 **Key points:**
-- `!Ref` on `AWS::Lambda::LayerVersion` returns the **LayerVersionArn** (full ARN including version number, e.g., `arn:aws:lambda:us-east-1:008971653395:layer:lenie_all_layer:2`)
+- `!Ref` on `AWS::Lambda::LayerVersion` returns the **LayerVersionArn** (full ARN including version number, e.g., `arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:lenie_all_layer:2`)
 - This versioned ARN is what consuming Lambda functions need
 - The SSM Parameter export stores this versioned ARN
 
@@ -247,9 +247,9 @@ Resources:
 
 | Layer | SSM Path | Value (example) |
 |-------|----------|----------------|
-| `lenie_all_layer` | `/${ProjectCode}/${Environment}/lambda/layers/lenie-all/arn` | `arn:aws:lambda:us-east-1:008971653395:layer:lenie_all_layer:2` |
-| `lenie_openai` | `/${ProjectCode}/${Environment}/lambda/layers/openai/arn` | `arn:aws:lambda:us-east-1:008971653395:layer:lenie_openai:2` |
-| `psycopg2_new_layer` | `/${ProjectCode}/${Environment}/lambda/layers/psycopg2/arn` | `arn:aws:lambda:us-east-1:008971653395:layer:psycopg2_new_layer:2` |
+| `lenie_all_layer` | `/${ProjectCode}/${Environment}/lambda/layers/lenie-all/arn` | `arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:lenie_all_layer:2` |
+| `lenie_openai` | `/${ProjectCode}/${Environment}/lambda/layers/openai/arn` | `arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:lenie_openai:2` |
+| `psycopg2_new_layer` | `/${ProjectCode}/${Environment}/lambda/layers/psycopg2/arn` | `arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:psycopg2_new_layer:2` |
 
 **Note on SSM path vs AWS layer name:**
 - SSM path uses **hyphens** (e.g., `lenie-all`, not `lenie_all_layer`) — consistent with architecture convention
@@ -304,8 +304,8 @@ Existing Lambda templates (Gen 1) currently hardcode layer ARNs:
 ```yaml
 # BEFORE (hardcoded — Gen 1 anti-pattern)
 Layers:
-  - arn:aws:lambda:us-east-1:008971653395:layer:lenie_all_layer:1
-  - arn:aws:lambda:us-east-1:008971653395:layer:psycopg2_new_layer:1
+  - arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:lenie_all_layer:1
+  - arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:psycopg2_new_layer:1
 ```
 
 After this story, consuming templates can reference via SSM:
@@ -424,7 +424,7 @@ Resources:
 - [Source: infra/aws/serverless/lambda_layers/layer_create_lenie_all.sh] — Build script for lenie_all_layer
 - [Source: infra/aws/serverless/lambda_layers/layer_openai_2.sh] — Build script for lenie_openai
 - [Source: infra/aws/serverless/lambda_layers/layer_create_psycop2_new.sh] — Build script for psycopg2_new_layer
-- [Source: infra/aws/serverless/env.sh] — Environment config (account 008971653395, bucket lenie-dev-cloudformation)
+- [Source: infra/aws/serverless/env.sh] — Environment config (account <AWS_ACCOUNT_ID_PROD>, bucket lenie-dev-cloudformation)
 - [Source: _bmad-output/implementation-artifacts/1-1-create-dynamodb-cache-table-cloudformation-templates.md] — Epic 1 learnings (SSM tags, IsProduction, comments, descriptions)
 - [Source: _bmad-output/implementation-artifacts/1-3-create-s3-frontend-hosting-bucket-template.md] — Epic 1 learnings (code review fixes, two-phase import)
 - [Source: Live AWS inspection 2026-02-14] — Layer runtime (python3.11), version (1), no description, no compatible architectures set
@@ -445,7 +445,7 @@ None — all tasks completed without errors.
 - **Task 2**: Created 3 CloudFormation templates following Gen 2+ canonical pattern with all Epic 1 code review fixes pre-applied: SSM Parameter map-format Tags, IsProduction condition with qa2/qa3, no DeletionPolicy (recreate strategy), no Outputs section, explanatory comments, "for Project Lenie" description suffix.
 - **Task 3**: Created 3 parameter files with ProjectCode, Environment, LayerCodeBucket (plain String, not SSM reference), and LayerCodeS3Key parameters.
 - **Task 4**: All 3 templates validated successfully with `aws cloudformation validate-template`.
-- **Task 5**: All 3 stacks deployed successfully via `create-stack`. SSM Parameters verified at correct paths. Layer ARN format confirmed: `arn:aws:lambda:us-east-1:008971653395:layer:<name>:2` (version 2 — new versions created by CloudFormation).
+- **Task 5**: All 3 stacks deployed successfully via `create-stack`. SSM Parameters verified at correct paths. Layer ARN format confirmed: `arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:<name>:2` (version 2 — new versions created by CloudFormation).
 
 ### Change Log
 

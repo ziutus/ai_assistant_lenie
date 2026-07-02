@@ -97,7 +97,7 @@ The existing template is a **hybrid Gen 1/Gen 2** template with significant issu
 | AllowedValues | `[dev, qas, prd]` | `[dev, qa, qa2, qa3, prod]` |
 | Conditions | None | `IsProduction` |
 | Lambda functions | Defined IN template | **DECISION NEEDED**: keep or separate? |
-| Lambda layer ARNs | Hardcoded (`arn:aws:lambda:us-east-1:049706517731:layer:...`) | SSM Parameter references |
+| Lambda layer ARNs | Hardcoded (`arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_LEGACY>:layer:...`) | SSM Parameter references |
 | SSM consumption | `{{resolve:ssm:...}}` dynamic refs | `AWS::SSM::Parameter::Value<String>` params |
 | SSM exports | None | API Gateway ID, root resource ID, invoke URL |
 | Tags | None | `Environment`, `Project` |
@@ -308,9 +308,9 @@ Tags:
 1. **Lambda Layer ARNs** (lines 63-65 in current template):
    ```yaml
    # CURRENT (hardcoded — WRONG):
-   - arn:aws:lambda:us-east-1:049706517731:layer:lenie_all_layer:1
-   - arn:aws:lambda:us-east-1:049706517731:layer:psycopg2_new_layer:1
-   - arn:aws:lambda:us-east-1:049706517731:layer:lenie_openai:1
+   - arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_LEGACY>:layer:lenie_all_layer:1
+   - arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_LEGACY>:layer:psycopg2_new_layer:1
+   - arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_LEGACY>:layer:lenie_openai:1
 
    # TARGET (SSM Parameter references):
    # Consumed via AWS::SSM::Parameter::Value<String> parameters
@@ -370,7 +370,7 @@ Tags:
 
 ### AWS Account ID
 
-Current account ID (visible in existing template): `049706517731` — but this value MUST NOT be hardcoded in the Gen 2+ template. Use `${AWS::AccountId}` intrinsic reference.
+Current account ID (visible in existing template): `<AWS_ACCOUNT_ID_LEGACY>` — but this value MUST NOT be hardcoded in the Gen 2+ template. Use `${AWS::AccountId}` intrinsic reference.
 
 ### Project Structure Notes
 
@@ -445,7 +445,7 @@ Claude Opus 4.6
 **Critical findings from live inspection:**
 - Live API name: `lenie_split` (not parameterized)
 - Live stage: `v1` (not `dev`)
-- Live account: `008971653395`
+- Live account: `<AWS_ACCOUNT_ID_PROD>`
 - Live Lambda names: `lenie_2_db`, `lenie_2_internet` (not `${ProjectCode}-${stage}-app-server-*`)
 - API contains ALL endpoints (app + infra + url_add2) — 23 total, not 11 as in template
 - `/ai_ask` points to `lenie_2_internet` (not `app-server-db` as previously documented)
@@ -459,7 +459,7 @@ Claude Opus 4.6
 - Exported live API Gateway via `aws apigateway get-export` (OAS30) and full method inspection
 - Discovered live API `lenie_split` contains BOTH app (14) AND infra (9) endpoints — 23 total, not 11 as in original template
 - Lambda function names are different from template: `lenie_2_db`/`lenie_2_internet` (not `${ProjectCode}-${stage}-app-server-*`)
-- Account ID: `008971653395` (not `049706517731` from old hardcoded ARNs)
+- Account ID: `<AWS_ACCOUNT_ID_PROD>` (not `<AWS_ACCOUNT_ID_LEGACY>` from old hardcoded ARNs)
 - Stage name: `v1` (not `dev`)
 - `/ai_ask` correctly points to `lenie_2_internet` (not `app-server-db` as previously documented)
 - `/url_add2` uses Step Functions integration (`lenie-url-add-analyze`) — not Lambda proxy

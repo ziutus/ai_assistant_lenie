@@ -18,26 +18,23 @@ backends:
     path_pattern: "{project_code}/{env}"
     connection_from: [VAULT_ADDR, VAULT_TOKEN]
   aws-ssm-main:
-    description: "AWS SSM Parameter Store (main application account)"
+    description: "AWS SSM Parameter Store (main application account, <AWS_ACCOUNT_ID_PROD> — holds dev, prod and qa parameters)"
     type: aws_ssm
     path_pattern: "/{project_code}/{env}/{key}"
     region: us-east-1
     profile: default
-  aws-ssm-2025:
-    description: "AWS SSM Parameter Store (target migration account)"
-    type: aws_ssm
-    path_pattern: "/{project_code}/{env}/{key}"
-    region: eu-central-1
-    profile: lenie-ai-2025-admin
 
 # Per-environment backend mapping.
+# NOTE: aws-ssm-2025 (account <AWS_ACCOUNT_ID_LEGACY>, profile lenie-ai-2025-admin) was removed 2026-07-02 —
+# that account was an abandoned earlier environment, never an actual migration target, and has
+# been closed via `organizations close-account`. prod/qa SSM parameters live under aws-ssm-main.
 environments:
   dev:
     backends: [nas-vault, aws-ssm-main]
   prod:
-    backends: [aws-ssm-2025]
+    backends: [aws-ssm-main]
   qa:
-    backends: [aws-ssm-2025]
+    backends: [aws-ssm-main]
 
 # Variable groups — organized by functional area.
 # Per-variable fields:

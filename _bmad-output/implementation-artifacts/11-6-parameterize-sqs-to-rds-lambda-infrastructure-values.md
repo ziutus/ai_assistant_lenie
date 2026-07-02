@@ -16,13 +16,13 @@ so that the template is environment-agnostic, contains no plaintext credentials,
 
 2. **AC2 — Security Group ID parameterized:** The hardcoded security group ID `sg-0d3882a9806ec2a9c` is replaced with a parameter. The developer must first identify which security group this is (RDS SG from `rds.yaml`, SSH SG from `security-groups.yaml`, or a manually-created SG) using `aws ec2 describe-security-groups`. If the SG source template doesn't export it to SSM, add an SSM Parameter export there first, then consume it via `AWS::SSM::Parameter::Value<String>`.
 
-3. **AC3 — Lambda Layer ARNs parameterized:** The 2 hardcoded project layer ARNs (containing account ID `008971653395`) are replaced with `AWS::SSM::Parameter::Value<String>` parameters consuming paths `/lenie/dev/lambda/layers/lenie-all/arn` and `/lenie/dev/lambda/layers/psycopg2/arn`. The AWS Powertools public layer ARN uses `!Sub` with `${AWS::Region}` (and optionally a parameter for the version).
+3. **AC3 — Lambda Layer ARNs parameterized:** The 2 hardcoded project layer ARNs (containing account ID `<AWS_ACCOUNT_ID_PROD>`) are replaced with `AWS::SSM::Parameter::Value<String>` parameters consuming paths `/lenie/dev/lambda/layers/lenie-all/arn` and `/lenie/dev/lambda/layers/psycopg2/arn`. The AWS Powertools public layer ARN uses `!Sub` with `${AWS::Region}` (and optionally a parameter for the version).
 
 4. **AC4 — Database credentials use Secrets Manager:** The hardcoded environment variables `POSTGRESQL_PASSWORD: change_me` and `POSTGRESQL_USER: postgres` are replaced with `{{resolve:secretsmanager:...}}` references, following the pattern established in `rds.yaml`. The Secrets Manager ARN is passed as a template parameter (value from `parameters/dev/sqs-to-rds-lambda.json`).
 
 5. **AC5 — RDS hostname parameterized:** The hardcoded `POSTGRESQL_HOST: lenie-dev.c9k28ukqsclc.us-east-1.rds.amazonaws.com` is replaced with either an SSM parameter reference or a `{{resolve:ssm:...}}` dynamic reference. If no SSM parameter for the RDS endpoint exists, one must be created (either added to `rds.yaml` or created manually).
 
-6. **AC6 — SQS queue URL parameterized:** The hardcoded `AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites` is replaced with an SSM parameter consuming `/lenie/dev/sqs/documents/url` (already exported by `sqs-documents.yaml`).
+6. **AC6 — SQS queue URL parameterized:** The hardcoded `AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/<AWS_ACCOUNT_ID_PROD>/lenie_websites` is replaced with an SSM parameter consuming `/lenie/dev/sqs/documents/url` (already exported by `sqs-documents.yaml`).
 
 7. **AC7 — Database name and port parameterized:** `POSTGRESQL_DATABASE: lenie` and `POSTGRESQL_PORT: 5432` use parameters (plain String with defaults, or SSM-backed if paths exist).
 
@@ -73,7 +73,7 @@ so that the template is environment-agnostic, contains no plaintext credentials,
 
 - [x] **Task 8: Validate and verify** (AC: #9, #10)
   - [x] 8.1 Run `cfn-lint infra/aws/cloudformation/templates/sqs-to-rds-lambda.yaml` — zero errors
-  - [x] 8.2 Verify zero hardcoded account IDs (`008971653395`) remain in template
+  - [x] 8.2 Verify zero hardcoded account IDs (`<AWS_ACCOUNT_ID_PROD>`) remain in template
   - [x] 8.3 Verify zero plaintext passwords remain in template
   - [x] 8.4 If vpc.yaml was modified (Task 1.4), run `cfn-lint` on it too
 
@@ -85,16 +85,16 @@ so that the template is environment-agnostic, contains no plaintext credentials,
 
 **Current hardcoded values in the template:**
 ```yaml
-# Lambda Layer ARNs with account ID 008971653395
+# Lambda Layer ARNs with account ID <AWS_ACCOUNT_ID_PROD>
 Layers:
   - arn:aws:lambda:us-east-1:017000801446:layer:AWSLambdaPowertoolsPythonV3-python311-x86_64:6
-  - arn:aws:lambda:us-east-1:008971653395:layer:lenie_all_layer:1
-  - arn:aws:lambda:us-east-1:008971653395:layer:psycopg2_new_layer:1
+  - arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:lenie_all_layer:1
+  - arn:aws:lambda:us-east-1:<AWS_ACCOUNT_ID_PROD>:layer:psycopg2_new_layer:1
 
 # Environment variables with plaintext credentials and hardcoded endpoints
 Environment:
   Variables:
-    AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites
+    AWS_QUEUE_URL_ADD: https://sqs.us-east-1.amazonaws.com/<AWS_ACCOUNT_ID_PROD>/lenie_websites
     POSTGRESQL_DATABASE: lenie
     POSTGRESQL_HOST: lenie-dev.c9k28ukqsclc.us-east-1.rds.amazonaws.com
     POSTGRESQL_PASSWORD: change_me
@@ -195,7 +195,7 @@ Layers:
 
 **Anti-patterns to avoid:**
 - Do NOT use `Fn::ImportValue` — project standard is SSM Parameters
-- Do NOT hardcode AWS account IDs (`008971653395`, `049706517731`)
+- Do NOT hardcode AWS account IDs (`<AWS_ACCOUNT_ID_PROD>`, `<AWS_ACCOUNT_ID_LEGACY>`)
 - Do NOT store plaintext passwords in templates or parameter files
 - Do NOT use `{{resolve:ssm:...}}` for parameters that can use `AWS::SSM::Parameter::Value<String>` type
 
@@ -327,7 +327,7 @@ Claude Opus 4.6 (claude-opus-4-6)
 - Task 1 investigation revealed all 3 subnets are from the **default VPC** (172.31.x.x range), not the project VPC (10.0.x.x). The RDS instance `lenie-dev` also resides in the default VPC. SSM parameters from `vpc.yaml` point to project VPC subnets (different IDs). User approved using plain String parameters for subnets and security group.
 - Security group `sg-0d3882a9806ec2a9c` (`postgresql-db`) is manually created in the default VPC, not managed by any CloudFormation template.
 - No SSM parameter exists for the RDS endpoint. The `lenie-dev-rds` CloudFormation stack is not deployed — RDS was created outside CloudFormation.
-- Secrets Manager ARN reused from `rds.json` parameter file (account `049706517731`).
+- Secrets Manager ARN reused from `rds.json` parameter file (account `<AWS_ACCOUNT_ID_LEGACY>`).
 
 ### Completion Notes List
 
@@ -338,7 +338,7 @@ Claude Opus 4.6 (claude-opus-4-6)
 - SQS URL and Lambda layer ARNs use `AWS::SSM::Parameter::Value<String>` for automatic SSM resolution
 - Parameter file expanded from 2 to 11 entries
 - `cfn-lint` passes with zero errors
-- Zero hardcoded account IDs (`008971653395`) remain in template
+- Zero hardcoded account IDs (`<AWS_ACCOUNT_ID_PROD>`) remain in template
 - Zero plaintext passwords remain in template
 - Template description added: "Lambda function that processes messages from SQS queue and writes them to RDS PostgreSQL"
 - `vpc.yaml`, `rds.yaml`, and `security-groups.yaml` were NOT modified (subnets/SG are in default VPC, not project VPC)

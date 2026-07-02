@@ -164,9 +164,9 @@ MSYS_NO_PATHCONV=1 aws lambda delete-function --function-name lenie-url-add --re
 # API Gateway
 MSYS_NO_PATHCONV=1 aws apigateway delete-rest-api --rest-api-id pir31ejsf2 --region us-east-1
 
-# SNS topics (need ARN — account 008971653395)
-MSYS_NO_PATHCONV=1 aws sns delete-topic --topic-arn arn:aws:sns:us-east-1:008971653395:rds-monitor-sns --region us-east-1
-MSYS_NO_PATHCONV=1 aws sns delete-topic --topic-arn arn:aws:sns:us-east-1:008971653395:ses-monitoring --region us-east-1
+# SNS topics (need ARN — account <AWS_ACCOUNT_ID_PROD>)
+MSYS_NO_PATHCONV=1 aws sns delete-topic --topic-arn arn:aws:sns:us-east-1:<AWS_ACCOUNT_ID_PROD>:rds-monitor-sns --region us-east-1
+MSYS_NO_PATHCONV=1 aws sns delete-topic --topic-arn arn:aws:sns:us-east-1:<AWS_ACCOUNT_ID_PROD>:ses-monitoring --region us-east-1
 
 # SES identities
 MSYS_NO_PATHCONV=1 aws ses delete-identity --identity lenie-ai.eu --region us-east-1
@@ -234,7 +234,7 @@ All AWS CLI commands with `/` paths MUST use `MSYS_NO_PATHCONV=1` prefix on Wind
 1. **MSYS_NO_PATHCONV=1** for all AWS CLI commands with `/` paths on Windows/MSYS (Story 2.1)
 2. **Template S3 upload** for `api-gw-app.yaml` — exceeds 51200 byte inline limit (Story 4.2)
 3. **Verify before delete** — always confirm resource exists before attempting deletion
-4. **No hardcoded account IDs** — use `${AWS::AccountId}` in templates. The current account is `008971653395` (Story 4.2 finding)
+4. **No hardcoded account IDs** — use `${AWS::AccountId}` in templates. The current account is `<AWS_ACCOUNT_ID_PROD>` (Story 4.2 finding)
 5. **Drift detection after stack updates** — verify `api-gw-app.yaml` stack is IN_SYNC after removing `/url_add` endpoint
 
 ### Risk Assessment

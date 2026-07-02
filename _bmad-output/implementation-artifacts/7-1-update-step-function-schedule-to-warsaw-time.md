@@ -120,7 +120,7 @@ Claude Opus 4.6 (claude-opus-4-6)
 - IAM Role: StepFunctionInvokerRole (auto-generated name)
 
 **Created SSM Parameters:**
-- `/lenie/dev/sqs/documents/url` = `https://sqs.us-east-1.amazonaws.com/008971653395/lenie_websites`
+- `/lenie/dev/sqs/documents/url` = `https://sqs.us-east-1.amazonaws.com/<AWS_ACCOUNT_ID_PROD>/lenie_websites`
 - `/lenie/dev/database/name` = `lenie-dev`
 
 **Deleted AWS resources:**

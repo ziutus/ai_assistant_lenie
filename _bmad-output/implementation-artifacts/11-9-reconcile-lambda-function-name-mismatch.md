@@ -225,7 +225,7 @@ Claude Opus 4.6
 - `deploy.ini` line 38: `sqs-to-rds-lambda.yaml` IS registered (not commented out) but was never deployed
 
 **Root Cause Analysis:**
-The original Lambda `lenie-sqs-to-db` was manually created in an earlier phase but has since been deleted (or existed in the old AWS account `008971653395`). The CF template `sqs-to-rds-lambda.yaml` was created by Story 11.6 using the Gen 2+ naming convention but was never deployed to AWS. Neither Lambda exists — this is a clean-slate scenario.
+The original Lambda `lenie-sqs-to-db` was manually created in an earlier phase but has since been deleted (or existed in the old AWS account `<AWS_ACCOUNT_ID_PROD>`). The CF template `sqs-to-rds-lambda.yaml` was created by Story 11.6 using the Gen 2+ naming convention but was never deployed to AWS. Neither Lambda exists — this is a clean-slate scenario.
 
 #### Task 2 — Naming Decision (2026-02-17)
 

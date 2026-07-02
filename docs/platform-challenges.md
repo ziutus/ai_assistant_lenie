@@ -159,7 +159,7 @@ This is also intended as **presentation material** — the challenges below illu
 
 **Fix applied:**
 1. Changed volume paths in `compose.nas.yaml`: `/share/vault/*` → `/share/Container/vault/*` (persistent QNAP path)
-2. Enabled **AWS KMS auto-unseal** — Vault automatically unseals using KMS key on konto 639394817995, eliminating manual unseal after restart
+2. Enabled **AWS KMS auto-unseal** — Vault automatically unseals using KMS key on konto <AWS_ACCOUNT_ID_MGMT>, eliminating manual unseal after restart
 3. Re-synced secrets from AWS SSM (us-east-1) to Vault using `env_to_vault.py sync`
 
 **References:** [Vault_Setup.md](CICD/Vault_Setup.md), [NAS_Deployment.md](CICD/NAS_Deployment.md)

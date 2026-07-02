@@ -122,7 +122,7 @@ Lenie-server-2025 is a personal AI knowledge management system for collecting, m
 
 3. **B-14: Consolidate api-gw-url-add into api-gw-app** — Merge the `/url_add` endpoint from `api-gw-url-add.yaml` into `api-gw-app.yaml`. Remove or archive `api-gw-url-add.yaml` template and its parameter file `parameters/dev/api-gw-url-add.json`. Migrate API key, usage plan, and Lambda permission resources. Update Chrome extension default endpoint URL (currently `https://jg40fjwz61.execute-api.us-east-1.amazonaws.com/v1/url_add`). The `api-gw-infra.yaml` template is not affected.
 
-4. **B-11: Add AWS account info to zip-to-s3 script** — Script `infra/aws/serverless/zip_to_s3.sh` sources `env.sh` by default (account `008971653395`, the current production account). Add: display `AWS_ACCOUNT_ID` during execution, display which env file is sourced, warn/confirm before proceeding with deployment. Two env configs: `env.sh` (account `008971653395`, current production) and `env_lenie_2025.sh` (account `049706517731`, target migration account).
+4. **B-11: Add AWS account info to zip-to-s3 script** — Script `infra/aws/serverless/zip_to_s3.sh` sources `env.sh` by default (account `<AWS_ACCOUNT_ID_PROD>`, the current production account). Add: display `AWS_ACCOUNT_ID` during execution, display which env file is sourced, warn/confirm before proceeding with deployment. Two env configs: `env.sh` (account `<AWS_ACCOUNT_ID_PROD>`, current production) and `env_lenie_2025.sh` (account `<AWS_ACCOUNT_ID_LEGACY>`, target migration account).
 
 5. **B-12: Fix CRLF git config for parameter files** — Verify parameter files in `infra/aws/cloudformation/parameters/dev/` (29 JSON files) have correct LF line endings. `.gitattributes` already enforces LF for `*.json`. Sprint 3 story 7-2 found CRLF warning was due to Windows `core.autocrlf` setting, not file content. Verify current state, update `.gitattributes` if needed, or document that current config is adequate.
 
@@ -145,7 +145,7 @@ Formalize the API contract between backend and frontend to eliminate type drift 
 - **B-22: Add max retry limit to aws_ec2_route53 script** — Prevent infinite loops in Route53 update script.
 - **B-23: Consolidate Lambdas with VPC IPv6 dual-stack** — Merge app-server-db + app-server-internet into one Lambda. ⚠️ BLOCKER: OpenAI API has no IPv6.
 - **B-39: Delegate DNS subzones per environment** — Split lenie-ai.eu into delegated subzones (dev, prod). Enables multi-account + multi-cloud. $0.50/month per subzone.
-- **B-46: Define strict SCP policies for lenie account** — Granular SCPs for 008971653395: restrict unused services, enforce encryption defaults, block public S3, limit regions.
+- **B-46: Define strict SCP policies for lenie account** — Granular SCPs for <AWS_ACCOUNT_ID_PROD>: restrict unused services, enforce encryption defaults, block public S3, limit regions.
 - **B-52: Lambda Layer security audit** — Lambda Layer dependencies ~1.5+ years old. Audit, update, rebuild layer ZIP.
 - **B-53: CORS hardening** — Replace wildcard `Access-Control-Allow-Origin: '*'` with explicit allowed origins.
 - **B-54: Lambda function CloudFormation management** — Replace hardcoded Lambda ARNs with CloudFormation-managed references (SSM/Fn::GetAtt).
@@ -216,7 +216,7 @@ Realizowane na samym końcu, po zakończeniu wszystkich pozostałych faz. Umożl
 
 **Rising Action:** Ziutus removes the Elastic IP from `ec2-lenie.yaml` and verifies that `aws_ec2_route53.py` correctly updates Route53 with the dynamic public IP on each EC2 start. Ziutus fixes the Lambda function name in `lambda-rds-start.yaml` from `${AWS::StackName}-rds-start-function` to `${ProjectCode}-${Environment}-rds-start` and updates all consumers. Ziutus merges the `/url_add` endpoint from `api-gw-url-add.yaml` into `api-gw-app.yaml`, updates the Chrome extension's default endpoint URL, then removes the standalone template. Ziutus adds account ID display and confirmation to `zip_to_s3.sh`. Ziutus verifies parameter file line endings and documents the finding. Ziutus creates a single-source metrics file and an automated verification script, then fixes all discrepancies across documentation files.
 
-**Climax:** After deployment — EC2 starts with dynamic IP and Route53 updates automatically. Lambda functions have clean names. The duplicate api-gw-url-add template is removed; api-gw-app now serves 11 endpoints (including `/url_add`), api-gw-infra serves 7 endpoints, and url-add.yaml retains its own API Gateway (3 REST APIs total). The deployment script clearly shows target account `008971653395` before proceeding. Documentation metrics match actual infrastructure with zero discrepancies. The verification script confirms consistency.
+**Climax:** After deployment — EC2 starts with dynamic IP and Route53 updates automatically. Lambda functions have clean names. The duplicate api-gw-url-add template is removed; api-gw-app now serves 11 endpoints (including `/url_add`), api-gw-infra serves 7 endpoints, and url-add.yaml retains its own API Gateway (3 REST APIs total). The deployment script clearly shows target account `<AWS_ACCOUNT_ID_PROD>` before proceeding. Documentation metrics match actual infrastructure with zero discrepancies. The verification script confirms consistency.
 
 **Resolution:** Infrastructure is consolidated. Monthly costs are reduced. Operational safety is improved (account visibility in deployment). Documentation is accurate and maintainable. The project is ready for Phase 3 (Security Hardening).
 
@@ -226,9 +226,9 @@ Realizowane na samym końcu, po zakończeniu wszystkich pozostałych faz. Umożl
 
 **Opening Scene:** Ziutus runs `./zip_to_s3.sh simple` from `infra/aws/serverless/`.
 
-**Rising Action:** The script displays: sourcing `env.sh`, AWS account ID `008971653395`, profile `default`, environment `dev`, S3 bucket `lenie-dev-cloudformation`. Ziutus reviews the information and confirms deployment. The script packages each Lambda function and uploads to S3.
+**Rising Action:** The script displays: sourcing `env.sh`, AWS account ID `<AWS_ACCOUNT_ID_PROD>`, profile `default`, environment `dev`, S3 bucket `lenie-dev-cloudformation`. Ziutus reviews the information and confirms deployment. The script packages each Lambda function and uploads to S3.
 
-**Resolution:** Ziutus has full visibility into which AWS account receives the deployment. No accidental cross-account deployments. If `env_lenie_2025.sh` were sourced instead, the script would display account `049706517731` and profile `lenie-ai-2025-admin`, making the difference immediately visible.
+**Resolution:** Ziutus has full visibility into which AWS account receives the deployment. No accidental cross-account deployments. If `env_lenie_2025.sh` were sourced instead, the script would display account `<AWS_ACCOUNT_ID_LEGACY>` and profile `lenie-ai-2025-admin`, making the difference immediately visible.
 
 ### Journey Requirements Summary
 
@@ -277,10 +277,10 @@ Brownfield web application: React 18 SPA (Amplify) + Flask REST API (API Gateway
 **Lambda function naming:** Stack naming convention is `<PROJECT_CODE>-<STAGE>-<template_name>`. The `lambda-rds-start.yaml` template uses `${AWS::StackName}` in `FunctionName`, producing `lenie-dev-lambda-rds-start-rds-start-function` (stack name `lenie-dev-lambda-rds-start` + suffix `-rds-start-function`). Other Lambda templates already use the clean `${ProjectCode}-${Environment}-<description>` pattern directly: `sqs-to-rds-lambda.yaml` produces `lenie-dev-sqs-to-rds-lambda`, `lambda-weblink-put-into-sqs.yaml` produces `lenie-dev-weblink-put-into-sqs`.
 
 **AWS accounts:**
-- `008971653395` — CURRENT production account (all active infrastructure runs here)
-- `049706517731` — TARGET migration account (will be used after full migration including RDS data)
+- `<AWS_ACCOUNT_ID_PROD>` — CURRENT production account (all active infrastructure runs here)
+- `<AWS_ACCOUNT_ID_LEGACY>` — TARGET migration account (will be used after full migration including RDS data)
 
-**Deployment script:** `infra/aws/serverless/zip_to_s3.sh` sources `env.sh` by default, which targets account `008971653395`. The script currently provides no account visibility — a developer could source the wrong env file and deploy to the wrong account without warning.
+**Deployment script:** `infra/aws/serverless/zip_to_s3.sh` sources `env.sh` by default, which targets account `<AWS_ACCOUNT_ID_PROD>`. The script currently provides no account visibility — a developer could source the wrong env file and deploy to the wrong account without warning.
 
 **Frontend deployments (current state as of 2026-02-23):**
 - **React admin app** (`web_interface_react/`): `app.dev.lenie-ai.eu` — S3 + CloudFront, active single-user interface
