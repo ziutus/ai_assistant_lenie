@@ -16,10 +16,10 @@ serverless/
 │   ├── rds-manager/           # RDS instance management (start/stop/status) — consolidated from rds-start, rds-stop, rds-status
 │   ├── ec2-manager/           # EC2 instance management (start/stop/status) — consolidated from ec2-start, ec2-stop, ec2-status
 │   ├── sqs-size/              # Get SQS queue message count
-│   ├── sqs-into-rds/          # Process SQS messages into RDS (document ingestion)
+│   ├── sqs-into-rds/          # (deleted from AWS 2026-07-02) Process SQS messages into RDS
 │   ├── sqs-weblink-put-into/  # Put web links into SQS queue
-│   ├── app-server-db/         # Main app Lambda - DB operations (uses backend/library)
-│   ├── app-server-internet/   # Main app Lambda - internet operations (uses backend/library)
+│   ├── app-server-db/         # (deleted from AWS 2026-07-02) Main app Lambda - DB operations
+│   ├── app-server-internet/   # (deleted from AWS 2026-07-02) Main app Lambda - internet operations
 │   └── tmp/                   # Empty Lambda placeholder
 └── lambda_layers/             # Lambda layer build scripts
     ├── layer_create_psycop2_new.sh  # psycopg2-binary layer
@@ -68,35 +68,17 @@ Common variables:
 |----------|-------------|
 | `sqs-weblink-put-into` | Receives URL data via API Gateway, stores text/HTML in S3, saves metadata to DynamoDB, sends message to SQS. Env vars: `AWS_QUEUE_URL_ADD`, `BUCKET_NAME`, `DYNAMODB_TABLE_NAME` |
 
-#### Application Server (app - includes backend/library)
+#### Application Server (app - includes backend/library) — DELETED 2026-07-02
 
-| Function | Endpoints | Description |
-|----------|-----------|-------------|
-| `app-server-db` | `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding` | DB-facing operations. Requires PostgreSQL env vars, `OPENAI_*`, `EMBEDDING_MODEL`, `BACKEND_TYPE`. **⚠ RDS was decommissioned 2026-07-02 — this function's PostgreSQL connection no longer resolves. All endpoints in this row currently fail when called through the "AWS Serverless" frontend mode. Not yet fixed; needs a decision (point at DynamoDB instead, or retire the AWS Serverless document-browsing path entirely in favor of Docker/NAS mode).** |
-| `app-server-internet` | `/website_download_text_content`, `/ai_embedding_get` | Internet-facing operations (downloads, AI calls, embeddings). Requires `OPENAI_*`, `AI_MODEL_SUMMARY`, `EMBEDDING_MODEL`. Not affected — no RDS dependency. |
+**Both app-server Lambdas were deleted from AWS on 2026-07-02** — Docker/NAS is the primary document UI, so the "AWS Serverless" document-browsing path was retired entirely. Full restoration guide: [docs/aws-serverless-restoration.md](../../../docs/aws-serverless-restoration.md).
 
-*(`sqs-into-rds` — read SQS, wrote to RDS — removed 2026-07-02 along with the `lenie-dev-sqs-to-rds-lambda` CloudFormation stack.)*
+- `app-server-db` (8 document-CRUD endpoints: `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding`) — depended on the decommissioned RDS; ran inside the default VPC.
+- `app-server-internet` (`/website_download_text_content`, `/ai_embedding_get`) — the audit found it broken (deployed zip had a stale import: `library.webpage_parse_result` moved to `library/models/webpage_parse_result.py`) and unused (zero invocations in ≥90 days). Its manually-created role had **`AdministratorAccess`** attached — role deleted; a least-privilege reference CF template is kept at `../cloudformation/templates/app-server-internet.yaml` (commented out in deploy.ini).
+- `sqs-into-rds` — removed with the `lenie-dev-sqs-to-rds-lambda` CloudFormation stack.
 
-Both app functions use path-based routing (`event['path']`) via API Gateway proxy integration.
+Source directories under `lambdas/` are kept for restoration. Sanitized config snapshots (runtime, layers, env key names): [`config-snapshots/`](config-snapshots/).
 
-#### IAM Permissions for Non-CF-Managed Lambdas
-
-`app-server-db` and `app-server-internet` are **not managed by CloudFormation** — their IAM roles are created manually. When using `SECRETS_BACKEND=aws` (config_loader reads from SSM Parameter Store), the execution role must include:
-
-```json
-{
-  "Effect": "Allow",
-  "Action": [
-    "ssm:GetParametersByPath",
-    "ssm:GetParameter"
-  ],
-  "Resource": "arn:aws:ssm:<region>:<account-id>:parameter/lenie/<env>/*"
-}
-```
-
-Replace `<region>`, `<account-id>`, and `<env>` with actual values (e.g., `eu-central-1`, `<AWS_ACCOUNT_ID_PROD>`, `dev`).
-
-Without this permission, `load_config()` will fail at Lambda cold start when `SECRETS_BACKEND=aws` is set.
+**IAM note for restoration:** when using `SECRETS_BACKEND=aws` (config_loader reads SSM at cold start), the execution role needs `ssm:GetParameter` + `ssm:GetParametersByPath` on `arn:aws:ssm:<region>:<account-id>:parameter/lenie/<env>/*`. Deploy roles via CloudFormation (see the reference template) — do not recreate them manually.
 
 ### Archived Functions
 
@@ -182,18 +164,20 @@ cd lambdas/sqs-size/
 
 This zips just the `lambda_function.py` and updates the function directly.
 
-## Flask Server vs Lambda Split
+## Flask Server vs Lambda Split (HISTORICAL — app-server Lambdas deleted 2026-07-02)
+
+This section is kept as design documentation for a possible future restoration (see [docs/aws-serverless-restoration.md](../../../docs/aws-serverless-restoration.md)).
 
 ### Why Two Lambdas?
 
-The Flask backend (`backend/server.py`) is the unified server used in Docker and Kubernetes deployments. In AWS serverless, the endpoints are split into two Lambda functions due to **VPC networking constraints**:
+The Flask backend (`backend/server.py`) is the unified server used in Docker and Kubernetes deployments. In AWS serverless, the endpoints were split into two Lambda functions due to **VPC networking constraints**:
 
-- **`app-server-db`** runs **inside VPC** to access RDS (PostgreSQL). It cannot make outbound internet calls because there is **no NAT Gateway** (cost optimization for a hobby project). **RDS was decommissioned 2026-07-02 — this Lambda's PostgreSQL connection currently fails; not yet re-pointed at another store.**
-- **`app-server-internet`** runs **outside VPC** with internet access for downloading web pages, calling LLM APIs (OpenAI), and computing embeddings.
+- **`app-server-db`** ran **inside VPC** to access RDS (PostgreSQL). It could not make outbound internet calls because there is **no NAT Gateway** (cost optimization for a hobby project).
+- **`app-server-internet`** ran **outside VPC** with internet access for downloading web pages, calling LLM APIs (OpenAI), and computing embeddings.
 
-The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-put-into` Lambda, which stores data in S3 + DynamoDB and sends a message to SQS. That message previously got processed by `sqs-into-rds` to sync into RDS; that consumer was removed with RDS (2026-07-02), so messages now just expire unread after 14 days. Documents uploaded from mobile devices (phone, tablet) still land immediately in DynamoDB and S3, and are synced to the local PostgreSQL database via `imports/dynamodb_sync.py` — this remains the actual working sync path.
+The `/url_add` endpoint from `server.py` is replaced in AWS by the `url-add` / `sqs-weblink-put-into` Lambdas, which store data in S3 + DynamoDB and send a message to SQS. That message previously got processed by `sqs-into-rds` to sync into RDS; that consumer was removed with RDS (2026-07-02), so messages now just expire unread after 14 days. Documents uploaded from mobile devices (phone, tablet) still land immediately in DynamoDB and S3, and are synced to the local PostgreSQL database via `imports/dynamodb_sync.py` — this remains the actual working sync path. **`/url_add` is the only remaining app API endpoint.**
 
-### Endpoint Mapping: server.py vs Lambdas
+### Endpoint Mapping: server.py vs Lambdas (historical)
 
 | `server.py` endpoint | Lambda | Notes |
 |---|---|---|
