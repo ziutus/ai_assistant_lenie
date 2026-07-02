@@ -9,7 +9,7 @@ import { lenie_version } from "../constants/variables";
 
 const Connect: React.FC = () => {
   const navigate = useNavigate();
-  const { setApiKey, setApiUrl, setApiType, setDatabaseStatus } =
+  const { setApiKey, setApiUrl, setApiType } =
     React.useContext(AuthorizationContext);
 
   const [formApiType, setFormApiType] = useState<ApiType>("AWS Serverless");
@@ -38,58 +38,26 @@ const Connect: React.FC = () => {
     const headers = { "x-api-key": formApiKey };
     const timeout = 10000;
 
-    let dbStatus = "unknown";
-
-    if (formApiType === "AWS Serverless") {
-      // Step 1: Check infra API — validates key + returns DB status
-      try {
-        const response = await axios.get(`${formApiUrl}/infra/database/status`, {
-          headers,
-          timeout,
-        });
-        dbStatus = response.data;
-      } catch (err: any) {
-        setIsValidating(false);
-        if (err.response?.status === 403 || err.response?.status === 401) {
-          setError("Invalid API key. Check the key and try again.");
-        } else if (err.code === "ECONNABORTED") {
-          setError("Connection timed out. Check the API URL.");
-        } else {
-          setError(`Connection failed: ${err.message}`);
-        }
-        return;
+    try {
+      await axios.get(`${formApiUrl}/website_list`, {
+        params: { type: "link", limit: 1 },
+        headers,
+        timeout,
+      });
+    } catch (err: any) {
+      setIsValidating(false);
+      if (err.response?.status === 403 || err.response?.status === 401) {
+        setError("Invalid API key. Check the key and try again.");
+      } else if (err.code === "ECONNABORTED") {
+        setError("Connection timed out. Check the API URL.");
+      } else {
+        setError(`Connection failed: ${err.message}`);
       }
-    } else {
-      // Docker/NAS — database is always available, skip infra check
-      dbStatus = "available";
+      return;
     }
 
-    // Step 2: If DB is up, validate app API key
-    if (dbStatus === "available") {
-      try {
-        await axios.get(`${formApiUrl}/website_list`, {
-          params: { type: "link", limit: 1 },
-          headers,
-          timeout,
-        });
-      } catch (err: any) {
-        setIsValidating(false);
-        if (err.response?.status === 403 || err.response?.status === 401) {
-          setError(formApiType === "AWS Serverless"
-            ? "Database is up, but App API rejected the key (403). Check your API key."
-            : "Invalid API key. Check the key and try again.");
-        } else if (err.code === "ECONNABORTED") {
-          setError("Connection timed out. Check the API URL.");
-        } else {
-          setError(`Connection failed: ${err.message}`);
-        }
-        return;
-      }
-    }
-
-    // All checks passed — save DB status and enter the app
+    // Key validated — enter the app
     setIsValidating(false);
-    setDatabaseStatus(dbStatus);
     applyAndRedirect();
   };
 

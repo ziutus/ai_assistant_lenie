@@ -1,19 +1,14 @@
 import React from "react";
 import classes from "./authorization.module.css";
 import { AuthorizationContext } from "../../context/authorizationContext";
-import { useDatabase } from "../../hooks/useDatabase";
-import { useVpnServer } from "../../hooks/useVpnServer";
 import { useSqs } from "../../hooks/useSqs";
 import { clearConnectionConfig } from "../../services/storage";
 import { useNavigate } from "react-router-dom";
 
 const Authorization = () => {
-  const { databaseStatus, apiType, apiUrl, setApiKey } =
+  const { apiType, apiUrl, setApiKey } =
     React.useContext(AuthorizationContext);
-  const { handleDBStart, handleDBStatusGet, handleDBStop, isLoading } = useDatabase();
-  const { handleVPNServerStart, handleVPNServerStop, handleVPNServerStatusGet, isLoading: isLoadingVpnServer } = useVpnServer();
 
-  const { vpnServerStatus } = React.useContext(AuthorizationContext);
   const { sqsLength } = React.useContext(AuthorizationContext);
   const { selectedDocumentType, selectedDocumentState, searchInDocument, searchType } = React.useContext(AuthorizationContext);
 
@@ -38,37 +33,10 @@ const Authorization = () => {
   // Auto-check infrastructure status on mount (AWS only — Docker/NAS has no infra endpoints)
   React.useEffect(() => {
     if (apiType === "AWS Serverless") {
-      handleDBStatusGet();
-      handleVPNServerStatusGet();
       fetchSqsSize();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const generateClass = (): string => {
-    switch (databaseStatus) {
-      case "unknown":
-        return classes.unknown;
-      case "available":
-        return classes.available;
-      case "stopped":
-        return classes.stopped;
-      default:
-        return "";
-    }
-  };
-
-  const generateClassVpnServer = (): string => {
-    switch (vpnServerStatus) {
-      case "available":
-        return "status-available";
-      case "stopped":
-        return "status-stopped";
-      case "unknown":
-      default:
-        return "status-unknown";
-    }
-  };
 
   const handleDisconnect = () => {
     clearConnectionConfig();
@@ -104,74 +72,7 @@ const Authorization = () => {
       {apiType === "AWS Serverless" && (
         <form id={'database-form'} className={classes.grid}>
           <div> SQS queue length: {sqsLength}
-            <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => fetchSqsSize()}> Check size</button>
-          </div>
-
-          <div className={classes.dbStatus}>
-            <p>
-              DataBase status:{' '}
-              <span className={generateClass()}>{databaseStatus}</span>
-            </p>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}
-            >
-              {!!isLoading && <div className={'loader'}></div>}
-              {databaseStatus === 'stopped' && (
-                <button
-                  disabled={isLoading}
-                  type={'button'}
-                  className={'button'}
-                  onClick={() => handleDBStart()}
-                >
-                  Start
-                </button>
-              )}
-              {databaseStatus === 'available' && (
-                <button
-                  disabled={isLoading}
-                  type={'button'}
-                  className={'button'}
-                  onClick={() => handleDBStop()}
-                >
-                  Stop
-                </button>
-              )}
-              <button
-                disabled={isLoading}
-                type={'button'}
-                className={'button'}
-                onClick={() => handleDBStatusGet()}
-              >
-                Check status
-              </button>
-            </div>
-          </div>
-
-          <div className={classes.vpnServerStatus}>
-            <p>
-              VPN Server status:{' '}
-              <span className={generateClassVpnServer()}>{vpnServerStatus}</span>
-            </p>
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}
-            >
-              {!!isLoadingVpnServer && <div className={'loader'}></div>}
-              {vpnServerStatus === 'stopped' && (
-                <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => handleVPNServerStart()}> Start </button>
-              )}
-              {vpnServerStatus === 'running' && (
-                <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => handleVPNServerStop()}> Stop </button>
-              )}
-              <button disabled={isLoadingVpnServer} type={'button'} className={'button'} onClick={() => handleVPNServerStatusGet()}> Check status</button>
-            </div>
+            <button type={'button'} className={'button'} onClick={() => fetchSqsSize()}> Check size</button>
           </div>
         </form>
       )}
