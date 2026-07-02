@@ -116,9 +116,9 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `env-setup.yaml` | SSM Parameter | Runtime version configuration (python3.11) |
-| `vpc.yaml` | VPC, 6 Subnets, IGW, Route Table, SSM | Multi-AZ network (public, private, DB subnets). **Currently unused** — RDS and the OpenVPN bastion actually ran in the AWS default VPC, not this one; this stack has 0 attached instances. Kept deployed but not cleaned up (out of scope of the 2026-07-02 RDS decommission — see `CLAUDE.md` root "Known Issues" if tracked). |
+| ~~`vpc.yaml`~~ | ~~VPC, 6 Subnets, IGW, Route Table, SSM~~ | **Stack deleted 2026-07-02.** The CF-managed VPC was empty (0 instances) — RDS and the OpenVPN bastion actually ran in the AWS default VPC, not this one. Template kept in repo for a future proper VPC layout. |
 | `1-domain-route53.yaml` | Route53 Hosted Zone | DISABLED — creates duplicate zone. Domain `lenie-ai.eu` hosted zone is managed by legacy stack `lenie-domain-route53-definition` (with SSM exports for all environments). |
-| `security-groups.yaml` | Security Group | SSH access from specific IPs. Same unused-VPC caveat as `vpc.yaml`. |
+| ~~`security-groups.yaml`~~ | ~~Security Group~~ | **Stack deleted 2026-07-02.** SSH-access SG (in the default VPC) guarding instances that no longer exist. |
 | ~~`secrets.yaml`~~ | ~~Secrets Manager, SSM Parameter~~ | **Deleted 2026-07-02.** Held only the RDS password secret; removed along with RDS. |
 
 ### Database
@@ -142,8 +142,8 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | `s3.yaml` | S3 Bucket | Video transcription bucket (`lenie-{stage}-video-to-text`) |
 | `s3-cloudformation.yaml` | S3 Bucket, SSM | Lambda code and CF artifacts bucket. Directory structure: `lambdas/` (Lambda ZIP packages), `layers/` (Lambda layers), `templates/` (exported API definitions) |
 | `s3-website-content.yaml` | S3 Bucket, Bucket Policy, SSM | Website content storage (`lenie-{stage}-website-content`, AES256) |
-| `s3-app-web.yaml` | S3 Bucket, Bucket Policy, SSM | Frontend hosting bucket (`lenie-{stage}-app-web`, CloudFront OAC) |
-| `s3-app2-web.yaml` | S3 Bucket, Bucket Policy, SSM | Target multi-user UI hosting bucket (`lenie-{stage}-app2-web`, CloudFront OAC) |
+| ~~`s3-app-web.yaml`~~ | ~~S3 Bucket, Bucket Policy, SSM~~ | **Stack deleted 2026-07-02** (hosted frontend had no backend after app-server-db removal) |
+| ~~`s3-app2-web.yaml`~~ | ~~S3 Bucket, Bucket Policy, SSM~~ | **Stack deleted 2026-07-02** (same reason as s3-app-web) |
 | `s3-landing-web.yaml` | S3 Bucket, Bucket Policy, SSM | Landing page hosting bucket (`lenie-{stage}-landing-web`, CloudFront OAC). Deployed in `[landing-prod]` section — production resource. |
 | `helm.yaml` | S3 Bucket, Bucket Policy, CloudFront OAI, CloudFront Distribution | Helm chart repository and CDN (`helm.{env}.lenie-ai.eu`). Certificate ARN resolved from SSM. |
 
@@ -159,7 +159,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `ec2-lenie.yaml` | EC2 (t4g.micro ARM64), SG, IAM | Instance with dynamic public IP and SSM |
+| ~~`ec2-lenie.yaml`~~ | ~~EC2 (t4g.micro ARM64), SG, IAM~~ | **Stack deleted 2026-07-02** — its instance no longer existed (stack was orphaned). |
 | `lenie-launch-template.yaml` | Launch Template | EC2 launch template |
 | `lambda-rds-start.yaml` | Lambda, IAM Role | REDUNDANT — commented out in deploy.ini; rds-start Lambda is managed by api-gw-infra.yaml. Delete stack `lenie-dev-lambda-rds-start` manually. |
 | `lambda-weblink-put-into-sqs.yaml` | Lambda | Function to put web links into SQS. Note: the queue it writes to has had no consumer since `sqs-to-rds-lambda` was deleted (2026-07-02) — messages just expire after 14 days. |
@@ -201,8 +201,8 @@ These settings apply to all methods/resources via wildcard `MethodSettings` (`Ht
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `cloudfront-app.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for frontend application (`app.{env}.lenie-ai.eu`) with SPA error responses (403/404 → index.html) and Route53 alias record. Certificate ARN resolved from SSM via `{{resolve:ssm:...}}` dynamic reference. |
-| `cloudfront-app2.yaml` | CloudFront Distribution, OAC, Route53 A-Record, SSM | CDN for target multi-user UI (`app2.{env}.lenie-ai.eu`) with SPA error responses and Route53 alias record. Certificate ARN resolved from SSM. |
+| ~~`cloudfront-app.yaml`~~ | ~~CloudFront Distribution, OAC, Route53 A-Record, SSM~~ | **Stack deleted 2026-07-02** (hosted frontend had no backend after app-server-db removal) |
+| ~~`cloudfront-app2.yaml`~~ | ~~CloudFront Distribution, OAC, Route53 A-Record, SSM~~ | **Stack deleted 2026-07-02** (same reason as cloudfront-app) |
 | `cloudfront-landing.yaml` | CloudFront Distribution, OAC, ACM Certificate, Route53 A-Record, SSM | CDN for landing page (`www.lenie-ai.eu`) with static 404 error page, Route53 alias record, and self-contained inline ACM certificate (DNS validation). Deployed in `[landing-prod]` section — production resource, not per-environment. |
 
 ### Email
@@ -248,8 +248,8 @@ Stacks have dependencies between them. When creating a new environment from scra
 - ~~`1-domain-route53.yaml`~~ - DISABLED (duplicate zone; managed by legacy stack `lenie-domain-route53-definition`)
 
 ### Layer 2: Networking
-- `vpc.yaml` - VPC, subnets, IGW
-- `security-groups.yaml` - SSH access rules
+- ~~`vpc.yaml`~~ - REMOVED 2026-07-02 (the CF VPC was empty; workloads used the default VPC)
+- ~~`security-groups.yaml`~~ - REMOVED 2026-07-02 (SSH SG for instances that no longer exist)
 
 ### Layer 3: Security
 - ~~`secrets.yaml`~~ - REMOVED 2026-07-02 (held only the RDS password secret, deleted with RDS)
@@ -259,8 +259,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `s3-cloudformation.yaml` - Lambda code and CF artifacts bucket
 - `dynamodb-documents.yaml` - documents table
 - `s3-website-content.yaml` - website content storage
-- `s3-app-web.yaml` - frontend hosting bucket
-- `s3-app2-web.yaml` - target multi-user UI hosting bucket
+- ~~`s3-app-web.yaml`~~ / ~~`s3-app2-web.yaml`~~ - REMOVED 2026-07-02 (frontend hosting, no backend after app-server-db removal)
 - `sqs-documents.yaml` - document processing queue (no consumer since the RDS pipeline was removed — see "Orchestration" above)
 - `sqs-application-errors.yaml` - DLQ with email notification
 - ~~`rds.yaml`~~ - RDS decommissioned 2026-07-02 (was never actually CF-managed despite the template; deleted directly via the RDS API, final snapshot retained)
@@ -269,8 +268,8 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `lambda-layer-lenie-all.yaml` - shared library layer
 - `lambda-layer-openai.yaml` - OpenAI SDK layer
 - `lambda-layer-psycopg2.yaml` - PostgreSQL driver layer
-- `ec2-lenie.yaml` - application server (currently orphaned: the CF-tracked instance no longer exists, stack not yet cleaned up)
-- `lenie-launch-template.yaml` - EC2 launch template
+- ~~`ec2-lenie.yaml`~~ - REMOVED 2026-07-02 (orphaned: the CF-tracked instance no longer existed)
+- `lenie-launch-template.yaml` - EC2 launch template (still deployed; of limited use now that ec2-lenie is gone — candidate for removal)
 - ~~`lambda-rds-start.yaml`~~ - REDUNDANT, commented out (rds-start Lambda managed by api-gw-infra.yaml)
 - `lambda-weblink-put-into-sqs.yaml` - Lambda for SQS ingestion
 - ~~`sqs-to-rds-lambda.yaml`~~ - REMOVED 2026-07-02 (SQS to RDS transfer Lambda, deleted with RDS)
@@ -287,8 +286,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 
 ### Layer 8: Certificates & CDN
 - `acm-certificates.yaml` - wildcard certificate for dev CloudFront distributions (SSM export)
-- `cloudfront-app.yaml` - CDN for frontend application (`app.{env}.lenie-ai.eu`, cert from SSM)
-- `cloudfront-app2.yaml` - CDN for target multi-user UI (`app2.{env}.lenie-ai.eu`, cert from SSM)
+- ~~`cloudfront-app.yaml`~~ / ~~`cloudfront-app2.yaml`~~ - REMOVED 2026-07-02 (frontend hosting CDNs)
 - `helm.yaml` - Helm chart repository and CDN (cert from SSM)
 
 This order is reflected in the `deploy.ini` file under the `[dev]` section. Run `./deploy.sh -p lenie -s dev` to deploy all templates in order.

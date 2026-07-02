@@ -82,28 +82,28 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 
 | Service | Purpose |
 |---------|---------|
-| VPC | Networking with public/private/DB subnets (a separate, currently-empty leftover VPC also exists — see Known Issues) |
+| VPC | Only the AWS default VPC remains — the empty CF-managed VPC (`lenie-dev-vpc`) and its SSH security-groups stack were deleted 2026-07-02 |
 | DynamoDB | Document metadata store, cross-env sync (now the sole cloud document store — RDS decommissioned 2026-07-02) |
 | SQS | Document processing queue — currently has no consumer since the RDS pipeline was removed (see "Scalable Asynchronous Ingestion via SQS" above) |
 | SNS | Error notifications via email |
 | S3 | Lambda code artifacts, video transcriptions, web content |
 | Lambda | 3 functions: `url-add` (Chrome extension ingestion), `sqs-weblink-put-into`, `sqs-size`. The app-server-db/internet document-serving Lambdas were deleted 2026-07-02 — see [docs/aws-serverless-restoration.md](../../docs/aws-serverless-restoration.md) |
 | API Gateway | 2 REST APIs (app: 1 endpoint — `/url_add`; infra: 1 endpoint — `/sqs/size`) + custom domain `api.{env}.lenie-ai.eu` with base path mappings |
-| EC2 | Application server (currently orphaned/stale CF-tracked instance, see `serverless/CLAUDE.md`) |
+| EC2 | None running — the orphaned `ec2-lenie` stack was deleted 2026-07-02; only the (unused) launch template stack remains |
 | EKS | Kubernetes cluster (alternative deployment target) |
 | Route53 | DNS for lenie-ai.eu domain |
 | SSM Parameter Store | Cross-stack value sharing |
 | CloudWatch | Logging, Step Function execution monitoring |
 | Budgets | Cost alerts ($8/month threshold) |
 | Organizations + SCPs | Multi-account governance, region restrictions |
-| CloudFront | CDN for frontend app (`app.dev.lenie-ai.eu`), admin panel (`app2.dev.lenie-ai.eu`), and landing page (`www.lenie-ai.eu`) |
+| CloudFront | CDN for the landing page (`www.lenie-ai.eu`) only — app/app2 hosting deleted 2026-07-02 |
 
 ## Frontend Hosting
 
-Three web frontends are hosted via S3 + CloudFront:
-- **React app** (`web_interface_react/`) — `app.dev.lenie-ai.eu` via `s3-app-web` + `cloudfront-app` stacks
-- **Admin panel** (`web_interface_app2/`) — `app2.dev.lenie-ai.eu` via `s3-app2-web` + `cloudfront-app2` stacks
+Only the landing page is hosted via S3 + CloudFront:
 - **Landing page** (`web_landing_page/`, Next.js static export) — `www.lenie-ai.eu` via `s3-landing-web` + `cloudfront-landing` stacks
+
+The React app (`app.dev.lenie-ai.eu`) and admin panel (`app2.dev.lenie-ai.eu`) hosting stacks were **deleted 2026-07-02** — they required the AWS document API (`app-server-db`), which was decommissioned. Both frontends now run only against the Docker/NAS backend. Restoration: [docs/aws-serverless-restoration.md](../../docs/aws-serverless-restoration.md).
 
 ### Historical Context
 

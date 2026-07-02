@@ -174,7 +174,7 @@ npm run lint      # TypeScript type check only
 
 ## AWS Deployment
 
-Deploy to S3 + CloudFront (`app.dev.lenie-ai.eu`). The script resolves S3 bucket and CloudFront distribution ID from SSM Parameter Store.
+**Hosting deleted 2026-07-02** — the `app.dev.lenie-ai.eu` S3+CloudFront stacks were removed (the frontend required the decommissioned AWS document API; it now runs only against Docker/NAS). `./deploy.sh` will fail until the stacks are restored — see [docs/aws-serverless-restoration.md](../docs/aws-serverless-restoration.md). Original flow (kept for restoration): the script resolves S3 bucket and CloudFront distribution ID from SSM Parameter Store.
 
 ```bash
 ./deploy.sh                      # Full build + deploy to S3 + CF invalidation
