@@ -58,9 +58,9 @@ Common variables:
 
 | Function | Env Vars | Description |
 |----------|----------|-------------|
-| `rds-manager` | `DB_ID` | RDS instance management — start/stop/status via API Gateway path routing |
-| `ec2-manager` | `INSTANCE_ID` | EC2 instance management — start/stop/status via API Gateway path routing |
 | `sqs-size` | SSM: `/lenie/dev/sqs_queue/new_links` | Get approximate message count in SQS queue |
+
+`rds-manager` and `ec2-manager` (RDS + OpenVPN start/stop/status) were removed from `api-gw-infra.yaml` and deleted from AWS on 2026-07-02 — RDS was decommissioned (unused since ~2026-04). The source directories `lambdas/rds-manager/` and `lambdas/ec2-manager/` are now dead code, kept only for reference; not part of `function_list_cf.txt` anymore.
 
 #### Document Processing (simple)
 
@@ -72,9 +72,10 @@ Common variables:
 
 | Function | Endpoints | Description |
 |----------|-----------|-------------|
-| `app-server-db` | `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding` | DB-facing operations. Requires PostgreSQL env vars, `OPENAI_*`, `EMBEDDING_MODEL`, `BACKEND_TYPE`. |
-| `app-server-internet` | `/website_download_text_content`, `/ai_embedding_get` | Internet-facing operations (downloads, AI calls, embeddings). Requires `OPENAI_*`, `AI_MODEL_SUMMARY`, `EMBEDDING_MODEL`. |
-| `sqs-into-rds` | - | Reads SQS message, creates `StalkerWebDocumentDB`, saves document to PostgreSQL. Requires `backend/library` in zip package. |
+| `app-server-db` | `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding` | DB-facing operations. Requires PostgreSQL env vars, `OPENAI_*`, `EMBEDDING_MODEL`, `BACKEND_TYPE`. **⚠ RDS was decommissioned 2026-07-02 — this function's PostgreSQL connection no longer resolves. All endpoints in this row currently fail when called through the "AWS Serverless" frontend mode. Not yet fixed; needs a decision (point at DynamoDB instead, or retire the AWS Serverless document-browsing path entirely in favor of Docker/NAS mode).** |
+| `app-server-internet` | `/website_download_text_content`, `/ai_embedding_get` | Internet-facing operations (downloads, AI calls, embeddings). Requires `OPENAI_*`, `AI_MODEL_SUMMARY`, `EMBEDDING_MODEL`. Not affected — no RDS dependency. |
+
+*(`sqs-into-rds` — read SQS, wrote to RDS — removed 2026-07-02 along with the `lenie-dev-sqs-to-rds-lambda` CloudFormation stack.)*
 
 Both app functions use path-based routing (`event['path']`) via API Gateway proxy integration.
 
@@ -187,10 +188,10 @@ This zips just the `lambda_function.py` and updates the function directly.
 
 The Flask backend (`backend/server.py`) is the unified server used in Docker and Kubernetes deployments. In AWS serverless, the endpoints are split into two Lambda functions due to **VPC networking constraints**:
 
-- **`app-server-db`** runs **inside VPC** to access RDS (PostgreSQL). It cannot make outbound internet calls because there is **no NAT Gateway** (cost optimization for a hobby project).
+- **`app-server-db`** runs **inside VPC** to access RDS (PostgreSQL). It cannot make outbound internet calls because there is **no NAT Gateway** (cost optimization for a hobby project). **RDS was decommissioned 2026-07-02 — this Lambda's PostgreSQL connection currently fails; not yet re-pointed at another store.**
 - **`app-server-internet`** runs **outside VPC** with internet access for downloading web pages, calling LLM APIs (OpenAI), and computing embeddings.
 
-The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-put-into` Lambda, which stores data in S3 + DynamoDB and sends a message to SQS (processed later by `sqs-into-rds` when RDS is available). This asynchronous pattern decouples data ingestion from database availability — documents uploaded from mobile devices (phone, tablet) are immediately stored in DynamoDB and S3, and can be synced to the local PostgreSQL database at any time.
+The `/url_add` endpoint from `server.py` is replaced in AWS by the `sqs-weblink-put-into` Lambda, which stores data in S3 + DynamoDB and sends a message to SQS. That message previously got processed by `sqs-into-rds` to sync into RDS; that consumer was removed with RDS (2026-07-02), so messages now just expire unread after 14 days. Documents uploaded from mobile devices (phone, tablet) still land immediately in DynamoDB and S3, and are synced to the local PostgreSQL database via `imports/dynamodb_sync.py` — this remains the actual working sync path.
 
 ### Endpoint Mapping: server.py vs Lambdas
 

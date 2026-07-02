@@ -26,8 +26,6 @@ web_interface_react/
 │   │   │   ├── useManageLLM.ts         # Core document CRUD + AI operations
 │   │   │   ├── useList.ts              # Document list fetching
 │   │   │   ├── useSearch.ts            # Vector similarity search
-│   │   │   ├── useDatabase.ts          # RDS start/stop/status
-│   │   │   ├── useVpnServer.ts         # VPN server control
 │   │   │   ├── useSqs.ts              # SQS queue size check
 │   │   │   └── useFileSubmit.ts        # Image file upload
 │   │   ├── components/
@@ -96,7 +94,7 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 ### Global State (`authorizationContext.tsx`)
 
 - **API config** (persisted to localStorage): `apiUrl`, `apiKey`, `apiType` (AWS Serverless / Docker)
-- **Infrastructure status**: `databaseStatus`, `vpnServerStatus`, `sqsLength`
+- **Infrastructure status**: `sqsLength` (RDS/OpenVPN status widgets removed 2026-07-02 along with the AWS resources they managed)
 - **Document filters**: `selectedDocumentType`, `selectedDocumentState`, `searchInDocument`, `searchType`
 
 ### localStorage Keys
@@ -114,8 +112,6 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 | `useManageLLM` | Document CRUD, AI processing (split, clean) | `/website_get`, `/website_save`, `/website_delete`, `/website_download_text_content`, `/website_split_for_embedding`, `/website_text_remove_not_needed` |
 | `useList` | Fetch document list with filters | `/website_list` |
 | `useSearch` | Vector similarity search | `/ai_embedding_get` + `/website_similar` (AWS) or `/website_similar` only (Docker) |
-| `useDatabase` | RDS instance management | `/infra/database/status\|start\|stop` |
-| `useVpnServer` | VPN server management | `/infra/vpn_server/status\|start\|stop` |
 | `useSqs` | SQS queue size | `/infra/sqs/size` |
 | `useFileSubmit` | Image upload | Separate AWS endpoint |
 
@@ -133,7 +129,7 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 | AWS Serverless | `https://api.dev.lenie-ai.eu` |
 | Docker | `http://localhost:5000` |
 
-App endpoints use the base URL (e.g., `/website_list`), infra endpoints use `/infra` prefix (e.g., `/infra/database/status`). Both share the same domain via API Gateway custom domain base path mappings.
+App endpoints use the base URL (e.g., `/website_list`), infra endpoints use `/infra` prefix (e.g., `/infra/sqs/size`). Both share the same domain via API Gateway custom domain base path mappings.
 
 ## TypeScript
 
