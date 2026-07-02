@@ -1,0 +1,25 @@
+{
+    "FunctionName": "lenie-dev-app-server-internet",
+    "Runtime": "python3.11",
+    "Handler": "lambda_function.lambda_handler",
+    "Timeout": 28,
+    "MemorySize": 128,
+    "Layers": [
+        "arn:aws:lambda:us-east-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:73",
+        "arn:aws:lambda:us-east-1:008971653395:layer:lenie_all_layer:4",
+        "arn:aws:lambda:us-east-1:008971653395:layer:lenie_openai:1",
+        "arn:aws:lambda:us-east-1:008971653395:layer:psycopg2_new_layer:1"
+    ],
+    "EnvKeys": [
+        "AWS_S3_TRANSCRIPT",
+        "AI_MODEL_SUMMARY",
+        "USE_CACHE",
+        "OPENAI_API_KEY",
+        "OPENAI_ORGANIZATION",
+        "EMBEDDING_MODEL",
+        "ASSEMBLYAI",
+        "TRANSCRIPT_PROVIDER"
+    ],
+    "Role": "arn:aws:iam::008971653395:role/lenie-dev-app-server-internet-role",
+    "Tracing": "Active"
+}

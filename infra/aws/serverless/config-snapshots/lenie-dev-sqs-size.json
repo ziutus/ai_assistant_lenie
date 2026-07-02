@@ -1,0 +1,14 @@
+{
+    "FunctionName": "lenie-dev-sqs-size",
+    "Runtime": "python3.11",
+    "Handler": "lambda_function.lambda_handler",
+    "Timeout": 30,
+    "MemorySize": 128,
+    "Layers": null,
+    "EnvKeys": [
+        "DB_ID",
+        "LOG_LEVEL"
+    ],
+    "Role": "arn:aws:iam::008971653395:role/lenie-dev-sqs-size-role",
+    "Tracing": "PassThrough"
+}

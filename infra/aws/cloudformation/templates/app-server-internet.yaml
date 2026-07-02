@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'app-server-internet Lambda — internet-facing operations (webpage download, embeddings via Bedrock)'
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project code for resource naming and tagging
+  Environment:
+    Type: String
+    Default: dev
+    Description: Deployment environment
+    AllowedValues:
+      - dev
+      # Post-MVP: add prod, qa as needed
+
+Resources:
+  AppServerInternetExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectCode}-${Environment}-app-server-internet-role'
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: AppServerInternetPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - xray:PutTraceSegments
+                  - xray:PutTelemetryRecords
+                Resource: "*"
+              - Effect: Allow
+                # EMBEDDING_MODEL is configurable via SSM; scoped to the Titan embedding family
+                # actually in use rather than all Bedrock foundation models.
+                Action:
+                  - bedrock:InvokeModel
+                Resource: !Sub 'arn:aws:bedrock:${AWS::Region}::foundation-model/amazon.titan-embed-*'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ProjectCode}/${Environment}/*'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'
+
+  AppServerInternetFunction:
+    Type: 'AWS::Lambda::Function'
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      FunctionName: !Sub '${ProjectCode}-${Environment}-app-server-internet'
+      Handler: 'lambda_function.lambda_handler'
+      Role: !GetAtt AppServerInternetExecutionRole.Arn
+      Runtime: 'python3.11'
+      Timeout: 28
+      MemorySize: 128
+      TracingConfig:
+        Mode: Active
+      Layers:
+        - 'arn:aws:lambda:us-east-1:017000801446:layer:AWSLambdaPowertoolsPythonV2:73'
+        - !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/lambda/layers/lenie-all/arn}}'
+        - !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/lambda/layers/openai/arn}}'
+        - !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/lambda/layers/psycopg2/arn}}'
+      Code:
+        S3Bucket: !Sub '{{resolve:ssm:/${ProjectCode}/${Environment}/s3/cloudformation/name}}'
+        S3Key: !Sub 'lambdas/${ProjectCode}-${Environment}-app-server-internet.zip'
+      Environment:
+        Variables:
+          AWS_S3_TRANSCRIPT: !Sub '{{resolve:ssm-secure:/${ProjectCode}/${Environment}/AWS_S3_TRANSCRIPT}}'
+          AI_MODEL_SUMMARY: !Sub '{{resolve:ssm-secure:/${ProjectCode}/${Environment}/AI_MODEL_SUMMARY}}'
+          USE_CACHE: !Sub '{{resolve:ssm-secure:/${ProjectCode}/${Environment}/USE_CACHE}}'
+          OPENAI_API_KEY: !Sub '{{resolve:ssm-secure:/${ProjectCode}/${Environment}/OPENAI_API_KEY}}'
+          OPENAI_ORGANIZATION: !Sub '{{resolve:ssm-secure:/${ProjectCode}/${Environment}/OPENAI_ORGANIZATION}}'
+          EMBEDDING_MODEL: !Sub '{{resolve:ssm-secure:/${ProjectCode}/${Environment}/EMBEDDING_MODEL}}'
+          ASSEMBLYAI: !Sub '{{resolve:ssm-secure:/${ProjectCode}/${Environment}/ASSEMBLYAI}}'
+          TRANSCRIPT_PROVIDER: 'assemblyai'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectCode
+        - Key: ManagedBy
+          Value: CloudFormation
+        - Key: StackName
+          Value: !Ref 'AWS::StackName'

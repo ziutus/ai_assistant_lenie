@@ -1,0 +1,15 @@
+{
+    "FunctionName": "lenie-dev-weblink-put-into-sqs",
+    "Runtime": "python3.11",
+    "Handler": "lambda_function.lambda_handler",
+    "Timeout": 30,
+    "MemorySize": 128,
+    "Layers": null,
+    "EnvKeys": [
+        "DYNAMODB_TABLE_NAME",
+        "AWS_QUEUE_URL_ADD",
+        "BUCKET_NAME"
+    ],
+    "Role": "arn:aws:iam::008971653395:role/lenie-dev-lambda-weblink-put-into-sqs-lambda-role",
+    "Tracing": "PassThrough"
+}
