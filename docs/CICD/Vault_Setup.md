@@ -159,7 +159,7 @@ python scripts/env_to_vault.py ssm get --env dev OPENAI_API_KEY        # get act
 
 # Optional AWS flags (for all ssm commands)
 python scripts/env_to_vault.py ssm list --env dev --region eu-central-1
-python scripts/env_to_vault.py ssm list --env dev --profile lenie-ai-2025-admin
+python scripts/env_to_vault.py ssm list --env dev --profile default
 ```
 
 ### Sync between backends

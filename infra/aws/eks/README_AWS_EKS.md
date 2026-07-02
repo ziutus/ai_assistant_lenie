@@ -75,7 +75,7 @@ Add addons by web interface.
 
 ```shell
 eksctl create addon --cluster lenie-ai --name aws-ebs-csi-driver --version latest \
-    --service-account-role-arn arn:aws:iam::008971653395:role/AmazonEKS_EBS_CSI_DriverRole --force
+    --service-account-role-arn arn:aws:iam::<AWS_ACCOUNT_ID_PROD>:role/AmazonEKS_EBS_CSI_DriverRole --force
 ```
 
 ## install metric server

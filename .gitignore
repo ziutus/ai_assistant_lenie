@@ -87,7 +87,9 @@ credentials.json
 */token.json
 token.json
 /infra/aws/serverless/env_lenie_2025.sh
+/infra/aws/serverless/env.sh
 /infra/kubernetes/kustomize/overlays/gke-dev/server_secrets.yaml
+/infra/kubernetes/kustomize/overlays/gke-dev/server_configmap.yaml
 
 # Local-only context files (contain account-specific AWS details)
 context_*.txt

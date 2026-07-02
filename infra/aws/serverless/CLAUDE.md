@@ -6,8 +6,8 @@ Source code for Lambda functions and Lambda layers, along with scripts for packa
 
 ```
 serverless/
-├── env.sh                     # Environment config (old AWS account)
-├── env_lenie_2025.sh          # Environment config (current AWS account)
+├── env.sh                     # Environment config (current AWS account)
+├── env_lenie_2025.sh          # Environment config (closed AWS account, kept for reference only)
 ├── zip_to_s3.sh               # Package and deploy Lambda code to S3 + update function
 ├── function_list_cf.txt       # Functions deployed via CloudFormation (simple)
 ├── function_list_cf_app.txt   # Functions deployed via CloudFormation (app - include backend/library)
@@ -30,19 +30,19 @@ serverless/
 
 ## Environment Configuration
 
-Two environment files exist for different AWS accounts:
+Two environment files exist, one per AWS account:
 
-| File | AWS Account | Profile | S3 Bucket Pattern |
-|------|------------|---------|-------------------|
-| `env.sh` | `008971653395` | `default` | `lenie-dev-cloudformation` |
-| `env_lenie_2025.sh` | `049706517731` | `lenie-ai-2025-admin` | `lenie-2025-dev-cloudformation` |
+| File | AWS Account | Profile | S3 Bucket Pattern | Status |
+|------|------------|---------|-------------------|--------|
+| `env.sh` | `<AWS_ACCOUNT_ID_PROD>` | `default` | `lenie-dev-cloudformation` | **active — current production** |
+| `env_lenie_2025.sh` | `<AWS_ACCOUNT_ID_LEGACY>` | `lenie-ai-2025-admin` | `lenie-2025-dev-cloudformation` | **closed 2026-07-02** (was an earlier, abandoned environment — never became the production target despite the name; fully decommissioned and closed via `organizations close-account`, 90-day grace period until permanent deletion) |
 
 Common variables:
 - `PYTHON_VERSION=3.11` - Lambda runtime version
 - `PLATFORM=manylinux2014_x86_64` - pip platform for binary packages
 - `PROJECT_NAME=lenie`, `ENVIRONMENT=dev`
 
-**Important**: Scripts source `env.sh` by default. To use the current account, either update `env.sh` or change the source line in scripts to `env_lenie_2025.sh`.
+**Important**: Scripts source `env.sh` by default — this is correct, `env.sh` points to the active account. `env_lenie_2025.sh` should no longer be sourced; it targets a closed account and is kept only for historical reference.
 
 ## Lambda Functions
 
@@ -93,7 +93,7 @@ Both app functions use path-based routing (`event['path']`) via API Gateway prox
 }
 ```
 
-Replace `<region>`, `<account-id>`, and `<env>` with actual values (e.g., `eu-central-1`, `008971653395`, `dev`).
+Replace `<region>`, `<account-id>`, and `<env>` with actual values (e.g., `eu-central-1`, `<AWS_ACCOUNT_ID_PROD>`, `dev`).
 
 Without this permission, `load_config()` will fail at Lambda cold start when `SECRETS_BACKEND=aws` is set.
 
