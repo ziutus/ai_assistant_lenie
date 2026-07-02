@@ -10,8 +10,6 @@ export interface AuthorizationState {
   setApiUrl: React.Dispatch<React.SetStateAction<string>>;
   apiType: ApiType;
   setApiType: React.Dispatch<React.SetStateAction<ApiType>>;
-  sqsLength: number;
-  setSqsLength: React.Dispatch<React.SetStateAction<number>>;
   searchInDocument: string;
   setSearchInDocument: React.Dispatch<React.SetStateAction<string>>;
   searchType: string;

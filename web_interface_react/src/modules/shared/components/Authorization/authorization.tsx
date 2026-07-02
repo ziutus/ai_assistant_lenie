@@ -1,7 +1,6 @@
 import React from "react";
 import classes from "./authorization.module.css";
 import { AuthorizationContext } from "../../context/authorizationContext";
-import { useSqs } from "../../hooks/useSqs";
 import { clearConnectionConfig } from "../../services/storage";
 import { useNavigate } from "react-router-dom";
 
@@ -9,10 +8,8 @@ const Authorization = () => {
   const { apiType, apiUrl, setApiKey } =
     React.useContext(AuthorizationContext);
 
-  const { sqsLength } = React.useContext(AuthorizationContext);
   const { selectedDocumentType, selectedDocumentState, searchInDocument, searchType } = React.useContext(AuthorizationContext);
 
-  const { fetchSqsSize } = useSqs();
   const navigate = useNavigate();
   const [backendVersion, setBackendVersion] = React.useState<string | null>(null);
 
@@ -29,14 +26,6 @@ const Authorization = () => {
         .catch(() => setBackendVersion(null));
     }
   }, [apiUrl]);
-
-  // Auto-check infrastructure status on mount (AWS only — Docker/NAS has no infra endpoints)
-  React.useEffect(() => {
-    if (apiType === "AWS Serverless") {
-      fetchSqsSize();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const handleDisconnect = () => {
     clearConnectionConfig();
@@ -69,13 +58,6 @@ const Authorization = () => {
         </button>
       </div>
 
-      {apiType === "AWS Serverless" && (
-        <form id={'database-form'} className={classes.grid}>
-          <div> SQS queue length: {sqsLength}
-            <button type={'button'} className={'button'} onClick={() => fetchSqsSize()}> Check size</button>
-          </div>
-        </form>
-      )}
       <div>
         <span> Document type: {selectedDocumentType} </span>
         <span> Document status: {selectedDocumentState}</span>

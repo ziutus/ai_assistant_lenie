@@ -15,9 +15,10 @@ serverless/
 ├── lambdas/                   # Lambda function source code
 │   ├── rds-manager/           # RDS instance management (start/stop/status) — consolidated from rds-start, rds-stop, rds-status
 │   ├── ec2-manager/           # EC2 instance management (start/stop/status) — consolidated from ec2-start, ec2-stop, ec2-status
-│   ├── sqs-size/              # Get SQS queue message count
+│   ├── url-add/               # /url_add endpoint — writes document to S3 + DynamoDB (the ONLY deployed Lambda)
+│   ├── sqs-size/              # (deleted from AWS 2026-07-02) Get SQS queue message count
 │   ├── sqs-into-rds/          # (deleted from AWS 2026-07-02) Process SQS messages into RDS
-│   ├── sqs-weblink-put-into/  # Put web links into SQS queue
+│   ├── sqs-weblink-put-into/  # (deleted from AWS 2026-07-02) Put web links into SQS queue
 │   ├── app-server-db/         # (deleted from AWS 2026-07-02) Main app Lambda - DB operations
 │   ├── app-server-internet/   # (deleted from AWS 2026-07-02) Main app Lambda - internet operations
 │   └── tmp/                   # Empty Lambda placeholder
@@ -56,9 +57,7 @@ Common variables:
 
 #### Infrastructure Management (simple)
 
-| Function | Env Vars | Description |
-|----------|----------|-------------|
-| `sqs-size` | SSM: `/lenie/dev/sqs_queue/new_links` | Get approximate message count in SQS queue |
+*(All infrastructure-management Lambdas are deleted as of 2026-07-02: `rds-manager`/`ec2-manager` went with RDS, `sqs-size` went with the SQS pipeline. Sources kept under `lambdas/` for restoration.)*
 
 `rds-manager` and `ec2-manager` (RDS + OpenVPN start/stop/status) were removed from `api-gw-infra.yaml` and deleted from AWS on 2026-07-02 — RDS was decommissioned (unused since ~2026-04). The source directories `lambdas/rds-manager/` and `lambdas/ec2-manager/` are now dead code, kept only for reference; not part of `function_list_cf.txt` anymore.
 
@@ -66,7 +65,9 @@ Common variables:
 
 | Function | Description |
 |----------|-------------|
-| `sqs-weblink-put-into` | Receives URL data via API Gateway, stores text/HTML in S3, saves metadata to DynamoDB, sends message to SQS. Env vars: `AWS_QUEUE_URL_ADD`, `BUCKET_NAME`, `DYNAMODB_TABLE_NAME` |
+| `url-add` | **The only deployed Lambda.** Receives URL data via API Gateway (`/url_add`), stores text/HTML in S3, saves metadata to DynamoDB (critical write). SQS send removed 2026-07-02. Env vars: `BUCKET_NAME`, `DYNAMODB_TABLE_NAME`. Source: `lambdas/url-add/` |
+
+*(`sqs-weblink-put-into` — an older parallel ingestion path — was deleted 2026-07-02 after 180 days with zero invocations.)*
 
 #### Application Server (app - includes backend/library) — DELETED 2026-07-02
 
@@ -175,14 +176,14 @@ The Flask backend (`backend/server.py`) is the unified server used in Docker and
 - **`app-server-db`** ran **inside VPC** to access RDS (PostgreSQL). It could not make outbound internet calls because there is **no NAT Gateway** (cost optimization for a hobby project).
 - **`app-server-internet`** ran **outside VPC** with internet access for downloading web pages, calling LLM APIs (OpenAI), and computing embeddings.
 
-The `/url_add` endpoint from `server.py` is replaced in AWS by the `url-add` / `sqs-weblink-put-into` Lambdas, which store data in S3 + DynamoDB and send a message to SQS. That message previously got processed by `sqs-into-rds` to sync into RDS; that consumer was removed with RDS (2026-07-02), so messages now just expire unread after 14 days. Documents uploaded from mobile devices (phone, tablet) still land immediately in DynamoDB and S3, and are synced to the local PostgreSQL database via `imports/dynamodb_sync.py` — this remains the actual working sync path. **`/url_add` is the only remaining app API endpoint.**
+The `/url_add` endpoint from `server.py` is replaced in AWS by the `url-add` Lambda, which stores data in S3 + DynamoDB (the SQS send and its whole pipeline were removed 2026-07-02). Documents uploaded from mobile devices (phone, tablet) land immediately in DynamoDB and S3, and are synced to the local PostgreSQL database via `imports/dynamodb_sync.py` — this remains the actual working sync path. **`/url_add` is the only remaining app API endpoint.**
 
 ### Endpoint Mapping: server.py vs Lambdas (historical)
 
 | `server.py` endpoint | Lambda | Notes |
 |---|---|---|
 | `/` (GET) | - | Info endpoint, server.py only |
-| `/url_add` (POST) | `sqs-weblink-put-into` | Different architecture: S3+DynamoDB+SQS instead of direct DB write |
+| `/url_add` (POST) | `url-add` | Different architecture: S3+DynamoDB instead of direct DB write |
 | `/website_list` (GET) | `app-server-db` | Lambda does not return `all_results_count` |
 | `/website_is_paid` (POST) | `app-server-db` | Functionally equivalent |
 | `/website_get` (GET) | `app-server-db` | Functionally equivalent |
