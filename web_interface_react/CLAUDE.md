@@ -120,16 +120,16 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 - **HTTP client**: axios
 - **Auth header**: `x-api-key: {apiKey}` on all requests
 - **Content-Type**: `application/x-www-form-urlencoded`
-- **API type toggle**: AWS Serverless (custom domain `api.dev.lenie-ai.eu`) or Docker (localhost:5000)
+- **API type**: Docker (Flask backend, localhost:5000 or NAS) — the only selectable option. The "AWS Serverless" option was removed from the connect screen 2026-07-02: its document-serving Lambdas (`app-server-db`/`app-server-internet`) were decommissioned, leaving only `/url_add` in the AWS API (used by the Chrome extension, not this frontend). The `ApiType` union in `@lenie/shared` still includes "AWS Serverless" because `web_interface_app2` references it. Restoration: [docs/aws-serverless-restoration.md](../docs/aws-serverless-restoration.md).
 
 ### Default URLs
 
 | API Type | API URL |
 |----------|---------|
-| AWS Serverless | `https://api.dev.lenie-ai.eu` |
 | Docker | `http://localhost:5000` |
+| ~~AWS Serverless~~ (removed from UI) | `https://api.dev.lenie-ai.eu` |
 
-App endpoints use the base URL (e.g., `/website_list`), infra endpoints use `/infra` prefix (e.g., `/infra/sqs/size`). Both share the same domain via API Gateway custom domain base path mappings.
+App endpoints use the base URL (e.g., `/website_list`), infra endpoints use `/infra` prefix (e.g., `/infra/sqs/size`).
 
 ## TypeScript
 

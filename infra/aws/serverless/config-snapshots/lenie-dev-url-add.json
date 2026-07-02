@@ -1,0 +1,19 @@
+{
+    "FunctionName": "lenie-dev-url-add",
+    "Runtime": "python3.11",
+    "Handler": "lambda_function.lambda_handler",
+    "Timeout": 30,
+    "MemorySize": 128,
+    "Layers": [
+        "arn:aws:lambda:us-east-1:017000801446:layer:AWSLambdaPowertoolsPythonV3-python311-x86_64:6"
+    ],
+    "EnvKeys": [
+        "TIMESTAMP",
+        "DYNAMODB_TABLE_NAME",
+        "AWS_QUEUE_URL_ADD",
+        "LOG_LEVEL",
+        "BUCKET_NAME"
+    ],
+    "Role": "arn:aws:iam::008971653395:role/lenie-dev-url-add-LambdaExecutionRole-3PR7oQFomdA2",
+    "Tracing": "PassThrough"
+}

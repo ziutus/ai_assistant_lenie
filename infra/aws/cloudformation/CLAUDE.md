@@ -164,6 +164,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | `lambda-rds-start.yaml` | Lambda, IAM Role | REDUNDANT — commented out in deploy.ini; rds-start Lambda is managed by api-gw-infra.yaml. Delete stack `lenie-dev-lambda-rds-start` manually. |
 | `lambda-weblink-put-into-sqs.yaml` | Lambda | Function to put web links into SQS. Note: the queue it writes to has had no consumer since `sqs-to-rds-lambda` was deleted (2026-07-02) — messages just expire after 14 days. |
 | ~~`sqs-to-rds-lambda.yaml`~~ | ~~Lambda, IAM Role~~ | **Deleted 2026-07-02** (stack `lenie-dev-sqs-to-rds-lambda`). Transferred messages from SQS to RDS; removed along with RDS. |
+| `app-server-internet.yaml` | Lambda, IAM Role | **NOT deployed** — least-privilege reference template kept for restoring the `app-server-internet` Lambda (deleted 2026-07-02; the old manually-created role had `AdministratorAccess`). Commented out in deploy.ini. See [docs/aws-serverless-restoration.md](../../../docs/aws-serverless-restoration.md). |
 | `url-add.yaml` | Lambda, IAM, Logs | URL addition Lambda function (API GW removed — `/url_add` endpoint served via `api-gw-app.yaml`) |
 
 ### API Gateway
@@ -172,7 +173,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 |----------|-----------|-------------|
 | `api-gw-account.yaml` | IAM Role, API GW Account, SSM Parameter | Account-level CloudWatch IAM role for API Gateway logging. Sets `cloudwatchRoleArn` on `AWS::ApiGateway::Account` (singleton per account/region). Role ARN exported to SSM at `/${ProjectCode}/${Environment}/apigw/cloudwatch-role-arn`. Must be deployed before any API Gateway templates that use stage logging. |
 | `api-gw-infra.yaml` | REST API, 1 Lambda, 1 IAM Role, SSM | Infrastructure management API — trimmed to a single endpoint (`/sqs/size`, `sqs-size` Lambda) on 2026-07-02. Previously also had `rds-manager` and `ec2-manager` (RDS + OpenVPN start/stop/status), removed when RDS was decommissioned. Paths without `/infra` prefix (routing via custom domain base path mapping). Exports API ID and invoke URL to SSM. |
-| `api-gw-app.yaml` | REST API, Stage, Lambda Permissions, SSM | Main application API (11 endpoints, x-api-key). Separate `ApiStage` resource manages v1 stage settings (logging, tracing, metrics). References 3 Lambda functions: `${PC}-${Env}-app-server-db`, `${PC}-${Env}-app-server-internet`, `${PC}-${Env}-url-add`. All Lambda names fully parameterized. Exports API ID, root resource ID, and invoke URL to SSM. |
+| `api-gw-app.yaml` | REST API, Stage, Lambda Permission, SSM | Main application API — trimmed to a single endpoint (`/url_add` → `url-add` Lambda) on 2026-07-02 when the app-server-db/internet Lambdas were deleted. Full 11-endpoint version: `git show e9e7e20:infra/aws/cloudformation/templates/api-gw-app.yaml`. Separate `ApiStage` resource manages v1 stage settings (logging, tracing, metrics). Exports API ID, root resource ID, and invoke URL to SSM. |
 | `api-gw-custom-domain.yaml` | ACM Certificate, API GW DomainName, BasePathMappings, Route53, SSM | Custom domain `api.{env}.lenie-ai.eu` with TLS 1.2. Root path (`/`) maps to app API, `/infra` maps to infra API. DNS validation via Route53. |
 
 **`api-gw-app` stage configuration (managed by CloudFormation):**
