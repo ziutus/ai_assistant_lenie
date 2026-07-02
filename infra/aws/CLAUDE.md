@@ -59,7 +59,7 @@ aws/
 Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/update/delete) across environments. Templates organized by layer: networking (VPC), database (DynamoDB — RDS decommissioned 2026-07-02), queues (SQS, SNS), storage (S3), compute (EC2, Lambda), API Gateway (2 REST APIs: app 11 + infra 1 endpoint, custom domain with base path mappings), CDN (CloudFront for app, app2, landing page), organization (SCPs, Identity Store), and monitoring (budgets). See `cloudformation/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for authoritative counts.
 
 ### serverless/
-Lambda function source code and Lambda layer build scripts (psycopg2, lenie_all, openai). 8 Lambda functions total: 6 CF-managed (3 simple infrastructure in api-gw-infra.yaml + 3 S3-packaged app functions) and 2 non-CF-managed (`lenie-dev-app-server-db`, `lenie-dev-app-server-internet`). Includes packaging script (`zip_to_s3.sh`). See `serverless/CLAUDE.md` for details and `docs/infrastructure-metrics.md` for full inventory.
+Lambda function source code and Lambda layer build scripts (psycopg2, lenie_all, openai). 3 deployed Lambda functions remain (`url-add`, `sqs-weblink-put-into`, `sqs-size` — all CF-managed). The app-server-db/internet document-serving Lambdas (formerly non-CF-managed) were deleted 2026-07-02; their sources and sanitized config snapshots stay in the repo for restoration. Includes packaging script (`zip_to_s3.sh`). See `serverless/CLAUDE.md` for details and [docs/aws-serverless-restoration.md](../../docs/aws-serverless-restoration.md) for the restoration guide.
 
 ### eks/
 EKS cluster configurations. Main cluster `lenie-ai` (K8s 1.31, spot instances, us-east-1) and a Karpenter POC cluster. Managed via `eksctl` with addons: EBS CSI Driver, Metrics Server, Stakater Reloader, AWS Load Balancer Controller. Includes automated deployment script for Karpenter setup. See `eks/CLAUDE.md` for details.
@@ -87,8 +87,8 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 | SQS | Document processing queue — currently has no consumer since the RDS pipeline was removed (see "Scalable Asynchronous Ingestion via SQS" above) |
 | SNS | Error notifications via email |
 | S3 | Lambda code artifacts, video transcriptions, web content |
-| Lambda | Infra management (`sqs-size`) and app logic (`app-server-db`, `app-server-internet`, `url-add`, etc.) |
-| API Gateway | 2 REST APIs (app: 11 endpoints including /url_add, infra: 1 endpoint — `/sqs/size`) + custom domain `api.{env}.lenie-ai.eu` with base path mappings |
+| Lambda | 3 functions: `url-add` (Chrome extension ingestion), `sqs-weblink-put-into`, `sqs-size`. The app-server-db/internet document-serving Lambdas were deleted 2026-07-02 — see [docs/aws-serverless-restoration.md](../../docs/aws-serverless-restoration.md) |
+| API Gateway | 2 REST APIs (app: 1 endpoint — `/url_add`; infra: 1 endpoint — `/sqs/size`) + custom domain `api.{env}.lenie-ai.eu` with base path mappings |
 | EC2 | Application server (currently orphaned/stale CF-tracked instance, see `serverless/CLAUDE.md`) |
 | EKS | Kubernetes cluster (alternative deployment target) |
 | Route53 | DNS for lenie-ai.eu domain |

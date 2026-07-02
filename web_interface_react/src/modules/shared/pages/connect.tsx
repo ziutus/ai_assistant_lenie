@@ -12,8 +12,8 @@ const Connect: React.FC = () => {
   const { setApiKey, setApiUrl, setApiType } =
     React.useContext(AuthorizationContext);
 
-  const [formApiType, setFormApiType] = useState<ApiType>("AWS Serverless");
-  const [formApiUrl, setFormApiUrl] = useState(DEFAULT_API_URLS["AWS Serverless"]);
+  const [formApiType, setFormApiType] = useState<ApiType>("Docker");
+  const [formApiUrl, setFormApiUrl] = useState(DEFAULT_API_URLS["Docker"]);
   const [formApiKey, setFormApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -140,7 +140,9 @@ const Connect: React.FC = () => {
               onChange={handleApiTypeChange}
               style={{ width: "100%", padding: "8px", fontSize: "14px" }}
             >
-              <option value="AWS Serverless">AWS Serverless</option>
+              {/* "AWS Serverless" removed 2026-07-02 — app-server-db/internet Lambdas decommissioned,
+                  document browsing works only against Docker/NAS backend.
+                  See docs/aws-serverless-restoration.md */}
               <option value="Docker">Docker</option>
             </select>
           </div>
