@@ -3,10 +3,6 @@ import type { ApiType, AuthorizationState } from "../../../types";
 import { loadConnectionConfig, saveConnectionConfig } from "../services/storage";
 
 export const AuthorizationContext = createContext<AuthorizationState>({
-  databaseStatus: "",
-  setDatabaseStatus: () => {},
-  vpnServerStatus: "",
-  setVpnServerStatus: () => {},
   apiKey: undefined,
   setApiKey: () => {},
   apiUrl: "",
@@ -29,8 +25,6 @@ const AuthorizationProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   // Lazy init from localStorage
   const saved = loadConnectionConfig();
 
-  const [databaseStatus, setDatabaseStatus] = React.useState("unknown");
-  const [vpnServerStatus, setVpnServerStatus] = React.useState("unknown");
   const [sqsLength, setSqsLength] = React.useState(0);
   const [apiKey, setApiKey] = React.useState<string | undefined>(saved.apiKey);
   const [apiType, setApiType] = React.useState<ApiType>(saved.apiType);
@@ -54,10 +48,6 @@ const AuthorizationProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   return (
     <AuthorizationContext.Provider
       value={{
-        databaseStatus,
-        setDatabaseStatus,
-        vpnServerStatus,
-        setVpnServerStatus,
         apiKey,
         setApiKey,
         apiUrl,

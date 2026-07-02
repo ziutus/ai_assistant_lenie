@@ -1,3 +1,2 @@
 app-server-internet
 app-server-db
-sqs-into-rds

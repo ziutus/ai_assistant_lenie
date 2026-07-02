@@ -116,16 +116,16 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `env-setup.yaml` | SSM Parameter | Runtime version configuration (python3.11) |
-| `vpc.yaml` | VPC, 6 Subnets, IGW, Route Table, SSM | Multi-AZ network (public, private, DB subnets) |
+| `vpc.yaml` | VPC, 6 Subnets, IGW, Route Table, SSM | Multi-AZ network (public, private, DB subnets). **Currently unused** — RDS and the OpenVPN bastion actually ran in the AWS default VPC, not this one; this stack has 0 attached instances. Kept deployed but not cleaned up (out of scope of the 2026-07-02 RDS decommission — see `CLAUDE.md` root "Known Issues" if tracked). |
 | `1-domain-route53.yaml` | Route53 Hosted Zone | DISABLED — creates duplicate zone. Domain `lenie-ai.eu` hosted zone is managed by legacy stack `lenie-domain-route53-definition` (with SSM exports for all environments). |
-| `security-groups.yaml` | Security Group | SSH access from specific IPs |
-| `secrets.yaml` | Secrets Manager, SSM Parameter | Database credentials (auto-generated password, username in `GenerateSecretString`). Exports secret ARN to SSM at `/${ProjectCode}/${Environment}/rds/secret-arn` |
+| `security-groups.yaml` | Security Group | SSH access from specific IPs. Same unused-VPC caveat as `vpc.yaml`. |
+| ~~`secrets.yaml`~~ | ~~Secrets Manager, SSM Parameter~~ | **Deleted 2026-07-02.** Held only the RDS password secret; removed along with RDS. |
 
 ### Database
 
 | Template | Resources | Description |
 |----------|-----------|-------------|
-| `rds.yaml` | RDS (PostgreSQL), DB Subnet Group, SG, SecretTargetAttachment | `db.t3.micro` instance, 20GB, snapshot restore support. `SecretTargetAttachment` links Secrets Manager secret to RDS instance (enables future auto-rotation). `RDSPasswordSecretArn` resolved from SSM |
+| ~~`rds.yaml`~~ | ~~RDS (PostgreSQL), DB Subnet Group, SG, SecretTargetAttachment~~ | **Decommissioned 2026-07-02.** Instance had gone unused since ~2026-04 (DynamoDB is the sole active document store); deleted directly via the RDS API (it was never actually CloudFormation-managed — no `aws:cloudformation:stack-name` tag was present despite this template existing). Final snapshot kept: `lenie-dev-final-snapshot-20260702`. |
 | `dynamodb-documents.yaml` | DynamoDB Table | Documents table with GSI (DateIndex), PITR for prod |
 
 ### Queues and Notifications
@@ -162,8 +162,8 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | `ec2-lenie.yaml` | EC2 (t4g.micro ARM64), SG, IAM | Instance with dynamic public IP and SSM |
 | `lenie-launch-template.yaml` | Launch Template | EC2 launch template |
 | `lambda-rds-start.yaml` | Lambda, IAM Role | REDUNDANT — commented out in deploy.ini; rds-start Lambda is managed by api-gw-infra.yaml. Delete stack `lenie-dev-lambda-rds-start` manually. |
-| `lambda-weblink-put-into-sqs.yaml` | Lambda | Function to put web links into SQS |
-| `sqs-to-rds-lambda.yaml` | Lambda, IAM Role | Transfer messages from SQS to RDS (VPC, layers, `POSTGRESQL_SSLMODE: require`) |
+| `lambda-weblink-put-into-sqs.yaml` | Lambda | Function to put web links into SQS. Note: the queue it writes to has had no consumer since `sqs-to-rds-lambda` was deleted (2026-07-02) — messages just expire after 14 days. |
+| ~~`sqs-to-rds-lambda.yaml`~~ | ~~Lambda, IAM Role~~ | **Deleted 2026-07-02** (stack `lenie-dev-sqs-to-rds-lambda`). Transferred messages from SQS to RDS; removed along with RDS. |
 | `url-add.yaml` | Lambda, IAM, Logs | URL addition Lambda function (API GW removed — `/url_add` endpoint served via `api-gw-app.yaml`) |
 
 ### API Gateway
@@ -171,7 +171,7 @@ Parameters can reference SSM Parameter Store (e.g. VPC ID, subnet ID) - values a
 | Template | Resources | Description |
 |----------|-----------|-------------|
 | `api-gw-account.yaml` | IAM Role, API GW Account, SSM Parameter | Account-level CloudWatch IAM role for API Gateway logging. Sets `cloudwatchRoleArn` on `AWS::ApiGateway::Account` (singleton per account/region). Role ARN exported to SSM at `/${ProjectCode}/${Environment}/apigw/cloudwatch-role-arn`. Must be deployed before any API Gateway templates that use stage logging. |
-| `api-gw-infra.yaml` | REST API, 3 Lambdas, 3 IAM Roles, SSM | Infrastructure management API (7 endpoints: RDS start/stop/status, EC2/VPN start/stop/status, SQS size). 3 consolidated Lambdas: rds-manager, ec2-manager, sqs-size. Each Lambda has its own least-privilege IAM role with resource-level scoping (SQS scoped to project queues, RDS scoped to specific DB instance via SSM, EC2 start/stop scoped to specific instance). Paths without `/infra` prefix (routing via custom domain base path mapping). Exports API ID and invoke URL to SSM. |
+| `api-gw-infra.yaml` | REST API, 1 Lambda, 1 IAM Role, SSM | Infrastructure management API — trimmed to a single endpoint (`/sqs/size`, `sqs-size` Lambda) on 2026-07-02. Previously also had `rds-manager` and `ec2-manager` (RDS + OpenVPN start/stop/status), removed when RDS was decommissioned. Paths without `/infra` prefix (routing via custom domain base path mapping). Exports API ID and invoke URL to SSM. |
 | `api-gw-app.yaml` | REST API, Stage, Lambda Permissions, SSM | Main application API (11 endpoints, x-api-key). Separate `ApiStage` resource manages v1 stage settings (logging, tracing, metrics). References 3 Lambda functions: `${PC}-${Env}-app-server-db`, `${PC}-${Env}-app-server-internet`, `${PC}-${Env}-url-add`. All Lambda names fully parameterized. Exports API ID, root resource ID, and invoke URL to SSM. |
 | `api-gw-custom-domain.yaml` | ACM Certificate, API GW DomainName, BasePathMappings, Route53, SSM | Custom domain `api.{env}.lenie-ai.eu` with TLS 1.2. Root path (`/`) maps to app API, `/infra` maps to infra API. DNS validation via Route53. |
 
@@ -188,9 +188,7 @@ These settings apply to all methods/resources via wildcard `MethodSettings` (`Ht
 
 ### Orchestration
 
-| Template | Resources | Description |
-|----------|-----------|-------------|
-| `sqs-to-rds-step-function.yaml` | Step Functions, EventBridge, IAM, Logs | Workflow: SQS -> start DB -> process -> stop DB. Map state has `Catch` with `States.ALL` to stop DB on Lambda failure (cost protection) |
+*(Template `sqs-to-rds-step-function.yaml` removed during the 2026-07-02 RDS decommission — stack `lenie-dev-sqs-to-rds-step-function` deleted. It orchestrated: SQS -> start DB -> process -> stop DB.)*
 
 ### Certificates
 
@@ -253,7 +251,7 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `security-groups.yaml` - SSH access rules
 
 ### Layer 3: Security
-- `secrets.yaml` - database credentials (password auto-generated via `GenerateSecretString`, secret ARN exported to SSM)
+- ~~`secrets.yaml`~~ - REMOVED 2026-07-02 (held only the RDS password secret, deleted with RDS)
 
 ### Layer 4: Storage
 - `s3.yaml` - video transcription bucket
@@ -262,29 +260,29 @@ Stacks have dependencies between them. When creating a new environment from scra
 - `s3-website-content.yaml` - website content storage
 - `s3-app-web.yaml` - frontend hosting bucket
 - `s3-app2-web.yaml` - target multi-user UI hosting bucket
-- `sqs-documents.yaml` - document processing queue
+- `sqs-documents.yaml` - document processing queue (no consumer since the RDS pipeline was removed — see "Orchestration" above)
 - `sqs-application-errors.yaml` - DLQ with email notification
-- `rds.yaml` - database (commented out; deployed separately, managed lifecycle via Step Functions)
+- ~~`rds.yaml`~~ - RDS decommissioned 2026-07-02 (was never actually CF-managed despite the template; deleted directly via the RDS API, final snapshot retained)
 
 ### Layer 5: Compute
 - `lambda-layer-lenie-all.yaml` - shared library layer
 - `lambda-layer-openai.yaml` - OpenAI SDK layer
 - `lambda-layer-psycopg2.yaml` - PostgreSQL driver layer
-- `ec2-lenie.yaml` - application server
+- `ec2-lenie.yaml` - application server (currently orphaned: the CF-tracked instance no longer exists, stack not yet cleaned up)
 - `lenie-launch-template.yaml` - EC2 launch template
 - ~~`lambda-rds-start.yaml`~~ - REDUNDANT, commented out (rds-start Lambda managed by api-gw-infra.yaml)
 - `lambda-weblink-put-into-sqs.yaml` - Lambda for SQS ingestion
-- `sqs-to-rds-lambda.yaml` - SQS to RDS transfer Lambda
+- ~~`sqs-to-rds-lambda.yaml`~~ - REMOVED 2026-07-02 (SQS to RDS transfer Lambda, deleted with RDS)
 - `url-add.yaml` - URL addition Lambda (no API Gateway — served via `api-gw-app.yaml`)
 
 ### Layer 6: API
 - `api-gw-account.yaml` - account-level CloudWatch IAM role (prerequisite for API GW logging)
-- `api-gw-infra.yaml` - infrastructure management API (7 endpoints, SSM exports)
+- `api-gw-infra.yaml` - infrastructure management API (1 endpoint — `/sqs/size` — since RDS/OpenVPN management was removed 2026-07-02)
 - `api-gw-app.yaml` - main application API (11 endpoints including /url_add)
 - `api-gw-custom-domain.yaml` - custom domain `api.{env}.lenie-ai.eu` with base path mappings (root → app API, `/infra` → infra API)
 
 ### Layer 7: Orchestration
-- `sqs-to-rds-step-function.yaml` - SQS -> start DB -> process -> stop DB
+*(Empty since 2026-07-02 — `sqs-to-rds-step-function.yaml` removed with RDS.)*
 
 ### Layer 8: Certificates & CDN
 - `acm-certificates.yaml` - wildcard certificate for dev CloudFront distributions (SSM export)
