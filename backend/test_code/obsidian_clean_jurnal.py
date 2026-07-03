@@ -329,9 +329,6 @@ def download_storytel_pages_with_playwright():
 
     print(f"\nFound {len(urls_found)} unique Storytel URLs")
 
-    # Initialize MarkItDown converter once before the loop
-    mdit = MarkItDown()
-
     # Use Playwright to download pages
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)

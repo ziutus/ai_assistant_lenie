@@ -18,14 +18,12 @@ Usage:
 Note:
     This script uses the reusable Google authentication module from backend/library/google_auth.py
 """
-import os
 import sys
 import argparse
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from library.google_auth import get_google_service

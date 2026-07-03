@@ -318,7 +318,7 @@ def main():
     url = f"gmail://{msg_id}"
 
     # Print summary
-    print(f"\n--- Email Summary ---")
+    print("\n--- Email Summary ---")
     print(f"  Message ID: {msg_id}")
     print(f"  Subject:    {subject}")
     print(f"  From:       {from_header}")
@@ -327,7 +327,7 @@ def main():
     print(f"  Language:   {language}")
     print(f"  Text length: {len(text)} characters")
     print(f"  Source:     {args.source}")
-    print(f"---------------------")
+    print("---------------------")
 
     if args.dry_run:
         print("\n[DRY RUN] Would import this email. Text preview (first 500 chars):\n")
