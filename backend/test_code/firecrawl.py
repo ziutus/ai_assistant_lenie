@@ -1,7 +1,4 @@
 from dotenv import load_dotenv
-import os
-from pprint import pprint
-from firecrawl import FirecrawlApp
 
 # dotenv.load_dotenv(".env", override=True)
 load_dotenv()
