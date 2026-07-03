@@ -14,7 +14,8 @@ imports/
 ├── feeds_state.yaml          # Per-feed last_checked state (gitignored, created at runtime)
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
 ├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
-└── youtube_add.py            # Ad-hoc: process a single YouTube video
+├── youtube_add.py            # Ad-hoc: process a single YouTube video (optionally + LLM analysis)
+└── youtube_batch_analyze.py  # Bielik LLM chunk analysis of an existing document (by ID)
 ```
 
 ## Scripts
@@ -157,14 +158,15 @@ python imports/article_browser.py --dump --id 8805
 
 ### `youtube_add.py`
 
-Ad-hoc CLI tool for processing a single YouTube video: adds it to the database, fetches metadata (title, language), downloads captions or transcription, and optionally generates an AI summary.
+Ad-hoc CLI tool for processing a single YouTube video: adds it to the database, fetches metadata (title, language), downloads captions or transcription, and optionally generates an AI summary and/or runs the full Bielik LLM chunk analysis (`--analyze`).
 
-**Data access: ORM (SQLAlchemy)** via `process_youtube_url()` from `library.youtube_processing`.
+**Data access: ORM (SQLAlchemy)** via `process_youtube_url()` from `library.youtube_processing`; with `--analyze` also `DocumentAnalysisService` from `library.document_analysis_service` + file exports from `library.analysis_exports`.
 
 **How it works:**
 1. Optionally authenticates Webshare proxy (checks bandwidth, disables if exhausted)
 2. Calls `process_youtube_url()` with the provided URL and options
 3. Prints a summary (ID, title, URL, language, state, text length, elapsed time)
+4. With `--analyze`: runs `DocumentAnalysisService.create_run()` on the new document and exports MD/JSON/debug/HTML files to `.claude/exports/`. If analysis fails, the document stays in the database and the script prints the `youtube_batch_analyze.py` command to retry.
 
 **Running:**
 ```bash
@@ -173,6 +175,8 @@ python imports/youtube_add.py <URL>
 python imports/youtube_add.py <URL> --language pl --note "..." --source own
 python imports/youtube_add.py <URL> --summary --force
 python imports/youtube_add.py <URL> --chapters-file chapters.txt -v
+python imports/youtube_add.py <URL> --analyze                              # full pipeline in one command
+python imports/youtube_add.py <URL> --analyze --speaker1 "..." --speaker2 "..."
 ```
 
 **Arguments:**
@@ -184,11 +188,44 @@ python imports/youtube_add.py <URL> --chapters-file chapters.txt -v
 - `--chapters-file PATH` — path to file with chapter list
 - `--summary` — generate AI summary after processing
 - `--force` — reprocess even if embeddings already exist
+- `--no-proxy` — disable Webshare proxy
+- `--analyze` — run Bielik LLM chunk analysis after processing (see [`youtube_batch_analyze.py`](#youtube_batch_analyzepy))
+- `--model NAME` — LLM model for `--analyze` (default: `Bielik-11B-v3.0-Instruct`)
+- `--speaker1 NAME` / `--speaker2 NAME` — `--analyze`: explicit speaker names (skips LLM speaker extraction)
+- `--no-synthesis` — `--analyze`: skip the final synthesis step
 - `-v`, `--verbose` — enable debug logging
 
 **Prerequisites:**
 - `.env` file with `POSTGRESQL_*` variables and LLM API keys
 - Optional: `WEBSHARE_API_KEY` for proxy support
+- For `--analyze`: `CLOUDFERRO_SHERLOCK_KEY` (Bielik)
+
+### `youtube_batch_analyze.py`
+
+Bielik LLM chunk analysis of an **existing** document (by `--doc_id`): chunk splitting, speaker extraction/labeling, two-pass rewrite + summarize, topic grouping, synthesis, DB persistence. Moved from `test_code/` — the pipeline lives in `library/document_analysis_service.py` + `library/chunk_llm_analysis.py` (shared with Flask `chunk_review_routes.py`); file exports in `library/analysis_exports.py`. For a brand-new video, use `youtube_add.py <URL> --analyze` instead.
+
+**Data access: ORM (SQLAlchemy)** via `DocumentAnalysisService.create_run()`; writes `document_analysis_runs` / `document_chunks` / `document_topic_sections` and exports MD/JSON/debug/HTML (with YouTube timestamp links) to `.claude/exports/`.
+
+**Running:**
+```bash
+cd backend
+python imports/youtube_batch_analyze.py --doc_id 9158
+python imports/youtube_batch_analyze.py --doc_id 9158 --dry_run          # chunk breakdown + cost estimate, no API calls
+python imports/youtube_batch_analyze.py --doc_id 9158 --no_synthesis
+python imports/youtube_batch_analyze.py --doc_id 9158 --speaker1 "..." --speaker2 "..."
+```
+
+**Arguments:**
+- `--doc_id N` — document ID in the database (required)
+- `--model NAME` — LLM model (default: `Bielik-11B-v3.0-Instruct`; also `arklabs/...` variant)
+- `--chunk_size N` — characters per chunk (default: 5000 ≈ 1500 tokens)
+- `--speaker1 NAME` / `--speaker2 NAME` — explicit speaker names (skips LLM speaker extraction)
+- `--no_synthesis` — skip the final synthesis step
+- `--dry_run` — preview chunk breakdown and cost estimate without calling the API
+
+**Prerequisites:**
+- `.env` with `POSTGRESQL_*` variables and `CLOUDFERRO_SHERLOCK_KEY`
+- Cost: ~0.05 EUR per 90K-char transcript at 0.56 EUR/M tokens
 
 ### `freedom_house_import.py`
 

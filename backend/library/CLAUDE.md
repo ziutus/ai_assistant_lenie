@@ -19,6 +19,9 @@ library/
 │   └── asemblyai/    # Speech-to-text transcription (sole provider, ADR-011)
 ├── ai.py             # LLM provider abstraction (routes to api/*)
 ├── embedding.py      # Embedding provider abstraction (routes to api/*)
+├── document_analysis_service.py  # Chunk analysis pipeline: split → LLM rewrite/summarize → topics → DB
+├── chunk_llm_analysis.py         # LLM chunk primitives: speaker extraction, rewrite, summarize
+├── analysis_exports.py           # Analysis run file exports (MD/JSON/debug/HTML) to .claude/exports/
 ├── article_extractor.py     # LLM-based article boundary extraction (Bielik markers + regex drafts)
 ├── article_pipeline.py      # Shared pipeline: step_1 raw markdown (cache/S3) + LLM article extraction
 ├── article_cleaner.py       # Portal artifact cleanup of extracted article markdown ([imgN]/[linkN] markers)

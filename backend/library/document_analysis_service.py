@@ -4,9 +4,10 @@ Full pipeline:
   text extraction → speech filler removal → chunk splitting → LLM analysis
   → topic grouping → optional synthesis → DB persistence
 
-Designed to be called from Flask endpoints (via REST API) and batch scripts.
-The batch script (test_code/youtube_batch_analyze.py) keeps its own HTML/JSON/MD
-export logic; this service handles only DB-backed pipeline execution.
+Designed to be called from Flask endpoints (via REST API) and CLI scripts
+(imports/youtube_batch_analyze.py, imports/youtube_add.py --analyze). File
+exports (HTML/JSON/MD) live in library/analysis_exports.py; this service
+handles only DB-backed pipeline execution.
 """
 
 import json
@@ -21,6 +22,8 @@ from library.db.models import (
 logger = logging.getLogger(__name__)
 
 CHUNK_CHARS = 5_000
+DEFAULT_ANALYSIS_MODEL = "Bielik-11B-v3.0-Instruct"
+ANALYSIS_MODELS = [DEFAULT_ANALYSIS_MODEL, f"arklabs/{DEFAULT_ANALYSIS_MODEL}"]
 SYNTHESIS_MAX_TOKENS = 2_000
 SYNTHESIS_MAX_INPUT_CHARS = 20_000
 _SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT): ?(.+)$', re.MULTILINE)
