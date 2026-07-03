@@ -6,6 +6,7 @@ Experimental and exploratory scripts that test backend library modules, external
 
 ```
 backend/test_code/
+├── _regen_html.py                    # Regenerate HTML view from a JSON analysis export
 ├── cloudferro_ark_labs_models.py     # CloudFerro & ARK Labs model listing
 ├── credentials.json                  # Google OAuth app credentials
 ├── dateparser_user.py                # Date parsing library tests
@@ -21,6 +22,7 @@ backend/test_code/
 ├── serper_dev.py                     # Web search via Serper API
 ├── token.json                        # Google OAuth token (auto-generated)
 ├── vault_tests.py                    # HashiCorp Vault integration tests
+├── youtube_batch_analyze.py          # CLI over DocumentAnalysisService + file exports
 └── tmp/                              # Temporary data files (git-ignored)
     └── storytel_*.{html,json,md}     # Storytel audiobook metadata samples
 ```
@@ -32,6 +34,13 @@ backend/test_code/
 | Script | Purpose |
 |--------|---------|
 | `embeddings_search.py` | Full RAG pipeline: language detection → translation → embedding → pgvector similarity search → LLM answer with sources. CLI with flags: `--question`, `--minimal_similarity`, `-model`, `-nc`, `-en`, `-pl` |
+
+### YouTube Transcript Analysis (Bielik LLM)
+
+| Script | Purpose |
+|--------|---------|
+| `youtube_batch_analyze.py` | Thin CLI over `library/document_analysis_service.py` (shared with Flask `chunk_review_routes.py`): chunk splitting, speaker labeling, rewrite + summarize, topic grouping, synthesis, DB persistence. Adds dry-run cost preview, `--speaker1/--speaker2` override, and file exports (MD/JSON/debug/HTML with YouTube timestamp links) to `.claude/exports/` |
+| `_regen_html.py` | Rebuild the HTML review view from an existing `youtube_analysis_*.json` export (no LLM calls) |
 
 ### LLM Provider Testing
 

@@ -62,6 +62,30 @@ def _map_chunks_to_segments(
     return result
 
 
+def _sentence_tail(text: str, max_chars: int = 300) -> str:
+    """Last up to max_chars of text, preferring a sentence boundary start."""
+    if len(text) <= max_chars:
+        return text
+    seg = text[-max_chars:]
+    for sep in ('. ', '.\n', '? ', '! '):
+        idx = seg.find(sep)
+        if idx != -1:
+            return seg[idx + len(sep):]
+    return seg
+
+
+def _sentence_head(text: str, max_chars: int = 300) -> str:
+    """First up to max_chars of text, preferring a sentence boundary end."""
+    if len(text) <= max_chars:
+        return text
+    seg = text[:max_chars]
+    for sep in ('. ', '.\n', '? ', '! '):
+        idx = seg.rfind(sep)
+        if idx != -1:
+            return seg[:idx + 1]
+    return seg
+
+
 def _extract_text(doc: WebDocument) -> tuple[str, str]:
     """Return (text, field_name) from best available field.
 
@@ -172,6 +196,7 @@ class DocumentAnalysisService:
         chunk_size: int = CHUNK_CHARS,
         no_synthesis: bool = False,
         progress_fn: Callable[[str], None] | None = None,
+        speakers: list[dict] | None = None,
     ) -> DocumentAnalysisRun:
         """Create a new analysis run for an existing document and persist to DB.
 
@@ -181,6 +206,8 @@ class DocumentAnalysisService:
             chunk_size:   Max characters per chunk (default 5 000 ≈ 1 500 tokens).
             no_synthesis: Skip the final synthesis step.
             progress_fn:  Optional callback for progress messages (used by batch scripts).
+            speakers:     Optional speaker list [{"name", "role", "description"}] —
+                          when given, skips LLM speaker extraction.
 
         Returns:
             Persisted DocumentAnalysisRun with .chunks and .topic_sections populated.
@@ -190,7 +217,7 @@ class DocumentAnalysisService:
             RuntimeError: LLM call failed or DB commit failed.
         """
         from library.chunk_llm_analysis import (
-            analyze_chunk, extract_speaker_info, remove_speech_fillers,
+            analyze_chunk, assign_speakers, extract_speaker_info, remove_speech_fillers,
         )
         from library.text_functions import split_text_into_sentence_chunks
 
@@ -218,31 +245,39 @@ class DocumentAnalysisService:
         is_multi_speaker = speaker_changes > 0
         log(f"format={'multi-speaker' if is_multi_speaker else 'monologue'} ({speaker_changes} >>)")
 
-        # 4. Remove speech fillers before splitting (cheaper than asking LLM)
+        # 4. Extract speakers from intro text (only for multi-speaker conversations),
+        #    unless the caller already provided them
+        if speakers is None:
+            speakers = []
+            if is_multi_speaker:
+                intro_text = text[800:2400].strip()
+                try:
+                    speakers = extract_speaker_info(intro_text, model)
+                    log(f"speakers={[sp['name'] for sp in speakers]}")
+                except Exception:
+                    logger.exception("speaker extraction failed, continuing without speakers")
+
+        # 5. Label speaker turns from >> markers (must happen before splitting,
+        #    so the rewrite prompt sees the [Name]: labels it is asked to preserve)
+        if is_multi_speaker and len(speakers) >= 2:
+            text = assign_speakers(text, speakers[0]["name"], speakers[1]["name"])
+            log(f"labeled speaker turns: [{speakers[0]['name']}] / [{speakers[1]['name']}]")
+
+        # 6. Remove speech fillers before splitting (cheaper than asking LLM)
         text = remove_speech_fillers(text)
 
-        # 5. Split into chunks at sentence boundaries
+        # 7. Split into chunks at sentence boundaries
         chunk_texts = split_text_into_sentence_chunks(text, chunk_size)
         log(f"split={len(chunk_texts)} chunks, max {chunk_size:,} chars")
 
-        # 6. Extract speakers from intro text (only for multi-speaker conversations)
-        speakers: list[dict] = []
-        if is_multi_speaker:
-            intro_text = text[800:2400].strip()
-            try:
-                speakers = extract_speaker_info(intro_text, model)
-                log(f"speakers={[sp['name'] for sp in speakers]}")
-            except Exception:
-                logger.exception("speaker extraction failed, continuing without speakers")
-
-        # 7. Map chunks to transcript segments (for timestamp links)
+        # 8. Map chunks to transcript segments (for timestamp links)
         segments = _load_segments(getattr(doc, "text_raw", None) or "")
         seg_map = (
             _map_chunks_to_segments(chunk_texts, segments)
             if segments else [(None, None)] * len(chunk_texts)
         )
 
-        # 8. Analyze each chunk via LLM
+        # 9. Analyze each chunk via LLM (with boundary context from adjacent chunks)
         sections: list[dict] = []
         total = len(chunk_texts)
         for i, chunk_text in enumerate(chunk_texts):
@@ -252,6 +287,8 @@ class DocumentAnalysisService:
                     chunk_text, model,
                     position=i + 1, total=total,
                     speakers=speakers or None,
+                    prev_context=_sentence_tail(chunk_texts[i - 1]) if i > 0 else "",
+                    next_context=_sentence_head(chunk_texts[i + 1]) if i < total - 1 else "",
                 )
             except Exception as exc:
                 raise RuntimeError(f"LLM call failed for chunk {i + 1}/{total}: {exc}") from exc
@@ -265,7 +302,7 @@ class DocumentAnalysisService:
                 "summary": result["summary"],
             })
 
-        # 9. Group chunks into logical topic sections
+        # 10. Group chunks into logical topic sections
         topic_groups = _merge_topics(sections, model)
         if topic_groups:
             topic_sections_data = []
@@ -296,13 +333,13 @@ class DocumentAnalysisService:
             ]
         log(f"topic_sections={len(topic_sections_data)}")
 
-        # 10. Optional synthesis
+        # 11. Optional synthesis
         synthesis = ""
         if not no_synthesis:
             log("generating synthesis...")
             synthesis = _synthesize(sections, doc.title or f"Dokument {doc_id}", model)
 
-        # 11. Persist to DB
+        # 12. Persist to DB
         run = DocumentAnalysisRun(
             document_id=doc_id,
             model=model,
