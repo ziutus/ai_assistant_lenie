@@ -991,7 +991,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
         date_str = doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else "????"
         detected_portal = _detect_portal(doc.url) or "?"
 
-        os.system("cls" if os.name == "nt" else "clear")
+        os.system("cls" if os.name == "nt" else "clear")  # nosec B605 — constant command, no user input
         print(f"--- [{idx + 1}/{len(filtered)}] ID: {doc.id} ---")
         print(f"  Tytuł:   {doc.title}")
         print(f"  Data:    {date_str}")

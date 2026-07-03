@@ -94,7 +94,7 @@ def _load_config_with_vault_fallback(start_dir: Path) -> None:
         for key, value in vault_data.items():
             if isinstance(value, str):
                 os.environ[key] = value
-        print(f"Konfiguracja załadowana z Vault ({vault_addr}, ścieżka: secret/{secret_path}).")
+        print("Konfiguracja załadowana z Vault.")
     except ImportError:
         print("UWAGA: Brak pakietu hvac — używam .env jako fallback. Zainstaluj: uv add hvac")
     except Exception as exc:  # noqa: BLE001
@@ -410,7 +410,7 @@ def analyze_results(all_results: list[dict]) -> None:
             print(f"    {rank}. [{count:3d}x = {percentage:5.1f}%] {first_line}{suffix}")
 
         if result["errors"]:
-            print(f"\n  Przykładowe błędy (max 3):")
+            print("\n  Przykładowe błędy (max 3):")
             for err in result["errors"][:3]:
                 print(f"    iter {err['iteration']}: {err['error'][:100]}")
 
@@ -460,7 +460,7 @@ def save_results(all_results: list[dict], output_dir: Path) -> None:
     # --- Plik podsumowania (tekstowy) ---
     summary_path = output_dir / f"model_comparison_{timestamp}_summary.txt"
     with open(summary_path, "w", encoding="utf-8") as f:
-        f.write(f"Porównanie modeli AI — pytanie o tożsamość\n")
+        f.write("Porównanie modeli AI — pytanie o tożsamość\n")
         f.write(f"Pytanie: {QUESTION}\n")
         f.write(f"Data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
         for result in all_results:
@@ -555,7 +555,7 @@ def main():
             sys.exit(1)
 
     print(f"\n{'='*65}")
-    print(f"  Model Identity Comparison")
+    print("  Model Identity Comparison")
     print(f"  Pytanie : \"{question}\"")
     print(f"  Iteracje: {args.iterations} per model")
     print(f"  Modeli  : {len(models)}")
@@ -570,7 +570,7 @@ def main():
     skipped = [m for m in models if m["provider"] not in clients]
 
     if skipped:
-        print(f"\nPominięte (brak klienta):")
+        print("\nPominięte (brak klienta):")
         for m in skipped:
             print(f"  - {m['display_name']}")
 

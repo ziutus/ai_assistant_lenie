@@ -12,7 +12,7 @@ query="+48 791 033 055"
 query = query.replace("+48", "").replace(" ", "").strip()
 print(f"Will search {query}")
 
-query_md5 = hashlib.md5(query.encode()).hexdigest()
+query_md5 = hashlib.md5(query.encode(), usedforsecurity=False).hexdigest()  # cache key only
 cache_dir = "tmp/serper_dev"
 cache_filename = f"{cache_dir}/{query_md5}.json"
 

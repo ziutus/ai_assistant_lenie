@@ -398,9 +398,9 @@ def website_get_next_to_correct():
             "next_type": "",
         }
         return response, 200
-    next_id = next_data[0]
+    next_id = int(next_data[0])
     next_type = next_data[1]
-    logging.info(next_id)
+    logging.info("Next document to correct: id=%d", next_id)
     response = {
         "status": "success",
         "next_id": next_id,
@@ -665,9 +665,11 @@ def app_version():
 
 
 if __name__ == '__main__':
+    # Default bind on all interfaces is intentional — the server runs in a container
+    bind_host = cfg.require("BIND_HOST", "0.0.0.0")  # nosec B104
     if cfg.require("USE_SSL", "false") == "true":
         logging.debug("Using SSL")
-        app.run(debug=cfg.require("DEBUG", "false").lower() == "true", host='0.0.0.0', port=port, ssl_context='adhoc')
+        app.run(debug=cfg.require("DEBUG", "false").lower() == "true", host=bind_host, port=port, ssl_context='adhoc')
     else:
         logging.debug("Using HTTP")
-        app.run(debug=cfg.require("DEBUG", "false").lower() == "true", port=port, host='0.0.0.0')
+        app.run(debug=cfg.require("DEBUG", "false").lower() == "true", port=port, host=bind_host)

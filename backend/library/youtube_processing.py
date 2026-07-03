@@ -182,7 +182,7 @@ def process_youtube_url(
                         proxy_password=creds[1],
                     )
                     ytt_api = YouTubeTranscriptApi(proxy_config=proxy_config)
-                    logger.info(f"Using Webshare rotating residential proxy (user: {creds[0]})")
+                    logger.info("Using Webshare rotating residential proxy")
                 else:
                     ytt_api = YouTubeTranscriptApi()
                     logger.warning("Webshare credentials unavailable — proceeding without proxy")
