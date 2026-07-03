@@ -67,17 +67,22 @@ make security-all   # Run all security checks (semgrep, pip-audit, bandit, safet
 
 ## WSL Linux Environment (`backend/.venv_wsl`)
 
-The developer works on Windows with a WSL (Fedora) environment for running Linux-specific scripts (imports, deploy scripts, shell scripts). A separate venv `.venv_wsl` exists in `backend/` for this purpose.
+The developer works on Windows with a WSL (Ubuntu 24.04) environment for running Linux-specific scripts (imports, deploy scripts, shell scripts). Two separate venvs exist in `backend/`:
+
+- **`.venv`** — Windows environment (default `uv sync` target when run from Windows)
+- **`.venv_wsl`** — Linux/WSL environment
 
 **When modifying Python dependencies** (adding/removing packages in `pyproject.toml`, adding path dependencies like `shared_python/`), you MUST also sync `.venv_wsl`:
 
 ```bash
-# Sync .venv_wsl after dependency changes
+# Sync .venv_wsl after dependency changes (path dep only)
 wsl bash -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && cd /mnt/c/Users/ziutus/git/_lenie-all/lenie-server-2025/backend && uv pip install -e ../shared_python/unified-config-loader/ --python .venv_wsl/bin/python"
 
-# Or full sync (recreates from lock file)
-wsl bash -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && cd /mnt/c/Users/ziutus/git/_lenie-all/lenie-server-2025/backend && uv sync --python .venv_wsl/bin/python --active"
+# Or full sync from lock file — UV_PROJECT_ENVIRONMENT is REQUIRED
+wsl bash -c "export PATH=\"\$HOME/.local/bin:\$PATH\" && cd /mnt/c/Users/ziutus/git/_lenie-all/lenie-server-2025/backend && UV_PROJECT_ENVIRONMENT=.venv_wsl uv sync"
 ```
+
+**WARNING**: Never run plain `uv sync` (or `uv sync --python .venv_wsl/bin/python --active`) from WSL — both target the default `.venv` and will overwrite the Windows environment with a Linux one (this happened 2026-07-03). `--python` selects the interpreter, not the target venv; `--active` needs `VIRTUAL_ENV` set. Only `UV_PROJECT_ENVIRONMENT=.venv_wsl` reliably targets `.venv_wsl`.
 
 **Checklist for dependency changes:**
 1. Update `pyproject.toml` and run `uv lock`
