@@ -1,5 +1,4 @@
 import argparse
-import json
 import logging
 import os
 import time
@@ -34,11 +33,6 @@ def parse_args():
     parser.add_argument("--only-webpage", action="store_true", help="Process only 'webpage' documents")
     parser.add_argument("--only-youtube", action="store_true", help="Process only 'youtube' documents")
     parser.add_argument("--only-movie", action="store_true", help="Process only 'movie' documents")
-    parser.add_argument(
-        "--clean-sqs",
-        action="store_true",
-        help="Drain the SQS queue in Step 1 (without this flag Step 1 is skipped)",
-    )
     args = parser.parse_args()
 
     only_flags = [args.only_links, args.only_webpage, args.only_youtube, args.only_movie]
@@ -116,79 +110,6 @@ def get_or_create_document(session, url: str):
         doc = WebDocument(url=url)
         session.add(doc)
     return doc
-
-
-def step1_drain_sqs(session, boto_session):
-    """Step 1: move queued URLs from the SQS queue into the database."""
-    from library.document_service import DocumentService
-
-    sqs = boto_session.client('sqs')
-    queue_url = cfg.get('AWS_QUEUE_URL_ADD')
-    doc_service = DocumentService(session)
-
-    while True:
-        response = sqs.receive_message(
-            QueueUrl=queue_url,
-            AttributeNames=['All'],
-            MaxNumberOfMessages=10,
-        )
-
-        if 'Messages' not in response:
-            print('No messages in queue')
-            break
-
-        for message in response['Messages']:
-            try:
-                print('Message: ', message['Body'])
-
-                link_data = json.loads(message['Body'])
-                if "source" not in link_data:
-                    link_data["source"] = "own"
-
-                print("Link Data:  URL", link_data["url"], "type:", link_data["type"], " source:", link_data["source"],
-                      "note:", link_data['note'])
-
-                if 'chapterList' in link_data:
-                    print(link_data["chapterList"])
-
-                # Map camelCase SQS fields to snake_case metadata
-                # (snake_case key wins when both variants are present)
-                sqs_field_map = {
-                    "chapterList": "chapter_list",
-                    "chapter_list": "chapter_list",
-                    "language": "language",
-                    "makeAISummary": "ai_summary_needed",
-                    "note": "note",
-                    "title": "title",
-                    "paywall": "paywall",
-                }
-                metadata = {"source": link_data.get("source", "own")}
-                for sqs_key, meta_key in sqs_field_map.items():
-                    if sqs_key in link_data:
-                        metadata[meta_key] = link_data[sqs_key]
-                uuid_val = link_data.get("uuid") or link_data.get("s3_uuid")
-                if uuid_val:
-                    metadata["uuid"] = uuid_val
-
-                doc, status = doc_service.import_document(
-                    url=link_data["url"],
-                    document_type=link_data["type"],
-                    skip_if_exists=True,
-                    **metadata,
-                )
-
-                if status == "skipped":
-                    print("This Url exist in, ignoring ")
-                    sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=message['ReceiptHandle'])
-                    continue
-
-                print(f"Added to database with ID {doc.id}")
-                print("[DONE]")
-
-                sqs.delete_message(QueueUrl=queue_url, ReceiptHandle=message['ReceiptHandle'])
-            except Exception as e:
-                session.rollback()
-                print(f'An error occurred: {e}')
 
 
 def step2a_process_youtube(session, websites):
@@ -497,13 +418,10 @@ def main():
     print("=" * 50)
 
     try:
-        print("\nStep 1: Taking pages to put into RDS database")
-        step_start = time.monotonic()
-        if not args.clean_sqs:
-            print("ignoring cleaning the SQS queue")
-        else:
-            step1_drain_sqs(session, boto_session)
-        print(f"Step 1 completed in {time.monotonic() - step_start:.1f}s")
+        # Step 1 (SQS queue drain, --clean-sqs) was removed 2026-07-03 — the SQS
+        # pipeline was decommissioned (see docs/aws-serverless-restoration.md);
+        # documents now arrive via imports/dynamodb_sync.py. On restoring a queue
+        # mechanism, recover step1_drain_sqs() from git history of this file.
 
         websites = WebsitesDBPostgreSQL(session=session)
 
