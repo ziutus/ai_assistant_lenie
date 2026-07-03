@@ -133,17 +133,17 @@ See `web_interface_app2/CLAUDE.md` for details.
 Kustomize-based deployment with base configurations and GKE dev overlay.
 
 ### AWS (`infra/aws/`)
-- CloudFormation templates for DynamoDB, RDS, SQS, Lambda, API Gateway
+- CloudFormation templates for DynamoDB, Lambda, API Gateway
 - Serverless Lambda functions
 
-**Architecture overview**: AWS API Gateway serves as the managed, secure entry point — access is controlled via API keys, eliminating the need to maintain and patch internet-facing services. Incoming documents flow through SQS for asynchronous processing (the database runs only when needed to optimize costs). DynamoDB provides always-available metadata storage, enabling synchronization between cloud (receiving data from mobile devices) and local environments.
+**Architecture overview**: AWS API Gateway serves as the managed, secure entry point — access is controlled via API keys, eliminating the need to maintain and patch internet-facing services. Incoming documents land in DynamoDB (metadata) and S3 (content); DynamoDB provides always-available storage, enabling synchronization between cloud (receiving data from mobile devices) and local environments via `imports/dynamodb_sync.py`. The SQS pipeline and AWS RDS were decommissioned 2026-07-02 (see [docs/aws-serverless-restoration.md](docs/aws-serverless-restoration.md)).
 
 **Flask server vs Lambda split**: The Flask `server.py` is the unified backend used in Docker/K8s deployments. For AWS serverless, the same logic is split into two Lambda functions due to VPC networking constraints (no NAT Gateway to save costs):
 - **`app-server-db`** - endpoints requiring PostgreSQL (runs inside VPC): `/website_list`, `/website_get`, `/website_save`, `/website_delete`, `/website_is_paid`, `/website_get_next_to_correct`, `/website_similar`, `/website_split_for_embedding`
 - **`app-server-internet`** - endpoints requiring internet access (runs outside VPC): `/website_download_text_content`, `/ai_embedding_get`
-- **`sqs-weblink-put-into`** - handles `/url_add` functionality via SQS+DynamoDB+S3 instead of direct DB write
+- **`url-add`** - handles `/url_add` functionality via DynamoDB+S3 instead of direct DB write (source in `infra/aws/serverless/lambdas/url-add/`; the SQS send was removed 2026-07-02)
 
-Some endpoints exist only in `server.py` (not in Lambda): `/url_add` (replaced by SQS flow), `/website_text_remove_not_needed`, health checks (`/healthz`, `/startup`, `/readiness`, `/liveness`), `/version`, `/metrics`.
+Some endpoints exist only in `server.py` (not in Lambda): `/url_add` (replaced by the DynamoDB flow), `/website_text_remove_not_needed`, health checks (`/healthz`, `/startup`, `/readiness`, `/liveness`), `/version`, `/metrics`.
 
 See `infra/aws/serverless/CLAUDE.md` for detailed comparison and known differences.
 
