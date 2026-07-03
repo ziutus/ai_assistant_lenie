@@ -19,7 +19,7 @@ describe("App", () => {
   });
 
   it("renders app layout when API key is set", () => {
-    localStorage.setItem("lenie_apiKey", "test-key");
+    localStorage.setItem("lenie_apiKey", btoa("test-key"));
     const { container } = render(
       <AuthorizationProvider>
         <MemoryRouter initialEntries={["/list"]}>
