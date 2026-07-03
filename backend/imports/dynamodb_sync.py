@@ -371,8 +371,8 @@ def main():
     print()
 
     if not args.yes:
-        answer = input("Continue? [y/N] ").strip().lower()
-        if answer != "y":
+        answer = input("Continue? [Y/n] ").strip().lower()
+        if answer not in ("", "y"):
             print("Aborted.")
             sys.exit(0)
         print()

@@ -611,7 +611,7 @@ class DocumentChunk(Base):
     seg_start: Mapped[int | None] = mapped_column(Integer)
     seg_end: Mapped[int | None] = mapped_column(Integer)
     rewrite_ratio: Mapped[int | None] = mapped_column(SmallInteger)
-    # status: pending | approved | needs_reanalysis | split_requested | split
+    # status: pending | approved | needs_reanalysis | split_requested | split | skipped
     status: Mapped[str] = mapped_column(
         String(30), nullable=False, server_default=sa_text("'pending'"),
     )
@@ -623,6 +623,9 @@ class DocumentChunk(Base):
     )
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
+    )
+    obsidian_note_paths: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, server_default=sa_text("'{}'"),
     )
 
     run: Mapped["DocumentAnalysisRun"] = relationship(back_populates="chunks")

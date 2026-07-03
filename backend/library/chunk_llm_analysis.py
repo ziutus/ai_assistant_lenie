@@ -48,7 +48,10 @@ Fragment transkrypcji:
     try:
         match = re.search(r'\[.*\]', response_text, re.DOTALL)
         if match:
-            return json.loads(match.group())
+            result = json.loads(match.group())
+            if result and isinstance(result[0], list):
+                result = result[0]
+            return [sp for sp in result if isinstance(sp, dict)]
     except Exception:
         logger.warning("extract_speaker_info: failed to parse JSON response")
     return []

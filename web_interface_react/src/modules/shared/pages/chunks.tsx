@@ -193,6 +193,7 @@ const Chunks = () => {
   const [savedFlash, setSavedFlash]       = React.useState<Record<number, boolean>>({});
   const [reanalyzing, setReanalyzing]     = React.useState<Record<number, boolean>>({});
   const [reanalyzingAll, setReanalyzingAll] = React.useState(false);
+  const [approvingAll, setApprovingAll] = React.useState(false);
   const [splitStates, setSplitStates]     = React.useState<Record<number, SplitState>>({});
   const [confirmingSplit, setConfirmingSplit] = React.useState<Record<number, boolean>>({});
   const [extractingSpeakers, setExtractingSpeakers] = React.useState(false);
@@ -352,6 +353,17 @@ const Chunks = () => {
     setReanalyzingAll(false);
   };
 
+  const approveAll = async () => {
+    const toApprove = chunks.filter(c => c.type !== "REKLAMA" && c.status !== "approved");
+    if (!toApprove.length) return;
+    setApprovingAll(true);
+    try {
+      await Promise.all(toApprove.map(c => patchChunk(c.id, { status: "approved" })));
+    } finally {
+      setApprovingAll(false);
+    }
+  };
+
   // ── Split ──
 
   const markSplit = (chunkId: number, absIdx: number, ts: string) => {
@@ -401,6 +413,7 @@ const Chunks = () => {
 
   const tematChunks = chunks.filter(c => c.type !== "REKLAMA");
   const approvedCount = tematChunks.filter(c => c.status === "approved").length;
+  const unapprovedTematCount = tematChunks.filter(c => c.status !== "approved").length;
   const pct = tematChunks.length ? Math.round(approvedCount / tematChunks.length * 100) : 0;
   const reklamaCount = chunks.filter(c => c.type === "REKLAMA").length;
   const visibleReklamaCount = chunks.filter(c => c.type === "REKLAMA" && !hiddenChunks.has(c.id)).length;
@@ -460,6 +473,12 @@ const Chunks = () => {
           <div style={{ flex: 1, minWidth: 80, background: "#334155", borderRadius: 4, height: 8 }}>
             <div style={{ width: `${pct}%`, height: 8, background: "#22c55e", borderRadius: 4, transition: "width .3s" }} />
           </div>
+          {unapprovedTematCount > 0 && (
+            <button className="button" onClick={approveAll} disabled={approvingAll}
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#15803d", color: "#fff", border: "none" }}>
+              {approvingAll ? "Zatwierdzam…" : `Zatwierdź wszystkie (${unapprovedTematCount})`}
+            </button>
+          )}
           {needsReanalysisCount > 0 && (
             <button className="button" onClick={reanalyzeAll} disabled={reanalyzingAll}
               style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0369a1", color: "#fff", border: "none" }}>

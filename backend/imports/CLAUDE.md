@@ -67,7 +67,7 @@ cd backend
 - `--data-dir PATH` — cache dir for S3 files (default: `os.path.join(CACHE_DIR, 'markdown')`)
 - `-y`, `--yes` — skip confirmation prompt (for automation)
 
-Before executing any operations, the script displays source (AWS profile, region) and target (PostgreSQL host/db/port/user) information, then asks for confirmation (`Continue? [y/N]`). Use `-y` to skip the prompt.
+Before executing any operations, the script displays source (AWS profile, region) and target (PostgreSQL host/db/port/user) information, then asks for confirmation (`Continue? [Y/n]`, Enter accepts). Use `-y` to skip the prompt.
 
 **SSM parameters used:**
 - `/{project}/{env}/dynamodb/documents/name` — DynamoDB table name
