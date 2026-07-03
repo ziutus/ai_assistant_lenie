@@ -1,26 +1,29 @@
 """Download missing markdown for documents already in the database.
 
-Re-downloads the webpage HTML, uploads it to S3, converts to markdown
-via MarkItDown, and stores the result in the database.
+Re-downloads the webpage HTML, uploads it to S3, converts to markdown via
+library.document_prepare.prepare_markdown (MarkItDown -> html2markdown ->
+html2text cascade, cached in {CACHE_DIR}/markdown/{doc_id}/) and stores the
+cleaned result in the database.
 
 Usage:
     cd backend
-    python web_documents_fix_missing_markdown.py
+    python web_documents_fix_missing_markdown.py [--dry-run] [--limit N]
 """
 
+import argparse
 import os
 import uuid
 
 import boto3
-from markitdown import MarkItDown
 
 from library.config_loader import load_config
 from library.db.engine import get_session
 from library.db.models import WebDocument
+from library.document_prepare import prepare_markdown
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-from library.website.website_download_context import download_raw_html
+from library.website.website_download_context import download_raw_html, webpage_text_clean
 
 cfg = load_config()
 
@@ -31,7 +34,28 @@ problems = [38, 89, 150, 157, 191, 208, 220, 311, 371, 376, 396,
 
 # 611 certificate expired
 
-if __name__ == '__main__':
+
+def decode_html(raw: bytes) -> str:
+    """Decode raw HTML bytes: UTF-8 first, then chardet detection, then latin-1 fallback."""
+    try:
+        return raw.decode("utf-8")
+    except UnicodeDecodeError:
+        import chardet
+
+        detected_encoding = chardet.detect(raw)['encoding']
+        print(f"Detected encoding: {detected_encoding}")
+        if detected_encoding:
+            return raw.decode(detected_encoding, errors="replace")
+        print("Encoding detection failed, using replacement characters.")
+        return raw.decode("latin-1", errors="replace")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Download missing markdown for documents in the database")
+    parser.add_argument("--dry-run", action="store_true", help="List documents only, no downloads or DB writes")
+    parser.add_argument("--limit", type=int, help="Max documents to process")
+    args = parser.parse_args()
+
     if not cfg.get("AWS_S3_WEBSITE_CONTENT"):
         print("The S3 bucket for text and html files is not set, exiting.")
         exit(1)
@@ -44,7 +68,13 @@ if __name__ == '__main__':
 
         document_id_start = max(problems) if len(problems) > 0 else 0
         md_needed = websites.get_documents_md_needed(min_id=document_id_start)
+        if args.limit:
+            md_needed = md_needed[:args.limit]
         print(md_needed)
+
+        if args.dry_run:
+            print(f"[dry-run] {len(md_needed)} documents would be processed.")
+            return
 
         s3 = boto3.client('s3')
 
@@ -72,20 +102,9 @@ if __name__ == '__main__':
                 session.commit()
                 continue
 
-            try:
-                html = html.decode("utf-8")
-            except UnicodeDecodeError:
-                import chardet
+            html = decode_html(html)
 
-                detected_encoding = chardet.detect(html)['encoding']
-                print(f"Detected encoding: {detected_encoding}")
-                if detected_encoding:
-                    html = html.decode(detected_encoding, errors="replace")
-                else:
-                    print("Encoding detection failed, using replacement characters.")
-                    html = html.decode("latin-1", errors="replace")
-
-            doc_uuid = str(uuid.uuid4())
+            doc_uuid = doc.uuid or str(uuid.uuid4())
             file_name = f"{doc_uuid}.html"
 
             try:
@@ -96,22 +115,26 @@ if __name__ == '__main__':
                 print(error_message)
                 exit(1)
 
-            doc_cache_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown", str(doc_uuid))
+            # Cache in the {CACHE_DIR}/markdown/{doc_id}/{doc_id}.ext convention
+            # (same as document_prepare.py), so downstream tools can reuse the files.
+            doc_cache_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown", str(doc.id))
             os.makedirs(doc_cache_dir, exist_ok=True)
-            page_file = os.path.join(doc_cache_dir, f"{doc_uuid}.html")
+            page_file = os.path.join(doc_cache_dir, f"{doc.id}.html")
             with open(page_file, 'w', encoding="utf-8") as file:
                 file.write(html)
 
-            md = MarkItDown()
-            result = md.convert(page_file)
+            # Drop stale cached markdown so prepare_markdown converts the fresh HTML
+            stale_md = os.path.join(doc_cache_dir, f"{doc.id}.md")
+            if os.path.exists(stale_md):
+                os.remove(stale_md)
 
-            md_file = os.path.join(doc_cache_dir, f"{doc_uuid}.md")
-            with open(md_file, 'w', encoding="utf-8") as file:
-                file.write(result.text_content)
+            # MarkItDown -> html2markdown -> html2text cascade; writes {id}.md to cache
+            markdown_text = prepare_markdown(doc.id, doc, doc_cache_dir)
+            if not markdown_text:
+                print(f"[ERROR] markdown conversion failed for {doc.id}")
+                continue
 
-            md_cleaned = result.text_content
-
-            doc.text_md = md_cleaned
+            doc.text_md = webpage_text_clean(doc.url, markdown_text)
             doc.uuid = doc_uuid
 
             session.commit()
@@ -119,3 +142,7 @@ if __name__ == '__main__':
         print("All done.")
     finally:
         session.close()
+
+
+if __name__ == '__main__':
+    main()
