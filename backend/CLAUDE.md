@@ -26,7 +26,6 @@ backend/
 ├── test_code/                             # Experimental/prototype scripts
 │   └── CLAUDE.md                          # ↳ Detailed docs
 │
-├── markdown_to_embedding.py              # Batch: markdown files → embeddings
 ├── web_documents_do_the_needful_new.py   # Batch: download, transcribe, embed documents
 ├── web_documents_fix_missing_markdown.py # Batch: fix documents with missing markdown
 ├── webdocument_md_decode.py              # Batch: markdown decoding & link processing
@@ -104,7 +103,6 @@ Standalone scripts for bulk document operations. Run manually, not part of the F
 | `web_documents_fix_missing_markdown.py` | Fix documents that are missing markdown content | **Yes** |
 | `webdocument_md_decode.py` | Markdown decoding, link extraction and correction, prepare content for embedding | **Yes** |
 | `webdocument_prepare_regexp_by_ai.py` | Generate site-specific regex patterns for article extraction using LLM | **Yes** |
-| `markdown_to_embedding.py` | Convert markdown files from `{CACHE_DIR}/markdown/` into embeddings. Supports manual corrections via `{id}_manual.md` files | No |
 
 Ad-hoc single-item tools and bulk import scripts live in [`imports/`](imports/CLAUDE.md): `youtube_add.py`, `dynamodb_sync.py`, `feed_monitor.py`, `article_browser.py`, `freedom_house_import.py`, `control_questions.py`, `migrate_data_to_cache.py`.
 

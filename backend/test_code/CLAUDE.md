@@ -6,28 +6,21 @@ Experimental and exploratory scripts that test backend library modules, external
 
 ```
 backend/test_code/
-├── aws_dynamodb_new_articles.py      # DynamoDB article queries
-├── cloudferro_ark_labs_models.py     # CloudFerro model listing
-├── cloudferro_embeddings.py          # CloudFerro embedding generation
+├── cloudferro_ark_labs_models.py     # CloudFerro & ARK Labs model listing
 ├── credentials.json                  # Google OAuth app credentials
 ├── dateparser_user.py                # Date parsing library tests
 ├── describe_image.py                 # Image analysis via AWS Bedrock Claude
-├── embedding_search_2.py             # Simplified vector similarity search
 ├── embeddings_search.py              # Full RAG pipeline (CLI tool)
 ├── firecrawl.py                      # Web crawling via Firecrawl (incomplete)
 ├── gcloud_firestore.py               # DynamoDB → Firestore migration
 ├── gcloud_firestore_example.py       # Basic Firestore CRUD example
 ├── google_calendar_to_obsidian.py    # Google Calendar → Obsidian sync
-├── models_list.py                    # LLM model listing via OpenAI client
 ├── obsidian_clean_jurnal.py          # Obsidian journal cleanup & Storytel metadata
 ├── openroute.py                      # OpenRouter API testing
 ├── read_pdf.py                       # PDF text extraction via pypdf
 ├── serper_dev.py                     # Web search via Serper API
 ├── token.json                        # Google OAuth token (auto-generated)
 ├── vault_tests.py                    # HashiCorp Vault integration tests
-├── webdocument_bielik_analizuj.py    # Interview data extraction (Bielik LLM)
-├── webdocument_bielik_popraw.py      # Text correction & summarization (Bielik)
-├── webdocument_bielik_popraw_2.py    # Transcription correction (Bielik)
 └── tmp/                              # Temporary data files (git-ignored)
     └── storytel_*.{html,json,md}     # Storytel audiobook metadata samples
 ```
@@ -39,8 +32,6 @@ backend/test_code/
 | Script | Purpose |
 |--------|---------|
 | `embeddings_search.py` | Full RAG pipeline: language detection → translation → embedding → pgvector similarity search → LLM answer with sources. CLI with flags: `--question`, `--minimal_similarity`, `-model`, `-nc`, `-en`, `-pl` |
-| `embedding_search_2.py` | Simplified similarity search using `WebsitesDBPostgreSQL` |
-| `cloudferro_embeddings.py` | Generate embeddings via CloudFerro API (BAAI/bge-multilingual-gemma2 model) |
 
 ### LLM Provider Testing
 
@@ -48,23 +39,13 @@ backend/test_code/
 |--------|---------|
 | `cloudferro_ark_labs_models.py` | List models from CloudFerro Sherlock & ARK Labs APIs |
 | `model_identity_comparison.py` | Ask multiple models N times "what's your name and who made you?" — compares consistency of responses across western and Chinese models (OpenRouter, OpenAI, Bedrock, CloudFerro). Outputs JSON/CSV/TXT summaries. |
-| `models_list.py` | List LLM models using OpenAI client with CloudFerro endpoint |
 | `openroute.py` | Test OpenRouter API (Claude Sonnet 4 models) |
 | `describe_image.py` | Image analysis using AWS Bedrock Claude 3 Haiku |
-
-### Polish Text Processing (Bielik LLM)
-
-| Script | Purpose |
-|--------|---------|
-| `webdocument_bielik_analizuj.py` | Extract journalist/guest names and bios from interview transcripts as JSON |
-| `webdocument_bielik_popraw.py` | Interactive text correction and summarization, saves results to DB |
-| `webdocument_bielik_popraw_2.py` | Batch correction of speech-to-text transcription output |
 
 ### Cloud Platform Integration
 
 | Script | Purpose |
 |--------|---------|
-| `aws_dynamodb_new_articles.py` | Query DynamoDB `lenie_dev_documents` table by date ranges |
 | `gcloud_firestore.py` | Migrate articles from DynamoDB to Google Firestore (batch operations, retry logic, cost monitoring) |
 | `gcloud_firestore_example.py` | Basic Firestore CRUD operations with dateparser |
 
