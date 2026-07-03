@@ -11,7 +11,8 @@ from unified_config_loader import load_config
 from library.db.engine import get_session
 from library.db.models import WebDocument
 
-from youtube_batch_analyze import save_html, _load_transcript_segments
+from library.document_analysis_service import _load_segments as _load_transcript_segments
+from youtube_batch_analyze import save_html
 
 
 def main():
