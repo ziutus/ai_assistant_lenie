@@ -2,23 +2,18 @@
 """
 Batch analysis of long YouTube transcripts using Bielik LLM via CloudFerro Sherlock.
 
-Pipeline (two passes per chunk — tasks separated to avoid summarizing instead of rewriting):
-  Pass 1 — rewrite:   label section (REKLAMA/TEMAT) + correct transcript verbatim
-  Pass 2 — summarize: 2-3 sentence summary of corrected text (skipped for REKLAMA)
-  Final  — synthesis: overall conclusions from all summaries
-
-Why two passes:
-  - Single prompt mixing "rewrite + summarize" caused Bielik to skip rewriting and jump
-    straight to a summary. Separating tasks forces the model to do each job fully.
-
-Why ~5,000 chars (≈1,500 tokens) per chunk:
-  - Rewrite output ≈ same size as input → needs max_tokens=2,500 (fits comfortably)
-  - Summary output is small → max_tokens=400
+The LLM pipeline (chunk splitting, speaker extraction/labeling, two-pass
+rewrite + summarize, topic grouping, synthesis, DB persistence) lives in
+library/document_analysis_service.py + library/chunk_llm_analysis.py and is
+shared with the Flask API (chunk_review_routes.py). This script is a thin CLI
+on top of it, adding:
+  - dry-run preview (chunk breakdown + cost estimate, no API calls)
+  - explicit --speaker1/--speaker2 override (skips LLM speaker extraction)
+  - file exports to .claude/exports/: analysis (MD), data (JSON), debug (MD),
+    review view (HTML with YouTube timestamp links)
 
 Cost at 0.56 EUR/M tokens: ~0.05 EUR for a 90K-char transcript
   (19 chunks × ~4,700 tok/chunk = 89K tokens).
-
-Text splitting: library.text_functions.split_text_into_chunks (shared utility).
 
 Usage (from backend/ directory):
     # Windows PowerShell
@@ -40,114 +35,22 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from unified_config_loader import load_config
 from library.db.engine import get_session
-from library.db.models import WebDocument, DocumentAnalysisRun, DocumentChunk, DocumentTopicSection
-from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
-from library.api.arklabs.arklabs_completion import arklabs_get_completion
+from library.db.models import WebDocument
+from library.chunk_llm_analysis import assign_speakers, remove_speech_fillers
+from library.document_analysis_service import (
+    CHUNK_CHARS,
+    DocumentAnalysisService,
+    _extract_text,
+    _load_segments,
+    _map_chunks_to_segments,
+)
 from library.text_functions import split_text_into_sentence_chunks
 
-
-CHUNK_CHARS = 5_000          # ≈1,500 text tokens — safe for verbatim reproduction
-REWRITE_MAX_TOKENS = 2_500   # rewrite task: reproduce full text with corrections
-REWRITE_MIN_RATIO = 0.80     # retry rewrite if output < 80% of input length
-SUMMARY_MAX_TOKENS = 400     # summarize task: 2-3 sentences only
-SYNTHESIS_MAX_TOKENS = 2_000
-SYNTHESIS_MAX_INPUT_CHARS = 20_000
-
-SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT): ?(.+)$', re.MULTILINE)
-
-# Filler words common in YouTube auto-transcripts (Polish hesitation sounds)
-_FILLER_RE = re.compile(r'\b[Yy]{2,}\b|\b[Ee]{3,}\b|\b[Mm]{3,}\b', re.IGNORECASE)
-_STANDALONE_Y_RE = re.compile(r'(?<!\w)[Yy](?!\w)')
-
-
-def clean_fillers(text: str) -> str:
-    """Remove YouTube transcript filler sounds (yyy, eee, standalone y) and fix spacing."""
-    text = _FILLER_RE.sub('', text)
-    text = _STANDALONE_Y_RE.sub('', text)
-    text = re.sub(r'[ \t]{2,}', ' ', text)
-    text = re.sub(r' ([,.])', r'\1', text)
-    return text
-
-
-def _tail(text: str, max_chars: int = 300) -> str:
-    """Last up to max_chars of text, preferring a sentence boundary start."""
-    if len(text) <= max_chars:
-        return text
-    seg = text[-max_chars:]
-    for sep in ('. ', '.\n', '? ', '! '):
-        idx = seg.find(sep)
-        if idx != -1:
-            return seg[idx + len(sep):]
-    return seg
-
-
-def _head(text: str, max_chars: int = 300) -> str:
-    """First up to max_chars of text, preferring a sentence boundary end."""
-    if len(text) <= max_chars:
-        return text
-    seg = text[:max_chars]
-    for sep in ('. ', '.\n', '? ', '! '):
-        idx = seg.rfind(sep)
-        if idx != -1:
-            return seg[:idx + 1]
-    return seg
 
 SHERLOCK_MODELS = ["Bielik-11B-v3.0-Instruct"]
 ARKLABS_PREFIX = "arklabs/"
 ARKLABS_MODELS = [f"{ARKLABS_PREFIX}Bielik-11B-v3.0-Instruct"]
 ALL_MODELS = SHERLOCK_MODELS + ARKLABS_MODELS
-
-
-def detect_format(text: str) -> dict:
-    """Detect monologue vs conversation by counting >> speaker-change markers."""
-    changes = len(re.findall(r'>>', text))
-    return {"is_multi_speaker": changes > 0, "speaker_changes": changes}
-
-
-def extract_speaker_info(intro_text: str, model: str) -> list[dict]:
-    """Ask LLM to extract speaker names/roles/descriptions from transcript intro.
-
-    Returns list of dicts: [{"name": ..., "role": ..., "description": ...}]
-    Returns [] if extraction fails.
-    """
-    import json as _json
-    prompt = f"""Z poniższego fragmentu transkrypcji podcastu wyekstrahuj informacje o rozmówcach.
-Zwróć TYLKO tablicę JSON bez żadnego dodatkowego tekstu, w formacie:
-[{{"name": "Imię Nazwisko", "role": "prowadzący", "description": "krótki opis stanowiska/roli"}}]
-
-Jeśli nie możesz zidentyfikować rozmówców, zwróć pustą tablicę: []
-
-Fragment transkrypcji:
-{intro_text}"""
-
-    print("  [meta] Ekstrakcja rozmówców z intro...", flush=True)
-    response_text, _ = call_model(prompt, model, max_tokens=300)
-    try:
-        match = re.search(r'\[.*\]', response_text, re.DOTALL)
-        if match:
-            return _json.loads(match.group())
-    except (ValueError, AttributeError):
-        pass
-    return []
-
-
-def assign_speakers(text: str, speaker1: str, speaker2: str) -> str:
-    """Parse >> speaker-change markers from YouTube auto-transcript and label each turn.
-
-    YouTube inserts >> when it detects a speaker change. The first segment belongs to
-    speaker1 (the host / first voice), then speakers alternate.
-    Short segments (< 10 chars) that are just acknowledgments are still labeled.
-    """
-    segments = re.split(r'\s*>>\s*', text)
-    speakers = [speaker1, speaker2]
-    labeled = []
-    for i, seg in enumerate(segments):
-        seg = seg.strip()
-        if not seg:
-            continue
-        label = speakers[i % 2]
-        labeled.append(f"[{label}]: {seg}")
-    return "\n\n".join(labeled)
 
 
 def _seconds_to_ts(secs: float) -> str:
@@ -158,201 +61,6 @@ def _seconds_to_ts(secs: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
 
 
-def _load_transcript_segments(text_raw: str) -> list[dict] | None:
-    """Parse YouTube transcript JSON from text_raw.
-
-    Returns list of {text, start, duration} dicts, or None if not valid JSON.
-    """
-    import json as _json
-    if not text_raw or not text_raw.strip().startswith('['):
-        return None
-    try:
-        segs = _json.loads(text_raw.strip())
-        if isinstance(segs, list) and segs and isinstance(segs[0], dict) and 'start' in segs[0]:
-            return segs
-    except (ValueError, KeyError, IndexError):
-        pass
-    return None
-
-
-def _map_chunks_to_segments(chunk_texts: list[str], segments: list[dict]) -> list[tuple[int, int]]:
-    """Map each chunk to an approximate range of segment indices (proportional by chars).
-
-    Returns list of (start_seg_idx, end_seg_idx) per chunk.
-    """
-    total = sum(len(c) for c in chunk_texts)
-    if not total:
-        return [(0, len(segments))] * len(chunk_texts)
-    n = len(segments)
-    result = []
-    cum = 0
-    for chunk in chunk_texts:
-        start = round(n * cum / total)
-        cum += len(chunk)
-        end = round(n * cum / total)
-        result.append((min(start, n), min(end, n)))
-    return result
-
-
-def get_text_for_analysis(doc: WebDocument) -> tuple[str, str]:
-    # Primary: plain text fields — LLM must receive plain text, not JSON
-    for field in ("text", "text_md"):
-        value = getattr(doc, field, None)
-        if value and len(value) > 100:
-            return value, field
-    # text_raw may be YouTube transcript JSON — extract plain text for LLM
-    raw = getattr(doc, "text_raw", None)
-    if raw and len(raw) > 100:
-        segs = _load_transcript_segments(raw)
-        if segs:
-            return "\n".join(s["text"] for s in segs), "text_raw (JSON→plain)"
-        return raw, "text_raw"
-    return "", ""
-
-
-def call_model(prompt: str, model: str, max_tokens: int) -> tuple[str, int]:
-    if model.startswith(ARKLABS_PREFIX):
-        actual_model = f"speakleash/{model.removeprefix(ARKLABS_PREFIX)}"
-        result = arklabs_get_completion(prompt, model=actual_model, max_tokens=max_tokens, temperature=0.2)
-    else:
-        result = sherlock_get_completion(prompt, model=model, max_tokens=max_tokens, temperature=0.2)
-    tokens_in = getattr(result, "prompt_tokens", 0) or 0
-    return result.response_text, tokens_in
-
-
-def rewrite_chunk(chunk: str, chunk_num: int, total: int, model: str,
-                  prev_context: str = "", next_context: str = "") -> str:
-    """Pass 1: label section + correct transcript verbatim (no summarizing).
-
-    prev_context / next_context: boundary sentences from adjacent chunks — shown to the model
-    as read-only context to improve coherence at chunk boundaries, not to be reproduced.
-    Retries once if output is shorter than REWRITE_MIN_RATIO of input — keeps the longer result.
-    """
-    ctx_prev = (
-        f"\n[KONTEKST — koniec poprzedniego fragmentu, NIE przepisuj tego]:\n{prev_context}\n"
-        if prev_context else ""
-    )
-    ctx_next = (
-        f"\n[KONTEKST — początek następnego fragmentu, NIE przepisuj tego]:\n{next_context}\n"
-        if next_context else ""
-    )
-    prompt = f"""Fragment {chunk_num}/{total} surowej transkrypcji podcastu YouTube.
-{ctx_prev}
-Wykonaj DWIE rzeczy — nic więcej:
-
-1. W PIERWSZEJ LINII wpisz etykietę sekcji (tylko jedną z dwóch opcji):
-   ### REKLAMA: nazwa_sponsora      (gdy to blok reklamowy lub sponsorski)
-   ### TEMAT: opis_3_4_słowa        (gdy to merytoryczna treść rozmowy)
-
-2. Przepisz poniższy tekst DOSŁOWNIE — każde słowo musi zostać zachowane. Popraw tylko:
-   - Interpunkcję i podział na zdania.
-   - Oczywiste błędy transkrypcji (zamienione lub zlepione wyrazy).
-   - Zachowaj etykiety [Mówca]: na początku każdej wypowiedzi — nie usuwaj ich.
-   NIE skracaj. NIE streszczaj. NIE pomijaj żadnej informacji.
-
---- FRAGMENT DO PRZEPISANIA ---
-{chunk}
---- KONIEC FRAGMENTU ---
-{ctx_next}"""
-
-    best = ""
-    for attempt in range(1, 3):  # max 2 attempts
-        print(f"  [{chunk_num:>2}/{total}] rewrite ({len(chunk):,} znaków, próba {attempt})...", flush=True)
-        response_text, tokens_in = call_model(prompt, model, REWRITE_MAX_TOKENS)
-        out_len = len(response_text)
-        ratio = round(out_len / len(chunk) * 100)
-        print(f"  [{chunk_num:>2}/{total}] rewrite gotowe — {out_len:,} znaków ({ratio}% wejścia), tokeny: {tokens_in}",
-              flush=True)
-        if len(response_text) > len(best):
-            best = response_text
-        if out_len >= len(chunk) * REWRITE_MIN_RATIO:
-            break
-        if attempt < 2:
-            print(f"  [{chunk_num:>2}/{total}] Wynik zbyt krótki ({ratio}% < {round(REWRITE_MIN_RATIO*100)}%) — ponawiam...",
-                  flush=True)
-    return best
-
-
-def summarize_chunk(corrected_text: str, chunk_num: int, total: int, model: str) -> str:
-    """Pass 2: summarize the already-corrected text in 2-3 sentences."""
-    prompt = f"""Napisz streszczenie poniższego fragmentu merytorycznej rozmowy w 2-3 zdaniach.
-Skup się na głównych tezach i wnioskach. Odpowiedz po polsku.
-
---- TEKST ---
-{corrected_text}
---- KONIEC ---"""
-
-    print(f"  [{chunk_num:>2}/{total}] summarize ({len(corrected_text):,} znaków)...", flush=True)
-    response_text, tokens_in = call_model(prompt, model, SUMMARY_MAX_TOKENS)
-    print(f"  [{chunk_num:>2}/{total}] summarize gotowe — tokeny: {tokens_in}", flush=True)
-    return response_text.strip()
-
-
-def parse_rewritten_chunk(raw: str) -> tuple[str, str, str]:
-    """Extract (section_type, topic, corrected_text) from rewrite output."""
-    header_match = SECTION_HEADER_RE.search(raw)
-    section_type = header_match.group(1) if header_match else "TEMAT"
-    topic = header_match.group(2).strip() if header_match else "Nieznany"
-    text = raw[header_match.end():].strip() if header_match else raw.strip()
-    return section_type, topic, text
-
-
-def merge_topics(sections: list[dict], model: str) -> list[dict]:
-    """Ask LLM to group adjacent chunks into logical topic sections.
-
-    Returns list of dicts: [{"title": ..., "type": ..., "chunks": [1, 2, ...]}]
-    where chunk numbers are 1-based. Returns [] if LLM call fails.
-    """
-    import json as _json
-    chunk_list = "\n".join(
-        f"{i + 1}. [{s['type']}] {s['topic']}"
-        for i, s in enumerate(sections)
-    )
-    prompt = f"""Poniżej lista {len(sections)} fragmentów transkrypcji podcastu z ich tematami.
-Pogrupuj SĄSIADUJĄCE fragmenty w logiczne sekcje tematyczne (zwykle 5-10 sekcji).
-Fragmenty reklamowe (REKLAMA) możesz pominąć lub zgrupować razem pod jedną sekcją REKLAMA.
-
-Zwróć TYLKO tablicę JSON bez żadnego dodatkowego tekstu, w formacie:
-[{{"title": "Tytuł sekcji tematycznej", "type": "TEMAT", "chunks": [1, 2]}}]
-Gdzie "chunks" to numery fragmentów (numeracja od 1), "type" to "TEMAT" lub "REKLAMA".
-
-Fragmenty:
-{chunk_list}"""
-
-    print("  [tematy] Grupowanie fragmentów w logiczne sekcje...", flush=True)
-    response_text, _ = call_model(prompt, model, max_tokens=600)
-    try:
-        match = re.search(r'\[.*\]', response_text, re.DOTALL)
-        if match:
-            groups = _json.loads(match.group())
-            print(f"  [tematy] {len(groups)} sekcji tematycznych.", flush=True)
-            return groups
-    except (ValueError, AttributeError):
-        pass
-    print("  [tematy] Nie udało się zgrupować — fallback do chunków.", flush=True)
-    return []
-
-
-def build_topic_sections(sections: list[dict], topic_groups: list[dict]) -> list[dict]:
-    """Merge chunk texts and summaries according to topic grouping from merge_topics()."""
-    result = []
-    for group in topic_groups:
-        indices = [i - 1 for i in group.get("chunks", [])]
-        valid = [i for i in indices if 0 <= i < len(sections)]
-        if not valid:
-            continue
-        merged_text = "\n\n".join(s["text"] for i in valid if (s := sections[i])["text"])
-        merged_summary = " ".join(s["summary"] for i in valid if (s := sections[i])["summary"])
-        result.append({
-            "title": group.get("title", ""),
-            "type": group.get("type", "TEMAT"),
-            "chunk_indices": [i + 1 for i in valid],  # 1-based for display
-            "text": merged_text,
-            "summary": merged_summary.strip(),
-        })
-    return result
-
-
 def build_toc(topic_sections: list[dict]) -> str:
     """Build table of contents from logical topic sections."""
     lines = ["## SPIS TREŚCI\n"]
@@ -361,37 +69,6 @@ def build_toc(topic_sections: list[dict]) -> str:
         chunks_label = f"  *(fragmenty: {', '.join(str(c) for c in s['chunk_indices'])})*"
         lines.append(f"{i:>2}. {marker} {s['title']}{chunks_label}")
     return "\n".join(lines)
-
-
-def synthesize(sections: list[dict], title: str, model: str) -> str:
-    content_sections = [s for s in sections if s["type"] == "TEMAT" and s["summary"]]
-    if not content_sections:
-        return ""
-
-    summaries = "\n\n".join(
-        [f"**{s.get('title') or s.get('topic', '')}**: {s['summary']}" for s in content_sections]
-    )
-
-    if len(summaries) > SYNTHESIS_MAX_INPUT_CHARS:
-        print(f"  [synteza] Streszczenia zbyt długie ({len(summaries):,} znaków) — pomijam.")
-        return ""
-
-    prompt = f"""Poniżej są streszczenia kolejnych sekcji merytorycznych podcastu YouTube pt.: „{title}".
-
-Na ich podstawie przygotuj:
-1. GŁÓWNE WNIOSKI: 5-7 najważniejszych wniosków (lista punktowana).
-2. SYNTEZA: Spójne streszczenie całości (6-8 zdań).
-
-Odpowiedz wyłącznie po polsku.
-
---- STRESZCZENIA SEKCJI ---
-{summaries}
---- KONIEC ---"""
-
-    print(f"  [synteza] ({len(prompt):,} znaków)...", flush=True)
-    response_text, _ = call_model(prompt, model, SYNTHESIS_MAX_TOKENS)
-    print("  [synteza] Gotowe.", flush=True)
-    return response_text
 
 
 def save_html(doc_id: int, title: str, model: str,
@@ -714,7 +391,7 @@ def save_debug(doc_id: int, title: str, model: str, sections: list[dict], timest
             f.write("\n\n")
 
             if s["summary"]:
-                f.write(f"### STRESZCZENIE\n\n")
+                f.write("### STRESZCZENIE\n\n")
                 f.write(s["summary"])
                 f.write("\n\n")
 
@@ -723,61 +400,36 @@ def save_debug(doc_id: int, title: str, model: str, sections: list[dict], timest
     return filename
 
 
-def save_to_db(
-    session,
-    doc: WebDocument,
-    model: str,
-    chunk_size: int,
-    sections: list[dict],
-    topic_sections: list[dict],
-    synthesis: str,
-    segments: list[dict] | None,
-) -> DocumentAnalysisRun:
-    """Persist analysis results to DB: one run + N chunks + M topic sections."""
-    seg_map = (
-        _map_chunks_to_segments([s["original"] for s in sections], segments)
-        if segments else [(None, None)] * len(sections)
-    )
-
-    run = DocumentAnalysisRun(
-        document_id=doc.id,
-        model=model,
-        chunk_size=chunk_size,
-        synthesis=synthesis or None,
-    )
-    session.add(run)
-    session.flush()  # get run.id before adding children
-
-    for i, s in enumerate(sections):
-        seg_start, seg_end = seg_map[i]
-        session.add(DocumentChunk(
-            run_id=run.id,
-            document_id=doc.id,
-            position=i + 1,
-            type=s["type"],
-            topic=s["topic"],
-            original_text=s["original"],
-            corrected_text=s["text"] or None,
-            summary=s["summary"] or None,
-            seg_start=seg_start,
-            seg_end=seg_end,
-            rewrite_ratio=s["ratio"],
-            status="pending",
-        ))
-
-    for i, ts in enumerate(topic_sections):
-        session.add(DocumentTopicSection(
-            run_id=run.id,
-            document_id=doc.id,
-            position=i + 1,
-            type=ts["type"],
-            title=ts["title"] or None,
-            summary=ts["summary"] or None,
-            chunk_positions=ts["chunk_indices"],
-        ))
-
-    session.commit()
-    return run
+def _sections_from_run(run) -> tuple[list[dict], list[dict]]:
+    """Rebuild the export data structures from a persisted DocumentAnalysisRun."""
+    chunks_sorted = sorted(run.chunks, key=lambda c: c.position)
+    sections = [
+        {
+            "type": c.type,
+            "topic": c.topic or "",
+            "original": c.original_text or "",
+            "text": c.corrected_text or "",
+            "ratio": c.rewrite_ratio if c.rewrite_ratio is not None else 0,
+            "summary": c.summary or "",
+        }
+        for c in chunks_sorted
+    ]
+    by_pos = {c.position: c for c in chunks_sorted}
+    topic_sections = [
+        {
+            "title": ts.title or "",
+            "type": ts.type,
+            "chunk_indices": list(ts.chunk_positions or []),
+            "text": "\n\n".join(
+                by_pos[p].corrected_text
+                for p in (ts.chunk_positions or [])
+                if p in by_pos and by_pos[p].corrected_text
+            ),
+            "summary": ts.summary or "",
+        }
+        for ts in sorted(run.topic_sections, key=lambda t: t.position)
+    ]
+    return sections, topic_sections
 
 
 def main():
@@ -794,7 +446,7 @@ def main():
                         help="Characters per chunk (≈1,500 tokens at default 5,000)")
     parser.add_argument("--speaker1", default="",
                         help="Name of first speaker (segments before first >>). "
-                             "If omitted, >> markers are not parsed.")
+                             "If omitted, speakers are auto-extracted via LLM.")
     parser.add_argument("--speaker2", default="",
                         help="Name of second speaker (segments after first >>).")
     parser.add_argument("--no_synthesis", action="store_true",
@@ -807,146 +459,104 @@ def main():
 
     print(f"Pobieranie dokumentu {args.doc_id}...")
     session = get_session()
-    doc = WebDocument.get_by_id(session, args.doc_id)
-    if doc is None:
-        print(f"BŁĄD: Dokument {args.doc_id} nie znaleziony.")
-        sys.exit(1)
+    try:
+        doc = WebDocument.get_by_id(session, args.doc_id)
+        if doc is None:
+            print(f"BŁĄD: Dokument {args.doc_id} nie znaleziony.")
+            sys.exit(1)
 
-    print(f"Tytuł  : {doc.title}")
-    print(f"Typ    : {doc.document_type} | Stan: {doc.document_state}")
-    if doc.author:
-        print(f"Autor  : {doc.author}")
+        print(f"Tytuł  : {doc.title}")
+        print(f"Typ    : {doc.document_type} | Stan: {doc.document_state}")
+        if doc.author:
+            print(f"Autor  : {doc.author}")
 
-    video_id = getattr(doc, "original_id", "") or ""
-    segments = _load_transcript_segments(getattr(doc, "text_raw", "") or "")
-    if segments:
-        print(f"Segm.  : {len(segments)} segmentów z timestampami w text_raw")
-    else:
-        print("Segm.  : brak JSON w text_raw — widok HTML bez linków YT")
+        video_id = getattr(doc, "original_id", "") or ""
+        segments = _load_segments(getattr(doc, "text_raw", "") or "")
+        if segments:
+            print(f"Segm.  : {len(segments)} segmentów z timestampami w text_raw")
+        else:
+            print("Segm.  : brak JSON w text_raw — widok HTML bez linków YT")
 
-    text, text_field = get_text_for_analysis(doc)
-    if not text:
-        print("BŁĄD: Brak tekstu w polach text / text_raw / text_md.")
-        sys.exit(1)
-    fmt = detect_format(text)
-    speaker_info: list[dict] = []
+        text, text_field = _extract_text(doc)
+        if not text:
+            print("BŁĄD: Brak tekstu w polach text / text_raw / text_md.")
+            sys.exit(1)
 
-    if fmt["is_multi_speaker"]:
-        print(f"Format : Rozmowa ({fmt['speaker_changes']} zmian mówcy)")
+        speaker_changes = len(re.findall(r">>", text))
+        fmt = {"is_multi_speaker": speaker_changes > 0, "speaker_changes": speaker_changes}
+        if fmt["is_multi_speaker"]:
+            print(f"Format : Rozmowa ({speaker_changes} zmian mówcy)")
+        else:
+            print("Format : Monolog (brak znaczników >>)")
+        print(f"Tekst  : pole '{text_field}', {len(text):,} znaków")
+
+        speakers_override = None
         if args.speaker1 and args.speaker2:
-            speaker_info = [
+            speakers_override = [
                 {"name": args.speaker1, "role": "prowadzący", "description": ""},
                 {"name": args.speaker2, "role": "gość", "description": ""},
             ]
-        elif not args.dry_run:
-            # Sponsor ads typically fill the first ~900 chars; the host intro
-            # with speaker names follows immediately after in the same segment.
-            # Take chars 800-2400 to reliably capture names without ad noise.
-            intro_text = text[800:2400].strip()
-            speaker_info = extract_speaker_info(intro_text, args.model)
-            if len(speaker_info) >= 2:
-                args.speaker1 = speaker_info[0]["name"]
-                args.speaker2 = speaker_info[1]["name"]
-                print(f"  → [{args.speaker1}] / [{args.speaker2}]")
-    else:
-        print("Format : Monolog (brak znaczników >>)")
 
-    if args.speaker1 and args.speaker2:
-        text = assign_speakers(text, args.speaker1, args.speaker2)
-        turns = text.count(f"[{args.speaker1}]:") + text.count(f"[{args.speaker2}]:")
-        print(f"Mówcy  : [{args.speaker1}] / [{args.speaker2}] — {turns} wypowiedzi")
+        if args.dry_run:
+            preview_text = text
+            if fmt["is_multi_speaker"] and speakers_override:
+                preview_text = assign_speakers(preview_text, args.speaker1, args.speaker2)
+            cleaned_text = remove_speech_fillers(preview_text)
+            chunks = split_text_into_sentence_chunks(cleaned_text, args.chunk_size)
+            est_tokens_total = len(chunks) * (args.chunk_size // 3 * 2)  # rough: in+out
+            est_cost = est_tokens_total / 1_000_000 * 0.56
+            print(f"\nPodział: {len(chunks)} fragmentów po max {args.chunk_size:,} znaków")
+            print(f"Szacowany koszt: ~{est_tokens_total:,} tokenów ≈ {est_cost:.3f} EUR\n")
+            for i, ch in enumerate(chunks):
+                print(f"  [{i + 1:>2}] {len(ch):>6,} znaków")
+            print("\n[dry_run] Tryb podglądu — API nie zostało wywołane.")
+            return
 
-    cleaned_text = clean_fillers(text)
-    saved = len(text) - len(cleaned_text)
-    print(f"Tekst  : pole '{text_field}', {len(text):,} znaków → po usunięciu fillerów: {len(cleaned_text):,} znaków (zaoszczędzono {saved:,})\n")
-
-    chunks = split_text_into_sentence_chunks(cleaned_text, args.chunk_size)
-    est_tokens_total = len(chunks) * (args.chunk_size // 3 * 2)  # rough: in+out
-    est_cost = est_tokens_total / 1_000_000 * 0.56
-    print(f"Podział: {len(chunks)} fragmentów po max {args.chunk_size:,} znaków")
-    print(f"Szacowany koszt: ~{est_tokens_total:,} tokenów ≈ {est_cost:.3f} EUR\n")
-    for i, ch in enumerate(chunks):
-        print(f"  [{i + 1:>2}] {len(ch):>6,} znaków")
-
-    if args.dry_run:
-        print("\n[dry_run] Tryb podglądu — API nie zostało wywołane.")
-        return
-
-    print(f"\n=== PRZETWARZANIE: {len(chunks)} fragmentów → {args.model} ===\n")
-    sections: list[dict] = []
-    for i, chunk in enumerate(chunks):
-        prev_ctx = _tail(chunks[i - 1]) if i > 0 else ""
-        next_ctx = _head(chunks[i + 1]) if i < len(chunks) - 1 else ""
-        rewritten = rewrite_chunk(chunk, i + 1, len(chunks), args.model, prev_ctx, next_ctx)
-        section_type, topic, corrected_text = parse_rewritten_chunk(rewritten)
-
-        summary = ""
-        if section_type == "TEMAT" and corrected_text:
-            summary = summarize_chunk(corrected_text, i + 1, len(chunks), args.model)
-
-        ratio = round(len(corrected_text) / len(chunk) * 100) if chunk else 0
-        sections.append({
-            "type": section_type,
-            "topic": topic,
-            "original": chunk,
-            "text": corrected_text,
-            "ratio": ratio,
-            "summary": summary,
-        })
-    print("\n=== GRUPOWANIE TEMATYCZNE ===\n")
-    topic_groups = merge_topics(sections, args.model)
-    if topic_groups:
-        topic_sections = build_topic_sections(sections, topic_groups)
-    else:
-        topic_sections = [
-            {
-                "title": s["topic"],
-                "type": s["type"],
-                "chunk_indices": [i + 1],
-                "text": s["text"],
-                "summary": s["summary"],
-            }
-            for i, s in enumerate(sections)
-        ]
-
-    toc = build_toc(topic_sections)
-    print(f"\n{toc}\n")
-
-    synthesis = ""
-    if not args.no_synthesis:
-        print("=== SYNTEZA ===\n")
-        synthesis = synthesize(topic_sections, doc.title or f"Dokument {args.doc_id}", args.model)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_file = save_results(
-        args.doc_id, doc.title or "", args.model, toc, topic_sections, synthesis, timestamp,
-        fmt=fmt, speaker_info=speaker_info,
-    )
-    json_file = save_json(
-        args.doc_id, doc.title or "", args.model, sections, topic_sections, synthesis, timestamp,
-        fmt=fmt, speaker_info=speaker_info,
-    )
-    debug_file = save_debug(args.doc_id, doc.title or "", args.model, sections, timestamp)
-    html_file = None
-    if segments:
-        html_file = save_html(
-            args.doc_id, doc.title or "", args.model,
-            topic_sections, sections, segments, video_id,
-            timestamp, fmt=fmt, speaker_info=speaker_info,
+        print(f"\n=== PRZETWARZANIE → {args.model} (DocumentAnalysisService) ===\n")
+        service = DocumentAnalysisService(session)
+        run = service.create_run(
+            doc_id=args.doc_id,
+            model=args.model,
+            chunk_size=args.chunk_size,
+            no_synthesis=args.no_synthesis,
+            progress_fn=lambda msg: print(f"  {msg}", flush=True),
+            speakers=speakers_override,
         )
-    print("\n=== ZAPIS DO BAZY DANYCH ===\n")
-    run = save_to_db(
-        session, doc, args.model, args.chunk_size,
-        sections, topic_sections, synthesis, segments,
-    )
-    print(f"  Run ID: {run.id} ({len(sections)} chunków, {len(topic_sections)} sekcji tematycznych)")
+
+        sections, topic_sections = _sections_from_run(run)
+        synthesis = run.synthesis or ""
+        speaker_info = run.speakers or []
+        run_id = run.id
+
+        toc = build_toc(topic_sections)
+        print(f"\n{toc}\n")
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output_file = save_results(
+            args.doc_id, doc.title or "", args.model, toc, topic_sections, synthesis, timestamp,
+            fmt=fmt, speaker_info=speaker_info,
+        )
+        json_file = save_json(
+            args.doc_id, doc.title or "", args.model, sections, topic_sections, synthesis, timestamp,
+            fmt=fmt, speaker_info=speaker_info,
+        )
+        debug_file = save_debug(args.doc_id, doc.title or "", args.model, sections, timestamp)
+        html_file = None
+        if segments:
+            html_file = save_html(
+                args.doc_id, doc.title or "", args.model,
+                topic_sections, sections, segments, video_id,
+                timestamp, fmt=fmt, speaker_info=speaker_info,
+            )
+    finally:
+        session.close()
 
     print(f"\n✓ Analiza (MD):  {output_file}")
     print(f"✓ Dane (JSON):   {json_file}")
     print(f"✓ Debug (MD):    {debug_file}")
     if html_file:
         print(f"✓ Widok HTML:    {html_file}")
-    print(f"✓ DB Run ID:     {run.id}")
+    print(f"✓ DB Run ID:     {run_id}")
 
 
 if __name__ == "__main__":
