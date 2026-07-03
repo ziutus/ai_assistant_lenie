@@ -107,7 +107,7 @@ def split_text_into_chunks(text: str, max_chars: int) -> list[str]:
                 current_size = 0
             line_parts: list[str] = []
             line_size = 0
-            for line in [l.strip() for l in para.split('\n') if l.strip()]:
+            for line in [ln.strip() for ln in para.split('\n') if ln.strip()]:
                 if line_size + len(line) + 1 > max_chars and line_parts:
                     chunks.append('\n'.join(line_parts))
                     line_parts = [line]

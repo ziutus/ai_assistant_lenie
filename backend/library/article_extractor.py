@@ -509,7 +509,7 @@ def extract_article_by_markers(markdown_text: str, markers: dict, url: str = "")
         # Brak footera — użyj LLM markera
         logger.info(f"Article end: LLM line {end_line} (no footer marker found)")
     else:
-        logger.warning(f"Cannot find article end: no footer marker, no LLM marker")
+        logger.warning("Cannot find article end: no footer marker, no LLM marker")
         return None
 
     # Cofnij się przez puste linie na końcu
@@ -550,15 +550,15 @@ def generate_regex_draft(markdown_text: str, markers: dict, output_path: str) ->
 
     # Pobierz kontekst PRZED artykułem (5 linii) — to będzie "pre" pattern
     pre_start = max(0, start_line - 5)
-    pre_lines = [l for l in lines[pre_start:start_line] if l.strip()]
+    pre_lines = [ln for ln in lines[pre_start:start_line] if ln.strip()]
 
     # Pobierz kontekst PO artykule (5 linii) — to będzie "post" pattern
     post_end = min(len(lines), end_line + 6)
-    post_lines = [l for l in lines[end_line + 1:post_end] if l.strip()]
+    post_lines = [ln for ln in lines[end_line + 1:post_end] if ln.strip()]
 
     # Buduj regex
     draft_lines = []
-    draft_lines.append(f"# Auto-generated regex draft from LLM extraction")
+    draft_lines.append("# Auto-generated regex draft from LLM extraction")
     draft_lines.append(f"# Markers: title={markers.get('title', 'N/A')}")
     draft_lines.append(f"# Pre-article context (lines {pre_start+1}-{start_line}):")
 
