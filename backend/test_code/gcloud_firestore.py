@@ -114,7 +114,7 @@ def auto_login_gcp() -> bool:
 
     for gcloud_cmd in gcloud_commands:
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603 — fixed gcloud command, list args, no shell
                 [gcloud_cmd, "auth", "application-default", "login"],
                 capture_output=False,
                 text=True,
@@ -169,7 +169,7 @@ def get_gcp_project_info(project_id: str) -> dict:
                 org_client = resourcemanager_v3.OrganizationsClient()
                 org = org_client.get_organization(name=f"organizations/{org_id}")
                 info["organization_name"] = org.display_name
-            except Exception:
+            except Exception:  # nosec B110 — optional org-name lookup, safe to skip on failure
                 pass
 
         # Sprawdź czy projekt należy do folderu

@@ -147,6 +147,13 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 
+[tool.bandit]
+# Usage: uvx --from "bandit[toml]" bandit -c backend/pyproject.toml -r backend/
+exclude_dirs = ["tests", ".venv", ".venv_wsl", "node_modules"]
+# B404: importing subprocess is not a finding by itself — actual calls are still
+# checked (B602/B603/B607); intentional safe calls carry per-line nosec comments
+skips = ["B404"]
+
 [tool.ruff]
 line-length = 120
 exclude = [".git", "__pycache__", "venv", ".venv", "node_modules"]

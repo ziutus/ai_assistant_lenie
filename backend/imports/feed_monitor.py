@@ -25,7 +25,7 @@ import os
 import re
 import subprocess
 import sys
-import xml.etree.ElementTree as ET  # noqa: S405 — used for type hints only, parsing goes through defusedxml
+import xml.etree.ElementTree as ET  # nosec B405 — used for type hints only, parsing goes through defusedxml
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
@@ -992,7 +992,7 @@ def cmd_review(feeds: list[dict], since: Optional[str] = None, source_filter: Op
                 url = entry["url"]
                 print("  Opening Claude Code...")
                 try:
-                    subprocess.run(
+                    subprocess.run(  # nosec B603 B607 — claude CLI, list args, no shell
                         ["claude", "-p", f"Pobierz i wyjasn mi po polsku ten artykul: {url}"],
                         check=False,
                     )

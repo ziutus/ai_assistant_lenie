@@ -167,7 +167,7 @@ def get_article_text(doc, session) -> Optional[dict]:
 def call_claude(prompt: str):
     """Wywołaj Claude Code z promptem."""
     try:
-        subprocess.run(["claude", "-p", prompt], check=False)
+        subprocess.run(["claude", "-p", prompt], check=False)  # nosec B603 B607 — claude CLI, list args, no shell
     except FileNotFoundError:
         print("  BŁĄD: komenda 'claude' nie znaleziona. Czy Claude Code jest zainstalowany?")
 
