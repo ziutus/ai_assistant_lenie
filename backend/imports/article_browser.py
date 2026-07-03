@@ -167,7 +167,7 @@ def get_article_text(doc, session) -> Optional[dict]:
 def call_claude(prompt: str):
     """Wywołaj Claude Code z promptem."""
     try:
-        subprocess.run(["claude", "-p", prompt], check=False)
+        subprocess.run(["claude", "-p", prompt], check=False)  # nosec B603 B607 — claude CLI, list args, no shell
     except FileNotFoundError:
         print("  BŁĄD: komenda 'claude' nie znaleziona. Czy Claude Code jest zainstalowany?")
 
@@ -991,7 +991,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
         date_str = doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else "????"
         detected_portal = _detect_portal(doc.url) or "?"
 
-        os.system("cls" if os.name == "nt" else "clear")
+        os.system("cls" if os.name == "nt" else "clear")  # nosec B605 — constant command, no user input
         print(f"--- [{idx + 1}/{len(filtered)}] ID: {doc.id} ---")
         print(f"  Tytuł:   {doc.title}")
         print(f"  Data:    {date_str}")

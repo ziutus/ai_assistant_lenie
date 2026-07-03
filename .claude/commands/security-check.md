@@ -70,7 +70,7 @@ uvx semgrep scan --config=auto backend/ 2>&1 || true
 
 2. **Bandit** (Python-specific security linter):
 ```bash
-uvx bandit -r backend/ -x backend/tests,backend/.venv,backend/.venv_wsl -f json 2>&1 || true
+PYTHONIOENCODING=utf-8 uvx --from "bandit[toml]" bandit -c backend/pyproject.toml -r backend/ -f json 2>&1 || true
 ```
 
 3. **pip-audit** (Python dependency vulnerabilities):

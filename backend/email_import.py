@@ -54,7 +54,7 @@ def run_gws(args: list[str]) -> dict:
     gws_bin = _find_gws_binary()
     cmd = [gws_bin] + args
     logger.debug(f"Running: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)  # nosec B603 — fixed gws binary, args built locally
     if result.returncode != 0:
         raise RuntimeError(f"gws command failed: {result.stderr.strip()}")
     # gws prints "Using keyring backend: keyring" to stdout before JSON

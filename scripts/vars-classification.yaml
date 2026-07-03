@@ -257,6 +257,13 @@ groups:
         default: "false"
         example: "false"
         used_by: [docker, local]
+      BIND_HOST:
+        description: "Interface the Flask server binds to (0.0.0.0 = all, intended for containers)"
+        type: config
+        required: false
+        default: "0.0.0.0"
+        example: "127.0.0.1"
+        used_by: [docker, local]
       USE_CACHE:
         description: "Enable caching for downloaded content"
         type: config

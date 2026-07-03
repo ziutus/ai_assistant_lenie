@@ -27,7 +27,7 @@ try:
     headers = {
         "Authorization": f"Bearer {api_key}"
     }
-    response = requests.get(f"{api_base}models", headers=headers)
+    response = requests.get(f"{api_base}models", headers=headers, timeout=30)
 
     # Wyświetlenie dostępnych modeli
     if response.status_code == 200:
@@ -49,7 +49,7 @@ try:
     headers = {
         "Authorization": f"Bearer {api_key}"
     }
-    response = requests.get(f"{api_base}models", headers=headers)
+    response = requests.get(f"{api_base}models", headers=headers, timeout=30)
 
     # Wyświetlenie modeli do embeddingu
     if response.status_code == 200:

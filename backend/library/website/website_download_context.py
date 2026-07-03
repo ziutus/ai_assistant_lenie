@@ -1,4 +1,6 @@
+import ipaddress
 import re
+import socket
 from urllib.parse import urlparse
 
 import requests
@@ -15,17 +17,44 @@ def load_site_rules(file_path: str) -> dict:
         return json.load(file)
 
 
-def download_raw_html(url: str) -> bytes | None:
+def validate_url_target(url: str) -> None:
+    """Reject URLs that could reach internal services (SSRF protection).
+
+    Allows only http/https and hosts that resolve exclusively to public
+    (global) IP addresses — loopback, private, link-local and other
+    reserved ranges are blocked.
+    """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https"):
         raise ValueError(f"Unsupported URL scheme: {parsed.scheme!r}. Only http and https are allowed.")
+    if not parsed.hostname:
+        raise ValueError(f"URL has no hostname: {url!r}")
 
-    response = requests.get(url)
+    try:
+        addr_info = socket.getaddrinfo(parsed.hostname, None)
+    except socket.gaierror as e:
+        raise ValueError(f"Cannot resolve hostname {parsed.hostname!r}: {e}") from e
 
-    if response.status_code == 200:
-        return response.content
-    else:
+    for info in addr_info:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global:
+            raise ValueError(
+                f"URL host {parsed.hostname!r} resolves to non-public address {ip} — refusing to fetch."
+            )
+
+
+def download_raw_html(url: str, max_redirects: int = 5) -> bytes | None:
+    # Follow redirects manually so every hop is validated before it is fetched
+    for _ in range(max_redirects + 1):
+        validate_url_target(url)
+        response = requests.get(url, timeout=30, allow_redirects=False)
+        if response.is_redirect or response.is_permanent_redirect:
+            url = requests.compat.urljoin(url, response.headers["Location"])
+            continue
+        if response.status_code == 200:
+            return response.content
         return None
+    raise ValueError(f"Too many redirects (>{max_redirects}) while fetching {url!r}")
 
 
 def webpage_raw_parse(url: str, raw_html: bytes, analyze_content: bool = True) -> WebPageParseResult:
