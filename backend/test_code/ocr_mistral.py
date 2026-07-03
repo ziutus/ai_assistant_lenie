@@ -186,7 +186,7 @@ def run_standard(args, pdf_files):
             print(f"BŁĄD: {e}")
             errors += 1
 
-    print(f"\n=== PODSUMOWANIE (standard) ===")
+    print("\n=== PODSUMOWANIE (standard) ===")
     print(f"Przetworzone: {processed}")
     print(f"Z cache:      {skipped}")
     print(f"Błędy:        {errors}")
@@ -285,8 +285,8 @@ def batch_submit(args, pdf_files):
     print(f"\n=== BATCH JOBS UTWORZONE: {len(all_jobs)} ===")
     for j in all_jobs:
         print(f"  Partia {j['batch_index']}: {j['job_id']} ({j['total_requests']} plików)")
-    print(f"\nSprawdź postęp:  python ocr_mistral.py --batch status")
-    print(f"Pobierz wyniki:  python ocr_mistral.py --batch download")
+    print("\nSprawdź postęp:  python ocr_mistral.py --batch status")
+    print("Pobierz wyniki:  python ocr_mistral.py --batch download")
 
     # Zapisz stan batch (obsługa wielu jobów)
     save_batch_state(args.output_dir, {
@@ -328,15 +328,15 @@ def batch_status(args):
             all_done = False
 
     if all_done:
-        print(f"\nWszystkie partie gotowe! Pobierz: python ocr_mistral.py --batch download")
+        print("\nWszystkie partie gotowe! Pobierz: python ocr_mistral.py --batch download")
     else:
-        print(f"\nCzekaj — przetwarzanie w toku...")
+        print("\nCzekaj — przetwarzanie w toku...")
 
 
 def _download_job_results(client, job, output_dir: Path, cache: dict) -> tuple[int, int]:
     """Pobierz wyniki jednego batch job. Zwraca (saved, errors)."""
     if not job.output_file:
-        print(f"  Brak pliku wyjściowego.")
+        print("  Brak pliku wyjściowego.")
         return 0, 0
 
     output = client.files.download(file_id=job.output_file)
@@ -430,7 +430,7 @@ def batch_download(args, pdf_files):
 
     save_cache(args.output_dir, cache)
 
-    print(f"\n=== PODSUMOWANIE (batch download) ===")
+    print("\n=== PODSUMOWANIE (batch download) ===")
     print(f"Zapisanych: {total_saved}")
     print(f"Błędów:     {total_errors}")
 
@@ -500,14 +500,14 @@ Przykłady:
         total_size = sum(f.stat().st_size for f in pdf_files)
         est_pages = len(pdf_files) * 2  # szacunek: ~2 strony/PDF
 
-        print(f"=== PLAN OCR ===")
+        print("=== PLAN OCR ===")
         print(f"Plików PDF:     {len(pdf_files)}")
         print(f"Rozmiar łączny: {total_size / 1024 / 1024:.1f} MB")
         print(f"Szac. stron:    ~{est_pages}")
         print(f"Z cache:        {cached}")
         print(f"Do przetworzenia: {len(pdf_files) - cached}")
-        print(f"")
-        print(f"Szacunkowy koszt:")
+        print("")
+        print("Szacunkowy koszt:")
         print(f"  Standard: ~${est_pages * 0.002:.2f} ($2/1000 stron)")
         print(f"  Batch:    ~${est_pages * 0.001:.2f} ($1/1000 stron)")
         print()

@@ -92,7 +92,7 @@ def _completion_stateful(ai_response, prompt, model, max_tokens,
     try:
         response = session.post(url, json=payload, headers=headers, timeout=120)
         response.raise_for_status()
-    except (http_requests.exceptions.Timeout, http_requests.exceptions.HTTPError) as e:
+    except (http_requests.exceptions.Timeout, http_requests.exceptions.HTTPError):
         _reset_stateful_session()
         raise
     data = response.json()

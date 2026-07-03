@@ -41,13 +41,13 @@ def check_gcp_authentication(auto_login: bool = False) -> bool:
 
     try:
         credentials, project = default()
-        print(f"✅ Autoryzacja OK")
+        print("✅ Autoryzacja OK")
         print(f"   Project: {project or 'nie wykryto (użyje GCP_FIRESTORE_PROJECT_ID)'}")
         print(f"   Credentials type: {type(credentials).__name__}")
         print("="*70 + "\n")
         return True
     except DefaultCredentialsError as e:
-        print(f"❌ BRAK AUTORYZACJI!")
+        print("❌ BRAK AUTORYZACJI!")
         print(f"   Błąd: {str(e)}")
 
         if auto_login:
@@ -66,7 +66,7 @@ def check_gcp_authentication(auto_login: bool = False) -> bool:
             print("\n🔄 Sprawdzanie autoryzacji po logowaniu...")
             try:
                 credentials, project = default()
-                print(f"✅ Autoryzacja OK!")
+                print("✅ Autoryzacja OK!")
                 print(f"   Project: {project or 'nie wykryto (użyje GCP_FIRESTORE_PROJECT_ID)'}")
                 print(f"   Credentials type: {type(credentials).__name__}")
                 print("="*70 + "\n")
@@ -85,7 +85,7 @@ def check_gcp_authentication(auto_login: bool = False) -> bool:
             print("="*70 + "\n")
             return False
     except Exception as e:
-        print(f"⚠️  Nieoczekiwany błąd podczas sprawdzania autoryzacji:")
+        print("⚠️  Nieoczekiwany błąd podczas sprawdzania autoryzacji:")
         print(f"   {type(e).__name__}: {str(e)}")
         print("="*70 + "\n")
         return False
@@ -114,7 +114,7 @@ def auto_login_gcp() -> bool:
 
     for gcloud_cmd in gcloud_commands:
         try:
-            result = subprocess.run(  # nosec B603 — fixed gcloud command, list args, no shell
+            subprocess.run(  # nosec B603 — fixed gcloud command, list args, no shell
                 [gcloud_cmd, "auth", "application-default", "login"],
                 capture_output=False,
                 text=True,
@@ -308,7 +308,7 @@ def migrate_articles(table_name: str = 'lenie_dev_documents', timeout_seconds: i
 
         # Sprawdź czy dokument już istnieje
         doc_ref = db.collection('articles').document(document_id)
-        print(f"  → Sprawdzanie czy istnieje w Firestore (może trwać 5-30s)...")
+        print("  → Sprawdzanie czy istnieje w Firestore (może trwać 5-30s)...")
 
         try:
             check_start = time.time()
@@ -321,65 +321,65 @@ def migrate_articles(table_name: str = 'lenie_dev_documents', timeout_seconds: i
                 print(f"  ⚠️  UWAGA: Zapytanie trwało {check_time:.2f}s - połączenie może być wolne!")
 
             if doc_exists:
-                print(f"  ✓ Dokument już istnieje, pomijam")
+                print("  ✓ Dokument już istnieje, pomijam")
                 skipped_count += 1
                 continue
 
         except gcp_exceptions.DeadlineExceeded:
             print(f"  ❌ TIMEOUT po {timeout_seconds}s - pomijam dokument")
-            print(f"     Możliwe przyczyny: wolne połączenie, throttling, firewall")
+            print("     Możliwe przyczyny: wolne połączenie, throttling, firewall")
             skipped_count += 1
             continue
         except RetryError as e:
             # Sprawdź czy to błąd autoryzacji
             error_msg = str(e)
             if "Reauthentication is needed" in error_msg or "Getting metadata from plugin failed" in error_msg:
-                print(f"\n  ❌ BŁĄD AUTORYZACJI: Token wygasł podczas operacji")
-                print(f"     Próba automatycznego ponownego logowania...")
+                print("\n  ❌ BŁĄD AUTORYZACJI: Token wygasł podczas operacji")
+                print("     Próba automatycznego ponownego logowania...")
 
                 if not auto_login_gcp():
-                    print(f"\n     ❌ Nie udało się zalogować.")
-                    print(f"     📋 Spróbuj ręcznie: gcloud auth application-default login")
-                    print(f"     Przerywam migrację.")
+                    print("\n     ❌ Nie udało się zalogować.")
+                    print("     📋 Spróbuj ręcznie: gcloud auth application-default login")
+                    print("     Przerywam migrację.")
                     sys.exit(1)
 
-                print(f"\n     ✅ Zalogowano ponownie!")
-                print(f"     ℹ️  Dokumenty już zmigrowane zostaną pominięte.")
-                print(f"     🔄 Uruchom skrypt ponownie aby kontynuować migrację.")
-                print(f"\n     Przerywam migrację - uruchom skrypt ponownie.")
+                print("\n     ✅ Zalogowano ponownie!")
+                print("     ℹ️  Dokumenty już zmigrowane zostaną pominięte.")
+                print("     🔄 Uruchom skrypt ponownie aby kontynuować migrację.")
+                print("\n     Przerywam migrację - uruchom skrypt ponownie.")
                 sys.exit(0)
             else:
                 print(f"  ❌ BŁĄD RETRY: {error_msg}")
-                print(f"     Pomijam dokument")
+                print("     Pomijam dokument")
                 skipped_count += 1
                 continue
         except Exception as e:
             # Ogólne sprawdzenie autoryzacji w innych błędach
             error_msg = str(e)
             if "Reauthentication is needed" in error_msg or "Getting metadata from plugin failed" in error_msg:
-                print(f"\n  ❌ BŁĄD AUTORYZACJI: Token wygasł podczas operacji")
-                print(f"     Próba automatycznego ponownego logowania...")
+                print("\n  ❌ BŁĄD AUTORYZACJI: Token wygasł podczas operacji")
+                print("     Próba automatycznego ponownego logowania...")
 
                 if not auto_login_gcp():
-                    print(f"\n     ❌ Nie udało się zalogować.")
-                    print(f"     📋 Spróbuj ręcznie: gcloud auth application-default login")
-                    print(f"     Przerywam migrację.")
+                    print("\n     ❌ Nie udało się zalogować.")
+                    print("     📋 Spróbuj ręcznie: gcloud auth application-default login")
+                    print("     Przerywam migrację.")
                     sys.exit(1)
 
-                print(f"\n     ✅ Zalogowano ponownie!")
-                print(f"     ℹ️  Dokumenty już zmigrowane zostaną pominięte.")
-                print(f"     🔄 Uruchom skrypt ponownie aby kontynuować migrację.")
-                print(f"\n     Przerywam migrację - uruchom skrypt ponownie.")
+                print("\n     ✅ Zalogowano ponownie!")
+                print("     ℹ️  Dokumenty już zmigrowane zostaną pominięte.")
+                print("     🔄 Uruchom skrypt ponownie aby kontynuować migrację.")
+                print("\n     Przerywam migrację - uruchom skrypt ponownie.")
                 sys.exit(0)
             print(f"  ❌ BŁĄD: {type(e).__name__}: {str(e)}")
-            print(f"     Pomijam dokument")
+            print("     Pomijam dokument")
             skipped_count += 1
             continue
 
         # Konwertuj i dodaj do batch
-        print(f"  → Konwertowanie danych...")
+        print("  → Konwertowanie danych...")
         firestore_data = convert_dynamodb_to_firestore(item)
-        print(f"  → Dodawanie do batch...")
+        print("  → Dodawanie do batch...")
         batch.set(doc_ref, firestore_data)
         batch_count += 1
 
@@ -396,7 +396,7 @@ def migrate_articles(table_name: str = 'lenie_dev_documents', timeout_seconds: i
                 batch_count = 0
             except gcp_exceptions.DeadlineExceeded:
                 print(f"  ❌ TIMEOUT przy commit batch po {timeout_seconds * 2}s")
-                print(f"     Batch nie został zapisany - spróbuj ponownie lub zwiększ timeout")
+                print("     Batch nie został zapisany - spróbuj ponownie lub zwiększ timeout")
                 batch = db.batch()
                 batch_count = 0
             except Exception as e:
@@ -422,15 +422,15 @@ def migrate_articles(table_name: str = 'lenie_dev_documents', timeout_seconds: i
             print(f"❌ BŁĄD przy ostatnim commit: {type(e).__name__}: {str(e)}")
 
     total_time = time.time() - start_time
-    print(f"\n" + "="*70)
+    print("\n" + "="*70)
     print(f"✅ Migracja zakończona w {total_time:.2f}s ({total_time/60:.1f} min)")
-    print(f"="*70)
+    print("="*70)
     print(f"   Zmigrowano: {migrated_count} artykułów")
     print(f"   Pominięto: {skipped_count} artykułów")
     if migrated_count > 0:
         avg_time = total_time / (migrated_count + skipped_count)
         print(f"   Średni czas na dokument: {avg_time:.2f}s")
-    print(f"="*70)
+    print("="*70)
 
 
 def get_today_articles(db: Optional[firestore.Client] = None):
@@ -659,11 +659,11 @@ def migrate_uuid_to_storage_uuid(db: Optional[firestore.Client] = None, dry_run:
     if batch_count > 0 and not dry_run:
         batch.commit()
 
-    print(f"\n✅ Operacja zakończona!")
+    print("\n✅ Operacja zakończona!")
     print(f"   Sprawdzono: {total_count} artykułów")
     print(f"   {'Zostałoby zaktualizowanych' if dry_run else 'Zaktualizowano'}: {updated_count} artykułów")
     if dry_run:
-        print(f"\n⚠️  To był tryb TEST (dry_run=True). Aby faktycznie zmienić pola, uruchom z dry_run=False")
+        print("\n⚠️  To był tryb TEST (dry_run=True). Aby faktycznie zmienić pola, uruchom z dry_run=False")
 
     return updated_count
 
@@ -721,11 +721,11 @@ def clean_empty_fields(db: Optional[firestore.Client] = None, dry_run: bool = Tr
     if batch_count > 0 and not dry_run:
         batch.commit()
 
-    print(f"\n✅ Operacja zakończona!")
+    print("\n✅ Operacja zakończona!")
     print(f"   Sprawdzono: {total_count} artykułów")
     print(f"   {'Zostałoby zaktualizowanych' if dry_run else 'Zaktualizowano'}: {updated_count} artykułów")
     if dry_run:
-        print(f"\n⚠️  To był tryb TEST (dry_run=True). Aby faktycznie usunąć pola, uruchom z dry_run=False")
+        print("\n⚠️  To był tryb TEST (dry_run=True). Aby faktycznie usunąć pola, uruchom z dry_run=False")
 
     return updated_count
 

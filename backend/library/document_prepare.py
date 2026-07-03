@@ -48,7 +48,7 @@ def prepare_markdown(document_id, doc, cache_dir, verbose: bool = False) -> str 
             return None
 
         s3_key = f"{doc.uuid}.html"
-        _log(f"[1/3] Sprawdzam HTML w S3...")
+        _log("[1/3] Sprawdzam HTML w S3...")
         if not s3_file_exist(s3_bucket, s3_key):
             _log("HTML nie znaleziony w S3")
             return None
