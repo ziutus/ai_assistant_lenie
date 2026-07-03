@@ -38,7 +38,8 @@ def sherlock_create_embeddings(texts, model="BAAI/bge-multilingual-gemma2")-> Em
         response = requests.post(
             f"{API_BASE}embeddings",
             headers=headers,
-            json=payload
+            json=payload,
+            timeout=60
         )
 
         if response.status_code == 200:

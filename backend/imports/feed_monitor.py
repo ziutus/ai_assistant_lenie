@@ -25,13 +25,14 @@ import os
 import re
 import subprocess
 import sys
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # noqa: S405 — used for type hints only, parsing goes through defusedxml
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta
 from email.utils import parsedate_to_datetime
 from typing import Optional
 from urllib.parse import urlparse
 
+import defusedxml.ElementTree as DET
 import requests
 import yaml
 from sqlalchemy.exc import SQLAlchemyError
@@ -118,7 +119,7 @@ def build_feed_url(feed_config: dict) -> str:
 def fetch_feed_xml(url: str) -> ET.Element:
     response = requests.get(url, timeout=30)
     response.raise_for_status()
-    return ET.fromstring(response.content)
+    return DET.fromstring(response.content)
 
 
 def fetch_json_feed(url: str, cache_path: Optional[str] = None) -> list[dict]:
@@ -913,7 +914,7 @@ def cmd_review(feeds: list[dict], since: Optional[str] = None, source_filter: Op
     discussed = 0
 
     for idx, (feed, entry) in enumerate(review_items, 1):
-        os.system("cls" if os.name == "nt" else "clear")
+        os.system("cls" if os.name == "nt" else "clear")  # nosec B605 — constant command, no user input
         date_str = entry["published"][:10] if entry["published"] else "????"
         doc_type = detect_document_type(entry["url"])
 
