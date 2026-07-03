@@ -59,7 +59,9 @@ if command -v trufflehog &>/dev/null; then
     if [[ "$MODE" == "full" ]]; then
         echo "Scanning entire repository history..."
     else
-        TRUFFLEHOG_ARGS+=(--since-commit "$BASE_REF")
+        # --branch HEAD restricts the scan to the current branch; without it
+        # TruffleHog walks ALL refs and reports findings from old branches
+        TRUFFLEHOG_ARGS+=(--since-commit "$BASE_REF" --branch HEAD)
     fi
 
     TRUFFLEHOG_OUTPUT="$(trufflehog "${TRUFFLEHOG_ARGS[@]}" 2>/dev/null || true)"
