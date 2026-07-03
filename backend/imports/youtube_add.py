@@ -30,6 +30,7 @@ def main():
     parser.add_argument("--chapters-file", help="Path to file with chapter list")
     parser.add_argument("--summary", action="store_true", help="Generate AI summary")
     parser.add_argument("--force", action="store_true", help="Force reprocessing even if embeddings exist")
+    parser.add_argument("--no-proxy", action="store_true", help="Disable Webshare proxy (useful when proxy gets 429 from YouTube)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
 
     args = parser.parse_args()
@@ -50,7 +51,10 @@ def main():
     logging.info("Script started")
 
     webshare_api_key = cfg.get("WEBSHARE_API_KEY")
-    if webshare_api_key:
+    if args.no_proxy:
+        logging.info("--no-proxy flag set — Webshare proxy disabled")
+        webshare_api_key = None
+    elif webshare_api_key:
         try:
             from library.webshare_ip_auth import ensure_ip_authorized, check_bandwidth
             ensure_ip_authorized(webshare_api_key)

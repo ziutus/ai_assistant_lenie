@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     split_first_type  VARCHAR(20),                 -- typ pierwszej części po podziale
     split_second_type VARCHAR(20),                 -- typ drugiej części po podziale
     created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
-    updated_at        TIMESTAMP NOT NULL DEFAULT NOW()
+    updated_at        TIMESTAMP NOT NULL DEFAULT NOW(),
+    obsidian_note_paths TEXT[] NOT NULL DEFAULT '{}'  -- ścieżki do notatek Obsidian (analogicznie do web_documents)
 );
 
 CREATE INDEX IF NOT EXISTS idx_chunks_run_id       ON public.document_chunks(run_id);

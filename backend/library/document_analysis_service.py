@@ -107,6 +107,12 @@ def _merge_topics(sections: list[dict], model: str) -> list[dict]:
         match = re.search(r'\[.*\]', response_text, re.DOTALL)
         if match:
             groups = json.loads(match.group())
+            # Unwrap if LLM wrapped result in an extra array: [[{...}]] → [{...}]
+            if groups and isinstance(groups[0], list):
+                logger.warning("merge_topics: got nested list, unwrapping")
+                groups = groups[0]
+            # Discard any non-dict elements to avoid AttributeError on .get()
+            groups = [g for g in groups if isinstance(g, dict)]
             logger.info("merge_topics: %d sections", len(groups))
             return groups
     except Exception:
