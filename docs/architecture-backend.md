@@ -91,7 +91,6 @@ Standalone scripts for bulk operations (not part of Flask API):
 | `web_documents_do_the_needful_new.py` | SQS polling â†’ DB insert â†’ YouTube processing â†’ language detection â†’ embedding |
 | `webdocument_md_decode.py` | Markdown decoding â†’ link extraction â†’ correction â†’ embedding |
 | `youtube_add.py` | CLI: YouTube URL â†’ metadata â†’ transcript â†’ optional AI summary â†’ DB |
-| `markdown_to_embedding.py` | Local markdown files â†’ embedding generation |
 
 ## Data Architecture
 
