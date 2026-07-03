@@ -137,9 +137,14 @@ cd /mnt/c/Users/<user>/git/_lenie-all/lenie-server-2025/backend
 source .venv_wsl/bin/activate
 uv sync --active
 
+# Non-interactive variant (no activation needed, e.g. from scripts or Windows via `wsl bash -c`)
+UV_PROJECT_ENVIRONMENT=.venv_wsl uv sync
+
 # Or install a specific new path dependency
 uv pip install -e ../shared_python/unified-config-loader/ --python .venv_wsl/bin/python
 ```
+
+> **Warning:** Never run plain `uv sync` from WSL without activation or `UV_PROJECT_ENVIRONMENT` — it targets the default `.venv` and overwrites the Windows environment with a Linux one. Note that `uv sync --python .venv_wsl/bin/python` does NOT work either: for `uv sync`, `--python` selects the interpreter version, not the target venv (unlike `uv pip`, where `--python` does point at the venv).
 
 **When to sync:**
 - After running `uv lock` on Windows (changed `pyproject.toml`)
