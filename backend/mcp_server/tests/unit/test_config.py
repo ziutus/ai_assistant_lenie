@@ -57,7 +57,7 @@ def test_settings_exits_on_missing_postgresql_host():
         "POSTGRESQL_USER": "u",
         "POSTGRESQL_PASSWORD": "p",
         "POSTGRESQL_PORT": "5432",
-        "OBSIDIAN_VAULT_PATH": "/tmp",
+        "OBSIDIAN_VAULT_PATH": "/fake/vault",
     })
     sys.modules.pop("mcp_server.config", None)
     with patch("library.config_loader.load_config", return_value=fake_cfg):

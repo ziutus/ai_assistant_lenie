@@ -65,7 +65,7 @@ security-deps:  ## Check dependencies for vulnerabilities (pip-audit)
 	cd backend && uvx pip-audit
 
 security-bandit: ## Run bandit Python security linter
-	uvx bandit -r backend/ -x backend/tests
+	uvx --from "bandit[toml]" bandit -c backend/pyproject.toml -r backend/
 
 security-safety: ## Check dependencies with safety
 	cd backend && uvx safety scan
@@ -147,7 +147,7 @@ security-all:   ## Run all security checks
 	-cd backend && uvx pip-audit
 	@echo ""
 	@echo "=== Running Bandit ==="
-	-uvx bandit -r backend/ -x backend/tests
+	-uvx --from "bandit[toml]" bandit -c backend/pyproject.toml -r backend/
 	@echo ""
 	@echo "=== Running Safety ==="
 	-cd backend && uvx safety scan
