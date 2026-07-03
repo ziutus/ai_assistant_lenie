@@ -57,6 +57,26 @@ Fragment transkrypcji:
     return []
 
 
+def assign_speakers(text: str, speaker1: str, speaker2: str) -> str:
+    """Parse >> speaker-change markers from YouTube auto-transcript and label each turn.
+
+    YouTube inserts >> when it detects a speaker change. The first segment belongs to
+    speaker1 (the host / first voice), then speakers alternate.
+    Short segments (< 10 chars) that are just acknowledgments are still labeled.
+    Ported from test_code/youtube_batch_analyze.py.
+    """
+    segments = re.split(r"\s*>>\s*", text)
+    speakers = [speaker1, speaker2]
+    labeled = []
+    for i, seg in enumerate(segments):
+        seg = seg.strip()
+        if not seg:
+            continue
+        label = speakers[i % 2]
+        labeled.append(f"[{label}]: {seg}")
+    return "\n\n".join(labeled)
+
+
 def remove_speech_fillers(text: str) -> str:
     """Remove hesitation sounds and word repetitions from Polish STT transcript.
 
@@ -85,17 +105,28 @@ def call_model(prompt: str, model: str, max_tokens: int) -> tuple[str, int]:
     return result.response_text, tokens
 
 
-def rewrite_chunk_text(text: str, model: str, position: int = 1, total: int = 1) -> tuple[str, int]:
+def rewrite_chunk_text(text: str, model: str, position: int = 1, total: int = 1,
+                       prev_context: str = "", next_context: str = "") -> tuple[str, int]:
     """Pass 1: label section + correct transcript verbatim.
 
     Applies remove_speech_fillers() before sending to LLM — faster and cheaper than
     asking the model to do it.
+    prev_context / next_context: boundary sentences from adjacent chunks — shown to the
+    model as read-only context to improve coherence at chunk boundaries, not reproduced.
     Returns (best_response_text, rewrite_ratio_pct).
     Retries once if output < REWRITE_MIN_RATIO of input length, keeps the longer result.
     """
     text = remove_speech_fillers(text)
+    ctx_prev = (
+        f"\n[KONTEKST — koniec poprzedniego fragmentu, NIE przepisuj tego]:\n{prev_context}\n"
+        if prev_context else ""
+    )
+    ctx_next = (
+        f"\n[KONTEKST — początek następnego fragmentu, NIE przepisuj tego]:\n{next_context}\n"
+        if next_context else ""
+    )
     prompt = f"""Fragment {position}/{total} surowej transkrypcji podcastu YouTube.
-Wykonaj DWIE rzeczy — nic więcej:
+{ctx_prev}Wykonaj DWIE rzeczy — nic więcej:
 
 1. W PIERWSZEJ LINII wpisz etykietę sekcji (tylko jedną z dwóch opcji):
    ### REKLAMA: nazwa_sponsora      (gdy to blok reklamowy lub sponsorski)
@@ -109,7 +140,8 @@ Wykonaj DWIE rzeczy — nic więcej:
 
 --- FRAGMENT DO PRZEPISANIA ---
 {text}
---- KONIEC FRAGMENTU ---"""
+--- KONIEC FRAGMENTU ---
+{ctx_next}"""
 
     best = ""
     for attempt in range(1, 3):
@@ -210,7 +242,8 @@ Jeśli REKLAMA: nie dodawaj nic więcej.
 
 def analyze_chunk(original_text: str, model: str,
                   position: int = 1, total: int = 1,
-                  speakers: list[dict] | None = None) -> dict:
+                  speakers: list[dict] | None = None,
+                  prev_context: str = "", next_context: str = "") -> dict:
     """Run full analysis pipeline on a single chunk.
 
     Returns dict:
@@ -220,7 +253,8 @@ def analyze_chunk(original_text: str, model: str,
         summary        — 2-3 sentence summary (None for REKLAMA)
         rewrite_ratio  — % of corrected vs original length
     """
-    raw_rewrite, ratio = rewrite_chunk_text(original_text, model, position, total)
+    raw_rewrite, ratio = rewrite_chunk_text(original_text, model, position, total,
+                                            prev_context=prev_context, next_context=next_context)
     section_type, topic, corrected_text = parse_rewritten_chunk(raw_rewrite)
 
     summary = None
