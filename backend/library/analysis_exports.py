@@ -1,56 +1,30 @@
-#!/usr/bin/env python3
-"""
-Batch analysis of long YouTube transcripts using Bielik LLM via CloudFerro Sherlock.
+"""File exports for document analysis runs (MD / JSON / debug / HTML review view).
 
-The LLM pipeline (chunk splitting, speaker extraction/labeling, two-pass
-rewrite + summarize, topic grouping, synthesis, DB persistence) lives in
-library/document_analysis_service.py + library/chunk_llm_analysis.py and is
-shared with the Flask API (chunk_review_routes.py). This script is a thin CLI
-on top of it, adding:
-  - dry-run preview (chunk breakdown + cost estimate, no API calls)
-  - explicit --speaker1/--speaker2 override (skips LLM speaker extraction)
-  - file exports to .claude/exports/: analysis (MD), data (JSON), debug (MD),
-    review view (HTML with YouTube timestamp links)
-
-Cost at 0.56 EUR/M tokens: ~0.05 EUR for a 90K-char transcript
-  (19 chunks × ~4,700 tok/chunk = 89K tokens).
-
-Usage (from backend/ directory):
-    # Windows PowerShell
-    $env:PYTHONPATH="."; $env:PYTHONIOENCODING="utf-8"; .venv/Scripts/python test_code/youtube_batch_analyze.py --doc_id 9158
-    $env:PYTHONPATH="."; $env:PYTHONIOENCODING="utf-8"; .venv/Scripts/python test_code/youtube_batch_analyze.py --doc_id 9158 --dry_run
-    $env:PYTHONPATH="."; $env:PYTHONIOENCODING="utf-8"; .venv/Scripts/python test_code/youtube_batch_analyze.py --doc_id 9158 --no_synthesis
-
-    # WSL / Linux (Bash)
-    PYTHONPATH=. .venv/bin/python test_code/youtube_batch_analyze.py --doc_id 9158
+Shared by the CLI tools that run or re-render Bielik chunk analysis:
+imports/youtube_add.py (--analyze), imports/youtube_batch_analyze.py and
+test_code/_regen_html.py. All files are written to .claude/exports/ at the
+repository root.
 """
 
-import argparse
+import html as _html
+import json
 import os
 import re
-import sys
 from datetime import datetime
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-
-from unified_config_loader import load_config
-from library.db.engine import get_session
-from library.db.models import WebDocument
-from library.chunk_llm_analysis import assign_speakers, remove_speech_fillers
 from library.document_analysis_service import (
-    CHUNK_CHARS,
-    DocumentAnalysisService,
     _extract_text,
     _load_segments,
     _map_chunks_to_segments,
 )
-from library.text_functions import split_text_into_sentence_chunks
 
 
-SHERLOCK_MODELS = ["Bielik-11B-v3.0-Instruct"]
-ARKLABS_PREFIX = "arklabs/"
-ARKLABS_MODELS = [f"{ARKLABS_PREFIX}Bielik-11B-v3.0-Instruct"]
-ALL_MODELS = SHERLOCK_MODELS + ARKLABS_MODELS
+def _exports_dir() -> str:
+    path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "..", ".claude", "exports")
+    )
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def _seconds_to_ts(secs: float) -> str:
@@ -77,12 +51,7 @@ def save_html(doc_id: int, title: str, model: str,
               timestamp: str,
               fmt: dict | None = None, speaker_info: list[dict] | None = None) -> str:
     """Generate HTML review table: per topic section, original transcript (with YT links) vs summary."""
-    import html as _html
-    exports_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", ".claude", "exports")
-    )
-    os.makedirs(exports_dir, exist_ok=True)
-    filename = os.path.join(exports_dir, f"youtube_view_{doc_id}_{timestamp}.html")
+    filename = os.path.join(_exports_dir(), f"youtube_view_{doc_id}_{timestamp}.html")
 
     chunk_seg_map = _map_chunks_to_segments([s["original"] for s in sections], segments)
 
@@ -241,11 +210,7 @@ td {{ vertical-align: top; padding: 9px 11px; border: 1px solid #ddd; }}
 def save_results(doc_id: int, title: str, model: str,
                  toc: str, topic_sections: list[dict], synthesis: str, timestamp: str,
                  fmt: dict | None = None, speaker_info: list[dict] | None = None) -> str:
-    exports_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", ".claude", "exports")
-    )
-    os.makedirs(exports_dir, exist_ok=True)
-    filename = os.path.join(exports_dir, f"youtube_analysis_{doc_id}_{timestamp}.md")
+    filename = os.path.join(_exports_dir(), f"youtube_analysis_{doc_id}_{timestamp}.md")
 
     content_count = sum(1 for s in topic_sections if s["type"] == "TEMAT")
     ad_count = sum(1 for s in topic_sections if s["type"] == "REKLAMA")
@@ -303,13 +268,8 @@ def save_json(doc_id: int, title: str, model: str,
               synthesis: str, timestamp: str,
               fmt: dict | None = None, speaker_info: list[dict] | None = None) -> str:
     """Save full analysis as JSON for programmatic processing."""
-    exports_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", ".claude", "exports")
-    )
-    os.makedirs(exports_dir, exist_ok=True)
-    filename = os.path.join(exports_dir, f"youtube_analysis_{doc_id}_{timestamp}.json")
+    filename = os.path.join(_exports_dir(), f"youtube_analysis_{doc_id}_{timestamp}.json")
 
-    import json
     payload = {
         "meta": {
             "doc_id": doc_id,
@@ -356,11 +316,7 @@ def save_json(doc_id: int, title: str, model: str,
 
 def save_debug(doc_id: int, title: str, model: str, sections: list[dict], timestamp: str) -> str:
     """Save per-chunk debug file: original → rewritten → summary."""
-    exports_dir = os.path.abspath(
-        os.path.join(os.path.dirname(__file__), "..", "..", ".claude", "exports")
-    )
-    os.makedirs(exports_dir, exist_ok=True)
-    filename = os.path.join(exports_dir, f"youtube_debug_{doc_id}_{timestamp}.md")
+    filename = os.path.join(_exports_dir(), f"youtube_debug_{doc_id}_{timestamp}.md")
 
     ok = sum(1 for s in sections if s["ratio"] >= 80)
     short = sum(1 for s in sections if s["ratio"] < 80)
@@ -400,7 +356,7 @@ def save_debug(doc_id: int, title: str, model: str, sections: list[dict], timest
     return filename
 
 
-def _sections_from_run(run) -> tuple[list[dict], list[dict]]:
+def sections_from_run(run) -> tuple[list[dict], list[dict]]:
     """Rebuild the export data structures from a persisted DocumentAnalysisRun."""
     chunks_sorted = sorted(run.chunks, key=lambda c: c.position)
     sections = [
@@ -432,132 +388,43 @@ def _sections_from_run(run) -> tuple[list[dict], list[dict]]:
     return sections, topic_sections
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="YouTube transcript: correct + segment + summarize (Bielik LLM)",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+def export_analysis_run(doc, run, model: str) -> dict:
+    """Export a persisted DocumentAnalysisRun to all file formats.
+
+    Returns dict with keys: "md", "json", "debug", "html" (None when the
+    document has no timestamped transcript segments) and "toc" (markdown string).
+    """
+    sections, topic_sections = sections_from_run(run)
+    synthesis = run.synthesis or ""
+    speaker_info = run.speakers or []
+
+    text, _ = _extract_text(doc)
+    speaker_changes = len(re.findall(r">>", text))
+    fmt = {"is_multi_speaker": speaker_changes > 0, "speaker_changes": speaker_changes}
+
+    doc_id = doc.id
+    title = doc.title or ""
+    video_id = getattr(doc, "original_id", "") or ""
+    segments = _load_segments(getattr(doc, "text_raw", "") or "")
+
+    toc = build_toc(topic_sections)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    md_file = save_results(
+        doc_id, title, model, toc, topic_sections, synthesis, timestamp,
+        fmt=fmt, speaker_info=speaker_info,
     )
-    parser.add_argument("--doc_id", type=int, required=True,
-                        help="Document ID in the database")
-    parser.add_argument("--model", default="Bielik-11B-v3.0-Instruct",
-                        choices=ALL_MODELS,
-                        help="Model to use")
-    parser.add_argument("--chunk_size", type=int, default=CHUNK_CHARS,
-                        help="Characters per chunk (≈1,500 tokens at default 5,000)")
-    parser.add_argument("--speaker1", default="",
-                        help="Name of first speaker (segments before first >>). "
-                             "If omitted, speakers are auto-extracted via LLM.")
-    parser.add_argument("--speaker2", default="",
-                        help="Name of second speaker (segments after first >>).")
-    parser.add_argument("--no_synthesis", action="store_true",
-                        help="Skip final synthesis step")
-    parser.add_argument("--dry_run", action="store_true",
-                        help="Show chunk breakdown without calling the API")
-    args = parser.parse_args()
-
-    load_config()
-
-    print(f"Pobieranie dokumentu {args.doc_id}...")
-    session = get_session()
-    try:
-        doc = WebDocument.get_by_id(session, args.doc_id)
-        if doc is None:
-            print(f"BŁĄD: Dokument {args.doc_id} nie znaleziony.")
-            sys.exit(1)
-
-        print(f"Tytuł  : {doc.title}")
-        print(f"Typ    : {doc.document_type} | Stan: {doc.document_state}")
-        if doc.author:
-            print(f"Autor  : {doc.author}")
-
-        video_id = getattr(doc, "original_id", "") or ""
-        segments = _load_segments(getattr(doc, "text_raw", "") or "")
-        if segments:
-            print(f"Segm.  : {len(segments)} segmentów z timestampami w text_raw")
-        else:
-            print("Segm.  : brak JSON w text_raw — widok HTML bez linków YT")
-
-        text, text_field = _extract_text(doc)
-        if not text:
-            print("BŁĄD: Brak tekstu w polach text / text_raw / text_md.")
-            sys.exit(1)
-
-        speaker_changes = len(re.findall(r">>", text))
-        fmt = {"is_multi_speaker": speaker_changes > 0, "speaker_changes": speaker_changes}
-        if fmt["is_multi_speaker"]:
-            print(f"Format : Rozmowa ({speaker_changes} zmian mówcy)")
-        else:
-            print("Format : Monolog (brak znaczników >>)")
-        print(f"Tekst  : pole '{text_field}', {len(text):,} znaków")
-
-        speakers_override = None
-        if args.speaker1 and args.speaker2:
-            speakers_override = [
-                {"name": args.speaker1, "role": "prowadzący", "description": ""},
-                {"name": args.speaker2, "role": "gość", "description": ""},
-            ]
-
-        if args.dry_run:
-            preview_text = text
-            if fmt["is_multi_speaker"] and speakers_override:
-                preview_text = assign_speakers(preview_text, args.speaker1, args.speaker2)
-            cleaned_text = remove_speech_fillers(preview_text)
-            chunks = split_text_into_sentence_chunks(cleaned_text, args.chunk_size)
-            est_tokens_total = len(chunks) * (args.chunk_size // 3 * 2)  # rough: in+out
-            est_cost = est_tokens_total / 1_000_000 * 0.56
-            print(f"\nPodział: {len(chunks)} fragmentów po max {args.chunk_size:,} znaków")
-            print(f"Szacowany koszt: ~{est_tokens_total:,} tokenów ≈ {est_cost:.3f} EUR\n")
-            for i, ch in enumerate(chunks):
-                print(f"  [{i + 1:>2}] {len(ch):>6,} znaków")
-            print("\n[dry_run] Tryb podglądu — API nie zostało wywołane.")
-            return
-
-        print(f"\n=== PRZETWARZANIE → {args.model} (DocumentAnalysisService) ===\n")
-        service = DocumentAnalysisService(session)
-        run = service.create_run(
-            doc_id=args.doc_id,
-            model=args.model,
-            chunk_size=args.chunk_size,
-            no_synthesis=args.no_synthesis,
-            progress_fn=lambda msg: print(f"  {msg}", flush=True),
-            speakers=speakers_override,
+    json_file = save_json(
+        doc_id, title, model, sections, topic_sections, synthesis, timestamp,
+        fmt=fmt, speaker_info=speaker_info,
+    )
+    debug_file = save_debug(doc_id, title, model, sections, timestamp)
+    html_file = None
+    if segments:
+        html_file = save_html(
+            doc_id, title, model,
+            topic_sections, sections, segments, video_id,
+            timestamp, fmt=fmt, speaker_info=speaker_info,
         )
 
-        sections, topic_sections = _sections_from_run(run)
-        synthesis = run.synthesis or ""
-        speaker_info = run.speakers or []
-        run_id = run.id
-
-        toc = build_toc(topic_sections)
-        print(f"\n{toc}\n")
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_file = save_results(
-            args.doc_id, doc.title or "", args.model, toc, topic_sections, synthesis, timestamp,
-            fmt=fmt, speaker_info=speaker_info,
-        )
-        json_file = save_json(
-            args.doc_id, doc.title or "", args.model, sections, topic_sections, synthesis, timestamp,
-            fmt=fmt, speaker_info=speaker_info,
-        )
-        debug_file = save_debug(args.doc_id, doc.title or "", args.model, sections, timestamp)
-        html_file = None
-        if segments:
-            html_file = save_html(
-                args.doc_id, doc.title or "", args.model,
-                topic_sections, sections, segments, video_id,
-                timestamp, fmt=fmt, speaker_info=speaker_info,
-            )
-    finally:
-        session.close()
-
-    print(f"\n✓ Analiza (MD):  {output_file}")
-    print(f"✓ Dane (JSON):   {json_file}")
-    print(f"✓ Debug (MD):    {debug_file}")
-    if html_file:
-        print(f"✓ Widok HTML:    {html_file}")
-    print(f"✓ DB Run ID:     {run_id}")
-
-
-if __name__ == "__main__":
-    main()
+    return {"md": md_file, "json": json_file, "debug": debug_file, "html": html_file, "toc": toc}

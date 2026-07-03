@@ -1,6 +1,7 @@
 """LLM-based chunk analysis: rewrite (transcript correction) + summarize.
 
-Extracted from test_code/youtube_batch_analyze.py for use by Flask API endpoints.
+Extracted from the YouTube batch analysis CLI (now imports/youtube_batch_analyze.py)
+for use by Flask API endpoints.
 Supports Sherlock (Bielik) and ArkLabs models.
 """
 
@@ -32,7 +33,6 @@ def extract_speaker_info(intro_text: str, model: str) -> list[dict]:
 
     Returns list of dicts: [{"name": "...", "role": "...", "description": "..."}]
     Returns [] if extraction fails or no speakers found.
-    Ported from test_code/youtube_batch_analyze.py.
     """
     prompt = f"""Z poniższego fragmentu transkrypcji podcastu wyekstrahuj informacje o rozmówcach.
 Zwróć TYLKO tablicę JSON bez żadnego dodatkowego tekstu, w formacie:
@@ -63,7 +63,6 @@ def assign_speakers(text: str, speaker1: str, speaker2: str) -> str:
     YouTube inserts >> when it detects a speaker change. The first segment belongs to
     speaker1 (the host / first voice), then speakers alternate.
     Short segments (< 10 chars) that are just acknowledgments are still labeled.
-    Ported from test_code/youtube_batch_analyze.py.
     """
     segments = re.split(r"\s*>>\s*", text)
     speakers = [speaker1, speaker2]
