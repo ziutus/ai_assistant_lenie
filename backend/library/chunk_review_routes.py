@@ -86,6 +86,7 @@ def analyze_document_chunks(doc_id: int):
         chunk_size   — max chars per chunk (default: 5000)
         no_synthesis — skip final synthesis step (default: false)
         mode         — "transcript" (default) or "article"
+        split_only   — split into chunks without any LLM analysis (default: false)
 
     Returns immediately with {job_id}. Poll GET /analysis_job/<job_id> for status.
     """
@@ -96,6 +97,7 @@ def analyze_document_chunks(doc_id: int):
     chunk_size = int(data.get("chunk_size", 5000))
     no_synthesis = bool(data.get("no_synthesis", False))
     mode = data.get("mode", "transcript")
+    split_only = bool(data.get("split_only", False))
     if mode not in ANALYSIS_MODES:
         return jsonify({"status": "error", "message": f"Invalid mode: {mode}"}), 400
 
@@ -130,6 +132,7 @@ def analyze_document_chunks(doc_id: int):
                 no_synthesis=no_synthesis,
                 progress_fn=_progress,
                 mode=mode,
+                split_only=split_only,
             )
             ad_count = sum(1 for c in run.chunks if c.type == "REKLAMA")
             _analysis_jobs[job_id].update({

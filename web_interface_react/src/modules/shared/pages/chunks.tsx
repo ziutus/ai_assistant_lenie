@@ -297,6 +297,7 @@ const Chunks = () => {
   const [jobId, setJobId]           = React.useState<string | null>(null);
   const [newModel, setNewModel]     = React.useState(MODELS[0]);
   const [newMode, setNewMode]       = React.useState("transcript");
+  const [splitOnly, setSplitOnly]   = React.useState(false);
   const [chunkSize, setChunkSize]   = React.useState(5000);
   const [hideAds, setHideAds]       = React.useState(false);
 
@@ -400,13 +401,17 @@ const Chunks = () => {
 
   // ── Analysis ──
 
-  const startAnalysis = async (modeOverride?: string) => {
+  const startAnalysis = async (modeOverride?: string, splitOnlyOverride?: boolean) => {
     if (!id) return;
     setError(""); setJobStatus("starting");
     try {
       const r = await fetch(`${apiUrl}/document/${id}/analyze_chunks`, {
         method: "POST", headers,
-        body: JSON.stringify({ model: newModel, chunk_size: chunkSize, mode: modeOverride ?? newMode }),
+        body: JSON.stringify({
+          model: newModel, chunk_size: chunkSize,
+          mode: modeOverride ?? newMode,
+          split_only: splitOnlyOverride ?? splitOnly,
+        }),
       });
       const data = await r.json();
       if (data.job_id) { setJobId(data.job_id); setJobStatus("running"); pollJob(data.job_id); }
@@ -470,11 +475,17 @@ const Chunks = () => {
     finally { setReanalyzing(prev => ({ ...prev, [chunkId]: false })); }
   };
 
+  // Chunks that still need an LLM pass: flagged for re-analysis OR fresh from
+  // a split-only run (pending TEMAT without a summary)
+  const chunksToAnalyze = chunks.filter(c =>
+    c.status === "needs_reanalysis"
+    || (c.type === "TEMAT" && c.status === "pending" && !c.summary)
+  );
+
   const reanalyzeAll = async () => {
-    const pending = chunks.filter(c => c.status === "needs_reanalysis");
-    if (!pending.length) return;
+    if (!chunksToAnalyze.length) return;
     setReanalyzingAll(true);
-    for (const chunk of pending) {
+    for (const chunk of chunksToAnalyze) {
       await reanalyzeChunk(chunk.id, chunk.corrected_text ? "semantic" : "full");
     }
     setReanalyzingAll(false);
@@ -600,7 +611,8 @@ const Chunks = () => {
     if (selectedRun === null || applyingCleanup || jobId) return;
     if (!window.confirm(
       "Nadpisać tekst źródłowy dokumentu treścią chunków TEMAT (REKLAMA/SZUM i usunięte linie znikną),\n"
-      + "a następnie uruchomić nową analizę z propozycją nowego podziału?"
+      + "a następnie zaproponować NOWY PODZIAŁ (bez analizy LLM)?\n"
+      + "Analizę uruchomisz przyciskiem 'Analizuj chunki' po przejrzeniu podziału."
     )) return;
     setApplyingCleanup(true);
     setError("");
@@ -612,8 +624,8 @@ const Chunks = () => {
         return;
       }
       setInfo(`Dokument wyczyszczony (${data.field}: ${data.length_before} → ${data.length_after} znaków, `
-        + `odrzucono ${data.dropped_chunks} chunków). Startuję nową analizę…`);
-      await startAnalysis("article");
+        + `odrzucono ${data.dropped_chunks} chunków). Startuję nowy podział (bez analizy LLM)…`);
+      await startAnalysis("article", true);
     } catch { setError("Błąd połączenia przy czyszczeniu dokumentu"); }
     finally { setApplyingCleanup(false); }
   };
@@ -671,7 +683,6 @@ const Chunks = () => {
   const pct = tematChunks.length ? Math.round(approvedCount / tematChunks.length * 100) : 0;
   const reklamaCount = chunks.filter(c => c.type !== "TEMAT").length;
   const visibleReklamaCount = chunks.filter(c => c.type !== "TEMAT" && !hiddenChunks.has(c.id)).length;
-  const needsReanalysisCount = chunks.filter(c => c.status === "needs_reanalysis").length;
   const maxPosition = chunks.reduce((m, c) => Math.max(m, c.position), 0);
   const visibleChunks = chunks.filter(c =>
     !hiddenChunks.has(c.id) && (!hideAds || c.type === "TEMAT")
@@ -702,6 +713,11 @@ const Chunks = () => {
             Chunk:&nbsp;
             <input type="number" value={chunkSize} onChange={e => setChunkSize(Number(e.target.value))}
               style={{ width: 75, padding: "3px 6px", fontSize: "0.88em" }} min={500} max={20000} step={500} />
+          </label>
+          <label style={{ fontSize: "0.85em", display: "flex", alignItems: "center", gap: 4 }}
+            title="Podziel na chunki bez wywołań LLM — najpierw doczyścisz/scalisz chunki, potem klikniesz Analizuj">
+            <input type="checkbox" checked={splitOnly} onChange={e => setSplitOnly(e.target.checked)} />
+            tylko podział (bez analizy LLM)
           </label>
           <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}>
             {jobId ? `Analiza… (${jobStatus})` : "Uruchom analizę"}
@@ -745,10 +761,10 @@ const Chunks = () => {
               {approvingAll ? "Zatwierdzam…" : `Zatwierdź wszystkie (${unapprovedTematCount})`}
             </button>
           )}
-          {needsReanalysisCount > 0 && (
+          {chunksToAnalyze.length > 0 && (
             <button className="button" onClick={reanalyzeAll} disabled={reanalyzingAll}
               style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0369a1", color: "#fff", border: "none" }}>
-              {reanalyzingAll ? "Analizuję…" : `Analizuj wszystkie (${needsReanalysisCount})`}
+              {reanalyzingAll ? "Analizuję…" : `Analizuj chunki (${chunksToAnalyze.length})`}
             </button>
           )}
           {reklamaCount > 0 && (visibleReklamaCount > 0 || hideAds) && (
