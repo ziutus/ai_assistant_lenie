@@ -194,9 +194,10 @@ const PlainTextLines: React.FC<{
   markedLines: Set<number>;
   saving: boolean;
   onToggleLine: (idx: number) => void;
-  onSave: () => void;
+  onSave: (removeFromDocument: boolean) => void;
   onCancel: () => void;
 }> = ({ text, markedLines, saving, onToggleLine, onSave, onCancel }) => {
+  const [removeFromDoc, setRemoveFromDoc] = React.useState(true);
   if (!text) return <em style={{ color: "#94a3b8" }}>brak tekstu</em>;
   const lines = text.split("\n");
   return (
@@ -228,8 +229,8 @@ const PlainTextLines: React.FC<{
         );
       })}
       {markedLines.size > 0 && (
-        <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={onSave} disabled={saving}
+        <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <button onClick={() => onSave(removeFromDoc)} disabled={saving}
             style={{ padding: "3px 12px", background: "#b91c1c", color: "#fff", border: "none", borderRadius: 3, cursor: "pointer", fontWeight: "bold", fontSize: "0.85em" }}>
             {saving ? "Zapisuję…" : `Usuń ${markedLines.size} ${markedLines.size === 1 ? "linię" : "linie/linii"} i zapisz`}
           </button>
@@ -237,6 +238,11 @@ const PlainTextLines: React.FC<{
             style={{ padding: "3px 10px", background: "#e2e8f0", color: "#475569", border: "none", borderRadius: 3, cursor: "pointer", fontSize: "0.85em" }}>
             Anuluj
           </button>
+          <label style={{ fontSize: "0.8em", color: "#475569", display: "flex", alignItems: "center", gap: 4 }}
+            title="Usuwa wszystkie wystąpienia tych linii z pól text/text_md dokumentu — kolejne analizy startują z czystego tekstu">
+            <input type="checkbox" checked={removeFromDoc} onChange={e => setRemoveFromDoc(e.target.checked)} />
+            usuń też z dokumentu źródłowego (wszystkie wystąpienia)
+          </label>
           <span style={{ fontSize: "0.8em", color: "#94a3b8" }}>
             Po zapisie warto ponownie uruchomić analizę chunka (▶ Pełna), by odświeżyć temat i streszczenie.
           </span>
@@ -265,6 +271,8 @@ const Chunks = () => {
 
   const [loading, setLoading]       = React.useState(false);
   const [error, setError]           = React.useState("");
+  const [info, setInfo]             = React.useState("");
+  const [applyingCleanup, setApplyingCleanup] = React.useState(false);
   const [jobStatus, setJobStatus]   = React.useState<string | null>(null);
   const [jobId, setJobId]           = React.useState<string | null>(null);
   const [newModel, setNewModel]     = React.useState(MODELS[0]);
@@ -306,6 +314,7 @@ const Chunks = () => {
   const fetchChunks = React.useCallback(async (runId: number) => {
     setLoading(true);
     setError("");
+    setInfo("");
     try {
       const r = await fetch(`${apiUrl}/analysis_run/${runId}/chunks`, { headers });
       const data = await r.json();
@@ -368,13 +377,13 @@ const Chunks = () => {
 
   // ── Analysis ──
 
-  const startAnalysis = async () => {
+  const startAnalysis = async (modeOverride?: string) => {
     if (!id) return;
     setError(""); setJobStatus("starting");
     try {
       const r = await fetch(`${apiUrl}/document/${id}/analyze_chunks`, {
         method: "POST", headers,
-        body: JSON.stringify({ model: newModel, chunk_size: chunkSize, mode: newMode }),
+        body: JSON.stringify({ model: newModel, chunk_size: chunkSize, mode: modeOverride ?? newMode }),
       });
       const data = await r.json();
       if (data.job_id) { setJobId(data.job_id); setJobStatus("running"); pollJob(data.job_id); }
@@ -477,16 +486,58 @@ const Chunks = () => {
     setLineEdits(prev => { const n = { ...prev }; delete n[chunkId]; return n; });
   };
 
-  const saveLineRemovals = async (chunk: Chunk) => {
+  const saveLineRemovals = async (chunk: Chunk, removeFromDocument: boolean) => {
     const marked = lineEdits[chunk.id];
     if (!marked || marked.size === 0) return;
     const lines = (chunk.original_text ?? "").split("\n");
     const newText = lines.filter((_, i) => !marked.has(i)).join("\n");
     if (!newText.trim()) { setError("Nie można usunąć wszystkich linii"); return; }
+    const removedLines = lines.filter((_, i) => marked.has(i)).map(l => l.trim()).filter(Boolean);
     setSavingLines(prev => ({ ...prev, [chunk.id]: true }));
-    const res = await patchChunk(chunk.id, { original_text: newText });
+    const res = await patchChunk(chunk.id, {
+      original_text: newText,
+      ...(removeFromDocument && removedLines.length ? { remove_lines_from_document: removedLines } : {}),
+    });
     setSavingLines(prev => ({ ...prev, [chunk.id]: false }));
-    if (res?.status === "success") clearLineMarks(chunk.id);
+    if (res?.status === "success") {
+      clearLineMarks(chunk.id);
+      if (res.document_lines_removed > 0) {
+        setInfo(`Usunięto ${res.document_lines_removed} linii z dokumentu źródłowego`);
+      }
+    }
+  };
+
+  const mergeWithNext = async (chunk: Chunk) => {
+    if (!window.confirm(`Scalić chunk #${chunk.position} z #${chunk.position + 1}? Scalony chunk będzie wymagał ponownej analizy.`)) return;
+    try {
+      const r = await fetch(`${apiUrl}/chunk/${chunk.id}/merge_with_next`, { method: "POST", headers });
+      const data = await r.json();
+      if (data.status === "success") {
+        if (selectedRun !== null) await fetchChunks(selectedRun);
+      } else { setError("Błąd scalania: " + (data.message ?? "")); }
+    } catch { setError("Błąd połączenia przy scalaniu"); }
+  };
+
+  const applyCleanupAndResplit = async () => {
+    if (selectedRun === null) return;
+    if (!window.confirm(
+      "Nadpisać tekst źródłowy dokumentu treścią chunków TEMAT (REKLAMA/SZUM i usunięte linie znikną),\n"
+      + "a następnie uruchomić nową analizę z propozycją nowego podziału?"
+    )) return;
+    setApplyingCleanup(true);
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}/apply_cleanup`, { method: "POST", headers });
+      const data = await r.json();
+      if (data.status !== "success") {
+        setError("Błąd czyszczenia dokumentu: " + (data.message ?? ""));
+        return;
+      }
+      setInfo(`Dokument wyczyszczony (${data.field}: ${data.length_before} → ${data.length_after} znaków, `
+        + `odrzucono ${data.dropped_chunks} chunków). Startuję nową analizę…`);
+      await startAnalysis("article");
+    } catch { setError("Błąd połączenia przy czyszczeniu dokumentu"); }
+    finally { setApplyingCleanup(false); }
   };
 
   // ── Split ──
@@ -543,6 +594,7 @@ const Chunks = () => {
   const reklamaCount = chunks.filter(c => c.type !== "TEMAT").length;
   const visibleReklamaCount = chunks.filter(c => c.type !== "TEMAT" && !hiddenChunks.has(c.id)).length;
   const needsReanalysisCount = chunks.filter(c => c.status === "needs_reanalysis").length;
+  const maxPosition = chunks.reduce((m, c) => Math.max(m, c.position), 0);
   const visibleChunks = chunks.filter(c =>
     !hiddenChunks.has(c.id) && (!hideAds || c.type === "TEMAT")
   );
@@ -573,7 +625,7 @@ const Chunks = () => {
             <input type="number" value={chunkSize} onChange={e => setChunkSize(Number(e.target.value))}
               style={{ width: 75, padding: "3px 6px", fontSize: "0.88em" }} min={500} max={20000} step={500} />
           </label>
-          <button className="button" onClick={startAnalysis} disabled={!!jobId}>
+          <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}>
             {jobId ? `Analiza… (${jobStatus})` : "Uruchom analizę"}
           </button>
         </div>
@@ -657,7 +709,19 @@ const Chunks = () => {
       )}
 
       {error && <p style={{ color: "#dc2626", marginBottom: 12 }}>{error}</p>}
+      {info && <p style={{ color: "#15803d", marginBottom: 12 }}>{info}</p>}
       {loading && <div className="loader" style={{ marginBottom: 12 }} />}
+
+      {/* Czyszczenie dokumentu z runa artykułowego */}
+      {runMode === "article" && chunks.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <button className="button" onClick={applyCleanupAndResplit} disabled={applyingCleanup || !!jobId}
+            title="Nadpisuje tekst źródłowy dokumentu treścią chunków TEMAT (REKLAMA/SZUM i usunięte linie znikają), po czym uruchamia nową analizę"
+            style={{ fontSize: "0.85em", background: "#7c3aed", color: "#fff", border: "none", padding: "4px 12px" }}>
+            {applyingCleanup ? "Czyszczę dokument…" : "Wyczyść dokument i zaproponuj nowy podział"}
+          </button>
+        </div>
+      )}
 
       {/* Chunki */}
       {visibleChunks.map((chunk, i) => {
@@ -731,6 +795,15 @@ const Chunks = () => {
                   {isCorrectedView ? "Surowy" : "Poprawiony"}
                 </button>
               )}
+              {chunk.position < maxPosition && (
+                <button
+                  onClick={() => mergeWithNext(chunk)}
+                  title={`Scal z chunkiem #${chunk.position + 1}`}
+                  style={{ padding: "2px 8px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em", color: "#64748b" }}
+                >
+                  ⇣ Scal
+                </button>
+              )}
               <button
                 onClick={() => setHiddenChunks(prev => new Set([...prev, chunk.id]))}
                 title="Ukryj ten chunk"
@@ -759,7 +832,7 @@ const Chunks = () => {
                   markedLines={lineEdits[chunk.id] ?? new Set()}
                   saving={savingLines[chunk.id] ?? false}
                   onToggleLine={idx => toggleLineMark(chunk.id, idx)}
-                  onSave={() => saveLineRemovals(chunk)}
+                  onSave={removeFromDoc => saveLineRemovals(chunk, removeFromDoc)}
                   onCancel={() => clearLineMarks(chunk.id)}
                 />
               )}

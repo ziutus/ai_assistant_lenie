@@ -283,6 +283,72 @@ def update_run(run_id: int):
 
 
 # ---------------------------------------------------------------------------
+# API: POST /analysis_run/<run_id>/apply_cleanup
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>/apply_cleanup", methods=["POST"])
+def apply_run_cleanup(run_id: int):
+    """Overwrite the document's source text with the run's TEMAT chunks only.
+
+    Article-mode runs are a full partition of the source text, so joining the
+    TEMAT chunks (which already carry manual line removals) yields the cleaned
+    document: REKLAMA/SZUM chunks and removed lines disappear from the source.
+    After this, a fresh analysis run ("zaproponuj nowy podział") starts clean.
+
+    Transcript runs are rejected: their chunk texts were transformed before
+    splitting (speaker labels, filler removal), so the join is not the source.
+    """
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+    if run.mode != "article":
+        return jsonify({"status": "error",
+                        "message": "apply_cleanup works only for article-mode runs"}), 400
+
+    chunks = session.scalars(
+        select(DocumentChunk)
+        .where(DocumentChunk.run_id == run_id)
+        .order_by(DocumentChunk.position)
+    ).all()
+    temat = [c for c in chunks if c.type == "TEMAT"]
+    cleaned = "\n\n".join(c.original_text for c in temat).strip()
+    if not cleaned:
+        return jsonify({"status": "error", "message": "Run has no TEMAT chunks"}), 400
+
+    doc = session.get(WebDocument, run.document_id)
+    if doc is None:
+        abort(404, f"Document {run.document_id} not found")
+
+    # Write back to the same field an article-mode analysis would read
+    from library.document_analysis_service import _extract_text
+    _, field = _extract_text(doc, prefer_md=True)
+    if field not in ("text", "text_md"):
+        return jsonify({"status": "error",
+                        "message": f"Cannot apply cleanup to source field: {field or 'none'}"}), 400
+
+    length_before = len(getattr(doc, field) or "")
+    setattr(doc, field, cleaned)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("apply_cleanup DB save failed for run %d", run_id)
+        return jsonify({"status": "error", "message": "DB save failed"}), 500
+
+    logger.info("apply_cleanup run %d: %s %d -> %d chars (%d TEMAT / %d chunks)",
+                run_id, field, length_before, len(cleaned), len(temat), len(chunks))
+    return jsonify({
+        "status": "success",
+        "field": field,
+        "length_before": length_before,
+        "length_after": len(cleaned),
+        "temat_chunks": len(temat),
+        "dropped_chunks": len(chunks) - len(temat),
+    })
+
+
+# ---------------------------------------------------------------------------
 # API: POST /analysis_run/<run_id>/extract_speakers
 # ---------------------------------------------------------------------------
 
@@ -372,6 +438,24 @@ def update_chunk(chunk_id: int):
         chunk.original_text = val
         changed = True
 
+    doc_lines_removed = 0
+    removed_lines = data.get("remove_lines_from_document") or []
+    if removed_lines:
+        # Propagate cleanup to the source document: drop ALL whole-line exact
+        # matches (junk lines like player controls repeat per embedded video)
+        targets = {ln.strip() for ln in removed_lines if isinstance(ln, str) and ln.strip()}
+        if targets:
+            doc = session.get(WebDocument, chunk.document_id)
+            if doc is not None:
+                for field in ("text", "text_md"):
+                    value = getattr(doc, field, None)
+                    if not value:
+                        continue
+                    kept = [ln for ln in value.split("\n") if ln.strip() not in targets]
+                    doc_lines_removed += value.count("\n") + 1 - len(kept)
+                    setattr(doc, field, "\n".join(kept))
+                changed = True
+
     if "split_at_seg" in data:
         chunk.split_at_seg = data["split_at_seg"]
         changed = True
@@ -399,7 +483,11 @@ def update_chunk(chunk_id: int):
             logger.exception("Failed to update chunk %d", chunk_id)
             return jsonify({"status": "error", "message": "DB error"}), 500
 
-    return jsonify({"status": "success", "chunk": _chunk_to_dict(chunk)})
+    return jsonify({
+        "status": "success",
+        "chunk": _chunk_to_dict(chunk),
+        "document_lines_removed": doc_lines_removed,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +612,77 @@ def execute_split(chunk_id: int):
         session.rollback()
         logger.exception("Failed to execute split on chunk %d", chunk_id)
         return jsonify({"status": "error", "message": "DB error during split"}), 500
+
+
+# ---------------------------------------------------------------------------
+# API: POST /chunk/<chunk_id>/merge_with_next
+# ---------------------------------------------------------------------------
+
+@bp.route("/chunk/<int:chunk_id>/merge_with_next", methods=["POST"])
+def merge_with_next(chunk_id: int):
+    """Merge a chunk with the following one (inverse of execute_split).
+
+    Concatenates texts, unions obsidian_note_paths, keeps the TEMAT type when
+    either side is TEMAT, and marks the merged chunk needs_reanalysis so the
+    topic/summary get refreshed. Positions after the removed chunk shift by -1.
+    """
+    session = get_scoped_session()
+    chunk = session.get(DocumentChunk, chunk_id)
+    if chunk is None:
+        abort(404, f"Chunk {chunk_id} not found")
+
+    next_chunk = session.scalar(
+        select(DocumentChunk).where(
+            DocumentChunk.run_id == chunk.run_id,
+            DocumentChunk.position == chunk.position + 1,
+        )
+    )
+    if next_chunk is None:
+        return jsonify({"status": "error", "message": "Chunk has no successor to merge with"}), 400
+
+    try:
+        chunk.original_text = f"{chunk.original_text}\n\n{next_chunk.original_text}".strip()
+        if chunk.corrected_text and next_chunk.corrected_text:
+            chunk.corrected_text = f"{chunk.corrected_text}\n\n{next_chunk.corrected_text}".strip()
+        else:
+            chunk.corrected_text = None
+        chunk.seg_end = next_chunk.seg_end
+        if next_chunk.type == "TEMAT":
+            chunk.type = "TEMAT"
+        chunk.topic = None
+        chunk.summary = None
+        chunk.rewrite_ratio = None
+        chunk.status = "needs_reanalysis"
+        merged_paths = list(chunk.obsidian_note_paths or [])
+        for p in next_chunk.obsidian_note_paths or []:
+            if p not in merged_paths:
+                merged_paths.append(p)
+        chunk.obsidian_note_paths = merged_paths
+        chunk.updated_at = datetime.utcnow()
+
+        removed_pos = next_chunk.position
+        session.delete(next_chunk)
+        session.flush()
+
+        # Shift following positions down via temp range (unique constraint on run_id+position)
+        session.execute(
+            sa_update(DocumentChunk)
+            .where(DocumentChunk.run_id == chunk.run_id, DocumentChunk.position > removed_pos)
+            .values(position=DocumentChunk.position + 10000)
+        )
+        session.execute(
+            sa_update(DocumentChunk)
+            .where(DocumentChunk.run_id == chunk.run_id, DocumentChunk.position > 10000)
+            .values(position=DocumentChunk.position - 10001)
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to merge chunk %d with next", chunk_id)
+        return jsonify({"status": "error", "message": "DB error during merge"}), 500
+
+    logger.info("Merged chunk %d with its successor (pos %d)", chunk_id, removed_pos)
+    return jsonify({"status": "success", "chunk": _chunk_to_dict(chunk)})
 
 
 # ---------------------------------------------------------------------------
