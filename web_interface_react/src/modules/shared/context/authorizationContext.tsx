@@ -7,7 +7,7 @@ export const AuthorizationContext = createContext<AuthorizationState>({
   setApiKey: () => {},
   apiUrl: "",
   setApiUrl: () => {},
-  apiType: "AWS Serverless",
+  apiType: "Docker",
   setApiType: () => {},
   searchInDocument: "",
   setSearchInDocument: () => {},

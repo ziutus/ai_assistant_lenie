@@ -24,9 +24,12 @@ logger = logging.getLogger(__name__)
 CHUNK_CHARS = 5_000
 DEFAULT_ANALYSIS_MODEL = "Bielik-11B-v3.0-Instruct"
 ANALYSIS_MODELS = [DEFAULT_ANALYSIS_MODEL, f"arklabs/{DEFAULT_ANALYSIS_MODEL}"]
+# mode: transcript (YouTube STT — speakers, fillers, verbatim rewrite)
+#       article    (clean markdown/text — header-based split, classify+summarize only)
+ANALYSIS_MODES = ("transcript", "article")
 SYNTHESIS_MAX_TOKENS = 2_000
 SYNTHESIS_MAX_INPUT_CHARS = 20_000
-_SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT): ?(.+)$', re.MULTILINE)
+_SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT|SZUM): ?(.+)$', re.MULTILINE)
 
 
 # ---------------------------------------------------------------------------
@@ -89,13 +92,16 @@ def _sentence_head(text: str, max_chars: int = 300) -> str:
     return seg
 
 
-def _extract_text(doc: WebDocument) -> tuple[str, str]:
+def _extract_text(doc: WebDocument, prefer_md: bool = False) -> tuple[str, str]:
     """Return (text, field_name) from best available field.
 
     Priority: text → text_md → text_raw (JSON transcript → plain text).
+    With prefer_md=True (article mode) text_md wins over text, so the
+    markdown-header splitter sees the document structure.
     Returns ("", "") when no usable text found.
     """
-    for field in ("text", "text_md"):
+    fields = ("text_md", "text") if prefer_md else ("text", "text_md")
+    for field in fields:
         val = getattr(doc, field, None)
         if val and len(val) > 100:
             return val, field
@@ -108,7 +114,7 @@ def _extract_text(doc: WebDocument) -> tuple[str, str]:
     return "", ""
 
 
-def _merge_topics(sections: list[dict], model: str) -> list[dict]:
+def _merge_topics(sections: list[dict], model: str, mode: str = "transcript") -> list[dict]:
     """Ask LLM to group adjacent chunks into logical topic sections.
 
     Returns list of {title, type, chunks: [1-based indices]}.
@@ -120,13 +126,15 @@ def _merge_topics(sections: list[dict], model: str) -> list[dict]:
         f"{i + 1}. [{s['type']}] {s['topic']}"
         for i, s in enumerate(sections)
     )
+    source_desc = "transkrypcji podcastu" if mode == "transcript" else "dokumentu"
     prompt = (
-        f"Poniżej lista {len(sections)} fragmentów transkrypcji podcastu z ich tematami.\n"
+        f"Poniżej lista {len(sections)} fragmentów {source_desc} z ich tematami.\n"
         "Pogrupuj SĄSIADUJĄCE fragmenty w logiczne sekcje tematyczne (zwykle 5-10 sekcji).\n"
-        "Fragmenty reklamowe (REKLAMA) możesz pominąć lub zgrupować razem pod jedną sekcją REKLAMA.\n\n"
+        "Fragmenty reklamowe (REKLAMA) i szum techniczny (SZUM) możesz pominąć lub zgrupować\n"
+        "razem pod jedną sekcją odpowiednio REKLAMA lub SZUM.\n\n"
         "Zwróć TYLKO tablicę JSON bez żadnego dodatkowego tekstu, w formacie:\n"
         '[{"title": "Tytuł sekcji tematycznej", "type": "TEMAT", "chunks": [1, 2]}]\n'
-        'Gdzie "chunks" to numery fragmentów (numeracja od 1), "type" to "TEMAT" lub "REKLAMA".\n\n'
+        'Gdzie "chunks" to numery fragmentów (numeracja od 1), "type" to "TEMAT", "REKLAMA" lub "SZUM".\n\n'
         f"Fragmenty:\n{chunk_list}"
     )
     try:
@@ -147,7 +155,7 @@ def _merge_topics(sections: list[dict], model: str) -> list[dict]:
     return []
 
 
-def _synthesize(sections: list[dict], title: str, model: str) -> str:
+def _synthesize(sections: list[dict], title: str, model: str, mode: str = "transcript") -> str:
     """Generate overall synthesis from all TEMAT chunk summaries.
 
     Returns "" if no summaries available or LLM call fails.
@@ -165,8 +173,9 @@ def _synthesize(sections: list[dict], title: str, model: str) -> str:
         logger.warning("synthesis input too long (%d chars), skipping", len(summaries))
         return ""
 
+    source_desc = "podcastu YouTube" if mode == "transcript" else "dokumentu"
     prompt = (
-        f'Poniżej są streszczenia kolejnych sekcji merytorycznych podcastu YouTube pt.: „{title}".\n\n'
+        f'Poniżej są streszczenia kolejnych sekcji merytorycznych {source_desc} pt.: „{title}".\n\n'
         "Na ich podstawie przygotuj:\n"
         "1. GŁÓWNE WNIOSKI: 5-7 najważniejszych wniosków (lista punktowana).\n"
         "2. SYNTEZA: Spójne streszczenie całości (6-8 zdań).\n\n"
@@ -200,6 +209,8 @@ class DocumentAnalysisService:
         no_synthesis: bool = False,
         progress_fn: Callable[[str], None] | None = None,
         speakers: list[dict] | None = None,
+        mode: str = "transcript",
+        split_only: bool = False,
     ) -> DocumentAnalysisRun:
         """Create a new analysis run for an existing document and persist to DB.
 
@@ -210,19 +221,29 @@ class DocumentAnalysisService:
             no_synthesis: Skip the final synthesis step.
             progress_fn:  Optional callback for progress messages (used by batch scripts).
             speakers:     Optional speaker list [{"name", "role", "description"}] —
-                          when given, skips LLM speaker extraction.
+                          when given, skips LLM speaker extraction (transcript mode only).
+            mode:         "transcript" (STT: speakers, fillers, verbatim rewrite) or
+                          "article" (clean text: header-based split, classify+summarize).
+            split_only:   Split into chunks WITHOUT any LLM calls — chunks land as
+                          TEMAT/pending with no topic/summary, so the user can first
+                          clean lines, merge or re-split, then analyze on demand.
 
         Returns:
             Persisted DocumentAnalysisRun with .chunks and .topic_sections populated.
 
         Raises:
-            ValueError:   Document not found or has no text content.
+            ValueError:   Document not found, no text content, or invalid mode.
             RuntimeError: LLM call failed or DB commit failed.
         """
         from library.chunk_llm_analysis import (
-            analyze_chunk, assign_speakers, extract_speaker_info, remove_speech_fillers,
+            analyze_article_chunk, analyze_chunk, assign_speakers,
+            extract_speaker_info, remove_speech_fillers,
         )
-        from library.text_functions import split_text_into_sentence_chunks
+        from library.text_functions import split_markdown_into_chunks, split_text_into_sentence_chunks
+
+        if mode not in ANALYSIS_MODES:
+            raise ValueError(f"Invalid mode: {mode!r} (expected one of {ANALYSIS_MODES})")
+        is_transcript = mode == "transcript"
 
         def log(msg: str) -> None:
             logger.info(msg)
@@ -236,63 +257,91 @@ class DocumentAnalysisService:
         if doc is None:
             raise ValueError(f"Document {doc_id} not found")
 
-        # 2. Extract text
-        text, text_field = _extract_text(doc)
+        # 2. Extract text (article mode prefers text_md — headers drive the split)
+        text, text_field = _extract_text(doc, prefer_md=not is_transcript)
         if not text:
             raise ValueError(f"Document {doc_id} has no usable text (checked: text, text_md, text_raw)")
 
-        log(f"doc={doc_id} field={text_field} len={len(text):,}")
+        log(f"doc={doc_id} mode={mode} field={text_field} len={len(text):,}")
 
-        # 3. Detect format (multi-speaker = has >> speaker markers)
-        speaker_changes = len(re.findall(r'>>', text))
-        is_multi_speaker = speaker_changes > 0
-        log(f"format={'multi-speaker' if is_multi_speaker else 'monologue'} ({speaker_changes} >>)")
+        if is_transcript:
+            # 3. Detect format (multi-speaker = has >> speaker markers)
+            speaker_changes = len(re.findall(r'>>', text))
+            is_multi_speaker = speaker_changes > 0
+            log(f"format={'multi-speaker' if is_multi_speaker else 'monologue'} ({speaker_changes} >>)")
 
-        # 4. Extract speakers from intro text (only for multi-speaker conversations),
-        #    unless the caller already provided them
-        if speakers is None:
-            speakers = []
-            if is_multi_speaker:
-                intro_text = text[800:2400].strip()
-                try:
-                    speakers = extract_speaker_info(intro_text, model)
-                    log(f"speakers={[sp['name'] for sp in speakers]}")
-                except Exception:
-                    logger.exception("speaker extraction failed, continuing without speakers")
+            # 4. Extract speakers from intro text (only for multi-speaker conversations),
+            #    unless the caller already provided them
+            if speakers is None:
+                speakers = []
+                if is_multi_speaker and not split_only:
+                    intro_text = text[800:2400].strip()
+                    try:
+                        speakers = extract_speaker_info(intro_text, model)
+                        log(f"speakers={[sp['name'] for sp in speakers]}")
+                    except Exception:
+                        logger.exception("speaker extraction failed, continuing without speakers")
 
-        # 5. Label speaker turns from >> markers (must happen before splitting,
-        #    so the rewrite prompt sees the [Name]: labels it is asked to preserve)
-        if is_multi_speaker and len(speakers) >= 2:
-            text = assign_speakers(text, speakers[0]["name"], speakers[1]["name"])
-            log(f"labeled speaker turns: [{speakers[0]['name']}] / [{speakers[1]['name']}]")
+            # 5. Label speaker turns from >> markers (must happen before splitting,
+            #    so the rewrite prompt sees the [Name]: labels it is asked to preserve)
+            if is_multi_speaker and len(speakers) >= 2:
+                text = assign_speakers(text, speakers[0]["name"], speakers[1]["name"])
+                log(f"labeled speaker turns: [{speakers[0]['name']}] / [{speakers[1]['name']}]")
 
-        # 6. Remove speech fillers before splitting (cheaper than asking LLM)
-        text = remove_speech_fillers(text)
+            # 6. Remove speech fillers before splitting (cheaper than asking LLM)
+            text = remove_speech_fillers(text)
 
-        # 7. Split into chunks at sentence boundaries
-        chunk_texts = split_text_into_sentence_chunks(text, chunk_size)
+            # 7. Split into chunks at sentence boundaries
+            chunk_texts = split_text_into_sentence_chunks(text, chunk_size)
+
+            # 8. Map chunks to transcript segments (for timestamp links)
+            segments = _load_segments(getattr(doc, "text_raw", None) or "")
+        else:
+            # Article mode: text is already clean — no speakers, no fillers,
+            # split at markdown headers, no transcript segments to map.
+            speakers = speakers or []
+            chunk_texts = split_markdown_into_chunks(text, chunk_size)
+            segments = []
         log(f"split={len(chunk_texts)} chunks, max {chunk_size:,} chars")
 
-        # 8. Map chunks to transcript segments (for timestamp links)
-        segments = _load_segments(getattr(doc, "text_raw", None) or "")
         seg_map = (
             _map_chunks_to_segments(chunk_texts, segments)
             if segments else [(None, None)] * len(chunk_texts)
         )
 
-        # 9. Analyze each chunk via LLM (with boundary context from adjacent chunks)
+        # 9. Analyze each chunk via LLM (with boundary context from adjacent chunks).
+        #    split_only: no LLM at all — chunks await manual cleanup + on-demand analysis.
         sections: list[dict] = []
         total = len(chunk_texts)
-        for i, chunk_text in enumerate(chunk_texts):
+        if split_only:
+            log(f"split_only: {total} chunks without LLM analysis")
+            sections = [
+                {
+                    "type": "TEMAT",
+                    "topic": None,
+                    "original": chunk_text,
+                    "text": None,
+                    "ratio": None,
+                    "summary": None,
+                }
+                for chunk_text in chunk_texts
+            ]
+            chunk_texts_iter: list[str] = []
+        else:
+            chunk_texts_iter = chunk_texts
+        for i, chunk_text in enumerate(chunk_texts_iter):
             log(f"chunk {i + 1}/{total} ({len(chunk_text):,} chars)...")
             try:
-                result = analyze_chunk(
-                    chunk_text, model,
-                    position=i + 1, total=total,
-                    speakers=speakers or None,
-                    prev_context=_sentence_tail(chunk_texts[i - 1]) if i > 0 else "",
-                    next_context=_sentence_head(chunk_texts[i + 1]) if i < total - 1 else "",
-                )
+                if is_transcript:
+                    result = analyze_chunk(
+                        chunk_text, model,
+                        position=i + 1, total=total,
+                        speakers=speakers or None,
+                        prev_context=_sentence_tail(chunk_texts[i - 1]) if i > 0 else "",
+                        next_context=_sentence_head(chunk_texts[i + 1]) if i < total - 1 else "",
+                    )
+                else:
+                    result = analyze_article_chunk(chunk_text, model, position=i + 1, total=total)
             except Exception as exc:
                 raise RuntimeError(f"LLM call failed for chunk {i + 1}/{total}: {exc}") from exc
 
@@ -305,8 +354,8 @@ class DocumentAnalysisService:
                 "summary": result["summary"],
             })
 
-        # 10. Group chunks into logical topic sections
-        topic_groups = _merge_topics(sections, model)
+        # 10. Group chunks into logical topic sections (skip LLM grouping for split_only)
+        topic_groups = [] if split_only else _merge_topics(sections, model, mode=mode)
         if topic_groups:
             topic_sections_data = []
             for group in topic_groups:
@@ -323,6 +372,9 @@ class DocumentAnalysisService:
                     "chunk_indices": [i + 1 for i in valid],
                     "summary": merged_summary.strip(),
                 })
+        elif split_only:
+            # No LLM ran — sections would carry no information yet
+            topic_sections_data = []
         else:
             # Fallback: each chunk is its own section
             topic_sections_data = [
@@ -338,9 +390,9 @@ class DocumentAnalysisService:
 
         # 11. Optional synthesis
         synthesis = ""
-        if not no_synthesis:
+        if not no_synthesis and not split_only:
             log("generating synthesis...")
-            synthesis = _synthesize(sections, doc.title or f"Dokument {doc_id}", model)
+            synthesis = _synthesize(sections, doc.title or f"Dokument {doc_id}", model, mode=mode)
 
         # 12. Persist to DB
         run = DocumentAnalysisRun(
@@ -349,6 +401,8 @@ class DocumentAnalysisService:
             chunk_size=chunk_size,
             synthesis=synthesis or None,
             speakers=speakers,
+            mode=mode,
+            status="created",
         )
         session.add(run)
         session.flush()  # get run.id before adding children

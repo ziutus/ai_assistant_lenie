@@ -36,7 +36,7 @@ backend/
 
 ## Main Application (`server.py`)
 
-Flask + Flask-CORS application exposing 20 REST API endpoints. **Version**: 0.3.13.0.
+Flask + Flask-CORS application exposing 20 REST API endpoints. **Version**: 0.3.14.0.
 
 ### API Endpoints
 
