@@ -47,6 +47,18 @@ def remove_matching_lines(input_text):
 
 _SENT_BOUNDARY = re.compile(r'(?<=[.!?…])\s+')
 
+# A trailing chunk smaller than this fraction of max_chars gets merged into the
+# previous one (accepting a slight overflow) — avoids orphan tails like a
+# 320-char chunk when a 5,106-char document meets a 5,000-char limit.
+_TAIL_MERGE_RATIO = 0.15
+
+
+def _merge_small_tail(chunks: list[str], max_chars: int, separator: str) -> list[str]:
+    if len(chunks) >= 2 and len(chunks[-1]) < max_chars * _TAIL_MERGE_RATIO:
+        tail = chunks.pop()
+        chunks[-1] = f"{chunks[-1]}{separator}{tail}"
+    return chunks
+
 
 def split_text_into_sentence_chunks(text: str, max_chars: int) -> list[str]:
     """Split text at sentence boundaries, accumulating up to max_chars per chunk.
@@ -85,7 +97,7 @@ def split_text_into_sentence_chunks(text: str, max_chars: int) -> list[str]:
     if current:
         chunks.append(' '.join(current))
 
-    return chunks
+    return _merge_small_tail(chunks, max_chars, ' ')
 
 
 def split_text_into_chunks(text: str, max_chars: int) -> list[str]:
@@ -128,7 +140,7 @@ def split_text_into_chunks(text: str, max_chars: int) -> list[str]:
     if current_parts:
         chunks.append('\n\n'.join(current_parts))
 
-    return chunks
+    return _merge_small_tail(chunks, max_chars, '\n\n')
 
 
 _MD_HEADER_RE = re.compile(r'^#{1,6} ', re.MULTILINE)
@@ -183,7 +195,7 @@ def split_markdown_into_chunks(text: str, max_chars: int) -> list[str]:
     if current:
         chunks.append('\n\n'.join(current))
 
-    return chunks
+    return _merge_small_tail(chunks, max_chars, '\n\n')
 
 
 def split_text_for_embedding(text, paragraph_titles=[], max_words_in_line=300, max_characters_in_line=1000):

@@ -299,6 +299,8 @@ const Chunks = () => {
   const [newMode, setNewMode]       = React.useState("transcript");
   const [splitOnly, setSplitOnly]   = React.useState(false);
   const [chunkSize, setChunkSize]   = React.useState(5000);
+  const [splitPreview, setSplitPreview] = React.useState<{ count: number; sizes: number[]; length: number } | null>(null);
+  const [previewNonce, setPreviewNonce] = React.useState(0);
   const [hideAds, setHideAds]       = React.useState(false);
 
   const [showCorrected, setShowCorrected] = React.useState<Record<number, boolean>>({});
@@ -373,6 +375,26 @@ const Chunks = () => {
   React.useEffect(() => {
     if (docType && docType !== "youtube" && docType !== "movie") setNewMode("article");
   }, [docType]);
+
+  // Live preview: how many chunks would a new split produce (no LLM, debounced)
+  React.useEffect(() => {
+    if (!id) return;
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(
+          `${apiUrl}/document/${id}/split_preview?mode=${newMode}&chunk_size=${chunkSize}`,
+          { headers: { "x-api-key": apiKey ?? "" } },
+        );
+        const data = await r.json();
+        if (data.status === "success") {
+          setSplitPreview({ count: data.chunk_count, sizes: data.chunk_sizes, length: data.text_length });
+        } else {
+          setSplitPreview(null);
+        }
+      } catch { setSplitPreview(null); }
+    }, 400);
+    return () => clearTimeout(t);
+  }, [id, newMode, chunkSize, apiUrl, apiKey, previewNonce]);
 
   // ── Job polling ──
 
@@ -537,6 +559,7 @@ const Chunks = () => {
       clearLineMarks(chunk.id);
       if (res.document_lines_removed > 0) {
         setInfo(`Usunięto ${res.document_lines_removed} linii z dokumentu źródłowego`);
+        setPreviewNonce(n => n + 1);
       }
     }
   };
@@ -625,6 +648,7 @@ const Chunks = () => {
       }
       setInfo(`Dokument wyczyszczony (${data.field}: ${data.length_before} → ${data.length_after} znaków, `
         + `odrzucono ${data.dropped_chunks} chunków). Startuję nowy podział (bez analizy LLM)…`);
+      setPreviewNonce(n => n + 1);
       await startAnalysis("article", true);
     } catch { setError("Błąd połączenia przy czyszczeniu dokumentu"); }
     finally { setApplyingCleanup(false); }
@@ -719,6 +743,14 @@ const Chunks = () => {
             <input type="checkbox" checked={splitOnly} onChange={e => setSplitOnly(e.target.checked)} />
             tylko podział (bez analizy LLM)
           </label>
+          {splitPreview && (
+            <span style={{ fontSize: "0.82em", color: "#475569" }}
+              title={`Rozmiary chunków: ${splitPreview.sizes.join(", ")} znaków`}>
+              → podział da <strong>{splitPreview.count}</strong> {splitPreview.count === 1 ? "chunk" : "chunki(-ów)"}
+              {" "}({splitPreview.length.toLocaleString("pl")} zn
+              {splitPreview.count > 1 && `: ${splitPreview.sizes.slice(0, 6).join(" + ")}${splitPreview.sizes.length > 6 ? " + …" : ""}`})
+            </span>
+          )}
           <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}>
             {jobId ? `Analiza… (${jobStatus})` : "Uruchom analizę"}
           </button>

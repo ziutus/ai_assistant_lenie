@@ -157,6 +157,49 @@ def analyze_document_chunks(doc_id: int):
     return jsonify({"status": "started", "job_id": job_id, "doc_id": doc_id})
 
 
+@bp.route("/document/<int:doc_id>/split_preview", methods=["GET"])
+def split_preview(doc_id: int):
+    """Preview how a document would split into chunks — no LLM calls, no DB writes.
+
+    Query params: mode (article|transcript, default article), chunk_size (default 5000).
+    Transcript sizes are approximate (speaker labeling happens only in a real run).
+    """
+    from library.document_analysis_service import ANALYSIS_MODES, _extract_text
+    from library.text_functions import split_markdown_into_chunks, split_text_into_sentence_chunks
+
+    mode = request.args.get("mode", "article")
+    chunk_size = request.args.get("chunk_size", 5000, type=int)
+    if mode not in ANALYSIS_MODES:
+        return jsonify({"status": "error", "message": f"Invalid mode: {mode}"}), 400
+    if not 500 <= chunk_size <= 50000:
+        return jsonify({"status": "error", "message": f"chunk_size out of range: {chunk_size}"}), 400
+
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    text, field = _extract_text(doc, prefer_md=(mode == "article"))
+    if not text:
+        return jsonify({"status": "error", "message": "Document has no usable text"}), 400
+
+    if mode == "article":
+        parts = split_markdown_into_chunks(text, chunk_size)
+    else:
+        from library.chunk_llm_analysis import remove_speech_fillers
+        parts = split_text_into_sentence_chunks(remove_speech_fillers(text), chunk_size)
+
+    return jsonify({
+        "status": "success",
+        "mode": mode,
+        "chunk_size": chunk_size,
+        "source_field": field,
+        "text_length": len(text),
+        "chunk_count": len(parts),
+        "chunk_sizes": [len(p) for p in parts],
+    })
+
+
 @bp.route("/analysis_job/<job_id>", methods=["GET"])
 def get_analysis_job(job_id: str):
     """Poll status of an async analysis job started by POST /document/<id>/analyze_chunks."""

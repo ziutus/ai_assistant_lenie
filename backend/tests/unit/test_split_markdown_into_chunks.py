@@ -64,3 +64,28 @@ class TestSplitMarkdownIntoChunks:
         text = "Język C# oraz F# to platforma .NET. " * 3
         chunks = split_markdown_into_chunks(text, 1000)
         assert len(chunks) == 1
+
+
+class TestTailMerge:
+    def test_small_tail_merged_into_previous(self):
+        """A document just over the limit must not leave an orphan tail chunk."""
+        # 3 paragraphs: 480+480+60 = ~1024 chars with a 1000 limit
+        text = "\n\n".join(["a" * 480, "b" * 480, "c" * 60])
+        chunks = split_markdown_into_chunks(text, 1000)
+        assert len(chunks) == 1
+        assert chunks[0].endswith("c" * 60)
+
+    def test_large_tail_stays_separate(self):
+        # tail of 400 chars (40% of limit) must remain its own chunk
+        text = "\n\n".join(["a" * 480, "b" * 480, "c" * 400])
+        chunks = split_markdown_into_chunks(text, 1000)
+        assert len(chunks) == 2
+        assert chunks[1] == "c" * 400
+
+    def test_sentence_splitter_merges_small_tail(self):
+        from library.text_functions import split_text_into_sentence_chunks
+        sentences = ("Zdanie ma tutaj dokladnie piecdziesiat znakow tu. " * 20).strip()
+        # ~1000 chars of sentences + one short trailing sentence, limit 1000
+        text = sentences + " Kropka."
+        chunks = split_text_into_sentence_chunks(text, 1000)
+        assert len(chunks) == 1 or len(chunks[-1]) >= 150
