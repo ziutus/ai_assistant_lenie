@@ -1,3 +1,4 @@
+import bisect
 import json
 import re
 
@@ -62,6 +63,15 @@ def chapters_text_to_list(chapters_string):
     return chapters
 
 
+def _chapter_index(chapter_starts: list[int], seconds: float, current: int) -> int:
+    """Index of the chapter the timestamp falls into (-1 = before the first chapter).
+
+    Never moves backwards — transcripts are processed sequentially and a stray
+    out-of-order timestamp must not reopen an earlier chapter.
+    """
+    return max(bisect.bisect_right(chapter_starts, seconds) - 1, current)
+
+
 def text_split_with_chapters(transcript_string: str | None, chapters_string: str | None = None) -> str | None:
     if transcript_string is None:
         return None
@@ -69,25 +79,34 @@ def text_split_with_chapters(transcript_string: str | None, chapters_string: str
         return transcript_string
 
     chapters = chapters_text_to_list(chapters_string)
+    if not chapters:
+        return transcript_string
 
     json_data = json.loads(transcript_string)
 
-    chapter_nb = 0
-    string_all = chapters[chapter_nb]['title'] + "\n"
+    chapter_starts = [time_to_seconds(ch['start']) for ch in chapters]
+    chapter_nb = -1  # -1 = intro before the first chapter
+    string_all = ""
+    after_header = False
     for transcript in json_data['results']["items"]:
+        content = transcript['alternatives'][0]['content']
 
         if 'start_time' in transcript:
-            chapter_start = time_to_seconds(chapters[chapter_nb]['start'])
-            chapter_end = time_to_seconds(chapters[chapter_nb]['end'])
-            transcript_start_time = float(transcript['start_time'])
-
-            if chapter_start <= transcript_start_time <= chapter_end:
-                string_all += " " + transcript['alternatives'][0]['content']
-            else:
+            target = _chapter_index(chapter_starts, float(transcript['start_time']), chapter_nb)
+            while chapter_nb < target:
                 chapter_nb += 1
-                string_all += "\n\n" + chapters[chapter_nb]['title'] + "\n" + transcript['alternatives'][0]['content']
+                string_all += ("\n\n" if string_all else "") + chapters[chapter_nb]['title'] + "\n"
+                after_header = True
+            if after_header:
+                string_all += content
+                after_header = False
+            elif string_all:
+                string_all += " " + content
+            else:
+                string_all += content
         else:
-            string_all += transcript['alternatives'][0]['content']
+            # No timestamp (e.g. punctuation) — attach directly, no separator
+            string_all += content
 
     return string_all
 
@@ -104,22 +123,28 @@ def youtube_titles_to_text(titles_text: str | None = None) -> str | None:
 def youtube_titles_split_with_chapters(titles_text: str | None = None, chapter_list_text: str | None = None) -> str | None:
     transcript = json.loads(titles_text)
     chapters = chapters_text_to_list(chapter_list_text)
+    if not chapters:
+        return youtube_titles_to_text(titles_text)
 
-    chapter_nb = 0
-    string_all = chapters[chapter_nb]['title'] + "\n"
+    chapter_starts = [time_to_seconds(ch['start']) for ch in chapters]
+    chapter_nb = -1  # -1 = intro before the first chapter
+    string_all = ""
+    after_header = False
     for entry in transcript:
 
         if 'start' in entry:
-            chapter_start = time_to_seconds(chapters[chapter_nb]['start'])
-            chapter_end = time_to_seconds(chapters[chapter_nb]['end'])
-            entry_start_time = float(entry['start'])
-
-            if chapter_start <= entry_start_time <= chapter_end:
+            target = _chapter_index(chapter_starts, float(entry['start']), chapter_nb)
+            while chapter_nb < target:
+                chapter_nb += 1
+                string_all += ("\n\n" if string_all else "") + chapters[chapter_nb]['title'] + "\n"
+                after_header = True
+            if after_header:
+                string_all += entry['text']
+                after_header = False
+            elif string_all:
                 string_all += " " + entry['text']
             else:
-                chapter_nb += 1
-                string_all += "\n\n" + chapters[chapter_nb]['title'] + "\n" + \
-                              entry['text']
+                string_all += entry['text']
         else:
             string_all += entry['text']
 

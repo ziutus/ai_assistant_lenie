@@ -89,7 +89,9 @@ URL_ADDED → DOCUMENT_INTO_DATABASE → NEED_CLEAN_TEXT → NEED_CLEAN_MD → T
 Special states:
 - `NEED_TRANSCRIPTION` / `TRANSCRIPTION_IN_PROGRESS` / `TRANSCRIPTION_DONE` — for audio/video content
 - `NEED_MANUAL_REVIEW` — automatic text cleanup failed; needs manual removal of ads, comments, and spam
-- `ERROR` — processing failed (details in `document_state_error`)
+- `ERROR` / `TEMPORARY_ERROR` — processing failed (details in `document_state_error`)
+
+**Invariant — `document_state_error` must be reset on every successful transition.** The field only means something while the document is in an error state (`ERROR`/`TEMPORARY_ERROR`); once a retry succeeds and `document_state` moves on, any code that sets `document_state_error` on failure MUST also clear it (`StalkerDocumentStatusError.NONE.name`) on the corresponding success path in the same function. Otherwise the error becomes sticky forever — a later retry that succeeds leaves the stale value in place because nothing overwrites it. `WebDocument.validate()` in `db/models.py` follows this correctly (resets to `NONE` at the top before re-evaluating). `library/youtube_processing.py` did **not** follow it for `CAPTIONS_FETCH_ERROR`/transcription errors until this was fixed (2026-07-04) — a retry that fetched captions successfully left `CAPTIONS_FETCH_ERROR` from an earlier failed attempt in place indefinitely. When adding a new failure/retry branch to any pipeline step, always pair the error-setting line with a reset on the success path.
 
 ## Document Types
 

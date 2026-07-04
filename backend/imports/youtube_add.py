@@ -3,6 +3,12 @@
 
 Usage:
     python youtube_add.py <URL> [--language pl] [--note "..."] [--source own] [--chapters "..."] [--summary] [--force] [-v]
+    python youtube_add.py <URL> --analyze [--model ...] [--speaker1 "..." --speaker2 "..."] [--no-synthesis]
+
+With --analyze, after the video is added and transcribed, the Bielik LLM chunk
+analysis (library/document_analysis_service.py) runs on the new document and
+exports MD/JSON/debug/HTML files to .claude/exports/. To (re-)analyze an
+existing document by ID, use imports/youtube_batch_analyze.py instead.
 """
 
 import argparse
@@ -14,7 +20,13 @@ from library.config_loader import load_config
 
 cfg = load_config()  # noqa: F841 — side effect: populates os.environ for library modules
 
+from library.analysis_exports import export_analysis_run  # noqa: E402
 from library.db.engine import get_session  # noqa: E402
+from library.document_analysis_service import (  # noqa: E402
+    ANALYSIS_MODELS,
+    DEFAULT_ANALYSIS_MODEL,
+    DocumentAnalysisService,
+)
 from library.youtube_processing import process_youtube_url  # noqa: E402
 
 
@@ -31,6 +43,16 @@ def main():
     parser.add_argument("--summary", action="store_true", help="Generate AI summary")
     parser.add_argument("--force", action="store_true", help="Force reprocessing even if embeddings exist")
     parser.add_argument("--no-proxy", action="store_true", help="Disable Webshare proxy (useful when proxy gets 429 from YouTube)")
+    parser.add_argument("--analyze", action="store_true",
+                        help="Run Bielik LLM chunk analysis after processing "
+                             "(exports MD/JSON/debug/HTML to .claude/exports/)")
+    parser.add_argument("--model", default=DEFAULT_ANALYSIS_MODEL, choices=ANALYSIS_MODELS,
+                        help="LLM model for --analyze (default: %(default)s)")
+    parser.add_argument("--speaker1", default="",
+                        help="--analyze: name of first speaker (segments before first >>); "
+                             "with --speaker2 skips LLM speaker extraction")
+    parser.add_argument("--speaker2", default="", help="--analyze: name of second speaker")
+    parser.add_argument("--no-synthesis", action="store_true", help="--analyze: skip final synthesis step")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
 
     args = parser.parse_args()
@@ -89,6 +111,36 @@ def main():
         doc_state = web_document.document_state
         doc_text_len = len(web_document.text) if web_document.text else 0
         doc_summary = web_document.summary
+
+        # Optional LLM chunk analysis on the freshly processed document
+        run_id = None
+        exports = None
+        analysis_error = None
+        if args.analyze:
+            if not web_document.text:
+                analysis_error = f"document has no transcript text (state: {doc_state})"
+            else:
+                speakers_override = None
+                if args.speaker1 and args.speaker2:
+                    speakers_override = [
+                        {"name": args.speaker1, "role": "prowadzący", "description": ""},
+                        {"name": args.speaker2, "role": "gość", "description": ""},
+                    ]
+                print(f"\n=== ANALIZA LLM → {args.model} (DocumentAnalysisService) ===\n")
+                try:
+                    service = DocumentAnalysisService(session)
+                    run = service.create_run(
+                        doc_id=doc_id,
+                        model=args.model,
+                        no_synthesis=args.no_synthesis,
+                        progress_fn=lambda msg: print(f"  {msg}", flush=True),
+                        speakers=speakers_override,
+                    )
+                    run_id = run.id
+                    exports = export_analysis_run(web_document, run, args.model)
+                except Exception as e:
+                    logging.error(f"LLM analysis failed: {e}")
+                    analysis_error = str(e)
     except Exception as e:
         logging.error(f"Error processing YouTube URL: {e}")
         sys.exit(1)
@@ -107,6 +159,21 @@ def main():
         print(f"  Summary:  {doc_summary[:200]}...")
     print(f"  Elapsed:  {elapsed:.2f}s")
     print("------------------------")
+
+    if args.analyze:
+        if analysis_error:
+            print(f"\nBŁĄD analizy LLM: {analysis_error}")
+            print("Dokument został dodany — analizę można powtórzyć:")
+            print(f"  python imports/youtube_batch_analyze.py --doc_id {doc_id}")
+            sys.exit(1)
+        print("\n--- Analiza LLM ---")
+        print(f"  Run ID:       {run_id}")
+        print(f"  Analiza (MD): {exports['md']}")
+        print(f"  Dane (JSON):  {exports['json']}")
+        print(f"  Debug (MD):   {exports['debug']}")
+        if exports["html"]:
+            print(f"  Widok HTML:   {exports['html']}")
+        print("-------------------")
 
 
 if __name__ == "__main__":
