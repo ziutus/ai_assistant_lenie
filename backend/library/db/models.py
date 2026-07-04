@@ -38,6 +38,63 @@ from library.models.stalker_document_type import StalkerDocumentType
 logger = logging.getLogger(__name__)
 
 
+DOCUMENT_TYPE_LOOKUP = {
+    "movie": StalkerDocumentType.movie.name,
+    "youtube": StalkerDocumentType.youtube.name,
+    "link": StalkerDocumentType.link.name,
+    "webpage": StalkerDocumentType.webpage.name,
+    "website": StalkerDocumentType.webpage.name,
+    "sms": StalkerDocumentType.text_message.name,
+    "text_message": StalkerDocumentType.text_message.name,
+    "text": StalkerDocumentType.text.name,
+    "social_media_post": StalkerDocumentType.social_media_post.name,
+    "social": StalkerDocumentType.social_media_post.name,
+}
+
+DOCUMENT_STATE_LOOKUP = {
+    "ERROR_DOWNLOAD": StalkerDocumentStatus.ERROR.name,
+    "ERROR": StalkerDocumentStatus.ERROR.name,
+    "URL_ADDED": StalkerDocumentStatus.URL_ADDED.name,
+    "NEED_TRANSCRIPTION": StalkerDocumentStatus.NEED_TRANSCRIPTION.name,
+    "TRANSCRIPTION_DONE": StalkerDocumentStatus.TRANSCRIPTION_DONE.name,
+    "TRANSCRIPTION_IN_PROGRESS": StalkerDocumentStatus.TRANSCRIPTION_IN_PROGRESS.name,
+    "NEED_MANUAL_REVIEW": StalkerDocumentStatus.NEED_MANUAL_REVIEW.name,
+    "READY_FOR_TRANSLATION": StalkerDocumentStatus.READY_FOR_TRANSLATION.name,
+    "READY_FOR_EMBEDDING": StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
+    "EMBEDDING_EXIST": StalkerDocumentStatus.EMBEDDING_EXIST.name,
+    "DOCUMENT_INTO_DATABASE": StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name,
+    "NEED_CLEAN_TEXT": StalkerDocumentStatus.NEED_CLEAN_TEXT.name,
+    "NEED_CLEAN_MD": StalkerDocumentStatus.NEED_CLEAN_MD.name,
+    "TEXT_TO_MD_DONE": StalkerDocumentStatus.NEED_CLEAN_MD.name,
+    "MD_SIMPLIFIED": StalkerDocumentStatus.MD_SIMPLIFIED.name,
+    "TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS": StalkerDocumentStatus.TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS.name,
+    "TEMPORARY_ERROR": StalkerDocumentStatus.TEMPORARY_ERROR.name,
+}
+
+DOCUMENT_STATE_ERROR_LOOKUP = {
+    None: StalkerDocumentStatusError.NONE.name,
+    "NONE": StalkerDocumentStatusError.NONE.name,
+    "ERROR_DOWNLOAD": StalkerDocumentStatusError.ERROR_DOWNLOAD.name,
+    "LINK_SUMMARY_MISSING": StalkerDocumentStatusError.LINK_SUMMARY_MISSING.name,
+    "TITLE_MISSING": StalkerDocumentStatusError.TITLE_MISSING.name,
+    "TEXT_MISSING": StalkerDocumentStatusError.TEXT_MISSING.name,
+    "TEXT_TRANSLATION_ERROR": StalkerDocumentStatusError.TEXT_TRANSLATION_ERROR.name,
+    "TITLE_TRANSLATION_ERROR": StalkerDocumentStatusError.TITLE_TRANSLATION_ERROR.name,
+    "SUMMARY_TRANSLATION_ERROR": StalkerDocumentStatusError.SUMMARY_TRANSLATION_ERROR.name,
+    "NO_URL_ERROR": StalkerDocumentStatusError.NO_URL_ERROR.name,
+    "EMBEDDING_ERROR": StalkerDocumentStatusError.EMBEDDING_ERROR.name,
+    "MISSING_TRANSLATION": StalkerDocumentStatusError.MISSING_TRANSLATION.name,
+    "TRANSLATION_ERROR": StalkerDocumentStatusError.TRANSLATION_ERROR.name,
+    "REGEX_ERROR": StalkerDocumentStatusError.REGEX_ERROR.name,
+    "TEXT_TO_MD_ERROR": StalkerDocumentStatusError.TEXT_TO_MD_ERROR.name,
+    "NO_CAPTIONS_AVAILABLE": StalkerDocumentStatusError.NO_CAPTIONS_AVAILABLE.name,
+    "CAPTIONS_LANGUAGE_MISMATCH": StalkerDocumentStatusError.CAPTIONS_LANGUAGE_MISMATCH.name,
+    "CAPTIONS_FETCH_ERROR": StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name,
+    "TRANSCRIPTION_ERROR": StalkerDocumentStatusError.TRANSCRIPTION_ERROR.name,
+    "TRANSCRIPTION_INSUFFICIENT_FUNDS": StalkerDocumentStatusError.TRANSCRIPTION_INSUFFICIENT_FUNDS.name,
+}
+
+
 # ---------------------------------------------------------------------------
 # Lookup tables (B-94/B-95 — DDL, B-96 — ORM models)
 # ---------------------------------------------------------------------------
@@ -228,104 +285,26 @@ class WebDocument(Base):
     # --- Domain methods (migrated from stalker_web_document.py) ---
 
     def set_document_type(self, document_type: str) -> None:
-        if document_type == "movie":
-            self.document_type = StalkerDocumentType.movie.name
-        elif document_type == "youtube":
-            self.document_type = StalkerDocumentType.youtube.name
-        elif document_type == "link":
-            self.document_type = StalkerDocumentType.link.name
-        elif document_type in ["webpage", "website"]:
-            self.document_type = StalkerDocumentType.webpage.name
-        elif document_type in ["sms", "text_message"]:
-            self.document_type = StalkerDocumentType.text_message.name
-        elif document_type in ["text"]:
-            self.document_type = StalkerDocumentType.text.name
-        elif document_type in ["social_media_post", "social"]:
-            self.document_type = StalkerDocumentType.social_media_post.name
-        else:
+        mapped_type = DOCUMENT_TYPE_LOOKUP.get(document_type)
+        if mapped_type is None:
             raise ValueError(
                 f"document_type must be one of 'movie', 'webpage', 'text_message', 'text', 'link', 'social_media_post' not >{document_type}<"
             )
+        self.document_type = mapped_type
 
     def set_document_state(self, document_state: str) -> None:
-        if document_state in ["ERROR_DOWNLOAD", "ERROR"]:
-            self.document_state = StalkerDocumentStatus.ERROR.name
-        elif document_state == "URL_ADDED":
-            self.document_state = StalkerDocumentStatus.URL_ADDED.name
-        elif document_state == "NEED_TRANSCRIPTION":
-            self.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION.name
-        elif document_state == "TRANSCRIPTION_DONE":
-            self.document_state = StalkerDocumentStatus.TRANSCRIPTION_DONE.name
-        elif document_state == "TRANSCRIPTION_IN_PROGRESS":
-            self.document_state = StalkerDocumentStatus.TRANSCRIPTION_IN_PROGRESS.name
-        elif document_state == "NEED_MANUAL_REVIEW":
-            self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
-        elif document_state == "READY_FOR_TRANSLATION":
-            self.document_state = StalkerDocumentStatus.READY_FOR_TRANSLATION.name
-        elif document_state == "READY_FOR_EMBEDDING":
-            self.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING.name
-        elif document_state == "EMBEDDING_EXIST":
-            self.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
-        elif document_state == "DOCUMENT_INTO_DATABASE":
-            self.document_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name
-        elif document_state == "NEED_CLEAN_TEXT":
-            self.document_state = StalkerDocumentStatus.NEED_CLEAN_TEXT.name
-        elif document_state == "NEED_CLEAN_MD":
-            self.document_state = StalkerDocumentStatus.NEED_CLEAN_MD.name
-        elif document_state == "TEXT_TO_MD_DONE":
-            self.document_state = StalkerDocumentStatus.NEED_CLEAN_MD.name
-        elif document_state == "MD_SIMPLIFIED":
-            self.document_state = StalkerDocumentStatus.MD_SIMPLIFIED.name
-        elif document_state == "TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS":
-            self.document_state = StalkerDocumentStatus.TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS.name
-        elif document_state == "TEMPORARY_ERROR":
-            self.document_state = StalkerDocumentStatus.TEMPORARY_ERROR.name
-        else:
+        mapped_state = DOCUMENT_STATE_LOOKUP.get(document_state)
+        if mapped_state is None:
             raise ValueError("document_state must be one of the valid StalkerDocumentStatus values")
+        self.document_state = mapped_state
 
     def set_document_state_error(self, document_state_error: str | None) -> None:
-        if document_state_error is None or document_state_error == "NONE":
-            self.document_state_error = StalkerDocumentStatusError.NONE.name
-        elif document_state_error == "ERROR_DOWNLOAD":
-            self.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD.name
-        elif document_state_error == "LINK_SUMMARY_MISSING":
-            self.document_state_error = StalkerDocumentStatusError.LINK_SUMMARY_MISSING.name
-        elif document_state_error == "TITLE_MISSING":
-            self.document_state_error = StalkerDocumentStatusError.TITLE_MISSING.name
-        elif document_state_error == "TEXT_MISSING":
-            self.document_state_error = StalkerDocumentStatusError.TEXT_MISSING.name
-        elif document_state_error == "TEXT_TRANSLATION_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.TEXT_TRANSLATION_ERROR.name
-        elif document_state_error == "TITLE_TRANSLATION_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.TITLE_TRANSLATION_ERROR.name
-        elif document_state_error == "SUMMARY_TRANSLATION_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.SUMMARY_TRANSLATION_ERROR.name
-        elif document_state_error == "NO_URL_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.NO_URL_ERROR.name
-        elif document_state_error == "EMBEDDING_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.EMBEDDING_ERROR.name
-        elif document_state_error == "MISSING_TRANSLATION":
-            self.document_state_error = StalkerDocumentStatusError.MISSING_TRANSLATION.name
-        elif document_state_error == "TRANSLATION_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.TRANSLATION_ERROR.name
-        elif document_state_error == "REGEX_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.REGEX_ERROR.name
-        elif document_state_error == "TEXT_TO_MD_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.TEXT_TO_MD_ERROR.name
-        elif document_state_error == "NO_CAPTIONS_AVAILABLE":
-            self.document_state_error = StalkerDocumentStatusError.NO_CAPTIONS_AVAILABLE.name
-        elif document_state_error == "CAPTIONS_LANGUAGE_MISMATCH":
-            self.document_state_error = StalkerDocumentStatusError.CAPTIONS_LANGUAGE_MISMATCH.name
-        elif document_state_error == "CAPTIONS_FETCH_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
-        elif document_state_error == "TRANSCRIPTION_ERROR":
-            self.document_state_error = StalkerDocumentStatusError.TRANSCRIPTION_ERROR.name
-        elif document_state_error == "TRANSCRIPTION_INSUFFICIENT_FUNDS":
-            self.document_state_error = StalkerDocumentStatusError.TRANSCRIPTION_INSUFFICIENT_FUNDS.name
-        else:
+        mapped_state_error = DOCUMENT_STATE_ERROR_LOOKUP.get(document_state_error)
+        if mapped_state_error is None:
             raise ValueError(
                 f"document_state_error must be one of the valid StalkerDocumentStatusError values, not >{document_state_error}<"
             )
+        self.document_state_error = mapped_state_error
 
     def analyze(self) -> None:
         if self.document_state == StalkerDocumentStatus.EMBEDDING_EXIST.name:

@@ -22,7 +22,6 @@ backend/test_code/
 ├── serper_dev.py                     # Web search via Serper API
 ├── token.json                        # Google OAuth token (auto-generated)
 ├── vault_tests.py                    # HashiCorp Vault integration tests
-├── youtube_batch_analyze.py          # CLI over DocumentAnalysisService + file exports
 └── tmp/                              # Temporary data files (git-ignored)
     └── storytel_*.{html,json,md}     # Storytel audiobook metadata samples
 ```
@@ -39,8 +38,9 @@ backend/test_code/
 
 | Script | Purpose |
 |--------|---------|
-| `youtube_batch_analyze.py` | Thin CLI over `library/document_analysis_service.py` (shared with Flask `chunk_review_routes.py`): chunk splitting, speaker labeling, rewrite + summarize, topic grouping, synthesis, DB persistence. Adds dry-run cost preview, `--speaker1/--speaker2` override, and file exports (MD/JSON/debug/HTML with YouTube timestamp links) to `.claude/exports/` |
-| `_regen_html.py` | Rebuild the HTML review view from an existing `youtube_analysis_*.json` export (no LLM calls) |
+| `_regen_html.py` | Rebuild the HTML review view from an existing `youtube_analysis_*.json` export (no LLM calls). Uses `save_html` from `library/analysis_exports.py` |
+
+The batch analysis CLI itself (`youtube_batch_analyze.py`) was promoted to [`imports/`](../imports/CLAUDE.md) — it is a production tool, not an experiment.
 
 ### LLM Provider Testing
 
