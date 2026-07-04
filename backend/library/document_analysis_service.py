@@ -29,7 +29,7 @@ ANALYSIS_MODELS = [DEFAULT_ANALYSIS_MODEL, f"arklabs/{DEFAULT_ANALYSIS_MODEL}"]
 ANALYSIS_MODES = ("transcript", "article")
 SYNTHESIS_MAX_TOKENS = 2_000
 SYNTHESIS_MAX_INPUT_CHARS = 20_000
-_SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT): ?(.+)$', re.MULTILINE)
+_SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT|SZUM): ?(.+)$', re.MULTILINE)
 
 
 # ---------------------------------------------------------------------------
@@ -130,10 +130,11 @@ def _merge_topics(sections: list[dict], model: str, mode: str = "transcript") ->
     prompt = (
         f"Poniżej lista {len(sections)} fragmentów {source_desc} z ich tematami.\n"
         "Pogrupuj SĄSIADUJĄCE fragmenty w logiczne sekcje tematyczne (zwykle 5-10 sekcji).\n"
-        "Fragmenty reklamowe (REKLAMA) możesz pominąć lub zgrupować razem pod jedną sekcją REKLAMA.\n\n"
+        "Fragmenty reklamowe (REKLAMA) i szum techniczny (SZUM) możesz pominąć lub zgrupować\n"
+        "razem pod jedną sekcją odpowiednio REKLAMA lub SZUM.\n\n"
         "Zwróć TYLKO tablicę JSON bez żadnego dodatkowego tekstu, w formacie:\n"
         '[{"title": "Tytuł sekcji tematycznej", "type": "TEMAT", "chunks": [1, 2]}]\n'
-        'Gdzie "chunks" to numery fragmentów (numeracja od 1), "type" to "TEMAT" lub "REKLAMA".\n\n'
+        'Gdzie "chunks" to numery fragmentów (numeracja od 1), "type" to "TEMAT", "REKLAMA" lub "SZUM".\n\n'
         f"Fragmenty:\n{chunk_list}"
     )
     try:

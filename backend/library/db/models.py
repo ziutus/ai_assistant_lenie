@@ -592,7 +592,7 @@ class DocumentChunk(Base):
         ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
     )
     position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | REKLAMA
+    type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | REKLAMA | SZUM
     topic: Mapped[str | None] = mapped_column(String(500))
     original_text: Mapped[str] = mapped_column(Text, nullable=False)
     corrected_text: Mapped[str | None] = mapped_column(Text)
@@ -635,7 +635,7 @@ class DocumentTopicSection(Base):
         ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
     )
     position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | REKLAMA
+    type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | REKLAMA | SZUM
     title: Mapped[str | None] = mapped_column(String(500))
     summary: Mapped[str | None] = mapped_column(Text)
     chunk_positions: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False)

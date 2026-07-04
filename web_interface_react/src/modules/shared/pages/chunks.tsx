@@ -44,11 +44,13 @@ const RUN_STATUS_LABELS: Record<string, string> = {
   reviewed: "zamknięta",
 };
 
+type ChunkType = "TEMAT" | "REKLAMA" | "SZUM";
+
 interface SplitState {
   segIdx: number;
   ts: string;
-  firstType: "TEMAT" | "REKLAMA";
-  secondType: "TEMAT" | "REKLAMA";
+  firstType: ChunkType;
+  secondType: ChunkType;
 }
 
 interface SegGroup {
@@ -68,6 +70,15 @@ const MODELS = [
 ];
 
 const STATUS_CYCLE = ["pending", "approved", "needs_reanalysis"] as const;
+const TYPE_CYCLE: ChunkType[] = ["TEMAT", "REKLAMA", "SZUM"];
+
+function typeColor(type: string | null): React.CSSProperties {
+  switch (type) {
+    case "REKLAMA": return { background: "#fee2e2", color: "#991b1b" };
+    case "SZUM":    return { background: "#e5e7eb", color: "#4b5563" };
+    default:        return { background: "#dbeafe", color: "#1d4ed8" };
+  }
+}
 
 function secs2ts(s: number): string {
   s = Math.floor(s);
@@ -343,7 +354,8 @@ const Chunks = () => {
   };
 
   const toggleType = (chunk: Chunk) => {
-    patchChunk(chunk.id, { type: chunk.type === "TEMAT" ? "REKLAMA" : "TEMAT" });
+    const idx = TYPE_CYCLE.indexOf(chunk.type as ChunkType);
+    patchChunk(chunk.id, { type: TYPE_CYCLE[(idx + 1) % TYPE_CYCLE.length] });
   };
 
   // ── Re-analysis ──
@@ -375,7 +387,7 @@ const Chunks = () => {
   };
 
   const approveAll = async () => {
-    const toApprove = chunks.filter(c => c.type !== "REKLAMA" && c.status !== "approved");
+    const toApprove = chunks.filter(c => c.type === "TEMAT" && c.status !== "approved");
     if (!toApprove.length) return;
     setApprovingAll(true);
     try {
@@ -432,15 +444,15 @@ const Chunks = () => {
 
   // ── Progress ──
 
-  const tematChunks = chunks.filter(c => c.type !== "REKLAMA");
+  const tematChunks = chunks.filter(c => c.type === "TEMAT");
   const approvedCount = tematChunks.filter(c => c.status === "approved").length;
   const unapprovedTematCount = tematChunks.filter(c => c.status !== "approved").length;
   const pct = tematChunks.length ? Math.round(approvedCount / tematChunks.length * 100) : 0;
-  const reklamaCount = chunks.filter(c => c.type === "REKLAMA").length;
-  const visibleReklamaCount = chunks.filter(c => c.type === "REKLAMA" && !hiddenChunks.has(c.id)).length;
+  const reklamaCount = chunks.filter(c => c.type !== "TEMAT").length;
+  const visibleReklamaCount = chunks.filter(c => c.type !== "TEMAT" && !hiddenChunks.has(c.id)).length;
   const needsReanalysisCount = chunks.filter(c => c.status === "needs_reanalysis").length;
   const visibleChunks = chunks.filter(c =>
-    !hiddenChunks.has(c.id) && (!hideAds || c.type !== "REKLAMA")
+    !hiddenChunks.has(c.id) && (!hideAds || c.type === "TEMAT")
   );
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -496,7 +508,7 @@ const Chunks = () => {
         <div style={{ marginBottom: 12, padding: "8px 14px", background: "#0f172a", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ color: "#94a3b8", fontSize: "0.82em" }}>
             TEMAT: {approvedCount}/{tematChunks.length} zatwierdzonych ({pct}%)
-            {reklamaCount > 0 && ` • ${reklamaCount} reklam${hideAds ? " (ukryte)" : ""}`}
+            {reklamaCount > 0 && ` • ${reklamaCount} reklam/szum${hideAds ? " (ukryte)" : ""}`}
           </span>
           <div style={{ flex: 1, minWidth: 80, background: "#334155", borderRadius: 4, height: 8 }}>
             <div style={{ width: `${pct}%`, height: 8, background: "#22c55e", borderRadius: 4, transition: "width .3s" }} />
@@ -516,7 +528,7 @@ const Chunks = () => {
           {reklamaCount > 0 && (visibleReklamaCount > 0 || hideAds) && (
             <button className="button" onClick={() => setHideAds(h => !h)}
               style={{ fontSize: "0.8em", padding: "3px 10px", background: hideAds ? "#475569" : "#b91c1c", color: "#fff", border: "none" }}>
-              {hideAds ? `Pokaż reklamy (${reklamaCount})` : `Ukryj reklamy (${visibleReklamaCount})`}
+              {hideAds ? `Pokaż reklamy i szum (${reklamaCount})` : `Ukryj reklamy i szum (${visibleReklamaCount})`}
             </button>
           )}
           {hiddenChunks.size > 0 && (
@@ -559,7 +571,6 @@ const Chunks = () => {
       {visibleChunks.map((chunk, i) => {
         const hasCorrected = !!chunk.corrected_text;
         const isCorrectedView = showCorrected[chunk.id] ?? hasCorrected;
-        const isReklama = chunk.type === "REKLAMA";
         const isReanalyzing = reanalyzing[chunk.id] ?? false;
         const splitSt = splitStates[chunk.id];
         const chunkSegs = segments.slice(chunk.seg_start ?? 0, chunk.seg_end ?? segments.length);
@@ -577,8 +588,7 @@ const Chunks = () => {
                 title="Kliknij aby zmienić typ"
                 style={{
                   cursor: "pointer", padding: "1px 8px", borderRadius: 4, fontWeight: 600,
-                  background: isReklama ? "#fee2e2" : "#dbeafe",
-                  color: isReklama ? "#991b1b" : "#1d4ed8",
+                  ...typeColor(chunk.type),
                 }}
               >
                 {chunk.type ?? "?"}
@@ -665,18 +675,20 @@ const Chunks = () => {
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
                   <label>Część 1 (przed):&nbsp;
                     <select value={splitSt.firstType}
-                      onChange={e => setSplitStates(prev => ({ ...prev, [chunk.id]: { ...prev[chunk.id], firstType: e.target.value as "TEMAT" | "REKLAMA" } }))}
+                      onChange={e => setSplitStates(prev => ({ ...prev, [chunk.id]: { ...prev[chunk.id], firstType: e.target.value as ChunkType } }))}
                       style={{ padding: "2px 6px", borderRadius: 3 }}>
                       <option value="REKLAMA">REKLAMA</option>
                       <option value="TEMAT">TEMAT</option>
+                      <option value="SZUM">SZUM</option>
                     </select>
                   </label>
                   <label>Część 2 (po):&nbsp;
                     <select value={splitSt.secondType}
-                      onChange={e => setSplitStates(prev => ({ ...prev, [chunk.id]: { ...prev[chunk.id], secondType: e.target.value as "TEMAT" | "REKLAMA" } }))}
+                      onChange={e => setSplitStates(prev => ({ ...prev, [chunk.id]: { ...prev[chunk.id], secondType: e.target.value as ChunkType } }))}
                       style={{ padding: "2px 6px", borderRadius: 3 }}>
                       <option value="TEMAT">TEMAT</option>
                       <option value="REKLAMA">REKLAMA</option>
+                      <option value="SZUM">SZUM</option>
                     </select>
                   </label>
                   <button onClick={() => confirmSplit(chunk.id)} disabled={confirmingSplit[chunk.id]}

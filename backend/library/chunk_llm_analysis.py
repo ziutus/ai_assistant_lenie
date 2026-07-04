@@ -15,7 +15,7 @@ REWRITE_MAX_TOKENS = 2_500
 REWRITE_MIN_RATIO = 0.80
 SUMMARY_MAX_TOKENS = 400
 
-SECTION_HEADER_RE = re.compile(r"^### (REKLAMA|TEMAT): ?(.+)$", re.MULTILINE)
+SECTION_HEADER_RE = re.compile(r"^### (REKLAMA|TEMAT|SZUM): ?(.+)$", re.MULTILINE)
 
 _ARKLABS_PREFIX = "arklabs/"
 
@@ -251,15 +251,18 @@ def analyze_article_chunk(original_text: str, model: str,
 
 Sklasyfikuj poniższy fragment i jeśli to TEMAT — napisz streszczenie.
 
-W PIERWSZEJ LINII wpisz etykietę (tylko jedną z dwóch opcji):
-   ### REKLAMA: <opis>       (treść reklamowa, sponsorska lub nawigacyjny szum strony)
+W PIERWSZEJ LINII wpisz etykietę (tylko jedną z trzech opcji):
    ### TEMAT: <temat>        (merytoryczna treść dokumentu)
+   ### REKLAMA: <opis>       (treść reklamowa lub sponsorska)
+   ### SZUM: <opis>          (szum techniczny strony: nawigacja portalu, menu, stopka,
+                              cookie/zgody, listy linków "przeczytaj też", przyciski udostępniania)
 W miejsce <temat>/<opis> wpisz KONKRETNY temat tego fragmentu w 3-5 słowach —
 nie przepisuj dosłownie tekstu "<temat>" ani nazwy etykiety.
+Jeśli fragment miesza szum z treścią merytoryczną — wybierz TEMAT.
 
 Jeśli TEMAT: w kolejnych liniach napisz streszczenie w 2-3 zdaniach po polsku,
 skupiając się na głównych tezach i wnioskach.
-Jeśli REKLAMA: nie dodawaj nic więcej.
+Jeśli REKLAMA lub SZUM: nie dodawaj nic więcej.
 
 --- TEKST ---
 {original_text}
