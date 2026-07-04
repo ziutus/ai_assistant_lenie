@@ -551,6 +551,16 @@ class DocumentAnalysisRun(Base):
     chunk_size: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("5000"))
     synthesis: Mapped[str | None] = mapped_column(Text)
     speakers: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'"))
+    # mode: transcript (YouTube STT — rewrite + speakers) | article (clean markdown — no rewrite)
+    mode: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=sa_text("'transcript'"),
+    )
+    # status: created | in_review | reviewed
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=sa_text("'created'"),
+    )
+    # scope: human-readable analysed range (e.g. chapter title); NULL = whole document
+    scope: Mapped[str | None] = mapped_column(String(200))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )

@@ -131,6 +131,61 @@ def split_text_into_chunks(text: str, max_chars: int) -> list[str]:
     return chunks
 
 
+_MD_HEADER_RE = re.compile(r'^#{1,6} ', re.MULTILINE)
+
+
+def split_markdown_into_chunks(text: str, max_chars: int) -> list[str]:
+    """Split markdown text into chunks, preferring section boundaries (headers).
+
+    Strategy:
+      1. Cut the text into sections at markdown headers (#..######) — a header
+         always starts a new section and stays with the content that follows it.
+      2. Pack consecutive sections into chunks of up to max_chars.
+      3. A single section larger than max_chars is split at paragraph boundaries
+         (falling back to line/sentence splits via split_text_into_chunks).
+      4. Text without any headers degrades to plain paragraph splitting.
+    """
+    text = text.strip()
+    if not text:
+        return []
+
+    boundaries = [m.start() for m in _MD_HEADER_RE.finditer(text)]
+    if not boundaries:
+        return split_text_into_chunks(text, max_chars)
+
+    # Preamble before the first header is its own section
+    starts = boundaries if boundaries[0] == 0 else [0] + boundaries
+    sections = [
+        text[start:end].strip()
+        for start, end in zip(starts, starts[1:] + [len(text)])
+    ]
+    sections = [s for s in sections if s]
+
+    chunks: list[str] = []
+    current: list[str] = []
+    current_size = 0
+
+    for section in sections:
+        if len(section) > max_chars:
+            if current:
+                chunks.append('\n\n'.join(current))
+                current = []
+                current_size = 0
+            chunks.extend(split_text_into_chunks(section, max_chars))
+        elif current_size + len(section) + 2 > max_chars and current:
+            chunks.append('\n\n'.join(current))
+            current = [section]
+            current_size = len(section)
+        else:
+            current.append(section)
+            current_size += len(section) + 2
+
+    if current:
+        chunks.append('\n\n'.join(current))
+
+    return chunks
+
+
 def split_text_for_embedding(text, paragraph_titles=[], max_words_in_line=300, max_characters_in_line=1000):
     sentences2 = []
     paragraphs = text.split("\n\n")

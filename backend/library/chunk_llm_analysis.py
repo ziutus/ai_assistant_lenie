@@ -239,6 +239,44 @@ Jeśli REKLAMA: nie dodawaj nic więcej.
     }
 
 
+def analyze_article_chunk(original_text: str, model: str,
+                          position: int = 1, total: int = 1) -> dict:
+    """Analyze a chunk of a clean article/document — no verbatim rewrite.
+
+    Article text is already clean (no STT artifacts), so a single LLM call
+    classifies the chunk and summarizes it. Returns the same dict shape as
+    analyze_chunk(), with corrected_text=None and rewrite_ratio=None.
+    """
+    prompt = f"""Fragment {position}/{total} artykułu lub dokumentu.
+
+Sklasyfikuj poniższy fragment i jeśli to TEMAT — napisz streszczenie.
+
+W PIERWSZEJ LINII wpisz etykietę (tylko jedną z dwóch opcji):
+   ### REKLAMA: krótki_opis          (treść reklamowa, sponsorska lub nawigacyjny szum strony)
+   ### TEMAT: opis_3_4_słowa         (merytoryczna treść dokumentu)
+
+Jeśli TEMAT: w kolejnych liniach napisz streszczenie w 2-3 zdaniach po polsku,
+skupiając się na głównych tezach i wnioskach.
+Jeśli REKLAMA: nie dodawaj nic więcej.
+
+--- TEKST ---
+{original_text}
+--- KONIEC ---"""
+
+    logger.info("article analysis chunk %d/%d, len=%d", position, total, len(original_text))
+    raw, tokens = call_model(prompt, model, SUMMARY_MAX_TOKENS)
+    logger.info("article analysis done: %d tokens", tokens)
+
+    section_type, topic, summary_text = parse_rewritten_chunk(raw)
+    return {
+        "type": section_type,
+        "topic": topic,
+        "corrected_text": None,
+        "summary": summary_text.strip() if section_type == "TEMAT" and summary_text.strip() else None,
+        "rewrite_ratio": None,
+    }
+
+
 def analyze_chunk(original_text: str, model: str,
                   position: int = 1, total: int = 1,
                   speakers: list[dict] | None = None,

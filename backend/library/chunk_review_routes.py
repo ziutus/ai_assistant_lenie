@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, abort
-from sqlalchemy import select, update as sa_update
+from sqlalchemy import func, select, update as sa_update
 
 from library.db.engine import get_scoped_session
 from library.db.models import (
@@ -33,8 +33,9 @@ bp = Blueprint("chunk_review", __name__)
 # Keyed by job_id (short UUID). Lives as long as the server process.
 _analysis_jobs: dict[str, dict] = {}
 
-ALLOWED_STATUSES = {"pending", "approved", "needs_reanalysis", "split_requested", "split"}
+ALLOWED_STATUSES = {"pending", "approved", "needs_reanalysis", "split_requested", "split", "skipped"}
 ALLOWED_TYPES = {"TEMAT", "REKLAMA"}
+ALLOWED_RUN_STATUSES = {"created", "in_review", "reviewed"}
 
 
 def _parse_segments(text_raw: str | None) -> list[dict]:
@@ -83,19 +84,26 @@ def analyze_document_chunks(doc_id: int):
         model        — LLM model name (default: Bielik-11B-v3.0-Instruct)
         chunk_size   — max chars per chunk (default: 5000)
         no_synthesis — skip final synthesis step (default: false)
+        mode         — "transcript" (default) or "article"
 
     Returns immediately with {job_id}. Poll GET /analysis_job/<job_id> for status.
     """
+    from library.document_analysis_service import ANALYSIS_MODES
+
     data = request.get_json(silent=True) or {}
     model = data.get("model", "Bielik-11B-v3.0-Instruct")
     chunk_size = int(data.get("chunk_size", 5000))
     no_synthesis = bool(data.get("no_synthesis", False))
+    mode = data.get("mode", "transcript")
+    if mode not in ANALYSIS_MODES:
+        return jsonify({"status": "error", "message": f"Invalid mode: {mode}"}), 400
 
     job_id = uuid.uuid4().hex[:8]
     _analysis_jobs[job_id] = {
         "status": "running",
         "doc_id": doc_id,
         "model": model,
+        "mode": mode,
         "run_id": None,
         "chunk_count": None,
         "ad_count": None,
@@ -120,6 +128,7 @@ def analyze_document_chunks(doc_id: int):
                 chunk_size=chunk_size,
                 no_synthesis=no_synthesis,
                 progress_fn=_progress,
+                mode=mode,
             )
             ad_count = sum(1 for c in run.chunks if c.type == "REKLAMA")
             _analysis_jobs[job_id].update({
@@ -173,6 +182,9 @@ def list_runs():
                 "id": r.id,
                 "model": r.model,
                 "chunk_size": r.chunk_size,
+                "mode": r.mode,
+                "status": r.status,
+                "scope": r.scope,
                 "created_at": r.created_at.isoformat(),
                 "chunk_count": len(r.chunks),
             }
@@ -207,6 +219,9 @@ def get_run_chunks(run_id: int):
             "id": run.id,
             "model": run.model,
             "chunk_size": run.chunk_size,
+            "mode": run.mode,
+            "status": run.status,
+            "scope": run.scope,
             "synthesis": run.synthesis,
             "speakers": run.speakers or [],
             "created_at": run.created_at.isoformat(),
@@ -215,6 +230,7 @@ def get_run_chunks(run_id: int):
             "id": doc.id if doc else None,
             "title": doc.title if doc else "",
             "original_id": doc.original_id if doc else "",
+            "document_type": doc.document_type if doc else "",
         },
         "segments": segments,
         "chunks": [_chunk_to_dict(c) for c in run.chunks],
@@ -229,6 +245,39 @@ def get_run_chunks(run_id: int):
             }
             for ts in topic_sections
         ],
+    })
+
+
+# ---------------------------------------------------------------------------
+# API: PATCH /analysis_run/<run_id>
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>", methods=["PATCH", "OPTIONS"])
+def update_run(run_id: int):
+    """Update run workflow fields. Body (JSON): {"status": "created"|"in_review"|"reviewed"}."""
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+
+    data = request.get_json() or {}
+    if "status" in data:
+        if data["status"] not in ALLOWED_RUN_STATUSES:
+            return jsonify({"status": "error", "message": f"Invalid run status: {data['status']}"}), 400
+        run.status = data["status"]
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception("Failed to update run %d", run_id)
+            return jsonify({"status": "error", "message": "DB error"}), 500
+
+    return jsonify({
+        "status": "success",
+        "run": {"id": run.id, "mode": run.mode, "status": run.status, "scope": run.scope},
     })
 
 
@@ -498,7 +547,19 @@ def reanalyze_chunk(chunk_id: int):
     speakers = run.speakers or []
 
     try:
-        if mode == "semantic" and chunk.corrected_text and chunk.corrected_text.strip():
+        if run.mode == "article":
+            # Article runs have no rewrite step — always re-run classify+summarize
+            text_to_analyze = chunk.original_text or ""
+            if not text_to_analyze.strip():
+                return jsonify({"status": "error", "message": "Chunk has no original_text to analyze"}), 400
+            total = session.scalar(
+                select(func.count()).select_from(DocumentChunk)
+                .where(DocumentChunk.run_id == chunk.run_id)
+            ) or 1
+            from library.chunk_llm_analysis import analyze_article_chunk
+            result = analyze_article_chunk(text_to_analyze, model,
+                                           position=chunk.position, total=total)
+        elif mode == "semantic" and chunk.corrected_text and chunk.corrected_text.strip():
             from library.chunk_llm_analysis import analyze_chunk_semantic
             result = analyze_chunk_semantic(chunk.corrected_text, model, speakers=speakers)
         else:
