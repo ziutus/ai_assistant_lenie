@@ -24,37 +24,19 @@ def ai_model_need_translation_to_english(model: str) -> bool:
 def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: int = 4096, top_p: float = 0.9) \
         -> AiResponse:
 
-    if model in ["gpt-3.5-turbo", "gpt-3.5-turbo-16k"]:
+    openai_models = ["gpt-3.5-turbo", "gpt-3.5-turbo-16k", "gpt-4", "gpt-4o", "gpt-4o-2024-05-13", "gpt-4o-mini"]
+
+    if model in openai_models:
         import library.api.openai.openai_my
-        if len(query) < 8000:
-            model = "gpt-3.5-turbo"
-        elif len(query) < 16000:
-            model = "gpt-3.5-turbo-16k"
-        else:
-            raise Exception("To long text for gpt-3.5 models")
-        ai_response = AiResponse(query=query, model=model)
-        ai_response.model = model
 
-        response = library.api.openai.openai_my.OpenAIClient.get_completion(query, model)
+        if model in ["gpt-3.5-turbo", "gpt-3.5-turbo-16k"]:
+            if len(query) < 8000:
+                model = "gpt-3.5-turbo"
+            elif len(query) < 16000:
+                model = "gpt-3.5-turbo-16k"
+            else:
+                raise Exception("Too long text for gpt-3.5 models")
 
-        if isinstance(response, bytes):
-            response = response.decode('utf-8')
-
-        ai_response.response_text = response
-        return ai_response
-    if model in ["gpt-4", "gpt-4o", "gpt-4o-2024-05-13"]:
-        import library.api.openai.openai_my
-        response = library.api.openai.openai_my.OpenAIClient.get_completion(query, model)
-        ai_response = AiResponse(query=query, model=model)
-
-        if isinstance(response, bytes):
-            response = response.decode('utf-8')
-
-        ai_response.response_text = response
-        return ai_response
-
-    elif model in ["gpt-4o-mini"]:
-        import library.api.openai.openai_my
         response = library.api.openai.openai_my.OpenAIClient.get_completion(query, model)
         ai_response = AiResponse(query=query, model=model)
 
