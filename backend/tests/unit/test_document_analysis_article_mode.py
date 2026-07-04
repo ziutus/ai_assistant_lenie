@@ -79,6 +79,35 @@ def article_env(monkeypatch, session):
     return calls
 
 
+class TestSzumType:
+    def test_parse_szum_header(self):
+        from library.chunk_llm_analysis import parse_rewritten_chunk
+        t, topic, rest = parse_rewritten_chunk("### SZUM: nawigacja portalu WP\n")
+        assert t == "SZUM"
+        assert topic == "nawigacja portalu WP"
+        assert rest == ""
+
+    def test_article_chunk_szum_has_no_summary(self, monkeypatch):
+        monkeypatch.setattr(
+            llm, "call_model",
+            lambda prompt, model, max_tokens: ("### SZUM: menu i stopka strony\ncokolwiek", 10),
+        )
+        result = llm.analyze_article_chunk("Wróć na POLSKA ŚWIAT...", "m")
+        assert result["type"] == "SZUM"
+        assert result["topic"] == "menu i stopka strony"
+        assert result["summary"] is None
+        assert result["corrected_text"] is None
+
+    def test_article_chunk_temat_strips_streszczenie_prefix(self, monkeypatch):
+        monkeypatch.setattr(
+            llm, "call_model",
+            lambda prompt, model, max_tokens: ("### TEMAT: konflikt USA-Iran\nStreszczenie: Analiza sytuacji.", 10),
+        )
+        result = llm.analyze_article_chunk("Treść merytoryczna.", "m")
+        assert result["type"] == "TEMAT"
+        assert result["summary"] == "Analiza sytuacji."
+
+
 class TestArticleMode:
     def test_invalid_mode_raises(self, session):
         service = DocumentAnalysisService(session)

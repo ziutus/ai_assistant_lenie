@@ -34,7 +34,7 @@ bp = Blueprint("chunk_review", __name__)
 _analysis_jobs: dict[str, dict] = {}
 
 ALLOWED_STATUSES = {"pending", "approved", "needs_reanalysis", "split_requested", "split", "skipped"}
-ALLOWED_TYPES = {"TEMAT", "REKLAMA"}
+ALLOWED_TYPES = {"TEMAT", "REKLAMA", "SZUM"}
 ALLOWED_RUN_STATUSES = {"created", "in_review", "reviewed"}
 
 
@@ -404,8 +404,8 @@ def execute_split(chunk_id: int):
 
     Body (JSON):
         split_at_seg      — absolute segment index (required)
-        split_first_type  — type for part before split: TEMAT | REKLAMA
-        split_second_type — type for part after split:  TEMAT | REKLAMA
+        split_first_type  — type for part before split: TEMAT | REKLAMA | SZUM
+        split_second_type — type for part after split:  TEMAT | REKLAMA | SZUM
 
     Effect:
         - Deletes the original chunk
@@ -477,7 +477,7 @@ def execute_split(chunk_id: int):
 
         # Chunk A — content before the split point
         text_a = _text_from_segs(seg_start, split_at)
-        status_a = "approved" if first_type == "REKLAMA" else "pending"
+        status_a = "approved" if first_type in ("REKLAMA", "SZUM") else "pending"
         chunk_a = DocumentChunk(
             run_id=run_id, document_id=doc_id, position=orig_pos,
             type=first_type, topic=None,
@@ -624,6 +624,7 @@ body{font-family:Arial,sans-serif;background:#f5f5f5;color:#222;font-size:14px}
 .badge:hover{opacity:.8}
 .badge.TEMAT{background:#dbeafe;color:#1d4ed8}
 .badge.REKLAMA{background:#fef3c7;color:#92400e}
+.badge.SZUM{background:#e5e7eb;color:#4b5563}
 .badge.pending{background:#e2e8f0;color:#475569}
 .badge.approved{background:#dcfce7;color:#15803d}
 .badge.needs_reanalysis{background:#fee2e2;color:#b91c1c}
@@ -896,12 +897,14 @@ function renderSplitPanel(chunkId) {
         <select id="split-first-type-${chunkId}">
           <option value="REKLAMA" ${st.firstType==="REKLAMA"?"selected":""}>REKLAMA</option>
           <option value="TEMAT" ${st.firstType==="TEMAT"?"selected":""}>TEMAT</option>
+          <option value="SZUM" ${st.firstType==="SZUM"?"selected":""}>SZUM</option>
         </select>
       </label>
       <label>Część 2 (po):
         <select id="split-second-type-${chunkId}">
           <option value="TEMAT" ${st.secondType==="TEMAT"?"selected":""}>TEMAT</option>
           <option value="REKLAMA" ${st.secondType==="REKLAMA"?"selected":""}>REKLAMA</option>
+          <option value="SZUM" ${st.secondType==="SZUM"?"selected":""}>SZUM</option>
         </select>
       </label>
       <button class="btn-confirm" onclick="confirmSplit(${chunkId})">Wykonaj podział</button>
@@ -929,8 +932,8 @@ function rerenderChunkTranscript(chunkId) {
 
 function updateProgress() {
   if (!_data) return;
-  const temat = _data.chunks.filter(c => c.type !== "REKLAMA");
-  const reklama = _data.chunks.filter(c => c.type === "REKLAMA");
+  const temat = _data.chunks.filter(c => c.type === "TEMAT");
+  const reklama = _data.chunks.filter(c => c.type !== "TEMAT");
   const approved = temat.filter(c => c.status === "approved").length;
   const pct = temat.length ? Math.round(approved / temat.length * 100) : 0;
   const adsPart = reklama.length
@@ -955,7 +958,9 @@ function cycleStatus(chunkId) {
 function toggleType(chunkId) {
   const chunk = _data.chunks.find(c => c.id === chunkId);
   if (!chunk) return;
-  saveChunk(chunkId, {type: chunk.type === "TEMAT" ? "REKLAMA" : "TEMAT"});
+  const order = ["TEMAT", "REKLAMA", "SZUM"];
+  const next = order[(order.indexOf(chunk.type) + 1) % order.length];
+  saveChunk(chunkId, {type: next});
 }
 
 function saveTopic(chunkId) {
@@ -1123,7 +1128,7 @@ async function extractSpeakers() {
 function updateAdsButton() {
   const btn = document.getElementById("btn-ads");
   if (!btn || !_data) return;
-  const count = _data.chunks.filter(c => c.type === "REKLAMA").length;
+  const count = _data.chunks.filter(c => c.type !== "TEMAT").length;
   if (_hideAds) {
     btn.textContent = `Pokaż reklamy (${count})`;
     btn.className = "show-mode";
@@ -1151,7 +1156,7 @@ function applyChunkFilter() {
   document.querySelectorAll(".chunk").forEach(el => {
     const chunkId = parseInt(el.id.replace("chunk-", ""));
     const chunk = _data.chunks.find(c => c.id === chunkId);
-    if (chunk) el.style.display = (_hideAds && chunk.type === "REKLAMA") ? "none" : "";
+    if (chunk) el.style.display = (_hideAds && chunk.type !== "TEMAT") ? "none" : "";
   });
 }
 

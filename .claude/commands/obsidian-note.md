@@ -48,10 +48,10 @@ else:
     run = runs[0]
     chunks = session.query(DocumentChunk).filter_by(run_id=run.id).order_by(DocumentChunk.position).all()
     temat = [c for c in chunks if c.type == 'TEMAT']
-    reklama = [c for c in chunks if c.type == 'REKLAMA']
+    reklama = [c for c in chunks if c.type != 'TEMAT']  # REKLAMA + SZUM
     approved = [c for c in temat if c.status == 'approved']
     print(f'RUN_ID={run.id}|MODEL={run.model}|CREATED={run.created_at.strftime(chr(37)+\"Y-\"+chr(37)+\"m-\"+chr(37)+\"d\")}')
-    print(f'TEMAT={len(temat)}|REKLAMA={len(reklama)}|APPROVED={len(approved)}')
+    print(f'TEMAT={len(temat)}|REKLAMA_SZUM={len(reklama)}|APPROVED={len(approved)}')
     print('---CHUNKS---')
     for c in temat:
         summary = (c.summary or '(brak)').replace(chr(10), ' ')[:250]
@@ -99,7 +99,7 @@ The `--dump` JSON adds one extra field to `--meta`: `text` (full article content
 **Nieopracowane** (empty `obsidian_note_paths` AND status != `skipped`) — these need work:
 - position number, status badge (approved/pending/needs_reanalysis), topic, summary
 
-Count of REKLAMA chunks (filtered out automatically).
+Count of REKLAMA/SZUM chunks (filtered out automatically — SZUM is extraction junk like portal navigation).
 Warning if any TEMAT chunks have status `needs_reanalysis` or `pending` (analysis incomplete).
 
 **Default proposal:** suggest working on unprocessed chunks only. If the user says "wszystkie" or "lista", show all.
