@@ -12,7 +12,9 @@ export function loadConnectionConfig(): {
   apiUrl: string;
   apiKey: string | undefined;
 } {
-  const apiType = (localStorage.getItem(KEYS.apiType) as ApiType) || "AWS Serverless";
+  // "Docker" is the only backend mode since the AWS API decommission —
+  // ignore any stale "AWS Serverless" value left in localStorage
+  const apiType: ApiType = "Docker";
   const storedKey = localStorage.getItem(KEYS.apiKey);
   return {
     apiType,
