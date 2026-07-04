@@ -2,7 +2,7 @@
 
 React 18 single-page application for managing documents and running AI operations (text correction, embedding, similarity search). Built with **Vite** and **TypeScript**.
 
-**App version**: 0.3.13.0 | **Package version**: 0.3.13.0
+**App version**: 0.3.14.0 | **Package version**: 0.3.14.0
 
 ## Directory Structure
 
@@ -92,7 +92,7 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 
 ### Global State (`authorizationContext.tsx`)
 
-- **API config** (persisted to localStorage): `apiUrl`, `apiKey`, `apiType` (AWS Serverless / Docker)
+- **API config** (persisted to localStorage): `apiUrl`, `apiKey`, `apiType` (always "Docker" since 2026-07-04)
 - *(Infrastructure status state removed 2026-07-02 — the RDS/OpenVPN/SQS widgets went away along with the AWS resources they monitored)*
 - **Document filters**: `selectedDocumentType`, `selectedDocumentState`, `searchInDocument`, `searchType`
 
@@ -100,7 +100,7 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 
 | Key | Value |
 |-----|-------|
-| `lenie_apiType` | "AWS Serverless" or "Docker" |
+| `lenie_apiType` | "Docker" (stale "AWS Serverless" values are ignored on load) |
 | `lenie_apiUrl` | API URL (single URL for both app and infra endpoints) |
 | `lenie_apiKey` | API authentication key |
 
@@ -118,7 +118,7 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 - **HTTP client**: axios
 - **Auth header**: `x-api-key: {apiKey}` on all requests
 - **Content-Type**: `application/x-www-form-urlencoded`
-- **API type**: Docker (Flask backend, localhost:5000 or NAS) — the only selectable option. The "AWS Serverless" option was removed from the connect screen 2026-07-02: its document-serving Lambdas (`app-server-db`/`app-server-internet`) were decommissioned, leaving only `/url_add` in the AWS API (used by the Chrome extension, not this frontend). The `ApiType` union in `@lenie/shared` still includes "AWS Serverless" because `web_interface_app2` references it. Restoration: [docs/aws-serverless-restoration.md](../docs/aws-serverless-restoration.md).
+- **API type**: Docker (Flask backend, localhost:5000 or NAS) — the only mode. The "AWS Serverless" option was removed from the connect screen 2026-07-02 and purged entirely 2026-07-04 (`ApiType` union, `DEFAULT_API_URLS`, storage fallback, `authorizationContext` default, `useSearch` AWS branch, app2 default URL): its document-serving Lambdas (`app-server-db`/`app-server-internet`) were decommissioned, leaving only `/url_add` in the AWS API (used by the Chrome extension, not this frontend). Restoration: [docs/aws-serverless-restoration.md](../docs/aws-serverless-restoration.md).
 
 ### Default URLs
 
