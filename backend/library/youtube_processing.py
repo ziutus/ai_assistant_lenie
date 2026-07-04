@@ -199,6 +199,12 @@ def process_youtube_url(
             transcript_text = json.dumps(srt.to_raw_data())
             logger.info(f"Successfully retrieved transcript in language: {yt_language}")
 
+            # Captions fetch succeeded — clear any stale error from a previous failed
+            # attempt (e.g. CAPTIONS_FETCH_ERROR from a retry). See ADR-010 state-error
+            # convention: document_state_error must be reset on every successful transition,
+            # not just left for the next terminal error to overwrite.
+            web_document.document_state_error = StalkerDocumentStatusError.NONE.name
+
             if transcript_text:
                 logger.info("Checking if transcript language matches expected language")
                 string_to_check = youtube_titles_to_text(transcript_text)
@@ -317,6 +323,9 @@ def process_youtube_url(
             web_document.text_raw = transcript.text
             web_document.text = text_raw
             web_document.document_state = StalkerDocumentStatus.TRANSCRIPTION_DONE.name
+            # Transcription succeeded — clear any stale error from an earlier failed
+            # captions/transcription attempt (see ADR-010 state-error convention).
+            web_document.document_state_error = StalkerDocumentStatusError.NONE.name
 
             # Log transcription usage
             audio_duration = getattr(transcript, 'audio_duration', None) or 0
