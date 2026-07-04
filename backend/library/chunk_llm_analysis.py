@@ -252,8 +252,10 @@ def analyze_article_chunk(original_text: str, model: str,
 Sklasyfikuj poniższy fragment i jeśli to TEMAT — napisz streszczenie.
 
 W PIERWSZEJ LINII wpisz etykietę (tylko jedną z dwóch opcji):
-   ### REKLAMA: krótki_opis          (treść reklamowa, sponsorska lub nawigacyjny szum strony)
-   ### TEMAT: opis_3_4_słowa         (merytoryczna treść dokumentu)
+   ### REKLAMA: <opis>       (treść reklamowa, sponsorska lub nawigacyjny szum strony)
+   ### TEMAT: <temat>        (merytoryczna treść dokumentu)
+W miejsce <temat>/<opis> wpisz KONKRETNY temat tego fragmentu w 3-5 słowach —
+nie przepisuj dosłownie tekstu "<temat>" ani nazwy etykiety.
 
 Jeśli TEMAT: w kolejnych liniach napisz streszczenie w 2-3 zdaniach po polsku,
 skupiając się na głównych tezach i wnioskach.
@@ -268,6 +270,8 @@ Jeśli REKLAMA: nie dodawaj nic więcej.
     logger.info("article analysis done: %d tokens", tokens)
 
     section_type, topic, summary_text = parse_rewritten_chunk(raw)
+    # Bielik tends to prefix the summary with a literal "Streszczenie:" label
+    summary_text = re.sub(r'^\s*Streszczenie:?\s*', '', summary_text, flags=re.IGNORECASE)
     return {
         "type": section_type,
         "topic": topic,
