@@ -210,6 +210,7 @@ class DocumentAnalysisService:
         progress_fn: Callable[[str], None] | None = None,
         speakers: list[dict] | None = None,
         mode: str = "transcript",
+        split_only: bool = False,
     ) -> DocumentAnalysisRun:
         """Create a new analysis run for an existing document and persist to DB.
 
@@ -223,6 +224,9 @@ class DocumentAnalysisService:
                           when given, skips LLM speaker extraction (transcript mode only).
             mode:         "transcript" (STT: speakers, fillers, verbatim rewrite) or
                           "article" (clean text: header-based split, classify+summarize).
+            split_only:   Split into chunks WITHOUT any LLM calls — chunks land as
+                          TEMAT/pending with no topic/summary, so the user can first
+                          clean lines, merge or re-split, then analyze on demand.
 
         Returns:
             Persisted DocumentAnalysisRun with .chunks and .topic_sections populated.
@@ -270,7 +274,7 @@ class DocumentAnalysisService:
             #    unless the caller already provided them
             if speakers is None:
                 speakers = []
-                if is_multi_speaker:
+                if is_multi_speaker and not split_only:
                     intro_text = text[800:2400].strip()
                     try:
                         speakers = extract_speaker_info(intro_text, model)
@@ -305,10 +309,27 @@ class DocumentAnalysisService:
             if segments else [(None, None)] * len(chunk_texts)
         )
 
-        # 9. Analyze each chunk via LLM (with boundary context from adjacent chunks)
+        # 9. Analyze each chunk via LLM (with boundary context from adjacent chunks).
+        #    split_only: no LLM at all — chunks await manual cleanup + on-demand analysis.
         sections: list[dict] = []
         total = len(chunk_texts)
-        for i, chunk_text in enumerate(chunk_texts):
+        if split_only:
+            log(f"split_only: {total} chunks without LLM analysis")
+            sections = [
+                {
+                    "type": "TEMAT",
+                    "topic": None,
+                    "original": chunk_text,
+                    "text": None,
+                    "ratio": None,
+                    "summary": None,
+                }
+                for chunk_text in chunk_texts
+            ]
+            chunk_texts_iter: list[str] = []
+        else:
+            chunk_texts_iter = chunk_texts
+        for i, chunk_text in enumerate(chunk_texts_iter):
             log(f"chunk {i + 1}/{total} ({len(chunk_text):,} chars)...")
             try:
                 if is_transcript:
@@ -333,8 +354,8 @@ class DocumentAnalysisService:
                 "summary": result["summary"],
             })
 
-        # 10. Group chunks into logical topic sections
-        topic_groups = _merge_topics(sections, model, mode=mode)
+        # 10. Group chunks into logical topic sections (skip LLM grouping for split_only)
+        topic_groups = [] if split_only else _merge_topics(sections, model, mode=mode)
         if topic_groups:
             topic_sections_data = []
             for group in topic_groups:
@@ -351,6 +372,9 @@ class DocumentAnalysisService:
                     "chunk_indices": [i + 1 for i in valid],
                     "summary": merged_summary.strip(),
                 })
+        elif split_only:
+            # No LLM ran — sections would carry no information yet
+            topic_sections_data = []
         else:
             # Fallback: each chunk is its own section
             topic_sections_data = [
@@ -366,7 +390,7 @@ class DocumentAnalysisService:
 
         # 11. Optional synthesis
         synthesis = ""
-        if not no_synthesis:
+        if not no_synthesis and not split_only:
             log("generating synthesis...")
             synthesis = _synthesize(sections, doc.title or f"Dokument {doc_id}", model, mode=mode)
 

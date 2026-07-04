@@ -146,6 +146,23 @@ class TestArticleMode:
         assert article_env["speakers"] == 0
         assert article_env["fillers"] == 0
 
+    def test_split_only_makes_no_llm_calls(self, session, article_env):
+        service = DocumentAnalysisService(session)
+        run = service.create_run(
+            doc_id=42, model="test-model", mode="article", chunk_size=300, split_only=True,
+        )
+
+        assert article_env["article"] == 0
+        assert article_env["transcript"] == 0
+        assert run.synthesis is None
+        chunks = [o for o in session.added if isinstance(o, DocumentChunk)]
+        assert len(chunks) >= 2
+        assert all(c.type == "TEMAT" and c.status == "pending" for c in chunks)
+        assert all(c.topic is None and c.summary is None and c.corrected_text is None for c in chunks)
+        from library.db.models import DocumentTopicSection
+        sections = [o for o in session.added if isinstance(o, DocumentTopicSection)]
+        assert sections == []
+
     def test_default_mode_is_transcript(self, session, article_env, monkeypatch):
         """Without mode argument the transcript pipeline runs (fillers get called)."""
         # Un-fail the transcript primitives — record calls instead
