@@ -576,8 +576,28 @@ const Chunks = () => {
     } catch { setError("Błąd połączenia przy scalaniu"); }
   };
 
-  const applyCleanupAndResplit = async () => {
+  const deleteRun = async () => {
     if (selectedRun === null) return;
+    if (!window.confirm(
+      `Usunąć run #${selectedRun} wraz ze wszystkimi chunkami i sekcjami?\n`
+      + "Powiązania chunków z notatkami Obsidian z tego runu zostaną utracone "
+      + "(ścieżki na dokumencie pozostają)."
+    )) return;
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}`, { method: "DELETE", headers });
+      const data = await r.json();
+      if (data.status === "success") {
+        setInfo(`Run #${data.deleted_run_id} usunięty (${data.chunk_count} chunków)`);
+        setChunks([]);
+        setSelectedRun(null);
+        setRuns([]);
+        await fetchRuns();
+      } else { setError("Błąd usuwania runa: " + (data.message ?? "")); }
+    } catch { setError("Błąd połączenia przy usuwaniu runa"); }
+  };
+
+  const applyCleanupAndResplit = async () => {
+    if (selectedRun === null || applyingCleanup || jobId) return;
     if (!window.confirm(
       "Nadpisać tekst źródłowy dokumentu treścią chunków TEMAT (REKLAMA/SZUM i usunięte linie znikną),\n"
       + "a następnie uruchomić nową analizę z propozycją nowego podziału?"
@@ -691,7 +711,7 @@ const Chunks = () => {
 
       {/* Wybór runu */}
       {runs.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
+        <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
           <label style={{ fontSize: "0.85em", fontWeight: 600 }}>Analiza: </label>
           <select value={selectedRun ?? ""} onChange={e => setSelectedRun(Number(e.target.value))} style={{ padding: "4px 8px", fontSize: "0.88em" }}>
             {runs.map(r => (
@@ -702,6 +722,10 @@ const Chunks = () => {
               </option>
             ))}
           </select>
+          <button onClick={deleteRun} title="Usuń wybrany run (chunki i sekcje)"
+            style={{ padding: "3px 9px", border: "1px solid #fca5a5", borderRadius: 4, background: "#fff", color: "#b91c1c", cursor: "pointer", fontSize: "0.82em" }}>
+            🗑 Usuń run
+          </button>
         </div>
       )}
 

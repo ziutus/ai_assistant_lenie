@@ -283,6 +283,35 @@ def update_run(run_id: int):
 
 
 # ---------------------------------------------------------------------------
+# API: DELETE /analysis_run/<run_id>
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>", methods=["DELETE"])
+def delete_run(run_id: int):
+    """Delete an analysis run with all its chunks and topic sections.
+
+    Document-level obsidian_note_paths stay intact; only the chunk-level
+    note links stored on this run's chunks are lost.
+    """
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+
+    chunk_count = len(run.chunks)
+    try:
+        session.delete(run)  # ORM cascade removes chunks and topic_sections
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to delete run %d", run_id)
+        return jsonify({"status": "error", "message": "DB error"}), 500
+
+    logger.info("Deleted analysis run %d (%d chunks)", run_id, chunk_count)
+    return jsonify({"status": "success", "deleted_run_id": run_id, "chunk_count": chunk_count})
+
+
+# ---------------------------------------------------------------------------
 # API: POST /analysis_run/<run_id>/apply_cleanup
 # ---------------------------------------------------------------------------
 
