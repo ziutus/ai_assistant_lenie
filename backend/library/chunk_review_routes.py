@@ -496,10 +496,12 @@ def update_chunk(chunk_id: int):
 
 @bp.route("/chunk/<int:chunk_id>/execute_split", methods=["POST"])
 def execute_split(chunk_id: int):
-    """Split a chunk into two at the given segment index.
+    """Split a chunk into two.
 
-    Body (JSON):
-        split_at_seg      — absolute segment index (required)
+    Body (JSON) — exactly one split point:
+        split_at_seg      — absolute transcript segment index (transcript chunks)
+        split_at_line     — line index in original_text; the line starts part B
+                            (article chunks without segments)
         split_first_type  — type for part before split: TEMAT | REKLAMA | SZUM
         split_second_type — type for part after split:  TEMAT | REKLAMA | SZUM
 
@@ -518,36 +520,65 @@ def execute_split(chunk_id: int):
 
     # Allow split data from body OR from what's already stored on the chunk
     split_at = data.get("split_at_seg", chunk.split_at_seg)
+    split_at_line = data.get("split_at_line")
     first_type = data.get("split_first_type", chunk.split_first_type)
     second_type = data.get("split_second_type", chunk.split_second_type)
 
-    if split_at is None:
-        return jsonify({"status": "error", "message": "split_at_seg required"}), 400
     if first_type not in ALLOWED_TYPES:
         return jsonify({"status": "error", "message": f"Invalid split_first_type: {first_type}"}), 400
     if second_type not in ALLOWED_TYPES:
         return jsonify({"status": "error", "message": f"Invalid split_second_type: {second_type}"}), 400
 
-    seg_start = chunk.seg_start or 0
-    seg_end = chunk.seg_end
+    if split_at_line is not None:
+        # Line-based split (article chunks — no transcript segments)
+        lines = (chunk.original_text or "").split("\n")
+        try:
+            split_at_line = int(split_at_line)
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "split_at_line must be an integer"}), 400
+        if not 0 < split_at_line < len(lines):
+            return jsonify({"status": "error",
+                            "message": f"split_at_line {split_at_line} out of range (1..{len(lines) - 1})"}), 400
+        text_a = "\n".join(lines[:split_at_line]).strip()
+        text_b = "\n".join(lines[split_at_line:]).strip()
+        if not text_a or not text_b:
+            return jsonify({"status": "error", "message": "Both parts must contain text"}), 400
+        seg_a = (None, None)
+        seg_b = (None, None)
+        # Fresh TEMAT parts need new topic/summary; junk is auto-approved
+        status_a = "needs_reanalysis" if first_type == "TEMAT" else "approved"
+        status_b = "needs_reanalysis" if second_type == "TEMAT" else "approved"
+    else:
+        if split_at is None:
+            return jsonify({"status": "error", "message": "split_at_seg or split_at_line required"}), 400
 
-    if not (seg_start <= split_at < (seg_end or split_at + 1)):
-        return jsonify({"status": "error",
-                        "message": f"split_at_seg {split_at} out of range [{seg_start}, {seg_end})"}), 400
+        seg_start = chunk.seg_start or 0
+        seg_end = chunk.seg_end
 
-    # Reconstruct text from raw transcript segments
-    doc = session.get(WebDocument, chunk.document_id)
-    segments = _parse_segments(doc.text_raw if doc else None)
+        if not (seg_start <= split_at < (seg_end or split_at + 1)):
+            return jsonify({"status": "error",
+                            "message": f"split_at_seg {split_at} out of range [{seg_start}, {seg_end})"}), 400
 
-    def _text_from_segs(start: int, end: int | None) -> str:
-        parts = []
-        for seg in (segments[start:end] if segments else []):
-            t = (seg.get("text") or "").strip()
-            if t.startswith(">>"):
-                t = t[2:].strip()
-            if t:
-                parts.append(t)
-        return " ".join(parts)
+        # Reconstruct text from raw transcript segments
+        doc = session.get(WebDocument, chunk.document_id)
+        segments = _parse_segments(doc.text_raw if doc else None)
+
+        def _text_from_segs(start: int, end: int | None) -> str:
+            parts = []
+            for seg in (segments[start:end] if segments else []):
+                t = (seg.get("text") or "").strip()
+                if t.startswith(">>"):
+                    t = t[2:].strip()
+                if t:
+                    parts.append(t)
+            return " ".join(parts)
+
+        text_a = _text_from_segs(seg_start, split_at)
+        text_b = _text_from_segs(split_at, seg_end)
+        seg_a = (seg_start, split_at)
+        seg_b = (split_at, seg_end)
+        status_a = "approved" if first_type in ("REKLAMA", "SZUM") else "pending"
+        status_b = "needs_reanalysis" if second_type == "TEMAT" else "approved"
 
     orig_pos = chunk.position
     run_id = chunk.run_id
@@ -571,27 +602,21 @@ def execute_split(chunk_id: int):
         session.delete(chunk)
         session.flush()
 
-        # Chunk A — content before the split point
-        text_a = _text_from_segs(seg_start, split_at)
-        status_a = "approved" if first_type in ("REKLAMA", "SZUM") else "pending"
         chunk_a = DocumentChunk(
             run_id=run_id, document_id=doc_id, position=orig_pos,
             type=first_type, topic=None,
             original_text=text_a or "(brak tekstu)",
             corrected_text=None, summary=None,
-            seg_start=seg_start, seg_end=split_at,
+            seg_start=seg_a[0], seg_end=seg_a[1],
             rewrite_ratio=None, status=status_a,
         )
 
-        # Chunk B — content after the split point
-        text_b = _text_from_segs(split_at, seg_end)
-        status_b = "needs_reanalysis" if second_type == "TEMAT" else "approved"
         chunk_b = DocumentChunk(
             run_id=run_id, document_id=doc_id, position=orig_pos + 1,
             type=second_type, topic=None,
             original_text=text_b or "(brak tekstu)",
             corrected_text=None, summary=None,
-            seg_start=split_at, seg_end=seg_end,
+            seg_start=seg_b[0], seg_end=seg_b[1],
             rewrite_ratio=None, status=status_b,
         )
 
@@ -599,8 +624,9 @@ def execute_split(chunk_id: int):
         session.add(chunk_b)
         session.commit()
 
-        logger.info("Split chunk %d at seg %d → chunks at pos %d and %d",
-                    chunk_id, split_at, orig_pos, orig_pos + 1)
+        split_point = f"line {split_at_line}" if split_at_line is not None else f"seg {split_at}"
+        logger.info("Split chunk %d at %s → chunks at pos %d and %d",
+                    chunk_id, split_point, orig_pos, orig_pos + 1)
 
         return jsonify({
             "status": "success",

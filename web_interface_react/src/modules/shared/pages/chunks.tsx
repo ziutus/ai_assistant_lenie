@@ -53,6 +53,12 @@ interface SplitState {
   secondType: ChunkType;
 }
 
+interface LineSplitState {
+  lineIdx: number;
+  firstType: ChunkType;
+  secondType: ChunkType;
+}
+
 interface SegGroup {
   absIdx: number;
   start: number;
@@ -192,39 +198,53 @@ const SegmentsView: React.FC<{
 const PlainTextLines: React.FC<{
   text: string;
   markedLines: Set<number>;
+  splitLineIdx: number | null;
   saving: boolean;
   onToggleLine: (idx: number) => void;
+  onMarkSplit: (idx: number) => void;
   onSave: (removeFromDocument: boolean) => void;
   onCancel: () => void;
-}> = ({ text, markedLines, saving, onToggleLine, onSave, onCancel }) => {
+}> = ({ text, markedLines, splitLineIdx, saving, onToggleLine, onMarkSplit, onSave, onCancel }) => {
   const [removeFromDoc, setRemoveFromDoc] = React.useState(true);
   if (!text) return <em style={{ color: "#94a3b8" }}>brak tekstu</em>;
   const lines = text.split("\n");
+  const lineBtnStyle: React.CSSProperties = {
+    background: "none", border: "1px solid #e2e8f0", borderRadius: 3,
+    fontSize: "0.78em", cursor: "pointer", padding: "0 4px", lineHeight: "1.3em",
+  };
   return (
     <div>
       {lines.map((line, i) => {
         const marked = markedLines.has(i);
+        const isSplitMark = splitLineIdx === i;
         return (
           <div
             key={i}
             style={{
-              position: "relative", paddingRight: 30, borderRadius: 2, minHeight: "1.4em",
+              position: "relative", paddingLeft: 56, borderRadius: 2, minHeight: "1.4em",
               ...(marked ? { background: "#fee2e2", textDecoration: "line-through", color: "#991b1b" } : {}),
+              ...(isSplitMark ? { background: "#fff7ed", borderLeft: "3px solid #f97316" } : {}),
             }}
           >
+            <span style={{ position: "absolute", left: 0, top: 1, display: "flex", gap: 3 }}>
+              <button
+                onClick={() => onToggleLine(i)}
+                title={marked ? "Przywróć linię" : "Usuń linię"}
+                style={{ ...lineBtnStyle, color: marked ? "#991b1b" : "#94a3b8" }}
+              >
+                {marked ? "↺" : "✕"}
+              </button>
+              {i > 0 && (
+                <button
+                  onClick={() => onMarkSplit(i)}
+                  title="Podziel tutaj — ta linia zacznie nowy chunk"
+                  style={{ ...lineBtnStyle, color: isSplitMark ? "#92400e" : "#94a3b8", fontWeight: isSplitMark ? "bold" : "normal" }}
+                >
+                  ✂
+                </button>
+              )}
+            </span>
             <span style={{ whiteSpace: "pre-wrap" }}>{line || " "}</span>
-            <button
-              onClick={() => onToggleLine(i)}
-              title={marked ? "Przywróć linię" : "Usuń linię"}
-              style={{
-                position: "absolute", right: 2, top: 1,
-                background: "none", border: "1px solid #e2e8f0", borderRadius: 3,
-                fontSize: "0.78em", cursor: "pointer", padding: "0 5px",
-                color: marked ? "#991b1b" : "#94a3b8",
-              }}
-            >
-              {marked ? "↺" : "✕"}
-            </button>
           </div>
         );
       })}
@@ -290,6 +310,8 @@ const Chunks = () => {
   const [splitStates, setSplitStates]     = React.useState<Record<number, SplitState>>({});
   const [lineEdits, setLineEdits]         = React.useState<Record<number, Set<number>>>({});
   const [savingLines, setSavingLines]     = React.useState<Record<number, boolean>>({});
+  const [lineSplitStates, setLineSplitStates] = React.useState<Record<number, LineSplitState>>({});
+  const [confirmingLineSplit, setConfirmingLineSplit] = React.useState<Record<number, boolean>>({});
   const [confirmingSplit, setConfirmingSplit] = React.useState<Record<number, boolean>>({});
   const [extractingSpeakers, setExtractingSpeakers] = React.useState(false);
   const [hiddenChunks, setHiddenChunks] = React.useState<Set<number>>(new Set());
@@ -335,6 +357,7 @@ const Chunks = () => {
       setShowCorrected(correctedDefaults);
       setSplitStates({});
       setLineEdits({});
+      setLineSplitStates({});
       setHiddenChunks(new Set());
     } catch {
       setError("Błąd ładowania chunków");
@@ -505,6 +528,41 @@ const Chunks = () => {
         setInfo(`Usunięto ${res.document_lines_removed} linii z dokumentu źródłowego`);
       }
     }
+  };
+
+  const markLineSplit = (chunkId: number, lineIdx: number) => {
+    setLineSplitStates(prev => {
+      if (prev[chunkId]?.lineIdx === lineIdx) {
+        const n = { ...prev }; delete n[chunkId]; return n;  // click again = unmark
+      }
+      return { ...prev, [chunkId]: { lineIdx, firstType: "TEMAT", secondType: "TEMAT" } };
+    });
+  };
+
+  const cancelLineSplit = (chunkId: number) => {
+    setLineSplitStates(prev => { const n = { ...prev }; delete n[chunkId]; return n; });
+  };
+
+  const confirmLineSplit = async (chunkId: number) => {
+    const st = lineSplitStates[chunkId];
+    if (!st) return;
+    setConfirmingLineSplit(prev => ({ ...prev, [chunkId]: true }));
+    try {
+      const r = await fetch(`${apiUrl}/chunk/${chunkId}/execute_split`, {
+        method: "POST", headers,
+        body: JSON.stringify({
+          split_at_line: st.lineIdx,
+          split_first_type: st.firstType,
+          split_second_type: st.secondType,
+        }),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        cancelLineSplit(chunkId);
+        if (selectedRun !== null) await fetchChunks(selectedRun);
+      } else { setError("Błąd podziału: " + (data.message ?? "")); }
+    } catch { setError("Błąd połączenia przy podziale"); }
+    finally { setConfirmingLineSplit(prev => ({ ...prev, [chunkId]: false })); }
   };
 
   const mergeWithNext = async (chunk: Chunk) => {
@@ -729,6 +787,7 @@ const Chunks = () => {
         const isCorrectedView = showCorrected[chunk.id] ?? hasCorrected;
         const isReanalyzing = reanalyzing[chunk.id] ?? false;
         const splitSt = splitStates[chunk.id];
+        const lineSplitSt = lineSplitStates[chunk.id];
         const chunkSegs = segments.slice(chunk.seg_start ?? 0, chunk.seg_end ?? segments.length);
 
         return (
@@ -830,8 +889,10 @@ const Chunks = () => {
                 <PlainTextLines
                   text={chunk.original_text ?? ""}
                   markedLines={lineEdits[chunk.id] ?? new Set()}
+                  splitLineIdx={lineSplitStates[chunk.id]?.lineIdx ?? null}
                   saving={savingLines[chunk.id] ?? false}
                   onToggleLine={idx => toggleLineMark(chunk.id, idx)}
+                  onMarkSplit={idx => markLineSplit(chunk.id, idx)}
                   onSave={removeFromDoc => saveLineRemovals(chunk, removeFromDoc)}
                   onCancel={() => clearLineMarks(chunk.id)}
                 />
@@ -871,6 +932,42 @@ const Chunks = () => {
                   </button>
                 </div>
                 <div style={{ color: "#92400e", fontSize: "0.8em", marginTop: 4 }}>Kliknij ✂ przy innym akapicie aby zmienić punkt podziału.</div>
+              </div>
+            )}
+
+            {/* Panel podziału liniowego (chunki artykułowe) */}
+            {lineSplitSt && (
+              <div style={{ margin: "0 14px 14px", padding: "10px 12px", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 5, fontSize: "0.84em" }}>
+                <strong style={{ color: "#92400e" }}>✂ Punkt podziału: linia {lineSplitSt.lineIdx + 1} (zaczyna nowy chunk)</strong>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+                  <label>Część 1 (przed):&nbsp;
+                    <select value={lineSplitSt.firstType}
+                      onChange={e => setLineSplitStates(prev => ({ ...prev, [chunk.id]: { ...prev[chunk.id], firstType: e.target.value as ChunkType } }))}
+                      style={{ padding: "2px 6px", borderRadius: 3 }}>
+                      <option value="TEMAT">TEMAT</option>
+                      <option value="REKLAMA">REKLAMA</option>
+                      <option value="SZUM">SZUM</option>
+                    </select>
+                  </label>
+                  <label>Część 2 (po):&nbsp;
+                    <select value={lineSplitSt.secondType}
+                      onChange={e => setLineSplitStates(prev => ({ ...prev, [chunk.id]: { ...prev[chunk.id], secondType: e.target.value as ChunkType } }))}
+                      style={{ padding: "2px 6px", borderRadius: 3 }}>
+                      <option value="TEMAT">TEMAT</option>
+                      <option value="REKLAMA">REKLAMA</option>
+                      <option value="SZUM">SZUM</option>
+                    </select>
+                  </label>
+                  <button onClick={() => confirmLineSplit(chunk.id)} disabled={confirmingLineSplit[chunk.id]}
+                    style={{ padding: "3px 12px", background: "#f97316", color: "#fff", border: "none", borderRadius: 3, cursor: "pointer", fontWeight: "bold", fontSize: "0.82em" }}>
+                    {confirmingLineSplit[chunk.id] ? "Dzielę…" : "Wykonaj podział"}
+                  </button>
+                  <button onClick={() => cancelLineSplit(chunk.id)}
+                    style={{ padding: "3px 10px", background: "#e2e8f0", color: "#475569", border: "none", borderRadius: 3, cursor: "pointer", fontSize: "0.82em" }}>
+                    Anuluj
+                  </button>
+                </div>
+                <div style={{ color: "#92400e", fontSize: "0.8em", marginTop: 4 }}>Kliknij ✂ przy innej linii aby zmienić punkt podziału. Części TEMAT dostaną status needs_reanalysis.</div>
               </div>
             )}
 
