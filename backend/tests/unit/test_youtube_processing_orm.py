@@ -271,3 +271,65 @@ class TestSessionCommit:
         # session.commit() should have been called (not doc.save())
         assert mock_session.commit.called, "session.commit() was not called"
         assert not doc.save.called, "doc.save() should not be called — use session.commit()"
+
+
+# ---------------------------------------------------------------------------
+# Test: document_state_error is cleared on a successful captions fetch
+# ---------------------------------------------------------------------------
+
+class TestDocumentStateErrorClearedOnSuccess:
+    """A stale document_state_error from a previous failed attempt must not
+    survive a subsequent successful captions fetch (regression: it used to be
+    sticky forever — see CAPTIONS_FETCH_ERROR left behind after a retry succeeded)."""
+
+    @patch("library.youtube_processing.youtube_titles_to_text")
+    @patch("library.youtube_processing.compare_language")
+    @patch("library.youtube_processing.text_language_detect")
+    @patch("library.youtube_processing.StalkerYoutubeFile")
+    @patch("library.youtube_processing.WebDocument")
+    def test_captions_success_clears_stale_error(
+        self, MockWebDocument, MockYoutubeFile, mock_detect, mock_compare, mock_titles_to_text, mock_session
+    ):
+        from library.youtube_processing import process_youtube_url
+        from library.models.stalker_document_status import StalkerDocumentStatus
+        from library.models.stalker_document_status_error import StalkerDocumentStatusError
+
+        doc = MagicMock()
+        doc.id = 1
+        doc.url = "https://www.youtube.com/watch?v=abc"
+        doc.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION.name
+        # Stale error left over from an earlier failed attempt (the bug this test guards against)
+        doc.document_state_error = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
+        doc.language = "pl"
+        doc.chapter_list = None
+        doc.transcript_job_id = None
+        MockWebDocument.get_by_url.return_value = doc
+
+        yt_file = MagicMock()
+        yt_file.valid = True
+        yt_file.can_pytube = False
+        yt_file.video_id = "abc123"
+        MockYoutubeFile.return_value = yt_file
+
+        mock_detect.return_value = "pl"
+        mock_compare.return_value = True
+        mock_titles_to_text.return_value = "plain transcript text"
+
+        with patch("library.youtube_processing.YouTubeTranscriptApi") as MockYTT:
+            mock_ytt = MagicMock()
+            available = MagicMock()
+            available.language_code = "pl"
+            mock_ytt.list.return_value = [available]
+
+            fetched = MagicMock()
+            fetched.to_raw_data.return_value = [{"text": "hello", "start": 0, "duration": 1}]
+            mock_ytt.fetch.return_value = fetched
+            MockYTT.return_value = mock_ytt
+
+            process_youtube_url(
+                session=mock_session,
+                youtube_url="https://www.youtube.com/watch?v=abc",
+            )
+
+        assert doc.document_state_error == StalkerDocumentStatusError.NONE.name
+        assert doc.document_state == StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
