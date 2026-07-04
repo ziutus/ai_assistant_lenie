@@ -1,5 +1,5 @@
 import React from "react";
-import { useParams, NavLink } from "react-router-dom";
+import { useParams, useLocation, NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -12,6 +12,7 @@ interface Segment {
 interface Chunk {
   id: number;
   position: number;
+  original_text: string | null;
   corrected_text: string | null;
   summary: string | null;
   topic: string | null;
@@ -32,7 +33,16 @@ interface AnalysisRun {
   model: string;
   created_at: string;
   chunk_count: number;
+  mode: string;
+  status: string;
+  scope: string | null;
 }
+
+const RUN_STATUS_LABELS: Record<string, string> = {
+  created: "nowa",
+  in_review: "w przeglądzie",
+  reviewed: "zamknięta",
+};
 
 interface SplitState {
   segIdx: number;
@@ -170,6 +180,8 @@ const SegmentsView: React.FC<{
 
 const Chunks = () => {
   const { id } = useParams<{ id: string }>();
+  const location = useLocation();
+  const initialDocType = (location.state as { docType?: string } | null)?.docType ?? "";
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
 
   const [runs, setRuns]             = React.useState<AnalysisRun[]>([]);
@@ -177,6 +189,8 @@ const Chunks = () => {
   const [chunks, setChunks]         = React.useState<Chunk[]>([]);
   const [segments, setSegments]     = React.useState<Segment[]>([]);
   const [videoId, setVideoId]       = React.useState("");
+  const [docType, setDocType]       = React.useState(initialDocType);
+  const [runMode, setRunMode]       = React.useState("transcript");
   const [speakers, setSpeakers]     = React.useState<Speaker[]>([]);
 
   const [loading, setLoading]       = React.useState(false);
@@ -184,6 +198,7 @@ const Chunks = () => {
   const [jobStatus, setJobStatus]   = React.useState<string | null>(null);
   const [jobId, setJobId]           = React.useState<string | null>(null);
   const [newModel, setNewModel]     = React.useState(MODELS[0]);
+  const [newMode, setNewMode]       = React.useState("transcript");
   const [chunkSize, setChunkSize]   = React.useState(5000);
   const [hideAds, setHideAds]       = React.useState(false);
 
@@ -226,6 +241,8 @@ const Chunks = () => {
       setChunks(loaded);
       setSegments(data.segments ?? []);
       setVideoId(data.document?.original_id ?? "");
+      setDocType(data.document?.document_type ?? "");
+      setRunMode(data.run?.mode ?? "transcript");
       setSpeakers(data.run?.speakers ?? []);
       const edits: Record<number, string> = {};
       const correctedDefaults: Record<number, boolean> = {};
@@ -246,6 +263,10 @@ const Chunks = () => {
 
   React.useEffect(() => { fetchRuns(); }, [fetchRuns]);
   React.useEffect(() => { if (selectedRun !== null) fetchChunks(selectedRun); }, [selectedRun, fetchChunks]);
+  // Clean documents (articles, webpages) default to article mode for new analyses
+  React.useEffect(() => {
+    if (docType && docType !== "youtube" && docType !== "movie") setNewMode("article");
+  }, [docType]);
 
   // ── Job polling ──
 
@@ -280,7 +301,7 @@ const Chunks = () => {
     try {
       const r = await fetch(`${apiUrl}/document/${id}/analyze_chunks`, {
         method: "POST", headers,
-        body: JSON.stringify({ model: newModel, chunk_size: chunkSize }),
+        body: JSON.stringify({ model: newModel, chunk_size: chunkSize, mode: newMode }),
       });
       const data = await r.json();
       if (data.job_id) { setJobId(data.job_id); setJobStatus("running"); pollJob(data.job_id); }
@@ -428,7 +449,7 @@ const Chunks = () => {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 6, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Przegląd chunków — dokument #{id}</h2>
-        <NavLink to={`/youtube/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Edytuj dokument</NavLink>
+        <NavLink to={`/${docType || "youtube"}/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Edytuj dokument</NavLink>
       </div>
 
       {/* Nowa analiza */}
@@ -437,6 +458,11 @@ const Chunks = () => {
         <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
           <select value={newModel} onChange={e => setNewModel(e.target.value)} style={{ padding: "4px 8px", fontSize: "0.88em" }}>
             {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <select value={newMode} onChange={e => setNewMode(e.target.value)} style={{ padding: "4px 8px", fontSize: "0.88em" }}
+            title="transkrypcja: mówcy + korekta STT; artykuł: czysty tekst, podział po nagłówkach, bez korekty">
+            <option value="transcript">transkrypcja (YouTube)</option>
+            <option value="article">artykuł (czysty tekst)</option>
           </select>
           <label style={{ fontSize: "0.85em" }}>
             Chunk:&nbsp;
@@ -457,6 +483,8 @@ const Chunks = () => {
             {runs.map(r => (
               <option key={r.id} value={r.id}>
                 #{r.id} — {r.model} ({r.chunk_count} chunków, {new Date(r.created_at).toLocaleString("pl")})
+                {" "}[{r.mode === "article" ? "artykuł" : "transkrypcja"}
+                {r.scope ? `, ${r.scope}` : ""}, {RUN_STATUS_LABELS[r.status] ?? r.status}]
               </option>
             ))}
           </select>
@@ -500,8 +528,8 @@ const Chunks = () => {
         </div>
       )}
 
-      {/* Pasek rozmówców */}
-      {selectedRun !== null && (
+      {/* Pasek rozmówców (tylko transkrypcje — artykuły nie mają mówców) */}
+      {selectedRun !== null && runMode !== "article" && (
         <div style={{ marginBottom: 12, padding: "8px 14px", background: "#1e3a5f", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <strong style={{ color: "#fff", fontSize: "0.85em" }}>Rozmówcy:</strong>
           {speakers.length > 0 ? (
@@ -610,11 +638,11 @@ const Chunks = () => {
               </button>
             </div>
 
-            {/* Treść */}
+            {/* Treść: poprawiony tekst → segmenty transkrypcji → surowy tekst (artykuły) */}
             <div style={{ padding: "12px 14px", fontSize: "0.88em", lineHeight: 1.6 }}>
               {isCorrectedView && hasCorrected ? (
                 <div style={{ whiteSpace: "pre-wrap", color: "#1e293b" }}>{chunk.corrected_text}</div>
-              ) : (
+              ) : chunkSegs.length > 0 ? (
                 <SegmentsView
                   segs={chunkSegs}
                   videoId={videoId}
@@ -623,6 +651,10 @@ const Chunks = () => {
                   splitState={splitSt}
                   onMarkSplit={markSplit}
                 />
+              ) : (
+                <div style={{ whiteSpace: "pre-wrap", color: "#1e293b" }}>
+                  {chunk.original_text ?? <em style={{ color: "#94a3b8" }}>brak tekstu</em>}
+                </div>
               )}
             </div>
 

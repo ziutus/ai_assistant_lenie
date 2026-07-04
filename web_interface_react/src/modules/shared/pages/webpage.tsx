@@ -3,7 +3,7 @@ import { useFormik } from "formik";
 import { useManageLLM } from "../hooks/useManageLLM";
 import SharedInputs from "../components/SharedInputs/sharedInputs";
 import InputsForAllExceptLink from "../components/SharedInputs/InputsForAllExceptLink";
-import { useParams } from "react-router-dom";
+import { useParams, NavLink } from "react-router-dom";
 import FormButtons from "../components/FormButtons/formButtons";
 import { AuthorizationContext } from '../context/authorizationContext';
 
@@ -59,7 +59,19 @@ const Webpage = () => {
 
   return (
     <div>
-      <h2 style={{ marginBottom: "10px" }}>Webpage</h2>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: "10px" }}>
+        <h2 style={{ margin: 0 }}>Webpage</h2>
+        {id && (
+          <NavLink
+            className={"button"}
+            to={`/chunks/${id}`}
+            state={{ docType: "webpage" }}
+            style={{ fontSize: "0.85em" }}
+          >
+            Analiza chunków
+          </NavLink>
+        )}
+      </div>
       <form onSubmit={formik.handleSubmit} style={{ maxWidth: "800px" }}>
         <SharedInputs
           formik={formik}

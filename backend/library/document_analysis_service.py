@@ -92,13 +92,16 @@ def _sentence_head(text: str, max_chars: int = 300) -> str:
     return seg
 
 
-def _extract_text(doc: WebDocument) -> tuple[str, str]:
+def _extract_text(doc: WebDocument, prefer_md: bool = False) -> tuple[str, str]:
     """Return (text, field_name) from best available field.
 
     Priority: text → text_md → text_raw (JSON transcript → plain text).
+    With prefer_md=True (article mode) text_md wins over text, so the
+    markdown-header splitter sees the document structure.
     Returns ("", "") when no usable text found.
     """
-    for field in ("text", "text_md"):
+    fields = ("text_md", "text") if prefer_md else ("text", "text_md")
+    for field in fields:
         val = getattr(doc, field, None)
         if val and len(val) > 100:
             return val, field
@@ -249,8 +252,8 @@ class DocumentAnalysisService:
         if doc is None:
             raise ValueError(f"Document {doc_id} not found")
 
-        # 2. Extract text
-        text, text_field = _extract_text(doc)
+        # 2. Extract text (article mode prefers text_md — headers drive the split)
+        text, text_field = _extract_text(doc, prefer_md=not is_transcript)
         if not text:
             raise ValueError(f"Document {doc_id} has no usable text (checked: text, text_md, text_raw)")
 

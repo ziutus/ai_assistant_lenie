@@ -56,6 +56,7 @@ def _chunk_to_dict(c: DocumentChunk) -> dict:
         "position": c.position,
         "type": c.type,
         "topic": c.topic,
+        "original_text": c.original_text,
         "corrected_text": c.corrected_text,
         "summary": c.summary,
         "seg_start": c.seg_start,
