@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Project Lenie is a personal AI assistant for collecting, managing, and searching data using LLMs. Named after the protagonist from Peter Watts' novel "Starfish," it helps users collect links/references, download and store webpage content, transcribe YouTube videos, and assess information reliability.
 
-**Current version**: 0.3.13.0 | **Status**: Active development | **License**: [BSL 1.1](LICENSE) (converts to Apache 2.0 on 2030-03-12)
+**Current version**: 0.3.14.0 | **Status**: Active development | **License**: [BSL 1.1](LICENSE) (converts to Apache 2.0 on 2030-03-12)
 
 ## Common Commands
 
@@ -110,7 +110,7 @@ See [`shared_python/unified-config-loader/README.md`](shared_python/unified-conf
 Shared TypeScript type definitions used by both frontend applications. Contains domain types (`WebDocument`, `ApiType`, `SearchResult`, `ListItem`), constants (`DEFAULT_API_URLS`), and factory values (`emptyDocument`). No build step — Vite transpiles directly via esbuild. Both frontends reference it through `@lenie/shared` alias (tsconfig `paths` + Vite `resolve.alias`). See `docs/shared-types.md` for details.
 
 ### Frontend (`web_interface_react/`)
-React 18 SPA (Vite) for document management and AI processing. 7 pages: document list with filtering, vector similarity search, and per-type editors (link, webpage, youtube, movie) with AI tools (split for embedding, clean text). Formik for form state, axios for API calls, React Router v6. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask). Includes infrastructure controls (start/stop RDS, VPN, SQS queue status). Domain types imported from `shared/` via `@lenie/shared` alias.
+React 18 SPA (Vite) for document management and AI processing. Pages: document list with filtering, vector similarity search, chunk review (`/chunks/:id`), and per-type editors (link, webpage, youtube, movie) with AI tools (split for embedding, clean text). Formik for form state, axios for API calls, React Router v6. Single backend mode: Docker (Flask) — the AWS Serverless mode was removed entirely 2026-07-04 (Lambdas decommissioned 2026-07-02). Domain types imported from `shared/` via `@lenie/shared` alias.
 
 See `web_interface_react/CLAUDE.md` for details.
 

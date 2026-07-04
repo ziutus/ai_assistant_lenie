@@ -21,8 +21,8 @@ cfg = load_config()
 
 secrets_backend = cfg.require("SECRETS_BACKEND", "env")
 
-APP_VERSION = "0.3.13.0"
-BUILD_TIME = "2026.01.23 04:04"
+APP_VERSION = "0.3.14.0"
+BUILD_TIME = "2026.07.04 08:00"
 
 logging.info(f"APP VERSION={APP_VERSION} (build time:{BUILD_TIME})")
 

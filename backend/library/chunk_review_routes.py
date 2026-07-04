@@ -18,7 +18,7 @@ import uuid
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, abort
-from sqlalchemy import select, update as sa_update
+from sqlalchemy import func, select, update as sa_update
 
 from library.db.engine import get_scoped_session
 from library.db.models import (
@@ -33,8 +33,9 @@ bp = Blueprint("chunk_review", __name__)
 # Keyed by job_id (short UUID). Lives as long as the server process.
 _analysis_jobs: dict[str, dict] = {}
 
-ALLOWED_STATUSES = {"pending", "approved", "needs_reanalysis", "split_requested", "split"}
-ALLOWED_TYPES = {"TEMAT", "REKLAMA"}
+ALLOWED_STATUSES = {"pending", "approved", "needs_reanalysis", "split_requested", "split", "skipped"}
+ALLOWED_TYPES = {"TEMAT", "REKLAMA", "SZUM"}
+ALLOWED_RUN_STATUSES = {"created", "in_review", "reviewed"}
 
 
 def _parse_segments(text_raw: str | None) -> list[dict]:
@@ -55,6 +56,7 @@ def _chunk_to_dict(c: DocumentChunk) -> dict:
         "position": c.position,
         "type": c.type,
         "topic": c.topic,
+        "original_text": c.original_text,
         "corrected_text": c.corrected_text,
         "summary": c.summary,
         "seg_start": c.seg_start,
@@ -83,19 +85,28 @@ def analyze_document_chunks(doc_id: int):
         model        — LLM model name (default: Bielik-11B-v3.0-Instruct)
         chunk_size   — max chars per chunk (default: 5000)
         no_synthesis — skip final synthesis step (default: false)
+        mode         — "transcript" (default) or "article"
+        split_only   — split into chunks without any LLM analysis (default: false)
 
     Returns immediately with {job_id}. Poll GET /analysis_job/<job_id> for status.
     """
+    from library.document_analysis_service import ANALYSIS_MODES
+
     data = request.get_json(silent=True) or {}
     model = data.get("model", "Bielik-11B-v3.0-Instruct")
     chunk_size = int(data.get("chunk_size", 5000))
     no_synthesis = bool(data.get("no_synthesis", False))
+    mode = data.get("mode", "transcript")
+    split_only = bool(data.get("split_only", False))
+    if mode not in ANALYSIS_MODES:
+        return jsonify({"status": "error", "message": f"Invalid mode: {mode}"}), 400
 
     job_id = uuid.uuid4().hex[:8]
     _analysis_jobs[job_id] = {
         "status": "running",
         "doc_id": doc_id,
         "model": model,
+        "mode": mode,
         "run_id": None,
         "chunk_count": None,
         "ad_count": None,
@@ -120,6 +131,8 @@ def analyze_document_chunks(doc_id: int):
                 chunk_size=chunk_size,
                 no_synthesis=no_synthesis,
                 progress_fn=_progress,
+                mode=mode,
+                split_only=split_only,
             )
             ad_count = sum(1 for c in run.chunks if c.type == "REKLAMA")
             _analysis_jobs[job_id].update({
@@ -173,6 +186,9 @@ def list_runs():
                 "id": r.id,
                 "model": r.model,
                 "chunk_size": r.chunk_size,
+                "mode": r.mode,
+                "status": r.status,
+                "scope": r.scope,
                 "created_at": r.created_at.isoformat(),
                 "chunk_count": len(r.chunks),
             }
@@ -207,6 +223,9 @@ def get_run_chunks(run_id: int):
             "id": run.id,
             "model": run.model,
             "chunk_size": run.chunk_size,
+            "mode": run.mode,
+            "status": run.status,
+            "scope": run.scope,
             "synthesis": run.synthesis,
             "speakers": run.speakers or [],
             "created_at": run.created_at.isoformat(),
@@ -215,6 +234,7 @@ def get_run_chunks(run_id: int):
             "id": doc.id if doc else None,
             "title": doc.title if doc else "",
             "original_id": doc.original_id if doc else "",
+            "document_type": doc.document_type if doc else "",
         },
         "segments": segments,
         "chunks": [_chunk_to_dict(c) for c in run.chunks],
@@ -229,6 +249,134 @@ def get_run_chunks(run_id: int):
             }
             for ts in topic_sections
         ],
+    })
+
+
+# ---------------------------------------------------------------------------
+# API: PATCH /analysis_run/<run_id>
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>", methods=["PATCH", "OPTIONS"])
+def update_run(run_id: int):
+    """Update run workflow fields. Body (JSON): {"status": "created"|"in_review"|"reviewed"}."""
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+
+    data = request.get_json() or {}
+    if "status" in data:
+        if data["status"] not in ALLOWED_RUN_STATUSES:
+            return jsonify({"status": "error", "message": f"Invalid run status: {data['status']}"}), 400
+        run.status = data["status"]
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception("Failed to update run %d", run_id)
+            return jsonify({"status": "error", "message": "DB error"}), 500
+
+    return jsonify({
+        "status": "success",
+        "run": {"id": run.id, "mode": run.mode, "status": run.status, "scope": run.scope},
+    })
+
+
+# ---------------------------------------------------------------------------
+# API: DELETE /analysis_run/<run_id>
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>", methods=["DELETE"])
+def delete_run(run_id: int):
+    """Delete an analysis run with all its chunks and topic sections.
+
+    Document-level obsidian_note_paths stay intact; only the chunk-level
+    note links stored on this run's chunks are lost.
+    """
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+
+    chunk_count = len(run.chunks)
+    try:
+        session.delete(run)  # ORM cascade removes chunks and topic_sections
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to delete run %d", run_id)
+        return jsonify({"status": "error", "message": "DB error"}), 500
+
+    logger.info("Deleted analysis run %d (%d chunks)", run_id, chunk_count)
+    return jsonify({"status": "success", "deleted_run_id": run_id, "chunk_count": chunk_count})
+
+
+# ---------------------------------------------------------------------------
+# API: POST /analysis_run/<run_id>/apply_cleanup
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>/apply_cleanup", methods=["POST"])
+def apply_run_cleanup(run_id: int):
+    """Overwrite the document's source text with the run's TEMAT chunks only.
+
+    Article-mode runs are a full partition of the source text, so joining the
+    TEMAT chunks (which already carry manual line removals) yields the cleaned
+    document: REKLAMA/SZUM chunks and removed lines disappear from the source.
+    After this, a fresh analysis run ("zaproponuj nowy podział") starts clean.
+
+    Transcript runs are rejected: their chunk texts were transformed before
+    splitting (speaker labels, filler removal), so the join is not the source.
+    """
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+    if run.mode != "article":
+        return jsonify({"status": "error",
+                        "message": "apply_cleanup works only for article-mode runs"}), 400
+
+    chunks = session.scalars(
+        select(DocumentChunk)
+        .where(DocumentChunk.run_id == run_id)
+        .order_by(DocumentChunk.position)
+    ).all()
+    temat = [c for c in chunks if c.type == "TEMAT"]
+    cleaned = "\n\n".join(c.original_text for c in temat).strip()
+    if not cleaned:
+        return jsonify({"status": "error", "message": "Run has no TEMAT chunks"}), 400
+
+    doc = session.get(WebDocument, run.document_id)
+    if doc is None:
+        abort(404, f"Document {run.document_id} not found")
+
+    # Write back to the same field an article-mode analysis would read
+    from library.document_analysis_service import _extract_text
+    _, field = _extract_text(doc, prefer_md=True)
+    if field not in ("text", "text_md"):
+        return jsonify({"status": "error",
+                        "message": f"Cannot apply cleanup to source field: {field or 'none'}"}), 400
+
+    length_before = len(getattr(doc, field) or "")
+    setattr(doc, field, cleaned)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("apply_cleanup DB save failed for run %d", run_id)
+        return jsonify({"status": "error", "message": "DB save failed"}), 500
+
+    logger.info("apply_cleanup run %d: %s %d -> %d chars (%d TEMAT / %d chunks)",
+                run_id, field, length_before, len(cleaned), len(temat), len(chunks))
+    return jsonify({
+        "status": "success",
+        "field": field,
+        "length_before": length_before,
+        "length_after": len(cleaned),
+        "temat_chunks": len(temat),
+        "dropped_chunks": len(chunks) - len(temat),
     })
 
 
@@ -314,6 +462,32 @@ def update_chunk(chunk_id: int):
         chunk.topic = data["topic"] or None
         changed = True
 
+    if "original_text" in data:
+        # Manual cleanup: UI line-removal mode sends the whole edited text
+        val = data["original_text"]
+        if not isinstance(val, str) or not val.strip():
+            return jsonify({"status": "error", "message": "original_text must be a non-empty string"}), 400
+        chunk.original_text = val
+        changed = True
+
+    doc_lines_removed = 0
+    removed_lines = data.get("remove_lines_from_document") or []
+    if removed_lines:
+        # Propagate cleanup to the source document: drop ALL whole-line exact
+        # matches (junk lines like player controls repeat per embedded video)
+        targets = {ln.strip() for ln in removed_lines if isinstance(ln, str) and ln.strip()}
+        if targets:
+            doc = session.get(WebDocument, chunk.document_id)
+            if doc is not None:
+                for field in ("text", "text_md"):
+                    value = getattr(doc, field, None)
+                    if not value:
+                        continue
+                    kept = [ln for ln in value.split("\n") if ln.strip() not in targets]
+                    doc_lines_removed += value.count("\n") + 1 - len(kept)
+                    setattr(doc, field, "\n".join(kept))
+                changed = True
+
     if "split_at_seg" in data:
         chunk.split_at_seg = data["split_at_seg"]
         changed = True
@@ -341,7 +515,11 @@ def update_chunk(chunk_id: int):
             logger.exception("Failed to update chunk %d", chunk_id)
             return jsonify({"status": "error", "message": "DB error"}), 500
 
-    return jsonify({"status": "success", "chunk": _chunk_to_dict(chunk)})
+    return jsonify({
+        "status": "success",
+        "chunk": _chunk_to_dict(chunk),
+        "document_lines_removed": doc_lines_removed,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -350,12 +528,14 @@ def update_chunk(chunk_id: int):
 
 @bp.route("/chunk/<int:chunk_id>/execute_split", methods=["POST"])
 def execute_split(chunk_id: int):
-    """Split a chunk into two at the given segment index.
+    """Split a chunk into two.
 
-    Body (JSON):
-        split_at_seg      — absolute segment index (required)
-        split_first_type  — type for part before split: TEMAT | REKLAMA
-        split_second_type — type for part after split:  TEMAT | REKLAMA
+    Body (JSON) — exactly one split point:
+        split_at_seg      — absolute transcript segment index (transcript chunks)
+        split_at_line     — line index in original_text; the line starts part B
+                            (article chunks without segments)
+        split_first_type  — type for part before split: TEMAT | REKLAMA | SZUM
+        split_second_type — type for part after split:  TEMAT | REKLAMA | SZUM
 
     Effect:
         - Deletes the original chunk
@@ -372,36 +552,65 @@ def execute_split(chunk_id: int):
 
     # Allow split data from body OR from what's already stored on the chunk
     split_at = data.get("split_at_seg", chunk.split_at_seg)
+    split_at_line = data.get("split_at_line")
     first_type = data.get("split_first_type", chunk.split_first_type)
     second_type = data.get("split_second_type", chunk.split_second_type)
 
-    if split_at is None:
-        return jsonify({"status": "error", "message": "split_at_seg required"}), 400
     if first_type not in ALLOWED_TYPES:
         return jsonify({"status": "error", "message": f"Invalid split_first_type: {first_type}"}), 400
     if second_type not in ALLOWED_TYPES:
         return jsonify({"status": "error", "message": f"Invalid split_second_type: {second_type}"}), 400
 
-    seg_start = chunk.seg_start or 0
-    seg_end = chunk.seg_end
+    if split_at_line is not None:
+        # Line-based split (article chunks — no transcript segments)
+        lines = (chunk.original_text or "").split("\n")
+        try:
+            split_at_line = int(split_at_line)
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "split_at_line must be an integer"}), 400
+        if not 0 < split_at_line < len(lines):
+            return jsonify({"status": "error",
+                            "message": f"split_at_line {split_at_line} out of range (1..{len(lines) - 1})"}), 400
+        text_a = "\n".join(lines[:split_at_line]).strip()
+        text_b = "\n".join(lines[split_at_line:]).strip()
+        if not text_a or not text_b:
+            return jsonify({"status": "error", "message": "Both parts must contain text"}), 400
+        seg_a = (None, None)
+        seg_b = (None, None)
+        # Fresh TEMAT parts need new topic/summary; junk is auto-approved
+        status_a = "needs_reanalysis" if first_type == "TEMAT" else "approved"
+        status_b = "needs_reanalysis" if second_type == "TEMAT" else "approved"
+    else:
+        if split_at is None:
+            return jsonify({"status": "error", "message": "split_at_seg or split_at_line required"}), 400
 
-    if not (seg_start <= split_at < (seg_end or split_at + 1)):
-        return jsonify({"status": "error",
-                        "message": f"split_at_seg {split_at} out of range [{seg_start}, {seg_end})"}), 400
+        seg_start = chunk.seg_start or 0
+        seg_end = chunk.seg_end
 
-    # Reconstruct text from raw transcript segments
-    doc = session.get(WebDocument, chunk.document_id)
-    segments = _parse_segments(doc.text_raw if doc else None)
+        if not (seg_start <= split_at < (seg_end or split_at + 1)):
+            return jsonify({"status": "error",
+                            "message": f"split_at_seg {split_at} out of range [{seg_start}, {seg_end})"}), 400
 
-    def _text_from_segs(start: int, end: int | None) -> str:
-        parts = []
-        for seg in (segments[start:end] if segments else []):
-            t = (seg.get("text") or "").strip()
-            if t.startswith(">>"):
-                t = t[2:].strip()
-            if t:
-                parts.append(t)
-        return " ".join(parts)
+        # Reconstruct text from raw transcript segments
+        doc = session.get(WebDocument, chunk.document_id)
+        segments = _parse_segments(doc.text_raw if doc else None)
+
+        def _text_from_segs(start: int, end: int | None) -> str:
+            parts = []
+            for seg in (segments[start:end] if segments else []):
+                t = (seg.get("text") or "").strip()
+                if t.startswith(">>"):
+                    t = t[2:].strip()
+                if t:
+                    parts.append(t)
+            return " ".join(parts)
+
+        text_a = _text_from_segs(seg_start, split_at)
+        text_b = _text_from_segs(split_at, seg_end)
+        seg_a = (seg_start, split_at)
+        seg_b = (split_at, seg_end)
+        status_a = "approved" if first_type in ("REKLAMA", "SZUM") else "pending"
+        status_b = "needs_reanalysis" if second_type == "TEMAT" else "approved"
 
     orig_pos = chunk.position
     run_id = chunk.run_id
@@ -425,27 +634,21 @@ def execute_split(chunk_id: int):
         session.delete(chunk)
         session.flush()
 
-        # Chunk A — content before the split point
-        text_a = _text_from_segs(seg_start, split_at)
-        status_a = "approved" if first_type == "REKLAMA" else "pending"
         chunk_a = DocumentChunk(
             run_id=run_id, document_id=doc_id, position=orig_pos,
             type=first_type, topic=None,
             original_text=text_a or "(brak tekstu)",
             corrected_text=None, summary=None,
-            seg_start=seg_start, seg_end=split_at,
+            seg_start=seg_a[0], seg_end=seg_a[1],
             rewrite_ratio=None, status=status_a,
         )
 
-        # Chunk B — content after the split point
-        text_b = _text_from_segs(split_at, seg_end)
-        status_b = "needs_reanalysis" if second_type == "TEMAT" else "approved"
         chunk_b = DocumentChunk(
             run_id=run_id, document_id=doc_id, position=orig_pos + 1,
             type=second_type, topic=None,
             original_text=text_b or "(brak tekstu)",
             corrected_text=None, summary=None,
-            seg_start=split_at, seg_end=seg_end,
+            seg_start=seg_b[0], seg_end=seg_b[1],
             rewrite_ratio=None, status=status_b,
         )
 
@@ -453,8 +656,9 @@ def execute_split(chunk_id: int):
         session.add(chunk_b)
         session.commit()
 
-        logger.info("Split chunk %d at seg %d → chunks at pos %d and %d",
-                    chunk_id, split_at, orig_pos, orig_pos + 1)
+        split_point = f"line {split_at_line}" if split_at_line is not None else f"seg {split_at}"
+        logger.info("Split chunk %d at %s → chunks at pos %d and %d",
+                    chunk_id, split_point, orig_pos, orig_pos + 1)
 
         return jsonify({
             "status": "success",
@@ -466,6 +670,77 @@ def execute_split(chunk_id: int):
         session.rollback()
         logger.exception("Failed to execute split on chunk %d", chunk_id)
         return jsonify({"status": "error", "message": "DB error during split"}), 500
+
+
+# ---------------------------------------------------------------------------
+# API: POST /chunk/<chunk_id>/merge_with_next
+# ---------------------------------------------------------------------------
+
+@bp.route("/chunk/<int:chunk_id>/merge_with_next", methods=["POST"])
+def merge_with_next(chunk_id: int):
+    """Merge a chunk with the following one (inverse of execute_split).
+
+    Concatenates texts, unions obsidian_note_paths, keeps the TEMAT type when
+    either side is TEMAT, and marks the merged chunk needs_reanalysis so the
+    topic/summary get refreshed. Positions after the removed chunk shift by -1.
+    """
+    session = get_scoped_session()
+    chunk = session.get(DocumentChunk, chunk_id)
+    if chunk is None:
+        abort(404, f"Chunk {chunk_id} not found")
+
+    next_chunk = session.scalar(
+        select(DocumentChunk).where(
+            DocumentChunk.run_id == chunk.run_id,
+            DocumentChunk.position == chunk.position + 1,
+        )
+    )
+    if next_chunk is None:
+        return jsonify({"status": "error", "message": "Chunk has no successor to merge with"}), 400
+
+    try:
+        chunk.original_text = f"{chunk.original_text}\n\n{next_chunk.original_text}".strip()
+        if chunk.corrected_text and next_chunk.corrected_text:
+            chunk.corrected_text = f"{chunk.corrected_text}\n\n{next_chunk.corrected_text}".strip()
+        else:
+            chunk.corrected_text = None
+        chunk.seg_end = next_chunk.seg_end
+        if next_chunk.type == "TEMAT":
+            chunk.type = "TEMAT"
+        chunk.topic = None
+        chunk.summary = None
+        chunk.rewrite_ratio = None
+        chunk.status = "needs_reanalysis"
+        merged_paths = list(chunk.obsidian_note_paths or [])
+        for p in next_chunk.obsidian_note_paths or []:
+            if p not in merged_paths:
+                merged_paths.append(p)
+        chunk.obsidian_note_paths = merged_paths
+        chunk.updated_at = datetime.utcnow()
+
+        removed_pos = next_chunk.position
+        session.delete(next_chunk)
+        session.flush()
+
+        # Shift following positions down via temp range (unique constraint on run_id+position)
+        session.execute(
+            sa_update(DocumentChunk)
+            .where(DocumentChunk.run_id == chunk.run_id, DocumentChunk.position > removed_pos)
+            .values(position=DocumentChunk.position + 10000)
+        )
+        session.execute(
+            sa_update(DocumentChunk)
+            .where(DocumentChunk.run_id == chunk.run_id, DocumentChunk.position > 10000)
+            .values(position=DocumentChunk.position - 10001)
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to merge chunk %d with next", chunk_id)
+        return jsonify({"status": "error", "message": "DB error during merge"}), 500
+
+    logger.info("Merged chunk %d with its successor (pos %d)", chunk_id, removed_pos)
+    return jsonify({"status": "success", "chunk": _chunk_to_dict(chunk)})
 
 
 # ---------------------------------------------------------------------------
@@ -498,7 +773,19 @@ def reanalyze_chunk(chunk_id: int):
     speakers = run.speakers or []
 
     try:
-        if mode == "semantic" and chunk.corrected_text and chunk.corrected_text.strip():
+        if run.mode == "article":
+            # Article runs have no rewrite step — always re-run classify+summarize
+            text_to_analyze = chunk.original_text or ""
+            if not text_to_analyze.strip():
+                return jsonify({"status": "error", "message": "Chunk has no original_text to analyze"}), 400
+            total = session.scalar(
+                select(func.count()).select_from(DocumentChunk)
+                .where(DocumentChunk.run_id == chunk.run_id)
+            ) or 1
+            from library.chunk_llm_analysis import analyze_article_chunk
+            result = analyze_article_chunk(text_to_analyze, model,
+                                           position=chunk.position, total=total)
+        elif mode == "semantic" and chunk.corrected_text and chunk.corrected_text.strip():
             from library.chunk_llm_analysis import analyze_chunk_semantic
             result = analyze_chunk_semantic(chunk.corrected_text, model, speakers=speakers)
         else:
@@ -562,6 +849,7 @@ body{font-family:Arial,sans-serif;background:#f5f5f5;color:#222;font-size:14px}
 .badge:hover{opacity:.8}
 .badge.TEMAT{background:#dbeafe;color:#1d4ed8}
 .badge.REKLAMA{background:#fef3c7;color:#92400e}
+.badge.SZUM{background:#e5e7eb;color:#4b5563}
 .badge.pending{background:#e2e8f0;color:#475569}
 .badge.approved{background:#dcfce7;color:#15803d}
 .badge.needs_reanalysis{background:#fee2e2;color:#b91c1c}
@@ -834,12 +1122,14 @@ function renderSplitPanel(chunkId) {
         <select id="split-first-type-${chunkId}">
           <option value="REKLAMA" ${st.firstType==="REKLAMA"?"selected":""}>REKLAMA</option>
           <option value="TEMAT" ${st.firstType==="TEMAT"?"selected":""}>TEMAT</option>
+          <option value="SZUM" ${st.firstType==="SZUM"?"selected":""}>SZUM</option>
         </select>
       </label>
       <label>Część 2 (po):
         <select id="split-second-type-${chunkId}">
           <option value="TEMAT" ${st.secondType==="TEMAT"?"selected":""}>TEMAT</option>
           <option value="REKLAMA" ${st.secondType==="REKLAMA"?"selected":""}>REKLAMA</option>
+          <option value="SZUM" ${st.secondType==="SZUM"?"selected":""}>SZUM</option>
         </select>
       </label>
       <button class="btn-confirm" onclick="confirmSplit(${chunkId})">Wykonaj podział</button>
@@ -867,8 +1157,8 @@ function rerenderChunkTranscript(chunkId) {
 
 function updateProgress() {
   if (!_data) return;
-  const temat = _data.chunks.filter(c => c.type !== "REKLAMA");
-  const reklama = _data.chunks.filter(c => c.type === "REKLAMA");
+  const temat = _data.chunks.filter(c => c.type === "TEMAT");
+  const reklama = _data.chunks.filter(c => c.type !== "TEMAT");
   const approved = temat.filter(c => c.status === "approved").length;
   const pct = temat.length ? Math.round(approved / temat.length * 100) : 0;
   const adsPart = reklama.length
@@ -893,7 +1183,9 @@ function cycleStatus(chunkId) {
 function toggleType(chunkId) {
   const chunk = _data.chunks.find(c => c.id === chunkId);
   if (!chunk) return;
-  saveChunk(chunkId, {type: chunk.type === "TEMAT" ? "REKLAMA" : "TEMAT"});
+  const order = ["TEMAT", "REKLAMA", "SZUM"];
+  const next = order[(order.indexOf(chunk.type) + 1) % order.length];
+  saveChunk(chunkId, {type: next});
 }
 
 function saveTopic(chunkId) {
@@ -1061,7 +1353,7 @@ async function extractSpeakers() {
 function updateAdsButton() {
   const btn = document.getElementById("btn-ads");
   if (!btn || !_data) return;
-  const count = _data.chunks.filter(c => c.type === "REKLAMA").length;
+  const count = _data.chunks.filter(c => c.type !== "TEMAT").length;
   if (_hideAds) {
     btn.textContent = `Pokaż reklamy (${count})`;
     btn.className = "show-mode";
@@ -1089,7 +1381,7 @@ function applyChunkFilter() {
   document.querySelectorAll(".chunk").forEach(el => {
     const chunkId = parseInt(el.id.replace("chunk-", ""));
     const chunk = _data.chunks.find(c => c.id === chunkId);
-    if (chunk) el.style.display = (_hideAds && chunk.type === "REKLAMA") ? "none" : "";
+    if (chunk) el.style.display = (_hideAds && chunk.type !== "TEMAT") ? "none" : "";
   });
 }
 

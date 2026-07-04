@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     run_id            INTEGER NOT NULL REFERENCES public.document_analysis_runs(id) ON DELETE CASCADE,
     document_id       INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
     position          SMALLINT NOT NULL,
-    type              VARCHAR(20) NOT NULL,        -- TEMAT | REKLAMA
+    type              VARCHAR(20) NOT NULL,        -- TEMAT | REKLAMA | SZUM
     topic             VARCHAR(500),
     original_text     TEXT NOT NULL,
     corrected_text    TEXT,
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS public.document_topic_sections (
     run_id          INTEGER NOT NULL REFERENCES public.document_analysis_runs(id) ON DELETE CASCADE,
     document_id     INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
     position        SMALLINT NOT NULL,
-    type            VARCHAR(20) NOT NULL,          -- TEMAT | REKLAMA
+    type            VARCHAR(20) NOT NULL,          -- TEMAT | REKLAMA | SZUM
     title           VARCHAR(500),
     summary         TEXT,
     chunk_positions INTEGER[] NOT NULL,            -- np. {1,2,3} — pozycje chunków z tego runu

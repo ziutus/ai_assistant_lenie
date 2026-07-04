@@ -15,7 +15,7 @@ REWRITE_MAX_TOKENS = 2_500
 REWRITE_MIN_RATIO = 0.80
 SUMMARY_MAX_TOKENS = 400
 
-SECTION_HEADER_RE = re.compile(r"^### (REKLAMA|TEMAT): ?(.+)$", re.MULTILINE)
+SECTION_HEADER_RE = re.compile(r"^### (REKLAMA|TEMAT|SZUM): ?(.+)$", re.MULTILINE)
 
 _ARKLABS_PREFIX = "arklabs/"
 
@@ -234,6 +234,51 @@ Jeśli REKLAMA: nie dodawaj nic więcej.
         "type": section_type,
         "topic": topic,
         "corrected_text": corrected_text,
+        "summary": summary_text.strip() if section_type == "TEMAT" and summary_text.strip() else None,
+        "rewrite_ratio": None,
+    }
+
+
+def analyze_article_chunk(original_text: str, model: str,
+                          position: int = 1, total: int = 1) -> dict:
+    """Analyze a chunk of a clean article/document — no verbatim rewrite.
+
+    Article text is already clean (no STT artifacts), so a single LLM call
+    classifies the chunk and summarizes it. Returns the same dict shape as
+    analyze_chunk(), with corrected_text=None and rewrite_ratio=None.
+    """
+    prompt = f"""Fragment {position}/{total} artykułu lub dokumentu.
+
+Sklasyfikuj poniższy fragment i jeśli to TEMAT — napisz streszczenie.
+
+W PIERWSZEJ LINII wpisz etykietę (tylko jedną z trzech opcji):
+   ### TEMAT: <temat>        (merytoryczna treść dokumentu)
+   ### REKLAMA: <opis>       (treść reklamowa lub sponsorska)
+   ### SZUM: <opis>          (szum techniczny strony: nawigacja portalu, menu, stopka,
+                              cookie/zgody, listy linków "przeczytaj też", przyciski udostępniania)
+W miejsce <temat>/<opis> wpisz KONKRETNY temat tego fragmentu w 3-5 słowach —
+nie przepisuj dosłownie tekstu "<temat>" ani nazwy etykiety.
+Jeśli fragment miesza szum z treścią merytoryczną — wybierz TEMAT.
+
+Jeśli TEMAT: w kolejnych liniach napisz streszczenie w 2-3 zdaniach po polsku,
+skupiając się na głównych tezach i wnioskach.
+Jeśli REKLAMA lub SZUM: nie dodawaj nic więcej.
+
+--- TEKST ---
+{original_text}
+--- KONIEC ---"""
+
+    logger.info("article analysis chunk %d/%d, len=%d", position, total, len(original_text))
+    raw, tokens = call_model(prompt, model, SUMMARY_MAX_TOKENS)
+    logger.info("article analysis done: %d tokens", tokens)
+
+    section_type, topic, summary_text = parse_rewritten_chunk(raw)
+    # Bielik tends to prefix the summary with a literal "Streszczenie:" label
+    summary_text = re.sub(r'^\s*Streszczenie:?\s*', '', summary_text, flags=re.IGNORECASE)
+    return {
+        "type": section_type,
+        "topic": topic,
+        "corrected_text": None,
         "summary": summary_text.strip() if section_type == "TEMAT" and summary_text.strip() else None,
         "rewrite_ratio": None,
     }

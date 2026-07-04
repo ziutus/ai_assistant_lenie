@@ -25,7 +25,7 @@ shared/
 
 | Export | Kind | Description |
 |--------|------|-------------|
-| `ApiType` | type | `"AWS Serverless" \| "Docker"` — backend deployment mode |
+| `ApiType` | type | `"Docker"` — backend deployment mode ("AWS Serverless" removed 2026-07-04) |
 | `DEFAULT_API_URLS` | const | Default backend URLs per API type |
 
 ### `documents.ts`

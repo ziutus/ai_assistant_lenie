@@ -9,7 +9,7 @@ const KEYS = {
   apiUrl: `${PREFIX}apiUrl`,
 } as const;
 
-export const DEFAULT_API_URL = DEFAULT_API_URLS["AWS Serverless"];
+export const DEFAULT_API_URL = DEFAULT_API_URLS["Docker"];
 
 export function loadAuth(): AuthState | null {
   const storedKey = localStorage.getItem(KEYS.apiKey);
