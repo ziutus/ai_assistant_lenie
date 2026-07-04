@@ -187,6 +187,65 @@ const SegmentsView: React.FC<{
   );
 };
 
+// ── Plain-text view with line removal (article chunks) ──────────────────────
+
+const PlainTextLines: React.FC<{
+  text: string;
+  markedLines: Set<number>;
+  saving: boolean;
+  onToggleLine: (idx: number) => void;
+  onSave: () => void;
+  onCancel: () => void;
+}> = ({ text, markedLines, saving, onToggleLine, onSave, onCancel }) => {
+  if (!text) return <em style={{ color: "#94a3b8" }}>brak tekstu</em>;
+  const lines = text.split("\n");
+  return (
+    <div>
+      {lines.map((line, i) => {
+        const marked = markedLines.has(i);
+        return (
+          <div
+            key={i}
+            style={{
+              position: "relative", paddingRight: 30, borderRadius: 2, minHeight: "1.4em",
+              ...(marked ? { background: "#fee2e2", textDecoration: "line-through", color: "#991b1b" } : {}),
+            }}
+          >
+            <span style={{ whiteSpace: "pre-wrap" }}>{line || " "}</span>
+            <button
+              onClick={() => onToggleLine(i)}
+              title={marked ? "Przywróć linię" : "Usuń linię"}
+              style={{
+                position: "absolute", right: 2, top: 1,
+                background: "none", border: "1px solid #e2e8f0", borderRadius: 3,
+                fontSize: "0.78em", cursor: "pointer", padding: "0 5px",
+                color: marked ? "#991b1b" : "#94a3b8",
+              }}
+            >
+              {marked ? "↺" : "✕"}
+            </button>
+          </div>
+        );
+      })}
+      {markedLines.size > 0 && (
+        <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={onSave} disabled={saving}
+            style={{ padding: "3px 12px", background: "#b91c1c", color: "#fff", border: "none", borderRadius: 3, cursor: "pointer", fontWeight: "bold", fontSize: "0.85em" }}>
+            {saving ? "Zapisuję…" : `Usuń ${markedLines.size} ${markedLines.size === 1 ? "linię" : "linie/linii"} i zapisz`}
+          </button>
+          <button onClick={onCancel}
+            style={{ padding: "3px 10px", background: "#e2e8f0", color: "#475569", border: "none", borderRadius: 3, cursor: "pointer", fontSize: "0.85em" }}>
+            Anuluj
+          </button>
+          <span style={{ fontSize: "0.8em", color: "#94a3b8" }}>
+            Po zapisie warto ponownie uruchomić analizę chunka (▶ Pełna), by odświeżyć temat i streszczenie.
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+
 // ── Main component ───────────────────────────────────────────────────────────
 
 const Chunks = () => {
@@ -221,6 +280,8 @@ const Chunks = () => {
   const [reanalyzingAll, setReanalyzingAll] = React.useState(false);
   const [approvingAll, setApprovingAll] = React.useState(false);
   const [splitStates, setSplitStates]     = React.useState<Record<number, SplitState>>({});
+  const [lineEdits, setLineEdits]         = React.useState<Record<number, Set<number>>>({});
+  const [savingLines, setSavingLines]     = React.useState<Record<number, boolean>>({});
   const [confirmingSplit, setConfirmingSplit] = React.useState<Record<number, boolean>>({});
   const [extractingSpeakers, setExtractingSpeakers] = React.useState(false);
   const [hiddenChunks, setHiddenChunks] = React.useState<Set<number>>(new Set());
@@ -264,6 +325,7 @@ const Chunks = () => {
       setTopicEdits(edits);
       setShowCorrected(correctedDefaults);
       setSplitStates({});
+      setLineEdits({});
       setHiddenChunks(new Set());
     } catch {
       setError("Błąd ładowania chunków");
@@ -395,6 +457,36 @@ const Chunks = () => {
     } finally {
       setApprovingAll(false);
     }
+  };
+
+  // ── Line removal (article chunks) ──
+
+  const toggleLineMark = (chunkId: number, idx: number) => {
+    setLineEdits(prev => {
+      const cur = new Set(prev[chunkId] ?? []);
+      if (cur.has(idx)) {
+        cur.delete(idx);
+      } else {
+        cur.add(idx);
+      }
+      return { ...prev, [chunkId]: cur };
+    });
+  };
+
+  const clearLineMarks = (chunkId: number) => {
+    setLineEdits(prev => { const n = { ...prev }; delete n[chunkId]; return n; });
+  };
+
+  const saveLineRemovals = async (chunk: Chunk) => {
+    const marked = lineEdits[chunk.id];
+    if (!marked || marked.size === 0) return;
+    const lines = (chunk.original_text ?? "").split("\n");
+    const newText = lines.filter((_, i) => !marked.has(i)).join("\n");
+    if (!newText.trim()) { setError("Nie można usunąć wszystkich linii"); return; }
+    setSavingLines(prev => ({ ...prev, [chunk.id]: true }));
+    const res = await patchChunk(chunk.id, { original_text: newText });
+    setSavingLines(prev => ({ ...prev, [chunk.id]: false }));
+    if (res?.status === "success") clearLineMarks(chunk.id);
   };
 
   // ── Split ──
@@ -662,9 +754,14 @@ const Chunks = () => {
                   onMarkSplit={markSplit}
                 />
               ) : (
-                <div style={{ whiteSpace: "pre-wrap", color: "#1e293b" }}>
-                  {chunk.original_text ?? <em style={{ color: "#94a3b8" }}>brak tekstu</em>}
-                </div>
+                <PlainTextLines
+                  text={chunk.original_text ?? ""}
+                  markedLines={lineEdits[chunk.id] ?? new Set()}
+                  saving={savingLines[chunk.id] ?? false}
+                  onToggleLine={idx => toggleLineMark(chunk.id, idx)}
+                  onSave={() => saveLineRemovals(chunk)}
+                  onCancel={() => clearLineMarks(chunk.id)}
+                />
               )}
             </div>
 

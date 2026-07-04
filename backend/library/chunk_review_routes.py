@@ -364,6 +364,14 @@ def update_chunk(chunk_id: int):
         chunk.topic = data["topic"] or None
         changed = True
 
+    if "original_text" in data:
+        # Manual cleanup: UI line-removal mode sends the whole edited text
+        val = data["original_text"]
+        if not isinstance(val, str) or not val.strip():
+            return jsonify({"status": "error", "message": "original_text must be a non-empty string"}), 400
+        chunk.original_text = val
+        changed = True
+
     if "split_at_seg" in data:
         chunk.split_at_seg = data["split_at_seg"]
         changed = True
