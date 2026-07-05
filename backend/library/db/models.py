@@ -429,6 +429,9 @@ class WebsiteEmbedding(Base):
     model: Mapped[str] = mapped_column(
         String(100), ForeignKey("embedding_models.name"), nullable=False,
     )
+    chunk_id: Mapped[int | None] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="SET NULL"), nullable=True,
+    )
     created_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime, server_default=sa_text("CURRENT_TIMESTAMP"),
     )
@@ -436,6 +439,7 @@ class WebsiteEmbedding(Base):
     # Relationships
     document: Mapped["WebDocument"] = relationship(back_populates="embeddings")
     model_ref: Mapped["EmbeddingModel"] = relationship(foreign_keys=[model])
+    chunk: Mapped["DocumentChunk | None"] = relationship(foreign_keys=[chunk_id])
 
 
 # ---------------------------------------------------------------------------

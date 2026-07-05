@@ -443,3 +443,102 @@ class DocumentAnalysisService:
 
         log(f"saved run_id={run.id} chunks={len(sections)} topic_sections={len(topic_sections_data)}")
         return run
+
+
+def generate_embeddings_from_run(
+    session, run_id: int, progress_fn: Callable[[str], None] | None = None,
+) -> dict:
+    """Generate embeddings from a run's approved TEMAT chunks.
+
+    For each chunk with type == "TEMAT" and status == "approved": takes
+    corrected_text (transcript mode) or original_text (article mode), splits it
+    into embedding-sized pieces (md_split_for_emb, same splitter used by
+    webdocument_md_decode.py), strips markdown syntax, and stores one
+    WebsiteEmbedding row per piece with chunk_id set. REKLAMA/SZUM chunks and
+    non-approved TEMAT chunks are skipped.
+
+    Re-running deletes this run's previously chunk-linked embeddings first, so
+    it is safe to call again after a chunk is re-approved or edited.
+    """
+    from sqlalchemy import delete, select
+
+    from library.config_loader import load_config
+    from library.db.models import WebsiteEmbedding
+    from library.lenie_markdown import md_remove_markdown, md_split_for_emb
+    from library.models.stalker_document_status import StalkerDocumentStatus
+    from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+    import library.embedding as embedding
+
+    def log(msg: str) -> None:
+        logger.info("[embeddings run=%d] %s", run_id, msg)
+        if progress_fn:
+            progress_fn(msg)
+
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        raise ValueError(f"Run {run_id} not found")
+
+    doc = session.get(WebDocument, run.document_id)
+    if doc is None:
+        raise ValueError(f"Document {run.document_id} not found")
+
+    model = load_config().require("EMBEDDING_MODEL")
+    websites = WebsitesDBPostgreSQL(session)
+
+    all_chunks = session.scalars(
+        select(DocumentChunk).where(DocumentChunk.run_id == run_id)
+    ).all()
+    eligible = [c for c in all_chunks if c.type == "TEMAT" and c.status == "approved"]
+
+    chunk_ids = [c.id for c in all_chunks]
+    if chunk_ids:
+        session.execute(delete(WebsiteEmbedding).where(WebsiteEmbedding.chunk_id.in_(chunk_ids)))
+        session.commit()
+
+    if not doc.language:
+        doc.language = "pl"
+
+    created = 0
+    skipped_empty = 0
+    for i, chunk in enumerate(eligible, 1):
+        log(f"chunk {i}/{len(eligible)} (position {chunk.position})...")
+        text = (chunk.corrected_text or chunk.original_text or "").strip()
+        if not text:
+            skipped_empty += 1
+            continue
+        for part in md_split_for_emb(text):
+            cleaned = md_remove_markdown(part).strip()
+            if not cleaned:
+                continue
+            result = embedding.get_embedding(model=model, text=cleaned)
+            if result.status != "success" or not result.embedding:
+                logger.warning(
+                    "Embedding generation failed for chunk %d (run %d): %s",
+                    chunk.id, run_id, result.status,
+                )
+                continue
+            websites.embedding_add(
+                website_id=doc.id,
+                embedding=result.embedding,
+                language=doc.language,
+                text=cleaned,
+                text_original=cleaned,
+                model=model,
+                chunk_id=chunk.id,
+            )
+            created += 1
+
+    if created:
+        doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
+
+    session.commit()
+    log(f"done: {created} embeddings created from {len(eligible)} chunks")
+
+    return {
+        "run_id": run_id,
+        "document_id": doc.id,
+        "model": model,
+        "chunks_considered": len(eligible),
+        "chunks_skipped_empty": skipped_empty,
+        "embeddings_created": created,
+    }

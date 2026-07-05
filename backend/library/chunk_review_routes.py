@@ -22,7 +22,7 @@ from sqlalchemy import func, select, update as sa_update
 
 from library.db.engine import get_scoped_session
 from library.db.models import (
-    DocumentAnalysisRun, DocumentChunk, DocumentTopicSection, WebDocument,
+    DocumentAnalysisRun, DocumentChunk, DocumentTopicSection, WebDocument, WebsiteEmbedding,
 )
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,10 @@ bp = Blueprint("chunk_review", __name__)
 # In-memory job registry for async analysis runs.
 # Keyed by job_id (short UUID). Lives as long as the server process.
 _analysis_jobs: dict[str, dict] = {}
+
+# In-memory job registry for async embedding-generation runs (separate from
+# _analysis_jobs — different job shape, polled via /embedding_job/<job_id>).
+_embedding_jobs: dict[str, dict] = {}
 
 ALLOWED_STATUSES = {"pending", "approved", "needs_reanalysis", "split_requested", "split", "skipped"}
 ALLOWED_TYPES = {"TEMAT", "REKLAMA", "SZUM"}
@@ -50,7 +54,7 @@ def _parse_segments(text_raw: str | None) -> list[dict]:
     return []
 
 
-def _chunk_to_dict(c: DocumentChunk) -> dict:
+def _chunk_to_dict(c: DocumentChunk, has_embeddings: bool | None = None) -> dict:
     return {
         "id": c.id,
         "position": c.position,
@@ -66,6 +70,8 @@ def _chunk_to_dict(c: DocumentChunk) -> dict:
         "split_at_seg": c.split_at_seg,
         "split_first_type": c.split_first_type,
         "split_second_type": c.split_second_type,
+        "obsidian_note_paths": c.obsidian_note_paths or [],
+        "has_embeddings": bool(has_embeddings) if has_embeddings is not None else None,
     }
 
 
@@ -260,6 +266,15 @@ def get_run_chunks(run_id: int):
         .order_by(DocumentTopicSection.position)
     ).all()
 
+    chunk_ids = [c.id for c in run.chunks]
+    embedded_chunk_ids: set[int] = set()
+    if chunk_ids:
+        embedded_chunk_ids = set(session.scalars(
+            select(WebsiteEmbedding.chunk_id)
+            .where(WebsiteEmbedding.chunk_id.in_(chunk_ids))
+            .distinct()
+        ).all())
+
     return jsonify({
         "status": "success",
         "run": {
@@ -280,7 +295,7 @@ def get_run_chunks(run_id: int):
             "document_type": doc.document_type if doc else "",
         },
         "segments": segments,
-        "chunks": [_chunk_to_dict(c) for c in run.chunks],
+        "chunks": [_chunk_to_dict(c, has_embeddings=c.id in embedded_chunk_ids) for c in run.chunks],
         "topic_sections": [
             {
                 "id": ts.id,
@@ -421,6 +436,69 @@ def apply_run_cleanup(run_id: int):
         "temat_chunks": len(temat),
         "dropped_chunks": len(chunks) - len(temat),
     })
+
+
+# ---------------------------------------------------------------------------
+# API: POST /analysis_run/<run_id>/generate_embeddings
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>/generate_embeddings", methods=["POST"])
+def generate_embeddings(run_id: int):
+    """Start an async job generating embeddings from this run's approved TEMAT chunks.
+
+    Returns immediately with {job_id}. Poll GET /embedding_job/<job_id> for status.
+    """
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+
+    job_id = uuid.uuid4().hex[:8]
+    _embedding_jobs[job_id] = {
+        "status": "running",
+        "run_id": run_id,
+        "result": None,
+        "error": None,
+        "progress": "Startowanie...",
+    }
+
+    def _run_embeddings() -> None:
+        from library.db.engine import get_session
+        from library.document_analysis_service import generate_embeddings_from_run
+
+        job_session = get_session()
+        try:
+            def _progress(msg: str) -> None:
+                _embedding_jobs[job_id]["progress"] = msg
+
+            result = generate_embeddings_from_run(job_session, run_id, progress_fn=_progress)
+            _embedding_jobs[job_id].update({
+                "status": "done",
+                "result": result,
+                "progress": f"Gotowe: {result['embeddings_created']} embeddingów "
+                            f"z {result['chunks_considered']} chunków",
+            })
+        except ValueError as exc:
+            _embedding_jobs[job_id].update({"status": "failed", "error": str(exc)})
+        except Exception as exc:
+            logger.exception("background embedding generation failed for run %d", run_id)
+            _embedding_jobs[job_id].update({"status": "failed", "error": str(exc)})
+        finally:
+            job_session.close()
+
+    t = threading.Thread(target=_run_embeddings, daemon=True, name=f"embeddings-{job_id}")
+    t.start()
+
+    return jsonify({"status": "started", "job_id": job_id, "run_id": run_id})
+
+
+@bp.route("/embedding_job/<job_id>", methods=["GET"])
+def get_embedding_job(job_id: str):
+    """Poll status of an async embedding job started by POST /analysis_run/<id>/generate_embeddings."""
+    job = _embedding_jobs.get(job_id)
+    if job is None:
+        return jsonify({"status": "error", "message": "Job not found"}), 404
+    return jsonify({"status": "success", "job": job})
 
 
 # ---------------------------------------------------------------------------
