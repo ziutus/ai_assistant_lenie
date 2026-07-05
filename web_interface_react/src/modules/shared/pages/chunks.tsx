@@ -112,6 +112,10 @@ const TYPE_CYCLE: ChunkType[] = ["TEMAT", "REKLAMA", "SZUM"];
 const SECTION_VIEW_THRESHOLD = 30;
 const CHUNK_PAGE_SIZE = 20;
 
+// Document types with an editor route in App.tsx. Types without one
+// (text, text_message, social_media_post) get a back-link to /list instead.
+const EDITOR_TYPES = ["webpage", "link", "youtube", "movie", "email"];
+
 function typeColor(type: string | null): React.CSSProperties {
   switch (type) {
     case "REKLAMA": return { background: "#fee2e2", color: "#991b1b" };
@@ -1165,7 +1169,11 @@ const Chunks = () => {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 6, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Przegląd chunków — dokument #{id}</h2>
-        <NavLink to={`/${docType || "youtube"}/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Edytuj dokument</NavLink>
+        {EDITOR_TYPES.includes(docType) ? (
+          <NavLink to={`/${docType}/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Edytuj dokument</NavLink>
+        ) : (
+          <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
+        )}
       </div>
 
       {/* Nowa analiza */}
