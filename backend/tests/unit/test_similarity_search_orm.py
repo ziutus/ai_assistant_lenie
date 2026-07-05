@@ -14,12 +14,12 @@ sa = pytest.importorskip("sqlalchemy")
 EXPECTED_KEYS = {
     "website_id", "text", "similarity", "id", "url", "language",
     "text_original", "websites_text_length", "embeddings_text_length",
-    "title", "document_type", "project",
+    "title", "document_type", "project", "chunk_id", "obsidian_note_paths",
 }
 
 
 def _make_row(**overrides):
-    """Create a mock result row with all 12 expected attributes."""
+    """Create a mock result row with all 14 expected attributes."""
     defaults = {
         "website_id": 1,
         "text": "chunk text",
@@ -33,6 +33,8 @@ def _make_row(**overrides):
         "title": "Test Doc",
         "document_type": "webpage",
         "project": "lenie",
+        "chunk_id": None,
+        "obsidian_note_paths": None,
     }
     defaults.update(overrides)
     row = MagicMock()

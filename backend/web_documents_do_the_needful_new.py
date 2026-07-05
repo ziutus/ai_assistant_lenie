@@ -340,9 +340,71 @@ def step4_mark_transcribed_ready(session, websites):
         session.commit()
 
 
+def _find_run_with_approved_chunks(session, document_id):
+    """Return the most recent DocumentAnalysisRun for this document that has at
+    least one approved TEMAT chunk, or None if there isn't one.
+    """
+    from sqlalchemy import select
+
+    from library.db.models import DocumentAnalysisRun, DocumentChunk
+
+    return session.scalar(
+        select(DocumentAnalysisRun)
+        .join(DocumentChunk, DocumentChunk.run_id == DocumentAnalysisRun.id)
+        .where(
+            DocumentAnalysisRun.document_id == document_id,
+            DocumentChunk.type == "TEMAT",
+            DocumentChunk.status == "approved",
+        )
+        .order_by(DocumentAnalysisRun.created_at.desc())
+        .limit(1)
+    )
+
+
+def _embed_document_from_markdown(session, websites, doc, model):
+    """Fallback embedding for youtube/webpage docs without an approved-chunk run.
+
+    Whole-document embedding: splits text_md (or text) into embedding-sized
+    pieces the same way webdocument_md_decode.py does (md_split_for_emb +
+    md_remove_markdown), no chunk_id (not tied to a chunk analysis run).
+    """
+    from library.lenie_markdown import md_remove_markdown, md_split_for_emb
+    import library.embedding as embedding
+
+    source = doc.text_md or doc.text
+    if not source:
+        print(f"WARNING: document {doc.id} has no text_md/text, skipping")
+        return False
+
+    if not doc.language:
+        doc.language = "pl"
+
+    created = 0
+    for part in md_split_for_emb(source):
+        cleaned = md_remove_markdown(part).strip()
+        if not cleaned:
+            continue
+        result = embedding.get_embedding(model=model, text=cleaned)
+        if result.status != "success" or not result.embedding:
+            print(f"WARNING: embedding failed for document {doc.id}: {result.status}")
+            continue
+        websites.embedding_add(doc.id, result.embedding, doc.language, cleaned, cleaned, model)
+        created += 1
+
+    return created > 0
+
+
 def step5_create_embeddings(session, websites):
-    """Step 5: create embeddings for link documents that are ready."""
+    """Step 5: create embeddings for documents that are ready.
+
+    link              — title + summary (single embedding).
+    youtube / webpage — embeds from the document's approved-chunk analysis run
+                        (via generate_embeddings_from_run) when one exists;
+                        otherwise falls back to a whole-document embedding
+                        split from text_md/text (no chunk_id).
+    """
     from library.db.models import WebDocument
+    from library.document_analysis_service import generate_embeddings_from_run
     from library.models.stalker_document_status import StalkerDocumentStatus
     from library.models.stalker_document_type import StalkerDocumentType
     from library.search_service import SearchService
@@ -361,24 +423,39 @@ def step5_create_embeddings(session, websites):
         print(f"Working on ID:{doc.id} ({website_nb} from {embedding_needed_len} {progress}%)"
               f" {doc.document_type} url: {doc.url}")
 
-        # Build text for embedding (same logic as StalkerWebDocumentDB.embedding_add)
         if doc.document_type == StalkerDocumentType.link.name:
             text = doc.title or ""
             if doc.summary:
                 text = (text + " " + doc.summary).strip() if text else doc.summary
+
+            if not text:
+                print(f"WARNING: document {doc.id} has no title or summary, skipping")
+                continue
+
+            websites.embedding_delete(doc.id, model)
+            result = search_service.get_embedding(text)
+            websites.embedding_add(doc.id, result.embedding, doc.language, text, text, model)
+            doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
+            session.commit()
+
+        elif doc.document_type in (StalkerDocumentType.youtube.name, StalkerDocumentType.webpage.name):
+            run = _find_run_with_approved_chunks(session, doc.id)
+            if run is not None:
+                result = generate_embeddings_from_run(session, run.id)
+                print(f"  embedded {result['embeddings_created']} pieces from run #{run.id} "
+                      f"({result['chunks_considered']} approved chunks)")
+            else:
+                websites.embedding_delete(doc.id, model)
+                session.commit()
+                if _embed_document_from_markdown(session, websites, doc, model):
+                    doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
+                    session.commit()
+                else:
+                    session.rollback()
+
         else:
             print(f"WARNING: embedding_add not yet implemented for document type: {doc.document_type}, skipping")
             continue
-
-        if not text:
-            print(f"WARNING: document {doc.id} has no title or summary, skipping")
-            continue
-
-        websites.embedding_delete(doc.id, model)
-        result = search_service.get_embedding(text)
-        websites.embedding_add(doc.id, result.embedding, doc.language, text, text, model)
-        doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
-        session.commit()
 
 
 def main():

@@ -572,17 +572,17 @@ class TestDict:
 
 
 # ---------------------------------------------------------------------------
-# 5.11: WebsiteEmbedding has all 8 columns
+# 5.11: WebsiteEmbedding has all 9 columns
 # ---------------------------------------------------------------------------
 
 class TestWebsiteEmbeddingColumns:
     EXPECTED_COLUMNS = {
         "id", "website_id", "language", "text",
-        "text_original", "embedding", "model", "created_at",
+        "text_original", "embedding", "model", "created_at", "chunk_id",
     }
 
     def test_column_count(self):
-        assert len(_column_names(WebsiteEmbedding)) == 8
+        assert len(_column_names(WebsiteEmbedding)) == 9
 
     def test_all_column_names(self):
         assert _column_names(WebsiteEmbedding) == self.EXPECTED_COLUMNS

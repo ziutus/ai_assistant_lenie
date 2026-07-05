@@ -48,6 +48,8 @@ export interface SearchResult {
   similarity: number;
   website_id: number;
   url: string;
+  chunk_id: number | null;
+  obsidian_note_paths: string[];
 }
 
 export interface ListItem {
