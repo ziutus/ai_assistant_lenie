@@ -46,6 +46,21 @@ from library.models.stalker_document_status import StalkerDocumentStatus
 cfg = load_config()
 
 
+def check_markdown_deps_installed() -> None:
+    """Fail fast with an actionable message if the optional 'markdown' dependency
+    group isn't installed. Needed to convert webpage HTML to markdown
+    (process_article_content) — without it the script would crash mid-run,
+    after DynamoDB items are already fetched and the document row inserted.
+    """
+    try:
+        import html2markdown  # noqa: F401
+    except ImportError:
+        print("ERROR: Missing optional dependency 'html2markdown' — required to convert "
+              "webpage HTML into markdown (process_article_content).")
+        print("Install it with: cd backend && uv sync --extra markdown")
+        sys.exit(1)
+
+
 def get_ssm_parameter(name: str, region: str = None) -> str:
     """Fetch a single SSM Parameter Store value."""
     region = region or cfg.require("AWS_REGION", "us-east-1")
@@ -311,6 +326,11 @@ def main():
     # Resolve cache dir default from config
     if args.data_dir is None:
         args.data_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
+
+    # Fail fast if the markdown conversion dependency is missing — better to
+    # find out before AWS calls / DB writes than mid-run on the first webpage item.
+    if not args.skip_s3 and not args.dry_run:
+        check_markdown_deps_installed()
 
     # Auto-detect last successful sync date. The DB connection doubles as a
     # fail-fast check before AWS calls; skipped for --dry-run with explicit
