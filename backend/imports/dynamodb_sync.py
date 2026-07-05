@@ -187,9 +187,11 @@ def process_article_content(doc_id: int, cache_base_dir: str,
                              session, skip_llm: bool = False) -> tuple[bool, bool]:
     """Convert HTML to markdown and optionally run LLM article extraction.
 
-    Saves files to cache only — no DB writes.
+    On successful LLM extraction persists text_extracted (pre-clean) and
+    text_md (post clean_article_text) on the document; otherwise no DB writes.
     Returns (markdown_ok, llm_ok).
     """
+    from library.article_cleaner import clean_article_text
     from library.article_pipeline import extract_article
 
     doc_cache_dir = os.path.join(cache_base_dir, str(doc_id))
@@ -218,6 +220,15 @@ def process_article_content(doc_id: int, cache_base_dir: str,
 
     if article:
         print(f"  Process: LLM OK ({len(article)} chars)")
+        cleaned = clean_article_text(article, doc.url)
+        doc.text_extracted = article
+        doc.text_md = cleaned["text"]
+        try:
+            session.commit()
+            print(f"  Process: saved text_extracted/text_md ({len(cleaned['text'])} chars cleaned)")
+        except Exception:
+            session.rollback()
+            print(f"  WARNING: failed to save text_extracted/text_md for doc {doc_id}")
         return True, True
 
     print("  Process: LLM failed — no article markers extracted")
