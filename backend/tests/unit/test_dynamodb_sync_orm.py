@@ -182,3 +182,36 @@ class TestSyncItemToPostgres:
 
         assert result == ("added", None)
         MockDocService.return_value.import_document.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests for check_markdown_deps_installed (preflight dependency check)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckMarkdownDepsInstalled:
+    """The 'markdown' optional dependency group (html2markdown) is needed to
+    convert webpage HTML into markdown. Missing it should fail fast with an
+    actionable message, not crash mid-run after AWS calls/DB writes.
+    """
+
+    def test_passes_when_dependency_importable(self):
+        from imports.dynamodb_sync import check_markdown_deps_installed
+
+        # html2markdown is installed in this environment — should not raise/exit.
+        check_markdown_deps_installed()
+
+    def test_exits_with_actionable_message_when_missing(self, monkeypatch, capsys):
+        from imports.dynamodb_sync import check_markdown_deps_installed
+
+        # A None entry in sys.modules makes `import html2markdown` raise ImportError,
+        # simulating the missing-dependency case without uninstalling the package.
+        monkeypatch.setitem(sys.modules, "html2markdown", None)
+
+        with pytest.raises(SystemExit) as exc_info:
+            check_markdown_deps_installed()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "html2markdown" in captured.out
+        assert "uv sync --extra markdown" in captured.out
