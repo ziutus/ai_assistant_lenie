@@ -198,6 +198,52 @@ def split_markdown_into_chunks(text: str, max_chars: int) -> list[str]:
     return _merge_small_tail(chunks, max_chars, '\n\n')
 
 
+_CHAPTER_HEADER_RE = re.compile(r'^(#{1,2}) (.+)$', re.MULTILINE)
+
+
+def detect_chapters(text: str) -> list[dict]:
+    """Detect a book-like table of contents from markdown H1/H2 headers.
+
+    Chapter level selection: H1 when the text has at least two H1 headers,
+    otherwise H2 (OCR output often promotes everything to one level). A single
+    header of either level still yields one chapter. Text before the first
+    chapter header (title page, TOC) becomes a "(wstęp)" pseudo-chapter.
+
+    Returns a list of dicts ordered by position in the text:
+        {position (1-based), level, title, char_start, char_end, length}
+    Empty list when the text has no H1/H2 headers.
+    """
+    text = text.rstrip()
+    if not text:
+        return []
+
+    headers = [
+        (len(m.group(1)), m.group(2).strip().rstrip('#').strip(), m.start())
+        for m in _CHAPTER_HEADER_RE.finditer(text)
+    ]
+    if not headers:
+        return []
+
+    h1_count = sum(1 for level, _, _ in headers if level == 1)
+    chapter_level = 1 if h1_count >= 2 or h1_count == len(headers) else 2
+    chosen = [(title, start) for level, title, start in headers if level == chapter_level]
+    if not chosen:
+        return []
+
+    chapters: list[dict] = []
+    if chosen[0][1] > 0 and text[:chosen[0][1]].strip():
+        chapters.append({"title": "(wstęp)", "char_start": 0, "char_end": chosen[0][1]})
+    starts = [start for _, start in chosen]
+    for (title, start), end in zip(chosen, starts[1:] + [len(text)]):
+        chapters.append({"title": title, "char_start": start, "char_end": end})
+
+    for i, ch in enumerate(chapters, 1):
+        ch["position"] = i
+        ch["level"] = chapter_level
+        ch["length"] = ch["char_end"] - ch["char_start"]
+    return chapters
+
+
 def split_text_for_embedding(text, paragraph_titles=[], max_words_in_line=300, max_characters_in_line=1000):
     sentences2 = []
     paragraphs = text.split("\n\n")
