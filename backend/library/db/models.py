@@ -658,3 +658,38 @@ class DocumentTopicSection(Base):
 
     def __repr__(self) -> str:
         return f"DocumentTopicSection(id={self.id!r}, run_id={self.run_id!r}, position={self.position!r})"
+
+
+class DocumentRemovedLine(Base):
+    """Line/block removed from a document during manual chunk review cleanup.
+
+    Training data for improving article_cleaner.py / site_rules.json: what the
+    automatic cleaner missed and a human had to remove. Rows survive run/chunk
+    deletion (FKs SET NULL) so aggregate queries (e.g. most-removed lines per
+    portal, via join on web_documents.url) keep working over time.
+    """
+
+    __tablename__ = "document_removed_lines"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("document_analysis_runs.id", ondelete="SET NULL"),
+    )
+    chunk_id: Mapped[int | None] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="SET NULL"),
+    )
+    # source: manual (line removed in chunk-review UI) | szum_chunk (whole
+    # SZUM/REKLAMA chunk dropped by apply_cleanup)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    line_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return f"DocumentRemovedLine(id={self.id!r}, document_id={self.document_id!r}, source={self.source!r})"
