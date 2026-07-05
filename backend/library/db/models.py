@@ -197,6 +197,9 @@ class WebDocument(Base):
     )
     project: Mapped[str | None] = mapped_column(String(100))
     text_md: Mapped[str | None] = mapped_column(Text)
+    # Raw LLM article extraction output (pre clean_article_text) — diagnostic only,
+    # intentionally NOT exposed via dict()/API (used for article_cleaner regression checks).
+    text_extracted: Mapped[str | None] = mapped_column(Text)
     transcript_needed: Mapped[bool | None] = mapped_column(Boolean, server_default=sa_text("false"))
 
     # Review & Obsidian tracking (Story 33.4, ADR-014)

@@ -35,7 +35,7 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 4. For `webpage` type items with `uuid`: fetches `{uuid}.txt` and `{uuid}.html` from S3 into memory
 5. Inserts new documents via `DocumentService.import_document(skip_if_exists=True)`
 6. After insert, saves S3 content to cache as `{CACHE_DIR}/markdown/{doc.id}/{doc.id}.html` (same convention as `document_prepare.py`, so downstream tools can reuse cached files without re-downloading from S3)
-7. For webpages: converts HTML to markdown (`_step_1_all.md`) and runs LLM article extraction (CloudFerro primary, ARK Labs fallback) unless `--skip-llm`
+7. For webpages: converts HTML to markdown (`_step_1_all.md`) and runs LLM article extraction (CloudFerro primary, ARK Labs fallback) unless `--skip-llm`. On successful extraction, persists `text_extracted` (raw LLM output, pre-clean) and `text_md` (after `article_cleaner.clean_article_text()`) on the document — `--skip-llm` and failed extraction leave both fields untouched
 8. Sets `document_state` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
 
 **DynamoDB → PostgreSQL field mapping:**

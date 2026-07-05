@@ -159,12 +159,12 @@ class TestWebDocumentColumns:
         "chapter_list", "document_state", "document_state_error",
         "text_raw", "transcript_job_id", "ai_summary_needed",
         "author", "note", "uuid", "project", "text_md",
-        "transcript_needed", "reviewed_at", "obsidian_note_paths",
-        "video_description",
+        "text_extracted", "transcript_needed", "reviewed_at",
+        "obsidian_note_paths", "video_description",
     }
 
     def test_column_count(self):
-        assert len(_column_names(WebDocument)) == 29
+        assert len(_column_names(WebDocument)) == 30
 
     def test_all_column_names(self):
         assert _column_names(WebDocument) == self.EXPECTED_COLUMNS
@@ -240,8 +240,8 @@ class TestWebDocumentColumnTypes:
     def test_text_fields_are_text_type(self):
         text_columns = [
             "summary", "tags", "text", "title", "text_raw",
-            "text_md", "chapter_list", "source", "original_id",
-            "transcript_job_id", "author", "note",
+            "text_md", "text_extracted", "chapter_list", "source",
+            "original_id", "transcript_job_id", "author", "note",
         ]
         for name in text_columns:
             col = _get_column(WebDocument, name)

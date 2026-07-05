@@ -191,7 +191,7 @@ All application variables (database, LLM, API keys, etc.) are defined in [`scrip
 PostgreSQL 18 with pgvector extension for vector similarity search. Schema defined in `backend/database/init/` (see `backend/database/CLAUDE.md` for full details).
 
 Two tables:
-- **`web_documents`** (29 columns) — documents with content, metadata, processing state, and multilingual fields
+- **`web_documents`** (30 columns) — documents with content, metadata, processing state, and multilingual fields
 - **`websites_embeddings`** — vector embeddings (dimensionless column, per-model HNSW partial indexes) with cosine similarity search
 
 Document processing states: `URL_ADDED` → `DOCUMENT_INTO_DATABASE` → ... → `EMBEDDING_EXIST` (15 states total, see `backend/library/models/stalker_document_status.py`).

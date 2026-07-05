@@ -40,6 +40,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `text_raw` | `text` | Raw extracted text before cleanup |
 | `text_english` | `text` | English translation of text |
 | `text_md` | `text` | Markdown version of text |
+| `text_extracted` | `text` | Raw LLM article extraction output (pre `clean_article_text()`), diagnostic only — not exposed via API |
 | `summary` | `text` | AI-generated summary |
 | `summary_english` | `text` | English translation of summary |
 | `language` | `varchar(10)` | Detected language code |
