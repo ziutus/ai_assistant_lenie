@@ -21,6 +21,8 @@ interface Chunk {
   status: string;
   seg_start: number | null;
   seg_end: number | null;
+  obsidian_note_paths?: string[];
+  has_embeddings?: boolean | null;
 }
 
 interface Speaker {
@@ -318,6 +320,9 @@ const Chunks = () => {
   const [confirmingSplit, setConfirmingSplit] = React.useState<Record<number, boolean>>({});
   const [extractingSpeakers, setExtractingSpeakers] = React.useState(false);
   const [hiddenChunks, setHiddenChunks] = React.useState<Set<number>>(new Set());
+  const [filterUnprocessed, setFilterUnprocessed] = React.useState(false);
+  const [embedJobId, setEmbedJobId] = React.useState<string | null>(null);
+  const [embedJobStatus, setEmbedJobStatus] = React.useState<string | null>(null);
 
   const headers = { "x-api-key": apiKey ?? "", "Content-Type": "application/json" };
 
@@ -699,6 +704,44 @@ const Chunks = () => {
     finally { setExtractingSpeakers(false); }
   };
 
+  // ── Embeddings ──
+
+  const pollEmbeddingJob = React.useCallback((jid: string) => {
+    const interval = setInterval(async () => {
+      try {
+        const r = await fetch(`${apiUrl}/embedding_job/${jid}`, { headers });
+        const data = await r.json();
+        setEmbedJobStatus(data.job?.status ?? data.status);
+        if (data.job?.status === "done") {
+          clearInterval(interval);
+          setEmbedJobId(null);
+          const res = data.job.result ?? {};
+          setInfo(`Embeddingi: ${res.embeddings_created ?? 0} utworzonych z ${res.chunks_considered ?? 0} zatwierdzonych chunków`);
+          if (selectedRun !== null) await fetchChunks(selectedRun);
+        } else if (data.job?.status === "failed") {
+          clearInterval(interval);
+          setEmbedJobId(null);
+          setError("Generowanie embeddingów nie powiodło się: " + (data.job.error ?? ""));
+        }
+      } catch {
+        clearInterval(interval);
+        setEmbedJobId(null);
+      }
+    }, 3000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiUrl, apiKey, selectedRun, fetchChunks]);
+
+  const generateEmbeddings = async () => {
+    if (selectedRun === null || embedJobId) return;
+    setError(""); setEmbedJobStatus("starting");
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}/generate_embeddings`, { method: "POST", headers });
+      const data = await r.json();
+      if (data.job_id) { setEmbedJobId(data.job_id); setEmbedJobStatus("running"); pollEmbeddingJob(data.job_id); }
+      else { setError("Nie udało się uruchomić generowania embeddingów"); setEmbedJobStatus(null); }
+    } catch { setError("Błąd połączenia przy generowaniu embeddingów"); setEmbedJobStatus(null); }
+  };
+
   // ── Progress ──
 
   const tematChunks = chunks.filter(c => c.type === "TEMAT");
@@ -710,6 +753,7 @@ const Chunks = () => {
   const maxPosition = chunks.reduce((m, c) => Math.max(m, c.position), 0);
   const visibleChunks = chunks.filter(c =>
     !hiddenChunks.has(c.id) && (!hideAds || c.type === "TEMAT")
+    && (!filterUnprocessed || (c.type === "TEMAT" && (c.obsidian_note_paths?.length ?? 0) === 0))
   );
 
   // ── Render ───────────────────────────────────────────────────────────────
@@ -811,6 +855,18 @@ const Chunks = () => {
               Pokaż ukryte ({hiddenChunks.size})
             </button>
           )}
+          <label style={{ fontSize: "0.8em", color: "#94a3b8", display: "flex", alignItems: "center", gap: 4 }}
+            title="Pokaż tylko chunki TEMAT bez notatki Obsidian">
+            <input type="checkbox" checked={filterUnprocessed} onChange={e => setFilterUnprocessed(e.target.checked)} />
+            tylko nieopracowane
+          </label>
+          {approvedCount > 0 && (
+            <button className="button" onClick={generateEmbeddings} disabled={!!embedJobId}
+              title="Generuje embeddingi z zatwierdzonych chunków TEMAT (do wyszukiwania semantycznego)"
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0891b2", color: "#fff", border: "none" }}>
+              {embedJobId ? `Embeddingi… (${embedJobStatus})` : "Generuj embeddingi"}
+            </button>
+          )}
         </div>
       )}
 
@@ -891,6 +947,17 @@ const Chunks = () => {
               </span>
 
               {chunk.speaker && <span style={{ color: "#64748b" }}>🎙 {chunk.speaker}</span>}
+
+              {!!chunk.obsidian_note_paths?.length && (
+                <span title={chunk.obsidian_note_paths.join("\n")} style={{ color: "#7c3aed" }}>
+                  📝 {chunk.obsidian_note_paths.length}
+                </span>
+              )}
+              {chunk.has_embeddings != null && (
+                <span title={chunk.has_embeddings ? "Ma embeddingi" : "Brak embeddingów"}>
+                  {chunk.has_embeddings ? "🟢" : "⚪"}
+                </span>
+              )}
 
               {/* Edycja tematu */}
               <input

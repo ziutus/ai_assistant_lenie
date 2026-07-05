@@ -46,6 +46,21 @@ from library.models.stalker_document_status import StalkerDocumentStatus
 cfg = load_config()
 
 
+def check_markdown_deps_installed() -> None:
+    """Fail fast with an actionable message if the optional 'markdown' dependency
+    group isn't installed. Needed to convert webpage HTML to markdown
+    (process_article_content) — without it the script would crash mid-run,
+    after DynamoDB items are already fetched and the document row inserted.
+    """
+    try:
+        import html2markdown  # noqa: F401
+    except ImportError:
+        print("ERROR: Missing optional dependency 'html2markdown' — required to convert "
+              "webpage HTML into markdown (process_article_content).")
+        print("Install it with: cd backend && uv sync --extra markdown")
+        sys.exit(1)
+
+
 def get_ssm_parameter(name: str, region: str = None) -> str:
     """Fetch a single SSM Parameter Store value."""
     region = region or cfg.require("AWS_REGION", "us-east-1")
@@ -172,9 +187,11 @@ def process_article_content(doc_id: int, cache_base_dir: str,
                              session, skip_llm: bool = False) -> tuple[bool, bool]:
     """Convert HTML to markdown and optionally run LLM article extraction.
 
-    Saves files to cache only — no DB writes.
+    On successful LLM extraction persists text_extracted (pre-clean) and
+    text_md (post clean_article_text) on the document; otherwise no DB writes.
     Returns (markdown_ok, llm_ok).
     """
+    from library.article_cleaner import clean_article_text
     from library.article_pipeline import extract_article
 
     doc_cache_dir = os.path.join(cache_base_dir, str(doc_id))
@@ -203,6 +220,15 @@ def process_article_content(doc_id: int, cache_base_dir: str,
 
     if article:
         print(f"  Process: LLM OK ({len(article)} chars)")
+        cleaned = clean_article_text(article, doc.url)
+        doc.text_extracted = article
+        doc.text_md = cleaned["text"]
+        try:
+            session.commit()
+            print(f"  Process: saved text_extracted/text_md ({len(cleaned['text'])} chars cleaned)")
+        except Exception:
+            session.rollback()
+            print(f"  WARNING: failed to save text_extracted/text_md for doc {doc_id}")
         return True, True
 
     print("  Process: LLM failed — no article markers extracted")
@@ -311,6 +337,11 @@ def main():
     # Resolve cache dir default from config
     if args.data_dir is None:
         args.data_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
+
+    # Fail fast if the markdown conversion dependency is missing — better to
+    # find out before AWS calls / DB writes than mid-run on the first webpage item.
+    if not args.skip_s3 and not args.dry_run:
+        check_markdown_deps_installed()
 
     # Auto-detect last successful sync date. The DB connection doubles as a
     # fail-fast check before AWS calls; skipped for --dry-run with explicit
