@@ -182,3 +182,137 @@ class TestSyncItemToPostgres:
 
         assert result == ("added", None)
         MockDocService.return_value.import_document.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests for check_markdown_deps_installed (preflight dependency check)
+# ---------------------------------------------------------------------------
+
+
+class TestCheckMarkdownDepsInstalled:
+    """The 'markdown' optional dependency group (html2markdown) is needed to
+    convert webpage HTML into markdown. Missing it should fail fast with an
+    actionable message, not crash mid-run after AWS calls/DB writes.
+    """
+
+    def test_passes_when_dependency_importable(self):
+        from imports.dynamodb_sync import check_markdown_deps_installed
+
+        # html2markdown is installed in this environment — should not raise/exit.
+        check_markdown_deps_installed()
+
+    def test_exits_with_actionable_message_when_missing(self, monkeypatch, capsys):
+        from imports.dynamodb_sync import check_markdown_deps_installed
+
+        # A None entry in sys.modules makes `import html2markdown` raise ImportError,
+        # simulating the missing-dependency case without uninstalling the package.
+        monkeypatch.setitem(sys.modules, "html2markdown", None)
+
+        with pytest.raises(SystemExit) as exc_info:
+            check_markdown_deps_installed()
+
+        assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "html2markdown" in captured.out
+        assert "uv sync --extra markdown" in captured.out
+
+
+# ---------------------------------------------------------------------------
+# Tests for process_article_content (text_extracted / text_md persistence)
+# ---------------------------------------------------------------------------
+
+
+class TestProcessArticleContent:
+    """process_article_content persists text_extracted (pre-clean) and text_md
+    (post clean_article_text) ONLY when LLM extraction succeeded — --skip-llm
+    and failed extraction must leave both fields untouched.
+    """
+
+    def _run(self, monkeypatch, extract_result, skip_llm=False, commit_raises=False):
+        """Run process_article_content with mocked pipeline; return (result, doc, session, cleaner_calls)."""
+        from imports import dynamodb_sync
+
+        doc = MagicMock()
+        doc.url = "https://example.com/article"
+
+        session = MagicMock(spec=["commit", "rollback"])
+        if commit_raises:
+            session.commit.side_effect = RuntimeError("db down")
+
+        monkeypatch.setattr(dynamodb_sync.os.path, "isfile", lambda p: True)
+        monkeypatch.setattr(
+            dynamodb_sync, "WebDocument",
+            MagicMock(get_by_id=MagicMock(return_value=doc)),
+        )
+        monkeypatch.setattr(
+            "library.article_pipeline.extract_article",
+            lambda *args, **kwargs: extract_result,
+        )
+
+        cleaner_calls = []
+
+        def fake_clean(text, url=""):
+            cleaner_calls.append((text, url))
+            return {"text": f"CLEANED::{text}", "links": [], "images": []}
+
+        monkeypatch.setattr("library.article_cleaner.clean_article_text", fake_clean)
+
+        result = dynamodb_sync.process_article_content(
+            doc_id=42, cache_base_dir="/cache", session=session, skip_llm=skip_llm,
+        )
+        return result, doc, session, cleaner_calls
+
+    def test_success_saves_text_extracted_and_text_md(self, monkeypatch):
+        result, doc, session, cleaner_calls = self._run(
+            monkeypatch, extract_result=("raw markdown", "extracted article"),
+        )
+
+        assert result == (True, True)
+        assert doc.text_extracted == "extracted article"
+        assert doc.text_md == "CLEANED::extracted article"
+        assert cleaner_calls == [("extracted article", doc.url)]
+        session.commit.assert_called_once()
+        session.rollback.assert_not_called()
+
+    def test_skip_llm_does_not_touch_text_fields(self, monkeypatch):
+        result, doc, session, cleaner_calls = self._run(
+            monkeypatch, extract_result=("raw markdown", None), skip_llm=True,
+        )
+
+        assert result == (True, False)
+        assert not isinstance(doc.text_extracted, str)
+        assert not isinstance(doc.text_md, str)
+        assert cleaner_calls == []
+        session.commit.assert_not_called()
+
+    def test_failed_extraction_does_not_touch_text_fields(self, monkeypatch):
+        result, doc, session, cleaner_calls = self._run(
+            monkeypatch, extract_result=("raw markdown", None),
+        )
+
+        assert result == (True, False)
+        assert not isinstance(doc.text_extracted, str)
+        assert not isinstance(doc.text_md, str)
+        assert cleaner_calls == []
+        session.commit.assert_not_called()
+
+    def test_markdown_failure_returns_false_false(self, monkeypatch):
+        result, doc, session, cleaner_calls = self._run(
+            monkeypatch, extract_result=(None, None),
+        )
+
+        assert result == (False, False)
+        assert cleaner_calls == []
+        session.commit.assert_not_called()
+
+    def test_commit_failure_rolls_back_and_warns(self, monkeypatch, capsys):
+        result, doc, session, cleaner_calls = self._run(
+            monkeypatch, extract_result=("raw markdown", "extracted article"),
+            commit_raises=True,
+        )
+
+        # Extraction itself succeeded — only persistence failed.
+        assert result == (True, True)
+        session.rollback.assert_called_once()
+        captured = capsys.readouterr()
+        assert "WARNING: failed to save text_extracted/text_md" in captured.out

@@ -22,7 +22,8 @@ from sqlalchemy import func, select, update as sa_update
 
 from library.db.engine import get_scoped_session
 from library.db.models import (
-    DocumentAnalysisRun, DocumentChunk, DocumentTopicSection, WebDocument,
+    DocumentAnalysisRun, DocumentChunk, DocumentRemovedLine, DocumentTopicSection,
+    WebDocument, WebsiteEmbedding,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,9 +34,50 @@ bp = Blueprint("chunk_review", __name__)
 # Keyed by job_id (short UUID). Lives as long as the server process.
 _analysis_jobs: dict[str, dict] = {}
 
+# In-memory job registry for async embedding-generation runs (separate from
+# _analysis_jobs — different job shape, polled via /embedding_job/<job_id>).
+_embedding_jobs: dict[str, dict] = {}
+
 ALLOWED_STATUSES = {"pending", "approved", "needs_reanalysis", "split_requested", "split", "skipped"}
 ALLOWED_TYPES = {"TEMAT", "REKLAMA", "SZUM"}
 ALLOWED_RUN_STATUSES = {"created", "in_review", "reviewed"}
+
+
+def _removed_lines_diff(old_text: str, new_text: str) -> list[str]:
+    """Return non-empty lines (stripped) present in old_text but absent from new_text.
+
+    Whole-line set difference, order preserved from old_text. A line still
+    present elsewhere in new_text is not reported even if one of its
+    occurrences was removed — good enough for cleaner-rule mining.
+    """
+    new_lines = {ln.strip() for ln in new_text.split("\n")}
+    seen: set[str] = set()
+    removed: list[str] = []
+    for ln in old_text.split("\n"):
+        stripped = ln.strip()
+        if stripped and stripped not in new_lines and stripped not in seen:
+            seen.add(stripped)
+            removed.append(stripped)
+    return removed
+
+
+def _log_removed_lines(session, *, document_id: int, run_id: int | None,
+                       chunk_id: int | None, lines: list[str], source: str) -> int:
+    """Queue DocumentRemovedLine rows on the session (no commit). Returns row count.
+
+    Removed lines feed cleaner-rule mining (article_cleaner.py / site_rules.json):
+    aggregate what the automatic cleanup missed and humans had to remove.
+    """
+    count = 0
+    for line in lines:
+        if not line or not line.strip():
+            continue
+        session.add(DocumentRemovedLine(
+            document_id=document_id, run_id=run_id, chunk_id=chunk_id,
+            source=source, line_text=line.strip(),
+        ))
+        count += 1
+    return count
 
 
 def _parse_segments(text_raw: str | None) -> list[dict]:
@@ -50,7 +92,7 @@ def _parse_segments(text_raw: str | None) -> list[dict]:
     return []
 
 
-def _chunk_to_dict(c: DocumentChunk) -> dict:
+def _chunk_to_dict(c: DocumentChunk, has_embeddings: bool | None = None) -> dict:
     return {
         "id": c.id,
         "position": c.position,
@@ -66,6 +108,8 @@ def _chunk_to_dict(c: DocumentChunk) -> dict:
         "split_at_seg": c.split_at_seg,
         "split_first_type": c.split_first_type,
         "split_second_type": c.split_second_type,
+        "obsidian_note_paths": c.obsidian_note_paths or [],
+        "has_embeddings": bool(has_embeddings) if has_embeddings is not None else None,
     }
 
 
@@ -260,6 +304,15 @@ def get_run_chunks(run_id: int):
         .order_by(DocumentTopicSection.position)
     ).all()
 
+    chunk_ids = [c.id for c in run.chunks]
+    embedded_chunk_ids: set[int] = set()
+    if chunk_ids:
+        embedded_chunk_ids = set(session.scalars(
+            select(WebsiteEmbedding.chunk_id)
+            .where(WebsiteEmbedding.chunk_id.in_(chunk_ids))
+            .distinct()
+        ).all())
+
     return jsonify({
         "status": "success",
         "run": {
@@ -280,7 +333,7 @@ def get_run_chunks(run_id: int):
             "document_type": doc.document_type if doc else "",
         },
         "segments": segments,
-        "chunks": [_chunk_to_dict(c) for c in run.chunks],
+        "chunks": [_chunk_to_dict(c, has_embeddings=c.id in embedded_chunk_ids) for c in run.chunks],
         "topic_sections": [
             {
                 "id": ts.id,
@@ -404,6 +457,23 @@ def apply_run_cleanup(run_id: int):
 
     length_before = len(getattr(doc, field) or "")
     setattr(doc, field, cleaned)
+
+    # Log dropped SZUM/REKLAMA chunks as cleaner-training data. Deduped by
+    # chunk_id so a repeated apply_cleanup does not double-log.
+    dropped = [c for c in chunks if c.type != "TEMAT"]
+    if dropped:
+        already_logged = set(session.scalars(
+            select(DocumentRemovedLine.chunk_id)
+            .where(DocumentRemovedLine.run_id == run_id,
+                   DocumentRemovedLine.source == "szum_chunk")
+        ).all())
+        for c in dropped:
+            if c.id not in already_logged:
+                _log_removed_lines(
+                    session, document_id=run.document_id, run_id=run_id,
+                    chunk_id=c.id, lines=[c.original_text], source="szum_chunk",
+                )
+
     try:
         session.commit()
     except Exception:
@@ -421,6 +491,69 @@ def apply_run_cleanup(run_id: int):
         "temat_chunks": len(temat),
         "dropped_chunks": len(chunks) - len(temat),
     })
+
+
+# ---------------------------------------------------------------------------
+# API: POST /analysis_run/<run_id>/generate_embeddings
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>/generate_embeddings", methods=["POST"])
+def generate_embeddings(run_id: int):
+    """Start an async job generating embeddings from this run's approved TEMAT chunks.
+
+    Returns immediately with {job_id}. Poll GET /embedding_job/<job_id> for status.
+    """
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+
+    job_id = uuid.uuid4().hex[:8]
+    _embedding_jobs[job_id] = {
+        "status": "running",
+        "run_id": run_id,
+        "result": None,
+        "error": None,
+        "progress": "Startowanie...",
+    }
+
+    def _run_embeddings() -> None:
+        from library.db.engine import get_session
+        from library.document_analysis_service import generate_embeddings_from_run
+
+        job_session = get_session()
+        try:
+            def _progress(msg: str) -> None:
+                _embedding_jobs[job_id]["progress"] = msg
+
+            result = generate_embeddings_from_run(job_session, run_id, progress_fn=_progress)
+            _embedding_jobs[job_id].update({
+                "status": "done",
+                "result": result,
+                "progress": f"Gotowe: {result['embeddings_created']} embeddingów "
+                            f"z {result['chunks_considered']} chunków",
+            })
+        except ValueError as exc:
+            _embedding_jobs[job_id].update({"status": "failed", "error": str(exc)})
+        except Exception as exc:
+            logger.exception("background embedding generation failed for run %d", run_id)
+            _embedding_jobs[job_id].update({"status": "failed", "error": str(exc)})
+        finally:
+            job_session.close()
+
+    t = threading.Thread(target=_run_embeddings, daemon=True, name=f"embeddings-{job_id}")
+    t.start()
+
+    return jsonify({"status": "started", "job_id": job_id, "run_id": run_id})
+
+
+@bp.route("/embedding_job/<job_id>", methods=["GET"])
+def get_embedding_job(job_id: str):
+    """Poll status of an async embedding job started by POST /analysis_run/<id>/generate_embeddings."""
+    job = _embedding_jobs.get(job_id)
+    if job is None:
+        return jsonify({"status": "error", "message": "Job not found"}), 404
+    return jsonify({"status": "success", "job": job})
 
 
 # ---------------------------------------------------------------------------
@@ -505,11 +638,13 @@ def update_chunk(chunk_id: int):
         chunk.topic = data["topic"] or None
         changed = True
 
+    manually_removed: list[str] = []
     if "original_text" in data:
         # Manual cleanup: UI line-removal mode sends the whole edited text
         val = data["original_text"]
         if not isinstance(val, str) or not val.strip():
             return jsonify({"status": "error", "message": "original_text must be a non-empty string"}), 400
+        manually_removed = _removed_lines_diff(chunk.original_text, val)
         chunk.original_text = val
         changed = True
 
@@ -530,6 +665,16 @@ def update_chunk(chunk_id: int):
                     doc_lines_removed += value.count("\n") + 1 - len(kept)
                     setattr(doc, field, "\n".join(kept))
                 changed = True
+            # Lines propagated to the document but not caught by the chunk-text
+            # diff (e.g. still present elsewhere in the chunk) — log those too
+            already = set(manually_removed)
+            manually_removed += [t for t in sorted(targets) if t not in already]
+
+    if manually_removed:
+        _log_removed_lines(
+            session, document_id=chunk.document_id, run_id=chunk.run_id,
+            chunk_id=chunk.id, lines=manually_removed, source="manual",
+        )
 
     if "split_at_seg" in data:
         chunk.split_at_seg = data["split_at_seg"]

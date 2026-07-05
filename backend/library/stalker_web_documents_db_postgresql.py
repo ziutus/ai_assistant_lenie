@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import Float, and_, column, delete, func, literal, or_, select, union
 from sqlalchemy.orm import Session
 
-from library.db.models import WebDocument, WebsiteEmbedding
+from library.db.models import DocumentChunk, WebDocument, WebsiteEmbedding
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.models.stalker_document_type import StalkerDocumentType
@@ -201,8 +201,11 @@ class WebsitesDBPostgreSQL:
                 WebDocument.title,
                 WebDocument.document_type,
                 WebDocument.project,
+                WebsiteEmbedding.chunk_id,
+                DocumentChunk.obsidian_note_paths,
             )
             .outerjoin(WebDocument, WebsiteEmbedding.website_id == WebDocument.id)
+            .outerjoin(DocumentChunk, WebsiteEmbedding.chunk_id == DocumentChunk.id)
             .where(WebsiteEmbedding.model == model)
             .where(
                 literal(1) - func.cast(
@@ -232,6 +235,8 @@ class WebsitesDBPostgreSQL:
                 "title": r.title,
                 "document_type": r.document_type,
                 "project": r.project,
+                "chunk_id": r.chunk_id,
+                "obsidian_note_paths": r.obsidian_note_paths or [],
             }
             for r in rows
         ]
@@ -240,7 +245,7 @@ class WebsitesDBPostgreSQL:
     # Embedding CRUD
     # ------------------------------------------------------------------
 
-    def embedding_add(self, website_id, embedding, language, text, text_original, model) -> None:
+    def embedding_add(self, website_id, embedding, language, text, text_original, model, chunk_id=None) -> None:
         emb = WebsiteEmbedding(
             website_id=website_id,
             language=language,
@@ -248,6 +253,7 @@ class WebsitesDBPostgreSQL:
             text_original=text_original,
             embedding=embedding,
             model=model,
+            chunk_id=chunk_id,
         )
         self.session.add(emb)
 
