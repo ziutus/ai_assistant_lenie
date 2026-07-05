@@ -1174,6 +1174,7 @@ const Chunks = () => {
         ) : (
           <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
         )}
+        <NavLink to={`/read/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>📖 Czytaj</NavLink>
       </div>
 
       {/* Nowa analiza */}

@@ -12,6 +12,7 @@ import List from "./modules/shared/pages/list";
 import UploadFile from "./modules/shared/pages/file";
 import Connect from "./modules/shared/pages/connect";
 import Chunks from "./modules/shared/pages/chunks";
+import Read from "./modules/shared/pages/read";
 import { AuthorizationContext } from "./modules/shared/context/authorizationContext";
 
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -41,6 +42,7 @@ function App() {
                   <Route path="/youtube/:id?" element={<Youtube />} />
                   <Route path="/email/:id?" element={<Email />} />
                   <Route path="/chunks/:id" element={<Chunks />} />
+                  <Route path="/read/:id" element={<Read />} />
                   <Route path="/list" element={<List />} />
                   <Route path="/search" element={<Search />} />
                   <Route path="/upload-file" element={<UploadFile />} />

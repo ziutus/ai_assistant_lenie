@@ -3,6 +3,7 @@
 Endpoints:
   GET  /analysis_runs?doc_id=<id>            — list runs for a document
   GET  /document/<doc_id>/chapters           — detect H1/H2 table of contents
+  GET  /document/<doc_id>/chapter/<position> — one chapter's markdown (reader view)
   POST /document/<doc_id>/analyze_chunks     — create a new analysis run
   GET  /analysis_run/<run_id>/chunks         — run data (chunks + segments;
                                                lite/section_id/offset/limit for books)
@@ -305,6 +306,42 @@ def document_chapters(doc_id: int):
         "source_field": field,
         "text_length": len(text),
         "chapters": detect_chapters(text),
+    })
+
+
+@bp.route("/document/<int:doc_id>/chapter/<int:position>", methods=["GET"])
+def document_chapter(doc_id: int, position: int):
+    """Return one chapter's markdown text for the reader view (/read/:id).
+
+    Positions are 1-based and match GET /document/<id>/chapters.
+    """
+    from library.document_analysis_service import _extract_text, _slice_chapter
+    from library.text_functions import detect_chapters
+
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    text, _field = _extract_text(doc, prefer_md=True)
+    if not text:
+        return jsonify({"status": "error", "message": "Document has no usable text"}), 400
+
+    chapter_total = len(detect_chapters(text))
+    try:
+        chapter_text, title = _slice_chapter(text, position)
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "position": position,
+        "title": title,
+        "text": chapter_text,
+        "chapter_total": chapter_total,
+        "prev": position - 1 if position > 1 else None,
+        "next": position + 1 if position < chapter_total else None,
     })
 
 
