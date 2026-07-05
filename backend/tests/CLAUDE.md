@@ -38,6 +38,7 @@ Configuration in `backend/pyproject.toml` under `[tool.pytest.ini_options]`. The
 | `test_similarity_search_orm.py` | `get_similar()` pgvector ORM path |
 | `test_sql_parameterization.py` | SQL parameterization (no string interpolation) |
 | `test_import_log_tracker.py` | `ImportLog` model + `ImportLogTracker` context manager |
+| `test_removed_lines.py` | `DocumentRemovedLine` model + `_removed_lines_diff`/`_log_removed_lines` helpers (cleaner-training data) |
 | `test_alembic_setup.py` | Alembic configuration, Flask session teardown |
 
 ### Services & Flask Endpoints (mocked sessions)
