@@ -72,27 +72,22 @@ def _chapter_index(chapter_starts: list[int], seconds: float, current: int) -> i
     return max(bisect.bisect_right(chapter_starts, seconds) - 1, current)
 
 
-def text_split_with_chapters(transcript_string: str | None, chapters_string: str | None = None) -> str | None:
-    if transcript_string is None:
-        return None
-    if chapters_string is None:
-        return transcript_string
-
-    chapters = chapters_text_to_list(chapters_string)
-    if not chapters:
-        return transcript_string
-
-    json_data = json.loads(transcript_string)
-
+def _append_with_chapters(
+    entries: list[dict],
+    chapters: list[dict],
+    content_key: str,
+    start_time_key: str,
+) -> str:
     chapter_starts = [time_to_seconds(ch['start']) for ch in chapters]
     chapter_nb = -1  # -1 = intro before the first chapter
     string_all = ""
     after_header = False
-    for transcript in json_data['results']["items"]:
-        content = transcript['alternatives'][0]['content']
 
-        if 'start_time' in transcript:
-            target = _chapter_index(chapter_starts, float(transcript['start_time']), chapter_nb)
+    for entry in entries:
+        content = entry[content_key]
+
+        if start_time_key in entry:
+            target = _chapter_index(chapter_starts, float(entry[start_time_key]), chapter_nb)
             while chapter_nb < target:
                 chapter_nb += 1
                 string_all += ("\n\n" if string_all else "") + chapters[chapter_nb]['title'] + "\n"
@@ -111,6 +106,28 @@ def text_split_with_chapters(transcript_string: str | None, chapters_string: str
     return string_all
 
 
+def text_split_with_chapters(transcript_string: str | None, chapters_string: str | None = None) -> str | None:
+    if transcript_string is None:
+        return None
+    if chapters_string is None:
+        return transcript_string
+
+    chapters = chapters_text_to_list(chapters_string)
+    if not chapters:
+        return transcript_string
+
+    json_data = json.loads(transcript_string)
+
+    entries = []
+    for transcript in json_data['results']["items"]:
+        normalized = {'content': transcript['alternatives'][0]['content']}
+        if 'start_time' in transcript:
+            normalized['start_time'] = transcript['start_time']
+        entries.append(normalized)
+
+    return _append_with_chapters(entries, chapters, content_key='content', start_time_key='start_time')
+
+
 def youtube_titles_to_text(titles_text: str | None = None) -> str | None:
     transcript = json.loads(titles_text)
     string_all = ""
@@ -126,26 +143,11 @@ def youtube_titles_split_with_chapters(titles_text: str | None = None, chapter_l
     if not chapters:
         return youtube_titles_to_text(titles_text)
 
-    chapter_starts = [time_to_seconds(ch['start']) for ch in chapters]
-    chapter_nb = -1  # -1 = intro before the first chapter
-    string_all = ""
-    after_header = False
+    entries = []
     for entry in transcript:
-
+        normalized = {'content': entry['text']}
         if 'start' in entry:
-            target = _chapter_index(chapter_starts, float(entry['start']), chapter_nb)
-            while chapter_nb < target:
-                chapter_nb += 1
-                string_all += ("\n\n" if string_all else "") + chapters[chapter_nb]['title'] + "\n"
-                after_header = True
-            if after_header:
-                string_all += entry['text']
-                after_header = False
-            elif string_all:
-                string_all += " " + entry['text']
-            else:
-                string_all += entry['text']
-        else:
-            string_all += entry['text']
+            normalized['start_time'] = entry['start']
+        entries.append(normalized)
 
-    return string_all
+    return _append_with_chapters(entries, chapters, content_key='content', start_time_key='start_time')
