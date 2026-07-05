@@ -218,6 +218,30 @@ class TestChaptersEndpoint:
         assert titles == ["(wstęp)", "Rozdział 1: Geneza", "Rozdział 2: Rozwój"]
 
 
+class TestChapterContentEndpoint:
+    def test_returns_chapter_text_with_nav(self, client):
+        resp = client.get("/document/77/chapter/2")
+        data = resp.get_json()
+
+        assert resp.status_code == 200
+        assert data["title"] == "Rozdział 1: Geneza"
+        assert data["text"].startswith("# Rozdział 1: Geneza")
+        assert data["chapter_total"] == 3
+        assert data["prev"] == 1
+        assert data["next"] == 3
+
+    def test_first_and_last_chapter_nav_boundaries(self, client):
+        first = client.get("/document/77/chapter/1").get_json()
+        last = client.get("/document/77/chapter/3").get_json()
+
+        assert first["prev"] is None and first["next"] == 2
+        assert last["prev"] == 2 and last["next"] is None
+
+    def test_out_of_range_rejected(self, client):
+        resp = client.get("/document/77/chapter/42")
+        assert resp.status_code == 400
+
+
 class TestSplitPreviewScopeChapter:
     def test_preview_scoped_to_chapter(self, client):
         resp = client.get("/document/77/split_preview?mode=article&scope_chapter=2")
