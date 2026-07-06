@@ -714,7 +714,7 @@ so that development uses the same S3 API as production (AWS) and future Kubernet
 - Data stored as plain files on NAS disk — easy to backup
 
 **Scope:**
-1. Add MinIO service to `infra/docker/compose.nas.yaml` (port 9000 for S3 API, 9001 for console)
+1. ~~Add MinIO service to `infra/docker/compose.nas.yaml` (port 9000 for S3 API, 9001 for console)~~ ✅ DONE — `lenie-minio` runs on NAS (API 9000, console 9001, env in `/share/Container/lenie-env/minio.env`, volume `lenie-minio-data`)
 2. Add `MINIO_*` env vars to config_loader: `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`
 3. Update boto3 S3 client initialization in backend to use `endpoint_url` when configured (transparent — if `S3_ENDPOINT_URL` is not set, defaults to AWS S3)
 4. Create initial buckets (e.g., `website-content`) via MinIO client or startup script
@@ -738,7 +738,8 @@ so that development uses the same S3 API as production (AWS) and future Kubernet
 - Consider `mc` (MinIO client CLI) for bucket creation in entrypoint/init script
 
 **Priority:** MEDIUM — enables consistent NAS development, prevents future rewrites
-**Status:** backlog
+**Status:** in progress — step 1 done (MinIO deployed on NAS, 2026-07-05 verified running); steps 2-8 remaining
+**Related:** [B-105](#b-105-scheduled-daily-dynamodb-sync-on-nas-qts-cron) (scheduled daily import — consumer of this storage)
 
 ### B-84: Add CONTENT_NEEDED Document Status for Slack Bot URL Additions
 
@@ -1504,3 +1505,35 @@ so that I can discover knowledge paths, visualize topic clusters, and find relat
 **Priority:** LOW
 **Status:** backlog
 **Related:** B-92 (SQLAlchemy ORM migration), B-99 (URL normalization/duplicate detection)
+
+### B-105: Scheduled Daily DynamoDB Sync on NAS (QTS cron)
+
+As a **user**,
+I want the DynamoDB → PostgreSQL import to run automatically every morning on the NAS,
+so that new documents captured via the Chrome extension (AWS DynamoDB + S3) appear in the local database daily without manual runs from the dev machine.
+
+**Origin:** 2026-07-05 session — `dynamodb_sync.py` now persists `text_extracted` + `text_md` (clean markdown) during sync, so an unattended import produces chunks-ready documents. Today the script runs manually from the dev machine (Windows/WSL); the NAS is always on and can host the schedule. Cache files should land in S3-compatible storage on the NAS ([B-82](#b-82-add-minio-as-s3-compatible-local-storage-for-nas-development), MinIO) instead of a dev-machine directory.
+
+**Findings (verified 2026-07-05):**
+- QTS has a running `crond`; persistent entries live in `/etc/config/crontab` (entries added via `crontab -e` land in `/tmp/cron/crontabs` and are **lost on reboot**). Reload with `crontab /etc/config/crontab`.
+- QTS has **no web GUI for cron** (unlike Synology Task Scheduler) — CLI only. Firmware upgrades may rebuild the file; verify the entry after upgrades.
+- Run monitoring is already covered by the `import_logs` table (`ImportLogTracker`) — no extra scheduler UI needed; MinIO console (port 9001) covers file browsing.
+- The script is automation-ready: `-y` (non-interactive) and auto `--since` from the last successful run in `import_logs`.
+
+**Scope:**
+1. Finish [B-82](#b-82-add-minio-as-s3-compatible-local-storage-for-nas-development) steps 2-7 (config_loader S3 vars, boto3 `endpoint_url`, `website-content` bucket, `dynamodb_sync.py` upload to MinIO, `vars-classification.yaml`, Vault credentials)
+2. Include `backend/imports/` in the backend Docker image (Dockerfile currently copies only `library/` + `server.py`) — or bind-mount in `compose.nas.yaml`
+3. Add read-only AWS credentials (SSM + DynamoDB + S3) to the backend container env on NAS
+4. Add cron entry to `/etc/config/crontab`, e.g.:
+   `30 6 * * * /share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker exec lenie-ai-server python imports/dynamodb_sync.py -y >> /share/Container/lenie-compose/logs/dynamodb_sync.log 2>&1`
+5. Documentation: `docs/CICD/NAS_Deployment.md` (cron persistence caveat), `backend/imports/CLAUDE.md`
+
+**Acceptance Criteria:**
+- Import runs daily at the scheduled time on the NAS without manual intervention
+- Downloaded S3 content lands in MinIO (browsable via console :9001), not on the dev machine
+- Each run is recorded in `import_logs`; a failed run is visible there and in the log file
+- Cron entry survives NAS reboot
+
+**Priority:** MEDIUM
+**Status:** backlog
+**Related:** [B-82](#b-82-add-minio-as-s3-compatible-local-storage-for-nas-development) (MinIO storage — prerequisite)

@@ -23,6 +23,9 @@ interface Chunk {
   seg_end: number | null;
   obsidian_note_paths?: string[];
   has_embeddings?: boolean | null;
+  // lite responses (big runs): texts stripped, preview + length instead
+  text_length?: number | null;
+  text_preview?: string | null;
 }
 
 interface Speaker {
@@ -38,6 +41,30 @@ interface AnalysisRun {
   mode: string;
   status: string;
   scope: string | null;
+  temat_count?: number;
+  approved_count?: number;
+}
+
+interface TopicSection {
+  id: number;
+  position: number;
+  type: string;
+  title: string | null;
+  summary: string | null;
+  chunk_positions: number[];
+  chunk_count: number;
+  temat_count: number;
+  approved_count: number;
+  notes_count: number;
+}
+
+interface Chapter {
+  position: number;
+  level: number;
+  title: string;
+  char_start: number;
+  char_end: number;
+  length: number;
 }
 
 const RUN_STATUS_LABELS: Record<string, string> = {
@@ -79,6 +106,15 @@ const MODELS = [
 
 const STATUS_CYCLE = ["pending", "approved", "needs_reanalysis"] as const;
 const TYPE_CYCLE: ChunkType[] = ["TEMAT", "REKLAMA", "SZUM"];
+
+// Runs bigger than this are fetched lite (no chunk texts) and browsed through
+// the section accordion (books); flat runs without sections get paged instead.
+const SECTION_VIEW_THRESHOLD = 30;
+const CHUNK_PAGE_SIZE = 20;
+
+// Document types with an editor route in App.tsx. Types without one
+// (text, text_message, social_media_post) get a back-link to /list instead.
+const EDITOR_TYPES = ["webpage", "link", "youtube", "movie", "email"];
 
 function typeColor(type: string | null): React.CSSProperties {
   switch (type) {
@@ -319,6 +355,20 @@ const Chunks = () => {
   const [confirmingLineSplit, setConfirmingLineSplit] = React.useState<Record<number, boolean>>({});
   const [confirmingSplit, setConfirmingSplit] = React.useState<Record<number, boolean>>({});
   const [extractingSpeakers, setExtractingSpeakers] = React.useState(false);
+  const [runStatus, setRunStatus] = React.useState("created");
+  const [chapters, setChapters]   = React.useState<Chapter[]>([]);
+  const [scopeChapter, setScopeChapter] = React.useState<number | "">("");
+  const [topicSections, setTopicSections] = React.useState<TopicSection[]>([]);
+  const [sectionView, setSectionView] = React.useState(false);
+  const [expandedSections, setExpandedSections] = React.useState<Set<number>>(new Set());
+  const [loadedSections, setLoadedSections] = React.useState<Set<number>>(new Set());
+  const [loadingSections, setLoadingSections] = React.useState<Record<number, boolean>>({});
+  const [sectionTitleEdits, setSectionTitleEdits] = React.useState<Record<number, string>>({});
+  const [editingSectionId, setEditingSectionId] = React.useState<number | null>(null);
+  const [savingSectionTitle, setSavingSectionTitle] = React.useState(false);
+  const [flatPaged, setFlatPaged] = React.useState(false);
+  const [chunkTotal, setChunkTotal] = React.useState(0);
+  const [loadingMore, setLoadingMore] = React.useState(false);
   const [hiddenChunks, setHiddenChunks] = React.useState<Set<number>>(new Set());
   const [filterUnprocessed, setFilterUnprocessed] = React.useState(false);
   const [embedJobId, setEmbedJobId] = React.useState<string | null>(null);
@@ -345,15 +395,36 @@ const Chunks = () => {
     setLoading(true);
     setError("");
     setInfo("");
+    // Big runs (books): fetch lite (no chunk texts) and browse via sections
+    const big = (runs.find(r => r.id === runId)?.chunk_count ?? 0) > SECTION_VIEW_THRESHOLD;
     try {
-      const r = await fetch(`${apiUrl}/analysis_run/${runId}/chunks`, { headers });
+      const r = await fetch(`${apiUrl}/analysis_run/${runId}/chunks${big ? "?lite=1" : ""}`, { headers });
       const data = await r.json();
-      const loaded: Chunk[] = data.chunks ?? [];
+      let loaded: Chunk[] = data.chunks ?? [];
+      const sections: TopicSection[] = data.topic_sections ?? [];
+      const useSections = big && sections.length > 0;
+      let paged = false;
+      if (big && sections.length === 0) {
+        // No sections to group by (e.g. split_only) — page the flat list
+        const r2 = await fetch(
+          `${apiUrl}/analysis_run/${runId}/chunks?offset=0&limit=${CHUNK_PAGE_SIZE}`, { headers });
+        const d2 = await r2.json();
+        loaded = d2.chunks ?? [];
+        paged = true;
+      }
       setChunks(loaded);
+      setTopicSections(sections);
+      setSectionView(useSections);
+      setExpandedSections(new Set());
+      setLoadedSections(new Set());
+      setEditingSectionId(null);
+      setFlatPaged(paged);
+      setChunkTotal(data.chunk_total ?? loaded.length);
       setSegments(data.segments ?? []);
       setVideoId(data.document?.original_id ?? "");
       setDocType(data.document?.document_type ?? "");
       setRunMode(data.run?.mode ?? "transcript");
+      setRunStatus(data.run?.status ?? "created");
       setSpeakers(data.run?.speakers ?? []);
       const edits: Record<number, string> = {};
       const correctedDefaults: Record<number, boolean> = {};
@@ -372,7 +443,7 @@ const Chunks = () => {
     } finally {
       setLoading(false);
     }
-  }, [apiUrl, apiKey]);
+  }, [apiUrl, apiKey, runs]);
 
   React.useEffect(() => { fetchRuns(); }, [fetchRuns]);
   React.useEffect(() => { if (selectedRun !== null) fetchChunks(selectedRun); }, [selectedRun, fetchChunks]);
@@ -381,13 +452,26 @@ const Chunks = () => {
     if (docType && docType !== "youtube" && docType !== "movie") setNewMode("article");
   }, [docType]);
 
+  // Book support: detect the document's table of contents (H1/H2) for article mode
+  React.useEffect(() => {
+    if (!id || newMode !== "article") { setChapters([]); setScopeChapter(""); return; }
+    (async () => {
+      try {
+        const r = await fetch(`${apiUrl}/document/${id}/chapters`, { headers: { "x-api-key": apiKey ?? "" } });
+        const data = await r.json();
+        setChapters(data.status === "success" ? (data.chapters ?? []) : []);
+      } catch { setChapters([]); }
+    })();
+  }, [id, newMode, apiUrl, apiKey]);
+
   // Live preview: how many chunks would a new split produce (no LLM, debounced)
   React.useEffect(() => {
     if (!id) return;
     const t = setTimeout(async () => {
       try {
+        const scopeParam = newMode === "article" && scopeChapter !== "" ? `&scope_chapter=${scopeChapter}` : "";
         const r = await fetch(
-          `${apiUrl}/document/${id}/split_preview?mode=${newMode}&chunk_size=${chunkSize}`,
+          `${apiUrl}/document/${id}/split_preview?mode=${newMode}&chunk_size=${chunkSize}${scopeParam}`,
           { headers: { "x-api-key": apiKey ?? "" } },
         );
         const data = await r.json();
@@ -399,7 +483,7 @@ const Chunks = () => {
       } catch { setSplitPreview(null); }
     }, 400);
     return () => clearTimeout(t);
-  }, [id, newMode, chunkSize, apiUrl, apiKey, previewNonce]);
+  }, [id, newMode, chunkSize, scopeChapter, apiUrl, apiKey, previewNonce]);
 
   // ── Job polling ──
 
@@ -428,16 +512,24 @@ const Chunks = () => {
 
   // ── Analysis ──
 
-  const startAnalysis = async (modeOverride?: string, splitOnlyOverride?: boolean) => {
+  const startAnalysis = async (
+    modeOverride?: string, splitOnlyOverride?: boolean, scopeChapterOverride?: number | null,
+  ) => {
     if (!id) return;
     setError(""); setJobStatus("starting");
+    const mode = modeOverride ?? newMode;
+    // undefined = use the panel selection; null = force whole document
+    const scope = scopeChapterOverride !== undefined
+      ? scopeChapterOverride
+      : (mode === "article" && scopeChapter !== "" ? scopeChapter : null);
     try {
       const r = await fetch(`${apiUrl}/document/${id}/analyze_chunks`, {
         method: "POST", headers,
         body: JSON.stringify({
           model: newModel, chunk_size: chunkSize,
-          mode: modeOverride ?? newMode,
+          mode,
           split_only: splitOnlyOverride ?? splitOnly,
+          ...(scope !== null ? { scope_chapter: scope } : {}),
         }),
       });
       const data = await r.json();
@@ -635,6 +727,108 @@ const Chunks = () => {
     } catch { setError("Błąd połączenia przy usuwaniu runa"); }
   };
 
+  // ── Sections (book view) ──
+
+  const mergeFullChunks = (full: Chunk[]) => {
+    setChunks(prev => {
+      const byId = new Map(full.map(f => [f.id, f]));
+      const merged = prev.map(c => byId.get(c.id) ?? c);
+      const known = new Set(prev.map(c => c.id));
+      full.forEach(f => { if (!known.has(f.id)) merged.push(f); });
+      return merged.sort((a, b) => a.position - b.position);
+    });
+    setTopicEdits(prev => {
+      const n = { ...prev };
+      full.forEach(c => { n[c.id] = c.topic ?? ""; });
+      return n;
+    });
+    setShowCorrected(prev => {
+      const n = { ...prev };
+      full.forEach(c => { n[c.id] = !!c.corrected_text; });
+      return n;
+    });
+  };
+
+  const toggleSection = async (ts: TopicSection) => {
+    const expanding = !expandedSections.has(ts.id);
+    setExpandedSections(prev => {
+      const n = new Set(prev);
+      if (expanding) n.add(ts.id); else n.delete(ts.id);
+      return n;
+    });
+    if (!expanding || loadedSections.has(ts.id) || selectedRun === null) return;
+    setLoadingSections(prev => ({ ...prev, [ts.id]: true }));
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}/chunks?section_id=${ts.id}`, { headers });
+      const data = await r.json();
+      if (data.status === "success") {
+        mergeFullChunks(data.chunks ?? []);
+        setLoadedSections(prev => new Set([...prev, ts.id]));
+      } else { setError("Błąd ładowania chunków sekcji"); }
+    } catch { setError("Błąd połączenia przy ładowaniu sekcji"); }
+    finally { setLoadingSections(prev => ({ ...prev, [ts.id]: false })); }
+  };
+
+  const switchToFlatFull = async () => {
+    if (selectedRun === null) return;
+    setLoading(true);
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}/chunks`, { headers });
+      const data = await r.json();
+      mergeFullChunks(data.chunks ?? []);
+      setSectionView(false);
+      setFlatPaged(false);
+    } catch { setError("Błąd ładowania pełnej listy chunków"); }
+    finally { setLoading(false); }
+  };
+
+  const saveSectionTitle = async (sectionId: number) => {
+    const title = (sectionTitleEdits[sectionId] ?? "").trim();
+    if (!title) return;
+    setSavingSectionTitle(true);
+    try {
+      const r = await fetch(`${apiUrl}/topic_section/${sectionId}`, {
+        method: "PATCH", headers, body: JSON.stringify({ title }),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        setTopicSections(prev => prev.map(ts =>
+          ts.id === sectionId ? { ...ts, title: data.topic_section.title } : ts));
+        setEditingSectionId(null);
+      } else { setError("Błąd zapisu tytułu sekcji"); }
+    } catch { setError("Błąd połączenia przy zapisie tytułu sekcji"); }
+    finally { setSavingSectionTitle(false); }
+  };
+
+  const loadMoreChunks = async () => {
+    if (selectedRun === null || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const r = await fetch(
+        `${apiUrl}/analysis_run/${selectedRun}/chunks?offset=${chunks.length}&limit=${CHUNK_PAGE_SIZE}`,
+        { headers });
+      const data = await r.json();
+      mergeFullChunks(data.chunks ?? []);
+    } catch { setError("Błąd doładowania chunków"); }
+    finally { setLoadingMore(false); }
+  };
+
+  // ── Run workflow status ──
+
+  const setRunWorkflowStatus = async (status: string) => {
+    if (selectedRun === null) return;
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}`, {
+        method: "PATCH", headers, body: JSON.stringify({ status }),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        setRunStatus(data.run.status);
+        setRuns(prev => prev.map(rr => rr.id === selectedRun ? { ...rr, status: data.run.status } : rr));
+      } else { setError("Błąd zmiany statusu analizy"); }
+    } catch { setError("Błąd połączenia przy zmianie statusu analizy"); }
+  };
+
   const applyCleanupAndResplit = async () => {
     if (selectedRun === null || applyingCleanup || jobId) return;
     if (!window.confirm(
@@ -654,7 +848,7 @@ const Chunks = () => {
       setInfo(`Dokument wyczyszczony (${data.field}: ${data.length_before} → ${data.length_after} znaków, `
         + `odrzucono ${data.dropped_chunks} chunków). Startuję nowy podział (bez analizy LLM)…`);
       setPreviewNonce(n => n + 1);
-      await startAnalysis("article", true);
+      await startAnalysis("article", true, null);
     } catch { setError("Błąd połączenia przy czyszczeniu dokumentu"); }
     finally { setApplyingCleanup(false); }
   };
@@ -758,159 +952,8 @@ const Chunks = () => {
 
   // ── Render ───────────────────────────────────────────────────────────────
 
-  return (
-    <div>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 6, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0 }}>Przegląd chunków — dokument #{id}</h2>
-        <NavLink to={`/${docType || "youtube"}/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Edytuj dokument</NavLink>
-      </div>
-
-      {/* Nowa analiza */}
-      <div style={{ margin: "16px 0", padding: "12px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
-        <strong style={{ fontSize: "0.9em" }}>Nowa analiza</strong>
-        <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-          <select value={newModel} onChange={e => setNewModel(e.target.value)} style={{ padding: "4px 8px", fontSize: "0.88em" }}>
-            {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
-          </select>
-          <select value={newMode} onChange={e => setNewMode(e.target.value)} style={{ padding: "4px 8px", fontSize: "0.88em" }}
-            title="transkrypcja: mówcy + korekta STT; artykuł: czysty tekst, podział po nagłówkach, bez korekty">
-            <option value="transcript">transkrypcja (YouTube)</option>
-            <option value="article">artykuł (czysty tekst)</option>
-          </select>
-          <label style={{ fontSize: "0.85em" }}>
-            Chunk:&nbsp;
-            <input type="number" value={chunkSize} onChange={e => setChunkSize(Number(e.target.value))}
-              style={{ width: 75, padding: "3px 6px", fontSize: "0.88em" }} min={500} max={20000} step={500} />
-          </label>
-          <label style={{ fontSize: "0.85em", display: "flex", alignItems: "center", gap: 4 }}
-            title="Podziel na chunki bez wywołań LLM — najpierw doczyścisz/scalisz chunki, potem klikniesz Analizuj">
-            <input type="checkbox" checked={splitOnly} onChange={e => setSplitOnly(e.target.checked)} />
-            tylko podział (bez analizy LLM)
-          </label>
-          {splitPreview && (
-            <span style={{ fontSize: "0.82em", color: "#475569" }}
-              title={`Rozmiary chunków: ${splitPreview.sizes.join(", ")} znaków`}>
-              → podział da <strong>{splitPreview.count}</strong> {splitPreview.count === 1 ? "chunk" : "chunki(-ów)"}
-              {" "}({splitPreview.length.toLocaleString("pl")} zn
-              {splitPreview.count > 1 && `: ${splitPreview.sizes.slice(0, 6).join(" + ")}${splitPreview.sizes.length > 6 ? " + …" : ""}`})
-            </span>
-          )}
-          <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}>
-            {jobId ? `Analiza… (${jobStatus})` : "Uruchom analizę"}
-          </button>
-        </div>
-      </div>
-
-      {/* Wybór runu */}
-      {runs.length > 0 && (
-        <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
-          <label style={{ fontSize: "0.85em", fontWeight: 600 }}>Analiza: </label>
-          <select value={selectedRun ?? ""} onChange={e => setSelectedRun(Number(e.target.value))} style={{ padding: "4px 8px", fontSize: "0.88em" }}>
-            {runs.map(r => (
-              <option key={r.id} value={r.id}>
-                #{r.id} — {r.model} ({r.chunk_count} chunków, {new Date(r.created_at).toLocaleString("pl")})
-                {" "}[{r.mode === "article" ? "artykuł" : "transkrypcja"}
-                {r.scope ? `, ${r.scope}` : ""}, {RUN_STATUS_LABELS[r.status] ?? r.status}]
-              </option>
-            ))}
-          </select>
-          <button onClick={deleteRun} title="Usuń wybrany run (chunki i sekcje)"
-            style={{ padding: "3px 9px", border: "1px solid #fca5a5", borderRadius: 4, background: "#fff", color: "#b91c1c", cursor: "pointer", fontSize: "0.82em" }}>
-            🗑 Usuń run
-          </button>
-        </div>
-      )}
-
-      {/* Pasek postępu */}
-      {chunks.length > 0 && (
-        <div style={{ marginBottom: 12, padding: "8px 14px", background: "#0f172a", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <span style={{ color: "#94a3b8", fontSize: "0.82em" }}>
-            TEMAT: {approvedCount}/{tematChunks.length} zatwierdzonych ({pct}%)
-            {reklamaCount > 0 && ` • ${reklamaCount} reklam/szum${hideAds ? " (ukryte)" : ""}`}
-          </span>
-          <div style={{ flex: 1, minWidth: 80, background: "#334155", borderRadius: 4, height: 8 }}>
-            <div style={{ width: `${pct}%`, height: 8, background: "#22c55e", borderRadius: 4, transition: "width .3s" }} />
-          </div>
-          {unapprovedTematCount > 0 && (
-            <button className="button" onClick={approveAll} disabled={approvingAll}
-              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#15803d", color: "#fff", border: "none" }}>
-              {approvingAll ? "Zatwierdzam…" : `Zatwierdź wszystkie (${unapprovedTematCount})`}
-            </button>
-          )}
-          {chunksToAnalyze.length > 0 && (
-            <button className="button" onClick={reanalyzeAll} disabled={reanalyzingAll}
-              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0369a1", color: "#fff", border: "none" }}>
-              {reanalyzingAll ? "Analizuję…" : `Analizuj chunki (${chunksToAnalyze.length})`}
-            </button>
-          )}
-          {reklamaCount > 0 && (visibleReklamaCount > 0 || hideAds) && (
-            <button className="button" onClick={() => setHideAds(h => !h)}
-              style={{ fontSize: "0.8em", padding: "3px 10px", background: hideAds ? "#475569" : "#b91c1c", color: "#fff", border: "none" }}>
-              {hideAds ? `Pokaż reklamy i szum (${reklamaCount})` : `Ukryj reklamy i szum (${visibleReklamaCount})`}
-            </button>
-          )}
-          {hiddenChunks.size > 0 && (
-            <button className="button" onClick={() => setHiddenChunks(new Set())}
-              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0369a1", color: "#fff", border: "none" }}>
-              Pokaż ukryte ({hiddenChunks.size})
-            </button>
-          )}
-          <label style={{ fontSize: "0.8em", color: "#94a3b8", display: "flex", alignItems: "center", gap: 4 }}
-            title="Pokaż tylko chunki TEMAT bez notatki Obsidian">
-            <input type="checkbox" checked={filterUnprocessed} onChange={e => setFilterUnprocessed(e.target.checked)} />
-            tylko nieopracowane
-          </label>
-          {approvedCount > 0 && (
-            <button className="button" onClick={generateEmbeddings} disabled={!!embedJobId}
-              title="Generuje embeddingi z zatwierdzonych chunków TEMAT (do wyszukiwania semantycznego)"
-              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0891b2", color: "#fff", border: "none" }}>
-              {embedJobId ? `Embeddingi… (${embedJobStatus})` : "Generuj embeddingi"}
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* Pasek rozmówców (tylko transkrypcje — artykuły nie mają mówców) */}
-      {selectedRun !== null && runMode !== "article" && (
-        <div style={{ marginBottom: 12, padding: "8px 14px", background: "#1e3a5f", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <strong style={{ color: "#fff", fontSize: "0.85em" }}>Rozmówcy:</strong>
-          {speakers.length > 0 ? (
-            <span style={{ fontSize: "0.85em" }}>
-              {speakers.map((sp, i) => (
-                <React.Fragment key={i}>
-                  {i > 0 && <span style={{ color: "#64748b" }}> &nbsp;|&nbsp; </span>}
-                  <strong style={{ color: "#fff" }}>{sp.name}</strong>
-                  {sp.role && <span style={{ color: "#93c5fd" }}> ({sp.role})</span>}
-                </React.Fragment>
-              ))}
-            </span>
-          ) : (
-            <span style={{ color: "#64748b", fontSize: "0.85em", fontStyle: "italic" }}>nie wykryto</span>
-          )}
-          <button className="button" onClick={extractSpeakers} disabled={extractingSpeakers}
-            style={{ marginLeft: "auto", fontSize: "0.82em", padding: "3px 10px" }}>
-            {extractingSpeakers ? "Wykrywam…" : speakers.length > 0 ? `Wykryj ponownie (${speakers.length})` : "Wykryj rozmówców"}
-          </button>
-        </div>
-      )}
-
-      {error && <p style={{ color: "#dc2626", marginBottom: 12 }}>{error}</p>}
-      {info && <p style={{ color: "#15803d", marginBottom: 12 }}>{info}</p>}
-      {loading && <div className="loader" style={{ marginBottom: 12 }} />}
-
-      {/* Czyszczenie dokumentu z runa artykułowego */}
-      {runMode === "article" && chunks.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <button className="button" onClick={applyCleanupAndResplit} disabled={applyingCleanup || !!jobId}
-            title="Nadpisuje tekst źródłowy dokumentu treścią chunków TEMAT (REKLAMA/SZUM i usunięte linie znikają), po czym uruchamia nową analizę"
-            style={{ fontSize: "0.85em", background: "#7c3aed", color: "#fff", border: "none", padding: "4px 12px" }}>
-            {applyingCleanup ? "Czyszczę dokument…" : "Wyczyść dokument i zaproponuj nowy podział"}
-          </button>
-        </div>
-      )}
-
-      {/* Chunki */}
-      {visibleChunks.map((chunk, i) => {
+  // Karta pojedynczego chunka — używana w widoku płaskim i w accordionie sekcji
+  const renderChunkCard = (chunk: Chunk) => {
         const hasCorrected = !!chunk.corrected_text;
         const isCorrectedView = showCorrected[chunk.id] ?? hasCorrected;
         const isReanalyzing = reanalyzing[chunk.id] ?? false;
@@ -1119,7 +1162,299 @@ const Chunks = () => {
             )}
           </div>
         );
+  };
+
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 6, flexWrap: "wrap" }}>
+        <h2 style={{ margin: 0 }}>Przegląd chunków — dokument #{id}</h2>
+        {EDITOR_TYPES.includes(docType) ? (
+          <NavLink to={`/${docType}/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Edytuj dokument</NavLink>
+        ) : (
+          <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
+        )}
+        <NavLink to={`/read/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>📖 Czytaj</NavLink>
+      </div>
+
+      {/* Nowa analiza */}
+      <div style={{ margin: "16px 0", padding: "12px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
+        <strong style={{ fontSize: "0.9em" }}>Nowa analiza</strong>
+        <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={newModel} onChange={e => setNewModel(e.target.value)} style={{ padding: "4px 8px", fontSize: "0.88em" }}>
+            {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          <select value={newMode} onChange={e => setNewMode(e.target.value)} style={{ padding: "4px 8px", fontSize: "0.88em" }}
+            title="transkrypcja: mówcy + korekta STT; artykuł: czysty tekst, podział po nagłówkach, bez korekty">
+            <option value="transcript">transkrypcja (YouTube)</option>
+            <option value="article">artykuł (czysty tekst)</option>
+          </select>
+          {newMode === "article" && chapters.length > 0 && (
+            <select value={scopeChapter} style={{ padding: "4px 8px", fontSize: "0.88em", maxWidth: 280 }}
+              onChange={e => setScopeChapter(e.target.value === "" ? "" : Number(e.target.value))}
+              title="Analizuj cały dokument albo tylko wybrany rozdział (spis treści z nagłówków markdown)">
+              <option value="">cały dokument ({chapters.length} rozdz.)</option>
+              {chapters.map(c => (
+                <option key={c.position} value={c.position}>
+                  {c.title} ({(c.length / 1000).toFixed(1)} tys. zn)
+                </option>
+              ))}
+            </select>
+          )}
+          <label style={{ fontSize: "0.85em" }}>
+            Chunk:&nbsp;
+            <input type="number" value={chunkSize} onChange={e => setChunkSize(Number(e.target.value))}
+              style={{ width: 75, padding: "3px 6px", fontSize: "0.88em" }} min={500} max={20000} step={500} />
+          </label>
+          <label style={{ fontSize: "0.85em", display: "flex", alignItems: "center", gap: 4 }}
+            title="Podziel na chunki bez wywołań LLM — najpierw doczyścisz/scalisz chunki, potem klikniesz Analizuj">
+            <input type="checkbox" checked={splitOnly} onChange={e => setSplitOnly(e.target.checked)} />
+            tylko podział (bez analizy LLM)
+          </label>
+          {splitPreview && (
+            <span style={{ fontSize: "0.82em", color: "#475569" }}
+              title={`Rozmiary chunków: ${splitPreview.sizes.join(", ")} znaków`}>
+              → podział da <strong>{splitPreview.count}</strong> {splitPreview.count === 1 ? "chunk" : "chunki(-ów)"}
+              {" "}({splitPreview.length.toLocaleString("pl")} zn
+              {splitPreview.count > 1 && `: ${splitPreview.sizes.slice(0, 6).join(" + ")}${splitPreview.sizes.length > 6 ? " + …" : ""}`})
+            </span>
+          )}
+          <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}>
+            {jobId ? `Analiza… (${jobStatus})` : "Uruchom analizę"}
+          </button>
+        </div>
+      </div>
+
+      {/* Wybór runu */}
+      {runs.length > 0 && (
+        <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
+          <label style={{ fontSize: "0.85em", fontWeight: 600 }}>Analiza: </label>
+          <select value={selectedRun ?? ""} onChange={e => setSelectedRun(Number(e.target.value))} style={{ padding: "4px 8px", fontSize: "0.88em" }}>
+            {runs.map(r => (
+              <option key={r.id} value={r.id}>
+                #{r.id} — {r.model} ({r.chunk_count} chunków, {new Date(r.created_at).toLocaleString("pl")})
+                {" "}[{r.mode === "article" ? "artykuł" : "transkrypcja"}
+                {r.scope ? `, ${r.scope}` : ""}
+                {r.temat_count != null && r.temat_count > 0 ? `, ✓ ${r.approved_count}/${r.temat_count}` : ""}
+                , {RUN_STATUS_LABELS[r.status] ?? r.status}]
+              </option>
+            ))}
+          </select>
+          <button onClick={deleteRun} title="Usuń wybrany run (chunki i sekcje)"
+            style={{ padding: "3px 9px", border: "1px solid #fca5a5", borderRadius: 4, background: "#fff", color: "#b91c1c", cursor: "pointer", fontSize: "0.82em" }}>
+            🗑 Usuń run
+          </button>
+          {selectedRun !== null && (runStatus === "reviewed" ? (
+            <button onClick={() => setRunWorkflowStatus("in_review")}
+              title="Analiza jest zamknięta — otwórz ją ponownie do przeglądu"
+              style={{ padding: "3px 9px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#f1f5f9", color: "#475569", cursor: "pointer", fontSize: "0.82em" }}>
+              ↺ Otwórz ponownie
+            </button>
+          ) : (
+            <button onClick={() => setRunWorkflowStatus("reviewed")}
+              title="Oznacz review tej analizy jako zakończony (status: zamknięta)"
+              style={{ padding: "3px 9px", border: "none", borderRadius: 4, background: "#15803d", color: "#fff", cursor: "pointer", fontSize: "0.82em", fontWeight: "bold" }}>
+              ✔ Zamknij review
+            </button>
+          ))}
+          {runStatus === "reviewed" && (
+            <span style={{ fontSize: "0.8em", color: "#15803d", fontWeight: 600 }}>zamknięta</span>
+          )}
+        </div>
+      )}
+
+      {/* Pasek postępu */}
+      {chunks.length > 0 && (
+        <div style={{ marginBottom: 12, padding: "8px 14px", background: "#0f172a", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ color: "#94a3b8", fontSize: "0.82em" }}>
+            TEMAT: {approvedCount}/{tematChunks.length} zatwierdzonych ({pct}%)
+            {reklamaCount > 0 && ` • ${reklamaCount} reklam/szum${hideAds ? " (ukryte)" : ""}`}
+          </span>
+          <div style={{ flex: 1, minWidth: 80, background: "#334155", borderRadius: 4, height: 8 }}>
+            <div style={{ width: `${pct}%`, height: 8, background: "#22c55e", borderRadius: 4, transition: "width .3s" }} />
+          </div>
+          {unapprovedTematCount > 0 && (
+            <button className="button" onClick={approveAll} disabled={approvingAll}
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#15803d", color: "#fff", border: "none" }}>
+              {approvingAll ? "Zatwierdzam…" : `Zatwierdź wszystkie (${unapprovedTematCount})`}
+            </button>
+          )}
+          {chunksToAnalyze.length > 0 && (
+            <button className="button" onClick={reanalyzeAll} disabled={reanalyzingAll}
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0369a1", color: "#fff", border: "none" }}>
+              {reanalyzingAll ? "Analizuję…" : `Analizuj chunki (${chunksToAnalyze.length})`}
+            </button>
+          )}
+          {reklamaCount > 0 && (visibleReklamaCount > 0 || hideAds) && (
+            <button className="button" onClick={() => setHideAds(h => !h)}
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: hideAds ? "#475569" : "#b91c1c", color: "#fff", border: "none" }}>
+              {hideAds ? `Pokaż reklamy i szum (${reklamaCount})` : `Ukryj reklamy i szum (${visibleReklamaCount})`}
+            </button>
+          )}
+          {hiddenChunks.size > 0 && (
+            <button className="button" onClick={() => setHiddenChunks(new Set())}
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0369a1", color: "#fff", border: "none" }}>
+              Pokaż ukryte ({hiddenChunks.size})
+            </button>
+          )}
+          <label style={{ fontSize: "0.8em", color: "#94a3b8", display: "flex", alignItems: "center", gap: 4 }}
+            title="Pokaż tylko chunki TEMAT bez notatki Obsidian">
+            <input type="checkbox" checked={filterUnprocessed} onChange={e => setFilterUnprocessed(e.target.checked)} />
+            tylko nieopracowane
+          </label>
+          {sectionView && (
+            <button className="button" onClick={switchToFlatFull}
+              title="Wczytaj wszystkie chunki i pokaż je jako jedną listę (bez accordionu sekcji)"
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#475569", color: "#fff", border: "none" }}>
+              Widok płaski
+            </button>
+          )}
+          {!sectionView && topicSections.length > 0 && chunkTotal > SECTION_VIEW_THRESHOLD && (
+            <button className="button" onClick={() => selectedRun !== null && fetchChunks(selectedRun)}
+              title="Wróć do widoku sekcji z lazy-loadingiem chunków"
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#475569", color: "#fff", border: "none" }}>
+              Widok sekcji
+            </button>
+          )}
+          {approvedCount > 0 && (
+            <button className="button" onClick={generateEmbeddings} disabled={!!embedJobId}
+              title="Generuje embeddingi z zatwierdzonych chunków TEMAT (do wyszukiwania semantycznego)"
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0891b2", color: "#fff", border: "none" }}>
+              {embedJobId ? `Embeddingi… (${embedJobStatus})` : "Generuj embeddingi"}
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Pasek rozmówców (tylko transkrypcje — artykuły nie mają mówców) */}
+      {selectedRun !== null && runMode !== "article" && (
+        <div style={{ marginBottom: 12, padding: "8px 14px", background: "#1e3a5f", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <strong style={{ color: "#fff", fontSize: "0.85em" }}>Rozmówcy:</strong>
+          {speakers.length > 0 ? (
+            <span style={{ fontSize: "0.85em" }}>
+              {speakers.map((sp, i) => (
+                <React.Fragment key={i}>
+                  {i > 0 && <span style={{ color: "#64748b" }}> &nbsp;|&nbsp; </span>}
+                  <strong style={{ color: "#fff" }}>{sp.name}</strong>
+                  {sp.role && <span style={{ color: "#93c5fd" }}> ({sp.role})</span>}
+                </React.Fragment>
+              ))}
+            </span>
+          ) : (
+            <span style={{ color: "#64748b", fontSize: "0.85em", fontStyle: "italic" }}>nie wykryto</span>
+          )}
+          <button className="button" onClick={extractSpeakers} disabled={extractingSpeakers}
+            style={{ marginLeft: "auto", fontSize: "0.82em", padding: "3px 10px" }}>
+            {extractingSpeakers ? "Wykrywam…" : speakers.length > 0 ? `Wykryj ponownie (${speakers.length})` : "Wykryj rozmówców"}
+          </button>
+        </div>
+      )}
+
+      {error && <p style={{ color: "#dc2626", marginBottom: 12 }}>{error}</p>}
+      {info && <p style={{ color: "#15803d", marginBottom: 12 }}>{info}</p>}
+      {loading && <div className="loader" style={{ marginBottom: 12 }} />}
+
+      {/* Czyszczenie dokumentu z runa artykułowego */}
+      {runMode === "article" && chunks.length > 0 && (
+        <div style={{ marginBottom: 12 }}>
+          <button className="button" onClick={applyCleanupAndResplit} disabled={applyingCleanup || !!jobId}
+            title="Nadpisuje tekst źródłowy dokumentu treścią chunków TEMAT (REKLAMA/SZUM i usunięte linie znikają), po czym uruchamia nową analizę"
+            style={{ fontSize: "0.85em", background: "#7c3aed", color: "#fff", border: "none", padding: "4px 12px" }}>
+            {applyingCleanup ? "Czyszczę dokument…" : "Wyczyść dokument i zaproponuj nowy podział"}
+          </button>
+        </div>
+      )}
+
+      {/* Chunki — widok płaski */}
+      {!sectionView && visibleChunks.map(renderChunkCard)}
+
+      {/* Doładowanie kolejnej strony (duży run bez sekcji) */}
+      {!sectionView && flatPaged && chunks.length < chunkTotal && (
+        <div style={{ textAlign: "center", margin: "12px 0" }}>
+          <button className="button" onClick={loadMoreChunks} disabled={loadingMore}>
+            {loadingMore ? "Ładuję…" : `Załaduj więcej (${chunks.length}/${chunkTotal})`}
+          </button>
+        </div>
+      )}
+
+      {/* Widok sekcji (książki): accordion z lazy-loadingiem chunków */}
+      {sectionView && topicSections.map(ts => {
+        const expanded = expandedSections.has(ts.id);
+        const secLoading = loadingSections[ts.id] ?? false;
+        const positions = new Set(ts.chunk_positions);
+        const secChunks = visibleChunks.filter(c => positions.has(c.position));
+        const pct = ts.temat_count ? Math.round(ts.approved_count / ts.temat_count * 100) : 0;
+        const isEditing = editingSectionId === ts.id;
+        return (
+          <div key={ts.id} style={{ marginBottom: 10, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+            <div
+              onClick={() => { if (!isEditing) toggleSection(ts); }}
+              style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "#f8fafc", cursor: isEditing ? "default" : "pointer", flexWrap: "wrap" }}
+            >
+              <span style={{ color: "#64748b" }}>{expanded ? "▾" : "▸"}</span>
+              <span style={{ padding: "1px 8px", borderRadius: 4, fontWeight: 600, fontSize: "0.78em", ...typeColor(ts.type) }}>{ts.type}</span>
+              {isEditing ? (
+                <>
+                  <input
+                    value={sectionTitleEdits[ts.id] ?? ""}
+                    onChange={e => setSectionTitleEdits(prev => ({ ...prev, [ts.id]: e.target.value }))}
+                    onClick={e => e.stopPropagation()}
+                    onKeyDown={e => { if (e.key === "Enter") saveSectionTitle(ts.id); if (e.key === "Escape") setEditingSectionId(null); }}
+                    autoFocus
+                    style={{ flex: 1, minWidth: 160, padding: "3px 6px", fontSize: "0.9em" }}
+                  />
+                  <button onClick={e => { e.stopPropagation(); saveSectionTitle(ts.id); }} disabled={savingSectionTitle}
+                    style={{ padding: "2px 10px", borderRadius: 3, border: "none", background: "#3b82f6", color: "#fff", fontSize: "0.78em", cursor: "pointer", fontWeight: "bold" }}>
+                    {savingSectionTitle ? "…" : "Zapisz"}
+                  </button>
+                  <button onClick={e => { e.stopPropagation(); setEditingSectionId(null); }}
+                    style={{ padding: "2px 8px", borderRadius: 3, border: "none", background: "#e2e8f0", color: "#475569", fontSize: "0.78em", cursor: "pointer" }}>
+                    Anuluj
+                  </button>
+                </>
+              ) : (
+                <>
+                  <strong style={{ flex: 1, fontSize: "0.92em" }}>{ts.title || `Sekcja ${ts.position}`}</strong>
+                  <button
+                    onClick={e => { e.stopPropagation(); setEditingSectionId(ts.id); setSectionTitleEdits(prev => ({ ...prev, [ts.id]: ts.title ?? "" })); }}
+                    title="Edytuj tytuł sekcji"
+                    style={{ padding: "2px 8px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.8em", color: "#64748b" }}
+                  >
+                    ✏
+                  </button>
+                </>
+              )}
+              <span style={{ fontSize: "0.8em", color: "#64748b" }}>
+                ✓ {ts.approved_count}/{ts.temat_count} • {ts.chunk_count} chunków
+                {ts.notes_count > 0 && ` • 📝 ${ts.notes_count}`}
+              </span>
+              <div style={{ width: 90, background: "#e2e8f0", borderRadius: 4, height: 7 }}>
+                <div style={{ width: `${pct}%`, height: 7, background: "#22c55e", borderRadius: 4 }} />
+              </div>
+            </div>
+            {expanded && (
+              <div style={{ padding: "10px 14px", borderTop: "1px solid #e2e8f0" }}>
+                {secLoading && <div className="loader" />}
+                {!secLoading && secChunks.map(renderChunkCard)}
+                {!secLoading && secChunks.length === 0 && (
+                  <p style={{ color: "#94a3b8", fontStyle: "italic", margin: 0 }}>Brak widocznych chunków (sprawdź filtry).</p>
+                )}
+              </div>
+            )}
+          </div>
+        );
       })}
+
+      {/* Chunki poza sekcjami (rzadkie — sekcje zwykle pokrywają cały run) */}
+      {sectionView && (() => {
+        const covered = new Set(topicSections.flatMap(ts => ts.chunk_positions));
+        const leftover = chunks.filter(c => !covered.has(c.position)).length;
+        return leftover > 0 ? (
+          <p style={{ color: "#94a3b8", fontSize: "0.85em" }}>
+            {leftover} chunków poza sekcjami — użyj przycisku „Widok płaski”, aby je zobaczyć.
+          </p>
+        ) : null;
+      })()}
 
       {!loading && chunks.length === 0 && runs.length === 0 && (
         <p style={{ color: "#64748b", fontStyle: "italic" }}>Brak analiz dla tego dokumentu. Uruchom pierwszą analizę powyżej.</p>
