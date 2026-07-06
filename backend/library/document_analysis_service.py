@@ -114,6 +114,23 @@ def _extract_text(doc: WebDocument, prefer_md: bool = False) -> tuple[str, str]:
     return "", ""
 
 
+def _slice_chapter(text: str, scope_chapter: int) -> tuple[str, str]:
+    """Cut out one chapter (1-based position from detect_chapters) of the text.
+
+    Returns (chapter_text, chapter_title). Raises ValueError when the text has
+    no detectable chapters or the position is out of range.
+    """
+    from library.text_functions import detect_chapters
+
+    chapters = detect_chapters(text)
+    if not chapters:
+        raise ValueError("Document has no detectable chapters (H1/H2 headers)")
+    match = next((c for c in chapters if c["position"] == scope_chapter), None)
+    if match is None:
+        raise ValueError(f"scope_chapter {scope_chapter} out of range (1..{len(chapters)})")
+    return text[match["char_start"]:match["char_end"]].strip(), match["title"]
+
+
 def _merge_topics(sections: list[dict], model: str, mode: str = "transcript") -> list[dict]:
     """Ask LLM to group adjacent chunks into logical topic sections.
 
@@ -211,6 +228,7 @@ class DocumentAnalysisService:
         speakers: list[dict] | None = None,
         mode: str = "transcript",
         split_only: bool = False,
+        scope_chapter: int | None = None,
     ) -> DocumentAnalysisRun:
         """Create a new analysis run for an existing document and persist to DB.
 
@@ -227,6 +245,9 @@ class DocumentAnalysisService:
             split_only:   Split into chunks WITHOUT any LLM calls — chunks land as
                           TEMAT/pending with no topic/summary, so the user can first
                           clean lines, merge or re-split, then analyze on demand.
+            scope_chapter: 1-based chapter position (as returned by detect_chapters /
+                          GET /document/<id>/chapters) — analyze only that chapter;
+                          run.scope is set to the chapter title. Article mode only.
 
         Returns:
             Persisted DocumentAnalysisRun with .chunks and .topic_sections populated.
@@ -244,6 +265,8 @@ class DocumentAnalysisService:
         if mode not in ANALYSIS_MODES:
             raise ValueError(f"Invalid mode: {mode!r} (expected one of {ANALYSIS_MODES})")
         is_transcript = mode == "transcript"
+        if scope_chapter is not None and is_transcript:
+            raise ValueError("scope_chapter requires article mode")
 
         def log(msg: str) -> None:
             logger.info(msg)
@@ -264,6 +287,7 @@ class DocumentAnalysisService:
 
         log(f"doc={doc_id} mode={mode} field={text_field} len={len(text):,}")
 
+        scope: str | None = None
         if is_transcript:
             # 3. Detect format (multi-speaker = has >> speaker markers)
             speaker_changes = len(re.findall(r'>>', text))
@@ -300,6 +324,10 @@ class DocumentAnalysisService:
             # Article mode: text is already clean — no speakers, no fillers,
             # split at markdown headers, no transcript segments to map.
             speakers = speakers or []
+            if scope_chapter is not None:
+                text, scope_title = _slice_chapter(text, scope_chapter)
+                scope = scope_title[:200]
+                log(f'scope: chapter {scope_chapter} "{scope}" ({len(text):,} chars)')
             chunk_texts = split_markdown_into_chunks(text, chunk_size)
             segments = []
         log(f"split={len(chunk_texts)} chunks, max {chunk_size:,} chars")
@@ -403,6 +431,7 @@ class DocumentAnalysisService:
             speakers=speakers,
             mode=mode,
             status="created",
+            scope=scope,
         )
         session.add(run)
         session.flush()  # get run.id before adding children

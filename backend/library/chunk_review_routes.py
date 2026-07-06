@@ -2,9 +2,14 @@
 
 Endpoints:
   GET  /analysis_runs?doc_id=<id>            — list runs for a document
+  GET  /document/<doc_id>/chapters           — detect H1/H2 table of contents
+  GET  /document/<doc_id>/chapter/<position> — one chapter's markdown (reader view)
   POST /document/<doc_id>/analyze_chunks     — create a new analysis run
-  GET  /analysis_run/<run_id>/chunks         — full run data (chunks + segments)
+  GET  /analysis_run/<run_id>/chunks         — run data (chunks + segments;
+                                               lite/section_id/offset/limit for books)
   POST /analysis_run/<run_id>/extract_speakers
+  PATCH /analysis_run/<run_id>               — run workflow status
+  PATCH /topic_section/<section_id>          — edit section title
   PATCH /chunk/<chunk_id>                    — update status / type / topic / split_at_seg
   POST /chunk/<chunk_id>/execute_split
   POST /chunk/<chunk_id>/reanalyze
@@ -92,14 +97,22 @@ def _parse_segments(text_raw: str | None) -> list[dict]:
     return []
 
 
-def _chunk_to_dict(c: DocumentChunk, has_embeddings: bool | None = None) -> dict:
+TEXT_PREVIEW_CHARS = 200
+
+
+def _chunk_to_dict(c: DocumentChunk, has_embeddings: bool | None = None, lite: bool = False) -> dict:
+    """Serialize a chunk. lite=True drops the full texts (book-sized runs are
+    lazy-loaded per section) and ships a short preview + length instead."""
+    text = c.corrected_text or c.original_text or ""
     return {
         "id": c.id,
         "position": c.position,
         "type": c.type,
         "topic": c.topic,
-        "original_text": c.original_text,
-        "corrected_text": c.corrected_text,
+        "original_text": None if lite else c.original_text,
+        "corrected_text": None if lite else c.corrected_text,
+        "text_length": len(text),
+        "text_preview": text[:TEXT_PREVIEW_CHARS] if lite else None,
         "summary": c.summary,
         "seg_start": c.seg_start,
         "seg_end": c.seg_end,
@@ -131,6 +144,8 @@ def analyze_document_chunks(doc_id: int):
         no_synthesis — skip final synthesis step (default: false)
         mode         — "transcript" (default) or "article"
         split_only   — split into chunks without any LLM analysis (default: false)
+        scope_chapter — 1-based chapter position (see GET /document/<id>/chapters);
+                       analyze only that chapter (article mode only)
 
     Returns immediately with {job_id}. Poll GET /analysis_job/<job_id> for status.
     """
@@ -142,8 +157,16 @@ def analyze_document_chunks(doc_id: int):
     no_synthesis = bool(data.get("no_synthesis", False))
     mode = data.get("mode", "transcript")
     split_only = bool(data.get("split_only", False))
+    scope_chapter = data.get("scope_chapter")
     if mode not in ANALYSIS_MODES:
         return jsonify({"status": "error", "message": f"Invalid mode: {mode}"}), 400
+    if scope_chapter is not None:
+        try:
+            scope_chapter = int(scope_chapter)
+        except (TypeError, ValueError):
+            return jsonify({"status": "error", "message": "scope_chapter must be an integer"}), 400
+        if mode != "article":
+            return jsonify({"status": "error", "message": "scope_chapter requires article mode"}), 400
 
     job_id = uuid.uuid4().hex[:8]
     _analysis_jobs[job_id] = {
@@ -177,6 +200,7 @@ def analyze_document_chunks(doc_id: int):
                 progress_fn=_progress,
                 mode=mode,
                 split_only=split_only,
+                scope_chapter=scope_chapter,
             )
             ad_count = sum(1 for c in run.chunks if c.type == "REKLAMA")
             _analysis_jobs[job_id].update({
@@ -205,18 +229,22 @@ def analyze_document_chunks(doc_id: int):
 def split_preview(doc_id: int):
     """Preview how a document would split into chunks — no LLM calls, no DB writes.
 
-    Query params: mode (article|transcript, default article), chunk_size (default 5000).
+    Query params: mode (article|transcript, default article), chunk_size (default 5000),
+    scope_chapter (1-based chapter position — article mode only).
     Transcript sizes are approximate (speaker labeling happens only in a real run).
     """
-    from library.document_analysis_service import ANALYSIS_MODES, _extract_text
+    from library.document_analysis_service import ANALYSIS_MODES, _extract_text, _slice_chapter
     from library.text_functions import split_markdown_into_chunks, split_text_into_sentence_chunks
 
     mode = request.args.get("mode", "article")
     chunk_size = request.args.get("chunk_size", 5000, type=int)
+    scope_chapter = request.args.get("scope_chapter", type=int)
     if mode not in ANALYSIS_MODES:
         return jsonify({"status": "error", "message": f"Invalid mode: {mode}"}), 400
     if not 500 <= chunk_size <= 50000:
         return jsonify({"status": "error", "message": f"chunk_size out of range: {chunk_size}"}), 400
+    if scope_chapter is not None and mode != "article":
+        return jsonify({"status": "error", "message": "scope_chapter requires article mode"}), 400
 
     session = get_scoped_session()
     doc = session.get(WebDocument, doc_id)
@@ -227,7 +255,13 @@ def split_preview(doc_id: int):
     if not text:
         return jsonify({"status": "error", "message": "Document has no usable text"}), 400
 
+    scope_title = None
     if mode == "article":
+        if scope_chapter is not None:
+            try:
+                text, scope_title = _slice_chapter(text, scope_chapter)
+            except ValueError as exc:
+                return jsonify({"status": "error", "message": str(exc)}), 400
         parts = split_markdown_into_chunks(text, chunk_size)
     else:
         from library.chunk_llm_analysis import remove_speech_fillers
@@ -238,9 +272,76 @@ def split_preview(doc_id: int):
         "mode": mode,
         "chunk_size": chunk_size,
         "source_field": field,
+        "scope_chapter": scope_chapter,
+        "scope_title": scope_title,
         "text_length": len(text),
         "chunk_count": len(parts),
         "chunk_sizes": [len(p) for p in parts],
+    })
+
+
+@bp.route("/document/<int:doc_id>/chapters", methods=["GET"])
+def document_chapters(doc_id: int):
+    """Detect the document's table of contents (H1/H2 markdown headers).
+
+    Reads the same text an article-mode analysis would (text_md preferred).
+    Chapter positions can be passed as scope_chapter to POST /analyze_chunks
+    or GET /split_preview to analyze a single chapter.
+    """
+    from library.document_analysis_service import _extract_text
+    from library.text_functions import detect_chapters
+
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    text, field = _extract_text(doc, prefer_md=True)
+    if not text:
+        return jsonify({"status": "error", "message": "Document has no usable text"}), 400
+
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "source_field": field,
+        "text_length": len(text),
+        "chapters": detect_chapters(text),
+    })
+
+
+@bp.route("/document/<int:doc_id>/chapter/<int:position>", methods=["GET"])
+def document_chapter(doc_id: int, position: int):
+    """Return one chapter's markdown text for the reader view (/read/:id).
+
+    Positions are 1-based and match GET /document/<id>/chapters.
+    """
+    from library.document_analysis_service import _extract_text, _slice_chapter
+    from library.text_functions import detect_chapters
+
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    text, _field = _extract_text(doc, prefer_md=True)
+    if not text:
+        return jsonify({"status": "error", "message": "Document has no usable text"}), 400
+
+    chapter_total = len(detect_chapters(text))
+    try:
+        chapter_text, title = _slice_chapter(text, position)
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "position": position,
+        "title": title,
+        "text": chapter_text,
+        "chapter_total": chapter_total,
+        "prev": position - 1 if position > 1 else None,
+        "next": position + 1 if position < chapter_total else None,
     })
 
 
@@ -278,6 +379,10 @@ def list_runs():
                 "scope": r.scope,
                 "created_at": r.created_at.isoformat(),
                 "chunk_count": len(r.chunks),
+                "temat_count": sum(1 for c in r.chunks if c.type == "TEMAT"),
+                "approved_count": sum(
+                    1 for c in r.chunks if c.type == "TEMAT" and c.status == "approved"
+                ),
             }
             for r in runs
         ],
@@ -290,13 +395,26 @@ def list_runs():
 
 @bp.route("/analysis_run/<int:run_id>/chunks", methods=["GET"])
 def get_run_chunks(run_id: int):
+    """Run data with chunks and topic sections.
+
+    Query params (all optional — omit all for the classic full response):
+        lite=1       — chunk dicts without full texts (text_preview/text_length
+                       instead); segments are skipped too. For book-sized runs.
+        section_id   — only chunks of that topic section (by chunk_positions).
+        offset/limit — slice of the (possibly section-filtered) chunk list.
+    """
+    lite = request.args.get("lite", type=int) == 1
+    section_id = request.args.get("section_id", type=int)
+    offset = request.args.get("offset", 0, type=int)
+    limit = request.args.get("limit", type=int)
+
     session = get_scoped_session()
     run = session.get(DocumentAnalysisRun, run_id)
     if run is None:
         abort(404, f"Run {run_id} not found")
 
     doc = session.get(WebDocument, run.document_id)
-    segments = _parse_segments(doc.text_raw if doc else None)
+    segments = [] if lite else _parse_segments(doc.text_raw if doc else None)
 
     topic_sections = session.scalars(
         select(DocumentTopicSection)
@@ -304,7 +422,8 @@ def get_run_chunks(run_id: int):
         .order_by(DocumentTopicSection.position)
     ).all()
 
-    chunk_ids = [c.id for c in run.chunks]
+    all_chunks = run.chunks  # ordered by position (relationship order_by)
+    chunk_ids = [c.id for c in all_chunks]
     embedded_chunk_ids: set[int] = set()
     if chunk_ids:
         embedded_chunk_ids = set(session.scalars(
@@ -312,6 +431,30 @@ def get_run_chunks(run_id: int):
             .where(WebsiteEmbedding.chunk_id.in_(chunk_ids))
             .distinct()
         ).all())
+
+    chunks = all_chunks
+    if section_id is not None:
+        section = next((ts for ts in topic_sections if ts.id == section_id), None)
+        if section is None:
+            return jsonify({"status": "error",
+                            "message": f"Topic section {section_id} not found in run {run_id}"}), 404
+        wanted = set(section.chunk_positions or [])
+        chunks = [c for c in chunks if c.position in wanted]
+    chunk_total = len(chunks)
+    if offset:
+        chunks = chunks[offset:]
+    if limit is not None:
+        chunks = chunks[:limit]
+
+    def _section_stats(ts: DocumentTopicSection) -> dict:
+        members = [c for c in all_chunks if c.position in set(ts.chunk_positions or [])]
+        temat = [c for c in members if c.type == "TEMAT"]
+        return {
+            "chunk_count": len(members),
+            "temat_count": len(temat),
+            "approved_count": sum(1 for c in temat if c.status == "approved"),
+            "notes_count": sum(1 for c in members if c.obsidian_note_paths),
+        }
 
     return jsonify({
         "status": "success",
@@ -333,7 +476,10 @@ def get_run_chunks(run_id: int):
             "document_type": doc.document_type if doc else "",
         },
         "segments": segments,
-        "chunks": [_chunk_to_dict(c, has_embeddings=c.id in embedded_chunk_ids) for c in run.chunks],
+        "lite": lite,
+        "offset": offset,
+        "chunk_total": chunk_total,
+        "chunks": [_chunk_to_dict(c, has_embeddings=c.id in embedded_chunk_ids, lite=lite) for c in chunks],
         "topic_sections": [
             {
                 "id": ts.id,
@@ -342,9 +488,52 @@ def get_run_chunks(run_id: int):
                 "title": ts.title,
                 "summary": ts.summary,
                 "chunk_positions": ts.chunk_positions,
+                **_section_stats(ts),
             }
             for ts in topic_sections
         ],
+    })
+
+
+# ---------------------------------------------------------------------------
+# API: PATCH /topic_section/<section_id>
+# ---------------------------------------------------------------------------
+
+@bp.route("/topic_section/<int:section_id>", methods=["PATCH", "OPTIONS"])
+def update_topic_section(section_id: int):
+    """Update a topic section. Body (JSON): {"title": "..."}."""
+    if request.method == "OPTIONS":
+        return jsonify({"status": "ok"}), 200
+
+    session = get_scoped_session()
+    section = session.get(DocumentTopicSection, section_id)
+    if section is None:
+        abort(404, f"Topic section {section_id} not found")
+
+    data = request.get_json() or {}
+    if "title" in data:
+        title = data["title"]
+        if not isinstance(title, str) or not title.strip():
+            return jsonify({"status": "error", "message": "title must be a non-empty string"}), 400
+        section.title = title.strip()[:500]
+        section.updated_at = datetime.utcnow()
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception("Failed to update topic section %d", section_id)
+            return jsonify({"status": "error", "message": "DB error"}), 500
+
+    return jsonify({
+        "status": "success",
+        "topic_section": {
+            "id": section.id,
+            "position": section.position,
+            "type": section.type,
+            "title": section.title,
+            "summary": section.summary,
+            "chunk_positions": section.chunk_positions,
+        },
     })
 
 
