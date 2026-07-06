@@ -1,6 +1,10 @@
 import React from "react";
 import { useParams, useSearchParams, NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
+import {
+  NotePopover, NoteRow, PendingNote, STANCE_ICON, UserNote, UserPicker,
+  normalizeWs, pendingNoteFromSelection, useReaderIdentity, useUserNotes,
+} from "../components/ReaderNotes/readerNotes";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,33 +26,6 @@ interface ChapterContent {
   next: number | null;
 }
 
-interface ReaderUser {
-  id: number;
-  username: string;
-  display_name: string | null;
-}
-
-interface UserNote {
-  id: number;
-  chapter_position: number | null;
-  anchor_quote: string;
-  anchor_prefix: string | null;
-  anchor_suffix: string | null;
-  note_text: string;
-  stance: string | null;
-}
-
-interface PendingNote {
-  quote: string;
-  prefix: string;
-  suffix: string;
-  x: number;
-  y: number;
-}
-
-const USER_STORAGE_KEY = "lenie_userId";
-const STANCE_ICON: Record<string, string> = { agree: "👍", disagree: "👎", neutral: "➖" };
-
 // ── Minimal markdown rendering (headings, paragraphs, hr; images skipped) ────
 
 const IMAGE_LINE = /^!\[[^\]]*\]\([^)]*\)$/;
@@ -62,8 +39,6 @@ function renderInline(text: string): React.ReactNode[] {
     return part;
   });
 }
-
-const normalizeWs = (s: string) => s.replace(/\s+/g, " ").trim();
 
 /** Render a paragraph's text with <mark> around anchored note quotes.
  *  Exact match → inline highlight; whitespace-normalized match → whole
@@ -113,7 +88,9 @@ function renderMarkdown(text: string, notes: UserNote[]): React.ReactNode[] {
     if (heading) {
       const level = Math.min(heading[1].length + 1, 6);
       const Tag = `h${level}` as keyof JSX.IntrinsicElements;
-      out.push(<Tag key={i} style={{ marginTop: level === 2 ? 0 : 28 }}>{heading[2]}</Tag>);
+      // headings can carry note anchors too (e.g. a quote of the chapter title)
+      const { nodes } = renderParagraphWithNotes(heading[2].replace(/\n/g, " "), notes);
+      out.push(<Tag key={i} style={{ marginTop: level === 2 ? 0 : 28 }}>{nodes}</Tag>);
       return;
     }
     if (trimmed === "---") {
@@ -152,55 +129,23 @@ const Read: React.FC = () => {
   const [error, setError] = React.useState<string | null>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
 
-  // ── User identity ──
-  const [users, setUsers] = React.useState<ReaderUser[]>([]);
-  const [userId, setUserId] = React.useState<number | null>(() => {
-    const v = localStorage.getItem(USER_STORAGE_KEY);
-    return v ? Number(v) : null;
-  });
-  const [newUsername, setNewUsername] = React.useState("");
-
   // ── Reading progress ──
   const [readChapters, setReadChapters] = React.useState<number[]>([]);
   const [progressLoaded, setProgressLoaded] = React.useState(false);
   const initialRedirectDone = React.useRef(false);
 
-  // ── Notes ──
-  const [notes, setNotes] = React.useState<UserNote[]>([]);
-  const [pendingNote, setPendingNote] = React.useState<PendingNote | null>(null);
-  const [noteText, setNoteText] = React.useState("");
-  const [noteStance, setNoteStance] = React.useState<string | null>(null);
-  const [editingNoteId, setEditingNoteId] = React.useState<number | null>(null);
-  const [editingText, setEditingText] = React.useState("");
-
-  const position = Number(searchParams.get("chapter") ?? 1);
-  const headers = React.useMemo(() => {
-    const h: Record<string, string> = { "x-api-key": apiKey ?? "" };
-    if (userId) h["x-user-id"] = String(userId);
-    return h;
-  }, [apiKey, userId]);
-  const jsonHeaders = React.useMemo(
-    () => ({ ...headers, "Content-Type": "application/json" }), [headers]);
-
-  const selectUser = (uid: number | null) => {
-    setUserId(uid);
+  // ── User identity + notes (shared with /chunks) ──
+  const identity = useReaderIdentity(apiUrl, apiKey, () => {
     setProgressLoaded(false);
     initialRedirectDone.current = false;
-    if (uid) localStorage.setItem(USER_STORAGE_KEY, String(uid));
-    else localStorage.removeItem(USER_STORAGE_KEY);
-  };
+  });
+  const { userId, headers, jsonHeaders } = identity;
+  const { notes, createNote, saveNoteText, deleteNote } = useUserNotes(apiUrl, id, identity);
+  const [pendingNote, setPendingNote] = React.useState<PendingNote | null>(null);
+
+  const position = Number(searchParams.get("chapter") ?? 1);
 
   // ── Data loading ──
-
-  React.useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch(`${apiUrl}/users`, { headers: { "x-api-key": apiKey ?? "" } });
-        const data = await r.json();
-        if (data.status === "success") setUsers(data.users ?? []);
-      } catch { /* users are optional — reader works without identity */ }
-    })();
-  }, [apiUrl, apiKey]);
 
   React.useEffect(() => {
     (async () => {
@@ -232,18 +177,6 @@ const Read: React.FC = () => {
       } catch { /* progress is best-effort */ }
       initialRedirectDone.current = true;
       setProgressLoaded(true);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiUrl, id, userId]);
-
-  React.useEffect(() => {
-    if (!userId) { setNotes([]); return; }
-    (async () => {
-      try {
-        const r = await fetch(`${apiUrl}/document/${id}/notes`, { headers });
-        const data = await r.json();
-        if (data.status === "success") setNotes(data.notes ?? []);
-      } catch { /* notes are best-effort */ }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiUrl, id, userId]);
@@ -305,87 +238,23 @@ const Read: React.FC = () => {
     goTo(content.next);
   };
 
-  const addUser = async () => {
-    const username = newUsername.trim();
-    if (!username) return;
-    const r = await fetch(`${apiUrl}/users`, {
-      method: "POST", headers: { "x-api-key": apiKey ?? "", "Content-Type": "application/json" },
-      body: JSON.stringify({ username }),
-    });
-    const data = await r.json();
-    if (data.status === "success") {
-      setUsers(prev => [...prev, data.user]);
-      selectUser(data.user.id);
-      setNewUsername("");
-    } else {
-      alert(data.message ?? "Nie udało się dodać użytkownika");
-    }
-  };
-
   const onTextSelected = () => {
     if (!userId) return;
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) return;
-    const quote = normalizeWs(sel.toString());
-    if (quote.length < 3 || quote.length > 2000) return;
-
-    let prefix = "";
-    let suffix = "";
-    const anchorEl = sel.anchorNode instanceof Element ? sel.anchorNode : sel.anchorNode?.parentElement;
-    const para = anchorEl?.closest("p");
-    const paraText = para?.textContent ?? "";
-    const idx = paraText.indexOf(quote);
-    if (idx >= 0) {
-      prefix = paraText.slice(Math.max(0, idx - 50), idx);
-      suffix = paraText.slice(idx + quote.length, idx + quote.length + 50);
-    }
-    const rect = sel.getRangeAt(0).getBoundingClientRect();
-    setPendingNote({ quote, prefix, suffix, x: rect.left + window.scrollX, y: rect.bottom + window.scrollY + 6 });
-    setNoteText("");
-    setNoteStance(null);
+    const pending = pendingNoteFromSelection("p");
+    if (pending) setPendingNote(pending);
   };
 
-  const saveNote = async () => {
-    if (!pendingNote || !noteText.trim()) return;
-    const r = await fetch(`${apiUrl}/document/${id}/notes`, {
-      method: "POST", headers: jsonHeaders,
-      body: JSON.stringify({
-        anchor_quote: pendingNote.quote,
-        anchor_prefix: pendingNote.prefix,
-        anchor_suffix: pendingNote.suffix,
-        chapter_position: position,
-        note_text: noteText.trim(),
-        stance: noteStance,
-      }),
+  const saveNote = async (noteText: string, stance: string | null) => {
+    if (!pendingNote || !noteText) return;
+    const ok = await createNote({
+      anchor_quote: pendingNote.quote,
+      anchor_prefix: pendingNote.prefix,
+      anchor_suffix: pendingNote.suffix,
+      chapter_position: position,
+      note_text: noteText,
+      stance,
     });
-    const data = await r.json();
-    if (data.status === "success") {
-      setNotes(prev => [...prev, data.note]);
-      setPendingNote(null);
-    } else {
-      alert(data.message ?? "Nie udało się zapisać notatki");
-    }
-  };
-
-  const deleteNote = async (noteId: number) => {
-    if (!window.confirm("Usunąć notatkę?")) return;
-    const r = await fetch(`${apiUrl}/note/${noteId}`, { method: "DELETE", headers });
-    const data = await r.json();
-    if (data.status === "success") setNotes(prev => prev.filter(n => n.id !== noteId));
-  };
-
-  const saveEditedNote = async (noteId: number) => {
-    const text = editingText.trim();
-    if (!text) return;
-    const r = await fetch(`${apiUrl}/note/${noteId}`, {
-      method: "PATCH", headers: jsonHeaders,
-      body: JSON.stringify({ note_text: text }),
-    });
-    const data = await r.json();
-    if (data.status === "success") {
-      setNotes(prev => prev.map(n => (n.id === noteId ? data.note : n)));
-      setEditingNoteId(null);
-    }
+    if (ok) setPendingNote(null);
   };
 
   // ── Derived ──
@@ -418,56 +287,19 @@ const Read: React.FC = () => {
     </div>
   );
 
-  const userPicker = (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85em" }}>
-      <span style={{ color: "#64748b" }}>Czytasz jako:</span>
-      <select value={userId ?? ""} onChange={e => selectUser(e.target.value ? Number(e.target.value) : null)}>
-        <option value="">— wybierz —</option>
-        {users.map(u => (
-          <option key={u.id} value={u.id}>{u.display_name || u.username}</option>
-        ))}
-      </select>
-      <input
-        value={newUsername} onChange={e => setNewUsername(e.target.value)}
-        onKeyDown={e => e.key === "Enter" && addUser()}
-        placeholder="nowy użytkownik…" style={{ width: 130 }}
-      />
-      <button onClick={addUser} disabled={!newUsername.trim()}>＋</button>
-    </div>
-  );
-
-  const renderNoteRow = (n: UserNote, showUnanchored: boolean) => (
-    <div key={n.id} style={{
-      padding: "6px 10px", borderBottom: "1px solid #e2e8f0", fontSize: "0.8em", lineHeight: 1.4,
-    }}>
-      <div style={{ color: "#64748b", cursor: n.chapter_position ? "pointer" : undefined }}
-        onClick={() => n.chapter_position && goTo(n.chapter_position)}>
+  const renderNoteRow = (n: UserNote) => (
+    <NoteRow
+      key={n.id}
+      note={n}
+      header={<>
         {STANCE_ICON[n.stance ?? ""] ?? "📝"} rozdz. {n.chapter_position ?? "?"}
-        {showUnanchored && n.chapter_position === position && !anchoredNoteIds.has(n.id) &&
+        {n.chapter_position === position && !anchoredNoteIds.has(n.id) &&
           <span style={{ color: "#b45309" }}> ⚠ nie odnaleziono w tekście</span>}
-      </div>
-      <div style={{ fontStyle: "italic", color: "#94a3b8", margin: "2px 0" }}>
-        „{n.anchor_quote.length > 90 ? `${n.anchor_quote.slice(0, 90)}…` : n.anchor_quote}"
-      </div>
-      {editingNoteId === n.id ? (
-        <div>
-          <textarea value={editingText} onChange={e => setEditingText(e.target.value)}
-            style={{ width: "100%", minHeight: 50 }} />
-          <button onClick={() => saveEditedNote(n.id)}>Zapisz</button>{" "}
-          <button onClick={() => setEditingNoteId(null)}>Anuluj</button>
-        </div>
-      ) : (
-        <div>
-          {n.note_text}{" "}
-          <span style={{ whiteSpace: "nowrap" }}>
-            <button title="Edytuj" style={{ border: "none", background: "none", cursor: "pointer" }}
-              onClick={() => { setEditingNoteId(n.id); setEditingText(n.note_text); }}>✏</button>
-            <button title="Usuń" style={{ border: "none", background: "none", cursor: "pointer" }}
-              onClick={() => deleteNote(n.id)}>🗑</button>
-          </span>
-        </div>
-      )}
-    </div>
+      </>}
+      onHeaderClick={n.chapter_position ? () => goTo(n.chapter_position) : undefined}
+      onSaveText={saveNoteText}
+      onDelete={deleteNote}
+    />
   );
 
   return (
@@ -476,7 +308,7 @@ const Read: React.FC = () => {
         <h2 style={{ margin: 0 }}>Czytelnik — dokument #{id}</h2>
         <NavLink to={`/chunks/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>Przegląd chunków</NavLink>
         <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
-        <div style={{ marginLeft: "auto" }}>{userPicker}</div>
+        <div style={{ marginLeft: "auto" }}><UserPicker identity={identity} /></div>
       </div>
 
       {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
@@ -526,7 +358,7 @@ const Read: React.FC = () => {
               marginTop: 12, padding: "10px 0",
             }}>
               <strong style={{ fontSize: "0.85em", padding: "0 14px" }}>📝 Moje notatki ({notes.length})</strong>
-              {notes.map(n => renderNoteRow(n, true))}
+              {notes.map(renderNoteRow)}
             </div>
           )}
         </div>
@@ -546,36 +378,7 @@ const Read: React.FC = () => {
 
       {/* Note popover */}
       {pendingNote && (
-        <div style={{
-          position: "absolute", left: pendingNote.x, top: pendingNote.y, zIndex: 50,
-          background: "#fff", border: "1px solid #cbd5e1", borderRadius: 8, padding: 10,
-          boxShadow: "0 4px 12px rgba(0,0,0,0.15)", width: 340,
-        }}>
-          <div style={{ fontSize: "0.75em", color: "#94a3b8", fontStyle: "italic", marginBottom: 6 }}>
-            „{pendingNote.quote.length > 120 ? `${pendingNote.quote.slice(0, 120)}…` : pendingNote.quote}"
-          </div>
-          <textarea
-            autoFocus value={noteText} onChange={e => setNoteText(e.target.value)}
-            placeholder="Twoja notatka — co myślisz o tym fragmencie?"
-            style={{ width: "100%", minHeight: 60, fontSize: "0.85em" }}
-          />
-          <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
-            {(["agree", "disagree", "neutral"] as const).map(s => (
-              <button key={s} onClick={() => setNoteStance(noteStance === s ? null : s)}
-                title={{ agree: "Zgadzam się", disagree: "Nie zgadzam się", neutral: "Neutralnie" }[s]}
-                style={{
-                  border: noteStance === s ? "2px solid #0369a1" : "1px solid #cbd5e1",
-                  borderRadius: 6, background: "#fff", cursor: "pointer", padding: "2px 8px",
-                }}>
-                {STANCE_ICON[s]}
-              </button>
-            ))}
-            <span style={{ marginLeft: "auto" }}>
-              <button onClick={saveNote} disabled={!noteText.trim()} style={{ marginRight: 6 }}>Zapisz</button>
-              <button onClick={() => setPendingNote(null)}>Anuluj</button>
-            </span>
-          </div>
-        </div>
+        <NotePopover pending={pendingNote} onSave={saveNote} onCancel={() => setPendingNote(null)} />
       )}
     </div>
   );

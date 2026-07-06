@@ -1,6 +1,10 @@
 import React from "react";
 import { useParams, useLocation, NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
+import {
+  NotePopover, NoteRow, PendingNote, STANCE_ICON, UserNote, UserPicker,
+  normalizeWs, pendingNoteFromSelection, useReaderIdentity, useUserNotes,
+} from "../components/ReaderNotes/readerNotes";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -373,6 +377,13 @@ const Chunks = () => {
   const [filterUnprocessed, setFilterUnprocessed] = React.useState(false);
   const [embedJobId, setEmbedJobId] = React.useState<string | null>(null);
   const [embedJobStatus, setEmbedJobStatus] = React.useState<string | null>(null);
+
+  // ── User identity + fragment notes (shared with /read) ──
+  const identity = useReaderIdentity(apiUrl, apiKey);
+  const { userId } = identity;
+  const { notes, createNote, saveNoteText, deleteNote } = useUserNotes(apiUrl, id, identity);
+  const [pendingNote, setPendingNote] = React.useState<(PendingNote & { chunkId: number }) | null>(null);
+  const [expandedNoteChunks, setExpandedNoteChunks] = React.useState<Set<number>>(new Set());
 
   const headers = { "x-api-key": apiKey ?? "", "Content-Type": "application/json" };
 
@@ -950,6 +961,57 @@ const Chunks = () => {
     && (!filterUnprocessed || (c.type === "TEMAT" && (c.obsidian_note_paths?.length ?? 0) === 0))
   );
 
+  // ── User notes: match notes to chunks of the selected run ──
+  // Direct match by chunk_id; reader notes (or notes from other runs) fall back
+  // to a quote search in the chunk text (skipped for lite chunks without texts).
+  const chunkNotes = React.useMemo(() => {
+    const byChunk = new Map<number, UserNote[]>();
+    if (!userId || notes.length === 0) return byChunk;
+    const runChunkIds = new Set(chunks.map(c => c.id));
+    for (const n of notes) {
+      if (n.chunk_id !== null && runChunkIds.has(n.chunk_id)) {
+        byChunk.set(n.chunk_id, [...(byChunk.get(n.chunk_id) ?? []), n]);
+        continue;
+      }
+      const quote = normalizeWs(n.anchor_quote);
+      for (const c of chunks) {
+        const text = c.corrected_text ?? c.original_text;
+        if (text && normalizeWs(text).includes(quote)) {
+          byChunk.set(c.id, [...(byChunk.get(c.id) ?? []), n]);
+          break;
+        }
+      }
+    }
+    return byChunk;
+  }, [notes, chunks, userId]);
+
+  const onChunkTextSelected = (chunkId: number) => {
+    if (!userId) return;
+    const pending = pendingNoteFromSelection("p,div");
+    if (pending) setPendingNote({ ...pending, chunkId });
+  };
+
+  const saveChunkNote = async (noteText: string, stance: string | null) => {
+    if (!pendingNote || !noteText) return;
+    // chapter_position: chapter-scoped runs store the chapter title in run.scope
+    const scope = runs.find(r => r.id === selectedRun)?.scope;
+    const chapter = scope ? chapters.find(ch => ch.title === scope)?.position ?? null : null;
+    const ok = await createNote({
+      anchor_quote: pendingNote.quote,
+      anchor_prefix: pendingNote.prefix,
+      anchor_suffix: pendingNote.suffix,
+      chapter_position: chapter,
+      run_id: selectedRun,
+      chunk_id: pendingNote.chunkId,
+      note_text: noteText,
+      stance,
+    });
+    if (ok) {
+      setExpandedNoteChunks(prev => new Set([...prev, pendingNote.chunkId]));
+      setPendingNote(null);
+    }
+  };
+
   // ── Render ───────────────────────────────────────────────────────────────
 
   // Karta pojedynczego chunka — używana w widoku płaskim i w accordionie sekcji
@@ -960,6 +1022,8 @@ const Chunks = () => {
         const splitSt = splitStates[chunk.id];
         const lineSplitSt = lineSplitStates[chunk.id];
         const chunkSegs = segments.slice(chunk.seg_start ?? 0, chunk.seg_end ?? segments.length);
+        const myNotes = chunkNotes.get(chunk.id) ?? [];
+        const notesExpanded = expandedNoteChunks.has(chunk.id);
 
         return (
           <div key={chunk.id} style={{ marginBottom: 18, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
@@ -994,6 +1058,19 @@ const Chunks = () => {
               {!!chunk.obsidian_note_paths?.length && (
                 <span title={chunk.obsidian_note_paths.join("\n")} style={{ color: "#7c3aed" }}>
                   📝 {chunk.obsidian_note_paths.length}
+                </span>
+              )}
+              {myNotes.length > 0 && (
+                <span
+                  onClick={() => setExpandedNoteChunks(prev => {
+                    const next = new Set(prev);
+                    if (next.has(chunk.id)) next.delete(chunk.id); else next.add(chunk.id);
+                    return next;
+                  })}
+                  title={`${myNotes.length} ${myNotes.length === 1 ? "notatka" : "notatki/notatek"} — kliknij aby ${notesExpanded ? "zwinąć" : "rozwinąć"}`}
+                  style={{ color: "#0369a1", cursor: "pointer", fontWeight: 600 }}
+                >
+                  💬 {myNotes.length}
                 </span>
               )}
               {chunk.has_embeddings != null && (
@@ -1055,7 +1132,8 @@ const Chunks = () => {
             </div>
 
             {/* Treść: poprawiony tekst → segmenty transkrypcji → surowy tekst (artykuły) */}
-            <div style={{ padding: "12px 14px", fontSize: "0.88em", lineHeight: 1.6 }}>
+            <div style={{ padding: "12px 14px", fontSize: "0.88em", lineHeight: 1.6 }}
+              onMouseUp={() => onChunkTextSelected(chunk.id)}>
               {isCorrectedView && hasCorrected ? (
                 <div style={{ whiteSpace: "pre-wrap", color: "#1e293b" }}>{chunk.corrected_text}</div>
               ) : chunkSegs.length > 0 ? (
@@ -1080,6 +1158,24 @@ const Chunks = () => {
                 />
               )}
             </div>
+
+            {/* Moje notatki do tego chunka */}
+            {notesExpanded && myNotes.length > 0 && (
+              <div style={{ margin: "0 14px 14px", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 5 }}>
+                <strong style={{ fontSize: "0.8em", color: "#0369a1", display: "block", padding: "6px 10px 0" }}>
+                  💬 Moje notatki
+                </strong>
+                {myNotes.map(n => (
+                  <NoteRow
+                    key={n.id}
+                    note={n}
+                    header={<>{STANCE_ICON[n.stance ?? ""] ?? "📝"}{n.chapter_position ? ` rozdz. ${n.chapter_position}` : ""}</>}
+                    onSaveText={saveNoteText}
+                    onDelete={deleteNote}
+                  />
+                ))}
+              </div>
+            )}
 
             {/* Panel podziału */}
             {splitSt && (
@@ -1175,6 +1271,7 @@ const Chunks = () => {
           <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
         )}
         <NavLink to={`/read/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>📖 Czytaj</NavLink>
+        <div style={{ marginLeft: "auto" }}><UserPicker identity={identity} /></div>
       </div>
 
       {/* Nowa analiza */}
@@ -1458,6 +1555,11 @@ const Chunks = () => {
 
       {!loading && chunks.length === 0 && runs.length === 0 && (
         <p style={{ color: "#64748b", fontStyle: "italic" }}>Brak analiz dla tego dokumentu. Uruchom pierwszą analizę powyżej.</p>
+      )}
+
+      {/* Popover nowej notatki (zaznaczenie tekstu w treści chunka) */}
+      {pendingNote && (
+        <NotePopover pending={pendingNote} onSave={saveChunkNote} onCancel={() => setPendingNote(null)} />
       )}
     </div>
   );
