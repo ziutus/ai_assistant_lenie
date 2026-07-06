@@ -14,6 +14,7 @@ from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_type import StalkerDocumentType
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.chunk_review_routes import bp as chunk_review_bp
+from library.reader_routes import bp as reader_bp
 
 logging.basicConfig(level=logging.INFO)
 
@@ -79,6 +80,7 @@ logging.info("Flask - enabling CORS for all routes")
 CORS(app)  # This will enable CORS for all routes
 
 app.register_blueprint(chunk_review_bp)
+app.register_blueprint(reader_bp)
 
 
 @app.teardown_appcontext
