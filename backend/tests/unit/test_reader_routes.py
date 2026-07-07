@@ -1,8 +1,9 @@
 """Unit tests for Etap 7 (reader): users, reading progress and fragment notes.
 
 Covers library/reader_routes.py with a mocked scoped session (no DB): user
-CRUD + x-user-id resolution, reading-progress upsert semantics and note
-anchoring/ownership rules.
+CRUD + reader-identity resolution from the API key (Etap 8: flask.g.auth set
+by the server middleware; service keys get 403), reading-progress upsert
+semantics and note anchoring/ownership rules.
 """
 
 from unittest.mock import MagicMock
@@ -13,6 +14,7 @@ pytest.importorskip("sqlalchemy")
 flask = pytest.importorskip("flask")
 
 from library import reader_routes as rr  # noqa: E402
+from library.auth import AuthContext  # noqa: E402
 from library.db.models import User, UserDocumentNote, UserReadingProgress, WebDocument  # noqa: E402
 
 
@@ -23,6 +25,10 @@ OTHER_USER = User(username="gosc")
 OTHER_USER.id = 2
 
 DOC_ID = 9204
+
+USER_AUTH = AuthContext(kind="user", key_id=10, key_name="frontend-krzysztof", user_id=READER_USER.id)
+SERVICE_AUTH = AuthContext(kind="service", key_id=11, key_name="chrome-extension", user_id=None)
+LEGACY_AUTH = AuthContext(kind="service", key_id=None, key_name="legacy", user_id=None, is_legacy=True)
 
 
 def _make_note(**overrides) -> UserDocumentNote:
@@ -68,12 +74,26 @@ def fake_session(monkeypatch):
 
 
 @pytest.fixture
-def client(fake_session):
+def auth_holder():
+    """Mutable stand-in for the AuthContext the server middleware puts in g.auth."""
+    return {"ctx": USER_AUTH}
+
+
+@pytest.fixture
+def client(fake_session, auth_holder):
     app = flask.Flask(__name__)
+
+    @app.before_request
+    def _set_auth():
+        if auth_holder["ctx"] is not None:
+            flask.g.auth = auth_holder["ctx"]
+
     app.register_blueprint(rr.bp)
     return app.test_client()
 
 
+# Old clients may still send x-user-id; it must be accepted when it matches
+# the key identity, so the happy-path requests below keep sending it.
 USER_HDR = {"x-user-id": "1"}
 
 
@@ -114,22 +134,39 @@ class TestUsers:
 
 
 # ---------------------------------------------------------------------------
-# x-user-id resolution
+# Reader identity from the API key (g.auth)
 # ---------------------------------------------------------------------------
 
 
 class TestRequireUser:
-    def test_missing_header_400(self, client):
+    def test_no_auth_context_401(self, client, auth_holder):
+        auth_holder["ctx"] = None
         resp = client.get(f"/document/{DOC_ID}/reading_progress")
-        assert resp.status_code == 400
+        assert resp.status_code == 401
 
-    def test_non_integer_header_400(self, client):
-        resp = client.get(f"/document/{DOC_ID}/reading_progress", headers={"x-user-id": "abc"})
-        assert resp.status_code == 400
+    def test_service_key_403(self, client, auth_holder):
+        auth_holder["ctx"] = SERVICE_AUTH
+        resp = client.get(f"/document/{DOC_ID}/reading_progress")
+        assert resp.status_code == 403
 
-    def test_unknown_user_404(self, client):
-        resp = client.get(f"/document/{DOC_ID}/reading_progress", headers={"x-user-id": "99"})
-        assert resp.status_code == 404
+    def test_legacy_key_403(self, client, auth_holder):
+        auth_holder["ctx"] = LEGACY_AUTH
+        resp = client.get(f"/document/{DOC_ID}/reading_progress", headers={"x-user-id": "1"})
+        assert resp.status_code == 403
+
+    def test_no_header_needed_with_user_key(self, client, fake_session):
+        fake_session.execute.return_value.scalar_one_or_none.return_value = None
+        resp = client.get(f"/document/{DOC_ID}/reading_progress")
+        assert resp.status_code == 200
+
+    def test_mismatched_x_user_id_403(self, client):
+        resp = client.get(f"/document/{DOC_ID}/reading_progress", headers={"x-user-id": "2"})
+        assert resp.status_code == 403
+
+    def test_key_user_gone_403(self, client, auth_holder):
+        auth_holder["ctx"] = AuthContext(kind="user", key_id=12, key_name="stale", user_id=99)
+        resp = client.get(f"/document/{DOC_ID}/reading_progress")
+        assert resp.status_code == 403
 
     def test_unknown_document_404(self, client, fake_session):
         resp = client.get("/document/12345/reading_progress", headers=USER_HDR)

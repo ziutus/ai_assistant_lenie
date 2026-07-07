@@ -801,3 +801,34 @@ class UserDocumentNote(Base):
             f"UserDocumentNote(id={self.id!r}, user_id={self.user_id!r}, "
             f"document_id={self.document_id!r}, chapter_position={self.chapter_position!r})"
         )
+
+
+class ApiKey(Base):
+    """API key: service account (kind=service) or per-user key (kind=user).
+
+    Only the SHA-256 hash of the plaintext key is stored; the plaintext is
+    returned once at creation. kind=user keys carry the reader identity
+    (user_id), replacing the x-user-id header. key_prefix keeps the first
+    characters of the plaintext for recognizing keys without revealing them.
+    """
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    key_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("TRUE"))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    last_used_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+    user: Mapped["User | None"] = relationship(foreign_keys=[user_id])
+
+    def __repr__(self) -> str:
+        return f"ApiKey(id={self.id!r}, kind={self.kind!r}, name={self.name!r}, active={self.active!r})"
