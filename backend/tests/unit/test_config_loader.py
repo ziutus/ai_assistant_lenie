@@ -86,14 +86,37 @@ class TestCreateBackend(unittest.TestCase):
             _create_backend("redis")
 
 
+def _clear_config_singleton():
+    """Drop the cached Config WITHOUT touching os.environ.
+
+    In setUp/tearDown the test's patch.dict has already restored (or not yet
+    modified) the environment; calling reset_config() there would pop restored
+    keys whose names collide with previously injected ones (STALKER_API_KEY,
+    POSTGRESQL_HOST, ...), permanently corrupting the environment for every
+    later test in the session. reset_config() itself is still exercised
+    explicitly by test_reset_clears_cache / test_reset_removes_injected_keys
+    inside their patch.dict scope.
+    """
+    import unified_config_loader.config as _ucc
+    _ucc._config = None
+    _ucc._injected_keys.clear()
+
+
 class TestLoadConfig(unittest.TestCase):
     """load_config / get_config / reset_config."""
 
     def setUp(self):
-        reset_config()
+        _clear_config_singleton()
+        # Also neutralize the bootstrap dotenv inside load_config(): otherwise
+        # the REAL project .env (SECRETS_BACKEND=vault + credentials) leaks in
+        # when a test pops SECRETS_BACKEND, and load_config() talks to the
+        # live Vault from a unit test.
+        self._bootstrap_patch = patch("unified_config_loader.config.find_dotenv", return_value="")
+        self._bootstrap_patch.start()
 
     def tearDown(self):
-        reset_config()
+        self._bootstrap_patch.stop()
+        _clear_config_singleton()
 
     @patch("unified_config_loader.backends.env.load_dotenv")
     def test_default_backend_is_env(self, mock_dotenv):
@@ -502,10 +525,14 @@ class TestBackwardCompatInjection(unittest.TestCase):
     that still use os.getenv() during the incremental migration."""
 
     def setUp(self):
-        reset_config()
+        _clear_config_singleton()
+        # See TestLoadConfig.setUp — keep the real .env out of unit tests.
+        self._bootstrap_patch = patch("unified_config_loader.config.find_dotenv", return_value="")
+        self._bootstrap_patch.start()
 
     def tearDown(self):
-        reset_config()
+        self._bootstrap_patch.stop()
+        _clear_config_singleton()
 
     @patch("unified_config_loader.backends.vault.VaultBackend.load")
     def test_vault_values_injected_into_environ(self, mock_vault_load):

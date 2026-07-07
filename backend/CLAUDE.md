@@ -46,9 +46,10 @@ Flask + Flask-CORS application exposing 20 REST API endpoints. **Version**: 0.3.
 | **AI Operations** | `/ai_get_embedding`, `/website_similar` |
 | **Content Processing** | `/website_download_text_content`, `/website_text_remove_not_needed`, `/website_split_for_embedding` |
 | **Metadata** | `/website_is_paid`, `/website_get_next_to_correct`, `/document_states` |
+| **Auth & identity** | `/whoami`, `/api_keys` (GET/POST), `/api_keys/<id>` (DELETE) — see `library/api_key_routes.py` |
 | **Health & Info** | `/` (root), `/healthz`, `/startup`, `/readiness`, `/liveness`, `/version`, `/metrics` |
 
-All routes (except health checks) require `x-api-key` header validated against `STALKER_API_KEY` env var.
+All routes (except health checks) require an `x-api-key` header. Keys live in the `api_keys` table (`library/auth.py`: SHA-256 hash lookup with an in-process TTL cache; `kind=user` keys carry the reader identity used by `reader_routes.py`, `kind=service` keys have full access but get 403 on reader endpoints). The legacy shared `STALKER_API_KEY` env var is still accepted as a service key during client migration. Keys are managed via `imports/api_key_admin.py` (CLI) or the `/api_keys` endpoints (service keys only); the plaintext (`lk_usr_*`/`lk_svc_*`) is shown once at creation.
 
 ### Storage
 

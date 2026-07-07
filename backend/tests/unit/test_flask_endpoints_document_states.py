@@ -81,10 +81,10 @@ class TestDocumentStates:
 
 
 class TestDocumentStatesAuth:
-    def test_missing_api_key_returns_400(self):
-        """Missing x-api-key header returns HTTP 400."""
+    def test_missing_api_key_returns_401(self):
+        """Missing x-api-key header returns HTTP 401 (Etap 8)."""
         import server
         server.app.config["TESTING"] = True
         with server.app.test_client() as c:
             resp = c.get("/document_states")
-            assert resp.status_code == 400
+            assert resp.status_code == 401
