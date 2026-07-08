@@ -90,6 +90,13 @@ const SideNavigation = ({ isMenuOpen, toggleMenu }: SideNavigationProps) => {
         >
           Upload File (Alfa)
         </NavLink>
+        <NavLink
+          to="/connect"
+          className={classes.link}
+          style={{ marginTop: 20, borderTop: "1px solid rgb(179, 179, 179)", paddingTop: 17 }}
+        >
+          Settings
+        </NavLink>
       </div>
     </aside>
   );
