@@ -408,8 +408,11 @@ POSTGRESQL_PORT=5432
 
 # Application
 PORT=5000
-STALKER_API_KEY=your-api-key       # API authentication
 ENV_DATA=dev                       # Environment identifier
+# STALKER_API_KEY=...              # Legacy name, now only the slack-bot's own key.
+                                    # Frontend/Chrome-extension/curl clients authenticate
+                                    # with a key from `imports/api_key_admin.py create` —
+                                    # there is no shared backend key anymore.
 
 # LLM Configuration
 LLM_PROVIDER=openai                # openai, bedrock, vertex, cloudferro

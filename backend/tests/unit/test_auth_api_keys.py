@@ -1,7 +1,7 @@
 """Unit tests for Etap 8: API keys (library/auth.py + library/api_key_routes.py).
 
 Covers key generation/hashing, the in-process cache (TTL, negative entries,
-invalidation), resolve_api_key (user/service/legacy/unknown/inactive, no DB
+invalidation), resolve_api_key (user/service/unknown/inactive, no DB
 on cache hits, last_used_at throttling) and the /whoami + /api_keys endpoints
 (service-only management) — all with mocked sessions, no DB.
 """
@@ -31,8 +31,6 @@ from library.db.models import ApiKey, User  # noqa: E402
 
 READER_USER = User(username="krzysztof", display_name="Krzysztof")
 READER_USER.id = 1
-
-LEGACY_KEY = "legacy-shared-secret"
 
 
 def _make_key_row(**overrides) -> ApiKey:
@@ -122,7 +120,7 @@ class TestResolveApiKey:
 
     def test_user_key_resolved(self):
         session = self._session_returning(_make_key_row())
-        ctx = resolve_api_key(lambda: session, "raw-key", legacy_key=LEGACY_KEY)
+        ctx = resolve_api_key(lambda: session, "raw-key")
         assert ctx == AuthContext(kind="user", key_id=10, key_name="frontend-krzysztof", user_id=1)
 
     def test_service_key_resolved(self):
@@ -132,15 +130,8 @@ class TestResolveApiKey:
         assert ctx.user_id is None
         assert not ctx.is_legacy
 
-    def test_legacy_fallback(self):
-        ctx = resolve_api_key(lambda: self._session_returning(None), LEGACY_KEY, legacy_key=LEGACY_KEY)
-        assert ctx == AuthContext(kind="service", key_id=None, key_name="legacy", user_id=None, is_legacy=True)
-
     def test_unknown_key_returns_none(self):
-        assert resolve_api_key(lambda: self._session_returning(None), "bad", legacy_key=LEGACY_KEY) is None
-
-    def test_no_legacy_configured(self):
-        assert resolve_api_key(lambda: self._session_returning(None), "anything") is None
+        assert resolve_api_key(lambda: self._session_returning(None), "bad") is None
 
     def test_cache_hit_skips_db(self):
         session = self._session_returning(_make_key_row())
@@ -171,13 +162,6 @@ class TestResolveApiKey:
         session.commit.assert_called_once()
         resolve_api_key(lambda: session, "raw-key")
         assert session.execute.call_count == 2
-
-    def test_legacy_key_never_touches_db(self):
-        factory = MagicMock()
-        resolve_api_key(factory, LEGACY_KEY, legacy_key=LEGACY_KEY)
-        # legacy is a plain string compare BEFORE the DB lookup — the session
-        # factory must not even be invoked
-        factory.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +236,6 @@ class TestDeactivateApiKey:
 
 USER_AUTH = AuthContext(kind="user", key_id=10, key_name="frontend-krzysztof", user_id=1)
 SERVICE_AUTH = AuthContext(kind="service", key_id=11, key_name="chrome-extension", user_id=None)
-LEGACY_AUTH = AuthContext(kind="service", key_id=None, key_name="legacy", user_id=None, is_legacy=True)
 
 
 @pytest.fixture
@@ -296,11 +279,6 @@ class TestWhoami:
         data = client.get("/whoami").get_json()
         assert data["kind"] == "service"
         assert data["user"] is None
-
-    def test_legacy_key(self, client, auth_holder):
-        auth_holder["ctx"] = LEGACY_AUTH
-        data = client.get("/whoami").get_json()
-        assert data["is_legacy"] is True
 
     def test_unauthenticated_401(self, client, auth_holder):
         auth_holder["ctx"] = None
