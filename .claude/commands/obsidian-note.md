@@ -32,9 +32,11 @@ cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/pytho
 
 Display the metadata to the user.
 
-**Step 1b — For `youtube` or `movie` documents: check for chunk analysis runs**
+**Step 1b — Check for chunk analysis runs (all document types)**
 
-Run the following to check if this document has pre-computed chunk analysis:
+Every document type can have chunk analysis runs — mode `transcript` (youtube/movie STT with rewrite) or mode `article` (webpage/link/text/book chapters, no rewrite). Always run this check, regardless of `document_type`.
+
+A document can have **more than one run** (a book typically has one `split_only` run over the whole text plus one `article` run per chapter). List all runs first:
 
 ```powershell
 cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python -c @"
@@ -45,25 +47,48 @@ runs = session.query(DocumentAnalysisRun).filter_by(document_id=<ARTICLE_ID>).or
 if not runs:
     print('NO_RUNS')
 else:
-    run = runs[0]
-    chunks = session.query(DocumentChunk).filter_by(run_id=run.id).order_by(DocumentChunk.position).all()
-    temat = [c for c in chunks if c.type == 'TEMAT']
-    reklama = [c for c in chunks if c.type != 'TEMAT']  # REKLAMA + SZUM
-    approved = [c for c in temat if c.status == 'approved']
-    print(f'RUN_ID={run.id}|MODEL={run.model}|CREATED={run.created_at.strftime(chr(37)+\"Y-\"+chr(37)+\"m-\"+chr(37)+\"d\")}')
-    print(f'TEMAT={len(temat)}|REKLAMA_SZUM={len(reklama)}|APPROVED={len(approved)}')
-    print('---CHUNKS---')
-    for c in temat:
-        summary = (c.summary or '(brak)').replace(chr(10), ' ')[:250]
-        notes = ','.join(c.obsidian_note_paths or [])
-        print(f'pos={c.position}|status={c.status}|notes={notes}|topic={c.topic or \"(brak)\"}|summary={summary}')
+    for run in runs:
+        chunks = session.query(DocumentChunk).filter_by(run_id=run.id).all()
+        temat = [c for c in chunks if c.type == 'TEMAT']
+        analyzed = [c for c in temat if c.topic]
+        approved = [c for c in temat if c.status == 'approved']
+        scope = run.scope or '(caly dokument)'
+        created = run.created_at.strftime(chr(37)+\"Y-\"+chr(37)+\"m-\"+chr(37)+\"d\")
+        print(f'RUN_ID={run.id}|MODE={run.mode}|STATUS={run.status}|SCOPE={scope}|MODEL={run.model}|CREATED={created}|TEMAT={len(temat)}|ANALYZED={len(analyzed)}|APPROVED={len(approved)}')
 session.close()
 "@
 ```
 
 **Interpret the result:**
 - `NO_RUNS` → proceed to **Step 1c** (fetch full text via `--dump`)
-- Runs found → proceed to **Step 2a** (chunk-based flow — skip Step 1c)
+- **One run** → auto-select it as `<RUN_ID>`, proceed straight to **Step 2a**
+- **Multiple runs** → this is typically a book (chapter runs) or a document re-analyzed several times. Show the list to the user (id, mode, scope, temat/analyzed/approved counts). A run with `ANALYZED=0` is a `split_only` run — chunks exist but have no topic/summary yet, not usable for note-writing on its own (even if `APPROVED` is non-zero — that can happen for stale/aborted runs where chunks were approved before topics were ever generated). Propose the run with the highest `ANALYZED` as the default (break ties by `APPROVED`), but let the user pick a different `RUN_ID` (e.g. a specific chapter). Once a `RUN_ID` is chosen, proceed to **Step 2a**.
+
+**Fetch the chunk list for the chosen run** (used by Step 2a — also re-run this after the user picks a different `RUN_ID` from the multi-run list above):
+
+```powershell
+cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python -c @"
+from library.db.engine import get_session
+from library.db.models import DocumentAnalysisRun, DocumentChunk
+session = get_session()
+run = session.get(DocumentAnalysisRun, <RUN_ID>)
+chunks = session.query(DocumentChunk).filter_by(run_id=run.id).order_by(DocumentChunk.position).all()
+temat = [c for c in chunks if c.type == 'TEMAT']
+reklama = [c for c in chunks if c.type != 'TEMAT']  # REKLAMA + SZUM
+approved = [c for c in temat if c.status == 'approved']
+created = run.created_at.strftime(chr(37)+\"Y-\"+chr(37)+\"m-\"+chr(37)+\"d\")
+print(f'RUN_ID={run.id}|MODE={run.mode}|SCOPE={run.scope or \"(caly dokument)\"}|MODEL={run.model}|CREATED={created}')
+print(f'TEMAT={len(temat)}|REKLAMA_SZUM={len(reklama)}|APPROVED={len(approved)}')
+print('---CHUNKS---')
+for c in temat:
+    summary = (c.summary or '(brak)').replace(chr(10), ' ')[:250]
+    notes = ','.join(c.obsidian_note_paths or [])
+    print(f'pos={c.position}|status={c.status}|notes={notes}|topic={c.topic or \"(brak)\"}|summary={summary}')
+session.close()
+"@
+```
+
+If `MODE=article`, `corrected_text` is expected to be `None` for every chunk — that is normal for this mode (no rewrite step), not a data quality issue. See the note in Step 2a's "Content usage rules".
 
 **Step 1c — Fetch full text (only when no chunks exist):**
 
@@ -86,9 +111,72 @@ cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/pytho
 
 The `--dump` JSON adds one extra field to `--meta`: `text` (full article content).
 
-### Step 2a: Chunk-based flow (YouTube/movie WITH existing chunks)
+### Step 2a: Chunk-based flow (document has existing analysis chunks)
 
-**Use this step when Step 1b found analysis runs.** This is the primary path for reviewed YouTube videos — it skips sending the full transcript to the LLM.
+**Use this step whenever Step 1b found a run to use** (any document type — youtube/movie transcript chunks or webpage/link/text/book article chunks). This is the primary path whenever pre-reviewed chunks exist — it skips sending the full text to the LLM.
+
+**If `TEMAT` count is large (> 30 chunks — same threshold as the `/chunks/:id` UI's `SECTION_VIEW_THRESHOLD`), use the section-grouped view below instead of the flat list.** Typical case: books with a run per chapter, or a `split_only` whole-book run. Otherwise skip straight to **"Flat chunk list"**.
+
+#### Section-grouped view (large runs — books)
+
+Fetch section stats:
+
+```powershell
+cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python -c @"
+from library.db.engine import get_session
+from library.db.models import DocumentAnalysisRun, DocumentChunk, DocumentTopicSection
+session = get_session()
+run = session.get(DocumentAnalysisRun, <RUN_ID>)
+chunks = session.query(DocumentChunk).filter_by(run_id=run.id).order_by(DocumentChunk.position).all()
+sections = session.query(DocumentTopicSection).filter_by(run_id=run.id).order_by(DocumentTopicSection.position).all()
+covered = set()
+for s in sections:
+    positions = set(s.chunk_positions or [])
+    covered |= positions
+    members = [c for c in chunks if c.position in positions and c.type == 'TEMAT']
+    done = sum(1 for c in members if c.obsidian_note_paths or c.status == 'skipped')
+    print(f'SEC_ID={s.id}|pos={s.position}|title={s.title or \"(brak tytulu)\"}|temat={len(members)}|done={done}')
+uncovered = [c for c in chunks if c.type == 'TEMAT' and c.position not in covered]
+if uncovered:
+    done = sum(1 for c in uncovered if c.obsidian_note_paths or c.status == 'skipped')
+    print(f'SEC_ID=NONE|title=(chunki bez przypisanej sekcji)|temat={len(uncovered)}|done={done}')
+session.close()
+"@
+```
+
+Topic sections don't always cover every `TEMAT` chunk (LLM synthesis is partial) — the `SEC_ID=NONE` line covers the rest, if any.
+
+**Display split into two groups (same top/bottom convention as the flat list):**
+- **Sekcje ukończone** (`done == temat`) at the TOP, compact one-liners: `Rozdział N: Tytuł — ✓ wszystkie opracowane (n tematów)`
+- **Sekcje do opracowania** (`done < temat`) at the BOTTOM: `Rozdział N: Tytuł — X/Y opracowanych`
+
+**Ask the user** which section(s) to drill into (by `SEC_ID`, or title). Then for each chosen section, fetch its chunks:
+
+```powershell
+cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python -c @"
+from library.db.engine import get_session
+from library.db.models import DocumentChunk, DocumentTopicSection
+session = get_session()
+section = session.get(DocumentTopicSection, <SEC_ID>)
+positions = set(section.chunk_positions or [])
+chunks = session.query(DocumentChunk).filter(
+    DocumentChunk.run_id == <RUN_ID>,
+    DocumentChunk.position.in_(positions),
+    DocumentChunk.type == 'TEMAT',
+).order_by(DocumentChunk.position).all()
+for c in chunks:
+    summary = (c.summary or '(brak)').replace(chr(10), ' ')[:250]
+    notes = ','.join(c.obsidian_note_paths or [])
+    print(f'pos={c.position}|status={c.status}|notes={notes}|topic={c.topic or \"(brak)\"}|summary={summary}')
+session.close()
+"@
+```
+
+(For `SEC_ID=NONE`, filter `DocumentChunk.position.notin_(covered)` instead, reusing the `covered` set logic from the stats query above.)
+
+Display these per-section chunks using the same **Już w notatkach / Nieopracowane** split as the flat list below, then continue with "For each selected chunk — fetch full text".
+
+#### Flat chunk list (normal-sized runs)
 
 **Display the chunk list to the user** split into two groups, in this order (Już w notatkach FIRST, Nieopracowane LAST — chat auto-scrolls to bottom so user sees pending items immediately):
 
@@ -100,7 +188,7 @@ The `--dump` JSON adds one extra field to `--meta`: `text` (full article content
 - position number, status badge (approved/pending/needs_reanalysis), topic, summary
 
 Count of REKLAMA/SZUM chunks (filtered out automatically — SZUM is extraction junk like portal navigation).
-Warning if any TEMAT chunks have status `needs_reanalysis` or `pending` (analysis incomplete).
+Warning if any TEMAT chunks have status `needs_reanalysis` or `pending` (analysis incomplete) — this is unrelated to `corrected_text` being empty (see mode=article note below).
 
 **Default proposal:** suggest working on unprocessed chunks only. If the user says "wszystkie" or "lista", show all.
 
@@ -118,16 +206,11 @@ Run #42 — Bielik-11B-v3.0-Instruct (2026-06-30) — 8 tematów, 3 reklamy
    Rozmówcy analizują wpływ embarg na eksport ropy...
 #6 [pending] Polityka celna USA
    ...
-
-=== Już w notatkach (4) ===
-#1 [approved] Wprowadzenie gości → Chiny.md
-#5 [approved] Chiński szok → Chiny.md, Stany Zjednoczone.md, Niemcy.md
-...
 ```
 
 **Ask the user:** "Które nieopracowane tematy (numery) chcesz opisać? (podaj numery, lub 'wszystkie' dla wszystkich nieopracowanych)"
 
-**For each selected chunk — fetch full corrected text from DB:**
+**For each selected chunk — fetch full text from DB (works for both modes):**
 
 ```powershell
 cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python -c @"
@@ -149,15 +232,16 @@ session.close()
 
 **Content usage rules:**
 - If chunk has `summary` and `approved` status → use `summary` as the basis, enrich only if needed
-- If chunk needs detail → use `corrected_text` (already cleaned STT transcript)
-- If chunk is `pending`/`needs_reanalysis` → warn user and ask if they want to proceed anyway
-- Never send raw `original_text` to LLM if `corrected_text` is available
+- If chunk needs detail:
+  - **mode=transcript** (youtube/movie) → use `corrected_text` (cleaned STT transcript with fillers/rewrite applied). Never send raw `original_text` to the LLM if `corrected_text` is available.
+  - **mode=article** (webpage/link/text/book) → `corrected_text` is **always `None` by design** — this mode has no rewrite step, the source markdown is already clean. Use `original_text` directly; this is expected behavior, not missing data, and should NOT be flagged as a data quality issue to the user.
+- If chunk is `pending`/`needs_reanalysis` → warn user and ask if they want to proceed anyway (this is a status-based check, orthogonal to which text field is populated)
 
 **Then proceed to Step 3** (find related notes).
 
-### Step 2b: Standard content flow (webpage/link OR YouTube without chunks)
+### Step 2b: Standard content flow (no existing chunks)
 
-**Use this step when:** document type is `webpage`/`link`, OR the YouTube document had no chunk analysis runs (Step 1b returned `NO_RUNS`).
+**Use this step when:** the document has no chunk analysis runs at all (Step 1b returned `NO_RUNS`) — regardless of document type. Since Step 1b now checks every type, this step mainly applies to documents that were never run through `/analyze_chunks` yet.
 
 Check `document_type` and `text_length` from `--dump`:
 
