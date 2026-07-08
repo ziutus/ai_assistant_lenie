@@ -1,7 +1,7 @@
 import unittest
 import os
 import sys
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 # This test requires Flask and other server dependencies.
 # Skip gracefully when run in minimal uvx environment without --with flags.
@@ -39,12 +39,13 @@ try:
         'POSTGRESQL_PORT': '5432',
         'EMBEDDING_MODEL': 'test-model',
         'PORT': '5000',
-        'STALKER_API_KEY': 'test-api-key',
     }
     for _key, _value in _env_defaults.items():
         os.environ.setdefault(_key, _value)
 
-    from server import app
+    import server as _server_module
+    from library.auth import AuthContext
+    app = _server_module.app
     _server_available = True
 except ImportError:
     _server_available = False
@@ -55,7 +56,15 @@ class TestMetricsEndpoint(unittest.TestCase):
 
     def setUp(self):
         self.client = app.test_client()
-        self.api_key = os.environ.get('STALKER_API_KEY', 'test-api-key')
+        self.api_key = 'test-api-key'
+        # /metrics requires auth; resolve_api_key is patched so these tests
+        # exercise the endpoint itself, not the api_keys DB lookup.
+        self._auth_patcher = patch.object(
+            _server_module, 'resolve_api_key',
+            return_value=AuthContext(kind="service", key_id=1, key_name="test", user_id=None),
+        )
+        self._auth_patcher.start()
+        self.addCleanup(self._auth_patcher.stop)
 
     def test_metrics_returns_200(self):
         response = self.client.get('/metrics', headers={'x-api-key': self.api_key})

@@ -232,7 +232,6 @@ class TestFlaskTeardown:
         "BACKEND_TYPE": "postgresql",
         "EMBEDDING_MODEL": "text-embedding-ada-002",
         "PORT": "5000",
-        "STALKER_API_KEY": "test-api-key",
         "SECRETS_BACKEND": "env",
     })
     @patch("library.stalker_web_documents_db_postgresql.WebsitesDBPostgreSQL")
@@ -266,7 +265,6 @@ class TestFlaskTeardown:
         "BACKEND_TYPE": "postgresql",
         "EMBEDDING_MODEL": "text-embedding-ada-002",
         "PORT": "5000",
-        "STALKER_API_KEY": "test-api-key",
         "SECRETS_BACKEND": "env",
     })
     @patch("library.stalker_web_documents_db_postgresql.WebsitesDBPostgreSQL")
