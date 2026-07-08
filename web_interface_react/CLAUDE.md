@@ -42,6 +42,8 @@ web_interface_react/
 │   │   │   ├── webpage.tsx             # Webpage editing + AI processing
 │   │   │   ├── youtube.tsx             # YouTube transcript editing
 │   │   │   ├── movie.tsx               # Movie transcript editing
+│   │   │   ├── chunks.tsx              # Chunk analysis review (/chunks/:id)
+│   │   │   ├── read.tsx                # Reader view (/read/:id)
 │   │   │   └── file.tsx                # File upload (alpha)
 │   │   ├── constants/
 │   │   │   └── variables.ts            # App version
@@ -72,7 +74,20 @@ All protected routes wrapped in `RequireAuth` → `Layout` → `Authorization`. 
 | `/webpage/:id?` | `webpage.tsx` | Edit webpages with AI tools (split, clean) |
 | `/youtube/:id?` | `youtube.tsx` | Edit YouTube transcripts |
 | `/movie/:id?` | `movie.tsx` | Edit movie transcripts |
+| `/chunks/:id` | `chunks.tsx` | Review a document's chunk analysis runs (see below) |
+| `/read/:id` | `read.tsx` | Chapter-by-chapter reader view (book/article `text_md`), with per-user progress + notes |
 | `/upload-file` | `file.tsx` | Upload image files (alpha) |
+
+### Chunk analysis review (`chunks.tsx`)
+
+Reviews `DocumentAnalysisRun` / `DocumentChunk` / `DocumentTopicSection` data (`GET/POST/PATCH /analysis_run*`, `/chunk/*`, `/topic_section/*` in `backend/library/chunk_review_routes.py`) for any document type — see [`backend/database/CLAUDE.md`](../backend/database/CLAUDE.md) for the underlying schema.
+
+- **Run mode selector**: `transcript` (YouTube/movie, rewrite + speaker labeling) vs `article` (webpage/link/text/book chapters, no rewrite — chunks render `original_text` since `corrected_text` is always `NULL` in this mode). For book documents (`GET /document/<id>/chapters`), a chapter can be picked as the analysis scope instead of the whole document.
+- **Run workflow status**: `created` → `in_review` → `reviewed`, toggled via "✔ Zamknij review" / "↺ Otwórz ponownie".
+- **Section view**: runs with more than `SECTION_VIEW_THRESHOLD` (30) `TEMAT` chunks switch to an accordion grouped by `DocumentTopicSection`, lazy-loading each section's chunks on expand (`?section_id=`); smaller/`split_only` runs page the flat chunk list (`?offset=&limit=`, `CHUNK_PAGE_SIZE` = 20).
+- **Synteza panel**: collapsible summary of the whole run (`run.synthesis`), collapsed by default.
+- **Embeddings**: 🟢/⚪ indicator per chunk (`has_embeddings`, derived from `websites_embeddings.chunk_id`) + "Generuj embeddingi" button (`POST /analysis_run/<id>/generate_embeddings`) — only embeds `TEMAT` chunks with `status=approved`.
+- **Obsidian notes**: 📝 indicator with tooltip listing `chunk.obsidian_note_paths`, written by the `/obsidian-note` skill (`.claude/commands/obsidian-note.md`), not by this UI.
 
 ## Architecture
 

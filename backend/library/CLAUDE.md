@@ -21,6 +21,7 @@ library/
 ├── embedding.py      # Embedding provider abstraction (routes to api/*)
 ├── document_analysis_service.py  # Chunk analysis pipeline: split → LLM rewrite/summarize → topics → DB
 ├── chunk_llm_analysis.py         # LLM chunk primitives: speaker extraction, rewrite, summarize
+├── chunk_review_routes.py        # Flask blueprint: chunk analysis REST API (runs, chunks, topic sections)
 ├── analysis_exports.py           # Analysis run file exports (MD/JSON/debug/HTML) to .claude/exports/
 ├── article_extractor.py     # LLM-based article boundary extraction (Bielik markers + regex drafts)
 ├── article_pipeline.py      # Shared pipeline: step_1 raw markdown (cache/S3) + LLM article extraction
@@ -41,11 +42,16 @@ library/
 
 ### Domain Model & Database
 
-- **`db/models.py`** — `WebDocument` SQLAlchemy ORM model: ~30 attributes covering URL, text content (raw/English/markdown), metadata, processing state. Methods: `get_by_id()`, `get_by_url()`, `populate_neighbors()`. `WebsiteEmbedding` model for vector embeddings.
+- **`db/models.py`** — `WebDocument` SQLAlchemy ORM model: ~30 attributes covering URL, text content (raw/English/markdown), metadata, processing state. Methods: `get_by_id()`, `get_by_url()`, `populate_neighbors()`. `WebsiteEmbedding` model for vector embeddings — optional `chunk_id` FK to `DocumentChunk`, set when the embedding was generated from a reviewed chunk (`generate_embeddings_from_run()`) rather than the fallback whole-document split.
+- **Chunk analysis models** (backing `chunk_review_routes.py` / `document_analysis_service.py`):
+  - `DocumentAnalysisRun` — one row per analysis pass over a document. `mode`: `transcript` (YouTube/movie STT — LLM rewrite + speaker labeling, chunk splitting by sentence) or `article` (webpage/link/text/book chapters — no rewrite step, markdown is already clean, so every chunk's `corrected_text` stays `None` by design; split by markdown headings). `status`: run review workflow, `created` → `in_review` → `reviewed` (`PATCH /analysis_run/<id>`). `scope`: human-readable analysed range (e.g. a book chapter title), `NULL` = whole document — a document can have several runs (e.g. one `split_only` run over a whole book plus one `article` run per chapter).
+  - `DocumentChunk` — one row per chunk of a run. `type`: `TEMAT` (on-topic) / `REKLAMA` (sponsored) / `SZUM` (extraction junk — portal nav, cookie banners; auto-approved, never sent to an LLM for note-writing). `status`: `pending` → `approved` (or `needs_reanalysis`/`split_requested`/`split`/`skipped`). `obsidian_note_paths` — array of vault-relative paths, populated by the `/obsidian-note` skill when a note is written from the chunk.
+  - `DocumentTopicSection` — LLM-synthesized grouping of a run's chunks by topic (`chunk_positions` array of `DocumentChunk.position`). Drives the book/chapter drill-down view in `/chunks/:id` for runs above `SECTION_VIEW_THRESHOLD` chunks. Coverage is partial by design — LLM synthesis doesn't always assign every chunk to a section.
+  - `DocumentRemovedLine` — training data for `article_cleaner.py`: lines a human removed from a chunk/document during review (`source`: `manual` or `szum_chunk`). Survives run/chunk deletion (`run_id`/`chunk_id` FKs are `SET NULL`) so aggregate queries (e.g. most-removed lines per portal) keep working after runs are re-created.
 - **`db/engine.py`** — SQLAlchemy engine and session factories: `get_session()`, `get_scoped_session()`.
 - **`stalker_web_documents_db_postgresql.py`** — `WebsitesDBPostgreSQL`: query layer using SQLAlchemy session. Requires `session` parameter. Methods: `get_list()` (paginated/filtered), `get_similar()` (pgvector cosine search), `get_next_to_correct()`, `get_count()`, `embedding_add()`, `embedding_delete()`.
 
-**Database tables:** `public.web_documents` (30 columns), `public.websites_embeddings` (vector similarity).
+**Database tables:** `public.web_documents` (30 columns), `public.websites_embeddings` (vector similarity, optional `chunk_id` FK), `public.document_analysis_runs`, `public.document_chunks`, `public.document_topic_sections`, `public.document_removed_lines` — see [`database/CLAUDE.md`](../database/CLAUDE.md) for full column definitions.
 
 ### Models (`models/`)
 
