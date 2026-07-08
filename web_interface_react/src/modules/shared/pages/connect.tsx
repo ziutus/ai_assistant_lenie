@@ -9,11 +9,11 @@ import { lenie_version } from "../constants/variables";
 
 const Connect: React.FC = () => {
   const navigate = useNavigate();
-  const { setApiKey, setApiUrl, setApiType } =
+  const { apiType, apiUrl, setApiKey, setApiUrl, setApiType } =
     React.useContext(AuthorizationContext);
 
-  const [formApiType, setFormApiType] = useState<ApiType>("Docker");
-  const [formApiUrl, setFormApiUrl] = useState(DEFAULT_API_URLS["Docker"]);
+  const [formApiType, setFormApiType] = useState<ApiType>(apiType);
+  const [formApiUrl, setFormApiUrl] = useState(apiUrl || DEFAULT_API_URLS[apiType]);
   const [formApiKey, setFormApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
