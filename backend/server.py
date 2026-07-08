@@ -1,4 +1,4 @@
-from flask import Flask, Response, request, abort, jsonify
+from flask import Flask, Response, g, request, abort, jsonify
 from flask_cors import CORS
 import logging
 
@@ -13,7 +13,10 @@ from library.ai_intent_parser import parse_intent
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_type import StalkerDocumentType
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
+from library.api_key_routes import bp as api_key_bp
+from library.auth import resolve_api_key
 from library.chunk_review_routes import bp as chunk_review_bp
+from library.reader_routes import bp as reader_bp
 
 logging.basicConfig(level=logging.INFO)
 
@@ -63,14 +66,16 @@ logging.info("Using embedding model: %s", embedding_model)
 port = cfg.require("PORT")
 
 def check_auth_header():
-    """
-  Function to validate 'x-api-key' in request headers
-  """
+    """Resolve the 'x-api-key' header to an AuthContext (api_keys table with
+    in-process cache; legacy STALKER_API_KEY accepted as a service key during
+    client migration) and store it in flask.g.auth."""
     api_key = request.headers.get('x-api-key')
     if api_key is None:
-        abort(400, 'x-api-key header is missing')
-    if api_key != cfg.require("STALKER_API_KEY"):
-        abort(400, 'x-api-key header is wrong')
+        abort(401, 'x-api-key header is missing')
+    auth = resolve_api_key(get_scoped_session, api_key, legacy_key=cfg.require("STALKER_API_KEY"))
+    if auth is None:
+        abort(401, 'x-api-key header is wrong')
+    g.auth = auth
 
 
 logging.info("Starting flask application")
@@ -79,6 +84,8 @@ logging.info("Flask - enabling CORS for all routes")
 CORS(app)  # This will enable CORS for all routes
 
 app.register_blueprint(chunk_review_bp)
+app.register_blueprint(reader_bp)
+app.register_blueprint(api_key_bp)
 
 
 @app.teardown_appcontext
