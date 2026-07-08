@@ -147,6 +147,15 @@ const List = () => {
                 <NavLink
                   className={"button"}
                   style={{ margin: "0 0 0 6px" }}
+                  to={`/read/${item.id}`}
+                >
+                  Czytaj
+                </NavLink>
+              )}
+              {["youtube", "movie", "webpage", "text"].includes(item.document_type) && (
+                <NavLink
+                  className={"button"}
+                  style={{ margin: "0 0 0 6px" }}
                   to={`/chunks/${item.id}`}
                   state={{ docType: item.document_type }}
                 >
