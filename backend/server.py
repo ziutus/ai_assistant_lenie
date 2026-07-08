@@ -95,7 +95,7 @@ def shutdown_session(exception=None):
 
 @app.before_request
 def before_request_func():
-    exempt_paths = ['/', '/healthz', '/startup', '/readiness', '/liveness', '/version', '/chunk_review']
+    exempt_paths = ['/', '/healthz', '/startup', '/readiness', '/liveness', '/version']
     if request.path not in exempt_paths and request.method != 'OPTIONS':
         check_auth_header()
 
@@ -136,8 +136,6 @@ label{{font-size:0.85em;font-weight:600;display:block;margin-bottom:6px}}
 input{{width:100%;padding:8px 10px;border:1px solid #cbd5e1;border-radius:5px;
   font-size:0.88em;margin-bottom:8px}}
 .saved{{color:#16a34a;font-size:0.8em}}
-.chunk-row{{display:flex;gap:8px;align-items:flex-end}}
-.chunk-row input{{margin-bottom:0;flex:1}}
 button{{padding:8px 16px;background:#0369a1;color:#fff;border:none;border-radius:5px;
   font-size:0.88em;cursor:pointer;font-weight:600;white-space:nowrap}}
 button:hover{{background:#0284c7}}
@@ -159,22 +157,16 @@ button:hover{{background:#0284c7}}
   <div class="section">
     <h2>Narzędzia API</h2>
     <div class="cards">
-      <a class="card" href="/chunk_review"><div class="card-title">Przegląd chunków</div><div class="card-desc">Analiza fragmentów dokumentu (YouTube, transkrypcje)</div></a>
       <a class="card" href="/version"><div class="card-title">Wersja API</div><div class="card-desc">Informacje o wersji i czasie budowania</div></a>
     </div>
   </div>
 
   <div class="section">
-    <h2>Klucz API &amp; szybki dostęp</h2>
+    <h2>Klucz API</h2>
     <div class="api-key-box">
       <label>API key</label>
       <input type="password" id="api-key" placeholder="x-api-key">
       <span class="saved" id="saved-info" style="display:none">✓ Klucz zapisany</span>
-      <label style="margin-top:12px">Otwórz przegląd chunków dla dokumentu</label>
-      <div class="chunk-row">
-        <input type="number" id="doc-id" placeholder="Document ID (np. 9158)" min="1">
-        <button onclick="goChunk()">Otwórz</button>
-      </div>
     </div>
   </div>
 </div>
@@ -196,13 +188,6 @@ button:hover{{background:#0284c7}}
     }}
   }});
 }})();
-function goChunk() {{
-  var id  = document.getElementById('doc-id').value;
-  var key = document.getElementById('api-key').value;
-  if (!id) {{ alert('Podaj Document ID'); return; }}
-  if (key) localStorage.setItem('lenie_api_key', key);
-  location.href = '/chunk_review?doc_id=' + id;
-}}
 </script>
 </body>
 </html>"""
