@@ -4,8 +4,9 @@ Keys live in the api_keys table (only SHA-256 hashes; plaintext is shown once
 at creation). Two kinds:
   - service — full access, no reader identity (reader endpoints reject it),
   - user    — full access + carries the reader identity (users.id).
-The legacy shared STALKER_API_KEY is still accepted as a service key during
-the client-migration period (is_legacy=True in the resolved context).
+The legacy shared STALKER_API_KEY fallback was retired in Etap 8 iter. 4 —
+every client now authenticates with its own key row. AuthContext.is_legacy
+is kept (always False) for API/response-shape stability.
 
 The per-request hash→context lookup MUST NOT hit the database: results
 (including unknown keys — negative entries) are cached in the process. The
@@ -165,13 +166,12 @@ def deactivate_api_key(session, key_id: int) -> ApiKey:
     return row
 
 
-def resolve_api_key(session_factory, raw_key: str, legacy_key: str | None = None) -> AuthContext | None:
+def resolve_api_key(session_factory, raw_key: str) -> AuthContext | None:
     """Resolve a raw x-api-key value to an AuthContext (None = invalid key).
 
     session_factory is a zero-arg callable (e.g. get_scoped_session) invoked
-    ONLY when the database is actually needed: cache hits and the legacy-key
-    compare resolve without opening a session, so legacy clients keep working
-    even if the api_keys table (or the whole DB) is unreachable.
+    ONLY when the database is actually needed — cache hits resolve without
+    opening a session.
     """
     key_hash = hash_api_key(raw_key)
     entry = _cache.get(key_hash)
@@ -179,11 +179,6 @@ def resolve_api_key(session_factory, raw_key: str, legacy_key: str | None = None
         if entry.context is not None:
             _touch_last_used(session_factory, entry.context)
         return entry.context
-
-    if legacy_key and raw_key == legacy_key:
-        context = AuthContext(kind="service", key_id=None, key_name="legacy", user_id=None, is_legacy=True)
-        _cache.set(key_hash, CacheEntry(context, time.monotonic() + POSITIVE_TTL_SECONDS))
-        return context
 
     row = session_factory().execute(
         select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.active.is_(True))

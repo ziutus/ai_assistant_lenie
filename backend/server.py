@@ -67,12 +67,11 @@ port = cfg.require("PORT")
 
 def check_auth_header():
     """Resolve the 'x-api-key' header to an AuthContext (api_keys table with
-    in-process cache; legacy STALKER_API_KEY accepted as a service key during
-    client migration) and store it in flask.g.auth."""
+    in-process cache) and store it in flask.g.auth."""
     api_key = request.headers.get('x-api-key')
     if api_key is None:
         abort(401, 'x-api-key header is missing')
-    auth = resolve_api_key(get_scoped_session, api_key, legacy_key=cfg.require("STALKER_API_KEY"))
+    auth = resolve_api_key(get_scoped_session, api_key)
     if auth is None:
         abort(401, 'x-api-key header is wrong')
     g.auth = auth
