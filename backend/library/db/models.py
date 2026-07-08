@@ -21,6 +21,7 @@ from sqlalchemy import (
     SmallInteger,
     String,
     Text,
+    UniqueConstraint,
     func,
     select,
     text as sa_text,
@@ -693,3 +694,141 @@ class DocumentRemovedLine(Base):
 
     def __repr__(self) -> str:
         return f"DocumentRemovedLine(id={self.id!r}, document_id={self.document_id!r}, source={self.source!r})"
+
+
+class User(Base):
+    """Reader identity (household trust model).
+
+    x-api-key stays the app-level auth; the x-user-id header only says WHO is
+    reading — no passwords. Owns reading progress and document notes.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    display_name: Mapped[str | None] = mapped_column(String(100))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return f"User(id={self.id!r}, username={self.username!r})"
+
+
+class UserReadingProgress(Base):
+    """Per-(user, document) reading position for the /read/:id reader.
+
+    Chapter positions are 1-based and match GET /document/<id>/chapters
+    (computed on the fly from text_md — independent of analysis runs).
+    Renormalizing a book may shift positions; current_chapter_title is a
+    snapshot that lets the UI notice the mismatch.
+    """
+
+    __tablename__ = "user_reading_progress"
+    __table_args__ = (
+        UniqueConstraint("user_id", "document_id", name="uq_reading_progress_user_document"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+    )
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    current_chapter: Mapped[int] = mapped_column(Integer, nullable=False)
+    current_chapter_title: Mapped[str | None] = mapped_column(String(500))
+    read_chapters: Mapped[list[int]] = mapped_column(
+        ARRAY(Integer), nullable=False, server_default=sa_text("'{}'"),
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"UserReadingProgress(user_id={self.user_id!r}, document_id={self.document_id!r}, "
+            f"current_chapter={self.current_chapter!r})"
+        )
+
+
+class UserDocumentNote(Base):
+    """User note/reaction anchored to a document fragment.
+
+    Anchored by exact quote + surrounding context (W3C TextQuoteSelector
+    style) at the DOCUMENT level so the note survives analysis-run deletion;
+    run_id/chunk_id are convenience links only (SET NULL). chapter_position
+    is a hint where to re-anchor. stance: agree | disagree | neutral | NULL.
+    """
+
+    __tablename__ = "user_document_notes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
+    )
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    chapter_position: Mapped[int | None] = mapped_column(Integer)
+    anchor_quote: Mapped[str] = mapped_column(Text, nullable=False)
+    anchor_prefix: Mapped[str | None] = mapped_column(String(100))
+    anchor_suffix: Mapped[str | None] = mapped_column(String(100))
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("document_analysis_runs.id", ondelete="SET NULL"),
+    )
+    chunk_id: Mapped[int | None] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="SET NULL"),
+    )
+    note_text: Mapped[str] = mapped_column(Text, nullable=False)
+    stance: Mapped[str | None] = mapped_column(String(10))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"UserDocumentNote(id={self.id!r}, user_id={self.user_id!r}, "
+            f"document_id={self.document_id!r}, chapter_position={self.chapter_position!r})"
+        )
+
+
+class ApiKey(Base):
+    """API key: service account (kind=service) or per-user key (kind=user).
+
+    Only the SHA-256 hash of the plaintext key is stored; the plaintext is
+    returned once at creation. kind=user keys carry the reader identity
+    (user_id), replacing the x-user-id header. key_prefix keeps the first
+    characters of the plaintext for recognizing keys without revealing them.
+    """
+
+    __tablename__ = "api_keys"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[str] = mapped_column(String(10), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    key_prefix: Mapped[str] = mapped_column(String(16), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("TRUE"))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    last_used_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+    user: Mapped["User | None"] = relationship(foreign_keys=[user_id])
+
+    def __repr__(self) -> str:
+        return f"ApiKey(id={self.id!r}, kind={self.kind!r}, name={self.name!r}, active={self.active!r})"
