@@ -286,7 +286,7 @@ groups:
         example: "tmp/youtube_to_text"
         used_by: [docker, local]
       STALKER_API_KEY:
-        description: "API authentication key for all endpoints"
+        description: "Legacy name, now the slack-bot's own api_keys service key (x-api-key). The backend no longer accepts a shared/legacy key — every other client authenticates with its own key from the api_keys table (see library/auth.py)."
         type: secret
         required: true
         used_by: [docker, lambda, local]

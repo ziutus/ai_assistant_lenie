@@ -63,7 +63,7 @@ LLM outputs in Lenie are **stored, not executed**:
 
 ### Layer 4: API Authentication
 
-All REST API endpoints (except health checks) require `x-api-key` header validated against `STALKER_API_KEY`. This prevents external actors from directly injecting content via the API.
+All REST API endpoints (except health checks) require `x-api-key` header, validated against per-client keys in the `api_keys` table (`backend/library/auth.py`). This prevents external actors from directly injecting content via the API.
 
 ## Known Gaps
 

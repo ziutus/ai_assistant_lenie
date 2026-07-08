@@ -28,7 +28,6 @@ DOC_ID = 9204
 
 USER_AUTH = AuthContext(kind="user", key_id=10, key_name="frontend-krzysztof", user_id=READER_USER.id)
 SERVICE_AUTH = AuthContext(kind="service", key_id=11, key_name="chrome-extension", user_id=None)
-LEGACY_AUTH = AuthContext(kind="service", key_id=None, key_name="legacy", user_id=None, is_legacy=True)
 
 
 def _make_note(**overrides) -> UserDocumentNote:
@@ -92,11 +91,6 @@ def client(fake_session, auth_holder):
     return app.test_client()
 
 
-# Old clients may still send x-user-id; it must be accepted when it matches
-# the key identity, so the happy-path requests below keep sending it.
-USER_HDR = {"x-user-id": "1"}
-
-
 # ---------------------------------------------------------------------------
 # Users
 # ---------------------------------------------------------------------------
@@ -149,19 +143,10 @@ class TestRequireUser:
         resp = client.get(f"/document/{DOC_ID}/reading_progress")
         assert resp.status_code == 403
 
-    def test_legacy_key_403(self, client, auth_holder):
-        auth_holder["ctx"] = LEGACY_AUTH
-        resp = client.get(f"/document/{DOC_ID}/reading_progress", headers={"x-user-id": "1"})
-        assert resp.status_code == 403
-
     def test_no_header_needed_with_user_key(self, client, fake_session):
         fake_session.execute.return_value.scalar_one_or_none.return_value = None
         resp = client.get(f"/document/{DOC_ID}/reading_progress")
         assert resp.status_code == 200
-
-    def test_mismatched_x_user_id_403(self, client):
-        resp = client.get(f"/document/{DOC_ID}/reading_progress", headers={"x-user-id": "2"})
-        assert resp.status_code == 403
 
     def test_key_user_gone_403(self, client, auth_holder):
         auth_holder["ctx"] = AuthContext(kind="user", key_id=12, key_name="stale", user_id=99)
@@ -169,7 +154,7 @@ class TestRequireUser:
         assert resp.status_code == 403
 
     def test_unknown_document_404(self, client, fake_session):
-        resp = client.get("/document/12345/reading_progress", headers=USER_HDR)
+        resp = client.get("/document/12345/reading_progress")
         assert resp.status_code == 404
 
 
@@ -181,7 +166,7 @@ class TestRequireUser:
 class TestReadingProgress:
     def test_get_without_row_returns_nulls(self, client, fake_session):
         fake_session.execute.return_value.scalar_one_or_none.return_value = None
-        resp = client.get(f"/document/{DOC_ID}/reading_progress", headers=USER_HDR)
+        resp = client.get(f"/document/{DOC_ID}/reading_progress")
         data = resp.get_json()
 
         assert resp.status_code == 200
@@ -194,7 +179,7 @@ class TestReadingProgress:
             current_chapter_title="Bank centralny", read_chapters=[3, 1, 2],
         )
         fake_session.execute.return_value.scalar_one_or_none.return_value = progress
-        resp = client.get(f"/document/{DOC_ID}/reading_progress", headers=USER_HDR)
+        resp = client.get(f"/document/{DOC_ID}/reading_progress")
         data = resp.get_json()
 
         assert data["current_chapter"] == 7
@@ -204,7 +189,7 @@ class TestReadingProgress:
     def test_put_creates_row(self, client, fake_session):
         fake_session.execute.return_value.scalar_one_or_none.return_value = None
         resp = client.put(
-            f"/document/{DOC_ID}/reading_progress", headers=USER_HDR,
+            f"/document/{DOC_ID}/reading_progress",
             json={"current_chapter": 5, "current_chapter_title": "Rozdział 5", "mark_read": [4]},
         )
         data = resp.get_json()
@@ -221,7 +206,7 @@ class TestReadingProgress:
         )
         fake_session.execute.return_value.scalar_one_or_none.return_value = progress
         resp = client.put(
-            f"/document/{DOC_ID}/reading_progress", headers=USER_HDR,
+            f"/document/{DOC_ID}/reading_progress",
             json={"current_chapter": 6, "mark_read": [5, 5], "unmark_read": [2]},
         )
         data = resp.get_json()
@@ -233,14 +218,14 @@ class TestReadingProgress:
     def test_put_invalid_current_chapter_400(self, client):
         for bad in (None, 0, -1, "3"):
             resp = client.put(
-                f"/document/{DOC_ID}/reading_progress", headers=USER_HDR,
+                f"/document/{DOC_ID}/reading_progress",
                 json={"current_chapter": bad},
             )
             assert resp.status_code == 400
 
     def test_put_invalid_mark_read_400(self, client):
         resp = client.put(
-            f"/document/{DOC_ID}/reading_progress", headers=USER_HDR,
+            f"/document/{DOC_ID}/reading_progress",
             json={"current_chapter": 1, "mark_read": [0]},
         )
         assert resp.status_code == 400
@@ -248,7 +233,7 @@ class TestReadingProgress:
     def test_put_truncates_title_to_500(self, client, fake_session):
         fake_session.execute.return_value.scalar_one_or_none.return_value = None
         resp = client.put(
-            f"/document/{DOC_ID}/reading_progress", headers=USER_HDR,
+            f"/document/{DOC_ID}/reading_progress",
             json={"current_chapter": 1, "current_chapter_title": "x" * 600},
         )
         assert len(resp.get_json()["current_chapter_title"]) == 500
@@ -262,7 +247,7 @@ class TestReadingProgress:
 class TestNotes:
     def test_create_note(self, client, fake_session):
         resp = client.post(
-            f"/document/{DOC_ID}/notes", headers=USER_HDR,
+            f"/document/{DOC_ID}/notes",
             json={
                 "anchor_quote": "fragment książki",
                 "note_text": "zgadzam się z autorem",
@@ -285,26 +270,26 @@ class TestNotes:
 
     def test_create_note_requires_quote_and_text(self, client):
         resp = client.post(
-            f"/document/{DOC_ID}/notes", headers=USER_HDR,
+            f"/document/{DOC_ID}/notes",
             json={"anchor_quote": "", "note_text": "coś"},
         )
         assert resp.status_code == 400
         resp = client.post(
-            f"/document/{DOC_ID}/notes", headers=USER_HDR,
+            f"/document/{DOC_ID}/notes",
             json={"anchor_quote": "coś", "note_text": " "},
         )
         assert resp.status_code == 400
 
     def test_create_note_invalid_stance_400(self, client):
         resp = client.post(
-            f"/document/{DOC_ID}/notes", headers=USER_HDR,
+            f"/document/{DOC_ID}/notes",
             json={"anchor_quote": "q", "note_text": "n", "stance": "meh"},
         )
         assert resp.status_code == 400
 
     def test_list_notes(self, client, fake_session):
         fake_session.execute.return_value.scalars.return_value.all.return_value = [_make_note()]
-        resp = client.get(f"/document/{DOC_ID}/notes", headers=USER_HDR)
+        resp = client.get(f"/document/{DOC_ID}/notes")
         data = resp.get_json()
 
         assert resp.status_code == 200
@@ -315,7 +300,7 @@ class TestNotes:
         note = _make_note()
         fake_session.store["notes"][note.id] = note
         resp = client.patch(
-            f"/note/{note.id}", headers=USER_HDR,
+            f"/note/{note.id}",
             json={"note_text": "zmienione", "stance": "disagree"},
         )
         data = resp.get_json()
@@ -327,19 +312,19 @@ class TestNotes:
     def test_patch_note_empty_text_400(self, client, fake_session):
         note = _make_note()
         fake_session.store["notes"][note.id] = note
-        resp = client.patch(f"/note/{note.id}", headers=USER_HDR, json={"note_text": ""})
+        resp = client.patch(f"/note/{note.id}", json={"note_text": ""})
         assert resp.status_code == 400
 
     def test_patch_foreign_note_403(self, client, fake_session):
         note = _make_note(user_id=OTHER_USER.id)
         fake_session.store["notes"][note.id] = note
-        resp = client.patch(f"/note/{note.id}", headers=USER_HDR, json={"note_text": "x"})
+        resp = client.patch(f"/note/{note.id}", json={"note_text": "x"})
         assert resp.status_code == 403
 
     def test_delete_note(self, client, fake_session):
         note = _make_note()
         fake_session.store["notes"][note.id] = note
-        resp = client.delete(f"/note/{note.id}", headers=USER_HDR)
+        resp = client.delete(f"/note/{note.id}")
 
         assert resp.status_code == 200
         fake_session.delete.assert_called_once_with(note)
@@ -347,9 +332,9 @@ class TestNotes:
     def test_delete_foreign_note_403(self, client, fake_session):
         note = _make_note(user_id=OTHER_USER.id)
         fake_session.store["notes"][note.id] = note
-        resp = client.delete(f"/note/{note.id}", headers=USER_HDR)
+        resp = client.delete(f"/note/{note.id}")
         assert resp.status_code == 403
 
     def test_delete_missing_note_404(self, client):
-        resp = client.delete("/note/777", headers=USER_HDR)
+        resp = client.delete("/note/777")
         assert resp.status_code == 404

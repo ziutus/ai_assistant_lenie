@@ -2,7 +2,7 @@
 
 Endpoints (all require x-api-key via the global before_request; the ones
 marked [user] additionally require a USER API key — the reader identity comes
-from the key itself (Etap 8); service/legacy keys get 403):
+from the key itself (Etap 8); service keys get 403):
   GET    /users                                — list users
   POST   /users                                — create user {username, display_name?}
   GET    /document/<doc_id>/reading_progress   — [user] progress for this document
@@ -36,17 +36,12 @@ ALLOWED_STANCES = {"agree", "disagree", "neutral"}
 def _require_user(session) -> User:
     """Resolve the reader identity from the API key (flask.g.auth) or abort.
 
-    Service/legacy keys carry no reader identity → 403. An x-user-id header,
-    if still sent by an old client, must match the key's identity — a mismatch
-    means a misconfigured client, not a way to impersonate another user."""
+    Service keys carry no reader identity → 403."""
     auth = getattr(g, "auth", None)
     if auth is None:
         abort(401, "request is not authenticated")
     if auth.kind != "user":
         abort(403, "reader endpoints require a user API key (service keys carry no reader identity)")
-    raw = request.headers.get("x-user-id")
-    if raw is not None and raw.strip() and raw.strip() != str(auth.user_id):
-        abort(403, "x-user-id header does not match the API key identity")
     user = session.get(User, auth.user_id)
     if user is None:
         abort(403, f"User {auth.user_id} for this API key no longer exists")
