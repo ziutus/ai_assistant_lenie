@@ -35,20 +35,31 @@ export interface PendingNote {
   y: number;
 }
 
-export const USER_STORAGE_KEY = "lenie_userId";
+// Legacy localStorage key from the pre-Etap-8 user picker; identity now comes
+// exclusively from the API key, so any leftover value is stale and ignored.
+const LEGACY_USER_STORAGE_KEY = "lenie_userId";
+
 export const STANCE_ICON: Record<string, string> = { agree: "👍", disagree: "👎", neutral: "➖" };
 
 export const normalizeWs = (s: string) => s.replace(/\s+/g, " ").trim();
 
 // ── Identity ─────────────────────────────────────────────────────────────────
+// Etap 8: reader identity is resolved from GET /whoami (which reflects the
+// presented API key). A "user" key carries the reader's identity outright —
+// no selector, no x-user-id header. A "service"/legacy key has no reader
+// identity at all: the reading-progress/notes endpoints 403 for it, so the
+// pages must not call them (gated by `userId === null` below).
+
+export type ReaderKind = "user" | "service" | null;
 
 export interface ReaderIdentity {
-  users: ReaderUser[];
+  kind: ReaderKind;
+  keyName: string | null;
+  isLegacy: boolean;
+  user: ReaderUser | null;
   userId: number | null;
-  selectUser: (uid: number | null) => void;
-  newUsername: string;
-  setNewUsername: (v: string) => void;
-  addUser: () => Promise<void>;
+  loading: boolean;
+  error: string | null;
   headers: Record<string, string>;
   jsonHeaders: Record<string, string>;
 }
@@ -58,78 +69,78 @@ export function useReaderIdentity(
   apiKey: string | undefined,
   onUserChange?: (uid: number | null) => void,
 ): ReaderIdentity {
-  const [users, setUsers] = React.useState<ReaderUser[]>([]);
-  const [userId, setUserId] = React.useState<number | null>(() => {
-    const v = localStorage.getItem(USER_STORAGE_KEY);
-    return v ? Number(v) : null;
-  });
-  const [newUsername, setNewUsername] = React.useState("");
+  const [kind, setKind] = React.useState<ReaderKind>(null);
+  const [keyName, setKeyName] = React.useState<string | null>(null);
+  const [isLegacy, setIsLegacy] = React.useState(false);
+  const [user, setUser] = React.useState<ReaderUser | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
 
-  const headers = React.useMemo(() => {
-    const h: Record<string, string> = { "x-api-key": apiKey ?? "" };
-    if (userId) h["x-user-id"] = String(userId);
-    return h;
-  }, [apiKey, userId]);
+  const headers = React.useMemo(() => ({ "x-api-key": apiKey ?? "" }), [apiKey]);
   const jsonHeaders = React.useMemo(
     () => ({ ...headers, "Content-Type": "application/json" }), [headers]);
 
   React.useEffect(() => {
+    localStorage.removeItem(LEGACY_USER_STORAGE_KEY);
+  }, []);
+
+  React.useEffect(() => {
+    if (!apiKey) { setLoading(false); return; }
+    setLoading(true);
+    setError(null);
     (async () => {
       try {
-        const r = await fetch(`${apiUrl}/users`, { headers: { "x-api-key": apiKey ?? "" } });
+        const r = await fetch(`${apiUrl}/whoami`, { headers: { "x-api-key": apiKey } });
         const data = await r.json();
-        if (data.status === "success") setUsers(data.users ?? []);
-      } catch { /* users are optional — pages work without identity */ }
+        if (data.status !== "success") throw new Error(data.message ?? "Nie udało się ustalić tożsamości");
+        setKind(data.kind ?? null);
+        setKeyName(data.key_name ?? null);
+        setIsLegacy(Boolean(data.is_legacy));
+        setUser(data.user ?? null);
+      } catch (e) {
+        setKind(null);
+        setUser(null);
+        setError(String(e));
+      } finally {
+        setLoading(false);
+      }
     })();
   }, [apiUrl, apiKey]);
 
-  const selectUser = (uid: number | null) => {
-    setUserId(uid);
-    if (uid) localStorage.setItem(USER_STORAGE_KEY, String(uid));
-    else localStorage.removeItem(USER_STORAGE_KEY);
-    onUserChange?.(uid);
-  };
+  const userId = kind === "user" ? (user?.id ?? null) : null;
 
-  const addUser = async () => {
-    const username = newUsername.trim();
-    if (!username) return;
-    const r = await fetch(`${apiUrl}/users`, {
-      method: "POST", headers: { "x-api-key": apiKey ?? "", "Content-Type": "application/json" },
-      body: JSON.stringify({ username }),
-    });
-    const data = await r.json();
-    if (data.status === "success") {
-      setUsers(prev => [...prev, data.user]);
-      selectUser(data.user.id);
-      setNewUsername("");
-    } else {
-      alert(data.message ?? "Nie udało się dodać użytkownika");
+  const prevUserId = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    if (prevUserId.current !== userId) {
+      prevUserId.current = userId;
+      onUserChange?.(userId);
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
 
-  return { users, userId, selectUser, newUsername, setNewUsername, addUser, headers, jsonHeaders };
+  return { kind, keyName, isLegacy, user, userId, loading, error, headers, jsonHeaders };
 }
 
-export const UserPicker: React.FC<{ identity: ReaderIdentity; label?: string }> = ({
-  identity, label = "Czytasz jako:",
-}) => {
-  const { users, userId, selectUser, newUsername, setNewUsername, addUser } = identity;
+/** Read-only reader-identity indicator — replaces the old user-picker/add-user
+ *  UI (Etap 8, iter. 2): identity comes from the key, there is nothing to
+ *  choose. For non-user keys it explains why progress/notes are absent. */
+export const ReaderIdentityBadge: React.FC<{ identity: ReaderIdentity }> = ({ identity }) => {
+  const { kind, user, loading, error } = identity;
+  if (loading) return null;
+  if (error) {
+    return <span style={{ fontSize: "0.8em", color: "#b91c1c" }}>Błąd tożsamości klucza API: {error}</span>;
+  }
+  if (kind === "user") {
+    return (
+      <span style={{ fontSize: "0.85em", color: "#64748b" }}>
+        Czytasz jako: <strong>{user?.display_name || user?.username}</strong>
+      </span>
+    );
+  }
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.85em" }}>
-      <span style={{ color: "#64748b" }}>{label}</span>
-      <select value={userId ?? ""} onChange={e => selectUser(e.target.value ? Number(e.target.value) : null)}>
-        <option value="">— wybierz —</option>
-        {users.map(u => (
-          <option key={u.id} value={u.id}>{u.display_name || u.username}</option>
-        ))}
-      </select>
-      <input
-        value={newUsername} onChange={e => setNewUsername(e.target.value)}
-        onKeyDown={e => e.key === "Enter" && addUser()}
-        placeholder="nowy użytkownik…" style={{ width: 130 }}
-      />
-      <button onClick={addUser} disabled={!newUsername.trim()}>＋</button>
-    </div>
+    <span style={{ fontSize: "0.8em", color: "#94a3b8" }}>
+      Ten klucz API nie ma tożsamości czytelnika — postęp czytania i notatki są niedostępne
+    </span>
   );
 };
 

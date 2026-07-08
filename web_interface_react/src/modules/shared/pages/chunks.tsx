@@ -2,7 +2,7 @@ import React from "react";
 import { useParams, useLocation, NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import {
-  NotePopover, NoteRow, PendingNote, STANCE_ICON, UserNote, UserPicker,
+  NotePopover, NoteRow, PendingNote, ReaderIdentityBadge, STANCE_ICON, UserNote,
   normalizeWs, pendingNoteFromSelection, useReaderIdentity, useUserNotes,
 } from "../components/ReaderNotes/readerNotes";
 
@@ -1271,7 +1271,7 @@ const Chunks = () => {
           <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
         )}
         <NavLink to={`/read/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>📖 Czytaj</NavLink>
-        <div style={{ marginLeft: "auto" }}><UserPicker identity={identity} /></div>
+        <div style={{ marginLeft: "auto" }}><ReaderIdentityBadge identity={identity} /></div>
       </div>
 
       {/* Nowa analiza */}
