@@ -360,6 +360,8 @@ const Chunks = () => {
   const [confirmingSplit, setConfirmingSplit] = React.useState<Record<number, boolean>>({});
   const [extractingSpeakers, setExtractingSpeakers] = React.useState(false);
   const [runStatus, setRunStatus] = React.useState("created");
+  const [synthesis, setSynthesis] = React.useState("");
+  const [synthesisOpen, setSynthesisOpen] = React.useState(false);
   const [chapters, setChapters]   = React.useState<Chapter[]>([]);
   const [scopeChapter, setScopeChapter] = React.useState<number | "">("");
   const [topicSections, setTopicSections] = React.useState<TopicSection[]>([]);
@@ -437,6 +439,8 @@ const Chunks = () => {
       setRunMode(data.run?.mode ?? "transcript");
       setRunStatus(data.run?.status ?? "created");
       setSpeakers(data.run?.speakers ?? []);
+      setSynthesis(data.run?.synthesis ?? "");
+      setSynthesisOpen(false);
       const edits: Record<number, string> = {};
       const correctedDefaults: Record<number, boolean> = {};
       loaded.forEach(c => {
@@ -1356,6 +1360,24 @@ const Chunks = () => {
           ))}
           {runStatus === "reviewed" && (
             <span style={{ fontSize: "0.8em", color: "#15803d", fontWeight: 600 }}>zamknięta</span>
+          )}
+        </div>
+      )}
+
+      {/* Synteza runu — zwijany panel */}
+      {synthesis && (
+        <div style={{ marginBottom: 12, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+          <div
+            onClick={() => setSynthesisOpen(o => !o)}
+            style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", background: "#f8fafc", cursor: "pointer" }}
+          >
+            <span style={{ color: "#64748b" }}>{synthesisOpen ? "▾" : "▸"}</span>
+            <span style={{ fontWeight: 600, fontSize: "0.85em" }}>Synteza</span>
+          </div>
+          {synthesisOpen && (
+            <div style={{ padding: "10px 14px", fontSize: "0.88em", whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
+              {synthesis}
+            </div>
           )}
         </div>
       )}
