@@ -5,6 +5,7 @@ import {
   NotePopover, NoteRow, PendingNote, STANCE_ICON, UserNote, UserPicker,
   normalizeWs, pendingNoteFromSelection, useReaderIdentity, useUserNotes,
 } from "../components/ReaderNotes/readerNotes";
+import styles from "./read.module.css";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -127,6 +128,7 @@ const Read: React.FC = () => {
   const [content, setContent] = React.useState<ChapterContent | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [tocOpen, setTocOpen] = React.useState(false);
   const contentRef = React.useRef<HTMLDivElement>(null);
 
   // ── Reading progress ──
@@ -218,6 +220,7 @@ const Read: React.FC = () => {
 
   const goTo = (pos: number | null) => {
     if (pos) setSearchParams({ chapter: String(pos) });
+    setTocOpen(false);
   };
 
   const toggleRead = (pos: number, read: boolean) => {
@@ -306,6 +309,9 @@ const Read: React.FC = () => {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Czytelnik — dokument #{id}</h2>
+        <button className={styles.tocToggleButton} onClick={() => setTocOpen(o => !o)}>
+          📑 Spis treści ({chapters.length})
+        </button>
         <NavLink to={`/chunks/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>Przegląd chunków</NavLink>
         <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
         <div style={{ marginLeft: "auto" }}><UserPicker identity={identity} /></div>
@@ -318,13 +324,21 @@ const Read: React.FC = () => {
         </p>
       )}
 
+      <div
+        className={`${styles.scrim} ${tocOpen ? styles.scrimOpen : ""}`}
+        onClick={() => setTocOpen(false)}
+      />
+
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
         {/* TOC sidebar + notes */}
-        <div style={{ flex: "0 0 300px", position: "sticky", top: 12, maxHeight: "85vh", overflowY: "auto" }}>
+        <div className={`${styles.tocPanel} ${tocOpen ? styles.tocPanelOpen : ""}`}>
           <nav style={{
             background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 0",
           }}>
-            <strong style={{ fontSize: "0.85em", padding: "0 14px" }}>Spis treści ({chapters.length})</strong>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 14px" }}>
+              <strong style={{ fontSize: "0.85em" }}>Spis treści ({chapters.length})</strong>
+              <button className={styles.tocClose} onClick={() => setTocOpen(false)} aria-label="Zamknij spis treści">✕</button>
+            </div>
             {chapters.map(ch => {
               const isRead = readChapters.includes(ch.position);
               return (

@@ -1,7 +1,7 @@
 import React from "react";
 import Layout from "./modules/shared/components/Layout/Layout";
 import Authorization from "./modules/shared/components/Authorization/authorization";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Link from "./modules/shared/pages/link";
 import Webpage from "./modules/shared/pages/webpage";
 import Youtube from "./modules/shared/pages/youtube";
@@ -24,6 +24,9 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 };
 
 function App() {
+  const location = useLocation();
+  const hideAuthorizationBar = location.pathname.startsWith("/read/");
+
   return (
     <Routes>
       <Route path="/connect" element={<Connect />} />
@@ -33,7 +36,7 @@ function App() {
           <RequireAuth>
             <Layout>
               <div className="App">
-                <Authorization />
+                {!hideAuthorizationBar && <Authorization />}
                 <Routes>
                   <Route path="/" element={<Navigate to="/list" />} />
                   <Route path="/webpage/:id?" element={<Webpage />} />

@@ -1,0 +1,89 @@
+.tocToggleButton {
+  display: none;
+}
+
+.tocClose {
+  display: none;
+}
+
+.scrim {
+  display: none;
+}
+
+.tocPanel {
+  flex: 0 0 300px;
+  position: sticky;
+  top: 12px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+@media (max-width: 768px) {
+  .tocToggleButton {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgb(203, 213, 225);
+    background: #f8fafc;
+    color: #1c2331;
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  .tocClose {
+    display: inline-flex;
+    border: none;
+    background: none;
+    font-size: 1rem;
+    color: #64748b;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 4px;
+  }
+
+  .scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.42);
+    z-index: 900;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+  }
+
+  .scrimOpen {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .tocPanel {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 82%;
+    max-width: 320px;
+    max-height: none;
+    background: #ffffff;
+    z-index: 901;
+    transform: translateX(-100%);
+    transition: transform 0.22s ease;
+    box-shadow: 12px 0 24px -12px rgba(0, 0, 0, 0.25);
+    padding: 12px;
+  }
+
+  .tocPanelOpen {
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tocPanel,
+  .scrim {
+    transition: none;
+  }
+}
