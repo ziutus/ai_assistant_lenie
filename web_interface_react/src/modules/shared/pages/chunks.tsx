@@ -72,6 +72,11 @@ interface Chapter {
   length: number;
 }
 
+interface CountryTag {
+  slug: string;
+  name_pl: string;
+}
+
 const RUN_STATUS_LABELS: Record<string, string> = {
   created: "nowa",
   in_review: "w przeglądzie",
@@ -370,6 +375,8 @@ const Chunks = () => {
   const [runStatus, setRunStatus] = React.useState("created");
   const [synthesis, setSynthesis] = React.useState("");
   const [synthesisOpen, setSynthesisOpen] = React.useState(false);
+  const [docCountries, setDocCountries] = React.useState<CountryTag[]>([]);
+  const [docThematicTags, setDocThematicTags] = React.useState<string[]>([]);
   const [chapters, setChapters]   = React.useState<Chapter[]>([]);
   const [scopeChapter, setScopeChapter] = React.useState<number | "">("");
   const [topicSections, setTopicSections] = React.useState<TopicSection[]>([]);
@@ -444,6 +451,8 @@ const Chunks = () => {
       setSegments(data.segments ?? []);
       setVideoId(data.document?.original_id ?? "");
       setDocType(data.document?.document_type ?? "");
+      setDocCountries(data.document?.countries ?? []);
+      setDocThematicTags(data.document?.thematic_tags ?? []);
       setRunMode(data.run?.mode ?? "transcript");
       setRunStatus(data.run?.status ?? "created");
       setSpeakers(data.run?.speakers ?? []);
@@ -1409,6 +1418,30 @@ const Chunks = () => {
           {runStatus === "reviewed" && (
             <span style={{ fontSize: "0.8em", color: "#15803d", fontWeight: 600 }}>zamknięta</span>
           )}
+        </div>
+      )}
+
+      {/* Tagi dokumentu (tematyczne + kraje) */}
+      {(docThematicTags.length > 0 || docCountries.length > 0) && (
+        <div style={{
+          marginBottom: 12, padding: "8px 14px", border: "1px solid #e2e8f0", borderRadius: 8,
+          display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6,
+        }}>
+          <span style={{ fontWeight: 600, fontSize: "0.85em", color: "#64748b", marginRight: 4 }}>🏷️ Tagi:</span>
+          {docThematicTags.map(tag => (
+            <span key={tag} style={{
+              fontSize: "0.78em", padding: "2px 8px", borderRadius: 999, background: "#f1f5f9", color: "#334155",
+            }}>
+              {tag}
+            </span>
+          ))}
+          {docCountries.map(c => (
+            <span key={c.slug} style={{
+              fontSize: "0.78em", padding: "2px 8px", borderRadius: 999, background: "#e0f2fe", color: "#334155",
+            }}>
+              {c.name_pl}
+            </span>
+          ))}
         </div>
       )}
 

@@ -102,4 +102,5 @@ This document serves as the index for all epics in lenie-server-2025. Individual
 - **B-50:** API Type Synchronization Pipeline (Pydantic → OpenAPI → TypeScript) — backlog
 - **B-82:** Add MinIO as S3-Compatible Local Storage for NAS Development — in progress (step 1 done: MinIO on NAS)
 - **B-105:** Scheduled Daily DynamoDB Sync on NAS (QTS cron) — backlog
+- **B-106:** Migrate Container Station Storage off CACHEDEV2 (recurring ext4 corruption) — backlog
 - **Details:** [backlog.md](backlog.md)

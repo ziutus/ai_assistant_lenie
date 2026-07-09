@@ -326,6 +326,15 @@ class TestGetRunChunksLazy:
         assert data["chunks"][0]["original_text"] is not None
         assert data["chunks"][0]["text_preview"] is None
 
+    def test_document_includes_tags_and_countries(self, client):
+        data = client.get("/analysis_run/1/chunks").get_json()
+
+        assert data["document"]["thematic_tags"] == ["geopolityka"]
+        assert data["document"]["countries"] == [
+            {"slug": "polska", "name_pl": "Polska"},
+            {"slug": "niemcy", "name_pl": "Niemcy"},
+        ]
+
     def test_lite_strips_texts_and_adds_preview(self, client):
         data = client.get("/analysis_run/1/chunks?lite=1").get_json()
 
