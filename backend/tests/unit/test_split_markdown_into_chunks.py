@@ -89,3 +89,29 @@ class TestTailMerge:
         text = sentences + " Kropka."
         chunks = split_text_into_sentence_chunks(text, 1000)
         assert len(chunks) == 1 or len(chunks[-1]) >= 150
+
+    def test_sentence_splitter_joins_with_newline_not_space(self):
+        """One sentence per line — lets the chunk-review UI's line-based split/delete
+        tools work at sentence granularity even without paragraph breaks in the source
+        (e.g. legacy YouTube transcripts with no JSON caption segments)."""
+        from library.text_functions import split_text_into_sentence_chunks
+        text = "To jest pierwsze zdanie. To jest drugie zdanie. A to trzecie?"
+        chunks = split_text_into_sentence_chunks(text, 1000)
+        assert len(chunks) == 1
+        lines = chunks[0].split("\n")
+        assert lines == [
+            "To jest pierwsze zdanie.",
+            "To jest drugie zdanie.",
+            "A to trzecie?",
+        ]
+
+    def test_sentence_splitter_flattens_source_newlines_before_splitting(self):
+        """Source \\n (YouTube caption line-wrapping) must not leak into the output as
+        extra blank sentences — only real sentence boundaries become line breaks."""
+        from library.text_functions import split_text_into_sentence_chunks
+        text = "To jest\npierwsze zdanie. To jest\ndrugie zdanie."
+        chunks = split_text_into_sentence_chunks(text, 1000)
+        assert chunks[0].split("\n") == [
+            "To jest pierwsze zdanie.",
+            "To jest drugie zdanie.",
+        ]
