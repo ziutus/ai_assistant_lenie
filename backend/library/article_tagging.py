@@ -73,3 +73,46 @@ def extract_countries_with_llm(text: str, title: str) -> list[str]:
     except Exception as e:
         print(f"  OSTRZEŻENIE: ekstrakcja krajów nie powiodła się: {e}")
         return []
+
+
+def extract_countries_hybrid(text: str, title: str) -> list[str]:
+    """Wykryj kraje: najpierw gazetteer (bez LLM), potem LLM potwierdza kandydatów.
+
+    Tańsze i bardziej precyzyjne niż extract_countries_with_llm(): gazetteer
+    (library.country_gazetteer) wyszukuje kraje po nazwie/przymiotniku bez
+    wywołania LLM. Jeśli nic nie znajdzie, LLM w ogóle nie jest wywoływany.
+    Jeśli znajdzie kandydatów, LLM dostaje zamkniętą listę do potwierdzenia,
+    które z nich są WYRAŹNIE omawiane (a nie tylko przelotnie wspomniane) —
+    zamiast open-ended ekstrakcji LLM nie może "wymyślić" kraju spoza listy.
+    """
+    from library.ai import ai_ask
+    from library.country_gazetteer import detect_countries
+
+    candidates = detect_countries(f"{title}\n{text}")
+    if not candidates:
+        return []
+
+    candidate_names = ", ".join(c.name_pl for c in candidates)
+    prompt = (
+        f"Przeczytaj poniższy artykuł. Z listy krajów-kandydatów wybierz TYLKO te, które są w nim\n"
+        f"WYRAŹNIE omawiane (nie tylko przelotnie wspomniane).\n\n"
+        f"Kandydaci: {candidate_names}\n\n"
+        f"Zwróć TYLKO wybrane nazwy dokładnie tak, jak podano na liście kandydatów, oddzielone przecinkami.\n"
+        f"Jeśli żaden z kandydatów nie jest wyraźnie omawiany, zwróć pustą odpowiedź.\n\n"
+        f"TYTUŁ: {title}\n\nTREŚĆ:\n{text[:3000]}"
+    )
+    try:
+        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=150)
+        raw = response.response_text.strip()
+        if not raw:
+            return []
+        by_name = {c.name_pl.lower(): c.slug for c in candidates}
+        result = []
+        for item in raw.split(","):
+            slug = by_name.get(item.strip().lower())
+            if slug and f"kraj-{slug}" not in result:
+                result.append(f"kraj-{slug}")
+        return result
+    except Exception as e:
+        print(f"  OSTRZEŻENIE: potwierdzenie krajów nie powiodło się: {e}")
+        return []

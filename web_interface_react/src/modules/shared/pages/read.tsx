@@ -5,7 +5,13 @@ import {
   NotePopover, NoteRow, PendingNote, ReaderIdentityBadge, STANCE_ICON, UserNote,
   normalizeWs, pendingNoteFromSelection, useReaderIdentity, useUserNotes,
 } from "../components/ReaderNotes/readerNotes";
+import type { CountryTag } from "../components/CountryMap/countryMap";
+import { useIsDesktop } from "../hooks/useIsDesktop";
 import styles from "./read.module.css";
+
+// Lazy-loaded: leaflet (~150 kB) should not land in the main bundle for users
+// who never open a geopolitical article on desktop (mobile, other pages).
+const CountryMap = React.lazy(() => import("../components/CountryMap/countryMap"));
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -127,11 +133,13 @@ const Read: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [chapters, setChapters] = React.useState<Chapter[]>([]);
+  const [countries, setCountries] = React.useState<CountryTag[]>([]);
   const [content, setContent] = React.useState<ChapterContent | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [tocOpen, setTocOpen] = React.useState(false);
   const contentRef = React.useRef<HTMLDivElement>(null);
+  const isDesktop = useIsDesktop();
 
   // ── Reading progress ──
   const [readChapters, setReadChapters] = React.useState<number[]>([]);
@@ -158,6 +166,7 @@ const Read: React.FC = () => {
         const data = await r.json();
         if (data.status !== "success") throw new Error(data.message ?? "Błąd pobierania rozdziałów");
         setChapters(data.chapters ?? []);
+        setCountries(data.countries ?? []);
       } catch (e) {
         setError(String(e));
       }
@@ -371,6 +380,12 @@ const Read: React.FC = () => {
               <strong style={{ fontSize: "0.85em", padding: "0 14px" }}>📝 Moje notatki ({notes.length})</strong>
               {notes.map(renderNoteRow)}
             </div>
+          )}
+
+          {isDesktop && (
+            <React.Suspense fallback={null}>
+              <CountryMap countries={countries} />
+            </React.Suspense>
           )}
         </div>
 

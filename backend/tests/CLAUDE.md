@@ -70,7 +70,8 @@ Configuration in `backend/pyproject.toml` under `[tool.pytest.ini_options]`. The
 |------|--------|
 | `test_article_cleaner.py` | `clean_article_text()` — portal artifact cleanup, `[imgN]`/`[linkN]` markers |
 | `test_article_pipeline.py` | `ensure_raw_markdown()` + `extract_article()` (cache/S3/LLM pipeline, no I/O) |
-| `test_article_tagging.py` | LLM thematic tagging & country extraction |
+| `test_article_tagging.py` | LLM thematic tagging & country extraction (incl. gazetteer+LLM hybrid) |
+| `test_country_gazetteer.py` | Non-LLM country-name detection (stem-based gazetteer) |
 | `test_article_review_tracking.py` | `reviewed_at` / `obsidian_note_paths` tracking |
 
 ### Markdown & Text Processing (legacy, `unittest.TestCase` style)
