@@ -3,6 +3,7 @@ import L from "leaflet";
 import { GeoJSON, MapContainer, TileLayer, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { COUNTRY_SLUG_TO_ISO3 } from "../../data/countryIso";
+import { ISO3_TO_NAME_PL } from "../../data/countryNames";
 
 export interface CountryTag {
   slug: string;
@@ -43,6 +44,9 @@ const FitToMatched: React.FC<{ data: GeoJSON.FeatureCollection; matchedIso: Set<
 };
 
 /** Map of OpenStreetMap tiles highlighting the countries a geopolitical article discusses.
+ *  Every country on the map is labeled in Polish (ISO3_TO_NAME_PL) — matched
+ *  (article) countries prominently, everything else (including neighbors of
+ *  the matched countries, which is the point) dimmed but still legible.
  *  Desktop-only by convention of the caller (see read.tsx) — loads tiles + a bundled
  *  world-countries GeoJSON only when actually rendered. Small island states / micro-states
  *  missing from the (lightweight, ~250KB) bundled GeoJSON won't appear on the map — they're
@@ -65,31 +69,29 @@ const CountryMap: React.FC<Props> = ({ countries }) => {
     [countries]
   );
 
-  // Polish name per ISO3 — the bundled GeoJSON only has English names, and the
-  // OSM tile labels are whatever language OSM ships for that area, so this is
-  // the only reliable way to always show Polish names on the map itself.
-  const namePlByIso = React.useMemo(() => {
-    const map = new Map<string, string>();
-    countries.forEach(c => {
-      const iso = COUNTRY_SLUG_TO_ISO3[c.slug];
-      if (iso) map.set(iso, c.name_pl);
-    });
-    return map;
-  }, [countries]);
-
   const style = React.useCallback(
     (feature?: GeoJSON.Feature): L.PathOptions => (matchedIso.has(String(feature?.id)) ? MATCHED_STYLE : UNMATCHED_STYLE),
     [matchedIso]
   );
 
+  // Every country gets its Polish name (ISO3_TO_NAME_PL — the bundled GeoJSON
+  // only has English names, and OSM tile labels are whatever language OSM
+  // ships per region, e.g. Germany as "Deutschland"). Countries the article
+  // actually discusses are labeled prominently; everything else (including
+  // their neighbors, which is the point — context for the highlighted
+  // countries) gets a smaller, muted label so the map doesn't turn into a
+  // wall of text.
   const onEachFeature = React.useCallback(
     (feature: GeoJSON.Feature, layer: L.Layer) => {
-      const namePl = namePlByIso.get(String(feature.id));
-      if (namePl) {
-        layer.bindTooltip(namePl, { permanent: true, direction: "center", className: "country-label" });
-      }
+      const namePl = ISO3_TO_NAME_PL[String(feature.id)];
+      if (!namePl) return;
+      const matched = matchedIso.has(String(feature.id));
+      layer.bindTooltip(namePl, {
+        permanent: true, direction: "center",
+        className: matched ? "country-label" : "country-label-dim",
+      });
     },
-    [namePlByIso]
+    [matchedIso]
   );
 
   if (countries.length === 0 || error) return null;
@@ -108,6 +110,17 @@ const CountryMap: React.FC<Props> = ({ countries }) => {
           padding: 0;
         }
         .country-label::before { display: none; }
+        .country-label-dim {
+          background: transparent;
+          border: none;
+          box-shadow: none;
+          font-size: 9px;
+          font-weight: 500;
+          color: #64748b;
+          text-shadow: 0 0 2px #ffffff, 0 0 2px #ffffff;
+          padding: 0;
+        }
+        .country-label-dim::before { display: none; }
       `}</style>
       <strong style={{ fontSize: "0.85em", display: "block", marginBottom: 8 }}>🌍 Kraje w artykule</strong>
       {geoData && (
