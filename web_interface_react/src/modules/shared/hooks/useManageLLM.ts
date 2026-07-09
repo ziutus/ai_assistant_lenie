@@ -463,6 +463,33 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     }
   };
 
+  const handleYoutubeRetryCaptions = async (website_id: string | number) => {
+    setIsLoading(true);
+    try {
+      const response = await axios.post(
+        `${apiUrl}/website_youtube_retry_captions`,
+        { id: website_id },
+        {
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "x-api-key": `${apiKey}`,
+          },
+        },
+      );
+      setMessage(response.data.message);
+      setIsLoading(false);
+      setIsError(false);
+      return response.data;
+    } catch (error: any) {
+      console.error("There was an error on handleYoutubeRetryCaptions!", error);
+      const message = error.response?.data?.message || error.message;
+      setMessage(`There was an error retrying YouTube captions: ${message}`);
+      setIsLoading(false);
+      setIsError(true);
+      return null;
+    }
+  };
+
   const handleDeleteDocument = async (website_id: string) => {
     setIsLoading(true);
     console.log("Deleting document with id: " + website_id);
@@ -512,6 +539,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     handleSplitTextForEmbedding,
     handleRemoveNotNeededText,
     handleDeleteDocumentNext,
-    handleDeleteDocument
+    handleDeleteDocument,
+    handleYoutubeRetryCaptions
   };
 };
