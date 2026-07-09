@@ -15,6 +15,7 @@ imports/
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
 ├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
 ├── youtube_add.py            # Ad-hoc: process a single YouTube video (optionally + LLM analysis)
+├── youtube_backfill_author.py # One-off: fetch channel name for existing videos missing 'author'
 └── youtube_batch_analyze.py  # Bielik LLM chunk analysis of an existing document (by ID)
 ```
 
@@ -199,6 +200,32 @@ python imports/youtube_add.py <URL> --analyze --speaker1 "..." --speaker2 "..."
 - `.env` file with `POSTGRESQL_*` variables and LLM API keys
 - Optional: `WEBSHARE_API_KEY` for proxy support
 - For `--analyze`: `CLOUDFERRO_SHERLOCK_KEY` (Bielik)
+
+### `youtube_backfill_author.py`
+
+One-off backfill for the `author` field (YouTube channel name) on videos added before `youtube_processing.py` started setting it automatically (`process_youtube_url()` sets `web_document.author = youtube_file.author` on every new video). Queries `web_documents` for `document_type='youtube' AND author IS NULL`, re-fetches metadata per video via `pytubefix`, and commits per document.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`.
+
+**Running:**
+```bash
+cd backend
+python imports/youtube_backfill_author.py --dry-run              # preview, no DB writes
+python imports/youtube_backfill_author.py                        # full backfill
+python imports/youtube_backfill_author.py --limit 20 --delay 2
+python imports/youtube_backfill_author.py --no-proxy             # skip Webshare (was not needed in practice — no rate-limiting observed on a 10-video sample)
+```
+
+**Arguments:**
+- `--dry-run` — preview only, no DB writes
+- `--limit N` — max number of videos to process
+- `--delay SECONDS` — sleep between requests (default: 1.5)
+- `--no-proxy` — disable Webshare proxy
+- `-v`, `--verbose` — enable debug logging
+
+**Prerequisites:**
+- `.env` with `POSTGRESQL_*` variables
+- Optional: `WEBSHARE_API_KEY` for proxy support (see `youtube_add.py`)
 
 ### `youtube_batch_analyze.py`
 

@@ -1,3 +1,5 @@
+import { buildObsidianNoteUrl } from "./modules/shared/utils/obsidian";
+
 interface ListItemSearchSimilarProps {
   item: {
     similarity: number;
@@ -27,7 +29,17 @@ const ListItemSearchSimilar = ({ item }: ListItemSearchSimilarProps) => {
                 </>
             )}
             {notes.length > 0 && (
-                <span title={notes.join("\n")}> 📝 {notes.length}</span>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    {" "}📝
+                    {notes.map((notePath, i) => (
+                        <span key={notePath}>
+                            {i > 0 && ","}
+                            <a href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>
+                                {notePath.split("/").pop()?.replace(/\.md$/i, "")}
+                            </a>
+                        </span>
+                    ))}
+                </span>
             )}
         </li>
     )

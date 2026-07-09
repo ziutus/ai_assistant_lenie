@@ -16,14 +16,25 @@ export const useList = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleGetList = async (type: string, documentState: string, searchInDocument?: string) => {
+  const handleGetList = async (
+    type: string,
+    documentState: string,
+    searchInDocument?: string,
+    obsidianNotesFilter?: { onlyMissing?: boolean; onlyHas?: boolean },
+  ) => {
     setIsLoading(true);
     try {
       const response = await axios.get(`${apiUrl}/website_list`, {
         headers: {
           "x-api-key": `${apiKey}`,
         },
-        params: { type, document_state: documentState, search_in_document: searchInDocument },
+        params: {
+          type,
+          document_state: documentState,
+          search_in_document: searchInDocument,
+          only_missing_obsidian_notes: obsidianNotesFilter?.onlyMissing || undefined,
+          only_has_obsidian_notes: obsidianNotesFilter?.onlyHas || undefined,
+        },
       });
       console.log(response.data.message);
       console.log(response.data);

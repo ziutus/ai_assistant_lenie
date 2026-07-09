@@ -5,6 +5,7 @@ import {
   NotePopover, NoteRow, PendingNote, ReaderIdentityBadge, STANCE_ICON, UserNote,
   normalizeWs, pendingNoteFromSelection, useReaderIdentity, useUserNotes,
 } from "../components/ReaderNotes/readerNotes";
+import { buildObsidianNoteUrl } from "../utils/obsidian";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -1060,8 +1061,20 @@ const Chunks = () => {
               {chunk.speaker && <span style={{ color: "#64748b" }}>🎙 {chunk.speaker}</span>}
 
               {!!chunk.obsidian_note_paths?.length && (
-                <span title={chunk.obsidian_note_paths.join("\n")} style={{ color: "#7c3aed" }}>
-                  📝 {chunk.obsidian_note_paths.length}
+                <span style={{ color: "#7c3aed", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                  📝
+                  {chunk.obsidian_note_paths.map((notePath, i) => (
+                    <React.Fragment key={notePath}>
+                      {i > 0 && ","}
+                      <a
+                        href={buildObsidianNoteUrl(notePath)}
+                        title={`Otwórz w Obsidianie: ${notePath}`}
+                        style={{ color: "#7c3aed" }}
+                      >
+                        {notePath.split("/").pop()?.replace(/\.md$/i, "")}
+                      </a>
+                    </React.Fragment>
+                  ))}
                 </span>
               )}
               {myNotes.length > 0 && (

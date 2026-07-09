@@ -254,12 +254,21 @@ def website_list():
     document_type = request.args.get('type', 'ALL')
     document_state = request.args.get('document_state', 'ALL')
     search_in_documents = request.args.get('search_in_document', '')
+    only_missing_obsidian_notes = request.args.get('only_missing_obsidian_notes', '').lower() in ('1', 'true')
+    only_has_obsidian_notes = request.args.get('only_has_obsidian_notes', '').lower() in ('1', 'true')
     logging.debug(document_type)
 
     session = get_scoped_session()
     repo = WebsitesDBPostgreSQL(session)
-    websites_list = repo.get_list(document_type=document_type, document_state=document_state, search_in_documents=search_in_documents)
-    websites_list_count = repo.get_list(document_type=document_type, document_state=document_state, search_in_documents=search_in_documents, count=True)
+    list_kwargs = {
+        "document_type": document_type,
+        "document_state": document_state,
+        "search_in_documents": search_in_documents,
+        "only_missing_obsidian_notes": only_missing_obsidian_notes,
+        "only_has_obsidian_notes": only_has_obsidian_notes,
+    }
+    websites_list = repo.get_list(**list_kwargs)
+    websites_list_count = repo.get_list(**list_kwargs, count=True)
     logging.debug("website count: %s", websites_list_count)
 
     response = {
