@@ -155,6 +155,12 @@ services:
     # (http://lenie-ner-service:8090). See ner_service/README.md.
     networks:
       - lenie-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8090/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
 
   lenie-mcp-server:
     image: 192.168.200.7:5005/lenie-mcp-server:latest
