@@ -346,15 +346,21 @@ def document_chapters(doc_id: int):
     chapters = detect_chapters(text) if text else []
     source = "markdown" if chapters else "none"
 
-    if not chapters:
-        run = _latest_run_for_document(session, doc_id)
-        if run:
-            chapters = _chunk_based_chapters(run)
-            if chapters:
-                source = "chunks"
+    run = _latest_run_for_document(session, doc_id)
+    if not chapters and run:
+        chapters = _chunk_based_chapters(run)
+        if chapters:
+            source = "chunks"
 
     if not text and source == "none":
         return jsonify({"status": "error", "message": "Document has no usable text"}), 400
+
+    from library.country_gazetteer import slug_to_name
+
+    tags = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
+    country_slugs = [t[len("kraj-"):] for t in tags if t.startswith("kraj-")]
+    countries = [{"slug": slug, "name_pl": slug_to_name(slug) or slug} for slug in country_slugs]
+    thematic_tags = [t for t in tags if not t.startswith("kraj-")]
 
     return jsonify({
         "status": "success",
@@ -363,6 +369,9 @@ def document_chapters(doc_id: int):
         "text_length": len(text),
         "chapters": chapters,
         "chapter_source": source,
+        "countries": countries,
+        "thematic_tags": thematic_tags,
+        "synthesis": run.synthesis if run else None,
     })
 
 
@@ -515,6 +524,13 @@ def get_run_chunks(run_id: int):
             .distinct()
         ).all())
 
+    from library.country_gazetteer import slug_to_name
+
+    doc_tags = [t.strip() for t in ((doc.tags if doc else None) or "").split(",") if t.strip()]
+    country_slugs = [t[len("kraj-"):] for t in doc_tags if t.startswith("kraj-")]
+    doc_countries = [{"slug": slug, "name_pl": slug_to_name(slug) or slug} for slug in country_slugs]
+    doc_thematic_tags = [t for t in doc_tags if not t.startswith("kraj-")]
+
     chunks = all_chunks
     if section_id is not None:
         section = next((ts for ts in topic_sections if ts.id == section_id), None)
@@ -557,6 +573,8 @@ def get_run_chunks(run_id: int):
             "title": doc.title if doc else "",
             "original_id": doc.original_id if doc else "",
             "document_type": doc.document_type if doc else "",
+            "countries": doc_countries,
+            "thematic_tags": doc_thematic_tags,
         },
         "segments": segments,
         "lite": lite,

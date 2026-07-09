@@ -1537,3 +1537,36 @@ so that new documents captured via the Chrome extension (AWS DynamoDB + S3) appe
 **Priority:** MEDIUM
 **Status:** backlog
 **Related:** [B-82](#b-82-add-minio-as-s3-compatible-local-storage-for-nas-development) (MinIO storage — prerequisite)
+
+### B-106: Migrate Container Station Storage off CACHEDEV2 (recurring ext4 corruption)
+
+As a **user**,
+I want Container Station's Docker storage (the `lenie-ai-db-data`, `lenie-ai-data`, `lenie-minio-data` and `lenie-registry-data` named volumes) moved off CACHEDEV2 to a healthier volume,
+so that recurring ext4 filesystem corruption on CACHEDEV2 stops causing `filesystem layer verification failed` deploy failures and stops putting the PostgreSQL data (which lives on the same volume) at risk.
+
+**Origin:** Recurring incident, not a one-off. First diagnosed and worked around 2026-07-08 (session notes, not currently in `docs/`): registry pulls of fresh large image layers on the NAS failed with `filesystem layer verification failed` / `invalid tar header`. Root-cause investigation ruled out failing disks — full SMART + `badblocks` scans on all 4 physical disks came back clean, and `mismatch_cnt` on the RAID1 array (`md2`, disks sdc+sdd) was 0. dmesg showed EXT4 errors (`bad entry in directory`, `corrupted in-inode xattr`) on the CACHEDEV2 volume, attributed to an unclean NAS shutdown a few days earlier. Fixed via `e2fsck` run twice through the QTS "Sprawdź system plików" UI option (first pass only checked, second pass actually repaired) — a *manual* attempt to `umount` + `e2fsck` the volume directly over SSH caused a full hard reset of the NAS mid-incident, so that path is now known-risky and to be avoided. **Recurred 2026-07-09** during a routine deploy of an unrelated feature — same symptom, same size class of layer (~170 MB). Worked around this time via `docker save <image> | ssh admin@nas docker load` (sideloading the image directly, bypassing the flaky registry pull) instead of re-running filesystem repair. Two incidents in two days on the same volume suggests the underlying disk/filesystem needs a structural fix (or isolation), not another round of `e2fsck`.
+
+**Scope:**
+1. **Confirm current layout** — verify (don't assume) that Container Station's Docker data-root and all 4 named volumes physically resolve to CACHEDEV2 (`md2`, RAID1 sdc+sdd), via `docker info` (`Docker Root Dir`) cross-referenced with QTS Storage Manager's volume-to-disk mapping. `infra/docker/compose.nas.yaml` (lines ~175-183) declares them as `external: true` named volumes with no explicit host path, so the real path needs an on-NAS lookup (`docker volume inspect <name>`).
+2. **Decide target volume** — CACHEDEV1 (`md1`/sdb, already hosts the Container Station qpkg + docker binary itself — see `docs/CICD/NAS_Deployment.md`) vs CACHEDEV3 (`md3`/sda) vs a new dedicated volume/pool if free space allows. Check actual free space on each candidate before deciding; note Vault already uses explicit bind mounts at `/share/vault/{config,data,logs}` on a separate path from the Docker-managed volumes — same pattern could apply here.
+3. **Backup before touching anything**: `pg_dump -F c` for PostgreSQL (mandatory — this volume hosts the live production data), plus a snapshot/export of `lenie-ai-data` and `lenie-minio-data`. `lenie-registry-data` (image blobs) is lower priority to preserve — it can be rebuilt by re-pushing images from the dev machine if lost.
+4. **Migration approach** — evaluate two options:
+   - (a) Move Container Station's whole Docker data-root to the new volume in one operation (if the QTS Container Station version supports a "change storage location" setting) — simplest, but moves everything (including unrelated containers) in one blast-radius unit.
+   - (b) Migrate only the 4 named volumes individually (copy the volume's data directory to the new location, repoint via `--opt device=<new-path>` or recreate the volume before `compose up`) — more surgical, but requires updating `compose.nas.yaml` volume definitions and retesting each service.
+5. **Update docs**: `docs/CICD/NAS_Deployment.md` currently only documents CACHEDEV1 (the qpkg itself) — add the final storage layout for CACHEDEV2/3 and a summary of the corruption history (currently this only exists in informal session notes, not in `docs/`).
+6. **Regression test**: repeat the exact test that verified the 2026-07-08 fix — push a fresh, large (≥200 MB), non-cached image layer through the registry and pull it back down on the NAS. Clean `Verifying Checksum` / `Pull complete` with no `filesystem layer verification failed` confirms the new volume doesn't inherit the problem.
+
+**Open question — be honest about what this does and doesn't fix:** the 2026-07-08 diagnosis blamed ext4 corruption following an unclean shutdown, not the physical disks (which tested clean) — so moving to a different disk is not a guaranteed root-cause fix if the trigger is Container Station's own behavior on unclean shutdown, which could corrupt whatever volume it's using next. What migration *does* reliably buy: isolating PostgreSQL's data from the flaky registry volume, so a future registry-blob corruption can't jeopardize the database, and a clean volume to retest the failure mode on. If corruption recurs on the new volume too, the real fix is likely an unclean-shutdown safeguard (UPS-triggered clean shutdown, or moving the registry to something other than a QNAP Docker volume) — worth flagging as a separate follow-up item if this happens.
+
+**Second benefit — much faster diagnosis next time:** CACHEDEV2 today also hosts large, unrelated personal volumes (`ania_zdjecia` ~1 TB, `zdjecia_backup`, `ania_gdrive`, `ziutus_gdrive`, `Public`, `homes`). Every diagnostic pass on this volume (badblocks, full SMART, `e2fsck` on the whole filesystem) has to cover that entire multi-TB footprint even though only the small Container Station storage is actually suspect — the 2026-07-07 badblocks run alone took ~8 hours per disk for exactly this reason. A dedicated volume/VG for Container Station (isolated from the large personal-file shares) would make future `fsck`/badblocks passes minutes instead of hours, since there'd be far less data to scan — a real, independent argument for migration beyond blast-radius isolation.
+
+**Acceptance Criteria:**
+- Container Station's Docker data-root (or at minimum the 4 named volumes) no longer resolves to CACHEDEV2/`md2`
+- PostgreSQL backup taken and verified restorable (`pg_restore --list` or a real restore to a scratch DB) *before* any data is moved
+- All 9 containers (`lenie-ai-db`, `lenie-ai-server`, `lenie-ai-frontend`, `lenie-ai-app2`, `lenie-ai-slack-bot`, `lenie-minio`, `lenie-registry`, `lenie-registry-ui`, `lenie-vault`) come up healthy post-migration
+- Regression test (large fresh layer push+pull via registry) passes cleanly on the new volume
+- `docs/CICD/NAS_Deployment.md` updated with the final storage layout and a summary of the CACHEDEV2 corruption history
+- `compose.nas.yaml` updated if volume paths changed, redeployed, and verified working
+
+**Priority:** MEDIUM (recurring and annoying, has a working manual deploy workaround, but not urgent — no data loss so far)
+**Status:** backlog

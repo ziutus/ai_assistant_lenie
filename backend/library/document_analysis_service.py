@@ -131,6 +131,52 @@ def _slice_chapter(text: str, scope_chapter: int) -> tuple[str, str]:
     return text[match["char_start"]:match["char_end"]].strip(), match["title"]
 
 
+def _chapter_chunks_from_text(text: str, chapter_titles: list[str], chunk_size: int) -> list[str] | None:
+    """Split a YouTube transcript at its chapter boundaries, when they're still present.
+
+    youtube_processing.py inserts each chapter's title as a standalone line at
+    the start of its block (blocks separated by a blank line) when the video
+    has a chapter_list — see text_transcript.py:_append_with_chapters. This
+    reuses those already-correct boundaries instead of the blind
+    split_text_into_sentence_chunks() char-count cut, so each chunk lines up
+    with a real video chapter (subject to chunk_size: an overlong chapter is
+    still sub-split at sentence boundaries).
+
+    Only reliable for single-speaker transcripts — assign_speakers() rebuilds
+    the text by >>-marker turns and destroys this block structure, so the
+    caller must not call this after labeling multi-speaker turns.
+
+    Returns None (caller falls back to split_text_into_sentence_chunks) when
+    less than a strict majority of the known chapter titles are found as
+    exact block-leading lines — the transcript may have been reshaped upstream.
+    """
+    from library.text_functions import split_text_into_sentence_chunks
+
+    if not chapter_titles:
+        return None
+    title_set = set(chapter_titles)
+    blocks = text.split("\n\n")
+    found = sum(1 for b in blocks if b.split("\n", 1)[0].strip() in title_set)
+    if found < (len(chapter_titles) + 1) // 2:  # require a strict majority
+        return None
+
+    def cap(piece: str) -> list[str]:
+        return [piece] if len(piece) <= chunk_size else split_text_into_sentence_chunks(piece, chunk_size)
+
+    chunks: list[str] = []
+    current = ""
+    for block in blocks:
+        starts_chapter = block.split("\n", 1)[0].strip() in title_set
+        if starts_chapter and current:
+            chunks.extend(cap(current))
+            current = block
+        else:
+            current = f"{current}\n\n{block}" if current else block
+    if current:
+        chunks.extend(cap(current))
+    return chunks
+
+
 def _merge_topics(sections: list[dict], model: str, mode: str = "transcript") -> list[dict]:
     """Ask LLM to group adjacent chunks into logical topic sections.
 
@@ -205,6 +251,29 @@ def _synthesize(sections: list[dict], title: str, model: str, mode: str = "trans
     except Exception:
         logger.exception("synthesis LLM call failed")
         return ""
+
+
+def _apply_tags(doc: WebDocument, text: str) -> None:
+    """Thematic + country tagging — same pipeline as article_browser.py's [w]/[k] actions.
+
+    Merges newly detected tags into doc.tags rather than overwriting: repeat
+    analysis runs (e.g. one run per book chapter) should accumulate tags
+    across runs, not clobber ones set by a previous run or by article_browser.py.
+    """
+    from library.article_tagging import COUNTRY_TAG_TRIGGERS, extract_countries_hybrid, tag_article_with_llm
+
+    article_tags = tag_article_with_llm(text, doc.title or "")
+    country_tags = (
+        extract_countries_hybrid(text, doc.title or "")
+        if article_tags and COUNTRY_TAG_TRIGGERS.intersection(article_tags)
+        else []
+    )
+    new_tags = article_tags + country_tags
+    if not new_tags:
+        return
+    existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
+    existing_set = set(existing)
+    doc.tags = ",".join(existing + [t for t in new_tags if t not in existing_set])
 
 
 # ---------------------------------------------------------------------------
@@ -315,8 +384,19 @@ class DocumentAnalysisService:
             # 6. Remove speech fillers before splitting (cheaper than asking LLM)
             text = remove_speech_fillers(text)
 
-            # 7. Split into chunks at sentence boundaries
-            chunk_texts = split_text_into_sentence_chunks(text, chunk_size)
+            # 7. Split into chunks — chapter-aware when the video has a YouTube
+            #    chapter_list and speaker labeling didn't restructure the text
+            #    (see _chapter_chunks_from_text); otherwise blind sentence-chunk split.
+            chunk_texts = None
+            if not is_multi_speaker and getattr(doc, "chapter_list", None):
+                from library.text_transcript import chapters_text_to_list
+
+                chapter_titles = [c["title"] for c in chapters_text_to_list(doc.chapter_list)]
+                chunk_texts = _chapter_chunks_from_text(text, chapter_titles, chunk_size)
+                if chunk_texts:
+                    log(f"chapter-aware split: {len(chapter_titles)} video chapters detected")
+            if chunk_texts is None:
+                chunk_texts = split_text_into_sentence_chunks(text, chunk_size)
 
             # 8. Map chunks to transcript segments (for timestamp links)
             segments = _load_segments(getattr(doc, "text_raw", None) or "")
@@ -421,6 +501,18 @@ class DocumentAnalysisService:
         if not no_synthesis and not split_only:
             log("generating synthesis...")
             synthesis = _synthesize(sections, doc.title or f"Dokument {doc_id}", model, mode=mode)
+
+        # 11b. Thematic + country tagging (same as article_browser.py's [w]/[k]
+        #      actions) — uses the synthesis as input when available (concise,
+        #      already LLM-summarized), else falls back to concatenated topic
+        #      summaries. Skipped for split_only: no LLM output exists yet.
+        if not split_only:
+            tagging_text = synthesis or "\n\n".join(
+                ts["summary"] for ts in topic_sections_data if ts["summary"]
+            )
+            if tagging_text:
+                log("tagging document...")
+                _apply_tags(doc, tagging_text)
 
         # 12. Persist to DB
         run = DocumentAnalysisRun(
