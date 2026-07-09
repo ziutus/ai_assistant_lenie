@@ -18,6 +18,28 @@
   overflow-y: auto;
 }
 
+.rightPanel {
+  flex: 0 0 300px;
+  position: sticky;
+  top: 12px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.synthesisPanel {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  margin-top: 12px;
+}
+
+.synthesisPanel summary {
+  font-size: 0.85em;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 @media (max-width: 768px) {
   .tocToggleButton {
     display: inline-flex;
