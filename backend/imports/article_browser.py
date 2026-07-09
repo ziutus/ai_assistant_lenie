@@ -30,8 +30,10 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
-__version__ = "0.4.2"
+__version__ = "0.4.3"
 # Changelog:
+#   0.4.3 — ekstrakcja krajów: gazetteer (bez LLM) jako prescreen + LLM potwierdza kandydatów
+#           (library.article_tagging.extract_countries_hybrid, zamiast open-ended extract_countries_with_llm)
 #   0.4.2 — load_config() raz na poziomie modułu (cfg + CACHE_DIR_BASE zamiast 7 wywołań)
 #   0.4.1 — refaktor: pipeline markdown+LLM → library/article_pipeline.py (wspólny z dynamodb_sync)
 #   0.4.0 — refaktor: czyszczenie → library/article_cleaner.py, tagowanie LLM → library/article_tagging.py
@@ -57,7 +59,7 @@ from library.db.models import WebDocument
 from library.article_extractor import _detect_portal
 from library.article_pipeline import ensure_raw_markdown, extract_article
 from library.article_cleaner import clean_article_text
-from library.article_tagging import COUNTRY_TAG_TRIGGERS, extract_countries_with_llm, tag_article_with_llm
+from library.article_tagging import COUNTRY_TAG_TRIGGERS, extract_countries_hybrid, tag_article_with_llm
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OBSIDIAN_VAULT = r"C:\Users\ziutus\Obsydian\personal"
@@ -606,7 +608,7 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     country_tags = []
     if article_tags and COUNTRY_TAG_TRIGGERS.intersection(article_tags):
         print(f"  Wykrywam kraje (tagi: {', '.join(COUNTRY_TAG_TRIGGERS.intersection(article_tags))})...")
-        country_tags = extract_countries_with_llm(text_only, doc.title or "")
+        country_tags = extract_countries_hybrid(text_only, doc.title or "")
     all_tags = article_tags + country_tags
     if all_tags:
         doc.tags = ",".join(all_tags)
@@ -1141,7 +1143,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                 if article:
                     text_only = _article_full_text(article)
                     print("  Wyciągam nazwy krajów z artykułu...")
-                    country_tags = extract_countries_with_llm(text_only, doc.title or "")
+                    country_tags = extract_countries_hybrid(text_only, doc.title or "")
                     if country_tags:
                         existing = [t for t in (doc.tags or "").split(",") if t.strip()]
                         existing_countries = {t for t in existing if t.startswith("kraj-")}

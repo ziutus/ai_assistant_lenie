@@ -27,6 +27,7 @@ class FakeDoc:
     text = ARTICLE_TEXT
     text_md = None
     text_raw = None
+    tags = None
 
 
 @pytest.fixture
@@ -44,7 +45,7 @@ def article_env(monkeypatch, session):
         das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: FakeDoc()),
     )
 
-    calls = {"article": 0, "transcript": 0, "speakers": 0, "fillers": 0}
+    calls = {"article": 0, "transcript": 0, "speakers": 0, "fillers": 0, "tagging": 0}
 
     def fake_article(text, model, position=1, total=1):
         calls["article"] += 1
@@ -76,6 +77,13 @@ def article_env(monkeypatch, session):
     monkeypatch.setattr(
         das, "_synthesize", lambda sections, title, model, mode="transcript": "synteza",
     )
+
+    def fake_tag_article(text, title):
+        calls["tagging"] += 1
+        return []
+
+    monkeypatch.setattr("library.article_tagging.tag_article_with_llm", fake_tag_article)
+    monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
     return calls
 
 
@@ -162,6 +170,50 @@ class TestArticleMode:
         from library.db.models import DocumentTopicSection
         sections = [o for o in session.added if isinstance(o, DocumentTopicSection)]
         assert sections == []
+
+    def test_tags_document_using_synthesis_text(self, session, article_env, monkeypatch):
+        doc = FakeDoc()
+        monkeypatch.setattr(das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: doc))
+        captured = {}
+
+        def fake_tag_article(text, title):
+            captured["text"] = text
+            return ["geopolityka"]
+
+        monkeypatch.setattr("library.article_tagging.tag_article_with_llm", fake_tag_article)
+        monkeypatch.setattr(
+            "library.article_tagging.extract_countries_hybrid", lambda text, title: ["kraj-polska"],
+        )
+
+        service = DocumentAnalysisService(session)
+        service.create_run(doc_id=42, model="test-model", mode="article", chunk_size=300)
+
+        assert captured["text"] == "synteza"
+        assert doc.tags == "geopolityka,kraj-polska"
+
+    def test_tagging_skipped_for_split_only(self, session, article_env, monkeypatch):
+        doc = FakeDoc()
+        monkeypatch.setattr(das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: doc))
+
+        service = DocumentAnalysisService(session)
+        service.create_run(doc_id=42, model="test-model", mode="article", chunk_size=300, split_only=True)
+
+        assert article_env["tagging"] == 0
+        assert doc.tags is None
+
+    def test_tagging_merges_with_existing_tags(self, session, article_env, monkeypatch):
+        doc = FakeDoc()
+        doc.tags = "kraj-niemcy"
+        monkeypatch.setattr(das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: doc))
+        monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title: ["wojsko"])
+        monkeypatch.setattr(
+            "library.article_tagging.extract_countries_hybrid", lambda text, title: ["kraj-niemcy", "kraj-polska"],
+        )
+
+        service = DocumentAnalysisService(session)
+        service.create_run(doc_id=42, model="test-model", mode="article", chunk_size=300)
+
+        assert doc.tags == "kraj-niemcy,wojsko,kraj-polska"
 
     def test_default_mode_is_transcript(self, session, article_env, monkeypatch):
         """Without mode argument the transcript pipeline runs (fillers get called)."""

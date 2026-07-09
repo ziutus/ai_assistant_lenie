@@ -36,6 +36,7 @@ class FakeBookDoc:
     text = None
     text_md = BOOK_TEXT
     text_raw = None
+    tags = "geopolityka,kraj-polska,kraj-niemcy"
 
 
 # ---------------------------------------------------------------------------
@@ -92,6 +93,8 @@ def book_env(monkeypatch, session):
     monkeypatch.setattr(
         das, "_synthesize", lambda sections, title, model, mode="transcript": "",
     )
+    monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title: [])
+    monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
     return analyzed
 
 
@@ -175,6 +178,9 @@ class _ScalarsResult:
     def all(self):
         return self._items
 
+    def first(self):
+        return self._items[0] if self._items else None
+
 
 @pytest.fixture
 def client(monkeypatch, run_with_sections):
@@ -195,11 +201,16 @@ def client(monkeypatch, run_with_sections):
         return None
 
     fake_session.get.side_effect = fake_get
-    # get_run_chunks issues two scalars() queries: topic sections, embedded chunk ids
-    fake_session.scalars.side_effect = lambda *_a, **_kw: (
-        _ScalarsResult(sections) if fake_session.scalars.call_count % 2 == 1
-        else _ScalarsResult([101])
-    )
+
+    def route_scalars(stmt, *_a, **_kw):
+        sql = str(stmt)
+        if "document_analysis_runs" in sql:
+            return _ScalarsResult([run])
+        if "document_topic_sections" in sql:
+            return _ScalarsResult(sections)
+        return _ScalarsResult([101])  # websites_embeddings: embedded chunk ids
+
+    fake_session.scalars.side_effect = route_scalars
     monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
 
     app = flask.Flask(__name__)
@@ -216,6 +227,38 @@ class TestChaptersEndpoint:
         assert data["source_field"] == "text_md"
         titles = [c["title"] for c in data["chapters"]]
         assert titles == ["(wstęp)", "Rozdział 1: Geneza", "Rozdział 2: Rozwój"]
+
+    def test_returns_countries_from_kraj_tags(self, client):
+        resp = client.get("/document/77/chapters")
+        data = resp.get_json()
+
+        assert data["countries"] == [
+            {"slug": "polska", "name_pl": "Polska"},
+            {"slug": "niemcy", "name_pl": "Niemcy"},
+        ]
+
+    def test_returns_thematic_tags_without_kraj_prefix(self, client):
+        resp = client.get("/document/77/chapters")
+        data = resp.get_json()
+
+        assert data["thematic_tags"] == ["geopolityka"]
+
+    def test_returns_synthesis_from_latest_run(self, client, run_with_sections):
+        run, _ = run_with_sections
+        run.synthesis = "Synteza całego dokumentu."
+
+        resp = client.get("/document/77/chapters")
+        data = resp.get_json()
+
+        assert data["synthesis"] == "Synteza całego dokumentu."
+
+    def test_countries_empty_when_no_tags(self, transcript_client):
+        resp = transcript_client.get("/document/88/chapters")
+        data = resp.get_json()
+
+        assert data["countries"] == []
+        assert data["thematic_tags"] == []
+        assert data["synthesis"] is None
 
 
 class TestChapterContentEndpoint:
@@ -282,6 +325,15 @@ class TestGetRunChunksLazy:
         assert len(data["chunks"]) == 5
         assert data["chunks"][0]["original_text"] is not None
         assert data["chunks"][0]["text_preview"] is None
+
+    def test_document_includes_tags_and_countries(self, client):
+        data = client.get("/analysis_run/1/chunks").get_json()
+
+        assert data["document"]["thematic_tags"] == ["geopolityka"]
+        assert data["document"]["countries"] == [
+            {"slug": "polska", "name_pl": "Polska"},
+            {"slug": "niemcy", "name_pl": "Niemcy"},
+        ]
 
     def test_lite_strips_texts_and_adds_preview(self, client):
         data = client.get("/analysis_run/1/chunks?lite=1").get_json()
@@ -360,6 +412,7 @@ class FakeTranscriptDoc:
     text_md = None
     text_raw = None
     document_type = "youtube"
+    tags = None
 
 
 @pytest.fixture
@@ -367,6 +420,7 @@ def transcript_run():
     run = MagicMock(spec=DocumentAnalysisRun)
     run.id = 5
     run.document_id = 88
+    run.synthesis = None
     run.chunks = [
         _make_chunk(id=201, document_id=88, position=1, type="TEMAT", topic="Temat pierwszy",
                     corrected_text="Tekst poprawiony 1", original_text="Oryginał 1"),

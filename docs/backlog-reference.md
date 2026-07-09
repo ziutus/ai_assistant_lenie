@@ -85,3 +85,9 @@ Cel: jeden spójny pipeline gdzie `text_md` zawiera wyekstrahowany artykuł (z f
 | ID | Title | Status | Depends on |
 |----|-------|--------|------------|
 | B-102 | Evaluate Neo4j AuraDB Free for Document Relationship Graph | backlog | B-92 |
+
+## Infrastructure — NAS Storage
+
+| ID | Title | Status | Depends on |
+|----|-------|--------|------------|
+| B-106 | Migrate Container Station Storage off CACHEDEV2 (recurring ext4 corruption) | backlog | — |

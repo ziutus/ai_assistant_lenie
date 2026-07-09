@@ -79,6 +79,47 @@ class TestExtractCountries:
         assert article_tagging.extract_countries_with_llm("treść", "tytuł") == []
 
 
+@pytest.mark.usefixtures("fixed_model")
+class TestExtractCountriesHybrid:
+    def test_no_candidates_skips_llm_call(self, monkeypatch):
+        pytest.importorskip("unidecode")
+        calls = []
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("polska", calls))
+        result = article_tagging.extract_countries_hybrid("tekst bez żadnego kraju", "tytuł")
+        assert result == []
+        assert calls == []
+
+    def test_llm_confirms_subset_of_candidates(self, monkeypatch):
+        pytest.importorskip("unidecode")
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("Polska"))
+        result = article_tagging.extract_countries_hybrid(
+            "Polska i Niemcy podpisały umowę, ale artykuł skupia się na Polsce.", "tytuł"
+        )
+        assert result == ["kraj-polska"]
+
+    def test_llm_response_outside_candidates_is_ignored(self, monkeypatch):
+        pytest.importorskip("unidecode")
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("Hiszpania"))
+        result = article_tagging.extract_countries_hybrid("Polska ogłosiła nowy program.", "tytuł")
+        assert result == []
+
+    def test_empty_llm_response_returns_empty_list(self, monkeypatch):
+        pytest.importorskip("unidecode")
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai(""))
+        result = article_tagging.extract_countries_hybrid("Polska ogłosiła nowy program.", "tytuł")
+        assert result == []
+
+    def test_llm_error_returns_empty_list(self, monkeypatch):
+        pytest.importorskip("unidecode")
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("API down")
+
+        monkeypatch.setattr("library.ai.ai_ask", boom)
+        result = article_tagging.extract_countries_hybrid("Polska ogłosiła nowy program.", "tytuł")
+        assert result == []
+
+
 class TestConstants:
     def test_country_triggers_are_subset_of_thematic_tags(self):
         assert article_tagging.COUNTRY_TAG_TRIGGERS <= set(article_tagging.THEMATIC_TAGS)
