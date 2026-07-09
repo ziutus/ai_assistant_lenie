@@ -13,9 +13,11 @@ interface Chapter {
   position: number;
   level: number;
   title: string;
-  char_start: number;
-  char_end: number;
   length: number;
+  // Present for markdown-header chapters; absent for the TEMAT-chunk fallback
+  // used by documents with no H1/H2 structure (YouTube/movie transcripts).
+  char_start?: number;
+  char_end?: number;
 }
 
 interface ChapterContent {
