@@ -34,6 +34,13 @@ tagging — not yet wired into the backend's tagging pipeline).
 Labels come directly from `pl_core_news_lg`: `persName`, `geogName`,
 `placeName`, `orgName`, `date`, `time`, etc.
 
+The model is loaded lazily on the first `/ner` call (not at startup), so
+`/healthz` responds immediately even before it's loaded — but that first
+`/ner` call pays the one-time load cost, which on the NAS (Celeron, cold
+disk cache after a container restart) has been observed to take up to
+~60-90s. Callers should set a generous timeout on the first request after
+a deploy/restart; subsequent calls are sub-second.
+
 ## Local development
 
 ```bash
