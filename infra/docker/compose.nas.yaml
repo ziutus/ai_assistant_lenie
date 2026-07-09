@@ -147,6 +147,15 @@ services:
     networks:
       - lenie-net
 
+  lenie-ner-service:
+    image: 192.168.200.7:5005/lenie-ner-service:latest
+    container_name: lenie-ner-service
+    restart: unless-stopped
+    # No published port — internal-only, reachable from other containers via lenie-net
+    # (http://lenie-ner-service:8090). See ner_service/README.md.
+    networks:
+      - lenie-net
+
   lenie-mcp-server:
     image: 192.168.200.7:5005/lenie-mcp-server:latest
     container_name: lenie-mcp-server
