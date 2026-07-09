@@ -49,6 +49,7 @@ backend/.venv_wsl/
 # These README.md files are required by hatchling build (pyproject.toml readme field)
 !slack_bot/README.md
 !shared_python/unified-config-loader/README.md
+!ner_service/README.md
 
 # Project directories not needed in any Docker build
 _bmad/
