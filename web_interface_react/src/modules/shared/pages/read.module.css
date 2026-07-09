@@ -19,7 +19,10 @@
 }
 
 .rightPanel {
-  flex: 0 0 300px;
+  /* Grows to fill leftover width on wide screens (toc and text are fixed-width) —
+     capped so the map/tags/synthesis column doesn't get absurdly wide on ultrawide monitors. */
+  flex: 1 1 300px;
+  max-width: 480px;
   position: sticky;
   top: 12px;
   max-height: 85vh;
