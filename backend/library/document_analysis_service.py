@@ -207,6 +207,29 @@ def _synthesize(sections: list[dict], title: str, model: str, mode: str = "trans
         return ""
 
 
+def _apply_tags(doc: WebDocument, text: str) -> None:
+    """Thematic + country tagging — same pipeline as article_browser.py's [w]/[k] actions.
+
+    Merges newly detected tags into doc.tags rather than overwriting: repeat
+    analysis runs (e.g. one run per book chapter) should accumulate tags
+    across runs, not clobber ones set by a previous run or by article_browser.py.
+    """
+    from library.article_tagging import COUNTRY_TAG_TRIGGERS, extract_countries_hybrid, tag_article_with_llm
+
+    article_tags = tag_article_with_llm(text, doc.title or "")
+    country_tags = (
+        extract_countries_hybrid(text, doc.title or "")
+        if article_tags and COUNTRY_TAG_TRIGGERS.intersection(article_tags)
+        else []
+    )
+    new_tags = article_tags + country_tags
+    if not new_tags:
+        return
+    existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
+    existing_set = set(existing)
+    doc.tags = ",".join(existing + [t for t in new_tags if t not in existing_set])
+
+
 # ---------------------------------------------------------------------------
 # Service
 # ---------------------------------------------------------------------------
@@ -421,6 +444,18 @@ class DocumentAnalysisService:
         if not no_synthesis and not split_only:
             log("generating synthesis...")
             synthesis = _synthesize(sections, doc.title or f"Dokument {doc_id}", model, mode=mode)
+
+        # 11b. Thematic + country tagging (same as article_browser.py's [w]/[k]
+        #      actions) — uses the synthesis as input when available (concise,
+        #      already LLM-summarized), else falls back to concatenated topic
+        #      summaries. Skipped for split_only: no LLM output exists yet.
+        if not split_only:
+            tagging_text = synthesis or "\n\n".join(
+                ts["summary"] for ts in topic_sections_data if ts["summary"]
+            )
+            if tagging_text:
+                log("tagging document...")
+                _apply_tags(doc, tagging_text)
 
         # 12. Persist to DB
         run = DocumentAnalysisRun(

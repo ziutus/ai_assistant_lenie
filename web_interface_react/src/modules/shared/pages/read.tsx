@@ -134,6 +134,8 @@ const Read: React.FC = () => {
 
   const [chapters, setChapters] = React.useState<Chapter[]>([]);
   const [countries, setCountries] = React.useState<CountryTag[]>([]);
+  const [thematicTags, setThematicTags] = React.useState<string[]>([]);
+  const [synthesis, setSynthesis] = React.useState<string | null>(null);
   const [content, setContent] = React.useState<ChapterContent | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -167,6 +169,8 @@ const Read: React.FC = () => {
         if (data.status !== "success") throw new Error(data.message ?? "Błąd pobierania rozdziałów");
         setChapters(data.chapters ?? []);
         setCountries(data.countries ?? []);
+        setThematicTags(data.thematic_tags ?? []);
+        setSynthesis(data.synthesis ?? null);
       } catch (e) {
         setError(String(e));
       }
@@ -381,12 +385,6 @@ const Read: React.FC = () => {
               {notes.map(renderNoteRow)}
             </div>
           )}
-
-          {isDesktop && (
-            <React.Suspense fallback={null}>
-              <CountryMap countries={countries} />
-            </React.Suspense>
-          )}
         </div>
 
         {/* Chapter content */}
@@ -400,6 +398,45 @@ const Read: React.FC = () => {
           )}
           {navButtons}
         </div>
+
+        {/* Map + tags + synthesis — desktop only */}
+        {isDesktop && (countries.length > 0 || thematicTags.length > 0 || synthesis) && (
+          <div className={styles.rightPanel}>
+            {countries.length > 0 && (
+              <React.Suspense fallback={null}>
+                <CountryMap countries={countries} />
+              </React.Suspense>
+            )}
+
+            {thematicTags.length > 0 && (
+              <div style={{
+                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
+                padding: 10, marginTop: 12,
+              }}>
+                <strong style={{ fontSize: "0.85em", display: "block", marginBottom: 8 }}>🏷️ Tagi</strong>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {thematicTags.map(tag => (
+                    <span key={tag} style={{
+                      fontSize: "0.78em", padding: "2px 8px", borderRadius: 999,
+                      background: "#f1f5f9", color: "#334155",
+                    }}>
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {synthesis && (
+              <details className={styles.synthesisPanel}>
+                <summary>📄 Streszczenie</summary>
+                <div style={{ fontSize: "0.85em", lineHeight: 1.55, whiteSpace: "pre-wrap", marginTop: 8 }}>
+                  {synthesis}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Note popover */}
