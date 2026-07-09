@@ -27,11 +27,14 @@
     background: none;
     border: none;
     cursor: pointer;
-    position: absolute;
+    position: fixed;
     top: 15px;
     left: 15px;
     z-index: 1001; /* Higher than the menu to ensure it is clickable */
-    /* Add desired styles */
+}
+
+.scrim {
+    display: none;
 }
 
 .logo{
@@ -111,4 +114,30 @@
 
 .menuOpen + .content {
     margin-left: 250px; /* When menu is open */
+}
+
+/* On phones, don't steal reading width for the hamburger or the open menu —
+   the sidebar overlays the content instead of pushing it. */
+@media (max-width: 768px) {
+    .content,
+    .menuOpen + .content {
+        margin-left: 0;
+        padding: 55px 16px 16px; /* top clears the fixed hamburger; sides keep text off the screen edge */
+    }
+
+    .scrim {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.42);
+        z-index: 999; /* below the menu, above the content */
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.22s ease;
+    }
+
+    .scrimOpen {
+        opacity: 1;
+        pointer-events: auto;
+    }
 }
