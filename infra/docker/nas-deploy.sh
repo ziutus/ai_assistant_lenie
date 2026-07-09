@@ -33,6 +33,7 @@ declare -A SVC_IMAGE=(
     [db]="lenie-ai-db:latest"
     [slack-bot]="lenie-ai-slack-bot:latest"
     [mcp-server]="lenie-mcp-server:latest"
+    [ner-service]="lenie-ner-service:latest"
 )
 declare -A SVC_REGISTRY_IMAGE=(
     [frontend]="${REGISTRY}/lenie-ai-frontend:latest"
@@ -41,6 +42,7 @@ declare -A SVC_REGISTRY_IMAGE=(
     [db]="${REGISTRY}/lenie-ai-db:latest"
     [slack-bot]="${REGISTRY}/lenie-ai-slack-bot:latest"
     [mcp-server]="${REGISTRY}/lenie-mcp-server:latest"
+    [ner-service]="${REGISTRY}/lenie-ner-service:latest"
 )
 declare -A SVC_DOCKERFILE=(
     [frontend]="web_interface_react/Dockerfile"
@@ -49,6 +51,7 @@ declare -A SVC_DOCKERFILE=(
     [db]="infra/docker/Postgresql/Dockerfile"
     [slack-bot]="slack_bot/Dockerfile"
     [mcp-server]="infra/docker/Dockerfile.mcp"
+    [ner-service]="ner_service/Dockerfile"
 )
 declare -A SVC_COMPOSE_NAME=(
     [frontend]="lenie-ai-frontend"
@@ -58,6 +61,7 @@ declare -A SVC_COMPOSE_NAME=(
     [slack-bot]="lenie-ai-slack-bot"
     [minio]="lenie-minio"
     [mcp-server]="lenie-mcp-server"
+    [ner-service]="lenie-ner-service"
 )
 
 ALL_SERVICES="db backend frontend app2"
@@ -201,9 +205,9 @@ show_status() {
 usage() {
     echo "Usage: $0 [OPTIONS] [service ...]"
     echo ""
-    echo "Services: frontend, app2, backend, db, slack-bot, minio, mcp-server, all (default: core services)"
+    echo "Services: frontend, app2, backend, db, slack-bot, minio, mcp-server, ner-service, all (default: core services)"
     echo "  Note: 'all' deploys core services only (db, backend, frontend, app2)."
-    echo "  slack-bot, minio and mcp-server must be deployed explicitly."
+    echo "  slack-bot, minio, mcp-server and ner-service must be deployed explicitly."
     echo ""
     echo "Options:"
     echo "  --skip-build      Skip Docker build, push existing local image"
@@ -236,7 +240,7 @@ while [[ $# -gt 0 ]]; do
         --sync-compose)  SYNC_COMPOSE="true"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
-        frontend|app2|backend|db|slack-bot|minio|mcp-server) SERVICES="$SERVICES $1"; shift ;;
+        frontend|app2|backend|db|slack-bot|minio|mcp-server|ner-service) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
 done
