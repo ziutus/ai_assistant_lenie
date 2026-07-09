@@ -7,6 +7,15 @@ import { useManageLLM } from "../hooks/useManageLLM";
 import { useFormik } from 'formik';
 import { buildObsidianNoteUrl } from "../utils/obsidian";
 
+// States where a document has no usable text yet — showing "Czytaj"/"Chunki" there
+// would just open an empty page. Mirrors the backend's YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES
+// (minus TEMPORARY_ERROR's overlap) plus TRANSCRIPTION_IN_PROGRESS.
+const NO_TEXT_STATES = ["URL_ADDED", "NEED_TRANSCRIPTION", "TRANSCRIPTION_IN_PROGRESS", "TEMPORARY_ERROR"];
+
+// Mirrors backend's _YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES — retry is only safe
+// before a transcript has ever been captured, so it can't clobber reviewed text.
+const YOUTUBE_CAPTIONS_RETRY_STATES = ["TEMPORARY_ERROR", "URL_ADDED", "NEED_TRANSCRIPTION"];
+
 const List = () => {
     const { isLoading, isError, data, message, handleGetList, dataAllLength } = useList();
     const { states: fetchedStates, types: fetchedTypes } = useDocumentStates();
@@ -38,7 +47,7 @@ const List = () => {
     onlyHas: filter === "has",
   });
 
-  const { handleDeleteDocument } = useManageLLM({ formik, selectedDocumentType, selectedDocumentState });
+  const { handleDeleteDocument, handleYoutubeRetryCaptions, message: manageMessage, isLoading: isRetrying } = useManageLLM({ formik, selectedDocumentType, selectedDocumentState });
 
   const handleTypeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
           setSelectedDocumentType(event.target.value);
@@ -60,6 +69,11 @@ const List = () => {
     console.log("handleDocumentDeleteOnThisPage, page id: " + document_id);
     await handleDeleteDocument(String(document_id));
     handleGetList(selectedDocumentType, selectedDocumentState);
+  };
+
+  const handleRetryCaptionsOnThisPage = async (document_id: string | number) => {
+    await handleYoutubeRetryCaptions(document_id);
+    handleGetList(selectedDocumentType, selectedDocumentState, searchInDocument, obsidianFilterParams(obsidianFilter));
   };
 
   // Single compact indicator for the row — details (links, counts) live in an
@@ -153,6 +167,7 @@ const List = () => {
       </select>
       <div>
         <p className={"errorText"}>{message}</p>
+        {manageMessage && <p className={"errorText"}>{manageMessage}</p>}
       </div>
 
       {isLoading && (
@@ -210,7 +225,7 @@ const List = () => {
               >
                 Edit
               </NavLink>
-              {["youtube", "movie", "webpage", "text"].includes(item.document_type) && (
+              {["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.document_state) && (
                 <NavLink
                   className={"button"}
                   style={{ margin: "0 0 0 6px" }}
@@ -219,7 +234,7 @@ const List = () => {
                   Czytaj
                 </NavLink>
               )}
-              {["youtube", "movie", "webpage", "text"].includes(item.document_type) && (
+              {["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.document_state) && (
                 <NavLink
                   className={"button"}
                   style={{ margin: "0 0 0 6px" }}
@@ -228,6 +243,16 @@ const List = () => {
                 >
                   Chunki
                 </NavLink>
+              )}
+              {item.document_type === "youtube" && YOUTUBE_CAPTIONS_RETRY_STATES.includes(item.document_state) && (
+                <button
+                  className={"button"}
+                  style={{ margin: "0 0 0 6px" }}
+                  disabled={isRetrying}
+                  onClick={() => handleRetryCaptionsOnThisPage(item.id)}
+                >
+                  Pobierz napisy ponownie
+                </button>
               )}
               <button
                 className={"button"}

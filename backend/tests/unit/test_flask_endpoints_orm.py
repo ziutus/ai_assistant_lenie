@@ -4,7 +4,7 @@ Tests verify that Flask route handlers correctly use ORM models and scoped sessi
 while preserving the exact API response formats expected by the frontend.
 """
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -549,3 +549,94 @@ class TestUrlAdd:
         data = resp.get_json()
         assert data["status"] == "success"
         mock_service.create_document.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# /website_youtube_retry_captions
+# ---------------------------------------------------------------------------
+
+
+class TestWebsiteYoutubeRetryCaptions:
+    def _mock_doc(self, document_type="youtube", document_state="TEMPORARY_ERROR"):
+        mock_doc = MagicMock()
+        mock_doc.id = 9163
+        mock_doc.url = "https://www.youtube.com/watch?v=abc123"
+        mock_doc.document_type = document_type
+        mock_doc.document_state = document_state
+        mock_doc.language = "pl"
+        mock_doc.chapter_list = None
+        mock_doc.note = None
+        mock_doc.source = "own"
+        return mock_doc
+
+    def test_retries_when_no_transcript_yet(self, client):
+        mock_session = MagicMock()
+        mock_doc = self._mock_doc()
+        updated_doc = self._mock_doc(document_state="NEED_MANUAL_REVIEW")
+        updated_doc.document_state_error = "NONE"
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = mock_doc
+                MockDS.return_value = mock_service
+                with patch("server.process_youtube_url", return_value=updated_doc) as mock_process:
+                    resp = client.post("/website_youtube_retry_captions", data={"id": "9163"}, headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["status"] == "success"
+        assert data["document_state"] == "NEED_MANUAL_REVIEW"
+        mock_process.assert_called_once_with(
+            session=mock_session,
+            youtube_url=mock_doc.url,
+            language=mock_doc.language,
+            chapter_list=mock_doc.chapter_list,
+            note=mock_doc.note,
+            source=mock_doc.source,
+            webshare_api_key=ANY,
+        )
+
+    def test_rejects_non_youtube_document(self, client):
+        mock_session = MagicMock()
+        mock_doc = self._mock_doc(document_type="webpage")
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = mock_doc
+                MockDS.return_value = mock_service
+
+                resp = client.post("/website_youtube_retry_captions", data={"id": "9163"}, headers=API_HEADERS)
+
+        assert resp.status_code == 400
+
+    def test_rejects_when_transcript_already_exists(self, client):
+        """A document already past NEED_TRANSCRIPTION has a transcript — retry
+        must not risk overwriting reviewed text."""
+        mock_session = MagicMock()
+        mock_doc = self._mock_doc(document_state="NEED_MANUAL_REVIEW")
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = mock_doc
+                MockDS.return_value = mock_service
+                with patch("server.process_youtube_url") as mock_process:
+                    resp = client.post("/website_youtube_retry_captions", data={"id": "9163"}, headers=API_HEADERS)
+
+        assert resp.status_code == 409
+        mock_process.assert_not_called()
+
+    def test_not_found_returns_404(self, client):
+        mock_session = MagicMock()
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = None
+                MockDS.return_value = mock_service
+
+                resp = client.post("/website_youtube_retry_captions", data={"id": "999"}, headers=API_HEADERS)
+
+        assert resp.status_code == 404
+
+    def test_missing_id_returns_400(self, client):
+        resp = client.post("/website_youtube_retry_captions", data={}, headers=API_HEADERS)
+        assert resp.status_code == 400
