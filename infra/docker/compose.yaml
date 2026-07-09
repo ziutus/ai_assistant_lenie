@@ -36,6 +36,12 @@ services:
     depends_on:
       - lenie-ai-server
     restart: unless-stopped
+  lenie-ner-service:
+    build:
+      context: ../..
+      dockerfile: ner_service/Dockerfile
+    profiles: ["ner"]
+    restart: unless-stopped
   lenie-ai-fronted:
     build:
       context: ../..

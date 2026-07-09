@@ -26,9 +26,6 @@ COPY backend/pyproject.toml backend/uv.lock ./
 # Install dependencies using uv
 RUN uv sync --frozen --extra docker --no-dev --no-install-project
 
-# Download Polish spaCy NER model (pl_core_news_lg, ~560MB) — see docs/geo-place-ner-plan.md / docs/person-ner-plan.md
-RUN uv run python -m spacy download pl_core_news_lg
-
 COPY backend/library ./library/
 #COPY backend/tests /app/tests/
 COPY backend/server.py .
