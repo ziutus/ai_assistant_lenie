@@ -42,6 +42,7 @@ dependencies = [
     "apify-client>=2.5.0",
     "mcp>=1.27.0,<2.0",
     "defusedxml>=0.7",
+    "spacy>=3.8",
 ]
 
 [project.optional-dependencies]
@@ -81,6 +82,7 @@ docker = [
     "sqlalchemy>=2.0,<3.0",
     "pgvector>=0.3.0",
     "alembic>=1.13",
+    "spacy>=3.8",
 ]
 
 all = [
@@ -119,6 +121,7 @@ all = [
     "sqlalchemy>=2.0,<3.0",
     "pgvector>=0.3.0",
     "alembic>=1.13",
+    "spacy>=3.8",
 ]
 
 [build-system]
