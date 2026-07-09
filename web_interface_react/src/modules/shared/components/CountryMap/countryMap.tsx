@@ -65,18 +65,53 @@ const CountryMap: React.FC<Props> = ({ countries }) => {
     [countries]
   );
 
+  // Polish name per ISO3 — the bundled GeoJSON only has English names, and the
+  // OSM tile labels are whatever language OSM ships for that area, so this is
+  // the only reliable way to always show Polish names on the map itself.
+  const namePlByIso = React.useMemo(() => {
+    const map = new Map<string, string>();
+    countries.forEach(c => {
+      const iso = COUNTRY_SLUG_TO_ISO3[c.slug];
+      if (iso) map.set(iso, c.name_pl);
+    });
+    return map;
+  }, [countries]);
+
   const style = React.useCallback(
     (feature?: GeoJSON.Feature): L.PathOptions => (matchedIso.has(String(feature?.id)) ? MATCHED_STYLE : UNMATCHED_STYLE),
     [matchedIso]
+  );
+
+  const onEachFeature = React.useCallback(
+    (feature: GeoJSON.Feature, layer: L.Layer) => {
+      const namePl = namePlByIso.get(String(feature.id));
+      if (namePl) {
+        layer.bindTooltip(namePl, { permanent: true, direction: "center", className: "country-label" });
+      }
+    },
+    [namePlByIso]
   );
 
   if (countries.length === 0 || error) return null;
 
   return (
     <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, marginTop: 12 }}>
+      <style>{`
+        .country-label {
+          background: transparent;
+          border: none;
+          box-shadow: none;
+          font-size: 11px;
+          font-weight: 600;
+          color: #0c2f4a;
+          text-shadow: 0 0 3px #ffffff, 0 0 3px #ffffff, 0 0 3px #ffffff;
+          padding: 0;
+        }
+        .country-label::before { display: none; }
+      `}</style>
       <strong style={{ fontSize: "0.85em", display: "block", marginBottom: 8 }}>🌍 Kraje w artykule</strong>
       {geoData && (
-        <div style={{ height: 260, borderRadius: 6, overflow: "hidden" }}>
+        <div style={{ height: 340, borderRadius: 6, overflow: "hidden" }}>
           <MapContainer
             style={{ height: "100%", width: "100%" }}
             center={[20, 10]}
@@ -88,7 +123,12 @@ const CountryMap: React.FC<Props> = ({ countries }) => {
               url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             />
-            <GeoJSON key={[...matchedIso].sort().join(",")} data={geoData} style={style} />
+            <GeoJSON
+              key={[...matchedIso].sort().join(",")}
+              data={geoData}
+              style={style}
+              onEachFeature={onEachFeature}
+            />
             <FitToMatched data={geoData} matchedIso={matchedIso} />
           </MapContainer>
         </div>
