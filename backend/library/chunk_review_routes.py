@@ -356,6 +356,12 @@ def document_chapters(doc_id: int):
     if not text and source == "none":
         return jsonify({"status": "error", "message": "Document has no usable text"}), 400
 
+    from library.country_gazetteer import slug_to_name
+
+    tags = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
+    country_slugs = [t[len("kraj-"):] for t in tags if t.startswith("kraj-")]
+    countries = [{"slug": slug, "name_pl": slug_to_name(slug) or slug} for slug in country_slugs]
+
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
@@ -363,6 +369,7 @@ def document_chapters(doc_id: int):
         "text_length": len(text),
         "chapters": chapters,
         "chapter_source": source,
+        "countries": countries,
     })
 
 

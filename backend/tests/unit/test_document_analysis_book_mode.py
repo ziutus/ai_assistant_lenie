@@ -36,6 +36,7 @@ class FakeBookDoc:
     text = None
     text_md = BOOK_TEXT
     text_raw = None
+    tags = "geopolityka,kraj-polska,kraj-niemcy"
 
 
 # ---------------------------------------------------------------------------
@@ -217,6 +218,21 @@ class TestChaptersEndpoint:
         titles = [c["title"] for c in data["chapters"]]
         assert titles == ["(wstęp)", "Rozdział 1: Geneza", "Rozdział 2: Rozwój"]
 
+    def test_returns_countries_from_kraj_tags(self, client):
+        resp = client.get("/document/77/chapters")
+        data = resp.get_json()
+
+        assert data["countries"] == [
+            {"slug": "polska", "name_pl": "Polska"},
+            {"slug": "niemcy", "name_pl": "Niemcy"},
+        ]
+
+    def test_countries_empty_when_no_tags(self, transcript_client):
+        resp = transcript_client.get("/document/88/chapters")
+        data = resp.get_json()
+
+        assert data["countries"] == []
+
 
 class TestChapterContentEndpoint:
     def test_returns_chapter_text_with_nav(self, client):
@@ -360,6 +376,7 @@ class FakeTranscriptDoc:
     text_md = None
     text_raw = None
     document_type = "youtube"
+    tags = None
 
 
 @pytest.fixture
