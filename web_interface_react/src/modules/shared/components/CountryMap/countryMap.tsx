@@ -76,7 +76,7 @@ const CountryMap: React.FC<Props> = ({ countries }) => {
     <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, marginTop: 12 }}>
       <strong style={{ fontSize: "0.85em", display: "block", marginBottom: 8 }}>🌍 Kraje w artykule</strong>
       {geoData && (
-        <div style={{ height: 220, borderRadius: 6, overflow: "hidden" }}>
+        <div style={{ height: 260, borderRadius: 6, overflow: "hidden" }}>
           <MapContainer
             style={{ height: "100%", width: "100%" }}
             center={[20, 10]}

@@ -387,8 +387,11 @@ const Read: React.FC = () => {
           )}
         </div>
 
-        {/* Chapter content */}
-        <div ref={contentRef} style={{ flex: 1, maxWidth: 760 }}>
+        {/* Chapter content — fixed reading width, does not grow to soak up wide-screen space.
+            minWidth: 0 overrides the flex item default (min-width: auto), which would
+            otherwise refuse to shrink below the article's content min-content width and
+            starve the right column of the space it's supposed to grow into. */}
+        <div ref={contentRef} style={{ flex: "0 1 760px", minWidth: 0 }}>
           {navButtons}
           {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
           {!loading && content && (
