@@ -75,7 +75,7 @@ All protected routes wrapped in `RequireAuth` → `Layout` → `Authorization`. 
 | `/youtube/:id?` | `youtube.tsx` | Edit YouTube transcripts |
 | `/movie/:id?` | `movie.tsx` | Edit movie transcripts |
 | `/chunks/:id` | `chunks.tsx` | Review a document's chunk analysis runs (see below) |
-| `/read/:id` | `read.tsx` | Chapter-by-chapter reader view (book/article `text_md`), with per-user progress + notes |
+| `/read/:id` | `read.tsx` | Chapter-by-chapter reader view (book/article `text_md`, or TEMAT chunk topics as fallback for YouTube/movie transcripts), with per-user progress + notes |
 | `/upload-file` | `file.tsx` | Upload image files (alpha) |
 
 ### Chunk analysis review (`chunks.tsx`)

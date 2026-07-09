@@ -345,3 +345,95 @@ class TestPatchTopicSection:
     def test_unknown_section_404(self, client):
         resp = client.patch("/topic_section/999", json={"title": "x"})
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Chapters fallback to TEMAT chunk topics (no markdown H1/H2 — e.g. YouTube
+# transcripts, which are split into topic chunks instead of markdown text)
+# ---------------------------------------------------------------------------
+
+
+class FakeTranscriptDoc:
+    id = 88
+    title = "Testowy film YouTube"
+    text = "Zwykła transkrypcja bez nagłówków markdown. " * 20
+    text_md = None
+    text_raw = None
+    document_type = "youtube"
+
+
+@pytest.fixture
+def transcript_run():
+    run = MagicMock(spec=DocumentAnalysisRun)
+    run.id = 5
+    run.document_id = 88
+    run.chunks = [
+        _make_chunk(id=201, document_id=88, position=1, type="TEMAT", topic="Temat pierwszy",
+                    corrected_text="Tekst poprawiony 1", original_text="Oryginał 1"),
+        _make_chunk(id=202, document_id=88, position=2, type="REKLAMA", topic="Reklama"),
+        _make_chunk(id=203, document_id=88, position=3, type="TEMAT", topic="Temat drugi",
+                    corrected_text=None, original_text="Oryginał 2"),
+    ]
+    return run
+
+
+@pytest.fixture
+def transcript_client(monkeypatch, transcript_run):
+    doc = FakeTranscriptDoc()
+    fake_session = MagicMock()
+    fake_session.get.side_effect = lambda model, pk: doc if model is WebDocument and pk == 88 else None
+    monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
+    monkeypatch.setattr(crr, "_latest_run_for_document",
+                        lambda _session, doc_id: transcript_run if doc_id == 88 else None)
+
+    app = flask.Flask(__name__)
+    app.register_blueprint(crr.bp)
+    return app.test_client()
+
+
+class TestChaptersFallbackToChunks:
+    def test_chapters_list_uses_temat_chunk_topics(self, transcript_client):
+        resp = transcript_client.get("/document/88/chapters")
+        data = resp.get_json()
+
+        assert resp.status_code == 200
+        assert data["chapter_source"] == "chunks"
+        titles = [c["title"] for c in data["chapters"]]
+        assert titles == ["Temat pierwszy", "Temat drugi"]  # REKLAMA excluded
+
+    def test_chapter_content_prefers_corrected_text(self, transcript_client):
+        resp = transcript_client.get("/document/88/chapter/1")
+        data = resp.get_json()
+
+        assert resp.status_code == 200
+        assert data["title"] == "Temat pierwszy"
+        assert data["text"] == "Tekst poprawiony 1"
+        assert data["chapter_total"] == 2
+        assert data["prev"] is None
+        assert data["next"] == 2
+
+    def test_chapter_content_falls_back_to_original_text(self, transcript_client):
+        resp = transcript_client.get("/document/88/chapter/2")
+        data = resp.get_json()
+
+        assert data["title"] == "Temat drugi"
+        assert data["text"] == "Oryginał 2"
+        assert data["prev"] == 1
+        assert data["next"] is None
+
+    def test_out_of_range_chunk_chapter_rejected(self, transcript_client):
+        resp = transcript_client.get("/document/88/chapter/99")
+        assert resp.status_code == 400
+
+    def test_no_headers_and_no_run_returns_error(self, monkeypatch):
+        doc = FakeTranscriptDoc()
+        fake_session = MagicMock()
+        fake_session.get.side_effect = lambda model, pk: doc if model is WebDocument else None
+        monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
+        monkeypatch.setattr(crr, "_latest_run_for_document", lambda _session, _doc_id: None)
+
+        app = flask.Flask(__name__)
+        app.register_blueprint(crr.bp)
+        resp = app.test_client().get("/document/88/chapter/1")
+
+        assert resp.status_code == 400

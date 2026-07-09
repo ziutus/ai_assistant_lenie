@@ -7,8 +7,8 @@ embeddings/notes and only ever supported the YouTube/transcript case.
 
 Endpoints:
   GET  /analysis_runs?doc_id=<id>            — list runs for a document
-  GET  /document/<doc_id>/chapters           — detect H1/H2 table of contents
-  GET  /document/<doc_id>/chapter/<position> — one chapter's markdown (reader view)
+  GET  /document/<doc_id>/chapters           — table of contents (H1/H2 headers, or TEMAT chunk topics as fallback)
+  GET  /document/<doc_id>/chapter/<position> — one chapter's text (reader view)
   POST /document/<doc_id>/analyze_chunks     — create a new analysis run
   GET  /analysis_run/<run_id>/chunks         — run data (chunks + segments;
                                                lite/section_id/offset/limit for books)
@@ -284,13 +284,45 @@ def split_preview(doc_id: int):
     })
 
 
+def _latest_run_for_document(session, doc_id: int) -> DocumentAnalysisRun | None:
+    return session.scalars(
+        select(DocumentAnalysisRun)
+        .where(DocumentAnalysisRun.document_id == doc_id)
+        .order_by(DocumentAnalysisRun.created_at.desc())
+    ).first()
+
+
+def _chunk_based_chapters(run: DocumentAnalysisRun) -> list[dict]:
+    """Fallback table of contents built from TEMAT chunk topics.
+
+    Used when the document's text has no markdown H1/H2 headers — the case
+    for YouTube/movie transcripts, which are split into topic chunks
+    (transcript-mode analysis) instead of markdown-structured text.
+    REKLAMA/SZUM chunks are excluded, same as the note-writing workflow.
+    """
+    temat_chunks = [c for c in sorted(run.chunks, key=lambda c: c.position) if c.type == "TEMAT"]
+    return [
+        {
+            "position": i,
+            "level": 1,
+            "title": chunk.topic or f"Fragment {i}",
+            "chunk_id": chunk.id,
+            "length": len(chunk.corrected_text or chunk.original_text or ""),
+        }
+        for i, chunk in enumerate(temat_chunks, start=1)
+    ]
+
+
 @bp.route("/document/<int:doc_id>/chapters", methods=["GET"])
 def document_chapters(doc_id: int):
-    """Detect the document's table of contents (H1/H2 markdown headers).
+    """Detect the document's table of contents.
 
-    Reads the same text an article-mode analysis would (text_md preferred).
-    Chapter positions can be passed as scope_chapter to POST /analyze_chunks
-    or GET /split_preview to analyze a single chapter.
+    Prefers markdown H1/H2 headers (text_md, article-mode analysis). When
+    none are found, falls back to TEMAT chunk topics from the latest
+    analysis run — the only structure transcript-mode documents (YouTube/
+    movie) have. Chapter positions can be passed as scope_chapter to
+    POST /analyze_chunks or GET /split_preview to analyze a single chapter
+    (markdown chapters only — chunk-based chapters aren't a valid scope there).
     """
     from library.document_analysis_service import _extract_text
     from library.text_functions import detect_chapters
@@ -301,7 +333,17 @@ def document_chapters(doc_id: int):
         abort(404, f"Document {doc_id} not found")
 
     text, field = _extract_text(doc, prefer_md=True)
-    if not text:
+    chapters = detect_chapters(text) if text else []
+    source = "markdown" if chapters else "none"
+
+    if not chapters:
+        run = _latest_run_for_document(session, doc_id)
+        if run:
+            chapters = _chunk_based_chapters(run)
+            if chapters:
+                source = "chunks"
+
+    if not text and source == "none":
         return jsonify({"status": "error", "message": "Document has no usable text"}), 400
 
     return jsonify({
@@ -309,15 +351,18 @@ def document_chapters(doc_id: int):
         "doc_id": doc_id,
         "source_field": field,
         "text_length": len(text),
-        "chapters": detect_chapters(text),
+        "chapters": chapters,
+        "chapter_source": source,
     })
 
 
 @bp.route("/document/<int:doc_id>/chapter/<int:position>", methods=["GET"])
 def document_chapter(doc_id: int, position: int):
-    """Return one chapter's markdown text for the reader view (/read/:id).
+    """Return one chapter's text for the reader view (/read/:id).
 
-    Positions are 1-based and match GET /document/<id>/chapters.
+    Positions are 1-based and match GET /document/<id>/chapters — either
+    markdown-header chapters or, as a fallback, TEMAT-chunk chapters (see
+    _chunk_based_chapters).
     """
     from library.document_analysis_service import _extract_text, _slice_chapter
     from library.text_functions import detect_chapters
@@ -328,14 +373,34 @@ def document_chapter(doc_id: int, position: int):
         abort(404, f"Document {doc_id} not found")
 
     text, _field = _extract_text(doc, prefer_md=True)
-    if not text:
-        return jsonify({"status": "error", "message": "Document has no usable text"}), 400
+    md_chapters = detect_chapters(text) if text else []
 
-    chapter_total = len(detect_chapters(text))
-    try:
-        chapter_text, title = _slice_chapter(text, position)
-    except ValueError as exc:
-        return jsonify({"status": "error", "message": str(exc)}), 400
+    if md_chapters:
+        chapter_total = len(md_chapters)
+        try:
+            chapter_text, title = _slice_chapter(text, position)
+        except ValueError as exc:
+            return jsonify({"status": "error", "message": str(exc)}), 400
+    else:
+        run = _latest_run_for_document(session, doc_id)
+        chunk_chapters = _chunk_based_chapters(run) if run else []
+        if not chunk_chapters:
+            return jsonify({
+                "status": "error",
+                "message": "Document has no detectable chapters (no H1/H2 headers, no chunk analysis run)",
+            }), 400
+
+        chapter_total = len(chunk_chapters)
+        match = next((c for c in chunk_chapters if c["position"] == position), None)
+        if match is None:
+            return jsonify({
+                "status": "error",
+                "message": f"scope_chapter {position} out of range (1..{chapter_total})",
+            }), 400
+
+        chunk = next(c for c in run.chunks if c.id == match["chunk_id"])
+        chapter_text = chunk.corrected_text or chunk.original_text or ""
+        title = match["title"]
 
     return jsonify({
         "status": "success",
