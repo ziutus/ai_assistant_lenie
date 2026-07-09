@@ -2,9 +2,9 @@
 # Images pulled from private registry at 192.168.200.7:5005
 #
 # Usage on NAS:
-#   DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
-#   $DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d
-#   $DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml ps
+#   DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+#   $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml up -d
+#   $DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml ps
 
 services:
   lenie-ai-db:
@@ -16,7 +16,7 @@ services:
     environment:
       POSTGRES_PASSWORD: ${NAS_DB_PASSWORD:-postgres}
     volumes:
-      - lenie-ai-db-data:/var/lib/postgresql/data
+      - lenie-ai-db-data:/var/lib/postgresql
     networks:
       - lenie-net
     healthcheck:
@@ -32,7 +32,7 @@ services:
     ports:
       - "5055:5000"
     env_file:
-      - /share/Container/lenie-env/.env
+      - /share/ContainerNew/lenie-env/.env
     volumes:
       - lenie-ai-data:/app/data
     networks:
@@ -64,7 +64,7 @@ services:
     container_name: lenie-ai-slack-bot
     restart: unless-stopped
     env_file:
-      - /share/Container/lenie-env/.env
+      - /share/ContainerNew/lenie-env/.env
     networks:
       - lenie-net
     depends_on:
@@ -78,7 +78,7 @@ services:
       - "9000:9000"   # S3 API
       - "9001:9001"   # Web console
     env_file:
-      - /share/Container/lenie-env/minio.env
+      - /share/ContainerNew/lenie-env/minio.env
     command: server /data --console-address ":9001"
     volumes:
       - lenie-minio-data:/data
@@ -132,11 +132,11 @@ services:
     cap_add:
       - IPC_LOCK
     env_file:
-      - /share/Container/lenie-env/vault.env
+      - /share/ContainerNew/lenie-env/vault.env
     volumes:
-      - /share/vault/config:/vault/config
-      - /share/vault/data:/vault/file
-      - /share/vault/logs:/vault/logs
+      - /share/ContainerNew/vault/config:/vault/config
+      - /share/ContainerNew/vault/data:/vault/file
+      - /share/ContainerNew/vault/logs:/vault/logs
     command: server
     healthcheck:
       test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
@@ -169,7 +169,7 @@ services:
     ports:
       - "8080:8080"
     env_file:
-      - /share/Container/lenie-env/mcp_server.env
+      - /share/ContainerNew/lenie-env/mcp_server.env
     networks:
       - lenie-net
     depends_on:
