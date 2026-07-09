@@ -67,6 +67,11 @@ def split_text_into_sentence_chunks(text: str, max_chars: int) -> list[str]:
     First flattens single newlines to spaces so sentences are not broken by line wrapping,
     then splits on sentence-ending punctuation.
 
+    Sentences within a chunk are joined with '\\n' (one sentence per line) rather than a
+    space — this lets the chunk-review UI's line-based split/delete tools operate at
+    sentence granularity even when the source has no paragraph breaks (see ADR-010 chunk
+    review notes: transcripts without JSON caption segments have no other split point).
+
     Falls back to mid-sentence split only when a single sentence exceeds max_chars.
     """
     flat = re.sub(r'\n(?!\n)', ' ', text)
@@ -81,13 +86,13 @@ def split_text_into_sentence_chunks(text: str, max_chars: int) -> list[str]:
     for sent in sentences:
         if len(sent) > max_chars:
             if current:
-                chunks.append(' '.join(current))
+                chunks.append('\n'.join(current))
                 current = []
                 current_size = 0
             for i in range(0, len(sent), max_chars):
                 chunks.append(sent[i:i + max_chars])
         elif current_size + len(sent) + 1 > max_chars and current:
-            chunks.append(' '.join(current))
+            chunks.append('\n'.join(current))
             current = [sent]
             current_size = len(sent)
         else:
@@ -95,9 +100,9 @@ def split_text_into_sentence_chunks(text: str, max_chars: int) -> list[str]:
             current_size += len(sent) + 1
 
     if current:
-        chunks.append(' '.join(current))
+        chunks.append('\n'.join(current))
 
-    return _merge_small_tail(chunks, max_chars, ' ')
+    return _merge_small_tail(chunks, max_chars, '\n')
 
 
 def split_text_into_chunks(text: str, max_chars: int) -> list[str]:

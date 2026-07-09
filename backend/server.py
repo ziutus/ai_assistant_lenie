@@ -17,6 +17,7 @@ from library.api_key_routes import bp as api_key_bp
 from library.auth import resolve_api_key
 from library.chunk_review_routes import bp as chunk_review_bp
 from library.reader_routes import bp as reader_bp
+from library.youtube_processing import process_youtube_url
 
 logging.basicConfig(level=logging.INFO)
 
@@ -493,6 +494,69 @@ def website_download_text_content():
         "url": url,
         "language": result["language"],
     }), 200
+
+
+# Retry is only safe before a transcript has ever been captured — once a document
+# reaches NEED_MANUAL_REVIEW (or later), process_youtube_url() would overwrite the
+# already-reviewed text on a fresh run.
+_YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES = {
+    StalkerDocumentStatus.TEMPORARY_ERROR.name,
+    StalkerDocumentStatus.URL_ADDED.name,
+    StalkerDocumentStatus.NEED_TRANSCRIPTION.name,
+}
+
+
+@app.route('/website_youtube_retry_captions', methods=['POST'])
+def website_youtube_retry_captions():
+    """Retry downloading YouTube captions for a document stuck in a no-transcript
+    state (e.g. document_state_error=CAPTIONS_FETCH_ERROR)."""
+    doc_id = request.form.get('id')
+    if not doc_id:
+        json_data = request.get_json(silent=True) or {}
+        doc_id = json_data.get('id')
+
+    if not doc_id:
+        return {"status": "error", "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
+
+    try:
+        doc_id_int = int(doc_id)
+    except (ValueError, TypeError):
+        return {"status": "error", "message": "Invalid ID parameter — must be a positive integer"}, 400
+
+    session = get_scoped_session()
+    service = DocumentService(session)
+    doc = service.get_document(doc_id_int)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+
+    if doc.document_type != StalkerDocumentType.youtube.name:
+        return {"status": "error", "message": "Retry captions is only available for YouTube documents"}, 400
+
+    if doc.document_state not in _YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES:
+        return {
+            "status": "error",
+            "message": f"Document is in state '{doc.document_state}' — captions retry is only allowed "
+                       f"before a transcript has been captured ({', '.join(sorted(_YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES))})",
+        }, 409
+
+    webshare_api_key = cfg.get("WEBSHARE_API_KEY")
+    updated = process_youtube_url(
+        session=session,
+        youtube_url=doc.url,
+        language=doc.language,
+        chapter_list=doc.chapter_list,
+        note=doc.note,
+        source=doc.source,
+        webshare_api_key=webshare_api_key,
+    )
+
+    return {
+        "status": "success",
+        "message": "Captions retry finished",
+        "id": updated.id,
+        "document_state": updated.document_state,
+        "document_state_error": updated.document_state_error,
+    }, 200
 
 
 @app.route('/website_text_remove_not_needed', methods=['POST'])

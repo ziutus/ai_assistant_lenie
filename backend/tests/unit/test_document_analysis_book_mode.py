@@ -437,3 +437,91 @@ class TestChaptersFallbackToChunks:
         resp = app.test_client().get("/document/88/chapter/1")
 
         assert resp.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# POST /analysis_run/<id>/extract_speakers
+# ---------------------------------------------------------------------------
+
+
+class TestExtractSpeakers:
+    def _make_client(self, monkeypatch, run, chunks_for_query):
+        fake_session = MagicMock()
+        fake_session.get.side_effect = (
+            lambda model, pk: run if model is DocumentAnalysisRun and pk == run.id else None
+        )
+        fake_session.scalars.return_value = _ScalarsResult(chunks_for_query)
+        monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
+
+        app = flask.Flask(__name__)
+        app.register_blueprint(crr.bp)
+        return app.test_client()
+
+    def test_default_uses_first_three_chunks_by_position(self, monkeypatch):
+        run = MagicMock(spec=DocumentAnalysisRun)
+        run.id, run.model, run.speakers = 10, "m", []
+        chunks = [
+            _make_chunk(id=1, position=1, original_text="Cześć, jestem Jan."),
+            _make_chunk(id=2, position=2, original_text="A ja Anna."),
+            _make_chunk(id=3, position=3, original_text="Zaczynajmy odcinek."),
+        ]
+        captured = {}
+        monkeypatch.setattr(llm, "extract_speaker_info", lambda text, model: (
+            captured.__setitem__("text", text) or [{"name": "Jan", "role": "prowadzący", "description": ""}]
+        ))
+        client = self._make_client(monkeypatch, run, chunks)
+
+        resp = client.post(f"/analysis_run/{run.id}/extract_speakers")
+        data = resp.get_json()
+
+        assert resp.status_code == 200
+        assert data["speakers"] == [{"name": "Jan", "role": "prowadzący", "description": ""}]
+        assert run.speakers == data["speakers"]
+        assert "Cześć, jestem Jan." in captured["text"]
+        assert "Zaczynajmy odcinek." in captured["text"]
+
+    def test_chunk_ids_uses_only_the_specified_chunk(self, monkeypatch):
+        run = MagicMock(spec=DocumentAnalysisRun)
+        run.id, run.model, run.speakers = 11, "m", []
+        target = _make_chunk(id=42, position=5, original_text="Nazywam się Ola, jestem gościem.")
+        captured = {}
+        monkeypatch.setattr(llm, "extract_speaker_info", lambda text, model: (
+            captured.__setitem__("text", text) or [{"name": "Ola", "role": "gość", "description": ""}]
+        ))
+        client = self._make_client(monkeypatch, run, [target])
+
+        resp = client.post(f"/analysis_run/{run.id}/extract_speakers", json={"chunk_ids": [42]})
+        data = resp.get_json()
+
+        assert resp.status_code == 200
+        assert captured["text"] == "Nazywam się Ola, jestem gościem."
+        assert data["speakers"] == [{"name": "Ola", "role": "gość", "description": ""}]
+
+    def test_chunk_ids_not_found_in_run_returns_400(self, monkeypatch):
+        run = MagicMock(spec=DocumentAnalysisRun)
+        run.id, run.model, run.speakers = 12, "m", []
+        client = self._make_client(monkeypatch, run, [])  # query matched nothing
+
+        resp = client.post(f"/analysis_run/{run.id}/extract_speakers", json={"chunk_ids": [999]})
+
+        assert resp.status_code == 400
+
+    def test_chunk_ids_wrong_type_returns_400(self, monkeypatch):
+        run = MagicMock(spec=DocumentAnalysisRun)
+        run.id, run.model, run.speakers = 13, "m", []
+        client = self._make_client(monkeypatch, run, [])
+
+        resp = client.post(f"/analysis_run/{run.id}/extract_speakers", json={"chunk_ids": "not-a-list"})
+
+        assert resp.status_code == 400
+
+    def test_run_not_found_returns_404(self, monkeypatch):
+        fake_session = MagicMock()
+        fake_session.get.return_value = None
+        monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
+        app = flask.Flask(__name__)
+        app.register_blueprint(crr.bp)
+
+        resp = app.test_client().post("/analysis_run/999/extract_speakers")
+
+        assert resp.status_code == 404
