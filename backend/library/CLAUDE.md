@@ -19,7 +19,7 @@ library/
 │   └── asemblyai/    # Speech-to-text transcription (sole provider, ADR-011)
 ├── ai.py             # LLM provider abstraction (routes to api/*)
 ├── embedding.py      # Embedding provider abstraction (routes to api/*)
-├── document_analysis_service.py  # Chunk analysis pipeline: split → LLM rewrite/summarize → topics → synthesis → tagging → DB
+├── document_analysis_service.py  # Chunk analysis pipeline: split (chapter-aware for YouTube) → LLM rewrite/summarize → topics → synthesis → tagging → DB
 ├── chunk_llm_analysis.py         # LLM chunk primitives: speaker extraction, rewrite, summarize
 ├── chunk_review_routes.py        # Flask blueprint: chunk analysis REST API (runs, chunks, topic sections)
 ├── analysis_exports.py           # Analysis run file exports (MD/JSON/debug/HTML) to .claude/exports/
