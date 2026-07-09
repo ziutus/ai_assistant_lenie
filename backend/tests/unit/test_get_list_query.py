@@ -86,3 +86,25 @@ class TestGetListParameterization:
         """Verify non-count mode returns list."""
         result = db_instance.get_list()
         assert isinstance(result, list)
+
+    def test_only_missing_obsidian_notes_filter(self, db_instance, mock_session):
+        """Verify the only_missing_obsidian_notes filter triggers query execution."""
+        result = db_instance.get_list(only_missing_obsidian_notes=True)
+        assert mock_session.execute.called
+        assert isinstance(result, list)
+
+    def test_only_missing_obsidian_notes_filter_count_mode(self, db_instance, mock_session):
+        """Verify the filter also applies in count mode."""
+        result = db_instance.get_list(only_missing_obsidian_notes=True, count=True)
+        assert result == 0
+
+    def test_only_has_obsidian_notes_filter(self, db_instance, mock_session):
+        """Verify the only_has_obsidian_notes filter triggers query execution."""
+        result = db_instance.get_list(only_has_obsidian_notes=True)
+        assert mock_session.execute.called
+        assert isinstance(result, list)
+
+    def test_only_has_obsidian_notes_filter_count_mode(self, db_instance, mock_session):
+        """Verify the filter also applies in count mode."""
+        result = db_instance.get_list(only_has_obsidian_notes=True, count=True)
+        assert result == 0

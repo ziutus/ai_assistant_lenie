@@ -23,7 +23,8 @@ class WebsitesDBPostgreSQL:
 
     def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL",
                  search_in_documents=None, count=False, project=None, ai_summary_needed: bool = None,
-                 start_id=None) -> list[dict[str, Any]]:
+                 start_id=None, only_missing_obsidian_notes: bool = False,
+                 only_has_obsidian_notes: bool = False) -> list[dict[str, Any]]:
 
         if count:
             stmt = select(func.count(WebDocument.id))
@@ -31,7 +32,8 @@ class WebsitesDBPostgreSQL:
             stmt = select(
                 WebDocument.id, WebDocument.url, WebDocument.title, WebDocument.document_type,
                 WebDocument.created_at, WebDocument.document_state, WebDocument.document_state_error,
-                WebDocument.note, WebDocument.project, WebDocument.uuid,
+                WebDocument.note, WebDocument.project, WebDocument.uuid, WebDocument.author,
+                WebDocument.obsidian_note_paths,
             )
 
         # Dynamic filters — column stores enum name strings directly
@@ -61,6 +63,21 @@ class WebsitesDBPostgreSQL:
                 WebDocument.chapter_list.ilike(pattern, escape="\\"),
             ))
 
+        if only_missing_obsidian_notes:
+            stmt = stmt.where(select(DocumentChunk.id).where(
+                DocumentChunk.document_id == WebDocument.id,
+                *self._missing_obsidian_note_chunk_conditions(),
+            ).exists())
+
+        if only_has_obsidian_notes:
+            stmt = stmt.where(or_(
+                func.coalesce(func.jsonb_array_length(WebDocument.obsidian_note_paths), 0) > 0,
+                select(DocumentChunk.id).where(
+                    DocumentChunk.document_id == WebDocument.id,
+                    *self._has_obsidian_note_chunk_conditions(),
+                ).exists(),
+            ))
+
         if count:
             return self.session.execute(stmt).scalar()
 
@@ -68,8 +85,12 @@ class WebsitesDBPostgreSQL:
         stmt = stmt.limit(limit).offset(offset * limit)
 
         rows = self.session.execute(stmt).all()
+        doc_ids = [row.id for row in rows]
+        obsidian_notes_by_doc = self._count_obsidian_note_chunks(doc_ids)
+
         result = []
         for row in rows:
+            missing, with_notes = obsidian_notes_by_doc.get(row.id, (0, 0))
             result.append({
                 "id": row.id,
                 "url": row.url,
@@ -81,8 +102,46 @@ class WebsitesDBPostgreSQL:
                 "note": row.note,
                 "project": row.project,
                 "uuid": row.uuid,
+                "author": row.author,
+                "obsidian_note_paths": row.obsidian_note_paths or [],
+                "chunks_missing_obsidian_notes": missing,
+                "chunks_with_obsidian_notes": with_notes,
             })
         return result
+
+    @staticmethod
+    def _missing_obsidian_note_chunk_conditions():
+        """TEMAT chunks that still need an Obsidian note: not skipped, no note path recorded yet."""
+        return (
+            DocumentChunk.type == "TEMAT",
+            DocumentChunk.status != "skipped",
+            func.coalesce(func.array_length(DocumentChunk.obsidian_note_paths, 1), 0) == 0,
+        )
+
+    @staticmethod
+    def _has_obsidian_note_chunk_conditions():
+        """TEMAT chunks that already have at least one Obsidian note recorded."""
+        return (
+            DocumentChunk.type == "TEMAT",
+            func.coalesce(func.array_length(DocumentChunk.obsidian_note_paths, 1), 0) > 0,
+        )
+
+    def _count_obsidian_note_chunks(self, doc_ids: list[int]) -> dict[int, tuple[int, int]]:
+        """Batch (missing, with_notes) TEMAT chunk counts per document_id."""
+        if not doc_ids:
+            return {}
+        missing_condition = and_(*self._missing_obsidian_note_chunk_conditions())
+        with_notes_condition = and_(*self._has_obsidian_note_chunk_conditions())
+        stmt = (
+            select(
+                DocumentChunk.document_id,
+                func.count().filter(missing_condition).label("missing"),
+                func.count().filter(with_notes_condition).label("with_notes"),
+            )
+            .where(DocumentChunk.document_id.in_(doc_ids), DocumentChunk.type == "TEMAT")
+            .group_by(DocumentChunk.document_id)
+        )
+        return {doc_id: (missing, with_notes) for doc_id, missing, with_notes in self.session.execute(stmt).all()}
 
     def get_count(self, document_type: str = "ALL") -> int:
         stmt = select(func.count(WebDocument.id))

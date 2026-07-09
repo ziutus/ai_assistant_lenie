@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { AuthorizationContext } from "../context/authorizationContext";
-import { saveConnectionConfig } from "../services/storage";
+import { loadObsidianVaultName, saveConnectionConfig, saveObsidianVaultName } from "../services/storage";
 import type { ApiType } from "../../../types";
 import { DEFAULT_API_URLS } from "../../../types";
 import { lenie_version } from "../constants/variables";
@@ -19,6 +19,15 @@ const Connect: React.FC = () => {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState("");
+
+  const [obsidianVaultName, setObsidianVaultName] = useState(loadObsidianVaultName());
+  const [obsidianSaved, setObsidianSaved] = useState(false);
+
+  const handleSaveObsidianVaultName = () => {
+    saveObsidianVaultName(obsidianVaultName);
+    setObsidianSaved(true);
+    setTimeout(() => setObsidianSaved(false), 2000);
+  };
 
   const handleApiTypeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const newType = e.target.value as ApiType;
@@ -175,6 +184,34 @@ const Connect: React.FC = () => {
         {isValidating ? "Connecting..." : "Connect"}
       </button>
       {isValidating && <div className="loader" style={{ marginTop: "10px" }}></div>}
+
+      <hr style={{ margin: "30px 0", border: "none", borderTop: "1px solid #dee2e6" }} />
+
+      <h3 style={{ marginBottom: "4px" }}>Obsidian</h3>
+      <div style={{ fontSize: "12px", color: "#6c757d", marginBottom: "12px" }}>
+        Nazwa vaulta na tym urządzeniu, używana w linkach 📝 do notatek (Obsidian Sync może mieć
+        inną nazwę vaulta na każdym urządzeniu). Zostaw puste, aby otwierać ostatnio używany vault.
+      </div>
+      <label htmlFor="connect-obsidian-vault" style={{ display: "block", marginBottom: "4px", fontWeight: 500 }}>
+        Nazwa vaulta (to urządzenie)
+      </label>
+      <div style={{ display: "flex", gap: "8px" }}>
+        <input
+          id="connect-obsidian-vault"
+          type="text"
+          value={obsidianVaultName}
+          onChange={(e) => setObsidianVaultName(e.target.value)}
+          placeholder="np. personal"
+          style={{ flex: 1, padding: "8px", fontSize: "14px" }}
+        />
+        <button
+          type="button"
+          onClick={handleSaveObsidianVaultName}
+          style={{ padding: "8px 12px", fontSize: "14px", cursor: "pointer" }}
+        >
+          {obsidianSaved ? "Zapisano ✓" : "Zapisz"}
+        </button>
+      </div>
     </div>
   );
 };
