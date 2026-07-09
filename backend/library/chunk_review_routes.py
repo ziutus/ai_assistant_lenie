@@ -237,8 +237,8 @@ def split_preview(doc_id: int):
     scope_chapter (1-based chapter position — article mode only).
     Transcript sizes are approximate (speaker labeling happens only in a real run).
     """
-    from library.document_analysis_service import ANALYSIS_MODES, _extract_text, _slice_chapter
-    from library.text_functions import split_markdown_into_chunks, split_text_into_sentence_chunks
+    from library.document_analysis_service import ANALYSIS_MODES, _extract_text
+    from library.text_functions import detect_chapters, split_markdown_into_chunks, split_text_into_sentence_chunks
 
     mode = request.args.get("mode", "article")
     chunk_size = request.args.get("chunk_size", 5000, type=int)
@@ -262,10 +262,20 @@ def split_preview(doc_id: int):
     scope_title = None
     if mode == "article":
         if scope_chapter is not None:
-            try:
-                text, scope_title = _slice_chapter(text, scope_chapter)
-            except ValueError as exc:
-                return jsonify({"status": "error", "message": str(exc)}), 400
+            chapters = detect_chapters(text)
+            if not chapters:
+                return jsonify({
+                    "status": "error",
+                    "message": "Document has no detectable chapters (H1/H2 headers)",
+                }), 400
+            match = next((c for c in chapters if c["position"] == scope_chapter), None)
+            if match is None:
+                return jsonify({
+                    "status": "error",
+                    "message": f"scope_chapter {scope_chapter} out of range (1..{len(chapters)})",
+                }), 400
+            text = text[match["char_start"]:match["char_end"]].strip()
+            scope_title = match["title"]
         parts = split_markdown_into_chunks(text, chunk_size)
     else:
         from library.chunk_llm_analysis import remove_speech_fillers
@@ -364,7 +374,7 @@ def document_chapter(doc_id: int, position: int):
     markdown-header chapters or, as a fallback, TEMAT-chunk chapters (see
     _chunk_based_chapters).
     """
-    from library.document_analysis_service import _extract_text, _slice_chapter
+    from library.document_analysis_service import _extract_text
     from library.text_functions import detect_chapters
 
     session = get_scoped_session()
@@ -377,10 +387,14 @@ def document_chapter(doc_id: int, position: int):
 
     if md_chapters:
         chapter_total = len(md_chapters)
-        try:
-            chapter_text, title = _slice_chapter(text, position)
-        except ValueError as exc:
-            return jsonify({"status": "error", "message": str(exc)}), 400
+        match = next((c for c in md_chapters if c["position"] == position), None)
+        if match is None:
+            return jsonify({
+                "status": "error",
+                "message": f"position {position} out of range (1..{chapter_total})",
+            }), 400
+        chapter_text = text[match["char_start"]:match["char_end"]].strip()
+        title = match["title"]
     else:
         run = _latest_run_for_document(session, doc_id)
         chunk_chapters = _chunk_based_chapters(run) if run else []
