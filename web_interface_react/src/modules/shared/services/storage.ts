@@ -5,6 +5,7 @@ const KEYS = {
   apiType: "lenie_apiType",
   apiUrl: "lenie_apiUrl",
   apiKey: "lenie_apiKey",
+  obsidianVaultName: "lenie_obsidianVaultName",
 } as const;
 
 export function loadConnectionConfig(): {
@@ -41,4 +42,19 @@ export function clearConnectionConfig(): void {
 
 export function isConnected(): boolean {
   return !!localStorage.getItem(KEYS.apiKey);
+}
+
+// The Obsidian vault name is device-specific (e.g. Obsidian Sync uses a
+// different display name per device for the same synced vault), so it's
+// stored locally per browser/device rather than coming from the backend.
+export function loadObsidianVaultName(): string {
+  return localStorage.getItem(KEYS.obsidianVaultName) || "";
+}
+
+export function saveObsidianVaultName(vaultName: string): void {
+  if (vaultName.trim()) {
+    localStorage.setItem(KEYS.obsidianVaultName, vaultName.trim());
+  } else {
+    localStorage.removeItem(KEYS.obsidianVaultName);
+  }
 }

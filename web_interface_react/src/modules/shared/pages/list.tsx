@@ -5,6 +5,7 @@ import { NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { useManageLLM } from "../hooks/useManageLLM";
 import { useFormik } from 'formik';
+import { buildObsidianNoteUrl } from "../utils/obsidian";
 
 const List = () => {
     const { isLoading, isError, data, message, handleGetList, dataAllLength } = useList();
@@ -21,17 +22,29 @@ const List = () => {
   const { selectedDocumentType, setSelectedDocumentType, selectedDocumentState, setSelectedDocumentState } = React.useContext(AuthorizationContext);
   const { searchInDocument, setSearchInDocument} = React.useContext(AuthorizationContext);
   const { searchType, setSearchType} = React.useContext(AuthorizationContext);
+  const [obsidianFilter, setObsidianFilter] = React.useState<"none" | "missing" | "has">("none");
+
+  const obsidianFilterParams = (filter: "none" | "missing" | "has") => ({
+    onlyMissing: filter === "missing",
+    onlyHas: filter === "has",
+  });
 
   const { handleDeleteDocument } = useManageLLM({ formik, selectedDocumentType, selectedDocumentState });
 
   const handleTypeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
           setSelectedDocumentType(event.target.value);
-          handleGetList(event.target.value, selectedDocumentState,searchInDocument);
+          handleGetList(event.target.value, selectedDocumentState, searchInDocument, obsidianFilterParams(obsidianFilter));
   };
 
   const handleDocumentStateChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
           setSelectedDocumentState(event.target.value);
-          handleGetList(selectedDocumentType, event.target.value,searchInDocument);
+          handleGetList(selectedDocumentType, event.target.value, searchInDocument, obsidianFilterParams(obsidianFilter));
+  };
+
+  const handleObsidianFilterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+          const filter = event.target.value as "none" | "missing" | "has";
+          setObsidianFilter(filter);
+          handleGetList(selectedDocumentType, selectedDocumentState, searchInDocument, obsidianFilterParams(filter));
   };
 
   const handleDocumentDeleteOnThisPage = async (document_id: string | number) => {
@@ -95,10 +108,17 @@ const List = () => {
         disabled={isLoading}
         className={"button"}
         type={"button"}
-        onClick={() => handleGetList(selectedDocumentType, selectedDocumentState, searchInDocument)}
+        onClick={() => handleGetList(selectedDocumentType, selectedDocumentState, searchInDocument, obsidianFilterParams(obsidianFilter))}
       >
         Search
       </button>
+      <br />
+      <label htmlFor="obsidian_filter"> 📝 Notatki Obsidian: </label>
+      <select id="obsidian_filter" value={obsidianFilter} onChange={handleObsidianFilterChange} disabled={isLoading}>
+        <option value="none">wszystkie</option>
+        <option value="missing">tylko z brakującymi</option>
+        <option value="has">tylko z notatką</option>
+      </select>
       <div>
         <p className={"errorText"}>{message}</p>
       </div>
@@ -120,6 +140,9 @@ const List = () => {
             >
               {item.id}&nbsp;&nbsp;|&nbsp;&nbsp;
               {item.title} &nbsp;
+              {item.author && (
+                <span style={{ color: "#6c757d", fontStyle: "italic" }}>({item.author}) </span>
+              )}
               <a
                 href={item.url}
                 style={{ color: "rgba(0,122,255)" }}
@@ -131,6 +154,35 @@ const List = () => {
               <span> {item.document_state}
                 {item.document_state_error !== 'NONE' && ` | ${item.document_state_error}`}
               </span>
+              {!!item.obsidian_note_paths?.length && (
+                <span style={{ margin: "0 0 0 10px", color: "#15803d" }}>
+                  📝{" "}
+                  {item.obsidian_note_paths.map((notePath: string, i: number) => (
+                    <React.Fragment key={notePath}>
+                      {i > 0 && ", "}
+                      <a href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>
+                        {notePath.split("/").pop()?.replace(/\.md$/i, "")}
+                      </a>
+                    </React.Fragment>
+                  ))}
+                </span>
+              )}
+              {!!item.chunks_with_obsidian_notes && (
+                <span
+                  style={{ margin: "0 0 0 10px", color: "#15803d" }}
+                  title="Chunki TEMAT z notatką Obsidian"
+                >
+                  📝 {item.chunks_with_obsidian_notes} gotowe
+                </span>
+              )}
+              {!!item.chunks_missing_obsidian_notes && (
+                <span
+                  style={{ margin: "0 0 0 10px", color: "#7c3aed" }}
+                  title="Chunki TEMAT bez notatki Obsidian"
+                >
+                  📝 {item.chunks_missing_obsidian_notes} do zrobienia
+                </span>
+              )}
               <span style={{ margin: "0 0 0 auto", fontWeight: "500" }}>
                 {item.document_type}
               </span>

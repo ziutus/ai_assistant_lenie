@@ -78,8 +78,12 @@ class TestGetList:
         mock_row.note = "note"
         mock_row.project = "lenie"
         mock_row.uuid = "uuid-1"
+        mock_row.author = None
+        mock_row.obsidian_note_paths = None
 
-        session.execute.return_value.all.return_value = [mock_row]
+        list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
+        missing_notes_result = MagicMock(all=MagicMock(return_value=[]))
+        session.execute.side_effect = [list_result, missing_notes_result]
 
         result = repo.get_list()
 
@@ -94,6 +98,46 @@ class TestGetList:
         assert result[0]["note"] == "note"
         assert result[0]["project"] == "lenie"
         assert result[0]["uuid"] == "uuid-1"
+        assert result[0]["chunks_missing_obsidian_notes"] == 0
+        assert result[0]["chunks_with_obsidian_notes"] == 0
+
+    def test_obsidian_notes_counts_are_attached_per_document(self):
+        session = MagicMock()
+        repo = _make_repo(session)
+
+        mock_row = _make_row(
+            id=1, url="https://example.com", title="Test", document_type="webpage",
+            created_at=datetime.datetime(2026, 1, 15, 10, 30, 0), document_state="URL_ADDED",
+            document_state_error=None, note=None, project=None, uuid=None, author=None,
+            obsidian_note_paths=None,
+        )
+        list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
+        missing_notes_result = MagicMock(all=MagicMock(return_value=[(1, 3, 2)]))
+        session.execute.side_effect = [list_result, missing_notes_result]
+
+        result = repo.get_list()
+
+        assert result[0]["chunks_missing_obsidian_notes"] == 3
+        assert result[0]["chunks_with_obsidian_notes"] == 2
+
+    def test_document_level_obsidian_note_paths_pass_through(self):
+        """web_documents.obsidian_note_paths (set by article_browser.py) must also surface."""
+        session = MagicMock()
+        repo = _make_repo(session)
+
+        mock_row = _make_row(
+            id=1, url="https://example.com", title="Test", document_type="webpage",
+            created_at=datetime.datetime(2026, 1, 15, 10, 30, 0), document_state="URL_ADDED",
+            document_state_error=None, note=None, project=None, uuid=None, author=None,
+            obsidian_note_paths=["02-wiedza/Kraje/Chiny.md"],
+        )
+        list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
+        missing_notes_result = MagicMock(all=MagicMock(return_value=[]))
+        session.execute.side_effect = [list_result, missing_notes_result]
+
+        result = repo.get_list()
+
+        assert result[0]["obsidian_note_paths"] == ["02-wiedza/Kraje/Chiny.md"]
 
     def test_single_filter_document_type(self):
         session = MagicMock()
@@ -199,7 +243,9 @@ class TestGetList:
         mock_row.project = None
         mock_row.uuid = None
 
-        session.execute.return_value.all.return_value = [mock_row]
+        list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
+        missing_notes_result = MagicMock(all=MagicMock(return_value=[]))
+        session.execute.side_effect = [list_result, missing_notes_result]
 
         result = repo.get_list()
 
