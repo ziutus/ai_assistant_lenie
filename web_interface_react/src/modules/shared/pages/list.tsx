@@ -23,6 +23,15 @@ const List = () => {
   const { searchInDocument, setSearchInDocument} = React.useContext(AuthorizationContext);
   const { searchType, setSearchType} = React.useContext(AuthorizationContext);
   const [obsidianFilter, setObsidianFilter] = React.useState<"none" | "missing" | "has">("none");
+  const [expandedObsidian, setExpandedObsidian] = React.useState<Set<number>>(new Set());
+
+  const toggleObsidianExpanded = (id: number) => {
+    setExpandedObsidian(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
 
   const obsidianFilterParams = (filter: "none" | "missing" | "has") => ({
     onlyMissing: filter === "missing",
@@ -51,6 +60,29 @@ const List = () => {
     console.log("handleDocumentDeleteOnThisPage, page id: " + document_id);
     await handleDeleteDocument(String(document_id));
     handleGetList(selectedDocumentType, selectedDocumentState);
+  };
+
+  // Single compact indicator for the row — details (links, counts) live in an
+  // expandable panel instead of cluttering the main line with several badges.
+  const obsidianSummary = (item: any) => {
+    const hasDocNotes = !!item.obsidian_note_paths?.length;
+    const hasChunkNotes = !!item.chunks_with_obsidian_notes;
+    const hasTodo = !!item.chunks_missing_obsidian_notes;
+    if (!hasDocNotes && !hasChunkNotes && !hasTodo) return null;
+
+    let label: string;
+    let color: string;
+    if (hasTodo && !hasDocNotes && !hasChunkNotes) {
+      label = `📝 ${item.chunks_missing_obsidian_notes} do zrobienia`;
+      color = "#7c3aed";
+    } else if (hasTodo) {
+      label = "📝 częściowo opracowane";
+      color = "#b45309";
+    } else {
+      label = "📝 notatka";
+      color = "#15803d";
+    }
+    return { label, color };
   };
 
   return (
@@ -128,16 +160,19 @@ const List = () => {
       )}
       <ul>
         {data &&
-          data.map((item: any) => (
+          data.map((item: any) => {
+            const obsidian = obsidianSummary(item);
+            const isExpanded = expandedObsidian.has(item.id);
+            return (
             <li
               key={item.id}
-              className={"flexBox"}
               style={{
                 marginBottom: "7px",
                 paddingBottom: "7px",
                 borderBottom: "1px solid rgb(179, 179, 179)",
               }}
             >
+            <div className={"flexBox"}>
               {item.id}&nbsp;&nbsp;|&nbsp;&nbsp;
               {item.title} &nbsp;
               {item.author && (
@@ -154,33 +189,13 @@ const List = () => {
               <span> {item.document_state}
                 {item.document_state_error !== 'NONE' && ` | ${item.document_state_error}`}
               </span>
-              {!!item.obsidian_note_paths?.length && (
-                <span style={{ margin: "0 0 0 10px", color: "#15803d" }}>
-                  📝{" "}
-                  {item.obsidian_note_paths.map((notePath: string, i: number) => (
-                    <React.Fragment key={notePath}>
-                      {i > 0 && ", "}
-                      <a href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>
-                        {notePath.split("/").pop()?.replace(/\.md$/i, "")}
-                      </a>
-                    </React.Fragment>
-                  ))}
-                </span>
-              )}
-              {!!item.chunks_with_obsidian_notes && (
+              {obsidian && (
                 <span
-                  style={{ margin: "0 0 0 10px", color: "#15803d" }}
-                  title="Chunki TEMAT z notatką Obsidian"
+                  onClick={() => toggleObsidianExpanded(item.id)}
+                  style={{ margin: "0 0 0 10px", color: obsidian.color, cursor: "pointer", fontWeight: 500 }}
+                  title="Kliknij, aby zobaczyć szczegóły notatek Obsidian"
                 >
-                  📝 {item.chunks_with_obsidian_notes} gotowe
-                </span>
-              )}
-              {!!item.chunks_missing_obsidian_notes && (
-                <span
-                  style={{ margin: "0 0 0 10px", color: "#7c3aed" }}
-                  title="Chunki TEMAT bez notatki Obsidian"
-                >
-                  📝 {item.chunks_missing_obsidian_notes} do zrobienia
+                  {obsidian.label} {isExpanded ? "▾" : "▸"}
                 </span>
               )}
               <span style={{ margin: "0 0 0 auto", fontWeight: "500" }}>
@@ -221,8 +236,35 @@ const List = () => {
               >
                 Delete
               </button>
+            </div>
+            {isExpanded && obsidian && (
+              <div style={{ marginTop: 6, paddingLeft: 20, fontSize: "0.85em", color: "#475569" }}>
+                {!!item.obsidian_note_paths?.length && (
+                  <div>
+                    Notatka dokumentu:{" "}
+                    {item.obsidian_note_paths.map((notePath: string, i: number) => (
+                      <React.Fragment key={notePath}>
+                        {i > 0 && ", "}
+                        <a href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>
+                          {notePath.split("/").pop()?.replace(/\.md$/i, "")}
+                        </a>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+                {(!!item.chunks_with_obsidian_notes || !!item.chunks_missing_obsidian_notes) && (
+                  <div>
+                    Chunki: {item.chunks_with_obsidian_notes || 0} gotowych, {item.chunks_missing_obsidian_notes || 0} do zrobienia —{" "}
+                    <NavLink to={`/chunks/${item.id}`} state={{ docType: item.document_type }}>
+                      przejdź do przeglądu chunków
+                    </NavLink>
+                  </div>
+                )}
+              </div>
+            )}
             </li>
-          ))}
+            );
+          })}
       </ul>
     </div>
   );
