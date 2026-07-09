@@ -116,6 +116,10 @@ const Layout = ({ children }: LayoutProps) => {
                 &#9776;
             </button>
             <SideNavigation isMenuOpen={isMenuOpen} toggleMenu={toggleMenu} />
+            <div
+                className={`${classes.scrim} ${isMenuOpen ? classes.scrimOpen : ""}`}
+                onClick={() => setIsMenuOpen(false)}
+            />
             <div className={classes.content}>{children}</div>
         </main>
     );
