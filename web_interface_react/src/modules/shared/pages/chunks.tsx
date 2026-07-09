@@ -112,6 +112,12 @@ const MODELS = [
 const STATUS_CYCLE = ["pending", "approved", "needs_reanalysis"] as const;
 const TYPE_CYCLE: ChunkType[] = ["TEMAT", "REKLAMA", "SZUM"];
 
+// Speaker self-introductions are expected near the start of a transcript, so the
+// per-chunk "detect speakers from just this chunk" button only appears on the
+// first few chunks — matches the backend default (first 3 chunks) with some
+// slack for reviewers who split the intro out into a later position.
+const SPEAKER_DETECT_CHUNK_LIMIT = 5;
+
 // Runs bigger than this are fetched lite (no chunk texts) and browsed through
 // the section accordion (books); flat runs without sections get paged instead.
 const SECTION_VIEW_THRESHOLD = 30;
@@ -360,6 +366,7 @@ const Chunks = () => {
   const [confirmingLineSplit, setConfirmingLineSplit] = React.useState<Record<number, boolean>>({});
   const [confirmingSplit, setConfirmingSplit] = React.useState<Record<number, boolean>>({});
   const [extractingSpeakers, setExtractingSpeakers] = React.useState(false);
+  const [extractingSpeakerFor, setExtractingSpeakerFor] = React.useState<number | null>(null);
   const [runStatus, setRunStatus] = React.useState("created");
   const [synthesis, setSynthesis] = React.useState("");
   const [synthesisOpen, setSynthesisOpen] = React.useState(false);
@@ -914,6 +921,24 @@ const Chunks = () => {
     finally { setExtractingSpeakers(false); }
   };
 
+  // Detect speakers from one specific chunk only — useful when the reviewer has
+  // already split out just the self-introductions, so the surrounding chunks
+  // (chit-chat, sponsor reads) don't need to be sent to the LLM too.
+  const extractSpeakersFromChunk = async (chunkId: number) => {
+    if (!selectedRun) return;
+    setExtractingSpeakerFor(chunkId);
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}/extract_speakers`, {
+        method: "POST", headers,
+        body: JSON.stringify({ chunk_ids: [chunkId] }),
+      });
+      const data = await r.json();
+      if (data.status === "success") setSpeakers(data.speakers ?? []);
+      else setError("Błąd wykrywania rozmówców: " + (data.message ?? ""));
+    } catch { setError("Błąd połączenia przy wykrywaniu rozmówców"); }
+    finally { setExtractingSpeakerFor(null); }
+  };
+
   // ── Embeddings ──
 
   const pollEmbeddingJob = React.useCallback((jid: string) => {
@@ -1128,6 +1153,16 @@ const Chunks = () => {
                 <button onClick={() => setShowCorrected(prev => ({ ...prev, [chunk.id]: !prev[chunk.id] }))}
                   style={{ padding: "2px 9px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em" }}>
                   {isCorrectedView ? "Surowy" : "Poprawiony"}
+                </button>
+              )}
+              {runMode === "transcript" && chunk.position <= SPEAKER_DETECT_CHUNK_LIMIT && (
+                <button
+                  onClick={() => extractSpeakersFromChunk(chunk.id)}
+                  disabled={extractingSpeakerFor === chunk.id}
+                  title="Wykryj rozmówców tylko z tego chunka (np. gdy przedstawienie się zostało wydzielone do osobnego chunka)"
+                  style={{ padding: "2px 8px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em", color: "#64748b" }}
+                >
+                  {extractingSpeakerFor === chunk.id ? "🎙 Wykrywam…" : "🎙 Wykryj"}
                 </button>
               )}
               {chunk.position < maxPosition && (
