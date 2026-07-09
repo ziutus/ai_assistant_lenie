@@ -834,22 +834,40 @@ def get_embedding_job(job_id: str):
 
 @bp.route("/analysis_run/<int:run_id>/extract_speakers", methods=["POST"])
 def extract_speakers(run_id: int):
-    """Extract speaker names from the first few chunks using LLM.
+    """Extract speaker names from a few chunks using LLM.
 
-    Uses the intro text (first 3 chunks' original_text) where participants
-    typically introduce themselves. Saves result to run.speakers.
+    By default uses the intro text (first 3 chunks' original_text, ordered by
+    position) where participants typically introduce themselves. Pass
+    chunk_ids (JSON body) to use specific chunk(s) instead — e.g. a single
+    chunk the reviewer has manually split out to contain just the
+    self-introductions, so detection doesn't need the surrounding chunks.
+    Saves result to run.speakers.
     """
     session = get_scoped_session()
     run = session.get(DocumentAnalysisRun, run_id)
     if run is None:
         abort(404, f"Run {run_id} not found")
 
-    intro_chunks = session.scalars(
-        select(DocumentChunk)
-        .where(DocumentChunk.run_id == run_id)
-        .order_by(DocumentChunk.position)
-        .limit(3)
-    ).all()
+    data = request.get_json(silent=True) or {}
+    chunk_ids = data.get("chunk_ids")
+
+    if chunk_ids:
+        if not isinstance(chunk_ids, list) or not all(isinstance(i, int) for i in chunk_ids):
+            return jsonify({"status": "error", "message": "chunk_ids must be a list of integers"}), 400
+        intro_chunks = session.scalars(
+            select(DocumentChunk)
+            .where(DocumentChunk.run_id == run_id, DocumentChunk.id.in_(chunk_ids))
+            .order_by(DocumentChunk.position)
+        ).all()
+        if len(intro_chunks) != len(set(chunk_ids)):
+            return jsonify({"status": "error", "message": "One or more chunk_ids not found in this run"}), 400
+    else:
+        intro_chunks = session.scalars(
+            select(DocumentChunk)
+            .where(DocumentChunk.run_id == run_id)
+            .order_by(DocumentChunk.position)
+            .limit(3)
+        ).all()
 
     intro_text = "\n\n".join(
         c.corrected_text or c.original_text or ""
@@ -857,7 +875,7 @@ def extract_speakers(run_id: int):
     ).strip()
 
     if not intro_text:
-        return jsonify({"status": "error", "message": "No text in first chunks"}), 400
+        return jsonify({"status": "error", "message": "No text in selected chunks"}), 400
 
     try:
         from library.chunk_llm_analysis import extract_speaker_info
