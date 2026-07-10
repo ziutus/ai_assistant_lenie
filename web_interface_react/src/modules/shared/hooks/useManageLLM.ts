@@ -319,49 +319,6 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     }
   };
 
-  const handleSplitTextForEmbedding = async (website: any) => {
-    setIsLoading(true);
-    try {
-      const response = await axios.post(
-        `${apiUrl}/website_split_for_embedding`,
-        {
-          chapter_list: website.chapter_list,
-          text: `${website.text}`,
-        },
-        {
-          headers: {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "x-api-key": `${apiKey}`,
-          },
-        },
-      );
-      formik.setFormikState({
-        values: { ...formik.values, text: response.data.text },
-      });
-      setIsLoading(false);
-      setIsError(false);
-      console.log("end of handleSplitTextForEmbedding");
-    } catch (error: any) {
-      console.error(
-        "There was an error on handleSplitTextForEmbedding!",
-        error,
-      );
-      let message = error.message;
-      if (
-        error.response &&
-        error.response.status &&
-        error.response.status === 400
-      ) {
-        message += " Check your API key first";
-      }
-      setMessage(
-        `There was an error on handleSplitTextForEmbedding: ${message}`,
-      );
-      setIsError(true);
-      setIsLoading(false);
-    }
-  };
-
   const handleRemoveNotNeededText = async (website: any) => {
     setIsLoading(true);
     try {
@@ -536,7 +493,6 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     handleSaveWebsiteToCorrect,
     handleGetLinkByID,
     handleGetEntryToReview,
-    handleSplitTextForEmbedding,
     handleRemoveNotNeededText,
     handleDeleteDocumentNext,
     handleDeleteDocument,

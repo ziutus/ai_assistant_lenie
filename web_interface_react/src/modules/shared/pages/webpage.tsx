@@ -51,7 +51,6 @@ const Webpage = () => {
     handleSaveWebsiteToCorrect,
     handleGetLinkByID,
     handleGetEntryToReview,
-    handleSplitTextForEmbedding,
     handleRemoveNotNeededText
   } = useManageLLM({
     formik, selectedDocumentType, selectedDocumentState
@@ -82,7 +81,6 @@ const Webpage = () => {
         />
         <InputsForAllExceptLink
           formik={formik}
-          handleSplitTextForEmbedding={handleSplitTextForEmbedding}
           isLoading={isLoading}
           handleRemoveNotNeededText={handleRemoveNotNeededText}
           showCleanText

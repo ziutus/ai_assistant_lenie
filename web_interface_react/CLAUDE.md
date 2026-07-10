@@ -130,7 +130,7 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 
 | Hook | Purpose | Key API Endpoints |
 |------|---------|-------------------|
-| `useManageLLM` | Document CRUD, AI processing (split, clean) | `/website_get`, `/website_save`, `/website_delete`, `/website_download_text_content`, `/website_split_for_embedding`, `/website_text_remove_not_needed` |
+| `useManageLLM` | Document CRUD, AI processing (clean) | `/website_get` (response includes `embeddings_count` + `approved_chunks_count` shown in the editor stats line), `/website_save`, `/website_delete`, `/website_download_text_content`, `/website_text_remove_not_needed` |
 | `useList` | Fetch document list with filters | `/website_list` |
 | `useSearch` | Vector similarity search | `/ai_embedding_get` + `/website_similar` (AWS) or `/website_similar` only (Docker) |
 | `useFileSubmit` | Image upload | Separate AWS endpoint |
