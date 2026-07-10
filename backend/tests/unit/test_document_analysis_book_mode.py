@@ -37,6 +37,8 @@ class FakeBookDoc:
     text_md = BOOK_TEXT
     text_raw = None
     tags = "geopolityka,kraj-polska,kraj-niemcy"
+    document_type = "text"
+    url = None
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +415,7 @@ class FakeTranscriptDoc:
     text_raw = None
     document_type = "youtube"
     tags = None
+    url = None
 
 
 @pytest.fixture

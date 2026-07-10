@@ -1,11 +1,12 @@
 import React from "react";
 import axios from "axios";
+import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
 
 // NER entities detected in the document (backend: GET/POST /website_entities,
 // table document_entities — see docs/ner-integration-plan.md).
 
-interface EntityItem {
+export interface EntityItem {
   text: string;
   count: number;
   // Stage-3 place verification (geogName/placeName only): absent = not checked,
@@ -38,7 +39,16 @@ const chipStyle: React.CSSProperties = {
   fontSize: "0.85em",
 };
 
-const EntityChips = ({ label, items }: { label: string; items: EntityItem[] }) => {
+export const EntityChips = ({
+  label,
+  items,
+  linkPersons,
+}: {
+  label: string;
+  items: EntityItem[];
+  // Resolved persons (person_id) become links to /persons/:id — used by the reader view.
+  linkPersons?: boolean;
+}) => {
   if (!items.length) {
     return null;
   }
@@ -52,7 +62,7 @@ const EntityChips = ({ label, items }: { label: string; items: EntityItem[] }) =
               .filter(Boolean)
               .join(" | ")
           : undefined;
-        return (
+        const chip = (
           <span
             key={item.text}
             style={{
@@ -73,6 +83,14 @@ const EntityChips = ({ label, items }: { label: string; items: EntityItem[] }) =
             {item.count > 1 && <span style={{ color: "#667" }}> ×{item.count}</span>}
           </span>
         );
+        if (linkPersons && isResolvedPerson) {
+          return (
+            <Link key={item.text} to={`/persons/${item.person_id}`} style={{ textDecoration: "none" }}>
+              {chip}
+            </Link>
+          );
+        }
+        return chip;
       })}
     </div>
   );
