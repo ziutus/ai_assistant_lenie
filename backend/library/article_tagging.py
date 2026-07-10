@@ -114,6 +114,41 @@ def confirm_places_with_llm(text: str, title: str, candidate_names: list[str]) -
         return []
 
 
+def confirm_person_with_llm(text: str, title: str, mention: str, candidates: list[dict]) -> str | None:
+    """Wybierz, który kandydat z Wikidaty to osoba wspomniana w artykule.
+
+    Kandydaci: [{"qid", "label", "description"}, ...] — opis (zawód/funkcja)
+    jest kontekstem do disambiguacji (np. Donald Tusk polityk vs jego ojciec).
+    LLM dostaje zamkniętą listę i może odpowiedzieć NONE — wtedy None (osoba
+    z artykułu to ktoś inny niż wszyscy kandydaci). Zwraca QID lub None.
+    """
+    from library.ai import ai_ask
+
+    if not candidates:
+        return None
+
+    listing = "\n".join(f"{c['qid']}: {c['label']} — {c['description'] or 'brak opisu'}" for c in candidates)
+    prompt = (
+        f'Przeczytaj poniższy artykuł. W artykule wspomniana jest osoba "{mention}".\n'
+        f"Z listy kandydatów wybierz tego, o którym faktycznie mowa w artykule.\n\n"
+        f"Kandydaci:\n{listing}\n\n"
+        f"Zwróć TYLKO identyfikator wybranego kandydata (np. Q946), bez wyjaśnień.\n"
+        f"Jeśli żaden kandydat nie pasuje do kontekstu artykułu, zwróć NONE.\n\n"
+        f"TYTUŁ: {title}\n\nTREŚĆ:\n{text[:3000]}"
+    )
+    try:
+        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=20)
+        raw = response.response_text.strip().upper()
+        valid = {c["qid"] for c in candidates}
+        for token in re.findall(r"Q\d+", raw):
+            if token in valid:
+                return token
+        return None
+    except Exception as e:
+        print(f"  OSTRZEŻENIE: disambiguacja osoby nie powiodła się: {e}")
+        return None
+
+
 def extract_countries_hybrid(text: str, title: str) -> list[str]:
     """Wykryj kraje: najpierw gazetteer (bez LLM), potem LLM potwierdza kandydatów.
 

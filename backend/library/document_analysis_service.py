@@ -538,6 +538,16 @@ class DocumentAnalysisService:
                 except Exception:
                     logger.exception("place verification failed, continuing without place tags")
 
+                # 11e. Person resolution (stage 4): alias/Wikidata+LLM/fuzzy ->
+                #      document_persons links (low confidence => manual_review).
+                try:
+                    from library.person_registry import resolve_document_persons
+
+                    p_summary = resolve_document_persons(session, doc, text)
+                    log(f"persons: linked={len(p_summary['linked'])} skipped={len(p_summary['skipped'])}")
+                except Exception:
+                    logger.exception("person resolution failed, continuing without person links")
+
         # 12. Persist to DB
         run = DocumentAnalysisRun(
             document_id=doc_id,

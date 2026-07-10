@@ -82,6 +82,38 @@ class TestConfirmPlaces:
 
 
 @pytest.mark.usefixtures("fixed_model")
+class TestConfirmPerson:
+    CANDIDATES = [
+        {"qid": "Q946", "label": "Donald Tusk", "description": "polski polityk"},
+        {"qid": "Q17278182", "label": "Donald Tusk", "description": "ojciec Donalda Tuska"},
+    ]
+
+    def test_returns_selected_qid(self, monkeypatch):
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("Q946"))
+        assert article_tagging.confirm_person_with_llm("treść", "tytuł", "Tusk", self.CANDIDATES) == "Q946"
+
+    def test_none_response_returns_none(self, monkeypatch):
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("NONE"))
+        assert article_tagging.confirm_person_with_llm("treść", "tytuł", "Tusk", self.CANDIDATES) is None
+
+    def test_qid_outside_candidates_rejected(self, monkeypatch):
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("Q12345"))
+        assert article_tagging.confirm_person_with_llm("treść", "tytuł", "Tusk", self.CANDIDATES) is None
+
+    def test_empty_candidates_skip_llm(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("", calls))
+        assert article_tagging.confirm_person_with_llm("treść", "tytuł", "Tusk", []) is None
+        assert calls == []
+
+    def test_llm_error_returns_none(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise RuntimeError("API down")
+        monkeypatch.setattr("library.ai.ai_ask", boom)
+        assert article_tagging.confirm_person_with_llm("treść", "tytuł", "Tusk", self.CANDIDATES) is None
+
+
+@pytest.mark.usefixtures("fixed_model")
 class TestExtractCountries:
     def test_countries_get_kraj_prefix(self, monkeypatch):
         monkeypatch.setattr("library.ai.ai_ask", _fake_ai("polska, korea północna"))

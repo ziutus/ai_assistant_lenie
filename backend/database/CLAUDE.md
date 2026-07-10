@@ -28,7 +28,8 @@ database/
     ├── 19-create-reader-user-tables.sql          # users, user_reading_progress, user_document_notes
     ├── 20-create-api-keys.sql                    # api_keys
     ├── 21-create-document-entities.sql           # document_entities (raw NER persons/places)
-    └── 22-create-geocode-cache.sql               # geocode_cache + document_entities.geocode_id
+    ├── 22-create-geocode-cache.sql               # geocode_cache + document_entities.geocode_id
+    └── 23-create-persons-tables.sql              # persons, person_aliases, document_persons
 ```
 
 ## How Init Scripts Are Used
@@ -199,6 +200,14 @@ Geocoder response cache (NER stage 3, `library/place_verification.py` + `library
 | `raw` | `jsonb` | First hit as returned by the provider (diagnostics/tuning) |
 | `provider` | `varchar(20) NOT NULL DEFAULT 'locationiq'` | Geocoding provider |
 | `created_at` | `timestamp` | Row creation timestamp |
+
+### Tables: `public.persons`, `public.person_aliases`, `public.document_persons`
+
+Person entity model (NER stage 4, `library/person_registry.py` + `library/wikidata_client.py` — see [`docs/person-ner-plan.md`](../../docs/person-ner-plan.md)). A relational model instead of tags because two people can share a name and one person appears under many spelling variants.
+
+- **`persons`** — one row per real person: `uuid` (unique), `canonical_name` (pg_trgm GIN index), `wikidata_qid` (unique, NULL for people without a Wikidata entry), `description` (occupation/known-for — disambiguation context), `created_at`.
+- **`person_aliases`** — spelling variants seen in articles (inflection, initials): `person_id` FK (CASCADE), `alias` (pg_trgm GIN index), UNIQUE `(person_id, alias)`.
+- **`document_persons`** — document↔person M:N + extraction metadata: `document_id`/`person_id` FKs (CASCADE), `raw_mention` (base form detected by NER), `confidence` (`wikidata_matched` — Wikidata human entity + LLM context match / `alias_matched` — existing alias or canonical name matched / `manual_review` — new or uncertain person, review queue / `manual_confirmed` — human approved), UNIQUE `(document_id, person_id)`.
 
 Reader identity and API key tables (`users`, `user_reading_progress`, `user_document_notes`, `api_keys` — init scripts 19-20) are out of scope for this section; see `library/reader_routes.py`, `library/auth.py` and `library/db/models.py` for their definitions.
 

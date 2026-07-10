@@ -50,13 +50,20 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     Place entities checked by stage-3 verification additionally carry
     "verified" (bool) and — when the geocoder resolved them — "lat"/"lon"/
     "display_name"; entities never checked have no "verified" key.
+    Person entities resolved by stage-4 (document_persons link with
+    raw_mention == entity_text) carry "person_id"/"canonical_name"/
+    "person_description"/"wikidata_qid"/"confidence".
     """
+    from library.person_registry import get_document_persons
+
     rows = (
         session.query(DocumentEntity)
         .filter(DocumentEntity.document_id == document_id)
         .order_by(DocumentEntity.mention_count.desc(), DocumentEntity.entity_text)
         .all()
     )
+    persons_by_mention = {p["raw_mention"]: p for p in get_document_persons(session, document_id)}
+
     grouped: dict[str, list[dict]] = {"persName": [], "geogName": [], "placeName": []}
     for row in rows:
         item: dict = {"text": row.entity_text, "count": row.mention_count}
@@ -66,5 +73,12 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 item["lat"] = float(row.geocode.lat) if row.geocode.lat is not None else None
                 item["lon"] = float(row.geocode.lon) if row.geocode.lon is not None else None
                 item["display_name"] = row.geocode.display_name
+        if row.entity_type == "persName" and row.entity_text in persons_by_mention:
+            link = persons_by_mention[row.entity_text]
+            item["person_id"] = link["person_id"]
+            item["canonical_name"] = link["canonical_name"]
+            item["person_description"] = link["description"]
+            item["wikidata_qid"] = link["wikidata_qid"]
+            item["confidence"] = link["confidence"]
         grouped.setdefault(row.entity_type, []).append(item)
     return grouped
