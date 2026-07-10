@@ -83,6 +83,22 @@ const SideNavigation = ({ isMenuOpen, toggleMenu }: SideNavigationProps) => {
           Search
         </NavLink>
         <NavLink
+          to="/persons"
+          className={({ isActive }) =>
+            isActive ? classes.activeLink : classes.link
+          }
+        >
+          Persons
+        </NavLink>
+        <NavLink
+          to="/persons-review"
+          className={({ isActive }) =>
+            isActive ? classes.activeLink : classes.link
+          }
+        >
+          Persons Review
+        </NavLink>
+        <NavLink
           to="/upload-file"
           className={({ isActive }) =>
             isActive ? classes.activeLink : classes.link
