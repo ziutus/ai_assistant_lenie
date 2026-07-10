@@ -527,6 +527,17 @@ class DocumentAnalysisService:
             except Exception:
                 logger.exception("entity extraction failed, continuing without entities")
 
+            # 11d. Place verification (stage 3): geocoder confirms the places
+            #      exist (cached), LLM confirms relevance -> miejsce-* tags.
+            if not split_only:
+                try:
+                    from library.place_verification import verify_document_places
+
+                    summary = verify_document_places(session, doc, text)
+                    log(f"places: {len(summary['resolved'])} resolved, tags: {summary['tagged'] or '-'}")
+                except Exception:
+                    logger.exception("place verification failed, continuing without place tags")
+
         # 12. Persist to DB
         run = DocumentAnalysisRun(
             document_id=doc_id,

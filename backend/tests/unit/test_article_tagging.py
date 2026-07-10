@@ -57,6 +57,31 @@ class TestTagArticle:
 
 
 @pytest.mark.usefixtures("fixed_model")
+class TestConfirmPlaces:
+    def test_returns_subset_matching_candidates(self, monkeypatch):
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("Cieśnina Ormuz, Wyspa Spoza Listy"))
+        result = article_tagging.confirm_places_with_llm(
+            "treść", "tytuł", ["Cieśnina Ormuz", "Kijów"])
+        assert result == ["Cieśnina Ormuz"]
+
+    def test_case_insensitive_matching(self, monkeypatch):
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("kijów"))
+        assert article_tagging.confirm_places_with_llm("treść", "tytuł", ["Kijów"]) == ["Kijów"]
+
+    def test_empty_candidates_skip_llm(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("", calls))
+        assert article_tagging.confirm_places_with_llm("treść", "tytuł", []) == []
+        assert calls == []
+
+    def test_llm_error_returns_empty_list(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise RuntimeError("API down")
+        monkeypatch.setattr("library.ai.ai_ask", boom)
+        assert article_tagging.confirm_places_with_llm("treść", "tytuł", ["Kijów"]) == []
+
+
+@pytest.mark.usefixtures("fixed_model")
 class TestExtractCountries:
     def test_countries_get_kraj_prefix(self, monkeypatch):
         monkeypatch.setattr("library.ai.ai_ask", _fake_ai("polska, korea północna"))

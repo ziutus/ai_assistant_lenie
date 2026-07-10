@@ -5,7 +5,7 @@ import {
   NotePopover, NoteRow, PendingNote, ReaderIdentityBadge, STANCE_ICON, UserNote,
   normalizeWs, pendingNoteFromSelection, useReaderIdentity, useUserNotes,
 } from "../components/ReaderNotes/readerNotes";
-import type { CountryTag } from "../components/CountryMap/countryMap";
+import type { CountryTag, PlaceMarker } from "../components/CountryMap/countryMap";
 import { useIsDesktop } from "../hooks/useIsDesktop";
 import styles from "./read.module.css";
 
@@ -134,6 +134,7 @@ const Read: React.FC = () => {
 
   const [chapters, setChapters] = React.useState<Chapter[]>([]);
   const [countries, setCountries] = React.useState<CountryTag[]>([]);
+  const [places, setPlaces] = React.useState<PlaceMarker[]>([]);
   const [thematicTags, setThematicTags] = React.useState<string[]>([]);
   const [synthesis, setSynthesis] = React.useState<string | null>(null);
   const [content, setContent] = React.useState<ChapterContent | null>(null);
@@ -173,6 +174,26 @@ const Read: React.FC = () => {
         setSynthesis(data.synthesis ?? null);
       } catch (e) {
         setError(String(e));
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiUrl, id, apiKey]);
+
+  // verified NER places (stage 3) → point markers on the country map
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const r = await fetch(`${apiUrl}/website_entities?id=${id}`, { headers });
+        const data = await r.json();
+        if (data.status !== "success") return;
+        const items = [...(data.entities?.geogName ?? []), ...(data.entities?.placeName ?? [])];
+        setPlaces(
+          items
+            .filter((it: any) => it.verified === true && it.lat != null && it.lon != null)
+            .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon })),
+        );
+      } catch {
+        // encje są ozdobnikiem widoku — brak nie blokuje czytnika
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -403,11 +424,11 @@ const Read: React.FC = () => {
         </div>
 
         {/* Map + tags + synthesis — desktop only */}
-        {isDesktop && (countries.length > 0 || thematicTags.length > 0 || synthesis) && (
+        {isDesktop && (countries.length > 0 || places.length > 0 || thematicTags.length > 0 || synthesis) && (
           <div className={styles.rightPanel}>
-            {countries.length > 0 && (
+            {(countries.length > 0 || places.length > 0) && (
               <React.Suspense fallback={null}>
-                <CountryMap countries={countries} />
+                <CountryMap countries={countries} places={places} />
               </React.Suspense>
             )}
 
