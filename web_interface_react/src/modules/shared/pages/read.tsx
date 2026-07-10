@@ -6,6 +6,7 @@ import {
   normalizeWs, pendingNoteFromSelection, useReaderIdentity, useUserNotes,
 } from "../components/ReaderNotes/readerNotes";
 import type { CountryTag, PlaceMarker } from "../components/CountryMap/countryMap";
+import { EntityChips, EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import { useIsDesktop } from "../hooks/useIsDesktop";
 import styles from "./read.module.css";
 
@@ -125,6 +126,9 @@ function renderMarkdown(text: string, notes: UserNote[]): React.ReactNode[] {
   return out;
 }
 
+// Document types that have an editor page at /{type}/:id
+const EDITOR_TYPES = new Set(["webpage", "link", "youtube", "movie", "email"]);
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 const Read: React.FC = () => {
@@ -133,8 +137,11 @@ const Read: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [chapters, setChapters] = React.useState<Chapter[]>([]);
+  const [documentType, setDocumentType] = React.useState<string | null>(null);
   const [countries, setCountries] = React.useState<CountryTag[]>([]);
   const [places, setPlaces] = React.useState<PlaceMarker[]>([]);
+  const [personItems, setPersonItems] = React.useState<EntityItem[]>([]);
+  const [placeItems, setPlaceItems] = React.useState<EntityItem[]>([]);
   const [thematicTags, setThematicTags] = React.useState<string[]>([]);
   const [synthesis, setSynthesis] = React.useState<string | null>(null);
   const [content, setContent] = React.useState<ChapterContent | null>(null);
@@ -169,6 +176,7 @@ const Read: React.FC = () => {
         const data = await r.json();
         if (data.status !== "success") throw new Error(data.message ?? "Błąd pobierania rozdziałów");
         setChapters(data.chapters ?? []);
+        setDocumentType(data.document_type ?? null);
         setCountries(data.countries ?? []);
         setThematicTags(data.thematic_tags ?? []);
         setSynthesis(data.synthesis ?? null);
@@ -187,6 +195,8 @@ const Read: React.FC = () => {
         const data = await r.json();
         if (data.status !== "success") return;
         const items = [...(data.entities?.geogName ?? []), ...(data.entities?.placeName ?? [])];
+        setPersonItems(data.entities?.persName ?? []);
+        setPlaceItems(items);
         setPlaces(
           items
             .filter((it: any) => it.verified === true && it.lat != null && it.lon != null)
@@ -348,6 +358,9 @@ const Read: React.FC = () => {
         <button className={styles.tocToggleButton} onClick={() => setTocOpen(o => !o)}>
           📑 Spis treści ({chapters.length})
         </button>
+        {documentType && EDITOR_TYPES.has(documentType) && (
+          <NavLink to={`/${documentType}/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>✏️ Edytuj</NavLink>
+        )}
         <NavLink to={`/chunks/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>Przegląd chunków</NavLink>
         <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
         <div style={{ marginLeft: "auto" }}><ReaderIdentityBadge identity={identity} /></div>
@@ -423,13 +436,24 @@ const Read: React.FC = () => {
           {navButtons}
         </div>
 
-        {/* Map + tags + synthesis — desktop only */}
-        {isDesktop && (countries.length > 0 || places.length > 0 || thematicTags.length > 0 || synthesis) && (
+        {/* Map + entities + tags + synthesis — desktop only */}
+        {isDesktop && (countries.length > 0 || places.length > 0 || personItems.length > 0
+          || placeItems.length > 0 || thematicTags.length > 0 || synthesis) && (
           <div className={styles.rightPanel}>
             {(countries.length > 0 || places.length > 0) && (
               <React.Suspense fallback={null}>
                 <CountryMap countries={countries} places={places} />
               </React.Suspense>
+            )}
+
+            {(personItems.length > 0 || placeItems.length > 0) && (
+              <div style={{
+                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
+                padding: 10, marginTop: 12, fontSize: "0.9em",
+              }}>
+                <EntityChips label={"👤 Osoby"} items={personItems} linkPersons />
+                <EntityChips label={"📍 Miejsca"} items={placeItems} />
+              </div>
             )}
 
             {thematicTags.length > 0 && (
