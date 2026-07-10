@@ -194,6 +194,104 @@ def resolve_document_persons(session, doc, text: str) -> dict:
     return {"linked": linked, "skipped": skipped}
 
 
+def list_manual_review(session) -> list[dict]:
+    """manual_review queue for the review UI — oldest first, with document context."""
+    rows = (
+        session.query(DocumentPerson)
+        .filter(DocumentPerson.confidence == CONFIDENCE_MANUAL_REVIEW)
+        .order_by(DocumentPerson.created_at)
+        .all()
+    )
+    return [
+        {
+            "link_id": r.id,
+            "document_id": r.document_id,
+            "document_title": r.document.title if r.document else None,
+            "document_type": r.document.document_type if r.document else None,
+            "person_id": r.person_id,
+            "canonical_name": r.person.canonical_name,
+            "description": r.person.description,
+            "wikidata_qid": r.person.wikidata_qid,
+            "aliases": [a.alias for a in r.person.aliases],
+            "raw_mention": r.raw_mention,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
+
+
+def _delete_person_if_orphaned(session, person_id: int) -> bool:
+    """Delete the Person row when no document_persons links point at it anymore.
+
+    A person created only by a rejected/merged mention has no reason to stay in
+    the registry — leaving it would make future fuzzy matches queue against a
+    ghost entry.
+    """
+    remaining = session.execute(
+        select(func.count()).select_from(DocumentPerson).where(DocumentPerson.person_id == person_id)
+    ).scalar()
+    if remaining:
+        return False
+    person = session.get(Person, person_id)
+    if person is None:
+        return False
+    session.delete(person)
+    return True
+
+
+def approve_review_link(session, link: DocumentPerson) -> dict:
+    """Human confirmed the mention belongs to the linked person."""
+    link.confidence = CONFIDENCE_MANUAL_CONFIRMED
+    return {"action": "approve", "link_id": link.id, "person_id": link.person_id}
+
+
+def reject_review_link(session, link: DocumentPerson) -> dict:
+    """Human rejected the link — delete it; drop the person too if orphaned."""
+    link_id, person_id = link.id, link.person_id
+    session.delete(link)
+    session.flush()
+    person_deleted = _delete_person_if_orphaned(session, person_id)
+    return {"action": "reject", "link_id": link_id, "person_id": person_id,
+            "person_deleted": person_deleted}
+
+
+def merge_review_link(session, link: DocumentPerson, target: Person) -> dict:
+    """Human says the mention is really the target person.
+
+    Re-points the link at the target (manual_confirmed), records the raw
+    mention and the source person's canonical name as target aliases (so the
+    next occurrence resolves via alias_matched without review), and deletes
+    the source person when nothing links to it anymore. When the document
+    already links to the target, the reviewed link is dropped instead of
+    re-pointed (document_id+person_id is unique).
+    """
+    if target.id == link.person_id:
+        raise ValueError("target_person_id points at the same person")
+
+    source = session.get(Person, link.person_id)
+    _add_alias(session, target, link.raw_mention)
+    if source is not None:
+        _add_alias(session, target, source.canonical_name)
+
+    existing = session.execute(
+        select(DocumentPerson).where(
+            DocumentPerson.document_id == link.document_id,
+            DocumentPerson.person_id == target.id,
+        )
+    ).scalars().first()
+    link_id, source_person_id = link.id, link.person_id
+    if existing is not None:
+        session.delete(link)
+    else:
+        link.person_id = target.id
+        link.confidence = CONFIDENCE_MANUAL_CONFIRMED
+    session.flush()
+    person_deleted = _delete_person_if_orphaned(session, source_person_id)
+    return {"action": "merge", "link_id": link_id, "person_id": target.id,
+            "source_person_id": source_person_id, "person_deleted": person_deleted,
+            "link_dropped_as_duplicate": existing is not None}
+
+
 def get_document_persons(session, document_id: int) -> list[dict]:
     """Person links for a document, for the API/UI."""
     rows = (

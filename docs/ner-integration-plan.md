@@ -159,7 +159,20 @@ Zgodnie z [`person-ner-plan.md`](person-ner-plan.md):
 | 3. Miejsca (LocationIQ + tagi + mapa) | etap 2 | konto LocationIQ ✅, namespace: `miejsce-*` | ✅ 2026-07-10 |
 | 4. Osoby (model relacyjny) | etap 2 | confidence: enum 4 wartości; Wikidata REST API | ✅ 2026-07-10 |
 
-Możliwe dalsze kroki (poza zakresem planu): UI kolejki `manual_review` dla
-osób (wzorem chunk review), strona „osoba → artykuły" we frontendzie
-(API `GET /person_documents` już jest), self-hosted geokoder (Photon) gdyby
-limit LocationIQ przestał wystarczać.
+## Kontynuacja: UI osób (2026-07-10, po zamknięciu planu)
+
+- **Kolejka `manual_review`**: `GET /persons_review` (wpisy z kontekstem
+  dokumentu) + `PATCH /persons_review/<link_id>` z akcjami `approve`
+  (→ `manual_confirmed`), `reject` (usuwa link; osierocona osoba znika
+  z rejestru) i `merge` (przepięcie linku na wskazane `target_person_id`
+  + aliasy: surowa wzmianka i nazwa kanoniczna źródła; duplikat linku w tym
+  samym dokumencie jest usuwany). Logika:
+  [`backend/library/person_registry.py`](../backend/library/person_registry.py)
+  (`list_manual_review`, `approve/reject/merge_review_link`).
+- **Frontend** (`web_interface_react`): strona `/persons-review` (lista wpisów,
+  przyciski Zatwierdź / Odrzuć / Scal z wyszukiwarką osoby docelowej) oraz
+  `/persons/:id?` (wyszukiwarka rejestru + lista artykułów osoby z linkami do
+  edytora i widoku `/read/:id`); obie pozycje w nawigacji Layoutu.
+
+Możliwe dalsze kroki (poza zakresem planu): self-hosted geokoder (Photon)
+gdyby limit LocationIQ przestał wystarczać.
