@@ -13,6 +13,7 @@ NER lemma aggregation keeps that form).
 """
 
 import logging
+import unicodedata
 
 from sqlalchemy import func, select
 
@@ -28,6 +29,31 @@ CONFIDENCE_MANUAL_CONFIRMED = "manual_confirmed"
 # pg_trgm similarity threshold for "possibly the same person" (queued for
 # review, not auto-merged)
 FUZZY_SIMILARITY_THRESHOLD = 0.5
+
+
+def _strip_accents(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
+
+
+def label_matches_mention(mention: str, label: str) -> bool:
+    """Name-consistency guard on the LLM's Wikidata pick.
+
+    The LLM over-confirms on STT-garbled single mentions (live E2E 2026-07-10,
+    doc 9216: "demokratas" -> the writer Žemaitė, "Talibanu" -> a Taliban
+    commander with an unrelated name). A pick only counts when some token of
+    the mention (>=3 chars, accents stripped) prefixes a token of the label or
+    vice versa — "Lepen" matches "Marine Le Pen", "Macrona" matches "Emmanuel
+    Macron", "demokratas" does not match "Žemaitė".
+    """
+    mention_tokens = [t for t in _strip_accents(mention.lower()).split() if len(t) >= 3]
+    label_tokens = [t for t in _strip_accents(label.lower()).replace("-", " ").split() if len(t) >= 2]
+    label_joined = "".join(label_tokens)
+    for m in mention_tokens:
+        if any(lt.startswith(m) or m.startswith(lt) for lt in label_tokens):
+            return True
+        if m in label_joined:  # "Lepen" vs "Le Pen"
+            return True
+    return False
 
 
 def find_by_alias(session, name: str) -> Person | None:
@@ -123,6 +149,11 @@ def resolve_document_persons(session, doc, text: str) -> dict:
             qid = confirm_person_with_llm(text, doc.title or "", name, candidates)
             if qid:
                 chosen = next(c for c in candidates if c["qid"] == qid)
+                if not label_matches_mention(name, chosen["label"]):
+                    logger.info("rejecting LLM pick %s (%r) for mention %r — name mismatch",
+                                qid, chosen["label"], name)
+                    qid = None
+            if qid:
                 person = session.execute(
                     select(Person).where(Person.wikidata_qid == qid)
                 ).scalars().first()

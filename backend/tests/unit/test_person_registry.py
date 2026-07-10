@@ -12,6 +12,7 @@ from library.person_registry import (  # noqa: E402
     CONFIDENCE_ALIAS,
     CONFIDENCE_MANUAL_REVIEW,
     CONFIDENCE_WIKIDATA,
+    label_matches_mention,
     resolve_document_persons,
 )
 
@@ -42,6 +43,27 @@ def _session(entities):
     # SELECTy (alias/fuzzy/qid/link) domyślnie nic nie znajdują
     session.execute.return_value.scalars.return_value.first.return_value = None
     return session
+
+
+class TestLabelMatchesMention:
+    @pytest.mark.parametrize("mention,label", [
+        ("Lepen", "Marine Le Pen"),
+        ("Macrona", "Emmanuel Macron"),
+        ("Trump", "Donald Trump"),
+        ("Erdogan", "Recep Tayyip Erdoğan"),
+        ("Donald Tusk", "Donald Tusk"),
+    ])
+    def test_accepts_name_consistent_picks(self, mention, label):
+        assert label_matches_mention(mention, label) is True
+
+    @pytest.mark.parametrize("mention,label", [
+        # Realne błędne dopasowania z E2E 2026-07-10 (doc 9216)
+        ("demokratas", "Žemaitė"),
+        ("Talibanu", "Abdul Ghani Beradar"),
+        ("Taliban", "Dadullah"),
+    ])
+    def test_rejects_unrelated_names(self, mention, label):
+        assert label_matches_mention(mention, label) is False
 
 
 class TestResolveDocumentPersons:
@@ -98,6 +120,18 @@ class TestResolveDocumentPersons:
         created = [c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], Person)]
         assert len(created) == 1
         assert created[0].wikidata_qid is None
+
+    def test_name_mismatched_llm_pick_rejected(self):
+        """LLM wybrał kandydata o niepasującej nazwie → odrzucony (jednowyrazowa wzmianka → skip)."""
+        session = _session([_entity("demokratas")])
+        candidates = [{"qid": "Q287069", "label": "Žemaitė", "description": "litewska pisarka"}]
+        with patch("library.wikidata_client.search_persons", return_value=candidates):
+            with patch("library.article_tagging.confirm_person_with_llm", return_value="Q287069"):
+                result = resolve_document_persons(session, _doc(), "tekst")
+
+        assert result["skipped"] == ["demokratas"]
+        created = [c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], Person)]
+        assert created == []
 
     def test_multiword_unknown_person_gets_manual_review_row(self):
         session = _session([_entity("Jimmy Rushton")])
