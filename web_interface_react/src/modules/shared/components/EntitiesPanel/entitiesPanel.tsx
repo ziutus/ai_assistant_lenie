@@ -133,6 +133,8 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
   // "Dodaj alias" flow
   const [aliasFor, setAliasFor] = React.useState<EntityItem | null>(null);
   const [aliasText, setAliasText] = React.useState("");
+  // "Wyklucz" flow: entity to suppress in future NER runs (ner_exclusions)
+  const [excludeFor, setExcludeFor] = React.useState<{ item: EntityItem; entityType: string } | null>(null);
 
   const headers = {
     "Content-Type": "application/x-www-form-urlencoded",
@@ -160,6 +162,7 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
     setEditMode(false);
     setMergeFor(null);
     setAliasFor(null);
+    setExcludeFor(null);
     fetchEntities();
   }, [docId, fetchEntities]);
 
@@ -237,6 +240,34 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
     }
   };
 
+  const handleExclude = async (scope: "global" | "author") => {
+    if (!excludeFor) {
+      return;
+    }
+    setMessage("");
+    try {
+      await axios.post(
+        `${apiUrl}/ner_exclusions`,
+        {
+          entity_text: excludeFor.item.text,
+          entity_type: excludeFor.entityType,
+          scope,
+          document_id: docId,
+        },
+        { headers: jsonHeaders },
+      );
+      if (excludeFor.item.id != null) {
+        await axios.delete(`${apiUrl}/website_entities/${excludeFor.item.id}`, { headers });
+      }
+      setExcludeFor(null);
+      setMessage(`„${excludeFor.item.text}" wykluczono (${scope === "global" ? "globalnie" : "dla autora"}).`);
+      fetchEntities();
+    } catch (error: any) {
+      console.error("Error excluding entity", error);
+      setMessage(`Nie udało się wykluczyć: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
   const handleAliasSubmit = async () => {
     if (!aliasFor?.person_id || !aliasText.trim()) {
       return;
@@ -265,7 +296,7 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
   const places = [...(entities?.geogName ?? []), ...(entities?.placeName ?? [])];
   const isEmpty = !persons.length && !places.length;
 
-  const editActions = (item: EntityItem) => (
+  const editActions = (entityType: string) => (item: EntityItem) => (
     <>
       <button
         type="button"
@@ -274,6 +305,14 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
         onClick={() => handleDelete(item)}
       >
         ×
+      </button>
+      <button
+        type="button"
+        style={{ ...chipActionStyle }}
+        title="Usuń i nie wykrywaj więcej (słownik wykluczeń NER)"
+        onClick={() => { setExcludeFor({ item, entityType }); setMergeFor(null); setAliasFor(null); }}
+      >
+        🚫
       </button>
       {item.link_id != null && (
         <button
@@ -306,13 +345,28 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
           {isRefreshing ? "Wykrywam..." : "Wykryj osoby i miejsca"}
         </button>
         {!isEmpty && (
-          <button className={"button"} type="button" onClick={() => { setEditMode(!editMode); setMergeFor(null); setAliasFor(null); }}>
+          <button className={"button"} type="button" onClick={() => { setEditMode(!editMode); setMergeFor(null); setAliasFor(null); setExcludeFor(null); }}>
             {editMode ? "Zakończ edycję" : "Edytuj"}
           </button>
         )}
       </div>
-      <EntityChips label={"Osoby"} items={persons} actions={editMode ? editActions : undefined} />
-      <EntityChips label={"Miejsca"} items={places} actions={editMode ? editActions : undefined} />
+      <EntityChips label={"Osoby"} items={persons} actions={editMode ? editActions("persName") : undefined} />
+      <EntityChips label={"Miejsca"} items={places} actions={editMode ? editActions("*") : undefined} />
+
+      {editMode && excludeFor && (
+        <div style={{ marginTop: 8, padding: 8, background: "#fff4f0", borderRadius: 6 }}>
+          <div style={{ marginBottom: 4 }}>
+            Nie wykrywaj więcej „{excludeFor.item.text}":
+          </div>
+          <button className={"button"} type="button" onClick={() => handleExclude("global")}>
+            Globalnie
+          </button>
+          <button className={"button"} type="button" style={{ marginLeft: 8 }} onClick={() => handleExclude("author")}>
+            Tylko dla autora tego dokumentu
+          </button>
+          <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setExcludeFor(null)}>✕ anuluj</button>
+        </div>
+      )}
 
       {editMode && mergeFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>

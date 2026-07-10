@@ -8,12 +8,34 @@ merging (unlike doc.tags, which accumulates across runs).
 
 import logging
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
-from library.db.models import DocumentEntity
+from library.db.models import DocumentEntity, NerExclusion, WebDocument
 from library.ner_client import aggregate_entities, extract_entities
 
 logger = logging.getLogger(__name__)
+
+
+def is_excluded(exclusions: list[NerExclusion], entity_type: str, entity_text: str,
+                author: str | None) -> bool:
+    """True when an exclusion rule suppresses this entity.
+
+    Matching is case-insensitive on the aggregated base form; entity_type='*'
+    matches all types; scope='author' rules only apply when the document's
+    author matches the rule's author.
+    """
+    text_lower = entity_text.strip().lower()
+    author_lower = (author or "").strip().lower()
+    for exc in exclusions:
+        if exc.entity_type not in ("*", entity_type):
+            continue
+        if exc.entity_text.strip().lower() != text_lower:
+            continue
+        if exc.scope == "global":
+            return True
+        if exc.scope == "author" and author_lower and (exc.author or "").strip().lower() == author_lower:
+            return True
+    return False
 
 
 def refresh_document_entities(session, document_id: int, text: str) -> list[DocumentEntity]:
@@ -22,13 +44,28 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     Queues the changes on the session without committing (caller owns the
     transaction). Returns the new DocumentEntity rows. When the NER service is
     unavailable an empty extraction result leaves existing rows untouched —
-    "service down" must not erase previously detected entities.
+    "service down" must not erase previously detected entities. Entities
+    matched by an ner_exclusions rule (global, or author-scoped for the
+    document's author) are dropped before persisting — they never reach
+    person resolution or place verification.
     """
     raw = extract_entities(text)
     if not raw:
         return []
 
     counts = aggregate_entities(raw)
+
+    exclusions = list(session.execute(select(NerExclusion)).scalars().all())
+    if exclusions:
+        doc = session.get(WebDocument, document_id)
+        author = getattr(doc, "author", None)
+        excluded = [k for k in counts if is_excluded(exclusions, k[0], k[1], author)]
+        for key in excluded:
+            del counts[key]
+        if excluded:
+            logger.info("NER exclusions dropped %d entities for doc %s: %s",
+                        len(excluded), document_id, [k[1] for k in excluded])
+
     session.execute(delete(DocumentEntity).where(DocumentEntity.document_id == document_id))
     rows = [
         DocumentEntity(

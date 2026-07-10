@@ -768,6 +768,37 @@ class DocumentEntity(Base):
         )
 
 
+class NerExclusion(Base):
+    """NER false-positive suppression (exclusion dictionary).
+
+    Applied at entity-refresh time (library/entity_service.py) so a recurring
+    NER mistake — "Taliban" as a person, an STT artifact like "Starling" — is
+    dropped before it lands in document_entities (and therefore never reaches
+    person resolution or place verification). scope='author' limits the rule
+    to documents by one author (e.g. a podcast channel whose STT keeps
+    producing the same artifact); entity_type='*' matches all entity types.
+    Matching is case-insensitive on the aggregated entity base form.
+    """
+
+    __tablename__ = "ner_exclusions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    entity_text: Mapped[str] = mapped_column(Text, nullable=False)
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'*'"))
+    scope: Mapped[str] = mapped_column(String(10), nullable=False, server_default=sa_text("'global'"))
+    author: Mapped[str | None] = mapped_column(Text)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"NerExclusion(id={self.id!r}, entity_text={self.entity_text!r}, "
+            f"entity_type={self.entity_type!r}, scope={self.scope!r}, author={self.author!r})"
+        )
+
+
 class Person(Base):
     """Canonical person entity — one row per real person (NER stage 4).
 

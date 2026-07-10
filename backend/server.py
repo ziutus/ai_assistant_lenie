@@ -694,6 +694,99 @@ def website_entities_delete(entity_id: int):
             "person_deleted": bool(link_result and link_result.get("person_deleted"))}, 200
 
 
+def _exclusion_dict(row):
+    return {
+        "id": row.id, "entity_text": row.entity_text, "entity_type": row.entity_type,
+        "scope": row.scope, "author": row.author, "note": row.note,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+@app.route('/ner_exclusions', methods=['GET'])
+def ner_exclusions_list():
+    """NER exclusion dictionary — false positives suppressed at entity refresh."""
+    from sqlalchemy import select as sa_select
+    from library.db.models import NerExclusion
+
+    session = get_scoped_session()
+    rows = session.execute(
+        sa_select(NerExclusion).order_by(NerExclusion.created_at.desc())
+    ).scalars().all()
+    return {"status": "success", "count": len(rows),
+            "exclusions": [_exclusion_dict(r) for r in rows]}, 200
+
+
+@app.route('/ner_exclusions', methods=['POST', 'OPTIONS'])
+def ner_exclusions_add():
+    """Add an exclusion rule. Body (JSON): {"entity_text": "...", "entity_type": "persName"|...|"*",
+    "scope": "global"|"author", "author": "..."|null, "document_id": <id>, "note": "..."}.
+    For scope=author without an explicit author, the author is taken from document_id."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import NerExclusion
+
+    data = request.get_json(silent=True) or {}
+    entity_text = (data.get('entity_text') or "").strip()
+    if not entity_text:
+        return {"status": "error", "message": "entity_text is required"}, 400
+    entity_type = (data.get('entity_type') or "*").strip()
+    if entity_type not in ("*", "persName", "geogName", "placeName"):
+        return {"status": "error", "message": "entity_type must be persName, geogName, placeName or *"}, 400
+    scope = (data.get('scope') or "global").strip()
+    if scope not in ("global", "author"):
+        return {"status": "error", "message": "scope must be global or author"}, 400
+
+    session = get_scoped_session()
+    author = (data.get('author') or "").strip() or None
+    if scope == "author" and author is None:
+        doc_id, error = _entities_doc_id(data.get('document_id'))
+        if error:
+            return {"status": "error",
+                    "message": "scope=author requires author or document_id"}, 400
+        doc = WebDocument.get_by_id(session, doc_id)
+        if doc is None:
+            return {"status": "error", "message": "Document not found"}, 404
+        author = (doc.author or "").strip() or None
+        if author is None:
+            return {"status": "error", "message": "Document has no author to scope the exclusion to"}, 400
+
+    row = NerExclusion(entity_text=entity_text, entity_type=entity_type, scope=scope,
+                       author=author if scope == "author" else None,
+                       note=(data.get('note') or "").strip() or None)
+    session.add(row)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("ner_exclusion add failed for %r", entity_text)
+        return {"status": "error", "message": "DB error (duplicate rule?)"}, 409
+
+    return {"status": "success", "exclusion": _exclusion_dict(row)}, 200
+
+
+@app.route('/ner_exclusions/<int:exclusion_id>', methods=['DELETE', 'OPTIONS'])
+def ner_exclusions_delete(exclusion_id: int):
+    """Remove an exclusion rule — the entity will be detected again on the next refresh."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import NerExclusion
+
+    session = get_scoped_session()
+    row = session.get(NerExclusion, exclusion_id)
+    if row is None:
+        return {"status": "error", "message": "Exclusion not found"}, 404
+    try:
+        session.delete(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("ner_exclusion delete failed for %s", exclusion_id)
+        return {"status": "error", "message": "DB error"}, 500
+    return {"status": "success", "deleted_id": exclusion_id}, 200
+
+
 @app.route('/website_get_next_to_correct', methods=['GET'])
 def website_get_next_to_correct():
     logging.debug("Getting website by id, new style")
