@@ -1,10 +1,10 @@
 import React from "react";
+import { NavLink } from "react-router-dom";
 import Input from "../Input/input";
 import EntitiesPanel from "../EntitiesPanel/entitiesPanel";
 
 interface InputsForAllExceptLinkProps {
   formik: any;
-  handleSplitTextForEmbedding: (values: any) => void;
   handleRemoveNotNeededText: (values: any) => void;
   isLoading: boolean;
   // "Clean Text" applies portal cleanup rules (site_rules.json) — only makes
@@ -14,7 +14,6 @@ interface InputsForAllExceptLinkProps {
 
 const InputsForAllExceptLink = ({
   formik,
-  handleSplitTextForEmbedding,
   handleRemoveNotNeededText,
   isLoading,
   showCleanText,
@@ -46,13 +45,15 @@ const InputsForAllExceptLink = ({
         multiline
       />{" "}
         <div style={{marginTop: "10px"}}>
-            <button
-                className={"button"}
-                style={{marginRight: "10px"}}
-                onClick={() => handleSplitTextForEmbedding(formik.values)}
-            >
-                Split text for Embedding
-            </button>
+            {formik.values.id && (
+                <NavLink
+                    className={"button"}
+                    style={{marginRight: "10px"}}
+                    to={`/chunks/${formik.values.id}`}
+                >
+                    Przegląd chunków →
+                </NavLink>
+            )}
             {showCleanText && (
                 <button
                     className={"button"}
@@ -65,11 +66,21 @@ const InputsForAllExceptLink = ({
         </div>
         {formik.values.text && (
             <div style={{marginTop: "10px"}}>
-                Length: {formik.values.text.length}
-                {" "}
-                Word Count: {formik.values.text.trim().split(/\s+/).length}
-                {" "}
-                Embedding parts: {(formik.values.text.match(/\n{3}/g) || []).length + 1}
+                Długość: {formik.values.text.length} znaków
+                {" · "}
+                Słowa: {formik.values.text.trim().split(/\s+/).length}
+                {formik.values.embeddings_count != null && (
+                    <>
+                        {" · "}
+                        Embeddingi w bazie: {formik.values.embeddings_count}
+                    </>
+                )}
+                {formik.values.approved_chunks_count != null && (
+                    <>
+                        {" · "}
+                        Zatwierdzone chunki TEMAT: {formik.values.approved_chunks_count}
+                    </>
+                )}
             </div>
         )}
         <br/>
