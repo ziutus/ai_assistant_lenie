@@ -85,6 +85,7 @@ const Webpage = () => {
           handleSplitTextForEmbedding={handleSplitTextForEmbedding}
           isLoading={isLoading}
           handleRemoveNotNeededText={handleRemoveNotNeededText}
+          showCleanText
         />
 
         <FormButtons

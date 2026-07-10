@@ -1,7 +1,10 @@
 import React from "react";
+import axios from "axios";
 import Input from "../Input/input";
 import Select from "../Select/select";
+import TagsInput from "../TagsInput/tagsInput";
 import { NavLink } from "react-router-dom";
+import { AuthorizationContext } from "../../context/authorizationContext";
 
 interface SharedInputsProps {
   formik: any;
@@ -11,6 +14,51 @@ interface SharedInputsProps {
   handleGetPageByUrl: (url: string) => void;
 }
 
+// Languages the user actually works with — anything else via "inny…"
+const PREFERRED_LANGUAGES = ["pl", "en"];
+
+const LanguageSelect = ({ formik, isLoading }: { formik: any; isLoading: boolean }) => {
+  const value: string = formik.values.language ?? "";
+  const [custom, setCustom] = React.useState(false);
+  const knownValue = value === "" || PREFERRED_LANGUAGES.includes(value);
+  return (
+    <>
+      <Select
+        disabled={isLoading}
+        value={custom ? "__other__" : value}
+        label={"Language"}
+        id={"language-select"}
+        onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+          if (e.target.value === "__other__") {
+            setCustom(true);
+            return;
+          }
+          setCustom(false);
+          formik.setFieldValue("language", e.target.value);
+        }}
+      >
+        <option value="">—</option>
+        {PREFERRED_LANGUAGES.map((lang) => (
+          <option key={lang} value={lang}>{lang}</option>
+        ))}
+        {!knownValue && !custom && <option value={value}>{value}</option>}
+        <option value="__other__">inny…</option>
+      </Select>
+      {custom && (
+        <Input
+          disabled={isLoading}
+          value={value}
+          label={"Language (kod, np. de)"}
+          onChange={formik.handleChange}
+          id={"language"}
+          name={"language"}
+          type={"text"}
+        />
+      )}
+    </>
+  );
+};
+
 const SharedInputs = ({
   formik,
   isLoading,
@@ -18,6 +66,20 @@ const SharedInputs = ({
   handleGetEntryToReview,
   handleGetPageByUrl,
 }: SharedInputsProps) => {
+  const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
+  const [tagSuggestions, setTagSuggestions] = React.useState<string[]>([]);
+  const [sourceSuggestions, setSourceSuggestions] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    const headers = { "x-api-key": `${apiKey}` };
+    axios.get(`${apiUrl}/tags`, { headers })
+      .then((r) => setTagSuggestions((r.data.tags ?? []).map((t: any) => t.tag)))
+      .catch(() => undefined);
+    axios.get(`${apiUrl}/sources`, { headers })
+      .then((r) => setSourceSuggestions((r.data.sources ?? []).map((s: any) => s.source)))
+      .catch(() => undefined);
+  }, [apiUrl, apiKey]);
+
   return (
     <>
       <Input
@@ -92,16 +154,16 @@ const SharedInputs = ({
         id={"source"}
         name={"source"}
         type={"text"}
+        list={"source-suggestions"}
       />
-      <Input
-        disabled={isLoading}
-        value={formik.values.language}
-        label={"Language"}
-        onChange={formik.handleChange}
-        id={"language"}
-        name={"language"}
-        type={"text"}
-      />
+      {sourceSuggestions.length > 0 && (
+        <datalist id="source-suggestions">
+          {sourceSuggestions.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
+      )}
+      <LanguageSelect formik={formik} isLoading={isLoading} />
       {formik.values.document_state_error && (
         <div>
           <p style={{ marginBottom: "10px", fontSize: "15px" }}>
@@ -183,23 +245,12 @@ const SharedInputs = ({
         name={"summary"}
         type={"text"}
       />
-      <Input
+      <TagsInput
         disabled={isLoading}
-        value={formik.values.language}
-        label={"Language"}
-        onChange={formik.handleChange}
-        id={"language"}
-        name={"language"}
-        type={"text"}
-      />
-      <Input
-        disabled={isLoading}
-        value={formik.values.tags}
+        value={formik.values.tags ?? ""}
         label={"Tags"}
-        onChange={formik.handleChange}
-        id={"tags"}
-        name={"tags"}
-        type={"text"}
+        suggestions={tagSuggestions}
+        onChange={(csv) => formik.setFieldValue("tags", csv)}
       />
     </>
   );

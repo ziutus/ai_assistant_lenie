@@ -7,6 +7,9 @@ interface InputsForAllExceptLinkProps {
   handleSplitTextForEmbedding: (values: any) => void;
   handleRemoveNotNeededText: (values: any) => void;
   isLoading: boolean;
+  // "Clean Text" applies portal cleanup rules (site_rules.json) — only makes
+  // sense for webpage documents, so only the webpage editor passes true.
+  showCleanText?: boolean;
 }
 
 const InputsForAllExceptLink = ({
@@ -14,19 +17,24 @@ const InputsForAllExceptLink = ({
   handleSplitTextForEmbedding,
   handleRemoveNotNeededText,
   isLoading,
+  showCleanText,
 }: InputsForAllExceptLinkProps) => {
   return (
     <>
-      <Input
-        disabled={isLoading}
-        value={formik.values.text_md}
-        label={"Website MarkDown content"}
-        onChange={formik.handleChange}
-        id={"text_md"}
-        name={"text_md"}
-        type={"text_md"}
-        multiline
-      />
+      {formik.values.text_md && (
+        <details style={{ marginBottom: "8px" }}>
+          <summary style={{ cursor: "pointer" }}>Website MarkDown content</summary>
+          <Input
+            disabled={isLoading}
+            value={formik.values.text_md}
+            onChange={formik.handleChange}
+            id={"text_md"}
+            name={"text_md"}
+            type={"text_md"}
+            multiline
+          />
+        </details>
+      )}
       <Input
         disabled={isLoading}
         value={formik.values.text}
@@ -45,22 +53,15 @@ const InputsForAllExceptLink = ({
             >
                 Split text for Embedding
             </button>
-            <button
-                className={"button"}
-                style={{marginRight: "10px"}}
-                onClick={() => handleRemoveNotNeededText(formik.values)}
-            >
-                Clean Text
-            </button>
-            <a
-                className={"button"}
-                style={{marginRight: "10px"}}
-                href="https://platform.openai.com/tokenizer"
-                target="_blank"
-                rel="noopener noreferrer"
-            >
-                OpenAI Tokenizer
-            </a>
+            {showCleanText && (
+                <button
+                    className={"button"}
+                    style={{marginRight: "10px"}}
+                    onClick={() => handleRemoveNotNeededText(formik.values)}
+                >
+                    Clean Text
+                </button>
+            )}
         </div>
         {formik.values.text && (
             <div style={{marginTop: "10px"}}>
