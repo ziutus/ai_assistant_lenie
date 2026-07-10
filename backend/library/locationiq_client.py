@@ -31,6 +31,12 @@ _last_request_at = 0.0
 # "Płytka Cieśnina, Iława" scores well below this).
 MIN_NAME_SIMILARITY = 0.75
 
+# OSM classes that can be a geographic place worth tagging. Rejects exact-name
+# hits on infrastructure — live E2E 2026-07-10: "Shahed" (the drone) matched a
+# railway station in Shiraz (class=railway) and got tagged. Missing class is
+# rejected too (conservative: every legitimate hit seen so far carried one).
+PLAUSIBLE_OSM_CLASSES = {"natural", "water", "waterway", "place", "boundary", "landuse"}
+
 
 def _api_key() -> str | None:
     from library.config_loader import load_config
@@ -61,11 +67,14 @@ def _name_similarity(query: str, display_name: str) -> float:
 def is_plausible_match(query: str, hit: dict) -> bool:
     """Does the geocoder hit plausibly refer to the queried place name?
 
-    Guards against fuzzy false positives. Note this can't catch a *different
-    real place with the same name* (that disambiguation is the LLM's job in
-    place_verification); it only rejects hits whose name doesn't match what
-    was asked.
+    Guards against fuzzy false positives (name similarity) and against
+    exact-name hits on non-places (OSM class allowlist — "Shahed" the drone
+    vs a railway station named Shahed). It can't catch a *different real
+    place with the same name and class* — that residual ambiguity is why the
+    LLM relevance step exists in place_verification.
     """
+    if hit.get("class") not in PLAUSIBLE_OSM_CLASSES:
+        return False
     display_name = hit.get("display_name") or ""
     if not display_name:
         return False
@@ -91,9 +100,12 @@ def geocode(query: str) -> dict | None:
     _last_request_at = time.monotonic()
 
     try:
+        # accept-language=pl: without it display_name comes back in English
+        # ("Kyiv, Ukraine"), which made the name-similarity check reject the
+        # Polish query "Kijów" (live E2E 2026-07-10)
         resp = requests.get(
             SEARCH_URL,
-            params={"key": key, "q": query, "format": "json", "limit": 1},
+            params={"key": key, "q": query, "format": "json", "limit": 1, "accept-language": "pl,en"},
             timeout=REQUEST_TIMEOUT_S,
         )
         if resp.status_code == 404:
