@@ -696,6 +696,40 @@ class DocumentRemovedLine(Base):
         return f"DocumentRemovedLine(id={self.id!r}, document_id={self.document_id!r}, source={self.source!r})"
 
 
+class DocumentEntity(Base):
+    """Raw NER entity (person/place mention) detected in a document.
+
+    MVP of docs/ner-integration-plan.md: aggregated mentions from the NER
+    microservice (ner_service/, via library/ner_client.py), no disambiguation.
+    Rows are derived data — refreshing a document's entities replaces them
+    (library/entity_service.py).
+    """
+
+    __tablename__ = "document_entities"
+    __table_args__ = (UniqueConstraint("document_id", "entity_type", "entity_text"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    # entity_type: persName | geogName | placeName (spaCy pl_core_news_lg labels)
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    # entity_text: base form of the mention (lemma when available)
+    entity_text: Mapped[str] = mapped_column(Text, nullable=False)
+    mention_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("1"))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"DocumentEntity(id={self.id!r}, document_id={self.document_id!r}, "
+            f"entity_type={self.entity_type!r}, entity_text={self.entity_text!r})"
+        )
+
+
 class User(Base):
     """Reader identity (household trust model).
 

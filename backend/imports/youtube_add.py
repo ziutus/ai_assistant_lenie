@@ -72,6 +72,12 @@ def main():
     t_start = time.time()
     logging.info("Script started")
 
+    if args.analyze:
+        # Rozgrzej serwis NER w tle — ładowanie modelu spaCy nakłada się na
+        # pobieranie/transkrypcję i analizę LLM zamiast blokować krok encji
+        from library.ner_client import warmup_async
+        warmup_async()
+
     webshare_api_key = cfg.get("WEBSHARE_API_KEY")
     if args.no_proxy:
         logging.info("--no-proxy flag set — Webshare proxy disabled")

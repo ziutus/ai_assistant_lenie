@@ -514,6 +514,19 @@ class DocumentAnalysisService:
                 log("tagging document...")
                 _apply_tags(doc, tagging_text)
 
+        # 11c. NER entities (persons/places) on the full document text — offline
+        #      (no LLM), stored in document_entities with replace semantics, so
+        #      chapter-scoped runs skip it (a single chapter's entities must not
+        #      clobber the whole document's). See docs/ner-integration-plan.md.
+        if scope is None:
+            try:
+                from library.entity_service import refresh_document_entities
+
+                entity_rows = refresh_document_entities(session, doc_id, text)
+                log(f"entities={len(entity_rows)}")
+            except Exception:
+                logger.exception("entity extraction failed, continuing without entities")
+
         # 12. Persist to DB
         run = DocumentAnalysisRun(
             document_id=doc_id,

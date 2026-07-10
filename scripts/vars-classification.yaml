@@ -194,6 +194,13 @@ groups:
         default: "Bielik-11B-v3.0-Instruct"
         example: "Bielik-11B-v3.0-Instruct"
         used_by: [local]
+      NER_SERVICE_URL:
+        description: "Internal NER microservice base URL (ner_service/, spaCy pl_core_news_lg; library/ner_client.py)"
+        type: config
+        required: false
+        default: "http://lenie-ner-service:8090"
+        example: "http://lenie-ner-service:8090"
+        used_by: [docker, local]
 
   aws:
     description: "AWS credentials and resource identifiers"

@@ -41,6 +41,11 @@ services:
       context: ../..
       dockerfile: ner_service/Dockerfile
     profiles: ["ner"]
+    # Dev-only published port so a backend running outside Docker can reach the
+    # service (NER_SERVICE_URL=http://localhost:8090). The NAS deployment keeps
+    # the service internal-only — see ner_service/README.md.
+    ports:
+      - "8090:8090"
     restart: unless-stopped
   lenie-ai-fronted:
     build:

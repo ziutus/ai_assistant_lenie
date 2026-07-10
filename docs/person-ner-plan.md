@@ -8,8 +8,13 @@
 > ale z dodatkowym, trudniejszym problemem: identyfikacja osoby nie jest
 > faktem deterministycznym (istnieje/nie istnieje), tylko wymaga disambiguacji.
 >
-> **Status:** plan / do przemyślenia — nieprzypisane do backlogu, nic nie zaimplementowane.
-> **Ostatnia aktualizacja:** 2026-07-09
+> **Status:** częściowo zaimplementowane — krok 1 (NER) działa: mikroserwis
+> [`ner_service/`](../ner_service/README.md) wykrywa `persName`, a MVP integracji
+> zapisuje surowe wzmianki osób w tabeli `document_entities` i pokazuje je w UI —
+> patrz [`ner-integration-plan.md`](ner-integration-plan.md). Kroki 2-3
+> (disambiguacja Wikidata, tabele `persons`/`person_aliases`/`document_persons`)
+> pozostają do zrobienia.
+> **Ostatnia aktualizacja:** 2026-07-10
 
 ## Problem
 

@@ -4,7 +4,7 @@ import logging
 
 from library.config_loader import load_config
 from library.db.engine import get_scoped_session
-from library.db.models import TranscriptionLog
+from library.db.models import TranscriptionLog, WebDocument
 from library.document_service import DocumentService
 from library.search_service import SearchService
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
@@ -374,6 +374,68 @@ def website_get_by_id():
     if doc is None:
         return {"status": "error", "message": "Document not found"}, 404
     return doc.dict(), 200
+
+
+def _entities_doc_id(raw_id):
+    """Validate the 'id' request value; returns (doc_id, None) or (None, error_response)."""
+    if not raw_id:
+        return None, ({"status": "error", "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400)
+    try:
+        doc_id = int(raw_id)
+    except (ValueError, TypeError):
+        return None, ({"status": "error", "message": "Invalid ID parameter — must be a positive integer"}, 400)
+    if doc_id <= 0:
+        return None, ({"status": "error", "message": "Invalid ID parameter — must be a positive integer"}, 400)
+    return doc_id, None
+
+
+@app.route('/website_entities', methods=['GET'])
+def website_entities_get():
+    """NER entities (persons/places) stored for a document — see docs/ner-integration-plan.md."""
+    from library.entity_service import get_document_entities
+
+    doc_id, error = _entities_doc_id(request.args.get('id'))
+    if error:
+        return error
+
+    session = get_scoped_session()
+    doc = WebDocument.get_by_id(session, doc_id)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+
+    return {"status": "success", "id": doc_id, "entities": get_document_entities(session, doc_id)}, 200
+
+
+@app.route('/website_entities', methods=['POST'])
+def website_entities_refresh():
+    """Re-run NER on the document text and replace its stored entities.
+
+    First call after an ner_service restart can take up to ~90s (model load) —
+    see ner_service/README.md.
+    """
+    from library.entity_service import get_document_entities, refresh_document_entities
+
+    doc_id, error = _entities_doc_id(request.form.get('id') or (request.get_json(silent=True) or {}).get('id'))
+    if error:
+        return error
+
+    session = get_scoped_session()
+    doc = WebDocument.get_by_id(session, doc_id)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+
+    text = doc.text_md or doc.text or ""
+    if not text.strip():
+        return {"status": "error", "message": "Document has no text content"}, 400
+
+    rows = refresh_document_entities(session, doc_id, text)
+    session.commit()
+    return {
+        "status": "success",
+        "id": doc_id,
+        "refreshed": len(rows),
+        "entities": get_document_entities(session, doc_id),
+    }, 200
 
 
 @app.route('/website_get_next_to_correct', methods=['GET'])

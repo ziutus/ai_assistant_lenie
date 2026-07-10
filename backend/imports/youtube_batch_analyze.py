@@ -72,6 +72,12 @@ def main():
                         help="Show chunk breakdown without calling the API")
     args = parser.parse_args()
 
+    if not args.dry_run:
+        # Rozgrzej serwis NER w tle — ładowanie modelu spaCy nakłada się na
+        # analizę LLM zamiast blokować krok encji na końcu create_run()
+        from library.ner_client import warmup_async
+        warmup_async()
+
     print(f"Pobieranie dokumentu {args.doc_id}...")
     session = get_session()
     try:

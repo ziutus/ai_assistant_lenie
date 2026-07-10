@@ -30,8 +30,10 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
-__version__ = "0.4.3"
+__version__ = "0.5.0"
 # Changelog:
+#   0.5.0 — encje NER (osoby/miejsca): auto przy [w]rite to db, ręcznie [e]ncje w menu
+#           (library.entity_service → tabela document_entities, docs/ner-integration-plan.md)
 #   0.4.3 — ekstrakcja krajów: gazetteer (bez LLM) jako prescreen + LLM potwierdza kandydatów
 #           (library.article_tagging.extract_countries_hybrid, zamiast open-ended extract_countries_with_llm)
 #   0.4.2 — load_config() raz na poziomie modułu (cfg + CACHE_DIR_BASE zamiast 7 wywołań)
@@ -621,6 +623,21 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     else:
         print("  Brak tagów tematycznych.")
 
+    # 2b. Encje NER (osoby/miejsca) — offline, bez LLM; brak serwisu NER nie
+    #     przerywa zapisu (refresh_document_entities zwraca wtedy pustą listę)
+    print("  Wykrywam osoby i miejsca (NER)...")
+    try:
+        from library.entity_service import refresh_document_entities
+        entity_rows = refresh_document_entities(session, doc.id, text_only)
+        session.commit()
+        if entity_rows:
+            print(f"  Encje zapisane: {len(entity_rows)}")
+        else:
+            print("  Brak encji (lub serwis NER niedostępny).")
+    except Exception as e:
+        session.rollback()
+        print(f"  OSTRZEŻENIE: ekstrakcja encji nie powiodła się: {e}")
+
     # 3. Twórz embedding
     print("  Tworzę embedding...")
     try:
@@ -1039,7 +1056,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
 
         while True:
             print(f"  ID: {doc.id}  Status: {doc.document_state}   (article_browser v{__version__})")
-            print("  [n]ext  [p]rev  [v]iew  [b]oundaries  [r]efresh  [w]rite to db  [s]ave note  [d]one/reviewed  [m]ark review  [o]bsidian  [c]ompare  [k]raje  [q]uit")
+            print("  [n]ext  [p]rev  [v]iew  [b]oundaries  [r]efresh  [w]rite to db  [s]ave note  [d]one/reviewed  [m]ark review  [o]bsidian  [c]ompare  [k]raje  [e]ncje  [q]uit")
             try:
                 action = _getch_action(f"  [{idx + 1}] > ")
             except (KeyboardInterrupt, EOFError):
@@ -1163,6 +1180,33 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                     print("  Nie udało się pobrać treści artykułu.")
                 continue
 
+            elif action in ("e", "encje"):
+                if article is None:
+                    article = get_article_text(doc, session)
+                if article:
+                    text_only = _article_full_text(article)
+                    print("  Wykrywam osoby i miejsca (NER)...")
+                    try:
+                        from library.entity_service import get_document_entities, refresh_document_entities
+                        rows = refresh_document_entities(session, doc.id, text_only)
+                        session.commit()
+                        if rows:
+                            grouped = get_document_entities(session, doc.id)
+                            for label, header in (("persName", "Osoby"), ("geogName", "Miejsca geograficzne"),
+                                                  ("placeName", "Miejsca administracyjne")):
+                                items = grouped.get(label) or []
+                                if items:
+                                    print(f"  {header}: " + ", ".join(
+                                        f"{it['text']} ({it['count']})" for it in items))
+                        else:
+                            print("  Brak encji (lub serwis NER niedostępny).")
+                    except Exception as e:
+                        session.rollback()
+                        print(f"  OSTRZEŻENIE: ekstrakcja encji nie powiodła się: {e}")
+                else:
+                    print("  Nie udało się pobrać treści artykułu.")
+                continue
+
             elif action in ("m", "mark"):
                 action_mark_review(doc, session)
                 continue
@@ -1256,6 +1300,11 @@ def main():
                      not_reviewed=args.not_reviewed, no_obsidian=args.no_obsidian,
                      not_cleaned=args.not_cleaned)
         elif args.review:
+            # Rozgrzej serwis NER w tle — ładowanie modelu spaCy (~90 s po
+            # restarcie kontenera) nakłada się na przeglądanie artykułów,
+            # zamiast blokować pierwszą akcję [w]/[e]
+            from library.ner_client import warmup_async
+            warmup_async()
             cmd_review(session, since=args.since, portal=args.portal,
                        start_id=args.id, limit=args.limit, auto_view=args.view,
                        check_urls=args.check_urls,

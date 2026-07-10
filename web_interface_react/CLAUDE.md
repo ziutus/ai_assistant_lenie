@@ -33,6 +33,7 @@ web_interface_react/
 │   │   │   ├── Input/                  # Reusable text/textarea input
 │   │   │   ├── Select/                 # Reusable select dropdown
 │   │   │   ├── SharedInputs/           # Common document form fields
+│   │   │   ├── EntitiesPanel/          # NER persons/places chips + refresh button (GET/POST /website_entities)
 │   │   │   └── FormButtons/            # Save/delete action buttons
 │   │   ├── pages/
 │   │   │   ├── connect.tsx             # Connection configuration (/connect)
@@ -128,6 +129,8 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 | `useList` | Fetch document list with filters | `/website_list` |
 | `useSearch` | Vector similarity search | `/ai_embedding_get` + `/website_similar` (AWS) or `/website_similar` only (Docker) |
 | `useFileSubmit` | Image upload | Separate AWS endpoint |
+
+The `EntitiesPanel` component (rendered inside `InputsForAllExceptLink`, so it appears on webpage/youtube/movie/email editors) calls `GET /website_entities?id=` on load and `POST /website_entities` ("Wykryj osoby i miejsca" button, 150s timeout — the first NER call after a service restart loads the spaCy model) — data comes from the `document_entities` table, see [`docs/ner-integration-plan.md`](../docs/ner-integration-plan.md).
 
 ## Backend API Communication
 
