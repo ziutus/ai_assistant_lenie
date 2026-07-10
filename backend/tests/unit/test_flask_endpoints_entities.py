@@ -112,3 +112,110 @@ class TestWebsiteEntitiesRefresh:
         assert resp.status_code == 200
         assert resp.get_json()["place_tags"] == []
         session.rollback.assert_called_once()
+
+
+class TestWebsiteEntitiesDelete:
+    def test_entity_not_found_returns_404(self, client):
+        session = MagicMock()
+        session.get.return_value = None
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.delete("/website_entities/999", headers=API_HEADERS)
+        assert resp.status_code == 404
+
+    def test_deletes_place_entity_without_person_link(self, client):
+        entity = MagicMock(entity_type="geogName", entity_text="Starling", document_id=42)
+        session = MagicMock()
+        session.get.return_value = entity
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.delete("/website_entities/7", headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["deleted_entity_id"] == 7
+        assert data["person_link_removed"] is False
+        session.delete.assert_called_once_with(entity)
+        session.commit.assert_called_once()
+
+    def test_person_entity_removes_matching_link(self, client):
+        entity = MagicMock(entity_type="persName", entity_text="Starling", document_id=42)
+        link = MagicMock()
+        session = MagicMock()
+        session.get.return_value = entity
+        session.execute.return_value.scalars.return_value.first.return_value = link
+        with patch("server.get_scoped_session", return_value=session):
+            with patch("library.person_registry.reject_review_link",
+                       return_value={"action": "reject", "person_deleted": True}) as mock_reject:
+                resp = client.delete("/website_entities/7", headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["person_link_removed"] is True
+        assert data["person_deleted"] is True
+        mock_reject.assert_called_once_with(session, link)
+        session.delete.assert_called_once_with(entity)
+
+
+class TestDocumentPersonsDecide:
+    def test_link_not_found_returns_404(self, client):
+        session = MagicMock()
+        session.get.return_value = None
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.patch("/document_persons/999", json={"action": "reject"}, headers=API_HEADERS)
+        assert resp.status_code == 404
+
+    def test_invalid_action_returns_400(self, client):
+        resp = client.patch("/document_persons/1", json={"action": "frobnicate"}, headers=API_HEADERS)
+        assert resp.status_code == 400
+
+    def test_reject_works_for_confident_link(self, client):
+        """Editor path: no 409 gate — a wrong wikidata_matched link can be undone."""
+        link = MagicMock(confidence="wikidata_matched")
+        session = MagicMock()
+        session.get.return_value = link
+        with patch("server.get_scoped_session", return_value=session):
+            with patch("library.person_registry.reject_review_link",
+                       return_value={"action": "reject", "link_id": 1, "person_id": 5,
+                                     "person_deleted": False}) as mock_reject:
+                resp = client.patch("/document_persons/1", json={"action": "reject"}, headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        assert resp.get_json()["action"] == "reject"
+        mock_reject.assert_called_once_with(session, link)
+        session.commit.assert_called_once()
+
+    def test_review_queue_endpoint_still_gates_on_manual_review(self, client):
+        link = MagicMock(confidence="wikidata_matched")
+        session = MagicMock()
+        session.get.return_value = link
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.patch("/persons_review/1", json={"action": "reject"}, headers=API_HEADERS)
+        assert resp.status_code == 409
+
+
+class TestPersonAliasAdd:
+    def test_missing_alias_returns_400(self, client):
+        resp = client.post("/persons/1/aliases", json={}, headers=API_HEADERS)
+        assert resp.status_code == 400
+
+    def test_person_not_found_returns_404(self, client):
+        session = MagicMock()
+        session.get.return_value = None
+        with patch("server.get_scoped_session", return_value=session):
+            resp = client.post("/persons/999/aliases", json={"alias": "Starlinek"}, headers=API_HEADERS)
+        assert resp.status_code == 404
+
+    def test_adds_alias(self, client):
+        person = MagicMock()
+        person.aliases = [MagicMock(alias="Starlinek")]
+        session = MagicMock()
+        session.get.return_value = person
+        with patch("server.get_scoped_session", return_value=session):
+            with patch("library.person_registry.add_person_alias", return_value=True) as mock_add:
+                resp = client.post("/persons/5/aliases", json={"alias": "Starlinek"}, headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["added"] is True
+        assert data["aliases"] == ["Starlinek"]
+        mock_add.assert_called_once_with(session, person, "Starlinek")
+        session.commit.assert_called_once()

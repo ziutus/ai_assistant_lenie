@@ -550,13 +550,13 @@ def persons_review_list():
     return {"status": "success", "count": len(entries), "entries": entries}, 200
 
 
-@app.route('/persons_review/<int:link_id>', methods=['PATCH', 'OPTIONS'])
-def persons_review_decide(link_id: int):
-    """Decide a manual_review entry. Body (JSON): {"action": "approve"|"reject"|"merge",
-    "target_person_id": <id>} — target_person_id only for merge."""
-    if request.method == 'OPTIONS':
-        return {"status": "OK"}, 200
+def _decide_person_link(link_id: int, require_review: bool):
+    """Shared handler for person-link decisions (approve/reject/merge).
 
+    require_review=True is the /persons_review queue semantics (409 outside
+    the queue); False is the editor path — lets the user undo a wrong
+    wikidata/alias match on any link.
+    """
     from library import person_registry
     from library.db.models import DocumentPerson, Person
 
@@ -569,7 +569,7 @@ def persons_review_decide(link_id: int):
     link = session.get(DocumentPerson, link_id)
     if link is None:
         return {"status": "error", "message": "Review entry not found"}, 404
-    if link.confidence != person_registry.CONFIDENCE_MANUAL_REVIEW:
+    if require_review and link.confidence != person_registry.CONFIDENCE_MANUAL_REVIEW:
         return {"status": "error", "message": "Entry is not awaiting review"}, 409
 
     try:
@@ -591,10 +591,107 @@ def persons_review_decide(link_id: int):
         return {"status": "error", "message": str(exc)}, 400
     except Exception:
         session.rollback()
-        logging.exception("persons_review decision failed for link %s", link_id)
+        logging.exception("person link decision failed for link %s", link_id)
         return {"status": "error", "message": "DB error"}, 500
 
     return {"status": "success", **result}, 200
+
+
+@app.route('/persons_review/<int:link_id>', methods=['PATCH', 'OPTIONS'])
+def persons_review_decide(link_id: int):
+    """Decide a manual_review entry. Body (JSON): {"action": "approve"|"reject"|"merge",
+    "target_person_id": <id>} — target_person_id only for merge."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+    return _decide_person_link(link_id, require_review=True)
+
+
+@app.route('/document_persons/<int:link_id>', methods=['PATCH', 'OPTIONS'])
+def document_persons_decide(link_id: int):
+    """Decide any document<->person link, regardless of confidence (editor UI).
+
+    Same actions/body as /persons_review — used to undo wrong
+    wikidata_matched/alias_matched links (e.g. an STT-garbled mention
+    resolved to the wrong person)."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+    return _decide_person_link(link_id, require_review=False)
+
+
+@app.route('/persons/<int:person_id>/aliases', methods=['POST', 'OPTIONS'])
+def person_alias_add(person_id: int):
+    """Manually add an alias (e.g. a podcast nickname) to a person.
+
+    Body (JSON or form): {"alias": "..."}. The next NER run resolves the
+    alias via alias_matched without Wikidata or review."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import Person
+    from library.person_registry import add_person_alias
+
+    data = request.get_json(silent=True) or {}
+    alias = (data.get('alias') or request.form.get('alias') or "").strip()
+    if not alias:
+        return {"status": "error", "message": "alias is required"}, 400
+
+    session = get_scoped_session()
+    person = session.get(Person, person_id)
+    if person is None:
+        return {"status": "error", "message": "Person not found"}, 404
+
+    try:
+        added = add_person_alias(session, person, alias)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("alias add failed for person %s", person_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return {"status": "success", "person_id": person_id, "added": added,
+            "aliases": [a.alias for a in person.aliases]}, 200
+
+
+@app.route('/website_entities/<int:entity_id>', methods=['DELETE', 'OPTIONS'])
+def website_entities_delete(entity_id: int):
+    """Delete a stored NER entity row (editor UI).
+
+    For persName entities the matching document_persons link (same document,
+    raw_mention == entity_text) is removed too; a person left with no links
+    is dropped from the registry."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library import person_registry
+    from library.db.models import DocumentEntity, DocumentPerson
+
+    session = get_scoped_session()
+    entity = session.get(DocumentEntity, entity_id)
+    if entity is None:
+        return {"status": "error", "message": "Entity not found"}, 404
+
+    link_result = None
+    try:
+        if entity.entity_type == "persName":
+            link = session.execute(
+                sa_select(DocumentPerson).where(
+                    DocumentPerson.document_id == entity.document_id,
+                    sa_func.lower(DocumentPerson.raw_mention) == entity.entity_text.lower(),
+                )
+            ).scalars().first()
+            if link is not None:
+                link_result = person_registry.reject_review_link(session, link)
+        session.delete(entity)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("entity delete failed for entity %s", entity_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return {"status": "success", "deleted_entity_id": entity_id,
+            "person_link_removed": link_result is not None,
+            "person_deleted": bool(link_result and link_result.get("person_deleted"))}, 200
 
 
 @app.route('/website_get_next_to_correct', methods=['GET'])
