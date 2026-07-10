@@ -694,6 +694,41 @@ def website_entities_delete(entity_id: int):
             "person_deleted": bool(link_result and link_result.get("person_deleted"))}, 200
 
 
+@app.route('/tags', methods=['GET'])
+def tags_list():
+    """Distinct tags across web_documents (CSV column), most used first — editor autocomplete."""
+    from sqlalchemy import select as sa_select
+
+    session = get_scoped_session()
+    rows = session.execute(
+        sa_select(WebDocument.tags).where(WebDocument.tags.isnot(None))
+    ).scalars().all()
+    counts: dict[str, int] = {}
+    for tags in rows:
+        for tag in (tags or "").split(","):
+            tag = tag.strip()
+            if tag:
+                counts[tag] = counts.get(tag, 0) + 1
+    ordered = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return {"status": "success", "tags": [{"tag": t, "count": c} for t, c in ordered]}, 200
+
+
+@app.route('/sources', methods=['GET'])
+def sources_list():
+    """Distinct web_documents.source values, most used first — editor autocomplete."""
+    from sqlalchemy import func as sa_func, select as sa_select
+
+    session = get_scoped_session()
+    rows = session.execute(
+        sa_select(WebDocument.source, sa_func.count())
+        .where(WebDocument.source.isnot(None))
+        .group_by(WebDocument.source)
+        .order_by(sa_func.count().desc(), WebDocument.source)
+    ).all()
+    return {"status": "success",
+            "sources": [{"source": s, "count": c} for s, c in rows if s and s.strip()]}, 200
+
+
 def _exclusion_dict(row):
     return {
         "id": row.id, "entity_text": row.entity_text, "entity_type": row.entity_type,

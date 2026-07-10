@@ -34,6 +34,7 @@ web_interface_react/
 │   │   │   ├── Select/                 # Reusable select dropdown
 │   │   │   ├── SharedInputs/           # Common document form fields
 │   │   │   ├── EntitiesPanel/          # NER persons/places chips + refresh button (GET/POST /website_entities)
+│   │   │   ├── TagsInput/              # Chip editor over the CSV tags field (suggestions from GET /tags)
 │   │   │   └── FormButtons/            # Save/delete action buttons
 │   │   ├── pages/
 │   │   │   ├── connect.tsx             # Connection configuration (/connect)
