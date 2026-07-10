@@ -41,17 +41,22 @@ def _get(params: dict) -> dict | None:
         return None
 
 
-def _is_human(entity: dict) -> bool:
-    claims = entity.get("claims", {}).get("P31", [])
-    for claim in claims:
-        value = claim.get("mainsnak", {}).get("datavalue", {}).get("value", {})
-        if isinstance(value, dict) and value.get("id") == HUMAN_QID:
-            return True
-    return False
+def _text_in_language(values: dict, language: str) -> str:
+    for lang in (language, "en"):
+        entry = values.get(lang)
+        if entry and entry.get("value"):
+            return entry["value"]
+    return ""
 
 
 def search_persons(name: str, language: str = "pl") -> list[dict]:
     """Search Wikidata for HUMAN entities matching a name.
+
+    Uses fulltext search (CirrusSearch) with the haswbstatement:P31=Q5 filter
+    instead of wbsearchentities — the latter only matches labels/aliases, so a
+    bare famous surname ("Trump") missed the intended person entirely (found
+    only a namesake gamer; live E2E 2026-07-10). Fulltext ranks Donald Trump
+    first for "Trump".
 
     Returns up to MAX_CANDIDATES dicts: {"qid", "label", "description"} —
     description (occupation/known-for) is the context the LLM uses to pick
@@ -61,42 +66,34 @@ def search_persons(name: str, language: str = "pl") -> list[dict]:
         return []
 
     search = _get({
-        "action": "wbsearchentities",
-        "search": name.strip(),
-        "language": language,
-        "uselang": language,
-        "type": "item",
-        # Generous limit: for a bare famous surname ("Trump") the intended
-        # person may rank below towers/families/namesakes, and non-human hits
-        # are filtered out afterwards.
-        "limit": 20,
+        "action": "query",
+        "list": "search",
+        "srsearch": f"{name.strip()} haswbstatement:P31={HUMAN_QID}",
+        "srlimit": MAX_CANDIDATES,
     })
     if not search:
         return []
-    hits = search.get("search", [])
-    if not hits:
+    qids = [
+        h["title"] for h in search.get("query", {}).get("search", [])
+        if h.get("title", "").startswith("Q")
+    ]
+    if not qids:
         return []
 
-    qids = [h["id"] for h in hits if h.get("id")]
     entities = _get({
         "action": "wbgetentities",
         "ids": "|".join(qids),
-        "props": "claims",
+        "props": "labels|descriptions",
+        "languages": f"{language}|en",
     })
     if not entities:
         return []
     entity_map = entities.get("entities", {})
 
     results = []
-    for hit in hits:
-        qid = hit.get("id")
-        if not qid or not _is_human(entity_map.get(qid, {})):
-            continue
-        results.append({
-            "qid": qid,
-            "label": hit.get("label") or name,
-            "description": hit.get("description") or "",
-        })
-        if len(results) >= MAX_CANDIDATES:
-            break
+    for qid in qids:
+        entity = entity_map.get(qid, {})
+        label = _text_in_language(entity.get("labels", {}), language) or name
+        description = _text_in_language(entity.get("descriptions", {}), language)
+        results.append({"qid": qid, "label": label, "description": description})
     return results
