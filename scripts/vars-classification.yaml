@@ -381,6 +381,11 @@ groups:
         type: secret
         required: false
         used_by: [docker, local]
+      LOCATIONIQ_API_KEY:
+        description: "LocationIQ API key for geocoding/place verification (NER stage 3, docs/ner-integration-plan.md; free tier 5000 req/day)"
+        type: secret
+        required: false
+        used_by: [docker, local]
       LANGFUSE_HOST:
         description: "Langfuse observability platform URL"
         type: config
