@@ -34,7 +34,8 @@ def ner():
 
     doc = get_nlp()(text)
     entities = [
-        {"text": ent.text, "label": ent.label_, "start": ent.start_char, "end": ent.end_char}
+        # lemma: base form for grouping inflected Polish variants ("Tuska" -> "Tusk")
+        {"text": ent.text, "label": ent.label_, "lemma": ent.lemma_, "start": ent.start_char, "end": ent.end_char}
         for ent in doc.ents
     ]
     return jsonify({"entities": entities})

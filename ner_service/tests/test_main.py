@@ -8,7 +8,9 @@ from src import main
 
 @pytest.fixture
 def client(monkeypatch):
-    fake_ent = types.SimpleNamespace(text="Donald Tusk", label_="persName", start_char=0, end_char=11)
+    fake_ent = types.SimpleNamespace(
+        text="Donald Tusk", label_="persName", lemma_="Donald Tusk", start_char=0, end_char=11,
+    )
     fake_doc = types.SimpleNamespace(ents=[fake_ent])
     monkeypatch.setattr(main, "get_nlp", lambda: MagicMock(return_value=fake_doc))
     main.app.testing = True
@@ -24,7 +26,11 @@ def test_healthz(client):
 def test_ner_returns_entities(client):
     resp = client.post("/ner", json={"text": "Donald Tusk"})
     assert resp.status_code == 200
-    assert resp.get_json() == {"entities": [{"text": "Donald Tusk", "label": "persName", "start": 0, "end": 11}]}
+    assert resp.get_json() == {
+        "entities": [
+            {"text": "Donald Tusk", "label": "persName", "lemma": "Donald Tusk", "start": 0, "end": 11}
+        ]
+    }
 
 
 def test_ner_requires_text(client):

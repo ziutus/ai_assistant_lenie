@@ -26,7 +26,8 @@ database/
     ├── 17-add-text-extracted-to-web-documents.sql
     ├── 18-create-document-removed-lines.sql
     ├── 19-create-reader-user-tables.sql          # users, user_reading_progress, user_document_notes
-    └── 20-create-api-keys.sql                    # api_keys
+    ├── 20-create-api-keys.sql                    # api_keys
+    └── 21-create-document-entities.sql           # document_entities (raw NER persons/places)
 ```
 
 ## How Init Scripts Are Used
@@ -164,6 +165,21 @@ Training data for `article_cleaner.py`: lines a human manually removed from a ch
 | `source` | `varchar(20) NOT NULL` | `manual` (removed in chunk-review UI) or `szum_chunk` (whole SZUM/REKLAMA chunk dropped by "Wyczyść dokument") |
 | `line_text` | `text NOT NULL` | The removed line/block |
 | `created_at` | `timestamp` | Row creation timestamp |
+
+### Table: `public.document_entities`
+
+Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-integration-plan.md`](../../docs/ner-integration-plan.md). Populated by `library/entity_service.py` from the NER microservice (`ner_service/`, via `library/ner_client.py`). Rows are derived data: a refresh **replaces** the document's rows (unlike `tags`, which accumulates). Deliberately no disambiguation columns — persons get dedicated tables in a later stage ([`docs/person-ner-plan.md`](../../docs/person-ner-plan.md)), places get verification + tags ([`docs/geo-place-ner-plan.md`](../../docs/geo-place-ner-plan.md)).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `entity_type` | `varchar(20) NOT NULL` | `persName` / `geogName` / `placeName` (spaCy `pl_core_news_lg` labels) |
+| `entity_text` | `text NOT NULL` | Base form of the mention (lemma when available — inflected variants aggregate into one row) |
+| `mention_count` | `integer NOT NULL DEFAULT 1` | Number of mentions aggregated into this row |
+| `created_at` | `timestamp` | Row creation timestamp |
+
+**Constraints/indexes:** UNIQUE `(document_id, entity_type, entity_text)`; indexes on `document_id` and `entity_type`.
 
 Reader identity and API key tables (`users`, `user_reading_progress`, `user_document_notes`, `api_keys` — init scripts 19-20) are out of scope for this section; see `library/reader_routes.py`, `library/auth.py` and `library/db/models.py` for their definitions.
 
