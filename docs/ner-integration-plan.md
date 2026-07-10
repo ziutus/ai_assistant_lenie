@@ -83,9 +83,13 @@ Zgodnie z [`geo-place-ner-plan.md`](geo-place-ner-plan.md):
 
 - [`backend/library/locationiq_client.py`](../backend/library/locationiq_client.py) —
   klient LocationIQ (klucz `LOCATIONIQ_API_KEY` z Vault, rate limit 2 zap./s,
-  graceful degradation) z **kontrolą jakości dopasowania** `is_plausible_match()`
-  (fuzzy-podobieństwo zapytania do części `display_name`, bez diakrytyków,
-  próg 0.75) — patrz „Ustalenie z testu klucza" niżej, dlaczego HTTP 200 nie wystarcza.
+  graceful degradation, `accept-language=pl,en` — bez tego `display_name` wraca
+  po angielsku i podobieństwo nazw odrzucało „Kijów" vs „Kyiv") z **kontrolą
+  jakości dopasowania** `is_plausible_match()`: fuzzy-podobieństwo zapytania do
+  części `display_name` (bez diakrytyków, próg 0.75) **+ allowlista klas OSM**
+  (natural/water/waterway/place/boundary/landuse — odrzuca np. stację kolejową
+  „Shahed" w Szirazie dopasowaną do nazwy drona) — patrz „Ustalenie z testu
+  klucza" niżej, dlaczego HTTP 200 nie wystarcza.
 - Tabela **`geocode_cache`** (init `22-create-geocode-cache.sql`, Alembic
   `a3b4c5d6e7f8`, ORM `GeocodeCache`) — jedna próba geokodowania per unikalny
   string, cache'owane też wyniki negatywne; kolumna `document_entities.geocode_id`.
