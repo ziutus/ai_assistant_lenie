@@ -365,6 +365,9 @@ def document_chapters(doc_id: int):
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
+        "document_type": doc.document_type,
+        "title": doc.title,
+        "url": doc.url,
         "source_field": field,
         "text_length": len(text),
         "chapters": chapters,
