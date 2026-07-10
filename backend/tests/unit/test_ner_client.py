@@ -13,6 +13,7 @@ from library.ner_client import (  # noqa: E402
     MAX_TEXT_CHARS,
     aggregate_entities,
     extract_entities,
+    warmup_async,
 )
 
 
@@ -66,6 +67,27 @@ class TestExtractEntities:
                 extract_entities("x" * (MAX_TEXT_CHARS + 500))
         sent = mock_post.call_args.kwargs["json"]["text"]
         assert len(sent) == MAX_TEXT_CHARS
+
+
+class TestWarmupAsync:
+    def test_fires_probe_in_background(self):
+        import threading
+
+        called = threading.Event()
+
+        def fake_post(*args, **kwargs):
+            called.set()
+            return _response([])
+
+        with patch("library.ner_client.requests.post", side_effect=fake_post):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                warmup_async()
+                assert called.wait(timeout=2)
+
+    def test_service_down_does_not_raise(self):
+        with patch("library.ner_client.requests.post", side_effect=requests.ConnectionError("boom")):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                warmup_async()  # fire-and-forget — nie może rzucić wyjątku
 
 
 class TestAggregateEntities:

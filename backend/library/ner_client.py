@@ -61,6 +61,26 @@ def extract_entities(text: str) -> list[dict]:
         return []
 
 
+def warmup_async() -> None:
+    """Fire-and-forget /ner probe in a daemon thread to pre-load the spaCy model.
+
+    Call at the start of scripts that will use NER later (article_browser,
+    youtube analysis): the one-time model load (~90s on the NAS after a
+    container restart) then overlaps with S3 downloads / LLM calls instead of
+    stalling the first real extraction. Errors are ignored — warmup must be
+    invisible when the service is down.
+    """
+    import threading
+
+    def _probe() -> None:
+        try:
+            requests.post(f"{_service_url()}/ner", json={"text": "ping"}, timeout=REQUEST_TIMEOUT_S)
+        except Exception:
+            logger.debug("NER warmup probe failed (ignored)")
+
+    threading.Thread(target=_probe, name="ner-warmup", daemon=True).start()
+
+
 def aggregate_entities(entities: list[dict], types: tuple[str, ...] = ENTITY_TYPES) -> dict[tuple[str, str], int]:
     """Group raw mentions by (entity_type, base form) with occurrence counts.
 

@@ -1300,6 +1300,11 @@ def main():
                      not_reviewed=args.not_reviewed, no_obsidian=args.no_obsidian,
                      not_cleaned=args.not_cleaned)
         elif args.review:
+            # Rozgrzej serwis NER w tle — ładowanie modelu spaCy (~90 s po
+            # restarcie kontenera) nakłada się na przeglądanie artykułów,
+            # zamiast blokować pierwszą akcję [w]/[e]
+            from library.ner_client import warmup_async
+            warmup_async()
             cmd_review(session, since=args.since, portal=args.portal,
                        start_id=args.id, limit=args.limit, auto_view=args.view,
                        check_urls=args.check_urls,
