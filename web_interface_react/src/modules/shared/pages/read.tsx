@@ -452,7 +452,7 @@ const Read: React.FC = () => {
             )}
 
             {synthesis && (
-              <details className={styles.synthesisPanel}>
+              <details className={styles.synthesisPanel} open>
                 <summary>📄 Streszczenie</summary>
                 <div style={{ fontSize: "0.85em", lineHeight: 1.55, whiteSpace: "pre-wrap", marginTop: 8 }}>
                   {synthesis}
