@@ -373,7 +373,26 @@ def website_get_by_id():
     doc = service.get_document(link_id_int)
     if doc is None:
         return {"status": "error", "message": "Document not found"}, 404
-    return doc.dict(), 200
+
+    # Real embedding stats for the editor: embeddings actually stored for the
+    # document + approved TEMAT chunks (the source of new embeddings via
+    # POST /analysis_run/<id>/generate_embeddings). Replaces the old frontend
+    # guess based on counting "\n\n\n" separators.
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library.db.models import DocumentChunk, WebsiteEmbedding
+
+    result = doc.dict()
+    result["embeddings_count"] = session.execute(
+        sa_select(sa_func.count()).select_from(WebsiteEmbedding)
+        .where(WebsiteEmbedding.website_id == link_id_int)
+    ).scalar()
+    result["approved_chunks_count"] = session.execute(
+        sa_select(sa_func.count()).select_from(DocumentChunk)
+        .where(DocumentChunk.document_id == link_id_int,
+               DocumentChunk.type == "TEMAT",
+               DocumentChunk.status == "approved")
+    ).scalar()
+    return result, 200
 
 
 def _entities_doc_id(raw_id):

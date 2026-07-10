@@ -120,6 +120,7 @@ class TestWebsiteGet:
             "text_md": None, "transcript_needed": False,
         }
         mock_session = MagicMock()
+        mock_session.execute.return_value.scalar.return_value = 0  # embeddings/chunks counts
         with patch("server.get_scoped_session", return_value=mock_session):
             with patch("server.DocumentService") as MockDS:
                 mock_service = MagicMock()
@@ -132,6 +133,8 @@ class TestWebsiteGet:
         data = resp.get_json()
         assert data["id"] == 42
         assert data["next_id"] == 43
+        assert data["embeddings_count"] == 0
+        assert data["approved_chunks_count"] == 0
         mock_service.get_document.assert_called_once_with(42)
 
     def test_not_found_returns_404(self, client):

@@ -83,11 +83,14 @@ class TestWebsiteGetValidation:
         """Valid ID that exists should return 200 with document data."""
         mock_doc = MagicMock()
         mock_doc.dict.return_value = {"id": 1, "url": "https://example.com"}
-        with patch("server.DocumentService") as MockDS:
-            mock_service = MagicMock()
-            mock_service.get_document.return_value = mock_doc
-            MockDS.return_value = mock_service
-            resp = client.get("/website_get?id=1", headers=API_HEADERS)
+        mock_session = MagicMock()
+        mock_session.execute.return_value.scalar.return_value = 0  # embeddings/chunks counts
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = mock_doc
+                MockDS.return_value = mock_service
+                resp = client.get("/website_get?id=1", headers=API_HEADERS)
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["id"] == 1
