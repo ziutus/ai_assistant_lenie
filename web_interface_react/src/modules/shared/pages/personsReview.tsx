@@ -98,6 +98,80 @@ const MergePicker = ({
   );
 };
 
+interface NerExclusion {
+  id: number;
+  entity_text: string;
+  entity_type: string;
+  scope: string;
+  author: string | null;
+  note: string | null;
+  created_at: string | null;
+}
+
+// NER exclusion dictionary (table ner_exclusions) — false positives suppressed
+// at entity refresh. Rules are added from the editor's EntitiesPanel (🚫);
+// here they can be reviewed and removed.
+const ExclusionsSection = () => {
+  const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
+  const [exclusions, setExclusions] = React.useState<NerExclusion[]>([]);
+  const [message, setMessage] = React.useState("");
+
+  const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
+
+  const fetchExclusions = async () => {
+    setMessage("");
+    try {
+      const response = await axios.get(`${apiUrl}/ner_exclusions`, { headers });
+      setExclusions(response.data.exclusions ?? []);
+    } catch (error: any) {
+      console.error("Error fetching exclusions", error);
+      setMessage(`Nie udało się pobrać wykluczeń: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchExclusions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const remove = async (id: number) => {
+    setMessage("");
+    try {
+      await axios.delete(`${apiUrl}/ner_exclusions/${id}`, { headers });
+      setExclusions((prev) => prev.filter((e) => e.id !== id));
+    } catch (error: any) {
+      console.error("Error deleting exclusion", error);
+      setMessage(`Nie udało się usunąć wykluczenia: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 30 }}>
+      <h3>Wykluczenia NER ({exclusions.length})</h3>
+      <p style={{ color: "#667", marginBottom: 10 }}>
+        Frazy pomijane przy wykrywaniu osób i miejsc (np. „Taliban" to organizacja, „Starling" to urządzenie).
+        Dodawane z edytora dokumentu (przycisk 🚫 w panelu encji).
+      </p>
+      {message && <p className={"errorText"}>{message}</p>}
+      {!exclusions.length && <p style={{ color: "#667" }}>Brak reguł wykluczeń.</p>}
+      <ul style={{ listStyle: "none", padding: 0 }}>
+        {exclusions.map((e) => (
+          <li key={e.id} style={{ padding: "6px 0", borderBottom: "1px solid #eee", display: "flex", alignItems: "center", gap: 10 }}>
+            <button className={"button"} type="button" onClick={() => remove(e.id)}>Usuń</button>
+            <strong>„{e.entity_text}"</strong>
+            <span style={{ color: "#667" }}>{e.entity_type === "*" ? "wszystkie typy" : e.entity_type}</span>
+            <span style={{ color: "#667" }}>
+              {e.scope === "global" ? "globalnie" : `autor: ${e.author}`}
+            </span>
+            {e.note && <span style={{ color: "#999" }}>({e.note})</span>}
+            {e.created_at && <span style={{ color: "#bbb", fontSize: "0.85em" }}>{e.created_at.slice(0, 10)}</span>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+};
+
 const PersonsReview = () => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [entries, setEntries] = React.useState<ReviewEntry[]>([]);
@@ -245,6 +319,8 @@ const PersonsReview = () => {
           </li>
         ))}
       </ul>
+
+      <ExclusionsSection />
     </div>
   );
 };
