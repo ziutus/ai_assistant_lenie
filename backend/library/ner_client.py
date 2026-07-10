@@ -86,13 +86,22 @@ def aggregate_entities(entities: list[dict], types: tuple[str, ...] = ENTITY_TYP
 
     The base form is the lemma when the service provides one (groups Polish
     inflected variants: "Tuska" -> "Tusk"), falling back to the surface text.
+
+    Mentions whose surface text starts lowercase are dropped: Polish proper
+    names are capitalized, so a lowercase mention is an adjective/demonym the
+    model mislabeled as a place ("ukraiński", "rosyjski"). The check uses the
+    surface text, not the lemma — legitimate lemmas can start lowercase
+    ("Cieśninie Ormuz" -> "cieśnina Ormuz").
     """
     counts: Counter[tuple[str, str]] = Counter()
     for ent in entities:
         label = ent.get("label")
         if label not in types:
             continue
-        base = (ent.get("lemma") or ent.get("text") or "").strip()
+        surface = (ent.get("text") or "").strip()
+        if not surface or surface[0].islower():
+            continue
+        base = (ent.get("lemma") or surface).strip()
         if not base:
             continue
         counts[(label, base)] += 1

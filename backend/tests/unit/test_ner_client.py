@@ -119,3 +119,16 @@ class TestAggregateEntities:
 
     def test_skips_blank_entities(self):
         assert aggregate_entities([{"text": "  ", "label": "persName"}]) == {}
+
+    def test_skips_lowercase_mentions(self):
+        """Przymiotniki ('ukraiński') błędnie oznaczane jako placeName — odpadają po wielkości litery."""
+        entities = [
+            {"text": "ukraiński", "label": "placeName", "lemma": "ukraiński"},
+            {"text": "Ukraina", "label": "placeName", "lemma": "Ukraina"},
+        ]
+        assert aggregate_entities(entities) == {("placeName", "Ukraina"): 1}
+
+    def test_lowercase_lemma_of_capitalized_mention_is_kept(self):
+        """Lemat może zaczynać się małą literą ('cieśnina Ormuz') — filtr patrzy na tekst wzmianki."""
+        entities = [{"text": "Cieśninie Ormuz", "label": "geogName", "lemma": "cieśnina Ormuz"}]
+        assert aggregate_entities(entities) == {("geogName", "cieśnina Ormuz"): 1}
