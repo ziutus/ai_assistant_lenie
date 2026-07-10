@@ -1,6 +1,6 @@
 import React from "react";
 import L from "leaflet";
-import { GeoJSON, MapContainer, TileLayer, useMap } from "react-leaflet";
+import { CircleMarker, GeoJSON, MapContainer, TileLayer, Tooltip, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { COUNTRY_SLUG_TO_ISO3 } from "../../data/countryIso";
 import { ISO3_TO_NAME_PL } from "../../data/countryNames";
@@ -10,8 +10,16 @@ export interface CountryTag {
   name_pl: string;
 }
 
+/** Verified NER place (stage 3, geocode_cache coords) rendered as a point marker. */
+export interface PlaceMarker {
+  name: string;
+  lat: number;
+  lon: number;
+}
+
 interface Props {
   countries: CountryTag[];
+  places?: PlaceMarker[];
 }
 
 const GEOJSON_URL = "/geo/world-countries.geo.json";
@@ -51,7 +59,7 @@ const FitToMatched: React.FC<{ data: GeoJSON.FeatureCollection; matchedIso: Set<
  *  world-countries GeoJSON only when actually rendered. Small island states / micro-states
  *  missing from the (lightweight, ~250KB) bundled GeoJSON won't appear on the map — they're
  *  still listed as text chips below it so nothing is silently dropped. */
-const CountryMap: React.FC<Props> = ({ countries }) => {
+const CountryMap: React.FC<Props> = ({ countries, places = [] }) => {
   const [geoData, setGeoData] = React.useState<GeoJSON.FeatureCollection | null>(null);
   const [error, setError] = React.useState(false);
 
@@ -94,7 +102,7 @@ const CountryMap: React.FC<Props> = ({ countries }) => {
     [matchedIso]
   );
 
-  if (countries.length === 0 || error) return null;
+  if ((countries.length === 0 && places.length === 0) || error) return null;
 
   return (
     <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, marginTop: 12 }}>
@@ -122,7 +130,9 @@ const CountryMap: React.FC<Props> = ({ countries }) => {
         }
         .country-label-dim::before { display: none; }
       `}</style>
-      <strong style={{ fontSize: "0.85em", display: "block", marginBottom: 8 }}>🌍 Kraje w artykule</strong>
+      <strong style={{ fontSize: "0.85em", display: "block", marginBottom: 8 }}>
+        🌍 {places.length > 0 ? "Kraje i miejsca w artykule" : "Kraje w artykule"}
+      </strong>
       {geoData && (
         <div style={{ height: 340, borderRadius: 6, overflow: "hidden" }}>
           <MapContainer
@@ -142,6 +152,16 @@ const CountryMap: React.FC<Props> = ({ countries }) => {
               style={style}
               onEachFeature={onEachFeature}
             />
+            {places.map(p => (
+              <CircleMarker
+                key={`${p.name}-${p.lat}-${p.lon}`}
+                center={[p.lat, p.lon]}
+                radius={6}
+                pathOptions={{ color: "#b45309", fillColor: "#f59e0b", fillOpacity: 0.85, weight: 1.5 }}
+              >
+                <Tooltip direction="top" offset={[0, -6]}>{p.name}</Tooltip>
+              </CircleMarker>
+            ))}
             <FitToMatched data={geoData} matchedIso={matchedIso} />
           </MapContainer>
         </div>

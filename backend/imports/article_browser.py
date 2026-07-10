@@ -30,8 +30,10 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
-__version__ = "0.5.0"
+__version__ = "0.5.1"
 # Changelog:
+#   0.5.1 — weryfikacja miejsc (etap 3): geokoder LocationIQ + LLM → tagi miejsce-*
+#           (library.place_verification; auto przy [w] i [e], ✓ przy zweryfikowanych)
 #   0.5.0 — encje NER (osoby/miejsca): auto przy [w]rite to db, ręcznie [e]ncje w menu
 #           (library.entity_service → tabela document_entities, docs/ner-integration-plan.md)
 #   0.4.3 — ekstrakcja krajów: gazetteer (bez LLM) jako prescreen + LLM potwierdza kandydatów
@@ -638,6 +640,19 @@ def action_save_to_db(doc, article: dict, session) -> bool:
         session.rollback()
         print(f"  OSTRZEŻENIE: ekstrakcja encji nie powiodła się: {e}")
 
+    # 2c. Weryfikacja miejsc (etap 3): geokoder + LLM → tagi miejsce-*
+    try:
+        from library.place_verification import verify_document_places
+        summary = verify_document_places(session, doc, text_only)
+        session.commit()
+        if summary["tagged"]:
+            print(f"  Miejsca potwierdzone: {', '.join(summary['tagged'])}")
+        elif summary["resolved"]:
+            print(f"  Miejsca zweryfikowane geokoderem (LLM nie potwierdził istotności): {', '.join(summary['resolved'])}")
+    except Exception as e:
+        session.rollback()
+        print(f"  OSTRZEŻENIE: weryfikacja miejsc nie powiodła się: {e}")
+
     # 3. Twórz embedding
     print("  Tworzę embedding...")
     try:
@@ -1191,13 +1206,20 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                         rows = refresh_document_entities(session, doc.id, text_only)
                         session.commit()
                         if rows:
+                            from library.place_verification import verify_document_places
+                            summary = verify_document_places(session, doc, text_only)
+                            session.commit()
                             grouped = get_document_entities(session, doc.id)
                             for label, header in (("persName", "Osoby"), ("geogName", "Miejsca geograficzne"),
                                                   ("placeName", "Miejsca administracyjne")):
                                 items = grouped.get(label) or []
                                 if items:
                                     print(f"  {header}: " + ", ".join(
-                                        f"{it['text']} ({it['count']})" for it in items))
+                                        f"{it['text']} ({it['count']})"
+                                        + (" ✓" if it.get("verified") else "")
+                                        for it in items))
+                            if summary["tagged"]:
+                                print(f"  Tagi miejsc: {', '.join(summary['tagged'])}")
                         else:
                             print("  Brak encji (lub serwis NER niedostępny).")
                     except Exception as e:

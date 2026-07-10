@@ -75,6 +75,45 @@ def extract_countries_with_llm(text: str, title: str) -> list[str]:
         return []
 
 
+def confirm_places_with_llm(text: str, title: str, candidate_names: list[str]) -> list[str]:
+    """Z listy zweryfikowanych geokoderem miejsc wybierz te WYRAŹNIE omawiane w artykule.
+
+    Ten sam wzorzec co extract_countries_hybrid: LLM dostaje zamkniętą listę
+    kandydatów (nie może wymyślić miejsca spoza niej) i ocenia wyłącznie
+    istotność w kontekście artykułu — fakt istnienia miejsca potwierdził już
+    geokoder (library/place_verification.py). Zwraca podzbiór candidate_names.
+    """
+    from library.ai import ai_ask
+
+    if not candidate_names:
+        return []
+
+    names = ", ".join(candidate_names)
+    prompt = (
+        f"Przeczytaj poniższy artykuł. Z listy miejsc-kandydatów wybierz TYLKO te, które są w nim\n"
+        f"WYRAŹNIE omawiane (nie tylko przelotnie wspomniane).\n\n"
+        f"Kandydaci: {names}\n\n"
+        f"Zwróć TYLKO wybrane nazwy dokładnie tak, jak podano na liście kandydatów, oddzielone przecinkami.\n"
+        f"Jeśli żaden z kandydatów nie jest wyraźnie omawiany, zwróć pustą odpowiedź.\n\n"
+        f"TYTUŁ: {title}\n\nTREŚĆ:\n{text[:3000]}"
+    )
+    try:
+        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=150)
+        raw = response.response_text.strip()
+        if not raw:
+            return []
+        by_lower = {n.lower(): n for n in candidate_names}
+        result = []
+        for item in raw.split(","):
+            name = by_lower.get(item.strip().lower())
+            if name and name not in result:
+                result.append(name)
+        return result
+    except Exception as e:
+        print(f"  OSTRZEŻENIE: potwierdzenie miejsc nie powiodło się: {e}")
+        return []
+
+
 def extract_countries_hybrid(text: str, title: str) -> list[str]:
     """Wykryj kraje: najpierw gazetteer (bez LLM), potem LLM potwierdza kandydatów.
 

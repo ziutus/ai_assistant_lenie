@@ -70,20 +70,39 @@ class TestWebsiteEntitiesRefresh:
                 resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
         assert resp.status_code == 400
 
-    def test_refreshes_and_returns_entities(self, client):
+    def test_refreshes_verifies_and_returns_entities(self, client):
         doc = MagicMock(text_md="# Artykuł o Tusku", text=None)
         session = MagicMock()
         with patch("server.get_scoped_session", return_value=session):
             with patch("server.WebDocument") as MockDoc:
                 MockDoc.get_by_id.return_value = doc
                 with patch("library.entity_service.refresh_document_entities", return_value=[MagicMock()] * 2) as mock_refresh:
-                    with patch("library.entity_service.get_document_entities", return_value=GROUPED):
-                        resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
+                    with patch("library.place_verification.verify_document_places",
+                               return_value={"checked": 1, "resolved": ["Kijów"], "tagged": ["miejsce-kijow"]}) as mock_verify:
+                        with patch("library.entity_service.get_document_entities", return_value=GROUPED):
+                            resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
 
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "success"
         assert data["refreshed"] == 2
+        assert data["place_tags"] == ["miejsce-kijow"]
         assert data["entities"] == GROUPED
         mock_refresh.assert_called_once_with(session, 42, "# Artykuł o Tusku")
-        session.commit.assert_called_once()
+        mock_verify.assert_called_once_with(session, doc, "# Artykuł o Tusku")
+        assert session.commit.call_count == 2
+
+    def test_place_verification_failure_does_not_fail_request(self, client):
+        doc = MagicMock(text_md="# Artykuł", text=None)
+        session = MagicMock()
+        with patch("server.get_scoped_session", return_value=session):
+            with patch("server.WebDocument") as MockDoc:
+                MockDoc.get_by_id.return_value = doc
+                with patch("library.entity_service.refresh_document_entities", return_value=[MagicMock()]):
+                    with patch("library.place_verification.verify_document_places", side_effect=RuntimeError("boom")):
+                        with patch("library.entity_service.get_document_entities", return_value=GROUPED):
+                            resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        assert resp.get_json()["place_tags"] == []
+        session.rollback.assert_called_once()

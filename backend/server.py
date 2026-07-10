@@ -408,10 +408,12 @@ def website_entities_get():
 
 @app.route('/website_entities', methods=['POST'])
 def website_entities_refresh():
-    """Re-run NER on the document text and replace its stored entities.
+    """Re-run NER on the document text, verify places and replace stored entities.
 
     First call after an ner_service restart can take up to ~90s (model load) —
-    see ner_service/README.md.
+    see ner_service/README.md. Place verification (geocoder + LLM relevance,
+    stage 3) runs after the refresh and adds miejsce-* tags to the document;
+    its failure does not fail the request.
     """
     from library.entity_service import get_document_entities, refresh_document_entities
 
@@ -430,10 +432,24 @@ def website_entities_refresh():
 
     rows = refresh_document_entities(session, doc_id, text)
     session.commit()
+
+    place_tags: list[str] = []
+    if rows:
+        try:
+            from library.place_verification import verify_document_places
+
+            summary = verify_document_places(session, doc, text)
+            session.commit()
+            place_tags = summary["tagged"]
+        except Exception:
+            session.rollback()
+            logging.exception("place verification failed for doc %s", doc_id)
+
     return {
         "status": "success",
         "id": doc_id,
         "refreshed": len(rows),
+        "place_tags": place_tags,
         "entities": get_document_entities(session, doc_id),
     }, 200
 

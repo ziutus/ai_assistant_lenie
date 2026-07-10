@@ -7,7 +7,7 @@
 > [`person-ner-plan.md`](person-ner-plan.md) (osoby), dodając brakującą warstwę
 > integracyjną i przyrostową kolejność wdrożenia.
 >
-> **Status:** etapy 1-2 ZAIMPLEMENTOWANE (2026-07-10), etapy 3-4 do zrobienia.
+> **Status:** etapy 1-3 ZAIMPLEMENTOWANE (2026-07-10), etap 4 (osoby) do zrobienia.
 > **Ostatnia aktualizacja:** 2026-07-10
 
 ## Punkt wyjścia (stan na 2026-07-10)
@@ -77,20 +77,35 @@ Ograniczenia MVP (świadome):
 - Brak rozróżnienia dwóch osób o tym samym nazwisku (rozwiązuje etap 4).
 - Brak weryfikacji, czy `geogName` to realne miejsce (rozwiązuje etap 3).
 
-## Etap 3 — miejsca: weryfikacja, tagi `miejsce-*`, mapa (do zrobienia)
+## Etap 3 — miejsca: weryfikacja, tagi `miejsce-*`, mapa ✅ (2026-07-10)
 
 Zgodnie z [`geo-place-ner-plan.md`](geo-place-ner-plan.md):
 
-- Weryfikacja kandydatów `geogName`/`placeName` przez **LocationIQ free tier**
-  (5 000 zapytań/dzień) z cache'em wyników w bazie (nazwa → istnieje/nie +
-  współrzędne), potem LLM potwierdza istotność (wzorzec `extract_countries_hybrid`).
-- Zweryfikowane miejsca → tagi `miejsce-*` w `doc.tags` + zapis współrzędnych.
-- UI: frontend ma już `CountryMap` (mapa z tagów `kraj-*`) — punkty miejsc ze
-  współrzędnymi nanosimy na tę samą mapę.
-
-Wymaga: konto LocationIQ (✅ założone 2026-07-10, klucz w Vault jako
-`LOCATIONIQ_API_KEY`, wpis w `scripts/vars-classification.yaml`), decyzja o
-namespace tagów (`miejsce-*` vs `geo-*`), tabela cache geokodowania.
+- [`backend/library/locationiq_client.py`](../backend/library/locationiq_client.py) —
+  klient LocationIQ (klucz `LOCATIONIQ_API_KEY` z Vault, rate limit 2 zap./s,
+  graceful degradation, `accept-language=pl,en` — bez tego `display_name` wraca
+  po angielsku i podobieństwo nazw odrzucało „Kijów" vs „Kyiv") z **kontrolą
+  jakości dopasowania** `is_plausible_match()`: fuzzy-podobieństwo zapytania do
+  części `display_name` (bez diakrytyków, próg 0.75) **+ allowlista klas OSM**
+  (natural/water/waterway/place/boundary/landuse — odrzuca np. stację kolejową
+  „Shahed" w Szirazie dopasowaną do nazwy drona) — patrz „Ustalenie z testu
+  klucza" niżej, dlaczego HTTP 200 nie wystarcza.
+- Tabela **`geocode_cache`** (init `22-create-geocode-cache.sql`, Alembic
+  `a3b4c5d6e7f8`, ORM `GeocodeCache`) — jedna próba geokodowania per unikalny
+  string, cache'owane też wyniki negatywne; kolumna `document_entities.geocode_id`.
+- [`backend/library/place_verification.py`](../backend/library/place_verification.py) —
+  `verify_document_places()`: kandydaci `geogName`/`placeName` → geokoder (przez
+  cache) → LLM potwierdza istotność (`article_tagging.confirm_places_with_llm`,
+  wzorzec `extract_countries_hybrid`) → tagi **`miejsce-<slug>`** w `doc.tags`.
+  **Kraje są pomijane** (mają własny pipeline `kraj-*`; geokodowanie ich paliłoby
+  limit API bez pożytku) — filtr przez `country_gazetteer.detect_countries()`.
+- Wpięcie: `document_analysis_service.create_run()` (krok 11d),
+  `article_browser.py` (`[w]` krok 2c i `[e]ncje` z ✓ przy zweryfikowanych),
+  `POST /website_entities` (weryfikacja po odświeżeniu, zwraca `place_tags`).
+- UI: `EntitiesPanel` — zielony chip z ✓ i tooltipem `display_name` dla
+  zweryfikowanych, wyszarzenie dla odrzuconych przez geokoder; `CountryMap`
+  (widok `/read/:id`) — pomarańczowe markery punktowe zweryfikowanych miejsc
+  (`GET /website_entities` → `lat`/`lon`).
 
 **Ustalenie z testu klucza (2026-07-10):** popularne polskie egzonimy
 rozwiązują się poprawnie („Kijów" → Kyiv, „Morze Czerwone" → Red Sea), ale
@@ -121,9 +136,8 @@ Zgodnie z [`person-ner-plan.md`](person-ner-plan.md):
 |---|---|---|---|
 | 1. Klient NER | działający `ner_service` | — | ✅ 2026-07-10 |
 | 2. MVP `document_entities` + UI | etap 1 | — | ✅ 2026-07-10 |
-| 3. Miejsca (LocationIQ + tagi + mapa) | etap 2 | konto LocationIQ, namespace tagów | do zrobienia |
+| 3. Miejsca (LocationIQ + tagi + mapa) | etap 2 | konto LocationIQ ✅, namespace: `miejsce-*` | ✅ 2026-07-10 |
 | 4. Osoby (model relacyjny) | etap 2 | format `confidence`, klient Wikidata | do zrobienia |
 
-Etapy 3 i 4 są od siebie niezależne — można je robić w dowolnej kolejności.
 Brak wpisu w backlogu (`_bmad-output/planning-artifacts/epics/backlog.md`) —
-dodać etapy 3-4 jako osobne zadania przy gotowości do implementacji.
+dodać etap 4 jako osobne zadanie przy gotowości do implementacji.

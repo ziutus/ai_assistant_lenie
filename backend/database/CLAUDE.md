@@ -27,7 +27,8 @@ database/
     ├── 18-create-document-removed-lines.sql
     ├── 19-create-reader-user-tables.sql          # users, user_reading_progress, user_document_notes
     ├── 20-create-api-keys.sql                    # api_keys
-    └── 21-create-document-entities.sql           # document_entities (raw NER persons/places)
+    ├── 21-create-document-entities.sql           # document_entities (raw NER persons/places)
+    └── 22-create-geocode-cache.sql               # geocode_cache + document_entities.geocode_id
 ```
 
 ## How Init Scripts Are Used
@@ -177,9 +178,27 @@ Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-inte
 | `entity_type` | `varchar(20) NOT NULL` | `persName` / `geogName` / `placeName` (spaCy `pl_core_news_lg` labels) |
 | `entity_text` | `text NOT NULL` | Base form of the mention (lemma when available — inflected variants aggregate into one row) |
 | `mention_count` | `integer NOT NULL DEFAULT 1` | Number of mentions aggregated into this row |
+| `geocode_id` | `integer` | FK → `geocode_cache.id` (`SET NULL` on delete) — stage-3 geocoder verdict for place entities; `NULL` = not checked yet |
 | `created_at` | `timestamp` | Row creation timestamp |
 
-**Constraints/indexes:** UNIQUE `(document_id, entity_type, entity_text)`; indexes on `document_id` and `entity_type`.
+**Constraints/indexes:** UNIQUE `(document_id, entity_type, entity_text)`; indexes on `document_id`, `entity_type` and `geocode_id`.
+
+### Table: `public.geocode_cache`
+
+Geocoder response cache (NER stage 3, `library/place_verification.py` + `library/locationiq_client.py`). One row per distinct query string ever sent to LocationIQ (free tier: 5000 req/day) — negative results are cached too, so a name is never geocoded twice.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `query` | `text NOT NULL UNIQUE` | The place name as queried (entity base form) |
+| `resolved` | `boolean NOT NULL` | Geocoder returned a hit AND it passed the match-quality check (`is_plausible_match()` — rare Polish exonyms fuzzy-match to wrong places, so a bare hit is not proof) |
+| `display_name` | `text` | Hierarchical name from the geocoder (e.g. "Kyiv, Ukraine") |
+| `lat` / `lon` | `numeric(9,6)` | Coordinates (map markers in `/read/:id`) |
+| `osm_class` / `osm_type` | `varchar(50)` | OSM classification of the hit |
+| `importance` | `real` | Geocoder relevance score |
+| `raw` | `jsonb` | First hit as returned by the provider (diagnostics/tuning) |
+| `provider` | `varchar(20) NOT NULL DEFAULT 'locationiq'` | Geocoding provider |
+| `created_at` | `timestamp` | Row creation timestamp |
 
 Reader identity and API key tables (`users`, `user_reading_progress`, `user_document_notes`, `api_keys` — init scripts 19-20) are out of scope for this section; see `library/reader_routes.py`, `library/auth.py` and `library/db/models.py` for their definitions.
 

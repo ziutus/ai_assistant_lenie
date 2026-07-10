@@ -696,13 +696,47 @@ class DocumentRemovedLine(Base):
         return f"DocumentRemovedLine(id={self.id!r}, document_id={self.document_id!r}, source={self.source!r})"
 
 
+class GeocodeCache(Base):
+    """Cached geocoder response for one query string (NER stage 3).
+
+    Negative results are cached too (resolved=False) so a name is never sent
+    to the geocoder twice. resolved means the hit also passed the match-quality
+    check in library/locationiq_client.py — rare Polish exonyms fuzzy-match to
+    wrong places, so a bare HTTP 200 is not proof the place exists.
+    """
+
+    __tablename__ = "geocode_cache"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    resolved: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    display_name: Mapped[str | None] = mapped_column(Text)
+    lat: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    lon: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    osm_class: Mapped[str | None] = mapped_column(String(50))
+    osm_type: Mapped[str | None] = mapped_column(String(50))
+    importance: Mapped[float | None] = mapped_column()
+    raw: Mapped[dict | None] = mapped_column(JSONB)
+    provider: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=sa_text("'locationiq'"),
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return f"GeocodeCache(id={self.id!r}, query={self.query!r}, resolved={self.resolved!r})"
+
+
 class DocumentEntity(Base):
     """Raw NER entity (person/place mention) detected in a document.
 
     MVP of docs/ner-integration-plan.md: aggregated mentions from the NER
     microservice (ner_service/, via library/ner_client.py), no disambiguation.
     Rows are derived data — refreshing a document's entities replaces them
-    (library/entity_service.py).
+    (library/entity_service.py). geocode_id links place entities to the
+    geocoder verdict (stage 3, library/place_verification.py); NULL = not
+    checked yet.
     """
 
     __tablename__ = "document_entities"
@@ -717,11 +751,15 @@ class DocumentEntity(Base):
     # entity_text: base form of the mention (lemma when available)
     entity_text: Mapped[str] = mapped_column(Text, nullable=False)
     mention_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("1"))
+    geocode_id: Mapped[int | None] = mapped_column(
+        ForeignKey("geocode_cache.id", ondelete="SET NULL"),
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
 
     document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    geocode: Mapped["GeocodeCache | None"] = relationship(foreign_keys=[geocode_id])
 
     def __repr__(self) -> str:
         return (
