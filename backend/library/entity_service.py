@@ -66,7 +66,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
 
     grouped: dict[str, list[dict]] = {"persName": [], "geogName": [], "placeName": []}
     for row in rows:
-        item: dict = {"text": row.entity_text, "count": row.mention_count}
+        item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count}
         if row.geocode is not None:
             item["verified"] = row.geocode.resolved
             if row.geocode.resolved:
@@ -75,6 +75,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 item["display_name"] = row.geocode.display_name
         if row.entity_type == "persName" and row.entity_text in persons_by_mention:
             link = persons_by_mention[row.entity_text]
+            item["link_id"] = link["link_id"]
             item["person_id"] = link["person_id"]
             item["canonical_name"] = link["canonical_name"]
             item["person_description"] = link["description"]

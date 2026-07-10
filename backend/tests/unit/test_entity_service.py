@@ -51,41 +51,41 @@ class TestRefreshDocumentEntities:
 
 class TestGetDocumentEntities:
     def test_groups_by_type(self):
-        row1 = MagicMock(entity_type="persName", entity_text="Tusk", mention_count=2, geocode=None)
-        row2 = MagicMock(entity_type="geogName", entity_text="cieśnina Ormuz", mention_count=1, geocode=None)
+        row1 = MagicMock(id=1, entity_type="persName", entity_text="Tusk", mention_count=2, geocode=None)
+        row2 = MagicMock(id=2, entity_type="geogName", entity_text="cieśnina Ormuz", mention_count=1, geocode=None)
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row1, row2]
 
         grouped = get_document_entities(session, 42)
 
         assert grouped == {
-            "persName": [{"text": "Tusk", "count": 2}],
-            "geogName": [{"text": "cieśnina Ormuz", "count": 1}],
+            "persName": [{"id": 1, "text": "Tusk", "count": 2}],
+            "geogName": [{"id": 2, "text": "cieśnina Ormuz", "count": 1}],
             "placeName": [],
         }
 
     def test_verified_place_carries_geocode_fields(self):
         geo = MagicMock(resolved=True, lat=50.45, lon=30.52, display_name="Kyiv, Ukraine")
-        row = MagicMock(entity_type="placeName", entity_text="Kijów", mention_count=3, geocode=geo)
+        row = MagicMock(id=3, entity_type="placeName", entity_text="Kijów", mention_count=3, geocode=geo)
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
 
         grouped = get_document_entities(session, 42)
 
         assert grouped["placeName"] == [{
-            "text": "Kijów", "count": 3, "verified": True,
+            "id": 3, "text": "Kijów", "count": 3, "verified": True,
             "lat": 50.45, "lon": 30.52, "display_name": "Kyiv, Ukraine",
         }]
 
     def test_unresolved_place_marked_not_verified(self):
         geo = MagicMock(resolved=False)
-        row = MagicMock(entity_type="geogName", entity_text="Jagami", mention_count=1, geocode=geo)
+        row = MagicMock(id=4, entity_type="geogName", entity_text="Jagami", mention_count=1, geocode=geo)
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
 
         grouped = get_document_entities(session, 42)
 
-        assert grouped["geogName"] == [{"text": "Jagami", "count": 1, "verified": False}]
+        assert grouped["geogName"] == [{"id": 4, "text": "Jagami", "count": 1, "verified": False}]
 
     def test_empty_document_returns_all_type_keys(self):
         session = MagicMock()

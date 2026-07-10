@@ -7,6 +7,7 @@ import { AuthorizationContext } from "../../context/authorizationContext";
 // table document_entities — see docs/ner-integration-plan.md).
 
 export interface EntityItem {
+  id?: number;
   text: string;
   count: number;
   // Stage-3 place verification (geogName/placeName only): absent = not checked,
@@ -16,6 +17,7 @@ export interface EntityItem {
   lon?: number | null;
   display_name?: string;
   // Stage-4 person resolution (persName only): present when linked to a Person
+  link_id?: number;
   person_id?: number;
   canonical_name?: string;
   person_description?: string | null;
@@ -29,6 +31,14 @@ interface EntitiesByType {
   placeName: EntityItem[];
 }
 
+interface PersonSearchResult {
+  id: number;
+  canonical_name: string;
+  description: string | null;
+  wikidata_qid: string | null;
+  aliases: string[];
+}
+
 const chipStyle: React.CSSProperties = {
   display: "inline-block",
   padding: "2px 8px",
@@ -39,15 +49,28 @@ const chipStyle: React.CSSProperties = {
   fontSize: "0.85em",
 };
 
+const chipActionStyle: React.CSSProperties = {
+  cursor: "pointer",
+  marginLeft: 4,
+  border: "none",
+  background: "transparent",
+  padding: 0,
+  fontSize: "1em",
+  lineHeight: 1,
+};
+
 export const EntityChips = ({
   label,
   items,
   linkPersons,
+  actions,
 }: {
   label: string;
   items: EntityItem[];
   // Resolved persons (person_id) become links to /persons/:id — used by the reader view.
   linkPersons?: boolean;
+  // Edit-mode buttons rendered inside each chip — used by the editor panel.
+  actions?: (item: EntityItem) => React.ReactNode;
 }) => {
   if (!items.length) {
     return null;
@@ -81,6 +104,7 @@ export const EntityChips = ({
               </span>
             )}
             {item.count > 1 && <span style={{ color: "#667" }}> ×{item.count}</span>}
+            {actions && actions(item)}
           </span>
         );
         if (linkPersons && isResolvedPerson) {
@@ -101,15 +125,22 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [message, setMessage] = React.useState("");
+  const [editMode, setEditMode] = React.useState(false);
+  // "To inna osoba…" flow: chip whose person link is being re-pointed
+  const [mergeFor, setMergeFor] = React.useState<EntityItem | null>(null);
+  const [searchQ, setSearchQ] = React.useState("");
+  const [searchResults, setSearchResults] = React.useState<PersonSearchResult[]>([]);
+  // "Dodaj alias" flow
+  const [aliasFor, setAliasFor] = React.useState<EntityItem | null>(null);
+  const [aliasText, setAliasText] = React.useState("");
 
   const headers = {
     "Content-Type": "application/x-www-form-urlencoded",
     "x-api-key": `${apiKey}`,
   };
+  const jsonHeaders = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
-  React.useEffect(() => {
-    setEntities(null);
-    setMessage("");
+  const fetchEntities = React.useCallback(() => {
     if (!docId) {
       return;
     }
@@ -120,7 +151,17 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
         console.error("Error fetching entities", error);
         setMessage("Nie udało się pobrać encji.");
       });
-  }, [docId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docId, apiUrl, apiKey]);
+
+  React.useEffect(() => {
+    setEntities(null);
+    setMessage("");
+    setEditMode(false);
+    setMergeFor(null);
+    setAliasFor(null);
+    fetchEntities();
+  }, [docId, fetchEntities]);
 
   const handleRefresh = async () => {
     if (!docId) {
@@ -147,6 +188,75 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
     setIsRefreshing(false);
   };
 
+  const handleDelete = async (item: EntityItem) => {
+    if (item.id == null) {
+      return;
+    }
+    setMessage("");
+    try {
+      await axios.delete(`${apiUrl}/website_entities/${item.id}`, { headers });
+      fetchEntities();
+    } catch (error: any) {
+      console.error("Error deleting entity", error);
+      setMessage(`Nie udało się usunąć encji: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const handlePersonSearch = async (q: string) => {
+    setSearchQ(q);
+    if (q.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    try {
+      const response = await axios.get(`${apiUrl}/persons`, { params: { q }, headers });
+      setSearchResults(response.data.persons ?? []);
+    } catch (error) {
+      console.error("Error searching persons", error);
+    }
+  };
+
+  const handleMergePick = async (target: PersonSearchResult) => {
+    if (!mergeFor?.link_id) {
+      return;
+    }
+    setMessage("");
+    try {
+      await axios.patch(
+        `${apiUrl}/document_persons/${mergeFor.link_id}`,
+        { action: "merge", target_person_id: target.id },
+        { headers: jsonHeaders },
+      );
+      setMergeFor(null);
+      setSearchQ("");
+      setSearchResults([]);
+      fetchEntities();
+    } catch (error: any) {
+      console.error("Error merging person link", error);
+      setMessage(`Nie udało się zmienić osoby: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const handleAliasSubmit = async () => {
+    if (!aliasFor?.person_id || !aliasText.trim()) {
+      return;
+    }
+    setMessage("");
+    try {
+      await axios.post(
+        `${apiUrl}/persons/${aliasFor.person_id}/aliases`,
+        { alias: aliasText.trim() },
+        { headers: jsonHeaders },
+      );
+      setAliasFor(null);
+      setAliasText("");
+      setMessage(`Alias dodany do: ${aliasFor.canonical_name}`);
+    } catch (error: any) {
+      console.error("Error adding alias", error);
+      setMessage(`Nie udało się dodać aliasu: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
   if (!docId) {
     return null;
   }
@@ -155,6 +265,39 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
   const places = [...(entities?.geogName ?? []), ...(entities?.placeName ?? [])];
   const isEmpty = !persons.length && !places.length;
 
+  const editActions = (item: EntityItem) => (
+    <>
+      <button
+        type="button"
+        style={{ ...chipActionStyle, color: "#a33" }}
+        title="Usuń encję (dla osoby usuwa też powiązanie z rejestrem)"
+        onClick={() => handleDelete(item)}
+      >
+        ×
+      </button>
+      {item.link_id != null && (
+        <button
+          type="button"
+          style={{ ...chipActionStyle, color: "#1d5ca8" }}
+          title="To inna osoba — wskaż właściwą w rejestrze"
+          onClick={() => { setMergeFor(item); setAliasFor(null); setSearchQ(""); setSearchResults([]); }}
+        >
+          ↷
+        </button>
+      )}
+      {item.person_id != null && (
+        <button
+          type="button"
+          style={{ ...chipActionStyle, color: "#2e7d43" }}
+          title="Dodaj alias (przezwisko) do tej osoby"
+          onClick={() => { setAliasFor(item); setMergeFor(null); setAliasText(""); }}
+        >
+          +
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div style={{ marginTop: "10px", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -162,9 +305,57 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
         <button className={"button"} type="button" disabled={isRefreshing} onClick={handleRefresh}>
           {isRefreshing ? "Wykrywam..." : "Wykryj osoby i miejsca"}
         </button>
+        {!isEmpty && (
+          <button className={"button"} type="button" onClick={() => { setEditMode(!editMode); setMergeFor(null); setAliasFor(null); }}>
+            {editMode ? "Zakończ edycję" : "Edytuj"}
+          </button>
+        )}
       </div>
-      <EntityChips label={"Osoby"} items={persons} />
-      <EntityChips label={"Miejsca"} items={places} />
+      <EntityChips label={"Osoby"} items={persons} actions={editMode ? editActions : undefined} />
+      <EntityChips label={"Miejsca"} items={places} actions={editMode ? editActions : undefined} />
+
+      {editMode && mergeFor && (
+        <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
+          <div style={{ marginBottom: 4 }}>
+            „{mergeFor.text}" to inna osoba — wyszukaj właściwą w rejestrze:
+            <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setMergeFor(null)}>✕ anuluj</button>
+          </div>
+          <input
+            value={searchQ}
+            onChange={(e) => handlePersonSearch(e.target.value)}
+            placeholder="Nazwisko osoby…"
+            style={{ padding: "4px 8px", width: 260 }}
+          />
+          {searchResults.filter((p) => p.id !== mergeFor.person_id).map((p) => (
+            <div key={p.id} style={{ padding: "3px 0" }}>
+              <button className={"button"} type="button" onClick={() => handleMergePick(p)}>wybierz</button>
+              {" "}<strong>{p.canonical_name}</strong>
+              {p.description && <span style={{ color: "#667" }}> — {p.description}</span>}
+              {p.wikidata_qid && <span style={{ color: "#999" }}> ({p.wikidata_qid})</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editMode && aliasFor && (
+        <div style={{ marginTop: 8, padding: 8, background: "#f0fff4", borderRadius: 6 }}>
+          <div style={{ marginBottom: 4 }}>
+            Nowy alias dla: <strong>{aliasFor.canonical_name ?? aliasFor.text}</strong>
+            <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setAliasFor(null)}>✕ anuluj</button>
+          </div>
+          <input
+            value={aliasText}
+            onChange={(e) => setAliasText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAliasSubmit(); } }}
+            placeholder="np. przezwisko z podkastu"
+            style={{ padding: "4px 8px", width: 260 }}
+          />
+          <button className={"button"} type="button" style={{ marginLeft: 8 }} onClick={handleAliasSubmit}>
+            Dodaj
+          </button>
+        </div>
+      )}
+
       {isEmpty && !message && (
         <div style={{ marginTop: "6px", color: "#667" }}>
           Brak zapisanych encji — użyj przycisku, aby je wykryć.
