@@ -45,6 +45,8 @@ web_interface_react/
 │   │   │   ├── movie.tsx               # Movie transcript editing
 │   │   │   ├── chunks.tsx              # Chunk analysis review (/chunks/:id)
 │   │   │   ├── read.tsx                # Reader view (/read/:id)
+│   │   │   ├── persons.tsx             # Person registry search + person → documents (/persons/:id?)
+│   │   │   ├── personsReview.tsx       # manual_review person queue (/persons-review)
 │   │   │   └── file.tsx                # File upload (alpha)
 │   │   ├── constants/
 │   │   │   └── variables.ts            # App version
@@ -77,6 +79,8 @@ All protected routes wrapped in `RequireAuth` → `Layout` → `Authorization`. 
 | `/movie/:id?` | `movie.tsx` | Edit movie transcripts |
 | `/chunks/:id` | `chunks.tsx` | Review a document's chunk analysis runs (see below) |
 | `/read/:id` | `read.tsx` | Chapter-by-chapter reader view (book/article `text_md`, or TEMAT chunk topics as fallback for YouTube/movie transcripts), with per-user progress + notes |
+| `/persons/:id?` | `persons.tsx` | Person registry (NER stage 4): fuzzy search (`GET /persons?q=`), person details (QID link to wikidata.org, aliases) and the person's documents (`GET /person_documents`) with editor + `/read/:id` links |
+| `/persons-review` | `personsReview.tsx` | manual_review queue (`GET /persons_review`): approve / reject / merge decisions (`PATCH /persons_review/<link_id>`); merge target picked via the `GET /persons?q=` search |
 | `/upload-file` | `file.tsx` | Upload image files (alpha) |
 
 ### Chunk analysis review (`chunks.tsx`)

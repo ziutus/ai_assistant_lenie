@@ -540,6 +540,63 @@ def person_documents():
     }, 200
 
 
+@app.route('/persons_review', methods=['GET'])
+def persons_review_list():
+    """The manual_review queue — person links awaiting a human decision (NER stage 4)."""
+    from library.person_registry import list_manual_review
+
+    session = get_scoped_session()
+    entries = list_manual_review(session)
+    return {"status": "success", "count": len(entries), "entries": entries}, 200
+
+
+@app.route('/persons_review/<int:link_id>', methods=['PATCH', 'OPTIONS'])
+def persons_review_decide(link_id: int):
+    """Decide a manual_review entry. Body (JSON): {"action": "approve"|"reject"|"merge",
+    "target_person_id": <id>} — target_person_id only for merge."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library import person_registry
+    from library.db.models import DocumentPerson, Person
+
+    data = request.get_json(silent=True) or {}
+    action = data.get('action')
+    if action not in ("approve", "reject", "merge"):
+        return {"status": "error", "message": "action must be one of: approve, reject, merge"}, 400
+
+    session = get_scoped_session()
+    link = session.get(DocumentPerson, link_id)
+    if link is None:
+        return {"status": "error", "message": "Review entry not found"}, 404
+    if link.confidence != person_registry.CONFIDENCE_MANUAL_REVIEW:
+        return {"status": "error", "message": "Entry is not awaiting review"}, 409
+
+    try:
+        if action == "approve":
+            result = person_registry.approve_review_link(session, link)
+        elif action == "reject":
+            result = person_registry.reject_review_link(session, link)
+        else:
+            target_id, error = _entities_doc_id(data.get('target_person_id'))
+            if error:
+                return error
+            target = session.get(Person, target_id)
+            if target is None:
+                return {"status": "error", "message": "Target person not found"}, 404
+            result = person_registry.merge_review_link(session, link, target)
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 400
+    except Exception:
+        session.rollback()
+        logging.exception("persons_review decision failed for link %s", link_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return {"status": "success", **result}, 200
+
+
 @app.route('/website_get_next_to_correct', methods=['GET'])
 def website_get_next_to_correct():
     logging.debug("Getting website by id, new style")

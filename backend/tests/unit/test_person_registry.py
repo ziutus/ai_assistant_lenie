@@ -7,12 +7,16 @@ import pytest
 pytest.importorskip("sqlalchemy")
 pytest.importorskip("requests")
 
-from library.db.models import DocumentEntity, Person  # noqa: E402
+from library.db.models import DocumentEntity, DocumentPerson, Person, PersonAlias  # noqa: E402
 from library.person_registry import (  # noqa: E402
     CONFIDENCE_ALIAS,
+    CONFIDENCE_MANUAL_CONFIRMED,
     CONFIDENCE_MANUAL_REVIEW,
     CONFIDENCE_WIKIDATA,
+    approve_review_link,
     label_matches_mention,
+    merge_review_link,
+    reject_review_link,
     resolve_document_persons,
 )
 
@@ -64,6 +68,111 @@ class TestLabelMatchesMention:
     ])
     def test_rejects_unrelated_names(self, mention, label):
         assert label_matches_mention(mention, label) is False
+
+
+def _review_link(link_id=100, doc_id=42, person_id=7, raw_mention="Jimmy Ruston"):
+    link = MagicMock(spec=DocumentPerson)
+    link.id = link_id
+    link.document_id = doc_id
+    link.person_id = person_id
+    link.raw_mention = raw_mention
+    link.confidence = CONFIDENCE_MANUAL_REVIEW
+    return link
+
+
+def _person(person_id=7, name="Jimmy Rushton", aliases=()):
+    person = MagicMock(spec=Person)
+    person.id = person_id
+    person.canonical_name = name
+    alias_rows = []
+    for a in aliases:
+        row = MagicMock(spec=PersonAlias)
+        row.alias = a
+        alias_rows.append(row)
+    person.aliases = alias_rows
+    return person
+
+
+class TestApproveReviewLink:
+    def test_sets_manual_confirmed(self):
+        link = _review_link()
+        result = approve_review_link(MagicMock(), link)
+
+        assert link.confidence == CONFIDENCE_MANUAL_CONFIRMED
+        assert result == {"action": "approve", "link_id": 100, "person_id": 7}
+
+
+class TestRejectReviewLink:
+    def test_deletes_link_and_orphaned_person(self):
+        link = _review_link()
+        person = _person()
+        session = MagicMock()
+        session.execute.return_value.scalar.return_value = 0  # no remaining links
+        session.get.return_value = person
+
+        result = reject_review_link(session, link)
+
+        assert result["person_deleted"] is True
+        deleted = [c.args[0] for c in session.delete.call_args_list]
+        assert deleted == [link, person]
+
+    def test_keeps_person_with_other_links(self):
+        link = _review_link()
+        session = MagicMock()
+        session.execute.return_value.scalar.return_value = 2  # person still linked elsewhere
+
+        result = reject_review_link(session, link)
+
+        assert result["person_deleted"] is False
+        deleted = [c.args[0] for c in session.delete.call_args_list]
+        assert deleted == [link]
+
+
+class TestMergeReviewLink:
+    def test_repoints_link_and_adds_aliases(self):
+        link = _review_link(raw_mention="Jimmy Ruston", person_id=7)
+        source = _person(person_id=7, name="Jimmy Ruston (source)")
+        target = _person(person_id=9, name="Jimmy Rushton")
+        session = MagicMock()
+        session.get.side_effect = lambda model, pid: {7: source}.get(pid)
+        # duplicate-link check -> None, orphan check -> 0 remaining
+        session.execute.return_value.scalars.return_value.first.return_value = None
+        session.execute.return_value.scalar.return_value = 0
+
+        with patch("library.person_registry._add_alias") as mock_alias:
+            result = merge_review_link(session, link, target)
+
+        assert link.person_id == 9
+        assert link.confidence == CONFIDENCE_MANUAL_CONFIRMED
+        assert result["person_deleted"] is True
+        assert result["link_dropped_as_duplicate"] is False
+        added_aliases = {c.args[2] for c in mock_alias.call_args_list}
+        assert added_aliases == {"Jimmy Ruston", "Jimmy Ruston (source)"}
+
+    def test_duplicate_target_link_drops_reviewed_link(self):
+        link = _review_link(person_id=7)
+        target = _person(person_id=9)
+        existing = MagicMock(spec=DocumentPerson)
+        session = MagicMock()
+        session.get.side_effect = lambda model, pid: {7: _person(person_id=7)}.get(pid)
+        session.execute.return_value.scalars.return_value.first.return_value = existing
+        session.execute.return_value.scalar.return_value = 1  # source still linked elsewhere
+
+        with patch("library.person_registry._add_alias"):
+            result = merge_review_link(session, link, target)
+
+        assert result["link_dropped_as_duplicate"] is True
+        assert result["person_deleted"] is False
+        assert link.person_id == 7  # untouched — the link itself was deleted
+        deleted = [c.args[0] for c in session.delete.call_args_list]
+        assert deleted == [link]
+
+    def test_merge_into_same_person_rejected(self):
+        link = _review_link(person_id=9)
+        target = _person(person_id=9)
+
+        with pytest.raises(ValueError):
+            merge_review_link(MagicMock(), link, target)
 
 
 class TestResolveDocumentPersons:
