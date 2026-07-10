@@ -29,7 +29,8 @@ database/
     ├── 20-create-api-keys.sql                    # api_keys
     ├── 21-create-document-entities.sql           # document_entities (raw NER persons/places)
     ├── 22-create-geocode-cache.sql               # geocode_cache + document_entities.geocode_id
-    └── 23-create-persons-tables.sql              # persons, person_aliases, document_persons
+    ├── 23-create-persons-tables.sql              # persons, person_aliases, document_persons
+    └── 24-create-ner-exclusions.sql              # ner_exclusions (NER false-positive suppressions)
 ```
 
 ## How Init Scripts Are Used
@@ -208,6 +209,22 @@ Person entity model (NER stage 4, `library/person_registry.py` + `library/wikida
 - **`persons`** — one row per real person: `uuid` (unique), `canonical_name` (pg_trgm GIN index), `wikidata_qid` (unique, NULL for people without a Wikidata entry), `description` (occupation/known-for — disambiguation context), `created_at`.
 - **`person_aliases`** — spelling variants seen in articles (inflection, initials): `person_id` FK (CASCADE), `alias` (pg_trgm GIN index), UNIQUE `(person_id, alias)`.
 - **`document_persons`** — document↔person M:N + extraction metadata: `document_id`/`person_id` FKs (CASCADE), `raw_mention` (base form detected by NER), `confidence` (`wikidata_matched` — Wikidata human entity + LLM context match / `alias_matched` — existing alias or canonical name matched / `manual_review` — new or uncertain person, review queue / `manual_confirmed` — human approved), UNIQUE `(document_id, person_id)`.
+
+### Table: `public.ner_exclusions`
+
+NER false-positive suppression dictionary, applied in `library/entity_service.py` at entity-refresh time — a matched entity is dropped before it lands in `document_entities`, so it never reaches person resolution or place verification. Typical rules: "Taliban" detected as `persName` (an organization), STT artifacts like "Starling"/"starlinek" (the Starlink device). Managed via `GET/POST/DELETE /ner_exclusions`; rules are added from the editor's EntitiesPanel (🚫 button) and reviewed on `/persons-review`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `entity_text` | `text NOT NULL` | Matched case-insensitively against the aggregated entity base form |
+| `entity_type` | `varchar(20) NOT NULL DEFAULT '*'` | `persName` / `geogName` / `placeName` / `*` (all types) |
+| `scope` | `varchar(10) NOT NULL DEFAULT 'global'` | `global` (every document) or `author` (only documents whose `web_documents.author` matches) |
+| `author` | `text` | Author the rule is limited to (required when `scope='author'`, CHECK constraint) |
+| `note` | `text` | Optional human note (why excluded) |
+| `created_at` | `timestamp` | Row creation timestamp |
+
+**Indexes:** unique on `(LOWER(entity_text), entity_type, scope, COALESCE(LOWER(author), ''))`.
 
 Reader identity and API key tables (`users`, `user_reading_progress`, `user_document_notes`, `api_keys` — init scripts 19-20) are out of scope for this section; see `library/reader_routes.py`, `library/auth.py` and `library/db/models.py` for their definitions.
 
