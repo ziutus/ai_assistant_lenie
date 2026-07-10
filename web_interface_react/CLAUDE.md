@@ -130,7 +130,7 @@ AuthorizationProvider (init from localStorage) → BrowserRouter → App → Req
 | `useSearch` | Vector similarity search | `/ai_embedding_get` + `/website_similar` (AWS) or `/website_similar` only (Docker) |
 | `useFileSubmit` | Image upload | Separate AWS endpoint |
 
-The `EntitiesPanel` component (rendered inside `InputsForAllExceptLink`, so it appears on webpage/youtube/movie/email editors) calls `GET /website_entities?id=` on load and `POST /website_entities` ("Wykryj osoby i miejsca" button, 150s timeout — the first NER call after a service restart loads the spaCy model) — data comes from the `document_entities` table, see [`docs/ner-integration-plan.md`](../docs/ner-integration-plan.md).
+The `EntitiesPanel` component (rendered inside `InputsForAllExceptLink`, so it appears on webpage/youtube/movie/email editors) calls `GET /website_entities?id=` on load and `POST /website_entities` ("Wykryj osoby i miejsca" button, 150s timeout — the first NER call after a service restart loads the spaCy model; the POST also runs stage-3 place verification) — data comes from the `document_entities` table, see [`docs/ner-integration-plan.md`](../docs/ner-integration-plan.md). Geocoder-verified places render as green chips with ✓ (tooltip: `display_name`), rejected ones dimmed. `CountryMap` additionally accepts `places` (verified places with `lat`/`lon`) and renders them as orange point markers — `read.tsx` fetches them from `GET /website_entities`.
 
 ## Backend API Communication
 

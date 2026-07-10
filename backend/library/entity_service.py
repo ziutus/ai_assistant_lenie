@@ -46,7 +46,10 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
 def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     """Return the document's stored entities grouped by type, most-mentioned first.
 
-    Shape: {"persName": [{"text": ..., "count": ...}, ...], "geogName": [...], "placeName": [...]}
+    Shape: {"persName": [{"text", "count"}, ...], "geogName": [...], "placeName": [...]}.
+    Place entities checked by stage-3 verification additionally carry
+    "verified" (bool) and — when the geocoder resolved them — "lat"/"lon"/
+    "display_name"; entities never checked have no "verified" key.
     """
     rows = (
         session.query(DocumentEntity)
@@ -56,7 +59,12 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     )
     grouped: dict[str, list[dict]] = {"persName": [], "geogName": [], "placeName": []}
     for row in rows:
-        grouped.setdefault(row.entity_type, []).append(
-            {"text": row.entity_text, "count": row.mention_count}
-        )
+        item: dict = {"text": row.entity_text, "count": row.mention_count}
+        if row.geocode is not None:
+            item["verified"] = row.geocode.resolved
+            if row.geocode.resolved:
+                item["lat"] = float(row.geocode.lat) if row.geocode.lat is not None else None
+                item["lon"] = float(row.geocode.lon) if row.geocode.lon is not None else None
+                item["display_name"] = row.geocode.display_name
+        grouped.setdefault(row.entity_type, []).append(item)
     return grouped
