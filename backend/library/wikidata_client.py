@@ -66,7 +66,10 @@ def search_persons(name: str, language: str = "pl") -> list[dict]:
         "language": language,
         "uselang": language,
         "type": "item",
-        "limit": MAX_CANDIDATES * 2,  # some hits will be filtered out as non-human
+        # Generous limit: for a bare famous surname ("Trump") the intended
+        # person may rank below towers/families/namesakes, and non-human hits
+        # are filtered out afterwards.
+        "limit": 20,
     })
     if not search:
         return []

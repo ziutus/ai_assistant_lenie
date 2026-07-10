@@ -81,6 +81,21 @@ class TestConfirmPlaces:
         assert article_tagging.confirm_places_with_llm("treść", "tytuł", ["Kijów"]) == []
 
 
+class TestMentionSnippets:
+    def test_extracts_context_around_mention(self):
+        text = "A" * 5000 + " Prezydent Macron ogłosił nowy plan. " + "B" * 5000
+        snippet = article_tagging._mention_snippets(text, "Macron")
+        assert "Macron ogłosił nowy plan" in snippet
+        assert len(snippet) < 600
+
+    def test_matches_inflected_variant_by_prefix(self):
+        text = "X" * 4000 + " Rozmowa o Macronie i jego rządzie. " + "Y" * 4000
+        assert "Macronie" in article_tagging._mention_snippets(text, "Macron")
+
+    def test_missing_mention_returns_empty(self):
+        assert article_tagging._mention_snippets("zwykły tekst", "Macron") == ""
+
+
 @pytest.mark.usefixtures("fixed_model")
 class TestConfirmPerson:
     CANDIDATES = [

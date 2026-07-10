@@ -11,12 +11,13 @@ from library.db.models import DocumentEntity, GeocodeCache  # noqa: E402
 from library.place_verification import _slugify, verify_document_places  # noqa: E402
 
 
-def _entity(text, etype="geogName", geocode_id=None, geocode=None):
+def _entity(text, etype="geogName", geocode_id=None, geocode=None, mention_count=1):
     ent = MagicMock(spec=DocumentEntity)
     ent.entity_text = text
     ent.entity_type = etype
     ent.geocode_id = geocode_id
     ent.geocode = geocode
+    ent.mention_count = mention_count
     return ent
 
 
@@ -120,6 +121,21 @@ class TestVerifyDocumentPlaces:
                 verify_document_places(session, doc, "tekst")
 
         assert doc.tags == "geopolityka"
+
+    def test_frequent_mention_auto_confirmed_without_llm(self):
+        """Miejsce wspomniane >=3 razy jest jawnie omawiane — tag bez wywołania LLM."""
+        geo = MagicMock(spec=GeocodeCache)
+        geo.resolved = True
+        ent = _entity("Teheran", geocode_id=7, geocode=geo, mention_count=5)
+        session = _session_with_entities([ent])
+        doc = self._doc()
+
+        with patch("library.place_verification._is_country", return_value=False):
+            with patch("library.article_tagging.confirm_places_with_llm") as mock_llm:
+                summary = verify_document_places(session, doc, "tekst")
+
+        mock_llm.assert_not_called()
+        assert summary["tagged"] == ["miejsce-teheran"]
 
     def test_duplicate_tag_not_added_twice(self):
         geo = MagicMock(spec=GeocodeCache)
