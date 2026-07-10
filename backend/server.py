@@ -434,6 +434,7 @@ def website_entities_refresh():
     session.commit()
 
     place_tags: list[str] = []
+    persons_linked = 0
     if rows:
         try:
             from library.place_verification import verify_document_places
@@ -445,12 +446,97 @@ def website_entities_refresh():
             session.rollback()
             logging.exception("place verification failed for doc %s", doc_id)
 
+        try:
+            from library.person_registry import resolve_document_persons
+
+            p_summary = resolve_document_persons(session, doc, text)
+            session.commit()
+            persons_linked = len(p_summary["linked"])
+        except Exception:
+            session.rollback()
+            logging.exception("person resolution failed for doc %s", doc_id)
+
     return {
         "status": "success",
         "id": doc_id,
         "refreshed": len(rows),
         "place_tags": place_tags,
+        "persons_linked": persons_linked,
         "entities": get_document_entities(session, doc_id),
+    }, 200
+
+
+@app.route('/persons', methods=['GET'])
+def persons_search():
+    """Search the person registry (NER stage 4) — fuzzy by name/alias (?q=), or list newest."""
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library.db.models import Person, PersonAlias
+
+    session = get_scoped_session()
+    query = (request.args.get('q') or "").strip()
+    if query:
+        by_name = session.execute(
+            sa_select(Person)
+            .where(sa_func.similarity(Person.canonical_name, query) > 0.3)
+            .order_by(sa_func.similarity(Person.canonical_name, query).desc())
+            .limit(20)
+        ).scalars().all()
+        by_alias = session.execute(
+            sa_select(Person)
+            .join(PersonAlias, PersonAlias.person_id == Person.id)
+            .where(sa_func.similarity(PersonAlias.alias, query) > 0.3)
+            .limit(20)
+        ).scalars().all()
+        seen: set[int] = set()
+        persons = [p for p in list(by_name) + list(by_alias) if p.id not in seen and not seen.add(p.id)]
+    else:
+        persons = session.execute(
+            sa_select(Person).order_by(Person.created_at.desc()).limit(50)
+        ).scalars().all()
+
+    return {
+        "status": "success",
+        "persons": [
+            {
+                "id": p.id, "uuid": p.uuid, "canonical_name": p.canonical_name,
+                "wikidata_qid": p.wikidata_qid, "description": p.description,
+                "aliases": [a.alias for a in p.aliases],
+            }
+            for p in persons
+        ],
+    }, 200
+
+
+@app.route('/person_documents', methods=['GET'])
+def person_documents():
+    """All documents mentioning a person (?id=<person_id>) — the stage-4 user goal."""
+    from sqlalchemy import select as sa_select
+    from library.db.models import DocumentPerson, Person
+
+    person_id, error = _entities_doc_id(request.args.get('id'))
+    if error:
+        return error
+
+    session = get_scoped_session()
+    person = session.get(Person, person_id)
+    if person is None:
+        return {"status": "error", "message": "Person not found"}, 404
+
+    links = session.execute(
+        sa_select(DocumentPerson).where(DocumentPerson.person_id == person_id)
+    ).scalars().all()
+    return {
+        "status": "success",
+        "person": {"id": person.id, "canonical_name": person.canonical_name,
+                   "description": person.description, "wikidata_qid": person.wikidata_qid},
+        "documents": [
+            {
+                "id": link.document.id, "title": link.document.title,
+                "document_type": link.document.document_type,
+                "raw_mention": link.raw_mention, "confidence": link.confidence,
+            }
+            for link in links
+        ],
     }, 200
 
 

@@ -8,12 +8,13 @@
 > ale z dodatkowym, trudniejszym problemem: identyfikacja osoby nie jest
 > faktem deterministycznym (istnieje/nie istnieje), tylko wymaga disambiguacji.
 >
-> **Status:** częściowo zaimplementowane — krok 1 (NER) działa: mikroserwis
-> [`ner_service/`](../ner_service/README.md) wykrywa `persName`, a MVP integracji
-> zapisuje surowe wzmianki osób w tabeli `document_entities` i pokazuje je w UI —
-> patrz [`ner-integration-plan.md`](ner-integration-plan.md). Kroki 2-3
-> (disambiguacja Wikidata, tabele `persons`/`person_aliases`/`document_persons`)
-> pozostają do zrobienia.
+> **Status:** ZAIMPLEMENTOWANE (2026-07-10) — pełny pipeline NER → disambiguacja
+> (Wikidata P31=Q5 + LLM, fallback pg_trgm na wewnętrznym rejestrze) →
+> `document_persons` z poziomami confidence działa: tabele `persons`/
+> `person_aliases`/`document_persons`, `library/person_registry.py`,
+> `library/wikidata_client.py`, API `GET /persons` + `GET /person_documents` —
+> szczegóły implementacji w [`ner-integration-plan.md`](ner-integration-plan.md)
+> (etap 4). Ten dokument pozostaje jako uzasadnienie decyzji projektowych.
 > **Ostatnia aktualizacja:** 2026-07-10
 
 ## Problem

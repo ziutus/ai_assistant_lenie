@@ -23,6 +23,11 @@ logger = logging.getLogger(__name__)
 
 PLACE_ENTITY_TYPES = ("geogName", "placeName")
 
+# A place mentioned this many times is clearly discussed — no LLM needed.
+# The LLM relevance check exists to filter out passing mentions, and mention
+# count is a direct signal of that.
+AUTO_CONFIRM_MENTIONS = 3
+
 
 def _slugify(name: str) -> str:
     """"Cieśnina Ormuz" -> "ciesnina-ormuz" (same convention as kraj-* slugs)."""
@@ -78,6 +83,8 @@ def verify_document_places(session, doc, text: str) -> dict:
 
     checked = 0
     resolved_names: list[str] = []
+    auto_confirmed: list[str] = []
+    llm_candidates: list[str] = []
     for ent in entities:
         if _is_country(ent.entity_text):
             continue
@@ -86,12 +93,18 @@ def verify_document_places(session, doc, text: str) -> dict:
             checked += 1
         if ent.geocode is not None and ent.geocode.resolved:
             resolved_names.append(ent.entity_text)
+            if (ent.mention_count or 1) >= AUTO_CONFIRM_MENTIONS:
+                auto_confirmed.append(ent.entity_text)
+            else:
+                llm_candidates.append(ent.entity_text)
 
     tagged: list[str] = []
     if resolved_names:
-        from library.article_tagging import confirm_places_with_llm
+        confirmed = list(auto_confirmed)
+        if llm_candidates:
+            from library.article_tagging import confirm_places_with_llm
 
-        confirmed = confirm_places_with_llm(text, doc.title or "", resolved_names)
+            confirmed += confirm_places_with_llm(text, doc.title or "", llm_candidates)
         existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
         existing_set = set(existing)
         for name in confirmed:
