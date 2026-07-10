@@ -30,8 +30,10 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
-__version__ = "0.5.1"
+__version__ = "0.6.0"
 # Changelog:
+#   0.6.0 — rozpoznawanie osób (etap 4): alias/Wikidata+LLM/fuzzy → document_persons
+#           (library.person_registry; auto przy [w] i [e], confidence przy nazwiskach)
 #   0.5.1 — weryfikacja miejsc (etap 3): geokoder LocationIQ + LLM → tagi miejsce-*
 #           (library.place_verification; auto przy [w] i [e], ✓ przy zweryfikowanych)
 #   0.5.0 — encje NER (osoby/miejsca): auto przy [w]rite to db, ręcznie [e]ncje w menu
@@ -653,6 +655,18 @@ def action_save_to_db(doc, article: dict, session) -> bool:
         session.rollback()
         print(f"  OSTRZEŻENIE: weryfikacja miejsc nie powiodła się: {e}")
 
+    # 2d. Rozpoznanie osób (etap 4): alias/Wikidata+LLM/fuzzy → document_persons
+    try:
+        from library.person_registry import resolve_document_persons
+        p_summary = resolve_document_persons(session, doc, text_only)
+        session.commit()
+        for name, canonical, confidence in p_summary["linked"]:
+            suffix = f" → {canonical}" if canonical != name else ""
+            print(f"  Osoba: {name}{suffix} [{confidence}]")
+    except Exception as e:
+        session.rollback()
+        print(f"  OSTRZEŻENIE: rozpoznanie osób nie powiodło się: {e}")
+
     # 3. Twórz embedding
     print("  Tworzę embedding...")
     try:
@@ -1209,6 +1223,9 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                             from library.place_verification import verify_document_places
                             summary = verify_document_places(session, doc, text_only)
                             session.commit()
+                            from library.person_registry import resolve_document_persons
+                            p_summary = resolve_document_persons(session, doc, text_only)
+                            session.commit()
                             grouped = get_document_entities(session, doc.id)
                             for label, header in (("persName", "Osoby"), ("geogName", "Miejsca geograficzne"),
                                                   ("placeName", "Miejsca administracyjne")):
@@ -1220,6 +1237,9 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                                         for it in items))
                             if summary["tagged"]:
                                 print(f"  Tagi miejsc: {', '.join(summary['tagged'])}")
+                            for name, canonical, confidence in p_summary["linked"]:
+                                suffix = f" → {canonical}" if canonical != name else ""
+                                print(f"  Osoba: {name}{suffix} [{confidence}]")
                         else:
                             print("  Brak encji (lub serwis NER niedostępny).")
                     except Exception as e:

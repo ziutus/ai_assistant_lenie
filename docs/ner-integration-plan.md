@@ -7,7 +7,7 @@
 > [`person-ner-plan.md`](person-ner-plan.md) (osoby), dodając brakującą warstwę
 > integracyjną i przyrostową kolejność wdrożenia.
 >
-> **Status:** etapy 1-3 ZAIMPLEMENTOWANE (2026-07-10), etap 4 (osoby) do zrobienia.
+> **Status:** WSZYSTKIE ETAPY 1-4 ZAIMPLEMENTOWANE (2026-07-10).
 > **Ostatnia aktualizacja:** 2026-07-10
 
 ## Punkt wyjścia (stan na 2026-07-10)
@@ -117,18 +117,38 @@ dopasowania (podobieństwo zwróconej nazwy do zapytania, `importance`,
 angielską nazwą (LLM i tak uczestniczy w kroku oceny istotności — może przy
 okazji tłumaczyć nazwę).
 
-## Etap 4 — osoby: model relacyjny (do zrobienia)
+## Etap 4 — osoby: model relacyjny ✅ (2026-07-10)
 
 Zgodnie z [`person-ner-plan.md`](person-ner-plan.md):
 
-- Tabele `persons` / `person_aliases` / `document_persons` (pg_trgm już w bazie),
-  disambiguacja przez Wikidata QID, fallback na wewnętrzny rejestr, LLM rozstrzyga
-  niejednoznaczności, kolejka `manual_review`.
-- Migracja danych: wiersze `document_entities` z `entity_type='persName'`
-  stają się wejściem do disambiguacji i zasilają `document_persons`;
-  po migracji `persName` znika z `document_entities` (miejsca zostają do etapu 3).
-- UI panelu osób przełącza się z surowych stringów na linki do encji `persons`
-  („wszystkie artykuły o osobie X").
+- Tabele **`persons` / `person_aliases` / `document_persons`** (init
+  `23-create-persons-tables.sql`, Alembic `b4c5d6e7f8a9`, ORM `Person`/
+  `PersonAlias`/`DocumentPerson`; indeksy pg_trgm na nazwach/aliasach).
+- [`backend/library/wikidata_client.py`](../backend/library/wikidata_client.py) —
+  `search_persons(name)`: wbsearchentities + wbgetentities, **tylko encje-ludzie
+  (P31=Q5)** — dron „Shahed" czy „Starlinek" nie przejdą; opisy kandydatów są
+  kontekstem do disambiguacji.
+- [`backend/library/person_registry.py`](../backend/library/person_registry.py) —
+  `resolve_document_persons()`: kaskada per wzmianka `persName`:
+  1. dokładny alias/nazwa kanoniczna → `alias_matched` (bez sieci),
+  2. Wikidata + `article_tagging.confirm_person_with_llm()` (LLM wybiera QID z
+     zamkniętej listy kandydatów po opisach, może odpowiedzieć NONE — np.
+     Donald Tusk polityk Q946 vs jego ojciec Q17278182) → `wikidata_matched`,
+  3. **junk guard**: jednowyrazowa wzmianka bez człowieka w Wikidacie jest
+     pomijana (szum spaCy: „Hornet", „Starlinek"),
+  4. fuzzy pg_trgm po rejestrze (próg 0.5) → `manual_review` (nigdy auto-merge),
+  5. nowa osoba bez wpisu w Wikidacie → `persons` bez QID + `manual_review`.
+- Wpięcie: `create_run()` krok 11e, `article_browser.py` (`[w]` krok 2d, `[e]`,
+  v0.6.0), `POST /website_entities` (zwraca `persons_linked`).
+- API: `GET /persons?q=` (fuzzy szukanie w rejestrze), `GET /person_documents?id=`
+  („wszystkie artykuły o osobie X" — cel użytkownika), elementy `persName` w
+  `GET /website_entities` niosą `person_id`/`canonical_name`/`person_description`/
+  `wikidata_qid`/`confidence`.
+- UI: `EntitiesPanel` — niebieskie chipy rozpoznanych osób (✓ lub „?" przy
+  `manual_review`), tooltip: nazwa kanoniczna | opis | QID | confidence.
+- Surowe wiersze `persName` w `document_entities` pozostają (wejście do
+  ponownej disambiguacji przy refreshu) — plan zakładał ich usunięcie, ale są
+  potrzebne jako kandydaci przy każdym kolejnym `resolve`.
 
 ## Kolejność i zależności
 
@@ -137,7 +157,9 @@ Zgodnie z [`person-ner-plan.md`](person-ner-plan.md):
 | 1. Klient NER | działający `ner_service` | — | ✅ 2026-07-10 |
 | 2. MVP `document_entities` + UI | etap 1 | — | ✅ 2026-07-10 |
 | 3. Miejsca (LocationIQ + tagi + mapa) | etap 2 | konto LocationIQ ✅, namespace: `miejsce-*` | ✅ 2026-07-10 |
-| 4. Osoby (model relacyjny) | etap 2 | format `confidence`, klient Wikidata | do zrobienia |
+| 4. Osoby (model relacyjny) | etap 2 | confidence: enum 4 wartości; Wikidata REST API | ✅ 2026-07-10 |
 
-Brak wpisu w backlogu (`_bmad-output/planning-artifacts/epics/backlog.md`) —
-dodać etap 4 jako osobne zadanie przy gotowości do implementacji.
+Możliwe dalsze kroki (poza zakresem planu): UI kolejki `manual_review` dla
+osób (wzorem chunk review), strona „osoba → artykuły" we frontendzie
+(API `GET /person_documents` już jest), self-hosted geokoder (Photon) gdyby
+limit LocationIQ przestał wystarczać.

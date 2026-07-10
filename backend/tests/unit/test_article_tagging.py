@@ -81,6 +81,53 @@ class TestConfirmPlaces:
         assert article_tagging.confirm_places_with_llm("treść", "tytuł", ["Kijów"]) == []
 
 
+class TestMentionSnippets:
+    def test_extracts_context_around_mention(self):
+        text = "A" * 5000 + " Prezydent Macron ogłosił nowy plan. " + "B" * 5000
+        snippet = article_tagging._mention_snippets(text, "Macron")
+        assert "Macron ogłosił nowy plan" in snippet
+        assert len(snippet) < 600
+
+    def test_matches_inflected_variant_by_prefix(self):
+        text = "X" * 4000 + " Rozmowa o Macronie i jego rządzie. " + "Y" * 4000
+        assert "Macronie" in article_tagging._mention_snippets(text, "Macron")
+
+    def test_missing_mention_returns_empty(self):
+        assert article_tagging._mention_snippets("zwykły tekst", "Macron") == ""
+
+
+@pytest.mark.usefixtures("fixed_model")
+class TestConfirmPerson:
+    CANDIDATES = [
+        {"qid": "Q946", "label": "Donald Tusk", "description": "polski polityk"},
+        {"qid": "Q17278182", "label": "Donald Tusk", "description": "ojciec Donalda Tuska"},
+    ]
+
+    def test_returns_selected_qid(self, monkeypatch):
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("Q946"))
+        assert article_tagging.confirm_person_with_llm("treść", "tytuł", "Tusk", self.CANDIDATES) == "Q946"
+
+    def test_none_response_returns_none(self, monkeypatch):
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("NONE"))
+        assert article_tagging.confirm_person_with_llm("treść", "tytuł", "Tusk", self.CANDIDATES) is None
+
+    def test_qid_outside_candidates_rejected(self, monkeypatch):
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("Q12345"))
+        assert article_tagging.confirm_person_with_llm("treść", "tytuł", "Tusk", self.CANDIDATES) is None
+
+    def test_empty_candidates_skip_llm(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr("library.ai.ai_ask", _fake_ai("", calls))
+        assert article_tagging.confirm_person_with_llm("treść", "tytuł", "Tusk", []) is None
+        assert calls == []
+
+    def test_llm_error_returns_none(self, monkeypatch):
+        def boom(*args, **kwargs):
+            raise RuntimeError("API down")
+        monkeypatch.setattr("library.ai.ai_ask", boom)
+        assert article_tagging.confirm_person_with_llm("treść", "tytuł", "Tusk", self.CANDIDATES) is None
+
+
 @pytest.mark.usefixtures("fixed_model")
 class TestExtractCountries:
     def test_countries_get_kraj_prefix(self, monkeypatch):

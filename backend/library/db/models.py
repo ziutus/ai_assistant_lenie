@@ -768,6 +768,89 @@ class DocumentEntity(Base):
         )
 
 
+class Person(Base):
+    """Canonical person entity — one row per real person (NER stage 4).
+
+    A relational model instead of tags because two people can share a name and
+    one person appears under many spelling variants. wikidata_qid is NULL for
+    people without a Wikidata entry (local/less-known figures). See
+    docs/person-ner-plan.md.
+    """
+
+    __tablename__ = "persons"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(
+        String(100), nullable=False, unique=True, server_default=func.gen_random_uuid(),
+    )
+    canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
+    wikidata_qid: Mapped[str | None] = mapped_column(String(20), unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    aliases: Mapped[list["PersonAlias"]] = relationship(
+        back_populates="person", cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"Person(id={self.id!r}, canonical_name={self.canonical_name!r}, wikidata_qid={self.wikidata_qid!r})"
+
+
+class PersonAlias(Base):
+    """Spelling variant of a person's name seen in articles (inflection, initials)."""
+
+    __tablename__ = "person_aliases"
+    __table_args__ = (UniqueConstraint("person_id", "alias"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    person_id: Mapped[int] = mapped_column(
+        ForeignKey("persons.id", ondelete="CASCADE"), nullable=False,
+    )
+    alias: Mapped[str] = mapped_column(Text, nullable=False)
+
+    person: Mapped["Person"] = relationship(back_populates="aliases")
+
+    def __repr__(self) -> str:
+        return f"PersonAlias(id={self.id!r}, person_id={self.person_id!r}, alias={self.alias!r})"
+
+
+class DocumentPerson(Base):
+    """Document<->person link (M:N) with extraction metadata (NER stage 4).
+
+    confidence: wikidata_matched (Wikidata human entity + LLM context match)
+              | alias_matched    (existing alias/canonical name matched)
+              | manual_review    (new/uncertain person — review queue)
+              | manual_confirmed (human approved a manual_review row)
+    """
+
+    __tablename__ = "document_persons"
+    __table_args__ = (UniqueConstraint("document_id", "person_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    person_id: Mapped[int] = mapped_column(
+        ForeignKey("persons.id", ondelete="CASCADE"), nullable=False,
+    )
+    raw_mention: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    person: Mapped["Person"] = relationship(foreign_keys=[person_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"DocumentPerson(id={self.id!r}, document_id={self.document_id!r}, "
+            f"person_id={self.person_id!r}, confidence={self.confidence!r})"
+        )
+
+
 class User(Base):
     """Reader identity (household trust model).
 

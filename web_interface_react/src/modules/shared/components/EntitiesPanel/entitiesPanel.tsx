@@ -14,6 +14,12 @@ interface EntityItem {
   lat?: number | null;
   lon?: number | null;
   display_name?: string;
+  // Stage-4 person resolution (persName only): present when linked to a Person
+  person_id?: number;
+  canonical_name?: string;
+  person_description?: string | null;
+  wikidata_qid?: string | null;
+  confidence?: string;
 }
 
 interface EntitiesByType {
@@ -39,21 +45,35 @@ const EntityChips = ({ label, items }: { label: string; items: EntityItem[] }) =
   return (
     <div style={{ marginTop: "6px" }}>
       <strong>{label}:</strong>{" "}
-      {items.map((item) => (
-        <span
-          key={item.text}
-          style={{
-            ...chipStyle,
-            ...(item.verified === true ? { background: "#e6f4ea", border: "1px solid #7cb98a" } : {}),
-            ...(item.verified === false ? { opacity: 0.55 } : {}),
-          }}
-          title={item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined}
-        >
-          {item.text}
-          {item.verified === true && <span style={{ color: "#2e7d43" }}> ✓</span>}
-          {item.count > 1 && <span style={{ color: "#667" }}> ×{item.count}</span>}
-        </span>
-      ))}
+      {items.map((item) => {
+        const isResolvedPerson = item.person_id != null;
+        const personTitle = isResolvedPerson
+          ? [item.canonical_name, item.person_description, item.wikidata_qid, item.confidence]
+              .filter(Boolean)
+              .join(" | ")
+          : undefined;
+        return (
+          <span
+            key={item.text}
+            style={{
+              ...chipStyle,
+              ...(item.verified === true ? { background: "#e6f4ea", border: "1px solid #7cb98a" } : {}),
+              ...(item.verified === false ? { opacity: 0.55 } : {}),
+              ...(isResolvedPerson ? { background: "#e3edf9", border: "1px solid #7ba3d0" } : {}),
+            }}
+            title={personTitle ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined)}
+          >
+            {item.text}
+            {item.verified === true && <span style={{ color: "#2e7d43" }}> ✓</span>}
+            {isResolvedPerson && (
+              <span style={{ color: item.confidence === "manual_review" ? "#b45309" : "#1d5ca8" }}>
+                {" "}{item.confidence === "manual_review" ? "?" : "✓"}
+              </span>
+            )}
+            {item.count > 1 && <span style={{ color: "#667" }}> ×{item.count}</span>}
+          </span>
+        );
+      })}
     </div>
   );
 };

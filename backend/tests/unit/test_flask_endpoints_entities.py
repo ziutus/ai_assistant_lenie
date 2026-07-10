@@ -79,18 +79,22 @@ class TestWebsiteEntitiesRefresh:
                 with patch("library.entity_service.refresh_document_entities", return_value=[MagicMock()] * 2) as mock_refresh:
                     with patch("library.place_verification.verify_document_places",
                                return_value={"checked": 1, "resolved": ["Kijów"], "tagged": ["miejsce-kijow"]}) as mock_verify:
-                        with patch("library.entity_service.get_document_entities", return_value=GROUPED):
-                            resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
+                        with patch("library.person_registry.resolve_document_persons",
+                                   return_value={"linked": [("Tusk", "Donald Tusk", "wikidata_matched")], "skipped": []}) as mock_persons:
+                            with patch("library.entity_service.get_document_entities", return_value=GROUPED):
+                                resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
 
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "success"
         assert data["refreshed"] == 2
         assert data["place_tags"] == ["miejsce-kijow"]
+        assert data["persons_linked"] == 1
         assert data["entities"] == GROUPED
         mock_refresh.assert_called_once_with(session, 42, "# Artykuł o Tusku")
         mock_verify.assert_called_once_with(session, doc, "# Artykuł o Tusku")
-        assert session.commit.call_count == 2
+        mock_persons.assert_called_once_with(session, doc, "# Artykuł o Tusku")
+        assert session.commit.call_count == 3
 
     def test_place_verification_failure_does_not_fail_request(self, client):
         doc = MagicMock(text_md="# Artykuł", text=None)
@@ -100,8 +104,10 @@ class TestWebsiteEntitiesRefresh:
                 MockDoc.get_by_id.return_value = doc
                 with patch("library.entity_service.refresh_document_entities", return_value=[MagicMock()]):
                     with patch("library.place_verification.verify_document_places", side_effect=RuntimeError("boom")):
-                        with patch("library.entity_service.get_document_entities", return_value=GROUPED):
-                            resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
+                        with patch("library.person_registry.resolve_document_persons",
+                                   return_value={"linked": [], "skipped": []}):
+                            with patch("library.entity_service.get_document_entities", return_value=GROUPED):
+                                resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
 
         assert resp.status_code == 200
         assert resp.get_json()["place_tags"] == []
