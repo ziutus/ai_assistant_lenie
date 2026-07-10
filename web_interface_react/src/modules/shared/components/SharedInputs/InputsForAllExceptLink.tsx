@@ -1,5 +1,6 @@
 import React from "react";
 import Input from "../Input/input";
+import EntitiesPanel from "../EntitiesPanel/entitiesPanel";
 
 interface InputsForAllExceptLinkProps {
   formik: any;
@@ -91,6 +92,7 @@ const InputsForAllExceptLink = ({
         type={"text"}
         multiline
       />
+      <EntitiesPanel docId={formik.values.id} />
     </>
   );
 };

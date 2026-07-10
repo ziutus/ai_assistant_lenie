@@ -6,8 +6,13 @@
 > pipeline NER → weryfikacja (Nominatim/OSM) → LLM, wraz z wymaganiami
 > sprzętowymi dwóch rozważanych modeli NER i przeglądem hostowanych API geokodujących.
 >
-> **Status:** plan / do przemyślenia — nieprzypisane do backlogu, nic nie zaimplementowane.
-> **Ostatnia aktualizacja:** 2026-07-09 (dodano weryfikację przez Nominatim/OSM zamiast LLM + przegląd hostowanych API)
+> **Status:** częściowo zaimplementowane — krok NER działa: mikroserwis
+> [`ner_service/`](../ner_service/README.md) (spaCy `pl_core_news_lg`) jest wdrożony
+> na NAS i zintegrowany z backendem jako MVP (surowe encje `geogName`/`placeName`
+> w tabeli `document_entities`, widoczne w UI) — patrz
+> [`ner-integration-plan.md`](ner-integration-plan.md). Kroki 2-3 (weryfikacja
+> Nominatim/LocationIQ + LLM, tagi `miejsce-*`) pozostają do zrobienia.
+> **Ostatnia aktualizacja:** 2026-07-10 (status integracji; wcześniej 2026-07-09: weryfikacja przez Nominatim/OSM + przegląd hostowanych API)
 
 ## Problem
 

@@ -11,10 +11,12 @@ published to the NAS host. Only other containers on `lenie-net` (currently:
 No authentication — network isolation is the only access control, matching
 the internal-only threat model.
 
-See [`../docs/geo-place-ner-plan.md`](../docs/geo-place-ner-plan.md) and
+See [`../docs/ner-integration-plan.md`](../docs/ner-integration-plan.md) for
+how this service is wired into the backend (client: `backend/library/ner_client.py`,
+storage: `document_entities` table, UI panel in `web_interface_react`), and
+[`../docs/geo-place-ner-plan.md`](../docs/geo-place-ner-plan.md) /
 [`../docs/person-ner-plan.md`](../docs/person-ner-plan.md) for the broader
-plan this service is the first step of (place/person entity extraction and
-tagging — not yet wired into the backend's tagging pipeline).
+place/person verification plans this service is the first step of.
 
 ## API
 
@@ -25,14 +27,16 @@ tagging — not yet wired into the backend's tagging pipeline).
 ```json
 {
   "entities": [
-    {"text": "Donald Tusk", "label": "persName", "start": 0, "end": 11},
-    {"text": "Cieśninie Ormuz", "label": "geogName", "start": 20, "end": 35}
+    {"text": "Donald Tusk", "label": "persName", "lemma": "Donald Tusk", "start": 0, "end": 11},
+    {"text": "Cieśninie Ormuz", "label": "geogName", "lemma": "cieśnina Ormuz", "start": 20, "end": 35}
   ]
 }
 ```
 
 Labels come directly from `pl_core_news_lg`: `persName`, `geogName`,
-`placeName`, `orgName`, `date`, `time`, etc.
+`placeName`, `orgName`, `date`, `time`, etc. `lemma` is the base form of the
+mention (spaCy lemmatizer) — callers use it to group inflected Polish variants
+of the same name ("Tuska" → "Tusk").
 
 The model is loaded lazily on the first `/ner` call (not at startup), so
 `/healthz` responds immediately even before it's loaded — but that first
