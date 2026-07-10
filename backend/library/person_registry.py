@@ -95,6 +95,18 @@ def _add_alias(session, person: Person, alias: str) -> None:
         session.add(PersonAlias(person=person, alias=alias))
 
 
+def add_person_alias(session, person: Person, alias: str) -> bool:
+    """Manually register an alias (e.g. a podcast nickname) for a person.
+
+    Returns False when the alias already exists (or equals the canonical
+    name) — the next mention of it resolves via alias_matched either way.
+    """
+    before = len(person.aliases)
+    _add_alias(session, person, alias)
+    session.flush()
+    return len(person.aliases) > before
+
+
 def _link(session, document_id: int, person: Person, raw_mention: str, confidence: str) -> bool:
     """Create the document<->person link unless one already exists. True if created."""
     existing = session.execute(
@@ -301,6 +313,7 @@ def get_document_persons(session, document_id: int) -> list[dict]:
     )
     return [
         {
+            "link_id": r.id,
             "person_id": r.person_id,
             "raw_mention": r.raw_mention,
             "canonical_name": r.person.canonical_name,
