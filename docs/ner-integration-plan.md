@@ -88,8 +88,19 @@ Zgodnie z [`geo-place-ner-plan.md`](geo-place-ner-plan.md):
 - UI: frontend ma już `CountryMap` (mapa z tagów `kraj-*`) — punkty miejsc ze
   współrzędnymi nanosimy na tę samą mapę.
 
-Wymaga: konto LocationIQ (weryfikacja cennika), decyzja o namespace tagów
-(`miejsce-*` vs `geo-*`), tabela cache geokodowania.
+Wymaga: konto LocationIQ (✅ założone 2026-07-10, klucz w Vault jako
+`LOCATIONIQ_API_KEY`, wpis w `scripts/vars-classification.yaml`), decyzja o
+namespace tagów (`miejsce-*` vs `geo-*`), tabela cache geokodowania.
+
+**Ustalenie z testu klucza (2026-07-10):** popularne polskie egzonimy
+rozwiązują się poprawnie („Kijów" → Kyiv, „Morze Czerwone" → Red Sea), ale
+rzadsze dają **fałszywe dopasowania fuzzy** zamiast braku wyniku — „Cieśnina
+Ormuz" zwróciła „Płytka Cieśnina" k. Iławy. Weryfikacja w etapie 3 nie może
+więc traktować samego HTTP 200 jako potwierdzenia: trzeba sprawdzić jakość
+dopasowania (podobieństwo zwróconej nazwy do zapytania, `importance`,
+`class`/`type` — np. water/strait/sea dla `geogName`) i/lub odpytywać
+angielską nazwą (LLM i tak uczestniczy w kroku oceny istotności — może przy
+okazji tłumaczyć nazwę).
 
 ## Etap 4 — osoby: model relacyjny (do zrobienia)
 
