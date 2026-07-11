@@ -74,12 +74,16 @@ export const EntityChips = ({
   label,
   items,
   linkPersons,
+  searchUnresolvedPersons,
   actions,
 }: {
   label: string;
   items: EntityItem[];
   // Resolved persons (person_id) become links to /persons/:id — used by the reader view.
   linkPersons?: boolean;
+  // Unresolved persons link to the registry search (/persons?q=) — stage 4
+  // may not have run for the document yet, but the name is still searchable.
+  searchUnresolvedPersons?: boolean;
   // Edit-mode buttons rendered inside each chip — used by the editor panel.
   actions?: (item: EntityItem) => React.ReactNode;
 }) => {
@@ -122,6 +126,18 @@ export const EntityChips = ({
         if (linkPersons && isResolvedPerson) {
           return (
             <Link key={item.text} to={`/persons/${item.person_id}`} style={{ textDecoration: "none" }}>
+              {chip}
+            </Link>
+          );
+        }
+        if (searchUnresolvedPersons && !isResolvedPerson) {
+          return (
+            <Link
+              key={item.text}
+              to={`/persons?q=${encodeURIComponent(item.text)}`}
+              style={{ textDecoration: "none" }}
+              title="Szukaj w rejestrze osób"
+            >
               {chip}
             </Link>
           );
