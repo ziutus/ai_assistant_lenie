@@ -118,6 +118,45 @@ class TestWebsiteEntitiesRefresh:
         session.rollback.assert_called_once()
 
 
+class TestEntityOccurrences:
+    """GET /document/<id>/entity_occurrences — rozkład wystąpień encji po rozdziałach."""
+
+    BOOK = ("# Rozdział pierwszy\n\nPutin przemawiał. Krytyka Putina narastała.\n\n"
+            "# Rozdział drugi\n\nZupełnie inny temat.\n\n"
+            "# Rozdział trzeci\n\nPowrót do Putina.")
+
+    def _client_with(self, doc, entity_rows):
+        session = MagicMock()
+        session.get.return_value = doc
+        session.query.return_value.filter.return_value.all.return_value = entity_rows
+        return patch("library.chunk_review_routes.get_scoped_session", return_value=session)
+
+    def test_counts_per_chapter_using_variants(self, client):
+        doc = MagicMock(text_md=self.BOOK, text=None)
+        row = MagicMock(variants=["Putin", "Putina"])
+        with self._client_with(doc, [row]):
+            resp = client.get("/document/9/entity_occurrences?text=Putin", headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["total"] == 3
+        assert data["occurrences"] == [
+            {"position": 1, "title": "Rozdział pierwszy", "count": 2},
+            {"position": 3, "title": "Rozdział trzeci", "count": 1},
+        ]
+
+    def test_missing_entity_falls_back_to_raw_text(self, client):
+        doc = MagicMock(text_md=self.BOOK, text=None)
+        with self._client_with(doc, []):
+            resp = client.get("/document/9/entity_occurrences?text=Putin", headers=API_HEADERS)
+        assert resp.get_json()["total"] == 3  # prefiks "Putin" łapie też odmiany
+
+    def test_missing_text_param_returns_400(self, client):
+        with self._client_with(MagicMock(), []):
+            resp = client.get("/document/9/entity_occurrences", headers=API_HEADERS)
+        assert resp.status_code == 400
+
+
 class TestWebsiteEntitiesDelete:
     def test_entity_not_found_returns_404(self, client):
         session = MagicMock()

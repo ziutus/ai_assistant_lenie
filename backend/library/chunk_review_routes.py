@@ -506,6 +506,61 @@ def document_chapter_entities(doc_id: int, position: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/entity_occurrences", methods=["GET"])
+def document_entity_occurrences(doc_id: int):
+    """Per-chapter occurrence counts of an entity name in the document (?text=).
+
+    Backs the "occurrences in this book" drill-down on the person page:
+    "Putin: rozdz. 2 ×5, rozdz. 18 ×1, …". Counting reuses the stored surface
+    variants of the document's entity (all inflected forms), the same
+    word-start matching as the chapter-scoped sidebar; when the document has
+    no such entity, the raw text is matched directly. Documents without
+    markdown chapters return an empty occurrence list but still a total.
+    """
+    import re
+
+    from library.document_analysis_service import _extract_text
+    from library.text_functions import detect_chapters
+
+    entity_text = (request.args.get("text") or "").strip()
+    if not entity_text:
+        return jsonify({"status": "error", "message": "text parameter required"}), 400
+
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    doc_text, _field = _extract_text(doc, prefer_md=True)
+    if not doc_text:
+        return jsonify({"status": "error", "message": "Document has no usable text"}), 400
+
+    from library.db.models import DocumentEntity
+
+    rows = (
+        session.query(DocumentEntity)
+        .filter(DocumentEntity.document_id == doc_id, DocumentEntity.entity_text == entity_text)
+        .all()
+    )
+    needles = {v for row in rows for v in (row.variants or [])} or {entity_text}
+    pattern = re.compile(
+        r"(?<!\w)(?:" + "|".join(re.escape(n) for n in sorted(needles)) + ")", re.IGNORECASE,
+    )
+
+    occurrences = [
+        {"position": ch["position"], "title": ch["title"], "count": count}
+        for ch in detect_chapters(doc_text)
+        if (count := len(pattern.findall(doc_text[ch["char_start"]:ch["char_end"]])))
+    ]
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "text": entity_text,
+        "total": len(pattern.findall(doc_text)),
+        "occurrences": occurrences,
+    })
+
+
 @bp.route("/analysis_job/<job_id>", methods=["GET"])
 def get_analysis_job(job_id: str):
     """Poll status of an async analysis job started by POST /document/<id>/analyze_chunks."""
