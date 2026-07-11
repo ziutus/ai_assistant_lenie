@@ -62,8 +62,20 @@ class TestFilterEntitiesToText:
         assert out["persName"] == []
         assert [i["text"] for i in out["placeName"]] == ["Teheran"]
 
-    def test_item_dicts_pass_through_untouched(self):
-        item = {"text": "Teheran", "count": 2, "variants": ["Teheran"], "verified": True,
+    def test_count_localized_to_text_metadata_preserved(self):
+        """Chip "Putin ×50" w trybie rozdziału pokazywał licznik z całej książki — teraz lokalny."""
+        item = {"text": "Teheran", "count": 42, "variants": ["Teheran", "Teheranie"], "verified": True,
                 "lat": 35.7, "lon": 51.4, "display_name": "Teheran, Iran"}
-        out = filter_entities_to_text(_grouped(placeName=[item]), "Teheran nocą.")
-        assert out["placeName"][0] is item
+        out = filter_entities_to_text(_grouped(placeName=[item]), "Teheran nocą. W Teheranie alarm.")
+        assert out["placeName"][0]["count"] == 2
+        assert out["placeName"][0]["verified"] is True
+        assert out["placeName"][0]["display_name"] == "Teheran, Iran"
+        assert item["count"] == 42  # oryginał (widok całego dokumentu) nietknięty
+
+    def test_kept_items_sorted_by_local_count(self):
+        grouped = _grouped(persName=[
+            {"text": "Putin", "count": 50, "variants": ["Putin"]},
+            {"text": "Merkel", "count": 3, "variants": ["Merkel"]},
+        ])
+        out = filter_entities_to_text(grouped, "Merkel i Merkel rozmawiały o Putinie.")
+        assert [(i["text"], i["count"]) for i in out["persName"]] == [("Merkel", 2), ("Putin", 1)]
