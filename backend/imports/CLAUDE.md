@@ -12,6 +12,7 @@ imports/
 ├── feed_monitor.py           # Monitor RSS/Atom/JSON feeds and import new entries
 ├── feeds.yaml                # Feed definitions for feed_monitor.py (committed)
 ├── feeds_state.yaml          # Per-feed last_checked state (gitignored, created at runtime)
+├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
 ├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
 ├── youtube_add.py            # Ad-hoc: process a single YouTube video (optionally + LLM analysis)
@@ -226,6 +227,20 @@ python imports/youtube_backfill_author.py --no-proxy             # skip Webshare
 **Prerequisites:**
 - `.env` with `POSTGRESQL_*` variables
 - Optional: `WEBSHARE_API_KEY` for proxy support (see `youtube_add.py`)
+
+### `fix_place_tags.py`
+
+One-off cleanup: merges duplicate `miejsce-*` tags created before `place_verification.py` started slugging tags from the geocoder's canonical spelling — inflected NER variants used to each get their own tag (`miejsce-kijowa` + `miejsce-kijow`). Recomputes each document's `miejsce-*` tags via `canonical_place_name()` on `geocode_cache.display_name` (no live geocoder calls) and rewrites `web_documents.tags`, dropping duplicates. Tags with no matching resolved place entity are left untouched. Run on the NAS DB 2026-07-11 (1 document updated).
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`.
+
+**Running:**
+```bash
+cd backend
+python imports/fix_place_tags.py            # dry-run (default)
+python imports/fix_place_tags.py --apply    # write changes
+python imports/fix_place_tags.py --id 9216  # single document
+```
 
 ### `youtube_batch_analyze.py`
 

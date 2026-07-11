@@ -64,6 +64,27 @@ def _name_similarity(query: str, display_name: str) -> float:
     return best
 
 
+def canonical_place_name(query: str, display_name: str) -> str:
+    """The display_name part naming the queried place — the geocoder's canonical spelling.
+
+    display_name is hierarchical ("Kijów, gmina Otmuchów, ..."); the part most
+    similar to the query is the canonical spelling of the place itself. Inflected
+    NER variants of one name ("Kijowa", "Moskwy") converge on the same form, so
+    place_verification can build one miejsce-* tag instead of one per variant.
+    Falls back to the query when display_name is empty.
+    """
+    parts = [p.strip() for p in (display_name or "").split(",") if p.strip()]
+    if not parts:
+        return query
+    q = _strip_accents(query.lower().strip())
+    best_part, best_score = parts[0], 0.0
+    for part in parts:
+        score = SequenceMatcher(None, q, _strip_accents(part.lower())).ratio()
+        if score > best_score:
+            best_part, best_score = part, score
+    return best_part
+
+
 def is_plausible_match(query: str, hit: dict) -> bool:
     """Does the geocoder hit plausibly refer to the queried place name?
 
