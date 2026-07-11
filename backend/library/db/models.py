@@ -728,6 +728,38 @@ class GeocodeCache(Base):
         return f"GeocodeCache(id={self.id!r}, query={self.query!r}, resolved={self.resolved!r})"
 
 
+class InfraGeometry(Base):
+    """Cached Overpass API lookup for linear infrastructure (pipelines) by name.
+
+    Same philosophy as GeocodeCache: one live call ever per distinct query
+    string, negative results cached too (resolved=False). geojson holds a
+    simplified GeoJSON MultiLineString rendered as polylines on the reader
+    map. Populated by library/overpass_client.py during entity refresh.
+    """
+
+    __tablename__ = "infra_geometries"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    query: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    resolved: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    # kind: 'pipeline' (future: power_line, ...)
+    kind: Mapped[str | None] = mapped_column(String(30))
+    # substance: gas | oil | ... (OSM tag of the matched pipeline)
+    substance: Mapped[str | None] = mapped_column(String(30))
+    name: Mapped[str | None] = mapped_column(Text)
+    wikidata_qid: Mapped[str | None] = mapped_column(String(20))
+    geojson: Mapped[dict | None] = mapped_column(JSONB)
+    provider: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=sa_text("'overpass'"),
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return f"InfraGeometry(id={self.id!r}, query={self.query!r}, resolved={self.resolved!r})"
+
+
 class DocumentEntity(Base):
     """Raw NER entity (person/place mention) detected in a document.
 

@@ -23,8 +23,19 @@ ENTITY_TYPES = ("persName", "geogName", "placeName")
 # NAS Celeron — see ner_service/README.md); later calls are sub-second.
 REQUEST_TIMEOUT_S = 120
 
-# Keep requests to the CPU-only service bounded (spaCy's own limit is 1M chars).
+# Keep single requests to the CPU-only service bounded (spaCy's own limit is
+# 1M chars). Longer texts are extracted in windows of this size — see
+# _iter_windows(); a 1.5M-char book used to be silently truncated to the
+# first window, so persons unique to late chapters never became entities.
 MAX_TEXT_CHARS = 200_000
+
+# Total cap across all windows — bounds worst-case NER time on the NAS Celeron
+# (~1-2 min per window) for pathologically long inputs.
+MAX_TEXT_TOTAL = 2_000_000
+
+# When cutting a window, back up to the nearest whitespace within this many
+# chars so a name straddling the boundary isn't split in half.
+WINDOW_BOUNDARY_BACKTRACK = 200
 
 
 def _service_url() -> str:
@@ -32,32 +43,60 @@ def _service_url() -> str:
     return (load_config().get("NER_SERVICE_URL") or DEFAULT_NER_SERVICE_URL).rstrip("/")
 
 
+def _iter_windows(text: str, size: int = MAX_TEXT_CHARS, total_cap: int = MAX_TEXT_TOTAL):
+    """Yield consecutive windows of at most `size` chars, cut at whitespace.
+
+    The cut backs up to the nearest whitespace within WINDOW_BOUNDARY_BACKTRACK
+    chars so a name straddling the boundary isn't split. Text beyond
+    `total_cap` is dropped.
+    """
+    text = text[:total_cap]
+    start = 0
+    while start < len(text):
+        end = min(start + size, len(text))
+        if end < len(text):
+            floor = max(start, end - WINDOW_BOUNDARY_BACKTRACK)
+            ws = max(text.rfind(" ", floor, end), text.rfind("\n", floor, end))
+            if ws > start:
+                end = ws
+        yield text[start:end]
+        start = end
+
+
 def extract_entities(text: str) -> list[dict]:
     """Return raw entities from the NER service: [{text, label, lemma, start, end}, ...].
 
-    Empty list on any failure (service down, timeout, bad response) — callers
-    must treat "no entities" and "service unavailable" the same way.
+    Long texts are processed in windows (see _iter_windows) and the mentions
+    concatenated — note start/end offsets are window-relative, not absolute;
+    the aggregation path ignores them. Empty list on total failure (service
+    down, timeout, bad response) — callers must treat "no entities" and
+    "service unavailable" the same way. When a later window fails, the
+    mentions collected so far are returned (partial coverage beats none) and
+    remaining windows are skipped to avoid hammering a failing service.
     """
     if not text or not text.strip():
         return []
-    try:
-        resp = requests.post(
-            f"{_service_url()}/ner",
-            json={"text": text[:MAX_TEXT_CHARS]},
-            timeout=REQUEST_TIMEOUT_S,
-        )
-        resp.raise_for_status()
-        entities = resp.json().get("entities", [])
-        if not isinstance(entities, list):
-            logger.warning("NER service returned unexpected payload shape")
-            return []
-        return entities
-    except requests.RequestException as e:
-        logger.warning("NER service unavailable (%s): %s", _service_url(), e)
-        return []
-    except ValueError as e:
-        logger.warning("NER service returned invalid JSON: %s", e)
-        return []
+    collected: list[dict] = []
+    for window in _iter_windows(text):
+        try:
+            resp = requests.post(
+                f"{_service_url()}/ner",
+                json={"text": window},
+                timeout=REQUEST_TIMEOUT_S,
+            )
+            resp.raise_for_status()
+            entities = resp.json().get("entities", [])
+            if not isinstance(entities, list):
+                logger.warning("NER service returned unexpected payload shape")
+                break
+            collected.extend(entities)
+        except requests.RequestException as e:
+            logger.warning("NER service unavailable (%s): %s", _service_url(), e)
+            break
+        except ValueError as e:
+            logger.warning("NER service returned invalid JSON: %s", e)
+            break
+    return collected
 
 
 def warmup_async() -> None:

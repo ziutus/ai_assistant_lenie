@@ -13,6 +13,14 @@ export interface EntityItem {
   // Surface forms seen in the text ("Kijów", "Kijowa") — used server-side for
   // chapter-scoped filtering; not rendered
   variants?: string[];
+  // Linear infrastructure match (Overpass/OSM, infra_geometries cache) —
+  // geojson is a MultiLineString drawn on the reader map
+  pipeline?: {
+    kind: string;
+    substance?: string | null;
+    name?: string | null;
+    geojson?: { type: string; coordinates: [number, number][][] } | null;
+  };
   // Stage-3 place verification (geogName/placeName only): absent = not checked,
   // true = geocoder confirmed (lat/lon/display_name present), false = not a real place
   verified?: boolean;
@@ -100,6 +108,7 @@ export const EntityChips = ({
             title={personTitle ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined)}
           >
             {item.text}
+            {item.pipeline && <span title={`Rurociąg (${item.pipeline.substance ?? "?"}) — dane © OpenStreetMap`}> 🛢️</span>}
             {item.verified === true && <span style={{ color: "#2e7d43" }}> ✓</span>}
             {isResolvedPerson && (
               <span style={{ color: item.confidence === "manual_review" ? "#b45309" : "#1d5ca8" }}>

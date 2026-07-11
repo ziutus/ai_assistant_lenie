@@ -30,7 +30,8 @@ database/
     ├── 21-create-document-entities.sql           # document_entities (raw NER persons/places)
     ├── 22-create-geocode-cache.sql               # geocode_cache + document_entities.geocode_id
     ├── 23-create-persons-tables.sql              # persons, person_aliases, document_persons
-    └── 24-create-ner-exclusions.sql              # ner_exclusions (NER false-positive suppressions)
+    ├── 24-create-ner-exclusions.sql              # ner_exclusions (NER false-positive suppressions)
+    └── 25-create-infra-geometries.sql            # infra_geometries (Overpass pipeline-route cache)
 ```
 
 ## How Init Scripts Are Used
@@ -185,6 +186,23 @@ Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-inte
 | `created_at` | `timestamp` | Row creation timestamp |
 
 **Constraints/indexes:** UNIQUE `(document_id, entity_type, entity_text)`; indexes on `document_id`, `entity_type` and `geocode_id`.
+
+### Table: `public.infra_geometries`
+
+Overpass API lookup cache for linear infrastructure (`library/overpass_client.py`) — same philosophy as `geocode_cache`: one live call ever per distinct query string, clean misses cached as `resolved=false` (transport failures are NOT cached). Populated during `POST /website_entities` for place entities the geocoder checked but rejected ("Baltic Pipe" has no point hit but has an OSM route).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `query` | `text NOT NULL UNIQUE` | Entity name as queried |
+| `resolved` | `boolean NOT NULL` | Overpass matched a named pipeline |
+| `kind` | `varchar(30)` | `pipeline` (future: power_line, …) |
+| `substance` | `varchar(30)` | OSM `substance` tag: `gas` / `oil` / … |
+| `name` | `text` | OSM name of the matched feature |
+| `wikidata_qid` | `varchar(20)` | OSM `wikidata` tag when present |
+| `geojson` | `jsonb` | Simplified GeoJSON MultiLineString (≤200 points per line) rendered on the reader map |
+| `provider` | `varchar(20) DEFAULT 'overpass'` | Data source |
+| `created_at` | `timestamp` | Row creation timestamp |
 
 ### Table: `public.geocode_cache`
 

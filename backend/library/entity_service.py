@@ -90,11 +90,14 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     Shape: {"persName": [{"text", "count"}, ...], "geogName": [...], "placeName": [...]}.
     Place entities checked by stage-3 verification additionally carry
     "verified" (bool) and — when the geocoder resolved them — "lat"/"lon"/
-    "display_name"; entities never checked have no "verified" key.
+    "display_name"; entities never checked have no "verified" key. Place
+    entities matched to linear infrastructure (infra_geometries, Overpass)
+    carry "pipeline": {"kind", "substance", "name", "geojson"}.
     Person entities resolved by stage-4 (document_persons link with
     raw_mention == entity_text) carry "person_id"/"canonical_name"/
     "person_description"/"wikidata_qid"/"confidence".
     """
+    from library.db.models import InfraGeometry
     from library.person_registry import get_document_persons
 
     rows = (
@@ -104,6 +107,16 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         .all()
     )
     persons_by_mention = {p["raw_mention"]: p for p in get_document_persons(session, document_id)}
+
+    place_names = [r.entity_text for r in rows if r.entity_type != "persName"]
+    pipelines_by_query: dict[str, InfraGeometry] = {}
+    if place_names:
+        infra_rows = (
+            session.query(InfraGeometry)
+            .filter(InfraGeometry.query.in_(place_names), InfraGeometry.resolved.is_(True))
+            .all()
+        )
+        pipelines_by_query = {r.query: r for r in infra_rows}
 
     grouped: dict[str, list[dict]] = {"persName": [], "geogName": [], "placeName": []}
     for row in rows:
@@ -115,6 +128,14 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 item["lat"] = float(row.geocode.lat) if row.geocode.lat is not None else None
                 item["lon"] = float(row.geocode.lon) if row.geocode.lon is not None else None
                 item["display_name"] = row.geocode.display_name
+        if row.entity_type != "persName" and row.entity_text in pipelines_by_query:
+            infra = pipelines_by_query[row.entity_text]
+            item["pipeline"] = {
+                "kind": infra.kind,
+                "substance": infra.substance,
+                "name": infra.name,
+                "geojson": infra.geojson,
+            }
         if row.entity_type == "persName" and row.entity_text in persons_by_mention:
             link = persons_by_mention[row.entity_text]
             item["link_id"] = link["link_id"]
