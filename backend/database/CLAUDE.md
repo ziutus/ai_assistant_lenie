@@ -31,7 +31,8 @@ database/
     ├── 22-create-geocode-cache.sql               # geocode_cache + document_entities.geocode_id
     ├── 23-create-persons-tables.sql              # persons, person_aliases, document_persons
     ├── 24-create-ner-exclusions.sql              # ner_exclusions (NER false-positive suppressions)
-    └── 25-create-infra-geometries.sql            # infra_geometries (Overpass pipeline-route cache)
+    ├── 25-create-infra-geometries.sql            # infra_geometries (Overpass pipeline-route cache)
+    └── 26-create-document-references.sql         # document_references (book footnotes extracted from text_md)
 ```
 
 ## How Init Scripts Are Used
@@ -186,6 +187,20 @@ Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-inte
 | `created_at` | `timestamp` | Row creation timestamp |
 
 **Constraints/indexes:** UNIQUE `(document_id, entity_type, entity_text)`; indexes on `document_id`, `entity_type` and `geocode_id`.
+
+### Table: `public.document_references`
+
+Footnotes/references extracted out of a book's `text_md` (`library/references.py`, CLI: `imports/extract_references.py`). OCR-ed books carry footnote lines inline where they fell on the scanned page — they interrupt reading and pollute NER/embeddings (footnote URLs used to become person entities). Replace semantics per document; the reader renders a per-chapter "Przypisy" section from these rows (`GET /document/<id>/chapter/<pos>` → `references`).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `chapter_position` | `integer` | 1-based, matches `detect_chapters()`; `NULL` = unassigned |
+| `marker` | `varchar(10) NOT NULL` | Footnote number as printed ("18" — superscript markers normalized to digits) |
+| `ref_text` | `text NOT NULL` | Full footnote text |
+| `url` | `text` | First URL found in the footnote, normalized to `https://` |
+| `created_at` | `timestamp` | Row creation timestamp |
 
 ### Table: `public.infra_geometries`
 

@@ -728,6 +728,41 @@ class GeocodeCache(Base):
         return f"GeocodeCache(id={self.id!r}, query={self.query!r}, resolved={self.resolved!r})"
 
 
+class DocumentReference(Base):
+    """Footnote/reference extracted out of a book's text_md (library/references.py).
+
+    OCR-ed books carry footnote lines inline where they fell on the scanned
+    page — they interrupt reading and pollute NER/embeddings. Extraction is
+    replace-per-document (derived data, like document_entities); the reader
+    renders a per-chapter "Przypisy" section from these rows.
+    """
+
+    __tablename__ = "document_references"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    # 1-based, matches detect_chapters(); NULL = unassigned
+    chapter_position: Mapped[int | None] = mapped_column(Integer)
+    # footnote number as printed ("18" — superscript markers are normalized to digits)
+    marker: Mapped[str] = mapped_column(String(10), nullable=False)
+    ref_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # first URL found in the footnote, normalized to an absolute https:// form
+    url: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"DocumentReference(id={self.id!r}, document_id={self.document_id!r}, "
+            f"chapter={self.chapter_position!r}, marker={self.marker!r})"
+        )
+
+
 class InfraGeometry(Base):
     """Cached Overpass API lookup for linear infrastructure (pipelines) by name.
 
