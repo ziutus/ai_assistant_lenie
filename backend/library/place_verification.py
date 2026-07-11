@@ -6,6 +6,13 @@ place exists (LocationIQ + match-quality check, cached in geocode_cache) →
 LLM confirms which verified places the article actually discusses → tags
 `miejsce-<slug>` merged into doc.tags (accumulating, like country tags).
 
+Tags are built from the geocoder's canonical spelling (canonical_place_name on
+display_name), not the NER surface form: spaCy doesn't always lemmatize proper
+names, so "Kijów" and "Kijowa" arrive as separate entities — slugging the
+surface form used to produce duplicate tags (miejsce-kijow + miejsce-kijowa).
+Entities sharing a canonical name are grouped, and their mention counts merged,
+before the AUTO_CONFIRM_MENTIONS threshold and the LLM relevance check.
+
 Countries are skipped entirely — they already have the kraj-* pipeline
 (country_gazetteer + extract_countries_hybrid) and the map highlights them
 from those tags; geocoding them here would only burn API quota.
@@ -17,7 +24,7 @@ import re
 from unidecode import unidecode
 
 from library.db.models import DocumentEntity, GeocodeCache
-from library.locationiq_client import geocode, is_plausible_match
+from library.locationiq_client import canonical_place_name, geocode, is_plausible_match
 
 logger = logging.getLogger(__name__)
 
@@ -83,8 +90,8 @@ def verify_document_places(session, doc, text: str) -> dict:
 
     checked = 0
     resolved_names: list[str] = []
-    auto_confirmed: list[str] = []
-    llm_candidates: list[str] = []
+    # canonical name -> {"mentions": summed count, "surface": most-mentioned NER form}
+    groups: dict[str, dict] = {}
     for ent in entities:
         if _is_country(ent.entity_text):
             continue
@@ -93,18 +100,28 @@ def verify_document_places(session, doc, text: str) -> dict:
             checked += 1
         if ent.geocode is not None and ent.geocode.resolved:
             resolved_names.append(ent.entity_text)
-            if (ent.mention_count or 1) >= AUTO_CONFIRM_MENTIONS:
-                auto_confirmed.append(ent.entity_text)
-            else:
-                llm_candidates.append(ent.entity_text)
+            canonical = canonical_place_name(ent.entity_text, ent.geocode.display_name or "")
+            group = groups.setdefault(canonical, {"mentions": 0, "surface": ent.entity_text, "surface_mentions": 0})
+            mentions = ent.mention_count or 1
+            group["mentions"] += mentions
+            if mentions > group["surface_mentions"]:
+                group["surface"] = ent.entity_text
+                group["surface_mentions"] = mentions
 
     tagged: list[str] = []
-    if resolved_names:
-        confirmed = list(auto_confirmed)
-        if llm_candidates:
+    if groups:
+        confirmed = [name for name, g in groups.items() if g["mentions"] >= AUTO_CONFIRM_MENTIONS]
+        # The LLM searches the text for mention snippets, so it gets the surface
+        # form (present in the text), and confirmations map back to canonical.
+        llm_surfaces = {g["surface"]: name for name, g in groups.items() if g["mentions"] < AUTO_CONFIRM_MENTIONS}
+        if llm_surfaces:
             from library.article_tagging import confirm_places_with_llm
 
-            confirmed += confirm_places_with_llm(text, doc.title or "", llm_candidates)
+            confirmed += [
+                llm_surfaces[s]
+                for s in confirm_places_with_llm(text, doc.title or "", list(llm_surfaces))
+                if s in llm_surfaces
+            ]
         existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
         existing_set = set(existing)
         for name in confirmed:

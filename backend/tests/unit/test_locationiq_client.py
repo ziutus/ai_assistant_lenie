@@ -8,7 +8,7 @@ pytest.importorskip("requests")
 
 import requests  # noqa: E402
 
-from library.locationiq_client import geocode, is_plausible_match, _name_similarity  # noqa: E402
+from library.locationiq_client import canonical_place_name, geocode, is_plausible_match, _name_similarity  # noqa: E402
 
 
 HORMUZ_HIT = {"display_name": "Strait of Hormuz, Oman", "lat": "26.44", "lon": "56.20",
@@ -31,6 +31,22 @@ class TestNameSimilarity:
 
     def test_unrelated_name_scores_low(self):
         assert _name_similarity("Cieśnina Ormuz", ILAWA_HIT["display_name"]) < 0.75
+
+
+class TestCanonicalPlaceName:
+    def test_inflected_variant_converges_on_canonical_spelling(self):
+        """Regresja na realny przypadek (doc 9216): "Kijowa" i "Kijów" dawały dwa tagi."""
+        assert canonical_place_name("Kijowa", "Kijów, gmina Otmuchów, powiat nyski, Polska") == "Kijów"
+        assert canonical_place_name("Moskwy", "Moskwa, Wyszobór, gmina Płoty, Polska") == "Moskwa"
+
+    def test_truncated_mention_gets_full_name(self):
+        assert canonical_place_name("Ankar", "Ankara, Çankaya, Ankara, Central Anatolia Region, Turcja") == "Ankara"
+
+    def test_best_part_not_always_first(self):
+        assert canonical_place_name("Pakistan", "Beludżystan, Pakistan") == "Pakistan"
+
+    def test_empty_display_name_falls_back_to_query(self):
+        assert canonical_place_name("Kijów", "") == "Kijów"
 
 
 class TestIsPlausibleMatch:
