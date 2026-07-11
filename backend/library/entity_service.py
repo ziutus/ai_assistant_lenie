@@ -7,11 +7,12 @@ merging (unlike doc.tags, which accumulates across runs).
 """
 
 import logging
+import re
 
 from sqlalchemy import delete, select
 
 from library.db.models import DocumentEntity, NerExclusion, WebDocument
-from library.ner_client import aggregate_entities, extract_entities
+from library.ner_client import aggregate_entities_detailed, extract_entities
 
 logger = logging.getLogger(__name__)
 
@@ -53,15 +54,15 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     if not raw:
         return []
 
-    counts = aggregate_entities(raw)
+    groups = aggregate_entities_detailed(raw)
 
     exclusions = list(session.execute(select(NerExclusion)).scalars().all())
     if exclusions:
         doc = session.get(WebDocument, document_id)
         author = getattr(doc, "author", None)
-        excluded = [k for k in counts if is_excluded(exclusions, k[0], k[1], author)]
+        excluded = [k for k in groups if is_excluded(exclusions, k[0], k[1], author)]
         for key in excluded:
-            del counts[key]
+            del groups[key]
         if excluded:
             logger.info("NER exclusions dropped %d entities for doc %s: %s",
                         len(excluded), document_id, [k[1] for k in excluded])
@@ -72,9 +73,12 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
             document_id=document_id,
             entity_type=entity_type,
             entity_text=entity_text,
-            mention_count=count,
+            mention_count=group["count"],
+            variants=group["variants"],
         )
-        for (entity_type, entity_text), count in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+        for (entity_type, entity_text), group in sorted(
+            groups.items(), key=lambda kv: (-kv[1]["count"], kv[0]),
+        )
     ]
     session.add_all(rows)
     return rows
@@ -103,7 +107,8 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
 
     grouped: dict[str, list[dict]] = {"persName": [], "geogName": [], "placeName": []}
     for row in rows:
-        item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count}
+        item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,
+                      "variants": row.variants or []}
         if row.geocode is not None:
             item["verified"] = row.geocode.resolved
             if row.geocode.resolved:
@@ -120,3 +125,26 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             item["confidence"] = link["confidence"]
         grouped.setdefault(row.entity_type, []).append(item)
     return grouped
+
+
+def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[str, list[dict]]:
+    """Subset of get_document_entities() output actually mentioned in text.
+
+    Chapter-scoped attribution: the expensive verification (geocoder, Wikidata,
+    LLM) stays document-level; this only checks which of the already-verified
+    entities appear in the given fragment. Matching is case-insensitive at a
+    word-start boundary with the variant as a prefix — "Iran" matches "Iranu"
+    (Polish suffix inflection) but not mid-word. Rows without stored variants
+    (predating the variants column) fall back to entity_text, which may itself
+    be a lemma absent from the text — those match again after the next refresh.
+    """
+    filtered: dict[str, list[dict]] = {}
+    for entity_type, items in grouped.items():
+        kept = []
+        for item in items:
+            needles = item.get("variants") or [item["text"]]
+            pattern = "|".join(re.escape(n) for n in needles if n)
+            if pattern and re.search(rf"(?<!\w)(?:{pattern})", text, re.IGNORECASE):
+                kept.append(item)
+        filtered[entity_type] = kept
+    return filtered

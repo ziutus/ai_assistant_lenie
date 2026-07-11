@@ -4,6 +4,9 @@
 -- entity_text: base form of the mention (lemma when available) — inflected
 --              variants of the same name are aggregated into one row
 -- mention_count: number of mentions aggregated into this row
+-- variants: distinct surface forms as seen in the text ("Kijów", "Kijowa") —
+--           used by the chapter-scoped entity filter (entity_service.
+--           filter_entities_to_text) to match regardless of Polish inflection
 -- Deliberately no disambiguation columns — persons get dedicated tables in a
 -- later stage (docs/person-ner-plan.md), places get verification + tags
 -- (docs/geo-place-ner-plan.md). Rows are derived data: refresh = replace.
@@ -16,6 +19,7 @@ CREATE TABLE IF NOT EXISTS public.document_entities (
     entity_type   VARCHAR(20) NOT NULL,
     entity_text   TEXT NOT NULL,
     mention_count INTEGER NOT NULL DEFAULT 1,
+    variants      TEXT[] NOT NULL DEFAULT '{}',
     created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
     UNIQUE (document_id, entity_type, entity_text)
 );

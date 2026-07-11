@@ -378,21 +378,16 @@ def document_chapters(doc_id: int):
     })
 
 
-@bp.route("/document/<int:doc_id>/chapter/<int:position>", methods=["GET"])
-def document_chapter(doc_id: int, position: int):
-    """Return one chapter's text for the reader view (/read/:id).
+def _resolve_chapter_text(session, doc, position: int) -> tuple[str, str, int]:
+    """Resolve one reader chapter to (text, title, chapter_total).
 
-    Positions are 1-based and match GET /document/<id>/chapters — either
-    markdown-header chapters or, as a fallback, TEMAT-chunk chapters (see
-    _chunk_based_chapters).
+    Positions are 1-based and match GET /document/<id>/chapters — markdown
+    H1/H2 chapters when the text has them, otherwise the TEMAT-chunk fallback
+    (see _chunk_based_chapters). Raises ValueError with a user-facing message
+    when the document has no chapters or the position is out of range.
     """
     from library.document_analysis_service import _extract_text
     from library.text_functions import detect_chapters
-
-    session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
-    if doc is None:
-        abort(404, f"Document {doc_id} not found")
 
     text, _field = _extract_text(doc, prefer_md=True)
     md_chapters = detect_chapters(text) if text else []
@@ -401,32 +396,40 @@ def document_chapter(doc_id: int, position: int):
         chapter_total = len(md_chapters)
         match = next((c for c in md_chapters if c["position"] == position), None)
         if match is None:
-            return jsonify({
-                "status": "error",
-                "message": f"position {position} out of range (1..{chapter_total})",
-            }), 400
-        chapter_text = text[match["char_start"]:match["char_end"]].strip()
-        title = match["title"]
-    else:
-        run = _latest_run_for_document(session, doc_id)
-        chunk_chapters = _chunk_based_chapters(run) if run else []
-        if not chunk_chapters:
-            return jsonify({
-                "status": "error",
-                "message": "Document has no detectable chapters (no H1/H2 headers, no chunk analysis run)",
-            }), 400
+            raise ValueError(f"position {position} out of range (1..{chapter_total})")
+        return text[match["char_start"]:match["char_end"]].strip(), match["title"], chapter_total
 
-        chapter_total = len(chunk_chapters)
-        match = next((c for c in chunk_chapters if c["position"] == position), None)
-        if match is None:
-            return jsonify({
-                "status": "error",
-                "message": f"scope_chapter {position} out of range (1..{chapter_total})",
-            }), 400
+    run = _latest_run_for_document(session, doc.id)
+    chunk_chapters = _chunk_based_chapters(run) if run else []
+    if not chunk_chapters:
+        raise ValueError("Document has no detectable chapters (no H1/H2 headers, no chunk analysis run)")
 
-        chunk = next(c for c in run.chunks if c.id == match["chunk_id"])
-        chapter_text = chunk.corrected_text or chunk.original_text or ""
-        title = match["title"]
+    chapter_total = len(chunk_chapters)
+    match = next((c for c in chunk_chapters if c["position"] == position), None)
+    if match is None:
+        raise ValueError(f"scope_chapter {position} out of range (1..{chapter_total})")
+
+    chunk = next(c for c in run.chunks if c.id == match["chunk_id"])
+    return chunk.corrected_text or chunk.original_text or "", match["title"], chapter_total
+
+
+@bp.route("/document/<int:doc_id>/chapter/<int:position>", methods=["GET"])
+def document_chapter(doc_id: int, position: int):
+    """Return one chapter's text for the reader view (/read/:id).
+
+    Positions are 1-based and match GET /document/<id>/chapters — either
+    markdown-header chapters or, as a fallback, TEMAT-chunk chapters (see
+    _chunk_based_chapters).
+    """
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    try:
+        chapter_text, title, chapter_total = _resolve_chapter_text(session, doc, position)
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
 
     return jsonify({
         "status": "success",
@@ -437,6 +440,52 @@ def document_chapter(doc_id: int, position: int):
         "chapter_total": chapter_total,
         "prev": position - 1 if position > 1 else None,
         "next": position + 1 if position < chapter_total else None,
+    })
+
+
+@bp.route("/document/<int:doc_id>/chapter/<int:position>/entities", methods=["GET"])
+def document_chapter_entities(doc_id: int, position: int):
+    """NER entities + country tags scoped to one chapter of the document.
+
+    The expensive document-level verification (geocoder, Wikidata, LLM) is
+    reused as-is — this endpoint only attributes the already-verified entities
+    to the chapter by matching their surface variants in the chapter's text
+    (entity_service.filter_entities_to_text), and intersects the document's
+    kraj-* tags with countries the gazetteer finds in the chapter. The reader
+    sidebar uses it so a long video's map/persons/places reflect the chapter
+    being read instead of the whole material.
+    """
+    from library.country_gazetteer import detect_countries
+    from library.entity_service import filter_entities_to_text, get_document_entities
+
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    try:
+        chapter_text, title, chapter_total = _resolve_chapter_text(session, doc, position)
+    except ValueError as e:
+        return jsonify({"status": "error", "message": str(e)}), 400
+
+    entities = filter_entities_to_text(get_document_entities(session, doc_id), chapter_text)
+
+    doc_tags = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
+    doc_country_slugs = {t[len("kraj-"):] for t in doc_tags if t.startswith("kraj-")}
+    countries = [
+        {"slug": c.slug, "name_pl": c.name_pl}
+        for c in detect_countries(chapter_text)
+        if c.slug in doc_country_slugs
+    ]
+
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "position": position,
+        "title": title,
+        "chapter_total": chapter_total,
+        "entities": entities,
+        "countries": countries,
     })
 
 

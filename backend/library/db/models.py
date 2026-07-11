@@ -751,6 +751,12 @@ class DocumentEntity(Base):
     # entity_text: base form of the mention (lemma when available)
     entity_text: Mapped[str] = mapped_column(Text, nullable=False)
     mention_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("1"))
+    # variants: distinct surface forms seen in the text ("Kijów", "Kijowa") —
+    # lets the chapter-scoped entity filter match regardless of Polish
+    # inflection. Empty = row predates the column (refilled on next refresh).
+    variants: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=sa_text("'{}'"),
+    )
     geocode_id: Mapped[int | None] = mapped_column(
         ForeignKey("geocode_cache.id", ondelete="SET NULL"),
     )
