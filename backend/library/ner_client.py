@@ -9,7 +9,6 @@ Integration plan: docs/ner-integration-plan.md.
 """
 
 import logging
-from collections import Counter
 
 import requests
 
@@ -81,19 +80,26 @@ def warmup_async() -> None:
     threading.Thread(target=_probe, name="ner-warmup", daemon=True).start()
 
 
-def aggregate_entities(entities: list[dict], types: tuple[str, ...] = ENTITY_TYPES) -> dict[tuple[str, str], int]:
-    """Group raw mentions by (entity_type, base form) with occurrence counts.
+def aggregate_entities_detailed(
+    entities: list[dict], types: tuple[str, ...] = ENTITY_TYPES,
+) -> dict[tuple[str, str], dict]:
+    """Group raw mentions by (entity_type, base form): occurrence counts + surface variants.
 
     The base form is the lemma when the service provides one (groups Polish
     inflected variants: "Tuska" -> "Tusk"), falling back to the surface text.
+    Each group also collects its distinct surface forms in first-seen order
+    ("Kijów", "Kijowa") — the chapter-scoped entity filter matches on them,
+    since the lemma itself may never appear in the text.
 
     Mentions whose surface text starts lowercase are dropped: Polish proper
     names are capitalized, so a lowercase mention is an adjective/demonym the
     model mislabeled as a place ("ukraiński", "rosyjski"). The check uses the
     surface text, not the lemma — legitimate lemmas can start lowercase
     ("Cieśninie Ormuz" -> "cieśnina Ormuz").
+
+    Shape: {(entity_type, base): {"count": int, "variants": [surface, ...]}}.
     """
-    counts: Counter[tuple[str, str]] = Counter()
+    groups: dict[tuple[str, str], dict] = {}
     for ent in entities:
         label = ent.get("label")
         if label not in types:
@@ -104,5 +110,17 @@ def aggregate_entities(entities: list[dict], types: tuple[str, ...] = ENTITY_TYP
         base = (ent.get("lemma") or surface).strip()
         if not base:
             continue
-        counts[(label, base)] += 1
-    return dict(counts)
+        group = groups.setdefault((label, base), {"count": 0, "variants": []})
+        group["count"] += 1
+        if surface not in group["variants"]:
+            group["variants"].append(surface)
+    return groups
+
+
+def aggregate_entities(entities: list[dict], types: tuple[str, ...] = ENTITY_TYPES) -> dict[tuple[str, str], int]:
+    """Group raw mentions by (entity_type, base form) with occurrence counts.
+
+    Counts-only view of aggregate_entities_detailed() — see there for the
+    grouping and filtering rules.
+    """
+    return {key: group["count"] for key, group in aggregate_entities_detailed(entities, types).items()}

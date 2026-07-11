@@ -36,6 +36,15 @@ interface ChapterContent {
   next: number | null;
 }
 
+// Chapter-scoped sidebar data (GET /document/:id/chapter/:pos/entities) —
+// document-level entities/countries filtered down to the chapter being read.
+interface ChapterScope {
+  persons: EntityItem[];
+  placeItems: EntityItem[];
+  markers: PlaceMarker[];
+  countries: CountryTag[];
+}
+
 // ── Minimal markdown rendering (headings, paragraphs, hr; images skipped) ────
 
 const IMAGE_LINE = /^!\[[^\]]*\]\([^)]*\)$/;
@@ -145,6 +154,9 @@ const Read: React.FC = () => {
   const [thematicTags, setThematicTags] = React.useState<string[]>([]);
   const [synthesis, setSynthesis] = React.useState<string | null>(null);
   const [content, setContent] = React.useState<ChapterContent | null>(null);
+  // sidebar scope: current chapter (default) vs whole document
+  const [scopeChapter, setScopeChapter] = React.useState(true);
+  const [chapterScope, setChapterScope] = React.useState<ChapterScope | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [tocOpen, setTocOpen] = React.useState(false);
@@ -208,6 +220,31 @@ const Read: React.FC = () => {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiUrl, id, apiKey]);
+
+  // chapter-scoped sidebar data — refetched when the reader moves to another
+  // chapter; a failure falls back to the document-level entities (scope null)
+  React.useEffect(() => {
+    if (!scopeChapter || !progressLoaded) return;
+    (async () => {
+      try {
+        const r = await fetch(`${apiUrl}/document/${id}/chapter/${position}/entities`, { headers });
+        const data = await r.json();
+        if (data.status !== "success") { setChapterScope(null); return; }
+        const items = [...(data.entities?.geogName ?? []), ...(data.entities?.placeName ?? [])];
+        setChapterScope({
+          persons: data.entities?.persName ?? [],
+          placeItems: items,
+          markers: items
+            .filter((it: any) => it.verified === true && it.lat != null && it.lon != null)
+            .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon })),
+          countries: data.countries ?? [],
+        });
+      } catch {
+        setChapterScope(null);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiUrl, id, position, scopeChapter, progressLoaded, apiKey]);
 
   // progress: fetch once per (user, doc); redirect to last position when URL has no ?chapter
   React.useEffect(() => {
@@ -317,6 +354,14 @@ const Read: React.FC = () => {
     return new Set(
       chapterNotes.filter(n => normText.includes(normalizeWs(n.anchor_quote))).map(n => n.id));
   }, [content, chapterNotes]);
+
+  // sidebar data in the selected scope — chapter scope falls back to
+  // document-level values until the chapter fetch lands (or when it fails)
+  const scoped = scopeChapter ? chapterScope : null;
+  const shownPersons = scoped ? scoped.persons : personItems;
+  const shownPlaceItems = scoped ? scoped.placeItems : placeItems;
+  const shownMarkers = scoped ? scoped.markers : places;
+  const shownCountries = scoped ? scoped.countries : countries;
 
   // ── Render ──
 
@@ -440,19 +485,44 @@ const Read: React.FC = () => {
         {isDesktop && (countries.length > 0 || places.length > 0 || personItems.length > 0
           || placeItems.length > 0 || thematicTags.length > 0 || synthesis) && (
           <div className={styles.rightPanel}>
-            {(countries.length > 0 || places.length > 0) && (
+            <div style={{ fontSize: "0.78em", color: "#64748b", display: "flex", gap: 8, alignItems: "center" }}>
+              Zakres:
+              {([["rozdział", true], ["cały dokument", false]] as const).map(([label, value]) => (
+                <button
+                  key={label}
+                  onClick={() => setScopeChapter(value)}
+                  style={{
+                    border: "none", background: "none", cursor: "pointer", padding: 0,
+                    fontSize: "1em",
+                    color: scopeChapter === value ? "#0369a1" : "#94a3b8",
+                    fontWeight: scopeChapter === value ? 600 : undefined,
+                    textDecoration: scopeChapter === value ? undefined : "underline",
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {(shownCountries.length > 0 || shownMarkers.length > 0) && (
               <React.Suspense fallback={null}>
-                <CountryMap countries={countries} places={places} />
+                <CountryMap countries={shownCountries} places={shownMarkers} />
               </React.Suspense>
             )}
 
-            {(personItems.length > 0 || placeItems.length > 0) && (
+            {(shownPersons.length > 0 || shownPlaceItems.length > 0) && (
               <div style={{
                 background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
                 padding: 10, marginTop: 12, fontSize: "0.9em",
               }}>
-                <EntityChips label={"👤 Osoby"} items={personItems} linkPersons />
-                <EntityChips label={"📍 Miejsca"} items={placeItems} />
+                <EntityChips label={"👤 Osoby"} items={shownPersons} linkPersons />
+                <EntityChips label={"📍 Miejsca"} items={shownPlaceItems} />
+              </div>
+            )}
+
+            {scoped && !shownPersons.length && !shownPlaceItems.length
+              && !shownCountries.length && !shownMarkers.length && (
+              <div style={{ fontSize: "0.8em", color: "#94a3b8", marginTop: 8 }}>
+                Brak osób i miejsc w tym rozdziale.
               </div>
             )}
 

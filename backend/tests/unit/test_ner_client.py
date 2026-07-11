@@ -12,6 +12,7 @@ from library.ner_client import (  # noqa: E402
     ENTITY_TYPES,
     MAX_TEXT_CHARS,
     aggregate_entities,
+    aggregate_entities_detailed,
     extract_entities,
     warmup_async,
 )
@@ -132,3 +133,24 @@ class TestAggregateEntities:
         """Lemat może zaczynać się małą literą ('cieśnina Ormuz') — filtr patrzy na tekst wzmianki."""
         entities = [{"text": "Cieśninie Ormuz", "label": "geogName", "lemma": "cieśnina Ormuz"}]
         assert aggregate_entities(entities) == {("geogName", "cieśnina Ormuz"): 1}
+
+
+class TestAggregateEntitiesDetailed:
+    def test_collects_distinct_surface_variants_in_seen_order(self):
+        entities = [
+            {"text": "Kijowie", "label": "placeName", "lemma": "Kijów"},
+            {"text": "Kijowa", "label": "placeName", "lemma": "Kijów"},
+            {"text": "Kijowa", "label": "placeName", "lemma": "Kijów"},
+        ]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Kijów"): {"count": 3, "variants": ["Kijowie", "Kijowa"]},
+        }
+
+    def test_counts_match_aggregate_entities(self):
+        entities = [
+            {"text": "Tuska", "label": "persName", "lemma": "Tusk"},
+            {"text": "Tusk", "label": "persName", "lemma": "Tusk"},
+            {"text": "ukraiński", "label": "placeName", "lemma": "ukraiński"},
+        ]
+        detailed = aggregate_entities_detailed(entities)
+        assert {k: g["count"] for k, g in detailed.items()} == aggregate_entities(entities)
