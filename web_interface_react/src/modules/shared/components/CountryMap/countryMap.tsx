@@ -1,6 +1,6 @@
 import React from "react";
 import L from "leaflet";
-import { CircleMarker, GeoJSON, MapContainer, TileLayer, Tooltip, useMap } from "react-leaflet";
+import { CircleMarker, GeoJSON, MapContainer, Polyline, TileLayer, Tooltip, useMap } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import { COUNTRY_SLUG_TO_ISO3 } from "../../data/countryIso";
 import { ISO3_TO_NAME_PL } from "../../data/countryNames";
@@ -17,9 +17,19 @@ export interface PlaceMarker {
   lon: number;
 }
 
+/** Linear infrastructure route (Overpass/OSM data, infra_geometries cache)
+ *  rendered as polylines — e.g. a gas pipeline an article discusses.
+ *  Coordinates come as GeoJSON MultiLineString (lon/lat order). */
+export interface PipelineLine {
+  name: string;
+  substance?: string | null;
+  coordinates: [number, number][][]; // [lon, lat] per GeoJSON
+}
+
 interface Props {
   countries: CountryTag[];
   places?: PlaceMarker[];
+  pipelines?: PipelineLine[];
 }
 
 const GEOJSON_URL = "/geo/world-countries.geo.json";
@@ -59,7 +69,7 @@ const FitToMatched: React.FC<{ data: GeoJSON.FeatureCollection; matchedIso: Set<
  *  world-countries GeoJSON only when actually rendered. Small island states / micro-states
  *  missing from the (lightweight, ~250KB) bundled GeoJSON won't appear on the map — they're
  *  still listed as text chips below it so nothing is silently dropped. */
-const CountryMap: React.FC<Props> = ({ countries, places = [] }) => {
+const CountryMap: React.FC<Props> = ({ countries, places = [], pipelines = [] }) => {
   const [geoData, setGeoData] = React.useState<GeoJSON.FeatureCollection | null>(null);
   const [error, setError] = React.useState(false);
 
@@ -102,7 +112,7 @@ const CountryMap: React.FC<Props> = ({ countries, places = [] }) => {
     [matchedIso]
   );
 
-  if ((countries.length === 0 && places.length === 0) || error) return null;
+  if ((countries.length === 0 && places.length === 0 && pipelines.length === 0) || error) return null;
 
   return (
     <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, marginTop: 12 }}>
@@ -152,6 +162,21 @@ const CountryMap: React.FC<Props> = ({ countries, places = [] }) => {
               style={style}
               onEachFeature={onEachFeature}
             />
+            {pipelines.map(pl =>
+              pl.coordinates.map((line, i) => (
+                <Polyline
+                  key={`${pl.name}-${i}`}
+                  positions={line.map(([lon, lat]) => [lat, lon] as [number, number])}
+                  pathOptions={{ color: pl.substance === "oil" ? "#7f1d1d" : "#c2410c", weight: 3, opacity: 0.9, dashArray: "6 4" }}
+                >
+                  {i === 0 && (
+                    <Tooltip direction="top" sticky>
+                      🛢️ {pl.name}{pl.substance ? ` (${pl.substance})` : ""} — dane © OpenStreetMap
+                    </Tooltip>
+                  )}
+                </Polyline>
+              ))
+            )}
             {places.map(p => (
               <CircleMarker
                 key={`${p.name}-${p.lat}-${p.lon}`}
