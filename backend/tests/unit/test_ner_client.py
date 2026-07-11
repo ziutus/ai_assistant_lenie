@@ -62,12 +62,43 @@ class TestExtractEntities:
             with patch("library.ner_client._service_url", return_value="http://ner:8090"):
                 assert extract_entities("tekst") == []
 
-    def test_text_is_truncated(self):
+    def test_long_text_processed_in_windows(self):
+        """Tekst dłuższy niż MAX_TEXT_CHARS idzie oknami — wcześniej był ucinany do pierwszego okna."""
         with patch("library.ner_client.requests.post", return_value=_response([])) as mock_post:
             with patch("library.ner_client._service_url", return_value="http://ner:8090"):
                 extract_entities("x" * (MAX_TEXT_CHARS + 500))
-        sent = mock_post.call_args.kwargs["json"]["text"]
-        assert len(sent) == MAX_TEXT_CHARS
+        assert mock_post.call_count == 2
+        sent_lengths = [c.kwargs["json"]["text"] for c in mock_post.call_args_list]
+        assert [len(t) for t in sent_lengths] == [MAX_TEXT_CHARS, 500]
+
+    def test_window_results_are_concatenated(self):
+        first = [{"text": "Tusk", "label": "persName", "lemma": "Tusk"}]
+        second = [{"text": "Kijów", "label": "placeName", "lemma": "Kijów"}]
+        with patch("library.ner_client.requests.post",
+                   side_effect=[_response(first), _response(second)]):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                result = extract_entities("x" * (MAX_TEXT_CHARS + 500))
+        assert result == first + second
+
+    def test_window_cut_backs_up_to_whitespace(self):
+        """Słowo na granicy okna nie jest przecinane w pół — cięcie cofa się do spacji."""
+        text = "a" * (MAX_TEXT_CHARS - 10) + " Konstantynopol upadł"
+        with patch("library.ner_client.requests.post", return_value=_response([])) as mock_post:
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                extract_entities(text)
+        windows = [c.kwargs["json"]["text"] for c in mock_post.call_args_list]
+        assert any("Konstantynopol" in w for w in windows)
+        assert len(windows[0]) == MAX_TEXT_CHARS - 10  # cięcie na spacji, nie w środku słowa
+
+    def test_failed_window_returns_partial_results(self):
+        """Padnięcie serwisu w trakcie — zwracamy to, co już zebrano, bez dobijania kolejnych okien."""
+        first = [{"text": "Tusk", "label": "persName", "lemma": "Tusk"}]
+        with patch("library.ner_client.requests.post",
+                   side_effect=[_response(first), requests.ConnectionError("boom")]) as mock_post:
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                result = extract_entities("x" * (3 * MAX_TEXT_CHARS))
+        assert result == first
+        assert mock_post.call_count == 2  # trzecie okno pominięte
 
 
 class TestWarmupAsync:

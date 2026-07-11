@@ -378,13 +378,14 @@ def document_chapters(doc_id: int):
     })
 
 
-def _resolve_chapter_text(session, doc, position: int) -> tuple[str, str, int]:
-    """Resolve one reader chapter to (text, title, chapter_total).
+def _resolve_chapter_text(session, doc, position: int) -> tuple[tuple[str, str, int] | None, str | None]:
+    """Resolve one reader chapter to ((text, title, chapter_total), None).
 
     Positions are 1-based and match GET /document/<id>/chapters — markdown
     H1/H2 chapters when the text has them, otherwise the TEMAT-chunk fallback
-    (see _chunk_based_chapters). Raises ValueError with a user-facing message
-    when the document has no chapters or the position is out of range.
+    (see _chunk_based_chapters). On a bad position or a chapterless document
+    returns (None, user-facing error message) — a plain value, not an
+    exception, so no exception detail can leak into the HTTP response.
     """
     from library.document_analysis_service import _extract_text
     from library.text_functions import detect_chapters
@@ -396,21 +397,21 @@ def _resolve_chapter_text(session, doc, position: int) -> tuple[str, str, int]:
         chapter_total = len(md_chapters)
         match = next((c for c in md_chapters if c["position"] == position), None)
         if match is None:
-            raise ValueError(f"position {position} out of range (1..{chapter_total})")
-        return text[match["char_start"]:match["char_end"]].strip(), match["title"], chapter_total
+            return None, f"position {position} out of range (1..{chapter_total})"
+        return (text[match["char_start"]:match["char_end"]].strip(), match["title"], chapter_total), None
 
     run = _latest_run_for_document(session, doc.id)
     chunk_chapters = _chunk_based_chapters(run) if run else []
     if not chunk_chapters:
-        raise ValueError("Document has no detectable chapters (no H1/H2 headers, no chunk analysis run)")
+        return None, "Document has no detectable chapters (no H1/H2 headers, no chunk analysis run)"
 
     chapter_total = len(chunk_chapters)
     match = next((c for c in chunk_chapters if c["position"] == position), None)
     if match is None:
-        raise ValueError(f"scope_chapter {position} out of range (1..{chapter_total})")
+        return None, f"scope_chapter {position} out of range (1..{chapter_total})"
 
     chunk = next(c for c in run.chunks if c.id == match["chunk_id"])
-    return chunk.corrected_text or chunk.original_text or "", match["title"], chapter_total
+    return (chunk.corrected_text or chunk.original_text or "", match["title"], chapter_total), None
 
 
 @bp.route("/document/<int:doc_id>/chapter/<int:position>", methods=["GET"])
@@ -426,10 +427,10 @@ def document_chapter(doc_id: int, position: int):
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
-    try:
-        chapter_text, title, chapter_total = _resolve_chapter_text(session, doc, position)
-    except ValueError as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
+    resolved, error = _resolve_chapter_text(session, doc, position)
+    if resolved is None:
+        return jsonify({"status": "error", "message": error}), 400
+    chapter_text, title, chapter_total = resolved
 
     return jsonify({
         "status": "success",
@@ -463,10 +464,10 @@ def document_chapter_entities(doc_id: int, position: int):
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
-    try:
-        chapter_text, title, chapter_total = _resolve_chapter_text(session, doc, position)
-    except ValueError as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
+    resolved, error = _resolve_chapter_text(session, doc, position)
+    if resolved is None:
+        return jsonify({"status": "error", "message": error}), 400
+    chapter_text, title, chapter_total = resolved
 
     entities = filter_entities_to_text(get_document_entities(session, doc_id), chapter_text)
 

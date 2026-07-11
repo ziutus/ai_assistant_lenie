@@ -454,6 +454,7 @@ def website_entities_refresh():
 
     place_tags: list[str] = []
     persons_linked = 0
+    pipelines: list[str] = []
     if rows:
         try:
             from library.place_verification import verify_document_places
@@ -475,12 +476,23 @@ def website_entities_refresh():
             session.rollback()
             logging.exception("person resolution failed for doc %s", doc_id)
 
+        try:
+            from library.overpass_client import attach_document_pipelines
+
+            i_summary = attach_document_pipelines(session, doc_id)
+            session.commit()
+            pipelines = i_summary["resolved"]
+        except Exception:
+            session.rollback()
+            logging.exception("pipeline lookup failed for doc %s", doc_id)
+
     return {
         "status": "success",
         "id": doc_id,
         "refreshed": len(rows),
         "place_tags": place_tags,
         "persons_linked": persons_linked,
+        "pipelines": pipelines,
         "entities": get_document_entities(session, doc_id),
     }, 200
 

@@ -5,7 +5,7 @@ import {
   NotePopover, NoteRow, PendingNote, ReaderIdentityBadge, STANCE_ICON, UserNote,
   normalizeWs, pendingNoteFromSelection, useReaderIdentity, useUserNotes,
 } from "../components/ReaderNotes/readerNotes";
-import type { CountryTag, PlaceMarker } from "../components/CountryMap/countryMap";
+import type { CountryTag, PipelineLine, PlaceMarker } from "../components/CountryMap/countryMap";
 import { EntityChips, EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import { useIsDesktop } from "../hooks/useIsDesktop";
 import styles from "./read.module.css";
@@ -362,6 +362,14 @@ const Read: React.FC = () => {
   const shownPlaceItems = scoped ? scoped.placeItems : placeItems;
   const shownMarkers = scoped ? scoped.markers : places;
   const shownCountries = scoped ? scoped.countries : countries;
+  // pipeline routes (Overpass/OSM) among the in-scope place entities
+  const shownPipelines: PipelineLine[] = shownPlaceItems
+    .filter(it => it.pipeline?.geojson?.coordinates?.length)
+    .map(it => ({
+      name: it.pipeline!.name ?? it.text,
+      substance: it.pipeline!.substance,
+      coordinates: it.pipeline!.geojson!.coordinates,
+    }));
 
   // ── Render ──
 
@@ -503,9 +511,9 @@ const Read: React.FC = () => {
               ))}
             </div>
 
-            {(shownCountries.length > 0 || shownMarkers.length > 0) && (
+            {(shownCountries.length > 0 || shownMarkers.length > 0 || shownPipelines.length > 0) && (
               <React.Suspense fallback={null}>
-                <CountryMap countries={shownCountries} places={shownMarkers} />
+                <CountryMap countries={shownCountries} places={shownMarkers} pipelines={shownPipelines} />
               </React.Suspense>
             )}
 
