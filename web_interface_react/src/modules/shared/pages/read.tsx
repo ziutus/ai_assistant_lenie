@@ -58,6 +58,30 @@ interface ChapterScope {
 
 const IMAGE_LINE = /^!\[[^\]]*\]\([^)]*\)$/;
 
+/** Footnote text with its URL fragment rendered as a link. The backend stores
+ *  the first URL it found in the footnote (normalized to https://), so the
+ *  matching fragment in the visible text becomes clickable; when the fragment
+ *  can't be located (edge cases), a trailing 🔗 keeps the link reachable. */
+function renderRefText(r: ChapterReference): React.ReactNode {
+  if (!r.url) return r.text;
+  const bare = r.url.replace(/^https?:\/\//, "");
+  const full = r.text.indexOf(r.url);
+  const idx = full >= 0 ? full : r.text.indexOf(bare);
+  const frag = full >= 0 ? r.url : bare;
+  if (idx < 0) {
+    return <>{r.text}{" "}<a href={r.url} target="_blank" rel="noreferrer" title={r.url}>🔗</a></>;
+  }
+  return (
+    <>
+      {r.text.slice(0, idx)}
+      <a href={r.url} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all", color: "#0369a1" }}>
+        {frag}
+      </a>
+      {r.text.slice(idx + frag.length)}
+    </>
+  );
+}
+
 const SUP_TO_DIGIT: Record<string, string> = {
   "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9",
 };
@@ -534,13 +558,7 @@ const Read: React.FC = () => {
               <ol style={{ fontSize: "0.82em", color: "#475569", lineHeight: 1.5, margin: "8px 0 0", paddingLeft: 28 }}>
                 {content.references!.map((r, i) => (
                   <li key={i} id={`fn-${r.marker}`} value={Number(r.marker) || undefined} style={{ margin: "4px 0" }}>
-                    {r.text}
-                    {r.url && (
-                      <>
-                        {" "}
-                        <a href={r.url} target="_blank" rel="noreferrer" title={r.url}>🔗</a>
-                      </>
-                    )}
+                    {renderRefText(r)}
                   </li>
                 ))}
               </ol>
