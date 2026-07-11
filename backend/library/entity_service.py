@@ -158,6 +158,11 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
     (Polish suffix inflection) but not mid-word. Rows without stored variants
     (predating the variants column) fall back to entity_text, which may itself
     be a lemma absent from the text — those match again after the next refresh.
+
+    Kept items get their "count" REPLACED with the local mention count and are
+    re-sorted by it — the reader chip "Putin ×50" in chapter scope used to show
+    the whole-book count, misleading for a chapter with a single mention.
+    Original dicts are not mutated (document-level callers keep global counts).
     """
     filtered: dict[str, list[dict]] = {}
     for entity_type, items in grouped.items():
@@ -165,7 +170,11 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
         for item in items:
             needles = item.get("variants") or [item["text"]]
             pattern = "|".join(re.escape(n) for n in needles if n)
-            if pattern and re.search(rf"(?<!\w)(?:{pattern})", text, re.IGNORECASE):
-                kept.append(item)
+            if not pattern:
+                continue
+            local_count = len(re.findall(rf"(?<!\w)(?:{pattern})", text, re.IGNORECASE))
+            if local_count:
+                kept.append({**item, "count": local_count})
+        kept.sort(key=lambda i: (-i["count"], i["text"]))
         filtered[entity_type] = kept
     return filtered
