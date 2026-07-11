@@ -432,6 +432,21 @@ def document_chapter(doc_id: int, position: int):
         return jsonify({"status": "error", "message": error}), 400
     chapter_text, title, chapter_total = resolved
 
+    # footnotes extracted out of the text (library/references.py) — the reader
+    # renders them as a "Przypisy" section at the end of the chapter
+    from library.db.models import DocumentReference
+
+    references = [
+        {"marker": r.marker, "text": r.ref_text, "url": r.url}
+        for r in session.query(DocumentReference)
+        .filter(
+            DocumentReference.document_id == doc_id,
+            DocumentReference.chapter_position == position,
+        )
+        .order_by(DocumentReference.id)
+        .all()
+    ]
+
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
@@ -439,6 +454,7 @@ def document_chapter(doc_id: int, position: int):
         "title": title,
         "text": chapter_text,
         "chapter_total": chapter_total,
+        "references": references,
         "prev": position - 1 if position > 1 else None,
         "next": position + 1 if position < chapter_total else None,
     })

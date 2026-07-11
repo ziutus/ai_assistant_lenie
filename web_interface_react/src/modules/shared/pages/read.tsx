@@ -27,11 +27,20 @@ interface Chapter {
   char_end?: number;
 }
 
+// Footnote extracted out of the book text (document_references) — rendered
+// as a "Przypisy" section at the end of the chapter, linked from ¹⁸ markers.
+interface ChapterReference {
+  marker: string;
+  text: string;
+  url: string | null;
+}
+
 interface ChapterContent {
   position: number;
   title: string;
   text: string;
   chapter_total: number;
+  references?: ChapterReference[];
   prev: number | null;
   next: number | null;
 }
@@ -49,12 +58,30 @@ interface ChapterScope {
 
 const IMAGE_LINE = /^!\[[^\]]*\]\([^)]*\)$/;
 
-function renderInline(text: string): React.ReactNode[] {
-  // **bold** and *italic* only — enough for OCR-ed book prose
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g);
+const SUP_TO_DIGIT: Record<string, string> = {
+  "⁰": "0", "¹": "1", "²": "2", "³": "3", "⁴": "4", "⁵": "5", "⁶": "6", "⁷": "7", "⁸": "8", "⁹": "9",
+};
+const supToNumber = (sup: string) => sup.split("").map(c => SUP_TO_DIGIT[c] ?? "").join("");
+
+function renderInline(text: string, refs?: Map<string, ChapterReference>): React.ReactNode[] {
+  // **bold**, *italic* and ¹⁸ footnote markers — enough for OCR-ed book prose
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
     if (part.startsWith("*") && part.endsWith("*") && part.length > 2) return <em key={i}>{part.slice(1, -1)}</em>;
+    if (/^[¹²³⁴⁵⁶⁷⁸⁹⁰]+$/.test(part)) {
+      const ref = refs?.get(supToNumber(part));
+      if (ref) {
+        return (
+          <sup key={i}>
+            <a href={`#fn-${ref.marker}`} title={ref.text} style={{ textDecoration: "none", color: "#0369a1" }}>
+              {part}
+            </a>
+          </sup>
+        );
+      }
+      return part;
+    }
     return part;
   });
 }
@@ -65,6 +92,7 @@ function renderInline(text: string): React.ReactNode[] {
 function renderParagraphWithNotes(
   text: string,
   notes: UserNote[],
+  refs?: Map<string, ChapterReference>,
 ): { nodes: React.ReactNode[]; paragraphTint: UserNote | null } {
   const matches = notes
     .map(n => ({ note: n, idx: text.indexOf(n.anchor_quote) }))
@@ -73,14 +101,14 @@ function renderParagraphWithNotes(
 
   if (matches.length === 0) {
     const tint = notes.find(n => normalizeWs(text).includes(normalizeWs(n.anchor_quote))) ?? null;
-    return { nodes: renderInline(text), paragraphTint: tint };
+    return { nodes: renderInline(text, refs), paragraphTint: tint };
   }
 
   const nodes: React.ReactNode[] = [];
   let cursor = 0;
   matches.forEach((m, i) => {
     if (m.idx < cursor) return; // overlapping quote — skip
-    if (m.idx > cursor) nodes.push(...renderInline(text.slice(cursor, m.idx)));
+    if (m.idx > cursor) nodes.push(...renderInline(text.slice(cursor, m.idx), refs));
     const quoted = text.slice(m.idx, m.idx + m.note.anchor_quote.length);
     nodes.push(
       <mark
@@ -88,16 +116,20 @@ function renderParagraphWithNotes(
         title={`${STANCE_ICON[m.note.stance ?? ""] ?? "📝"} ${m.note.note_text}`}
         style={{ background: "#fef08a", padding: "0 1px", cursor: "help" }}
       >
-        {renderInline(quoted)}
+        {renderInline(quoted, refs)}
       </mark>
     );
     cursor = m.idx + m.note.anchor_quote.length;
   });
-  if (cursor < text.length) nodes.push(...renderInline(text.slice(cursor)));
+  if (cursor < text.length) nodes.push(...renderInline(text.slice(cursor), refs));
   return { nodes, paragraphTint: null };
 }
 
-function renderMarkdown(text: string, notes: UserNote[]): React.ReactNode[] {
+function renderMarkdown(
+  text: string,
+  notes: UserNote[],
+  refs?: Map<string, ChapterReference>,
+): React.ReactNode[] {
   const blocks = text.split(/\n\s*\n/);
   const out: React.ReactNode[] = [];
   blocks.forEach((block, i) => {
@@ -119,7 +151,7 @@ function renderMarkdown(text: string, notes: UserNote[]): React.ReactNode[] {
     // footnote / caption lines (superscript digits or "Wykres N.") — smaller font
     const isNote = /^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,3} )\S*\s*(http|www|[A-ZŻŹĆĄŚĘŁÓŃ])/.test(trimmed) && trimmed.length < 400;
     const paraText = trimmed.replace(/\n/g, " ");
-    const { nodes, paragraphTint } = renderParagraphWithNotes(paraText, notes);
+    const { nodes, paragraphTint } = renderParagraphWithNotes(paraText, notes, refs);
     out.push(
       <p key={i} style={isNote
         ? { fontSize: "0.8em", color: "#64748b", margin: "6px 0" }
@@ -348,6 +380,11 @@ const Read: React.FC = () => {
   const chapterNotes = React.useMemo(
     () => notes.filter(n => n.chapter_position === position), [notes, position]);
 
+  // footnotes by marker — for ¹⁸ tooltips/anchors in the text
+  const referencesByMarker = React.useMemo(
+    () => new Map((content?.references ?? []).map(r => [r.marker, r])),
+    [content?.references]);
+
   const anchoredNoteIds = React.useMemo(() => {
     if (!content) return new Set<number>();
     const normText = normalizeWs(content.text);
@@ -483,8 +520,31 @@ const Read: React.FC = () => {
           {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
           {!loading && content && (
             <article style={{ fontSize: "1.02em" }} onMouseUp={onTextSelected}>
-              {renderMarkdown(content.text, chapterNotes)}
+              {renderMarkdown(content.text, chapterNotes, referencesByMarker)}
             </article>
+          )}
+          {!loading && content && (content.references?.length ?? 0) > 0 && (
+            <details open style={{
+              marginTop: 24, padding: "10px 14px", background: "#f8fafc",
+              border: "1px solid #e2e8f0", borderRadius: 8,
+            }}>
+              <summary style={{ cursor: "pointer", fontSize: "0.9em", fontWeight: 600 }}>
+                📚 Przypisy ({content.references!.length})
+              </summary>
+              <ol style={{ fontSize: "0.82em", color: "#475569", lineHeight: 1.5, margin: "8px 0 0", paddingLeft: 28 }}>
+                {content.references!.map((r, i) => (
+                  <li key={i} id={`fn-${r.marker}`} value={Number(r.marker) || undefined} style={{ margin: "4px 0" }}>
+                    {r.text}
+                    {r.url && (
+                      <>
+                        {" "}
+                        <a href={r.url} target="_blank" rel="noreferrer" title={r.url}>🔗</a>
+                      </>
+                    )}
+                  </li>
+                ))}
+              </ol>
+            </details>
           )}
           {navButtons}
         </div>
