@@ -81,8 +81,10 @@ class TestWebsiteEntitiesRefresh:
                                return_value={"checked": 1, "resolved": ["Kijów"], "tagged": ["miejsce-kijow"]}) as mock_verify:
                         with patch("library.person_registry.resolve_document_persons",
                                    return_value={"linked": [("Tusk", "Donald Tusk", "wikidata_matched")], "skipped": []}) as mock_persons:
-                            with patch("library.entity_service.get_document_entities", return_value=GROUPED):
-                                resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
+                            with patch("library.overpass_client.attach_document_pipelines",
+                                       return_value={"checked": 1, "resolved": ["Baltic Pipe"]}) as mock_pipes:
+                                with patch("library.entity_service.get_document_entities", return_value=GROUPED):
+                                    resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
 
         assert resp.status_code == 200
         data = resp.get_json()
@@ -90,11 +92,13 @@ class TestWebsiteEntitiesRefresh:
         assert data["refreshed"] == 2
         assert data["place_tags"] == ["miejsce-kijow"]
         assert data["persons_linked"] == 1
+        assert data["pipelines"] == ["Baltic Pipe"]
         assert data["entities"] == GROUPED
         mock_refresh.assert_called_once_with(session, 42, "# Artykuł o Tusku")
         mock_verify.assert_called_once_with(session, doc, "# Artykuł o Tusku")
         mock_persons.assert_called_once_with(session, doc, "# Artykuł o Tusku")
-        assert session.commit.call_count == 3
+        mock_pipes.assert_called_once_with(session, 42)
+        assert session.commit.call_count == 4  # refresh + miejsca + osoby + rurociągi
 
     def test_place_verification_failure_does_not_fail_request(self, client):
         doc = MagicMock(text_md="# Artykuł", text=None)
