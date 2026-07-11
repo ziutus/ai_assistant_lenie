@@ -11,6 +11,7 @@ imports/
 ├── dynamodb_sync.py          # Sync documents from DynamoDB + S3 to local PostgreSQL
 ├── feed_monitor.py           # Monitor RSS/Atom/JSON feeds and import new entries
 ├── feeds.yaml                # Feed definitions for feed_monitor.py (committed)
+├── extract_references.py     # Extract book footnotes from text_md into document_references
 ├── feeds_state.yaml          # Per-feed last_checked state (gitignored, created at runtime)
 ├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
@@ -227,6 +228,20 @@ python imports/youtube_backfill_author.py --no-proxy             # skip Webshare
 **Prerequisites:**
 - `.env` with `POSTGRESQL_*` variables
 - Optional: `WEBSHARE_API_KEY` for proxy support (see `youtube_add.py`)
+
+### `extract_references.py`
+
+Extracts book footnotes ("¹⁸ https://... (dostęp: ...)", "29 Eurostat.") out of a document's `text_md` into the `document_references` table (`library/references.py` — see there for the detection heuristics) and updates `text_md` to the cleaned text. Replace semantics — safe to re-run. **After `--apply`, re-run NER** for the document so entities are rebuilt from the clean text (footnote URLs used to become junk person entities).
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`.
+
+**Running:**
+```bash
+cd backend
+python imports/extract_references.py --id 9204           # dry-run (default)
+python imports/extract_references.py --id 9204 --apply
+python imports/extract_references.py --id 9204 --show 30 # more dry-run samples
+```
 
 ### `fix_place_tags.py`
 
