@@ -10,6 +10,9 @@ export interface EntityItem {
   id?: number;
   text: string;
   count: number;
+  // Surface forms seen in the text ("Kijów", "Kijowa") — used server-side for
+  // chapter-scoped filtering; not rendered
+  variants?: string[];
   // Stage-3 place verification (geogName/placeName only): absent = not checked,
   // true = geocoder confirmed (lat/lon/display_name present), false = not a real place
   verified?: boolean;

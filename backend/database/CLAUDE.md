@@ -180,6 +180,7 @@ Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-inte
 | `entity_type` | `varchar(20) NOT NULL` | `persName` / `geogName` / `placeName` (spaCy `pl_core_news_lg` labels) |
 | `entity_text` | `text NOT NULL` | Base form of the mention (lemma when available — inflected variants aggregate into one row) |
 | `mention_count` | `integer NOT NULL DEFAULT 1` | Number of mentions aggregated into this row |
+| `variants` | `text[] NOT NULL DEFAULT '{}'` | Distinct surface forms as seen in the text ("Kijów", "Kijowa") — matched by the chapter-scoped entity filter (`entity_service.filter_entities_to_text`) regardless of inflection; empty = row predates the column (refilled on next refresh) |
 | `geocode_id` | `integer` | FK → `geocode_cache.id` (`SET NULL` on delete) — stage-3 geocoder verdict for place entities; `NULL` = not checked yet |
 | `created_at` | `timestamp` | Row creation timestamp |
 
