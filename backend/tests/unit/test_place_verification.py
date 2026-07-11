@@ -21,6 +21,13 @@ def _entity(text, etype="geogName", geocode_id=None, geocode=None, mention_count
     return ent
 
 
+def _resolved_geocode(display_name):
+    geo = MagicMock(spec=GeocodeCache)
+    geo.resolved = True
+    geo.display_name = display_name
+    return geo
+
+
 def _session_with_entities(entities, cached_geocode=None):
     session = MagicMock()
     # first query() call -> entities; GeocodeCache lookups -> cached_geocode
@@ -49,7 +56,8 @@ class TestVerifyDocumentPlaces:
     def test_resolved_and_confirmed_place_gets_tag(self):
         ent = _entity("Cieśnina Ormuz")
         session = _session_with_entities([ent])
-        hit = {"display_name": "Strait of Hormuz, Oman", "lat": "26.4", "lon": "56.2",
+        # display_name po polsku — geocode() prosi o accept-language=pl
+        hit = {"display_name": "Cieśnina Ormuz, Oman", "lat": "26.4", "lon": "56.2",
                "class": "natural", "type": "strait", "importance": 0.6}
         doc = self._doc(tags="geopolityka")
 
@@ -93,8 +101,7 @@ class TestVerifyDocumentPlaces:
         assert summary == {"checked": 0, "resolved": [], "tagged": []}
 
     def test_cached_query_not_geocoded_again(self):
-        cached = MagicMock(spec=GeocodeCache)
-        cached.resolved = True
+        cached = _resolved_geocode("Kijów, Ukraina")
         cached.id = 7
         ent = _entity("Kijów", etype="placeName")
         session = _session_with_entities([ent], cached_geocode=cached)
@@ -110,9 +117,7 @@ class TestVerifyDocumentPlaces:
         assert summary["tagged"] == []  # LLM nie potwierdził istotności
 
     def test_llm_rejection_leaves_tags_untouched(self):
-        geo = MagicMock(spec=GeocodeCache)
-        geo.resolved = True
-        ent = _entity("Kijów", geocode_id=7, geocode=geo)
+        ent = _entity("Kijów", geocode_id=7, geocode=_resolved_geocode("Kijów, Ukraina"))
         session = _session_with_entities([ent])
         doc = self._doc(tags="geopolityka")
 
@@ -124,9 +129,7 @@ class TestVerifyDocumentPlaces:
 
     def test_frequent_mention_auto_confirmed_without_llm(self):
         """Miejsce wspomniane >=3 razy jest jawnie omawiane — tag bez wywołania LLM."""
-        geo = MagicMock(spec=GeocodeCache)
-        geo.resolved = True
-        ent = _entity("Teheran", geocode_id=7, geocode=geo, mention_count=5)
+        ent = _entity("Teheran", geocode_id=7, geocode=_resolved_geocode("Teheran, Iran"), mention_count=5)
         session = _session_with_entities([ent])
         doc = self._doc()
 
@@ -138,9 +141,7 @@ class TestVerifyDocumentPlaces:
         assert summary["tagged"] == ["miejsce-teheran"]
 
     def test_duplicate_tag_not_added_twice(self):
-        geo = MagicMock(spec=GeocodeCache)
-        geo.resolved = True
-        ent = _entity("Kijów", geocode_id=7, geocode=geo)
+        ent = _entity("Kijów", geocode_id=7, geocode=_resolved_geocode("Kijów, Ukraina"))
         session = _session_with_entities([ent])
         doc = self._doc(tags="miejsce-kijow")
 
@@ -150,3 +151,52 @@ class TestVerifyDocumentPlaces:
 
         assert summary["tagged"] == []
         assert doc.tags == "miejsce-kijow"
+
+    def test_inflected_variants_produce_one_tag(self):
+        """Regresja na realny przypadek (doc 9216): "Kijów" i "Kijowa" dawały miejsce-kijow + miejsce-kijowa.
+
+        Odmieniona forma geokoduje się nawet do innego obiektu OSM (wieś Kijów
+        pod Otmuchowem), ale kanoniczna pisownia obu trafień slugu je scala.
+        """
+        ents = [
+            _entity("Kijów", geocode_id=7, geocode=_resolved_geocode("Kijow, Ukraina")),
+            _entity("Kijowa", geocode_id=8, geocode=_resolved_geocode("Kijów, gmina Otmuchów, Polska")),
+        ]
+        session = _session_with_entities(ents)
+        doc = self._doc()
+
+        with patch("library.place_verification._is_country", return_value=False):
+            with patch("library.article_tagging.confirm_places_with_llm",
+                       return_value=["Kijów", "Kijowa"]):
+                summary = verify_document_places(session, doc, "tekst")
+
+        assert summary["tagged"] == ["miejsce-kijow"]
+        assert doc.tags == "miejsce-kijow"
+
+    def test_mention_counts_merged_before_auto_confirm(self):
+        """Warianty tej samej nazwy sumują wzmianki — razem przekraczają próg auto-confirm bez LLM."""
+        ents = [
+            _entity("Grenlandia", geocode_id=7, geocode=_resolved_geocode("Grenlandia"), mention_count=2),
+            _entity("Grenlandią", geocode_id=8, geocode=_resolved_geocode("Grenlandia"), mention_count=2),
+        ]
+        session = _session_with_entities(ents)
+        doc = self._doc()
+
+        with patch("library.place_verification._is_country", return_value=False):
+            with patch("library.article_tagging.confirm_places_with_llm") as mock_llm:
+                summary = verify_document_places(session, doc, "tekst")
+
+        mock_llm.assert_not_called()
+        assert summary["tagged"] == ["miejsce-grenlandia"]
+
+    def test_tag_built_from_canonical_spelling(self):
+        """Ucięta wzmianka ("Ankar") dostaje tag z pełnej nazwy geokodera, nie z formy z tekstu."""
+        geo = _resolved_geocode("Ankara, Çankaya, Ankara, Central Anatolia Region, Turcja")
+        ent = _entity("Ankar", geocode_id=7, geocode=geo, mention_count=3)
+        session = _session_with_entities([ent])
+        doc = self._doc()
+
+        with patch("library.place_verification._is_country", return_value=False):
+            summary = verify_document_places(session, doc, "tekst")
+
+        assert summary["tagged"] == ["miejsce-ankara"]
