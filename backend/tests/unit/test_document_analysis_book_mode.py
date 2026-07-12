@@ -439,6 +439,9 @@ def transcript_client(monkeypatch, transcript_run):
     doc = FakeTranscriptDoc()
     fake_session = MagicMock()
     fake_session.get.side_effect = lambda model, pk: doc if model is WebDocument and pk == 88 else None
+    # chapter-scoped synthesis lookup (GET /document/<id>/chapter/<pos>) — no
+    # chapter-scoped run exists for this chunk-based-chapters document
+    fake_session.scalars.side_effect = lambda *_a, **_kw: _ScalarsResult([])
     monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
     monkeypatch.setattr(crr, "_latest_run_for_document",
                         lambda _session, doc_id: transcript_run if doc_id == 88 else None)
