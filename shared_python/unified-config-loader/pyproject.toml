@@ -4,7 +4,7 @@ version = "1.0.0"
 description = "Pluggable configuration loader with env/vault/aws backends"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [
     { name = "Lenie AI Team" }
 ]

@@ -40,18 +40,20 @@ make lock            # or: cd backend && uv lock
 ```
 
 ### Testing
+
+Pytest configuration lives in `backend/pyproject.toml` — run tests from `backend/` with `PYTHONPATH=.` (some tests resolve paths relative to cwd):
+
 ```bash
-# All tests
-pytest
+cd backend
 
-# Unit tests only
-pytest backend/tests/unit/
+# Unit tests (full suite needs the project venv, not uvx)
+PYTHONPATH=. .venv/Scripts/python -m pytest tests/unit/ -q
 
-# Integration tests (requires database)
-pytest backend/tests/integration/
+# Integration tests (requires PostgreSQL + .env)
+PYTHONPATH=. .venv/Scripts/python -m pytest tests/integration/ -q
 
 # Single test file
-pytest backend/tests/unit/test_split_for_embedding.py
+PYTHONPATH=. .venv/Scripts/python -m pytest tests/unit/test_split_for_embedding.py -v
 ```
 
 ### Code Quality
@@ -61,8 +63,8 @@ make lint           # Run ruff linter (via Makefile)
 make lint-fix       # Run ruff with auto-fix
 make format         # Format code with ruff
 make format-check   # Check formatting (for CI)
-pre-commit run      # Run pre-commit hooks (includes TruffleHog secret detection)
-make security-all   # Run all security checks (semgrep, pip-audit, bandit, safety)
+pre-commit run      # Pre-commit hooks: Gitleaks + TruffleHog on staged changes; a pre-push hook additionally scans unpushed commit history for secrets
+make security-all   # Runs semgrep, pip-audit, bandit, safety and prints their output — tool failures are ignored (`-` prefix in Makefile), so it aggregates results but is NOT a pass/fail quality gate
 ```
 
 ## WSL Linux Environment (`backend/.venv_wsl`)
@@ -120,7 +122,7 @@ Chrome/Kiwi browser extension (Manifest v3) for capturing webpages and sending t
 See `web_chrome_extension/CLAUDE.md` for details.
 
 ### Landing Page (`web_landing_page/`)
-Next.js 14.2 static export with React 18 + Tailwind 3.4 + TypeScript. Deployed at `www.lenie-ai.eu` via S3 + CloudFront. 25 static pages.
+Next.js 15 static export with React 19 + Tailwind 3.4 + TypeScript (exact versions: `web_landing_page/package.json`). Deployed at `www.lenie-ai.eu` via S3 + CloudFront. 25 static pages.
 
 ### Admin Panel (`web_interface_app2/`)
 Vite 6 + React 18 + TypeScript admin panel at `app2.dev.lenie-ai.eu`. Uses React Bootstrap, React Router v6. Domain types imported from `shared/` via `@lenie/shared` alias.
@@ -190,9 +192,11 @@ All application variables (database, LLM, API keys, etc.) are defined in [`scrip
 
 PostgreSQL 18 with pgvector extension for vector similarity search. Schema defined in `backend/database/init/` (see `backend/database/CLAUDE.md` for full details).
 
-Two tables:
-- **`web_documents`** (30 columns) — documents with content, metadata, processing state, and multilingual fields
+Core tables:
+- **`web_documents`** — documents with content, metadata, processing state, and multilingual fields
 - **`websites_embeddings`** — vector embeddings (dimensionless column, per-model HNSW partial indexes) with cosine similarity search
+
+The full model is much larger (chunk analysis runs/chunks/topic sections, NER entities/persons/exclusions, geocode and infrastructure caches, document references, reader progress/notes, users and API keys, import logs) — the authoritative inventory is [`backend/database/CLAUDE.md`](backend/database/CLAUDE.md); schema migrations live in `backend/alembic/`.
 
 Document processing states: `URL_ADDED` → `DOCUMENT_INTO_DATABASE` → ... → `EMBEDDING_EXIST` (15 states total, see `backend/library/models/stalker_document_status.py`).
 
