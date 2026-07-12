@@ -118,6 +118,87 @@ class TestWebsiteEntitiesRefresh:
         session.rollback.assert_called_once()
 
 
+class TestEntityOccurrences:
+    """GET /document/<id>/entity_occurrences — rozkład wystąpień encji po rozdziałach."""
+
+    BOOK = ("# Rozdział pierwszy\n\nPutin przemawiał. Krytyka Putina narastała.\n\n"
+            "# Rozdział drugi\n\nZupełnie inny temat.\n\n"
+            "# Rozdział trzeci\n\nPowrót do Putina.")
+
+    def _client_with(self, doc, entity_rows):
+        session = MagicMock()
+        session.get.return_value = doc
+        session.query.return_value.filter.return_value.all.return_value = entity_rows
+        return patch("library.chunk_review_routes.get_scoped_session", return_value=session)
+
+    def test_counts_per_chapter_using_variants(self, client):
+        doc = MagicMock(text_md=self.BOOK, text=None)
+        row = MagicMock(variants=["Putin", "Putina"])
+        with self._client_with(doc, [row]):
+            resp = client.get("/document/9/entity_occurrences?text=Putin", headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["total"] == 3
+        assert data["occurrences"] == [
+            {"position": 1, "title": "Rozdział pierwszy", "count": 2},
+            {"position": 3, "title": "Rozdział trzeci", "count": 1},
+        ]
+
+    def test_missing_entity_falls_back_to_raw_text(self, client):
+        doc = MagicMock(text_md=self.BOOK, text=None)
+        with self._client_with(doc, []):
+            resp = client.get("/document/9/entity_occurrences?text=Putin", headers=API_HEADERS)
+        assert resp.get_json()["total"] == 3  # prefiks "Putin" łapie też odmiany
+
+    def test_missing_text_param_returns_400(self, client):
+        with self._client_with(MagicMock(), []):
+            resp = client.get("/document/9/entity_occurrences", headers=API_HEADERS)
+        assert resp.status_code == 400
+
+    def test_no_markdown_chapters_falls_back_to_chunk_chapters(self, client):
+        """YouTube transcript: no H1/H2 headers, chapters come from TEMAT chunks."""
+        doc = MagicMock(
+            text_md=None,
+            text="Transkrypcja bez nagłówków markdown. Putin wspomniany. " + "Wypełniacz. " * 10,
+        )
+
+        def chunk(id_, position, type_, topic, text):
+            c = MagicMock(spec=["id", "position", "type", "topic", "corrected_text", "original_text"])
+            c.id, c.position, c.type, c.topic = id_, position, type_, topic
+            c.corrected_text, c.original_text = text, None
+            return c
+
+        run = MagicMock()
+        run.chunks = [
+            chunk(201, 1, "TEMAT", "Temat pierwszy", "Rozmowa o Putinie. Sam Putin milczał."),
+            chunk(202, 2, "REKLAMA", "Reklama", "Putin w reklamie się nie liczy."),
+            chunk(203, 3, "TEMAT", "Temat drugi", "Zupełnie inny temat."),
+            chunk(204, 4, "TEMAT", "Temat trzeci", "Krytyka Putina."),
+        ]
+        with self._client_with(doc, []):
+            with patch("library.chunk_review_routes._latest_run_for_document", return_value=run):
+                resp = client.get("/document/9/entity_occurrences?text=Putin", headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        # positions are reader chapter numbers (TEMAT chunks renumbered 1..N)
+        assert data["occurrences"] == [
+            {"position": 1, "title": "Temat pierwszy", "count": 2},
+            {"position": 3, "title": "Temat trzeci", "count": 1},
+        ]
+
+    def test_no_chapters_and_no_run_returns_empty_occurrences(self, client):
+        doc = MagicMock(text_md=None, text="Tekst bez nagłówków. Putin raz. " + "Wypełniacz. " * 10)
+        with self._client_with(doc, []):
+            with patch("library.chunk_review_routes._latest_run_for_document", return_value=None):
+                resp = client.get("/document/9/entity_occurrences?text=Putin", headers=API_HEADERS)
+
+        data = resp.get_json()
+        assert data["occurrences"] == []
+        assert data["total"] == 1
+
+
 class TestWebsiteEntitiesDelete:
     def test_entity_not_found_returns_404(self, client):
         session = MagicMock()

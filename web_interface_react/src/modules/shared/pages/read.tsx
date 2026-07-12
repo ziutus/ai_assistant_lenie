@@ -41,6 +41,9 @@ interface ChapterContent {
   text: string;
   chapter_total: number;
   references?: ChapterReference[];
+  // Synthesis of a run analysed with this chapter as scope (GET /document/:id/chapter/:pos) —
+  // takes priority over the whole-document synthesis from GET /document/:id/chapters.
+  synthesis_chapter?: string | null;
   prev: number | null;
   next: number | null;
 }
@@ -110,18 +113,44 @@ function renderInline(text: string, refs?: Map<string, ChapterReference>): React
   });
 }
 
-/** Render a paragraph's text with <mark> around anchored note quotes.
- *  Exact match → inline highlight; whitespace-normalized match → whole
- *  paragraph tinted (quote spans line breaks or renderer differences). */
+// All case-insensitive occurrences of the given terms in text — used to
+// highlight an entity (from the persons page or a sidebar chip click).
+// Substring (not word-boundary) matching is deliberate: Polish inflected
+// forms usually share the stem prefix ("Putin" also finds "Putina").
+function findEntityMatches(text: string, terms: string[]): { idx: number; len: number }[] {
+  const lower = text.toLowerCase();
+  const spans: { idx: number; len: number }[] = [];
+  for (const term of terms) {
+    const t = term.trim().toLowerCase();
+    if (t.length < 2) continue;
+    let start = 0;
+    while (true) {
+      const idx = lower.indexOf(t, start);
+      if (idx < 0) break;
+      spans.push({ idx, len: term.trim().length });
+      start = idx + t.length;
+    }
+  }
+  return spans;
+}
+
+/** Render a paragraph's text with <mark> around anchored note quotes and
+ *  entity-highlight terms. Exact note match → inline highlight; whitespace-
+ *  normalized match → whole paragraph tinted (quote spans line breaks or
+ *  renderer differences). */
 function renderParagraphWithNotes(
   text: string,
   notes: UserNote[],
   refs?: Map<string, ChapterReference>,
+  highlightTerms?: string[],
 ): { nodes: React.ReactNode[]; paragraphTint: UserNote | null } {
-  const matches = notes
-    .map(n => ({ note: n, idx: text.indexOf(n.anchor_quote) }))
-    .filter(m => m.idx >= 0)
-    .sort((a, b) => a.idx - b.idx);
+  type Match = { idx: number; len: number; kind: "note" | "entity"; note?: UserNote };
+  const noteMatches: Match[] = notes
+    .map(n => ({ note: n, idx: text.indexOf(n.anchor_quote), len: n.anchor_quote.length, kind: "note" as const }))
+    .filter(m => m.idx >= 0);
+  const entityMatches: Match[] = findEntityMatches(text, highlightTerms ?? [])
+    .map(m => ({ ...m, kind: "entity" as const }));
+  const matches = [...noteMatches, ...entityMatches].sort((a, b) => a.idx - b.idx);
 
   if (matches.length === 0) {
     const tint = notes.find(n => normalizeWs(text).includes(normalizeWs(n.anchor_quote))) ?? null;
@@ -131,19 +160,31 @@ function renderParagraphWithNotes(
   const nodes: React.ReactNode[] = [];
   let cursor = 0;
   matches.forEach((m, i) => {
-    if (m.idx < cursor) return; // overlapping quote — skip
+    if (m.idx < cursor) return; // overlapping match — skip
     if (m.idx > cursor) nodes.push(...renderInline(text.slice(cursor, m.idx), refs));
-    const quoted = text.slice(m.idx, m.idx + m.note.anchor_quote.length);
-    nodes.push(
-      <mark
-        key={`note-${m.note.id}-${i}`}
-        title={`${STANCE_ICON[m.note.stance ?? ""] ?? "📝"} ${m.note.note_text}`}
-        style={{ background: "#fef08a", padding: "0 1px", cursor: "help" }}
-      >
-        {renderInline(quoted, refs)}
-      </mark>
-    );
-    cursor = m.idx + m.note.anchor_quote.length;
+    const quoted = text.slice(m.idx, m.idx + m.len);
+    if (m.kind === "note" && m.note) {
+      nodes.push(
+        <mark
+          key={`note-${m.note.id}-${i}`}
+          title={`${STANCE_ICON[m.note.stance ?? ""] ?? "📝"} ${m.note.note_text}`}
+          style={{ background: "#fef08a", padding: "0 1px", cursor: "help" }}
+        >
+          {renderInline(quoted, refs)}
+        </mark>
+      );
+    } else {
+      nodes.push(
+        <mark
+          key={`ent-${i}`}
+          className="entity-highlight"
+          style={{ background: "#bfdbfe", padding: "0 1px" }}
+        >
+          {renderInline(quoted, refs)}
+        </mark>
+      );
+    }
+    cursor = m.idx + m.len;
   });
   if (cursor < text.length) nodes.push(...renderInline(text.slice(cursor), refs));
   return { nodes, paragraphTint: null };
@@ -153,6 +194,7 @@ function renderMarkdown(
   text: string,
   notes: UserNote[],
   refs?: Map<string, ChapterReference>,
+  highlightTerms?: string[],
 ): React.ReactNode[] {
   const blocks = text.split(/\n\s*\n/);
   const out: React.ReactNode[] = [];
@@ -164,7 +206,7 @@ function renderMarkdown(
       const level = Math.min(heading[1].length + 1, 6);
       const Tag = `h${level}` as keyof JSX.IntrinsicElements;
       // headings can carry note anchors too (e.g. a quote of the chapter title)
-      const { nodes } = renderParagraphWithNotes(heading[2].replace(/\n/g, " "), notes);
+      const { nodes } = renderParagraphWithNotes(heading[2].replace(/\n/g, " "), notes, undefined, highlightTerms);
       out.push(<Tag key={i} style={{ marginTop: level === 2 ? 0 : 28 }}>{nodes}</Tag>);
       return;
     }
@@ -175,7 +217,7 @@ function renderMarkdown(
     // footnote / caption lines (superscript digits or "Wykres N.") — smaller font
     const isNote = /^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,3} )\S*\s*(http|www|[A-ZŻŹĆĄŚĘŁÓŃ])/.test(trimmed) && trimmed.length < 400;
     const paraText = trimmed.replace(/\n/g, " ");
-    const { nodes, paragraphTint } = renderParagraphWithNotes(paraText, notes, refs);
+    const { nodes, paragraphTint } = renderParagraphWithNotes(paraText, notes, refs, highlightTerms);
     out.push(
       <p key={i} style={isNote
         ? { fontSize: "0.8em", color: "#64748b", margin: "6px 0" }
@@ -213,6 +255,16 @@ const Read: React.FC = () => {
   // sidebar scope: current chapter (default) vs whole document
   const [scopeChapter, setScopeChapter] = React.useState(true);
   const [chapterScope, setChapterScope] = React.useState<ChapterScope | null>(null);
+  // sidebar chip click mode: highlight the entity in the chapter text (default)
+  // vs the previous behaviour of navigating to /persons/:id or a search
+  const [highlightMode, setHighlightMode] = React.useState(true);
+  // terms to <mark> in the chapter text — seeded from ?highlight= (set by the
+  // persons page's document links, using the document's raw_mention) or a
+  // sidebar chip click (which supplies the entity's known surface variants)
+  const [highlightTerms, setHighlightTerms] = React.useState<string[]>(() => {
+    const h = searchParams.get("highlight");
+    return h ? [h] : [];
+  });
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [tocOpen, setTocOpen] = React.useState(false);
@@ -312,7 +364,12 @@ const Read: React.FC = () => {
         if (data.status === "success") {
           setReadChapters(data.read_chapters ?? []);
           if (!initialRedirectDone.current && !searchParams.get("chapter") && data.current_chapter) {
-            setSearchParams({ chapter: String(data.current_chapter) }, { replace: true });
+            // preserve other params (e.g. ?highlight= from the persons page)
+            setSearchParams((prev) => {
+              const next = new URLSearchParams(prev);
+              next.set("chapter", String(data.current_chapter));
+              return next;
+            }, { replace: true });
           }
         }
       } catch { /* progress is best-effort */ }
@@ -355,11 +412,48 @@ const Read: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content?.position, userId]);
 
+  // scroll the first highlighted entity match into view — covers both a
+  // fresh arrival from the persons page (?highlight=) and a sidebar chip click.
+  // Delayed a tick: the chapter-load path scrolls to top right after setContent
+  // and the lazy map shifts layout, either of which cancels an immediate scroll.
+  React.useEffect(() => {
+    if (!highlightTerms.length || !content) return;
+    const t = window.setTimeout(() => {
+      const el = contentRef.current?.querySelector<HTMLElement>(".entity-highlight");
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [content, highlightTerms]);
+
   // ── Actions ──
 
   const goTo = (pos: number | null) => {
-    if (pos) setSearchParams({ chapter: String(pos) });
+    if (pos) {
+      // keep ?highlight= etc. — moving between chapters continues the search
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("chapter", String(pos));
+        return next;
+      });
+    }
     setTocOpen(false);
+  };
+
+  const clearHighlight = () => {
+    setHighlightTerms([]);
+    const next = new URLSearchParams(searchParams);
+    next.delete("highlight");
+    setSearchParams(next, { replace: true });
+  };
+
+  // sidebar chip click in highlight mode — mark the entity's known surface
+  // variants (chapter-scoped chips carry them) or fall back to its label
+  const handleEntityHighlight = (item: EntityItem) => {
+    const terms = item.variants?.length ? item.variants : [item.text];
+    setHighlightTerms(terms);
+    const next = new URLSearchParams(searchParams);
+    next.set("highlight", item.text);
+    setSearchParams(next, { replace: true });
   };
 
   const toggleRead = (pos: number, read: boolean) => {
@@ -541,10 +635,22 @@ const Read: React.FC = () => {
             starve the right column of the space it's supposed to grow into. */}
         <div ref={contentRef} style={{ flex: "0 1 760px", minWidth: 0 }}>
           {navButtons}
+          {highlightTerms.length > 0 && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, margin: "0 0 12px", fontSize: "0.85em",
+              color: "#334155",
+            }}>
+              🔎 Podświetlono: <strong>{highlightTerms[0]}</strong>
+              <button type="button" onClick={clearHighlight}
+                style={{ border: "none", background: "none", cursor: "pointer", color: "#0369a1", padding: 0 }}>
+                ✕ wyczyść
+              </button>
+            </div>
+          )}
           {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
           {!loading && content && (
             <article style={{ fontSize: "1.02em" }} onMouseUp={onTextSelected}>
-              {renderMarkdown(content.text, chapterNotes, referencesByMarker)}
+              {renderMarkdown(content.text, chapterNotes, referencesByMarker, highlightTerms)}
             </article>
           )}
           {!loading && content && (content.references?.length ?? 0) > 0 && (
@@ -569,7 +675,7 @@ const Read: React.FC = () => {
 
         {/* Map + entities + tags + synthesis — desktop only */}
         {isDesktop && (countries.length > 0 || places.length > 0 || personItems.length > 0
-          || placeItems.length > 0 || thematicTags.length > 0 || synthesis) && (
+          || placeItems.length > 0 || thematicTags.length > 0 || synthesis || content?.synthesis_chapter) && (
           <div className={styles.rightPanel}>
             <div style={{ fontSize: "0.78em", color: "#64748b", display: "flex", gap: 8, alignItems: "center" }}>
               Zakres:
@@ -588,6 +694,27 @@ const Read: React.FC = () => {
                 </button>
               ))}
             </div>
+            <div style={{
+              fontSize: "0.78em", color: "#64748b", display: "flex", gap: 8, alignItems: "center", marginTop: 4,
+            }}>
+              Tryb kliknięcia:
+              {([["podświetl w tekście", true], ["szukaj w bazie", false]] as const).map(([label, value]) => (
+                <button
+                  key={label}
+                  onClick={() => setHighlightMode(value)}
+                  title={value ? "Kliknięcie chipa podświetla wystąpienia w tekście rozdziału"
+                    : "Kliknięcie chipa przechodzi do strony osoby lub wyszukiwania"}
+                  style={{
+                    border: "none", background: "none", cursor: "pointer", padding: 0,
+                    fontSize: "1em",
+                    color: highlightMode === value ? "#0369a1" : "#94a3b8",
+                    fontWeight: highlightMode === value ? 600 : undefined,
+                    textDecoration: highlightMode === value ? undefined : "underline",
+                  }}>
+                  {label}
+                </button>
+              ))}
+            </div>
 
             {(shownCountries.length > 0 || shownMarkers.length > 0 || shownPipelines.length > 0) && (
               <React.Suspense fallback={null}>
@@ -600,8 +727,10 @@ const Read: React.FC = () => {
                 background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
                 padding: 10, marginTop: 12, fontSize: "0.9em",
               }}>
-                <EntityChips label={"👤 Osoby"} items={shownPersons} linkPersons />
-                <EntityChips label={"📍 Miejsca"} items={shownPlaceItems} />
+                <EntityChips label={"👤 Osoby"} items={shownPersons} linkPersons searchUnresolvedPersons
+                  highlightMode={highlightMode} onHighlight={handleEntityHighlight} />
+                <EntityChips label={"📍 Miejsca"} items={shownPlaceItems}
+                  highlightMode={highlightMode} onHighlight={handleEntityHighlight} />
               </div>
             )}
 
@@ -631,11 +760,11 @@ const Read: React.FC = () => {
               </div>
             )}
 
-            {synthesis && (
+            {(content?.synthesis_chapter || synthesis) && (
               <details className={styles.synthesisPanel} open>
-                <summary>📄 Streszczenie</summary>
+                <summary>📄 Streszczenie {content?.synthesis_chapter ? "rozdziału" : "dokumentu"}</summary>
                 <div style={{ fontSize: "0.85em", lineHeight: 1.55, whiteSpace: "pre-wrap", marginTop: 8 }}>
-                  {synthesis}
+                  {content?.synthesis_chapter ?? synthesis}
                 </div>
               </details>
             )}

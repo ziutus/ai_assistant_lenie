@@ -540,9 +540,15 @@ def persons_search():
 
 @app.route('/person_documents', methods=['GET'])
 def person_documents():
-    """All documents mentioning a person (?id=<person_id>) — the stage-4 user goal."""
+    """All documents mentioning a person (?id=<person_id>) — the stage-4 user goal.
+
+    Each document carries mention_count (from document_entities, matched by the
+    link's raw_mention) and the list is sorted by it — the person page shows
+    where the person is actually discussed, not just referenced once. A count
+    of 0 means the entity row is gone (entities were refreshed after linking).
+    """
     from sqlalchemy import select as sa_select
-    from library.db.models import DocumentPerson, Person
+    from library.db.models import DocumentEntity, DocumentPerson, Person
 
     person_id, error = _entities_doc_id(request.args.get('id'))
     if error:
@@ -556,18 +562,27 @@ def person_documents():
     links = session.execute(
         sa_select(DocumentPerson).where(DocumentPerson.person_id == person_id)
     ).scalars().all()
+    documents = []
+    for link in links:
+        mention_count = session.execute(
+            sa_select(DocumentEntity.mention_count).where(
+                DocumentEntity.document_id == link.document_id,
+                DocumentEntity.entity_type == "persName",
+                DocumentEntity.entity_text == link.raw_mention,
+            )
+        ).scalar_one_or_none() or 0
+        documents.append({
+            "id": link.document.id, "title": link.document.title,
+            "document_type": link.document.document_type,
+            "raw_mention": link.raw_mention, "confidence": link.confidence,
+            "mention_count": mention_count,
+        })
+    documents.sort(key=lambda d: -d["mention_count"])
     return {
         "status": "success",
         "person": {"id": person.id, "canonical_name": person.canonical_name,
                    "description": person.description, "wikidata_qid": person.wikidata_qid},
-        "documents": [
-            {
-                "id": link.document.id, "title": link.document.title,
-                "document_type": link.document.document_type,
-                "raw_mention": link.raw_mention, "confidence": link.confidence,
-            }
-            for link in links
-        ],
+        "documents": documents,
     }, 200
 
 

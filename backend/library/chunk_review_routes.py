@@ -362,6 +362,15 @@ def document_chapters(doc_id: int):
     countries = [{"slug": slug, "name_pl": slug_to_name(slug) or slug} for slug in country_slugs]
     thematic_tags = [t for t in tags if not t.startswith("kraj-")]
 
+    # Document-level synthesis must come from a whole-document run — the
+    # latest run may be chapter-scoped (run.scope = chapter title) and its
+    # synthesis covers one chapter only (served by GET .../chapter/<pos>).
+    doc_run = session.scalars(
+        select(DocumentAnalysisRun)
+        .where(DocumentAnalysisRun.document_id == doc_id, DocumentAnalysisRun.scope.is_(None))
+        .order_by(DocumentAnalysisRun.created_at.desc())
+    ).first()
+
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
@@ -374,7 +383,7 @@ def document_chapters(doc_id: int):
         "chapter_source": source,
         "countries": countries,
         "thematic_tags": thematic_tags,
-        "synthesis": run.synthesis if run else None,
+        "synthesis": doc_run.synthesis if doc_run else None,
     })
 
 
@@ -447,6 +456,16 @@ def document_chapter(doc_id: int, position: int):
         .all()
     ]
 
+    # A run analysed with scope_chapter=position sets run.scope to the chapter
+    # title (see document_analysis_service.create_run) — if one exists, its
+    # synthesis is chapter-specific and takes priority over the whole-document
+    # synthesis the reader already has from GET /document/<id>/chapters.
+    chapter_run = session.scalars(
+        select(DocumentAnalysisRun)
+        .where(DocumentAnalysisRun.document_id == doc_id, DocumentAnalysisRun.scope == title)
+        .order_by(DocumentAnalysisRun.created_at.desc())
+    ).first()
+
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
@@ -455,6 +474,7 @@ def document_chapter(doc_id: int, position: int):
         "text": chapter_text,
         "chapter_total": chapter_total,
         "references": references,
+        "synthesis_chapter": chapter_run.synthesis if chapter_run else None,
         "prev": position - 1 if position > 1 else None,
         "next": position + 1 if position < chapter_total else None,
     })
@@ -503,6 +523,75 @@ def document_chapter_entities(doc_id: int, position: int):
         "chapter_total": chapter_total,
         "entities": entities,
         "countries": countries,
+    })
+
+
+@bp.route("/document/<int:doc_id>/entity_occurrences", methods=["GET"])
+def document_entity_occurrences(doc_id: int):
+    """Per-chapter occurrence counts of an entity name in the document (?text=).
+
+    Backs the "occurrences in this book" drill-down on the person page:
+    "Putin: rozdz. 2 ×5, rozdz. 18 ×1, …". Counting reuses the stored surface
+    variants of the document's entity (all inflected forms), the same
+    word-start matching as the chapter-scoped sidebar; when the document has
+    no such entity, the raw text is matched directly. Chapter positions match
+    GET /document/<id>/chapters: markdown H1/H2 chapters when the text has
+    them, otherwise the TEMAT-chunk fallback (YouTube/movie transcripts).
+    """
+    import re
+
+    from library.document_analysis_service import _extract_text
+    from library.text_functions import detect_chapters
+
+    entity_text = (request.args.get("text") or "").strip()
+    if not entity_text:
+        return jsonify({"status": "error", "message": "text parameter required"}), 400
+
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    doc_text, _field = _extract_text(doc, prefer_md=True)
+    if not doc_text:
+        return jsonify({"status": "error", "message": "Document has no usable text"}), 400
+
+    from library.db.models import DocumentEntity
+
+    rows = (
+        session.query(DocumentEntity)
+        .filter(DocumentEntity.document_id == doc_id, DocumentEntity.entity_text == entity_text)
+        .all()
+    )
+    needles = {v for row in rows for v in (row.variants or [])} or {entity_text}
+    pattern = re.compile(
+        r"(?<!\w)(?:" + "|".join(re.escape(n) for n in sorted(needles)) + ")", re.IGNORECASE,
+    )
+
+    md_chapters = detect_chapters(doc_text)
+    if md_chapters:
+        occurrences = [
+            {"position": ch["position"], "title": ch["title"], "count": count}
+            for ch in md_chapters
+            if (count := len(pattern.findall(doc_text[ch["char_start"]:ch["char_end"]])))
+        ]
+    else:
+        # no markdown chapters — count inside the TEMAT-chunk chapters the
+        # reader uses for transcripts (positions match /document/<id>/chapters)
+        run = _latest_run_for_document(session, doc_id)
+        chunks_by_id = {c.id: c for c in run.chunks} if run else {}
+        occurrences = [
+            {"position": ch["position"], "title": ch["title"], "count": count}
+            for ch in (_chunk_based_chapters(run) if run else [])
+            if (chunk := chunks_by_id[ch["chunk_id"]])
+            and (count := len(pattern.findall(chunk.corrected_text or chunk.original_text or "")))
+        ]
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "text": entity_text,
+        "total": len(pattern.findall(doc_text)),
+        "occurrences": occurrences,
     })
 
 
