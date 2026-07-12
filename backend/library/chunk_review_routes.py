@@ -362,6 +362,15 @@ def document_chapters(doc_id: int):
     countries = [{"slug": slug, "name_pl": slug_to_name(slug) or slug} for slug in country_slugs]
     thematic_tags = [t for t in tags if not t.startswith("kraj-")]
 
+    # Document-level synthesis must come from a whole-document run — the
+    # latest run may be chapter-scoped (run.scope = chapter title) and its
+    # synthesis covers one chapter only (served by GET .../chapter/<pos>).
+    doc_run = session.scalars(
+        select(DocumentAnalysisRun)
+        .where(DocumentAnalysisRun.document_id == doc_id, DocumentAnalysisRun.scope.is_(None))
+        .order_by(DocumentAnalysisRun.created_at.desc())
+    ).first()
+
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
@@ -374,7 +383,7 @@ def document_chapters(doc_id: int):
         "chapter_source": source,
         "countries": countries,
         "thematic_tags": thematic_tags,
-        "synthesis": run.synthesis if run else None,
+        "synthesis": doc_run.synthesis if doc_run else None,
     })
 
 
@@ -447,6 +456,16 @@ def document_chapter(doc_id: int, position: int):
         .all()
     ]
 
+    # A run analysed with scope_chapter=position sets run.scope to the chapter
+    # title (see document_analysis_service.create_run) — if one exists, its
+    # synthesis is chapter-specific and takes priority over the whole-document
+    # synthesis the reader already has from GET /document/<id>/chapters.
+    chapter_run = session.scalars(
+        select(DocumentAnalysisRun)
+        .where(DocumentAnalysisRun.document_id == doc_id, DocumentAnalysisRun.scope == title)
+        .order_by(DocumentAnalysisRun.created_at.desc())
+    ).first()
+
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
@@ -455,6 +474,7 @@ def document_chapter(doc_id: int, position: int):
         "text": chapter_text,
         "chapter_total": chapter_total,
         "references": references,
+        "synthesis_chapter": chapter_run.synthesis if chapter_run else None,
         "prev": position - 1 if position > 1 else None,
         "next": position + 1 if position < chapter_total else None,
     })

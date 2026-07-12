@@ -76,6 +76,8 @@ export const EntityChips = ({
   linkPersons,
   searchUnresolvedPersons,
   actions,
+  highlightMode,
+  onHighlight,
 }: {
   label: string;
   items: EntityItem[];
@@ -86,6 +88,10 @@ export const EntityChips = ({
   searchUnresolvedPersons?: boolean;
   // Edit-mode buttons rendered inside each chip — used by the editor panel.
   actions?: (item: EntityItem) => React.ReactNode;
+  // When true, every chip becomes a click-to-highlight button (calls
+  // onHighlight instead of navigating) — used by the reader's mode toggle.
+  highlightMode?: boolean;
+  onHighlight?: (item: EntityItem) => void;
 }) => {
   if (!items.length) {
     return null;
@@ -123,6 +129,19 @@ export const EntityChips = ({
             {actions && actions(item)}
           </span>
         );
+        if (highlightMode && onHighlight) {
+          return (
+            <button
+              key={item.text}
+              type="button"
+              onClick={() => onHighlight(item)}
+              title="Podświetl w tekście rozdziału"
+              style={{ border: "none", background: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+            >
+              {chip}
+            </button>
+          );
+        }
         if (linkPersons && isResolvedPerson) {
           return (
             <Link key={item.text} to={`/persons/${item.person_id}`} style={{ textDecoration: "none" }}>

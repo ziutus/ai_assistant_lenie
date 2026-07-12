@@ -189,15 +189,15 @@ const Persons = () => {
             {documents.map((doc) => (
               <li key={doc.id} style={{ padding: "6px 0", borderBottom: "1px solid #eee" }}>
                 <span style={{ color: "#667", fontSize: "0.85em", marginRight: 8 }}>[{doc.document_type}]</span>
-                {EDITOR_TYPES.includes(doc.document_type) ? (
-                  <NavLink to={`/${doc.document_type}/${doc.id}`}>{doc.title || `Dokument ${doc.id}`}</NavLink>
-                ) : (
-                  <span>{doc.title || `Dokument ${doc.id}`}</span>
-                )}
-                {doc.mention_count > 0 && <strong style={{ marginLeft: 8, color: "#334155" }}>×{doc.mention_count}</strong>}
-                <NavLink to={`/read/${doc.id}`} style={{ marginLeft: 10, fontSize: "0.85em", color: "#0369a1" }}>
-                  📖 Czytaj
+                <NavLink to={`/read/${doc.id}?highlight=${encodeURIComponent(doc.raw_mention)}`}>
+                  {doc.title || `Dokument ${doc.id}`}
                 </NavLink>
+                {doc.mention_count > 0 && <strong style={{ marginLeft: 8, color: "#334155" }}>×{doc.mention_count}</strong>}
+                {EDITOR_TYPES.includes(doc.document_type) && (
+                  <NavLink to={`/${doc.document_type}/${doc.id}`} style={{ marginLeft: 10, fontSize: "0.85em", color: "#0369a1" }}>
+                    ✏️ Edytuj
+                  </NavLink>
+                )}
                 <button
                   type="button"
                   onClick={() => toggleOccurrences(doc)}
@@ -218,7 +218,10 @@ const Persons = () => {
                     )}
                     {(occurrences[doc.id] as ChapterOccurrence[]).map((o) => (
                       <div key={o.position} style={{ padding: "1px 0" }}>
-                        <NavLink to={`/read/${doc.id}?chapter=${o.position}`} style={{ color: "#0369a1" }}>
+                        <NavLink
+                          to={`/read/${doc.id}?chapter=${o.position}&highlight=${encodeURIComponent(doc.raw_mention)}`}
+                          style={{ color: "#0369a1" }}
+                        >
                           {o.position}. {o.title}
                         </NavLink>
                         <span style={{ color: "#667" }}> ×{o.count}</span>
