@@ -1,6 +1,6 @@
 import React from "react";
 import axios from "axios";
-import { NavLink, useNavigate, useParams } from "react-router-dom";
+import { NavLink, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 
 // Person registry browser (NER stage 4): fuzzy search over persons/aliases
@@ -21,6 +21,15 @@ interface PersonDocument {
   document_type: string;
   raw_mention: string;
   confidence: string;
+  mention_count: number;
+}
+
+// Per-chapter occurrence counts (GET /document/:id/entity_occurrences?text=)
+// — the "occurrences in this book" drill-down for long documents.
+interface ChapterOccurrence {
+  position: number;
+  title: string;
+  count: number;
 }
 
 const EDITOR_TYPES = ["webpage", "link", "youtube", "movie", "email"];
@@ -55,14 +64,19 @@ export const PersonHeader = ({ person }: { person: Pick<PersonItem, "canonical_n
 const Persons = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
 
-  const [query, setQuery] = React.useState("");
+  // ?q= pre-fills the search — unresolved person chips in the reader link here
+  const initialQuery = searchParams.get("q") ?? "";
+  const [query, setQuery] = React.useState(initialQuery);
   const [persons, setPersons] = React.useState<PersonItem[]>([]);
   const [person, setPerson] = React.useState<
     { canonical_name: string; description: string | null; wikidata_qid: string | null } | null
   >(null);
   const [documents, setDocuments] = React.useState<PersonDocument[]>([]);
+  // per-document chapter drill-down ("wystąpienia w tej książce")
+  const [occurrences, setOccurrences] = React.useState<Record<number, ChapterOccurrence[] | "loading">>({});
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
 
@@ -88,12 +102,40 @@ const Persons = () => {
   };
 
   React.useEffect(() => {
-    search("");
+    search(initialQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const toggleOccurrences = async (doc: PersonDocument) => {
+    if (occurrences[doc.id]) {
+      setOccurrences((prev) => {
+        const next = { ...prev };
+        delete next[doc.id];
+        return next;
+      });
+      return;
+    }
+    setOccurrences((prev) => ({ ...prev, [doc.id]: "loading" }));
+    try {
+      const response = await axios.get(`${apiUrl}/document/${doc.id}/entity_occurrences`, {
+        params: { text: doc.raw_mention }, headers,
+      });
+      setOccurrences((prev) => ({ ...prev, [doc.id]: response.data.occurrences ?? [] }));
+    } catch (error: any) {
+      console.error("Error fetching occurrences", error);
+      setOccurrences((prev) => {
+        const next = { ...prev };
+        delete next[doc.id];
+        return next;
+      });
+      setMessage(`Nie udało się pobrać wystąpień: ${error.response?.data?.message || error.message}`);
+    }
+  };
 
   React.useEffect(() => {
     setPerson(null);
     setDocuments([]);
+    setOccurrences({});
     if (!id) {
       return;
     }
@@ -147,17 +189,46 @@ const Persons = () => {
             {documents.map((doc) => (
               <li key={doc.id} style={{ padding: "6px 0", borderBottom: "1px solid #eee" }}>
                 <span style={{ color: "#667", fontSize: "0.85em", marginRight: 8 }}>[{doc.document_type}]</span>
-                {EDITOR_TYPES.includes(doc.document_type) ? (
-                  <NavLink to={`/${doc.document_type}/${doc.id}`}>{doc.title || `Dokument ${doc.id}`}</NavLink>
-                ) : (
-                  <span>{doc.title || `Dokument ${doc.id}`}</span>
-                )}
-                <NavLink to={`/read/${doc.id}`} style={{ marginLeft: 10, fontSize: "0.85em", color: "#0369a1" }}>
-                  📖 Czytaj
+                <NavLink to={`/read/${doc.id}?highlight=${encodeURIComponent(doc.raw_mention)}`}>
+                  {doc.title || `Dokument ${doc.id}`}
                 </NavLink>
+                {doc.mention_count > 0 && <strong style={{ marginLeft: 8, color: "#334155" }}>×{doc.mention_count}</strong>}
+                {EDITOR_TYPES.includes(doc.document_type) && (
+                  <NavLink to={`/${doc.document_type}/${doc.id}`} style={{ marginLeft: 10, fontSize: "0.85em", color: "#0369a1" }}>
+                    ✏️ Edytuj
+                  </NavLink>
+                )}
+                <button
+                  type="button"
+                  onClick={() => toggleOccurrences(doc)}
+                  style={{ marginLeft: 10, fontSize: "0.85em", color: "#0369a1", border: "none", background: "none", cursor: "pointer", padding: 0 }}
+                >
+                  {occurrences[doc.id] ? "▾ rozdziały" : "▸ rozdziały"}
+                </button>
                 <span style={{ marginLeft: 10, fontSize: "0.85em", color: "#667" }}>
                   wzmianka: „{doc.raw_mention}” · {CONFIDENCE_LABELS[doc.confidence] ?? doc.confidence}
                 </span>
+                {occurrences[doc.id] === "loading" && (
+                  <div style={{ fontSize: "0.85em", color: "#94a3b8", margin: "4px 0 0 20px" }}>Ładowanie…</div>
+                )}
+                {Array.isArray(occurrences[doc.id]) && (
+                  <div style={{ fontSize: "0.85em", margin: "4px 0 0 20px" }}>
+                    {(occurrences[doc.id] as ChapterOccurrence[]).length === 0 && (
+                      <span style={{ color: "#94a3b8" }}>Brak rozdziałów (dokument bez struktury) lub wystąpień.</span>
+                    )}
+                    {(occurrences[doc.id] as ChapterOccurrence[]).map((o) => (
+                      <div key={o.position} style={{ padding: "1px 0" }}>
+                        <NavLink
+                          to={`/read/${doc.id}?chapter=${o.position}&highlight=${encodeURIComponent(doc.raw_mention)}`}
+                          style={{ color: "#0369a1" }}
+                        >
+                          {o.position}. {o.title}
+                        </NavLink>
+                        <span style={{ color: "#667" }}> ×{o.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </li>
             ))}
           </ul>
