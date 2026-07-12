@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Internal NER microservice (spaCy pl_core_news_lg) for Project Lenie"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 authors = [
     { name = "Lenie AI Team" }
 ]
