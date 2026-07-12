@@ -534,8 +534,9 @@ def document_entity_occurrences(doc_id: int):
     "Putin: rozdz. 2 ×5, rozdz. 18 ×1, …". Counting reuses the stored surface
     variants of the document's entity (all inflected forms), the same
     word-start matching as the chapter-scoped sidebar; when the document has
-    no such entity, the raw text is matched directly. Documents without
-    markdown chapters return an empty occurrence list but still a total.
+    no such entity, the raw text is matched directly. Chapter positions match
+    GET /document/<id>/chapters: markdown H1/H2 chapters when the text has
+    them, otherwise the TEMAT-chunk fallback (YouTube/movie transcripts).
     """
     import re
 
@@ -567,11 +568,24 @@ def document_entity_occurrences(doc_id: int):
         r"(?<!\w)(?:" + "|".join(re.escape(n) for n in sorted(needles)) + ")", re.IGNORECASE,
     )
 
-    occurrences = [
-        {"position": ch["position"], "title": ch["title"], "count": count}
-        for ch in detect_chapters(doc_text)
-        if (count := len(pattern.findall(doc_text[ch["char_start"]:ch["char_end"]])))
-    ]
+    md_chapters = detect_chapters(doc_text)
+    if md_chapters:
+        occurrences = [
+            {"position": ch["position"], "title": ch["title"], "count": count}
+            for ch in md_chapters
+            if (count := len(pattern.findall(doc_text[ch["char_start"]:ch["char_end"]])))
+        ]
+    else:
+        # no markdown chapters — count inside the TEMAT-chunk chapters the
+        # reader uses for transcripts (positions match /document/<id>/chapters)
+        run = _latest_run_for_document(session, doc_id)
+        chunks_by_id = {c.id: c for c in run.chunks} if run else {}
+        occurrences = [
+            {"position": ch["position"], "title": ch["title"], "count": count}
+            for ch in (_chunk_based_chapters(run) if run else [])
+            if (chunk := chunks_by_id[ch["chunk_id"]])
+            and (count := len(pattern.findall(chunk.corrected_text or chunk.original_text or "")))
+        ]
     return jsonify({
         "status": "success",
         "doc_id": doc_id,

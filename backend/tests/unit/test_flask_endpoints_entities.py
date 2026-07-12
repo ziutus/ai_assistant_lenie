@@ -156,6 +156,48 @@ class TestEntityOccurrences:
             resp = client.get("/document/9/entity_occurrences", headers=API_HEADERS)
         assert resp.status_code == 400
 
+    def test_no_markdown_chapters_falls_back_to_chunk_chapters(self, client):
+        """YouTube transcript: no H1/H2 headers, chapters come from TEMAT chunks."""
+        doc = MagicMock(
+            text_md=None,
+            text="Transkrypcja bez nagłówków markdown. Putin wspomniany. " + "Wypełniacz. " * 10,
+        )
+
+        def chunk(id_, position, type_, topic, text):
+            c = MagicMock(spec=["id", "position", "type", "topic", "corrected_text", "original_text"])
+            c.id, c.position, c.type, c.topic = id_, position, type_, topic
+            c.corrected_text, c.original_text = text, None
+            return c
+
+        run = MagicMock()
+        run.chunks = [
+            chunk(201, 1, "TEMAT", "Temat pierwszy", "Rozmowa o Putinie. Sam Putin milczał."),
+            chunk(202, 2, "REKLAMA", "Reklama", "Putin w reklamie się nie liczy."),
+            chunk(203, 3, "TEMAT", "Temat drugi", "Zupełnie inny temat."),
+            chunk(204, 4, "TEMAT", "Temat trzeci", "Krytyka Putina."),
+        ]
+        with self._client_with(doc, []):
+            with patch("library.chunk_review_routes._latest_run_for_document", return_value=run):
+                resp = client.get("/document/9/entity_occurrences?text=Putin", headers=API_HEADERS)
+
+        assert resp.status_code == 200
+        data = resp.get_json()
+        # positions are reader chapter numbers (TEMAT chunks renumbered 1..N)
+        assert data["occurrences"] == [
+            {"position": 1, "title": "Temat pierwszy", "count": 2},
+            {"position": 3, "title": "Temat trzeci", "count": 1},
+        ]
+
+    def test_no_chapters_and_no_run_returns_empty_occurrences(self, client):
+        doc = MagicMock(text_md=None, text="Tekst bez nagłówków. Putin raz. " + "Wypełniacz. " * 10)
+        with self._client_with(doc, []):
+            with patch("library.chunk_review_routes._latest_run_for_document", return_value=None):
+                resp = client.get("/document/9/entity_occurrences?text=Putin", headers=API_HEADERS)
+
+        data = resp.get_json()
+        assert data["occurrences"] == []
+        assert data["total"] == 1
+
 
 class TestWebsiteEntitiesDelete:
     def test_entity_not_found_returns_404(self, client):
