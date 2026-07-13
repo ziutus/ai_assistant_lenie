@@ -1,11 +1,14 @@
 """Deterministic Polish NER normalization rules loaded from versioned data."""
 
 import json
+import logging
 import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
 from library.country_gazetteer import canonical_country_name
+
+logger = logging.getLogger(__name__)
 
 RULES_PATH = Path(__file__).resolve().parents[1] / "data" / "ner_normalization.json"
 
@@ -18,8 +21,12 @@ def normalize_ner_text(value: str) -> str:
 @lru_cache(maxsize=1)
 def load_ner_normalization_rules() -> dict:
     """Load curated rules once per backend process."""
-    with RULES_PATH.open(encoding="utf-8") as handle:
-        return json.load(handle)
+    try:
+        with RULES_PATH.open(encoding="utf-8") as handle:
+            return json.load(handle)
+    except FileNotFoundError:
+        logger.warning("NER normalization rules file does not exist: %s", RULES_PATH)
+        return {}
 
 
 def canonical_country_for_surface(surface: str) -> str | None:
