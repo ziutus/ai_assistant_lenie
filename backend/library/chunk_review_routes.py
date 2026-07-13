@@ -487,10 +487,12 @@ def document_chapter_entities(doc_id: int, position: int):
     The expensive document-level verification (geocoder, Wikidata, LLM) is
     reused as-is — this endpoint only attributes the already-verified entities
     to the chapter by matching their surface variants in the chapter's text
-    (entity_service.filter_entities_to_text), and intersects the document's
-    kraj-* tags with countries the gazetteer finds in the chapter. The reader
-    sidebar uses it so a long video's map/persons/places reflect the chapter
-    being read instead of the whole material.
+    (entity_service.filter_entities_to_text). Each kept entity carries
+    chapter_variants with only the variants actually matched in this chapter.
+    The endpoint also intersects the document's kraj-* tags with countries the
+    gazetteer finds in the chapter. The reader sidebar uses it so a long video's
+    map/persons/places reflect the chapter being read instead of the whole
+    material.
     """
     from library.country_gazetteer import detect_countries
     from library.entity_service import filter_entities_to_text, get_document_entities
@@ -1474,4 +1476,3 @@ def reanalyze_chunk(chunk_id: int):
         return jsonify({"status": "error", "message": "DB save failed"}), 500
 
     return jsonify({"status": "success", "chunk": _chunk_to_dict(chunk)})
-

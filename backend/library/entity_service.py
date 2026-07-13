@@ -153,11 +153,12 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
 
     Chapter-scoped attribution: the expensive verification (geocoder, Wikidata,
     LLM) stays document-level; this only checks which of the already-verified
-    entities appear in the given fragment. Matching is case-insensitive at a
-    word-start boundary with the variant as a prefix — "Iran" matches "Iranu"
-    (Polish suffix inflection) but not mid-word. Rows without stored variants
-    (predating the variants column) fall back to entity_text, which may itself
-    be a lemma absent from the text — those match again after the next refresh.
+    entities appear in the given fragment. Stored surface variants match as
+    complete tokens (Unicode-aware boundaries on both sides). Rows without
+    stored variants (predating the variants column) retain the legacy
+    word-start prefix fallback against entity_text until the next refresh.
+    Matching is case-insensitive, except that a capitalized needle only matches
+    a surface form that is also capitalized.
 
     Kept items get their "count" REPLACED with the local mention count and are
     re-sorted by it — the reader chip "Putin ×50" in chapter scope used to show
@@ -168,13 +169,37 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
     for entity_type, items in grouped.items():
         kept = []
         for item in items:
-            needles = item.get("variants") or [item["text"]]
-            pattern = "|".join(re.escape(n) for n in needles if n)
-            if not pattern:
+            variants = item.get("variants") or []
+            raw_needles = variants or [item["text"]]
+            needles_by_key: dict[str, str] = {}
+            for raw_needle in raw_needles:
+                needle = raw_needle.strip()
+                if needle:
+                    needles_by_key.setdefault(needle.casefold(), needle)
+            needles = sorted(needles_by_key.values(), key=len, reverse=True)
+            if not needles:
                 continue
-            local_count = len(re.findall(rf"(?<!\w)(?:{pattern})", text, re.IGNORECASE))
+
+            alternatives = "|".join(f"(?P<v{i}>{re.escape(needle)})" for i, needle in enumerate(needles))
+            right_boundary = r"(?!\w)" if variants else ""
+            pattern = re.compile(rf"(?<!\w)(?:{alternatives}){right_boundary}", re.IGNORECASE)
+
+            matched_variant_indexes: set[int] = set()
+            local_count = 0
+            for match in pattern.finditer(text):
+                variant_index = int(match.lastgroup[1:])
+                needle = needles[variant_index]
+                matched_text = match.group(0)
+                if needle[0].isupper() and not matched_text[0].isupper():
+                    continue
+                matched_variant_indexes.add(variant_index)
+                local_count += 1
+
             if local_count:
-                kept.append({**item, "count": local_count})
+                chapter_variants = [
+                    needle for i, needle in enumerate(needles) if i in matched_variant_indexes
+                ]
+                kept.append({**item, "count": local_count, "chapter_variants": chapter_variants})
         kept.sort(key=lambda i: (-i["count"], i["text"]))
         filtered[entity_type] = kept
     return filtered
