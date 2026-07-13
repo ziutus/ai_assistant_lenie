@@ -14,6 +14,8 @@ from library.ner_client import (  # noqa: E402
     aggregate_entities,
     aggregate_entities_detailed,
     extract_entities,
+    extract_entities_strict,
+    NERExtractionError,
     warmup_async,
 )
 
@@ -99,6 +101,22 @@ class TestExtractEntities:
                 result = extract_entities("x" * (3 * MAX_TEXT_CHARS))
         assert result == first
         assert mock_post.call_count == 2  # trzecie okno pominięte
+
+    def test_strict_first_window_failure_raises(self):
+        with patch("library.ner_client.requests.post", side_effect=requests.ConnectionError("boom")):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                with pytest.raises(NERExtractionError, match="window 1"):
+                    extract_entities_strict("tekst")
+
+    def test_strict_later_window_failure_discards_partial_result(self):
+        first = [{"text": "Tusk", "label": "persName", "lemma": "Tusk"}]
+        with patch(
+            "library.ner_client.requests.post",
+            side_effect=[_response(first), requests.ConnectionError("boom")],
+        ):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                with pytest.raises(NERExtractionError, match="window 2"):
+                    extract_entities_strict("x" * (MAX_TEXT_CHARS + 500))
 
 
 class TestWarmupAsync:
