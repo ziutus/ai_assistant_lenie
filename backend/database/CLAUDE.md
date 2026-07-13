@@ -32,7 +32,8 @@ database/
     ├── 23-create-persons-tables.sql              # persons, person_aliases, document_persons
     ├── 24-create-ner-exclusions.sql              # ner_exclusions (NER false-positive suppressions)
     ├── 25-create-infra-geometries.sql            # infra_geometries (Overpass pipeline-route cache)
-    └── 26-create-document-references.sql         # document_references (book footnotes extracted from text_md)
+    ├── 26-create-document-references.sql         # document_references (book footnotes extracted from text_md)
+    └── 27-create-document-events.sql             # document_events (LLM-extracted document timeline)
 ```
 
 ## How Init Scripts Are Used
@@ -201,6 +202,28 @@ Footnotes/references extracted out of a book's `text_md` (`library/references.py
 | `ref_text` | `text NOT NULL` | Full footnote text |
 | `url` | `text` | First URL found in the footnote, normalized to `https://` |
 | `created_at` | `timestamp` | Row creation timestamp |
+
+### Table: `public.document_events`
+
+Timeline events discussed in a document, extracted chapter by chapter by `library/timeline_events.py` and managed
+with replace semantics by `imports/extract_events.py`. LLM output is accepted only when its anchor quote occurs in the
+source fragment; Polish exact and coarse dates are normalized for chronological sorting.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `document_id` | `integer NOT NULL` | FK to `web_documents.id` (CASCADE delete) |
+| `chapter_position` | `integer` | 1-based position from `detect_chapters()`; `NULL` for chapterless documents |
+| `event_date` | `date` | Exact date or beginning of a normalized range |
+| `event_date_end` | `date` | End of a normalized month/year/decade/century range |
+| `date_precision` | `varchar(10) NOT NULL` | `day`, `month`, `year`, `decade`, `century`, `era`, or `unknown` |
+| `date_text` | `text NOT NULL` | Original date expression returned from the source text |
+| `sort_year` | `integer` | Sort key, including approximate years for coarse expressions |
+| `description` | `text NOT NULL` | One-sentence factual event description |
+| `anchor_quote` | `text` | Short exact quote grounding the event in the source fragment |
+| `created_at` | `timestamp` | Row creation timestamp |
+
+**Index:** `(document_id, sort_year)`.
 
 ### Table: `public.infra_geometries`
 
