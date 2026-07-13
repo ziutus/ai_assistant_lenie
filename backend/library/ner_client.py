@@ -9,8 +9,16 @@ Integration plan: docs/ner-integration-plan.md.
 """
 
 import logging
+import re
+from collections import Counter
 
 import requests
+
+from library.ner_normalization import (
+    canonical_country_for_surface,
+    is_rejected_surface_lemma_pair,
+    normalize_ner_text,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,41 +127,166 @@ def warmup_async() -> None:
     threading.Thread(target=_probe, name="ner-warmup", daemon=True).start()
 
 
+def _is_initials_only(surface: str) -> bool:
+    tokens = surface.split()
+    return bool(tokens) and all(
+        re.fullmatch(r"[^\W\d_]\.", token, re.UNICODE) and token[0].isupper()
+        for token in tokens
+    )
+
+
+def _preferred_spelling(spellings: Counter[str], order: list[str]) -> str:
+    """Pick the most frequent capitalized spelling, with first-seen tie breaks."""
+    capitalized = [value for value in order if value and value[0].isupper()]
+    candidates = capitalized or order
+    return max(candidates, key=lambda value: (spellings[value], -order.index(value)))
+
+
+def _deduplicated_spellings(spellings: Counter[str], order: list[str]) -> list[str]:
+    """Collapse case-only variants while preserving first-seen key order."""
+    buckets: dict[str, Counter[str]] = {}
+    bucket_order: list[str] = []
+    spelling_order: dict[str, list[str]] = {}
+    for value in order:
+        key = value.casefold()
+        if key not in buckets:
+            buckets[key] = Counter()
+            spelling_order[key] = []
+            bucket_order.append(key)
+        if value not in spelling_order[key]:
+            spelling_order[key].append(value)
+        buckets[key][value] += spellings[value]
+    return [_preferred_spelling(buckets[key], spelling_order[key]) for key in bucket_order]
+
+
+def _is_truncated_lemma(base: str, variants: list[str]) -> bool:
+    """Detect spaCy lemmas such as Brn/Wiln/Wegr cut from every full surface."""
+    base_key = base.casefold()
+    return bool(variants) and all(
+        variant.casefold().startswith(base_key)
+        and variant.casefold() != base_key
+        and len(variant) - len(base) >= 2
+        for variant in variants
+    )
+
+
 def aggregate_entities_detailed(
     entities: list[dict], types: tuple[str, ...] = ENTITY_TYPES,
 ) -> dict[tuple[str, str], dict]:
-    """Group raw mentions by (entity_type, base form): occurrence counts + surface variants.
+    """Normalize and group raw mentions into stable person/place entities.
 
-    The base form is the lemma when the service provides one (groups Polish
-    inflected variants: "Tuska" -> "Tusk"), falling back to the surface text.
-    Each group also collects its distinct surface forms in first-seen order
-    ("Kijów", "Kijowa") — the chapter-scoped entity filter matches on them,
-    since the lemma itself may never appear in the text.
+    New ner_service payloads are filtered by root-token POS; payloads without
+    POS retain legacy behavior. Country names, selected demonyms and exact
+    uppercase abbreviations are canonicalized. Case-only duplicates share one
+    display spelling, and geogName/placeName duplicates share the more frequent
+    label. Suspicious cut-off lemmas fall back to their best full surface form.
 
-    Mentions whose surface text starts lowercase are dropped: Polish proper
-    names are capitalized, so a lowercase mention is an adjective/demonym the
-    model mislabeled as a place ("ukraiński", "rosyjski"). The check uses the
-    surface text, not the lemma — legitimate lemmas can start lowercase
-    ("Cieśninie Ormuz" -> "cieśnina Ormuz").
-
-    Shape: {(entity_type, base): {"count": int, "variants": [surface, ...]}}.
+    Shape: {(entity_type, base): {"count", "variants", "raw_lemmas"}}.
+    raw_lemmas is internal metadata used to preserve ner_exclusions behavior
+    after canonicalization; it is not persisted or returned by the API.
     """
-    groups: dict[tuple[str, str], dict] = {}
+    preliminary: dict[tuple[str, str], dict] = {}
     for ent in entities:
         label = ent.get("label")
         if label not in types:
             continue
-        surface = (ent.get("text") or "").strip()
-        if not surface or surface[0].islower():
+        surface = normalize_ner_text(ent.get("text") or "")
+        if not surface or _is_initials_only(surface):
             continue
-        base = (ent.get("lemma") or surface).strip()
-        if not base:
+        if surface[0].islower():
             continue
-        group = groups.setdefault((label, base), {"count": 0, "variants": []})
+        lemma = normalize_ner_text(ent.get("lemma") or surface)
+        if not lemma:
+            continue
+
+        pos = normalize_ner_text(ent.get("pos") or "").upper() or None
+        if pos is not None and pos not in {"NOUN", "PROPN"}:
+            continue
+        if is_rejected_surface_lemma_pair(surface, lemma, pos):
+            continue
+
+        country = canonical_country_for_surface(surface) if label in {"geogName", "placeName"} else None
+        base = country or lemma
+        key = (label, base.casefold())
+        group = preliminary.setdefault(
+            key,
+            {
+                "count": 0,
+                "base_spellings": Counter(),
+                "base_order": [],
+                "surface_spellings": Counter(),
+                "surface_order": [],
+                "raw_lemma_spellings": Counter(),
+                "raw_lemma_order": [],
+            },
+        )
         group["count"] += 1
-        if surface not in group["variants"]:
-            group["variants"].append(surface)
-    return groups
+        for value, counter_name, order_name in (
+            (base, "base_spellings", "base_order"),
+            (surface, "surface_spellings", "surface_order"),
+            (lemma, "raw_lemma_spellings", "raw_lemma_order"),
+        ):
+            group[counter_name][value] += 1
+            if value not in group[order_name]:
+                group[order_name].append(value)
+
+    normalized_groups: list[dict] = []
+    for (label, _base_key), group in preliminary.items():
+        base = _preferred_spelling(group["base_spellings"], group["base_order"])
+        variants = _deduplicated_spellings(group["surface_spellings"], group["surface_order"])
+        if _is_truncated_lemma(base, variants):
+            base = _preferred_spelling(group["surface_spellings"], group["surface_order"])
+        normalized_groups.append({"label": label, "base": base, "variants": variants, **group})
+
+    merged: dict[tuple[str, str], dict] = {}
+    for source in normalized_groups:
+        family = "persName" if source["label"] == "persName" else "place"
+        key = (family, source["base"].casefold())
+        group = merged.setdefault(
+            key,
+            {
+                "count": 0,
+                "label_counts": Counter(),
+                "label_order": [],
+                "base_spellings": Counter(),
+                "base_order": [],
+                "surface_spellings": Counter(),
+                "surface_order": [],
+                "raw_lemma_spellings": Counter(),
+                "raw_lemma_order": [],
+            },
+        )
+        group["count"] += source["count"]
+        group["label_counts"][source["label"]] += source["count"]
+        if source["label"] not in group["label_order"]:
+            group["label_order"].append(source["label"])
+        group["base_spellings"][source["base"]] += source["count"]
+        if source["base"] not in group["base_order"]:
+            group["base_order"].append(source["base"])
+        for value, counter_name, order_name in (
+            *[(value, "surface_spellings", "surface_order") for value in source["surface_order"]],
+            *[(value, "raw_lemma_spellings", "raw_lemma_order") for value in source["raw_lemma_order"]],
+        ):
+            source_counter = source[counter_name]
+            group[counter_name][value] += source_counter[value]
+            if value not in group[order_name]:
+                group[order_name].append(value)
+
+    result: dict[tuple[str, str], dict] = {}
+    for group in merged.values():
+        label = max(
+            group["label_order"],
+            key=lambda value: (group["label_counts"][value], -group["label_order"].index(value)),
+        )
+        base = _preferred_spelling(group["base_spellings"], group["base_order"])
+        result[(label, base)] = {
+            "count": group["count"],
+            "variants": _deduplicated_spellings(group["surface_spellings"], group["surface_order"]),
+            "raw_lemmas": _deduplicated_spellings(
+                group["raw_lemma_spellings"], group["raw_lemma_order"],
+            ),
+        }
+    return result
 
 
 def aggregate_entities(entities: list[dict], types: tuple[str, ...] = ENTITY_TYPES) -> dict[tuple[str, str], int]:
