@@ -13,10 +13,12 @@ import logging
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
     Integer,
+    Index,
     Numeric,
     SmallInteger,
     String,
@@ -760,6 +762,43 @@ class DocumentReference(Base):
         return (
             f"DocumentReference(id={self.id!r}, document_id={self.document_id!r}, "
             f"chapter={self.chapter_position!r}, marker={self.marker!r})"
+        )
+
+
+class DocumentEvent(Base):
+    """Dated event discussed in a document, extracted by timeline_events.py."""
+
+    __tablename__ = "document_events"
+    __table_args__ = (
+        CheckConstraint(
+            "date_precision IN ('day', 'month', 'year', 'decade', 'century', 'era', 'unknown')",
+            name="ck_document_events_date_precision",
+        ),
+        Index("idx_document_events_document_sort_year", "document_id", "sort_year"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    chapter_position: Mapped[int | None] = mapped_column(Integer)
+    event_date: Mapped[datetime.date | None] = mapped_column(Date)
+    event_date_end: Mapped[datetime.date | None] = mapped_column(Date)
+    date_precision: Mapped[str] = mapped_column(String(10), nullable=False)
+    date_text: Mapped[str] = mapped_column(Text, nullable=False)
+    sort_year: Mapped[int | None] = mapped_column(Integer)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    anchor_quote: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"DocumentEvent(id={self.id!r}, document_id={self.document_id!r}, "
+            f"chapter={self.chapter_position!r}, date_text={self.date_text!r})"
         )
 
 
