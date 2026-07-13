@@ -7,6 +7,7 @@ import {
 } from "../components/ReaderNotes/readerNotes";
 import type { CountryTag, PipelineLine, PlaceMarker } from "../components/CountryMap/countryMap";
 import { EntityChips, EntityItem } from "../components/EntitiesPanel/entitiesPanel";
+import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timelinePanel";
 import { useIsDesktop } from "../hooks/useIsDesktop";
 import styles from "./read.module.css";
 
@@ -150,27 +151,45 @@ function entityHighlightTerms(item: EntityItem): string[] {
   return [item.text];
 }
 
-/** Render a paragraph's text with <mark> around anchored note quotes and
- *  entity-highlight terms. Exact note match → inline highlight; whitespace-
- *  normalized match → whole paragraph tinted (quote spans line breaks or
- *  renderer differences). */
+function normalizeAnchorText(value: string): string {
+  return normalizeWs(value)
+    .replace(/[‐‑‒–—−]/g, "-")
+    .replace(/[“”„‟«»]/g, '"')
+    .replace(/[‘’‚‛]/g, "'");
+}
+
+/** Render anchored note/timeline quotes and entity terms. Exact anchor match
+ *  becomes an inline highlight; whitespace/typography-normalized anchor match
+ *  tints the whole paragraph (quote spans line breaks or renderer differences). */
 function renderParagraphWithNotes(
   text: string,
   notes: UserNote[],
   refs?: Map<string, ChapterReference>,
   highlightTerms?: string[],
-): { nodes: React.ReactNode[]; paragraphTint: UserNote | null } {
-  type Match = { idx: number; len: number; kind: "note" | "entity"; note?: UserNote };
+  timelineAnchor?: string | null,
+): { nodes: React.ReactNode[]; paragraphTint: UserNote | null; timelineTint: boolean; timelineFound: boolean } {
+  type Match = { idx: number; len: number; kind: "note" | "entity" | "timeline"; note?: UserNote };
   const noteMatches: Match[] = notes
     .map(n => ({ note: n, idx: text.indexOf(n.anchor_quote), len: n.anchor_quote.length, kind: "note" as const }))
     .filter(m => m.idx >= 0);
   const entityMatches: Match[] = findEntityMatches(text, highlightTerms ?? [])
     .map(m => ({ ...m, kind: "entity" as const }));
-  const matches = [...noteMatches, ...entityMatches].sort((a, b) => a.idx - b.idx);
+  const timelineIndex = timelineAnchor ? text.indexOf(timelineAnchor) : -1;
+  const timelineMatches: Match[] = timelineAnchor && timelineIndex >= 0
+    ? [{ idx: timelineIndex, len: timelineAnchor.length, kind: "timeline" }]
+    : [];
+  const matches = [...timelineMatches, ...noteMatches, ...entityMatches].sort((a, b) => a.idx - b.idx);
+  const paragraphTint = notes.find(n =>
+    text.indexOf(n.anchor_quote) < 0
+    && normalizeAnchorText(text).includes(normalizeAnchorText(n.anchor_quote))) ?? null;
+  const timelineTint = Boolean(
+    timelineAnchor && timelineIndex < 0
+    && normalizeAnchorText(text).includes(normalizeAnchorText(timelineAnchor)),
+  );
+  const timelineFound = timelineIndex >= 0 || timelineTint;
 
   if (matches.length === 0) {
-    const tint = notes.find(n => normalizeWs(text).includes(normalizeWs(n.anchor_quote))) ?? null;
-    return { nodes: renderInline(text, refs), paragraphTint: tint };
+    return { nodes: renderInline(text, refs), paragraphTint, timelineTint, timelineFound };
   }
 
   const nodes: React.ReactNode[] = [];
@@ -189,6 +208,16 @@ function renderParagraphWithNotes(
           {renderInline(quoted, refs)}
         </mark>
       );
+    } else if (m.kind === "timeline") {
+      nodes.push(
+        <mark
+          key={`timeline-${i}`}
+          className="timeline-highlight"
+          style={{ background: "#fed7aa", padding: "0 1px" }}
+        >
+          {renderInline(quoted, refs)}
+        </mark>
+      );
     } else {
       nodes.push(
         <mark
@@ -203,7 +232,7 @@ function renderParagraphWithNotes(
     cursor = m.idx + m.len;
   });
   if (cursor < text.length) nodes.push(...renderInline(text.slice(cursor), refs));
-  return { nodes, paragraphTint: null };
+  return { nodes, paragraphTint, timelineTint, timelineFound };
 }
 
 function renderMarkdown(
@@ -211,6 +240,7 @@ function renderMarkdown(
   notes: UserNote[],
   refs?: Map<string, ChapterReference>,
   highlightTerms?: string[],
+  timelineAnchor?: string | null,
 ): React.ReactNode[] {
   const blocks = text.split(/\n\s*\n/);
   const out: React.ReactNode[] = [];
@@ -222,8 +252,18 @@ function renderMarkdown(
       const level = Math.min(heading[1].length + 1, 6);
       const Tag = `h${level}` as keyof JSX.IntrinsicElements;
       // headings can carry note anchors too (e.g. a quote of the chapter title)
-      const { nodes } = renderParagraphWithNotes(heading[2].replace(/\n/g, " "), notes, undefined, highlightTerms);
-      out.push(<Tag key={i} style={{ marginTop: level === 2 ? 0 : 28 }}>{nodes}</Tag>);
+      const { nodes, timelineTint, timelineFound } = renderParagraphWithNotes(
+        heading[2].replace(/\n/g, " "), notes, undefined, highlightTerms, timelineAnchor,
+      );
+      out.push(
+        <Tag
+          key={i}
+          className={timelineFound ? "timeline-anchor-paragraph" : undefined}
+          style={{ marginTop: level === 2 ? 0 : 28, ...(timelineTint ? { background: "#fff7ed" } : {}) }}
+        >
+          {nodes}
+        </Tag>,
+      );
       return;
     }
     if (trimmed === "---") {
@@ -233,13 +273,16 @@ function renderMarkdown(
     // footnote / caption lines (superscript digits or "Wykres N.") — smaller font
     const isNote = /^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,3} )\S*\s*(http|www|[A-ZŻŹĆĄŚĘŁÓŃ])/.test(trimmed) && trimmed.length < 400;
     const paraText = trimmed.replace(/\n/g, " ");
-    const { nodes, paragraphTint } = renderParagraphWithNotes(paraText, notes, refs, highlightTerms);
+    const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
+      paraText, notes, refs, highlightTerms, timelineAnchor,
+    );
     out.push(
-      <p key={i} style={isNote
+      <p key={i} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={isNote
         ? { fontSize: "0.8em", color: "#64748b", margin: "6px 0" }
         : {
             lineHeight: 1.65, margin: "14px 0", textAlign: "justify",
             ...(paragraphTint ? { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 } : {}),
+            ...(timelineTint ? { background: "#fff7ed", borderLeft: "3px solid #f59e0b", paddingLeft: 8 } : {}),
           }}
         title={paragraphTint ? `📝 ${paragraphTint.note_text}` : undefined}>
         {nodes}
@@ -284,6 +327,11 @@ const Read: React.FC = () => {
     const h = searchParams.get("highlight");
     return h ? [h] : [];
   });
+  const [timelineHighlight, setTimelineHighlight] = React.useState<{
+    quote: string;
+    dateText: string;
+    chapterPosition: number | null;
+  } | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [tocOpen, setTocOpen] = React.useState(false);
@@ -468,12 +516,28 @@ const Read: React.FC = () => {
     return () => window.clearTimeout(t);
   }, [content, highlightTerms]);
 
+  // Timeline anchors deliberately use the note-anchor rendering path, not
+  // token-based entity matching. Exact quotes get an inline mark; normalized
+  // whitespace/typography matches tint the containing paragraph.
+  React.useEffect(() => {
+    if (!timelineHighlight || !content) return;
+    if (timelineHighlight.chapterPosition != null && content.position !== timelineHighlight.chapterPosition) return;
+    const t = window.setTimeout(() => {
+      const el = contentRef.current?.querySelector<HTMLElement>(
+        ".timeline-highlight, .timeline-anchor-paragraph",
+      );
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [content, timelineHighlight]);
+
   // ── Actions ──
 
   const goTo = (pos: number | null) => {
     if (pos) {
       // a new chapter is a new context — drop the entity highlight
       setHighlightTerms([]);
+      setTimelineHighlight(null);
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
         next.set("chapter", String(pos));
@@ -494,10 +558,28 @@ const Read: React.FC = () => {
   // sidebar chip click in highlight mode — mark the entity's known surface
   // variants (chapter-scoped chips carry them) or fall back to its label
   const handleEntityHighlight = (item: EntityItem) => {
+    setTimelineHighlight(null);
     setHighlightTerms(entityHighlightTerms(item));
     const next = new URLSearchParams(searchParams);
     next.set("highlight", item.text);
     setSearchParams(next, { replace: true });
+  };
+
+  const handleTimelineEventClick = (event: EventItem) => {
+    setHighlightTerms([]);
+    const quote = event.anchor_quote?.trim();
+    setTimelineHighlight(quote ? {
+      quote,
+      dateText: event.date_text,
+      chapterPosition: event.chapter_position,
+    } : null);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (event.chapter_position != null) next.set("chapter", String(event.chapter_position));
+      next.delete("highlight");
+      return next;
+    });
+    setTocOpen(false);
   };
 
   const toggleRead = (pos: number, read: boolean) => {
@@ -692,10 +774,24 @@ const Read: React.FC = () => {
               </button>
             </div>
           )}
+          {timelineHighlight && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 8, margin: "0 0 12px", fontSize: "0.85em",
+              color: "#334155",
+            }}>
+              🕰️ Wydarzenie: <strong>{timelineHighlight.dateText}</strong>
+              <button type="button" onClick={() => setTimelineHighlight(null)}
+                style={{ border: "none", background: "none", cursor: "pointer", color: "#0369a1", padding: 0 }}>
+                ✕ wyczyść
+              </button>
+            </div>
+          )}
           {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
           {!loading && content && (
             <article style={{ fontSize: "1.02em" }} onMouseUp={onTextSelected}>
-              {renderMarkdown(content.text, chapterNotes, referencesByMarker, highlightTerms)}
+              {renderMarkdown(
+                content.text, chapterNotes, referencesByMarker, highlightTerms, timelineHighlight?.quote,
+              )}
             </article>
           )}
           {!loading && content && (content.references?.length ?? 0) > 0 && (
@@ -719,8 +815,7 @@ const Read: React.FC = () => {
         </div>
 
         {/* Map + entities + tags + synthesis — desktop only */}
-        {isDesktop && (countries.length > 0 || places.length > 0 || personItems.length > 0
-          || placeItems.length > 0 || thematicTags.length > 0 || synthesis || content?.synthesis_chapter) && (
+        {isDesktop && (
           <div className={styles.rightPanel}>
             <div style={{ fontSize: "0.78em", color: "#64748b", display: "flex", gap: 8, alignItems: "center" }}>
               Zakres:
@@ -794,6 +889,8 @@ const Read: React.FC = () => {
                 Brak osób i miejsc w tym rozdziale.
               </div>
             )}
+
+            <TimelinePanel docId={id} currentChapter={position} onEventClick={handleTimelineEventClick} />
 
             {thematicTags.length > 0 && (
               <div style={{
