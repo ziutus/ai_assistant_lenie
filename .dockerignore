@@ -61,13 +61,12 @@ web_landing_page/
 web_chrome_extension/
 infra/
 
-# Backend dev/test files (Dockerfile only copies library/ and server.py)
+# Backend dev/test files (Dockerfile copies library/, data/ and server.py)
 backend/tests/
 backend/mcp_server/tests/
 backend/test_code/
 backend/tmp/
 backend/imports/
-backend/data/
 
 # CI/CD configs
 .circleci/
