@@ -27,6 +27,7 @@ COPY backend/pyproject.toml backend/uv.lock ./
 RUN uv sync --frozen --extra docker --no-dev --no-install-project
 
 COPY backend/library ./library/
+COPY backend/data ./data/
 #COPY backend/tests /app/tests/
 COPY backend/server.py .
 
