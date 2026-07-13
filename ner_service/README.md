@@ -27,8 +27,10 @@ place/person verification plans this service is the first step of.
 ```json
 {
   "entities": [
-    {"text": "Donald Tusk", "label": "persName", "lemma": "Donald Tusk", "start": 0, "end": 11},
-    {"text": "Cieśninie Ormuz", "label": "geogName", "lemma": "cieśnina Ormuz", "start": 20, "end": 35}
+    {"text": "Donald Tusk", "label": "persName", "lemma": "Donald Tusk", "start": 0, "end": 11,
+     "pos": "PROPN", "morph": "Case=Nom|Gender=Masc|Number=Sing"},
+    {"text": "Cieśninie Ormuz", "label": "geogName", "lemma": "cieśnina Ormuz", "start": 20, "end": 35,
+     "pos": "PROPN", "morph": "Case=Loc|Gender=Neut|Number=Sing"}
   ]
 }
 ```
@@ -36,7 +38,10 @@ place/person verification plans this service is the first step of.
 Labels come directly from `pl_core_news_lg`: `persName`, `geogName`,
 `placeName`, `orgName`, `date`, `time`, etc. `lemma` is the base form of the
 mention (spaCy lemmatizer) — callers use it to group inflected Polish variants
-of the same name ("Tuska" → "Tusk").
+of the same name ("Tuska" → "Tusk"). `pos` and `morph` describe the root token
+of the entity span (`ent.root`); they let callers reject false positives whose
+syntactic head is not nominal. They are additive fields, so existing clients
+that only consume the original fields remain compatible.
 
 The model is loaded lazily on the first `/ner` call (not at startup), so
 `/healthz` responds immediately even before it's loaded — but that first

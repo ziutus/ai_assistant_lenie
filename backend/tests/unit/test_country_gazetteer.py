@@ -55,3 +55,27 @@ class TestSlugConvention:
     def test_slug_matches_kraj_prefix_convention(self):
         found = country_gazetteer.detect_countries("Arabia Saudyjska zwiększyła wydobycie ropy.")
         assert any(c.slug == "arabia-saudyjska" for c in found)
+
+
+class TestCanonicalCountryName:
+    @pytest.mark.parametrize("mention", ["Polska", "polska", "polski", "polskiej"])
+    def test_matches_one_complete_country_mention(self, mention):
+        assert country_gazetteer.canonical_country_name(mention) == "Polska"
+
+    def test_does_not_search_inside_a_sentence(self):
+        assert country_gazetteer.canonical_country_name("Rozmowy z Polską") is None
+
+    @pytest.mark.parametrize(
+        ("mention", "country"),
+        [
+            ("Iranem", "Iran"),
+            ("Rosjanie", "Rosja"),
+            ("Ukraińcami", "Ukraina"),
+            ("włoskiej", "Włochy"),
+        ],
+    )
+    def test_accepts_inflection_with_up_to_four_suffix_chars(self, mention, country):
+        assert country_gazetteer.canonical_country_name(mention) == country
+
+    def test_rejects_longer_word_that_only_shares_country_stem(self):
+        assert country_gazetteer.canonical_country_name("Włoszczowa") is None

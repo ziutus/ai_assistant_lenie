@@ -21,6 +21,7 @@ RAW = [
 def _session_with_exclusions(exclusions):
     session = MagicMock()
     session.execute.return_value.scalars.return_value.all.return_value = exclusions
+    session.get.return_value = MagicMock(author=None)
     return session
 
 
@@ -68,6 +69,24 @@ class TestRefreshDocumentEntities:
 
         assert {r.entity_text for r in rows} == {"cieśnina Ormuz"}
 
+    def test_exclusion_matches_raw_variant_after_country_canonicalization(self):
+        session = _session_with_exclusions(
+            [NerExclusion(entity_text="Turcy", entity_type="placeName", scope="global")]
+        )
+        raw = [{"text": "Turcy", "label": "placeName", "lemma": "Turk", "pos": "NOUN"}]
+        with patch("library.entity_service.extract_entities", return_value=raw):
+            rows = refresh_document_entities(session, 42, "Turcy")
+        assert rows == []
+
+    def test_exclusion_matches_raw_lemma_after_country_canonicalization(self):
+        session = _session_with_exclusions(
+            [NerExclusion(entity_text="Turk", entity_type="placeName", scope="global")]
+        )
+        raw = [{"text": "Turcy", "label": "placeName", "lemma": "Turk", "pos": "NOUN"}]
+        with patch("library.entity_service.extract_entities", return_value=raw):
+            rows = refresh_document_entities(session, 42, "Turcy")
+        assert rows == []
+
     def test_author_exclusion_applies_only_to_matching_author(self):
         exclusions = [NerExclusion(entity_text="Tusk", entity_type="*", scope="author",
                                    author="Good Times Bad Times")]
@@ -98,12 +117,20 @@ class TestIsExcluded:
         rules = [NerExclusion(entity_text="Taliban", entity_type="persName", scope="global")]
         assert is_excluded(rules, "geogName", "Taliban", None) is False
 
+    def test_place_types_are_equivalent_after_label_merging(self):
+        rules = [NerExclusion(entity_text="Ukraina", entity_type="geogName", scope="global")]
+        assert is_excluded(rules, "placeName", "Ukraina", None) is True
+
     def test_author_scope_needs_author(self):
         rules = [NerExclusion(entity_text="Starlinek", entity_type="persName",
                               scope="author", author="Kanał X")]
         assert is_excluded(rules, "persName", "Starlinek", None) is False
         assert is_excluded(rules, "persName", "Starlinek", "kanał x") is True
         assert is_excluded(rules, "persName", "Starlinek", "Inny") is False
+
+    def test_matches_raw_terms(self):
+        rules = [NerExclusion(entity_text="Turcy", entity_type="placeName", scope="global")]
+        assert is_excluded(rules, "placeName", "Turcja", None, raw_terms=["Turk", "Turcy"]) is True
 
 
 class TestGetDocumentEntities:
