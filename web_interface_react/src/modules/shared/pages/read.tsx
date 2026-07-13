@@ -255,6 +255,9 @@ const Read: React.FC = () => {
   // sidebar scope: current chapter (default) vs whole document
   const [scopeChapter, setScopeChapter] = React.useState(true);
   const [chapterScope, setChapterScope] = React.useState<ChapterScope | null>(null);
+  const [chapterScopeLoading, setChapterScopeLoading] = React.useState(false);
+  const chapterScopeRequestId = React.useRef(0);
+  const contentRequestId = React.useRef(0);
   // sidebar chip click mode: highlight the entity in the chapter text (default)
   // vs the previous behaviour of navigating to /persons/:id or a search
   const [highlightMode, setHighlightMode] = React.useState(true);
@@ -332,11 +335,19 @@ const Read: React.FC = () => {
   // chapter-scoped sidebar data — refetched when the reader moves to another
   // chapter; a failure falls back to the document-level entities (scope null)
   React.useEffect(() => {
-    if (!scopeChapter || !progressLoaded) return;
+    if (!scopeChapter || !progressLoaded) {
+      chapterScopeRequestId.current += 1;
+      setChapterScopeLoading(false);
+      return;
+    }
+    const requestId = ++chapterScopeRequestId.current;
+    setChapterScope(null);
+    setChapterScopeLoading(true);
     (async () => {
       try {
         const r = await fetch(`${apiUrl}/document/${id}/chapter/${position}/entities`, { headers });
         const data = await r.json();
+        if (requestId !== chapterScopeRequestId.current) return;
         if (data.status !== "success") { setChapterScope(null); return; }
         const items = [...(data.entities?.geogName ?? []), ...(data.entities?.placeName ?? [])];
         setChapterScope({
@@ -348,7 +359,9 @@ const Read: React.FC = () => {
           countries: data.countries ?? [],
         });
       } catch {
-        setChapterScope(null);
+        if (requestId === chapterScopeRequestId.current) setChapterScope(null);
+      } finally {
+        if (requestId === chapterScopeRequestId.current) setChapterScopeLoading(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -382,6 +395,7 @@ const Read: React.FC = () => {
   // chapter content — waits for the progress redirect so we don't flash chapter 1
   React.useEffect(() => {
     if (!progressLoaded) return;
+    const requestId = ++contentRequestId.current;
     (async () => {
       setLoading(true);
       setError(null);
@@ -389,14 +403,15 @@ const Read: React.FC = () => {
       try {
         const r = await fetch(`${apiUrl}/document/${id}/chapter/${position}`, { headers });
         const data = await r.json();
+        if (requestId !== contentRequestId.current) return;
         if (data.status !== "success") throw new Error(data.message ?? "Błąd pobierania rozdziału");
         setContent(data);
         contentRef.current?.scrollTo({ top: 0 });
         window.scrollTo({ top: 0 });
       } catch (e) {
-        setError(String(e));
+        if (requestId === contentRequestId.current) setError(String(e));
       } finally {
-        setLoading(false);
+        if (requestId === contentRequestId.current) setLoading(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -429,10 +444,12 @@ const Read: React.FC = () => {
 
   const goTo = (pos: number | null) => {
     if (pos) {
-      // keep ?highlight= etc. — moving between chapters continues the search
+      // a new chapter is a new context — drop the entity highlight
+      setHighlightTerms([]);
       setSearchParams((prev) => {
         const next = new URLSearchParams(prev);
         next.set("chapter", String(pos));
+        next.delete("highlight");
         return next;
       });
     }
@@ -525,6 +542,7 @@ const Read: React.FC = () => {
       substance: it.pipeline!.substance,
       coordinates: it.pipeline!.geojson!.coordinates,
     }));
+  const rightPanelLoading = loading || (scopeChapter && chapterScopeLoading);
 
   // ── Render ──
 
@@ -715,7 +733,16 @@ const Read: React.FC = () => {
                 </button>
               ))}
             </div>
-
+            {rightPanelLoading ? (
+              <div role="status" aria-live="polite" style={{
+                minHeight: 160, display: "flex", alignItems: "center",
+                justifyContent: "center", gap: 8, color: "#64748b",
+                fontSize: "0.85em",
+              }}>
+                <span className="loader" aria-hidden="true" />
+                Ładowanie danych rozdziału…
+              </div>
+            ) : <>
             {(shownCountries.length > 0 || shownMarkers.length > 0 || shownPipelines.length > 0) && (
               <React.Suspense fallback={null}>
                 <CountryMap countries={shownCountries} places={shownMarkers} pipelines={shownPipelines} />
@@ -768,6 +795,7 @@ const Read: React.FC = () => {
                 </div>
               </details>
             )}
+            </>}
           </div>
         )}
       </div>
