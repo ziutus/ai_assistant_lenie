@@ -107,7 +107,7 @@ CLAUDE.md
       SKILL.md
     feed-review/
       SKILL.md
-    bmad-code-review/
+    obsidian-note/
       SKILL.md
 docs/
   agent/
@@ -138,37 +138,15 @@ Lista skilli jest przykładowa i wymaga osobnej decyzji.
 
 #### Kontekst
 
-Żaden kontrakt dokumentacyjny nie zadziała, jeśli Codex nie może fizycznie czytać repozytorium. Audyt z 2026-07-12 wykazał twardy blocker: natywny sandbox Codex na Windows uruchamia komendy jako dedykowane konta lokalne (`CodexSandboxOffline`, `CodexSandboxOnline`), które nie mają dostępu NTFS do repozytorium położonego w profilu użytkownika (`C:\Users\<user>\git\...`). Skutek: `CreateProcessWithLogonW failed: 267`, reviewer nie widzi diffa i zwraca werdykt bez pokrycia (zaobserwowane przy pierwszym `/codex:review` w tym repozytorium). Problem zgłaszany także u innych użytkowników: [openai/codex#19599](https://github.com/openai/codex/issues/19599), [openai/codex#18620](https://github.com/openai/codex/issues/18620).
+Audyt z 2026-07-12 wykazał, że konta natywnego sandboxa Codex na Windows nie miały praw NTFS potrzebnych do pracy z repozytorium umieszczonym w profilu użytkownika. Powodowało to m.in. błąd `CreateProcessWithLogonW failed: 267` oraz review bez dostępu do rzeczywistego diffa.
 
-#### Zakres
-
-Nadać kontom sandboxa minimalne uprawnienia odczytu:
-
-1. Odczyt drzewa repozytoriów (dziedziczony):
-   `icacls "C:\Users\<user>\git" /grant "CodexSandboxOffline:(OI)(CI)RX" "CodexSandboxOnline:(OI)(CI)RX"`
-2. Przejście (traverse, bez listowania) przez katalog profilu:
-   `icacls "C:\Users\<user>" /grant "CodexSandboxOffline:(X)" "CodexSandboxOnline:(X)"`
-
-Uwagi operacyjne:
-
-- Konto sandboxa nie ma przywileju „bypass traverse checking", więc krok 2 jest niezbędny — sam wpis na `git\` nie wystarcza (zweryfikowane empirycznie).
-- Zmiana DACL na katalogu profilu wyzwala systemową repropagację dziedziczonych wpisów po całym poddrzewie (AppData itd.) — operacja trwa długo; uruchamiać w oknie terminala, które nie zostanie przerwane, i czekać na `Successfully processed 1 files`.
-- W Git Bash wymagany prefiks `MSYS_NO_PATHCONV=1` (inaczej `/grant` jest zamieniany na ścieżkę).
-- Cofnięcie: `icacls <ścieżka> /remove CodexSandboxOffline CodexSandboxOnline`.
-
-Alternatywy, jeśli ACL-e okażą się niewystarczające: uruchamianie Codex w WSL (sandbox Landlock/seccomp zamiast kont Windows) albo świadoma rezygnacja z sandboxa (`--sandbox danger-full-access`) — do decyzji, ze świadomością obniżenia izolacji.
-
-#### Kryteria akceptacji
-
-- `codex sandbox cmd /c "git status"` uruchomione w katalogu repozytorium wykonuje się bez błędu 267 i bez przekierowania cwd do katalogu zastępczego (`C:\Users\CodexSandboxOffline\.codex\.sandbox\cwd\...`).
-- `/codex:review` czyta diff repozytorium i zwraca werdykt oparty na kodzie (bez zastrzeżenia o niedostępnym workspace).
+Pełna procedura diagnozy, nadawania minimalnych praw, weryfikacji i cofania zmian znajduje się w [`docs/agent/windows-codex-sandbox.md`](agent/windows-codex-sandbox.md). Procedura jest zależna od maszyny i nie stanowi automatycznego kroku konfiguracji repozytorium.
 
 #### Status (2026-07-12)
 
 - [x] Diagnoza (konta sandboxa, błąd 267, brak bypass-traverse)
-- [x] Wpis `(OI)(CI)RX` na `C:\Users\ziutus\git` dla obu kont
-- [x] Wpis traverse `(X)` na `C:\Users\ziutus` — założony (repropagacja DACL po profilu trwała ~50 min; obserwacja: po udrożnieniu traverse Codex sam nadał grupie `CodexSandboxUsers` prawo Modify na katalogu repozytorium — to jego własny mechanizm zarządzania dostępem workspace)
-- [x] Weryfikacja `codex sandbox` w repozytorium — `git log` i `git status` działają, cwd nie jest przekierowywane (uwaga: sandboxowy PowerShell potrafi zostawić w cwd artefakt `Microsoft/Windows/PowerShell/ModuleAnalysisCache` — usuwać, nie commitować)
+- [x] Nadanie kontom sandboxa praw odczytu repozytorium i przejścia przez katalog nadrzędny
+- [x] Weryfikacja funkcjonalna: `git log`, `git status` i odczyt diffa działają dla właściwego repozytorium
 - [x] Ponowny `/codex:review` z werdyktem opartym na kodzie — reviewer przeczytał diff working tree i zwrócił merytoryczne znalezisko (P2 dot. plików licencji w artefaktach pakietów). **Etap 0 ukończony 2026-07-12.**
 
 ### Etap 1: główny `AGENTS.md`
@@ -318,23 +296,23 @@ Do rozważenia:
 - Nie włączać domyślnie narzędzi modyfikujących AWS.
 - Oddzielić ustawienia współdzielone od prywatnego profilu użytkownika.
 
-#### Migracja MCP
+#### Migracja MCP — odroczona
 
-Dla każdego wpisu z `.mcp.json` podjąć jedną z decyzji:
+W pierwszej iteracji nie przenosić żadnego wpisu z `.mcp.json` do konfiguracji Codex. Integracje pozostają w inwentarzu, aby można było wrócić do nich wraz z odpowiadającymi im obszarami projektu:
 
-| MCP | Proponowana decyzja | Uwagi |
+| MCP | Decyzja na pierwszą iterację | Warunek ponownego rozpatrzenia |
 |---|---|---|
-| AWS IaC | przenieść lub pozostawić w profilu | zależy od częstotliwości użycia |
-| CloudFormation | przenieść jako read-only | zachować argument `--readonly` |
-| AWS API | przenieść jako read-only | zachować `READ_OPERATIONS_ONLY=true` |
-| GitGuardian | decyzja osobna | wymaga sieci i uruchomienia przez `uvx` |
-| WordPress.com | nie przenosić domyślnie | obecnie wyłączony |
+| AWS IaC | nie przenosić | powrót do aktywnej integracji lub wdrożeń AWS |
+| CloudFormation | nie przenosić | powrót do AWS; wtedy zachować argument `--readonly` |
+| AWS API | nie przenosić | powrót do AWS; wtedy zachować `READ_OPERATIONS_ONLY=true` |
+| GitGuardian | nie przenosić | osobna potrzeba użycia MCP; skanery repozytorium działają niezależnie |
+| WordPress.com | nie przenosić | rozpoczęcie publikowania na WordPress.com |
 
 #### Kryteria akceptacji
 
-- `codex mcp list` pokazuje oczekiwane serwery.
+- W pierwszej iteracji konfiguracja projektowa Codex nie uruchamia żadnego z odroczonych MCP.
 - Start Codex nie wymaga sekretów zapisanych w repo.
-- Narzędzia AWS nie mogą przypadkowo wykonywać zapisów.
+- Inwentarz zachowuje ograniczenia read-only wymagane przy ewentualnym powrocie do AWS.
 
 ### Etap 7: skille dla powtarzalnych workflow
 
@@ -342,13 +320,15 @@ Dla każdego wpisu z `.mcp.json` podjąć jedną z decyzji:
 
 Nie konwertować automatycznie wszystkich `.claude/commands`. Najpierw zebrać informacje, które workflow są faktycznie używane.
 
-#### Kandydaci do pierwszej iteracji
+#### Pierwsza iteracja — rozstrzygnięte 2026-07-13
 
 - `security-check`;
 - `feed-review`;
-- `bmad-code-review`;
-- opcjonalnie `obsidian-note`;
-- opcjonalnie jeden skrócony workflow implementacyjny BMAD.
+- `obsidian-note` — jako skill projektowy z konfigurowalną lokalnie ścieżką vaulta, bez twardo zakodowanej ścieżki profilu użytkownika.
+
+Workflow BMAD pozostają w backlogu i nie są objęte pierwszą iteracją. Można wrócić do ich wyboru, gdy użytkownik ponownie zacznie z nich korzystać; nie należy teraz konwertować ich masowo ani implementować `bmad-code-review` tylko jako przykład.
+
+`obsidian-note` musi zawsze pokazać propozycję treści i uzyskać zgodę przed zapisem do vaulta. Aktualizacja bazy jest osobnym skutkiem ubocznym, który również wymaga jawnego potwierdzenia. Skill powinien raportować oba wykonane zapisy niezależnie.
 
 #### Kryteria wyboru
 
@@ -404,22 +384,28 @@ Dla każdego zadania ocenić:
 
 ## 7. Decyzje wymagane przed implementacją
 
-### D1. Model współdzielenia dokumentacji
+### D1. Model współdzielenia dokumentacji — ROZSTRZYGNIĘTE (2026-07-13)
 
 - **Wariant A — rekomendowany:** krótkie `AGENTS.md` i `CLAUDE.md` plus wspólne `docs/agent/`.
 - Wariant B: niezależne, kompletne instrukcje dla każdego agenta.
 - Wariant C: `AGENTS.md` będący prawie pełną kopią `CLAUDE.md`.
 
-### D2. Zakres lokalnych `AGENTS.md`
+**Decyzja: wariant A.** Pliki platformowe pozostają krótkie, a wspólne zasady i materiały trafiają do `docs/agent/`, aby ograniczyć duplikację i ryzyko rozjazdów.
+
+### D2. Zakres lokalnych `AGENTS.md` — ROZSTRZYGNIĘTE (2026-07-13)
 
 - **Wariant A — rekomendowany:** tylko obszary o różnych technologiach lub poziomie ryzyka.
 - Wariant B: odpowiednik każdego istniejącego lokalnego `CLAUDE.md`.
 
-### D3. Lokalizacja eksportów agentów
+**Decyzja: wariant A.** Lokalne `AGENTS.md` powstaną tylko tam, gdzie technologia, komendy weryfikacyjne albo poziom ryzyka rzeczywiście wymagają odrębnych instrukcji.
 
-- `tmp/agent-exports/`;
-- `.agents/exports/`;
-- pozostawienie osobnych lokalizacji dla Claude i Codex.
+### D3. Lokalizacja eksportów agentów — ROZSTRZYGNIĘTE (2026-07-13)
+
+- **Wariant A:** `tmp/agent-exports/`;
+- Wariant B: `.agents/exports/`;
+- Wariant C: pozostawienie osobnych lokalizacji dla Claude i Codex.
+
+**Decyzja: wariant A.** Neutralne względem platformy eksporty agentów trafiają do ignorowanego katalogu `tmp/agent-exports/`.
 
 ### D4. Polityka commitów — ROZSTRZYGNIĘTE (2026-07-12)
 
@@ -429,15 +415,17 @@ Dla każdego zadania ocenić:
 
 **Decyzja: zachować obecną praktykę (wariant C).** Dotychczasowy przepływ odpowiada użytkownikowi: agent commituje ukończoną pracę na feature branchu (nigdy na `main`), z autorem zdefiniowanym w swoim pliku platformowym — dla Claude Code jest to `--author="Claude Code <noreply@anthropic.com>"` zapisane w `CLAUDE.md`. Konsekwencje: reguła autorstwa pozostaje w `CLAUDE.md` i **nie wchodzi** do wspólnej warstwy `docs/agent/` ani do `AGENTS.md`; polityka commitów Codex zostanie zdefiniowana osobno w `AGENTS.md` przy etapie 1 (domyślnie: commit tylko na polecenie, dopóki Codex nie zostanie sprawdzony w zadaniach próbnych z etapu 9).
 
-### D5. Zakres projektowego MCP
+### D5. Zakres projektowego MCP — ROZSTRZYGNIĘTE DLA PIERWSZEJ ITERACJI (2026-07-13)
 
 - **Wariant A:** tylko bezpieczne MCP read-only w repo, pozostałe w profilu użytkownika.
 - Wariant B: wszystkie obecnie aktywne MCP w `.codex/config.toml`.
 - Wariant C: cała konfiguracja MCP wyłącznie w profilu użytkownika.
 
-### D6. Pierwsza lista skilli
+**Decyzja: odroczyć migrację MCP do Codex.** Integracje AWS nie są obecnie używane i zostaną ponownie ocenione przy powrocie do AWS. WordPress.com zostanie ponownie oceniony przy rozpoczęciu publikowania. GitGuardian MCP także nie wchodzi do pierwszej iteracji, ponieważ wymaga sieci i uruchomienia przez `uvx`, a repozytorium ma niezależne skanery sekretów. Inwentarz i wymagane ograniczenia read-only pozostają w planie; odroczenie nie oznacza usunięcia istniejącej konfiguracji Claude Code.
 
-Wybrać maksymalnie 3–5 workflow do pierwszej iteracji na podstawie rzeczywistego użycia.
+### D6. Pierwsza lista skilli — ROZSTRZYGNIĘTE (2026-07-13)
+
+**Decyzja:** przenieść `security-check`, `feed-review` i `obsidian-note`. `obsidian-note` będzie skillem projektowym z lokalnie konfigurowaną ścieżką vaulta oraz jawną zgodą przed zapisem notatek i przed aktualizacją bazy. Workflow BMAD zachować w backlogu bez implementacji do czasu powrotu użytkownika do ich rzeczywistego użycia.
 
 ### D7. Źródło prawdy dla licencji — ROZSTRZYGNIĘTE I WDROŻONE (2026-07-12)
 
@@ -458,15 +446,15 @@ Wybrać maksymalnie 3–5 workflow do pierwszej iteracji na podstawie rzeczywist
 
 ## 9. Proponowana kolejność realizacji
 
-0. Dokończyć etap 0 (dostęp sandboxa Codex do repozytorium na Windows) — bez niego walidacja pozostałych etapów jest niemożliwa.
-1. Podjąć decyzje D1–D7.
-2. Skorygować najważniejsze rozjazdy faktów.
+0. Etap 0 (dostęp sandboxa Codex do repozytorium na Windows) — ukończony.
+1. Decyzje D1–D7 są rozstrzygnięte; D5 odracza migrację MCP do ponownej oceny przy powrocie właściwych integracji.
+2. Sprawdzić pozostałe wersje, liczniki, daty i linki oraz skorygować tylko nowe rozjazdy faktów.
 3. Utworzyć `docs/agent/verification.md` i `docs/agent/safety.md`.
 4. Utworzyć główny `AGENTS.md`.
 5. Utworzyć minimalny zestaw lokalnych `AGENTS.md`.
 6. Skrócić i uporządkować `CLAUDE.md`, zachowując obsługę Claude Code.
-7. Dodać `.codex/config.toml` po ustaleniu zakresu MCP.
-8. Utworzyć pierwsze 3–5 skilli.
+7. Dodać `.codex/config.toml` tylko dla potrzebnych ustawień projektowych; nie dodawać odroczonych MCP.
+8. Utworzyć skille `security-check`, `feed-review` i `obsidian-note`.
 9. Przeprowadzić zadania próbne i zebrać korekty.
 10. Dodać lekką automatyczną kontrolę dryfu dokumentacji.
 
@@ -495,6 +483,6 @@ Najmniejsza iteracja zapewniająca wyraźną poprawę jakości:
 4. `backend/AGENTS.md`;
 5. `infra/aws/AGENTS.md`;
 6. `web_interface_react/AGENTS.md`;
-7. korekta wykrytych rozjazdów dokumentacji.
+7. kontrola pozostałych wersji, liczników, dat i linków w dokumentacji.
 
-Konfigurację MCP i skille można wdrożyć w drugiej iteracji po sprawdzeniu, jak Codex działa z samą poprawioną warstwą instrukcji.
+Skille `security-check`, `feed-review` i `obsidian-note` można wdrożyć w drugiej iteracji po sprawdzeniu, jak Codex działa z samą poprawioną warstwą instrukcji. Migracja MCP pozostaje odroczona do czasu powrotu do integracji AWS, GitGuardian MCP lub publikowania na WordPress.com.
