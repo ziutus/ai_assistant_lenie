@@ -152,6 +152,22 @@ Jeśli konfiguracja ACL jest niewłaściwa dla danej maszyny, można rozważyć:
 
 Nie należy automatycznie przechodzić na pełny dostęp tylko dlatego, że pierwsza próba konfiguracji ACL nie zadziałała.
 
+## Prawo zapisu dla jednego repozytorium
+
+Jeżeli podjęto świadomą decyzję, że sandbox ma modyfikować pliki konkretnego repozytorium (np. Codex implementuje zmiany, a człowiek lub inny agent robi code review), należy nadać prawo Modify bezpośrednio kontom sandboxa:
+
+```powershell
+icacls "C:\Users\<user>\git\<repozytorium>" /grant "CodexSandboxOffline:(OI)(CI)M" "CodexSandboxOnline:(OI)(CI)M"
+```
+
+Uwaga: nadanie prawa Modify grupie `CodexSandboxUsers` NIE wystarcza — restricted token sandboxa nie honoruje uprawnień grupowych i zapis kończy się odmową dostępu. Prawa muszą być nadane bezpośrednio kontom. Weryfikacja funkcjonalna:
+
+```powershell
+codex sandbox cmd /c "echo test > C:\Users\<user>\git\<repozytorium>\.claude\exports\sandbox_write_test.txt"
+```
+
 ## Historia dla tego repozytorium
 
 W dniu 2026-07-12 problem został potwierdzony i rozwiązany na maszynie deweloperskiej. Po zmianie praw `git log`, `git status` oraz review diffa zaczęły działać dla właściwego repozytorium. Jest to stan lokalnej maszyny, a nie gwarantowany element konfiguracji repozytorium.
+
+W dniu 2026-07-13 podjęto świadomą decyzję o nadaniu kontom sandboxa prawa zapisu (Modify) do tego repozytorium, aby Codex mógł implementować zmiany bezpośrednio (workflow: Codex koduje, Claude Code robi review). Test zapisu przez `codex sandbox` przeszedł po nadaniu praw bezpośrednio kontom (wpis grupy `CodexSandboxUsers` z prawem M istniał wcześniej, ale nie działał).
