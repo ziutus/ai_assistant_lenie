@@ -13,6 +13,8 @@ export interface EntityItem {
   // Surface forms seen in the text ("Kijów", "Kijowa") — used server-side for
   // chapter-scoped filtering; not rendered
   variants?: string[];
+  // Surface forms actually matched in the selected reader chapter.
+  chapter_variants?: string[];
   // Linear infrastructure match (Overpass/OSM, infra_geometries cache) —
   // geojson is a MultiLineString drawn on the reader map
   pipeline?: {
