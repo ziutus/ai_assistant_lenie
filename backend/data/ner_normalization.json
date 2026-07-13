@@ -1,0 +1,23 @@
+{
+  "country_abbreviations": {
+    "PL": "Polska",
+    "UA": "Ukraina"
+  },
+  "demonyms": {
+    "finowie": "Finlandia",
+    "grecy": "Grecja",
+    "turcy": "Turcja",
+    "turk": "Turcja",
+    "węgrzy": "Węgry",
+    "wegrzy": "Węgry",
+    "włosi": "Włochy",
+    "wlosi": "Włochy"
+  },
+  "reject_surface_lemma_pairs": [
+    {
+      "surface": "Dana",
+      "lemma": "Dan",
+      "pos": ["ADJ", "NOUN", "PROPN"]
+    }
+  ]
+}

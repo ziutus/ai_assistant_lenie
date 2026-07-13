@@ -248,6 +248,20 @@ class CountryEntry:
     slug: str
 
 
+@dataclass(frozen=True)
+class CountryPattern:
+    regex: re.Pattern
+    fixed_chars: int
+    stem_tokens: int
+
+    def fullmatch_with_suffix_limit(self, mention: str) -> bool:
+        """Match a complete mention while allowing at most 4 chars per stem suffix."""
+        if self.regex.fullmatch(mention) is None:
+            return False
+        mention_chars = len(re.sub(r"[\s-]+", "", mention))
+        return mention_chars - self.fixed_chars <= 4 * self.stem_tokens
+
+
 def _slug(name_pl: str) -> str:
     """Slug w konwencji article_tagging.extract_countries_with_llm (kraj-<slug>)."""
     ascii_name = unidecode(name_pl).lower()
@@ -255,18 +269,28 @@ def _slug(name_pl: str) -> str:
     return re.sub(r"\s+", "-", ascii_name.strip())
 
 
-def _compile_variant(variant: str) -> re.Pattern:
+def _compile_variant(variant: str) -> CountryPattern:
     parts = []
+    fixed_chars = 0
+    stem_tokens = 0
     for token in variant.split():
         if token.endswith("*"):
-            parts.append(r"\b" + re.escape(token[:-1]) + r"\w*")
+            fixed = token[:-1]
+            parts.append(r"\b" + re.escape(fixed) + r"\w*")
+            fixed_chars += len(fixed)
+            stem_tokens += 1
         else:
             parts.append(r"\b" + re.escape(token) + r"\b")
-    return re.compile(r"[\s-]+".join(parts))
+            fixed_chars += len(token)
+    return CountryPattern(
+        regex=re.compile(r"[\s-]+".join(parts)),
+        fixed_chars=fixed_chars,
+        stem_tokens=stem_tokens,
+    )
 
 
 @lru_cache(maxsize=1)
-def _compiled_countries() -> tuple[tuple[CountryEntry, tuple[re.Pattern, ...]], ...]:
+def _compiled_countries() -> tuple[tuple[CountryEntry, tuple[CountryPattern, ...]], ...]:
     compiled = []
     for name_pl, variants in _COUNTRY_DATA:
         entry = CountryEntry(name_pl=name_pl, slug=_slug(name_pl))
@@ -285,6 +309,25 @@ def slug_to_name(slug: str) -> str | None:
     return _slug_to_name_map().get(slug)
 
 
+def canonical_country_name(mention: str) -> str | None:
+    """Return the canonical Polish country name when one mention matches in full.
+
+    Unlike detect_countries(), this does not search inside a larger fragment:
+    every gazetteer pattern must consume the complete normalized mention. This
+    makes it safe for NER normalization ("polskiej" -> "Polska") without
+    treating an arbitrary sentence containing a country as the entity itself.
+    """
+    normalized = unidecode(mention).strip().lower()
+    if not normalized:
+        return None
+    matches = {
+        entry.name_pl
+        for entry, patterns in _compiled_countries()
+        if any(pattern.fullmatch_with_suffix_limit(normalized) for pattern in patterns)
+    }
+    return next(iter(matches)) if len(matches) == 1 else None
+
+
 def detect_countries(text: str) -> list[CountryEntry]:
     """Zwróć kraje, których nazwa/przymiotnik/mieszkaniec pojawia się w tekście — bez LLM.
 
@@ -294,5 +337,9 @@ def detect_countries(text: str) -> list[CountryEntry]:
     nadmiarowego dopasowania.
     """
     normalized = unidecode(text).lower()
-    found = [entry for entry, patterns in _compiled_countries() if any(p.search(normalized) for p in patterns)]
+    found = [
+        entry
+        for entry, patterns in _compiled_countries()
+        if any(pattern.regex.search(normalized) for pattern in patterns)
+    ]
     return sorted(found, key=lambda e: e.name_pl)
