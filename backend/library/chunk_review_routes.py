@@ -528,6 +528,44 @@ def document_chapter_entities(doc_id: int, position: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/events", methods=["GET"])
+def document_events(doc_id: int):
+    """Return stored timeline events ordered chronologically, with undated rows last."""
+    from library.db.models import DocumentEvent
+
+    session = get_scoped_session()
+    if session.get(WebDocument, doc_id) is None:
+        abort(404, f"Document {doc_id} not found")
+
+    rows = (
+        session.query(DocumentEvent)
+        .filter(DocumentEvent.document_id == doc_id)
+        .order_by(
+            DocumentEvent.sort_year.asc().nullslast(),
+            DocumentEvent.event_date.asc().nullslast(),
+            DocumentEvent.id.asc(),
+        )
+        .all()
+    )
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "events": [
+            {
+                "date_text": row.date_text,
+                "event_date": row.event_date.isoformat() if row.event_date else None,
+                "event_date_end": row.event_date_end.isoformat() if row.event_date_end else None,
+                "date_precision": row.date_precision,
+                "sort_year": row.sort_year,
+                "description": row.description,
+                "anchor_quote": row.anchor_quote,
+                "chapter_position": row.chapter_position,
+            }
+            for row in rows
+        ],
+    })
+
+
 @bp.route("/document/<int:doc_id>/entity_occurrences", methods=["GET"])
 def document_entity_occurrences(doc_id: int):
     """Per-chapter occurrence counts of an entity name in the document (?text=).
