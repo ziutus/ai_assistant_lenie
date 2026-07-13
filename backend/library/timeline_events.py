@@ -19,7 +19,7 @@ from library.text_functions import detect_chapters
 logger = logging.getLogger(__name__)
 
 DEFAULT_TIMELINE_MODEL = "Bielik-11B-v3.0-Instruct"
-MAX_FRAGMENT_CHARS = 20_000
+MAX_FRAGMENT_CHARS = 10_000
 
 _MONTHS = {
     "stycznia": 1,
@@ -199,22 +199,72 @@ def normalize_date_text(date_text: str) -> dict | None:
     return _date_result("unknown", value.year, value, value)
 
 
-def parse_events_response(raw_response: str) -> list[dict]:
-    """Parse a JSON event list, tolerating a surrounding Markdown code fence."""
+def _complete_array_prefix(raw: str) -> str | None:
+    """Return a JSON array containing all complete top-level objects in a truncated array."""
+    array_start = raw.find("[")
+    if array_start < 0:
+        return None
+
+    in_string = escaped = False
+    array_depth = object_depth = 0
+    last_complete_object = None
+    for position, character in enumerate(raw[array_start:], start=array_start):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character == "[":
+            array_depth += 1
+        elif character == "]":
+            array_depth -= 1
+        elif character == "{":
+            object_depth += 1
+        elif character == "}":
+            object_depth -= 1
+            if array_depth == 1 and object_depth == 0:
+                last_complete_object = position
+
+    if last_complete_object is None:
+        return None
+    return raw[array_start:last_complete_object + 1].rstrip().rstrip(",") + "]"
+
+
+def _parse_events_response(raw_response: str) -> tuple[list[dict], bool]:
+    """Parse an event list and report whether the original JSON was invalid."""
     raw = (raw_response or "").strip()
     fence = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", raw, re.IGNORECASE | re.DOTALL)
     if fence:
         raw = fence.group(1).strip()
+    invalid_json = False
     try:
         payload = json.loads(raw)
     except (json.JSONDecodeError, TypeError):
-        logger.warning("timeline LLM returned invalid JSON")
-        return []
+        invalid_json = True
+        repaired = _complete_array_prefix(raw)
+        try:
+            payload = json.loads(repaired) if repaired is not None else None
+        except (json.JSONDecodeError, TypeError):
+            payload = None
+        if payload is None:
+            logger.warning("timeline LLM returned invalid JSON that could not be recovered")
+            return [], True
     if isinstance(payload, dict):
         payload = payload.get("events", payload.get("wydarzenia", []))
     if not isinstance(payload, list):
-        return []
-    return [item for item in payload if isinstance(item, dict)]
+        return [], invalid_json
+    return [item for item in payload if isinstance(item, dict)], invalid_json
+
+
+def parse_events_response(raw_response: str) -> list[dict]:
+    """Parse a JSON event list, recovering complete objects from a truncated array."""
+    events, _invalid_json = _parse_events_response(raw_response)
+    return events
 
 
 def _normalize_quote_typography(value: str) -> str:
@@ -286,11 +336,12 @@ def _response_usage(response) -> tuple[int, float | None]:
 
 def extract_fragment_events(fragment: str, chapter_position: int | None, model: str) -> tuple[list[dict], dict]:
     """Make one LLM call and retain only grounded events with normalizable dates."""
-    response = ai_ask(_timeline_prompt(fragment), model=model, temperature=0.1, max_token_count=1600)
+    response = ai_ask(_timeline_prompt(fragment), model=model, temperature=0.1, max_token_count=4000)
     tokens, cost = _response_usage(response)
     events: list[dict] = []
     rejected_quote = rejected_date = 0
-    for candidate in parse_events_response(response.response_text):
+    candidates, invalid_json = _parse_events_response(response.response_text)
+    for candidate in candidates:
         date_text = str(candidate.get("date_text") or "").strip()
         description = str(candidate.get("description") or "").strip()
         quote = str(candidate.get("quote") or "").strip()
@@ -311,6 +362,7 @@ def extract_fragment_events(fragment: str, chapter_position: int | None, model: 
     return events, {
         "rejected_without_quote": rejected_quote,
         "rejected_without_date": rejected_date,
+        "invalid_json": int(invalid_json),
         "llm_calls": 1,
         "llm_tokens": tokens,
         "llm_cost": cost,
@@ -364,6 +416,7 @@ def extract_document_events(session, doc, model: str | None = None, *, chapter_p
             "events": len(chapter_events),
             "rejected_without_quote": sum(r["rejected_without_quote"] for r in fragment_reports),
             "rejected_without_date": sum(r["rejected_without_date"] for r in fragment_reports),
+            "invalid_json": sum(r["invalid_json"] for r in fragment_reports),
             "llm_calls": sum(r["llm_calls"] for r in fragment_reports),
             "llm_tokens": sum(r["llm_tokens"] for r in fragment_reports),
             "llm_cost": _combine_costs(r["llm_cost"] for r in fragment_reports),

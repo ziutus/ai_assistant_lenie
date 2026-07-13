@@ -12,6 +12,79 @@ from library import chunk_review_routes, timeline_events
 from library.db.models import DocumentEvent
 
 
+def test_truncated_response_recovers_complete_objects():
+    raw = '[{"date_text": "2020", "description": "Pierwsze", "quote": "Cytat"}, {"date_text": "2021"'
+
+    assert timeline_events.parse_events_response(raw) == [
+        {"date_text": "2020", "description": "Pierwsze", "quote": "Cytat"}
+    ]
+
+
+def test_truncated_response_without_complete_object_returns_empty_list():
+    assert timeline_events.parse_events_response('[{"date_text": "2020"') == []
+
+
+def test_valid_json_response_is_parsed_without_changes():
+    payload = [{"date_text": "2020", "description": "Wydarzenie", "quote": "Cytat"}]
+
+    assert timeline_events.parse_events_response(json.dumps(payload)) == payload
+
+
+def test_invalid_json_is_counted_in_fragment_report(monkeypatch):
+    fragment = "W 2020 wydarzyło się pierwsze wydarzenie."
+    raw = json.dumps([{
+        "date_text": "2020",
+        "description": "Pierwsze wydarzenie.",
+        "quote": "W 2020 wydarzyło się pierwsze wydarzenie.",
+    }])[:-1] + ', {"date_text": "2021"'
+    monkeypatch.setattr(
+        timeline_events,
+        "ai_ask",
+        lambda *_args, **_kwargs: SimpleNamespace(response_text=raw, total_tokens=1),
+    )
+
+    events, report = timeline_events.extract_fragment_events(fragment, 1, "model")
+
+    assert len(events) == 1
+    assert report["invalid_json"] == 1
+
+
+def test_invalid_json_is_summed_in_chapter_report(monkeypatch):
+    reports = iter([
+        {
+            "rejected_without_quote": 0,
+            "rejected_without_date": 0,
+            "invalid_json": 1,
+            "llm_calls": 1,
+            "llm_tokens": 10,
+            "llm_cost": None,
+        },
+        {
+            "rejected_without_quote": 0,
+            "rejected_without_date": 0,
+            "invalid_json": 0,
+            "llm_calls": 1,
+            "llm_tokens": 10,
+            "llm_cost": None,
+        },
+    ])
+    monkeypatch.setattr(
+        timeline_events,
+        "_chapters_for_document",
+        lambda *_args, **_kwargs: [{"position": 47, "title": "Rozdział", "text": "tekst"}],
+    )
+    monkeypatch.setattr(timeline_events, "split_timeline_fragments", lambda _text: ["jeden", "dwa"])
+    monkeypatch.setattr(
+        timeline_events,
+        "extract_fragment_events",
+        lambda *_args, **_kwargs: ([], next(reports)),
+    )
+
+    result = timeline_events.extract_document_events(None, SimpleNamespace(), model="model")
+
+    assert result["chapters"][0]["invalid_json"] == 1
+
+
 @pytest.mark.parametrize(
     "wrapper",
     [lambda payload: payload, lambda payload: f"```json\n{payload}\n```"],
