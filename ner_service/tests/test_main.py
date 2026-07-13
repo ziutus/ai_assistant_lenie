@@ -8,8 +8,9 @@ from src import main
 
 @pytest.fixture
 def client(monkeypatch):
+    fake_root = types.SimpleNamespace(pos_="PROPN", morph="Case=Nom|Gender=Masc|Number=Sing")
     fake_ent = types.SimpleNamespace(
-        text="Donald Tusk", label_="persName", lemma_="Donald Tusk", start_char=0, end_char=11,
+        text="Donald Tusk", label_="persName", lemma_="Donald Tusk", start_char=0, end_char=11, root=fake_root,
     )
     fake_doc = types.SimpleNamespace(ents=[fake_ent])
     monkeypatch.setattr(main, "get_nlp", lambda: MagicMock(return_value=fake_doc))
@@ -28,7 +29,15 @@ def test_ner_returns_entities(client):
     assert resp.status_code == 200
     assert resp.get_json() == {
         "entities": [
-            {"text": "Donald Tusk", "label": "persName", "lemma": "Donald Tusk", "start": 0, "end": 11}
+            {
+                "text": "Donald Tusk",
+                "label": "persName",
+                "lemma": "Donald Tusk",
+                "start": 0,
+                "end": 11,
+                "pos": "PROPN",
+                "morph": "Case=Nom|Gender=Masc|Number=Sing",
+            }
         ]
     }
 

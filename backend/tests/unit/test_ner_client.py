@@ -155,7 +155,7 @@ class TestAggregateEntities:
     def test_skips_lowercase_mentions(self):
         """Przymiotniki ('ukraiński') błędnie oznaczane jako placeName — odpadają po wielkości litery."""
         entities = [
-            {"text": "ukraiński", "label": "placeName", "lemma": "ukraiński"},
+            {"text": "ukraiński", "label": "placeName", "lemma": "ukraiński", "pos": "ADJ"},
             {"text": "Ukraina", "label": "placeName", "lemma": "Ukraina"},
         ]
         assert aggregate_entities(entities) == {("placeName", "Ukraina"): 1}
@@ -174,7 +174,11 @@ class TestAggregateEntitiesDetailed:
             {"text": "Kijowa", "label": "placeName", "lemma": "Kijów"},
         ]
         assert aggregate_entities_detailed(entities) == {
-            ("placeName", "Kijów"): {"count": 3, "variants": ["Kijowie", "Kijowa"]},
+            ("placeName", "Kijów"): {
+                "count": 3,
+                "variants": ["Kijowie", "Kijowa"],
+                "raw_lemmas": ["Kijów"],
+            },
         }
 
     def test_counts_match_aggregate_entities(self):
@@ -185,3 +189,93 @@ class TestAggregateEntitiesDetailed:
         ]
         detailed = aggregate_entities_detailed(entities)
         assert {k: g["count"] for k, g in detailed.items()} == aggregate_entities(entities)
+
+
+class TestAggregateNormalization:
+    def test_lowercase_legacy_country_forms_are_rejected(self):
+        entities = [
+            {"text": "Polska", "label": "placeName", "lemma": "Polska"},
+            {"text": "polski", "label": "placeName", "lemma": "polski"},
+            {"text": "polska", "label": "placeName", "lemma": "polska"},
+        ]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Polska"): {
+                "count": 1,
+                "variants": ["Polska"],
+                "raw_lemmas": ["Polska"],
+            },
+        }
+
+    def test_ukraine_case_variants_share_canonical_name(self):
+        entities = [
+            {"text": "Ukraina", "label": "placeName", "lemma": "Ukraina"},
+            {"text": "UKRAINA", "label": "placeName", "lemma": "ukraina"},
+        ]
+        assert aggregate_entities(entities) == {("placeName", "Ukraina"): 2}
+
+    def test_lowercase_inflected_country_is_rejected_without_pos(self):
+        entities = [{"text": "polskiej", "label": "placeName", "lemma": "polski"}]
+        assert aggregate_entities(entities) == {}
+
+    def test_person_name_is_never_canonicalized_as_country(self):
+        entities = [{"text": "Czechowa", "label": "persName", "lemma": "Czechow", "pos": "PROPN"}]
+        assert aggregate_entities(entities) == {("persName", "Czechow"): 1}
+
+    def test_initials_only_are_rejected_but_initial_with_surname_stays(self):
+        entities = [
+            {"text": "A.", "label": "persName", "lemma": "A."},
+            {"text": "J. K.", "label": "persName", "lemma": "J. K."},
+            {"text": "J. Kowalski", "label": "persName", "lemma": "J. Kowalski"},
+        ]
+        assert aggregate_entities(entities) == {("persName", "J. Kowalski"): 1}
+
+    def test_curated_demonym_maps_to_country(self):
+        entities = [{"text": "Turcy", "label": "placeName", "lemma": "Turk", "pos": "NOUN"}]
+        assert aggregate_entities(entities) == {("placeName", "Turcja"): 1}
+
+    def test_kurds_are_not_mapped_to_a_country(self):
+        entities = [{"text": "Kurdowie", "label": "placeName", "lemma": "Kurd", "pos": "NOUN"}]
+        assert aggregate_entities(entities) == {("placeName", "Kurdowie"): 1}
+
+    def test_truncated_lemma_falls_back_to_full_surface(self):
+        entities = [{"text": "Brnem", "label": "placeName", "lemma": "Brn", "pos": "PROPN"}]
+        assert aggregate_entities(entities) == {("placeName", "Brnem"): 1}
+
+    def test_uppercase_country_abbreviation_maps_to_country(self):
+        entities = [{"text": "PL", "label": "geogName", "lemma": "PL", "pos": "PROPN"}]
+        assert aggregate_entities(entities) == {("geogName", "Polska"): 1}
+
+    def test_mixed_case_country_abbreviation_is_not_mapped(self):
+        entities = [{"text": "Pl", "label": "geogName", "lemma": "Pl", "pos": "PROPN"}]
+        assert aggregate_entities(entities) == {("geogName", "Pl"): 1}
+
+    def test_common_noun_dana_is_rejected_with_pos(self):
+        entities = [{"text": "Dana", "label": "persName", "lemma": "Dan", "pos": "NOUN"}]
+        assert aggregate_entities(entities) == {}
+
+    def test_dana_is_rejected_when_spacy_marks_it_as_proper_noun(self):
+        entities = [{"text": "Dana", "label": "persName", "lemma": "Dan", "pos": "PROPN"}]
+        assert aggregate_entities(entities) == {}
+
+    def test_dana_is_kept_without_pos_for_legacy_service(self):
+        entities = [{"text": "Dana", "label": "persName", "lemma": "Dan"}]
+        assert aggregate_entities(entities) == {("persName", "Dan"): 1}
+
+    def test_non_nominal_root_is_rejected(self):
+        entities = [{"text": "Polski", "label": "placeName", "lemma": "polski", "pos": "ADJ"}]
+        assert aggregate_entities(entities) == {}
+
+    def test_place_labels_merge_and_more_frequent_label_wins(self):
+        entities = [
+            {"text": "Ukraina", "label": "geogName", "lemma": "Ukraina"},
+            {"text": "Ukraina", "label": "placeName", "lemma": "Ukraina"},
+            {"text": "UKRAINA", "label": "placeName", "lemma": "ukraina"},
+        ]
+        assert aggregate_entities(entities) == {("placeName", "Ukraina"): 3}
+
+    def test_unicode_is_normalized_to_nfc_before_grouping(self):
+        entities = [
+            {"text": "Łódź", "label": "placeName", "lemma": "Łódź"},
+            {"text": "Ło\u0301dź", "label": "placeName", "lemma": "Ło\u0301dź"},
+        ]
+        assert aggregate_entities(entities) == {("placeName", "Łódź"): 2}

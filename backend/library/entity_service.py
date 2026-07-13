@@ -13,28 +13,41 @@ from sqlalchemy import delete, select
 
 from library.db.models import DocumentEntity, NerExclusion, WebDocument
 from library.ner_client import aggregate_entities_detailed, extract_entities
+from library.ner_normalization import normalize_ner_text
 
 logger = logging.getLogger(__name__)
 
 
 def is_excluded(exclusions: list[NerExclusion], entity_type: str, entity_text: str,
-                author: str | None) -> bool:
+                author: str | None, raw_terms: list[str] | None = None) -> bool:
     """True when an exclusion rule suppresses this entity.
 
-    Matching is case-insensitive on the aggregated base form; entity_type='*'
-    matches all types; scope='author' rules only apply when the document's
-    author matches the rule's author.
+    Matching is case-insensitive on the normalized base form and, when
+    provided, its raw lemmas/surface variants. entity_type='*' matches all
+    types; geogName/placeName rules remain interchangeable after place-label
+    merging; scope='author' only applies when the document's author matches.
     """
-    text_lower = entity_text.strip().lower()
-    author_lower = (author or "").strip().lower()
+    candidate_keys = {
+        normalize_ner_text(value).casefold()
+        for value in [entity_text, *(raw_terms or [])]
+        if normalize_ner_text(value)
+    }
+    author_lower = normalize_ner_text(author or "").casefold()
+    matching_types = {entity_type}
+    if entity_type in {"geogName", "placeName"}:
+        matching_types.update({"geogName", "placeName"})
     for exc in exclusions:
-        if exc.entity_type not in ("*", entity_type):
+        if exc.entity_type != "*" and exc.entity_type not in matching_types:
             continue
-        if exc.entity_text.strip().lower() != text_lower:
+        if normalize_ner_text(exc.entity_text).casefold() not in candidate_keys:
             continue
         if exc.scope == "global":
             return True
-        if exc.scope == "author" and author_lower and (exc.author or "").strip().lower() == author_lower:
+        if (
+            exc.scope == "author"
+            and author_lower
+            and normalize_ner_text(exc.author or "").casefold() == author_lower
+        ):
             return True
     return False
 
@@ -60,7 +73,17 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     if exclusions:
         doc = session.get(WebDocument, document_id)
         author = getattr(doc, "author", None)
-        excluded = [k for k in groups if is_excluded(exclusions, k[0], k[1], author)]
+        excluded = [
+            key
+            for key, group in groups.items()
+            if is_excluded(
+                exclusions,
+                key[0],
+                key[1],
+                author,
+                raw_terms=[*group.get("raw_lemmas", []), *group.get("variants", [])],
+            )
+        ]
         for key in excluded:
             del groups[key]
         if excluded:
