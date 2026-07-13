@@ -113,25 +113,41 @@ function renderInline(text: string, refs?: Map<string, ChapterReference>): React
   });
 }
 
-// All case-insensitive occurrences of the given terms in text — used to
-// highlight an entity (from the persons page or a sidebar chip click).
-// Substring (not word-boundary) matching is deliberate: Polish inflected
-// forms usually share the stem prefix ("Putin" also finds "Putina").
+// All complete-token occurrences of the given terms. Terms are matched
+// case-insensitively at Unicode-aware boundaries, except that a capitalized
+// term only matches a capitalized surface form. Longer overlapping terms win.
 function findEntityMatches(text: string, terms: string[]): { idx: number; len: number }[] {
-  const lower = text.toLowerCase();
-  const spans: { idx: number; len: number }[] = [];
-  for (const term of terms) {
-    const t = term.trim().toLowerCase();
-    if (t.length < 2) continue;
-    let start = 0;
-    while (true) {
-      const idx = lower.indexOf(t, start);
-      if (idx < 0) break;
-      spans.push({ idx, len: term.trim().length });
-      start = idx + t.length;
-    }
-  }
-  return spans;
+  const uniqueTerms = new Map<string, string>();
+  terms.forEach(rawTerm => {
+    const term = rawTerm.trim();
+    const key = term.toLowerCase();
+    if (term.length >= 2 && !uniqueTerms.has(key)) uniqueTerms.set(key, term);
+  });
+  const sortedTerms = [...uniqueTerms.values()].sort((a, b) => b.length - a.length);
+  if (!sortedTerms.length) return [];
+
+  const escaped = sortedTerms.map(term => term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const pattern = new RegExp(
+    `(?<![\\p{L}\\p{N}_])(?:${escaped.join("|")})(?![\\p{L}\\p{N}_])`,
+    "giu",
+  );
+  return [...text.matchAll(pattern)]
+    .filter(match => {
+      const matchedText = match[0];
+      const term = uniqueTerms.get(matchedText.toLowerCase());
+      return term && (!isUppercaseLetter(term[0]) || isUppercaseLetter(matchedText[0]));
+    })
+    .map(match => ({ idx: match.index!, len: match[0].length }));
+}
+
+function isUppercaseLetter(char: string): boolean {
+  return char === char.toUpperCase() && char !== char.toLowerCase();
+}
+
+function entityHighlightTerms(item: EntityItem): string[] {
+  if (item.chapter_variants?.length) return item.chapter_variants;
+  if (item.variants?.length) return item.variants;
+  return [item.text];
 }
 
 /** Render a paragraph's text with <mark> around anchored note quotes and
@@ -367,6 +383,18 @@ const Read: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiUrl, id, position, scopeChapter, progressLoaded, apiKey]);
 
+  // Resolve a raw ?highlight= mention to the variants that actually occur in
+  // the loaded chapter. This keeps arrivals from the persons page aligned with
+  // the same exact-token matching used by chapter-scoped sidebar clicks.
+  React.useEffect(() => {
+    const requested = searchParams.get("highlight")?.trim().toLowerCase();
+    if (!requested || !chapterScope) return;
+    const items = [...chapterScope.persons, ...chapterScope.placeItems];
+    const item = items.find(candidate =>
+      [candidate.text, ...(candidate.variants ?? [])].some(value => value.trim().toLowerCase() === requested));
+    if (item) setHighlightTerms(entityHighlightTerms(item));
+  }, [chapterScope, searchParams]);
+
   // progress: fetch once per (user, doc); redirect to last position when URL has no ?chapter
   React.useEffect(() => {
     if (!userId) { setProgressLoaded(true); setReadChapters([]); return; }
@@ -466,8 +494,7 @@ const Read: React.FC = () => {
   // sidebar chip click in highlight mode — mark the entity's known surface
   // variants (chapter-scoped chips carry them) or fall back to its label
   const handleEntityHighlight = (item: EntityItem) => {
-    const terms = item.variants?.length ? item.variants : [item.text];
-    setHighlightTerms(terms);
+    setHighlightTerms(entityHighlightTerms(item));
     const next = new URLSearchParams(searchParams);
     next.set("highlight", item.text);
     setSearchParams(next, { replace: true });
