@@ -71,7 +71,11 @@ def _iter_windows(text: str, size: int = MAX_TEXT_CHARS, total_cap: int = MAX_TE
         start = end
 
 
-def extract_entities(text: str) -> list[dict]:
+class NERExtractionError(RuntimeError):
+    """A complete NER extraction could not be obtained."""
+
+
+def _extract_entities(text: str, *, strict: bool) -> list[dict]:
     """Return raw entities from the NER service: [{text, label, lemma, start, end}, ...].
 
     Long texts are processed in windows (see _iter_windows) and the mentions
@@ -85,7 +89,7 @@ def extract_entities(text: str) -> list[dict]:
     if not text or not text.strip():
         return []
     collected: list[dict] = []
-    for window in _iter_windows(text):
+    for window_index, window in enumerate(_iter_windows(text), start=1):
         try:
             resp = requests.post(
                 f"{_service_url()}/ner",
@@ -95,16 +99,25 @@ def extract_entities(text: str) -> list[dict]:
             resp.raise_for_status()
             entities = resp.json().get("entities", [])
             if not isinstance(entities, list):
-                logger.warning("NER service returned unexpected payload shape")
-                break
+                raise ValueError("NER service returned unexpected payload shape")
             collected.extend(entities)
-        except requests.RequestException as e:
-            logger.warning("NER service unavailable (%s): %s", _service_url(), e)
-            break
-        except ValueError as e:
-            logger.warning("NER service returned invalid JSON: %s", e)
+        except (requests.RequestException, ValueError) as exc:
+            message = f"NER extraction failed in window {window_index}: {exc}"
+            if strict:
+                raise NERExtractionError(message) from exc
+            logger.warning(message)
             break
     return collected
+
+
+def extract_entities(text: str) -> list[dict]:
+    """Best-effort extraction; preserves partial-result legacy behavior."""
+    return _extract_entities(text, strict=False)
+
+
+def extract_entities_strict(text: str) -> list[dict]:
+    """Return only a complete extraction; raise on failure of any text window."""
+    return _extract_entities(text, strict=True)
 
 
 def warmup_async() -> None:
