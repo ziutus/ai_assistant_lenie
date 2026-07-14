@@ -46,18 +46,32 @@ class TestTagsList:
         assert resp.get_json()["tags"] == []
 
 
+def _source_row(id_, name, count, is_active=True, description=None, url=None):
+    row = MagicMock()
+    row.id = id_
+    row.name = name
+    row.description = description
+    row.url = url
+    row.is_active = is_active
+    return (row, count)
+
+
 class TestSourcesList:
     def test_returns_sources_with_counts(self, client):
         session = MagicMock()
         session.execute.return_value.all.return_value = [
-            ("unknow.news", 120), ("own", 80), ("  ", 3),
+            _source_row(1, "unknow.news", 120), _source_row(2, "own", 80),
         ]
         with patch("server.get_scoped_session", return_value=session):
             resp = client.get("/sources", headers=API_HEADERS)
 
         assert resp.status_code == 200
         sources = resp.get_json()["sources"]
-        assert sources == [
-            {"source": "unknow.news", "count": 120},
-            {"source": "own", "count": 80},
-        ]
+        # Backward-compat keys consumed by the editor autocomplete.
+        assert sources[0]["source"] == "unknow.news"
+        assert sources[0]["count"] == 120
+        # Lookup-table fields.
+        assert sources[0]["name"] == "unknow.news"
+        assert sources[0]["id"] == 1
+        assert sources[0]["is_active"] is True
+        assert sources[1]["source"] == "own"

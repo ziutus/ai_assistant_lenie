@@ -2,7 +2,7 @@
 
 Chrome/Kiwi browser extension for capturing webpages and sending them to the Lenie AI backend. No build step — load unpacked directly from this folder.
 
-**Version**: 1.0.23 | **Manifest**: v3
+**Version**: 1.0.24 | **Manifest**: v3
 
 ## Directory Structure
 
@@ -27,7 +27,7 @@ web_chrome_extension/
 3. **Content extraction** — captures full page text (`innerText`) and HTML (`outerHTML`) via `chrome.scripting.executeScript()`
 4. **Content type classification** — `webpage` (default), `link`, `youtube`, `movie`
 5. **YouTube detection** — auto-switches type to `youtube` when URL matches `youtube.com/watch`, shows chapter list field
-6. **Source tracking** — dropdown with predefined sources (Own, Maruda, Tomasz Szer, Rafał Skonieczko)
+6. **Source tracking** — dropdown loaded from `GET {apiBase}/sources?active=1` (apiBase = serverUrl minus the `/url_add` suffix), with a "+ Dodaj nowe źródło…" option that creates a source via `POST /sources`. Last selection persisted (`chrome.storage.sync.lastSource`); fetched list cached in `chrome.storage.local.sourcesCache`. Offline / endpoint without `/sources` (AWS Gateway) → cache, then the 4 hardcoded fallback options in popup.html
 7. **Paywall flag** — boolean Yes/No radio buttons
 8. **Notes & chapters** — free-text note field, chapter list (visible for YouTube only)
 
@@ -90,7 +90,11 @@ CSP: `script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'self'`
 
 Uses `chrome.storage.sync` (encrypted by Chrome, synced across profiles):
 - `apiKey` — API authentication key
-- `serverUrl` — backend endpoint URL
+- `serverUrl` — backend endpoint URL (full `/url_add` URL; the `/sources` calls derive the base from it)
+- `lastSource` — last selected source (restored on popup open)
+
+Uses `chrome.storage.local`:
+- `sourcesCache` — last successfully fetched active source names (offline fallback)
 
 ## Installation
 

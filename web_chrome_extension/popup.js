@@ -31,6 +31,134 @@ document.addEventListener('DOMContentLoaded', function () {
   const pageTitleInput = document.getElementById('pageTitle');
   const toggleApiKeyVisibilityBtn = document.getElementById('toggleApiKeyVisibility');
   const apiKeyEye = document.getElementById('apiKeyEye');
+  const newSourceContainer = document.getElementById('newSourceContainer');
+  const newSourceNameInput = document.getElementById('newSourceName');
+  const addSourceButton = document.getElementById('addSourceButton');
+
+  const ADD_NEW_SOURCE = '__add_new__';
+  let previousSourceValue = sourceSelect.value;
+
+  // serverUrl stores the FULL /url_add endpoint URL (backward compatible with
+  // existing installs) — derive the API base for the /sources endpoints.
+  function apiBaseFrom(serverUrl) {
+    return serverUrl.trim().replace(/\/url_add\/?$/, '');
+  }
+
+  function rebuildSourceOptions(names, selected) {
+    sourceSelect.innerHTML = '';
+    names.forEach(name => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      sourceSelect.appendChild(option);
+    });
+    const addNew = document.createElement('option');
+    addNew.value = ADD_NEW_SOURCE;
+    addNew.textContent = '+ Dodaj nowe źródło…';
+    sourceSelect.appendChild(addNew);
+    if (selected && names.includes(selected)) {
+      sourceSelect.value = selected;
+    } else if (names.includes('own')) {
+      sourceSelect.value = 'own';
+    }
+    previousSourceValue = sourceSelect.value;
+  }
+
+  // Rebuild the source dropdown from the backend (active sources only).
+  // Offline / AWS Gateway URL (no /sources route) → cached list from
+  // chrome.storage.local; without a cache the hardcoded HTML options stay.
+  // Never blocks the popup.
+  function loadSources(apiKey, serverUrl) {
+    chrome.storage.sync.get(['lastSource'], (sync) => {
+      const lastSource = sync.lastSource;
+      fetch(apiBaseFrom(serverUrl) + '/sources?active=1', { headers: { 'x-api-key': apiKey } })
+        .then(response => {
+          if (!response.ok) throw new Error(`${response.status}`);
+          return response.json();
+        })
+        .then(data => {
+          const names = (data.sources || []).map(s => s.name || s.source).filter(Boolean);
+          if (!names.length) return;
+          chrome.storage.local.set({ sourcesCache: names });
+          rebuildSourceOptions(names, lastSource);
+        })
+        .catch(() => {
+          chrome.storage.local.get(['sourcesCache'], (local) => {
+            if (local.sourcesCache && local.sourcesCache.length) {
+              rebuildSourceOptions(local.sourcesCache, lastSource);
+            } else if (lastSource && [...sourceSelect.options].some(o => o.value === lastSource)) {
+              sourceSelect.value = lastSource;
+              previousSourceValue = lastSource;
+            }
+          });
+        });
+    });
+  }
+
+  sourceSelect.addEventListener('change', function () {
+    if (sourceSelect.value === ADD_NEW_SOURCE) {
+      newSourceContainer.style.display = 'block';
+      newSourceNameInput.focus();
+      return;
+    }
+    newSourceContainer.style.display = 'none';
+    previousSourceValue = sourceSelect.value;
+    chrome.storage.sync.set({ lastSource: sourceSelect.value });
+  });
+
+  addSourceButton.addEventListener('click', function () {
+    const name = newSourceNameInput.value.trim();
+    const apiKey = apiKeyInput.value.trim();
+    const serverUrl = serverUrlInput.value.trim();
+    if (!name) {
+      alert('Podaj nazwę nowego źródła');
+      return;
+    }
+    if (!apiKey || !serverUrl) {
+      alert('Uzupełnij ustawienia (klucz API i adres serwera)');
+      return;
+    }
+    addSourceButton.disabled = true;
+    fetch(apiBaseFrom(serverUrl) + '/sources', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      body: JSON.stringify({ name: name })
+    })
+      .then(response => {
+        // 409 = source already exists — just select it.
+        if (!response.ok && response.status !== 409) {
+          throw new Error(`${response.status} - ${response.statusText}`);
+        }
+      })
+      .then(() => {
+        if (![...sourceSelect.options].some(o => o.value === name)) {
+          const option = document.createElement('option');
+          option.value = name;
+          option.textContent = name;
+          const addNewOption = [...sourceSelect.options].find(o => o.value === ADD_NEW_SOURCE);
+          sourceSelect.insertBefore(option, addNewOption || null);
+        }
+        sourceSelect.value = name;
+        previousSourceValue = name;
+        chrome.storage.sync.set({ lastSource: name });
+        chrome.storage.local.get(['sourcesCache'], (local) => {
+          const cache = local.sourcesCache || [];
+          if (!cache.includes(name)) {
+            chrome.storage.local.set({ sourcesCache: cache.concat([name]) });
+          }
+        });
+        newSourceContainer.style.display = 'none';
+        newSourceNameInput.value = '';
+      })
+      .catch(error => {
+        alert(`Nie udało się dodać źródła: ${error.message}`);
+        sourceSelect.value = previousSourceValue;
+        newSourceContainer.style.display = 'none';
+      })
+      .finally(() => {
+        addSourceButton.disabled = false;
+      });
+  });
 
   function toggleChapterListVisibility() {
     chapterListContainer.style.display = (typeSelect.value === 'youtube') ? 'block' : 'none';
@@ -43,6 +171,9 @@ document.addEventListener('DOMContentLoaded', function () {
   chrome.storage.sync.get(['apiKey', 'serverUrl'], function (data) {
     if (data.apiKey) apiKeyInput.value = data.apiKey;
     if (data.serverUrl) serverUrlInput.value = data.serverUrl;
+    if (data.apiKey && data.serverUrl) {
+      loadSources(data.apiKey, data.serverUrl);
+    }
   });
 
   // Toggle API key visibility
@@ -110,6 +241,10 @@ document.addEventListener('DOMContentLoaded', function () {
     }
     if (!serverUrl) {
       alert('Podaj adres serwera');
+      return;
+    }
+    if (sourceSelect.value === '__add_new__') {
+      alert('Dokończ dodawanie nowego źródła albo wybierz istniejące');
       return;
     }
 
