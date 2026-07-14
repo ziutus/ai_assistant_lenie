@@ -759,20 +759,140 @@ def tags_list():
     return {"status": "success", "tags": [{"tag": t, "count": c} for t, c in ordered]}, 200
 
 
-@app.route('/sources', methods=['GET'])
-def sources_list():
-    """Distinct web_documents.source values, most used first — editor autocomplete."""
+def _source_dict(row, count: int = 0):
+    # "source" duplicates "name" for backward compatibility (editor autocomplete
+    # consumed the old distinct-values shape).
+    return {
+        "id": row.id, "name": row.name, "source": row.name,
+        "description": row.description, "url": row.url,
+        "is_active": row.is_active, "count": count,
+    }
+
+
+def _source_doc_count(session, name: str) -> int:
     from sqlalchemy import func as sa_func, select as sa_select
 
+    return session.execute(
+        sa_select(sa_func.count()).where(WebDocument.source == name)
+    ).scalar_one()
+
+
+@app.route('/sources', methods=['GET'])
+def sources_list():
+    """Sources lookup with per-source document counts, most used first.
+
+    ?active=1 limits to is_active sources (editor/extension pickers)."""
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library.db.models import Source
+
     session = get_scoped_session()
-    rows = session.execute(
-        sa_select(WebDocument.source, sa_func.count())
+    counts = (
+        sa_select(WebDocument.source.label("name"), sa_func.count().label("cnt"))
         .where(WebDocument.source.isnot(None))
         .group_by(WebDocument.source)
-        .order_by(sa_func.count().desc(), WebDocument.source)
-    ).all()
+        .subquery()
+    )
+    doc_count = sa_func.coalesce(counts.c.cnt, 0)
+    query = sa_select(Source, doc_count).outerjoin(counts, counts.c.name == Source.name)
+    if request.args.get('active') in ('1', 'true', 'yes'):
+        query = query.where(Source.is_active.is_(True))
+    rows = session.execute(query.order_by(doc_count.desc(), Source.name)).all()
     return {"status": "success",
-            "sources": [{"source": s, "count": c} for s, c in rows if s and s.strip()]}, 200
+            "sources": [_source_dict(row, count) for row, count in rows]}, 200
+
+
+@app.route('/sources', methods=['POST', 'OPTIONS'])
+def sources_add():
+    """Add a discovery source. Body (JSON): {"name": "...", "description": "...",
+    "url": "...", "is_active": true}. Only name is required."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import Source
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or "").strip()
+    if not name:
+        return {"status": "error", "message": "name is required"}, 400
+
+    session = get_scoped_session()
+    row = Source(name=name,
+                 description=(data.get('description') or "").strip() or None,
+                 url=(data.get('url') or "").strip() or None,
+                 is_active=bool(data.get('is_active', True)))
+    session.add(row)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("source add failed for %r", name)
+        return {"status": "error", "message": "DB error (duplicate name?)"}, 409
+
+    return {"status": "success", "source": _source_dict(row)}, 200
+
+
+@app.route('/sources/<int:source_id>', methods=['PATCH', 'OPTIONS'])
+def sources_update(source_id: int):
+    """Update a source. Renaming cascades to web_documents.source (fk_source
+    is ON UPDATE CASCADE), so all documents follow the new name atomically."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import Source
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    row = session.get(Source, source_id)
+    if row is None:
+        return {"status": "error", "message": "Source not found"}, 404
+
+    if 'name' in data:
+        name = (data.get('name') or "").strip()
+        if not name:
+            return {"status": "error", "message": "name cannot be empty"}, 400
+        row.name = name
+    if 'description' in data:
+        row.description = (data.get('description') or "").strip() or None
+    if 'url' in data:
+        row.url = (data.get('url') or "").strip() or None
+    if 'is_active' in data:
+        row.is_active = bool(data.get('is_active'))
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("source update failed for %s", source_id)
+        return {"status": "error", "message": "DB error (duplicate name?)"}, 409
+
+    return {"status": "success", "source": _source_dict(row, _source_doc_count(session, row.name))}, 200
+
+
+@app.route('/sources/<int:source_id>', methods=['DELETE', 'OPTIONS'])
+def sources_delete(source_id: int):
+    """Delete an unused source. Sources with documents return 409 — deactivate
+    them instead (is_active=false) so document history stays intact."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import Source
+
+    session = get_scoped_session()
+    row = session.get(Source, source_id)
+    if row is None:
+        return {"status": "error", "message": "Source not found"}, 404
+    used_by = _source_doc_count(session, row.name)
+    if used_by > 0:
+        return {"status": "error",
+                "message": f"Source is used by {used_by} documents — deactivate it instead"}, 409
+    try:
+        session.delete(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("source delete failed for %s", source_id)
+        return {"status": "error", "message": "DB error"}, 500
+    return {"status": "success", "deleted_id": source_id}, 200
 
 
 def _exclusion_dict(row):

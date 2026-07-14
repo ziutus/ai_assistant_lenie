@@ -33,7 +33,8 @@ database/
     ├── 24-create-ner-exclusions.sql              # ner_exclusions (NER false-positive suppressions)
     ├── 25-create-infra-geometries.sql            # infra_geometries (Overpass pipeline-route cache)
     ├── 26-create-document-references.sql         # document_references (book footnotes extracted from text_md)
-    └── 27-create-document-events.sql             # document_events (LLM-extracted document timeline)
+    ├── 27-create-document-events.sql             # document_events (LLM-extracted document timeline)
+    └── 28-create-sources.sql                     # sources lookup + fk_source on web_documents.source
 ```
 
 ## How Init Scripts Are Used
@@ -68,7 +69,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `summary_english` | `text` | English translation of summary |
 | `language` | `varchar(10)` | Detected language code |
 | `tags` | `text` | Comma-separated tags |
-| `source` | `text` | Content source identifier |
+| `source` | `text` | Discovery source (how the user found the document) — FK → `sources.name` (`fk_source`, `ON UPDATE CASCADE`); unknown values are auto-created by the ORM `before_flush` hook |
 | `author` | `text` | Document author |
 | `note` | `text` | User notes |
 | `paywall` | `boolean` | Whether content is behind a paywall (default: false) |
@@ -282,6 +283,18 @@ NER false-positive suppression dictionary, applied in `library/entity_service.py
 | `created_at` | `timestamp` | Row creation timestamp |
 
 **Indexes:** unique on `(LOWER(entity_text), entity_type, scope, COALESCE(LOWER(author), ''))`.
+
+### Table: `public.sources`
+
+Discovery-source lookup — how the user found a document (`own`, a newsletter, a friend); a recommendation channel, NOT the content author. `web_documents.source` references `name` (ADR-010) with `ON UPDATE CASCADE`, so renaming a source rewrites all documents atomically; deletes are restricted (API allows DELETE only when no documents use the source — deactivate instead). Managed via `GET/POST /sources`, `PATCH/DELETE /sources/<id>` and the React `/sources` page; the Chrome extension loads the active list and can add new sources. Unknown values arriving through any ORM write path (imports, feeds, DynamoDB sync) are auto-created by the `before_flush` hook in `library/db/models.py`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `name` | `varchar UNIQUE NOT NULL` | Source name (FK target of `web_documents.source`) |
+| `description` | `text` | Optional human note (what the source is) |
+| `url` | `text` | Optional source website |
+| `is_active` | `boolean NOT NULL DEFAULT TRUE` | Inactive sources stay valid on existing documents but disappear from pickers (`GET /sources?active=1`) |
 
 Reader identity and API key tables (`users`, `user_reading_progress`, `user_document_notes`, `api_keys` — init scripts 19-20) are out of scope for this section; see `library/reader_routes.py`, `library/auth.py` and `library/db/models.py` for their definitions.
 
