@@ -694,8 +694,9 @@ def person_alias_add(person_id: int):
         logging.exception("alias add failed for person %s", person_id)
         return {"status": "error", "message": "DB error"}, 500
 
-    return {"status": "success", "person_id": person_id, "added": added,
-            "aliases": [a.alias for a in person.aliases]}, 200
+    # jsonify enforces Content-Type: application/json (CodeQL py/reflective-xss)
+    return jsonify({"status": "success", "person_id": person_id, "added": added,
+                    "aliases": [a.alias for a in person.aliases]}), 200
 
 
 @app.route('/website_entities/<int:entity_id>', methods=['DELETE', 'OPTIONS'])
@@ -735,9 +736,9 @@ def website_entities_delete(entity_id: int):
         logging.exception("entity delete failed for entity %s", entity_id)
         return {"status": "error", "message": "DB error"}, 500
 
-    return {"status": "success", "deleted_entity_id": entity_id,
-            "person_link_removed": link_result is not None,
-            "person_deleted": bool(link_result and link_result.get("person_deleted"))}, 200
+    return jsonify({"status": "success", "deleted_entity_id": entity_id,
+                    "person_link_removed": link_result is not None,
+                    "person_deleted": bool(link_result and link_result.get("person_deleted"))}), 200
 
 
 @app.route('/tags', methods=['GET'])
@@ -828,7 +829,8 @@ def sources_add():
         logging.exception("source add failed for %r", name)
         return {"status": "error", "message": "DB error (duplicate name?)"}, 409
 
-    return {"status": "success", "source": _source_dict(row)}, 200
+    # jsonify enforces Content-Type: application/json (CodeQL py/reflective-xss)
+    return jsonify({"status": "success", "source": _source_dict(row)}), 200
 
 
 @app.route('/sources/<int:source_id>', methods=['PATCH', 'OPTIONS'])
@@ -865,7 +867,8 @@ def sources_update(source_id: int):
         logging.exception("source update failed for %s", source_id)
         return {"status": "error", "message": "DB error (duplicate name?)"}, 409
 
-    return {"status": "success", "source": _source_dict(row, _source_doc_count(session, row.name))}, 200
+    return jsonify({"status": "success",
+                    "source": _source_dict(row, _source_doc_count(session, row.name))}), 200
 
 
 @app.route('/sources/<int:source_id>', methods=['DELETE', 'OPTIONS'])
@@ -883,8 +886,8 @@ def sources_delete(source_id: int):
         return {"status": "error", "message": "Source not found"}, 404
     used_by = _source_doc_count(session, row.name)
     if used_by > 0:
-        return {"status": "error",
-                "message": f"Source is used by {used_by} documents — deactivate it instead"}, 409
+        return jsonify({"status": "error",
+                        "message": f"Source is used by {used_by} documents — deactivate it instead"}), 409
     try:
         session.delete(row)
         session.commit()
@@ -892,7 +895,7 @@ def sources_delete(source_id: int):
         session.rollback()
         logging.exception("source delete failed for %s", source_id)
         return {"status": "error", "message": "DB error"}, 500
-    return {"status": "success", "deleted_id": source_id}, 200
+    return jsonify({"status": "success", "deleted_id": source_id}), 200
 
 
 def _exclusion_dict(row):
@@ -985,7 +988,7 @@ def ner_exclusions_delete(exclusion_id: int):
         session.rollback()
         logging.exception("ner_exclusion delete failed for %s", exclusion_id)
         return {"status": "error", "message": "DB error"}, 500
-    return {"status": "success", "deleted_id": exclusion_id}, 200
+    return jsonify({"status": "success", "deleted_id": exclusion_id}), 200
 
 
 @app.route('/website_get_next_to_correct', methods=['GET'])
