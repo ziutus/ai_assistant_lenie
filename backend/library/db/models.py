@@ -24,6 +24,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
     func,
     select,
     text as sa_text,
@@ -143,6 +144,46 @@ class EmbeddingModel(Base):
         return f"EmbeddingModel(id={self.id!r}, name={self.name!r})"
 
 
+class Source(Base):
+    """Discovery source lookup — how the user found a document (NOT its author).
+
+    web_documents.source references name (ADR-010) with ON UPDATE CASCADE, so
+    renaming a source here rewrites all documents atomically. Deactivated
+    sources stay valid on existing documents but disappear from pickers
+    (GET /sources?active=1).
+    """
+
+    __tablename__ = "sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    url: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+
+    @classmethod
+    def ensure(cls, session: Session, name: str) -> "Source | None":
+        """Return the source row for ``name``, creating it if missing.
+
+        Single get-or-create used by the before_flush hook and POST /sources —
+        any write path may introduce a new source without violating fk_source.
+        """
+        name = (name or "").strip()
+        if not name:
+            return None
+        existing = session.execute(
+            select(cls).where(cls.name == name)
+        ).scalar_one_or_none()
+        if existing is not None:
+            return existing
+        row = cls(name=name)
+        session.add(row)
+        return row
+
+    def __repr__(self) -> str:
+        return f"Source(id={self.id!r}, name={self.name!r}, is_active={self.is_active!r})"
+
+
 # ---------------------------------------------------------------------------
 # WebDocument — Single Table Inheritance on web_documents
 # ---------------------------------------------------------------------------
@@ -173,7 +214,9 @@ class WebDocument(Base):
 
     # How the user discovered this content (e.g. "own", "unknow.news", "friend").
     # Used to evaluate recommendation source quality over time — NOT who created the content.
-    source: Mapped[str | None] = mapped_column(Text)
+    # FK by name (ADR-010); unknown values are auto-created in `sources` by the
+    # before_flush hook at the bottom of this module.
+    source: Mapped[str | None] = mapped_column(Text, ForeignKey("sources.name"))
     date_from: Mapped[datetime.date | None] = mapped_column(Date)
     original_id: Mapped[str | None] = mapped_column(Text)
     document_length: Mapped[int | None] = mapped_column(Integer)
@@ -1130,3 +1173,35 @@ class ApiKey(Base):
 
     def __repr__(self) -> str:
         return f"ApiKey(id={self.id!r}, kind={self.kind!r}, name={self.name!r}, active={self.active!r})"
+
+
+# ---------------------------------------------------------------------------
+# Session events
+# ---------------------------------------------------------------------------
+
+
+@event.listens_for(Session, "before_flush")
+def _ensure_document_sources_exist(session: Session, flush_context, instances) -> None:
+    """Auto-create `sources` rows for WebDocument.source values (fk_source).
+
+    Single choke point for every ORM write path (server endpoints, imports,
+    feed monitor, DynamoDB sync, e-mail import): an unknown discovery source
+    becomes a new active `sources` row instead of an IntegrityError. The
+    unit of work inserts `sources` before `web_documents` (FK dependency).
+    """
+    seen: set[str] = set()
+    for obj in list(session.new) + list(session.dirty):
+        if not isinstance(obj, WebDocument):
+            continue
+        name = (obj.source or "").strip()
+        if not name:
+            # Whitespace-only values would violate fk_source — store NULL.
+            if obj.source is not None:
+                obj.source = None
+            continue
+        if obj.source != name:
+            obj.source = name
+        if name in seen:
+            continue
+        seen.add(name)
+        Source.ensure(session, name)

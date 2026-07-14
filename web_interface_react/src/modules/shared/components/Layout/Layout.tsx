@@ -99,6 +99,14 @@ const SideNavigation = ({ isMenuOpen, toggleMenu }: SideNavigationProps) => {
           Persons Review
         </NavLink>
         <NavLink
+          to="/sources"
+          className={({ isActive }) =>
+            isActive ? classes.activeLink : classes.link
+          }
+        >
+          Sources
+        </NavLink>
+        <NavLink
           to="/upload-file"
           className={({ isActive }) =>
             isActive ? classes.activeLink : classes.link

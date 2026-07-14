@@ -59,6 +59,51 @@ const LanguageSelect = ({ formik, isLoading }: { formik: any; isLoading: boolean
   );
 };
 
+// Active sources from GET /sources?active=1; the current value stays visible
+// even when it is deactivated/legacy (extra option), and "inne…" allows a free
+// value — the backend auto-creates unknown sources on save.
+const SourceSelect = ({ formik, isLoading, sources }: { formik: any; isLoading: boolean; sources: string[] }) => {
+  const value: string = formik.values.source ?? "";
+  const [custom, setCustom] = React.useState(false);
+  const knownValue = value === "" || sources.includes(value);
+  return (
+    <>
+      <Select
+        disabled={isLoading}
+        value={custom ? "__other__" : value}
+        label={"Source"}
+        id={"source-select"}
+        onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+          if (e.target.value === "__other__") {
+            setCustom(true);
+            return;
+          }
+          setCustom(false);
+          formik.setFieldValue("source", e.target.value);
+        }}
+      >
+        <option value="">—</option>
+        {sources.map((s) => (
+          <option key={s} value={s}>{s}</option>
+        ))}
+        {!knownValue && !custom && <option value={value}>{value}</option>}
+        <option value="__other__">inne…</option>
+      </Select>
+      {custom && (
+        <Input
+          disabled={isLoading}
+          value={value}
+          label={"Source (nowe źródło — zostanie utworzone przy zapisie)"}
+          onChange={formik.handleChange}
+          id={"source"}
+          name={"source"}
+          type={"text"}
+        />
+      )}
+    </>
+  );
+};
+
 const SharedInputs = ({
   formik,
   isLoading,
@@ -75,8 +120,8 @@ const SharedInputs = ({
     axios.get(`${apiUrl}/tags`, { headers })
       .then((r) => setTagSuggestions((r.data.tags ?? []).map((t: any) => t.tag)))
       .catch(() => undefined);
-    axios.get(`${apiUrl}/sources`, { headers })
-      .then((r) => setSourceSuggestions((r.data.sources ?? []).map((s: any) => s.source)))
+    axios.get(`${apiUrl}/sources?active=1`, { headers })
+      .then((r) => setSourceSuggestions((r.data.sources ?? []).map((s: any) => s.name ?? s.source)))
       .catch(() => undefined);
   }, [apiUrl, apiKey]);
 
@@ -146,23 +191,7 @@ const SharedInputs = ({
           Next To review
         </button>
       </div>
-      <Input
-        disabled={isLoading}
-        value={formik.values.source}
-        label={"Source"}
-        onChange={formik.handleChange}
-        id={"source"}
-        name={"source"}
-        type={"text"}
-        list={"source-suggestions"}
-      />
-      {sourceSuggestions.length > 0 && (
-        <datalist id="source-suggestions">
-          {sourceSuggestions.map((s) => (
-            <option key={s} value={s} />
-          ))}
-        </datalist>
-      )}
+      <SourceSelect formik={formik} isLoading={isLoading} sources={sourceSuggestions} />
       <LanguageSelect formik={formik} isLoading={isLoading} />
       {formik.values.document_state_error && (
         <div>

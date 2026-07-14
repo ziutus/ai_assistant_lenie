@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).
 
+## [1.0.24] - 2026-07-14
+### Dodane
+- Lista źródeł (Source) pobierana dynamicznie z backendu (`GET /sources?active=1`) zamiast 4 zaszytych opcji; zaszyte opcje pozostają jako fallback offline (dodatkowo cache w `chrome.storage.local`)
+- Opcja „+ Dodaj nowe źródło…" w dropdownie — tworzy źródło przez `POST /sources`
+- Zapamiętywanie ostatnio wybranego źródła (`chrome.storage.sync.lastSource`)
+
 ## [1.0.23] - 2026-02-20
 ### Zmienione
 - Zaktualizowano domyślny URL endpointu API na skonsolidowaną bramkę api-gw-app (endpoint /url_add przeniesiony do głównej bramki)
