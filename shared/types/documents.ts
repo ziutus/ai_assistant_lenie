@@ -42,6 +42,17 @@ export const emptyDocument: WebDocument = {
   previous_type: "",
 };
 
+// Discovery source lookup row (backend table `sources`, GET /sources).
+// `count` = number of web_documents using this source.
+export interface Source {
+  id: number;
+  name: string;
+  description: string | null;
+  url: string | null;
+  is_active: boolean;
+  count: number;
+}
+
 export interface SearchResult {
   id: number;
   text: string;
