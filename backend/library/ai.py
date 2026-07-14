@@ -54,7 +54,8 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         return ai_response
     elif model in ["Bielik-11B-v2.3-Instruct", "Bielik-11B-v3.0-Instruct"]:
         from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
-        return sherlock_get_completion(query, model=model)
+        return sherlock_get_completion(query, model=model, temperature=temperature,
+                                       max_tokens=max_token_count)
     elif model.startswith("arklabs/"):
         from library.api.arklabs.arklabs_completion import arklabs_get_completion
         actual_model = model.removeprefix("arklabs/")
