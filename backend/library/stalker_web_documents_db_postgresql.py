@@ -300,6 +300,63 @@ class WebsitesDBPostgreSQL:
             for r in rows
         ]
 
+    def search_text(self, query: str, limit: int = 20, project=None) -> list[dict[str, Any]]:
+        """Return documents matching query words in user-visible text fields.
+
+        This deliberately uses portable ILIKE predicates instead of requiring a
+        PostgreSQL text-search migration. Ranking/merging with vector results is
+        handled by SearchService. Short words (for example Polish prepositions)
+        do not restrict token matching.
+        """
+        query = (query or "").strip()
+        if not query:
+            return []
+
+        tokens = list(dict.fromkeys(word for word in query.split() if len(word) >= 3))
+        searchable = func.concat_ws(
+            " ",
+            func.coalesce(WebDocument.title, ""),
+            func.coalesce(WebDocument.tags, ""),
+            func.coalesce(WebDocument.note, ""),
+            func.coalesce(WebDocument.text, ""),
+        )
+        phrase = f"%{query}%"
+        conditions = [WebDocument.title.ilike(phrase), searchable.ilike(phrase)]
+        if tokens:
+            conditions.append(and_(*(searchable.ilike(f"%{token}%") for token in tokens)))
+
+        stmt = (
+            select(WebDocument)
+            .where(or_(*conditions))
+            .order_by(WebDocument.created_at.desc(), WebDocument.id.desc())
+            .limit(limit)
+        )
+        if project:
+            stmt = stmt.where(WebDocument.project == project)
+
+        documents = self.session.scalars(stmt).all()
+        return [
+            {
+                "website_id": doc.id,
+                "text": (doc.text or "")[:1000],
+                "similarity": 0.0,
+                "id": None,
+                "url": doc.url,
+                "language": doc.language,
+                "text_original": (doc.text or "")[:1000],
+                "websites_text_length": len(doc.text or ""),
+                "embeddings_text_length": 0,
+                "title": doc.title,
+                "document_type": doc.document_type,
+                "project": doc.project,
+                "chunk_id": None,
+                "obsidian_note_paths": doc.obsidian_note_paths or [],
+                "tags": doc.tags,
+                "note": doc.note,
+            }
+            for doc in documents
+        ]
+
     # ------------------------------------------------------------------
     # Embedding CRUD
     # ------------------------------------------------------------------
@@ -328,12 +385,10 @@ class WebsitesDBPostgreSQL:
     # ------------------------------------------------------------------
 
     def get_documents_needing_embedding(self, embedding_model: str) -> list[int]:
-        # Documents in READY_FOR_EMBEDDING state
-        stmt1 = select(WebDocument.id).where(
-            WebDocument.document_state == StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
-        )
-        # Documents in EMBEDDING_EXIST state missing embedding for this model
-        stmt2 = (
+        # Only states which explicitly declare content ready for indexing are
+        # processed automatically. DOCUMENT_INTO_DATABASE may still be waiting
+        # for chunk review; closing that review starts indexing directly.
+        stmt = (
             select(WebDocument.id)
             .outerjoin(
                 WebsiteEmbedding,
@@ -343,11 +398,23 @@ class WebsitesDBPostgreSQL:
                 ),
             )
             .where(
-                WebDocument.document_state == StalkerDocumentStatus.EMBEDDING_EXIST.name,
                 WebsiteEmbedding.website_id.is_(None),
+                WebDocument.document_state.in_([
+                    StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
+                    StalkerDocumentStatus.EMBEDDING_EXIST.name,
+                    StalkerDocumentStatus.MD_SIMPLIFIED.name,
+                ]),
+                or_(
+                    func.length(func.coalesce(WebDocument.text_md, "")) > 0,
+                    func.length(func.coalesce(WebDocument.text, "")) > 0,
+                    and_(
+                        WebDocument.document_type == StalkerDocumentType.link.name,
+                        func.length(func.coalesce(WebDocument.title, "")) > 0,
+                    ),
+                ),
             )
+            .order_by(WebDocument.id)
         )
-        stmt = union(stmt1, stmt2).order_by(column("id"))
         rows = self.session.execute(stmt).all()
         return [row[0] for row in rows]
 

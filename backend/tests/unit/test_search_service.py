@@ -109,14 +109,17 @@ class TestSearchSimilar:
         service = SearchService(session)
 
         expected_results = [{"website_id": 1, "similarity": 0.9}]
-        with patch.object(service.repo, "get_similar", return_value=expected_results) as mock_similar:
+        with patch.object(service.repo, "search_text", return_value=[]), \
+             patch.object(service.repo, "get_similar", return_value=expected_results) as mock_similar:
             result = service.search_similar("test query")
 
-        assert result == expected_results
+        assert result[0]["website_id"] == 1
+        assert result[0]["similarity"] == 0.9
+        assert result[0]["search_match"] == "semantic"
         mock_similar.assert_called_once_with(
             [0.1, 0.2, 0.3],
             "text-embedding-ada-002",
-            limit=3,
+            limit=20,
             project=None,
         )
 
@@ -171,7 +174,7 @@ class TestSearchSimilar:
         mock_similar.assert_called_once_with(
             [0.1, 0.2, 0.3],
             "text-embedding-ada-002",
-            limit=10,
+            limit=50,
             project=None,
         )
 
@@ -194,7 +197,7 @@ class TestSearchSimilar:
         mock_similar.assert_called_once_with(
             [0.1, 0.2, 0.3],
             "text-embedding-ada-002",
-            limit=3,
+            limit=20,
             project="my-project",
         )
 
@@ -215,3 +218,26 @@ class TestSearchSimilar:
             result = service.search_similar("obscure query")
 
         assert result == []
+
+    @patch("library.search_service.embedding.get_embedding")
+    @patch("library.search_service.load_config")
+    def test_exact_title_is_returned_without_document_embedding(self, mock_config, mock_get_embedding):
+        cfg = MagicMock()
+        cfg.require.return_value = "test-model"
+        mock_config.return_value = cfg
+        mock_get_embedding.return_value = _make_embedding_result(status="error", embedding=[])
+        service = SearchService(_make_session())
+        lexical = [{
+            "website_id": 9242,
+            "title": "Wojna w Ukrainie. Rosyjscy szpiedzy przenieśli działalność do Japonii",
+            "text": "Artykuł o rosyjskich agentach w Japonii.",
+            "similarity": 0.0,
+        }]
+        with patch.object(service.repo, "search_text", return_value=lexical), \
+             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
+            result = service.search_similar("Rosyjscy szpiedzy w Japonii", limit=10)
+
+        assert result[0]["website_id"] == 9242
+        assert result[0]["search_match"] == "text"
+        assert result[0]["similarity"] > 0.5
+        mock_similar.assert_not_called()
