@@ -1293,6 +1293,59 @@ def update_chunk(chunk_id: int):
 # API: POST /chunk/<chunk_id>/execute_split
 # ---------------------------------------------------------------------------
 
+@bp.route("/chunk/<int:chunk_id>", methods=["DELETE"])
+def delete_noise_chunk(chunk_id: int):
+    """Delete a REKLAMA/SZUM chunk from a run and close the position gap.
+
+    This intentionally does not modify the source document. TEMAT chunks must
+    be reclassified first, which protects substantive content from accidental
+    deletion through the compact card action.
+    """
+    session = get_scoped_session()
+    chunk = session.get(DocumentChunk, chunk_id)
+    if chunk is None:
+        abort(404, f"Chunk {chunk_id} not found")
+    if chunk.type == "TEMAT":
+        return jsonify({"status": "error", "message": "TEMAT chunks cannot be deleted"}), 400
+
+    run_id = chunk.run_id
+    removed_position = chunk.position
+    sections = session.scalars(
+        select(DocumentTopicSection).where(DocumentTopicSection.run_id == run_id)
+    ).all()
+    for section in sections:
+        section.chunk_positions = [
+            pos - 1 if pos > removed_position else pos
+            for pos in (section.chunk_positions or [])
+            if pos != removed_position
+        ]
+
+    try:
+        session.delete(chunk)
+        session.flush()
+        # Two-phase shift avoids collisions with a possible unique(run, position).
+        session.execute(
+            sa_update(DocumentChunk)
+            .where(DocumentChunk.run_id == run_id, DocumentChunk.position > removed_position)
+            .values(position=DocumentChunk.position + 10000)
+        )
+        session.execute(
+            sa_update(DocumentChunk)
+            .where(DocumentChunk.run_id == run_id, DocumentChunk.position > 10000)
+            .values(position=DocumentChunk.position - 10001)
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to delete noise chunk %d", chunk_id)
+        return jsonify({"status": "error", "message": "DB error"}), 500
+
+    return jsonify({
+        "status": "success", "deleted_chunk_id": chunk_id,
+        "run_id": run_id, "removed_position": removed_position,
+    })
+
+
 @bp.route("/chunk/<int:chunk_id>/execute_split", methods=["POST"])
 def execute_split(chunk_id: int):
     """Split a chunk into two.
