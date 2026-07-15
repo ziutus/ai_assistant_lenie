@@ -39,6 +39,7 @@ def _make_note(**overrides) -> UserDocumentNote:
         anchor_prefix="poprzedzający tekst",
         anchor_suffix="następujący tekst",
         note_text="moja reakcja",
+        tags=[],
         stance="agree",
     )
     note.id = 501

@@ -11,12 +11,6 @@ export const useSearch = ({ callback }: { callback: () => void }) => {
   const [results, setResults] = React.useState<any[] | null>(null);
   const [searchSimilar, setSearchSimilar] = React.useState('');
 
-  React.useEffect(() => {
-    handleSearchSimilar().then(() => null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-
   const handleSearchSimilar = async (search?: string, searchLimit?: string, translate?: boolean) => {
     setIsLoading(true);
     console.log("searching: " + search)

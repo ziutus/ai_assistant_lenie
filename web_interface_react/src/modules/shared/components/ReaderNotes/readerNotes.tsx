@@ -22,6 +22,7 @@ export interface UserNote {
   run_id: number | null;
   chunk_id: number | null;
   note_text: string;
+  tags: string[];
   stance: string | null;
   created_at: string | null;
   updated_at: string | null;
@@ -156,6 +157,7 @@ export interface NotesApi {
     run_id?: number | null;
     chunk_id?: number | null;
     note_text: string;
+    tags?: string[];
     stance: string | null;
   }) => Promise<boolean>;
   saveNoteText: (noteId: number, text: string) => Promise<boolean>;
@@ -245,10 +247,12 @@ export function pendingNoteFromSelection(blockSelector = "p"): PendingNote | nul
 
 export const NotePopover: React.FC<{
   pending: PendingNote;
-  onSave: (noteText: string, stance: string | null) => void;
+  onSave: (noteText: string, stance: string | null, tags: string[]) => void;
+  onSearch?: (quote: string) => void;
   onCancel: () => void;
-}> = ({ pending, onSave, onCancel }) => {
+}> = ({ pending, onSave, onSearch, onCancel }) => {
   const [noteText, setNoteText] = React.useState("");
+  const [tagText, setTagText] = React.useState("");
   const [stance, setStance] = React.useState<string | null>(null);
   return (
     <div style={{
@@ -264,6 +268,11 @@ export const NotePopover: React.FC<{
         placeholder="Twoja notatka — co myślisz o tym fragmencie?"
         style={{ width: "100%", minHeight: 60, fontSize: "0.85em" }}
       />
+      <input
+        value={tagText} onChange={e => setTagText(e.target.value)}
+        placeholder="Tagi, np. ESSI (oddziel przecinkami)"
+        style={{ width: "100%", marginTop: 6, fontSize: "0.85em" }}
+      />
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 6 }}>
         {(["agree", "disagree", "neutral"] as const).map(s => (
           <button key={s} onClick={() => setStance(stance === s ? null : s)}
@@ -276,11 +285,18 @@ export const NotePopover: React.FC<{
           </button>
         ))}
         <span style={{ marginLeft: "auto" }}>
-          <button onClick={() => onSave(noteText.trim(), stance)} disabled={!noteText.trim()}
+          <button onClick={() => onSave(noteText.trim(), stance,
+            tagText.split(",").map(t => t.trim()).filter(Boolean))}
+            disabled={!noteText.trim() && !tagText.trim()}
             style={{ marginRight: 6 }}>Zapisz</button>
           <button onClick={onCancel}>Anuluj</button>
         </span>
       </div>
+      {onSearch && (
+        <button type="button" onClick={() => onSearch(pending.quote)} style={{ marginTop: 8, width: "100%" }}>
+          🔎 Szukaj tego fragmentu w bazie Lenie
+        </button>
+      )}
     </div>
   );
 };
@@ -307,6 +323,11 @@ export const NoteRow: React.FC<{
       <div style={{ fontStyle: "italic", color: "#94a3b8", margin: "2px 0" }}>
         „{note.anchor_quote.length > 90 ? `${note.anchor_quote.slice(0, 90)}…` : note.anchor_quote}"
       </div>
+      {(note.tags?.length ?? 0) > 0 && (
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", margin: "3px 0" }}>
+          {note.tags.map(tag => <span key={tag} style={{ color: "#0369a1" }}>#{tag}</span>)}
+        </div>
+      )}
       {editing ? (
         <div>
           <textarea value={text} onChange={e => setText(e.target.value)}

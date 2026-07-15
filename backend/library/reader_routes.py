@@ -67,6 +67,7 @@ def _note_to_dict(note: UserDocumentNote) -> dict:
         "run_id": note.run_id,
         "chunk_id": note.chunk_id,
         "note_text": note.note_text,
+        "tags": note.tags or [],
         "stance": note.stance,
         "created_at": note.created_at.isoformat() if note.created_at else None,
         "updated_at": note.updated_at.isoformat() if note.updated_at else None,
@@ -241,6 +242,19 @@ def list_notes(doc_id: int):
     })
 
 
+@bp.route("/notes", methods=["GET"])
+def search_notes():
+    """Search the current reader's tagged fragments across all documents."""
+    session = get_scoped_session()
+    user = _require_user(session)
+    tag = (request.args.get("tag") or "").strip().lower()
+    query = select(UserDocumentNote).where(UserDocumentNote.user_id == user.id)
+    if tag:
+        query = query.where(UserDocumentNote.tags.any(tag))
+    notes = session.execute(query.order_by(UserDocumentNote.updated_at.desc())).scalars().all()
+    return jsonify({"status": "success", "notes": [_note_to_dict(n) for n in notes]})
+
+
 @bp.route("/document/<int:doc_id>/notes", methods=["POST"])
 def create_note(doc_id: int):
     data = request.get_json(silent=True) or {}
@@ -248,8 +262,14 @@ def create_note(doc_id: int):
     note_text = (data.get("note_text") or "").strip()
     if not anchor_quote:
         return jsonify({"status": "error", "message": "anchor_quote is required"}), 400
-    if not note_text:
-        return jsonify({"status": "error", "message": "note_text is required"}), 400
+    raw_tags = data.get("tags") or []
+    if not isinstance(raw_tags, list):
+        return jsonify({"status": "error", "message": "tags must be a list"}), 400
+    tags = list(dict.fromkeys(str(tag).strip().lower() for tag in raw_tags if str(tag).strip()))
+    if any(len(tag) > 80 for tag in tags) or len(tags) > 20:
+        return jsonify({"status": "error", "message": "at most 20 tags, each up to 80 characters"}), 400
+    if not note_text and not tags:
+        return jsonify({"status": "error", "message": "note_text or tags are required"}), 400
     stance = data.get("stance")
     if stance is not None and stance not in ALLOWED_STANCES:
         return jsonify({
@@ -272,6 +292,7 @@ def create_note(doc_id: int):
         run_id=data.get("run_id"),
         chunk_id=data.get("chunk_id"),
         note_text=note_text,
+        tags=tags,
         stance=stance,
     )
     session.add(note)
