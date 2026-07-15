@@ -220,9 +220,14 @@ def process_article_content(doc_id: int, cache_base_dir: str,
 
     if article:
         print(f"  Process: LLM OK ({len(article)} chars)")
+        from library.article_metadata import extract_article_author
+
         cleaned = clean_article_text(article, doc.url)
         doc.text_extracted = article
         doc.text_md = cleaned["text"]
+        if not doc.author:
+            with open(html_file, encoding="utf-8") as f:
+                doc.author = extract_article_author(f.read(), doc.url)
         try:
             session.commit()
             print(f"  Process: saved text_extracted/text_md ({len(cleaned['text'])} chars cleaned)")
