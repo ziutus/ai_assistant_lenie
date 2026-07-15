@@ -321,6 +321,7 @@ const Read: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [chapters, setChapters] = React.useState<Chapter[]>([]);
+  const [readerCompact, setReaderCompact] = React.useState(false);
   const [documentType, setDocumentType] = React.useState<string | null>(null);
   const [countries, setCountries] = React.useState<CountryTag[]>([]);
   const [places, setPlaces] = React.useState<PlaceMarker[]>([]);
@@ -373,17 +374,24 @@ const Read: React.FC = () => {
   const [tagQuery, setTagQuery] = React.useState("");
   const [tagResults, setTagResults] = React.useState<UserNote[]>([]);
 
-  const position = Number(searchParams.get("chapter") ?? 1);
+  const requestedPosition = Number(searchParams.get("chapter") ?? 1);
+  const position = readerCompact ? 1 : requestedPosition;
 
   // ── Data loading ──
 
   React.useEffect(() => {
     (async () => {
       try {
-        const r = await fetch(`${apiUrl}/document/${id}/chapters`, { headers });
+        const r = await fetch(`${apiUrl}/document/${id}/chapters?reader=1`, { headers });
         const data = await r.json();
         if (data.status !== "success") throw new Error(data.message ?? "Błąd pobierania rozdziałów");
         setChapters(data.chapters ?? []);
+        setReaderCompact(data.reader_compact === true);
+        if (data.reader_compact === true && requestedPosition !== 1) {
+          const next = new URLSearchParams(searchParams);
+          next.set("chapter", "1");
+          setSearchParams(next, { replace: true });
+        }
         setDocumentType(data.document_type ?? null);
         setCountries(data.countries ?? []);
         setThematicTags(data.thematic_tags ?? []);
@@ -442,7 +450,7 @@ const Read: React.FC = () => {
     setChapterScopeLoading(true);
     (async () => {
       try {
-        const r = await fetch(`${apiUrl}/document/${id}/chapter/${position}/entities`, { headers });
+        const r = await fetch(`${apiUrl}/document/${id}/chapter/${position}/entities?reader=1`, { headers });
         const data = await r.json();
         if (requestId !== chapterScopeRequestId.current) return;
         if (data.status !== "success") { setChapterScope(null); return; }
@@ -510,7 +518,7 @@ const Read: React.FC = () => {
       setError(null);
       setPendingNote(null);
       try {
-        const r = await fetch(`${apiUrl}/document/${id}/chapter/${position}`, { headers });
+        const r = await fetch(`${apiUrl}/document/${id}/chapter/${position}?reader=1`, { headers });
         const data = await r.json();
         if (requestId !== contentRequestId.current) return;
         if (data.status !== "success") throw new Error(data.message ?? "Błąd pobierania rozdziału");
@@ -672,7 +680,10 @@ const Read: React.FC = () => {
   // ── Derived ──
 
   const chapterNotes = React.useMemo(
-    () => notes.filter(n => n.chapter_position === position), [notes, position]);
+    () => content?.chapter_total === 1
+      ? notes
+      : notes.filter(n => n.chapter_position === position),
+    [notes, position, content?.chapter_total]);
 
   // footnotes by marker — for ¹⁸ tooltips/anchors in the text
   const referencesByMarker = React.useMemo(
@@ -705,7 +716,7 @@ const Read: React.FC = () => {
 
   // ── Render ──
 
-  const navButtons = content && (
+  const navButtons = content && content.chapter_total > 1 && (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, margin: "18px 0" }}>
       <button onClick={() => goTo(content.prev)} disabled={!content.prev}
         style={{ padding: "6px 14px", cursor: content.prev ? "pointer" : "default" }}>
@@ -730,7 +741,7 @@ const Read: React.FC = () => {
         {n.chapter_position === position && !anchoredNoteIds.has(n.id) &&
           <span style={{ color: "#b45309" }}> ⚠ nie odnaleziono w tekście</span>}
       </>}
-      onHeaderClick={n.chapter_position ? () => goTo(n.chapter_position) : undefined}
+      onHeaderClick={n.chapter_position ? () => goTo(readerCompact ? 1 : n.chapter_position) : undefined}
       onSaveText={saveNoteText}
       onDelete={deleteNote}
     />
@@ -740,9 +751,11 @@ const Read: React.FC = () => {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Czytelnik — dokument #{id}</h2>
-        <button className={styles.tocToggleButton} onClick={() => setTocOpen(o => !o)}>
-          📑 Spis treści ({chapters.length})
-        </button>
+        {chapters.length > 1 && (
+          <button className={styles.tocToggleButton} onClick={() => setTocOpen(o => !o)}>
+            📑 Spis treści ({chapters.length})
+          </button>
+        )}
         {documentType && EDITOR_TYPES.has(documentType) && (
           <NavLink to={`/${documentType}/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>✏️ Edytuj</NavLink>
         )}
@@ -761,7 +774,7 @@ const Read: React.FC = () => {
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
         {/* TOC sidebar + notes */}
         <div className={`${styles.tocPanel} ${tocOpen ? styles.tocPanelOpen : ""}`}>
-          <nav style={{
+          {chapters.length > 1 && <nav style={{
             background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 0",
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 14px" }}>
@@ -793,7 +806,7 @@ const Read: React.FC = () => {
                 </div>
               );
             })}
-          </nav>
+          </nav>}
 
           {userId && notes.length > 0 && (
             <div style={{
