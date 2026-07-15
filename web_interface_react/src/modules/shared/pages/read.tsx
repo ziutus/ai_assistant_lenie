@@ -351,6 +351,8 @@ const Read: React.FC = () => {
   const { userId, headers, jsonHeaders } = identity;
   const { notes, createNote, saveNoteText, deleteNote } = useUserNotes(apiUrl, id, identity);
   const [pendingNote, setPendingNote] = React.useState<PendingNote | null>(null);
+  const [tagQuery, setTagQuery] = React.useState("");
+  const [tagResults, setTagResults] = React.useState<UserNote[]>([]);
 
   const position = Number(searchParams.get("chapter") ?? 1);
 
@@ -600,23 +602,40 @@ const Read: React.FC = () => {
     goTo(content.next);
   };
 
-  const onTextSelected = () => {
+  const onTextContextMenu = (event: React.MouseEvent<HTMLElement>) => {
     if (!userId) return;
     const pending = pendingNoteFromSelection("p");
-    if (pending) setPendingNote(pending);
+    if (pending) {
+      event.preventDefault();
+      setPendingNote({ ...pending, x: event.pageX, y: event.pageY });
+    }
   };
 
-  const saveNote = async (noteText: string, stance: string | null) => {
-    if (!pendingNote || !noteText) return;
+  const saveNote = async (noteText: string, stance: string | null, tags: string[]) => {
+    if (!pendingNote || (!noteText && tags.length === 0)) return;
     const ok = await createNote({
       anchor_quote: pendingNote.quote,
       anchor_prefix: pendingNote.prefix,
       anchor_suffix: pendingNote.suffix,
       chapter_position: position,
       note_text: noteText,
+      tags,
       stance,
     });
     if (ok) setPendingNote(null);
+  };
+
+  const searchSelectedQuote = (quote: string) => {
+    window.open(`/search?q=${encodeURIComponent(quote)}`, "_blank", "noopener,noreferrer");
+    setPendingNote(null);
+  };
+
+  const searchByTag = async (tag: string) => {
+    const normalized = tag.trim().toLowerCase().replace(/^#/, "");
+    if (!normalized) { setTagResults([]); return; }
+    const r = await fetch(`${apiUrl}/notes?tag=${encodeURIComponent(normalized)}`, { headers });
+    const data = await r.json();
+    setTagResults(data.status === "success" ? (data.notes ?? []) : []);
   };
 
   // ── Derived ──
@@ -754,6 +773,33 @@ const Read: React.FC = () => {
               {notes.map(renderNoteRow)}
             </div>
           )}
+
+          {userId && (
+            <div style={{
+              background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
+              marginTop: 12, padding: 10,
+            }}>
+              <strong style={{ fontSize: "0.85em" }}>🏷️ Szukaj po tagu</strong>
+              <form onSubmit={e => { e.preventDefault(); void searchByTag(tagQuery); }}
+                style={{ display: "flex", gap: 4, marginTop: 7 }}>
+                <input value={tagQuery} onChange={e => setTagQuery(e.target.value)}
+                  placeholder="np. ESSI" style={{ minWidth: 0, flex: 1 }} />
+                <button type="submit">Szukaj</button>
+              </form>
+              {tagResults.map(n => (
+                <NavLink key={n.id}
+                  to={`/read/${n.document_id}?chapter=${n.chapter_position ?? 1}&highlight=${encodeURIComponent(n.anchor_quote)}`}
+                  style={{ display: "block", fontSize: "0.78em", marginTop: 7, color: "#0369a1" }}>
+                  dokument #{n.document_id}, rozdz. {n.chapter_position ?? "?"}: {n.anchor_quote.slice(0, 70)}
+                </NavLink>
+              ))}
+              {tagQuery && tagResults.length === 0 && (
+                <div style={{ color: "#94a3b8", fontSize: "0.75em", marginTop: 6 }}>
+                  Wpisz tag i wybierz „Szukaj”.
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Chapter content — fixed reading width, does not grow to soak up wide-screen space.
@@ -788,7 +834,7 @@ const Read: React.FC = () => {
           )}
           {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
           {!loading && content && (
-            <article style={{ fontSize: "1.02em" }} onMouseUp={onTextSelected}>
+            <article style={{ fontSize: "1.02em" }} onContextMenu={onTextContextMenu}>
               {renderMarkdown(
                 content.text, chapterNotes, referencesByMarker, highlightTerms, timelineHighlight?.quote,
               )}
@@ -926,7 +972,8 @@ const Read: React.FC = () => {
 
       {/* Note popover */}
       {pendingNote && (
-        <NotePopover pending={pendingNote} onSave={saveNote} onCancel={() => setPendingNote(null)} />
+        <NotePopover pending={pendingNote} onSave={saveNote} onSearch={searchSelectedQuote}
+          onCancel={() => setPendingNote(null)} />
       )}
     </div>
   );

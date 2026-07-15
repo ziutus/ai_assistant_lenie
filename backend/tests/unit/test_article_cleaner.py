@@ -11,11 +11,61 @@ from library.article_cleaner import (
     _is_portal_internal_link,
     clean_article_text,
 )
+from library.article_extractor import _detect_portal, extract_article_by_markers
 
 LONG_PARAGRAPH = (
     "To jest długi akapit właściwej treści artykułu, który ma zdecydowanie ponad "
     "osiemdziesiąt znaków i powinien zostać zachowany po czyszczeniu."
 )
+
+
+class TestGazetaExtraction:
+    URL = "https://wiadomosci.gazeta.pl/swiat/7,123,artykul.html"
+
+    def test_detects_gazeta_portal(self):
+        assert _detect_portal(self.URL) == "gazeta"
+
+    def test_footer_overrides_llm_end_before_embedded_recommendation(self):
+        markdown = "\n\n".join([
+            "Pierwsze zdanie właściwego artykułu ma zdecydowanie więcej niż czterdzieści znaków.",
+            "Zdanie błędnie wskazane przez model jako koniec artykułu, choć tekst trwa dalej.",
+            "Czytaj także:",
+            "SUBSKRYPCJA",
+            "[Polecany tekst](https://wyborcza.pl/polecany)",
+            "Dalszy akapit artykułu znajdujący się za osadzoną kartą rekomendacji portalu.",
+            "- To jest prawidłowe ostatnie zdanie całego artykułu wypowiedziane przez polityka.",
+            "REKLAMA",
+            "*Źródło: PAP*",
+            "Dziękujemy za przeczytanie",
+        ])
+        markers = {
+            "article_first_sentence": "Pierwsze zdanie właściwego artykułu ma zdecydowanie więcej niż czterdzieści znaków.",
+            "article_last_sentence": "Zdanie błędnie wskazane przez model jako koniec artykułu, choć tekst trwa dalej.",
+        }
+
+        result = extract_article_by_markers(markdown, markers, url=self.URL)
+
+        assert "prawidłowe ostatnie zdanie" in result
+        assert "Źródło: PAP" not in result
+
+    def test_cleaner_removes_embedded_recommendation_but_keeps_following_text(self):
+        text = "\n\n".join([
+            LONG_PARAGRAPH,
+            "Czytaj także:",
+            "SUBSKRYPCJA",
+            "[Polecany tekst](https://wyborcza.pl/polecany)",
+            "Dalszy akapit właściwego artykułu, który znajduje się za kartą polecanego tekstu "
+            "i musi pozostać w ostatecznie oczyszczonej treści dokumentu.",
+            "*Źródło: PAP*",
+        ])
+
+        result = clean_article_text(text, url=self.URL)["text"]
+
+        assert "Dalszy akapit właściwego artykułu" in result
+        assert "Czytaj także" not in result
+        assert "SUBSKRYPCJA" not in result
+        assert "Polecany tekst" not in result
+        assert "Źródło: PAP" not in result
 
 
 class TestImageExtraction:
