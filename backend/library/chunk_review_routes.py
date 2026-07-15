@@ -360,6 +360,32 @@ def _chunk_based_chapters(run: DocumentAnalysisRun) -> list[dict]:
     ]
 
 
+# Short articles read more naturally as one continuous page. Keep their
+# detected markdown chapters for analysis/scoping, but collapse them in the
+# reader API so headings remain visible without forcing extra navigation.
+READER_COMPACT_MAX_WORDS = 1_000
+READER_COMPACT_MAX_CHARS = 10_000
+
+
+def _compact_reader_chapters(text: str, chapters: list[dict]) -> tuple[list[dict], bool]:
+    """Return a single reader chapter for a short, multi-chapter article."""
+    compact = (
+        len(chapters) > 1
+        and len(text) <= READER_COMPACT_MAX_CHARS
+        and len(text.split()) <= READER_COMPACT_MAX_WORDS
+    )
+    if not compact:
+        return chapters, False
+    return [{
+        "position": 1,
+        "level": chapters[0]["level"],
+        "title": "(całość)",
+        "char_start": 0,
+        "char_end": len(text),
+        "length": len(text),
+    }], True
+
+
 @bp.route("/document/<int:doc_id>/chapters", methods=["GET"])
 def document_chapters(doc_id: int):
     """Detect the document's table of contents.
@@ -382,6 +408,9 @@ def document_chapters(doc_id: int):
     text, field = _extract_text(doc, prefer_md=True)
     chapters = detect_chapters(text) if text else []
     source = "markdown" if chapters else "none"
+    reader_compact = False
+    if request.args.get("reader") == "1" and chapters:
+        chapters, reader_compact = _compact_reader_chapters(text, chapters)
 
     run = _latest_run_for_document(session, doc_id)
     if not chapters and run:
@@ -418,13 +447,16 @@ def document_chapters(doc_id: int):
         "text_length": len(text),
         "chapters": chapters,
         "chapter_source": source,
+        "reader_compact": reader_compact,
         "countries": countries,
         "thematic_tags": thematic_tags,
         "synthesis": doc_run.synthesis if doc_run else None,
     })
 
 
-def _resolve_chapter_text(session, doc, position: int) -> tuple[tuple[str, str, int] | None, str | None]:
+def _resolve_chapter_text(
+    session, doc, position: int, *, compact_reader: bool = False,
+) -> tuple[tuple[str, str, int] | None, str | None]:
     """Resolve one reader chapter to ((text, title, chapter_total), None).
 
     Positions are 1-based and match GET /document/<id>/chapters — markdown
@@ -440,6 +472,8 @@ def _resolve_chapter_text(session, doc, position: int) -> tuple[tuple[str, str, 
     md_chapters = detect_chapters(text) if text else []
 
     if md_chapters:
+        if compact_reader:
+            md_chapters, _reader_compact = _compact_reader_chapters(text, md_chapters)
         chapter_total = len(md_chapters)
         match = next((c for c in md_chapters if c["position"] == position), None)
         if match is None:
@@ -473,7 +507,9 @@ def document_chapter(doc_id: int, position: int):
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
-    resolved, error = _resolve_chapter_text(session, doc, position)
+    resolved, error = _resolve_chapter_text(
+        session, doc, position, compact_reader=request.args.get("reader") == "1",
+    )
     if resolved is None:
         return jsonify({"status": "error", "message": error}), 400
     chapter_text, title, chapter_total = resolved
@@ -482,15 +518,14 @@ def document_chapter(doc_id: int, position: int):
     # renders them as a "Przypisy" section at the end of the chapter
     from library.db.models import DocumentReference
 
+    reference_query = session.query(DocumentReference).filter(
+        DocumentReference.document_id == doc_id,
+    )
+    if chapter_total > 1:
+        reference_query = reference_query.filter(DocumentReference.chapter_position == position)
     references = [
         {"marker": r.marker, "text": r.ref_text, "url": r.url}
-        for r in session.query(DocumentReference)
-        .filter(
-            DocumentReference.document_id == doc_id,
-            DocumentReference.chapter_position == position,
-        )
-        .order_by(DocumentReference.id)
-        .all()
+        for r in reference_query.order_by(DocumentReference.id).all()
     ]
 
     # A run analysed with scope_chapter=position sets run.scope to the chapter
@@ -539,7 +574,9 @@ def document_chapter_entities(doc_id: int, position: int):
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
-    resolved, error = _resolve_chapter_text(session, doc, position)
+    resolved, error = _resolve_chapter_text(
+        session, doc, position, compact_reader=request.args.get("reader") == "1",
+    )
     if resolved is None:
         return jsonify({"status": "error", "message": error}), 400
     chapter_text, title, chapter_total = resolved
