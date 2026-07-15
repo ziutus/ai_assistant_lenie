@@ -24,7 +24,11 @@ COPY shared_python/unified-config-loader/ /shared_python/unified-config-loader/
 COPY backend/pyproject.toml backend/uv.lock ./
 
 # Install dependencies using uv
-RUN uv sync --frozen --extra docker --no-dev --no-install-project
+# Bump when a private registry contains a corrupted cached dependency blob.
+# Keeping the revision marker in the layer deliberately gives it a new digest.
+ARG DEPENDENCY_LAYER_REV=20260715-provenance
+RUN printf '%s\n' "$DEPENDENCY_LAYER_REV" > /app/.dependency-layer-revision && \
+    uv sync --frozen --extra docker --no-dev --no-install-project
 
 COPY backend/library ./library/
 COPY backend/data ./data/
@@ -35,7 +39,7 @@ COPY backend/server.py .
 RUN groupadd -g 1000 lenie-ai-client && \
     useradd -u 1000 -g lenie-ai-client -m lenie-ai-client && \
     mkdir -p /app/data && \
-    chown -R 1000:1000 /app
+    chown 1000:1000 /app/data
 
 # Switch to the lenie-ai-client user
 USER lenie-ai-client
