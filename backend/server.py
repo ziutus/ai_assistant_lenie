@@ -596,6 +596,149 @@ def persons_review_list():
     return {"status": "success", "count": len(entries), "entries": entries}, 200
 
 
+@app.route('/person_biographies_review', methods=['GET'])
+def person_biographies_review_list():
+    """Author biographies whose new/conflicting facts need a human decision."""
+    from library.author_biography import list_biography_review
+
+    session = get_scoped_session()
+    entries = list_biography_review(session)
+    return {"status": "success", "count": len(entries), "entries": entries}, 200
+
+
+@app.route('/person_biographies_review/<int:link_id>', methods=['PATCH', 'OPTIONS'])
+def person_biographies_review_decide(link_id: int):
+    """Approve the proposed merged description or reject the biography update."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.author_biography import decide_biography_review
+    from library.db.models import DocumentPerson
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    link = session.get(DocumentPerson, link_id)
+    if link is None:
+        return {"status": "error", "message": "Review entry not found"}, 404
+    try:
+        result = decide_biography_review(link, data.get('action'))
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 400
+    except Exception:
+        session.rollback()
+        logging.exception("biography review decision failed for link %s", link_id)
+        return {"status": "error", "message": "DB error"}, 500
+    return {"status": "success", **result}, 200
+
+
+@app.route('/information_sources', methods=['GET'])
+def information_sources_list():
+    """Search canonical information sources and return document counts."""
+    from sqlalchemy import func, or_, select
+    from library.db.models import (
+        DocumentInformationSource, InformationSource, InformationSourceAlias,
+    )
+
+    session = get_scoped_session()
+    query = (request.args.get('q') or '').strip()
+    statement = (
+        select(
+            InformationSource,
+            func.count(func.distinct(DocumentInformationSource.document_id)).label('document_count'),
+        )
+        .outerjoin(DocumentInformationSource, DocumentInformationSource.source_id == InformationSource.id)
+        .group_by(InformationSource.id)
+        .order_by(InformationSource.canonical_name)
+    )
+    if query:
+        pattern = f"%{query}%"
+        alias_match = select(InformationSourceAlias.source_id).where(
+            InformationSourceAlias.alias.ilike(pattern)
+        )
+        statement = statement.where(or_(
+            InformationSource.canonical_name.ilike(pattern),
+            InformationSource.domain.ilike(pattern),
+            InformationSource.id.in_(alias_match),
+        ))
+    rows = session.execute(statement).all()
+    entries = [{
+        "id": source.id,
+        "canonical_name": source.canonical_name,
+        "source_type": source.source_type,
+        "domain": source.domain,
+        "description": source.description,
+        "aliases": [alias.alias for alias in source.aliases],
+        "document_count": count,
+    } for source, count in rows]
+    return {"status": "success", "count": len(entries), "entries": entries}, 200
+
+
+@app.route('/information_sources/<int:source_id>/documents', methods=['GET'])
+def information_source_documents(source_id: int):
+    """Return documents attributed to one source, optionally filtered by role."""
+    from sqlalchemy import select
+    from library.db.models import DocumentInformationSource, InformationSource
+
+    session = get_scoped_session()
+    source = session.get(InformationSource, source_id)
+    if source is None:
+        return {"status": "error", "message": "Information source not found"}, 404
+    statement = select(DocumentInformationSource).where(
+        DocumentInformationSource.source_id == source_id
+    ).order_by(DocumentInformationSource.created_at.desc())
+    role = (request.args.get('role') or '').strip()
+    if role:
+        statement = statement.where(DocumentInformationSource.role == role)
+    links = session.scalars(statement).all()
+    entries = [{
+        "document_id": link.document_id,
+        "title": link.document.title,
+        "url": link.document.url,
+        "role": link.role,
+        "raw_mention": link.raw_mention,
+        "evidence_excerpt": link.evidence_excerpt,
+        "confidence": link.confidence,
+        "review_status": link.review_status,
+    } for link in links]
+    return {
+        "status": "success",
+        "source": {"id": source.id, "canonical_name": source.canonical_name, "domain": source.domain},
+        "count": len(entries),
+        "entries": entries,
+    }, 200
+
+
+@app.route('/document/<int:doc_id>/information_sources', methods=['GET'])
+def document_information_sources(doc_id: int):
+    """Return structured provenance links for a document."""
+    from sqlalchemy import select
+    from library.db.models import DocumentInformationSource
+
+    session = get_scoped_session()
+    if session.get(WebDocument, doc_id) is None:
+        return {"status": "error", "message": "Document not found"}, 404
+    links = session.scalars(select(DocumentInformationSource).where(
+        DocumentInformationSource.document_id == doc_id
+    ).order_by(DocumentInformationSource.role, DocumentInformationSource.id)).all()
+    entries = [{
+        "id": link.id,
+        "source_id": link.source_id,
+        "canonical_name": link.source.canonical_name,
+        "source_type": link.source.source_type,
+        "domain": link.source.domain,
+        "role": link.role,
+        "raw_mention": link.raw_mention,
+        "source_url": link.source_url,
+        "evidence_excerpt": link.evidence_excerpt,
+        "confidence": link.confidence,
+        "extraction_method": link.extraction_method,
+        "review_status": link.review_status,
+    } for link in links]
+    return {"status": "success", "count": len(entries), "entries": entries}, 200
+
+
 def _decide_person_link(link_id: int, require_review: bool):
     """Shared handler for person-link decisions (approve/reject/merge).
 
