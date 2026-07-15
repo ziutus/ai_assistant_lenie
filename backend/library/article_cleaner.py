@@ -224,8 +224,8 @@ def _clean_lines_money(lines: list[str]) -> list[str]:
 
 def _clean_lines_wp(lines: list[str]) -> list[str]:
     """Czyszczenie specyficzne dla wp.pl/o2.pl/tech.wp.pl."""
-    skip_exact = {"Skomentuj", "Udostępnij"}
-    skip_startswith = ("Udostępnij na X", "Dźwięk został wygenerowany",
+    skip_exact = {"Skomentuj", "Słuchaj", "Udostępnij", "Kopiuj link"}
+    skip_startswith = ("Udostępnij na ", "Dźwięk został wygenerowany",
                        "Źródło zdjęć:", "Źródło artykułu:", "oprac.")
     cleaned = []
     for line in lines:

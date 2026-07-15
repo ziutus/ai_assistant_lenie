@@ -182,3 +182,14 @@ class TestWpCleaning:
             "Treść artykułu wp.",
         ]
         assert _clean_lines_wp(lines) == ["Treść artykułu wp."]
+
+    def test_wp_audio_and_share_controls_removed(self):
+        lines = [
+            "Słuchaj",
+            "Udostępnij na Facebooku",
+            "Udostępnij na X",
+            "Udostępnij na WhatsApp",
+            "Kopiuj link",
+            "Treść artykułu wp.",
+        ]
+        assert _clean_lines_wp(lines) == ["Treść artykułu wp."]
