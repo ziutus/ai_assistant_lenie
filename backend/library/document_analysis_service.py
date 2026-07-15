@@ -297,6 +297,7 @@ class DocumentAnalysisService:
         speakers: list[dict] | None = None,
         mode: str = "transcript",
         split_only: bool = False,
+        preclean: bool = False,
         scope_chapter: int | None = None,
     ) -> DocumentAnalysisRun:
         """Create a new analysis run for an existing document and persist to DB.
@@ -314,6 +315,9 @@ class DocumentAnalysisService:
             split_only:   Split into chunks WITHOUT any LLM calls — chunks land as
                           TEMAT/pending with no topic/summary, so the user can first
                           clean lines, merge or re-split, then analyze on demand.
+            preclean:     Article-only pre-pass: LLM marks exact REKLAMA/SZUM line
+                          ranges before final chunking. The resulting lossless proposal
+                          is saved in this same run without semantic chunk analysis.
             scope_chapter: 1-based chapter position (as returned by detect_chapters /
                           GET /document/<id>/chapters) — analyze only that chapter;
                           run.scope is set to the chapter title. Article mode only.
@@ -327,7 +331,7 @@ class DocumentAnalysisService:
         """
         from library.chunk_llm_analysis import (
             analyze_article_chunk, analyze_chunk, assign_speakers,
-            extract_speaker_info, remove_speech_fillers,
+            extract_speaker_info, propose_article_cleanup, remove_speech_fillers,
         )
         from library.text_functions import split_markdown_into_chunks, split_text_into_sentence_chunks
 
@@ -336,6 +340,9 @@ class DocumentAnalysisService:
         is_transcript = mode == "transcript"
         if scope_chapter is not None and is_transcript:
             raise ValueError("scope_chapter requires article mode")
+        if preclean and is_transcript:
+            raise ValueError("preclean requires article mode")
+        proposal_only = split_only or preclean
 
         def log(msg: str) -> None:
             logger.info(msg)
@@ -413,10 +420,26 @@ class DocumentAnalysisService:
             from library.author_biography import extract_trailing_author_biography
 
             article_body, author_bio = extract_trailing_author_biography(text, getattr(doc, "author", None))
-            chunk_texts = split_markdown_into_chunks(article_body, chunk_size)
+            preclean_meta: list[tuple[str, str | None]] = []
+            if preclean:
+                log("preclean: detecting ads and noisy line ranges before final split...")
+                proposed = propose_article_cleanup(article_body, model)
+                chunk_texts = []
+                for piece in proposed:
+                    piece_chunks = (
+                        split_markdown_into_chunks(piece["text"], chunk_size)
+                        if piece["type"] == "TEMAT" else [piece["text"]]
+                    )
+                    chunk_texts.extend(piece_chunks)
+                    preclean_meta.extend([(piece["type"], piece["topic"])] * len(piece_chunks))
+                log(f"preclean: {sum(1 for t, _ in preclean_meta if t != 'TEMAT')} excluded ranges proposed")
+            else:
+                chunk_texts = split_markdown_into_chunks(article_body, chunk_size)
             if author_bio:
                 chunk_texts.append(author_bio)
                 author_bio_position = len(chunk_texts) - 1
+                if preclean:
+                    preclean_meta.append(("SZUM", "Notka biograficzna autora"))
                 log(f"author biography isolated ({len(author_bio):,} chars)")
             segments = []
         log(f"split={len(chunk_texts)} chunks, max {chunk_size:,} chars")
@@ -430,12 +453,12 @@ class DocumentAnalysisService:
         #    split_only: no LLM at all — chunks await manual cleanup + on-demand analysis.
         sections: list[dict] = []
         total = len(chunk_texts)
-        if split_only:
-            log(f"split_only: {total} chunks without LLM analysis")
+        if proposal_only:
+            log(f"proposal: {total} chunks without semantic LLM analysis")
             sections = [
                 {
-                    "type": "SZUM" if i == author_bio_position else "TEMAT",
-                    "topic": "Notka biograficzna autora" if i == author_bio_position else None,
+                    "type": preclean_meta[i][0] if preclean else ("SZUM" if i == author_bio_position else "TEMAT"),
+                    "topic": preclean_meta[i][1] if preclean else ("Notka biograficzna autora" if i == author_bio_position else None),
                     "original": chunk_text,
                     "text": None,
                     "ratio": None,
@@ -480,7 +503,7 @@ class DocumentAnalysisService:
             })
 
         # 10. Group chunks into logical topic sections (skip LLM grouping for split_only)
-        topic_groups = [] if split_only else _merge_topics(sections, model, mode=mode)
+        topic_groups = [] if proposal_only else _merge_topics(sections, model, mode=mode)
         if topic_groups:
             topic_sections_data = []
             for group in topic_groups:
@@ -497,7 +520,7 @@ class DocumentAnalysisService:
                     "chunk_indices": [i + 1 for i in valid],
                     "summary": merged_summary.strip(),
                 })
-        elif split_only:
+        elif proposal_only:
             # No LLM ran — sections would carry no information yet
             topic_sections_data = []
         else:
@@ -515,7 +538,7 @@ class DocumentAnalysisService:
 
         # 11. Optional synthesis
         synthesis = ""
-        if not no_synthesis and not split_only:
+        if not no_synthesis and not proposal_only:
             log("generating synthesis...")
             synthesis = _synthesize(sections, doc.title or f"Dokument {doc_id}", model, mode=mode)
 
@@ -523,7 +546,7 @@ class DocumentAnalysisService:
         #      actions) — uses the synthesis as input when available (concise,
         #      already LLM-summarized), else falls back to concatenated topic
         #      summaries. Skipped for split_only: no LLM output exists yet.
-        if not split_only:
+        if not proposal_only:
             tagging_text = synthesis or "\n\n".join(
                 ts["summary"] for ts in topic_sections_data if ts["summary"]
             )
@@ -546,7 +569,7 @@ class DocumentAnalysisService:
 
             # 11d. Place verification (stage 3): geocoder confirms the places
             #      exist (cached), LLM confirms relevance -> miejsce-* tags.
-            if not split_only:
+            if not proposal_only:
                 try:
                     from library.place_verification import verify_document_places
 

@@ -185,6 +185,8 @@ def analyze_document_chunks(doc_id: int):
         no_synthesis — skip final synthesis step (default: false)
         mode         — "transcript" (default) or "article"
         split_only   — split into chunks without any LLM analysis (default: false)
+        preclean     — article-only LLM cleanup proposal before final split;
+                       saved as the first stage of the same run (default: false)
         scope_chapter — 1-based chapter position (see GET /document/<id>/chapters);
                        analyze only that chapter (article mode only)
 
@@ -198,9 +200,12 @@ def analyze_document_chunks(doc_id: int):
     no_synthesis = bool(data.get("no_synthesis", False))
     mode = data.get("mode", "transcript")
     split_only = bool(data.get("split_only", False))
+    preclean = bool(data.get("preclean", False))
     scope_chapter = data.get("scope_chapter")
     if mode not in ANALYSIS_MODES:
         return jsonify({"status": "error", "message": f"Invalid mode: {mode}"}), 400
+    if preclean and mode != "article":
+        return jsonify({"status": "error", "message": "preclean requires article mode"}), 400
     if scope_chapter is not None:
         try:
             scope_chapter = int(scope_chapter)
@@ -241,6 +246,7 @@ def analyze_document_chunks(doc_id: int):
                 progress_fn=_progress,
                 mode=mode,
                 split_only=split_only,
+                preclean=preclean,
                 scope_chapter=scope_chapter,
             )
             ad_count = sum(1 for c in run.chunks if c.type == "REKLAMA")
@@ -747,6 +753,12 @@ def list_runs():
                 "approved_count": sum(
                     1 for c in r.chunks if c.type == "TEMAT" and c.status == "approved"
                 ),
+                "workflow_stage": (
+                    "reviewed" if r.status == "reviewed"
+                    else "analysis" if any(c.type == "TEMAT" and c.summary for c in r.chunks)
+                    else "cleanup_proposal" if any(c.type in {"REKLAMA", "SZUM"} for c in r.chunks)
+                    else "split_proposal"
+                ),
             }
             for r in runs
         ],
@@ -839,6 +851,12 @@ def get_run_chunks(run_id: int):
             "synthesis": run.synthesis,
             "speakers": run.speakers or [],
             "created_at": run.created_at.isoformat(),
+            "workflow_stage": (
+                "reviewed" if run.status == "reviewed"
+                else "analysis" if any(c.type == "TEMAT" and c.summary for c in all_chunks)
+                else "cleanup_proposal" if any(c.type in {"REKLAMA", "SZUM"} for c in all_chunks)
+                else "split_proposal"
+            ),
         },
         "document": {
             "id": doc.id if doc else None,
@@ -1203,8 +1221,8 @@ def update_chunk(chunk_id: int):
     if "original_text" in data:
         # Manual cleanup: UI line-removal mode sends the whole edited text
         val = data["original_text"]
-        if not isinstance(val, str) or not val.strip():
-            return jsonify({"status": "error", "message": "original_text must be a non-empty string"}), 400
+        if not isinstance(val, str):
+            return jsonify({"status": "error", "message": "original_text must be a string"}), 400
         manually_removed = _removed_lines_diff(chunk.original_text, val)
         chunk.original_text = val
         changed = True

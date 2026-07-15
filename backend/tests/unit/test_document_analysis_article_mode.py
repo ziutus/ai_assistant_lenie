@@ -88,6 +88,27 @@ def article_env(monkeypatch, session):
 
 
 class TestSzumType:
+    def test_cleanup_range_parser_clamps_and_ignores_temat(self):
+        rows = llm._parse_cleanup_ranges(
+            '[{"start_line": 0, "end_line": 2, "type": "SZUM", "reason": "menu"}, '
+            '{"start_line": 3, "end_line": 9, "type": "REKLAMA", "reason": "cta"}, '
+            '{"start_line": 1, "end_line": 1, "type": "TEMAT"}]',
+            4,
+        )
+        assert rows == [
+            {"start_line": 1, "end_line": 2, "type": "SZUM", "reason": "menu"},
+            {"start_line": 3, "end_line": 4, "type": "REKLAMA", "reason": "cta"},
+        ]
+
+    def test_preclean_is_lossless_and_keeps_unmarked_lines(self, monkeypatch):
+        monkeypatch.setattr(
+            llm, "call_model",
+            lambda *_a, **_kw: ('[{"start_line": 2, "end_line": 2, "type": "SZUM", "reason": "linki"}]', 5),
+        )
+        pieces = llm.propose_article_cleanup("Treść\nLink 1 | Link 2\nDalsza treść", "m")
+        assert [p["type"] for p in pieces] == ["TEMAT", "SZUM", "TEMAT"]
+        assert "\n".join(p["text"] for p in pieces) == "Treść\nLink 1 | Link 2\nDalsza treść"
+
     def test_parse_szum_header(self):
         from library.chunk_llm_analysis import parse_rewritten_chunk
         t, topic, rest = parse_rewritten_chunk("### SZUM: nawigacja portalu WP\n")
@@ -170,6 +191,23 @@ class TestArticleMode:
         from library.db.models import DocumentTopicSection
         sections = [o for o in session.added if isinstance(o, DocumentTopicSection)]
         assert sections == []
+
+    def test_preclean_saves_proposal_in_same_run_without_semantic_analysis(
+        self, session, article_env, monkeypatch,
+    ):
+        monkeypatch.setattr("library.entity_service.refresh_document_entities", lambda *_a, **_kw: [])
+        monkeypatch.setattr(llm, "propose_article_cleanup", lambda text, model: [
+            {"type": "TEMAT", "topic": "Treść merytoryczna", "text": "Wartościowy akapit."},
+            {"type": "SZUM", "topic": "lista linków", "text": "Czytaj także: link"},
+        ])
+        run = DocumentAnalysisService(session).create_run(
+            doc_id=42, model="test-model", mode="article", preclean=True,
+        )
+        chunks = [o for o in session.added if isinstance(o, DocumentChunk)]
+        assert [c.type for c in chunks] == ["TEMAT", "SZUM"]
+        assert all(c.run_id == run.id for c in chunks)
+        assert all(c.summary is None and c.status == "pending" for c in chunks)
+        assert article_env["article"] == 0
 
     def test_tags_document_using_synthesis_text(self, session, article_env, monkeypatch):
         doc = FakeDoc()
