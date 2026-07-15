@@ -16,6 +16,7 @@ import Read from "./modules/shared/pages/read";
 import Persons from "./modules/shared/pages/persons";
 import PersonsReview from "./modules/shared/pages/personsReview";
 import Sources from "./modules/shared/pages/sources";
+import InformationSources from "./modules/shared/pages/informationSources";
 import { AuthorizationContext } from "./modules/shared/context/authorizationContext";
 
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -53,6 +54,7 @@ function App() {
                   <Route path="/persons/:id?" element={<Persons />} />
                   <Route path="/persons-review" element={<PersonsReview />} />
                   <Route path="/sources" element={<Sources />} />
+                  <Route path="/information-sources" element={<InformationSources />} />
                   <Route path="/search" element={<Search />} />
                   <Route path="/upload-file" element={<UploadFile />} />
                   <Route path="*" element={<p>404</p>} />
