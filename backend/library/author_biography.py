@@ -12,9 +12,8 @@ from library.db.models import DocumentPerson, Person
 logger = logging.getLogger(__name__)
 
 BIO_SIGNALS_RE = re.compile(
-    r"\b(jest|był|była|pracuje|pracował|pracowała|zaczynał|zaczynała|"
-    r"zajmuje się|specjalizuje się|dziennikarzem|dziennikarką|autorem|autorką|"
-    r"ukończył|ukończyła|redakcji|studiach)\b",
+    r"\b(jest|by\w*|prac\w*|zacz\w*|zajm\w*|specjaliz\w*|"
+    r"dziennikar\w*|autor\w*|uko\w*|redakcj\w*|studiach)\b",
     re.IGNORECASE,
 )
 
@@ -23,9 +22,11 @@ def extract_trailing_author_biography(text: str, author: str | None) -> tuple[st
     """Return (article body, trailing author block).
 
     Detection is deliberately conservative: the known author name must occur
-    near the beginning of a paragraph in the final 35% of the document and the
-    paragraph must contain biographical language. Short trailing footer/source
-    lines are kept with the biography so they can be classified as SZUM too.
+    near the beginning of a paragraph in the final 35% of the document and
+    biographical language must occur in that paragraph or one of the next four.
+    Portals commonly split the byline, role and biography into separate
+    paragraphs. The whole trailing block is returned so footer artifacts can
+    be classified as SZUM together with the biography.
     """
     author = (author or "").strip()
     if not text or len(author.split()) < 2:
@@ -34,16 +35,29 @@ def extract_trailing_author_biography(text: str, author: str | None) -> tuple[st
     paragraphs = list(re.finditer(r"\S(?:.*?\S)?(?=\n\s*\n|\Z)", text, re.DOTALL))
     lower_bound = int(len(text) * 0.65)
     author_re = re.compile(re.escape(author), re.IGNORECASE)
-    for paragraph in reversed(paragraphs):
+    for index in range(len(paragraphs) - 1, -1, -1):
+        paragraph = paragraphs[index]
         value = paragraph.group().strip()
         if paragraph.start() < lower_bound:
             break
         name_match = author_re.search(value)
-        if name_match and name_match.start() <= 80 and BIO_SIGNALS_RE.search(value):
-            # Only the biography paragraph belongs to the person. Any short
-            # trailing label (e.g. "The Wall Street Journal") is provenance,
-            # not part of the biography and is intentionally left out here.
+        if not name_match or name_match.start() > 80:
+            continue
+
+        # Compact biographies already contain the author and biographical
+        # language in one paragraph. Preserve the historical behavior and do
+        # not absorb an unrelated source/provenance label that follows it.
+        if len(value) > 80 and BIO_SIGNALS_RE.search(value):
             return text[:paragraph.start()].rstrip(), value
+
+        # WP/o2 and similar portals often render e.g. "Jan Kowalski,
+        # Dziennikarz" separately from the actual biography. Limit the lookup
+        # window so an ordinary author mention cannot consume a distant footer.
+        bio_window = "\n\n".join(
+            item.group().strip() for item in paragraphs[index:index + 5]
+        )
+        if BIO_SIGNALS_RE.search(bio_window):
+            return text[:paragraph.start()].rstrip(), text[paragraph.start():].strip()
     return text, None
 
 
