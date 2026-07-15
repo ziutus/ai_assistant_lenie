@@ -857,6 +857,14 @@ const Chunks = () => {
       if (data.status === "success") {
         setRunStatus(data.run.status);
         setRuns(prev => prev.map(rr => rr.id === selectedRun ? { ...rr, status: data.run.status } : rr));
+        if (data.embedding_job_id) {
+          setEmbedJobId(data.embedding_job_id);
+          setEmbedJobStatus("running");
+          pollEmbeddingJob(data.embedding_job_id);
+          setInfo("Review zamknięty — automatycznie generuję embeddingi z zatwierdzonych chunków TEMAT.");
+        } else if (status === "reviewed" && approvedCount === 0) {
+          setInfo("Review zamknięty, ale nie utworzono embeddingów: brak zatwierdzonych chunków TEMAT.");
+        }
       } else { setError("Błąd zmiany statusu analizy"); }
     } catch { setError("Błąd połączenia przy zmianie statusu analizy"); }
   };
@@ -1464,6 +1472,20 @@ const Chunks = () => {
       )}
 
       {/* Pasek postępu */}
+      {selectedRun !== null && (
+        <div style={{
+          marginBottom: 10, padding: "10px 14px", border: "1px solid #bae6fd",
+          borderRadius: 6, background: "#f0f9ff", color: "#0c4a6e", fontSize: "0.84em",
+        }}>
+          <strong>Jak powstają embeddingi:</strong>{" "}
+          analiza tworzy chunki ze statusem <code>pending</code> → zatwierdź merytoryczne chunki
+          <code> TEMAT</code> → kliknij <strong>Zamknij review</strong>. Zamknięcie automatycznie
+          przebuduje indeks wyszukiwania tylko z zatwierdzonych treści. Chunki <code>REKLAMA</code>
+          i <code>SZUM</code> są pomijane. Po późniejszej edycji lub ponownym otwarciu review użyj
+          przycisku <strong>Generuj embeddingi</strong>, aby odświeżyć indeks ręcznie.
+        </div>
+      )}
+
       {chunks.length > 0 && (
         <div style={{ marginBottom: 12, padding: "8px 14px", background: "#0f172a", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ color: "#94a3b8", fontSize: "0.82em" }}>
