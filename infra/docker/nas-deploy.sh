@@ -118,7 +118,9 @@ build_image() {
 
     log "Budowanie obrazu: ${image} (${dockerfile})..."
     cd "$PROJECT_ROOT"
-    docker build -t "$image" -f "$dockerfile" . 2>&1 | tail -5
+    # Plain progress remains readable in non-interactive Codex/CI logs and
+    # makes long dependency/export steps visible instead of buffering them.
+    docker build --progress=plain -t "$image" -f "$dockerfile" .
     ok "Obraz ${image} zbudowany"
 }
 
