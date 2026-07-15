@@ -364,6 +364,7 @@ const Chunks = () => {
   const [savingTopics, setSavingTopics]   = React.useState<Record<number, boolean>>({});
   const [savedFlash, setSavedFlash]       = React.useState<Record<number, boolean>>({});
   const [reanalyzing, setReanalyzing]     = React.useState<Record<number, boolean>>({});
+  const [deletingChunks, setDeletingChunks] = React.useState<Record<number, boolean>>({});
   const [reanalyzingAll, setReanalyzingAll] = React.useState(false);
   const [approvingAll, setApprovingAll] = React.useState(false);
   const [splitStates, setSplitStates]     = React.useState<Record<number, SplitState>>({});
@@ -758,6 +759,26 @@ const Chunks = () => {
     } catch { setError("Błąd połączenia przy scalaniu"); }
   };
 
+  const deleteNoiseChunk = async (chunk: Chunk) => {
+    if (chunk.type === "TEMAT" || deletingChunks[chunk.id]) return;
+    setDeletingChunks(prev => ({ ...prev, [chunk.id]: true }));
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/chunk/${chunk.id}`, { method: "DELETE", headers });
+      const data = await r.json();
+      if (data.status === "success") {
+        setInfo(`Usunięto chunk #${chunk.position} (${chunk.type}) z bieżącego runu.`);
+        if (selectedRun !== null) await fetchChunks(selectedRun);
+      } else {
+        setError("Nie udało się usunąć chunka: " + (data.message ?? ""));
+      }
+    } catch {
+      setError("Błąd połączenia przy usuwaniu chunka");
+    } finally {
+      setDeletingChunks(prev => ({ ...prev, [chunk.id]: false }));
+    }
+  };
+
   const deleteRun = async () => {
     if (selectedRun === null) return;
     if (!window.confirm(
@@ -1086,6 +1107,13 @@ const Chunks = () => {
   // Karta pojedynczego chunka — używana w widoku płaskim i w accordionie sekcji
   const renderChunkCard = (chunk: Chunk) => {
         const hasCorrected = !!chunk.corrected_text;
+        const chunkLength = chunk.text_length ?? (chunk.corrected_text ?? chunk.original_text ?? "").length;
+        const nextChunk = chunks.find(c => c.position === chunk.position + 1);
+        const nextChunkLength = nextChunk
+          ? (nextChunk.text_length ?? (nextChunk.corrected_text ?? nextChunk.original_text ?? "").length)
+          : 0;
+        const mergedLength = chunkLength + nextChunkLength;
+        const mergeExceedsTarget = mergedLength > chunkSize;
         const isCorrectedView = showCorrected[chunk.id] ?? hasCorrected;
         const isReanalyzing = reanalyzing[chunk.id] ?? false;
         const splitSt = splitStates[chunk.id];
@@ -1100,6 +1128,12 @@ const Chunks = () => {
             {/* Nagłówek */}
             <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0", fontSize: "0.82em", flexWrap: "wrap" }}>
               <span style={{ fontWeight: 600, color: "#334155", minWidth: 24 }}>#{chunk.position}</span>
+              <span
+                title={`Dokładny rozmiar: ${chunkLength.toLocaleString("pl-PL")} znaków; około ${Math.ceil(chunkLength / 4).toLocaleString("pl-PL")} tokenów`}
+                style={{ color: "#64748b", fontSize: "0.9em", whiteSpace: "nowrap" }}
+              >
+                {chunkLength >= 1000 ? `${(chunkLength / 1000).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} tys. zn` : `${chunkLength} zn`}
+              </span>
 
               {/* Typ — klikalny */}
               <span
@@ -1207,18 +1241,32 @@ const Chunks = () => {
               {chunk.position < maxPosition && (
                 <button
                   onClick={() => mergeWithNext(chunk)}
-                  title={`Scal z chunkiem #${chunk.position + 1}`}
-                  style={{ padding: "2px 8px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em", color: "#64748b" }}
+                  title={`Scal z chunkiem #${chunk.position + 1}: wynik ${mergedLength.toLocaleString("pl-PL")} znaków${mergeExceedsTarget ? ` (powyżej celu ${chunkSize.toLocaleString("pl-PL")})` : ""}`}
+                  style={{
+                    padding: "2px 8px", border: `1px solid ${mergeExceedsTarget ? "#f59e0b" : "#cbd5e1"}`,
+                    borderRadius: 4, background: mergeExceedsTarget ? "#fffbeb" : "#fff", cursor: "pointer",
+                    fontSize: "0.82em", color: mergeExceedsTarget ? "#92400e" : "#64748b",
+                  }}
                 >
                   ⇣ Scal
+                  {" → "}{mergedLength >= 1000
+                    ? `${(mergedLength / 1000).toLocaleString("pl-PL", { maximumFractionDigits: 1 })} tys. zn`
+                    : `${mergedLength} zn`}
                 </button>
               )}
               <button
-                onClick={() => setHiddenChunks(prev => new Set([...prev, chunk.id]))}
-                title="Ukryj ten chunk"
-                style={{ padding: "2px 8px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em", color: "#64748b", marginLeft: "auto" }}
+                onClick={() => chunk.type === "TEMAT"
+                  ? setHiddenChunks(prev => new Set([...prev, chunk.id]))
+                  : deleteNoiseChunk(chunk)}
+                disabled={!!deletingChunks[chunk.id]}
+                title={chunk.type === "TEMAT" ? "Ukryj ten chunk" : `Usuń chunk ${chunk.type} z bieżącego runu`}
+                style={{
+                  padding: "2px 8px", border: `1px solid ${chunk.type === "TEMAT" ? "#cbd5e1" : "#fca5a5"}`,
+                  borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em",
+                  color: chunk.type === "TEMAT" ? "#64748b" : "#b91c1c", marginLeft: "auto",
+                }}
               >
-                ✕
+                {deletingChunks[chunk.id] ? "…" : chunk.type === "TEMAT" ? "✕" : "🗑"}
               </button>
             </div>
 
