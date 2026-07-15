@@ -34,6 +34,39 @@ def test_does_not_extract_author_mention_without_biographical_language():
     assert excerpt is None
 
 
+def test_extracts_split_portal_biography_and_trailing_footer():
+    text = (
+        ("Treść artykułu. " * 80)
+        + "\n\nOstatni akapit właściwej treści."
+        + "\n\nŁukasz Maziewski, Dziennikarz o2.pl"
+        + "\n\nDziennikarz o2.pl"
+        + "\n\nZainteresowany bezpieczeństwem. Zajmował się problematyką przez siedem lat "
+          "w Fakcie, a od 2021 r. w Wirtualnej Polsce."
+        + "\n\nLukasz.Maziewski@grupawp.pl"
+        + "\n\ntarcza antyrakietowa przemysł obronny"
+    )
+
+    body, excerpt = extract_trailing_author_biography(text, "Łukasz Maziewski")
+
+    assert body.endswith("Ostatni akapit właściwej treści.")
+    assert excerpt.startswith("Łukasz Maziewski, Dziennikarz o2.pl")
+    assert "Zajmował się problematyką" in excerpt
+    assert excerpt.endswith("tarcza antyrakietowa przemysł obronny")
+
+
+def test_split_layout_still_requires_known_author_name():
+    text = (
+        ("Treść artykułu. " * 80)
+        + "\n\nJan Kowalski, Dziennikarz"
+        + "\n\nOd 2021 r. pracuje w redakcji i zajmuje się gospodarką."
+    )
+
+    body, excerpt = extract_trailing_author_biography(text, "Anna Nowak")
+
+    assert body == text
+    assert excerpt is None
+
+
 def test_first_biography_fills_empty_person_description():
     person = Person(canonical_name="Jacek Losik", description=None)
     person.id = 236
