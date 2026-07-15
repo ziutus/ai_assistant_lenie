@@ -9,6 +9,7 @@ import { useSearchParams } from "react-router-dom";
 const Search = () => {
   const [searchParams] = useSearchParams();
   const initialQuery = searchParams.get("q") ?? "";
+  const [submittedQuery, setSubmittedQuery] = React.useState(initialQuery);
   const { handleSearchSimilar, results, setResults, isLoading, message, setMessage, isError } =
       useSearch({
         callback: () => formik.resetForm(),
@@ -18,6 +19,7 @@ const Search = () => {
     formik.resetForm();
     setResults([]);
     setMessage("");
+    setSubmittedQuery("");
   };
 
   const formik: any = useFormik({
@@ -27,6 +29,7 @@ const Search = () => {
       translate: false
     },
     onSubmit: async (data) => {
+      setSubmittedQuery(data.search.trim());
       await handleSearchSimilar(data.search, data.searchLimit, data.translate);
     },
   });
@@ -41,14 +44,15 @@ const Search = () => {
 
   return (
       <form onSubmit={formik.handleSubmit}>
-        <h2 style={{ marginBottom: "10px" }}>Search Similar</h2>
-        <div style={{display: "flex", alignItems: "center"}}>
-          <div style={{minWidth: "400px", marginRight: "20px"}}>
+        <h2 style={{ marginBottom: "4px" }}>Wyszukiwanie</h2>
+        <p style={{ marginTop: 0, color: "#64748b", fontSize: ".88rem" }}>Wyniki łączą dopasowanie tekstowe i semantyczne.</p>
+        <div style={{display: "flex", alignItems: "center", flexWrap: "wrap", gap: 12}}>
+          <div style={{minWidth: "min(520px, 100%)", flex: "1 1 420px"}}>
             <Input
                 required
                 disabled={isLoading}
                 value={formik.values.search}
-                label={"Search"}
+                label={"Szukana fraza"}
                 onChange={formik.handleChange}
                 id={"search"}
                 name={"search"}
@@ -59,7 +63,7 @@ const Search = () => {
           <Select
               disabled={isLoading}
               value={formik.values.searchLimit}
-              label={"search Limit"}
+              label={"Liczba wyników"}
               onChange={formik.handleChange}
               id={"searchLimit"}
               name={"searchLimit"}
@@ -71,25 +75,13 @@ const Search = () => {
             <option value="50">50</option>
           </Select>
 
-          <div style={{marginLeft: '20px'}}>
-            <label htmlFor="translate" style={{marginRight: '10px'}}>Translate</label>
-            <input
-                type="checkbox"
-                id="translate"
-                name="translate"
-                checked={formik.values.translate}
-                onChange={formik.handleChange}
-                disabled={isLoading}
-            />
-          </div>
-
           <button
               type={"submit"}
               style={{marginTop: "11px"}}
               className={"button"}
               disabled={isLoading}
           >
-            Search
+            Szukaj
           </button>
 
           <button
@@ -97,18 +89,23 @@ const Search = () => {
               style={{marginTop: "11px", marginLeft: "10px"}}
               onClick={() => handleClean()}
           >
-            Clean
+            Wyczyść
           </button>
         </div>
 
         {isLoading && <div className={"loader"}></div>}
         {isError && <p className={"errorText"}>{message}</p>}
 
-        <ul>
+        {results && !isLoading && (
+          <div style={{ margin: "18px 0 10px", color: "#64748b", fontSize: ".85rem" }}>
+            Znaleziono: <strong style={{ color: "#334155" }}>{results.length}</strong>
+          </div>
+        )}
+        <div style={{ display: "grid", gap: 12, maxWidth: 1050, paddingBottom: 30 }}>
           {results?.map((item: any) => (
-              <ListItemSearchSimilar key={item.id} item={item}/>
+              <ListItemSearchSimilar key={`${item.website_id}-${item.chunk_id ?? item.id ?? "text"}`} item={item} query={submittedQuery}/>
           ))}
-        </ul>
+        </div>
       </form>
   );
 };

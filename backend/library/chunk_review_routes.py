@@ -52,6 +52,43 @@ ALLOWED_TYPES = {"TEMAT", "REKLAMA", "SZUM"}
 ALLOWED_RUN_STATUSES = {"created", "in_review", "reviewed"}
 
 
+def _start_embedding_job(run_id: int) -> str:
+    """Start background indexing for a reviewed run and return its job id."""
+    job_id = uuid.uuid4().hex[:8]
+    _embedding_jobs[job_id] = {
+        "status": "running", "run_id": run_id, "result": None,
+        "error": None, "progress": "Startowanie...",
+    }
+
+    def _run_embeddings() -> None:
+        from library.db.engine import get_session
+        from library.document_analysis_service import generate_embeddings_from_run
+
+        job_session = get_session()
+        try:
+            def _progress(msg: str) -> None:
+                _embedding_jobs[job_id]["progress"] = msg
+
+            result = generate_embeddings_from_run(job_session, run_id, progress_fn=_progress)
+            _embedding_jobs[job_id].update({
+                "status": "done", "result": result,
+                "progress": f"Gotowe: {result['embeddings_created']} embeddingów "
+                            f"z {result['chunks_considered']} chunków",
+            })
+        except ValueError as exc:
+            _embedding_jobs[job_id].update({"status": "failed", "error": str(exc)})
+        except Exception as exc:
+            logger.exception("background embedding generation failed for run %d", run_id)
+            _embedding_jobs[job_id].update({"status": "failed", "error": str(exc)})
+        finally:
+            job_session.close()
+
+    threading.Thread(
+        target=_run_embeddings, daemon=True, name=f"embeddings-{job_id}",
+    ).start()
+    return job_id
+
+
 def _removed_lines_diff(old_text: str, new_text: str) -> list[str]:
     """Return non-empty lines (stripped) present in old_text but absent from new_text.
 
@@ -852,6 +889,7 @@ def update_run(run_id: int):
         abort(404, f"Run {run_id} not found")
 
     data = request.get_json() or {}
+    embedding_job_id = None
     if "status" in data:
         if data["status"] not in ALLOWED_RUN_STATUSES:
             return jsonify({"status": "error", "message": f"Invalid run status: {data['status']}"}), 400
@@ -863,9 +901,23 @@ def update_run(run_id: int):
             logger.exception("Failed to update run %d", run_id)
             return jsonify({"status": "error", "message": "DB error"}), 500
 
+        # Newly analysed chunks are pending. Closing human review is the safe
+        # boundary for indexing only approved TEMAT content.
+        if data["status"] == "reviewed":
+            approved_count = session.scalar(
+                select(func.count()).select_from(DocumentChunk).where(
+                    DocumentChunk.run_id == run_id,
+                    DocumentChunk.type == "TEMAT",
+                    DocumentChunk.status == "approved",
+                )
+            ) or 0
+            if approved_count:
+                embedding_job_id = _start_embedding_job(run_id)
+
     return jsonify({
         "status": "success",
         "run": {"id": run.id, "mode": run.mode, "status": run.status, "scope": run.scope},
+        "embedding_job_id": embedding_job_id,
     })
 
 
@@ -996,41 +1048,7 @@ def generate_embeddings(run_id: int):
     if run is None:
         abort(404, f"Run {run_id} not found")
 
-    job_id = uuid.uuid4().hex[:8]
-    _embedding_jobs[job_id] = {
-        "status": "running",
-        "run_id": run_id,
-        "result": None,
-        "error": None,
-        "progress": "Startowanie...",
-    }
-
-    def _run_embeddings() -> None:
-        from library.db.engine import get_session
-        from library.document_analysis_service import generate_embeddings_from_run
-
-        job_session = get_session()
-        try:
-            def _progress(msg: str) -> None:
-                _embedding_jobs[job_id]["progress"] = msg
-
-            result = generate_embeddings_from_run(job_session, run_id, progress_fn=_progress)
-            _embedding_jobs[job_id].update({
-                "status": "done",
-                "result": result,
-                "progress": f"Gotowe: {result['embeddings_created']} embeddingów "
-                            f"z {result['chunks_considered']} chunków",
-            })
-        except ValueError as exc:
-            _embedding_jobs[job_id].update({"status": "failed", "error": str(exc)})
-        except Exception as exc:
-            logger.exception("background embedding generation failed for run %d", run_id)
-            _embedding_jobs[job_id].update({"status": "failed", "error": str(exc)})
-        finally:
-            job_session.close()
-
-    t = threading.Thread(target=_run_embeddings, daemon=True, name=f"embeddings-{job_id}")
-    t.start()
+    job_id = _start_embedding_job(run_id)
 
     return jsonify({"status": "started", "job_id": job_id, "run_id": run_id})
 
