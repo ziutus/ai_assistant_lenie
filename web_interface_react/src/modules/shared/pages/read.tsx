@@ -387,6 +387,7 @@ const Read: React.FC = () => {
         if (data.status !== "success") throw new Error(data.message ?? "Błąd pobierania rozdziałów");
         setChapters(data.chapters ?? []);
         setReaderCompact(data.reader_compact === true);
+        setScopeChapter(data.reader_compact !== true);
         if (data.reader_compact === true && requestedPosition !== 1) {
           const next = new URLSearchParams(searchParams);
           next.set("chapter", "1");
@@ -907,7 +908,7 @@ const Read: React.FC = () => {
         {/* Map + entities + tags + synthesis — desktop only */}
         {isDesktop && (
           <div className={styles.rightPanel}>
-            <div style={{ fontSize: "0.78em", color: "#64748b", display: "flex", gap: 8, alignItems: "center" }}>
+            {!readerCompact && <div style={{ fontSize: "0.78em", color: "#64748b", display: "flex", gap: 8, alignItems: "center" }}>
               Zakres:
               {([["rozdział", true], ["cały dokument", false]] as const).map(([label, value]) => (
                 <button
@@ -923,7 +924,7 @@ const Read: React.FC = () => {
                   {label}
                 </button>
               ))}
-            </div>
+            </div>}
             <div style={{
               fontSize: "0.78em", color: "#64748b", display: "flex", gap: 8, alignItems: "center", marginTop: 4,
             }}>
