@@ -256,6 +256,34 @@ def _clean_lines_wp(lines: list[str]) -> list[str]:
     return cleaned
 
 
+def _clean_lines_gazeta(lines: list[str]) -> list[str]:
+    """Usuń śródtekstowe karty rekomendacji Gazeta.pl, zachowując dalszy artykuł."""
+    cleaned = []
+    in_recommendation = False
+
+    for line in lines:
+        stripped = line.strip()
+        stripped_no_links = re.sub(r'\s*\[link\d+\]', '', stripped).strip()
+
+        if stripped_no_links in ("Czytaj także:", "Czytaj również:"):
+            in_recommendation = True
+            continue
+
+        if in_recommendation:
+            if not stripped or stripped in ("SUBSKRYPCJA", "REKLAMA"):
+                continue
+            # Po karcie rekomendacji właściwy artykuł wraca jako zwykły,
+            # odpowiednio długi akapit. Przetwórz go już normalnie.
+            if len(stripped_no_links) >= 100 and not stripped.startswith(("[", "!")):
+                in_recommendation = False
+            else:
+                continue
+
+        cleaned.append(line)
+
+    return cleaned
+
+
 def clean_article_text(text: str, url: str = "") -> dict:
     """Wyczyść wyekstrahowany markdown. Zwraca dict: {text, links, images}."""
     extracted_links = []
@@ -375,6 +403,8 @@ def clean_article_text(text: str, url: str = "") -> dict:
         lines = _clean_lines_money(lines)
     elif portal == "wp":
         lines = _clean_lines_wp(lines)
+    elif portal == "gazeta":
+        lines = _clean_lines_gazeta(lines)
 
     text = "\n".join(lines)
     text = re.sub(r'\n{3,}', '\n\n', text)

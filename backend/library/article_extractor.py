@@ -86,6 +86,8 @@ def _detect_portal(url: str) -> str | None:
         return "businessinsider"
     if "national-geographic.pl" in url_lower:
         return "natgeo"
+    if "gazeta.pl" in url_lower:
+        return "gazeta"
     return None
 
 
@@ -129,6 +131,15 @@ PORTAL_FOOTER_MARKERS = {
         "#### Nasz autor",
         "Redakcja poleca",
         "### ZAPISZ SIĘ NA NEWSLETTER",
+    ],
+    # Gazeta.pl osadza karty "Czytaj także" pomiędzy akapitami artykułu, więc
+    # nie mogą one wyznaczać końca. Te markery występują dopiero po ostatnim
+    # akapicie właściwej treści.
+    "gazeta": [
+        "*Źródło:",
+        "Źródło:",
+        "Dziękujemy za przeczytanie",
+        "#### Obserwuj nas",
     ],
 }
 
