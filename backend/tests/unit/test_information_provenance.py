@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from library.db.models import DocumentInformationSource
 from library.information_provenance import (
     extract_information_sources,
+    extract_known_reporting_sources,
     publisher_domain,
     refresh_document_information_sources,
 )
@@ -12,6 +13,28 @@ from library.information_provenance import (
 
 def test_publisher_domain_normalizes_www():
     assert publisher_domain("https://www.money.pl/a/b.html") == "money.pl"
+
+
+def test_known_nyt_reporting_is_detected_from_grounded_attribution():
+    text = ('Dziennik "New York Times" ujawnił, że w Tokio działa jednostka GRU. '
+            'W innym miejscu wspomniano NYT bez przypisania ustaleń.')
+
+    result = extract_known_reporting_sources(text)
+
+    assert result == [{
+        "canonical_name": "The New York Times",
+        "raw_mention": "New York Times",
+        "role": "original_reporting",
+        "source_type": "newspaper",
+        "domain": "nytimes.com",
+        "evidence_excerpt": 'Dziennik "New York Times" ujawnił, że w Tokio działa jednostka GRU.',
+        "confidence": 100,
+        "extraction_method": "rule",
+    }]
+
+
+def test_known_nyt_bare_mention_is_not_enough():
+    assert extract_known_reporting_sources("Czytam dziś New York Times.") == []
 
 
 def test_llm_sources_are_grounded_and_roles_validated():
@@ -73,4 +96,54 @@ def test_refresh_always_adds_publisher_and_llm_sources():
     assert result["sources"] == [
         ("money.pl", "publisher"),
         ("The Wall Street Journal", "original_reporting"),
+    ]
+
+
+def test_refresh_keeps_rule_source_when_llm_extraction_fails():
+    session = MagicMock()
+    doc = SimpleNamespace(id=9242, url="https://wiadomosci.gazeta.pl/test.html", title="Tytuł")
+    publisher = SimpleNamespace(id=1, canonical_name="wiadomosci.gazeta.pl")
+    nyt = SimpleNamespace(id=2, canonical_name="The New York Times")
+    text = 'Dziennik "New York Times" ujawnił nowe informacje.'
+
+    with patch("library.information_provenance._get_or_create_source", side_effect=[publisher, nyt]), \
+            patch("library.information_provenance.extract_information_sources", side_effect=RuntimeError):
+        result = refresh_document_information_sources(session, doc, text, "model")
+
+    links = [call.args[0] for call in session.add.call_args_list
+             if isinstance(call.args[0], DocumentInformationSource)]
+    assert [(link.source_id, link.role, link.extraction_method) for link in links] == [
+        (1, "publisher", "url"),
+        (2, "original_reporting", "rule"),
+    ]
+    assert result["sources"][-1] == ("The New York Times", "original_reporting")
+
+
+def test_refresh_deduplicates_nyt_rule_and_llm_name_variant():
+    session = MagicMock()
+    doc = SimpleNamespace(id=9242, url="https://wiadomosci.gazeta.pl/test.html", title="Tytuł")
+    publisher = SimpleNamespace(id=1, canonical_name="wiadomosci.gazeta.pl")
+    nyt = SimpleNamespace(id=2, canonical_name="The New York Times")
+    llm_candidate = {
+        "canonical_name": "New York Times",
+        "raw_mention": "NYT",
+        "role": "original_reporting",
+        "source_type": "newspaper",
+        "domain": None,
+        "evidence_excerpt": "NYT podał nowe informacje.",
+        "confidence": 95,
+    }
+    text = 'Dziennik "New York Times" ujawnił nowe informacje. NYT podał nowe informacje.'
+
+    with patch("library.information_provenance._get_or_create_source",
+               side_effect=[publisher, nyt, nyt]), \
+            patch("library.information_provenance.extract_information_sources",
+                  return_value=[llm_candidate]):
+        refresh_document_information_sources(session, doc, text, "model")
+
+    links = [call.args[0] for call in session.add.call_args_list
+             if isinstance(call.args[0], DocumentInformationSource)]
+    assert [(link.source_id, link.role) for link in links] == [
+        (1, "publisher"),
+        (2, "original_reporting"),
     ]

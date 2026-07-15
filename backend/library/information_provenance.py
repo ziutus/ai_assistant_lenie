@@ -17,10 +17,69 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_ROLES = {"original_reporting", "cited", "republication", "data_source"}
 
+KNOWN_REPORTING_SOURCES = (
+    {
+        "canonical_name": "The New York Times",
+        "source_type": "newspaper",
+        "domain": "nytimes.com",
+        "aliases": ("The New York Times", "New York Times", "NYT"),
+    },
+)
+
+# These verbs are deliberately conservative: a bare mention of a newspaper is
+# not enough to claim that the document is based on its reporting.
+REPORTING_VERBS = re.compile(
+    r"\b(?:ujawni(?:ł|ła|ło)|ustali(?:ł|ła|ło)|poda(?:ł|ła|ło)|opisa(?:ł|ła|ło)|"
+    r"donosi(?:ł|ła)?|informuje|poinformowa(?:ł|ła|ło)|napisa(?:ł|ła|ło))\b",
+    re.IGNORECASE,
+)
+
 
 def publisher_domain(url: str) -> str | None:
     host = (urlparse(url or "").hostname or "").lower()
     return host.removeprefix("www.") or None
+
+
+def extract_known_reporting_sources(text: str) -> list[dict]:
+    """Detect well-known reporting sources using grounded, conservative rules."""
+    sentences = re.split(r"(?<=[.!?])\s+|\n+", text)
+    result = []
+    for known in KNOWN_REPORTING_SOURCES:
+        for sentence in sentences:
+            mention = next((
+                alias for alias in known["aliases"]
+                if re.search(rf"(?<!\w){re.escape(alias)}(?!\w)", sentence, re.IGNORECASE)
+            ), None)
+            if mention and REPORTING_VERBS.search(sentence):
+                result.append({
+                    "canonical_name": known["canonical_name"],
+                    "raw_mention": mention,
+                    "role": "original_reporting",
+                    "source_type": known["source_type"],
+                    "domain": known["domain"],
+                    "evidence_excerpt": sentence.strip(),
+                    "confidence": 100,
+                    "extraction_method": "rule",
+                })
+                break
+    return result
+
+
+def _normalize_known_source(item: dict) -> dict:
+    """Map LLM spelling variants onto the same canonical source record."""
+    names = {
+        str(item.get("canonical_name") or "").strip().lower(),
+        str(item.get("raw_mention") or "").strip().lower(),
+    }
+    for known in KNOWN_REPORTING_SOURCES:
+        if names & {alias.lower() for alias in known["aliases"]}:
+            return {
+                **item,
+                "canonical_name": known["canonical_name"],
+                "source_type": known["source_type"],
+                "domain": known["domain"],
+            }
+    return item
 
 
 def _json_array(raw: str) -> list[dict]:
@@ -145,11 +204,13 @@ def refresh_document_information_sources(session, doc, text: str, model: str) ->
         ))
         created.append((publisher.canonical_name, "publisher"))
 
+    candidates = extract_known_reporting_sources(text)
     try:
-        candidates = extract_information_sources(text, doc.title or "", model)
+        llm_candidates = extract_information_sources(text, doc.title or "", model)
     except Exception:
         logger.exception("information-source LLM extraction failed for document %s", doc.id)
-        candidates = []
+        llm_candidates = []
+    candidates.extend(_normalize_known_source(item) for item in llm_candidates)
 
     seen = {(name.lower(), role) for name, role in created}
     for item in candidates:
@@ -166,7 +227,7 @@ def refresh_document_information_sources(session, doc, text: str, model: str) ->
             source_url=None,
             evidence_excerpt=item["evidence_excerpt"],
             confidence=item["confidence"],
-            extraction_method="llm",
+            extraction_method=item.get("extraction_method", "llm"),
             review_status="auto_accepted" if item["confidence"] >= 80 else "needs_review",
         ))
         created.append((source.canonical_name, item["role"]))

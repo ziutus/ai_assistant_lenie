@@ -698,6 +698,7 @@ def information_source_documents(source_id: int):
         "url": link.document.url,
         "role": link.role,
         "raw_mention": link.raw_mention,
+        "source_url": link.source_url,
         "evidence_excerpt": link.evidence_excerpt,
         "confidence": link.confidence,
         "review_status": link.review_status,
@@ -707,6 +708,66 @@ def information_source_documents(source_id: int):
         "source": {"id": source.id, "canonical_name": source.canonical_name, "domain": source.domain},
         "count": len(entries),
         "entries": entries,
+    }, 200
+
+
+@app.route('/information_sources/<int:source_id>/publisher_stats', methods=['GET'])
+def information_source_publisher_stats(source_id: int):
+    """Summarize external provenance for documents published by one source."""
+    from sqlalchemy import func, select
+    from library.db.models import DocumentInformationSource, InformationSource
+
+    session = get_scoped_session()
+    source = session.get(InformationSource, source_id)
+    if source is None:
+        return {"status": "error", "message": "Information source not found"}, 404
+
+    published_ids = select(DocumentInformationSource.document_id).where(
+        DocumentInformationSource.source_id == source_id,
+        DocumentInformationSource.role == "publisher",
+    )
+    published_count = session.scalar(select(func.count()).select_from(published_ids.subquery())) or 0
+    external_document_count = session.scalar(select(
+        func.count(func.distinct(DocumentInformationSource.document_id))
+    ).where(
+        DocumentInformationSource.document_id.in_(published_ids),
+        DocumentInformationSource.role != "publisher",
+    )) or 0
+    role_rows = session.execute(select(
+        DocumentInformationSource.role,
+        func.count(func.distinct(DocumentInformationSource.document_id)),
+    ).where(
+        DocumentInformationSource.document_id.in_(published_ids),
+        DocumentInformationSource.role != "publisher",
+    ).group_by(DocumentInformationSource.role)).all()
+    origin_rows = session.execute(select(
+        InformationSource.id,
+        InformationSource.canonical_name,
+        DocumentInformationSource.role,
+        func.count(func.distinct(DocumentInformationSource.document_id)),
+    ).join(
+        DocumentInformationSource, DocumentInformationSource.source_id == InformationSource.id,
+    ).where(
+        DocumentInformationSource.document_id.in_(published_ids),
+        DocumentInformationSource.role != "publisher",
+    ).group_by(
+        InformationSource.id, InformationSource.canonical_name, DocumentInformationSource.role,
+    ).order_by(func.count(func.distinct(DocumentInformationSource.document_id)).desc())).all()
+
+    return {
+        "status": "success",
+        "source": {"id": source.id, "canonical_name": source.canonical_name, "domain": source.domain},
+        "published_document_count": published_count,
+        # Absence of a detected source is not proof that reporting is original.
+        "without_external_source_count": max(0, published_count - external_document_count),
+        "with_external_source_count": external_document_count,
+        "role_counts": {role: count for role, count in role_rows},
+        "origins": [{
+            "source_id": origin_id,
+            "canonical_name": name,
+            "role": role,
+            "document_count": count,
+        } for origin_id, name, role, count in origin_rows],
     }, 200
 
 

@@ -10,6 +10,14 @@ Project Lenie is a personal AI assistant for collecting, managing, and searching
 
 ## Common Commands
 
+### Default Runtime Environment
+
+The NAS deployment at `192.168.200.7` is the default runtime environment for
+the document UI and backend processing. After a backend change, do not advise
+the user to rerun document analysis until the updated backend image has been
+deployed to NAS and the running service has been verified. Always state
+explicitly whether a relevant change is only local or already deployed.
+
 ### Development (Docker Compose)
 ```bash
 make build          # Build docker containers
