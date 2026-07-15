@@ -4,8 +4,11 @@ import { useFormik } from "formik";
 import Input from "../components/Input/input";
 import { useSearch } from "../hooks/useSearch";
 import Select from "../components/Select/select";
+import { useSearchParams } from "react-router-dom";
 
 const Search = () => {
+  const [searchParams] = useSearchParams();
+  const initialQuery = searchParams.get("q") ?? "";
   const { handleSearchSimilar, results, setResults, isLoading, message, setMessage, isError } =
       useSearch({
         callback: () => formik.resetForm(),
@@ -19,14 +22,22 @@ const Search = () => {
 
   const formik: any = useFormik({
     initialValues: {
-      search: "",
-      searchLimit: "",
+      search: initialQuery,
+      searchLimit: "10",
       translate: false
     },
     onSubmit: async (data) => {
       await handleSearchSimilar(data.search, data.searchLimit, data.translate);
     },
   });
+
+  const initialSearchDone = React.useRef(false);
+  React.useEffect(() => {
+    if (!initialSearchDone.current && initialQuery) {
+      initialSearchDone.current = true;
+      void handleSearchSimilar(initialQuery, "10", false);
+    }
+  }, [handleSearchSimilar, initialQuery]);
 
   return (
       <form onSubmit={formik.handleSubmit}>

@@ -1200,6 +1200,9 @@ class UserDocumentNote(Base):
         ForeignKey("document_chunks.id", ondelete="SET NULL"),
     )
     note_text: Mapped[str] = mapped_column(Text, nullable=False)
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(String(80)), nullable=False, server_default=sa_text("'{}'"),
+    )
     stance: Mapped[str | None] = mapped_column(String(10))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
