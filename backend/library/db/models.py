@@ -1023,6 +1023,11 @@ class DocumentPerson(Base):
     )
     raw_mention: Mapped[str] = mapped_column(Text, nullable=False)
     confidence: Mapped[str] = mapped_column(String(20), nullable=False)
+    role: Mapped[str] = mapped_column(String(30), nullable=False, server_default="mentioned")
+    source_excerpt: Mapped[str | None] = mapped_column(Text)
+    bio_review_status: Mapped[str | None] = mapped_column(String(30))
+    bio_review_result: Mapped[dict | None] = mapped_column(JSONB)
+    bio_reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
@@ -1035,6 +1040,75 @@ class DocumentPerson(Base):
             f"DocumentPerson(id={self.id!r}, document_id={self.document_id!r}, "
             f"person_id={self.person_id!r}, confidence={self.confidence!r})"
         )
+
+
+class InformationSource(Base):
+    """Canonical publisher/reporting/data source mentioned by documents.
+
+    This is intentionally separate from ``Source``: Source records how the
+    user discovered a document, while InformationSource records where claims
+    or reporting contained in the document originated.
+    """
+
+    __tablename__ = "information_sources"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    canonical_name: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    source_type: Mapped[str | None] = mapped_column(String(30))
+    domain: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    aliases: Mapped[list["InformationSourceAlias"]] = relationship(
+        back_populates="source", cascade="all, delete-orphan",
+    )
+
+
+class InformationSourceAlias(Base):
+    """Observed alternate name, e.g. WSJ for The Wall Street Journal."""
+
+    __tablename__ = "information_source_aliases"
+    __table_args__ = (UniqueConstraint("source_id", "alias"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[int] = mapped_column(
+        ForeignKey("information_sources.id", ondelete="CASCADE"), nullable=False,
+    )
+    alias: Mapped[str] = mapped_column(Text, nullable=False)
+
+    source: Mapped["InformationSource"] = relationship(back_populates="aliases")
+
+
+class DocumentInformationSource(Base):
+    """Document-to-information-source provenance with role and evidence."""
+
+    __tablename__ = "document_information_sources"
+    __table_args__ = (UniqueConstraint("document_id", "source_id", "role"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    source_id: Mapped[int] = mapped_column(
+        ForeignKey("information_sources.id", ondelete="CASCADE"), nullable=False,
+    )
+    role: Mapped[str] = mapped_column(String(30), nullable=False)
+    raw_mention: Mapped[str] = mapped_column(Text, nullable=False)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    evidence_excerpt: Mapped[str | None] = mapped_column(Text)
+    confidence: Mapped[int | None] = mapped_column(Integer)
+    extraction_method: Mapped[str] = mapped_column(String(30), nullable=False)
+    review_status: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default="auto_accepted",
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    source: Mapped["InformationSource"] = relationship(foreign_keys=[source_id])
 
 
 class User(Base):
