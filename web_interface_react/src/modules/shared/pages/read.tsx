@@ -58,6 +58,24 @@ interface ChapterScope {
   countries: CountryTag[];
 }
 
+interface InformationSourceLink {
+  id: number;
+  source_id: number;
+  canonical_name: string;
+  domain: string | null;
+  role: string;
+  source_url: string | null;
+  evidence_excerpt: string | null;
+}
+
+const SOURCE_ROLE_LABELS: Record<string, string> = {
+  publisher: "Publikacja",
+  original_reporting: "Źródło ustaleń",
+  republication: "Przedruk / opracowanie",
+  cited: "Cytowane źródło",
+  data_source: "Źródło danych",
+};
+
 // ── Minimal markdown rendering (headings, paragraphs, hr; images skipped) ────
 
 const IMAGE_LINE = /^!\[[^\]]*\]\([^)]*\)$/;
@@ -310,6 +328,7 @@ const Read: React.FC = () => {
   const [placeItems, setPlaceItems] = React.useState<EntityItem[]>([]);
   const [thematicTags, setThematicTags] = React.useState<string[]>([]);
   const [synthesis, setSynthesis] = React.useState<string | null>(null);
+  const [informationSources, setInformationSources] = React.useState<InformationSourceLink[]>([]);
   const [content, setContent] = React.useState<ChapterContent | null>(null);
   // sidebar scope: current chapter (default) vs whole document
   const [scopeChapter, setScopeChapter] = React.useState(true);
@@ -375,6 +394,18 @@ const Read: React.FC = () => {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiUrl, id, apiKey]);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const response = await fetch(`${apiUrl}/document/${id}/information_sources`, { headers });
+        const data = await response.json();
+        if (data.status === "success") setInformationSources(data.entries ?? []);
+      } catch {
+        // Provenance enriches the reader but must not block document reading.
+      }
+    })();
+  }, [apiUrl, id, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // verified NER places (stage 3) → point markers on the country map
   React.useEffect(() => {
@@ -911,6 +942,30 @@ const Read: React.FC = () => {
                 Ładowanie danych rozdziału…
               </div>
             ) : <>
+            {informationSources.length > 0 && (
+              <div style={{
+                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
+                padding: 10, marginTop: 12,
+              }}>
+                <strong style={{ fontSize: "0.85em", display: "block", marginBottom: 8 }}>📰 Pochodzenie</strong>
+                {informationSources.map(source => (
+                  <div key={source.id} style={{ marginTop: 7 }}>
+                    <div style={{ fontSize: "0.75em", color: "#64748b" }}>
+                      {SOURCE_ROLE_LABELS[source.role] ?? source.role}
+                    </div>
+                    <NavLink to={`/information-sources?id=${source.source_id}`} style={{ color: "#0369a1", fontWeight: 600 }}>
+                      {source.canonical_name}
+                    </NavLink>
+                    {source.source_url && <>{" "}<a href={source.source_url} target="_blank" rel="noreferrer" title="Otwórz publikację">↗</a></>}
+                    {source.evidence_excerpt && (
+                      <div style={{ fontSize: "0.76em", color: "#475569", marginTop: 2 }}>
+                        „{source.evidence_excerpt}”
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
             {(shownCountries.length > 0 || shownMarkers.length > 0 || shownPipelines.length > 0) && (
               <React.Suspense fallback={null}>
                 <CountryMap countries={shownCountries} places={shownMarkers} pipelines={shownPipelines} />
