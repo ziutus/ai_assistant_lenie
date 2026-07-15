@@ -167,18 +167,19 @@ class TestGetDocumentsNeedingEmbeddingORM:
         # Should be a SQLAlchemy construct, not a raw string
         assert hasattr(stmt, "compile"), "Statement should be a SQLAlchemy construct"
 
-    def test_query_uses_union_and_outerjoin(self, repo, mock_session):
-        """Verify the ORM statement contains UNION and LEFT OUTER JOIN for correct logic."""
+    def test_query_uses_outerjoin_and_ready_state_filter(self, repo, mock_session):
+        """Verify missing-model detection is limited to index-ready states."""
         mock_session.execute.return_value.all.return_value = []
 
         repo.get_documents_needing_embedding("some-model")
 
         stmt = mock_session.execute.call_args[0][0]
         compiled_sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-        assert "UNION" in compiled_sql.upper(), f"Expected UNION in SQL: {compiled_sql}"
         assert "LEFT OUTER JOIN" in compiled_sql.upper() or "OUTER JOIN" in compiled_sql.upper(), (
             f"Expected OUTER JOIN in SQL: {compiled_sql}"
         )
+        assert "READY_FOR_EMBEDDING" in compiled_sql
+        assert "DOCUMENT_INTO_DATABASE" not in compiled_sql
 
 
 # ---------------------------------------------------------------------------
