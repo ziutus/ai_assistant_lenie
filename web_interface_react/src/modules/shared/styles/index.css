@@ -100,3 +100,32 @@ input[type="file"]:disabled {
   background: rgba(0, 0, 0, 0.07);
   color: rgba(0, 0, 0, 0.42);
 }
+
+/* Chunk review workflow: a persistent vertical guide on wide screens. */
+.chunks-page,
+.chunks-page * {
+  box-sizing: border-box;
+}
+
+@media (min-width: 1200px) {
+  .chunks-page--with-flow {
+    padding-right: 270px;
+  }
+
+  .chunks-workflow {
+    position: fixed;
+    z-index: 20;
+    top: 24px;
+    right: 24px;
+    width: 246px;
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 1199px) {
+  .chunks-workflow {
+    position: static;
+    width: 100%;
+  }
+}

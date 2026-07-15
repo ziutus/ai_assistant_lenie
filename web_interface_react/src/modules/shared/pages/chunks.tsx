@@ -48,6 +48,7 @@ interface AnalysisRun {
   scope: string | null;
   temat_count?: number;
   approved_count?: number;
+  workflow_stage?: "split_proposal" | "cleanup_proposal" | "analysis" | "reviewed";
 }
 
 interface TopicSection {
@@ -352,6 +353,7 @@ const Chunks = () => {
   const [newModel, setNewModel]     = React.useState(MODELS[0]);
   const [newMode, setNewMode]       = React.useState("transcript");
   const [splitOnly, setSplitOnly]   = React.useState(false);
+  const [preclean, setPreclean]     = React.useState(true);
   const [chunkSize, setChunkSize]   = React.useState(5000);
   const [splitPreview, setSplitPreview] = React.useState<{ count: number; sizes: number[]; length: number } | null>(null);
   const [previewNonce, setPreviewNonce] = React.useState(0);
@@ -479,6 +481,18 @@ const Chunks = () => {
 
   React.useEffect(() => { fetchRuns(); }, [fetchRuns]);
   React.useEffect(() => { if (selectedRun !== null) fetchChunks(selectedRun); }, [selectedRun, fetchChunks]);
+  // Direct links to /chunks/:id do not carry router state. Load the document
+  // type so the basic flow can choose article/transcript without user input.
+  React.useEffect(() => {
+    if (!id || docType) return;
+    (async () => {
+      try {
+        const r = await fetch(`${apiUrl}/website_get?id=${id}`, { headers: { "x-api-key": apiKey ?? "" } });
+        const data = await r.json();
+        if (data.document_type) setDocType(data.document_type);
+      } catch { /* analysis can still be configured manually */ }
+    })();
+  }, [id, docType, apiUrl, apiKey]);
   // Clean documents (articles, webpages) default to article mode for new analyses
   React.useEffect(() => {
     if (docType && docType !== "youtube" && docType !== "movie") setNewMode("article");
@@ -561,6 +575,7 @@ const Chunks = () => {
           model: newModel, chunk_size: chunkSize,
           mode,
           split_only: splitOnlyOverride ?? splitOnly,
+          preclean: mode === "article" && !(splitOnlyOverride ?? splitOnly) && preclean,
           ...(scope !== null ? { scope_chapter: scope } : {}),
         }),
       });
@@ -676,18 +691,23 @@ const Chunks = () => {
     if (!marked || marked.size === 0) return;
     const lines = (chunk.original_text ?? "").split("\n");
     const newText = lines.filter((_, i) => !marked.has(i)).join("\n");
-    if (!newText.trim()) { setError("Nie można usunąć wszystkich linii"); return; }
     const removedLines = lines.filter((_, i) => marked.has(i)).map(l => l.trim()).filter(Boolean);
     setSavingLines(prev => ({ ...prev, [chunk.id]: true }));
     const res = await patchChunk(chunk.id, {
       original_text: newText,
+      ...(!newText.trim() ? { type: "SZUM", status: "skipped", topic: "Usunięty fragment" } : {}),
       ...(removeFromDocument && removedLines.length ? { remove_lines_from_document: removedLines } : {}),
     });
     setSavingLines(prev => ({ ...prev, [chunk.id]: false }));
     if (res?.status === "success") {
       clearLineMarks(chunk.id);
-      if (res.document_lines_removed > 0) {
-        setInfo(`Usunięto ${res.document_lines_removed} linii z dokumentu źródłowego`);
+      const sourceCount = res.document_lines_removed ?? 0;
+      if (!newText.trim()) {
+        setInfo(`Usunięto całą treść chunka #${chunk.position} i oznaczono go jako SZUM${sourceCount > 0 ? `; usunięto też ${sourceCount} linii ze źródła` : ""}.`);
+      } else if (sourceCount > 0) {
+        setInfo(`Usunięto ${sourceCount} linii z dokumentu źródłowego`);
+      }
+      if (sourceCount > 0) {
         setPreviewNonce(n => n + 1);
       }
     }
@@ -729,7 +749,6 @@ const Chunks = () => {
   };
 
   const mergeWithNext = async (chunk: Chunk) => {
-    if (!window.confirm(`Scalić chunk #${chunk.position} z #${chunk.position + 1}? Scalony chunk będzie wymagał ponownej analizy.`)) return;
     try {
       const r = await fetch(`${apiUrl}/chunk/${chunk.id}/merge_with_next`, { method: "POST", headers });
       const data = await r.json();
@@ -1007,6 +1026,9 @@ const Chunks = () => {
     !hiddenChunks.has(c.id) && (!hideAds || c.type === "TEMAT")
     && (!filterUnprocessed || (c.type === "TEMAT" && (c.obsidian_note_paths?.length ?? 0) === 0))
   );
+  const embeddedCount = tematChunks.filter(c => c.has_embeddings === true).length;
+  const reviewReady = tematChunks.length > 0 && unapprovedTematCount === 0 && chunksToAnalyze.length === 0;
+  const workflowBusy = !!jobId || reanalyzingAll || approvingAll || !!embedJobId;
 
   // ── User notes: match notes to chunks of the selected run ──
   // Direct match by chunk_id; reader notes (or notes from other runs) fall back
@@ -1331,7 +1353,7 @@ const Chunks = () => {
 
 
   return (
-    <div>
+    <div className={selectedRun !== null ? "chunks-page chunks-page--with-flow" : "chunks-page"}>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 6, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Przegląd chunków — dokument #{id}</h2>
         {EDITOR_TYPES.includes(docType) ? (
@@ -1347,6 +1369,22 @@ const Chunks = () => {
       <div style={{ margin: "16px 0", padding: "12px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
         <strong style={{ fontSize: "0.9em" }}>Nowa analiza</strong>
         <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: "0.86em", color: "#475569" }}>
+            {newMode === "article" ? "Artykuł" : "Transkrypcja"}
+            {" · "}{newModel}
+            {splitPreview ? ` · około ${splitPreview.count} ${splitPreview.count === 1 ? "chunk" : "chunków"}` : ""}
+            {newMode === "article" && preclean && !splitOnly ? " · wykrywanie reklam i szumu" : ""}
+          </span>
+          <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}
+            style={{ marginLeft: "auto", fontWeight: 700, padding: "6px 12px" }}>
+            {jobId ? `Analiza… (${jobStatus})` : runs.length > 0 ? "Rozpocznij nową analizę" : "Rozpocznij analizę"}
+          </button>
+        </div>
+        <details style={{ marginTop: 9 }}>
+          <summary style={{ cursor: "pointer", color: "#64748b", fontSize: "0.82em", userSelect: "none" }}>
+            Ustawienia zaawansowane
+          </summary>
+          <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap", alignItems: "center", paddingTop: 8, borderTop: "1px solid #e2e8f0" }}>
           <select value={newModel} onChange={e => setNewModel(e.target.value)} style={{ padding: "4px 8px", fontSize: "0.88em" }}>
             {MODELS.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
@@ -1377,6 +1415,13 @@ const Chunks = () => {
             <input type="checkbox" checked={splitOnly} onChange={e => setSplitOnly(e.target.checked)} />
             tylko podział (bez analizy LLM)
           </label>
+          {newMode === "article" && !splitOnly && (
+            <label style={{ fontSize: "0.85em", display: "flex", alignItems: "center", gap: 4 }}
+              title="LLM najpierw oznaczy dokładne zakresy reklam i szumu. Propozycja oraz docelowy podział zostaną zapisane w jednym runie.">
+              <input type="checkbox" checked={preclean} onChange={e => setPreclean(e.target.checked)} />
+              najpierw wykryj reklamy i szum
+            </label>
+          )}
           {splitPreview && (
             <span style={{ fontSize: "0.82em", color: "#475569" }}
               title={`Rozmiary chunków: ${splitPreview.sizes.join(", ")} znaków`}>
@@ -1386,9 +1431,10 @@ const Chunks = () => {
             </span>
           )}
           <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}>
-            {jobId ? `Analiza… (${jobStatus})` : "Uruchom analizę"}
+            {jobId ? `Analiza… (${jobStatus})` : runs.length > 0 ? "Rozpocznij nową analizę z tymi ustawieniami" : "Uruchom z tymi ustawieniami"}
           </button>
-        </div>
+          </div>
+        </details>
       </div>
 
       {/* Wybór runu */}
@@ -1402,6 +1448,8 @@ const Chunks = () => {
                 {" "}[{r.mode === "article" ? "artykuł" : "transkrypcja"}
                 {r.scope ? `, ${r.scope}` : ""}
                 {r.temat_count != null && r.temat_count > 0 ? `, ✓ ${r.approved_count}/${r.temat_count}` : ""}
+                {r.workflow_stage === "cleanup_proposal" ? ", propozycja czyszczenia" : ""}
+                {r.workflow_stage === "split_proposal" ? ", propozycja podziału" : ""}
                 , {RUN_STATUS_LABELS[r.status] ?? r.status}]
               </option>
             ))}
@@ -1410,7 +1458,7 @@ const Chunks = () => {
             style={{ padding: "3px 9px", border: "1px solid #fca5a5", borderRadius: 4, background: "#fff", color: "#b91c1c", cursor: "pointer", fontSize: "0.82em" }}>
             🗑 Usuń run
           </button>
-          {selectedRun !== null && (runStatus === "reviewed" ? (
+          {false && selectedRun !== null && (runStatus === "reviewed" ? (
             <button onClick={() => setRunWorkflowStatus("in_review")}
               title="Analiza jest zamknięta — otwórz ją ponownie do przeglądu"
               style={{ padding: "3px 9px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#f1f5f9", color: "#475569", cursor: "pointer", fontSize: "0.82em" }}>
@@ -1423,13 +1471,102 @@ const Chunks = () => {
               ✔ Zamknij review
             </button>
           ))}
-          {runStatus === "reviewed" && (
+          {false && runStatus === "reviewed" && (
             <span style={{ fontSize: "0.8em", color: "#15803d", fontWeight: 600 }}>zamknięta</span>
           )}
         </div>
       )}
 
       {/* Tagi dokumentu (tematyczne + kraje) */}
+      {/* Guided workflow: keep the next action in one predictable place. */}
+      {selectedRun !== null && (
+        <aside className="chunks-workflow" style={{
+          marginBottom: 14, padding: "14px 16px", border: "1px solid #cbd5e1",
+          borderRadius: 10, background: "#fff", boxShadow: "0 1px 3px rgba(15, 23, 42, .06)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12, flexWrap: "wrap" }}>
+            <strong style={{ color: "#0f172a" }}>Proces</strong>
+            <span style={{ fontSize: "0.82em", color: "#64748b" }}>run #{selectedRun}</span>
+            {workflowBusy && <span style={{ fontSize: "0.82em", color: "#0369a1" }}>Przetwarzanie…</span>}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
+            {[
+              {
+                label: "1. Analiza chunków",
+                done: chunksToAnalyze.length === 0,
+                detail: chunksToAnalyze.length > 0 ? `${chunksToAnalyze.length} wymaga analizy` : `${tematChunks.length} treści TEMAT`,
+              },
+              {
+                label: "2. Przegląd i akceptacja",
+                done: reviewReady || runStatus === "reviewed",
+                detail: `${approvedCount}/${tematChunks.length} zatwierdzonych`,
+              },
+              {
+                label: "3. Embeddingi",
+                done: runStatus === "reviewed" && embeddedCount > 0 && !embedJobId,
+                detail: embedJobId ? `generowanie: ${embedJobStatus}` : embeddedCount > 0 ? `${embeddedCount} chunków w indeksie` : "uruchomią się po zamknięciu",
+              },
+            ].map(step => (
+              <div key={step.label} style={{
+                padding: "10px 12px", borderRadius: 7,
+                border: `1px solid ${step.done ? "#86efac" : "#e2e8f0"}`,
+                background: step.done ? "#f0fdf4" : "#f8fafc",
+              }}>
+                <div style={{ fontSize: "0.84em", fontWeight: 700, color: step.done ? "#15803d" : "#334155" }}>
+                  {step.done ? "✓ " : ""}{step.label}
+                </div>
+                <div style={{ marginTop: 3, fontSize: "0.78em", color: "#64748b" }}>{step.detail}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 8, marginTop: 12 }}>
+            {chunksToAnalyze.length > 0 && runStatus !== "reviewed" ? (
+              <button className="button" onClick={reanalyzeAll} disabled={reanalyzingAll}
+                style={{ background: "#0369a1", color: "#fff", border: "none", fontWeight: 700 }}>
+                {reanalyzingAll ? "Analizuję…" : `Dalej: analizuj chunki (${chunksToAnalyze.length})`}
+              </button>
+            ) : unapprovedTematCount > 0 && runStatus !== "reviewed" ? (
+              <button className="button" onClick={approveAll} disabled={workflowBusy}
+                style={{ background: "#15803d", color: "#fff", border: "none", fontWeight: 700 }}>
+                {approvingAll ? "Zatwierdzam…" : `Dalej: zatwierdź wszystkie TEMAT (${unapprovedTematCount})`}
+              </button>
+            ) : runStatus !== "reviewed" ? (
+              <button className="button" onClick={() => setRunWorkflowStatus("reviewed")} disabled={!reviewReady || workflowBusy}
+                title={!reviewReady ? "Najpierw przeanalizuj i zatwierdź wszystkie chunki TEMAT" : "Zamknij review i automatycznie utwórz embeddingi"}
+                style={{ background: reviewReady ? "#7c3aed" : "#cbd5e1", color: "#fff", border: "none", fontWeight: 700 }}>
+                Zakończ review i utwórz embeddingi
+              </button>
+            ) : embedJobId ? (
+              <span style={{ color: "#0369a1", fontSize: "0.88em", fontWeight: 700 }}>
+                Tworzenie embeddingów… ({embedJobStatus})
+              </span>
+            ) : embeddedCount > 0 ? (
+              <span style={{ color: "#15803d", fontSize: "0.88em", fontWeight: 700 }}>✓ Proces zakończony</span>
+            ) : (
+              <span style={{ color: "#b45309", fontSize: "0.84em", fontWeight: 700 }}>
+                Review zakończone, ale brak embeddingów
+              </span>
+            )}
+            {runStatus === "reviewed" && (
+              <>
+                <button onClick={() => setRunWorkflowStatus("in_review")} disabled={!!embedJobId}
+                  style={{ padding: "4px 10px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", color: "#475569", cursor: "pointer", fontSize: "0.82em" }}>
+                  ↻ Otwórz review
+                </button>
+                <button onClick={generateEmbeddings} disabled={!!embedJobId || approvedCount === 0}
+                  title="Ręcznie odśwież embeddingi po późniejszych zmianach"
+                  style={{ padding: "4px 10px", border: "1px solid #a5f3fc", borderRadius: 4, background: "#ecfeff", color: "#0e7490", cursor: "pointer", fontSize: "0.82em" }}>
+                  {embedJobId ? `Odświeżam… (${embedJobStatus})` : "Odśwież embeddingi"}
+                </button>
+              </>
+            )}
+            <span style={{ fontSize: "0.78em", color: "#64748b", lineHeight: 1.4 }}>
+              Reklamy i szum są pomijane. Każdy chunk możesz zatwierdzić osobno poniżej.
+            </span>
+          </div>
+        </aside>
+      )}
+
       {(docThematicTags.length > 0 || docCountries.length > 0) && (
         <div style={{
           marginBottom: 12, padding: "8px 14px", border: "1px solid #e2e8f0", borderRadius: 8,
@@ -1471,21 +1608,6 @@ const Chunks = () => {
         </div>
       )}
 
-      {/* Pasek postępu */}
-      {selectedRun !== null && (
-        <div style={{
-          marginBottom: 10, padding: "10px 14px", border: "1px solid #bae6fd",
-          borderRadius: 6, background: "#f0f9ff", color: "#0c4a6e", fontSize: "0.84em",
-        }}>
-          <strong>Jak powstają embeddingi:</strong>{" "}
-          analiza tworzy chunki ze statusem <code>pending</code> → zatwierdź merytoryczne chunki
-          <code> TEMAT</code> → kliknij <strong>Zamknij review</strong>. Zamknięcie automatycznie
-          przebuduje indeks wyszukiwania tylko z zatwierdzonych treści. Chunki <code>REKLAMA</code>
-          i <code>SZUM</code> są pomijane. Po późniejszej edycji lub ponownym otwarciu review użyj
-          przycisku <strong>Generuj embeddingi</strong>, aby odświeżyć indeks ręcznie.
-        </div>
-      )}
-
       {chunks.length > 0 && (
         <div style={{ marginBottom: 12, padding: "8px 14px", background: "#0f172a", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ color: "#94a3b8", fontSize: "0.82em" }}>
@@ -1495,13 +1617,13 @@ const Chunks = () => {
           <div style={{ flex: 1, minWidth: 80, background: "#334155", borderRadius: 4, height: 8 }}>
             <div style={{ width: `${pct}%`, height: 8, background: "#22c55e", borderRadius: 4, transition: "width .3s" }} />
           </div>
-          {unapprovedTematCount > 0 && (
+          {false && unapprovedTematCount > 0 && (
             <button className="button" onClick={approveAll} disabled={approvingAll}
               style={{ fontSize: "0.8em", padding: "3px 10px", background: "#15803d", color: "#fff", border: "none" }}>
               {approvingAll ? "Zatwierdzam…" : `Zatwierdź wszystkie (${unapprovedTematCount})`}
             </button>
           )}
-          {chunksToAnalyze.length > 0 && (
+          {false && chunksToAnalyze.length > 0 && (
             <button className="button" onClick={reanalyzeAll} disabled={reanalyzingAll}
               style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0369a1", color: "#fff", border: "none" }}>
               {reanalyzingAll ? "Analizuję…" : `Analizuj chunki (${chunksToAnalyze.length})`}
@@ -1538,13 +1660,6 @@ const Chunks = () => {
               Widok sekcji
             </button>
           )}
-          {approvedCount > 0 && (
-            <button className="button" onClick={generateEmbeddings} disabled={!!embedJobId}
-              title="Generuje embeddingi z zatwierdzonych chunków TEMAT (do wyszukiwania semantycznego)"
-              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0891b2", color: "#fff", border: "none" }}>
-              {embedJobId ? `Embeddingi… (${embedJobStatus})` : "Generuj embeddingi"}
-            </button>
-          )}
         </div>
       )}
 
@@ -1576,15 +1691,23 @@ const Chunks = () => {
       {info && <p style={{ color: "#15803d", marginBottom: 12 }}>{info}</p>}
       {loading && <div className="loader" style={{ marginBottom: 12 }} />}
 
-      {/* Czyszczenie dokumentu z runa artykułowego */}
-      {runMode === "article" && chunks.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <button className="button" onClick={applyCleanupAndResplit} disabled={applyingCleanup || !!jobId}
-            title="Nadpisuje tekst źródłowy dokumentu treścią chunków TEMAT (REKLAMA/SZUM i usunięte linie znikają), po czym uruchamia nową analizę"
-            style={{ fontSize: "0.85em", background: "#7c3aed", color: "#fff", border: "none", padding: "4px 12px" }}>
-            {applyingCleanup ? "Czyszczę dokument…" : "Wyczyść dokument i zaproponuj nowy podział"}
-          </button>
-        </div>
+      {/* Destructive source cleanup is optional, not part of the standard flow. */}
+      {runMode === "article" && runStatus !== "reviewed" && chunksToAnalyze.length > 0 && reklamaCount > 0 && (
+        <details style={{ marginBottom: 12, padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 6, background: "#f8fafc" }}>
+          <summary style={{ cursor: "pointer", color: "#64748b", fontSize: "0.82em", userSelect: "none" }}>
+            Operacje zaawansowane
+          </summary>
+          <div style={{ marginTop: 9 }}>
+            <button className="button" onClick={applyCleanupAndResplit} disabled={applyingCleanup || workflowBusy}
+              title="Trwale nadpisuje tekst źródłowy treścią chunków TEMAT, usuwa REKLAMA/SZUM i tworzy nowy run"
+              style={{ fontSize: "0.82em", background: "#7c3aed", color: "#fff", border: "none", padding: "5px 10px" }}>
+              {applyingCleanup ? "Stosuję czyszczenie…" : "Zastosuj czyszczenie do tekstu źródłowego i utwórz nowy run"}
+            </button>
+            <p style={{ margin: "7px 0 0", color: "#64748b", fontSize: "0.76em", lineHeight: 1.4 }}>
+              Opcjonalne: trwale usuwa odrzucone fragmenty z dokumentu. Standardowy flow nie wymaga tej operacji.
+            </p>
+          </div>
+        </details>
       )}
 
       {/* Chunki — widok płaski */}
