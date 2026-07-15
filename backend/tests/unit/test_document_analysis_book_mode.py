@@ -21,6 +21,7 @@ from library.db.models import (  # noqa: E402
     DocumentAnalysisRun, DocumentChunk, DocumentTopicSection, WebDocument,
 )
 from library.document_analysis_service import DocumentAnalysisService, _slice_chapter  # noqa: E402
+from library.text_functions import detect_chapters  # noqa: E402
 
 
 BOOK_TEXT = (
@@ -230,6 +231,16 @@ class TestChaptersEndpoint:
         titles = [c["title"] for c in data["chapters"]]
         assert titles == ["(wstęp)", "Rozdział 1: Geneza", "Rozdział 2: Rozwój"]
 
+    def test_reader_collapses_short_markdown_document(self, client):
+        resp = client.get("/document/77/chapters?reader=1")
+        data = resp.get_json()
+
+        assert resp.status_code == 200
+        assert data["reader_compact"] is True
+        assert len(data["chapters"]) == 1
+        assert data["chapters"][0]["title"] == "(całość)"
+        assert data["chapters"][0]["length"] == data["text_length"]
+
     def test_returns_countries_from_kraj_tags(self, client):
         resp = client.get("/document/77/chapters")
         data = resp.get_json()
@@ -263,6 +274,17 @@ class TestChaptersEndpoint:
         assert data["synthesis"] is None
 
 
+class TestCompactReaderChapters:
+    def test_long_document_keeps_its_chapters(self):
+        long_text = BOOK_TEXT + (" bardzo długi tekst" * 1_000)
+        chapters = detect_chapters(long_text)
+
+        result, compact = crr._compact_reader_chapters(long_text, chapters)
+
+        assert compact is False
+        assert result == chapters
+
+
 class TestChapterContentEndpoint:
     def test_returns_chapter_text_with_nav(self, client):
         resp = client.get("/document/77/chapter/2")
@@ -274,6 +296,15 @@ class TestChapterContentEndpoint:
         assert data["chapter_total"] == 3
         assert data["prev"] == 1
         assert data["next"] == 3
+
+    def test_short_document_is_returned_as_one_continuous_chapter(self, client):
+        data = client.get("/document/77/chapter/1?reader=1").get_json()
+
+        assert data["title"] == "(całość)"
+        assert data["text"] == BOOK_TEXT.strip()
+        assert data["chapter_total"] == 1
+        assert data["prev"] is None
+        assert data["next"] is None
 
     def test_first_and_last_chapter_nav_boundaries(self, client):
         first = client.get("/document/77/chapter/1").get_json()
