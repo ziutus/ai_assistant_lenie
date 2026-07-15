@@ -357,6 +357,8 @@ class DocumentAnalysisService:
         log(f"doc={doc_id} mode={mode} field={text_field} len={len(text):,}")
 
         scope: str | None = None
+        author_bio = None
+        author_bio_position = None
         if is_transcript:
             # 3. Detect format (multi-speaker = has >> speaker markers)
             speaker_changes = len(re.findall(r'>>', text))
@@ -408,7 +410,14 @@ class DocumentAnalysisService:
                 text, scope_title = _slice_chapter(text, scope_chapter)
                 scope = scope_title[:200]
                 log(f'scope: chapter {scope_chapter} "{scope}" ({len(text):,} chars)')
-            chunk_texts = split_markdown_into_chunks(text, chunk_size)
+            from library.author_biography import extract_trailing_author_biography
+
+            article_body, author_bio = extract_trailing_author_biography(text, getattr(doc, "author", None))
+            chunk_texts = split_markdown_into_chunks(article_body, chunk_size)
+            if author_bio:
+                chunk_texts.append(author_bio)
+                author_bio_position = len(chunk_texts) - 1
+                log(f"author biography isolated ({len(author_bio):,} chars)")
             segments = []
         log(f"split={len(chunk_texts)} chunks, max {chunk_size:,} chars")
 
@@ -425,14 +434,14 @@ class DocumentAnalysisService:
             log(f"split_only: {total} chunks without LLM analysis")
             sections = [
                 {
-                    "type": "TEMAT",
-                    "topic": None,
+                    "type": "SZUM" if i == author_bio_position else "TEMAT",
+                    "topic": "Notka biograficzna autora" if i == author_bio_position else None,
                     "original": chunk_text,
                     "text": None,
                     "ratio": None,
                     "summary": None,
                 }
-                for chunk_text in chunk_texts
+                for i, chunk_text in enumerate(chunk_texts)
             ]
             chunk_texts_iter: list[str] = []
         else:
@@ -440,7 +449,15 @@ class DocumentAnalysisService:
         for i, chunk_text in enumerate(chunk_texts_iter):
             log(f"chunk {i + 1}/{total} ({len(chunk_text):,} chars)...")
             try:
-                if is_transcript:
+                if i == author_bio_position:
+                    result = {
+                        "type": "SZUM",
+                        "topic": "Notka biograficzna autora",
+                        "corrected_text": None,
+                        "summary": None,
+                        "rewrite_ratio": None,
+                    }
+                elif is_transcript:
                     result = analyze_chunk(
                         chunk_text, model,
                         position=i + 1, total=total,
@@ -547,6 +564,23 @@ class DocumentAnalysisService:
                     log(f"persons: linked={len(p_summary['linked'])} skipped={len(p_summary['skipped'])}")
                 except Exception:
                     logger.exception("person resolution failed, continuing without person links")
+
+                if author_bio:
+                    try:
+                        from library.author_biography import process_author_biography
+
+                        bio_summary = process_author_biography(session, doc, author_bio, model)
+                        log(f"author biography: {bio_summary['status']}")
+                    except Exception:
+                        logger.exception("author biography processing failed, continuing")
+
+                try:
+                    from library.information_provenance import refresh_document_information_sources
+
+                    provenance = refresh_document_information_sources(session, doc, text, model)
+                    log(f"information sources: {len(provenance['sources'])}")
+                except Exception:
+                    logger.exception("information-source extraction failed, continuing")
 
         # 12. Persist to DB
         run = DocumentAnalysisRun(
