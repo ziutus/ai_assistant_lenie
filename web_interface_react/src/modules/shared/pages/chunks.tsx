@@ -78,6 +78,40 @@ interface CountryTag {
   name_pl: string;
 }
 
+interface DocQuality {
+  score: number;
+  penalties: Record<string, number>;
+  signals?: { photo_captions?: number; noise_share?: number; temat_chars?: number };
+  llm_rubric?: { zrodla: number; glebia: number; jezyk: number; uzasadnienie?: string } | null;
+}
+
+const QUALITY_PENALTY_LABELS: Record<string, string> = {
+  photo_captions: "podpisy zdjęć",
+  missing_author: "brak autora",
+  noise_share: "udział reklam/szumu",
+  short_text: "bardzo krótki tekst",
+  clickbait_title: "clickbaitowy tytuł",
+  llm_rubric: "rubryka LLM (źródła/głębia/język)",
+};
+
+function qualityTooltip(q: DocQuality): string {
+  const lines = Object.entries(q.penalties ?? {}).map(
+    ([key, pts]) => `−${pts}: ${QUALITY_PENALTY_LABELS[key] ?? key}`,
+  );
+  if (lines.length === 0) lines.push("bez zastrzeżeń");
+  if (q.llm_rubric) {
+    lines.push(`LLM — źródła: ${q.llm_rubric.zrodla}/5, głębia: ${q.llm_rubric.glebia}/5, język: ${q.llm_rubric.jezyk}/5`);
+    if (q.llm_rubric.uzasadnienie) lines.push(q.llm_rubric.uzasadnienie);
+  }
+  return lines.join("\n");
+}
+
+function qualityColors(score: number): React.CSSProperties {
+  if (score >= 75) return { background: "#dcfce7", color: "#15803d" };
+  if (score >= 50) return { background: "#fef3c7", color: "#b45309" };
+  return { background: "#fee2e2", color: "#b91c1c" };
+}
+
 const RUN_STATUS_LABELS: Record<string, string> = {
   created: "nowa",
   in_review: "w przeglądzie",
@@ -363,6 +397,10 @@ const Chunks = () => {
   const [videoId, setVideoId]       = React.useState("");
   const [docType, setDocType]       = React.useState(initialDocType);
   const [docTitle, setDocTitle]     = React.useState("");
+  const [docUrl, setDocUrl]         = React.useState("");
+  const [docQuality, setDocQuality] = React.useState<DocQuality | null>(null);
+  const [computingQuality, setComputingQuality] = React.useState(false);
+  const [reportingIssue, setReportingIssue] = React.useState(false);
   const [runMode, setRunMode]       = React.useState("transcript");
   const [speakers, setSpeakers]     = React.useState<Speaker[]>([]);
 
@@ -477,6 +515,8 @@ const Chunks = () => {
       setSegments(data.segments ?? []);
       setVideoId(data.document?.original_id ?? "");
       setDocType(data.document?.document_type ?? "");
+      setDocUrl(data.document?.url ?? "");
+      setDocQuality(data.document?.quality ?? null);
       setDocCountries(data.document?.countries ?? []);
       setDocThematicTags(data.document?.thematic_tags ?? []);
       setRunMode(data.run?.mode ?? "transcript");
@@ -516,6 +556,8 @@ const Chunks = () => {
         const data = await r.json();
         if (data.document_type) setDocType(data.document_type);
         if (data.title) setDocTitle(data.title);
+        if (data.url) setDocUrl(data.url);
+        if (data.quality) setDocQuality(data.quality);
       } catch { /* analysis can still be configured manually */ }
     })();
   }, [id, docType, docTitle, apiUrl, apiKey]);
@@ -1040,6 +1082,43 @@ const Chunks = () => {
     finally { setExtractingAuthorFor(null); }
   };
 
+  // ── Quality (staranność) + extraction issue report ──
+
+  const computeQuality = async () => {
+    if (!id || selectedRun === null || computingQuality) return;
+    setComputingQuality(true);
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/document/${id}/quality`, {
+        method: "POST", headers, body: JSON.stringify({ run_id: selectedRun }),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        setDocQuality(data.quality);
+        setInfo(`Oceniono staranność: ${data.quality.score}/100`);
+      } else { setError("Błąd oceny staranności: " + (data.message ?? "")); }
+    } catch { setError("Błąd połączenia przy ocenie staranności"); }
+    finally { setComputingQuality(false); }
+  };
+
+  const reportExtractionIssue = async () => {
+    if (!id || reportingIssue) return;
+    if (!window.confirm(
+      "Zgłosić: artykuł błędnie obcięty względem oryginału?\n"
+      + "Dokument wróci do kolejki NEED_MANUAL_REVIEW z błędem ARTICLE_TRUNCATED."
+    )) return;
+    setReportingIssue(true);
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/document/${id}/report_extraction_issue`, { method: "POST", headers });
+      const data = await r.json();
+      if (data.status === "success") {
+        setInfo("Zgłoszono błędne obcięcie artykułu — dokument trafił do kolejki ręcznej analizy (NEED_MANUAL_REVIEW).");
+      } else { setError("Błąd zgłoszenia: " + (data.message ?? "")); }
+    } catch { setError("Błąd połączenia przy zgłaszaniu"); }
+    finally { setReportingIssue(false); }
+  };
+
   // ── Embeddings ──
 
   const pollEmbeddingJob = React.useCallback((jid: string) => {
@@ -1094,6 +1173,10 @@ const Chunks = () => {
   const embeddedCount = tematChunks.filter(c => c.has_embeddings === true).length;
   const reviewReady = tematChunks.length > 0 && unapprovedTematCount === 0 && chunksToAnalyze.length === 0;
   const workflowBusy = !!jobId || reanalyzingAll || approvingAll || !!embedJobId;
+  const analyzedTematCount = tematChunks.filter(c => c.summary).length;
+  // Preclean leaves REKLAMA/SZUM chunks behind; a clean article leaves none,
+  // so once the LLM analysis produced summaries the detection step is also done.
+  const noiseMarkingDone = reklamaCount > 0 || analyzedTematCount > 0 || runStatus === "reviewed";
 
   // ── User notes: match notes to chunks of the selected run ──
   // Direct match by chunk_id; reader notes (or notes from other runs) fall back
@@ -1472,6 +1555,36 @@ const Chunks = () => {
           <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
         )}
         <NavLink to={`/read/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>📖 Czytaj</NavLink>
+        {docUrl && (
+          <a href={docUrl} target="_blank" rel="noopener noreferrer"
+            title="Otwórz oryginalny artykuł — porównaj, czy tekst nie jest obcięty"
+            style={{ fontSize: "0.85em", color: "#0369a1" }}>
+            🔗 Oryginał
+          </a>
+        )}
+        {docQuality && (
+          <span
+            title={qualityTooltip(docQuality)}
+            style={{
+              fontSize: "0.8em", fontWeight: 700, padding: "2px 9px", borderRadius: 10,
+              cursor: "help", ...qualityColors(docQuality.score),
+            }}
+          >
+            ⚖ {docQuality.score}/100
+          </span>
+        )}
+        {runMode === "article" && selectedRun !== null && (
+          <button onClick={computeQuality} disabled={computingQuality}
+            title="Policz ocenę staranności artykułu (kary deterministyczne + rubryka LLM) na chunkach wybranego runu"
+            style={{ padding: "2px 9px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.8em", color: "#64748b" }}>
+            {computingQuality ? "⚖ Oceniam…" : docQuality ? "⚖ Oceń ponownie" : "⚖ Oceń staranność"}
+          </button>
+        )}
+        <button onClick={reportExtractionIssue} disabled={reportingIssue}
+          title="Artykuł błędnie obcięty względem oryginału — odeślij dokument do kolejki ręcznej analizy (NEED_MANUAL_REVIEW + ARTICLE_TRUNCATED)"
+          style={{ padding: "2px 9px", border: "1px solid #fca5a5", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.8em", color: "#b91c1c" }}>
+          {reportingIssue ? "⚠ Zgłaszam…" : "⚠ Błędnie obcięty"}
+        </button>
         <div style={{ marginLeft: "auto" }}><ReaderIdentityBadge identity={identity} /></div>
       </div>
 
@@ -1610,23 +1723,59 @@ const Chunks = () => {
             {workflowBusy && <span style={{ fontSize: "0.82em", color: "#0369a1" }}>Przetwarzanie…</span>}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
-            {[
+            {([
               {
                 label: "1. Analiza chunków",
                 done: chunksToAnalyze.length === 0,
                 detail: chunksToAnalyze.length > 0 ? `${chunksToAnalyze.length} wymaga analizy` : `${tematChunks.length} treści TEMAT`,
+                subs: [
+                  {
+                    label: "Podział na chunki",
+                    done: chunkTotal > 0,
+                    detail: chunkTotal > 0 ? `${chunkTotal} chunków` : "brak chunków",
+                  },
+                  ...(runMode === "article" ? [{
+                    label: "Wykrywanie reklam i szumu",
+                    done: noiseMarkingDone,
+                    detail: reklamaCount > 0 ? `${reklamaCount} REKLAMA/SZUM` : noiseMarkingDone ? "nie wykryto" : "oczekuje",
+                  }] : []),
+                  {
+                    label: "Analiza LLM (tematy i streszczenia)",
+                    done: tematChunks.length > 0 && chunksToAnalyze.length === 0 && analyzedTematCount > 0,
+                    detail: `${analyzedTematCount}/${tematChunks.length} przeanalizowanych`,
+                  },
+                ],
               },
               {
                 label: "2. Przegląd i akceptacja",
                 done: reviewReady || runStatus === "reviewed",
                 detail: `${approvedCount}/${tematChunks.length} zatwierdzonych`,
+                subs: [
+                  {
+                    label: "Zatwierdzenie chunków TEMAT",
+                    done: tematChunks.length > 0 && unapprovedTematCount === 0,
+                    detail: `${approvedCount}/${tematChunks.length}`,
+                  },
+                  {
+                    label: "Zamknięcie review",
+                    done: runStatus === "reviewed",
+                    detail: RUN_STATUS_LABELS[runStatus] ?? runStatus,
+                  },
+                ],
               },
               {
                 label: "3. Embeddingi",
                 done: runStatus === "reviewed" && embeddedCount > 0 && !embedJobId,
                 detail: embedJobId ? `generowanie: ${embedJobStatus}` : embeddedCount > 0 ? `${embeddedCount} chunków w indeksie` : "uruchomią się po zamknięciu",
+                subs: [
+                  {
+                    label: "Generowanie embeddingów",
+                    done: embeddedCount > 0 && !embedJobId,
+                    detail: embedJobId ? `w toku: ${embedJobStatus}` : `${embeddedCount}/${approvedCount} zatwierdzonych w indeksie`,
+                  },
+                ],
               },
-            ].map(step => (
+            ] as { label: string; done: boolean; detail: string; subs: { label: string; done: boolean; detail: string }[] }[]).map(step => (
               <div key={step.label} style={{
                 padding: "10px 12px", borderRadius: 7,
                 border: `1px solid ${step.done ? "#86efac" : "#e2e8f0"}`,
@@ -1636,6 +1785,17 @@ const Chunks = () => {
                   {step.done ? "✓ " : ""}{step.label}
                 </div>
                 <div style={{ marginTop: 3, fontSize: "0.78em", color: "#64748b" }}>{step.detail}</div>
+                <div style={{ marginTop: 6, display: "grid", gap: 3, paddingLeft: 2 }}>
+                  {step.subs.map(sub => (
+                    <div key={sub.label} style={{ display: "flex", gap: 6, fontSize: "0.76em", alignItems: "baseline" }}>
+                      <span style={{ color: sub.done ? "#15803d" : "#94a3b8", fontWeight: 700, minWidth: 11 }}>
+                        {sub.done ? "✓" : "○"}
+                      </span>
+                      <span style={{ color: sub.done ? "#15803d" : "#475569" }}>{sub.label}</span>
+                      <span style={{ color: "#94a3b8", whiteSpace: "nowrap" }}>— {sub.detail}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

@@ -161,10 +161,11 @@ class TestWebDocumentColumns:
         "author", "note", "uuid", "project", "text_md",
         "text_extracted", "transcript_needed", "reviewed_at",
         "obsidian_note_paths", "video_description", "ner_unavailable_at",
+        "quality",
     }
 
     def test_column_count(self):
-        assert len(_column_names(WebDocument)) == 31
+        assert len(_column_names(WebDocument)) == 32
 
     def test_all_column_names(self):
         assert _column_names(WebDocument) == self.EXPECTED_COLUMNS
@@ -496,14 +497,14 @@ class TestValidate:
 # ---------------------------------------------------------------------------
 
 class TestDict:
-    def test_dict_has_33_keys(self):
+    def test_dict_has_34_keys(self):
         doc = _make_doc(
             title="Test",
             document_state_error="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
-        assert len(result) == 33
+        assert len(result) == 34
 
     def test_dict_keys(self):
         doc = _make_doc(
@@ -521,6 +522,7 @@ class TestDict:
             "ai_summary_needed", "author", "note", "uuid", "project",
             "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths", "video_description",
+            "quality",
         }
         assert set(result.keys()) == expected_keys
 
