@@ -6,6 +6,7 @@ const KEYS = {
   apiUrl: "lenie_apiUrl",
   apiKey: "lenie_apiKey",
   obsidianVaultName: "lenie_obsidianVaultName",
+  listFilters: "lenie_listFilters",
 } as const;
 
 export function loadConnectionConfig(): {
@@ -42,6 +43,39 @@ export function clearConnectionConfig(): void {
 
 export function isConnected(): boolean {
   return !!localStorage.getItem(KEYS.apiKey);
+}
+
+// Document-list filters survive a page reload (stored per browser). Saved as a
+// partial merge so the context (type/state/search) and the list page
+// (obsidian filter) can persist their fields independently.
+export interface ListFilters {
+  documentType: string;
+  documentState: string;
+  searchText: string;
+  searchType: string;
+  obsidianFilter: "none" | "missing" | "has";
+}
+
+const DEFAULT_LIST_FILTERS: ListFilters = {
+  documentType: "link",
+  documentState: "NEED_MANUAL_REVIEW",
+  searchText: "",
+  searchType: "strict",
+  obsidianFilter: "none",
+};
+
+export function loadListFilters(): ListFilters {
+  try {
+    const raw = localStorage.getItem(KEYS.listFilters);
+    if (!raw) return { ...DEFAULT_LIST_FILTERS };
+    return { ...DEFAULT_LIST_FILTERS, ...JSON.parse(raw) };
+  } catch {
+    return { ...DEFAULT_LIST_FILTERS };
+  }
+}
+
+export function saveListFilters(filters: Partial<ListFilters>): void {
+  localStorage.setItem(KEYS.listFilters, JSON.stringify({ ...loadListFilters(), ...filters }));
 }
 
 // The Obsidian vault name is device-specific (e.g. Obsidian Sync uses a

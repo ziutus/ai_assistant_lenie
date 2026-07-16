@@ -258,6 +258,12 @@ class WebDocument(Base):
     # silently empty. Cleared on the next successful refresh (found or not).
     ner_unavailable_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 
+    # Article quality ("staranność") assessment — JSONB: score 0-100, per-signal
+    # penalties (photo captions, missing author, noise share, ...) and the LLM
+    # rubric. Computed by library/article_quality.py at the end of an article-mode
+    # analysis run, or on demand via POST /document/<id>/quality.
+    quality: Mapped[dict | None] = mapped_column(JSONB)
+
     # Lookup-table relationships (many-to-one)
     document_type_ref: Mapped["DocumentType"] = relationship(
         foreign_keys=[document_type],
@@ -428,6 +434,7 @@ class WebDocument(Base):
             "transcript_needed": self.transcript_needed,
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,
             "obsidian_note_paths": self.obsidian_note_paths or [],
+            "quality": self.quality,
         }
 
 

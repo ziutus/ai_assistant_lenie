@@ -1,6 +1,7 @@
 import axios from "axios";
 import React from "react";
 import { AuthorizationContext } from "../context/authorizationContext";
+import { loadListFilters } from "../services/storage";
 
 export const useList = () => {
   const [data, setData] = React.useState<any[] | null>(null);
@@ -9,10 +10,16 @@ export const useList = () => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [isError, setIsError] = React.useState(false);
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
-  const { selectedDocumentType, selectedDocumentState} = React.useContext(AuthorizationContext);
+  const { selectedDocumentType, selectedDocumentState, searchInDocument } = React.useContext(AuthorizationContext);
 
   React.useEffect(() => {
-    handleGetList(selectedDocumentType, selectedDocumentState).then(() => null);
+    // Initial load reuses all persisted filters (incl. the list-local Obsidian
+    // filter), so a page reload shows the same results the user was browsing.
+    const { obsidianFilter } = loadListFilters();
+    handleGetList(selectedDocumentType, selectedDocumentState, searchInDocument, {
+      onlyMissing: obsidianFilter === "missing",
+      onlyHas: obsidianFilter === "has",
+    }).then(() => null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

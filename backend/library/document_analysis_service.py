@@ -570,6 +570,20 @@ class DocumentAnalysisService:
                 except Exception:
                     logger.exception("author extraction failed, continuing without author")
 
+            # 11f. Article quality ("staranność") scoring — deterministic
+            #      penalties + one LLM rubric call (library/article_quality.py).
+            #      Whole-document article runs only: a transcript or a single
+            #      chapter is not a fair sample of the article's care.
+            if not is_transcript and scope is None:
+                try:
+                    from library.article_quality import compute_quality
+
+                    doc.quality = compute_quality(doc, sections, model=model)
+                    log(f"quality: {doc.quality['score']}/100 "
+                        f"(penalties: {doc.quality['penalties'] or '-'})")
+                except Exception:
+                    logger.exception("quality scoring failed, continuing without quality")
+
         # 11c. NER entities (persons/places) on the full document text — offline
         #      (no LLM), stored in document_entities with replace semantics, so
         #      chapter-scoped runs skip it (a single chapter's entities must not

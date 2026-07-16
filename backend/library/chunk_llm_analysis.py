@@ -75,7 +75,9 @@ def propose_article_cleanup(text: str, model: str, max_chars: int = 12_000) -> l
         prompt = f"""Oceń linie surowego artykułu PRZED jego podziałem na fragmenty.
 Wskaż wyłącznie zakresy, które należy wykluczyć:
 - REKLAMA: sponsor, afiliacja, autopromocja, newsletter lub CTA,
-- SZUM: menu, stopka, cookies, nawigacja, lista linków, podpis techniczny.
+- SZUM: menu, stopka, cookies, nawigacja, lista linków, podpis techniczny,
+  podpis pod zdjęciem / credit fotografa (np. "zdjęcie ilustracyjne", "fot. ...",
+  shutterstock, Getty, East News, PAP).
 Nie oznaczaj jako szum nagłówków ani krótkich merytorycznych akapitów.
 Zwróć TYLKO JSON: [{{"start_line": 2, "end_line": 4, "type": "SZUM", "reason": "lista linków"}}].
 Gdy nic nie trzeba wykluczyć, zwróć [].
@@ -363,7 +365,8 @@ W PIERWSZEJ LINII wpisz etykietę (tylko jedną z trzech opcji):
    ### TEMAT: <temat>        (merytoryczna treść dokumentu)
    ### REKLAMA: <opis>       (treść reklamowa lub sponsorska)
    ### SZUM: <opis>          (szum techniczny strony: nawigacja portalu, menu, stopka,
-                              cookie/zgody, listy linków "przeczytaj też", przyciski udostępniania)
+                              cookie/zgody, listy linków "przeczytaj też", przyciski udostępniania,
+                              podpisy zdjęć i credity fotografów, np. "zdjęcie ilustracyjne")
 W miejsce <temat>/<opis> wpisz KONKRETNY temat tego fragmentu w 3-5 słowach —
 nie przepisuj dosłownie tekstu "<temat>" ani nazwy etykiety.
 Jeśli fragment miesza szum z treścią merytoryczną — wybierz TEMAT.
