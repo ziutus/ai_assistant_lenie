@@ -40,6 +40,10 @@ _CAPTION_AGENCY_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Podpis bywa dłuższy niż _CAPTION_MAX_CHARS, ale linia KOŃCZĄCA SIĘ
+# "(zdjęcie ilustracyjne)" to zawsze podpis, niezależnie od długości.
+_CAPTION_SUFFIX_RE = re.compile(r"\(zdj[eę]cie\s+ilustracyjne\)\s*$", re.IGNORECASE)
+
 _CLICKBAIT_RE = re.compile(
     r"(?:nie uwierzysz|szok(?:uj[aą]c\w*)?\b|musisz to zobaczy[ćc]|zobacz,? co|"
     r"a[żz] trudno uwierzy[ćc]|to zmieni (?:tw[oó]j|wszystko)|jednym trikiem|"
@@ -52,7 +56,11 @@ def is_photo_caption_line(line: str) -> bool:
     """Czy linia jest podpisem zdjęcia / creditem fotografa (np.
     "zdjęcie ilustracyjne, Dmytro Buiansky / shutterstock")?"""
     stripped = line.strip()
-    if not stripped or len(stripped) > _CAPTION_MAX_CHARS:
+    if not stripped:
+        return False
+    if _CAPTION_SUFFIX_RE.search(stripped):
+        return True
+    if len(stripped) > _CAPTION_MAX_CHARS:
         return False
     # Usuń markery [imgN] — podpis często sąsiaduje z markerem obrazka
     bare = re.sub(r"\[img\d+(?::[^\]]*)?\]", "", stripped).strip()

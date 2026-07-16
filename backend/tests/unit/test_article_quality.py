@@ -39,6 +39,13 @@ class TestPhotoCaptionDetection:
     def test_zrodlo_zdjecia(self):
         assert is_photo_caption_line("Źródło zdjęcia: Unsplash")
 
+    def test_long_caption_ending_with_zdjecie_ilustracyjne(self):
+        line = (
+            "Chiński rząd nakazał zaprzestanie produkcji aut ośmiu firmom. "
+            "Niektóre były pionierami chińskiej motoryzacji (zdjęcie ilustracyjne)"
+        )
+        assert is_photo_caption_line(line)
+
     def test_long_paragraph_mentioning_photo_is_not_caption(self):
         text = (
             "Na opublikowanym przez agencję zdjęciu widać skutki wybuchu, a fotograf "
