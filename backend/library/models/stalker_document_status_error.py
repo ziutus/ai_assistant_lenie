@@ -24,4 +24,7 @@ class StalkerDocumentStatusError(Enum):
     CAPTIONS_FETCH_ERROR = 17
     TRANSCRIPTION_ERROR = 18
     TRANSCRIPTION_INSUFFICIENT_FUNDS = 19
+    # Reviewer-reported: extracted article text is truncated/wrong vs the
+    # original page (POST /document/<id>/report_extraction_issue)
+    ARTICLE_TRUNCATED = 20
 

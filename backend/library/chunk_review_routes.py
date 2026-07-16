@@ -862,10 +862,12 @@ def get_run_chunks(run_id: int):
         "document": {
             "id": doc.id if doc else None,
             "title": doc.title if doc else "",
+            "url": doc.url if doc else "",
             "original_id": doc.original_id if doc else "",
             "document_type": doc.document_type if doc else "",
             "countries": doc_countries,
             "thematic_tags": doc_thematic_tags,
+            "quality": doc.quality if doc else None,
         },
         "segments": segments,
         "lite": lite,
@@ -1254,6 +1256,104 @@ def extract_author(run_id: int):
         return jsonify({"status": "error", "message": "DB save failed"}), 500
 
     return jsonify({"status": "success", "author": author})
+
+
+# ---------------------------------------------------------------------------
+# API: POST /document/<doc_id>/quality
+# ---------------------------------------------------------------------------
+
+@bp.route("/document/<int:doc_id>/quality", methods=["POST"])
+def compute_document_quality(doc_id: int):
+    """(Re)compute the article quality ("staranność") score on demand.
+
+    Body (optional JSON): {"run_id": N} — which analysis run's chunks to score;
+    defaults to the document's newest run. Deterministic penalties + one LLM
+    rubric call with the run's model (library/article_quality.py). Saves the
+    result to web_documents.quality and returns it.
+    """
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    run_id = data.get("run_id")
+    if run_id is not None:
+        run = session.get(DocumentAnalysisRun, run_id)
+        if run is None or run.document_id != doc_id:
+            return jsonify({"status": "error",
+                            "message": f"Run {run_id} not found for document {doc_id}"}), 404
+    else:
+        run = session.scalars(
+            select(DocumentAnalysisRun)
+            .where(DocumentAnalysisRun.document_id == doc_id)
+            .order_by(DocumentAnalysisRun.id.desc())
+        ).first()
+        if run is None:
+            return jsonify({"status": "error",
+                            "message": "No analysis run — run chunk analysis first"}), 400
+
+    chunks = session.scalars(
+        select(DocumentChunk)
+        .where(DocumentChunk.run_id == run.id)
+        .order_by(DocumentChunk.position)
+    ).all()
+    if not chunks:
+        return jsonify({"status": "error", "message": f"Run {run.id} has no chunks"}), 400
+
+    sections = [
+        {"type": c.type, "original": c.corrected_text or c.original_text or ""}
+        for c in chunks
+    ]
+    try:
+        from library.article_quality import compute_quality
+        doc.quality = compute_quality(doc, sections, model=run.model)
+    except Exception:
+        logger.exception("quality computation failed for document %d", doc_id)
+        return jsonify({"status": "error", "message": "Quality computation failed"}), 500
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("DB save failed for document %d quality", doc_id)
+        return jsonify({"status": "error", "message": "DB save failed"}), 500
+
+    return jsonify({"status": "success", "run_id": run.id, "quality": doc.quality})
+
+
+# ---------------------------------------------------------------------------
+# API: POST /document/<doc_id>/report_extraction_issue
+# ---------------------------------------------------------------------------
+
+@bp.route("/document/<int:doc_id>/report_extraction_issue", methods=["POST"])
+def report_extraction_issue(doc_id: int):
+    """Reviewer-reported flag: the extracted article text is truncated or wrong
+    compared with the original page.
+
+    Sets document_state=NEED_MANUAL_REVIEW + document_state_error=ARTICLE_TRUNCATED,
+    so the document lands in the default manual-review queue on the list page
+    and the error is visible next to its state.
+    """
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    doc.document_state = "NEED_MANUAL_REVIEW"
+    doc.document_state_error = "ARTICLE_TRUNCATED"
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("DB save failed reporting extraction issue for document %d", doc_id)
+        return jsonify({"status": "error", "message": "DB save failed"}), 500
+
+    return jsonify({
+        "status": "success",
+        "document_state": doc.document_state,
+        "document_state_error": doc.document_state_error,
+    })
 
 
 # ---------------------------------------------------------------------------
