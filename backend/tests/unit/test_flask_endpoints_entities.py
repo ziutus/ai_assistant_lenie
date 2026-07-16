@@ -46,7 +46,7 @@ class TestWebsiteEntitiesGet:
     def test_returns_grouped_entities(self, client):
         with patch("server.get_scoped_session", return_value=MagicMock()):
             with patch("server.WebDocument") as MockDoc:
-                MockDoc.get_by_id.return_value = MagicMock()
+                MockDoc.get_by_id.return_value = MagicMock(ner_unavailable_at=None)
                 with patch("library.entity_service.get_document_entities", return_value=GROUPED):
                     resp = client.get("/website_entities?id=42", headers=API_HEADERS)
 
@@ -55,6 +55,20 @@ class TestWebsiteEntitiesGet:
         assert data["status"] == "success"
         assert data["id"] == 42
         assert data["entities"] == GROUPED
+        assert data["ner_unavailable_at"] is None
+
+    def test_returns_ner_unavailable_timestamp_when_set(self, client):
+        import datetime as dt
+
+        with patch("server.get_scoped_session", return_value=MagicMock()):
+            with patch("server.WebDocument") as MockDoc:
+                MockDoc.get_by_id.return_value = MagicMock(
+                    ner_unavailable_at=dt.datetime(2026, 7, 15, 6, 44, 0),
+                )
+                with patch("library.entity_service.get_document_entities", return_value=GROUPED):
+                    resp = client.get("/website_entities?id=42", headers=API_HEADERS)
+
+        assert resp.get_json()["ner_unavailable_at"] == "2026-07-15T06:44:00"
 
 
 class TestWebsiteEntitiesRefresh:
@@ -99,6 +113,23 @@ class TestWebsiteEntitiesRefresh:
         mock_persons.assert_called_once_with(session, doc, "# Artykuł o Tusku")
         mock_pipes.assert_called_once_with(session, 42)
         assert session.commit.call_count == 4  # refresh + miejsca + osoby + rurociągi
+
+    def test_ner_service_unavailable_returns_503(self, client):
+        from library.ner_client import NERServiceUnavailable
+
+        doc = MagicMock(text_md="# Artykuł", text=None)
+        session = MagicMock()
+        with patch("server.get_scoped_session", return_value=session):
+            with patch("server.WebDocument") as MockDoc:
+                MockDoc.get_by_id.return_value = doc
+                with patch("library.entity_service.refresh_document_entities",
+                           side_effect=NERServiceUnavailable("boom")):
+                    resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
+
+        assert resp.status_code == 503
+        data = resp.get_json()
+        assert data["status"] == "error"
+        assert data["ner_unavailable"] is True
 
     def test_place_verification_failure_does_not_fail_request(self, client):
         doc = MagicMock(text_md="# Artykuł", text=None)

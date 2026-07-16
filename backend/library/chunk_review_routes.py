@@ -13,6 +13,7 @@ Endpoints:
   GET  /analysis_run/<run_id>/chunks         — run data (chunks + segments;
                                                lite/section_id/offset/limit for books)
   POST /analysis_run/<run_id>/extract_speakers
+  POST /analysis_run/<run_id>/extract_author
   PATCH /analysis_run/<run_id>               — run workflow status
   PATCH /topic_section/<section_id>          — edit section title
   PATCH /chunk/<chunk_id>                    — update status / type / topic / split_at_seg
@@ -1182,6 +1183,77 @@ def extract_speakers(run_id: int):
         return jsonify({"status": "error", "message": "DB save failed"}), 500
 
     return jsonify({"status": "success", "speakers": speakers})
+
+
+# ---------------------------------------------------------------------------
+# API: POST /analysis_run/<run_id>/extract_author
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>/extract_author", methods=["POST"])
+def extract_author(run_id: int):
+    """Extract the article author's name (byline) using LLM.
+
+    Pass chunk_ids (JSON body) to use specific chunk(s) instead — e.g. a
+    chunk containing the byline the reviewer identified. Without chunk_ids,
+    uses the head+tail of the whole document's text (a byline can appear at
+    the start or the end of an article). Saves the result directly to the
+    document's author field, always overwriting any existing value — this is
+    a reviewer-triggered manual action, unlike the automatic pipeline step in
+    document_analysis_service.create_run() which never overwrites.
+    """
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    chunk_ids = data.get("chunk_ids")
+
+    if chunk_ids:
+        if not isinstance(chunk_ids, list) or not all(isinstance(i, int) for i in chunk_ids):
+            return jsonify({"status": "error", "message": "chunk_ids must be a list of integers"}), 400
+        chunks = session.scalars(
+            select(DocumentChunk)
+            .where(DocumentChunk.run_id == run_id, DocumentChunk.id.in_(chunk_ids))
+            .order_by(DocumentChunk.position)
+        ).all()
+        if len(chunks) != len(set(chunk_ids)):
+            return jsonify({"status": "error", "message": "One or more chunk_ids not found in this run"}), 400
+        source_text = "\n\n".join(
+            c.corrected_text or c.original_text or "" for c in chunks
+        ).strip()
+    else:
+        doc = session.get(WebDocument, run.document_id)
+        if doc is None:
+            abort(404, f"Document {run.document_id} not found")
+        from library.chunk_llm_analysis import head_tail_excerpt
+        source_text = head_tail_excerpt(doc.text_md or doc.text or "")
+
+    if not source_text:
+        return jsonify({"status": "error", "message": "No text available for author extraction"}), 400
+
+    try:
+        from library.chunk_llm_analysis import extract_author_info
+        author = extract_author_info(source_text, run.model)
+    except Exception:
+        logger.exception("extract_author_info failed for run %d", run_id)
+        return jsonify({"status": "error", "message": "LLM call failed"}), 500
+
+    if not author:
+        return jsonify({"status": "success", "author": None})
+
+    doc = session.get(WebDocument, run.document_id)
+    if doc is None:
+        abort(404, f"Document {run.document_id} not found")
+    doc.author = author
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("DB save failed for run %d author", run_id)
+        return jsonify({"status": "error", "message": "DB save failed"}), 500
+
+    return jsonify({"status": "success", "author": author})
 
 
 # ---------------------------------------------------------------------------

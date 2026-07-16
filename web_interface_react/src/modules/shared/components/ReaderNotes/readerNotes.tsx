@@ -122,6 +122,18 @@ export function useReaderIdentity(
   return { kind, keyName, isLegacy, user, userId, loading, error, headers, jsonHeaders };
 }
 
+// "TypeError: Failed to fetch" (Chrome/Edge) / "NetworkError when attempting
+// to fetch resource" (Firefox) means the browser could not even open a
+// connection — almost always a local network problem (tryb samolotowy, WiFi,
+// VPN), not a backend or API-key issue. Anything else is a real backend
+// error (bad key, 500, unexpected response shape).
+function friendlyIdentityError(error: string): string {
+  if (/Failed to fetch|NetworkError|Load failed/i.test(error)) {
+    return "Brak połączenia z serwerem — sprawdź internet/Wi-Fi (np. czy nie jest włączony tryb samolotowy) i czy adres backendu jest osiągalny.";
+  }
+  return `Błąd tożsamości klucza API: ${error}`;
+}
+
 /** Read-only reader-identity indicator — replaces the old user-picker/add-user
  *  UI (Etap 8, iter. 2): identity comes from the key, there is nothing to
  *  choose. For non-user keys it explains why progress/notes are absent. */
@@ -129,7 +141,7 @@ export const ReaderIdentityBadge: React.FC<{ identity: ReaderIdentity }> = ({ id
   const { kind, user, loading, error } = identity;
   if (loading) return null;
   if (error) {
-    return <span style={{ fontSize: "0.8em", color: "#b91c1c" }}>Błąd tożsamości klucza API: {error}</span>;
+    return <span style={{ fontSize: "0.8em", color: "#b91c1c" }}>{friendlyIdentityError(error)}</span>;
   }
   if (kind === "user") {
     return (

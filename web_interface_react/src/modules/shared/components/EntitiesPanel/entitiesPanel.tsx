@@ -174,6 +174,10 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   const [message, setMessage] = React.useState("");
+  // Set when the last NER refresh found ner_service unreachable (backend:
+  // web_documents.ner_unavailable_at) — lets us warn instead of implying
+  // "no entities" when the real cause was a dead service.
+  const [nerUnavailableAt, setNerUnavailableAt] = React.useState<string | null>(null);
   const [editMode, setEditMode] = React.useState(false);
   // "To inna osoba…" flow: chip whose person link is being re-pointed
   const [mergeFor, setMergeFor] = React.useState<EntityItem | null>(null);
@@ -197,7 +201,10 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
     }
     axios
       .get(`${apiUrl}/website_entities`, { params: { id: docId }, headers })
-      .then((response) => setEntities(response.data.entities))
+      .then((response) => {
+        setEntities(response.data.entities);
+        setNerUnavailableAt(response.data.ner_unavailable_at ?? null);
+      })
       .catch((error) => {
         console.error("Error fetching entities", error);
         setMessage("Nie udało się pobrać encji.");
@@ -230,12 +237,18 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
         { headers, timeout: 150000 },
       );
       setEntities(response.data.entities);
+      setNerUnavailableAt(null);
       if (response.data.refreshed === 0) {
-        setMessage("Nie wykryto encji (lub serwis NER jest niedostępny).");
+        setMessage("Nie wykryto żadnych osób ani miejsc w tym dokumencie.");
       }
     } catch (error: any) {
       console.error("Error refreshing entities", error);
-      setMessage(`Nie udało się wykryć encji: ${error.response?.data?.message || error.message}`);
+      if (error.response?.data?.ner_unavailable) {
+        setNerUnavailableAt(new Date().toISOString());
+        setMessage("Serwis NER jest niedostępny — spróbuj ponownie za chwilę.");
+      } else {
+        setMessage(`Nie udało się wykryć encji: ${error.response?.data?.message || error.message}`);
+      }
     }
     setIsRefreshing(false);
   };
@@ -399,6 +412,15 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
           </button>
         )}
       </div>
+      {nerUnavailableAt && (
+        <div style={{
+          marginTop: 8, padding: 8, background: "#fff7ed", border: "1px solid #fdba74",
+          borderRadius: 6, fontSize: "0.85em", color: "#9a3412",
+        }}>
+          ⚠️ Serwis NER był niedostępny ({new Date(nerUnavailableAt).toLocaleString("pl-PL")}) — lista poniżej
+          może być pusta lub niepełna niezależnie od zawartości dokumentu. Spróbuj ponownie za chwilę.
+        </div>
+      )}
       <EntityChips label={"Osoby"} items={persons} actions={editMode ? editActions("persName") : undefined} />
       <EntityChips label={"Miejsca"} items={places} actions={editMode ? editActions("*") : undefined} />
 
