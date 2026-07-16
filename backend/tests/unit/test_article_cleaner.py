@@ -243,3 +243,34 @@ class TestWpCleaning:
             "Treść artykułu wp.",
         ]
         assert _clean_lines_wp(lines) == ["Treść artykułu wp."]
+
+    def test_o2_header_and_split_tags_removed(self):
+        # o2.pl: nagłówek strony + tagi rozbite na osobne linie zakończone licznikiem "+N"
+        lines = [
+            "Zaloguj",
+            "Obserwuj nas na:",
+            "Źródło zdjęć: © Facebook, Pixabay",
+            "3 lutego 2026, 13:51",
+            "Treść artykułu o2.",
+            "sztuczna inteligencja",
+            "polska ukraina",
+            "+3",
+        ]
+        assert _clean_lines_wp(lines) == ["Treść artykułu o2."]
+
+    def test_o2_comments_disabled_notice_removed(self):
+        lines = [
+            "Treść artykułu o2.",
+            "Wyłączono komentarze",
+            "Jako redakcja Wirtualnej Polski doceniamy zaangażowanie naszych czytelników w komentarzach.",
+            "Redakcja serwisu o2",
+        ]
+        assert _clean_lines_wp(lines) == ["Treść artykułu o2."]
+
+    def test_o2_tag_like_lines_kept_without_counter(self):
+        # Krótkie linie z małych liter NIE są usuwane, gdy nie kończą się licznikiem "+N"
+        lines = [
+            "krótka linia z małych liter",
+            "Treść artykułu o2.",
+        ]
+        assert _clean_lines_wp(lines) == lines
