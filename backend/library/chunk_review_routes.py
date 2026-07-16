@@ -50,7 +50,7 @@ _embedding_jobs: dict[str, dict] = {}
 
 ALLOWED_STATUSES = {"pending", "approved", "needs_reanalysis", "split_requested", "split", "skipped"}
 ALLOWED_TYPES = {"TEMAT", "REKLAMA", "SZUM"}
-ALLOWED_RUN_STATUSES = {"created", "in_review", "reviewed"}
+ALLOWED_RUN_STATUSES = {"created", "in_review", "reviewed", "superseded"}
 
 
 def _start_embedding_job(run_id: int) -> str:
@@ -339,9 +339,14 @@ def split_preview(doc_id: int):
 
 
 def _latest_run_for_document(session, doc_id: int) -> DocumentAnalysisRun | None:
+    """Newest run that is still current — superseded runs were replaced by a
+    newer run of the same scope, so their chunk structure is stale."""
     return session.scalars(
         select(DocumentAnalysisRun)
-        .where(DocumentAnalysisRun.document_id == doc_id)
+        .where(
+            DocumentAnalysisRun.document_id == doc_id,
+            DocumentAnalysisRun.status != "superseded",
+        )
         .order_by(DocumentAnalysisRun.created_at.desc())
     ).first()
 
@@ -440,7 +445,11 @@ def document_chapters(doc_id: int):
     # synthesis covers one chapter only (served by GET .../chapter/<pos>).
     doc_run = session.scalars(
         select(DocumentAnalysisRun)
-        .where(DocumentAnalysisRun.document_id == doc_id, DocumentAnalysisRun.scope.is_(None))
+        .where(
+            DocumentAnalysisRun.document_id == doc_id,
+            DocumentAnalysisRun.scope.is_(None),
+            DocumentAnalysisRun.status != "superseded",
+        )
         .order_by(DocumentAnalysisRun.created_at.desc())
     ).first()
 
@@ -541,7 +550,11 @@ def document_chapter(doc_id: int, position: int):
     # synthesis the reader already has from GET /document/<id>/chapters.
     chapter_run = session.scalars(
         select(DocumentAnalysisRun)
-        .where(DocumentAnalysisRun.document_id == doc_id, DocumentAnalysisRun.scope == title)
+        .where(
+            DocumentAnalysisRun.document_id == doc_id,
+            DocumentAnalysisRun.scope == title,
+            DocumentAnalysisRun.status != "superseded",
+        )
         .order_by(DocumentAnalysisRun.created_at.desc())
     ).first()
 
@@ -755,7 +768,8 @@ def list_runs():
                     1 for c in r.chunks if c.type == "TEMAT" and c.status == "approved"
                 ),
                 "workflow_stage": (
-                    "reviewed" if r.status == "reviewed"
+                    "superseded" if r.status == "superseded"
+                    else "reviewed" if r.status == "reviewed"
                     else "analysis" if any(c.type == "TEMAT" and c.summary for c in r.chunks)
                     else "cleanup_proposal" if any(c.type in {"REKLAMA", "SZUM"} for c in r.chunks)
                     else "split_proposal"
@@ -853,7 +867,8 @@ def get_run_chunks(run_id: int):
             "speakers": run.speakers or [],
             "created_at": run.created_at.isoformat(),
             "workflow_stage": (
-                "reviewed" if run.status == "reviewed"
+                "superseded" if run.status == "superseded"
+                else "reviewed" if run.status == "reviewed"
                 else "analysis" if any(c.type == "TEMAT" and c.summary for c in all_chunks)
                 else "cleanup_proposal" if any(c.type in {"REKLAMA", "SZUM"} for c in all_chunks)
                 else "split_proposal"
@@ -937,7 +952,7 @@ def update_topic_section(section_id: int):
 
 @bp.route("/analysis_run/<int:run_id>", methods=["PATCH", "OPTIONS"])
 def update_run(run_id: int):
-    """Update run workflow fields. Body (JSON): {"status": "created"|"in_review"|"reviewed"}."""
+    """Update run workflow fields. Body (JSON): {"status": "created"|"in_review"|"reviewed"|"superseded"}."""
     if request.method == "OPTIONS":
         return jsonify({"status": "ok"}), 200
 
@@ -1286,7 +1301,10 @@ def compute_document_quality(doc_id: int):
     else:
         run = session.scalars(
             select(DocumentAnalysisRun)
-            .where(DocumentAnalysisRun.document_id == doc_id)
+            .where(
+                DocumentAnalysisRun.document_id == doc_id,
+                DocumentAnalysisRun.status != "superseded",
+            )
             .order_by(DocumentAnalysisRun.id.desc())
         ).first()
         if run is None:

@@ -2,10 +2,10 @@ import datetime
 import logging
 from typing import Any
 
-from sqlalchemy import Float, and_, column, delete, func, literal, or_, select, union
+from sqlalchemy import Float, and_, delete, func, literal, or_, select
 from sqlalchemy.orm import Session
 
-from library.db.models import DocumentChunk, WebDocument, WebsiteEmbedding
+from library.db.models import DocumentAnalysisRun, DocumentChunk, WebDocument, WebsiteEmbedding
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.models.stalker_document_type import StalkerDocumentType
@@ -111,11 +111,17 @@ class WebsitesDBPostgreSQL:
 
     @staticmethod
     def _missing_obsidian_note_chunk_conditions():
-        """TEMAT chunks that still need an Obsidian note: not skipped, no note path recorded yet."""
+        """TEMAT chunks that still need an Obsidian note: not skipped, no note path
+        recorded yet, and not part of a superseded run (an abandoned run replaced
+        by a newer one of the same scope — its chunks are not work to do)."""
         return (
             DocumentChunk.type == "TEMAT",
             DocumentChunk.status != "skipped",
             func.coalesce(func.array_length(DocumentChunk.obsidian_note_paths, 1), 0) == 0,
+            select(DocumentAnalysisRun.id).where(
+                DocumentAnalysisRun.id == DocumentChunk.run_id,
+                DocumentAnalysisRun.status != "superseded",
+            ).exists(),
         )
 
     @staticmethod

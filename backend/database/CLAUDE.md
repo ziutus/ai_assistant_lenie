@@ -116,7 +116,7 @@ One row per chunk-analysis pass over a document (`library/document_analysis_serv
 | `synthesis` | `text` | LLM-generated overview of the whole run (shown as a collapsible "Synteza" panel in `/chunks/:id`) |
 | `speakers` | `jsonb NOT NULL DEFAULT '[]'` | Detected speaker list, `mode=transcript` only |
 | `mode` | `varchar(20) NOT NULL DEFAULT 'transcript'` | `transcript` (YouTube/movie STT — LLM rewrite + speaker labeling, split by sentence) or `article` (webpage/link/text/book chapters — no rewrite, source markdown already clean so every chunk's `corrected_text` is `NULL` by design; split by markdown headings) |
-| `status` | `varchar(20) NOT NULL DEFAULT 'created'` | Run review workflow: `created` → `in_review` → `reviewed` |
+| `status` | `varchar(20) NOT NULL DEFAULT 'created'` | Run review workflow: `created` → `in_review` → `reviewed`; `superseded` = abandoned run replaced by a newer run of the same `document_id`+`scope` (set by `document_analysis_service.supersede_unfinished_runs`) |
 | `scope` | `varchar(200)` | Human-readable analysed range (e.g. a book chapter title); `NULL` = whole document |
 | `created_at` | `timestamp` | Row creation timestamp |
 

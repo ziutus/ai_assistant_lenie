@@ -621,7 +621,9 @@ class DocumentAnalysisRun(Base):
     mode: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=sa_text("'transcript'"),
     )
-    # status: created | in_review | reviewed
+    # status: created | in_review | reviewed | superseded (replaced by a newer
+    # run of the same document+scope before ever reaching reviewed — see
+    # document_analysis_service.supersede_unfinished_runs)
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, server_default=sa_text("'created'"),
     )
