@@ -5,8 +5,20 @@
             "\\bad\\s*\\n\\s*Reklama",
             "Reklama\\n",
             "\\d+\\s*komentarz[ey]?\\n",
-            "Udostępnij na X Udostępnij na Facebooku\\n?",
+            "Udostępnij na X\\s+Udostępnij na Facebooku\\n?",
             "Treść zewnętrzna\\n?"
+        ]
+    },
+    "https://www.o2.pl": {
+        "remove_before" : ["Udostępnij na X\\s+Udostępnij na Facebooku"],
+        "remove_after" : ["Wybrane dla Ciebie"],
+        "remove_string" : [],
+        "remove_string_regexp" : [
+            "(?<=[.?!\"])  [^\\n]{10,120}[^.?!\\n](?=\\n+(?:[^\\n]{10,120}[^.?!\\n]\\n+){0,2}Przewiń wstecz\\s+Oglądaj)",
+            "(?:(?<=\\n)[^\\n]{10,120}[^.?!\\n]\\n+){0,2}Przewiń wstecz\\s+Oglądaj\\s+Przewiń naprzód\\s+Ustawienia\\s+Włącz / wyłącz pełny ekran\\s+\\d{2}:\\d{2}",
+            "Oglądaj\\s*\\n\\s*\\d{2}:\\d{2}\\n?",
+            "REKLAMA\\s*KONIEC REKLAMY",
+            "[\\wąćęłńóśźż][\\wąćęłńóśźż ]*\\+\\d+\\s*$"
         ]
     },
     "https://wiadomosci.onet.pl": {
