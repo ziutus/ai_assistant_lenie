@@ -6,12 +6,16 @@ linie usunięte ręcznie podczas review są zapisane w document_removed_lines
 i posłużyły do zbudowania tych reguł.
 """
 
+import json
+import logging
+
 import pytest
 
 pytest.importorskip("requests")
 pytest.importorskip("bs4")
 
-from library.website.website_download_context import webpage_text_clean  # noqa: E402
+from library.website import website_download_context  # noqa: E402
+from library.website.website_download_context import load_site_rules, webpage_text_clean  # noqa: E402
 
 O2_URL = "https://www.o2.pl/informacje/falszywe-ukrainki-zalewaja-siec-brutalny-cel-ogloszen-7250406541257024a"
 
@@ -38,6 +42,15 @@ VIDEO_EMBED = (
     "Przewiń wstecz\n\nOglądaj\n\nPrzewiń naprzód\n\nUstawienia\n\n"
     "Włącz / wyłącz pełny ekran\n\n01:49"
 )
+
+
+@pytest.fixture(autouse=True)
+def default_site_rules_config(monkeypatch):
+    monkeypatch.setattr(
+        website_download_context,
+        "load_config",
+        lambda: {"SITE_RULES_PATH": "data/site_rules.json"},
+    )
 
 
 class TestO2SiteRules:
@@ -90,3 +103,32 @@ class TestO2SiteRules:
     def test_plain_article_untouched(self):
         text = f"{ARTICLE_P1}\n\n{ARTICLE_P2}"
         assert webpage_text_clean(O2_URL, text) == text
+
+
+def test_site_rules_path_is_configurable(monkeypatch, tmp_path):
+    rules_path = tmp_path / "site-rules.json"
+    rules_path.write_text(json.dumps({"example.com": {
+        "remove_before": [],
+        "remove_after": [],
+        "remove_string": ["REMOVE ME"],
+        "remove_string_regexp": [],
+    }}), encoding="utf-8")
+    monkeypatch.setattr(
+        website_download_context,
+        "load_config",
+        lambda: {"SITE_RULES_PATH": str(rules_path)},
+    )
+
+    assert webpage_text_clean("https://example.com/article", "keep REMOVE ME this") == "keep  this"
+
+
+@pytest.mark.parametrize("contents", [None, "not valid json"])
+def test_missing_or_invalid_rules_fall_back_to_empty_rules(tmp_path, caplog, contents):
+    rules_path = tmp_path / "site-rules.json"
+    if contents is not None:
+        rules_path.write_text(contents, encoding="utf-8")
+
+    with caplog.at_level(logging.WARNING, logger=website_download_context.__name__):
+        assert load_site_rules(str(rules_path)) == {}
+
+    assert "Cannot load site cleanup rules" in caplog.text

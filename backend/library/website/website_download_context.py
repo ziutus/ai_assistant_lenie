@@ -1,4 +1,6 @@
 import ipaddress
+import json
+import logging
 import re
 import socket
 from urllib.parse import urlparse
@@ -7,14 +9,20 @@ import requests
 from bs4 import BeautifulSoup
 
 from library.text_functions import remove_before_regex, remove_last_occurrence_and_after, remove_text_regex
-import json
+from library.config_loader import load_config
 
 from library.models.webpage_parse_result import WebPageParseResult
 
+logger = logging.getLogger(__name__)
+
 
 def load_site_rules(file_path: str) -> dict:
-    with open(file_path, 'r', encoding='utf-8') as file:
-        return json.load(file)
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            return json.load(file)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("Cannot load site cleanup rules from %s: %s", file_path, exc)
+        return {}
 
 
 def validate_url_target(url: str) -> None:
@@ -99,7 +107,8 @@ def webpage_raw_parse(url: str, raw_html: bytes, analyze_content: bool = True) -
 def webpage_text_clean(url: str, content: str):
     content = re.sub('\xa0', " ", content)
 
-    site_rules = load_site_rules('data/site_rules.json')
+    site_rules_path = load_config().get("SITE_RULES_PATH", "data/site_rules.json")
+    site_rules = load_site_rules(site_rules_path)
 
     for url_path in site_rules:
         if url.find(url_path) != -1:

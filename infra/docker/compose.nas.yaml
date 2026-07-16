@@ -33,8 +33,11 @@ services:
       - "5055:5000"
     env_file:
       - /share/ContainerNew/lenie-env/.env
+    environment:
+      SITE_RULES_PATH: /app/config/site_rules.json
     volumes:
       - lenie-ai-data:/app/data
+      - /share/ContainerNew/lenie-config:/app/config:ro
     networks:
       - lenie-net
     depends_on:
