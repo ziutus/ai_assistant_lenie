@@ -28,6 +28,7 @@ interface Chunk {
   seg_end: number | null;
   obsidian_note_paths?: string[];
   has_embeddings?: boolean | null;
+  photo_caption_line_indices?: number[];
   // lite responses (big runs): texts stripped, preview + length instead
   text_length?: number | null;
   text_preview?: string | null;
@@ -71,6 +72,19 @@ interface Chapter {
   char_start: number;
   char_end: number;
   length: number;
+}
+
+interface RecleanPreview {
+  source_field: string;
+  before_length: number;
+  after_length: number;
+  before_line_count: number;
+  after_line_count: number;
+  removed_line_count: number;
+  removed_lines_preview: string[];
+  start_preview: string;
+  end_preview: string;
+  saved: boolean;
 }
 
 interface CountryTag {
@@ -309,13 +323,14 @@ const SegmentsView: React.FC<{
 const PlainTextLines: React.FC<{
   text: string;
   markedLines: Set<number>;
+  photoCaptionLines: Set<number>;
   splitLineIdx: number | null;
   saving: boolean;
   onToggleLine: (idx: number) => void;
   onMarkSplit: (idx: number) => void;
   onSave: (removeFromDocument: boolean) => void;
   onCancel: () => void;
-}> = ({ text, markedLines, splitLineIdx, saving, onToggleLine, onMarkSplit, onSave, onCancel }) => {
+}> = ({ text, markedLines, photoCaptionLines, splitLineIdx, saving, onToggleLine, onMarkSplit, onSave, onCancel }) => {
   const [removeFromDoc, setRemoveFromDoc] = React.useState(true);
   if (!text) return <em style={{ color: "#94a3b8" }}>brak tekstu</em>;
   const lines = text.split("\n");
@@ -327,6 +342,7 @@ const PlainTextLines: React.FC<{
     <div>
       {lines.map((line, i) => {
         const marked = markedLines.has(i);
+        const isPhotoCaption = photoCaptionLines.has(i);
         const isSplitMark = splitLineIdx === i;
         return (
           <div
@@ -334,6 +350,7 @@ const PlainTextLines: React.FC<{
             style={{
               position: "relative", paddingLeft: 56, borderRadius: 2, minHeight: "1.4em",
               ...(marked ? { background: "#fee2e2", textDecoration: "line-through", color: "#991b1b" } : {}),
+              ...(!marked && isPhotoCaption ? { background: "#fefce8", borderLeft: "3px solid #eab308" } : {}),
               ...(isSplitMark ? { background: "#fff7ed", borderLeft: "3px solid #f97316" } : {}),
             }}
           >
@@ -356,6 +373,14 @@ const PlainTextLines: React.FC<{
               )}
             </span>
             <span style={{ whiteSpace: "pre-wrap" }}>{line || " "}</span>
+            {isPhotoCaption && (
+              <span
+                title="Podpis lub credit zdjęcia: zachowany dla oceny jakości, pomijany przy generowaniu embeddingów"
+                style={{ marginLeft: 8, padding: "1px 5px", borderRadius: 3, background: "#fef08a", color: "#854d0e", fontSize: "0.75em", whiteSpace: "nowrap" }}
+              >
+                📷 kandydat do usunięcia
+              </span>
+            )}
           </div>
         );
       })}
@@ -418,6 +443,9 @@ const Chunks = () => {
   const [chunkSize, setChunkSize]   = React.useState(5000);
   const [splitPreview, setSplitPreview] = React.useState<{ count: number; sizes: number[]; length: number } | null>(null);
   const [previewNonce, setPreviewNonce] = React.useState(0);
+  const [recleanPreview, setRecleanPreview] = React.useState<RecleanPreview | null>(null);
+  const [useRecleaned, setUseRecleaned] = React.useState(false);
+  const [recleaning, setRecleaning] = React.useState(false);
   const [hideAds, setHideAds]       = React.useState(false);
 
   const [showCorrected, setShowCorrected] = React.useState<Record<number, boolean>>({});
@@ -585,8 +613,9 @@ const Chunks = () => {
     const t = setTimeout(async () => {
       try {
         const scopeParam = newMode === "article" && scopeChapter !== "" ? `&scope_chapter=${scopeChapter}` : "";
+        const recleanParam = newMode === "article" && useRecleaned ? "&reclean=1" : "";
         const r = await fetch(
-          `${apiUrl}/document/${id}/split_preview?mode=${newMode}&chunk_size=${chunkSize}${scopeParam}`,
+          `${apiUrl}/document/${id}/split_preview?mode=${newMode}&chunk_size=${chunkSize}${scopeParam}${recleanParam}`,
           { headers: { "x-api-key": apiKey ?? "" } },
         );
         const data = await r.json();
@@ -598,7 +627,7 @@ const Chunks = () => {
       } catch { setSplitPreview(null); }
     }, 400);
     return () => clearTimeout(t);
-  }, [id, newMode, chunkSize, scopeChapter, apiUrl, apiKey, previewNonce]);
+  }, [id, newMode, chunkSize, scopeChapter, useRecleaned, apiUrl, apiKey, previewNonce]);
 
   // ── Job polling ──
 
@@ -629,6 +658,7 @@ const Chunks = () => {
 
   const startAnalysis = async (
     modeOverride?: string, splitOnlyOverride?: boolean, scopeChapterOverride?: number | null,
+    recleanOverride?: boolean,
   ) => {
     if (!id) return;
     setError(""); setJobStatus("starting");
@@ -645,6 +675,7 @@ const Chunks = () => {
           mode,
           split_only: splitOnlyOverride ?? splitOnly,
           preclean: mode === "article" && !(splitOnlyOverride ?? splitOnly) && preclean,
+          reclean: mode === "article" && (recleanOverride ?? useRecleaned),
           ...(scope !== null ? { scope_chapter: scope } : {}),
         }),
       });
@@ -652,6 +683,40 @@ const Chunks = () => {
       if (data.job_id) { setJobId(data.job_id); setJobStatus("running"); pollJob(data.job_id); }
       else { setError("Nie udało się uruchomić analizy"); setJobStatus(null); }
     } catch { setError("Błąd połączenia"); setJobStatus(null); }
+  };
+
+  const previewReclean = async (save = false) => {
+    if (!id) return;
+    if (save && !window.confirm("Zapisać oczyszczony tekst w dokumencie? Ta operacja nadpisze bieżące pole tekstowe.")) return;
+    setRecleaning(true); setError(""); setInfo("");
+    try {
+      const r = await fetch(`${apiUrl}/document/${id}/reclean_preview`, {
+        method: "POST", headers, body: JSON.stringify({ save }),
+      });
+      const data = await r.json();
+      if (!r.ok || data.status !== "success") throw new Error(data.message || "Nie udało się przeczyścić tekstu");
+      setRecleanPreview(data as RecleanPreview);
+      setUseRecleaned(!save);
+      setPreviewNonce(n => n + 1);
+      if (save) {
+        setInfo(`Zapisano oczyszczony tekst w polu ${data.source_field}.`);
+      } else {
+        const confirmed = window.confirm(
+          `Ponowne czyszczenie: ${data.before_length.toLocaleString("pl")} → ${data.after_length.toLocaleString("pl")} znaków, `
+          + `${data.removed_line_count} usuniętych lub zmienionych linii.\n\nUtworzyć teraz nowy run „tylko podział”?`,
+        );
+        if (confirmed) {
+          setInfo("Tworzę nowy podział z oczyszczonego tekstu…");
+          await startAnalysis("article", true, null, true);
+        } else {
+          setInfo("Podgląd gotowy. Nowy run nie został utworzony.");
+        }
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Błąd ponownego czyszczenia tekstu");
+    } finally {
+      setRecleaning(false);
+    }
   };
 
   // ── Chunk patch ──
@@ -1426,6 +1491,7 @@ const Chunks = () => {
                 <PlainTextLines
                   text={chunk.original_text ?? ""}
                   markedLines={lineEdits[chunk.id] ?? new Set()}
+                  photoCaptionLines={new Set(chunk.photo_caption_line_indices ?? [])}
                   splitLineIdx={lineSplitStates[chunk.id]?.lineIdx ?? null}
                   saving={savingLines[chunk.id] ?? false}
                   onToggleLine={idx => toggleLineMark(chunk.id, idx)}
@@ -1618,6 +1684,43 @@ const Chunks = () => {
             {jobId ? `Analiza… (${jobStatus})` : hasActiveRun ? "+ Nowa analiza" : "▶ Rozpocznij analizę"}
           </button>
         </div>
+        {newMode === "article" && (
+          <div style={{ marginTop: 10, padding: "9px 11px", background: "#fff", border: "1px solid #dbeafe", borderRadius: 6 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <strong style={{ fontSize: "0.84em", color: "#334155" }}>1. Podział na chunki</strong>
+              <button className="button" onClick={() => previewReclean(false)} disabled={recleaning || !!jobId}
+                title="Uruchom aktualne reguły clean_article_text, pokaż podsumowanie i utwórz nowy run tylko-podział">
+                {recleaning ? "Czyszczę…" : "Przeczyść tekst i podziel ponownie"}
+              </button>
+              {recleanPreview && (
+                <label style={{ fontSize: "0.82em", display: "flex", alignItems: "center", gap: 5 }}>
+                  <input type="checkbox" checked={useRecleaned} onChange={e => setUseRecleaned(e.target.checked)} />
+                  użyj oczyszczonego tekstu tylko do podziału
+                </label>
+              )}
+            </div>
+            {recleanPreview && (
+              <div style={{ marginTop: 8, fontSize: "0.8em", color: "#475569" }}>
+                <div>
+                  Pole <code>{recleanPreview.source_field}</code>: {recleanPreview.before_length.toLocaleString("pl")} → {recleanPreview.after_length.toLocaleString("pl")} znaków,
+                  {" "}{recleanPreview.before_line_count} → {recleanPreview.after_line_count} linii;
+                  usuniętych/zmienionych linii: <strong>{recleanPreview.removed_line_count}</strong>.
+                </div>
+                <details style={{ marginTop: 5 }}>
+                  <summary style={{ cursor: "pointer" }}>Pokaż koniec tekstu po czyszczeniu</summary>
+                  <pre style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", background: "#f8fafc", padding: 8, borderRadius: 4 }}>
+                    {recleanPreview.end_preview}
+                  </pre>
+                </details>
+                <button onClick={() => previewReclean(true)} disabled={recleaning}
+                  style={{ marginTop: 6, padding: "3px 8px", border: "1px solid #f59e0b", background: "#fffbeb", borderRadius: 4, cursor: "pointer", color: "#92400e" }}
+                  title="Opcjonalnie nadpisuje bieżące pole text/text_md wynikiem czyszczenia">
+                  Zapisz oczyszczony tekst w dokumencie…
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <details style={{ marginTop: 9 }}>
           <summary style={{ cursor: "pointer", color: "#64748b", fontSize: "0.82em", userSelect: "none" }}>
             Ustawienia zaawansowane

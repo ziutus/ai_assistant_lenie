@@ -355,6 +355,7 @@ class DocumentAnalysisService:
         mode: str = "transcript",
         split_only: bool = False,
         preclean: bool = False,
+        reclean: bool = False,
         scope_chapter: int | None = None,
     ) -> DocumentAnalysisRun:
         """Create a new analysis run for an existing document and persist to DB.
@@ -399,6 +400,8 @@ class DocumentAnalysisService:
             raise ValueError("scope_chapter requires article mode")
         if preclean and is_transcript:
             raise ValueError("preclean requires article mode")
+        if reclean and is_transcript:
+            raise ValueError("reclean requires article mode")
         proposal_only = split_only or preclean
 
         def log(msg: str) -> None:
@@ -419,6 +422,15 @@ class DocumentAnalysisService:
             raise ValueError(f"Document {doc_id} has no usable text (checked: text, text_md, text_raw)")
 
         log(f"doc={doc_id} mode={mode} field={text_field} len={len(text):,}")
+
+        if reclean:
+            from library.article_cleaner import clean_article_text
+
+            original_length = len(text)
+            text = clean_article_text(text, getattr(doc, "url", "") or "")["text"]
+            if not text:
+                raise ValueError(f"Document {doc_id} is empty after deterministic cleanup")
+            log(f"reclean: {original_length:,} -> {len(text):,} chars (source unchanged)")
 
         scope: str | None = None
         author_bio = None
@@ -773,6 +785,7 @@ def generate_embeddings_from_run(
     from library.config_loader import load_config
     from library.db.models import WebsiteEmbedding
     from library.lenie_markdown import md_remove_markdown, md_split_for_emb
+    from library.article_quality import remove_photo_caption_lines
     from library.models.stalker_document_status import StalkerDocumentStatus
     from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
     import library.embedding as embedding
@@ -810,7 +823,9 @@ def generate_embeddings_from_run(
     skipped_empty = 0
     for i, chunk in enumerate(eligible, 1):
         log(f"chunk {i}/{len(eligible)} (position {chunk.position})...")
-        text = (chunk.corrected_text or chunk.original_text or "").strip()
+        text = remove_photo_caption_lines(
+            chunk.corrected_text or chunk.original_text or ""
+        ).strip()
         if not text:
             skipped_empty += 1
             continue
