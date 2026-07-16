@@ -31,6 +31,16 @@ SYNTHESIS_MAX_TOKENS = 2_000
 SYNTHESIS_MAX_INPUT_CHARS = 20_000
 _SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT|SZUM): ?(.+)$', re.MULTILINE)
 
+# Run statuses that mean review never finished — once a newer run of the same
+# document+scope exists, such a run is an abandoned attempt (double click,
+# retry after an error) and gets marked "superseded".
+UNFINISHED_RUN_STATUSES = ("created", "in_review")
+
+# Chunk statuses that still represent pending review work — flipped to
+# "skipped" when their run is superseded, so they stop counting as chunks
+# missing an Obsidian note. Approved/split chunks and note paths stay intact.
+OPEN_CHUNK_STATUSES = ("pending", "needs_reanalysis", "split_requested")
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -274,6 +284,53 @@ def _apply_tags(doc: WebDocument, text: str) -> None:
     existing = [t.strip() for t in (doc.tags or "").split(",") if t.strip()]
     existing_set = set(existing)
     doc.tags = ",".join(existing + [t for t in new_tags if t not in existing_set])
+
+
+def stale_duplicate_runs(runs: list) -> list:
+    """Given all runs of ONE document+scope group, return the abandoned duplicates.
+
+    A run is a stale duplicate when a newer run of the same scope exists and
+    it never reached "reviewed" — the case behind document 9245: a first
+    /analyze_chunks call abandoned mid-workflow (status=created) plus a second
+    one actually used for notes. Legal multi-run setups (a split_only run over
+    a whole book + article runs per chapter) live in different scope groups
+    and never meet here. The newest run of the group is never returned, even
+    when itself unfinished — it is the current one.
+    """
+    if len(runs) < 2:
+        return []
+    ordered = sorted(runs, key=lambda r: (r.created_at, r.id))
+    return [r for r in ordered[:-1] if r.status in UNFINISHED_RUN_STATUSES]
+
+
+def supersede_unfinished_runs(session, doc_id: int, scope: str | None) -> list[DocumentAnalysisRun]:
+    """Mark unfinished runs of the same document+scope as superseded.
+
+    Called by create_run() just before a new run of that scope is persisted:
+    an earlier run that never reached "reviewed" is an abandoned attempt once
+    a newer run of the same scope exists — left as "created", its pending
+    chunks would stay visible forever in the "missing Obsidian notes" filter.
+    Chunks still awaiting review are flipped to "skipped"; approved/split
+    chunks and recorded note paths stay untouched. Nothing is deleted — the
+    run and its chunks remain browsable in /chunks/:id.
+    """
+    from sqlalchemy import select, update
+
+    siblings = session.scalars(
+        select(DocumentAnalysisRun).where(DocumentAnalysisRun.document_id == doc_id)
+    ).all()
+    stale = [r for r in siblings if r.scope == scope and r.status in UNFINISHED_RUN_STATUSES]
+    for run in stale:
+        run.status = "superseded"
+        session.execute(
+            update(DocumentChunk)
+            .where(
+                DocumentChunk.run_id == run.id,
+                DocumentChunk.status.in_(OPEN_CHUNK_STATUSES),
+            )
+            .values(status="skipped")
+        )
+    return stale
 
 
 # ---------------------------------------------------------------------------
@@ -638,7 +695,13 @@ class DocumentAnalysisService:
                 except Exception:
                     logger.exception("information-source extraction failed, continuing")
 
-        # 12. Persist to DB
+        # 12. Persist to DB. An unfinished earlier run of the same scope is an
+        #     abandoned attempt once this one lands — supersede it so its
+        #     pending chunks stop counting as missing Obsidian notes (same
+        #     transaction as the new run, so a failed commit changes nothing).
+        for stale_run in supersede_unfinished_runs(session, doc_id, scope):
+            log(f"superseded unfinished run_id={stale_run.id} (same scope, never reviewed)")
+
         run = DocumentAnalysisRun(
             document_id=doc_id,
             model=model,
