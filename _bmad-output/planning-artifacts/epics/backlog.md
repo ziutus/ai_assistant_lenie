@@ -1525,7 +1525,7 @@ so that new documents captured via the Chrome extension (AWS DynamoDB + S3) appe
 2. Include `backend/imports/` in the backend Docker image (Dockerfile currently copies only `library/` + `server.py`) — or bind-mount in `compose.nas.yaml`
 3. Add read-only AWS credentials (SSM + DynamoDB + S3) to the backend container env on NAS
 4. Add cron entry to `/etc/config/crontab`, e.g.:
-   `30 6 * * * /share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker exec lenie-ai-server python imports/dynamodb_sync.py -y >> /share/Container/lenie-compose/logs/dynamodb_sync.log 2>&1`
+   `30 6 * * * /share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker exec lenie-ai-server python imports/dynamodb_sync.py -y >> /share/ContainerNew/lenie-compose/logs/dynamodb_sync.log 2>&1`
 5. Documentation: `docs/CICD/NAS_Deployment.md` (cron persistence caveat), `backend/imports/CLAUDE.md`
 
 **Acceptance Criteria:**
@@ -1568,5 +1568,7 @@ so that recurring ext4 filesystem corruption on CACHEDEV2 stops causing `filesys
 - `docs/CICD/NAS_Deployment.md` updated with the final storage layout and a summary of the CACHEDEV2 corruption history
 - `compose.nas.yaml` updated if volume paths changed, redeployed, and verified working
 
+**Status update (2026-07-16, observed during an unrelated deploy):** the migration appears to have been carried out — `docker info` on the NAS reports `Docker Root Dir: /share/CACHEDEV4_DATA/ContainerNew/container-station-data/lib/docker`, the Container Station qpkg (docker binary) now lives under `/share/CACHEDEV4_DATA/.qpkg/`, and the compose/env files moved to `/share/ContainerNew/` (`lenie-compose/`, `lenie-env/`; `nas-deploy.sh` already points there). The old `/share/Container` (→ CACHEDEV2) still exists as a stale copy. A backend+frontend deploy through the registry completed cleanly the same day. AC still unverified: physical location of the 4 named volumes (`docker volume inspect`), the dedicated large-fresh-layer regression test, and the corruption-history summary in `docs/CICD/NAS_Deployment.md` (path references there were updated to CACHEDEV4/ContainerNew on 2026-07-16).
+
 **Priority:** MEDIUM (recurring and annoying, has a working manual deploy workaround, but not urgent — no data loss so far)
-**Status:** backlog
+**Status:** backlog — likely resolved in practice, pending verification of the remaining acceptance criteria (see status update above)
