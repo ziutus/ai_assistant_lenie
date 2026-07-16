@@ -25,7 +25,8 @@ from library.db.models import DocumentRemovedLine  # noqa: E402
 
 class TestDocumentRemovedLineModel:
     EXPECTED_COLUMNS = {
-        "id", "document_id", "run_id", "chunk_id", "source", "line_text", "created_at",
+        "id", "document_id", "run_id", "chunk_id", "source", "line_text",
+        "review_status", "reviewed_at", "review_note", "rule_reference", "created_at",
     }
 
     def test_tablename(self):
@@ -118,6 +119,7 @@ class TestLogRemovedLines:
         for r in rows:
             assert isinstance(r, DocumentRemovedLine)
             assert (r.document_id, r.run_id, r.chunk_id, r.source) == (9202, 17, 101, "manual")
+            assert r.review_status is None  # database server default: pending
 
     def test_skips_empty_and_whitespace_lines(self):
         session = MagicMock(spec=["add"])

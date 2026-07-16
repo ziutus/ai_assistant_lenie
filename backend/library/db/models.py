@@ -725,7 +725,9 @@ class DocumentRemovedLine(Base):
     """Line/block removed from a document during manual chunk review cleanup.
 
     Training data for improving article_cleaner.py / site_rules.json: what the
-    automatic cleaner missed and a human had to remove. Rows survive run/chunk
+    automatic cleaner missed and a human had to remove. Claude Code/Codex rule
+    reviews should only inspect ``pending`` rows and record a terminal decision
+    using ``scripts/review_removed_lines.py``. Rows survive run/chunk
     deletion (FKs SET NULL) so aggregate queries (e.g. most-removed lines per
     portal, via join on web_documents.url) keep working over time.
     """
@@ -746,6 +748,14 @@ class DocumentRemovedLine(Base):
     # SZUM/REKLAMA chunk dropped by apply_cleanup)
     source: Mapped[str] = mapped_column(String(20), nullable=False)
     line_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # Lifecycle for cleaner-rule mining. Only ``pending`` rows should be
+    # presented for analysis; terminal statuses prevent repeated review.
+    review_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default=sa_text("'pending'"),
+    )
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    review_note: Mapped[str | None] = mapped_column(Text)
+    rule_reference: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
