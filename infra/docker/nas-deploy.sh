@@ -18,12 +18,14 @@ NAS_USER="admin"
 NAS_DOCKER="/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker"
 NAS_COMPOSE_DIR="/share/ContainerNew/lenie-compose"
 NAS_COMPOSE_FILE="${NAS_COMPOSE_DIR}/compose.nas.yaml"
+NAS_CONFIG_DIR="/share/ContainerNew/lenie-config"
 REGISTRY="${NAS_HOST}:5005"
 
 # Project root (two levels up from this script)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOCAL_COMPOSE_FILE="${SCRIPT_DIR}/compose.nas.yaml"
+LOCAL_SITE_RULES_FILE="${PROJECT_ROOT}/backend/data/site_rules.json"
 
 # Service definitions: name | local image | registry image | dockerfile
 declare -A SVC_IMAGE=(
@@ -171,6 +173,13 @@ sync_compose() {
     ok "compose.nas.yaml skopiowany do ${NAS_COMPOSE_FILE}"
 }
 
+sync_site_rules() {
+    log "Kopiowanie site_rules.json na NAS..."
+    nas_ssh "mkdir -p ${NAS_CONFIG_DIR}"
+    scp "$LOCAL_SITE_RULES_FILE" "${NAS_USER}@${NAS_HOST}:${NAS_CONFIG_DIR}/site_rules.json"
+    ok "site_rules.json skopiowany do ${NAS_CONFIG_DIR}"
+}
+
 deploy_service() {
     local svc="$1"
     local skip_build="$2"
@@ -262,6 +271,7 @@ echo -e "${GREEN}  Compose only: ${COMPOSE_ONLY}${NC}"
 echo -e "${GREEN}============================================${NC}"
 
 check_nas_connection
+sync_site_rules
 
 # Sync compose file if requested
 if [ "$SYNC_COMPOSE" = "true" ]; then
