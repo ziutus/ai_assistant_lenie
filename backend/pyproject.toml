@@ -40,7 +40,7 @@ dependencies = [
     "alembic>=1.13",
     "markitdown>=0.1.4",
     "apify-client>=2.5.0",
-    "mcp>=1.27.0,<2.0",
+    "mcp>=1.28.1,<2.0",
     "defusedxml>=0.7",
 ]
 
