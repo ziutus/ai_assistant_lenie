@@ -29,7 +29,7 @@ from collections import Counter
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, abort
-from sqlalchemy import func, select, update as sa_update
+from sqlalchemy import func, or_, select, update as sa_update
 
 from library.db.engine import get_scoped_session
 from library.db.models import (
@@ -358,6 +358,39 @@ def split_preview(doc_id: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/next_for_analysis", methods=["GET"])
+def next_document_for_analysis(doc_id: int):
+    """Return the next document with usable text and no completed review."""
+    session = get_scoped_session()
+    has_text = or_(
+        func.length(WebDocument.text) > 100,
+        func.length(WebDocument.text_md) > 100,
+        func.length(WebDocument.text_raw) > 100,
+    )
+    has_completed_run = select(DocumentAnalysisRun.id).where(
+        DocumentAnalysisRun.document_id == WebDocument.id,
+        DocumentAnalysisRun.status == "reviewed",
+    ).exists()
+
+    def find_next(before_current: bool):
+        stmt = select(WebDocument.id, WebDocument.title).where(
+            WebDocument.id != doc_id,
+            has_text,
+            ~has_completed_run,
+        )
+        if before_current:
+            stmt = stmt.where(WebDocument.id < doc_id)
+        return session.execute(stmt.order_by(WebDocument.id.desc()).limit(1)).first()
+
+    row = find_next(True) or find_next(False)
+    if row is None:
+        return jsonify({"status": "success", "document": None})
+    return jsonify({
+        "status": "success",
+        "document": {"id": row.id, "title": row.title},
+    })
+
+
 @bp.route("/document/<int:doc_id>/reclean_preview", methods=["POST"])
 def reclean_preview(doc_id: int):
     """Preview current deterministic cleanup and optionally save it explicitly."""
@@ -407,6 +440,8 @@ def reclean_preview(doc_id: int):
         "after_line_count": len(after_lines),
         "removed_line_count": len(removed),
         "removed_lines_preview": removed[:20],
+        "before_start_preview": before[:400],
+        "before_end_preview": before[-700:],
         "start_preview": after[:400],
         "end_preview": after[-700:],
     })
