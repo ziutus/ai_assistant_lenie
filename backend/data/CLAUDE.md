@@ -80,6 +80,11 @@ Supported portals:
 
 ## Adding New Rules
 
+Candidates collected during manual review are processed according to
+[`docs/agent/document-removed-lines-workflow.md`](../../docs/agent/document-removed-lines-workflow.md).
+The workflow requires recording a terminal decision in `document_removed_lines`
+after the rule and its regression tests are verified.
+
 1. Download the target page and convert to Markdown (the system uses `markitdown`, `html2text`, or `html2markdown`)
 2. Identify the structural markers (navigation, date, sharing buttons, footer) surrounding the article text
 3. Write a regex with `(?P<article_text>...)` capturing only the article body
