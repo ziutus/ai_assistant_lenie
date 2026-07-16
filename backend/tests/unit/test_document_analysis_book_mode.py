@@ -40,6 +40,7 @@ class FakeBookDoc:
     tags = "geopolityka,kraj-polska,kraj-niemcy"
     document_type = "text"
     url = None
+    quality = None
 
 
 # ---------------------------------------------------------------------------

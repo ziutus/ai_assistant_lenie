@@ -12,6 +12,7 @@ i reużywalna w skryptach batch.
 import re
 
 from library.article_extractor import _detect_portal, _find_footer_line, _find_start_line
+from library.article_quality import is_photo_caption_line
 from library.lenie_markdown import links_correct, md_square_brackets_in_one_line
 
 
@@ -134,6 +135,11 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
             continue
         # "Czytaj także:" + link na tej samej lub następnej linii
         if stripped.startswith("**Czytaj także:**") or stripped.startswith("**Czytaj również:**"):
+            continue
+
+        # Podpis zdjęcia / credit fotografa ("zdjęcie ilustracyjne ... / shutterstock")
+        # — wzorce współdzielone z article_quality (tam liczone do oceny staranności)
+        if is_photo_caption_line(stripped):
             continue
 
         # Linia z samymi [imgN] markerami (osierocone po usunięciu kontekstu)
