@@ -160,11 +160,11 @@ class TestWebDocumentColumns:
         "text_raw", "transcript_job_id", "ai_summary_needed",
         "author", "note", "uuid", "project", "text_md",
         "text_extracted", "transcript_needed", "reviewed_at",
-        "obsidian_note_paths", "video_description",
+        "obsidian_note_paths", "video_description", "ner_unavailable_at",
     }
 
     def test_column_count(self):
-        assert len(_column_names(WebDocument)) == 30
+        assert len(_column_names(WebDocument)) == 31
 
     def test_all_column_names(self):
         assert _column_names(WebDocument) == self.EXPECTED_COLUMNS

@@ -84,6 +84,16 @@ const RUN_STATUS_LABELS: Record<string, string> = {
   reviewed: "zamknięta",
 };
 
+function runLabelText(r: AnalysisRun): string {
+  const parts = [r.mode === "article" ? "artykuł" : "transkrypcja"];
+  if (r.scope) parts.push(r.scope);
+  if (r.temat_count != null && r.temat_count > 0) parts.push(`✓ ${r.approved_count}/${r.temat_count}`);
+  if (r.workflow_stage === "cleanup_proposal") parts.push("propozycja czyszczenia");
+  if (r.workflow_stage === "split_proposal") parts.push("propozycja podziału");
+  parts.push(RUN_STATUS_LABELS[r.status] ?? r.status);
+  return `#${r.id} — ${r.model} (${r.chunk_count} chunków, ${new Date(r.created_at).toLocaleString("pl")}) [${parts.join(", ")}]`;
+}
+
 type ChunkType = "TEMAT" | "REKLAMA" | "SZUM";
 
 interface SplitState {
@@ -132,6 +142,17 @@ const CHUNK_PAGE_SIZE = 20;
 // Document types with an editor route in App.tsx. Types without one
 // (text, text_message, social_media_post) get a back-link to /list instead.
 const EDITOR_TYPES = ["webpage", "link", "youtube", "movie", "email"];
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  webpage: "artykuł",
+  link: "link",
+  youtube: "YouTube",
+  movie: "film",
+  email: "e-mail",
+  text: "tekst",
+  text_message: "wiadomość",
+  social_media_post: "post społecznościowy",
+};
 
 function typeColor(type: string | null): React.CSSProperties {
   switch (type) {
@@ -341,6 +362,7 @@ const Chunks = () => {
   const [segments, setSegments]     = React.useState<Segment[]>([]);
   const [videoId, setVideoId]       = React.useState("");
   const [docType, setDocType]       = React.useState(initialDocType);
+  const [docTitle, setDocTitle]     = React.useState("");
   const [runMode, setRunMode]       = React.useState("transcript");
   const [speakers, setSpeakers]     = React.useState<Speaker[]>([]);
 
@@ -375,6 +397,7 @@ const Chunks = () => {
   const [confirmingSplit, setConfirmingSplit] = React.useState<Record<number, boolean>>({});
   const [extractingSpeakers, setExtractingSpeakers] = React.useState(false);
   const [extractingSpeakerFor, setExtractingSpeakerFor] = React.useState<number | null>(null);
+  const [extractingAuthorFor, setExtractingAuthorFor] = React.useState<number | null>(null);
   const [runStatus, setRunStatus] = React.useState("created");
   const [synthesis, setSynthesis] = React.useState("");
   const [synthesisOpen, setSynthesisOpen] = React.useState(false);
@@ -483,17 +506,19 @@ const Chunks = () => {
   React.useEffect(() => { fetchRuns(); }, [fetchRuns]);
   React.useEffect(() => { if (selectedRun !== null) fetchChunks(selectedRun); }, [selectedRun, fetchChunks]);
   // Direct links to /chunks/:id do not carry router state. Load the document
-  // type so the basic flow can choose article/transcript without user input.
+  // type (so the basic flow can choose article/transcript without user input)
+  // and title (so the page header shows what document this is, not just the id).
   React.useEffect(() => {
-    if (!id || docType) return;
+    if (!id || (docType && docTitle)) return;
     (async () => {
       try {
         const r = await fetch(`${apiUrl}/website_get?id=${id}`, { headers: { "x-api-key": apiKey ?? "" } });
         const data = await r.json();
         if (data.document_type) setDocType(data.document_type);
+        if (data.title) setDocTitle(data.title);
       } catch { /* analysis can still be configured manually */ }
     })();
-  }, [id, docType, apiUrl, apiKey]);
+  }, [id, docType, docTitle, apiUrl, apiKey]);
   // Clean documents (articles, webpages) default to article mode for new analyses
   React.useEffect(() => {
     if (docType && docType !== "youtube" && docType !== "movie") setNewMode("article");
@@ -996,6 +1021,25 @@ const Chunks = () => {
     finally { setExtractingSpeakerFor(null); }
   };
 
+  // Detect the article author (byline) from one specific chunk. Unlike speaker
+  // detection, no position limit — a byline can appear at either the start or
+  // the end of an article. Saves directly to doc.author (backend commits it).
+  const extractAuthorFromChunk = async (chunkId: number) => {
+    if (!selectedRun) return;
+    setExtractingAuthorFor(chunkId);
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}/extract_author`, {
+        method: "POST", headers,
+        body: JSON.stringify({ chunk_ids: [chunkId] }),
+      });
+      const data = await r.json();
+      if (data.status === "success" && data.author) setInfo(`Ustawiono autora: ${data.author}`);
+      else if (data.status === "success") setError("Nie udało się rozpoznać autora w tym chunku");
+      else setError("Błąd wykrywania autora: " + (data.message ?? ""));
+    } catch { setError("Błąd połączenia przy wykrywaniu autora"); }
+    finally { setExtractingAuthorFor(null); }
+  };
+
   // ── Embeddings ──
 
   const pollEmbeddingJob = React.useCallback((jid: string) => {
@@ -1238,6 +1282,16 @@ const Chunks = () => {
                   {extractingSpeakerFor === chunk.id ? "🎙 Wykrywam…" : "🎙 Wykryj"}
                 </button>
               )}
+              {runMode === "article" && (
+                <button
+                  onClick={() => extractAuthorFromChunk(chunk.id)}
+                  disabled={extractingAuthorFor === chunk.id}
+                  title="Wykryj autora artykułu (byline) z tego chunka i zapisz go w dokumencie"
+                  style={{ padding: "2px 8px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em", color: "#64748b" }}
+                >
+                  {extractingAuthorFor === chunk.id ? "✍️ Wykrywam…" : "✍️ Autor"}
+                </button>
+              )}
               {chunk.position < maxPosition && (
                 <button
                   onClick={() => mergeWithNext(chunk)}
@@ -1400,10 +1454,18 @@ const Chunks = () => {
   };
 
 
+  // Any non-reviewed run means there's an analysis in progress — the top
+  // "Rozpocznij analizę" button then starts an unrelated, additional run
+  // rather than continuing it, so it's relabeled to make that explicit.
+  const hasActiveRun = runs.some(r => r.status !== "reviewed");
+
   return (
     <div className={selectedRun !== null ? "chunks-page chunks-page--with-flow" : "chunks-page"}>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 6, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0 }}>Przegląd chunków — dokument #{id}</h2>
+        <h2 style={{ margin: 0 }}>
+          Przegląd chunków — {docTitle || `dokument #${id}`}
+          {docType && <span style={{ fontWeight: 400, color: "#64748b", fontSize: "0.7em" }}> ({DOC_TYPE_LABELS[docType] ?? docType}, #{id})</span>}
+        </h2>
         {EDITOR_TYPES.includes(docType) ? (
           <NavLink to={`/${docType}/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Edytuj dokument</NavLink>
         ) : (
@@ -1413,19 +1475,33 @@ const Chunks = () => {
         <div style={{ marginLeft: "auto" }}><ReaderIdentityBadge identity={identity} /></div>
       </div>
 
-      {/* Nowa analiza */}
       <div style={{ margin: "16px 0", padding: "12px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
-        <strong style={{ fontSize: "0.9em" }}>Nowa analiza</strong>
-        <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ fontSize: "0.86em", color: "#475569" }}>
             {newMode === "article" ? "Artykuł" : "Transkrypcja"}
             {" · "}{newModel}
-            {splitPreview ? ` · około ${splitPreview.count} ${splitPreview.count === 1 ? "chunk" : "chunków"}` : ""}
-            {newMode === "article" && preclean && !splitOnly ? " · wykrywanie reklam i szumu" : ""}
+            {splitPreview && (
+              <>
+                {` · około ${splitPreview.count} ${splitPreview.count === 1 ? "chunk" : "chunków"}`}
+                {` (${splitPreview.length.toLocaleString("pl")} zn.)`}
+              </>
+            )}
+            {newMode === "article" && preclean && !splitOnly && (
+              <>
+                {" · "}
+                <span
+                  title="Osobny wstępny krok LLM: zanim tekst zostanie podzielony na chunki do recenzji, model oznacza dokładne zakresy reklam i szumu (np. nawigacja, stopka). Propozycja czyszczenia trafia do tego samego runu do zatwierdzenia przed docelowym podziałem."
+                  style={{ borderBottom: "1px dotted #94a3b8", cursor: "help" }}
+                >
+                  wykrywanie reklam i szumu
+                </span>
+              </>
+            )}
           </span>
           <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}
+            title={hasActiveRun ? "Uruchamia dodatkowy, osobny run — nie kontynuuje istniejącej analizy poniżej. Aby ją kontynuować, użyj przycisku w panelu procesu po prawej." : undefined}
             style={{ marginLeft: "auto", fontWeight: 700, padding: "6px 12px" }}>
-            {jobId ? `Analiza… (${jobStatus})` : runs.length > 0 ? "Rozpocznij nową analizę" : "Rozpocznij analizę"}
+            {jobId ? `Analiza… (${jobStatus})` : hasActiveRun ? "+ Nowa analiza" : "▶ Rozpocznij analizę"}
           </button>
         </div>
         <details style={{ marginTop: 9 }}>
@@ -1479,7 +1555,7 @@ const Chunks = () => {
             </span>
           )}
           <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}>
-            {jobId ? `Analiza… (${jobStatus})` : runs.length > 0 ? "Rozpocznij nową analizę z tymi ustawieniami" : "Uruchom z tymi ustawieniami"}
+            {jobId ? `Analiza… (${jobStatus})` : hasActiveRun ? "+ Nowa analiza z tymi ustawieniami" : "▶ Rozpocznij analizę z tymi ustawieniami"}
           </button>
           </div>
         </details>
@@ -1489,19 +1565,15 @@ const Chunks = () => {
       {runs.length > 0 && (
         <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 8 }}>
           <label style={{ fontSize: "0.85em", fontWeight: 600 }}>Analiza: </label>
-          <select value={selectedRun ?? ""} onChange={e => setSelectedRun(Number(e.target.value))} style={{ padding: "4px 8px", fontSize: "0.88em" }}>
-            {runs.map(r => (
-              <option key={r.id} value={r.id}>
-                #{r.id} — {r.model} ({r.chunk_count} chunków, {new Date(r.created_at).toLocaleString("pl")})
-                {" "}[{r.mode === "article" ? "artykuł" : "transkrypcja"}
-                {r.scope ? `, ${r.scope}` : ""}
-                {r.temat_count != null && r.temat_count > 0 ? `, ✓ ${r.approved_count}/${r.temat_count}` : ""}
-                {r.workflow_stage === "cleanup_proposal" ? ", propozycja czyszczenia" : ""}
-                {r.workflow_stage === "split_proposal" ? ", propozycja podziału" : ""}
-                , {RUN_STATUS_LABELS[r.status] ?? r.status}]
-              </option>
-            ))}
-          </select>
+          {runs.length > 1 ? (
+            <select value={selectedRun ?? ""} onChange={e => setSelectedRun(Number(e.target.value))} style={{ padding: "4px 8px", fontSize: "0.88em" }}>
+              {runs.map(r => (
+                <option key={r.id} value={r.id}>{runLabelText(r)}</option>
+              ))}
+            </select>
+          ) : (
+            <span style={{ fontSize: "0.88em" }}>{runLabelText(runs[0])}</span>
+          )}
           <button onClick={deleteRun} title="Usuń wybrany run (chunki i sekcje)"
             style={{ padding: "3px 9px", border: "1px solid #fca5a5", borderRadius: 4, background: "#fff", color: "#b91c1c", cursor: "pointer", fontSize: "0.82em" }}>
             🗑 Usuń run
@@ -1711,8 +1783,11 @@ const Chunks = () => {
         </div>
       )}
 
-      {/* Pasek rozmówców (tylko transkrypcje — artykuły nie mają mówców) */}
-      {selectedRun !== null && runMode !== "article" && (
+      {/* Pasek rozmówców (tylko transkrypcje — artykuły nie mają mówców).
+          Gated on !error too: on a failed fetchChunks() runMode keeps its
+          stale/default value (the catch block never reaches setRunMode), so
+          without this an error banner could still show the transcript-only bar. */}
+      {selectedRun !== null && !error && runMode !== "article" && (
         <div style={{ marginBottom: 12, padding: "8px 14px", background: "#1e3a5f", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <strong style={{ color: "#fff", fontSize: "0.85em" }}>Rozmówcy:</strong>
           {speakers.length > 0 ? (

@@ -153,7 +153,9 @@ class TestArticleMode:
         assert run.mode == "article"
         assert run.status == "created"
         assert run.speakers == []
-        session.commit.assert_called_once()
+        # 2 commits: entity_service's own isolated commit of ner_unavailable_at
+        # (NER unreachable in this test env — no real ner_service) + the run persist.
+        assert session.commit.call_count == 2
 
     def test_article_chunks_have_no_corrected_text(self, session, article_env):
         service = DocumentAnalysisService(session)

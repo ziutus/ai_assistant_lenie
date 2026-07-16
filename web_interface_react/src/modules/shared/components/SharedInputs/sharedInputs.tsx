@@ -104,6 +104,65 @@ const SourceSelect = ({ formik, isLoading, sources }: { formik: any; isLoading: 
   );
 };
 
+// Editor-level author detection: finds the document's most recent analysis
+// run (GET /analysis_runs?doc_id=, sorted newest-first) and asks the LLM to
+// extract a byline from the head+tail of the full document text (no
+// chunk_ids — the per-chunk variant lives in chunks.tsx, where a reviewer
+// can point at one specific chunk instead). Only shown for document types
+// that go through chunk analysis; link documents have no full text to run it on.
+const AUTHOR_EXTRACT_TYPES = ["webpage", "youtube", "movie", "email"];
+
+const AuthorExtractButton = ({
+  formik, isLoading, apiUrl, apiKey,
+}: { formik: any; isLoading: boolean; apiUrl?: string; apiKey?: string }) => {
+  const [busy, setBusy] = React.useState(false);
+  const [status, setStatus] = React.useState<string | null>(null);
+
+  if (!AUTHOR_EXTRACT_TYPES.includes(formik.values.document_type)) return null;
+
+  const handleClick = async () => {
+    if (!formik.values.id) return;
+    setBusy(true);
+    setStatus(null);
+    const headers = { "x-api-key": `${apiKey}` };
+    try {
+      const runsRes = await axios.get(`${apiUrl}/analysis_runs`, {
+        headers, params: { doc_id: formik.values.id },
+      });
+      const runs = runsRes.data.runs ?? [];
+      if (runs.length === 0) {
+        setStatus("Brak analizy chunków dla tego dokumentu — najpierw ją uruchom.");
+        return;
+      }
+      const res = await axios.post(`${apiUrl}/analysis_run/${runs[0].id}/extract_author`, {}, { headers });
+      if (res.data.author) {
+        formik.setFieldValue("author", res.data.author);
+        setStatus(`Ustawiono autora: ${res.data.author}`);
+      } else {
+        setStatus("Nie udało się rozpoznać autora.");
+      }
+    } catch {
+      setStatus("Błąd podczas pobierania autora.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <span style={{ marginLeft: "10px", display: "inline-flex", alignItems: "center", gap: "8px" }}>
+      <button
+        type="button"
+        disabled={isLoading || busy || !formik.values.id}
+        className={"button"}
+        onClick={handleClick}
+      >
+        {busy ? "Pobieram…" : "✍️ Pobierz autora"}
+      </button>
+      {status && <span style={{ fontSize: "0.85em" }}>{status}</span>}
+    </span>
+  );
+};
+
 const SharedInputs = ({
   formik,
   isLoading,
@@ -127,15 +186,20 @@ const SharedInputs = ({
 
   return (
     <>
-      <Input
-        disabled={isLoading}
-        value={formik.values.author}
-        label={"Author"}
-        onChange={formik.handleChange}
-        id={"author"}
-        name={"author"}
-        type={"text"}
-      />
+      <div style={{ display: "flex", alignItems: "flex-end" }}>
+        <div className="flex-grow">
+          <Input
+            disabled={isLoading}
+            value={formik.values.author}
+            label={"Author"}
+            onChange={formik.handleChange}
+            id={"author"}
+            name={"author"}
+            type={"text"}
+          />
+        </div>
+        <AuthorExtractButton formik={formik} isLoading={isLoading} apiUrl={apiUrl} apiKey={apiKey} />
+      </div>
       <div className="flexBox">
         <div className="flex-grow">
           <Input
