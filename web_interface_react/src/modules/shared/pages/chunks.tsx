@@ -48,7 +48,7 @@ interface AnalysisRun {
   scope: string | null;
   temat_count?: number;
   approved_count?: number;
-  workflow_stage?: "split_proposal" | "cleanup_proposal" | "analysis" | "reviewed";
+  workflow_stage?: "split_proposal" | "cleanup_proposal" | "analysis" | "reviewed" | "superseded";
 }
 
 interface TopicSection {
@@ -116,6 +116,7 @@ const RUN_STATUS_LABELS: Record<string, string> = {
   created: "nowa",
   in_review: "w przeglądzie",
   reviewed: "zamknięta",
+  superseded: "zastąpiona nowszą",
 };
 
 function runLabelText(r: AnalysisRun): string {
