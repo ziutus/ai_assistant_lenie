@@ -5,6 +5,7 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
 -- Instalacja rozszerzenia unaccent (diacritic-insensitive search: Łódź → lodz, Michał → michal)
+-- Used by WebsitesDBPostgreSQL.search_text() -- see docs/search-hybrid.md
 CREATE EXTENSION IF NOT EXISTS unaccent;
 
 -- Instalacja rozszerzenia pg_trgm (fuzzy matching via trigram similarity)
