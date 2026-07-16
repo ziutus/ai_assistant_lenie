@@ -327,6 +327,11 @@ const Read: React.FC = () => {
   const [places, setPlaces] = React.useState<PlaceMarker[]>([]);
   const [personItems, setPersonItems] = React.useState<EntityItem[]>([]);
   const [placeItems, setPlaceItems] = React.useState<EntityItem[]>([]);
+  // Set when the last NER refresh found ner_service unreachable (backend:
+  // web_documents.ner_unavailable_at) — distinguishes "service was down" from
+  // "genuinely no persons/places in this document" so the reader can warn
+  // instead of just staying silently empty.
+  const [nerUnavailableAt, setNerUnavailableAt] = React.useState<string | null>(null);
   const [thematicTags, setThematicTags] = React.useState<string[]>([]);
   const [synthesis, setSynthesis] = React.useState<string | null>(null);
   const [informationSources, setInformationSources] = React.useState<InformationSourceLink[]>([]);
@@ -426,6 +431,7 @@ const Read: React.FC = () => {
         const items = [...(data.entities?.geogName ?? []), ...(data.entities?.placeName ?? [])];
         setPersonItems(data.entities?.persName ?? []);
         setPlaceItems(items);
+        setNerUnavailableAt(data.ner_unavailable_at ?? null);
         setPlaces(
           items
             .filter((it: any) => it.verified === true && it.lat != null && it.lon != null)
@@ -984,6 +990,17 @@ const Read: React.FC = () => {
               <React.Suspense fallback={null}>
                 <CountryMap countries={shownCountries} places={shownMarkers} pipelines={shownPipelines} />
               </React.Suspense>
+            )}
+
+            {nerUnavailableAt && (
+              <div style={{
+                background: "#fff7ed", border: "1px solid #fdba74", borderRadius: 8,
+                padding: 10, marginTop: 12, fontSize: "0.85em", color: "#9a3412",
+              }}>
+                ⚠️ Wykrywanie osób i miejsc nie powiodło się — serwis NER był niedostępny
+                ({new Date(nerUnavailableAt).toLocaleString("pl-PL")}). Lista poniżej może być pusta lub niepełna,
+                niekoniecznie dlatego, że w dokumencie nic nie ma. Spróbuj ponownej analizy w edytorze dokumentu.
+              </div>
             )}
 
             {(shownPersons.length > 0 || shownPlaceItems.length > 0) && (

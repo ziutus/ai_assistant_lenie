@@ -75,6 +75,28 @@ class NERExtractionError(RuntimeError):
     """A complete NER extraction could not be obtained."""
 
 
+class NERServiceUnavailable(RuntimeError):
+    """The NER service could not be reached at all (confirmed via /healthz).
+
+    Raised by entity_service.refresh_document_entities so callers can tell
+    "service down" apart from "ran fine, found nothing" — extract_entities()
+    itself still returns [] either way, preserving its existing contract.
+    """
+
+
+def is_available() -> bool:
+    """Cheap /healthz probe — used to confirm a real outage vs. a genuinely empty extraction.
+
+    Short timeout: this must not itself become a slow path in the common case
+    (service up). Any exception counts as unavailable.
+    """
+    try:
+        resp = requests.get(f"{_service_url()}/healthz", timeout=5)
+        return resp.ok
+    except requests.RequestException:
+        return False
+
+
 def _extract_entities(text: str, *, strict: bool) -> list[dict]:
     """Return raw entities from the NER service: [{text, label, lemma, start, end}, ...].
 

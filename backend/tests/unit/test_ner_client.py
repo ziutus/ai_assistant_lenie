@@ -15,6 +15,7 @@ from library.ner_client import (  # noqa: E402
     aggregate_entities_detailed,
     extract_entities,
     extract_entities_strict,
+    is_available,
     NERExtractionError,
     warmup_async,
 )
@@ -25,6 +26,26 @@ def _response(entities):
     resp.json.return_value = {"entities": entities}
     resp.raise_for_status.return_value = None
     return resp
+
+
+class TestIsAvailable:
+    def test_healthy_service_returns_true(self):
+        resp = MagicMock(ok=True)
+        with patch("library.ner_client.requests.get", return_value=resp) as mock_get:
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                assert is_available() is True
+        assert mock_get.call_args.args[0] == "http://ner:8090/healthz"
+
+    def test_error_status_returns_false(self):
+        resp = MagicMock(ok=False)
+        with patch("library.ner_client.requests.get", return_value=resp):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                assert is_available() is False
+
+    def test_unreachable_service_returns_false(self):
+        with patch("library.ner_client.requests.get", side_effect=requests.ConnectionError("boom")):
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                assert is_available() is False
 
 
 class TestExtractEntities:

@@ -422,7 +422,12 @@ def website_entities_get():
     if doc is None:
         return {"status": "error", "message": "Document not found"}, 404
 
-    return {"status": "success", "id": doc_id, "entities": get_document_entities(session, doc_id)}, 200
+    return {
+        "status": "success",
+        "id": doc_id,
+        "entities": get_document_entities(session, doc_id),
+        "ner_unavailable_at": doc.ner_unavailable_at.isoformat() if doc.ner_unavailable_at else None,
+    }, 200
 
 
 @app.route('/website_entities', methods=['POST'])
@@ -435,6 +440,7 @@ def website_entities_refresh():
     its failure does not fail the request.
     """
     from library.entity_service import get_document_entities, refresh_document_entities
+    from library.ner_client import NERServiceUnavailable
 
     doc_id, error = _entities_doc_id(request.form.get('id') or (request.get_json(silent=True) or {}).get('id'))
     if error:
@@ -449,7 +455,15 @@ def website_entities_refresh():
     if not text.strip():
         return {"status": "error", "message": "Document has no text content"}, 400
 
-    rows = refresh_document_entities(session, doc_id, text)
+    try:
+        rows = refresh_document_entities(session, doc_id, text)
+    except NERServiceUnavailable:
+        # refresh_document_entities already committed doc.ner_unavailable_at.
+        return {
+            "status": "error",
+            "message": "Serwis NER jest niedostępny — spróbuj ponownie za chwilę.",
+            "ner_unavailable": True,
+        }, 503
     session.commit()
 
     place_tags: list[str] = []

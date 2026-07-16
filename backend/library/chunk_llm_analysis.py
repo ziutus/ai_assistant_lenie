@@ -129,6 +129,42 @@ Fragment transkrypcji:
     return []
 
 
+def head_tail_excerpt(text: str, chars: int = 1500) -> str:
+    """First and last `chars` characters of text — a byline can appear at either end."""
+    text = text.strip()
+    if len(text) <= chars * 2:
+        return text
+    return text[:chars] + "\n...\n" + text[-chars:]
+
+
+def extract_author_info(text: str, model: str) -> str | None:
+    """Ask LLM to identify the article's author (byline) from a text excerpt.
+
+    Returns the author's name, or None if extraction fails or no author found.
+    """
+    prompt = f"""Z poniższego fragmentu artykułu spróbuj ustalić imię i nazwisko autora (dziennikarza, publicysty).
+Zwróć TYLKO obiekt JSON bez żadnego dodatkowego tekstu, w formacie:
+{{"author": "Imię Nazwisko"}}
+
+Jeśli nie możesz jednoznacznie zidentyfikować autora, zwróć: {{"author": null}}
+
+Fragment artykułu:
+{text}"""
+
+    logger.info("extract_author_info: len=%d", len(text))
+    response_text, _ = call_model(prompt, model, max_tokens=100)
+    try:
+        match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if match:
+            result = json.loads(match.group())
+            author = result.get("author")
+            if isinstance(author, str) and author.strip():
+                return author.strip()
+    except Exception:
+        logger.warning("extract_author_info: failed to parse JSON response")
+    return None
+
+
 def assign_speakers(text: str, speaker1: str, speaker2: str) -> str:
     """Parse >> speaker-change markers from YouTube auto-transcript and label each turn.
 

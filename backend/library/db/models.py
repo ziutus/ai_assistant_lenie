@@ -252,6 +252,12 @@ class WebDocument(Base):
     reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
     obsidian_note_paths: Mapped[list] = mapped_column(JSONB, server_default=sa_text("'[]'"))
 
+    # Set when the last NER refresh (entity_service.refresh_document_entities)
+    # found the ner_service unreachable — distinguishes "service down" from
+    # "genuinely no entities found" so the reader can warn instead of staying
+    # silently empty. Cleared on the next successful refresh (found or not).
+    ner_unavailable_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
     # Lookup-table relationships (many-to-one)
     document_type_ref: Mapped["DocumentType"] = relationship(
         foreign_keys=[document_type],

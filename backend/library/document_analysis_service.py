@@ -554,6 +554,22 @@ class DocumentAnalysisService:
                 log("tagging document...")
                 _apply_tags(doc, tagging_text)
 
+            # 11b2. Article author fallback (LLM) — article_metadata.extract_article_author()
+            #       (deterministic, WP.pl only) already ran at import time; this is a
+            #       fallback for everything else. Never overwrites an existing doc.author
+            #       (deterministic or manually entered). Whole-document runs only — a
+            #       single chapter excerpt is not a reliable place to look for a byline.
+            if not is_transcript and scope is None and not (getattr(doc, "author", None) or "").strip():
+                try:
+                    from library.chunk_llm_analysis import extract_author_info, head_tail_excerpt
+
+                    author_name = extract_author_info(head_tail_excerpt(text), model)
+                    if author_name:
+                        doc.author = author_name
+                        log(f"author detected: {author_name}")
+                except Exception:
+                    logger.exception("author extraction failed, continuing without author")
+
         # 11c. NER entities (persons/places) on the full document text — offline
         #      (no LLM), stored in document_entities with replace semantics, so
         #      chapter-scoped runs skip it (a single chapter's entities must not
@@ -561,9 +577,12 @@ class DocumentAnalysisService:
         if scope is None:
             try:
                 from library.entity_service import refresh_document_entities
+                from library.ner_client import NERServiceUnavailable
 
                 entity_rows = refresh_document_entities(session, doc_id, text)
                 log(f"entities={len(entity_rows)}")
+            except NERServiceUnavailable:
+                log("WARNING: NER service unavailable — entities not refreshed for this run")
             except Exception:
                 logger.exception("entity extraction failed, continuing without entities")
 
