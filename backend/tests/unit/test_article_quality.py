@@ -9,6 +9,8 @@ from library.article_quality import (
     count_photo_captions,
     is_clickbait_title,
     is_photo_caption_line,
+    photo_caption_candidates,
+    remove_photo_caption_lines,
 )
 
 LONG_PARAGRAPH = (
@@ -72,6 +74,73 @@ class TestPhotoCaptionDetection:
     def test_count_empty_text(self):
         assert count_photo_captions("") == 0
 
+    def test_candidates_preserve_license_and_public_domain_evidence(self):
+        text = "\n".join([
+            LONG_PARAGRAPH,
+            "Makieta obozu (fot. Drozdp), licencja CC BY-SA 4.0",
+            "Salomon Morel, 1948 r., domena publiczna",
+            "Źródło Archiwum FUF / archiwum prywatne",
+        ])
+        candidates = photo_caption_candidates(text)
+        assert [item["line_index"] for item in candidates] == [1, 2, 3]
+        assert [item["category"] for item in candidates] == [
+            "creative_commons", "public_domain", "own_or_private_archive",
+        ]
+
+    def test_embedding_filter_removes_caption_without_mutating_source(self):
+        source = f"{LONG_PARAGRAPH}\nFot. Jan Kowalski / PAP\n{LONG_PARAGRAPH}"
+        filtered = remove_photo_caption_lines(source)
+        assert "Fot. Jan Kowalski" not in filtered
+        assert filtered.count(LONG_PARAGRAPH) == 2
+        assert "Fot. Jan Kowalski" in source
+
+    def test_image_marker_makes_following_description_a_ui_candidate(self):
+        caption = "Prezydent Turcji wita prezydenta USA w Ankarze, 7 lipca 2026 r."
+        text = "\n".join([
+            f"[img2: {caption}]",
+            caption,
+            LONG_PARAGRAPH,
+        ])
+        candidates = photo_caption_candidates(text)
+        assert [(item["line_index"], item["category"]) for item in candidates] == [
+            (0, "image_marker"), (1, "image_description"),
+        ]
+        filtered = remove_photo_caption_lines(text)
+        assert "[img2" not in filtered
+        assert "Prezydent Turcji" not in filtered
+        assert LONG_PARAGRAPH in filtered
+
+    def test_onet_marker_credit_and_repeated_alt_are_all_candidates(self):
+        caption = "Prezydent Turcji wita prezydenta USA w Ankarze, 7 lipca 2026 r."
+        text = "\n".join([
+            f"[img2: {caption}]",
+            "ABDULLAH GUCLU / AFP",
+            caption,
+            LONG_PARAGRAPH,
+        ])
+        candidates = photo_caption_candidates(text)
+        assert [item["line_index"] for item in candidates] == [0, 1, 2]
+        filtered = remove_photo_caption_lines(text)
+        assert "ABDULLAH" not in filtered
+        assert caption not in filtered
+        assert LONG_PARAGRAPH in filtered
+
+    def test_histmag_short_credit_between_marker_and_repeated_alt_is_candidate(self):
+        caption = "Makieta obozu, 2022 rok (fot. Drozdp), licencja CC BY-SA 4.0"
+        text = "\n".join([
+            f"[img3: {caption}]",
+            "Drozdp / Portal historyczny Histmag.org",
+            caption,
+            LONG_PARAGRAPH,
+        ])
+        candidates = photo_caption_candidates(text)
+        assert [item["line_index"] for item in candidates] == [0, 1, 2]
+        assert candidates[1]["category"] == "image_credit"
+
+    def test_copyright_and_abbreviated_illustrative_caption_detected(self):
+        assert is_photo_caption_line("Rosyjskie czołgi. © Twitter | Kontakt6")
+        assert is_photo_caption_line("Firma złożyła wniosek o upadłość (zdj. ilustracyjne)")
+
 
 class TestClickbaitTitle:
     def test_clickbait(self):
@@ -109,6 +178,8 @@ class TestComputeQuality:
         q = compute_quality(_Doc(author="A", title="T"), secs, model=None)
         assert q["penalties"]["photo_captions"] == 15  # cap, nie 25
         assert q["signals"]["photo_captions"] == 5
+        assert q["signals"]["photo_caption_categories"] == {"agency_or_stock": 5}
+        assert len(q["signals"]["photo_caption_lines"]) == 5
 
     def test_noise_share_penalty(self):
         secs = [

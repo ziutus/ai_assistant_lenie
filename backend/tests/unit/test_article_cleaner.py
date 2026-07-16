@@ -6,6 +6,8 @@ Pure-function tests on synthetic markdown fixtures, no DB/LLM/network.
 from library.article_cleaner import (
     _clean_lines_money,
     _clean_lines_onet,
+    _clean_lines_ithardware,
+    _is_adjacent_tag_links_line,
     _clean_lines_wp,
     _detect_h2_ads,
     _is_portal_internal_link,
@@ -67,6 +69,21 @@ class TestGazetaExtraction:
         assert "Polecany tekst" not in result
         assert "Źródło: PAP" not in result
 
+    def test_gallery_and_homepage_controls_removed_but_article_sentence_kept(self):
+        text = "\n\n".join([
+            "Otwórz galerię (3)",
+            "[przejdź na](https://www.gazeta.pl/0%2C0.html?utm_campaign=test)",
+            "Reporter powiedział: przejdź na drugą stronę dokumentu i otwórz galerię sztuki.",
+            LONG_PARAGRAPH,
+        ])
+
+        result = clean_article_text(text, url=self.URL)["text"]
+
+        assert "Otwórz galerię (3)" not in result
+        assert "przejdź na [link" not in result
+        assert "przejdź na drugą stronę" in result
+        assert LONG_PARAGRAPH in result
+
 
 class TestImageExtraction:
     def test_inline_image_replaced_with_marker(self):
@@ -75,12 +92,12 @@ class TestImageExtraction:
         assert result["images"] == [{"alt": "Opis zdjęcia", "url": "https://example.com/foto.jpg"}]
         assert "[img0: Opis zdjęcia]" in result["text"]
 
-    def test_standalone_image_line_removed_but_collected(self):
+    def test_standalone_image_line_preserved_for_quality_and_collected(self):
         text = f"{LONG_PARAGRAPH}\n\n![Opis zdjęcia](https://example.com/foto.jpg)\n\nDrugi akapit."
         result = clean_article_text(text)
         assert result["images"] == [{"alt": "Opis zdjęcia", "url": "https://example.com/foto.jpg"}]
-        # Linia z samym markerem [imgN] jest usuwana z tekstu
-        assert "[img0" not in result["text"]
+        # Marker pozostaje dla quality/UI; generator embeddingów filtruje jego kopię.
+        assert "[img0: Opis zdjęcia]" in result["text"]
         assert "Drugi akapit." in result["text"]
 
     def test_image_with_empty_url_removed(self):
@@ -221,6 +238,29 @@ class TestMoneyCleaning:
         ]
         assert _clean_lines_money(lines) == ["Treść artykułu money."]
 
+    def test_money_comments_audio_and_share_controls_removed(self):
+        lines = [
+            "25 komentarzy",
+            "Słuchaj",
+            "Udostępnij na Facebooku Udostępnij na X Udostępnij na WhatsApp Kopiuj link",
+            "Treść artykułu money.",
+        ]
+        assert _clean_lines_money(lines) == ["Treść artykułu money."]
+
+    def test_money_author_artifact_and_contextual_source_logo_removed(self):
+        lines = [
+            "jacek.losik@grupawp.plo autorze",
+            "Źródło artykułu:",
+            "",
+            "T",
+            "The Wall Street Journal",
+            "Litera T w treści artykułu pozostaje.",
+        ]
+        assert _clean_lines_money(lines) == [
+            "The Wall Street Journal",
+            "Litera T w treści artykułu pozostaje.",
+        ]
+
 
 class TestWpCleaning:
     def test_wp_comments_author_and_tags_removed(self):
@@ -274,3 +314,111 @@ class TestWpCleaning:
             "Treść artykułu o2.",
         ]
         assert _clean_lines_wp(lines) == lines
+
+    def test_wp_newsletter_block_removed_but_article_content_kept(self):
+        lines = [
+            "PREMIUM Zapisz się na newsletter!",
+            "Newsy, wywiady, śledztwa i reportaże w Twojej skrzynce co tydzień - zawsze za darmo.",
+            "Zapisz mnie",
+            "Zapisz mnie na liście uczestników spotkania.",
+        ]
+        assert _clean_lines_wp(lines) == ["Zapisz mnie na liście uczestników spotkania."]
+
+    def test_wp_author_email_artifact_removed_but_normal_email_kept(self):
+        lines = [
+            "Lukasz.Maziewski@grupawp.plo autorze",
+            "Kontakt do autora: autor@grupawp.pl",
+        ]
+        assert _clean_lines_wp(lines) == ["Kontakt do autora: autor@grupawp.pl"]
+
+
+class TestSafeUiArtifacts:
+    def test_ad_block_markers_removed_without_touching_surrounding_paragraphs(self):
+        before = "Akapit przed blokiem reklamowym pozostaje w artykule."
+        after = "Akapit po bloku reklamowym również pozostaje w artykule."
+        text = f"{before}\n\nREKLAMA\nKONIEC REKLAMY\n\n{after}"
+
+        result = clean_article_text(text)["text"]
+
+        assert "REKLAMA" not in result
+        assert before in result
+        assert after in result
+
+    def test_generic_recommendations_video_markers_and_separator_removed(self):
+        text = "\n".join([
+            "Dalszy ciąg artykułu pod materiałem wideo",
+            "**Zobacz także:** **Polecany materiał** [link0]",
+            "* **Czytaj więcej:** **Inny materiał** [link1]",
+            "|",
+            LONG_PARAGRAPH,
+        ])
+        result = clean_article_text(text)["text"]
+        assert result == LONG_PARAGRAPH
+
+    def test_onet_ai_and_premium_labels_removed(self):
+        lines = [
+            "Zapytaj o więcej Onet Czat z AI [link0]",
+            "Więcej pogłębionych treści",
+            "Więcej treści premium dla Ciebie",
+            "Treść artykułu.",
+        ]
+        assert _clean_lines_onet(lines) == ["Treść artykułu."]
+
+    def test_ithardware_player_controls_are_domain_scoped(self):
+        lines = ["Dalsza część artykulu pod video", "Play", "ad", "Treść artykułu."]
+        assert _clean_lines_ithardware(lines) == ["Dalsza część artykulu pod video", "Treść artykułu."]
+
+        text = "\n".join(lines)
+        result = clean_article_text(text, url="https://ithardware.pl/aktualnosci/test.html")["text"]
+        assert result == "Treść artykułu."
+
+        unrelated = clean_article_text("Play\nad\nTreść artykułu.", url="https://example.com/article")["text"]
+        assert "Play" in unrelated
+        assert "ad" in unrelated
+
+    def test_onet_adjacent_recommendation_cards_do_not_merge_or_remove_article(self):
+        cards = (
+            "Więcej treści premium dla Ciebie\n\n"
+            "[![Pierwsza rekomendacja](https://cdn.example/1.jpg)\n\n"
+            "#### Pierwsza rekomendacja](https://wiadomosci.onet.pl/a/1)"
+            "[![Druga rekomendacja](https://cdn.example/2.jpg)\n\n"
+            "#### Druga rekomendacja](https://wiadomosci.onet.pl/a/2)"
+        )
+        result = clean_article_text(
+            f"{cards}\n\n{LONG_PARAGRAPH}",
+            url="https://www.onet.pl/informacje/onetwiadomosci/test",
+        )["text"]
+
+        assert "Pierwsza rekomendacja" not in result
+        assert "Druga rekomendacja" not in result
+        assert LONG_PARAGRAPH in result
+
+
+class TestAdjacentTagLinks:
+    def test_detects_wp_and_money_tag_only_lines(self):
+        assert _is_adjacent_tag_links_line(
+            '[czołgi](/tag/czolgi)[rosja](/tag/rosja)'
+        )
+        assert _is_adjacent_tag_links_line(
+            '[afryka](https://www.money.pl/wiadomosci/afryka.html "afryka")'
+            '[rosja](https://www.money.pl/wiadomosci/rosja.html "rosja")'
+        )
+
+    def test_does_not_remove_adjacent_article_links_or_inline_sentence(self):
+        article_links = (
+            '[Pierwszy artykuł](https://example.com/1)'
+            '[Drugi artykuł](https://example.com/2)'
+        )
+        inline = 'Zobacz [tag](/tag/test) w treści zdania.'
+        assert not _is_adjacent_tag_links_line(article_links)
+        assert not _is_adjacent_tag_links_line(inline)
+
+        result = clean_article_text(f"{article_links}\n{inline}")["text"]
+        assert "Pierwszy artykuł" in result
+        assert "Drugi artykuł" in result
+        assert "w treści zdania" in result
+
+    def test_cleaner_removes_adjacent_tag_block(self):
+        tags = '[czołgi](/tag/czolgi)[rosja](/tag/rosja)[militaria](/tag/militaria)'
+        result = clean_article_text(f"{LONG_PARAGRAPH}\n{tags}", url="https://tech.wp.pl/test")["text"]
+        assert result == LONG_PARAGRAPH

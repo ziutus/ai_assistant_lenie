@@ -122,6 +122,62 @@ def test_site_rules_path_is_configurable(monkeypatch, tmp_path):
     assert webpage_text_clean("https://example.com/article", "keep REMOVE ME this") == "keep  this"
 
 
+@pytest.mark.parametrize(
+    ("url", "artifact"),
+    [
+        ("https://www.money.pl/artykul", "25 komentarzy\nSłuchaj\nUdostępnij na Facebooku Udostępnij na X Udostępnij na WhatsApp Kopiuj link"),
+        ("https://www.onet.pl/informacje/test", "Zapytaj o więcej Onet Czat z AI [link0]\nWięcej pogłębionych treści\nWięcej treści premium dla Ciebie\nDalszy ciąg artykułu pod materiałem wideo"),
+        ("https://businessinsider.com.pl/test", "Dalszy ciąg artykułu pod materiałem wideo\n**Zobacz także:** **Polecany tekst** [link0]\n|"),
+        ("https://ithardware.pl/test", "Dalsza część artykulu pod video\nPlay\nad"),
+    ],
+)
+def test_domain_safe_ui_artifacts_removed(url, artifact):
+    article = "To jest zwykła treść artykułu, która ma pozostać bez zmian."
+    result = webpage_text_clean(url, f"{artifact}\n{article}")
+    assert result == article
+
+
+def test_tech_wp_newsletter_removed_without_matching_article_phrase():
+    newsletter = (
+        "PREMIUM Zapisz się na newsletter!\n"
+        "Newsy, wywiady, śledztwa i reportaże w Twojej skrzynce co tydzień - zawsze za darmo.\n"
+        "Zapisz mnie"
+    )
+    article = "Zapisz mnie na listę uczestników spotkania."
+    result = webpage_text_clean("https://tech.wp.pl/test", f"{newsletter}\n{article}")
+    assert result == article
+
+
+def test_gazeta_gallery_controls_removed_without_touching_article_sentence():
+    controls = (
+        "Otwórz galerię (3)\n"
+        "[przejdź na](https://www.gazeta.pl/0%2C0.html?utm_campaign=test)"
+    )
+    article = "Czytelnik może przejść na wystawę i otworzyć galerię sztuki."
+    result = webpage_text_clean(
+        "https://wiadomosci.gazeta.pl/swiat/test",
+        f"{controls}\n{article}",
+    )
+    assert result == article
+
+
+def test_global_two_line_ad_marker_removed_between_article_paragraphs():
+    before = "Akapit przed reklamą pozostaje."
+    after = "Akapit po reklamie pozostaje."
+    result = webpage_text_clean(
+        "https://example.com/article",
+        f"{before}\nREKLAMA\nKONIEC REKLAMY\n{after}",
+    )
+    assert result == f"{before}\n\n{after}"
+
+
+@pytest.mark.parametrize("url", ["https://www.money.pl/test", "https://wiadomosci.wp.pl/test"])
+def test_wp_platform_glued_author_email_removed_but_normal_email_kept(url):
+    artifact = "jan.kowalski@grupawp.plo autorze"
+    article = "Kontakt pod adresem redakcja@grupawp.pl pozostaje częścią tekstu."
+    assert webpage_text_clean(url, f"{artifact}\n{article}") == article
+
+
 @pytest.mark.parametrize("contents", [None, "not valid json"])
 def test_missing_or_invalid_rules_fall_back_to_empty_rules(tmp_path, caplog, contents):
     rules_path = tmp_path / "site-rules.json"

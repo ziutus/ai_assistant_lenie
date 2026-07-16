@@ -14,8 +14,24 @@ pytest.importorskip("flask")
 
 from sqlalchemy import inspect  # noqa: E402
 
-from library.chunk_review_routes import _log_removed_lines, _removed_lines_diff  # noqa: E402
+from library.chunk_review_routes import _chunk_to_dict, _log_removed_lines, _removed_lines_diff  # noqa: E402
 from library.db.models import DocumentRemovedLine  # noqa: E402
+
+
+def test_chunk_payload_marks_photo_caption_candidates():
+    chunk = type("Chunk", (), {
+        "id": 1, "position": 1, "type": "TEMAT", "topic": None,
+        "original_text": "Treść artykułu.\nFot. Jan Kowalski / PAP\nDalsza treść.",
+        "corrected_text": None, "summary": None, "seg_start": None, "seg_end": None,
+        "rewrite_ratio": None, "status": "pending", "split_at_seg": None,
+        "split_first_type": None, "split_second_type": None,
+        "obsidian_note_paths": [],
+    })()
+
+    payload = _chunk_to_dict(chunk)
+
+    assert payload["photo_caption_line_indices"] == [1]
+    assert "Fot. Jan Kowalski / PAP" in payload["original_text"]
 
 
 # ---------------------------------------------------------------------------
