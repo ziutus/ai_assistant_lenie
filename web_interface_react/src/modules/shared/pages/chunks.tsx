@@ -82,6 +82,8 @@ interface RecleanPreview {
   after_line_count: number;
   removed_line_count: number;
   removed_lines_preview: string[];
+  before_start_preview: string;
+  before_end_preview: string;
   start_preview: string;
   end_preview: string;
   saved: boolean;
@@ -487,6 +489,8 @@ const Chunks = () => {
   const [filterUnprocessed, setFilterUnprocessed] = React.useState(false);
   const [embedJobId, setEmbedJobId] = React.useState<string | null>(null);
   const [embedJobStatus, setEmbedJobStatus] = React.useState<string | null>(null);
+  const [showCompletedResult, setShowCompletedResult] = React.useState(false);
+  const [loadingNextDocument, setLoadingNextDocument] = React.useState(false);
 
   // ── User identity + fragment notes (shared with /read) ──
   const identity = useReaderIdentity(apiUrl, apiKey);
@@ -565,6 +569,7 @@ const Chunks = () => {
       setLineEdits({});
       setLineSplitStates({});
       setHiddenChunks(new Set());
+      setShowCompletedResult(false);
     } catch {
       setError("Błąd ładowania chunków");
     } finally {
@@ -628,6 +633,26 @@ const Chunks = () => {
     }, 400);
     return () => clearTimeout(t);
   }, [id, newMode, chunkSize, scopeChapter, useRecleaned, apiUrl, apiKey, previewNonce]);
+
+  // Before the first run, the user cannot know whether deterministic cleanup is
+  // needed. Compare source and cleaner output automatically (read-only).
+  React.useEffect(() => {
+    if (!id || newMode !== "article") { setRecleanPreview(null); return; }
+    const controller = new AbortController();
+    (async () => {
+      try {
+        const r = await fetch(`${apiUrl}/document/${id}/reclean_preview`, {
+          method: "POST",
+          headers: { "x-api-key": apiKey ?? "", "Content-Type": "application/json" },
+          body: JSON.stringify({ save: false }),
+          signal: controller.signal,
+        });
+        const data = await r.json();
+        if (r.ok && data.status === "success") setRecleanPreview(data as RecleanPreview);
+      } catch { /* The normal split preview still works if comparison is unavailable. */ }
+    })();
+    return () => controller.abort();
+  }, [id, newMode, apiUrl, apiKey, previewNonce]);
 
   // ── Job polling ──
 
@@ -696,9 +721,9 @@ const Chunks = () => {
       const data = await r.json();
       if (!r.ok || data.status !== "success") throw new Error(data.message || "Nie udało się przeczyścić tekstu");
       setRecleanPreview(data as RecleanPreview);
-      setUseRecleaned(!save);
       setPreviewNonce(n => n + 1);
       if (save) {
+        setUseRecleaned(false);
         setInfo(`Zapisano oczyszczony tekst w polu ${data.source_field}.`);
       } else {
         const confirmed = window.confirm(
@@ -706,9 +731,11 @@ const Chunks = () => {
           + `${data.removed_line_count} usuniętych lub zmienionych linii.\n\nUtworzyć teraz nowy run „tylko podział”?`,
         );
         if (confirmed) {
+          setUseRecleaned(true);
           setInfo("Tworzę nowy podział z oczyszczonego tekstu…");
           await startAnalysis("article", true, null, true);
         } else {
+          setUseRecleaned(false);
           setInfo("Podgląd gotowy. Nowy run nie został utworzony.");
         }
       }
@@ -717,6 +744,16 @@ const Chunks = () => {
     } finally {
       setRecleaning(false);
     }
+  };
+
+  const prepareSplit = async () => {
+    const cleanupNeeded = !!recleanPreview && (
+      recleanPreview.before_length !== recleanPreview.after_length
+      || recleanPreview.before_line_count !== recleanPreview.after_line_count
+      || recleanPreview.removed_line_count > 0
+    );
+    if (cleanupNeeded) await previewReclean(false);
+    else await startAnalysis("article", true, null, false);
   };
 
   // ── Chunk patch ──
@@ -1223,6 +1260,24 @@ const Chunks = () => {
     } catch { setError("Błąd połączenia przy generowaniu embeddingów"); setEmbedJobStatus(null); }
   };
 
+  const goToNextDocument = async () => {
+    if (!id || loadingNextDocument) return;
+    setLoadingNextDocument(true); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/document/${id}/next_for_analysis`, { headers });
+      const data = await r.json();
+      if (r.ok && data.document?.id) {
+        window.location.assign(`/chunks/${data.document.id}`);
+      } else {
+        setInfo("Brak kolejnych dokumentów z niezakończonym review.");
+      }
+    } catch {
+      setError("Nie udało się pobrać następnego dokumentu do analizy.");
+    } finally {
+      setLoadingNextDocument(false);
+    }
+  };
+
   // ── Progress ──
 
   const tematChunks = chunks.filter(c => c.type === "TEMAT");
@@ -1243,6 +1298,7 @@ const Chunks = () => {
   // Preclean leaves REKLAMA/SZUM chunks behind; a clean article leaves none,
   // so once the LLM analysis produced summaries the detection step is also done.
   const noiseMarkingDone = reklamaCount > 0 || analyzedTematCount > 0 || runStatus === "reviewed";
+  const processComplete = runStatus === "reviewed" && embeddedCount > 0 && !embedJobId;
 
   // ── User notes: match notes to chunks of the selected run ──
   // Direct match by chunk_id; reader notes (or notes from other runs) fall back
@@ -1608,6 +1664,20 @@ const Chunks = () => {
   // "Rozpocznij analizę" button then starts an unrelated, additional run
   // rather than continuing it, so it's relabeled to make that explicit.
   const hasActiveRun = runs.some(r => r.status !== "reviewed");
+  const cleanupNeeded = !!recleanPreview && (
+    recleanPreview.before_length !== recleanPreview.after_length
+    || recleanPreview.before_line_count !== recleanPreview.after_line_count
+    || recleanPreview.removed_line_count > 0
+  );
+  const cleanupEvidence = (recleanPreview?.removed_lines_preview ?? []).join("\n");
+  const cleanupSignals = [
+    /Wybrane dla Ciebie|Regulamin|Polityka prywatności|©|TECH\.WP\.PL/i.test(cleanupEvidence) ? "stopka lub rekomendacje" : null,
+    /REKLAMA|KONIEC REKLAMY/i.test(cleanupEvidence) ? "markery reklam" : null,
+    /Zaloguj|Menu|Najnowsze|Odkryj/i.test(cleanupEvidence) ? "nawigacja" : null,
+  ].filter((value): value is string => value !== null);
+  const prepareButtonLabel = cleanupNeeded
+    ? (runs.length > 0 ? "Przeczyść i podziel ponownie" : "Przeczyść i podziel")
+    : (runs.length > 0 ? "Podziel ponownie" : "Podziel tekst");
 
   return (
     <div className={selectedRun !== null ? "chunks-page chunks-page--with-flow" : "chunks-page"}>
@@ -1629,6 +1699,11 @@ const Chunks = () => {
             🔗 Oryginał
           </a>
         )}
+        <button onClick={goToNextDocument} disabled={loadingNextDocument}
+          title="Przejdź do kolejnego starszego dokumentu, którego review nie zostało zakończone"
+          style={{ padding: "3px 9px", border: "1px solid #bae6fd", borderRadius: 4, background: "#f0f9ff", cursor: "pointer", fontSize: "0.82em", color: "#0369a1", fontWeight: 600 }}>
+          {loadingNextDocument ? "Szukam…" : "Następny do analizy →"}
+        </button>
         {docQuality && (
           <span
             title={qualityTooltip(docQuality)}
@@ -1678,45 +1753,54 @@ const Chunks = () => {
               </>
             )}
           </span>
-          <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}
+          {runs.length > 0 && <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}
             title={hasActiveRun ? "Uruchamia dodatkowy, osobny run — nie kontynuuje istniejącej analizy poniżej. Aby ją kontynuować, użyj przycisku w panelu procesu po prawej." : undefined}
             style={{ marginLeft: "auto", fontWeight: 700, padding: "6px 12px" }}>
             {jobId ? `Analiza… (${jobStatus})` : hasActiveRun ? "+ Nowa analiza" : "▶ Rozpocznij analizę"}
-          </button>
+          </button>}
         </div>
         {newMode === "article" && (
           <div style={{ marginTop: 10, padding: "9px 11px", background: "#fff", border: "1px solid #dbeafe", borderRadius: 6 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <strong style={{ fontSize: "0.84em", color: "#334155" }}>1. Podział na chunki</strong>
-              <button className="button" onClick={() => previewReclean(false)} disabled={recleaning || !!jobId}
-                title="Uruchom aktualne reguły clean_article_text, pokaż podsumowanie i utwórz nowy run tylko-podział">
-                {recleaning ? "Czyszczę…" : "Przeczyść tekst i podziel ponownie"}
+              <strong style={{ fontSize: "0.84em", color: "#334155" }}>1. Kontrola tekstu i podział</strong>
+              <button className="button" onClick={prepareSplit} disabled={recleaning || !!jobId || !recleanPreview}
+                title="Utwórz nowy run tylko-podział; jeśli cleaner wykrył różnice, najpierw pokaże podsumowanie i poprosi o potwierdzenie">
+                {recleaning ? "Przygotowuję…" : recleanPreview ? prepareButtonLabel : "Sprawdzam tekst…"}
               </button>
-              {recleanPreview && (
-                <label style={{ fontSize: "0.82em", display: "flex", alignItems: "center", gap: 5 }}>
-                  <input type="checkbox" checked={useRecleaned} onChange={e => setUseRecleaned(e.target.checked)} />
-                  użyj oczyszczonego tekstu tylko do podziału
-                </label>
-              )}
+              {recleanPreview && <span style={{
+                fontSize: "0.78em", fontWeight: 700, padding: "2px 7px", borderRadius: 10,
+                color: useRecleaned ? "#1e40af" : cleanupNeeded ? "#92400e" : "#166534",
+                background: useRecleaned ? "#dbeafe" : cleanupNeeded ? "#fef3c7" : "#dcfce7",
+              }}>{useRecleaned ? "widok po czyszczeniu — użyty do podziału" : cleanupNeeded ? "wykryto elementy do czyszczenia" : "tekst nie wymaga ponownego czyszczenia"}</span>}
             </div>
             {recleanPreview && (
               <div style={{ marginTop: 8, fontSize: "0.8em", color: "#475569" }}>
                 <div>
-                  Pole <code>{recleanPreview.source_field}</code>: {recleanPreview.before_length.toLocaleString("pl")} → {recleanPreview.after_length.toLocaleString("pl")} znaków,
-                  {" "}{recleanPreview.before_line_count} → {recleanPreview.after_line_count} linii;
-                  usuniętych/zmienionych linii: <strong>{recleanPreview.removed_line_count}</strong>.
+                  {useRecleaned ? "Tekst po czyszczeniu" : "Tekst źródłowy"}: <strong>{(useRecleaned ? recleanPreview.after_length : recleanPreview.before_length).toLocaleString("pl")}</strong> znaków,
+                  przewidywany podział: <strong>{splitPreview?.count ?? "…"}</strong> {splitPreview?.count === 1 ? "chunk" : "chunków"}.
+                  {cleanupNeeded && <> Cleaner zmieni {recleanPreview.removed_line_count} linii
+                    {cleanupSignals.length > 0 && <> ({cleanupSignals.join(", ")})</>}.</>}
                 </div>
-                <details style={{ marginTop: 5 }}>
-                  <summary style={{ cursor: "pointer" }}>Pokaż koniec tekstu po czyszczeniu</summary>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 8, marginTop: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 700, marginBottom: 3, color: "#64748b" }}>Początek {useRecleaned ? "po czyszczeniu" : "tekstu"}</div>
+                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", maxHeight: 180, overflow: "auto", background: "#f8fafc", padding: 8, borderRadius: 4 }}>
+                      {useRecleaned ? recleanPreview.start_preview : recleanPreview.before_start_preview}
+                    </pre>
+                  </div>
+                  <div>
+                    <div style={{ fontWeight: 700, marginBottom: 3, color: "#64748b" }}>Koniec {useRecleaned ? "po czyszczeniu" : "tekstu"}</div>
+                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", maxHeight: 180, overflow: "auto", background: "#f8fafc", padding: 8, borderRadius: 4 }}>
+                      {useRecleaned ? recleanPreview.end_preview : recleanPreview.before_end_preview}
+                    </pre>
+                  </div>
+                </div>
+                {cleanupNeeded && !useRecleaned && <details style={{ marginTop: 5 }}>
+                  <summary style={{ cursor: "pointer" }}>Podejrzyj koniec po czyszczeniu</summary>
                   <pre style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", background: "#f8fafc", padding: 8, borderRadius: 4 }}>
                     {recleanPreview.end_preview}
                   </pre>
-                </details>
-                <button onClick={() => previewReclean(true)} disabled={recleaning}
-                  style={{ marginTop: 6, padding: "3px 8px", border: "1px solid #f59e0b", background: "#fffbeb", borderRadius: 4, cursor: "pointer", color: "#92400e" }}
-                  title="Opcjonalnie nadpisuje bieżące pole text/text_md wynikiem czyszczenia">
-                  Zapisz oczyszczony tekst w dokumencie…
-                </button>
+                </details>}
               </div>
             )}
           </div>
@@ -1944,6 +2028,11 @@ const Chunks = () => {
                 </button>
               </>
             )}
+            <button className="button" onClick={goToNextDocument} disabled={loadingNextDocument}
+              title="Pomiń bieżący dokument i przejdź do kolejnego z niezakończonym review"
+              style={{ marginTop: 4, background: "#0369a1", color: "#fff", border: "none", fontWeight: 700, padding: "7px 12px" }}>
+              {loadingNextDocument ? "Szukam następnego dokumentu…" : "Następny dokument do sprawdzenia →"}
+            </button>
             <span style={{ fontSize: "0.78em", color: "#64748b", lineHeight: 1.4 }}>
               Reklamy i szum są pomijane. Każdy chunk możesz zatwierdzić osobno poniżej.
             </span>
@@ -1992,7 +2081,46 @@ const Chunks = () => {
         </div>
       )}
 
-      {chunks.length > 0 && (
+      {processComplete && (
+        <div style={{
+          marginBottom: 14, padding: "18px 20px", border: "1px solid #86efac",
+          borderRadius: 10, background: "#f0fdf4",
+        }}>
+          <div style={{ fontSize: "1.05em", fontWeight: 800, color: "#166534" }}>
+            ✓ Proces zakończony — dokument znajduje się w indeksie
+          </div>
+          <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 9, color: "#475569", fontSize: "0.86em" }}>
+            <span><strong>{embeddedCount}</strong> chunków TEMAT z embeddingami</span>
+            <span><strong>{approvedCount}</strong> zatwierdzonych</span>
+            <span><strong>{reklamaCount}</strong> REKLAMA/SZUM pominiętych</span>
+            <span>run <strong>#{selectedRun}</strong></span>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 13 }}>
+            <NavLink to={`/read/${id}`} className="button" style={{ textDecoration: "none" }}>📖 Czytaj dokument</NavLink>
+            <button className="button" onClick={() => setShowCompletedResult(value => !value)}>
+              {showCompletedResult ? "Ukryj wynikowe chunki" : "Pokaż wynikowe chunki"}
+            </button>
+          </div>
+          {showCompletedResult && (
+            <div style={{ display: "grid", gap: 8, marginTop: 14 }}>
+              {tematChunks.map(chunk => (
+                <div key={chunk.id} style={{ padding: "10px 12px", border: "1px solid #bbf7d0", borderRadius: 6, background: "#fff" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5 }}>
+                    <strong style={{ color: "#334155" }}>#{chunk.position} {chunk.topic || "TEMAT"}</strong>
+                    <span style={{ color: "#15803d", fontSize: "0.78em" }}>● w indeksie</span>
+                  </div>
+                  <div style={{ whiteSpace: "pre-wrap", color: "#475569", fontSize: "0.84em", lineHeight: 1.5 }}>
+                    {(chunk.corrected_text || chunk.original_text || chunk.text_preview || "").slice(0, 700)}
+                    {(chunk.text_length ?? (chunk.corrected_text || chunk.original_text || "").length) > 700 ? "…" : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!processComplete && chunks.length > 0 && (
         <div style={{ marginBottom: 12, padding: "8px 14px", background: "#0f172a", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ color: "#94a3b8", fontSize: "0.82em" }}>
             TEMAT: {approvedCount}/{tematChunks.length} zatwierdzonych ({pct}%)
@@ -2051,7 +2179,7 @@ const Chunks = () => {
           Gated on !error too: on a failed fetchChunks() runMode keeps its
           stale/default value (the catch block never reaches setRunMode), so
           without this an error banner could still show the transcript-only bar. */}
-      {selectedRun !== null && !error && runMode !== "article" && (
+      {!processComplete && selectedRun !== null && !error && runMode !== "article" && (
         <div style={{ marginBottom: 12, padding: "8px 14px", background: "#1e3a5f", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <strong style={{ color: "#fff", fontSize: "0.85em" }}>Rozmówcy:</strong>
           {speakers.length > 0 ? (
@@ -2098,10 +2226,10 @@ const Chunks = () => {
       )}
 
       {/* Chunki — widok płaski */}
-      {!sectionView && visibleChunks.map(renderChunkCard)}
+      {!processComplete && !sectionView && visibleChunks.map(renderChunkCard)}
 
       {/* Doładowanie kolejnej strony (duży run bez sekcji) */}
-      {!sectionView && flatPaged && chunks.length < chunkTotal && (
+      {!processComplete && !sectionView && flatPaged && chunks.length < chunkTotal && (
         <div style={{ textAlign: "center", margin: "12px 0" }}>
           <button className="button" onClick={loadMoreChunks} disabled={loadingMore}>
             {loadingMore ? "Ładuję…" : `Załaduj więcej (${chunks.length}/${chunkTotal})`}
@@ -2110,7 +2238,7 @@ const Chunks = () => {
       )}
 
       {/* Widok sekcji (książki): accordion z lazy-loadingiem chunków */}
-      {sectionView && topicSections.map(ts => {
+      {!processComplete && sectionView && topicSections.map(ts => {
         const expanded = expandedSections.has(ts.id);
         const secLoading = loadingSections[ts.id] ?? false;
         const positions = new Set(ts.chunk_positions);
@@ -2189,7 +2317,10 @@ const Chunks = () => {
       })()}
 
       {!loading && chunks.length === 0 && runs.length === 0 && (
-        <p style={{ color: "#64748b", fontStyle: "italic" }}>Brak analiz dla tego dokumentu. Uruchom pierwszą analizę powyżej.</p>
+        <p style={{ color: "#64748b", fontStyle: "italic" }}>
+          Brak przygotowanego podziału. W kroku „1. Kontrola tekstu i podział” sprawdź początek oraz koniec tekstu,
+          a następnie kliknij „{prepareButtonLabel}”.
+        </p>
       )}
 
       {/* Popover nowej notatki (zaznaczenie tekstu w treści chunka) */}
