@@ -6,16 +6,31 @@ Entities are derived data, so a refresh replaces previous rows instead of
 merging (unlike doc.tags, which accumulates across runs).
 """
 
+import datetime
 import logging
 import re
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from library.db.models import DocumentEntity, NerExclusion, WebDocument
-from library.ner_client import aggregate_entities_detailed, extract_entities
+from library.ner_client import NERServiceUnavailable, aggregate_entities_detailed, extract_entities, is_available
 from library.ner_normalization import normalize_ner_text
 
 logger = logging.getLogger(__name__)
+
+
+def _record_ner_availability(session, document_id: int, *, unavailable: bool) -> None:
+    """Persist doc.ner_unavailable_at immediately (own commit) — see its column comment.
+
+    Committed independently of the caller's transaction so the flag survives
+    even when the caller rolls back after refresh_document_entities raises
+    (e.g. article_browser.py's except blocks).
+    """
+    value = datetime.datetime.utcnow() if unavailable else None
+    session.execute(
+        update(WebDocument).where(WebDocument.id == document_id).values(ner_unavailable_at=value),
+    )
+    session.commit()
 
 
 def is_excluded(exclusions: list[NerExclusion], entity_type: str, entity_text: str,
@@ -56,22 +71,39 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     """Run NER on text and replace the document's rows in document_entities.
 
     Queues the changes on the session without committing (caller owns the
-    transaction). Returns the new DocumentEntity rows. When the NER service is
-    unavailable an empty extraction result leaves existing rows untouched —
-    "service down" must not erase previously detected entities. Entities
+    transaction) and returns the new DocumentEntity rows. When the raw
+    extraction comes back empty, a cheap /healthz probe (ner_client.is_available)
+    tells apart two cases — genuinely no entities (probe OK: clears any stale
+    doc.ner_unavailable_at, returns []) vs. the service being down (probe
+    fails: sets doc.ner_unavailable_at and raises NERServiceUnavailable). Both
+    of those writes commit immediately, independent of the caller's
+    transaction, so the flag survives even when the caller rolls back on the
+    raised exception (e.g. article_browser.py's except blocks). Existing
+    document_entities rows are left untouched on both empty-extraction paths —
+    "no fresh data" must never erase previously detected entities. Entities
     matched by an ner_exclusions rule (global, or author-scoped for the
     document's author) are dropped before persisting — they never reach
     person resolution or place verification.
     """
     raw = extract_entities(text)
     if not raw:
-        return []
+        if is_available():
+            _record_ner_availability(session, document_id, unavailable=False)
+            return []
+        _record_ner_availability(session, document_id, unavailable=True)
+        raise NERServiceUnavailable(f"NER service unreachable while refreshing entities for document {document_id}")
+
+    # Success: clear a stale unavailable flag as part of the caller's own
+    # transaction (no isolated commit needed — unlike the branches above,
+    # there is no exception here for the caller to roll back).
+    doc = session.get(WebDocument, document_id)
+    if doc is not None and doc.ner_unavailable_at is not None:
+        doc.ner_unavailable_at = None
 
     groups = aggregate_entities_detailed(raw)
 
     exclusions = list(session.execute(select(NerExclusion)).scalars().all())
     if exclusions:
-        doc = session.get(WebDocument, document_id)
         author = getattr(doc, "author", None)
         excluded = [
             key

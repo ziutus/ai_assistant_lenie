@@ -50,15 +50,29 @@ class TestRefreshDocumentEntities:
             rows = refresh_document_entities(session, 42, "jakiś tekst")
         assert rows[0].entity_text == "Tusk"
 
-    def test_service_unavailable_keeps_existing_rows(self):
-        """Empty extraction (service down) must not delete previously stored entities."""
+    def test_genuinely_empty_extraction_keeps_existing_rows(self):
+        """Empty extraction with the service reachable must not touch document_entities."""
         session = MagicMock()
-        with patch("library.entity_service.extract_entities", return_value=[]):
+        with patch("library.entity_service.extract_entities", return_value=[]), \
+             patch("library.entity_service.is_available", return_value=True):
             rows = refresh_document_entities(session, 42, "jakiś tekst")
 
         assert rows == []
-        session.execute.assert_not_called()
         session.add_all.assert_not_called()
+        session.commit.assert_called_once()  # clears any stale ner_unavailable_at
+
+    def test_service_unavailable_raises_and_flags_document_without_touching_rows(self):
+        """Empty extraction with the service down must raise, not silently return []."""
+        from library.ner_client import NERServiceUnavailable
+
+        session = MagicMock()
+        with patch("library.entity_service.extract_entities", return_value=[]), \
+             patch("library.entity_service.is_available", return_value=False):
+            with pytest.raises(NERServiceUnavailable):
+                refresh_document_entities(session, 42, "jakiś tekst")
+
+        session.add_all.assert_not_called()
+        session.commit.assert_called_once()  # sets ner_unavailable_at, own transaction
 
     def test_global_exclusion_drops_entity(self):
         session = _session_with_exclusions(

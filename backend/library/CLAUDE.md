@@ -60,7 +60,7 @@ library/
 - **`db/engine.py`** — SQLAlchemy engine and session factories: `get_session()`, `get_scoped_session()`.
 - **`stalker_web_documents_db_postgresql.py`** — `WebsitesDBPostgreSQL`: query layer using SQLAlchemy session. Requires `session` parameter. Methods: `get_list()` (paginated/filtered), `get_similar()` (pgvector cosine search), `get_next_to_correct()`, `get_count()`, `embedding_add()`, `embedding_delete()`.
 
-**Database tables:** `public.web_documents` (30 columns), `public.websites_embeddings` (vector similarity, optional `chunk_id` FK), `public.document_analysis_runs`, `public.document_chunks`, `public.document_topic_sections`, `public.document_removed_lines` — see [`database/CLAUDE.md`](../database/CLAUDE.md) for full column definitions.
+**Database tables:** `public.web_documents` (31 columns), `public.websites_embeddings` (vector similarity, optional `chunk_id` FK), `public.document_analysis_runs`, `public.document_chunks`, `public.document_topic_sections`, `public.document_removed_lines` — see [`database/CLAUDE.md`](../database/CLAUDE.md) for full column definitions.
 
 ### Models (`models/`)
 
