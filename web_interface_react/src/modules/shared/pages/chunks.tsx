@@ -1094,6 +1094,10 @@ const Chunks = () => {
   const embeddedCount = tematChunks.filter(c => c.has_embeddings === true).length;
   const reviewReady = tematChunks.length > 0 && unapprovedTematCount === 0 && chunksToAnalyze.length === 0;
   const workflowBusy = !!jobId || reanalyzingAll || approvingAll || !!embedJobId;
+  const analyzedTematCount = tematChunks.filter(c => c.summary).length;
+  // Preclean leaves REKLAMA/SZUM chunks behind; a clean article leaves none,
+  // so once the LLM analysis produced summaries the detection step is also done.
+  const noiseMarkingDone = reklamaCount > 0 || analyzedTematCount > 0 || runStatus === "reviewed";
 
   // ── User notes: match notes to chunks of the selected run ──
   // Direct match by chunk_id; reader notes (or notes from other runs) fall back
@@ -1610,23 +1614,59 @@ const Chunks = () => {
             {workflowBusy && <span style={{ fontSize: "0.82em", color: "#0369a1" }}>Przetwarzanie…</span>}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
-            {[
+            {([
               {
                 label: "1. Analiza chunków",
                 done: chunksToAnalyze.length === 0,
                 detail: chunksToAnalyze.length > 0 ? `${chunksToAnalyze.length} wymaga analizy` : `${tematChunks.length} treści TEMAT`,
+                subs: [
+                  {
+                    label: "Podział na chunki",
+                    done: chunkTotal > 0,
+                    detail: chunkTotal > 0 ? `${chunkTotal} chunków` : "brak chunków",
+                  },
+                  ...(runMode === "article" ? [{
+                    label: "Wykrywanie reklam i szumu",
+                    done: noiseMarkingDone,
+                    detail: reklamaCount > 0 ? `${reklamaCount} REKLAMA/SZUM` : noiseMarkingDone ? "nie wykryto" : "oczekuje",
+                  }] : []),
+                  {
+                    label: "Analiza LLM (tematy i streszczenia)",
+                    done: tematChunks.length > 0 && chunksToAnalyze.length === 0 && analyzedTematCount > 0,
+                    detail: `${analyzedTematCount}/${tematChunks.length} przeanalizowanych`,
+                  },
+                ],
               },
               {
                 label: "2. Przegląd i akceptacja",
                 done: reviewReady || runStatus === "reviewed",
                 detail: `${approvedCount}/${tematChunks.length} zatwierdzonych`,
+                subs: [
+                  {
+                    label: "Zatwierdzenie chunków TEMAT",
+                    done: tematChunks.length > 0 && unapprovedTematCount === 0,
+                    detail: `${approvedCount}/${tematChunks.length}`,
+                  },
+                  {
+                    label: "Zamknięcie review",
+                    done: runStatus === "reviewed",
+                    detail: RUN_STATUS_LABELS[runStatus] ?? runStatus,
+                  },
+                ],
               },
               {
                 label: "3. Embeddingi",
                 done: runStatus === "reviewed" && embeddedCount > 0 && !embedJobId,
                 detail: embedJobId ? `generowanie: ${embedJobStatus}` : embeddedCount > 0 ? `${embeddedCount} chunków w indeksie` : "uruchomią się po zamknięciu",
+                subs: [
+                  {
+                    label: "Generowanie embeddingów",
+                    done: embeddedCount > 0 && !embedJobId,
+                    detail: embedJobId ? `w toku: ${embedJobStatus}` : `${embeddedCount}/${approvedCount} zatwierdzonych w indeksie`,
+                  },
+                ],
               },
-            ].map(step => (
+            ] as { label: string; done: boolean; detail: string; subs: { label: string; done: boolean; detail: string }[] }[]).map(step => (
               <div key={step.label} style={{
                 padding: "10px 12px", borderRadius: 7,
                 border: `1px solid ${step.done ? "#86efac" : "#e2e8f0"}`,
@@ -1636,6 +1676,17 @@ const Chunks = () => {
                   {step.done ? "✓ " : ""}{step.label}
                 </div>
                 <div style={{ marginTop: 3, fontSize: "0.78em", color: "#64748b" }}>{step.detail}</div>
+                <div style={{ marginTop: 6, display: "grid", gap: 3, paddingLeft: 2 }}>
+                  {step.subs.map(sub => (
+                    <div key={sub.label} style={{ display: "flex", gap: 6, fontSize: "0.76em", alignItems: "baseline" }}>
+                      <span style={{ color: sub.done ? "#15803d" : "#94a3b8", fontWeight: 700, minWidth: 11 }}>
+                        {sub.done ? "✓" : "○"}
+                      </span>
+                      <span style={{ color: sub.done ? "#15803d" : "#475569" }}>{sub.label}</span>
+                      <span style={{ color: "#94a3b8", whiteSpace: "nowrap" }}>— {sub.detail}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

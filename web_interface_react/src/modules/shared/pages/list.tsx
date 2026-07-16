@@ -6,6 +6,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import { useManageLLM } from "../hooks/useManageLLM";
 import { useFormik } from 'formik';
 import { buildObsidianNoteUrl } from "../utils/obsidian";
+import { loadListFilters, saveListFilters } from "../services/storage";
 
 // States where a document has no usable text yet — showing "Czytaj"/"Chunki" there
 // would just open an empty page. Mirrors the backend's YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES
@@ -31,7 +32,7 @@ const List = () => {
   const { selectedDocumentType, setSelectedDocumentType, selectedDocumentState, setSelectedDocumentState } = React.useContext(AuthorizationContext);
   const { searchInDocument, setSearchInDocument} = React.useContext(AuthorizationContext);
   const { searchType, setSearchType} = React.useContext(AuthorizationContext);
-  const [obsidianFilter, setObsidianFilter] = React.useState<"none" | "missing" | "has">("none");
+  const [obsidianFilter, setObsidianFilter] = React.useState<"none" | "missing" | "has">(() => loadListFilters().obsidianFilter);
   const [expandedObsidian, setExpandedObsidian] = React.useState<Set<number>>(new Set());
 
   const toggleObsidianExpanded = (id: number) => {
@@ -62,6 +63,7 @@ const List = () => {
   const handleObsidianFilterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
           const filter = event.target.value as "none" | "missing" | "has";
           setObsidianFilter(filter);
+          saveListFilters({ obsidianFilter: filter });
           handleGetList(selectedDocumentType, selectedDocumentState, searchInDocument, obsidianFilterParams(filter));
   };
 
