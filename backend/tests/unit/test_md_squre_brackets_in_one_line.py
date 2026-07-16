@@ -55,6 +55,30 @@ pra](https://test2.pl)
 
         self.assertEqual(md_square_brackets_in_one_line(text), expected)
 
+    def test_separates_adjacent_linked_image_cards_before_flattening(self):
+        text = (
+            "[![Pierwsza karta](https://img.example/1.jpg)\n\n"
+            "#### Pierwsza karta](https://example.com/1)"
+            "[![Druga karta](https://img.example/2.jpg)\n\n"
+            "#### Druga karta](https://example.com/2)"
+        )
+
+        expected = (
+            "[![Pierwsza karta](https://img.example/1.jpg) #### Pierwsza karta]"
+            "(https://example.com/1)\n\n"
+            "[![Druga karta](https://img.example/2.jpg) #### Druga karta]"
+            "(https://example.com/2)"
+        )
+
+        self.assertEqual(md_square_brackets_in_one_line(text), expected)
+
+    def test_keeps_existing_separator_between_cards(self):
+        text = (
+            "[![Pierwsza](https://img.example/1.jpg)](https://example.com/1)\n\n"
+            "[![Druga](https://img.example/2.jpg)](https://example.com/2)"
+        )
+        self.assertEqual(md_square_brackets_in_one_line(text), text)
+
 
 if __name__ == "__main__":
     unittest.main()

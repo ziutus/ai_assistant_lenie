@@ -128,6 +128,28 @@ class TestScopeChapterRun:
         with pytest.raises(ValueError, match="out of range"):
             service.create_run(doc_id=77, model="m", mode="article", scope_chapter=42)
 
+    def test_reclean_applies_current_footer_rules_before_split(self, monkeypatch, session, book_env):
+        class WpDoc(FakeBookDoc):
+            text_md = None
+            text = ("Treść właściwa artykułu i jego dłuższy akapit testowy. " * 4
+                    + "\n\nWybrane dla Ciebie\n\nPolecany materiał")
+            url = "https://tech.wp.pl/test"
+
+        monkeypatch.setattr(
+            das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: WpDoc()),
+        )
+        monkeypatch.setattr("library.entity_service.refresh_document_entities", lambda *_a, **_kw: [])
+
+        service = DocumentAnalysisService(session)
+        service.create_run(doc_id=77, model="m", mode="article", split_only=True, reclean=True)
+
+        joined = "\n".join(
+            item.original_text for item in session.added if isinstance(item, DocumentChunk)
+        )
+        assert "Treść właściwa" in joined
+        assert "Wybrane dla Ciebie" not in joined
+        assert "Polecany materiał" not in joined
+
 
 # ---------------------------------------------------------------------------
 # Flask routes (mocked session)
@@ -347,6 +369,11 @@ class TestAnalyzeChunksScopeValidation:
     def test_scope_chapter_must_be_int(self, client):
         resp = client.post("/document/77/analyze_chunks",
                            json={"mode": "article", "scope_chapter": "abc"})
+        assert resp.status_code == 400
+
+    def test_reclean_requires_article_mode(self, client):
+        resp = client.post("/document/77/analyze_chunks",
+                           json={"mode": "transcript", "reclean": True})
         assert resp.status_code == 400
 
 

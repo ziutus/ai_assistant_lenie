@@ -25,6 +25,7 @@ import json
 import logging
 import threading
 import uuid
+from collections import Counter
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, abort
@@ -146,6 +147,9 @@ def _chunk_to_dict(c: DocumentChunk, has_embeddings: bool | None = None, lite: b
     """Serialize a chunk. lite=True drops the full texts (book-sized runs are
     lazy-loaded per section) and ships a short preview + length instead."""
     text = c.corrected_text or c.original_text or ""
+    from library.article_quality import photo_caption_candidates
+
+    caption_candidates = photo_caption_candidates(c.original_text or "") if not lite else []
     return {
         "id": c.id,
         "position": c.position,
@@ -165,6 +169,7 @@ def _chunk_to_dict(c: DocumentChunk, has_embeddings: bool | None = None, lite: b
         "split_second_type": c.split_second_type,
         "obsidian_note_paths": c.obsidian_note_paths or [],
         "has_embeddings": bool(has_embeddings) if has_embeddings is not None else None,
+        "photo_caption_line_indices": [item["line_index"] for item in caption_candidates],
     }
 
 
@@ -202,11 +207,14 @@ def analyze_document_chunks(doc_id: int):
     mode = data.get("mode", "transcript")
     split_only = bool(data.get("split_only", False))
     preclean = bool(data.get("preclean", False))
+    reclean = bool(data.get("reclean", False))
     scope_chapter = data.get("scope_chapter")
     if mode not in ANALYSIS_MODES:
         return jsonify({"status": "error", "message": f"Invalid mode: {mode}"}), 400
     if preclean and mode != "article":
         return jsonify({"status": "error", "message": "preclean requires article mode"}), 400
+    if reclean and mode != "article":
+        return jsonify({"status": "error", "message": "reclean requires article mode"}), 400
     if scope_chapter is not None:
         try:
             scope_chapter = int(scope_chapter)
@@ -248,6 +256,7 @@ def analyze_document_chunks(doc_id: int):
                 mode=mode,
                 split_only=split_only,
                 preclean=preclean,
+                reclean=reclean,
                 scope_chapter=scope_chapter,
             )
             ad_count = sum(1 for c in run.chunks if c.type == "REKLAMA")
@@ -287,12 +296,15 @@ def split_preview(doc_id: int):
     mode = request.args.get("mode", "article")
     chunk_size = request.args.get("chunk_size", 5000, type=int)
     scope_chapter = request.args.get("scope_chapter", type=int)
+    reclean = request.args.get("reclean", "0").lower() in {"1", "true", "yes"}
     if mode not in ANALYSIS_MODES:
         return jsonify({"status": "error", "message": f"Invalid mode: {mode}"}), 400
     if not 500 <= chunk_size <= 50000:
         return jsonify({"status": "error", "message": f"chunk_size out of range: {chunk_size}"}), 400
     if scope_chapter is not None and mode != "article":
         return jsonify({"status": "error", "message": "scope_chapter requires article mode"}), 400
+    if reclean and mode != "article":
+        return jsonify({"status": "error", "message": "reclean requires article mode"}), 400
 
     session = get_scoped_session()
     doc = session.get(WebDocument, doc_id)
@@ -302,6 +314,13 @@ def split_preview(doc_id: int):
     text, field = _extract_text(doc, prefer_md=(mode == "article"))
     if not text:
         return jsonify({"status": "error", "message": "Document has no usable text"}), 400
+
+    if reclean:
+        from library.article_cleaner import clean_article_text
+
+        text = clean_article_text(text, doc.url or "")["text"]
+        if not text:
+            return jsonify({"status": "error", "message": "Document is empty after cleanup"}), 400
 
     scope_title = None
     if mode == "article":
@@ -330,11 +349,66 @@ def split_preview(doc_id: int):
         "mode": mode,
         "chunk_size": chunk_size,
         "source_field": field,
+        "reclean": reclean,
         "scope_chapter": scope_chapter,
         "scope_title": scope_title,
         "text_length": len(text),
         "chunk_count": len(parts),
         "chunk_sizes": [len(p) for p in parts],
+    })
+
+
+@bp.route("/document/<int:doc_id>/reclean_preview", methods=["POST"])
+def reclean_preview(doc_id: int):
+    """Preview current deterministic cleanup and optionally save it explicitly."""
+    from library.article_cleaner import clean_article_text
+    from library.document_analysis_service import _extract_text
+
+    data = request.get_json(silent=True) or {}
+    save = bool(data.get("save", False))
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    before, field = _extract_text(doc, prefer_md=True)
+    if not before:
+        return jsonify({"status": "error", "message": "Document has no usable text"}), 400
+    if field not in {"text", "text_md"}:
+        return jsonify({
+            "status": "error",
+            "message": f"Cleanup preview cannot analyze source field {field}",
+        }), 400
+
+    after = clean_article_text(before, doc.url or "")["text"]
+    before_lines = before.splitlines()
+    after_lines = after.splitlines()
+    remaining = Counter(after_lines)
+    removed = []
+    for line in before_lines:
+        if remaining[line] > 0:
+            remaining[line] -= 1
+        elif line.strip():
+            removed.append(line)
+
+    if save:
+        setattr(doc, field, after)
+        doc.document_length = len(after)
+        doc.quality = None
+        session.commit()
+
+    return jsonify({
+        "status": "success",
+        "saved": save,
+        "source_field": field,
+        "before_length": len(before),
+        "after_length": len(after),
+        "before_line_count": len(before_lines),
+        "after_line_count": len(after_lines),
+        "removed_line_count": len(removed),
+        "removed_lines_preview": removed[:20],
+        "start_preview": after[:400],
+        "end_preview": after[-700:],
     })
 
 

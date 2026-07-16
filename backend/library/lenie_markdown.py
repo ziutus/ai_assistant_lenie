@@ -135,6 +135,12 @@ def process_markdown_and_extract_links(md_text):
 
 
 def md_square_brackets_in_one_line(text):
+    # Niektóre konwertery HTML -> Markdown sklejają sąsiednie karty z obrazkiem:
+    #   [![...](image)](article)[![...](image)](article)
+    # Bez separatora poniższa normalizacja traktuje je jak jeden blok. Odtwórz
+    # granicę kart, zanim usuniemy nowe linie znajdujące się wewnątrz nawiasów.
+    text = re.sub(r'\)(?=\[!\[)', ')\n\n', text)
+
     is_in_brackets = False
     text_new = ""
     level = 0

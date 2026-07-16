@@ -4,6 +4,7 @@
             "\\*\\*Reklama\\*\\*\\s*Dzięki reklamie oglądasz za darmo\\.?",
             "\\bad\\s*\\n\\s*Reklama",
             "Reklama\\n",
+            "(?m)^REKLAMA[^\\S\\n]*\\n\\s*KONIEC REKLAMY[^\\S\\n]*$",
             "\\d+\\s*komentarz[ey]?\\n",
             "Udostępnij na X\\s+Udostępnij na Facebooku\\n?",
             "Treść zewnętrzna\\n?"
@@ -34,6 +35,67 @@
         "remove_after" : ["Oceń jakość naszego artykułu:Twoja opinia pozwala nam tworzyć lepsze treści",
           "\\*\\*Masz newsa, zdjęcie lub filmik\\? Prześlij nam przez"],
         "remove_string" : [],
-        "remove_string_regexp" : ["\\d+Podziel się:\\d+Podziel się:", "\\*Dalsza część artykułu pod materiałem wideo\\*"]
+        "remove_string_regexp" : [
+            "\\d+Podziel się:\\d+Podziel się:",
+            "\\*Dalsza część artykułu pod materiałem wideo\\*",
+            "(?m)^\\d+\\s+komentarz(?:e|y)?\\s*$",
+            "(?m)^Słuchaj\\s*$",
+            "(?m)^Udostępnij na Facebooku(?:\\s+Udostępnij na X)?(?:\\s+Udostępnij na WhatsApp)?(?:\\s+Kopiuj link)?\\s*$",
+            "(?mi)^[\\w.+-]+@grupawp\\.pl\\s*o autorze[^\\S\\n]*$"
+        ]
+    },
+    "https://tech.wp.pl": {
+        "remove_before" : [],
+        "remove_after" : [],
+        "remove_string" : [],
+        "remove_string_regexp" : [
+            "(?ms)^PREMIUM Zapisz się na newsletter!\\s*Newsy, wywiady, śledztwa i reportaże w Twojej skrzynce co tydzień - zawsze za darmo\\.\\s*Zapisz mnie[^\\S\\n]*$"
+        ]
+    },
+    "https://www.onet.pl": {
+        "remove_before" : [],
+        "remove_after" : [],
+        "remove_string" : [],
+        "remove_string_regexp" : [
+            "(?m)^Zapytaj o więcej Onet Czat z AI(?:\\s+\\[link\\d+\\])?\\s*$",
+            "(?m)^Więcej (?:pogłębionych treści|treści premium dla Ciebie)\\s*$",
+            "(?m)^Dalszy ciąg artykułu pod materiałem wideo\\s*$"
+        ]
+    },
+    "https://businessinsider.com.pl": {
+        "remove_before" : [],
+        "remove_after" : [],
+        "remove_string" : [],
+        "remove_string_regexp" : [
+            "(?m)^Dalszy ciąg artykułu pod materiałem wideo\\s*$",
+            "(?m)^\\*\\*Zobacz także:\\*\\*.*$",
+            "(?m)^\\|\\s*$"
+        ]
+    },
+    "https://ithardware.pl": {
+        "remove_before" : [],
+        "remove_after" : [],
+        "remove_string" : [],
+        "remove_string_regexp" : [
+            "(?mi)^Dalsza część artykulu pod video\\s*$",
+            "(?m)^(?:Play|ad)\\s*$"
+        ]
+    },
+    "https://wiadomosci.gazeta.pl": {
+        "remove_before" : [],
+        "remove_after" : [],
+        "remove_string" : [],
+        "remove_string_regexp" : [
+            "(?mi)^Otwórz galerię \\(\\d+\\)[^\\S\\n]*$",
+            "(?mi)^\\[przejdź na\\]\\(https://www\\.gazeta\\.pl/0%2C0\\.html[^)]*\\)[^\\S\\n]*$"
+        ]
+    },
+    "https://wiadomosci.wp.pl": {
+        "remove_before" : [],
+        "remove_after" : [],
+        "remove_string" : [],
+        "remove_string_regexp" : [
+            "(?mi)^[\\w.+-]+@grupawp\\.pl\\s*o autorze[^\\S\\n]*$"
+        ]
     }
 }
