@@ -230,9 +230,33 @@ def _clean_lines_money(lines: list[str]) -> list[str]:
 
 def _clean_lines_wp(lines: list[str]) -> list[str]:
     """Czyszczenie specyficzne dla wp.pl/o2.pl/tech.wp.pl."""
-    skip_exact = {"Skomentuj", "Słuchaj", "Udostępnij", "Kopiuj link"}
+    skip_exact = {"Skomentuj", "Słuchaj", "Udostępnij", "Kopiuj link",
+                  "Zaloguj", "Obserwuj nas na:", "Wyłączono komentarze"}
     skip_startswith = ("Udostępnij na ", "Dźwięk został wygenerowany",
-                       "Źródło zdjęć:", "Źródło artykułu:", "oprac.")
+                       "Źródło zdjęć:", "Źródło artykułu:", "oprac.",
+                       "Jako redakcja Wirtualnej Polski", "Redakcja serwisu o2")
+
+    # Tagi rozbite na osobne linie (o2.pl): "sztuczna inteligencja" / "polska" / "+3"
+    # — usuń samodzielny licznik "+N" i bezpośrednio poprzedzające go linie tagów
+    tag_counter_re = re.compile(r'^\+\d+$')
+    tag_word_re = re.compile(r'^[a-ząćęłńóśźż][a-ząćęłńóśźż ]{0,40}$')
+    drop: set[int] = set()
+    for i, line in enumerate(lines):
+        if tag_counter_re.match(line.strip()):
+            drop.add(i)
+            j = i - 1
+            while j >= 0:
+                s = lines[j].strip()
+                if not s:
+                    j -= 1
+                    continue
+                if tag_word_re.match(s):
+                    drop.add(j)
+                    j -= 1
+                else:
+                    break
+    lines = [line for k, line in enumerate(lines) if k not in drop]
+
     cleaned = []
     for line in lines:
         stripped = line.strip()
