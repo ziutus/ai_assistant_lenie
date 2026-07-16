@@ -12,7 +12,6 @@ i reużywalna w skryptach batch.
 import re
 
 from library.article_extractor import _detect_portal, _find_footer_line, _find_start_line
-from library.article_quality import is_photo_caption_line
 from library.lenie_markdown import links_correct, md_square_brackets_in_one_line
 
 
@@ -61,6 +60,16 @@ def _is_portal_internal_link(url: str) -> bool:
     return any(re.search(p, url) for p in _PORTAL_INTERNAL_LINK_PATTERNS)
 
 
+def _is_adjacent_tag_links_line(line: str) -> bool:
+    """Czy linia składa się wyłącznie z co najmniej dwóch linków tagowych portalu."""
+    link_re = re.compile(r'\[[^\]\n]+\]\(([^)\n]+)\)')
+    matches = link_re.findall(line)
+    if len(matches) < 2 or link_re.sub('', line).strip():
+        return False
+    urls = [match.split('"')[0].strip() for match in matches]
+    return all(_is_portal_internal_link(url) for url in urls)
+
+
 def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
     """Generyczne czyszczenie linia po linii — wspólne dla wszystkich portali."""
     cleaned = []
@@ -103,7 +112,7 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
             continue
 
         # Markdown horizontal rules (---, ***, ___) — artefakty z konwersji HTML
-        if re.match(r'^[-*_]{3,}\s*$', stripped):
+        if re.match(r'^[-*_]{3,}\s*$', stripped) or stripped == "|":
             continue
 
         # Puste nagłówki markdown (np. "####" po usunięciu obrazka z pustym URL)
@@ -116,7 +125,7 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
 
         # Frazy portalowe wspólne
         if stripped in ("Dalszy ciąg materiału pod wideo", "REKLAMAKONIEC REKLAMY",
-                        "REKLAMA", "Lubię to", "[ ]", "Rozwiń", "Zwiń"):
+                        "REKLAMA", "KONIEC REKLAMY", "Lubię to", "[ ]", "Rozwiń", "Zwiń"):
             continue
 
         # Kontrolki video playera
@@ -131,19 +140,14 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
             continue
         # Warianty "Dalsza część artykułu pod wideo" (z kursywą, dwukropkiem)
         if "dalsza część artykułu pod wideo" in stripped.lower() or \
-           "dalszy ciąg materiału pod wideo" in stripped.lower():
+           "dalszy ciąg materiału pod wideo" in stripped.lower() or \
+           "dalszy ciąg artykułu pod materiałem wideo" in stripped.lower() or \
+           "dalsza część artykulu pod video" in stripped.lower():
             continue
         # "Czytaj także:" + link na tej samej lub następnej linii
         if stripped.startswith("**Czytaj także:**") or stripped.startswith("**Czytaj również:**"):
             continue
-
-        # Podpis zdjęcia / credit fotografa ("zdjęcie ilustracyjne ... / shutterstock")
-        # — wzorce współdzielone z article_quality (tam liczone do oceny staranności)
-        if is_photo_caption_line(stripped):
-            continue
-
-        # Linia z samymi [imgN] markerami (osierocone po usunięciu kontekstu)
-        if stripped.startswith("[img") and not any(c.isalpha() for c in re.sub(r'\[img\d+[^\]]*\]', '', stripped)):
+        if stripped.startswith("**Zobacz także:**") or stripped.startswith("* **Czytaj więcej:**"):
             continue
 
         # "Zobacz też" z obrazkiem: [[imgN...] tytuł](url) lub [[imgN...] tytuł [linkN]
@@ -157,7 +161,10 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
 
 def _clean_lines_onet(lines: list[str]) -> list[str]:
     """Czyszczenie specyficzne dla onet.pl/fakt.pl."""
-    skip = {"Posłuchaj artykułu", "Skróć artykuł", "- x1 +", "x1", "Obserwuj"}
+    skip = {
+        "Posłuchaj artykułu", "Skróć artykuł", "- x1 +", "x1", "Obserwuj",
+        "Więcej pogłębionych treści", "Więcej treści premium dla Ciebie",
+    }
     cleaned = []
     in_top_premium = False
     for line in lines:
@@ -177,6 +184,8 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
         # Porównuj treść linii bez prefiksów nagłówkowych (#### Posłuchaj artykułu → Posłuchaj artykułu)
         stripped_content = re.sub(r'^#{1,6}\s+', '', stripped)
         if stripped_content in skip:
+            continue
+        if stripped.startswith("Zapytaj o więcej Onet Czat z AI"):
             continue
         # Przyciski prędkości audio playera: x2, x1.75, x1.5, x1.25, x0.75
         if re.match(r'^x[\d.]+$', stripped):
@@ -204,18 +213,32 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
 
 def _clean_lines_money(lines: list[str]) -> list[str]:
     """Czyszczenie specyficzne dla money.pl."""
-    skip_exact = {"Skomentuj", "Notowania", "Udostępnij"}
-    skip_startswith = ("Udostępnij na X", "Źródło zdjęć:", "Źródło artykułu:",
+    skip_exact = {"Skomentuj", "Notowania", "Udostępnij", "Słuchaj", "Kopiuj link"}
+    skip_startswith = ("Udostępnij na ", "Źródło zdjęć:", "Źródło artykułu:",
                        "oprac.", "Dźwięk został wygenerowany")
     cleaned = []
+    skip_source_logo = False
     for line in lines:
         stripped = line.strip()
+        if stripped.startswith("Źródło artykułu:"):
+            skip_source_logo = True
+            continue
+        if skip_source_logo:
+            if not stripped:
+                continue
+            skip_source_logo = False
+            if re.match(r'^[A-Z]$', stripped):
+                continue
         if stripped in skip_exact:
             continue
         if any(stripped.startswith(s) for s in skip_startswith):
             continue
+        if re.match(r'^[\w.+-]+@grupawp\.pl\s*o autorze$', stripped, re.IGNORECASE):
+            continue
         # Samodzielna data: "24 marca 2026, 12:26"
         if re.match(r'^\d{1,2}\s+\w+\s+\d{4},?\s+\d{1,2}:\d{2}$', stripped):
+            continue
+        if re.match(r'^\d+\s+komentarz', stripped):
             continue
         # Tagi: "gospodarka elektrownia atomowa rosja +1" lub z markerami [linkN]
         tag_line = re.sub(r'\[link\d+\]', '', stripped).strip()
@@ -258,11 +281,26 @@ def _clean_lines_wp(lines: list[str]) -> list[str]:
     lines = [line for k, line in enumerate(lines) if k not in drop]
 
     cleaned = []
+    in_newsletter = False
     for line in lines:
         stripped = line.strip()
+        if stripped == "PREMIUM Zapisz się na newsletter!":
+            in_newsletter = True
+            continue
+        if in_newsletter:
+            if stripped in {
+                "Newsy, wywiady, śledztwa i reportaże w Twojej skrzynce co tydzień - zawsze za darmo.",
+                "Zapisz mnie",
+            }:
+                if stripped == "Zapisz mnie":
+                    in_newsletter = False
+                continue
+            in_newsletter = False
         if stripped in skip_exact:
             continue
         if any(stripped.startswith(s) for s in skip_startswith):
+            continue
+        if re.match(r'^[\w.+-]+@grupawp\.pl\s*o autorze$', stripped, re.IGNORECASE):
             continue
         if re.match(r'^\d+\s+komentarz', stripped):
             continue
@@ -286,6 +324,11 @@ def _clean_lines_wp(lines: list[str]) -> list[str]:
     return cleaned
 
 
+def _clean_lines_ithardware(lines: list[str]) -> list[str]:
+    """Usuń kontrolki osadzonego playera ITHardware bez globalnych reguł Play/ad."""
+    return [line for line in lines if line.strip() not in {"Play", "ad"}]
+
+
 def _clean_lines_gazeta(lines: list[str]) -> list[str]:
     """Usuń śródtekstowe karty rekomendacji Gazeta.pl, zachowując dalszy artykuł."""
     cleaned = []
@@ -294,6 +337,11 @@ def _clean_lines_gazeta(lines: list[str]) -> list[str]:
     for line in lines:
         stripped = line.strip()
         stripped_no_links = re.sub(r'\s*\[link\d+\]', '', stripped).strip()
+
+        if re.match(r'^Otwórz galerię \(\d+\)$', stripped, re.IGNORECASE):
+            continue
+        if re.match(r'^przejdź na(?: \[link\d+\])?$', stripped, re.IGNORECASE):
+            continue
 
         if stripped_no_links in ("Czytaj także:", "Czytaj również:"):
             in_recommendation = True
@@ -323,6 +371,23 @@ def clean_article_text(text: str, url: str = "") -> dict:
     # 1. Napraw wieloliniowe linki i tagi markdown
     text = links_correct(text)
     text = md_square_brackets_in_one_line(text)
+
+    # Karty rekomendacji z linkowanym obrazkiem i nagłówkiem. Konwerter potrafi
+    # zwrócić kilka kart bez separatora; md_square_brackets_in_one_line najpierw
+    # odtwarza ich granice. Usuwamy teraz każdą kartę jako osobną linię, zanim
+    # prosty parser obrazków natrafi na zagnieżdżone nawiasy, np. "[ANALIZA]".
+    text = "\n".join(
+        line for line in text.splitlines()
+        if not (line.strip().startswith("[![") and "#### " in line)
+    )
+
+    # Konwertery HTML -> Markdown potrafią zwrócić blok tagów bez separatorów:
+    # [tag 1](/tag/1)[tag 2](/tag/2). Usuń wyłącznie linie złożone w całości
+    # z co najmniej dwóch linków rozpoznanych jako tagi/kategorie portalu.
+    text = "\n".join(
+        line for line in text.splitlines()
+        if not _is_adjacent_tag_links_line(line.strip())
+    )
 
     # 2. Wykryj H2+obrazek wstawki PRZED usuwaniem obrazków
     h2_ad_titles = _detect_h2_ads(text)
@@ -435,6 +500,8 @@ def clean_article_text(text: str, url: str = "") -> dict:
         lines = _clean_lines_wp(lines)
     elif portal == "gazeta":
         lines = _clean_lines_gazeta(lines)
+    elif "ithardware.pl" in url.lower():
+        lines = _clean_lines_ithardware(lines)
 
     text = "\n".join(lines)
     text = re.sub(r'\n{3,}', '\n\n', text)

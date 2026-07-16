@@ -118,6 +118,19 @@ class TestGenerateEmbeddingsFromRun:
 
         assert embedding_env["embedding_add"][0]["text"] == "Wersja poprawiona."
 
+    def test_photo_captions_are_filtered_only_from_embedding_copy(self, session, embedding_env):
+        source = "Treść przed zdjęciem.\nFot. Jan Kowalski / PAP\nTreść po zdjęciu."
+        chunks = [_chunk(1, "TEMAT", "approved", original_text=source)]
+        session.scalars.return_value.all.return_value = chunks
+
+        generate_embeddings_from_run(session, 5)
+
+        embedded = embedding_env["embedding_add"][0]["text"]
+        assert "Fot. Jan Kowalski" not in embedded
+        assert "Treść przed zdjęciem" in embedded
+        assert "Treść po zdjęciu" in embedded
+        assert chunks[0].original_text == source
+
     def test_empty_text_chunk_is_skipped(self, session, embedding_env):
         chunks = [_chunk(1, "TEMAT", "approved", original_text="   ")]
         session.scalars.return_value.all.return_value = chunks

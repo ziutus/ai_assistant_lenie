@@ -15,6 +15,7 @@ import datetime
 import json
 import logging
 import re
+from collections import Counter
 
 logger = logging.getLogger(__name__)
 
@@ -36,13 +37,14 @@ _CAPTION_PREFIX_RE = re.compile(
 _CAPTION_AGENCY_RE = re.compile(
     r"(?:zdj[eę]cie\s+ilustracyjne|shutterstock|getty\s*images?|east\s+news|"
     r"adobe\s+stock|istock(?:photo)?|depositphotos|123rf|unsplash|pexels|"
+    r"domena\s+publiczna|\bcc\s+by(?:-sa)?\b|creative\s+commons|archiwum\s+prywatne|©|"
     r"\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|\bForum\b\s*/|/\s*Forum\b)",
     re.IGNORECASE,
 )
 
 # Podpis bywa dłuższy niż _CAPTION_MAX_CHARS, ale linia KOŃCZĄCA SIĘ
 # "(zdjęcie ilustracyjne)" to zawsze podpis, niezależnie od długości.
-_CAPTION_SUFFIX_RE = re.compile(r"\(zdj[eę]cie\s+ilustracyjne\)\s*$", re.IGNORECASE)
+_CAPTION_SUFFIX_RE = re.compile(r"\((?:zdj[eę]cie|zdj\.)\s+ilustracyjne\)\s*$", re.IGNORECASE)
 
 _CLICKBAIT_RE = re.compile(
     r"(?:nie uwierzysz|szok(?:uj[aą]c\w*)?\b|musisz to zobaczy[ćc]|zobacz,? co|"
@@ -74,6 +76,67 @@ def count_photo_captions(text: str) -> int:
     if not text:
         return 0
     return sum(1 for line in text.splitlines() if is_photo_caption_line(line))
+
+
+def photo_caption_candidates(text: str) -> list[dict]:
+    """Wykryte podpisy wraz z kategorią — dowody dla quality i podpowiedzi UI."""
+    candidates = []
+    pending_image_alt: str | None = None
+    pending_image_lines = 0
+    for index, line in enumerate((text or "").splitlines()):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("[img"):
+            candidates.append({"line_index": index, "text": stripped, "category": "image_marker"})
+            marker = re.match(r'^\[img\d+(?::\s*([^\]]*))?\]\s*$', stripped)
+            pending_image_alt = (marker.group(1) or "").strip() if marker else None
+            pending_image_lines = 3 if marker else 0
+            if not marker:
+                candidates.append({"line_index": index, "text": stripped, "category": "image_description"})
+            continue
+
+        direct_caption = is_photo_caption_line(stripped)
+        normalized = re.sub(r'\s+', ' ', stripped).casefold()
+        normalized_alt = re.sub(r'\s+', ' ', pending_image_alt or '').casefold()
+        repeats_image_alt = bool(pending_image_alt and normalized == normalized_alt)
+        adjacent_description = bool(
+            pending_image_lines > 0 and not stripped.startswith("#")
+            and (len(stripped) <= 120 or (repeats_image_alt and len(stripped) <= 300))
+        )
+        if pending_image_lines > 0:
+            pending_image_lines -= 1
+            if repeats_image_alt or (not direct_caption and not adjacent_description):
+                pending_image_alt = None
+                pending_image_lines = 0
+        if not (direct_caption or adjacent_description):
+            continue
+        lowered = stripped.lower()
+        if "domena publiczna" in lowered:
+            category = "public_domain"
+        elif re.search(r'\bcc\s+by(?:-sa)?\b|creative commons', lowered):
+            category = "creative_commons"
+        elif "archiwum prywatne" in lowered:
+            category = "own_or_private_archive"
+        elif re.search(r'zdj[eę]cie\s+ilustracyjne', lowered):
+            category = "illustrative"
+        elif _CAPTION_AGENCY_RE.search(line):
+            category = "agency_or_stock"
+        elif adjacent_description:
+            category = "image_description" if repeats_image_alt else "image_credit"
+        else:
+            category = "other"
+        candidates.append({"line_index": index, "text": line.strip(), "category": category})
+    return candidates
+
+
+def remove_photo_caption_lines(text: str) -> str:
+    """Kopia tekstu bez podpisów zdjęć, przeznaczona dla embeddingów/search."""
+    candidates = {item["line_index"] for item in photo_caption_candidates(text)}
+    return "\n".join(
+        line for index, line in enumerate((text or "").splitlines())
+        if index not in candidates
+    )
 
 
 def is_clickbait_title(title: str | None) -> bool:
@@ -133,7 +196,11 @@ def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -
     total_len = len(temat_text) + noise_len
 
     full_text = "\n".join((s.get("original") or "") for s in chunk_sections)
-    captions = count_photo_captions(full_text)
+    caption_evidence = photo_caption_candidates(full_text)
+    caption_evidence_for_score = [
+        item for item in caption_evidence if item["category"] != "image_marker"
+    ]
+    captions = len(caption_evidence_for_score)
     noise_share = (noise_len / total_len) if total_len else 0.0
 
     penalties: dict[str, int] = {}
@@ -161,6 +228,8 @@ def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -
         "penalties": penalties,
         "signals": {
             "photo_captions": captions,
+            "photo_caption_categories": dict(Counter(item["category"] for item in caption_evidence_for_score)),
+            "photo_caption_lines": [item["text"] for item in caption_evidence_for_score[:20]],
             "noise_share": round(noise_share, 3),
             "temat_chars": len(temat_text),
         },
