@@ -307,23 +307,31 @@ class WebsitesDBPostgreSQL:
         PostgreSQL text-search migration. Ranking/merging with vector results is
         handled by SearchService. Short words (for example Polish prepositions)
         do not restrict token matching.
+
+        Both sides of every ILIKE comparison are wrapped in the `unaccent()`
+        extension so Polish diacritics don't have to match literally (a query
+        typed as "ludzmi" must still find text containing "ludźmi"). See
+        docs/search-hybrid.md for why plain ILIKE is not enough here and why
+        this two-layer approach (SQL candidate selection + Python scoring in
+        SearchService) exists at all.
         """
         query = (query or "").strip()
         if not query:
             return []
 
         tokens = list(dict.fromkeys(word for word in query.split() if len(word) >= 3))
-        searchable = func.concat_ws(
+        searchable = func.unaccent(func.concat_ws(
             " ",
             func.coalesce(WebDocument.title, ""),
             func.coalesce(WebDocument.tags, ""),
             func.coalesce(WebDocument.note, ""),
             func.coalesce(WebDocument.text, ""),
-        )
-        phrase = f"%{query}%"
-        conditions = [WebDocument.title.ilike(phrase), searchable.ilike(phrase)]
+        ))
+        title = func.unaccent(func.coalesce(WebDocument.title, ""))
+        phrase = func.unaccent(f"%{query}%")
+        conditions = [title.ilike(phrase), searchable.ilike(phrase)]
         if tokens:
-            conditions.append(and_(*(searchable.ilike(f"%{token}%") for token in tokens)))
+            conditions.append(and_(*(searchable.ilike(func.unaccent(f"%{token}%")) for token in tokens)))
 
         stmt = (
             select(WebDocument)
@@ -339,6 +347,12 @@ class WebsitesDBPostgreSQL:
             {
                 "website_id": doc.id,
                 "text": (doc.text or "")[:1000],
+                # Full (untruncated) text for SearchService._merge_results() coverage
+                # scoring only -- popped before the API response is returned. A
+                # matching token past the first 1000 chars (a long article's intro
+                # is often boilerplate/AI summary, not the matched sentence) must
+                # not be scored as absent. See docs/search-hybrid.md.
+                "text_for_scoring": doc.text or "",
                 "similarity": 0.0,
                 "id": None,
                 "url": doc.url,
