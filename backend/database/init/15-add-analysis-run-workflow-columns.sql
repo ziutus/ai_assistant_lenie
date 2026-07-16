@@ -1,6 +1,6 @@
 -- Migration: add workflow columns to document_analysis_runs
 -- mode:   analysis pipeline variant — 'transcript' (YouTube STT) | 'article' (clean markdown/text)
--- status: review workflow state — 'created' | 'in_review' | 'reviewed'
+-- status: review workflow state — 'created' | 'in_review' | 'reviewed' | 'superseded'
 -- scope:  human-readable analysed range (e.g. chapter title); NULL = whole document
 
 \c "lenie-ai";

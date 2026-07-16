@@ -13,6 +13,7 @@ imports/
 ├── feeds.yaml                # Feed definitions for feed_monitor.py (committed)
 ├── extract_references.py     # Extract book footnotes from text_md into document_references
 ├── feeds_state.yaml          # Per-feed last_checked state (gitignored, created at runtime)
+├── fix_duplicate_analysis_runs.py # One-off: supersede abandoned duplicate analysis runs (same document+scope, never reviewed)
 ├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
 ├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
@@ -241,6 +242,20 @@ cd backend
 python imports/extract_references.py --id 9204           # dry-run (default)
 python imports/extract_references.py --id 9204 --apply
 python imports/extract_references.py --id 9204 --show 30 # more dry-run samples
+```
+
+### `fix_duplicate_analysis_runs.py`
+
+One-off cleanup for abandoned duplicate analysis runs — the state left behind before `document_analysis_service.create_run()` started superseding unfinished sibling runs automatically. Finds every `(document_id, scope)` group with more than one run, marks each non-newest run that never reached `reviewed` as `status='superseded'` and flips its still-open chunks (`pending`/`needs_reanalysis`/`split_requested`) to `skipped`, so they drop out of the "missing Obsidian notes" filter on `/list`. Runs whose chunks already carry Obsidian notes are reported but never touched; nothing is deleted (history stays browsable in `/chunks/:id`).
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`.
+
+**Running:**
+```bash
+cd backend
+python imports/fix_duplicate_analysis_runs.py            # dry-run (default)
+python imports/fix_duplicate_analysis_runs.py --apply    # write changes
+python imports/fix_duplicate_analysis_runs.py --id 9245  # single document
 ```
 
 ### `fix_place_tags.py`
