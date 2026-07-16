@@ -15,10 +15,16 @@ CREATE TABLE IF NOT EXISTS public.document_removed_lines (
     chunk_id    INTEGER REFERENCES public.document_chunks(id) ON DELETE SET NULL,
     source      VARCHAR(20) NOT NULL,
     line_text   TEXT NOT NULL,
+    review_status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        CHECK (review_status IN ('pending', 'rule_added', 'rejected', 'already_covered')),
+    reviewed_at TIMESTAMP,
+    review_note TEXT,
+    rule_reference VARCHAR(500),
     created_at  TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_removed_lines_document_id ON public.document_removed_lines(document_id);
 CREATE INDEX IF NOT EXISTS idx_removed_lines_source      ON public.document_removed_lines(source);
+CREATE INDEX IF NOT EXISTS idx_removed_lines_review_status ON public.document_removed_lines(review_status);
 
 SELECT 'Table document_removed_lines created' AS status;
