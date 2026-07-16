@@ -59,8 +59,8 @@ Vault is managed via `compose.nas.yaml`. Sync the compose file and start:
 ```bash
 ./infra/docker/nas-deploy.sh --sync-compose
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d lenie-vault
+DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml up -d lenie-vault
 ```
 
 See [NAS_Deployment.md](NAS_Deployment.md) for full compose workflow.
@@ -291,7 +291,7 @@ Create the env file from the template and fill in real credentials:
 cp infra/docker/vault.env.example infra/docker/vault.env
 # Edit with real values from CloudFormation outputs
 # Then copy to NAS:
-scp infra/docker/vault.env admin@192.168.200.7:/share/Container/lenie-env/vault.env
+scp infra/docker/vault.env admin@192.168.200.7:/share/ContainerNew/lenie-env/vault.env
 ```
 
 The file should contain:
@@ -318,14 +318,14 @@ If Vault was previously initialized with Shamir keys (manual unseal), you must m
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
 
 # 1. Update vault.hcl with the seal "awskms" block (see above)
-# 2. Ensure vault.env is in place at /share/Container/lenie-env/vault.env
+# 2. Ensure vault.env is in place at /share/ContainerNew/lenie-env/vault.env
 
 # 3. Recreate the container (IMPORTANT: must use --force-recreate, not "docker restart",
 #    because "docker restart" does NOT reload env_file — credentials won't be available)
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d --force-recreate lenie-vault
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml up -d --force-recreate lenie-vault
 
 # 4. Wait for Vault to start in migration mode (~10s)
 sleep 12

@@ -64,7 +64,7 @@ ssh admin@192.168.200.7 "echo OK"
 Docker binary is not in the default PATH on QNAP. Full path:
 
 ```
-/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
 ```
 
 Container Station must be installed via QNAP App Center.
@@ -91,7 +91,7 @@ A private Docker registry (`registry:2`) runs on the NAS to store built images. 
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
 
 $DOCKER run -d --name lenie-registry \
   --restart unless-stopped \
@@ -123,7 +123,7 @@ Apply & Restart Docker Desktop.
 
 **NAS (Container Station):**
 
-Edit `/share/CACHEDEV1_DATA/.qpkg/container-station/etc/docker.json`, add:
+Edit `/share/CACHEDEV4_DATA/.qpkg/container-station/etc/docker.json`, add:
 
 ```json
 {
@@ -147,7 +147,7 @@ curl http://192.168.200.7:5005/v2/_catalog
 
 # From NAS — pull it back
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
 $DOCKER pull 192.168.200.7:5005/hello-world
 ```
 
@@ -157,7 +157,7 @@ Over time, the registry accumulates old image layers. To reclaim disk space:
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
 
 # Run garbage collection (removes unreferenced blobs)
 $DOCKER exec lenie-registry bin/registry garbage-collect /etc/docker/registry/config.yml
@@ -211,40 +211,40 @@ The script performs these steps for each service:
 
 ### Compose File
 
-The compose file lives at `/share/Container/lenie-compose/compose.nas.yaml` on the NAS. Source of truth is `infra/docker/compose.nas.yaml` in the repo.
+The compose file lives at `/share/ContainerNew/lenie-compose/compose.nas.yaml` on the NAS. Source of truth is `infra/docker/compose.nas.yaml` in the repo.
 
 To sync it to NAS:
 
 ```bash
 ./infra/docker/nas-deploy.sh --sync-compose
 # or manually:
-scp infra/docker/compose.nas.yaml admin@192.168.200.7:/share/Container/lenie-compose/compose.nas.yaml
+scp infra/docker/compose.nas.yaml admin@192.168.200.7:/share/ContainerNew/lenie-compose/compose.nas.yaml
 ```
 
 ### Docker Compose Commands on NAS
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
 
 # Status
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml ps
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml ps
 
 # Restart all
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml restart
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml restart
 
 # Restart single service
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml restart lenie-ai-server
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml restart lenie-ai-server
 
 # View logs
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
 
 # Stop everything
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml down
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml down
 
 # Pull latest images and recreate
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml pull
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml pull
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml up -d
 ```
 
 ### Migration from Old Workflow
@@ -258,7 +258,7 @@ If migrating from the previous tar.gz/scp deployment:
 5. Create external volumes (if they don't exist):
    ```bash
    ssh admin@192.168.200.7
-   DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+   DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
    $DOCKER volume create lenie-ai-db-data
    $DOCKER volume create lenie-ai-data
    $DOCKER volume create lenie-minio-data
@@ -305,9 +305,9 @@ docker push 192.168.200.7:5005/lenie-ai-frontend:latest
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml pull
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml up -d
+DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml pull
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml up -d
 ```
 
 ## Database Setup
@@ -331,7 +331,7 @@ psql -h 192.168.200.7 -p 5434 -U postgres -d lenie-ai
 
 ## Backend Configuration
 
-The backend reads environment variables from `/share/Container/lenie-env/.env` on the NAS. Create this file from `infra/docker/nas.env.example` template and fill in your secrets:
+The backend reads environment variables from `/share/ContainerNew/lenie-env/.env` on the NAS. Create this file from `infra/docker/nas.env.example` template and fill in your secrets:
 
 Key differences from local `.env`:
 
@@ -345,7 +345,7 @@ To update the env file on the NAS:
 
 ```bash
 # First time: cp infra/docker/nas.env.example infra/docker/nas.env && edit nas.env with real secrets
-scp infra/docker/nas.env admin@192.168.200.7:/share/Container/lenie-env/.env
+scp infra/docker/nas.env admin@192.168.200.7:/share/ContainerNew/lenie-env/.env
 # Then restart the backend container
 ```
 
@@ -379,7 +379,7 @@ disable_mlock = true
 api_addr = "http://0.0.0.0:8200"
 ```
 
-AWS credentials for KMS are provided via env file at `/share/Container/lenie-env/vault.env` (see `infra/docker/vault.env.example` for template). The KMS key and IAM user are managed by CloudFormation stack `lenie-nas-vault-kms-unseal` on the personal AWS account (profile `ziutus-Administrator`).
+AWS credentials for KMS are provided via env file at `/share/ContainerNew/lenie-env/vault.env` (see `infra/docker/vault.env.example` for template). The KMS key and IAM user are managed by CloudFormation stack `lenie-nas-vault-kms-unseal` on the personal AWS account (profile `ziutus-Administrator`).
 
 Persistent data directories on NAS:
 - `/share/vault/config` — configuration
@@ -412,7 +412,7 @@ If auto-unseal is not yet configured (or AWS KMS is unreachable), unseal manuall
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
 $DOCKER exec -e VAULT_ADDR=http://127.0.0.1:8200 lenie-vault \
   vault operator unseal <UNSEAL_KEY>
 ```
@@ -443,10 +443,10 @@ This setting is saved in the browser's localStorage.
 
 ```bash
 ssh admin@192.168.200.7
-DOCKER=/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker
+DOCKER=/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker
 
 # Via compose
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml ps
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml ps
 
 # All lenie containers (including registry)
 $DOCKER ps --filter name=lenie
@@ -455,10 +455,10 @@ $DOCKER ps --filter name=lenie
 ### View logs
 
 ```bash
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-db
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-slack-bot
-$DOCKER compose -f /share/Container/lenie-compose/compose.nas.yaml logs --tail 50 lenie-minio
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-server
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-db
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-ai-slack-bot
+$DOCKER compose -f /share/ContainerNew/lenie-compose/compose.nas.yaml logs --tail 50 lenie-minio
 $DOCKER logs --tail 50 lenie-vault
 $DOCKER logs --tail 50 lenie-registry
 ```
@@ -479,7 +479,7 @@ Check logs for errors. Common issues:
 ### Disk space on NAS
 
 ```bash
-ssh admin@192.168.200.7 'df -h /share/CACHEDEV1_DATA'
+ssh admin@192.168.200.7 'df -h /share/CACHEDEV4_DATA'
 ```
 
 Clean unused Docker images on NAS:
@@ -507,7 +507,7 @@ If the problem persists, restart Docker Desktop (Settings → Resources → Rest
 ```bash
 docker save 192.168.200.7:5005/lenie-ai-frontend:latest | \
   ssh admin@192.168.200.7 \
-  "/share/CACHEDEV1_DATA/.qpkg/container-station/usr/bin/.libs/docker load"
+  "/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker load"
 ```
 
 ### WSL integration for make targets
