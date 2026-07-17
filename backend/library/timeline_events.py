@@ -21,31 +21,45 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMELINE_MODEL = "Bielik-11B-v3.0-Instruct"
 MAX_FRAGMENT_CHARS = 10_000
 
+# Genitive/locative forms come from the article text ("w lutym 2024 r."); the
+# nominative ones from the LLM, which often normalizes date_text to "luty 2024 r.".
 _MONTHS = {
     "stycznia": 1,
     "styczniu": 1,
+    "styczen": 1,
     "lutego": 2,
     "lutym": 2,
+    "luty": 2,
     "marca": 3,
     "marcu": 3,
+    "marzec": 3,
     "kwietnia": 4,
     "kwietniu": 4,
+    "kwiecien": 4,
     "maja": 5,
     "maju": 5,
+    "maj": 5,
     "czerwca": 6,
     "czerwcu": 6,
+    "czerwiec": 6,
     "lipca": 7,
     "lipcu": 7,
+    "lipiec": 7,
     "sierpnia": 8,
     "sierpniu": 8,
+    "sierpien": 8,
     "wrzesnia": 9,
     "wrzesniu": 9,
+    "wrzesien": 9,
     "pazdziernika": 10,
     "pazdzierniku": 10,
+    "pazdziernik": 10,
     "listopada": 11,
     "listopadzie": 11,
+    "listopad": 11,
     "grudnia": 12,
     "grudniu": 12,
+    "grudzien": 12,
 }
 _MONTH_PATTERN = "|".join(sorted(_MONTHS, key=len, reverse=True))
 _DECADE_WORDS = {
@@ -66,7 +80,9 @@ _ERA_PATTERNS = (
     (re.compile(r"\b(?:w\s+)?okresie\s+prl\b", re.IGNORECASE), 1945),
     (re.compile(r"\b(?:podczas|w\s+czasie)\s+zimnej\s+wojny\b", re.IGNORECASE), 1947),
 )
-_YEAR_RANGE_RE = re.compile(r"(?:w\s+latach\s+)?(\d{3,4})\s*[-‐‑‒–—−]\s*(\d{3,4})")
+# The dash class needs a + because unidecode turns an em dash into "--";
+# the prefix covers "w latach"/"latach"/"lata" spellings of a year range.
+_YEAR_RANGE_RE = re.compile(r"(?:(?:w\s+)?lat(?:ach|a)\s+)?(\d{3,4})\s*[-‐‑‒–—−]+\s*(\d{3,4})")
 _TYPOGRAPHY_TRANSLATION = str.maketrans({
     **dict.fromkeys("‐‑‒–—−", "-"),
     **dict.fromkeys("“”„‟«»", '"'),
