@@ -891,6 +891,43 @@ def document_events(doc_id: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/time_periods", methods=["GET"])
+def document_time_periods(doc_id: int):
+    """Return stored time periods, whole-document rows first, then chapter by chapter."""
+    from library.db.models import DocumentTimePeriod
+
+    session = get_scoped_session()
+    if session.get(WebDocument, doc_id) is None:
+        abort(404, f"Document {doc_id} not found")
+
+    rows = (
+        session.query(DocumentTimePeriod)
+        .filter(DocumentTimePeriod.document_id == doc_id)
+        .order_by(
+            DocumentTimePeriod.chapter_position.asc().nullsfirst(),
+            DocumentTimePeriod.position.asc(),
+            DocumentTimePeriod.id.asc(),
+        )
+        .all()
+    )
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "time_periods": [
+            {
+                "chapter_position": row.chapter_position,
+                "position": row.position,
+                "period_label": row.period_label,
+                "period_start_year": row.period_start_year,
+                "period_end_year": row.period_end_year,
+                "confidence": row.confidence,
+                "evidence": row.evidence,
+            }
+            for row in rows
+        ],
+    })
+
+
 @bp.route("/document/<int:doc_id>/entity_occurrences", methods=["GET"])
 def document_entity_occurrences(doc_id: int):
     """Per-chapter occurrence counts of an entity name in the document (?text=).

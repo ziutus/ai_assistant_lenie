@@ -226,6 +226,28 @@ source fragment; Polish exact and coarse dates are normalized for chronological 
 
 **Index:** `(document_id, sort_year)`.
 
+### Table: `public.document_time_periods`
+
+Historical periods a document's content is about (e.g. "starożytny Egipt", "zimna wojna", "współczesność"),
+classified by `library/time_periods.py` — per reader chapter for books, one whole-document row set for chapterless
+documents — and managed with replace semantics by `imports/extract_time_periods.py`. Year ranges enable future
+search filtering by period ("texts about the 1980s" = range overlap); BCE years are stored as negative integers.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `document_id` | `integer NOT NULL` | FK to `web_documents.id` (CASCADE delete) |
+| `chapter_position` | `integer` | 1-based position from `detect_chapters()`; `NULL` for chapterless documents |
+| `position` | `integer NOT NULL` | Order within the chapter, `0` = main period |
+| `period_label` | `varchar(100) NOT NULL` | Short Polish period name returned by the LLM |
+| `period_start_year` | `integer` | Approximate first year; negative = BCE |
+| `period_end_year` | `integer` | Approximate last year; negative = BCE |
+| `confidence` | `varchar(10) NOT NULL` | `high`, `medium`, or `low` |
+| `evidence` | `text` | One LLM sentence: what in the text grounds the classification |
+| `created_at` | `timestamp` | Row creation timestamp |
+
+**Indexes:** `(document_id, chapter_position)`, `(period_start_year, period_end_year)`.
+
 ### Table: `public.infra_geometries`
 
 Overpass API lookup cache for linear infrastructure (`library/overpass_client.py`) — same philosophy as `geocode_cache`: one live call ever per distinct query string, clean misses cached as `resolved=false` (transport failures are NOT cached). Populated during `POST /website_entities` for place entities the geocoder checked but rejected ("Baltic Pipe" has no point hit but has an OSM route).
