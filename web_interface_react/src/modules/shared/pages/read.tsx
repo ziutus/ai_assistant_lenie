@@ -382,6 +382,9 @@ const Read: React.FC = () => {
   const [informationSources, setInformationSources] = React.useState<InformationSourceLink[]>([]);
   const [citedPublications, setCitedPublications] = React.useState<CitedPublicationLink[]>([]);
   const [docQuality, setDocQuality] = React.useState<DocQuality | null>(null);
+  const [docUrl, setDocUrl] = React.useState<string | null>(null);
+  const [docDateFrom, setDocDateFrom] = React.useState<string | null>(null);
+  const [docCreatedAt, setDocCreatedAt] = React.useState<string | null>(null);
   const [content, setContent] = React.useState<ChapterContent | null>(null);
   // sidebar scope: current chapter (default) vs whole document
   const [scopeChapter, setScopeChapter] = React.useState(true);
@@ -450,6 +453,9 @@ const Read: React.FC = () => {
         setThematicTags(data.thematic_tags ?? []);
         setSynthesis(data.synthesis ?? null);
         setDocQuality(data.quality ?? null);
+        setDocUrl(data.url ?? null);
+        setDocDateFrom(data.date_from ?? null);
+        setDocCreatedAt(data.created_at ?? null);
       } catch (e) {
         setError(String(e));
       }
@@ -839,6 +845,18 @@ const Read: React.FC = () => {
         <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
         <div style={{ marginLeft: "auto" }}><ReaderIdentityBadge identity={identity} /></div>
       </div>
+
+      {(docDateFrom || docCreatedAt || docUrl) && (
+        <div style={{ fontSize: "0.82em", color: "#64748b", marginBottom: 10, display: "flex", gap: 14, flexWrap: "wrap" }}>
+          {docDateFrom && <span>📅 Opublikowano: {new Date(docDateFrom).toLocaleDateString("pl-PL")}</span>}
+          {docCreatedAt && <span>Dodano do Lenie: {new Date(docCreatedAt).toLocaleDateString("pl-PL")}</span>}
+          {docUrl && (
+            <a href={docUrl} target="_blank" rel="noreferrer" style={{ color: "#0369a1", wordBreak: "break-all" }}>
+              🔗 Oryginał ↗
+            </a>
+          )}
+        </div>
+      )}
 
       {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
 

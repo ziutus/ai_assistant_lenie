@@ -14,10 +14,15 @@ interface ListItemSearchSimilarProps {
     document_type?: string | null;
     website_id: number;
     url: string;
+    date_from?: string | null;
+    created_at?: string | null;
     chunk_id?: number | null;
     obsidian_note_paths?: string[];
   };
 }
+
+const formatDocDate = (value?: string | null) =>
+  value ? new Date(value).toLocaleDateString("pl-PL") : null;
 
 const meaningfulTerms = (query: string) =>
   Array.from(new Set(query.trim().split(/\s+/).filter(term => term.length >= 3)))
@@ -76,6 +81,10 @@ const ListItemSearchSimilar = ({ item, query }: ListItemSearchSimilarProps) => {
               {MATCH_LABELS[match]}
             </span>
             {item.document_type && <span>{item.document_type}</span>}
+            {formatDocDate(item.date_from) && <span title="Data publikacji">📅 {formatDocDate(item.date_from)}</span>}
+            {!item.date_from && formatDocDate(item.created_at) && (
+              <span title="Data dodania do Lenie (brak daty publikacji)">📅 dodano {formatDocDate(item.created_at)}</span>
+            )}
             <span>ID {item.website_id}</span>
             {item.chunk_id != null && <span>chunk #{item.chunk_id}</span>}
           </div>
