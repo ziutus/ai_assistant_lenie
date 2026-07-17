@@ -145,6 +145,38 @@ class TestPhotoCaptionDetection:
     def test_agencja_wyborcza_detected_without_fot_prefix(self):
         assert is_photo_caption_line("Krzysztof Gutkowski / Agencja Wyborcza.pl")
 
+    def test_bloomberg_credit_line(self):
+        assert is_photo_caption_line("Bloomberg")
+
+    def test_interia_glued_caption_with_doubled_agency(self):
+        # Prawdziwy podpis z interia.pl (dok. 9145) — ekstrakcja skleiła
+        # podpis z podwojonym creditem agencji bez spacji.
+        line = (
+            "Mapy stworzone za pomocą Pokémon GO zasilają systemy "
+            "nawigacyjne wojskowych dronowychBloombergBloomberg"
+        )
+        assert is_photo_caption_line(line)
+
+    def test_interia_glued_uppercase_photographer_and_acronym(self):
+        # Wersalikowe nazwisko fotografa sklejone z akronimem agencji.
+        line = (
+            "W Pokemon Go gracze skanowali masę znanych obiektów, "
+            "tworząc nieświadomie mapy dla wojskaTHOMAS SAMSONAFP"
+        )
+        assert is_photo_caption_line(line)
+
+    def test_glued_agency_credit_categorized_as_agency(self):
+        text = "\n".join([
+            LONG_PARAGRAPH,
+            "Mapy stworzone za pomocą Pokémon GO zasilają systemy "
+            "nawigacyjne wojskowych dronowychBloombergBloomberg",
+        ])
+        candidates = photo_caption_candidates(text)
+        assert [item["category"] for item in candidates] == ["agency"]
+
+    def test_allcaps_word_ending_like_acronym_is_not_split(self):
+        assert not is_photo_caption_line("NA OBIAD BYŁA RZEPA")
+
     def test_publisher_own_agency_on_publisher_domain(self):
         text = f"{LONG_PARAGRAPH}\nFot. Krzysztof Gutkowski / Agencja Wyborcza.pl"
         for url in (
