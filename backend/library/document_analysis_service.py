@@ -777,6 +777,9 @@ class DocumentAnalysisService:
         return run
 
 
+EMBEDDING_BATCH_SIZE = 32
+
+
 def generate_embeddings_from_run(
     session, run_id: int, progress_fn: Callable[[str], None] | None = None,
 ) -> dict:
@@ -788,6 +791,12 @@ def generate_embeddings_from_run(
     webdocument_md_decode.py), strips markdown syntax, and stores one
     WebsiteEmbedding row per piece with chunk_id set. REKLAMA/SZUM chunks and
     non-approved TEMAT chunks are skipped.
+
+    Pieces are embedded in batches of EMBEDDING_BATCH_SIZE (one provider API
+    call per batch where the provider supports it — a 400-chunk book used to
+    take ~5 h as one HTTP round-trip per piece) and the session is committed
+    after every batch, so a crash mid-run keeps the embeddings finished so far
+    instead of discarding hours of work.
 
     Re-running deletes this run's previously chunk-linked embeddings first, so
     it is safe to call again after a chunk is re-approved or edited.
@@ -831,10 +840,9 @@ def generate_embeddings_from_run(
     if not doc.language:
         doc.language = "pl"
 
-    created = 0
     skipped_empty = 0
-    for i, chunk in enumerate(eligible, 1):
-        log(f"chunk {i}/{len(eligible)} (position {chunk.position})...")
+    pieces: list[tuple[DocumentChunk, str]] = []
+    for chunk in eligible:
         text = remove_photo_caption_lines(
             chunk.corrected_text or chunk.original_text or ""
         ).strip()
@@ -843,13 +851,22 @@ def generate_embeddings_from_run(
             continue
         for part in md_split_for_emb(text):
             cleaned = md_remove_markdown(part).strip()
-            if not cleaned:
-                continue
-            result = embedding.get_embedding(model=model, text=cleaned)
+            if cleaned:
+                pieces.append((chunk, cleaned))
+
+    created = 0
+    failed = 0
+    total_batches = (len(pieces) + EMBEDDING_BATCH_SIZE - 1) // EMBEDDING_BATCH_SIZE
+    for batch_number, start in enumerate(range(0, len(pieces), EMBEDDING_BATCH_SIZE), 1):
+        batch = pieces[start:start + EMBEDDING_BATCH_SIZE]
+        log(f"batch {batch_number}/{total_batches} ({len(batch)} fragments, {created} embeddings stored)...")
+        results = embedding.get_embeddings(model, [piece_text for _, piece_text in batch])
+        for (chunk, cleaned), result in zip(batch, results):
             if result.status != "success" or not result.embedding:
+                failed += 1
                 logger.warning(
                     "Embedding generation failed for chunk %d (run %d): %s",
-                    chunk.id, run_id, result.status,
+                    chunk.id, run_id, result.error_message or result.status,
                 )
                 continue
             websites.embedding_add(
@@ -862,6 +879,7 @@ def generate_embeddings_from_run(
                 chunk_id=chunk.id,
             )
             created += 1
+        session.commit()
 
     if created:
         doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
@@ -876,4 +894,5 @@ def generate_embeddings_from_run(
         "chunks_considered": len(eligible),
         "chunks_skipped_empty": skipped_empty,
         "embeddings_created": created,
+        "embeddings_failed": failed,
     }
