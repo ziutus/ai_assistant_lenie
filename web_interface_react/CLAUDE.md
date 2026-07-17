@@ -73,7 +73,7 @@ All protected routes wrapped in `RequireAuth` → `Layout` → `Authorization`. 
 | `/connect` | `connect.tsx` | Backend connection configuration (API type, URL, key) |
 | `/` | — | Redirects to `/list` |
 | `/list` | `list.tsx` | Browse documents with type/state/text filters |
-| `/search` | `search.tsx` | Vector similarity search across embeddings |
+| `/search` | `search.tsx` | Hybrid text + vector search. Optional "Okres od roku / do roku" fields (BCE as negative years, kept in the shareable URL) filter results to documents whose classified time period (`document_time_periods`) overlaps the window |
 | `/link/:id?` | `link.tsx` | Edit link documents (metadata only) |
 | `/webpage/:id?` | `webpage.tsx` | Edit webpages with AI tools (split, clean) |
 | `/youtube/:id?` | `youtube.tsx` | Edit YouTube transcripts |

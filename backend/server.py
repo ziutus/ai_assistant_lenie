@@ -1321,13 +1321,22 @@ def _parse_search_text(req):
 
 
 def _parse_search_params(req):
-    """Extract search text and limit from request (form, JSON, or args)."""
+    """Extract search text, limit and period-year window from request (form, JSON, or args)."""
     if req.form:
-        return req.form.get('search'), req.form.get('limit')
+        source = req.form
     elif req.json:
-        return req.json.get('search'), req.json.get('limit')
+        source = req.json
     else:
-        return req.args.get('search'), req.args.get('limit')
+        source = req.args
+    return source.get('search'), source.get('limit'), source.get('period_from'), source.get('period_to')
+
+
+def _parse_period_year(value):
+    """Return the year filter as int (BCE negative), or None for empty/invalid input."""
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
 
 
 @app.route('/ai_get_embedding', methods=['POST'])
@@ -1347,12 +1356,17 @@ def ai_get_embedding():
 
 @app.route('/website_similar', methods=['POST'])
 def search_similar():
-    text, limit = _parse_search_params(request)
+    text, limit, period_from, period_to = _parse_search_params(request)
 
     session = get_scoped_session()
     service = SearchService(session)
     try:
-        websites_list = service.search_similar(text, limit=int(limit) if limit else 3)
+        websites_list = service.search_similar(
+            text,
+            limit=int(limit) if limit else 3,
+            period_from=_parse_period_year(period_from),
+            period_to=_parse_period_year(period_to),
+        )
     except RuntimeError:
         logging.exception("Error searching for similar documents")
         return jsonify({"status": "error", "message": "Error searching for similar documents", "encoding": "utf8", "text": text,

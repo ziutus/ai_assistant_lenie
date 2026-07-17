@@ -919,6 +919,43 @@ class DocumentEvent(Base):
         )
 
 
+class DocumentTimePeriod(Base):
+    """Historical period a document (or one reader chapter) is about, classified by time_periods.py."""
+
+    __tablename__ = "document_time_periods"
+    __table_args__ = (
+        CheckConstraint(
+            "confidence IN ('high', 'medium', 'low')",
+            name="ck_document_time_periods_confidence",
+        ),
+        Index("idx_document_time_periods_document_chapter", "document_id", "chapter_position"),
+        Index("idx_document_time_periods_years", "period_start_year", "period_end_year"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    chapter_position: Mapped[int | None] = mapped_column(Integer)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    period_label: Mapped[str] = mapped_column(String(100), nullable=False)
+    period_start_year: Mapped[int | None] = mapped_column(Integer)
+    period_end_year: Mapped[int | None] = mapped_column(Integer)
+    confidence: Mapped[str] = mapped_column(String(10), nullable=False, default="low", server_default="low")
+    evidence: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"DocumentTimePeriod(id={self.id!r}, document_id={self.document_id!r}, "
+            f"chapter={self.chapter_position!r}, period_label={self.period_label!r})"
+        )
+
+
 class DocumentAnalysisJob(Base):
     """Persistent queue entry for document chunk analysis.
 
