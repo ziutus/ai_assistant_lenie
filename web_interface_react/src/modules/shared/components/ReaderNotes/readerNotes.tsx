@@ -34,6 +34,7 @@ export interface PendingNote {
   suffix: string;
   x: number;
   y: number;
+  selectionRange?: Range;
 }
 
 // Legacy localStorage key from the pre-Etap-8 user picker; identity now comes
@@ -252,7 +253,32 @@ export function pendingNoteFromSelection(blockSelector = "p"): PendingNote | nul
     suffix = blockText.slice(idx + quote.length, idx + quote.length + 50);
   }
   const rect = sel.getRangeAt(0).getBoundingClientRect();
-  return { quote, prefix, suffix, x: rect.left + window.scrollX, y: rect.bottom + window.scrollY + 6 };
+  return {
+    quote, prefix, suffix,
+    x: rect.left + window.scrollX,
+    y: rect.bottom + window.scrollY + 6,
+    selectionRange: sel.getRangeAt(0).cloneRange(),
+  };
+}
+
+async function copyText(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch { /* HTTP on the NAS may not expose the Clipboard API; use the fallback. */ }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  return copied;
 }
 
 // ── UI: note popover (absolute-positioned at the selection) ──────────────────
@@ -266,7 +292,17 @@ export const NotePopover: React.FC<{
   const [noteText, setNoteText] = React.useState("");
   const [tagText, setTagText] = React.useState("");
   const [stance, setStance] = React.useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = React.useState<"idle" | "copied" | "failed">("idle");
+  React.useEffect(() => {
+    const highlights = (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+    const HighlightCtor = (window as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
+    if (!pending.selectionRange || !highlights || !HighlightCtor) return;
+    highlights.set("lenie-context-selection", new HighlightCtor(pending.selectionRange));
+    return () => { highlights.delete("lenie-context-selection"); };
+  }, [pending.selectionRange]);
   return (
+    <>
+    <style>{`::highlight(lenie-context-selection) { background: #fde68a; color: #1e293b; }`}</style>
     <div style={{
       position: "absolute", left: pending.x, top: pending.y, zIndex: 50,
       background: "#fff", border: "1px solid #cbd5e1", borderRadius: 8, padding: 10,
@@ -309,7 +345,15 @@ export const NotePopover: React.FC<{
           🔎 Szukaj tego fragmentu w bazie Lenie
         </button>
       )}
+      <button type="button" onClick={async () => {
+        const copied = await copyText(pending.quote);
+        if (copied) onCancel(); else setCopyStatus("failed");
+      }} style={{ marginTop: 6, width: "100%" }}>
+        {copyStatus === "failed" ? "Nie udało się skopiować"
+          : "📋 Skopiuj zaznaczony tekst"}
+      </button>
     </div>
+    </>
   );
 };
 

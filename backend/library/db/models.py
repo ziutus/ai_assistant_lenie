@@ -660,7 +660,7 @@ class DocumentChunk(Base):
         ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
     )
     position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | REKLAMA | SZUM
+    type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | ZRODLA | REKLAMA | SZUM
     topic: Mapped[str | None] = mapped_column(String(500))
     original_text: Mapped[str] = mapped_column(Text, nullable=False)
     corrected_text: Mapped[str | None] = mapped_column(Text)
@@ -703,7 +703,7 @@ class DocumentTopicSection(Base):
         ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
     )
     position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | REKLAMA | SZUM
+    type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | ZRODLA | REKLAMA | SZUM
     title: Mapped[str | None] = mapped_column(String(500))
     summary: Mapped[str | None] = mapped_column(Text)
     chunk_positions: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False)
@@ -833,6 +833,55 @@ class DocumentReference(Base):
         )
 
 
+class CitedPublication(Base):
+    """A canonical scholarly work cited by one or more documents."""
+
+    __tablename__ = "cited_publications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    title: Mapped[str | None] = mapped_column(Text)
+    journal: Mapped[str | None] = mapped_column(Text)
+    publication_year: Mapped[int | None] = mapped_column(Integer)
+    doi: Mapped[str | None] = mapped_column(Text)
+    pmid: Mapped[str | None] = mapped_column(String(20))
+    pmcid: Mapped[str | None] = mapped_column(String(30))
+    canonical_url: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+
+class DocumentCitedPublication(Base):
+    """Document-to-publication citation with grounded evidence."""
+
+    __tablename__ = "document_cited_publications"
+    __table_args__ = (UniqueConstraint("document_id", "publication_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    publication_id: Mapped[int] = mapped_column(
+        ForeignKey("cited_publications.id", ondelete="CASCADE"), nullable=False,
+    )
+    chunk_id: Mapped[int | None] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="SET NULL"),
+    )
+    raw_citation: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_excerpt: Mapped[str | None] = mapped_column(Text)
+    extraction_method: Mapped[str] = mapped_column(String(30), nullable=False)
+    review_status: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default="auto_accepted",
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    publication: Mapped["CitedPublication"] = relationship(foreign_keys=[publication_id])
+    chunk: Mapped["DocumentChunk | None"] = relationship(foreign_keys=[chunk_id])
+
+
 class DocumentEvent(Base):
     """Dated event discussed in a document, extracted by timeline_events.py."""
 
@@ -868,6 +917,47 @@ class DocumentEvent(Base):
             f"DocumentEvent(id={self.id!r}, document_id={self.document_id!r}, "
             f"chapter={self.chapter_position!r}, date_text={self.date_text!r})"
         )
+
+
+class DocumentAnalysisJob(Base):
+    """Persistent queue entry for document chunk analysis.
+
+    The job outlives browser navigation and backend restarts. A single backend
+    worker claims queued rows and writes progress/result back to PostgreSQL.
+    """
+
+    __tablename__ = "document_analysis_jobs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'running', 'done', 'failed')",
+            name="ck_document_analysis_jobs_status",
+        ),
+        Index("idx_document_analysis_jobs_document_created", "document_id", "created_at"),
+        Index("idx_document_analysis_jobs_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("document_analysis_runs.id", ondelete="SET NULL"),
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="queued")
+    parameters: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    progress: Mapped[str | None] = mapped_column(Text)
+    error: Mapped[str | None] = mapped_column(Text)
+    chunk_count: Mapped[int | None] = mapped_column(Integer)
+    ad_count: Mapped[int | None] = mapped_column(Integer)
+    topic_section_count: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    run: Mapped["DocumentAnalysisRun | None"] = relationship(foreign_keys=[run_id])
 
 
 class InfraGeometry(Base):
