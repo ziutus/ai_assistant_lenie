@@ -22,6 +22,7 @@ interface PersonDocument {
   raw_mention: string;
   confidence: string;
   mention_count: number;
+  role: string;
 }
 
 // Per-chapter occurrence counts (GET /document/:id/entity_occurrences?text=)
@@ -79,6 +80,8 @@ const Persons = () => {
   const [occurrences, setOccurrences] = React.useState<Record<number, ChapterOccurrence[] | "loading">>({});
   const [isLoading, setIsLoading] = React.useState(false);
   const [message, setMessage] = React.useState("");
+  const authoredDocuments = documents.filter((doc) => doc.role === "author");
+  const mentionedDocuments = documents.filter((doc) => doc.role !== "author");
 
   const headers = {
     "Content-Type": "application/x-www-form-urlencoded",
@@ -183,10 +186,10 @@ const Persons = () => {
       {id && person ? (
         <div style={{ marginBottom: 20, padding: 10, border: "1px solid #ddd", borderRadius: 6 }}>
           <PersonHeader person={person} />
-          <h3 style={{ margin: "12px 0 6px" }}>Artykuły ({documents.length})</h3>
-          {!documents.length && <div style={{ color: "#667" }}>Brak artykułów powiązanych z tą osobą.</div>}
+          <h3 style={{ margin: "12px 0 6px" }}>Artykuły autora ({authoredDocuments.length})</h3>
+          {!authoredDocuments.length && <div style={{ color: "#667" }}>Brak dokumentów oznaczonych jako autorstwa tej osoby.</div>}
           <ul style={{ listStyle: "none", padding: 0 }}>
-            {documents.map((doc) => (
+            {authoredDocuments.map((doc) => (
               <li key={doc.id} style={{ padding: "6px 0", borderBottom: "1px solid #eee" }}>
                 <span style={{ color: "#667", fontSize: "0.85em", marginRight: 8 }}>[{doc.document_type}]</span>
                 <NavLink to={`/read/${doc.id}?highlight=${encodeURIComponent(doc.raw_mention)}`}>
@@ -232,6 +235,20 @@ const Persons = () => {
               </li>
             ))}
           </ul>
+          {mentionedDocuments.length > 0 && <>
+            <h3 style={{ margin: "18px 0 6px" }}>Dokumenty, w których jest wspomniany ({mentionedDocuments.length})</h3>
+            <ul style={{ listStyle: "none", padding: 0 }}>
+              {mentionedDocuments.map((doc) => (
+                <li key={doc.id} style={{ padding: "6px 0", borderBottom: "1px solid #eee" }}>
+                  <span style={{ color: "#667", fontSize: "0.85em", marginRight: 8 }}>[{doc.document_type}]</span>
+                  <NavLink to={`/read/${doc.id}?highlight=${encodeURIComponent(doc.raw_mention)}`}>
+                    {doc.title || `Dokument ${doc.id}`}
+                  </NavLink>
+                  {doc.mention_count > 0 && <strong style={{ marginLeft: 8, color: "#334155" }}>×{doc.mention_count}</strong>}
+                </li>
+              ))}
+            </ul>
+          </>}
           <button className={"button"} type="button" onClick={() => navigate("/persons")}>
             ← Wróć do listy
           </button>

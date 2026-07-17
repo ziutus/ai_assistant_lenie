@@ -33,7 +33,21 @@ _CAPTION_PREFIX_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Sygnaly stockowe/agencyjne w dowolnym miejscu krótkiej linii
+# Sygnały stockowe/agencyjne w dowolnym miejscu krótkiej linii.
+# Osobne wzorce są potrzebne do oceny pochodzenia zdjęć: fotografia
+# agencyjna nie powinna dostawać tej samej kary co generyczny stock.
+_CAPTION_STOCK_RE = re.compile(
+    r"(?:shutterstock|getty\s*images?|east\s+news|adobe\s+stock|"
+    r"istock(?:photo)?|depositphotos|123rf|unsplash|pexels)",
+    re.IGNORECASE,
+)
+
+_CAPTION_AGENCY_SOURCE_RE = re.compile(
+    r"(?:\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|"
+    r"\bForum\b\s*/|/\s*Forum\b)",
+    re.IGNORECASE,
+)
+
 _CAPTION_AGENCY_RE = re.compile(
     r"(?:zdj[eę]cie\s+ilustracyjne|shutterstock|getty\s*images?|east\s+news|"
     r"adobe\s+stock|istock(?:photo)?|depositphotos|123rf|unsplash|pexels|"
@@ -41,6 +55,21 @@ _CAPTION_AGENCY_RE = re.compile(
     r"\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|\bForum\b\s*/|/\s*Forum\b)",
     re.IGNORECASE,
 )
+
+# Punkty oznaczają jakość/oryginalność źródła, a nie fakt, że
+# podpis pozostał w tekście. Materiał własny jest najlepszy, fotografia
+# agencyjna jest pełnowartościowym źródłem redakcyjnym, a stock i zdjęcia
+# czysto ilustracyjne dostają najwyższą karę. Limit całej kategorii: 15.
+PHOTO_SOURCE_PENALTY_WEIGHTS = {
+    "own_or_private_archive": 0,
+    "agency": 1,
+    "creative_commons": 2,
+    "public_domain": 2,
+    "stock": 3,
+    "illustrative": 3,
+    "image_credit": 2,
+    "other": 2,
+}
 
 # Podpis bywa dłuższy niż _CAPTION_MAX_CHARS, ale linia KOŃCZĄCA SIĘ
 # "(zdjęcie ilustracyjne)" to zawsze podpis, niezależnie od długości.
@@ -52,6 +81,25 @@ _CLICKBAIT_RE = re.compile(
     r"zdradzi[łl]a? sekret|internauci oszaleli|wszyscy o (?:tym|niej|nim) m[oó]wi[aą])",
     re.IGNORECASE,
 )
+
+_REFERENCES_HEADING_RE = re.compile(
+    r"^\s*(?:#{1,6}\s*)?(?:źródła|zrodla|bibliografia|references|literatura)\s*:?\s*$",
+    re.IGNORECASE,
+)
+
+
+def is_references_section(text: str) -> bool:
+    """True for a non-content chunk consisting of a references list.
+
+    Such chunks are intentionally excluded from embeddings, but they are
+    evidence of diligence and must not count as editorial noise.
+    """
+    from library.cited_publications import extract_cited_publications
+
+    lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
+    if not lines or not extract_cited_publications(text):
+        return False
+    return bool(_REFERENCES_HEADING_RE.match(lines[0]))
 
 
 def is_photo_caption_line(line: str) -> bool:
@@ -120,8 +168,10 @@ def photo_caption_candidates(text: str) -> list[dict]:
             category = "own_or_private_archive"
         elif re.search(r'zdj[eę]cie\s+ilustracyjne', lowered):
             category = "illustrative"
-        elif _CAPTION_AGENCY_RE.search(line):
-            category = "agency_or_stock"
+        elif _CAPTION_STOCK_RE.search(line):
+            category = "stock"
+        elif _CAPTION_AGENCY_SOURCE_RE.search(line):
+            category = "agency"
         elif adjacent_description:
             category = "image_description" if repeats_image_alt else "image_credit"
         else:
@@ -143,13 +193,20 @@ def is_clickbait_title(title: str | None) -> bool:
     return bool(title and _CLICKBAIT_RE.search(title))
 
 
-def _llm_rubric(text: str, model: str) -> dict | None:
+def _llm_rubric(text: str, model: str, cited_publications: list[dict] | None = None) -> dict | None:
     """Jedno wywołanie LLM: oceny 0-5 w trzech wymiarach staranności.
 
     Zwraca {"zrodla": n, "glebia": n, "jezyk": n, "uzasadnienie": "..."}
     albo None, gdy wywołanie/parsowanie się nie powiedzie.
     """
     from library.chunk_llm_analysis import call_model
+
+    citation_lines = []
+    for item in cited_publications or []:
+        identifier = item.get("pmid") or item.get("pmcid") or item.get("doi") or item.get("canonical_url")
+        if identifier:
+            citation_lines.append(f"- {identifier}: {item.get('raw_citation') or item.get('canonical_url') or ''}")
+    citation_context = "\n".join(citation_lines) or "brak automatycznie rozpoznanych publikacji"
 
     prompt = f"""Oceń staranność poniższego artykułu w trzech wymiarach, każdy w skali 0-5:
 - "zrodla": czy autor powołuje się na konkretne źródła (dokumenty, dane, ekspertów z nazwiska), czy tylko ogólniki typu "media donoszą",
@@ -161,7 +218,12 @@ Zwróć TYLKO obiekt JSON bez dodatkowego tekstu:
 
 --- ARTYKUŁ ---
 {text[:RUBRIC_INPUT_CHARS]}
---- KONIEC ---"""
+--- KONIEC ---
+
+--- PUBLIKACJE ROZPOZNANE W SEKCJI ŹRÓDEŁ DOKUMENTU ---
+{citation_context}
+--- KONIEC PUBLIKACJI ---
+Uwzględnij tę listę przy ocenie pola "zrodla", nawet jeśli została technicznie wydzielona poza tekst główny."""
     try:
         raw, _ = call_model(prompt, model, RUBRIC_MAX_TOKENS)
         match = re.search(r"\{.*\}", raw, re.DOTALL)
@@ -190,22 +252,38 @@ def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -
     temat_text = "\n".join(
         (s.get("original") or "") for s in chunk_sections if s.get("type") == "TEMAT"
     )
+    reference_sections = [
+        s for s in chunk_sections
+        if s.get("type") == "ZRODLA"
+        or (s.get("type") != "TEMAT" and is_references_section(s.get("original") or ""))
+    ]
+    reference_len = sum(len(s.get("original") or "") for s in reference_sections)
     noise_len = sum(
-        len(s.get("original") or "") for s in chunk_sections if s.get("type") != "TEMAT"
+        len(s.get("original") or "") for s in chunk_sections
+        if s.get("type") != "TEMAT" and s not in reference_sections
     )
-    total_len = len(temat_text) + noise_len
+    total_len = len(temat_text) + noise_len + reference_len
 
     full_text = "\n".join((s.get("original") or "") for s in chunk_sections)
+    from library.cited_publications import extract_cited_publications
+    cited_publications = extract_cited_publications(full_text)
     caption_evidence = photo_caption_candidates(full_text)
-    caption_evidence_for_score = [
-        item for item in caption_evidence if item["category"] != "image_marker"
+    photo_source_evidence = [
+        item for item in caption_evidence
+        if item["category"] in PHOTO_SOURCE_PENALTY_WEIGHTS
     ]
-    captions = len(caption_evidence_for_score)
+    captions = len(photo_source_evidence)
+    photo_source_penalty_details = Counter()
+    for item in photo_source_evidence:
+        weight = PHOTO_SOURCE_PENALTY_WEIGHTS[item["category"]]
+        if weight:
+            photo_source_penalty_details[item["category"]] += weight
     noise_share = (noise_len / total_len) if total_len else 0.0
 
     penalties: dict[str, int] = {}
-    if captions:
-        penalties["photo_captions"] = min(15, 5 * captions)
+    photo_source_penalty = min(15, sum(photo_source_penalty_details.values()))
+    if photo_source_penalty:
+        penalties["photo_sources"] = photo_source_penalty
     if not (getattr(doc, "author", None) or "").strip():
         penalties["missing_author"] = 10
     if noise_share > 0:
@@ -217,8 +295,13 @@ def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -
 
     rubric = None
     if model and temat_text.strip():
-        rubric = _llm_rubric(temat_text, model)
+        rubric = _llm_rubric(temat_text, model, cited_publications)
         if rubric:
+            # Structured identifiers are grounded evidence, not an LLM guess.
+            # Prevent a separated references chunk from being scored as "no
+            # sources" merely because the rubric sees TEMAT prose separately.
+            citation_floor = 4 if len(cited_publications) >= 3 else 3 if len(cited_publications) == 2 else 2 if cited_publications else 0
+            rubric["zrodla"] = max(rubric["zrodla"], citation_floor)
             rubric_sum = rubric["zrodla"] + rubric["glebia"] + rubric["jezyk"]
             penalties["llm_rubric"] = (15 - rubric_sum) * 2  # 0-30
 
@@ -228,10 +311,13 @@ def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -
         "penalties": penalties,
         "signals": {
             "photo_captions": captions,
-            "photo_caption_categories": dict(Counter(item["category"] for item in caption_evidence_for_score)),
-            "photo_caption_lines": [item["text"] for item in caption_evidence_for_score[:20]],
+            "photo_caption_categories": dict(Counter(item["category"] for item in photo_source_evidence)),
+            "photo_caption_lines": [item["text"] for item in photo_source_evidence[:20]],
+            "photo_source_penalty_details": dict(photo_source_penalty_details),
             "noise_share": round(noise_share, 3),
+            "reference_chars": reference_len,
             "temat_chars": len(temat_text),
+            "cited_publications": len(cited_publications),
         },
         "llm_rubric": rubric,
         "model": model if rubric else None,

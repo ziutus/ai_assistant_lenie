@@ -29,7 +29,7 @@ ANALYSIS_MODELS = [DEFAULT_ANALYSIS_MODEL, f"arklabs/{DEFAULT_ANALYSIS_MODEL}"]
 ANALYSIS_MODES = ("transcript", "article")
 SYNTHESIS_MAX_TOKENS = 2_000
 SYNTHESIS_MAX_INPUT_CHARS = 20_000
-_SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT|SZUM): ?(.+)$', re.MULTILINE)
+_SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT|ZRODLA|SZUM): ?(.+)$', re.MULTILINE)
 
 # Run statuses that mean review never finished — once a newer run of the same
 # document+scope exists, such a run is an abandoned attempt (double click,
@@ -203,11 +203,11 @@ def _merge_topics(sections: list[dict], model: str, mode: str = "transcript") ->
     prompt = (
         f"Poniżej lista {len(sections)} fragmentów {source_desc} z ich tematami.\n"
         "Pogrupuj SĄSIADUJĄCE fragmenty w logiczne sekcje tematyczne (zwykle 5-10 sekcji).\n"
-        "Fragmenty reklamowe (REKLAMA) i szum techniczny (SZUM) możesz pominąć lub zgrupować\n"
-        "razem pod jedną sekcją odpowiednio REKLAMA lub SZUM.\n\n"
+        "Fragmenty źródłowe (ZRODLA), reklamowe (REKLAMA) i szum techniczny (SZUM) możesz pominąć lub zgrupować\n"
+        "razem pod jedną sekcją odpowiednio ZRODLA, REKLAMA lub SZUM.\n\n"
         "Zwróć TYLKO tablicę JSON bez żadnego dodatkowego tekstu, w formacie:\n"
         '[{"title": "Tytuł sekcji tematycznej", "type": "TEMAT", "chunks": [1, 2]}]\n'
-        'Gdzie "chunks" to numery fragmentów (numeracja od 1), "type" to "TEMAT", "REKLAMA" lub "SZUM".\n\n'
+        'Gdzie "chunks" to numery fragmentów (numeracja od 1), "type" to "TEMAT", "ZRODLA", "REKLAMA" lub "SZUM".\n\n'
         f"Fragmenty:\n{chunk_list}"
     )
     try:
@@ -727,9 +727,10 @@ class DocumentAnalysisService:
         session.add(run)
         session.flush()  # get run.id before adding children
 
+        created_chunks = []
         for i, s in enumerate(sections):
             seg_start, seg_end = seg_map[i]
-            session.add(DocumentChunk(
+            created_chunk = DocumentChunk(
                 run_id=run.id,
                 document_id=doc_id,
                 position=i + 1,
@@ -742,7 +743,9 @@ class DocumentAnalysisService:
                 seg_end=seg_end,
                 rewrite_ratio=s["ratio"],
                 status="pending",
-            ))
+            )
+            session.add(created_chunk)
+            created_chunks.append(created_chunk)
 
         for i, ts in enumerate(topic_sections_data):
             session.add(DocumentTopicSection(
@@ -754,6 +757,15 @@ class DocumentAnalysisService:
                 summary=ts["summary"] or None,
                 chunk_positions=ts["chunk_indices"],
             ))
+
+        session.flush()
+        try:
+            from library.cited_publications import refresh_document_cited_publications
+
+            citations = refresh_document_cited_publications(session, doc_id, created_chunks)
+            log(f"cited publications: {len(citations['publications'])}")
+        except Exception:
+            logger.exception("cited-publication extraction failed, continuing")
 
         try:
             session.commit()
