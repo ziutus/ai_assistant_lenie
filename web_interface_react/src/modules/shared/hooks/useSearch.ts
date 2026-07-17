@@ -11,7 +11,10 @@ export const useSearch = ({ callback }: { callback: () => void }) => {
   const [results, setResults] = React.useState<any[] | null>(null);
   const [searchSimilar, setSearchSimilar] = React.useState('');
 
-  const handleSearchSimilar = async (search?: string, searchLimit?: string, translate?: boolean) => {
+  const handleSearchSimilar = async (
+    search?: string, searchLimit?: string, translate?: boolean,
+    periodFrom?: string, periodTo?: string,
+  ) => {
     setIsLoading(true);
     console.log("searching: " + search)
     console.log("searching limit: " + searchLimit)
@@ -25,7 +28,9 @@ export const useSearch = ({ callback }: { callback: () => void }) => {
           model: "amazon.titan-embed-text-v1",
           search: search,
           limit: searchLimit,
-          translate: translate
+          translate: translate,
+          ...(periodFrom?.trim() ? { period_from: periodFrom.trim() } : {}),
+          ...(periodTo?.trim() ? { period_to: periodTo.trim() } : {}),
         }, {
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',

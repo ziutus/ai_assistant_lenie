@@ -274,7 +274,9 @@ class TestWebsiteSimilar:
         data = resp.get_json()
         assert data["status"] == "success"
         MockService.assert_called_once_with(mock_session)
-        service_instance.search_similar.assert_called_once_with("test query", limit=5)
+        service_instance.search_similar.assert_called_once_with(
+            "test query", limit=5, period_from=None, period_to=None,
+        )
 
     def test_returns_correct_json_structure(self, client):
         """Verify endpoint returns status, message, websites keys."""
@@ -317,7 +319,9 @@ class TestWebsiteSimilar:
                 }, headers=API_HEADERS)
 
         assert resp.status_code == 200
-        service_instance.search_similar.assert_called_once_with("test query", limit=7)
+        service_instance.search_similar.assert_called_once_with(
+            "test query", limit=7, period_from=None, period_to=None,
+        )
 
 
 # ---------------------------------------------------------------------------
