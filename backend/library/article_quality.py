@@ -44,7 +44,7 @@ _CAPTION_STOCK_RE = re.compile(
 )
 
 _CAPTION_AGENCY_SOURCE_RE = re.compile(
-    r"(?:\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|"
+    r"(?:\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|\bBloomberg\b|"
     r"\bForum\b\s*/|/\s*Forum\b|agencj\w+\s+wyborcz\w+)",
     re.IGNORECASE,
 )
@@ -53,10 +53,24 @@ _CAPTION_AGENCY_RE = re.compile(
     r"(?:zdj[eę]cie\s+ilustracyjne|shutterstock|getty\s*images?|east\s+news|"
     r"adobe\s+stock|istock(?:photo)?|depositphotos|123rf|unsplash|pexels|"
     r"domena\s+publiczna|\bcc\s+by(?:-sa)?\b|creative\s+commons|archiwum\s+prywatne|©|"
-    r"\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|\bForum\b\s*/|/\s*Forum\b|"
-    r"agencj\w+\s+wyborcz\w+)",
+    r"\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|\bBloomberg\b|"
+    r"\bForum\b\s*/|/\s*Forum\b|agencj\w+\s+wyborcz\w+)",
     re.IGNORECASE,
 )
+
+# Ekstrakcja Interii skleja podpis, fotografa i agencję bez separatora
+# ("...dronowychBloombergBloomberg", "...wojskaTHOMAS SAMSONAFP"), przez co
+# \b we wzorcach agencji nie znajduje granicy słowa. Rozklejenie: spacja na
+# granicy mała→wielka litera oraz przed akronimem agencji doklejonym do
+# wersalikowego nazwiska (min. 3 wielkie litery przed akronimem, żeby nie
+# rozcinać zwykłych słów w stylu "RZEPA").
+_GLUED_LOWER_UPPER_RE = re.compile(r"(?<=[a-ząćęłńóśźż])(?=[A-ZĄĆĘŁŃÓŚŹŻ])")
+_GLUED_ACRONYM_RE = re.compile(r"(?<=[A-ZĄĆĘŁŃÓŚŹŻ]{3})(?=(?:AFP|EPA|PAP)\s*$)")
+
+
+def _deglue_credits(line: str) -> str:
+    """Kopia linii z przywróconymi granicami słów w sklejonym credicie."""
+    return _GLUED_ACRONYM_RE.sub(" ", _GLUED_LOWER_UPPER_RE.sub(" ", line))
 
 # Zdjęcie z agencji fotograficznej należącej do wydawcy artykułu to materiał
 # własny redakcji (waga 0), nie zewnętrzna agencja — mapa: wzorzec nazwy
@@ -145,7 +159,10 @@ def is_photo_caption_line(line: str) -> bool:
     bare = re.sub(r"\[img\d+(?::[^\]]*)?\]", "", stripped).strip()
     if not bare:
         return False
-    return bool(_CAPTION_PREFIX_RE.match(bare) or _CAPTION_AGENCY_RE.search(bare))
+    if _CAPTION_PREFIX_RE.match(bare) or _CAPTION_AGENCY_RE.search(bare):
+        return True
+    deglued = _deglue_credits(bare)
+    return deglued != bare and bool(_CAPTION_AGENCY_RE.search(deglued))
 
 
 def count_photo_captions(text: str) -> int:
@@ -191,7 +208,8 @@ def photo_caption_candidates(text: str, url: str | None = None) -> list[dict]:
                 pending_image_lines = 0
         if not (direct_caption or adjacent_description):
             continue
-        lowered = stripped.lower()
+        deglued = _deglue_credits(stripped)
+        lowered = deglued.lower()
         if "domena publiczna" in lowered:
             category = "public_domain"
         elif re.search(r'\bcc\s+by(?:-sa)?\b|creative commons', lowered):
@@ -200,11 +218,11 @@ def photo_caption_candidates(text: str, url: str | None = None) -> list[dict]:
             category = "own_or_private_archive"
         elif re.search(r'zdj[eę]cie\s+ilustracyjne', lowered):
             category = "illustrative"
-        elif _CAPTION_STOCK_RE.search(line):
+        elif _CAPTION_STOCK_RE.search(deglued):
             category = "stock"
-        elif _is_publisher_own_agency(line, url):
+        elif _is_publisher_own_agency(deglued, url):
             category = "own_or_private_archive"
-        elif _CAPTION_AGENCY_SOURCE_RE.search(line):
+        elif _CAPTION_AGENCY_SOURCE_RE.search(deglued):
             category = "agency"
         elif adjacent_description:
             category = "image_description" if repeats_image_alt else "image_credit"
