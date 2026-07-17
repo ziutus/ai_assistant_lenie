@@ -1031,11 +1031,13 @@ const Read: React.FC = () => {
               </div>
             ) : <>
             {informationSources.length > 0 && (
-              <div style={{
+              <details open style={{
                 background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
                 padding: 10, marginTop: 12,
               }}>
-                <strong style={{ fontSize: "0.85em", display: "block", marginBottom: 8 }}>📰 Pochodzenie</strong>
+                <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
+                  📰 Pochodzenie ({informationSources.length})
+                </summary>
                 {informationSources.map(source => (
                   <div key={source.id} style={{ marginTop: 7 }}>
                     <div style={{ fontSize: "0.75em", color: "#64748b" }}>
@@ -1052,7 +1054,7 @@ const Read: React.FC = () => {
                     )}
                   </div>
                 ))}
-              </div>
+              </details>
             )}
             {citedPublications.length > 0 && (
               <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, marginTop: 12 }}>

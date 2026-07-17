@@ -209,7 +209,7 @@ const MODELS = [
 ];
 
 const STATUS_CYCLE = ["pending", "approved", "needs_reanalysis"] as const;
-const TYPE_CYCLE: ChunkType[] = ["TEMAT", "ZRODLA", "SZUM", "REKLAMA"];
+const TYPE_CYCLE: ChunkType[] = ["TEMAT", "SZUM", "ZRODLA", "REKLAMA"];
 
 // Speaker self-introductions are expected near the start of a transcript, so the
 // per-chunk "detect speakers from just this chunk" button only appears on the
