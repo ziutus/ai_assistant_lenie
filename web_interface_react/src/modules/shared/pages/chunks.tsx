@@ -363,12 +363,13 @@ const PlainTextLines: React.FC<{
   saving: boolean;
   detectingAuthorLine: number | null;
   onToggleLine: (idx: number) => void;
+  onTogglePhotoBlock: (indices: number[]) => void;
   onMarkSplit: (idx: number) => void;
   onDetectAuthor: (idx: number) => void;
   onReplaceText: (text: string) => Promise<boolean>;
   onSave: (removeFromDocument: boolean) => void;
   onCancel: () => void;
-}> = ({ text, markedLines, photoCaptionLines, splitLineIndices, saving, detectingAuthorLine, onToggleLine, onMarkSplit, onDetectAuthor, onReplaceText, onSave, onCancel }) => {
+}> = ({ text, markedLines, photoCaptionLines, splitLineIndices, saving, detectingAuthorLine, onToggleLine, onTogglePhotoBlock, onMarkSplit, onDetectAuthor, onReplaceText, onSave, onCancel }) => {
   const [removeFromDoc, setRemoveFromDoc] = React.useState(true);
   const [editingText, setEditingText] = React.useState(false);
   const [draftText, setDraftText] = React.useState(text);
@@ -406,11 +407,19 @@ const PlainTextLines: React.FC<{
         const marked = markedLines.has(i);
         const isPhotoCaption = photoCaptionLines.has(i);
         const isSplitMark = splitLineIndices.has(i);
+        const photoBlockIndices = (() => {
+          if (!isPhotoCaption || i + 2 >= lines.length || lines[i + 1].trim()) return [];
+          let descriptionIndex = i + 1;
+          while (descriptionIndex < lines.length && !lines[descriptionIndex].trim()) descriptionIndex += 1;
+          if (descriptionIndex >= lines.length || lines[descriptionIndex].trim().startsWith("#") || lines[descriptionIndex].trim().length > 300) return [];
+          return Array.from({ length: descriptionIndex - i + 1 }, (_, offset) => i + offset);
+        })();
+        const photoBlockMarked = photoBlockIndices.length > 0 && photoBlockIndices.every(idx => markedLines.has(idx));
         return (
           <div
             key={i}
             style={{
-              position: "relative", paddingLeft: 82, borderRadius: 2, minHeight: "1.4em",
+              position: "relative", paddingLeft: photoBlockIndices.length > 0 ? 122 : 82, borderRadius: 2, minHeight: "1.4em",
               ...(marked ? { background: "#fee2e2", textDecoration: "line-through", color: "#991b1b" } : {}),
               ...(!marked && isPhotoCaption ? { background: "#fefce8", borderLeft: "3px solid #eab308" } : {}),
               ...(isSplitMark ? { background: "#fff7ed", borderLeft: "3px solid #f97316" } : {}),
@@ -441,6 +450,15 @@ const PlainTextLines: React.FC<{
               >
                 {detectingAuthorLine === i ? "…" : "A"}
               </button>
+              {photoBlockIndices.length > 0 && (
+                <button
+                  onClick={() => onTogglePhotoBlock(photoBlockIndices)}
+                  title={photoBlockMarked ? "Przywróć źródło, odstęp i opis zdjęcia" : "Usuń źródło, odstęp i opis zdjęcia"}
+                  style={{ ...lineBtnStyle, color: photoBlockMarked ? "#991b1b" : "#b45309", fontWeight: "bold" }}
+                >
+                  {photoBlockMarked ? "↶ blok" : "× blok"}
+                </button>
+              )}
             </span>
             <span style={{ whiteSpace: "pre-wrap" }}>{line || " "}</span>
             {isPhotoCaption && (
@@ -958,6 +976,15 @@ const Chunks = () => {
       } else {
         cur.add(idx);
       }
+      return { ...prev, [chunkId]: cur };
+    });
+  };
+
+  const togglePhotoBlockMark = (chunkId: number, indices: number[]) => {
+    setLineEdits(prev => {
+      const cur = new Set(prev[chunkId] ?? []);
+      const restore = indices.every(idx => cur.has(idx));
+      indices.forEach(idx => restore ? cur.delete(idx) : cur.add(idx));
       return { ...prev, [chunkId]: cur };
     });
   };
@@ -1742,6 +1769,7 @@ const Chunks = () => {
                   saving={savingLines[chunk.id] ?? false}
                   detectingAuthorLine={extractingAuthorLine?.chunkId === chunk.id ? extractingAuthorLine.lineIdx : null}
                   onToggleLine={idx => toggleLineMark(chunk.id, idx)}
+                  onTogglePhotoBlock={indices => togglePhotoBlockMark(chunk.id, indices)}
                   onMarkSplit={idx => markLineSplit(chunk.id, idx)}
                   onDetectAuthor={idx => extractAuthorFromLine(chunk, idx)}
                   onReplaceText={text => replaceChunkText(chunk, text)}
