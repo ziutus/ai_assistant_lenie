@@ -8,6 +8,7 @@ import {
 import type { CountryTag, PipelineLine, PlaceMarker } from "../components/CountryMap/countryMap";
 import { EntityChips, EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timelinePanel";
+import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import { useIsDesktop } from "../hooks/useIsDesktop";
 import styles from "./read.module.css";
 
@@ -1107,6 +1108,8 @@ const Read: React.FC = () => {
                 Brak osób i miejsc w tym rozdziale.
               </div>
             )}
+
+            <TimePeriodsPanel docId={id} currentChapter={position} />
 
             <TimelinePanel docId={id} currentChapter={position} onEventClick={handleTimelineEventClick} />
 

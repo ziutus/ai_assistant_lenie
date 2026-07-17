@@ -37,6 +37,8 @@ const Search = () => {
   const limitParam = searchParams.get("limit") ?? DEFAULT_LIMIT;
   const initialLimit = ALLOWED_LIMITS.includes(limitParam) ? limitParam : DEFAULT_LIMIT;
   const initialTranslate = searchParams.get("translate") === "true";
+  const initialPeriodFrom = searchParams.get("period_from") ?? "";
+  const initialPeriodTo = searchParams.get("period_to") ?? "";
   const [submittedQuery, setSubmittedQuery] = React.useState(initialQuery);
   const [copied, setCopied] = React.useState(false);
   const { handleSearchSimilar, results, setResults, isLoading, message, setMessage, isError } =
@@ -45,7 +47,9 @@ const Search = () => {
       });
 
   const handleClean = () => {
-    formik.resetForm({ values: { search: "", searchLimit: DEFAULT_LIMIT, translate: false } });
+    formik.resetForm({ values: {
+      search: "", searchLimit: DEFAULT_LIMIT, translate: false, periodFrom: "", periodTo: "",
+    } });
     setResults([]);
     setMessage("");
     setSubmittedQuery("");
@@ -63,7 +67,9 @@ const Search = () => {
     initialValues: {
       search: initialQuery,
       searchLimit: initialLimit,
-      translate: initialTranslate
+      translate: initialTranslate,
+      periodFrom: initialPeriodFrom,
+      periodTo: initialPeriodTo
     },
     onSubmit: async (data) => {
       const query = data.search.trim();
@@ -71,8 +77,10 @@ const Search = () => {
       const params: Record<string, string> = { q: query };
       if (data.searchLimit !== DEFAULT_LIMIT) params.limit = data.searchLimit;
       if (data.translate) params.translate = "true";
+      if (data.periodFrom.trim()) params.period_from = data.periodFrom.trim();
+      if (data.periodTo.trim()) params.period_to = data.periodTo.trim();
       setSearchParams(params);
-      await handleSearchSimilar(query, data.searchLimit, data.translate);
+      await handleSearchSimilar(query, data.searchLimit, data.translate, data.periodFrom, data.periodTo);
     },
   });
 
@@ -80,9 +88,9 @@ const Search = () => {
   React.useEffect(() => {
     if (!initialSearchDone.current && initialQuery) {
       initialSearchDone.current = true;
-      void handleSearchSimilar(initialQuery, initialLimit, initialTranslate);
+      void handleSearchSimilar(initialQuery, initialLimit, initialTranslate, initialPeriodFrom, initialPeriodTo);
     }
-  }, [handleSearchSimilar, initialQuery, initialLimit, initialTranslate]);
+  }, [handleSearchSimilar, initialQuery, initialLimit, initialTranslate, initialPeriodFrom, initialPeriodTo]);
 
   return (
       <form onSubmit={formik.handleSubmit}>
@@ -99,6 +107,29 @@ const Search = () => {
                 id={"search"}
                 name={"search"}
                 type={"text"}
+            />
+          </div>
+
+          <div style={{ width: 130 }} title="Filtruj po okresie, którego dotyczy treść (lata p.n.e. jako liczby ujemne). Pokazuje tylko dokumenty ze sklasyfikowanym okresem.">
+            <Input
+                disabled={isLoading}
+                value={formik.values.periodFrom}
+                label={"Okres od roku"}
+                onChange={formik.handleChange}
+                id={"periodFrom"}
+                name={"periodFrom"}
+                type={"number"}
+            />
+          </div>
+          <div style={{ width: 130 }} title="Filtruj po okresie, którego dotyczy treść (lata p.n.e. jako liczby ujemne). Pokazuje tylko dokumenty ze sklasyfikowanym okresem.">
+            <Input
+                disabled={isLoading}
+                value={formik.values.periodTo}
+                label={"do roku"}
+                onChange={formik.handleChange}
+                id={"periodTo"}
+                name={"periodTo"}
+                type={"number"}
             />
           </div>
 

@@ -241,3 +241,56 @@ class TestSearchSimilar:
         assert result[0]["search_match"] == "text"
         assert result[0]["similarity"] > 0.5
         mock_similar.assert_not_called()
+
+
+class TestPeriodFilter:
+    @patch("library.search_service.embedding.get_embedding")
+    @patch("library.search_service.load_config")
+    def test_period_window_drops_documents_outside_it(self, mock_config, mock_get_embedding):
+        cfg = MagicMock()
+        cfg.require.return_value = "test-model"
+        mock_config.return_value = cfg
+        mock_get_embedding.return_value = _make_embedding_result()
+        service = SearchService(_make_session())
+        semantic = [
+            {"website_id": 1, "similarity": 0.9},
+            {"website_id": 2, "similarity": 0.8},
+        ]
+        with patch.object(service.repo, "search_text", return_value=[]), \
+             patch.object(service.repo, "get_similar", return_value=semantic), \
+             patch.object(service, "_documents_in_period", return_value={1}) as mock_period:
+            result = service.search_similar("zapytanie", limit=10, period_from=1939, period_to=1945)
+
+        assert [row["website_id"] for row in result] == [1]
+        mock_period.assert_called_once_with(1939, 1945)
+
+    @patch("library.search_service.embedding.get_embedding")
+    @patch("library.search_service.load_config")
+    def test_no_period_window_skips_the_filter(self, mock_config, mock_get_embedding):
+        cfg = MagicMock()
+        cfg.require.return_value = "test-model"
+        mock_config.return_value = cfg
+        mock_get_embedding.return_value = _make_embedding_result()
+        service = SearchService(_make_session())
+        with patch.object(service.repo, "search_text", return_value=[]), \
+             patch.object(service.repo, "get_similar", return_value=[{"website_id": 1, "similarity": 0.9}]), \
+             patch.object(service, "_documents_in_period") as mock_period:
+            result = service.search_similar("zapytanie", limit=10)
+
+        assert [row["website_id"] for row in result] == [1]
+        mock_period.assert_not_called()
+
+    @pytest.mark.parametrize(
+        ("period_from", "period_to", "expected_filters"),
+        [(1939, 1945, 2), (1939, None, 1), (None, -500, 1)],
+    )
+    def test_documents_in_period_builds_one_filter_per_bound(self, period_from, period_to, expected_filters):
+        session = _make_session()
+        query = MagicMock()
+        session.query.return_value = query
+        query.filter.return_value = query
+        query.distinct.return_value = [(5,), (7,)]
+        service = SearchService(session)
+
+        assert service._documents_in_period(period_from, period_to) == {5, 7}
+        assert query.filter.call_count == expected_filters

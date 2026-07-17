@@ -12,6 +12,7 @@ imports/
 ├── feed_monitor.py           # Monitor RSS/Atom/JSON feeds and import new entries
 ├── feeds.yaml                # Feed definitions for feed_monitor.py (committed)
 ├── extract_references.py     # Extract book footnotes from text_md into document_references
+├── extract_time_periods.py   # Classify the historical period a document is about (per chapter for books)
 ├── feeds_state.yaml          # Per-feed last_checked state (gitignored, created at runtime)
 ├── fix_duplicate_analysis_runs.py # One-off: supersede abandoned duplicate analysis runs (same document+scope, never reviewed)
 ├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
@@ -242,6 +243,20 @@ cd backend
 python imports/extract_references.py --id 9204           # dry-run (default)
 python imports/extract_references.py --id 9204 --apply
 python imports/extract_references.py --id 9204 --show 30 # more dry-run samples
+```
+
+### `extract_time_periods.py`
+
+Classifies the historical period a document's content is about ("współczesność", "zimna wojna", "starożytny Egipt") into the `document_time_periods` table (`library/time_periods.py`) — one LLM call per reader chapter for books, one for the whole document otherwise. Up to 3 periods per chapter (main period first), each with an approximate year range (BCE = negative) for future search filtering by period. Replace semantics — safe to re-run. Read back via `GET /document/<id>/time_periods`.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`.
+
+**Running:**
+```bash
+cd backend
+python imports/extract_time_periods.py --id 9144 --dry-run     # preview, no DB writes
+python imports/extract_time_periods.py --id 9144               # classify + store
+python imports/extract_time_periods.py --id 9204 --chapter 37  # re-run one book chapter
 ```
 
 ### `fix_duplicate_analysis_runs.py`
