@@ -16,6 +16,7 @@ import json
 import logging
 import re
 from collections import Counter
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ _CAPTION_STOCK_RE = re.compile(
 
 _CAPTION_AGENCY_SOURCE_RE = re.compile(
     r"(?:\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|"
-    r"\bForum\b\s*/|/\s*Forum\b)",
+    r"\bForum\b\s*/|/\s*Forum\b|agencj\w+\s+wyborcz\w+)",
     re.IGNORECASE,
 )
 
@@ -52,9 +53,37 @@ _CAPTION_AGENCY_RE = re.compile(
     r"(?:zdj[eę]cie\s+ilustracyjne|shutterstock|getty\s*images?|east\s+news|"
     r"adobe\s+stock|istock(?:photo)?|depositphotos|123rf|unsplash|pexels|"
     r"domena\s+publiczna|\bcc\s+by(?:-sa)?\b|creative\s+commons|archiwum\s+prywatne|©|"
-    r"\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|\bForum\b\s*/|/\s*Forum\b)",
+    r"\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|\bForum\b\s*/|/\s*Forum\b|"
+    r"agencj\w+\s+wyborcz\w+)",
     re.IGNORECASE,
 )
+
+# Zdjęcie z agencji fotograficznej należącej do wydawcy artykułu to materiał
+# własny redakcji (waga 0), nie zewnętrzna agencja — mapa: wzorzec nazwy
+# agencji w podpisie -> domeny serwisów tego wydawcy.
+PUBLISHER_OWN_AGENCIES: list[tuple[re.Pattern, tuple[str, ...]]] = [
+    # Agencja Wyborcza.pl — agencja fotograficzna Agory
+    (re.compile(r"agencj\w+\s+wyborcz\w+", re.IGNORECASE),
+     ("wyborcza.pl", "gazeta.pl", "wyborcza.biz", "wysokieobcasy.pl", "tokfm.pl")),
+]
+
+
+def _is_publisher_own_agency(line: str, url: str | None) -> bool:
+    """Czy podpis wskazuje agencję fotograficzną wydawcy serwisu z `url`?"""
+    if not url:
+        return False
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        return False
+    if not host:
+        return False
+    for agency_re, domains in PUBLISHER_OWN_AGENCIES:
+        if agency_re.search(line) and any(
+            host == domain or host.endswith("." + domain) for domain in domains
+        ):
+            return True
+    return False
 
 # Punkty oznaczają jakość/oryginalność źródła, a nie fakt, że
 # podpis pozostał w tekście. Materiał własny jest najlepszy, fotografia
@@ -126,8 +155,11 @@ def count_photo_captions(text: str) -> int:
     return sum(1 for line in text.splitlines() if is_photo_caption_line(line))
 
 
-def photo_caption_candidates(text: str) -> list[dict]:
-    """Wykryte podpisy wraz z kategorią — dowody dla quality i podpowiedzi UI."""
+def photo_caption_candidates(text: str, url: str | None = None) -> list[dict]:
+    """Wykryte podpisy wraz z kategorią — dowody dla quality i podpowiedzi UI.
+
+    url: adres dokumentu; pozwala rozpoznać agencję własną wydawcy
+    (PUBLISHER_OWN_AGENCIES) i nadać jej kategorię materiału własnego."""
     candidates = []
     pending_image_alt: str | None = None
     pending_image_lines = 0
@@ -170,6 +202,8 @@ def photo_caption_candidates(text: str) -> list[dict]:
             category = "illustrative"
         elif _CAPTION_STOCK_RE.search(line):
             category = "stock"
+        elif _is_publisher_own_agency(line, url):
+            category = "own_or_private_archive"
         elif _CAPTION_AGENCY_SOURCE_RE.search(line):
             category = "agency"
         elif adjacent_description:
@@ -267,7 +301,7 @@ def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -
     full_text = "\n".join((s.get("original") or "") for s in chunk_sections)
     from library.cited_publications import extract_cited_publications
     cited_publications = extract_cited_publications(full_text)
-    caption_evidence = photo_caption_candidates(full_text)
+    caption_evidence = photo_caption_candidates(full_text, getattr(doc, "url", None))
     photo_source_evidence = [
         item for item in caption_evidence
         if item["category"] in PHOTO_SOURCE_PENALTY_WEIGHTS
