@@ -266,6 +266,8 @@ class WebsitesDBPostgreSQL:
                 WebDocument.title,
                 WebDocument.document_type,
                 WebDocument.project,
+                WebDocument.date_from,
+                WebDocument.created_at,
                 WebsiteEmbedding.chunk_id,
                 DocumentChunk.obsidian_note_paths,
             )
@@ -300,6 +302,8 @@ class WebsitesDBPostgreSQL:
                 "title": r.title,
                 "document_type": r.document_type,
                 "project": r.project,
+                "date_from": r.date_from.isoformat() if r.date_from else None,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
                 "chunk_id": r.chunk_id,
                 "obsidian_note_paths": r.obsidian_note_paths or [],
             }
@@ -369,6 +373,8 @@ class WebsitesDBPostgreSQL:
                 "title": doc.title,
                 "document_type": doc.document_type,
                 "project": doc.project,
+                "date_from": doc.date_from.isoformat() if doc.date_from else None,
+                "created_at": doc.created_at.isoformat() if doc.created_at else None,
                 "chunk_id": None,
                 "obsidian_note_paths": doc.obsidian_note_paths or [],
                 "tags": doc.tags,

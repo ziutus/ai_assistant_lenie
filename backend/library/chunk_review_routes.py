@@ -698,6 +698,8 @@ def document_chapters(doc_id: int):
         "thematic_tags": thematic_tags,
         "synthesis": doc_run.synthesis if doc_run else None,
         "quality": getattr(doc, "quality", None),
+        "date_from": doc.date_from.isoformat() if doc.date_from else None,
+        "created_at": doc.created_at.isoformat() if doc.created_at else None,
     })
 
 
