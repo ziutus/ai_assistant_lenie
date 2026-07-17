@@ -9,6 +9,7 @@ import type { CountryTag, PipelineLine, PlaceMarker } from "../components/Countr
 import { EntityChips, EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timelinePanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
+import TonePanel from "../components/TonePanel/tonePanel";
 import { useIsDesktop } from "../hooks/useIsDesktop";
 import styles from "./read.module.css";
 
@@ -1110,6 +1111,8 @@ const Read: React.FC = () => {
             )}
 
             <TimePeriodsPanel docId={id} currentChapter={position} />
+
+            <TonePanel docId={id} currentChapter={position} />
 
             <TimelinePanel docId={id} currentChapter={position} onEventClick={handleTimelineEventClick} />
 
