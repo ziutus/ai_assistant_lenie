@@ -930,6 +930,42 @@ def document_time_periods(doc_id: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/tones", methods=["GET"])
+def document_tones(doc_id: int):
+    """Return stored chapter tones, whole-document rows first, then chapter by chapter."""
+    from library.db.models import DocumentTone
+
+    session = get_scoped_session()
+    if session.get(WebDocument, doc_id) is None:
+        abort(404, f"Document {doc_id} not found")
+
+    rows = (
+        session.query(DocumentTone)
+        .filter(DocumentTone.document_id == doc_id)
+        .order_by(
+            DocumentTone.chapter_position.asc().nullsfirst(),
+            DocumentTone.id.asc(),
+        )
+        .all()
+    )
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "tones": [
+            {
+                "chapter_position": row.chapter_position,
+                "emotion": row.emotion,
+                "secondary_emotions": row.secondary_emotions,
+                "sentiment": row.sentiment,
+                "intensity": row.intensity,
+                "registers": row.registers,
+                "evidence": row.evidence,
+            }
+            for row in rows
+        ],
+    })
+
+
 @bp.route("/document/<int:doc_id>/entity_occurrences", methods=["GET"])
 def document_entity_occurrences(doc_id: int):
     """Per-chapter occurrence counts of an entity name in the document (?text=).

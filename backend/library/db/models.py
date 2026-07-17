@@ -956,6 +956,46 @@ class DocumentTimePeriod(Base):
         )
 
 
+class DocumentTone(Base):
+    """Emotional tone and language register of a document chapter, classified by tones.py."""
+
+    __tablename__ = "document_tones"
+    __table_args__ = (
+        CheckConstraint(
+            "sentiment IN ('pozytywne', 'negatywne', 'neutralne', 'mieszane')",
+            name="ck_document_tones_sentiment",
+        ),
+        CheckConstraint(
+            "intensity IN ('niska', 'średnia', 'wysoka')",
+            name="ck_document_tones_intensity",
+        ),
+        Index("idx_document_tones_document_chapter", "document_id", "chapter_position"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    chapter_position: Mapped[int | None] = mapped_column(Integer)
+    emotion: Mapped[str] = mapped_column(String(20), nullable=False)
+    secondary_emotions: Mapped[str | None] = mapped_column(String(100))
+    sentiment: Mapped[str] = mapped_column(String(10), nullable=False)
+    intensity: Mapped[str] = mapped_column(String(10), nullable=False)
+    registers: Mapped[str | None] = mapped_column(String(100))
+    evidence: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"DocumentTone(id={self.id!r}, document_id={self.document_id!r}, "
+            f"chapter={self.chapter_position!r}, emotion={self.emotion!r})"
+        )
+
+
 class DocumentAnalysisJob(Base):
     """Persistent queue entry for document chunk analysis.
 
