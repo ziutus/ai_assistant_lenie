@@ -67,8 +67,11 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({ docId, currentChapter, on
     }
   }, [apiUrl, apiKey, docId, events, loading]);
 
+  // chapter_position == null means the document has no chapters — such events
+  // belong to the whole document and must survive the default chapter scope
   const shownEvents = React.useMemo(
-    () => (events ?? []).filter(event => !scopeChapter || event.chapter_position === currentChapter),
+    () => (events ?? []).filter(event =>
+      !scopeChapter || event.chapter_position == null || event.chapter_position === currentChapter),
     [events, scopeChapter, currentChapter],
   );
 
