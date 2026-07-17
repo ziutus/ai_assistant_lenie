@@ -16,7 +16,7 @@ REWRITE_MIN_RATIO = 0.80
 SUMMARY_MAX_TOKENS = 400
 PRECLEAN_MAX_TOKENS = 1_200
 
-SECTION_HEADER_RE = re.compile(r"^### (REKLAMA|TEMAT|SZUM): ?(.+)$", re.MULTILINE)
+SECTION_HEADER_RE = re.compile(r"^### (REKLAMA|TEMAT|ZRODLA|SZUM): ?(.+)$", re.MULTILINE)
 
 _ARKLABS_PREFIX = "arklabs/"
 
@@ -40,7 +40,7 @@ def _parse_cleanup_ranges(raw: str, line_count: int) -> list[dict]:
         return []
     result = []
     for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict) or row.get("type") not in {"REKLAMA", "SZUM"}:
+        if not isinstance(row, dict) or row.get("type") not in {"REKLAMA", "ZRODLA", "SZUM"}:
             continue
         try:
             start = max(1, min(line_count, int(row["start_line"])))
@@ -75,6 +75,7 @@ def propose_article_cleanup(text: str, model: str, max_chars: int = 12_000) -> l
         prompt = f"""Oceń linie surowego artykułu PRZED jego podziałem na fragmenty.
 Wskaż wyłącznie zakresy, które należy wykluczyć:
 - REKLAMA: sponsor, afiliacja, autopromocja, newsletter lub CTA,
+- ZRODLA: wydzielona bibliografia lub lista cytowanych publikacji/odnośników,
 - SZUM: menu, stopka, cookies, nawigacja, lista linków, podpis techniczny,
   podpis pod zdjęciem / credit fotografa (np. "zdjęcie ilustracyjne", "fot. ...",
   shutterstock, Getty, East News, PAP).
@@ -361,8 +362,9 @@ def analyze_article_chunk(original_text: str, model: str,
 
 Sklasyfikuj poniższy fragment i jeśli to TEMAT — napisz streszczenie.
 
-W PIERWSZEJ LINII wpisz etykietę (tylko jedną z trzech opcji):
+W PIERWSZEJ LINII wpisz etykietę (tylko jedną z czterech opcji):
    ### TEMAT: <temat>        (merytoryczna treść dokumentu)
+   ### ZRODLA: <opis>        (bibliografia lub lista cytowanych źródeł dotyczących dokumentu)
    ### REKLAMA: <opis>       (treść reklamowa lub sponsorska)
    ### SZUM: <opis>          (szum techniczny strony: nawigacja portalu, menu, stopka,
                               cookie/zgody, listy linków "przeczytaj też", przyciski udostępniania,
@@ -373,7 +375,7 @@ Jeśli fragment miesza szum z treścią merytoryczną — wybierz TEMAT.
 
 Jeśli TEMAT: w kolejnych liniach napisz streszczenie w 2-3 zdaniach po polsku,
 skupiając się na głównych tezach i wnioskach.
-Jeśli REKLAMA lub SZUM: nie dodawaj nic więcej.
+Jeśli ZRODLA, REKLAMA lub SZUM: nie dodawaj nic więcej.
 
 --- TEKST ---
 {original_text}

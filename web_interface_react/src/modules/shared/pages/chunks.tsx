@@ -29,9 +29,20 @@ interface Chunk {
   obsidian_note_paths?: string[];
   has_embeddings?: boolean | null;
   photo_caption_line_indices?: number[];
+  cited_publications?: CitedPublicationSummary[];
   // lite responses (big runs): texts stripped, preview + length instead
   text_length?: number | null;
   text_preview?: string | null;
+}
+
+interface CitedPublicationSummary {
+  id: number;
+  publication_id: number;
+  title: string | null;
+  pmid: string | null;
+  pmcid: string | null;
+  doi: string | null;
+  canonical_url: string;
 }
 
 interface Speaker {
@@ -97,12 +108,19 @@ interface CountryTag {
 interface DocQuality {
   score: number;
   penalties: Record<string, number>;
-  signals?: { photo_captions?: number; noise_share?: number; temat_chars?: number };
+  signals?: {
+    photo_captions?: number;
+    photo_caption_categories?: Record<string, number>;
+    photo_source_penalty_details?: Record<string, number>;
+    noise_share?: number;
+    temat_chars?: number;
+  };
   llm_rubric?: { zrodla: number; glebia: number; jezyk: number; uzasadnienie?: string } | null;
 }
 
 const QUALITY_PENALTY_LABELS: Record<string, string> = {
   photo_captions: "podpisy zdjęć",
+  photo_sources: "pochodzenie zdjęć",
   missing_author: "brak autora",
   noise_share: "udział reklam/szumu",
   short_text: "bardzo krótki tekst",
@@ -115,6 +133,22 @@ function qualityTooltip(q: DocQuality): string {
     ([key, pts]) => `−${pts}: ${QUALITY_PENALTY_LABELS[key] ?? key}`,
   );
   if (lines.length === 0) lines.push("bez zastrzeżeń");
+  const photoCategories = q.signals?.photo_caption_categories;
+  if (photoCategories && Object.keys(photoCategories).length > 0) {
+    const labels: Record<string, string> = {
+      own_or_private_archive: "własne/prywatne archiwum",
+      agency: "agencyjne",
+      creative_commons: "Creative Commons",
+      public_domain: "domena publiczna",
+      stock: "stockowe",
+      illustrative: "ilustracyjne",
+      image_credit: "inne podpisane",
+      other: "inne źródła",
+    };
+    lines.push(`Zdjęcia: ${Object.entries(photoCategories)
+      .map(([key, count]) => `${labels[key] ?? key}: ${count}`)
+      .join(", ")}`);
+  }
   if (q.llm_rubric) {
     lines.push(`LLM — źródła: ${q.llm_rubric.zrodla}/5, głębia: ${q.llm_rubric.glebia}/5, język: ${q.llm_rubric.jezyk}/5`);
     if (q.llm_rubric.uzasadnienie) lines.push(q.llm_rubric.uzasadnienie);
@@ -145,7 +179,7 @@ function runLabelText(r: AnalysisRun): string {
   return `#${r.id} — ${r.model} (${r.chunk_count} chunków, ${new Date(r.created_at).toLocaleString("pl")}) [${parts.join(", ")}]`;
 }
 
-type ChunkType = "TEMAT" | "REKLAMA" | "SZUM";
+type ChunkType = "TEMAT" | "ZRODLA" | "REKLAMA" | "SZUM";
 
 interface SplitState {
   segIdx: number;
@@ -155,9 +189,7 @@ interface SplitState {
 }
 
 interface LineSplitState {
-  lineIdx: number;
-  firstType: ChunkType;
-  secondType: ChunkType;
+  lineIndices: Set<number>;
 }
 
 interface SegGroup {
@@ -177,7 +209,7 @@ const MODELS = [
 ];
 
 const STATUS_CYCLE = ["pending", "approved", "needs_reanalysis"] as const;
-const TYPE_CYCLE: ChunkType[] = ["TEMAT", "REKLAMA", "SZUM"];
+const TYPE_CYCLE: ChunkType[] = ["TEMAT", "ZRODLA", "SZUM", "REKLAMA"];
 
 // Speaker self-introductions are expected near the start of a transcript, so the
 // per-chunk "detect speakers from just this chunk" button only appears on the
@@ -207,6 +239,7 @@ const DOC_TYPE_LABELS: Record<string, string> = {
 
 function typeColor(type: string | null): React.CSSProperties {
   switch (type) {
+    case "ZRODLA":  return { background: "#ede9fe", color: "#6d28d9" };
     case "REKLAMA": return { background: "#fee2e2", color: "#991b1b" };
     case "SZUM":    return { background: "#e5e7eb", color: "#4b5563" };
     default:        return { background: "#dbeafe", color: "#1d4ed8" };
@@ -326,14 +359,20 @@ const PlainTextLines: React.FC<{
   text: string;
   markedLines: Set<number>;
   photoCaptionLines: Set<number>;
-  splitLineIdx: number | null;
+  splitLineIndices: Set<number>;
   saving: boolean;
+  detectingAuthorLine: number | null;
   onToggleLine: (idx: number) => void;
   onMarkSplit: (idx: number) => void;
+  onDetectAuthor: (idx: number) => void;
+  onReplaceText: (text: string) => Promise<boolean>;
   onSave: (removeFromDocument: boolean) => void;
   onCancel: () => void;
-}> = ({ text, markedLines, photoCaptionLines, splitLineIdx, saving, onToggleLine, onMarkSplit, onSave, onCancel }) => {
+}> = ({ text, markedLines, photoCaptionLines, splitLineIndices, saving, detectingAuthorLine, onToggleLine, onMarkSplit, onDetectAuthor, onReplaceText, onSave, onCancel }) => {
   const [removeFromDoc, setRemoveFromDoc] = React.useState(true);
+  const [editingText, setEditingText] = React.useState(false);
+  const [draftText, setDraftText] = React.useState(text);
+  React.useEffect(() => { if (!editingText) setDraftText(text); }, [text, editingText]);
   if (!text) return <em style={{ color: "#94a3b8" }}>brak tekstu</em>;
   const lines = text.split("\n");
   const lineBtnStyle: React.CSSProperties = {
@@ -342,15 +381,36 @@ const PlainTextLines: React.FC<{
   };
   return (
     <div>
+      <div style={{ marginBottom: 8 }}>
+        <button type="button" onClick={() => { setDraftText(text); setEditingText(value => !value); }}
+          style={{ padding: "2px 9px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em", color: "#475569" }}>
+          {editingText ? "Anuluj edycję" : "✎ Edytuj linie"}
+        </button>
+      </div>
+      {editingText ? (
+        <div style={{ marginBottom: 10 }}>
+          <textarea value={draftText} onChange={e => setDraftText(e.target.value)} autoFocus
+            title="Enter tworzy nową linię; każda linia po zapisie dostanie osobne przyciski ×, ✂ i A"
+            style={{ width: "100%", minHeight: 180, boxSizing: "border-box", padding: 8, fontFamily: "inherit", fontSize: "1em", lineHeight: 1.55 }} />
+          <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
+            <button type="button" disabled={saving || !draftText.trim()} onClick={async () => {
+              if (await onReplaceText(draftText)) setEditingText(false);
+            }} style={{ padding: "3px 12px", background: "#0369a1", color: "#fff", border: "none", borderRadius: 3, cursor: "pointer", fontWeight: 600 }}>
+              {saving ? "Zapisuję…" : "Zapisz nowe linie"}
+            </button>
+            <span style={{ color: "#64748b", fontSize: "0.8em" }}>Enter dodaje linię. Po zapisie możesz użyć ✂ przy kilku liniach.</span>
+          </div>
+        </div>
+      ) : <>
       {lines.map((line, i) => {
         const marked = markedLines.has(i);
         const isPhotoCaption = photoCaptionLines.has(i);
-        const isSplitMark = splitLineIdx === i;
+        const isSplitMark = splitLineIndices.has(i);
         return (
           <div
             key={i}
             style={{
-              position: "relative", paddingLeft: 56, borderRadius: 2, minHeight: "1.4em",
+              position: "relative", paddingLeft: 82, borderRadius: 2, minHeight: "1.4em",
               ...(marked ? { background: "#fee2e2", textDecoration: "line-through", color: "#991b1b" } : {}),
               ...(!marked && isPhotoCaption ? { background: "#fefce8", borderLeft: "3px solid #eab308" } : {}),
               ...(isSplitMark ? { background: "#fff7ed", borderLeft: "3px solid #f97316" } : {}),
@@ -373,6 +433,14 @@ const PlainTextLines: React.FC<{
                   ✂
                 </button>
               )}
+              <button
+                onClick={() => onDetectAuthor(i)}
+                disabled={detectingAuthorLine !== null}
+                title="Wykryj autora z tej linii i sąsiednich zdań"
+                style={{ ...lineBtnStyle, color: "#7c3aed", fontWeight: "bold" }}
+              >
+                {detectingAuthorLine === i ? "…" : "A"}
+              </button>
             </span>
             <span style={{ whiteSpace: "pre-wrap" }}>{line || " "}</span>
             {isPhotoCaption && (
@@ -386,6 +454,7 @@ const PlainTextLines: React.FC<{
           </div>
         );
       })}
+      </>}
       {markedLines.size > 0 && (
         <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <button onClick={() => onSave(removeFromDoc)} disabled={saving}
@@ -425,9 +494,13 @@ const Chunks = () => {
   const [videoId, setVideoId]       = React.useState("");
   const [docType, setDocType]       = React.useState(initialDocType);
   const [docTitle, setDocTitle]     = React.useState("");
+  const [docAuthor, setDocAuthor]   = React.useState("");
+  const [authorPersonId, setAuthorPersonId] = React.useState<number | null>(null);
+  const [authorDescription, setAuthorDescription] = React.useState("");
   const [docUrl, setDocUrl]         = React.useState("");
   const [docQuality, setDocQuality] = React.useState<DocQuality | null>(null);
   const [computingQuality, setComputingQuality] = React.useState(false);
+  const [refreshingCitationsFor, setRefreshingCitationsFor] = React.useState<number | null>(null);
   const [reportingIssue, setReportingIssue] = React.useState(false);
   const [runMode, setRunMode]       = React.useState("transcript");
   const [speakers, setSpeakers]     = React.useState<Speaker[]>([]);
@@ -438,6 +511,7 @@ const Chunks = () => {
   const [applyingCleanup, setApplyingCleanup] = React.useState(false);
   const [jobStatus, setJobStatus]   = React.useState<string | null>(null);
   const [jobId, setJobId]           = React.useState<string | null>(null);
+  const jobPollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const [newModel, setNewModel]     = React.useState(MODELS[0]);
   const [newMode, setNewMode]       = React.useState("transcript");
   const [splitOnly, setSplitOnly]   = React.useState(false);
@@ -467,6 +541,7 @@ const Chunks = () => {
   const [extractingSpeakers, setExtractingSpeakers] = React.useState(false);
   const [extractingSpeakerFor, setExtractingSpeakerFor] = React.useState<number | null>(null);
   const [extractingAuthorFor, setExtractingAuthorFor] = React.useState<number | null>(null);
+  const [extractingAuthorLine, setExtractingAuthorLine] = React.useState<{ chunkId: number; lineIdx: number } | null>(null);
   const [runStatus, setRunStatus] = React.useState("created");
   const [synthesis, setSynthesis] = React.useState("");
   const [synthesisOpen, setSynthesisOpen] = React.useState(false);
@@ -549,6 +624,9 @@ const Chunks = () => {
       setVideoId(data.document?.original_id ?? "");
       setDocType(data.document?.document_type ?? "");
       setDocUrl(data.document?.url ?? "");
+      setDocAuthor(data.document?.author ?? "");
+      setAuthorPersonId(data.document?.author_person_id ?? null);
+      setAuthorDescription(data.document?.author_description ?? "");
       setDocQuality(data.document?.quality ?? null);
       setDocCountries(data.document?.countries ?? []);
       setDocThematicTags(data.document?.thematic_tags ?? []);
@@ -591,6 +669,7 @@ const Chunks = () => {
         if (data.document_type) setDocType(data.document_type);
         if (data.title) setDocTitle(data.title);
         if (data.url) setDocUrl(data.url);
+        if (data.author) setDocAuthor(data.author);
         if (data.quality) setDocQuality(data.quality);
       } catch { /* analysis can still be configured manually */ }
     })();
@@ -657,27 +736,57 @@ const Chunks = () => {
   // ── Job polling ──
 
   const pollJob = React.useCallback((jid: string) => {
-    const interval = setInterval(async () => {
+    if (jobPollRef.current) clearInterval(jobPollRef.current);
+    const check = async () => {
       try {
-        const r = await fetch(`${apiUrl}/analysis_job/${jid}`, { headers });
+        const r = await fetch(`${apiUrl}/analysis_job/${jid}`, {
+          headers: { "x-api-key": apiKey ?? "" },
+        });
         const data = await r.json();
-        setJobStatus(data.job?.status ?? data.status);
+        setJobStatus(data.job?.progress ?? data.job?.status ?? data.status);
         if (data.job?.status === "done") {
-          clearInterval(interval);
+          if (jobPollRef.current) clearInterval(jobPollRef.current);
+          jobPollRef.current = null;
           setJobId(null);
           await fetchRuns();
           if (data.job.run_id) setSelectedRun(data.job.run_id);
         } else if (data.job?.status === "failed") {
-          clearInterval(interval);
+          if (jobPollRef.current) clearInterval(jobPollRef.current);
+          jobPollRef.current = null;
           setJobId(null);
           setError("Analiza nie powiodła się: " + (data.job.error ?? ""));
         }
       } catch {
-        clearInterval(interval);
-        setJobId(null);
+        // A transient connection problem must not detach a persistent job.
+        setJobStatus("Oczekiwanie na backend…");
       }
-    }, 5000);
+    };
+    void check();
+    jobPollRef.current = setInterval(check, 5000);
   }, [apiUrl, apiKey, fetchRuns]);
+
+  React.useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(`${apiUrl}/document/${id}/analysis_job`, {
+          headers: { "x-api-key": apiKey ?? "" },
+        });
+        const data = await response.json();
+        if (!cancelled && data.job?.id) {
+          setJobId(data.job.id);
+          setJobStatus(data.job.progress ?? data.job.status);
+          pollJob(data.job.id);
+        }
+      } catch { /* Existing runs remain usable when queue status is unavailable. */ }
+    })();
+    return () => {
+      cancelled = true;
+      if (jobPollRef.current) clearInterval(jobPollRef.current);
+      jobPollRef.current = null;
+    };
+  }, [id, apiUrl, apiKey, pollJob]);
 
   // ── Analysis ──
 
@@ -884,12 +993,36 @@ const Chunks = () => {
     }
   };
 
+  const replaceChunkText = async (chunk: Chunk, text: string): Promise<boolean> => {
+    if (!text.trim() || text === (chunk.original_text ?? "")) return text === (chunk.original_text ?? "");
+    setSavingLines(prev => ({ ...prev, [chunk.id]: true }));
+    const res = await patchChunk(chunk.id, {
+      original_text: text,
+      ...(chunk.type === "TEMAT" ? { status: "needs_reanalysis" } : {}),
+    });
+    setSavingLines(prev => ({ ...prev, [chunk.id]: false }));
+    if (res?.status === "success") {
+      clearLineMarks(chunk.id);
+      setInfo(`Zapisano ręczną edycję linii w chunku #${chunk.position}.`);
+      return true;
+    }
+    setError("Nie udało się zapisać edycji linii.");
+    return false;
+  };
+
+  const saveAllVisibleLineRemovals = async () => {
+    const targets = visibleChunks.filter(c => (lineEdits[c.id]?.size ?? 0) > 0);
+    if (!targets.length) return;
+    for (const chunk of targets) await saveLineRemovals(chunk, true);
+    setInfo(`Zapisano usunięcie zaznaczonych linii w ${targets.length} widocznych chunkach.`);
+  };
+
   const markLineSplit = (chunkId: number, lineIdx: number) => {
     setLineSplitStates(prev => {
-      if (prev[chunkId]?.lineIdx === lineIdx) {
-        const n = { ...prev }; delete n[chunkId]; return n;  // click again = unmark
-      }
-      return { ...prev, [chunkId]: { lineIdx, firstType: "TEMAT", secondType: "TEMAT" } };
+      const indices = new Set(prev[chunkId]?.lineIndices ?? []);
+      if (indices.has(lineIdx)) indices.delete(lineIdx); else indices.add(lineIdx);
+      if (indices.size === 0) { const n = { ...prev }; delete n[chunkId]; return n; }
+      return { ...prev, [chunkId]: { lineIndices: indices } };
     });
   };
 
@@ -905,9 +1038,7 @@ const Chunks = () => {
       const r = await fetch(`${apiUrl}/chunk/${chunkId}/execute_split`, {
         method: "POST", headers,
         body: JSON.stringify({
-          split_at_line: st.lineIdx,
-          split_first_type: st.firstType,
-          split_second_type: st.secondType,
+          split_at_lines: [...st.lineIndices].sort((a, b) => a - b),
         }),
       });
       const data = await r.json();
@@ -1082,7 +1213,7 @@ const Chunks = () => {
   const applyCleanupAndResplit = async () => {
     if (selectedRun === null || applyingCleanup || jobId) return;
     if (!window.confirm(
-      "Nadpisać tekst źródłowy dokumentu treścią chunków TEMAT (REKLAMA/SZUM i usunięte linie znikną),\n"
+      "Nadpisać tekst źródłowy dokumentu treścią chunków TEMAT i ŹRÓDŁA (REKLAMA/SZUM i usunięte linie znikną),\n"
       + "a następnie zaproponować NOWY PODZIAŁ (bez analizy LLM)?\n"
       + "Analizę uruchomisz przyciskiem 'Analizuj chunki' po przejrzeniu podziału."
     )) return;
@@ -1178,11 +1309,34 @@ const Chunks = () => {
         body: JSON.stringify({ chunk_ids: [chunkId] }),
       });
       const data = await r.json();
-      if (data.status === "success" && data.author) setInfo(`Ustawiono autora: ${data.author}`);
+      if (data.status === "success" && data.author) {
+        setDocAuthor(data.author);
+        setInfo(`Ustawiono autora: ${data.author}`);
+      }
       else if (data.status === "success") setError("Nie udało się rozpoznać autora w tym chunku");
       else setError("Błąd wykrywania autora: " + (data.message ?? ""));
     } catch { setError("Błąd połączenia przy wykrywaniu autora"); }
     finally { setExtractingAuthorFor(null); }
+  };
+
+  const extractAuthorFromLine = async (chunk: Chunk, lineIdx: number) => {
+    if (!selectedRun) return;
+    const lines = (chunk.original_text ?? "").split("\n");
+    const contextText = lines.slice(Math.max(0, lineIdx - 2), lineIdx + 3).join("\n");
+    setExtractingAuthorLine({ chunkId: chunk.id, lineIdx });
+    setError("");
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}/extract_author`, {
+        method: "POST", headers, body: JSON.stringify({ context_text: contextText }),
+      });
+      const data = await r.json();
+      if (data.status === "success" && data.author) {
+        setDocAuthor(data.author);
+        setInfo(`Ustawiono autora: ${data.author}. Linię autora możesz teraz oznaczyć × i usunąć.`);
+      } else if (data.status === "success") setError("Nie udało się rozpoznać autora w tym kontekście");
+      else setError("Błąd wykrywania autora: " + (data.message ?? ""));
+    } catch { setError("Błąd połączenia przy wykrywaniu autora"); }
+    finally { setExtractingAuthorLine(null); }
   };
 
   // ── Quality (staranność) + extraction issue report ──
@@ -1202,6 +1356,25 @@ const Chunks = () => {
       } else { setError("Błąd oceny staranności: " + (data.message ?? "")); }
     } catch { setError("Błąd połączenia przy ocenie staranności"); }
     finally { setComputingQuality(false); }
+  };
+
+  const refreshCitedPublications = async (chunk: Chunk) => {
+    if (!id || refreshingCitationsFor !== null) return;
+    setRefreshingCitationsFor(chunk.id); setError("");
+    try {
+      const r = await fetch(`${apiUrl}/document/${id}/cited_publications`, {
+        method: "POST", headers, body: JSON.stringify({ chunk_ids: [chunk.id] }),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        const citations = (data.entries ?? []).filter((entry: { chunk_id?: number }) => entry.chunk_id === chunk.id);
+        setChunks(prev => prev.map(item => item.id === chunk.id
+          ? { ...item, cited_publications: citations } : item));
+        setInfo(`Z chunka #${chunk.position} zapisano ${data.refreshed_count} cytowanych publikacji; dokument ma łącznie ${data.count}.`);
+      }
+      else setError("Błąd zapisu cytowanych publikacji: " + (data.message ?? ""));
+    } catch { setError("Błąd połączenia przy zapisie cytowanych publikacji"); }
+    finally { setRefreshingCitationsFor(null); }
   };
 
   const reportExtractionIssue = async () => {
@@ -1291,6 +1464,7 @@ const Chunks = () => {
     !hiddenChunks.has(c.id) && (!hideAds || c.type === "TEMAT")
     && (!filterUnprocessed || (c.type === "TEMAT" && (c.obsidian_note_paths?.length ?? 0) === 0))
   );
+  const visibleMarkedLineCount = visibleChunks.reduce((sum, c) => sum + (lineEdits[c.id]?.size ?? 0), 0);
   const embeddedCount = tematChunks.filter(c => c.has_embeddings === true).length;
   const reviewReady = tematChunks.length > 0 && unapprovedTematCount === 0 && chunksToAnalyze.length === 0;
   const workflowBusy = !!jobId || reanalyzingAll || approvingAll || !!embedJobId;
@@ -1442,6 +1616,12 @@ const Chunks = () => {
                   {chunk.has_embeddings ? "🟢" : "⚪"}
                 </span>
               )}
+              {!!chunk.cited_publications?.length && (
+                <span title="Publikacje wykryte i zapisane z tego chunka"
+                  style={{ color: "#6d28d9", fontWeight: 600 }}>
+                  📚 {chunk.cited_publications.length}
+                </span>
+              )}
 
               {/* Edycja tematu */}
               <input
@@ -1497,6 +1677,16 @@ const Chunks = () => {
                   {extractingAuthorFor === chunk.id ? "✍️ Wykrywam…" : "✍️ Autor"}
                 </button>
               )}
+              {runMode === "article" && (
+                <button
+                  onClick={() => refreshCitedPublications(chunk)}
+                  disabled={refreshingCitationsFor !== null}
+                  title="Odczytaj PMID, PMCID i DOI tylko z tego chunka; publikacje zostaną przypisane do całego dokumentu"
+                  style={{ padding: "2px 8px", border: "1px solid #c4b5fd", borderRadius: 4, background: "#f5f3ff", cursor: "pointer", fontSize: "0.82em", color: "#6d28d9" }}
+                >
+                  {refreshingCitationsFor === chunk.id ? "📚 Zapisuję…" : "📚 Cytowania"}
+                </button>
+              )}
               {chunk.position < maxPosition && (
                 <button
                   onClick={() => mergeWithNext(chunk)}
@@ -1548,15 +1738,36 @@ const Chunks = () => {
                   text={chunk.original_text ?? ""}
                   markedLines={lineEdits[chunk.id] ?? new Set()}
                   photoCaptionLines={new Set(chunk.photo_caption_line_indices ?? [])}
-                  splitLineIdx={lineSplitStates[chunk.id]?.lineIdx ?? null}
+                  splitLineIndices={lineSplitStates[chunk.id]?.lineIndices ?? new Set()}
                   saving={savingLines[chunk.id] ?? false}
+                  detectingAuthorLine={extractingAuthorLine?.chunkId === chunk.id ? extractingAuthorLine.lineIdx : null}
                   onToggleLine={idx => toggleLineMark(chunk.id, idx)}
                   onMarkSplit={idx => markLineSplit(chunk.id, idx)}
+                  onDetectAuthor={idx => extractAuthorFromLine(chunk, idx)}
+                  onReplaceText={text => replaceChunkText(chunk, text)}
                   onSave={removeFromDoc => saveLineRemovals(chunk, removeFromDoc)}
                   onCancel={() => clearLineMarks(chunk.id)}
                 />
               )}
             </div>
+
+            {!!chunk.cited_publications?.length && (
+              <div style={{ margin: "0 14px 12px", padding: "8px 10px", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 5 }}>
+                <strong style={{ display: "block", color: "#6d28d9", fontSize: "0.8em", marginBottom: 5 }}>📚 Wykryte cytowane publikacje</strong>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {chunk.cited_publications.map(publication => {
+                    const identifier = publication.pmid ? `PMID ${publication.pmid}`
+                      : publication.pmcid ? publication.pmcid
+                      : publication.doi ? `DOI ${publication.doi}` : `publikacja #${publication.publication_id}`;
+                    return <a key={publication.id} href={publication.canonical_url} target="_blank" rel="noreferrer"
+                      title={publication.title || identifier}
+                      style={{ padding: "2px 7px", borderRadius: 4, background: "#fff", color: "#6d28d9", fontSize: "0.8em", fontWeight: 600 }}>
+                      {identifier} ↗
+                    </a>;
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Moje notatki do tego chunka */}
             {notesExpanded && myNotes.length > 0 && (
@@ -1587,6 +1798,7 @@ const Chunks = () => {
                       style={{ padding: "2px 6px", borderRadius: 3 }}>
                       <option value="REKLAMA">REKLAMA</option>
                       <option value="TEMAT">TEMAT</option>
+                      <option value="ZRODLA">ŹRÓDŁA</option>
                       <option value="SZUM">SZUM</option>
                     </select>
                   </label>
@@ -1595,6 +1807,7 @@ const Chunks = () => {
                       onChange={e => setSplitStates(prev => ({ ...prev, [chunk.id]: { ...prev[chunk.id], secondType: e.target.value as ChunkType } }))}
                       style={{ padding: "2px 6px", borderRadius: 3 }}>
                       <option value="TEMAT">TEMAT</option>
+                      <option value="ZRODLA">ŹRÓDŁA</option>
                       <option value="REKLAMA">REKLAMA</option>
                       <option value="SZUM">SZUM</option>
                     </select>
@@ -1615,26 +1828,9 @@ const Chunks = () => {
             {/* Panel podziału liniowego (chunki artykułowe) */}
             {lineSplitSt && (
               <div style={{ margin: "0 14px 14px", padding: "10px 12px", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 5, fontSize: "0.84em" }}>
-                <strong style={{ color: "#92400e" }}>✂ Punkt podziału: linia {lineSplitSt.lineIdx + 1} (zaczyna nowy chunk)</strong>
+                <strong style={{ color: "#92400e" }}>✂ Punkty podziału: {[...lineSplitSt.lineIndices].sort((a, b) => a - b).map(i => i + 1).join(", ")} ({lineSplitSt.lineIndices.size + 1} części)</strong>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-                  <label>Część 1 (przed):&nbsp;
-                    <select value={lineSplitSt.firstType}
-                      onChange={e => setLineSplitStates(prev => ({ ...prev, [chunk.id]: { ...prev[chunk.id], firstType: e.target.value as ChunkType } }))}
-                      style={{ padding: "2px 6px", borderRadius: 3 }}>
-                      <option value="TEMAT">TEMAT</option>
-                      <option value="REKLAMA">REKLAMA</option>
-                      <option value="SZUM">SZUM</option>
-                    </select>
-                  </label>
-                  <label>Część 2 (po):&nbsp;
-                    <select value={lineSplitSt.secondType}
-                      onChange={e => setLineSplitStates(prev => ({ ...prev, [chunk.id]: { ...prev[chunk.id], secondType: e.target.value as ChunkType } }))}
-                      style={{ padding: "2px 6px", borderRadius: 3 }}>
-                      <option value="TEMAT">TEMAT</option>
-                      <option value="REKLAMA">REKLAMA</option>
-                      <option value="SZUM">SZUM</option>
-                    </select>
-                  </label>
+                  <span>Wszystkie nowe części otrzymają typ TEMAT.</span>
                   <button onClick={() => confirmLineSplit(chunk.id)} disabled={confirmingLineSplit[chunk.id]}
                     style={{ padding: "3px 12px", background: "#f97316", color: "#fff", border: "none", borderRadius: 3, cursor: "pointer", fontWeight: "bold", fontSize: "0.82em" }}>
                     {confirmingLineSplit[chunk.id] ? "Dzielę…" : "Wykonaj podział"}
@@ -1644,7 +1840,7 @@ const Chunks = () => {
                     Anuluj
                   </button>
                 </div>
-                <div style={{ color: "#92400e", fontSize: "0.8em", marginTop: 4 }}>Kliknij ✂ przy innej linii aby zmienić punkt podziału. Części TEMAT dostaną status needs_reanalysis.</div>
+                <div style={{ color: "#92400e", fontSize: "0.8em", marginTop: 4 }}>Klikaj ✂ przy kolejnych liniach, aby dodać lub usunąć punkty. Części TEMAT dostaną status needs_reanalysis.</div>
               </div>
             )}
 
@@ -1686,6 +1882,15 @@ const Chunks = () => {
           Przegląd chunków — {docTitle || `dokument #${id}`}
           {docType && <span style={{ fontWeight: 400, color: "#64748b", fontSize: "0.7em" }}> ({DOC_TYPE_LABELS[docType] ?? docType}, #{id})</span>}
         </h2>
+        {runMode === "article" && (
+          <span style={{ fontSize: "0.88em", padding: "3px 9px", borderRadius: 4, background: docAuthor ? "#f3e8ff" : "#f1f5f9", color: docAuthor ? "#6b21a8" : "#64748b" }}>
+            Autor: {docAuthor && authorPersonId
+              ? <NavLink to={`/persons/${authorPersonId}`} target="_blank" rel="noreferrer"
+                  title={authorDescription || "Podsumowanie autora i jego artykuły — otwórz w nowej karcie"}
+                  style={{ color: "inherit", fontWeight: 700 }}>{docAuthor}</NavLink>
+              : <strong>{docAuthor || "nie wykryto"}</strong>}
+          </span>
+        )}
         {EDITOR_TYPES.includes(docType) ? (
           <NavLink to={`/${docType}/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Edytuj dokument</NavLink>
         ) : (
@@ -1704,15 +1909,15 @@ const Chunks = () => {
           style={{ padding: "3px 9px", border: "1px solid #bae6fd", borderRadius: 4, background: "#f0f9ff", cursor: "pointer", fontSize: "0.82em", color: "#0369a1", fontWeight: 600 }}>
           {loadingNextDocument ? "Szukam…" : "Następny do analizy →"}
         </button>
-        {docQuality && (
+        {runMode === "article" && (
           <span
-            title={qualityTooltip(docQuality)}
+            title={docQuality ? qualityTooltip(docQuality) : "Ocena nie została jeszcze wyliczona dla tego dokumentu"}
             style={{
               fontSize: "0.8em", fontWeight: 700, padding: "2px 9px", borderRadius: 10,
-              cursor: "help", ...qualityColors(docQuality.score),
+              cursor: "help", ...(docQuality ? qualityColors(docQuality.score) : { background: "#f1f5f9", color: "#64748b" }),
             }}
           >
-            ⚖ {docQuality.score}/100
+            ⚖ Staranność: {docQuality ? `${docQuality.score}/100` : "nie oceniono"}
           </span>
         )}
         {runMode === "article" && selectedRun !== null && (
@@ -1925,7 +2130,7 @@ const Chunks = () => {
                   ...(runMode === "article" ? [{
                     label: "Wykrywanie reklam i szumu",
                     done: noiseMarkingDone,
-                    detail: reklamaCount > 0 ? `${reklamaCount} REKLAMA/SZUM` : noiseMarkingDone ? "nie wykryto" : "oczekuje",
+                    detail: reklamaCount > 0 ? `${reklamaCount} poza TEMAT` : noiseMarkingDone ? "nie wykryto" : "oczekuje",
                   }] : []),
                   {
                     label: "Analiza LLM (tematy i streszczenia)",
@@ -2092,7 +2297,7 @@ const Chunks = () => {
           <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginTop: 9, color: "#475569", fontSize: "0.86em" }}>
             <span><strong>{embeddedCount}</strong> chunków TEMAT z embeddingami</span>
             <span><strong>{approvedCount}</strong> zatwierdzonych</span>
-            <span><strong>{reklamaCount}</strong> REKLAMA/SZUM pominiętych</span>
+            <span><strong>{reklamaCount}</strong> poza TEMAT pominiętych</span>
             <span>run <strong>#{selectedRun}</strong></span>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 13 }}>
@@ -2124,7 +2329,7 @@ const Chunks = () => {
         <div style={{ marginBottom: 12, padding: "8px 14px", background: "#0f172a", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ color: "#94a3b8", fontSize: "0.82em" }}>
             TEMAT: {approvedCount}/{tematChunks.length} zatwierdzonych ({pct}%)
-            {reklamaCount > 0 && ` • ${reklamaCount} reklam/szum${hideAds ? " (ukryte)" : ""}`}
+            {reklamaCount > 0 && ` • ${reklamaCount} poza TEMAT${hideAds ? " (ukryte)" : ""}`}
           </span>
           <div style={{ flex: 1, minWidth: 80, background: "#334155", borderRadius: 4, height: 8 }}>
             <div style={{ width: `${pct}%`, height: 8, background: "#22c55e", borderRadius: 4, transition: "width .3s" }} />
@@ -2144,13 +2349,20 @@ const Chunks = () => {
           {reklamaCount > 0 && (visibleReklamaCount > 0 || hideAds) && (
             <button className="button" onClick={() => setHideAds(h => !h)}
               style={{ fontSize: "0.8em", padding: "3px 10px", background: hideAds ? "#475569" : "#b91c1c", color: "#fff", border: "none" }}>
-              {hideAds ? `Pokaż reklamy i szum (${reklamaCount})` : `Ukryj reklamy i szum (${visibleReklamaCount})`}
+              {hideAds ? `Pokaż fragmenty poza TEMAT (${reklamaCount})` : `Ukryj fragmenty poza TEMAT (${visibleReklamaCount})`}
             </button>
           )}
           {hiddenChunks.size > 0 && (
             <button className="button" onClick={() => setHiddenChunks(new Set())}
               style={{ fontSize: "0.8em", padding: "3px 10px", background: "#0369a1", color: "#fff", border: "none" }}>
               Pokaż ukryte ({hiddenChunks.size})
+            </button>
+          )}
+          {visibleMarkedLineCount > 0 && (
+            <button className="button" onClick={saveAllVisibleLineRemovals}
+              title="Usuń zaznaczone linie ze wszystkich obecnie widocznych chunków i z dokumentu źródłowego"
+              style={{ fontSize: "0.8em", padding: "3px 10px", background: "#b91c1c", color: "#fff", border: "none" }}>
+              Usuń zaznaczone we wszystkich widocznych ({visibleMarkedLineCount})
             </button>
           )}
           <label style={{ fontSize: "0.8em", color: "#94a3b8", display: "flex", alignItems: "center", gap: 4 }}
@@ -2214,7 +2426,7 @@ const Chunks = () => {
           </summary>
           <div style={{ marginTop: 9 }}>
             <button className="button" onClick={applyCleanupAndResplit} disabled={applyingCleanup || workflowBusy}
-              title="Trwale nadpisuje tekst źródłowy treścią chunków TEMAT, usuwa REKLAMA/SZUM i tworzy nowy run"
+              title="Trwale nadpisuje tekst źródłowy treścią chunków TEMAT i ŹRÓDŁA, usuwa REKLAMA/SZUM i tworzy nowy run"
               style={{ fontSize: "0.82em", background: "#7c3aed", color: "#fff", border: "none", padding: "5px 10px" }}>
               {applyingCleanup ? "Stosuję czyszczenie…" : "Zastosuj czyszczenie do tekstu źródłowego i utwórz nowy run"}
             </button>

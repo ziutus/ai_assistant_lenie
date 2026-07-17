@@ -172,14 +172,55 @@ class TestComputeQuality:
         assert q["penalties"]["missing_author"] == 10
         assert q["score"] == 90
 
-    def test_photo_caption_penalty_capped(self):
+    def test_stock_photo_source_penalty_capped(self):
         captions = "\n".join(["Fot. X / shutterstock"] * 5)
         secs = self._sections() + [{"type": "TEMAT", "original": captions}]
         q = compute_quality(_Doc(author="A", title="T"), secs, model=None)
-        assert q["penalties"]["photo_captions"] == 15  # cap, nie 25
+        assert q["penalties"]["photo_sources"] == 15
         assert q["signals"]["photo_captions"] == 5
-        assert q["signals"]["photo_caption_categories"] == {"agency_or_stock": 5}
+        assert q["signals"]["photo_caption_categories"] == {"stock": 5}
+        assert q["signals"]["photo_source_penalty_details"] == {"stock": 15}
         assert len(q["signals"]["photo_caption_lines"]) == 5
+
+    def test_photo_sources_are_weighted_by_provenance(self):
+        captions = "\n".join([
+            "Fot. Anna Nowak / archiwum prywatne",
+            "Wu Hong / PAP",
+            "Domena Publiczna/wikimedia",
+            "Zdjęcie ilustracyjne / Shutterstock",
+        ])
+        secs = self._sections() + [{"type": "TEMAT", "original": captions}]
+        q = compute_quality(_Doc(author="A", title="T"), secs, model=None)
+
+        assert q["penalties"]["photo_sources"] == 6  # 0 + 1 + 2 + 3
+        assert q["signals"]["photo_caption_categories"] == {
+            "own_or_private_archive": 1,
+            "agency": 1,
+            "public_domain": 1,
+            "illustrative": 1,
+        }
+        assert q["signals"]["photo_source_penalty_details"] == {
+            "agency": 1, "public_domain": 2, "illustrative": 3,
+        }
+
+    def test_own_photo_source_is_not_penalized(self):
+        secs = self._sections() + [{
+            "type": "TEMAT", "original": "Fot. Anna Nowak / archiwum prywatne",
+        }]
+        q = compute_quality(_Doc(author="Anna Nowak", title="T"), secs, model=None)
+
+        assert "photo_sources" not in q["penalties"]
+        assert q["signals"]["photo_caption_categories"] == {"own_or_private_archive": 1}
+
+    def test_image_description_is_not_treated_as_a_photo_source(self):
+        secs = self._sections() + [{
+            "type": "TEMAT",
+            "original": "[img1: Prezydent podczas konferencji]\nPrezydent podczas konferencji",
+        }]
+        q = compute_quality(_Doc(author="A", title="T"), secs, model=None)
+
+        assert "photo_sources" not in q["penalties"]
+        assert q["signals"]["photo_captions"] == 0
 
     def test_noise_share_penalty(self):
         secs = [
@@ -214,3 +255,46 @@ class TestComputeQuality:
         q = compute_quality(_Doc(author="A", title="T"), self._sections(), model=None)
         assert set(q) == {"score", "penalties", "signals", "llm_rubric", "model", "computed_at"}
         assert q["model"] is None
+
+    def test_separate_citations_chunk_sets_sources_floor(self, monkeypatch):
+        monkeypatch.setattr(
+            "library.article_quality._llm_rubric",
+            lambda text, model, cited: {
+                "zrodla": 0, "glebia": 0, "jezyk": 3,
+                "uzasadnienie": "Model nie zauważył wydzielonej listy.",
+            },
+        )
+        sections = self._sections() + [{
+            "type": "SZUM",
+            "original": "\n".join([
+                "https://pmc.ncbi.nlm.nih.gov/articles/PMC8431537/",
+                "https://pubmed.ncbi.nlm.nih.gov/30485934/",
+                "https://pubmed.ncbi.nlm.nih.gov/21188562/",
+            ]),
+        }]
+        q = compute_quality(_Doc(author="A", title="T"), sections, model="test-model")
+
+        assert q["signals"]["cited_publications"] == 3
+        assert q["llm_rubric"]["zrodla"] == 4
+        assert q["penalties"]["llm_rubric"] == 16
+
+    def test_references_chunk_is_not_penalized_as_noise(self):
+        sections = self._sections() + [{
+            "type": "SZUM",
+            "original": "Źródła:\nhttps://pubmed.ncbi.nlm.nih.gov/30485934/",
+        }]
+        q = compute_quality(_Doc(author="A", title="T"), sections, model=None)
+
+        assert "noise_share" not in q["penalties"]
+        assert q["signals"]["noise_share"] == 0
+        assert q["signals"]["reference_chars"] > 0
+
+    def test_explicit_zrodla_type_needs_no_heading_heuristic(self):
+        sections = self._sections() + [{
+            "type": "ZRODLA",
+            "original": "PMID 30485934",
+        }]
+        q = compute_quality(_Doc(author="A", title="T"), sections, model=None)
+
+        assert "noise_share" not in q["penalties"]
+        assert q["signals"]["reference_chars"] == len("PMID 30485934")

@@ -88,6 +88,22 @@ def article_env(monkeypatch, session):
 
 
 class TestSzumType:
+    def test_parse_zrodla_header(self):
+        from library.chunk_llm_analysis import parse_rewritten_chunk
+        chunk_type, topic, rest = parse_rewritten_chunk("### ZRODLA: publikacje naukowe\n")
+        assert chunk_type == "ZRODLA"
+        assert topic == "publikacje naukowe"
+        assert rest == ""
+
+    def test_cleanup_range_parser_accepts_zrodla(self):
+        rows = llm._parse_cleanup_ranges(
+            '[{"start_line": 2, "end_line": 4, "type": "ZRODLA", "reason": "bibliografia"}]',
+            5,
+        )
+        assert rows == [{
+            "start_line": 2, "end_line": 4, "type": "ZRODLA", "reason": "bibliografia",
+        }]
+
     def test_cleanup_range_parser_clamps_and_ignores_temat(self):
         rows = llm._parse_cleanup_ranges(
             '[{"start_line": 0, "end_line": 2, "type": "SZUM", "reason": "menu"}, '

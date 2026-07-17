@@ -68,6 +68,50 @@ interface InformationSourceLink {
   evidence_excerpt: string | null;
 }
 
+interface CitedPublicationLink {
+  id: number;
+  publication_id: number;
+  title: string | null;
+  pmid: string | null;
+  pmcid: string | null;
+  doi: string | null;
+  canonical_url: string;
+  raw_citation: string;
+}
+
+interface DocQuality {
+  score: number;
+  penalties: Record<string, number>;
+  llm_rubric?: { zrodla: number; glebia: number; jezyk: number; uzasadnienie?: string } | null;
+}
+
+const QUALITY_PENALTY_LABELS: Record<string, string> = {
+  photo_captions: "podpisy zdjęć",
+  missing_author: "brak autora",
+  noise_share: "udział reklam/szumu",
+  short_text: "bardzo krótki tekst",
+  clickbait_title: "clickbaitowy tytuł",
+  llm_rubric: "rubryka LLM (źródła/głębia/język)",
+};
+
+function qualityTooltip(q: DocQuality): string {
+  const lines = Object.entries(q.penalties ?? {}).map(
+    ([key, pts]) => `−${pts}: ${QUALITY_PENALTY_LABELS[key] ?? key}`,
+  );
+  if (lines.length === 0) lines.push("bez zastrzeżeń");
+  if (q.llm_rubric) {
+    lines.push(`LLM — źródła: ${q.llm_rubric.zrodla}/5, głębia: ${q.llm_rubric.glebia}/5, język: ${q.llm_rubric.jezyk}/5`);
+    if (q.llm_rubric.uzasadnienie) lines.push(q.llm_rubric.uzasadnienie);
+  }
+  return lines.join("\n");
+}
+
+function qualityColors(score: number): React.CSSProperties {
+  if (score >= 75) return { background: "#dcfce7", color: "#15803d" };
+  if (score >= 50) return { background: "#fef3c7", color: "#b45309" };
+  return { background: "#fee2e2", color: "#b91c1c" };
+}
+
 const SOURCE_ROLE_LABELS: Record<string, string> = {
   publisher: "Publikacja",
   original_reporting: "Źródło ustaleń",
@@ -335,6 +379,8 @@ const Read: React.FC = () => {
   const [thematicTags, setThematicTags] = React.useState<string[]>([]);
   const [synthesis, setSynthesis] = React.useState<string | null>(null);
   const [informationSources, setInformationSources] = React.useState<InformationSourceLink[]>([]);
+  const [citedPublications, setCitedPublications] = React.useState<CitedPublicationLink[]>([]);
+  const [docQuality, setDocQuality] = React.useState<DocQuality | null>(null);
   const [content, setContent] = React.useState<ChapterContent | null>(null);
   // sidebar scope: current chapter (default) vs whole document
   const [scopeChapter, setScopeChapter] = React.useState(true);
@@ -402,6 +448,7 @@ const Read: React.FC = () => {
         setCountries(data.countries ?? []);
         setThematicTags(data.thematic_tags ?? []);
         setSynthesis(data.synthesis ?? null);
+        setDocQuality(data.quality ?? null);
       } catch (e) {
         setError(String(e));
       }
@@ -418,6 +465,16 @@ const Read: React.FC = () => {
       } catch {
         // Provenance enriches the reader but must not block document reading.
       }
+    })();
+  }, [apiUrl, id, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const response = await fetch(`${apiUrl}/document/${id}/cited_publications`, { headers });
+        const data = await response.json();
+        if (data.status === "success") setCitedPublications(data.entries ?? []);
+      } catch { /* Citations are optional reader enrichment. */ }
     })();
   }, [apiUrl, id, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -758,6 +815,17 @@ const Read: React.FC = () => {
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Czytelnik — dokument #{id}</h2>
+        {docQuality && (
+          <span
+            title={qualityTooltip(docQuality)}
+            style={{
+              fontSize: "0.8em", fontWeight: 700, padding: "2px 9px", borderRadius: 10,
+              cursor: "help", ...qualityColors(docQuality.score),
+            }}
+          >
+            ⚖ Staranność: {docQuality.score}/100
+          </span>
+        )}
         {chapters.length > 1 && (
           <button className={styles.tocToggleButton} onClick={() => setTocOpen(o => !o)}>
             📑 Spis treści ({chapters.length})
@@ -984,6 +1052,22 @@ const Read: React.FC = () => {
                     )}
                   </div>
                 ))}
+              </div>
+            )}
+            {citedPublications.length > 0 && (
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: 10, marginTop: 12 }}>
+                <strong style={{ fontSize: "0.85em", display: "block", marginBottom: 8 }}>📚 Cytowane publikacje</strong>
+                {citedPublications.map(publication => {
+                  const identifier = publication.pmid ? `PMID ${publication.pmid}`
+                    : publication.pmcid ? publication.pmcid
+                    : publication.doi ? `DOI ${publication.doi}` : "Publikacja";
+                  return <div key={publication.id} style={{ marginTop: 7, fontSize: "0.8em" }}>
+                    <a href={publication.canonical_url} target="_blank" rel="noreferrer" style={{ color: "#6d28d9", fontWeight: 600 }}>
+                      {publication.title || identifier} ↗
+                    </a>
+                    {publication.title && <div style={{ color: "#64748b" }}>{identifier}</div>}
+                  </div>;
+                })}
               </div>
             )}
             {(shownCountries.length > 0 || shownMarkers.length > 0 || shownPipelines.length > 0) && (

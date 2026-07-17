@@ -15,7 +15,7 @@ from library.models.stalker_document_type import StalkerDocumentType
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.api_key_routes import bp as api_key_bp
 from library.auth import resolve_api_key
-from library.chunk_review_routes import bp as chunk_review_bp
+from library.chunk_review_routes import bp as chunk_review_bp, start_analysis_worker
 from library.reader_routes import bp as reader_bp
 from library.youtube_processing import process_youtube_url
 
@@ -86,6 +86,7 @@ CORS(app)  # This will enable CORS for all routes
 app.register_blueprint(chunk_review_bp)
 app.register_blueprint(reader_bp)
 app.register_blueprint(api_key_bp)
+start_analysis_worker()
 
 
 @app.teardown_appcontext
@@ -589,9 +590,9 @@ def person_documents():
             "id": link.document.id, "title": link.document.title,
             "document_type": link.document.document_type,
             "raw_mention": link.raw_mention, "confidence": link.confidence,
-            "mention_count": mention_count,
+            "mention_count": mention_count, "role": link.role,
         })
-    documents.sort(key=lambda d: -d["mention_count"])
+    documents.sort(key=lambda d: (d["role"] != "author", -d["mention_count"]))
     return {
         "status": "success",
         "person": {"id": person.id, "canonical_name": person.canonical_name,
@@ -812,6 +813,71 @@ def document_information_sources(doc_id: int):
         "review_status": link.review_status,
     } for link in links]
     return {"status": "success", "count": len(entries), "entries": entries}, 200
+
+
+@app.route('/document/<int:doc_id>/cited_publications', methods=['GET', 'POST'])
+def document_cited_publications(doc_id: int):
+    """List citations or refresh them from the latest reviewed chunk text."""
+    from sqlalchemy import select
+    from library.db.models import (
+        CitedPublication, DocumentAnalysisRun, DocumentChunk, DocumentCitedPublication,
+    )
+
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        chunk_ids = data.get("chunk_ids")
+        replace_document = True
+        if chunk_ids is not None:
+            if not isinstance(chunk_ids, list) or not chunk_ids or not all(isinstance(value, int) for value in chunk_ids):
+                return {"status": "error", "message": "chunk_ids must be a non-empty list of integers"}, 400
+            wanted = set(chunk_ids)
+            selected_chunks = session.scalars(select(DocumentChunk).where(
+                DocumentChunk.document_id == doc_id, DocumentChunk.id.in_(wanted),
+            ).order_by(DocumentChunk.position)).all()
+            if len(selected_chunks) != len(wanted):
+                return {"status": "error", "message": "One or more chunks do not belong to this document"}, 400
+            replace_document = False
+        else:
+            run = session.scalar(select(DocumentAnalysisRun).where(
+                DocumentAnalysisRun.document_id == doc_id
+            ).order_by(DocumentAnalysisRun.created_at.desc()))
+            if run is None:
+                return {"status": "error", "message": "Document has no analysis run"}, 400
+            selected_chunks = list(run.chunks)
+        try:
+            from library.cited_publications import refresh_document_cited_publications
+            result = refresh_document_cited_publications(
+                session, doc_id, selected_chunks, replace_document=replace_document,
+            )
+            session.commit()
+        except Exception:
+            session.rollback()
+            logging.exception("cited publication refresh failed for document %s", doc_id)
+            return {"status": "error", "message": "Citation refresh failed"}, 500
+
+    rows = session.execute(select(DocumentCitedPublication, CitedPublication).join(
+        CitedPublication, CitedPublication.id == DocumentCitedPublication.publication_id
+    ).where(DocumentCitedPublication.document_id == doc_id).order_by(
+        DocumentCitedPublication.id
+    )).all()
+    entries = [{
+        "id": link.id, "publication_id": publication.id,
+        "title": publication.title, "journal": publication.journal,
+        "publication_year": publication.publication_year,
+        "doi": publication.doi, "pmid": publication.pmid, "pmcid": publication.pmcid,
+        "canonical_url": publication.canonical_url, "chunk_id": link.chunk_id,
+        "raw_citation": link.raw_citation, "evidence_excerpt": link.evidence_excerpt,
+        "review_status": link.review_status,
+    } for link, publication in rows]
+    response = {"status": "success", "count": len(entries), "entries": entries}
+    if request.method == 'POST':
+        response["refreshed_count"] = len(result["publications"])
+        response["scanned_chunk_ids"] = [chunk.id for chunk in selected_chunks]
+    return response, 200
 
 
 def _decide_person_link(link_id: int, require_review: bool):

@@ -29,11 +29,12 @@ from collections import Counter
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, abort
-from sqlalchemy import func, or_, select, update as sa_update
+from sqlalchemy import func, or_, select, text as sa_text, update as sa_update
 
 from library.db.engine import get_scoped_session
 from library.db.models import (
-    DocumentAnalysisRun, DocumentChunk, DocumentRemovedLine, DocumentTopicSection,
+    CitedPublication, DocumentAnalysisJob, DocumentAnalysisRun, DocumentChunk, DocumentCitedPublication,
+    DocumentPerson, DocumentRemovedLine, DocumentTopicSection, Person,
     WebDocument, WebsiteEmbedding,
 )
 
@@ -41,17 +42,161 @@ logger = logging.getLogger(__name__)
 
 bp = Blueprint("chunk_review", __name__)
 
-# In-memory job registry for async analysis runs.
-# Keyed by job_id (short UUID). Lives as long as the server process.
-_analysis_jobs: dict[str, dict] = {}
+_analysis_worker_lock = threading.Lock()
+_analysis_worker_started = False
+_analysis_worker_wakeup = threading.Event()
 
 # In-memory job registry for async embedding-generation runs (separate from
 # _analysis_jobs — different job shape, polled via /embedding_job/<job_id>).
 _embedding_jobs: dict[str, dict] = {}
 
 ALLOWED_STATUSES = {"pending", "approved", "needs_reanalysis", "split_requested", "split", "skipped"}
-ALLOWED_TYPES = {"TEMAT", "REKLAMA", "SZUM"}
+ALLOWED_TYPES = {"TEMAT", "ZRODLA", "REKLAMA", "SZUM"}
 ALLOWED_RUN_STATUSES = {"created", "in_review", "reviewed", "superseded"}
+
+
+def _analysis_job_dict(job: DocumentAnalysisJob) -> dict:
+    params = job.parameters or {}
+    return {
+        "id": job.id, "status": job.status, "doc_id": job.document_id,
+        "run_id": job.run_id, "model": params.get("model"), "mode": params.get("mode"),
+        "chunk_count": job.chunk_count, "ad_count": job.ad_count,
+        "topic_section_count": job.topic_section_count, "progress": job.progress,
+        "error": job.error,
+        "created_at": job.created_at.isoformat() if job.created_at else None,
+        "started_at": job.started_at.isoformat() if job.started_at else None,
+        "finished_at": job.finished_at.isoformat() if job.finished_at else None,
+    }
+
+
+def _update_analysis_job(job_id: str, **values) -> None:
+    """Commit a small progress/status update from the worker."""
+    from library.db.engine import get_session
+
+    session = get_session()
+    try:
+        job = session.get(DocumentAnalysisJob, job_id)
+        if job is not None:
+            for key, value in values.items():
+                setattr(job, key, value)
+            session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("failed to update persistent analysis job %s", job_id)
+    finally:
+        session.close()
+
+
+def _analysis_worker() -> None:
+    """Process persistent analysis jobs sequentially."""
+    from library.db.engine import get_session
+    from library.document_analysis_service import DocumentAnalysisService
+
+    # Flask's debug reloader (and a future multi-worker WSGI deployment) may
+    # import this module in more than one process. A session-level PostgreSQL
+    # advisory lock elects exactly one queue coordinator across all of them.
+    coordinator = get_session()
+    try:
+        is_owner = coordinator.scalar(sa_text("SELECT pg_try_advisory_lock(92440017)"))
+    except Exception:
+        coordinator.close()
+        logger.exception("analysis queue coordinator election failed")
+        return
+    if not is_owner:
+        coordinator.close()
+        logger.info("analysis queue worker inactive; another process owns the coordinator lock")
+        return
+    logger.info("analysis queue coordinator lock acquired")
+
+    # A process restart interrupts Python work. Put such rows back in the queue;
+    # create_run owns its transaction and supersedes any partial predecessor.
+    recovery = get_session()
+    try:
+        recovery.query(DocumentAnalysisJob).filter(
+            DocumentAnalysisJob.status == "running"
+        ).update({
+            DocumentAnalysisJob.status: "queued",
+            DocumentAnalysisJob.progress: "Wznowiono po restarcie backendu",
+            DocumentAnalysisJob.started_at: None,
+        })
+        recovery.commit()
+    except Exception:
+        recovery.rollback()
+        logger.exception("analysis queue recovery failed")
+    finally:
+        recovery.close()
+
+    while True:
+        claim = get_session()
+        job_id = None
+        params: dict = {}
+        doc_id = None
+        try:
+            job = claim.scalars(
+                select(DocumentAnalysisJob)
+                .where(DocumentAnalysisJob.status == "queued")
+                .order_by(DocumentAnalysisJob.created_at)
+                .with_for_update(skip_locked=True)
+                .limit(1)
+            ).first()
+            if job is not None:
+                job.status = "running"
+                job.started_at = datetime.utcnow()
+                job.progress = "Startowanie..."
+                job.error = None
+                job_id, doc_id, params = job.id, job.document_id, dict(job.parameters or {})
+                claim.commit()
+        except Exception:
+            claim.rollback()
+            logger.exception("analysis queue claim failed")
+        finally:
+            claim.close()
+
+        if job_id is None:
+            _analysis_worker_wakeup.wait(5)
+            _analysis_worker_wakeup.clear()
+            continue
+
+        work = get_session()
+        try:
+            service = DocumentAnalysisService(work)
+            run = service.create_run(
+                doc_id=doc_id,
+                model=params["model"], chunk_size=params["chunk_size"],
+                no_synthesis=params["no_synthesis"],
+                progress_fn=lambda msg: _update_analysis_job(job_id, progress=msg),
+                mode=params["mode"], split_only=params["split_only"],
+                preclean=params["preclean"], reclean=params["reclean"],
+                scope_chapter=params.get("scope_chapter"),
+            )
+            ad_count = sum(1 for chunk in run.chunks if chunk.type == "REKLAMA")
+            _update_analysis_job(
+                job_id, status="done", run_id=run.id,
+                chunk_count=len(run.chunks), ad_count=ad_count,
+                topic_section_count=len(run.topic_sections),
+                progress=f"Gotowe: {len(run.chunks)} chunków, {len(run.topic_sections)} sekcji",
+                finished_at=datetime.utcnow(),
+            )
+        except Exception as exc:
+            logger.exception("background analysis failed for doc %s", doc_id)
+            _update_analysis_job(
+                job_id, status="failed", error=str(exc),
+                progress="Analiza nie powiodła się", finished_at=datetime.utcnow(),
+            )
+        finally:
+            work.close()
+
+
+def start_analysis_worker() -> None:
+    """Start the process-local queue worker once (safe to call repeatedly)."""
+    global _analysis_worker_started
+    with _analysis_worker_lock:
+        if _analysis_worker_started:
+            return
+        _analysis_worker_started = True
+        threading.Thread(
+            target=_analysis_worker, daemon=True, name="document-analysis-worker",
+        ).start()
 
 
 def _start_embedding_job(run_id: int) -> str:
@@ -223,63 +368,36 @@ def analyze_document_chunks(doc_id: int):
         if mode != "article":
             return jsonify({"status": "error", "message": "scope_chapter requires article mode"}), 400
 
-    job_id = uuid.uuid4().hex[:8]
-    _analysis_jobs[job_id] = {
-        "status": "running",
-        "doc_id": doc_id,
-        "model": model,
-        "mode": mode,
-        "run_id": None,
-        "chunk_count": None,
-        "ad_count": None,
-        "topic_section_count": None,
-        "error": None,
-        "progress": "Startowanie...",
-    }
+    session = get_scoped_session()
+    if session.get(WebDocument, doc_id) is None:
+        abort(404, f"Document {doc_id} not found")
+    active = session.scalars(
+        select(DocumentAnalysisJob).where(
+            DocumentAnalysisJob.document_id == doc_id,
+            DocumentAnalysisJob.status.in_(("queued", "running")),
+        ).order_by(DocumentAnalysisJob.created_at.desc()).limit(1)
+    ).first()
+    if active is not None:
+        return jsonify({
+            "status": "already_active", "job_id": active.id, "doc_id": doc_id,
+            "job": _analysis_job_dict(active),
+        })
 
-    def _run_analysis() -> None:
-        from library.db.engine import get_session
-        from library.document_analysis_service import DocumentAnalysisService
-
-        session = get_session()
-        try:
-            def _progress(msg: str) -> None:
-                _analysis_jobs[job_id]["progress"] = msg
-
-            service = DocumentAnalysisService(session)
-            run = service.create_run(
-                doc_id=doc_id,
-                model=model,
-                chunk_size=chunk_size,
-                no_synthesis=no_synthesis,
-                progress_fn=_progress,
-                mode=mode,
-                split_only=split_only,
-                preclean=preclean,
-                reclean=reclean,
-                scope_chapter=scope_chapter,
-            )
-            ad_count = sum(1 for c in run.chunks if c.type == "REKLAMA")
-            _analysis_jobs[job_id].update({
-                "status": "done",
-                "run_id": run.id,
-                "chunk_count": len(run.chunks),
-                "ad_count": ad_count,
-                "topic_section_count": len(run.topic_sections),
-                "progress": f"Gotowe: {len(run.chunks)} chunków, {len(run.topic_sections)} sekcji",
-            })
-        except ValueError as exc:
-            _analysis_jobs[job_id].update({"status": "failed", "error": str(exc)})
-        except Exception as exc:
-            logger.exception("background analysis failed for doc %d", doc_id)
-            _analysis_jobs[job_id].update({"status": "failed", "error": str(exc)})
-        finally:
-            session.close()
-
-    t = threading.Thread(target=_run_analysis, daemon=True, name=f"analysis-{job_id}")
-    t.start()
-
-    return jsonify({"status": "started", "job_id": job_id, "doc_id": doc_id})
+    job_id = uuid.uuid4().hex
+    session.add(DocumentAnalysisJob(
+        id=job_id, document_id=doc_id, status="queued",
+        parameters={
+            "model": model, "chunk_size": chunk_size,
+            "no_synthesis": no_synthesis, "mode": mode,
+            "split_only": split_only, "preclean": preclean,
+            "reclean": reclean, "scope_chapter": scope_chapter,
+        },
+        progress="Oczekuje w kolejce",
+    ))
+    session.commit()
+    start_analysis_worker()
+    _analysis_worker_wakeup.set()
+    return jsonify({"status": "queued", "job_id": job_id, "doc_id": doc_id})
 
 
 @bp.route("/document/<int:doc_id>/split_preview", methods=["GET"])
@@ -576,6 +694,7 @@ def document_chapters(doc_id: int):
         "countries": countries,
         "thematic_tags": thematic_tags,
         "synthesis": doc_run.synthesis if doc_run else None,
+        "quality": getattr(doc, "quality", None),
     })
 
 
@@ -840,11 +959,34 @@ def document_entity_occurrences(doc_id: int):
 
 @bp.route("/analysis_job/<job_id>", methods=["GET"])
 def get_analysis_job(job_id: str):
-    """Poll status of an async analysis job started by POST /document/<id>/analyze_chunks."""
-    job = _analysis_jobs.get(job_id)
+    """Poll a persistent analysis job."""
+    session = get_scoped_session()
+    job = session.get(DocumentAnalysisJob, job_id)
     if job is None:
         return jsonify({"status": "error", "message": "Job not found"}), 404
-    return jsonify({"status": "success", "job": job})
+    start_analysis_worker()
+    return jsonify({"status": "success", "job": _analysis_job_dict(job)})
+
+
+@bp.route("/document/<int:doc_id>/analysis_job", methods=["GET"])
+def get_document_analysis_job(doc_id: int):
+    """Latest active job for a document, used to resume UI monitoring."""
+    session = get_scoped_session()
+    if session.get(WebDocument, doc_id) is None:
+        abort(404, f"Document {doc_id} not found")
+    job = session.scalars(
+        select(DocumentAnalysisJob).where(
+            DocumentAnalysisJob.document_id == doc_id,
+            DocumentAnalysisJob.status.in_(("queued", "running")),
+        ).order_by(DocumentAnalysisJob.created_at.desc()).limit(1)
+    ).first()
+    start_analysis_worker()
+    if job is not None:
+        _analysis_worker_wakeup.set()
+    return jsonify({
+        "status": "success", "doc_id": doc_id,
+        "job": _analysis_job_dict(job) if job else None,
+    })
 
 @bp.route("/analysis_runs", methods=["GET"])
 def list_runs():
@@ -880,7 +1022,7 @@ def list_runs():
                     "superseded" if r.status == "superseded"
                     else "reviewed" if r.status == "reviewed"
                     else "analysis" if any(c.type == "TEMAT" and c.summary for c in r.chunks)
-                    else "cleanup_proposal" if any(c.type in {"REKLAMA", "SZUM"} for c in r.chunks)
+                else "cleanup_proposal" if any(c.type in {"ZRODLA", "REKLAMA", "SZUM"} for c in r.chunks)
                     else "split_proposal"
                 ),
             }
@@ -914,6 +1056,16 @@ def get_run_chunks(run_id: int):
         abort(404, f"Run {run_id} not found")
 
     doc = session.get(WebDocument, run.document_id)
+    author_person = None
+    if isinstance(doc, WebDocument):
+        author_person = session.execute(
+            select(Person.id, Person.description)
+            .join(DocumentPerson, DocumentPerson.person_id == Person.id)
+            .where(
+                DocumentPerson.document_id == run.document_id,
+                DocumentPerson.role == "author",
+            ).limit(1)
+        ).first()
     segments = [] if lite else _parse_segments(doc.text_raw if doc else None)
 
     topic_sections = session.scalars(
@@ -953,6 +1105,23 @@ def get_run_chunks(run_id: int):
     if limit is not None:
         chunks = chunks[:limit]
 
+    citations_by_chunk: dict[int, list[dict]] = {}
+    returned_chunk_ids = [chunk.id for chunk in chunks]
+    if returned_chunk_ids:
+        citation_rows = session.execute(
+            select(DocumentCitedPublication, CitedPublication)
+            .join(CitedPublication, CitedPublication.id == DocumentCitedPublication.publication_id)
+            .where(DocumentCitedPublication.chunk_id.in_(returned_chunk_ids))
+            .order_by(DocumentCitedPublication.id)
+        ).all()
+        for link, publication in citation_rows:
+            citations_by_chunk.setdefault(link.chunk_id, []).append({
+                "id": link.id, "publication_id": publication.id,
+                "title": publication.title, "pmid": publication.pmid,
+                "pmcid": publication.pmcid, "doi": publication.doi,
+                "canonical_url": publication.canonical_url,
+            })
+
     def _section_stats(ts: DocumentTopicSection) -> dict:
         members = [c for c in all_chunks if c.position in set(ts.chunk_positions or [])]
         temat = [c for c in members if c.type == "TEMAT"]
@@ -979,7 +1148,7 @@ def get_run_chunks(run_id: int):
                 "superseded" if run.status == "superseded"
                 else "reviewed" if run.status == "reviewed"
                 else "analysis" if any(c.type == "TEMAT" and c.summary for c in all_chunks)
-                else "cleanup_proposal" if any(c.type in {"REKLAMA", "SZUM"} for c in all_chunks)
+                else "cleanup_proposal" if any(c.type in {"ZRODLA", "REKLAMA", "SZUM"} for c in all_chunks)
                 else "split_proposal"
             ),
         },
@@ -989,15 +1158,21 @@ def get_run_chunks(run_id: int):
             "url": doc.url if doc else "",
             "original_id": doc.original_id if doc else "",
             "document_type": doc.document_type if doc else "",
+            "author": getattr(doc, "author", "") if doc else "",
+            "author_person_id": author_person.id if author_person else None,
+            "author_description": author_person.description if author_person else None,
             "countries": doc_countries,
             "thematic_tags": doc_thematic_tags,
-            "quality": doc.quality if doc else None,
+            "quality": getattr(doc, "quality", None) if doc else None,
         },
         "segments": segments,
         "lite": lite,
         "offset": offset,
         "chunk_total": chunk_total,
-        "chunks": [_chunk_to_dict(c, has_embeddings=c.id in embedded_chunk_ids, lite=lite) for c in chunks],
+        "chunks": [{
+            **_chunk_to_dict(c, has_embeddings=c.id in embedded_chunk_ids, lite=lite),
+            "cited_publications": citations_by_chunk.get(c.id, []),
+        } for c in chunks],
         "topic_sections": [
             {
                 "id": ts.id,
@@ -1138,11 +1313,12 @@ def delete_run(run_id: int):
 
 @bp.route("/analysis_run/<int:run_id>/apply_cleanup", methods=["POST"])
 def apply_run_cleanup(run_id: int):
-    """Overwrite the document's source text with the run's TEMAT chunks only.
+    """Overwrite the source with retained TEMAT and ZRODLA chunks.
 
     Article-mode runs are a full partition of the source text, so joining the
-    TEMAT chunks (which already carry manual line removals) yields the cleaned
-    document: REKLAMA/SZUM chunks and removed lines disappear from the source.
+    TEMAT/ZRODLA chunks (which already carry manual line removals) yield the
+    cleaned document: REKLAMA/SZUM chunks and removed lines disappear, while
+    the bibliography remains available for provenance and quality scoring.
     After this, a fresh analysis run ("zaproponuj nowy podział") starts clean.
 
     Transcript runs are rejected: their chunk texts were transformed before
@@ -1161,8 +1337,9 @@ def apply_run_cleanup(run_id: int):
         .where(DocumentChunk.run_id == run_id)
         .order_by(DocumentChunk.position)
     ).all()
-    temat = [c for c in chunks if c.type == "TEMAT"]
-    cleaned = "\n\n".join(c.original_text for c in temat).strip()
+    retained = [c for c in chunks if c.type in {"TEMAT", "ZRODLA"}]
+    temat = [c for c in retained if c.type == "TEMAT"]
+    cleaned = "\n\n".join(c.original_text for c in retained).strip()
     if not cleaned:
         return jsonify({"status": "error", "message": "Run has no TEMAT chunks"}), 400
 
@@ -1182,7 +1359,7 @@ def apply_run_cleanup(run_id: int):
 
     # Log dropped SZUM/REKLAMA chunks as cleaner-training data. Deduped by
     # chunk_id so a repeated apply_cleanup does not double-log.
-    dropped = [c for c in chunks if c.type != "TEMAT"]
+    dropped = [c for c in chunks if c.type in {"REKLAMA", "SZUM"}]
     if dropped:
         already_logged = set(session.scalars(
             select(DocumentRemovedLine.chunk_id)
@@ -1334,8 +1511,15 @@ def extract_author(run_id: int):
 
     data = request.get_json(silent=True) or {}
     chunk_ids = data.get("chunk_ids")
+    context_text = data.get("context_text")
 
-    if chunk_ids:
+    if context_text is not None:
+        if not isinstance(context_text, str):
+            return jsonify({"status": "error", "message": "context_text must be a string"}), 400
+        # A line-level reviewer action only needs a small local excerpt.  Keep
+        # the request bounded even if a malformed client sends the whole book.
+        source_text = context_text.strip()[:12000]
+    elif chunk_ids:
         if not isinstance(chunk_ids, list) or not all(isinstance(i, int) for i in chunk_ids):
             return jsonify({"status": "error", "message": "chunk_ids must be a list of integers"}), 400
         chunks = session.scalars(
@@ -1669,6 +1853,64 @@ def execute_split(chunk_id: int):
 
     data = request.get_json() or {}
 
+    # Article editor: several marked line boundaries can be committed at once.
+    # All resulting pieces default to TEMAT; callers may provide one type per
+    # piece in split_types.
+    split_at_lines = data.get("split_at_lines")
+    if split_at_lines is not None:
+        lines = (chunk.original_text or "").split("\n")
+        if not isinstance(split_at_lines, list) or not all(isinstance(i, int) for i in split_at_lines):
+            return jsonify({"status": "error", "message": "split_at_lines must be a list of integers"}), 400
+        boundaries = sorted(set(split_at_lines))
+        if not boundaries or boundaries[0] <= 0 or boundaries[-1] >= len(lines):
+            return jsonify({"status": "error", "message": f"split_at_lines out of range (1..{len(lines) - 1})"}), 400
+        part_types = data.get("split_types") or ["TEMAT"] * (len(boundaries) + 1)
+        if (not isinstance(part_types, list) or len(part_types) != len(boundaries) + 1
+                or any(t not in ALLOWED_TYPES for t in part_types)):
+            return jsonify({"status": "error", "message": "split_types must contain one valid type per part"}), 400
+        cuts = [0, *boundaries, len(lines)]
+        texts = ["\n".join(lines[cuts[i]:cuts[i + 1]]).strip() for i in range(len(cuts) - 1)]
+        if any(not text for text in texts):
+            return jsonify({"status": "error", "message": "Every part must contain text"}), 400
+
+        orig_pos, run_id, doc_id = chunk.position, chunk.run_id, chunk.document_id
+        extra_positions = len(texts) - 1
+        try:
+            session.execute(
+                sa_update(DocumentChunk)
+                .where(DocumentChunk.run_id == run_id, DocumentChunk.position > orig_pos)
+                .values(position=DocumentChunk.position + 10000)
+            )
+            session.execute(
+                sa_update(DocumentChunk)
+                .where(DocumentChunk.run_id == run_id, DocumentChunk.position > 10000)
+                .values(position=DocumentChunk.position - 10000 + extra_positions)
+            )
+            session.delete(chunk)
+            session.flush()
+            created = []
+            for offset, (text, part_type) in enumerate(zip(texts, part_types)):
+                created_chunk = DocumentChunk(
+                    run_id=run_id, document_id=doc_id, position=orig_pos + offset,
+                    type=part_type, topic=None, original_text=text,
+                    corrected_text=None, summary=None, seg_start=None, seg_end=None,
+                    rewrite_ratio=None,
+                    status="needs_reanalysis" if part_type == "TEMAT" else "approved",
+                )
+                session.add(created_chunk)
+                created.append(created_chunk)
+            session.flush()
+            from library.cited_publications import refresh_document_cited_publications
+            refresh_document_cited_publications(
+                session, doc_id, created, replace_document=False,
+            )
+            session.commit()
+            return jsonify({"status": "success", "chunks": [_chunk_to_dict(c) for c in created]})
+        except Exception:
+            session.rollback()
+            logger.exception("Failed to multi-split chunk %d", chunk_id)
+            return jsonify({"status": "error", "message": "DB error during split"}), 500
+
     # Allow split data from body OR from what's already stored on the chunk
     split_at = data.get("split_at_seg", chunk.split_at_seg)
     split_at_line = data.get("split_at_line")
@@ -1728,7 +1970,7 @@ def execute_split(chunk_id: int):
         text_b = _text_from_segs(split_at, seg_end)
         seg_a = (seg_start, split_at)
         seg_b = (split_at, seg_end)
-        status_a = "approved" if first_type in ("REKLAMA", "SZUM") else "pending"
+        status_a = "approved" if first_type in ("ZRODLA", "REKLAMA", "SZUM") else "pending"
         status_b = "needs_reanalysis" if second_type == "TEMAT" else "approved"
 
     orig_pos = chunk.position
@@ -1773,6 +2015,11 @@ def execute_split(chunk_id: int):
 
         session.add(chunk_a)
         session.add(chunk_b)
+        session.flush()
+        from library.cited_publications import refresh_document_cited_publications
+        refresh_document_cited_publications(
+            session, doc_id, [chunk_a, chunk_b], replace_document=False,
+        )
         session.commit()
 
         split_point = f"line {split_at_line}" if split_at_line is not None else f"seg {split_at}"
@@ -1851,6 +2098,10 @@ def merge_with_next(chunk_id: int):
             sa_update(DocumentChunk)
             .where(DocumentChunk.run_id == chunk.run_id, DocumentChunk.position > 10000)
             .values(position=DocumentChunk.position - 10001)
+        )
+        from library.cited_publications import refresh_document_cited_publications
+        refresh_document_cited_publications(
+            session, chunk.document_id, [chunk], replace_document=False,
         )
         session.commit()
     except Exception:
