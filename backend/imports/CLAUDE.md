@@ -13,6 +13,7 @@ imports/
 ├── feeds.yaml                # Feed definitions for feed_monitor.py (committed)
 ├── extract_references.py     # Extract book footnotes from text_md into document_references
 ├── extract_time_periods.py   # Classify the historical period a document is about (per chapter for books)
+├── extract_tones.py          # Classify emotional tone + language register per chapter
 ├── feeds_state.yaml          # Per-feed last_checked state (gitignored, created at runtime)
 ├── fix_duplicate_analysis_runs.py # One-off: supersede abandoned duplicate analysis runs (same document+scope, never reviewed)
 ├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
@@ -257,6 +258,20 @@ cd backend
 python imports/extract_time_periods.py --id 9144 --dry-run     # preview, no DB writes
 python imports/extract_time_periods.py --id 9144               # classify + store
 python imports/extract_time_periods.py --id 9204 --chapter 37  # re-run one book chapter
+```
+
+### `extract_tones.py`
+
+Classifies the emotional tone and language register of a document into the `document_tones` table (`library/tones.py`) — one LLM call per reader chapter for books, one for the whole document otherwise. Two separate axes per chapter: emotion (closed list: neutralny/radosny/smutny/gniewny/alarmistyczny/podniosły/refleksyjny + sentiment + intensity) and language register (formalny/potoczny/dziecinny/wulgarny/obraźliwy/ironiczny) — a joyful text written in childish language is emotion `radosny` + register `dziecinny`. Labels are validated against the closed lists (diacritic-tolerant). Replace semantics — safe to re-run. Read back via `GET /document/<id>/tones`; the reader shows the current chapter's tone in the "🎭 Ton rozdziału" sidebar panel.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`.
+
+**Running:**
+```bash
+cd backend
+python imports/extract_tones.py --id 9144 --dry-run     # preview, no DB writes
+python imports/extract_tones.py --id 9144               # classify + store
+python imports/extract_tones.py --id 9204 --chapter 9   # re-run one book chapter
 ```
 
 ### `fix_duplicate_analysis_runs.py`

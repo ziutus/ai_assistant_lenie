@@ -248,6 +248,29 @@ search filtering by period ("texts about the 1980s" = range overlap); BCE years 
 
 **Indexes:** `(document_id, chapter_position)`, `(period_start_year, period_end_year)`.
 
+### Table: `public.document_tones`
+
+Emotional tone and language register of a chapter, classified by `library/tones.py` — per reader chapter for
+books, one whole-document row for chapterless documents — and managed with replace semantics by
+`imports/extract_tones.py`. Emotion ("radosny") and register ("dziecinny") are deliberately separate axes:
+mixing them into one label made the LLM drop the register. All labels come from closed Polish lists validated
+in Python (LLM output with stripped diacritics is canonicalized, e.g. "srednia" → "średnia"); one row per chapter.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `document_id` | `integer NOT NULL` | FK to `web_documents.id` (CASCADE delete) |
+| `chapter_position` | `integer` | 1-based position from `detect_chapters()`; `NULL` for chapterless documents |
+| `emotion` | `varchar(20) NOT NULL` | Main emotion: `neutralny`, `radosny`, `smutny`, `gniewny`, `alarmistyczny`, `podniosły`, `refleksyjny` |
+| `secondary_emotions` | `varchar(100)` | Up to 2 extra emotions from the same list, comma-separated |
+| `sentiment` | `varchar(10) NOT NULL` | `pozytywne`, `negatywne`, `neutralne`, or `mieszane` |
+| `intensity` | `varchar(10) NOT NULL` | `niska`, `średnia`, or `wysoka` |
+| `registers` | `varchar(100)` | Up to 2 language registers (`formalny`, `potoczny`, `dziecinny`, `wulgarny`, `obraźliwy`, `ironiczny`), comma-separated |
+| `evidence` | `text` | One LLM sentence grounding the classification |
+| `created_at` | `timestamp` | Row creation timestamp |
+
+**Index:** `(document_id, chapter_position)`.
+
 ### Table: `public.infra_geometries`
 
 Overpass API lookup cache for linear infrastructure (`library/overpass_client.py`) — same philosophy as `geocode_cache`: one live call ever per distinct query string, clean misses cached as `resolved=false` (transport failures are NOT cached). Populated during `POST /website_entities` for place entities the geocoder checked but rejected ("Baltic Pipe" has no point hit but has an OSM route).
