@@ -146,6 +146,10 @@ def test_quote_outside_fragment_is_rejected(monkeypatch):
         ("XIX wieku", "century", datetime.date(1801, 1, 1), 1850),
         ("1918-1939", "year", datetime.date(1918, 1, 1), 1918),
         ("w latach 1918–1939", "year", datetime.date(1918, 1, 1), 1918),
+        ("lata 1988 — 1998", "year", datetime.date(1988, 1, 1), 1988),
+        ("luty 2024 r.", "month", datetime.date(2024, 2, 1), 2024),
+        ("styczeń 2024 r.", "month", datetime.date(2024, 1, 1), 2024),
+        ("sierpień 2023 r.", "month", datetime.date(2023, 8, 1), 2023),
     ],
 )
 def test_polish_date_normalization(date_text, precision, event_date, sort_year):
