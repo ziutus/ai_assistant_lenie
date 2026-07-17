@@ -7,11 +7,23 @@ Pure-function tests, no DB/LLM/network (compute_quality tested with model=None).
 from library.article_quality import (
     compute_quality,
     count_photo_captions,
+    extract_press_bibliography,
     is_clickbait_title,
     is_photo_caption_line,
+    is_references_section,
     photo_caption_candidates,
     remove_photo_caption_lines,
 )
+
+PRESS_BIBLIOGRAPHY = "\n".join([
+    "**Źródła:**",
+    "",
+    '* The Guardian — "Papua New Guinea killings: what’s behind the outbreak in tribal fighting?"',
+    '* Radio New Zealand — "**Brutal killings of two women in Papua New Guinea spark outrage"**',
+    "* Time.com — \"A Fight Between Rivaling Tribes in Papua New Guinea Has Led to a Massacre\"",
+    "* MSZ",
+    "* World Population Review",
+])
 
 LONG_PARAGRAPH = (
     "To jest długi akapit właściwej treści artykułu, w którym autor rzetelnie "
@@ -335,7 +347,7 @@ class TestComputeQuality:
     def test_separate_citations_chunk_sets_sources_floor(self, monkeypatch):
         monkeypatch.setattr(
             "library.article_quality._llm_rubric",
-            lambda text, model, cited: {
+            lambda text, model, cited, press: {
                 "zrodla": 0, "glebia": 0, "jezyk": 3,
                 "uzasadnienie": "Model nie zauważył wydzielonej listy.",
             },
@@ -374,3 +386,68 @@ class TestComputeQuality:
 
         assert "noise_share" not in q["penalties"]
         assert q["signals"]["reference_chars"] == len("PMID 30485934")
+
+    def test_press_bibliography_sets_sources_floor(self, monkeypatch):
+        monkeypatch.setattr(
+            "library.article_quality._llm_rubric",
+            lambda text, model, cited, press: {
+                "zrodla": 1, "glebia": 2, "jezyk": 3,
+                "uzasadnienie": "Model nie widział wydzielonej bibliografii.",
+            },
+        )
+        sections = self._sections() + [{"type": "ZRODLA", "original": PRESS_BIBLIOGRAPHY}]
+        q = compute_quality(_Doc(author="A", title="T"), sections, model="test-model")
+
+        assert q["signals"]["press_bibliography"] == 5
+        assert q["signals"]["press_bibliography_sources"][:2] == ["The Guardian", "Radio New Zealand"]
+        assert q["llm_rubric"]["zrodla"] == 4
+        assert q["penalties"]["llm_rubric"] == (15 - (4 + 2 + 3)) * 2
+
+    def test_press_references_chunk_is_not_penalized_as_noise(self):
+        sections = self._sections() + [{"type": "SZUM", "original": PRESS_BIBLIOGRAPHY}]
+        q = compute_quality(_Doc(author="A", title="T"), sections, model=None)
+
+        assert "noise_share" not in q["penalties"]
+        assert q["signals"]["noise_share"] == 0
+        assert q["signals"]["reference_chars"] == len(PRESS_BIBLIOGRAPHY)
+
+
+class TestPressBibliography:
+    def test_extracts_names_and_entries(self):
+        entries = extract_press_bibliography(PRESS_BIBLIOGRAPHY)
+        assert [item["source_name"] for item in entries] == [
+            "The Guardian", "Radio New Zealand", "Time.com", "MSZ", "World Population Review",
+        ]
+        assert entries[0]["raw_entry"].startswith('The Guardian — "Papua New Guinea')
+
+    def test_plain_heading_and_dash_bullets(self):
+        text = "Źródła:\n- Raport GUS - dane za 2024 r.\n- NIK"
+        entries = extract_press_bibliography(text)
+        assert [item["source_name"] for item in entries] == ["Raport GUS", "NIK"]
+
+    def test_no_heading_means_no_entries(self):
+        text = "* The Guardian — artykuł\n* MSZ"
+        assert extract_press_bibliography(text) == []
+
+    def test_list_ends_at_first_non_bullet_line(self):
+        text = "Źródła:\n* The Guardian — artykuł\nZwykły akapit treści.\n* To już nie bibliografia"
+        entries = extract_press_bibliography(text)
+        assert [item["source_name"] for item in entries] == ["The Guardian"]
+
+    def test_bulletless_paragraph_under_heading_is_not_an_entry(self):
+        text = "Źródła:\nWięcej informacji na stronie ministerstwa."
+        assert extract_press_bibliography(text) == []
+
+
+class TestIsReferencesSection:
+    def test_press_bibliography_without_identifiers(self):
+        assert is_references_section(PRESS_BIBLIOGRAPHY)
+
+    def test_bold_heading_with_doi(self):
+        assert is_references_section("**Źródła:**\nhttps://pubmed.ncbi.nlm.nih.gov/30485934/")
+
+    def test_heading_without_any_entries(self):
+        assert not is_references_section("Źródła:\n")
+
+    def test_content_chunk_is_not_references(self):
+        assert not is_references_section(LONG_PARAGRAPH)
