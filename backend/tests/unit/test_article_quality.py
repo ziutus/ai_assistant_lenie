@@ -20,9 +20,10 @@ LONG_PARAGRAPH = (
 
 
 class _Doc:
-    def __init__(self, author=None, title=None):
+    def __init__(self, author=None, title=None, url=None):
         self.author = author
         self.title = title
+        self.url = url
 
 
 class TestPhotoCaptionDetection:
@@ -141,6 +142,28 @@ class TestPhotoCaptionDetection:
         assert is_photo_caption_line("Rosyjskie czołgi. © Twitter | Kontakt6")
         assert is_photo_caption_line("Firma złożyła wniosek o upadłość (zdj. ilustracyjne)")
 
+    def test_agencja_wyborcza_detected_without_fot_prefix(self):
+        assert is_photo_caption_line("Krzysztof Gutkowski / Agencja Wyborcza.pl")
+
+    def test_publisher_own_agency_on_publisher_domain(self):
+        text = f"{LONG_PARAGRAPH}\nFot. Krzysztof Gutkowski / Agencja Wyborcza.pl"
+        for url in (
+            "https://next.gazeta.pl/next/7,151003,32847569,artykul.html",
+            "https://wyborcza.pl/7,75399,12345,artykul.html",
+        ):
+            candidates = photo_caption_candidates(text, url)
+            assert [item["category"] for item in candidates] == ["own_or_private_archive"]
+
+    def test_publisher_own_agency_on_foreign_domain_is_regular_agency(self):
+        text = f"{LONG_PARAGRAPH}\nFot. Krzysztof Gutkowski / Agencja Wyborcza.pl"
+        candidates = photo_caption_candidates(text, "https://www.onet.pl/informacje/artykul")
+        assert [item["category"] for item in candidates] == ["agency"]
+
+    def test_publisher_own_agency_without_url_is_regular_agency(self):
+        text = f"{LONG_PARAGRAPH}\nFot. Krzysztof Gutkowski / Agencja Wyborcza.pl"
+        candidates = photo_caption_candidates(text)
+        assert [item["category"] for item in candidates] == ["agency"]
+
 
 class TestClickbaitTitle:
     def test_clickbait(self):
@@ -211,6 +234,27 @@ class TestComputeQuality:
 
         assert "photo_sources" not in q["penalties"]
         assert q["signals"]["photo_caption_categories"] == {"own_or_private_archive": 1}
+
+    def test_publisher_own_agency_photo_is_not_penalized(self):
+        secs = self._sections() + [{
+            "type": "TEMAT", "original": "Fot. Krzysztof Gutkowski / Agencja Wyborcza.pl",
+        }]
+        doc = _Doc(author="Oliwia Ziółkowska", title="T",
+                   url="https://next.gazeta.pl/next/7,151003,32847569,artykul.html")
+        q = compute_quality(doc, secs, model=None)
+
+        assert "photo_sources" not in q["penalties"]
+        assert q["signals"]["photo_caption_categories"] == {"own_or_private_archive": 1}
+
+    def test_publisher_agency_photo_on_foreign_portal_penalized_as_agency(self):
+        secs = self._sections() + [{
+            "type": "TEMAT", "original": "Fot. Krzysztof Gutkowski / Agencja Wyborcza.pl",
+        }]
+        doc = _Doc(author="A", title="T", url="https://www.onet.pl/informacje/artykul")
+        q = compute_quality(doc, secs, model=None)
+
+        assert q["penalties"]["photo_sources"] == 1
+        assert q["signals"]["photo_caption_categories"] == {"agency": 1}
 
     def test_image_description_is_not_treated_as_a_photo_source(self):
         secs = self._sections() + [{

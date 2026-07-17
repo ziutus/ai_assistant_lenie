@@ -288,13 +288,16 @@ def _parse_segments(text_raw: str | None) -> list[dict]:
 TEXT_PREVIEW_CHARS = 200
 
 
-def _chunk_to_dict(c: DocumentChunk, has_embeddings: bool | None = None, lite: bool = False) -> dict:
+def _chunk_to_dict(
+    c: DocumentChunk, has_embeddings: bool | None = None, lite: bool = False, doc_url: str | None = None,
+) -> dict:
     """Serialize a chunk. lite=True drops the full texts (book-sized runs are
-    lazy-loaded per section) and ships a short preview + length instead."""
+    lazy-loaded per section) and ships a short preview + length instead.
+    doc_url lets caption categorization recognize the publisher's own photo agency."""
     text = c.corrected_text or c.original_text or ""
     from library.article_quality import photo_caption_candidates
 
-    caption_candidates = photo_caption_candidates(c.original_text or "") if not lite else []
+    caption_candidates = photo_caption_candidates(c.original_text or "", doc_url) if not lite else []
     return {
         "id": c.id,
         "position": c.position,
@@ -1170,7 +1173,8 @@ def get_run_chunks(run_id: int):
         "offset": offset,
         "chunk_total": chunk_total,
         "chunks": [{
-            **_chunk_to_dict(c, has_embeddings=c.id in embedded_chunk_ids, lite=lite),
+            **_chunk_to_dict(c, has_embeddings=c.id in embedded_chunk_ids, lite=lite,
+                             doc_url=doc.url if doc else None),
             "cited_publications": citations_by_chunk.get(c.id, []),
         } for c in chunks],
         "topic_sections": [
