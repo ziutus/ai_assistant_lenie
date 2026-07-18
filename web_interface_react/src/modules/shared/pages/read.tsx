@@ -359,6 +359,9 @@ function renderMarkdown(
 // Document types that have an editor page at /{type}/:id
 const EDITOR_TYPES = new Set(["webpage", "link", "youtube", "movie", "email"]);
 
+// Tag counts above this render the sidebar "Tagi" section collapsed by default.
+const TAGS_OPEN_THRESHOLD = 20;
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 const Read: React.FC = () => {
@@ -1110,15 +1113,18 @@ const Read: React.FC = () => {
             )}
 
             {(shownPersons.length > 0 || shownPlaceItems.length > 0) && (
-              <div style={{
+              <details open style={{
                 background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
                 padding: 10, marginTop: 12, fontSize: "0.9em",
               }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
+                  👤 Osoby i miejsca ({shownPersons.length + shownPlaceItems.length})
+                </summary>
                 <EntityChips label={"👤 Osoby"} items={shownPersons} linkPersons searchUnresolvedPersons
                   highlightMode={highlightMode} onHighlight={handleEntityHighlight} />
                 <EntityChips label={"📍 Miejsca"} items={shownPlaceItems}
                   highlightMode={highlightMode} onHighlight={handleEntityHighlight} />
-              </div>
+              </details>
             )}
 
             {scoped && !shownPersons.length && !shownPlaceItems.length
@@ -1135,12 +1141,16 @@ const Read: React.FC = () => {
             <TimelinePanel docId={id} currentChapter={position} onEventClick={handleTimelineEventClick} />
 
             {thematicTags.length > 0 && (
-              <div style={{
+              // A book can carry hundreds of miejsce-* tags — start collapsed
+              // beyond a screenful so the tag wall doesn't swallow the panel.
+              <details open={thematicTags.length <= TAGS_OPEN_THRESHOLD} style={{
                 background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
                 padding: 10, marginTop: 12,
               }}>
-                <strong style={{ fontSize: "0.85em", display: "block", marginBottom: 8 }}>🏷️ Tagi</strong>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
+                  🏷️ Tagi ({thematicTags.length})
+                </summary>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
                   {thematicTags.map(tag => (
                     <span key={tag} style={{
                       fontSize: "0.78em", padding: "2px 8px", borderRadius: 999,
@@ -1150,7 +1160,7 @@ const Read: React.FC = () => {
                     </span>
                   ))}
                 </div>
-              </div>
+              </details>
             )}
 
             {(content?.synthesis_chapter || synthesis) && (
