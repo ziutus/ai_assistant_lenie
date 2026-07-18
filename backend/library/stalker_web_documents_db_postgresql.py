@@ -407,6 +407,56 @@ class WebsitesDBPostgreSQL:
             for doc in documents
         ]
 
+    def list_by_filters(self, filters, limit: int = 20, offset: int = 0, sort=None) -> list[dict[str, Any]]:
+        """Filter-only document listing: no text query, no embedding involved.
+
+        Applies the SAME build_document_filters() search_text()/get_similar()
+        use, before LIMIT — filter-only listing shares the identical
+        constraints too (stage 6 session B of the search-rebuild plan). An
+        empty ``filters`` object is legal and lists everything, newest
+        first, matching ParsedSearchQuery's own "no criteria means list
+        everything" semantics.
+
+        ``sort`` is a ``library.search.types.SearchSort``; RELEVANCE has no
+        meaning without a text query, so it falls back to the same
+        newest-first ordering as INGESTED_DESC.
+        """
+        from library.search.sql_filters import build_document_filters
+        from library.search.types import SearchSort
+
+        sort_columns = {
+            SearchSort.PUBLISHED_DESC: WebDocument.date_from.desc(),
+            SearchSort.PUBLISHED_ASC: WebDocument.date_from.asc(),
+            SearchSort.INGESTED_DESC: WebDocument.created_at.desc(),
+            SearchSort.RELEVANCE: WebDocument.created_at.desc(),
+        }
+        order = sort_columns[SearchSort(sort) if sort is not None else SearchSort.RELEVANCE]
+
+        stmt = (
+            select(WebDocument)
+            .where(*build_document_filters(filters))
+            .order_by(order, WebDocument.id.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+
+        documents = self.session.scalars(stmt).all()
+        return [
+            {
+                "website_id": doc.id,
+                "title": doc.title,
+                "url": doc.url,
+                "document_type": doc.document_type,
+                "project": doc.project,
+                "language": doc.language,
+                "date_from": doc.date_from.isoformat() if doc.date_from else None,
+                "created_at": doc.created_at.isoformat() if doc.created_at else None,
+                "similarity": None,
+                "search_match": "filters_only",
+            }
+            for doc in documents
+        ]
+
     # ------------------------------------------------------------------
     # Embedding CRUD
     # ------------------------------------------------------------------

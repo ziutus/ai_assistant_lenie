@@ -11,7 +11,7 @@ pytest.importorskip("sqlalchemy")
 
 from library.search_service import SearchService
 from library.models.embedding_result import EmbeddingResult
-from library.search.types import SearchFilters
+from library.search.types import SearchFilters, SearchSort
 
 
 # ---------------------------------------------------------------------------
@@ -328,3 +328,39 @@ class TestPeriodFilter:
             service.search_similar("zapytanie", project="")
 
         assert mock_similar.call_args.kwargs["filters"] == SearchFilters()
+
+
+class TestSearchByFilters:
+    """Stage 6 session B: filter-only listing, no embedding generated."""
+
+    def test_delegates_to_repo_list_by_filters(self):
+        service = SearchService(_make_session())
+        filters = SearchFilters(document_types=("webpage",))
+        with patch.object(service.repo, "list_by_filters", return_value=[{"website_id": 1}]) as mock_list:
+            result = service.search_by_filters(filters, limit=15, offset=5, sort=SearchSort.PUBLISHED_DESC)
+
+        assert result == [{"website_id": 1}]
+        mock_list.assert_called_once_with(filters, limit=15, offset=5, sort=SearchSort.PUBLISHED_DESC)
+
+    def test_defaults(self):
+        service = SearchService(_make_session())
+        filters = SearchFilters()
+        with patch.object(service.repo, "list_by_filters", return_value=[]) as mock_list:
+            service.search_by_filters(filters)
+
+        mock_list.assert_called_once_with(filters, limit=20, offset=0, sort=SearchSort.RELEVANCE)
+
+    @patch("library.search_service.embedding.get_embedding")
+    def test_never_generates_an_embedding(self, mock_get_embedding):
+        service = SearchService(_make_session())
+        with patch.object(service.repo, "list_by_filters", return_value=[]):
+            service.search_by_filters(SearchFilters(document_types=("webpage",)))
+
+        mock_get_embedding.assert_not_called()
+
+    def test_empty_filters_allowed_lists_everything(self):
+        service = SearchService(_make_session())
+        with patch.object(service.repo, "list_by_filters", return_value=[{"website_id": 1}, {"website_id": 2}]):
+            result = service.search_by_filters(SearchFilters())
+
+        assert len(result) == 2
