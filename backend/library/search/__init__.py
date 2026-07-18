@@ -63,14 +63,17 @@ __all__ = [
     "resolve_relation",
     "SearchQueryParseResult",
     "parse_search_query",
+    "build_document_filters",
 ]
 
-# audit_repository/parser need sqlalchemy (via ai.py); lazy re-export keeps
-# `library.search` importable in the lightweight (uvx) test environment.
+# audit_repository/parser/sql_filters need sqlalchemy (via ai.py or
+# library.db.models); lazy re-export keeps `library.search` importable in
+# the lightweight (uvx) test environment.
 _AUDIT_EXPORTS = frozenset(
     {"record_interpretation", "record_feedback", "delete_expired_interpretations", "parsed_query_to_dict"}
 )
 _PARSER_EXPORTS = frozenset({"SearchQueryParseResult", "parse_search_query"})
+_SQL_FILTER_EXPORTS = frozenset({"build_document_filters"})
 
 
 def __getattr__(name):
@@ -78,4 +81,6 @@ def __getattr__(name):
         return getattr(importlib.import_module("library.search.audit_repository"), name)
     if name in _PARSER_EXPORTS:
         return getattr(importlib.import_module("library.search.parser"), name)
+    if name in _SQL_FILTER_EXPORTS:
+        return getattr(importlib.import_module("library.search.sql_filters"), name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

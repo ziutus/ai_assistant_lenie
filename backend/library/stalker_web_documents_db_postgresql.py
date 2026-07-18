@@ -237,8 +237,18 @@ class WebsitesDBPostgreSQL:
     # Similarity search
     # ------------------------------------------------------------------
 
-    def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30, project=None) -> list[dict[
-            str, Any]] | None:
+    def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30, project=None,
+                    filters=None) -> list[dict[str, Any]] | None:
+        """Vector similarity search.
+
+        ``filters`` (an optional ``library.search.types.SearchFilters``) is
+        applied via ``library.search.sql_filters.build_document_filters()``
+        — the SAME builder ``search_text()`` uses — before ``LIMIT``, so
+        vector and lexical search share identical constraints (stage 6
+        acceptance criterion). ``project`` is a separate, older exact-match
+        filter kept for existing callers; the two combine with AND if both
+        are given.
+        """
 
         if minimal_similarity is None:
             minimal_similarity = 0.30
@@ -287,6 +297,10 @@ class WebsitesDBPostgreSQL:
         if project:
             stmt = stmt.where(WebDocument.project == project)
 
+        if filters is not None:
+            from library.search.sql_filters import build_document_filters
+            stmt = stmt.where(*build_document_filters(filters))
+
         rows = self.session.execute(stmt).all()
         return [
             {
@@ -310,7 +324,7 @@ class WebsitesDBPostgreSQL:
             for r in rows
         ]
 
-    def search_text(self, query: str, limit: int = 20, project=None) -> list[dict[str, Any]]:
+    def search_text(self, query: str, limit: int = 20, project=None, filters=None) -> list[dict[str, Any]]:
         """Return documents matching query words in user-visible text fields.
 
         This deliberately uses portable ILIKE predicates instead of requiring a
@@ -324,6 +338,12 @@ class WebsitesDBPostgreSQL:
         docs/search-hybrid.md for why plain ILIKE is not enough here and why
         this two-layer approach (SQL candidate selection + Python scoring in
         SearchService) exists at all.
+
+        ``filters`` (an optional ``library.search.types.SearchFilters``) is
+        applied via ``library.search.sql_filters.build_document_filters()``
+        — the SAME builder ``get_similar()`` uses — before ``LIMIT`` (stage 6
+        acceptance criterion: lexical and vector search share identical
+        constraints).
         """
         query = (query or "").strip()
         if not query:
@@ -351,6 +371,10 @@ class WebsitesDBPostgreSQL:
         )
         if project:
             stmt = stmt.where(WebDocument.project == project)
+
+        if filters is not None:
+            from library.search.sql_filters import build_document_filters
+            stmt = stmt.where(*build_document_filters(filters))
 
         documents = self.session.scalars(stmt).all()
         return [
