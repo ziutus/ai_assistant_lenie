@@ -11,6 +11,7 @@ pytest.importorskip("sqlalchemy")
 
 from library.search_service import SearchService
 from library.models.embedding_result import EmbeddingResult
+from library.search.types import SearchFilters
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +121,7 @@ class TestSearchSimilar:
             [0.1, 0.2, 0.3],
             "text-embedding-ada-002",
             limit=20,
-            project=None,
+            filters=SearchFilters(),
         )
 
     @patch("library.search_service.embedding.get_embedding")
@@ -175,7 +176,7 @@ class TestSearchSimilar:
             [0.1, 0.2, 0.3],
             "text-embedding-ada-002",
             limit=50,
-            project=None,
+            filters=SearchFilters(),
         )
 
     @patch("library.search_service.embedding.get_embedding")
@@ -198,7 +199,7 @@ class TestSearchSimilar:
             [0.1, 0.2, 0.3],
             "text-embedding-ada-002",
             limit=20,
-            project="my-project",
+            filters=SearchFilters(collection_name="my-project"),
         )
 
     @patch("library.search_service.embedding.get_embedding")
@@ -244,53 +245,86 @@ class TestSearchSimilar:
 
 
 class TestPeriodFilter:
+    """Stage 6: the period window is now a SearchFilters passed to the repo
+    (applied in SQL before LIMIT), not a Python-side post-filter -- see
+    tests/unit/test_repository_sql_filters.py for the SQL-level proof."""
+
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
-    def test_period_window_drops_documents_outside_it(self, mock_config, mock_get_embedding):
+    def test_period_window_is_forwarded_as_filters(self, mock_config, mock_get_embedding):
         cfg = MagicMock()
         cfg.require.return_value = "test-model"
         mock_config.return_value = cfg
         mock_get_embedding.return_value = _make_embedding_result()
         service = SearchService(_make_session())
-        semantic = [
-            {"website_id": 1, "similarity": 0.9},
-            {"website_id": 2, "similarity": 0.8},
-        ]
-        with patch.object(service.repo, "search_text", return_value=[]), \
-             patch.object(service.repo, "get_similar", return_value=semantic), \
-             patch.object(service, "_documents_in_period", return_value={1}) as mock_period:
-            result = service.search_similar("zapytanie", limit=10, period_from=1939, period_to=1945)
+        with patch.object(service.repo, "search_text", return_value=[]) as mock_text, \
+             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
+            service.search_similar("zapytanie", limit=10, period_from=1939, period_to=1945)
 
-        assert [row["website_id"] for row in result] == [1]
-        mock_period.assert_called_once_with(1939, 1945)
+        expected_filters = SearchFilters(subject_period_start_year=1939, subject_period_end_year=1945)
+        assert mock_text.call_args.kwargs["filters"] == expected_filters
+        assert mock_similar.call_args.kwargs["filters"] == expected_filters
 
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
-    def test_no_period_window_skips_the_filter(self, mock_config, mock_get_embedding):
+    def test_no_period_window_yields_empty_filters(self, mock_config, mock_get_embedding):
         cfg = MagicMock()
         cfg.require.return_value = "test-model"
         mock_config.return_value = cfg
         mock_get_embedding.return_value = _make_embedding_result()
         service = SearchService(_make_session())
         with patch.object(service.repo, "search_text", return_value=[]), \
-             patch.object(service.repo, "get_similar", return_value=[{"website_id": 1, "similarity": 0.9}]), \
-             patch.object(service, "_documents_in_period") as mock_period:
-            result = service.search_similar("zapytanie", limit=10)
+             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
+            service.search_similar("zapytanie", limit=10)
 
-        assert [row["website_id"] for row in result] == [1]
-        mock_period.assert_not_called()
+        assert mock_similar.call_args.kwargs["filters"] == SearchFilters()
 
-    @pytest.mark.parametrize(
-        ("period_from", "period_to", "expected_filters"),
-        [(1939, 1945, 2), (1939, None, 1), (None, -500, 1)],
-    )
-    def test_documents_in_period_builds_one_filter_per_bound(self, period_from, period_to, expected_filters):
-        session = _make_session()
-        query = MagicMock()
-        session.query.return_value = query
-        query.filter.return_value = query
-        query.distinct.return_value = [(5,), (7,)]
-        service = SearchService(session)
+    @patch("library.search_service.embedding.get_embedding")
+    @patch("library.search_service.load_config")
+    def test_reversed_period_is_swapped_not_rejected(self, mock_config, mock_get_embedding):
+        cfg = MagicMock()
+        cfg.require.return_value = "test-model"
+        mock_config.return_value = cfg
+        mock_get_embedding.return_value = _make_embedding_result()
+        service = SearchService(_make_session())
+        with patch.object(service.repo, "search_text", return_value=[]), \
+             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
+            service.search_similar("zapytanie", period_from=1945, period_to=1939)
 
-        assert service._documents_in_period(period_from, period_to) == {5, 7}
-        assert query.filter.call_count == expected_filters
+        filters = mock_similar.call_args.kwargs["filters"]
+        assert filters.subject_period_start_year == 1939
+        assert filters.subject_period_end_year == 1945
+
+    @patch("library.search_service.embedding.get_embedding")
+    @patch("library.search_service.load_config")
+    def test_out_of_domain_year_degrades_to_no_filter_instead_of_raising(self, mock_config, mock_get_embedding):
+        cfg = MagicMock()
+        cfg.require.return_value = "test-model"
+        mock_config.return_value = cfg
+        mock_get_embedding.return_value = _make_embedding_result()
+        service = SearchService(_make_session())
+        with patch.object(service.repo, "search_text", return_value=[]), \
+             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
+            # 999_999 is outside [MIN_SUBJECT_YEAR, MAX_SUBJECT_YEAR] -- must
+            # not raise SearchQueryValidationError out of a public API that
+            # accepts untrusted HTTP params.
+            service.search_similar("zapytanie", period_from=999_999)
+
+        assert mock_similar.call_args.kwargs["filters"] == SearchFilters()
+
+    @patch("library.search_service.embedding.get_embedding")
+    @patch("library.search_service.load_config")
+    def test_blank_project_treated_as_no_collection_filter(self, mock_config, mock_get_embedding):
+        cfg = MagicMock()
+        cfg.require.return_value = "test-model"
+        mock_config.return_value = cfg
+        mock_get_embedding.return_value = _make_embedding_result()
+        service = SearchService(_make_session())
+        with patch.object(service.repo, "search_text", return_value=[]), \
+             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
+            # An empty string used to be a falsy no-op (`if project:`);
+            # SearchFilters(collection_name="") would raise -- must still
+            # degrade to "no collection filter", not crash.
+            service.search_similar("zapytanie", project="")
+
+        assert mock_similar.call_args.kwargs["filters"] == SearchFilters()
