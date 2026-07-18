@@ -364,3 +364,62 @@ class TestSearchByFilters:
             result = service.search_by_filters(SearchFilters())
 
         assert len(result) == 2
+
+
+class TestStage8Search:
+    def test_missing_query_delegates_without_embedding(self):
+        service = SearchService(_make_session())
+        filters = SearchFilters(languages=("pl",))
+        with patch.object(service, "search_by_filters", return_value=[]) as filter_search, \
+             patch("library.search_service.embedding.get_embedding") as embedding:
+            service.search(None, filters, limit=4, offset=2, sort=SearchSort.PUBLISHED_ASC)
+        filter_search.assert_called_once_with(
+            filters, limit=4, offset=2, sort=SearchSort.PUBLISHED_ASC,
+        )
+        embedding.assert_not_called()
+
+    @patch("library.search_service.embedding.get_embedding")
+    @patch("library.search_service.load_config")
+    def test_query_forwards_all_filters_and_slices_offset(self, config, get_embedding):
+        config.return_value.require.return_value = "model"
+        get_embedding.return_value = _make_embedding_result()
+        service = SearchService(_make_session())
+        filters = SearchFilters(author_name="Jan")
+        merged = [{"website_id": n} for n in range(6)]
+        with patch.object(service.repo, "search_text", return_value=[]) as lexical, \
+             patch.object(service.repo, "get_similar", return_value=[]) as semantic, \
+             patch.object(service, "_merge_results", return_value=merged) as merge:
+            result = service.search("temat", filters, limit=2, offset=3)
+        assert result == merged[3:5]
+        assert lexical.call_args.kwargs["filters"] is filters
+        assert semantic.call_args.kwargs["filters"] is filters
+        assert merge.call_args.args[-1] == 5
+
+    @patch("library.search_service.embedding.get_embedding")
+    @patch("library.search_service.load_config")
+    def test_embedding_failure_uses_lexical_results(self, config, get_embedding):
+        config.return_value.require.return_value = "model"
+        get_embedding.return_value = _make_embedding_result(status="error")
+        service = SearchService(_make_session())
+        with patch.object(service.repo, "search_text", return_value=[{"website_id": 1}]), \
+             patch.object(service, "_merge_results", return_value=[{"website_id": 1}]):
+            assert service.search("temat", SearchFilters()) == [{"website_id": 1}]
+
+    @patch("library.search_service.embedding.get_embedding")
+    @patch("library.search_service.load_config")
+    def test_explicit_published_sort_is_applied_after_ranking(self, config, get_embedding):
+        config.return_value.require.return_value = "model"
+        get_embedding.return_value = _make_embedding_result()
+        service = SearchService(_make_session())
+        merged = [
+            {"website_id": 1, "date_from": None},
+            {"website_id": 2, "date_from": "2020-01-01"},
+            {"website_id": 3, "date_from": "2022-01-01"},
+        ]
+        with patch.object(service.repo, "search_text", return_value=[]), \
+             patch.object(service.repo, "get_similar", return_value=[]), \
+             patch.object(service, "_merge_results", return_value=merged):
+            result = service.search(
+                "temat", SearchFilters(), sort=SearchSort.PUBLISHED_DESC,
+            )
+        assert [item["website_id"] for item in result] == [3, 2, 1]
