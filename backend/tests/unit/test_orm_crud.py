@@ -424,7 +424,7 @@ class TestDictCompatibility:
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
             "summary", "url", "language", "tags", "text", "paywall", "title",
-            "created_at", "document_type", "source", "date_from", "original_id",
+            "created_at", "document_type", "source", "date_from", "date_from_source", "original_id",
             "document_length", "chapter_list", "document_state", "document_state_error",
             "text_raw", "transcript_job_id", "ai_summary_needed", "author",
             "note", "uuid", "project", "text_md", "transcript_needed",
