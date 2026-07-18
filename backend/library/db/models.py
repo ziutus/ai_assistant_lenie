@@ -186,6 +186,34 @@ class Source(Base):
         return f"Source(id={self.id!r}, name={self.name!r}, is_active={self.is_active!r})"
 
 
+class Publisher(Base):
+    """Portal which published a document (not its discovery/information source)."""
+
+    __tablename__ = "publishers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    domains: Mapped[list["PublisherDomain"]] = relationship(
+        back_populates="publisher", cascade="all, delete-orphan",
+    )
+
+
+class PublisherDomain(Base):
+    """Globally unique, normalized hostname belonging to one publisher."""
+
+    __tablename__ = "publisher_domains"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    publisher_id: Mapped[int] = mapped_column(
+        ForeignKey("publishers.id", ondelete="CASCADE"), nullable=False,
+    )
+    domain: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    publisher: Mapped["Publisher"] = relationship(back_populates="domains")
+
+
 # ---------------------------------------------------------------------------
 # WebDocument — Single Table Inheritance on web_documents
 # ---------------------------------------------------------------------------
@@ -219,6 +247,9 @@ class WebDocument(Base):
     # FK by name (ADR-010); unknown values are auto-created in `sources` by the
     # before_flush hook at the bottom of this module.
     source: Mapped[str | None] = mapped_column(Text, ForeignKey("sources.name"))
+    publisher_id: Mapped[int | None] = mapped_column(
+        ForeignKey("publishers.id", ondelete="SET NULL"), index=True,
+    )
     date_from: Mapped[datetime.date | None] = mapped_column(Date)
     # How date_from was set — "manual" (reviewer typed it on /chunks) or "llm"
     # (extract_publication_date). NULL for legacy/import-set values (unknown
