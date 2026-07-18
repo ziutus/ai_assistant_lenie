@@ -25,7 +25,7 @@ NAS pozostaje na zweryfikowanym w 7A head `f5a6b7c8d9e0`.
 precyzyjne przypadki mogą wymagać kuracji relacyjnych autorów. Rejestr zawiera realne duplikaty
 osób (np. Artur Rubinstein); zgodnie z kontraktem są raportowane jako niejednoznaczne, nie scalane.
 
-**PR/merge:** PR **#293**; hash merge'a do uzupełnienia po merge sesji B.
+**PR/merge:** PR **#293**, merge **2a4d5cd**.
 
 **Następny krok:** Etap 8 — nowe endpointy `POST /search/parse`, `POST /search` i feedback,
 z jawną obsługą niejednoznacznych wyników resolverów.
