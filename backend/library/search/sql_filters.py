@@ -8,22 +8,28 @@ correlated EXISTS subquery against ``document_time_periods`` for
 via ``.where(*conditions)`` before ``LIMIT``, which is the stage 6
 acceptance criterion: lexical and vector search use identical constraints.
 
-Author/publisher/discovery-source filters need free-text-to-identifier
-resolution (stage 7 — not built yet); passing one here raises
-``NotImplementedError`` rather than silently searching unfiltered, which
-would be a much worse failure mode than a loud one caught in review.
+Stage 7 adds deterministic name filters: publisher ids through the publisher
+registry, authors through role='author' person/alias links with a guarded
+legacy byline fallback, and discovery sources through the physical
+``sources`` lookup. None of these paths chooses an arbitrary first match.
 """
 
 from __future__ import annotations
 
-from sqlalchemy import ColumnElement, exists, func, or_, select
+from sqlalchemy import ColumnElement, and_, exists, func, or_, select
 
-from library.db.models import DocumentTimePeriod, Publisher, PublisherDomain, WebDocument
+from library.db.models import (
+    DocumentPerson,
+    DocumentTimePeriod,
+    Person,
+    PersonAlias,
+    Publisher,
+    PublisherDomain,
+    Source,
+    WebDocument,
+)
 from library.publisher_registry import normalize_publisher_domain
 from library.search.types import SearchFilters
-
-_UNRESOLVED_NAME_FIELDS = ("author_name", "discovery_source_name")
-
 
 def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
     """Return WebDocument-scoped predicates for the given filters.
@@ -32,15 +38,10 @@ def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
     ``.where(*conditions)`` or ``and_(*conditions)``) against a query that
     already selects from/joins ``WebDocument``.
     """
-    for field_name in _UNRESOLVED_NAME_FIELDS:
-        if getattr(filters, field_name) is not None:
-            raise NotImplementedError(
-                f"{field_name} filtering requires name resolution (stage 7 of "
-                "docs/search-rebuild-implementation-plan.md); not yet supported by "
-                "build_document_filters()"
-            )
-
     conditions: list[ColumnElement[bool]] = []
+
+    if filters.author_name is not None:
+        conditions.append(_author_match(filters.author_name))
 
     if filters.publisher_name is not None:
         publisher_ids = select(Publisher.id).where(
@@ -55,6 +56,16 @@ def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
             func.lower(PublisherDomain.domain) == domain,
         )
         conditions.append(WebDocument.publisher_id.in_(publisher_ids))
+
+    if filters.discovery_source_name is not None:
+        # Physical names stay ``source``/``sources`` until stage 11, but the
+        # domain meaning here is explicitly the discovery channel.  Never
+        # join information_sources (claim/reporting provenance).
+        discovery_source_names = select(Source.name).where(
+            func.unaccent(func.lower(Source.name))
+            == func.unaccent(filters.discovery_source_name.strip().lower()),
+        )
+        conditions.append(WebDocument.source.in_(discovery_source_names))
 
     if filters.collection_name is not None:
         # Today collection_name maps onto the plain web_documents.project
@@ -85,6 +96,36 @@ def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
         ))
 
     return conditions
+
+
+def _author_match(name: str) -> ColumnElement[bool]:
+    """Structured author/alias match with legacy byline fallback only.
+
+    The fallback is used only when a document has no role='author' links, so
+    stale display text can never override normalized authorship.
+    """
+    folded = name.strip().lower()
+    author_links = select(DocumentPerson.id).where(
+        DocumentPerson.document_id == WebDocument.id,
+        DocumentPerson.role == "author",
+    )
+    matching_link = (
+        select(DocumentPerson.id)
+        .join(Person, DocumentPerson.person_id == Person.id)
+        .outerjoin(PersonAlias, PersonAlias.person_id == Person.id)
+        .where(
+            DocumentPerson.document_id == WebDocument.id,
+            DocumentPerson.role == "author",
+            or_(
+                func.unaccent(func.lower(Person.canonical_name)) == func.unaccent(folded),
+                func.unaccent(func.lower(PersonAlias.alias)) == func.unaccent(folded),
+            ),
+        )
+    )
+    legacy_byline = func.unaccent(func.lower(func.coalesce(WebDocument.author, ""))).ilike(
+        func.unaccent(f"%{folded}%"),
+    )
+    return or_(exists(matching_link), and_(~exists(author_links), legacy_byline))
 
 
 def _subject_period_overlap(start_year: int | None, end_year: int | None) -> ColumnElement[bool]:
