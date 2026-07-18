@@ -352,6 +352,10 @@ Search audit and LLM usage accounting (stage 2 of [docs/search-rebuild-implement
 
 Reader identity and API key tables (`users`, `user_reading_progress`, `user_document_notes`, `api_keys` — init scripts 19-20) are out of scope for this section; see `library/reader_routes.py`, `library/auth.py` and `library/db/models.py` for their definitions.
 
+### Tables: `public.publishers`, `public.publisher_domains`
+
+Stage 7A search registry (migration `f5a6b7c8d9e0`). `publishers` stores the publication portal; `publisher_domains.domain` is globally unique and maps a normalized hostname to one publisher. `web_documents.publisher_id` is nullable (`ON DELETE SET NULL`, indexed). Migration backfills one bootstrap publisher per normalized hostname extracted from `web_documents.url`; its initial canonical name is the domain. This concept is separate from `sources` (discovery channel) and `information_sources` (claim/reporting provenance).
+
 ## Document Processing States
 
 The `document_state` column tracks a document through its processing pipeline (defined in `backend/library/models/stalker_document_status.py`):

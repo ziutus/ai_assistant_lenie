@@ -5,6 +5,33 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 7, sesja A (publisherzy i domeny) — UKOŃCZONA
+
+**Zakres wykonany:** migracja `f5a6b7c8d9e0` tworzy `publishers`, globalnie unikalne
+`publisher_domains`, indeksy i nullable `web_documents.publisher_id`; backfill bierze wyłącznie
+hostname z `web_documents.url` (nigdy discovery `sources` ani `information_sources`). ORM dostał
+`Publisher`/`PublisherDomain`. `publisher_registry.resolve_publisher()` zwraca jawne 0/1/N
+dopasowań, a pojedynczy `publisher_id` tylko dla N=1. `build_document_filters()` obsługuje
+`publisher_name`/`publisher_domain` przez podzapytania obejmujące wszystkie dopasowania — bez
+losowego wyboru.
+
+**Testy uruchomione:** `tests/unit/`: **1792 passed**; `uvx ruff check backend/`: czysty.
+NAS: upgrade `e4f5a6b7c8d9 → f5a6b7c8d9e0`, downgrade, ponowny upgrade; head
+`f5a6b7c8d9e0`. Backfill: 3904 publisherów/domen, 9219/9220 dokumentów przypiętych. E2E:
+realna domena `00xbyte.github.io` → dokładnie 1; dwa transakcyjne publishery o tej samej nazwie
+→ dokładnie 2 i `publisher_id=None`; rollback potwierdzony (0 śladów).
+
+**Otwarte ryzyka:** bootstrapowa nazwa publishera jest domeną i wymaga późniejszej kuracji;
+jeden dokument bez rozpoznawalnego hosta pozostaje bez publishera. `author_name` i
+`discovery_source_name` nadal celowo rzucają `NotImplementedError` do sesji B.
+
+**PR/merge:** PR **#292**; hash merge'a do uzupełnienia po merge sesji A.
+
+**Następny krok:** etap 7, sesja B — autor przez `document_persons.role='author'` i aliasy z
+fallbackiem do fizycznych pól `author`/`author_source` (docelowo byline/byline_method), oraz
+semantyka discovery source oparta na obecnej tabeli `sources`, bez dotykania
+`information_sources`.
+
 ## 2026-07-18 — Etap 6, sesja B (wyszukiwanie samymi filtrami, bez embeddingu) — ETAP 6 UKOŃCZONY
 
 **Zakres wykonany:**
