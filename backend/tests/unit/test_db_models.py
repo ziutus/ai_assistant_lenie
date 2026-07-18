@@ -155,7 +155,7 @@ class TestWebDocumentColumns:
     EXPECTED_COLUMNS = {
         "id", "summary", "url", "language", "tags", "text",
         "paywall", "title", "created_at", "document_type",
-        "source", "date_from", "date_from_source", "original_id", "document_length",
+        "source", "publisher_id", "date_from", "date_from_source", "original_id", "document_length",
         "chapter_list", "document_state", "document_state_error",
         "text_raw", "transcript_job_id", "ai_summary_needed",
         "author", "author_source", "note", "uuid", "project", "text_md",
@@ -165,7 +165,7 @@ class TestWebDocumentColumns:
     }
 
     def test_column_count(self):
-        assert len(_column_names(WebDocument)) == 34
+        assert len(_column_names(WebDocument)) == 35
 
     def test_all_column_names(self):
         assert _column_names(WebDocument) == self.EXPECTED_COLUMNS
