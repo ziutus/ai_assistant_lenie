@@ -1273,6 +1273,7 @@ def get_run_chunks(run_id: int):
             "thematic_tags": doc_thematic_tags,
             "quality": getattr(doc, "quality", None) if doc else None,
             "date_from": doc.date_from.isoformat() if doc and doc.date_from else None,
+            "date_from_source": getattr(doc, "date_from_source", None) if doc else None,
         },
         "segments": segments,
         "lite": lite,
@@ -1748,6 +1749,7 @@ def extract_publication_date(run_id: int):
     if doc is None:
         abort(404, f"Document {run.document_id} not found")
     doc.date_from = parsed_date
+    doc.date_from_source = "llm"
     try:
         session.commit()
     except Exception:
@@ -1755,7 +1757,7 @@ def extract_publication_date(run_id: int):
         logger.exception("DB save failed for run %d date_from", run_id)
         return jsonify({"status": "error", "message": "DB save failed"}), 500
 
-    return jsonify({"status": "success", "date_from": parsed_date.isoformat()})
+    return jsonify({"status": "success", "date_from": parsed_date.isoformat(), "date_from_source": "llm"})
 
 
 # ---------------------------------------------------------------------------
@@ -1780,6 +1782,7 @@ def set_date_from(doc_id: int):
 
     if date_str is None:
         doc.date_from = None
+        doc.date_from_source = None
     else:
         if not isinstance(date_str, str):
             return jsonify({"status": "error", "message": "date_from must be a string or null"}), 400
@@ -1787,6 +1790,7 @@ def set_date_from(doc_id: int):
             doc.date_from = date.fromisoformat(date_str)
         except ValueError:
             return jsonify({"status": "error", "message": f"Invalid date {date_str!r}, expected YYYY-MM-DD"}), 400
+        doc.date_from_source = "manual"
 
     try:
         session.commit()
@@ -1795,7 +1799,11 @@ def set_date_from(doc_id: int):
         logger.exception("DB save failed for document %d date_from", doc_id)
         return jsonify({"status": "error", "message": "DB save failed"}), 500
 
-    return jsonify({"status": "success", "date_from": doc.date_from.isoformat() if doc.date_from else None})
+    return jsonify({
+        "status": "success",
+        "date_from": doc.date_from.isoformat() if doc.date_from else None,
+        "date_from_source": doc.date_from_source,
+    })
 
 
 # ---------------------------------------------------------------------------

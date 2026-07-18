@@ -524,6 +524,7 @@ const Chunks = () => {
   const [authorPersonId, setAuthorPersonId] = React.useState<number | null>(null);
   const [authorDescription, setAuthorDescription] = React.useState("");
   const [docDateFrom, setDocDateFrom] = React.useState<string | null>(null);
+  const [docDateFromSource, setDocDateFromSource] = React.useState<string | null>(null);
   const [extractingDateFor, setExtractingDateFor] = React.useState<number | null>(null);
   const [dateInput, setDateInput] = React.useState("");
   const [savingDate, setSavingDate] = React.useState(false);
@@ -658,6 +659,7 @@ const Chunks = () => {
       setAuthorPersonId(data.document?.author_person_id ?? null);
       setAuthorDescription(data.document?.author_description ?? "");
       setDocDateFrom(data.document?.date_from ?? null);
+      setDocDateFromSource(data.document?.date_from_source ?? null);
       setDateInput(data.document?.date_from ?? "");
       setDocQuality(data.document?.quality ?? null);
       setDocCountries(data.document?.countries ?? []);
@@ -1374,6 +1376,7 @@ const Chunks = () => {
       const data = await r.json();
       if (data.status === "success" && data.date_from) {
         setDocDateFrom(data.date_from);
+        setDocDateFromSource(data.date_from_source ?? "llm");
         setDateInput(data.date_from);
         setInfo(`Ustawiono datę publikacji: ${data.date_from}`);
       }
@@ -1396,6 +1399,7 @@ const Chunks = () => {
       const data = await r.json();
       if (data.status === "success") {
         setDocDateFrom(data.date_from);
+        setDocDateFromSource(data.date_from_source ?? "manual");
         setInfo(`Ustawiono datę publikacji: ${data.date_from}`);
       } else setError("Błąd zapisu daty publikacji: " + (data.message ?? ""));
     } catch { setError("Błąd połączenia przy zapisie daty publikacji"); }
@@ -1988,6 +1992,16 @@ const Chunks = () => {
         {runMode === "article" && (
           <span style={{ fontSize: "0.88em", padding: "3px 9px", borderRadius: 4, background: docDateFrom ? "#f3e8ff" : "#f1f5f9", color: docDateFrom ? "#6b21a8" : "#64748b", display: "inline-flex", alignItems: "center", gap: 6 }}>
             Data publikacji: <strong>{docDateFrom || "nie wykryto"}</strong>
+            {docDateFrom && docDateFromSource && (
+              <span
+                title={docDateFromSource === "manual"
+                  ? "Wpisana ręcznie przez recenzenta — automatyka jej nie znalazła"
+                  : "Wykryta przez LLM z treści chunka"}
+                style={{ fontSize: "0.85em", opacity: 0.75 }}
+              >
+                {docDateFromSource === "manual" ? "✍️" : "🤖"}
+              </span>
+            )}
             <input
               type="date"
               value={dateInput}
