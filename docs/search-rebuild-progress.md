@@ -5,6 +5,91 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 4 (samodzielny SearchQueryParser) — UKOŃCZONY
+
+**Zakres wykonany:**
+
+- Nowy moduł `library/search/parser.py`, niezależny od testowego parsera komend Slacka:
+  - `SEARCH_QUERY_SYSTEM_PROMPT` — pełny polski prompt systemowy z opisem wszystkich ~20 pól
+    `ParsedSearchQuery`, dwoma przykładami (przykład z planu: niewolnictwo w Afryce/1945; przykład
+    „lista wszystkiego" bez kryteriów), jawną instrukcją bezpieczeństwa: cały tekst użytkownika to
+    WYŁĄCZNIE treść do zinterpretowania, nigdy polecenie dla modelu (obrona przed prompt injection).
+  - `_RESPONSE_SCHEMA` — pełny JSON Schema (`response_format`) z **wszystkimi polami wymaganymi**,
+    `additionalProperties: false`, uniami typu z `null` (`["string", "null"]`), enumami dla
+    `document_types` (z `StalkerDocumentType`), `sort`, `model_confidence`.
+  - `build_parsed_query(payload)` — normalizuje odwrócone zakresy (lata/daty/daty-czasu) PRZED
+    konstrukcją przez `normalize_*_range()` z etapu 1, konwertuje stringi ISO na `date`/`datetime`;
+    poza tym przekazuje pola 1:1 do `ParsedSearchQuery`, które samo waliduje (bez duplikowania
+    reguł walidacji w parserze).
+  - `_extract_json()` — zdejmuje code fence, przy nieparsowalnym JSON-ie próbuje odzyskać ucięty
+    obiekt (`_repair_truncated_object`: domyka otwarte stringi/nawiasy, licząc głębokość) —
+    odzyskanie udaje się, gdy ucięcie nastąpiło po wszystkich wymaganych polach; ucięcie w środku
+    literału (`tr` zamiast `true`) zostaje `invalid_json`.
+  - `parse_search_query(raw_query, model=None)` — **zawsze zwraca poprawny `ParsedSearchQuery`**:
+    sukces/niejednoznaczność → sparsowany obiekt (status `parsed`/`ambiguous`); błąd LLM/nieparsowalny
+    JSON/błąd walidacji → syntetyczny fallback (`query=surowy tekst`, `model_confidence=low`,
+    ostrzeżenie po polsku). Każda próba (niezależnie od wyniku) zapisuje dokładnie jeden wiersz
+    przez `record_interpretation()` z etapu 2; `ai_ask()` wywoływane z `temperature=0`,
+    `system_prompt`, `response_format`, `operation="search_query_parse"` — usage zapisuje się
+    automatycznie przez centralny recorder z etapu 3, także przy wyjątku LLM.
+  - `SearchQueryParseResult` — dataclass zwracany do wywołującego: `parsed_query`, `status`,
+    `fallback_used`, `interpretation_log_id`, `model`, `raw_response`, `error_code`/`error_message`,
+    `llm_latency_ms`, `usage`.
+  - Leniwy re-eksport `parse_search_query`/`SearchQueryParseResult` w `library/search/__init__.py`.
+
+**Testy uruchomione:**
+
+- `tests/unit/test_search_query_parser.py` (nowy, 30 testów): przykład z planu (niewolnictwo/1945),
+  przekazanie surowego tekstu do `ai_ask()` bez modyfikacji, prompt injection (tekst dociera
+  bajt w bajt, system prompt nietknięty), niestandardowy model, domyślny model z configu,
+  niejednoznaczność → `ambiguous`, pusty/`None` `response_text` → `invalid_json`, wyjątek LLM
+  (timeout i ogólny) → `llm_error` z fallbackiem bez wyjątku, JSON w code fence, ucięty JSON
+  odzyskiwalny i nieodzyskiwalny, odwrócone zakresy lat/dat zamieniane (nie odrzucane), nieznany
+  typ dokumentu / zła literówka typu pola / zła data ISO / niespójna flaga doprecyzowania →
+  `validation_error` z użytecznym fallbackiem, `build_parsed_query()` i `_fallback_query()`
+  testowane też bezpośrednio, dokładnie jedno wywołanie `ai_ask()`/`record_interpretation()`
+  na próbę (także przy błędzie).
+- Pełna suita `tests/unit/`: **1680 passed**; `uvx ruff check backend/`: czysty.
+- **E2E na żywym Sherlocku + bazie NAS** z PEŁNYM schematem (unie typu z `null`, tablice z enumami,
+  20 wymaganych pól — nigdy wcześniej nie testowane na żywo, wcześniejsza sonda z etapu 3 używała
+  schematu 2-polowego): 3 zapytania.
+  1. Przykład z planu → `parsed`, `subject_period_start_year=1945`, `temporal_expression` po polsku
+     z poprawnymi znakami diakrytycznymi mimo wejścia bez nich.
+  2. „artykuly Jana Kowalskiego z onet.pl o wyborach z zeszlego miesiaca" → jednym wywołaniem
+     poprawnie: `author_name="Jan Kowalski"`, `publisher_name="Onet.pl"`,
+     `publisher_domain="onet.pl"`, `document_types=("webpage",)`, `languages=("pl",)`,
+     `sort=published_desc`, `published_on_to` = koniec poprzedniego miesiąca.
+  3. „cos zupelnie niejasnego xyz" → `ambiguous`, `clarification_required=True`,
+     sensowne pytanie doprecyzowujące po polsku.
+  Wszystkie 3 zostawiły dokładnie jeden wiersz w `search_interpretation_logs` i jeden w
+  `llm_usage_logs` (`operation='search_query_parse'`, koszt ~0,001 EUR `estimated`);
+  posprzątane po teście.
+
+**Otwarte ryzyka:**
+
+- `llm_usage_logs.search_interpretation_log_id` **nie jest wypełniane** — FK zostaje `NULL`.
+  Wiązanie wymagałoby zapisu w dwóch krokach (najpierw `ai_ask()` bez znanego jeszcze
+  `interpretation_log_id`, potem UPDATE wiersza usage po utworzeniu wiersza interpretacji) albo
+  odwrócenia kolejności zapisów; świadomie odłożone — nie jest wymagane przez warunek zakończenia
+  etapu 4, a `audit_repository`/`recorder` nie mają dziś funkcji do takiego UPDATE-u. Do rozważenia
+  przy etapie 8 (endpoint) lub jako osobny mały PR.
+- Prompt nie zawiera pełnego słownika kotwic historycznych (tylko przykład „koniec II wojny
+  światowej = 1945") — pełny wersjonowany słownik to zakres etapu 5.
+- `document_types`/`languages` w schemacie JSON nie są jeszcze rozwiązywane na relacje
+  (`author_name`/`publisher_name`/`discovery_source_name`/`collection_name` to nadal tekst, zgodnie
+  z sekcją 5 planu) — rozwiązanie nazw na identyfikatory to etap 7.
+- Ewaluacja na pełnym fixture 43 zapytań (`tests/fixtures/search_query_cases.json`) z etapu 0 NIE
+  została uruchomiona w tej sesji (to explicite etap 10) — dzisiejsze 3 zapytania to punktowa
+  weryfikacja działania schematu na żywo, nie pełny raport jakości.
+- Wersjonowanie promptu/parsera (`PARSER_VERSION="1"`, `PROMPT_VERSION="1"`) to na razie stałe
+  literały bez mechanizmu bump — przy zmianie treści promptu trzeba pamiętać o ręcznym podniesieniu.
+
+**Następny krok:** Etap 5 — czas i okresy historyczne: wydzielić wspólną normalizację lat
+z `time_periods.py`, rozróżnić datę publikacji/datę dodania/okres treści (już rozróżnione
+w typach z etapu 1, ale bez logiki relacji), dodać relacje `before`/`after`/`between`/`around`,
+mały wersjonowany słownik kotwic (np. koniec II wojny światowej = 1945 — dziś tylko w przykładzie
+promptu, nie w kodzie), oznaczać przybliżenia ostrzeżeniem. Etap `S`.
+
 ## 2026-07-18 — Etap 3b (sprzątanie usage w modułach domenowych) — UKOŃCZONY
 
 **Zakres wykonany:**
