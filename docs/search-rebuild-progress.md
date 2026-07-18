@@ -5,6 +5,70 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 3b (sprzątanie usage w modułach domenowych) — UKOŃCZONY
+
+**Zakres wykonany:**
+
+- Nowy moduł `library/llm_usage/report.py` — `usage_report(usage)` kształtuje jedno wywołanie
+  (`response.usage`, czyli `UsageRecord` z etapu 3) do słownika przyjaznego JSON-owi
+  (`llm_calls`, `usage_log_ids`, `llm_tokens`, `llm_cost_amount` jako `str(Decimal)`,
+  `llm_cost_currency`, `llm_cost_status`); `combine_usage_reports()` agreguje wiele takich
+  słowników (tokeny sumowane gdy wszystkie znane; koszt sumowany TYLKO gdy wszystkie składniki
+  mają znaną kwotę w tej samej walucie — inaczej `None`/`unknown`, nigdy cichego miksowania
+  walut ani zera zamiast nieznanej ceny; mieszany status reported/estimated → `estimated`
+  jako bezpieczniejszy). Bez importu sqlalchemy (duck typing na `usage`) — moduł działa też
+  w lekkim środowisku uvx.
+- `library/timeline_events.py` — usunięto `_response_usage()` (martwa sonda `cost_usd`/`cost`/
+  `credits_used`, zawsze zwracała `None`) i `_combine_costs()`; `extract_fragment_events()`
+  i `extract_document_events()` budują raporty przez `usage_report()`/`combine_usage_reports()`;
+  wywołanie `ai_ask()` dostało `operation="timeline_event_extraction"`.
+- `library/tones.py` — usunięty prywatny import `_response_usage` z `timeline_events`;
+  `classify_fragment()` używa `usage_report()`; `ai_ask()` dostał
+  `operation="tone_classification"`.
+- `library/time_periods.py` — analogicznie; `ai_ask()` dostał
+  `operation="time_period_classification"`.
+- Skrypty CLI (`imports/extract_events.py`, `extract_tones.py`, `extract_time_periods.py`)
+  bez zmian — dumpują cokolwiek jest w raporcie, nowe pola (`usage_log_ids`,
+  `llm_cost_amount/currency/status`) po prostu się w nich pojawią zamiast starego `llm_cost`.
+- Dokumentacja: `backend/library/CLAUDE.md` (opis `report.py`, aktualizacja wzmianki o etapie 3b
+  przy `ai_ask()`), `backend/tests/CLAUDE.md`.
+
+**Testy uruchomione:**
+
+- `tests/unit/test_llm_usage_report.py` (nowy, 11 testów): kształtowanie pojedynczego wywołania,
+  agregacja tokenów/kosztu, mix walut nigdy nie sumowany, dowolny `unknown` zatruwa sumę,
+  brakujący token zatruwa sumę tokenów, mieszany status → estimated, lista pusta, pojedynczy
+  raport = passthrough.
+- `tests/unit/test_timeline_events.py`, `test_tones.py`, `test_time_periods.py` zaktualizowane
+  (mocki `ai_ask` w testach dostały `usage=fake_usage(...)` zamiast czytanego wcześniej
+  `total_tokens=` bezpośrednio na obiekcie odpowiedzi) — 76 testów łącznie z nowym modułem.
+- Pełna suita `tests/unit/`: **1650 passed**; `uvx ruff check backend/`: czysty.
+- E2E na żywym Sherlocku + baza NAS: `tones.classify_fragment()` i `time_periods.classify_fragment()`
+  na tym samym fragmencie o zakończeniu II wojny światowej — oba zwróciły niepuste
+  `usage_log_ids`, `llm_cost_status="estimated"`, `llm_cost_currency="EUR"`; w bazie potwierdzono
+  wiersze z `operation='tone_classification'`/`'time_period_classification'`; posprzątane po teście.
+
+**Otwarte ryzyka:**
+
+- `grep -rn "_response_usage\|_combine_costs"` w `backend/` daje tylko wzmiankę w docstringu
+  `report.py` — zero żywego kodu odwołuje się do starych nazw (potwierdza warunek zakończenia
+  etapu 3b z planu).
+- `combine_usage_reports()` przy mieszanym statusie reported/estimated zwraca `estimated` —
+  arbitralna decyzja projektowa (brak precyzyjniejszego statusu w enum `CostStatus` dla „część
+  rekordów miała inny status"); nieistotne dziś, bo żaden provider w tych trzech modułach nie
+  raportuje kosztu (`reported`), tylko lokalna estymacja Bielika.
+- `imports/extract_events.py`/`extract_tones.py`/`extract_time_periods.py` nadal nie mają testów
+  jednostkowych na kształt wypisywanego JSON-a (nie było ich też przed tą sesją) — zmiana pól
+  raportu jest więc niezweryfikowana testem na poziomie CLI, tylko przez testy modułów
+  bibliotecznych i E2E ręczne.
+
+**Następny krok:** Etap 4 — samodzielny `SearchQueryParser` (nowy moduł niezależny od
+testowego parsera komend Slacka, polski prompt systemowy z pełnym schematem, walidacja/
+normalizacja odpowiedzi Bielika przez `ParsedSearchQuery` z etapu 1, fallback do surowej frazy,
+zapis każdej próby do `search_interpretation_logs` przez `record_interpretation()` z etapu 2,
+`ai_ask(..., operation="search_query_parse", ...)` z `system_prompt` i `response_format` json_schema
+z etapu 3). Etap `M` — rozbić na dwie sesje.
+
 ## 2026-07-18 — Etap 3 (poprawa abstrakcji LLM) — UKOŃCZONY
 
 **Zakres wykonany:**

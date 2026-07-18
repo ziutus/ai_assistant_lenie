@@ -9,7 +9,8 @@ from sqlalchemy import delete
 from library.ai import ai_ask
 from library.config_loader import load_config
 from library.db.models import DocumentTimePeriod
-from library.timeline_events import _chapters_for_document, _complete_array_prefix, _response_usage
+from library.llm_usage.report import usage_report
+from library.timeline_events import _chapters_for_document, _complete_array_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -110,8 +111,10 @@ def normalize_period(candidate: dict) -> dict | None:
 
 def classify_fragment(fragment: str, model: str) -> tuple[list[dict], dict]:
     """Make one LLM call and retain valid, de-duplicated periods (main period first)."""
-    response = ai_ask(_time_period_prompt(fragment), model=model, temperature=0.1, max_token_count=800)
-    tokens, cost = _response_usage(response)
+    response = ai_ask(
+        _time_period_prompt(fragment), model=model, temperature=0.1, max_token_count=800,
+        operation="time_period_classification",
+    )
     candidates, invalid_json = _parse_periods_response(response.response_text)
     periods: list[dict] = []
     seen_labels: set[str] = set()
@@ -131,9 +134,7 @@ def classify_fragment(fragment: str, model: str) -> tuple[list[dict], dict]:
     return periods, {
         "rejected_invalid": rejected,
         "invalid_json": int(invalid_json),
-        "llm_calls": 1,
-        "llm_tokens": tokens,
-        "llm_cost": cost,
+        **usage_report(response.usage).as_dict(),
     }
 
 
