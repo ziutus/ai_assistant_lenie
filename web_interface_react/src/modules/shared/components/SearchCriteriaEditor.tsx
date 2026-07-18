@@ -1,0 +1,67 @@
+import React from "react";
+import type { SearchInterpretation } from "../hooks/useSearch";
+import { SEARCH_FILTER_KEYS, type SearchFilterKey } from "../utils/searchCriteria";
+
+const LABELS: Record<SearchFilterKey, string> = {
+  author_name: "Autor", publisher_name: "Wydawca", publisher_domain: "Domena wydawcy",
+  discovery_source_name: "Źródło odkrycia", collection_name: "Kolekcja",
+  published_on_from: "Publikacja od", published_on_to: "Publikacja do",
+  ingested_at_from: "Dodano od", ingested_at_to: "Dodano do",
+  subject_period_start_year: "Okres od", subject_period_end_year: "Okres do",
+  document_types: "Typy", languages: "Języki",
+};
+
+const present = (value: unknown) => value != null && value !== ""
+  && (!Array.isArray(value) || value.length > 0);
+
+const inputValue = (value: unknown) => Array.isArray(value) ? value.join(", ") : String(value ?? "");
+
+export const SearchCriteriaEditor = ({ criteria, disabled, onChange, onApply }: {
+  criteria: SearchInterpretation;
+  disabled: boolean;
+  onChange: (criteria: SearchInterpretation) => void;
+  onApply: () => void;
+}) => {
+  const update = (key: SearchFilterKey, raw: string) => {
+    let value: string | number | string[] | null = raw;
+    if (key === "document_types" || key === "languages") {
+      value = raw.split(",").map(item => item.trim()).filter(Boolean);
+    } else if (key === "subject_period_start_year" || key === "subject_period_end_year") {
+      value = raw === "" ? null : Number(raw);
+    }
+    onChange({ ...criteria, [key]: value });
+  };
+  const remove = (key: SearchFilterKey) => onChange({
+    ...criteria,
+    [key]: key === "document_types" || key === "languages" ? [] : null,
+  });
+
+  return (
+    <section aria-label="Korekta interpretacji" style={{ margin: "12px 0 18px", maxWidth: 1050 }}>
+      <h4 style={{ marginBottom: 8 }}>Popraw interpretację</h4>
+      <label style={{ display: "block", marginBottom: 8 }}>
+        Temat
+        <input aria-label="Temat" disabled={disabled} value={criteria.query ?? ""}
+          onChange={event => onChange({ ...criteria, query: event.target.value || null })}
+          style={{ display: "block", width: "min(600px, 100%)" }} />
+      </label>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        {SEARCH_FILTER_KEYS.filter(key => present(criteria[key])).map(key => (
+          <label key={key} style={{ display: "flex", alignItems: "center", gap: 5,
+            border: "1px solid #cbd5e1", borderRadius: 8, padding: "5px 7px", background: "#fff" }}>
+            <span style={{ fontSize: ".78rem", color: "#475569" }}>{LABELS[key]}</span>
+            <input aria-label={LABELS[key]} disabled={disabled} value={inputValue(criteria[key])}
+              type={key.startsWith("subject_period_") ? "number" : "text"}
+              onChange={event => update(key, event.target.value)} style={{ width: 130 }} />
+            <button aria-label={`Usuń filtr ${LABELS[key]}`} type="button" disabled={disabled}
+              onClick={() => remove(key)} style={{ border: 0, background: "transparent", cursor: "pointer" }}>×</button>
+          </label>
+        ))}
+      </div>
+      <button type="button" className="button" disabled={disabled || (!criteria.query &&
+        SEARCH_FILTER_KEYS.every(key => !present(criteria[key])))} onClick={onApply} style={{ marginTop: 10 }}>
+        Szukaj z poprawionymi kryteriami
+      </button>
+    </section>
+  );
+};
