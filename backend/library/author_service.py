@@ -33,7 +33,10 @@ logger = logging.getLogger(__name__)
 # Portal bylines separate co-authors with commas, semicolons, slashes,
 # newlines (multi-line copy-paste) or the Polish conjunctions "i"/"oraz"
 # ("Michał Rogalski i Piotr Gruszka").
-_AUTHOR_SEPARATORS = re.compile(r"\s*(?:[,;/\n]|\bi\b|\boraz\b)\s*", re.IGNORECASE)
+# Do not wrap the alternatives in ``\s*``: adjacent unbounded whitespace
+# matches can backtrack polynomially on an untrusted pasted byline. Each split
+# part is stripped below, so whitespace consumption here is unnecessary.
+_AUTHOR_SEPARATORS = re.compile(r"[,;/\n]|\bi\b|\boraz\b", re.IGNORECASE)
 
 # Portal UI junk that survives a byline copy-paste ("Michał Rogalski\nObserwuj").
 _AUTHOR_STOPWORDS = {"obserwuj", "autor", "autorzy", "autorka", "red.", "redakcja", "opracowanie"}
