@@ -26,7 +26,7 @@ ale przy bardzo rozbudowanych filtrach warto później przejść na krótszy, we
 UI umożliwia edycję/usunięcie filtrów rozpoznanych przez Bielika, ale nie ma jeszcze pickera do
 dodawania całkiem nowego typu filtra, którego parser nie zwrócił.
 
-**PR/merge:** PR **#298**; hash merge'a do uzupełnienia po merge sesji B.
+**PR/merge:** PR **#298**, merge **9c82bb5**.
 
 **Następny krok:** Etap 10 — baseline ewaluacji 43 prawdziwych zapytań na Bieliku z raportem
 poprawności pól, latency, tokenów i kosztu.
