@@ -27,6 +27,7 @@ from library.ai import ai_ask
 from library.config_loader import load_config
 from library.models.stalker_document_type import StalkerDocumentType
 from library.search.audit_repository import record_interpretation
+from library.search.temporal import TemporalRelation, enrich_subject_period
 from library.search.types import (
     MAX_QUERY_LENGTH,
     InterpretationStatus,
@@ -49,6 +50,7 @@ PARSE_OPERATION = "search_query_parse"
 _DOCUMENT_TYPE_VALUES = sorted(member.name for member in StalkerDocumentType)
 _SORT_VALUES = [member.value for member in SearchSort]
 _CONFIDENCE_VALUES = [member.value for member in ModelConfidence]
+_RELATION_VALUES = [member.value for member in TemporalRelation]
 
 FALLBACK_SUMMARY = "Nie udało się zinterpretować zapytania — wyszukiwanie po dosłownej frazie."
 
@@ -73,7 +75,15 @@ Zwróć WYŁĄCZNIE poprawny obiekt JSON z dokładnie tymi polami:
   (rzadko wspominane wprost przez użytkownika — ustawiaj tylko gdy naprawdę o to pyta)
 - subject_period_start_year, subject_period_end_year: lata, których DOTYCZY treść (nie data
   publikacji artykułu!) jako liczby całkowite; lata p.n.e. jako liczby ujemne; null gdy nieznane.
-  Przykładowa kotwica: koniec II wojny światowej to rok 1945.
+  Jeśli znasz dokładny rok (np. koniec II wojny światowej to rok 1945), podaj go wprost tutaj.
+- subject_period_relation, subject_period_anchor_text: pole zapasowe — wypełniaj TYLKO gdy
+  rozpoznajesz znany punkt odniesienia w historii (np. "upadek muru berlińskiego", "rozpad ZSRR"),
+  ale NIE jesteś pewien dokładnego roku. subject_period_relation to jedna z wartości
+  {_RELATION_VALUES} ("exact" = dokładnie ten rok, "before"/"after" = przed/po tym roku,
+  "around" = w przybliżeniu tego roku, "between" = potrzebne wtedy oba pola start/end_year
+  powyżej, nie to pole), subject_period_anchor_text to oryginalny fragment tekstu z nazwą
+  wydarzenia (np. "upadek muru berlińskiego"). Gdy podajesz już dokładny rok wyżej, zostaw oba
+  te pola null.
 - temporal_expression: oryginalny fragment tekstu opisujący okres (do diagnostyki) albo null
 - document_types: lista spośród {_DOCUMENT_TYPE_VALUES} albo pusta lista gdy nie sprecyzowano
 - languages: lista kodów języków ISO 639-1 (np. "pl", "en") albo pusta lista
@@ -93,6 +103,7 @@ Przykład 1 — zapytanie: "niewolnictwo w afryce miedzy od konca II wojny swiat
   "published_on_from": null, "published_on_to": null,
   "ingested_at_from": null, "ingested_at_to": null,
   "subject_period_start_year": 1945, "subject_period_end_year": null,
+  "subject_period_relation": null, "subject_period_anchor_text": null,
   "temporal_expression": "od konca II wojny swiatowej",
   "document_types": [], "languages": [], "sort": "relevance",
   "interpretation_summary": "Niewolnictwo w Afryce od zakończenia II wojny światowej",
@@ -109,12 +120,31 @@ Przykład 2 — zapytanie: "co mamy nowego" (brak konkretnych kryteriów)
   "published_on_from": null, "published_on_to": null,
   "ingested_at_from": null, "ingested_at_to": null,
   "subject_period_start_year": null, "subject_period_end_year": null,
+  "subject_period_relation": null, "subject_period_anchor_text": null,
   "temporal_expression": null,
   "document_types": [], "languages": [], "sort": "ingested_desc",
   "interpretation_summary": "Najnowsze dodane dokumenty, bez konkretnego tematu",
   "warnings": [],
   "clarification_required": false, "clarification_question": null,
   "model_confidence": "medium"
+}}
+
+Przykład 3 — zapytanie: "gospodarka polski po upadku muru berlinskiego" (rok nieznany, ale
+punkt odniesienia znany — użyj pola zapasowego zamiast zgadywać rok)
+{{
+  "query": "gospodarka Polski",
+  "author_name": null, "publisher_name": null, "publisher_domain": null,
+  "discovery_source_name": null, "collection_name": null,
+  "published_on_from": null, "published_on_to": null,
+  "ingested_at_from": null, "ingested_at_to": null,
+  "subject_period_start_year": null, "subject_period_end_year": null,
+  "subject_period_relation": "after", "subject_period_anchor_text": "upadek muru berlinskiego",
+  "temporal_expression": "po upadku muru berlinskiego",
+  "document_types": [], "languages": [], "sort": "relevance",
+  "interpretation_summary": "Gospodarka Polski po upadku muru berlińskiego",
+  "warnings": [],
+  "clarification_required": false, "clarification_question": null,
+  "model_confidence": "high"
 }}
 """
 
@@ -137,6 +167,8 @@ _RESPONSE_SCHEMA = {
                 "ingested_at_to": {"type": ["string", "null"]},
                 "subject_period_start_year": {"type": ["integer", "null"]},
                 "subject_period_end_year": {"type": ["integer", "null"]},
+                "subject_period_relation": {"type": ["string", "null"], "enum": [*_RELATION_VALUES, None]},
+                "subject_period_anchor_text": {"type": ["string", "null"]},
                 "temporal_expression": {"type": ["string", "null"]},
                 "document_types": {"type": "array", "items": {"type": "string", "enum": _DOCUMENT_TYPE_VALUES}},
                 "languages": {"type": "array", "items": {"type": "string"}},
@@ -151,7 +183,8 @@ _RESPONSE_SCHEMA = {
                 "query", "author_name", "publisher_name", "publisher_domain",
                 "discovery_source_name", "collection_name",
                 "published_on_from", "published_on_to", "ingested_at_from", "ingested_at_to",
-                "subject_period_start_year", "subject_period_end_year", "temporal_expression",
+                "subject_period_start_year", "subject_period_end_year",
+                "subject_period_relation", "subject_period_anchor_text", "temporal_expression",
                 "document_types", "languages", "sort", "interpretation_summary", "warnings",
                 "clarification_required", "clarification_question", "model_confidence",
             ],
@@ -283,8 +316,19 @@ def build_parsed_query(payload: dict) -> ParsedSearchQuery:
     if _is_plain_int(start_year) and _is_plain_int(end_year):
         start_year, end_year, year_warning = normalize_year_range(start_year, end_year)
 
+    # Fallback only: when the LLM left both bounds null but recognized a
+    # known historical anchor it wasn't sure of the year for, resolve the
+    # year deterministically here instead of trusting model arithmetic.
+    # An explicit numeric year from the LLM is never overridden.
+    start_year, end_year, anchor_warning = enrich_subject_period(
+        start_year=start_year,
+        end_year=end_year,
+        relation=payload.get("subject_period_relation"),
+        anchor_text=payload.get("subject_period_anchor_text"),
+    )
+
     warnings = list(payload.get("warnings") or [])
-    for warning in (published_warning, ingested_warning, year_warning):
+    for warning in (published_warning, ingested_warning, year_warning, anchor_warning):
         if warning:
             warnings.append(warning)
 

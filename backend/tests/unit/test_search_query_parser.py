@@ -273,6 +273,65 @@ class TestValidationErrors:
         assert result.parsed_query.interpretation_summary == parser.FALLBACK_SUMMARY
 
 
+class TestSubjectPeriodAnchorEnrichment:
+    """Stage 5: relation + anchor_text fallback when the LLM leaves years null."""
+
+    def test_known_anchor_resolves_year_deterministically(self):
+        payload = niewolnictwo_payload(
+            subject_period_start_year=None, subject_period_end_year=None,
+            subject_period_relation="after", subject_period_anchor_text="upadek muru berlińskiego",
+        )
+        parsed = parser.build_parsed_query(payload)
+        assert parsed.subject_period_start_year == 1989
+        assert parsed.subject_period_end_year is None
+        assert any("1989" in w for w in parsed.warnings)
+
+    def test_explicit_year_from_llm_is_never_overridden_by_anchor(self):
+        payload = niewolnictwo_payload(
+            subject_period_start_year=1945, subject_period_end_year=None,
+            subject_period_relation="after", subject_period_anchor_text="rozpad ZSRR",
+        )
+        parsed = parser.build_parsed_query(payload)
+        # 1945 from the LLM wins; the (contradictory, LLM-authored) anchor
+        # hint pointing at 1991 is never consulted once a year is present.
+        assert parsed.subject_period_start_year == 1945
+
+    def test_unrecognized_anchor_leaves_period_null_with_diagnostic_warning(self):
+        payload = niewolnictwo_payload(
+            subject_period_start_year=None, subject_period_end_year=None,
+            subject_period_relation="after", subject_period_anchor_text="jakies nieznane wydarzenie",
+        )
+        parsed = parser.build_parsed_query(payload)
+        assert parsed.subject_period_start_year is None
+        assert parsed.subject_period_end_year is None
+        assert any("nieznane wydarzenie" in w for w in parsed.warnings)
+
+    def test_enrichment_never_sets_published_on_or_ingested_at(self):
+        payload = niewolnictwo_payload(
+            subject_period_start_year=None, subject_period_end_year=None,
+            subject_period_relation="exact", subject_period_anchor_text="koniec II wojny światowej",
+            published_on_from=None, published_on_to=None,
+        )
+        parsed = parser.build_parsed_query(payload)
+        assert parsed.subject_period_start_year == 1945
+        assert parsed.published_on_from is None
+        assert parsed.published_on_to is None
+        assert parsed.ingested_at_from is None
+        assert parsed.ingested_at_to is None
+
+    def test_full_parse_flow_resolves_anchor_end_to_end(self):
+        payload = niewolnictwo_payload(
+            subject_period_start_year=None, subject_period_end_year=None,
+            subject_period_relation="around", subject_period_anchor_text="rozpad ZSRR",
+        )
+        response = fake_llm_response(json.dumps(payload))
+        with patched_ai_ask(return_value=response), patched_record(return_value=1):
+            result = parser.parse_search_query("gospodarka po rozpadzie ZSRR")
+        assert result.status is InterpretationStatus.PARSED
+        assert result.parsed_query.subject_period_start_year == 1986
+        assert result.parsed_query.subject_period_end_year == 1996
+
+
 class TestBuildParsedQueryUnit:
     def test_minimal_valid_payload(self):
         parsed = parser.build_parsed_query(niewolnictwo_payload())
