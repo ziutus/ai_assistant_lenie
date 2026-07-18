@@ -5,6 +5,30 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 8 (nowe endpointy wyszukiwania) — UKOŃCZONY
+
+**Zakres wykonany:** nowy blueprint `library/search_routes.py`, zarejestrowany w `server.py`:
+`POST /search/parse`, `POST /search`, `POST /search/<id>/feedback`. Requesty JSON są mapowane na
+walidowane `SearchRequest`/`SearchFilters`/`SearchFeedback`; błędy kontraktu zwracają spójne 400.
+Naturalne zapytanie korzysta z parsera i bezpiecznego fallbacku, jawne kryteria nie wywołują LLM.
+Niejednoznaczne nazwy zwracają clarification i count bez uruchamiania search; awaria resolvera
+jest logowana i nie daje 500. `SearchService.search()` obsługuje komplet filtrów, filter-only bez
+embeddingu, hybrydową paginację i jawne sortowanie. Stary `/website_similar` pozostaje bez zmian.
+
+**Testy uruchomione:** `tests/unit/`: **1826 passed**; `uvx ruff check backend/`: czysty.
+`test_search_routes.py` pokrywa parse/search/feedback, natural/explicit/fallback, ambiguity,
+błędy resolvera i bezpieczne 400/404/503. E2E Flask + Sherlock + NAS: `/search/parse` → 200,
+search_id=9, rok 2004; jawne `/search` dla `HTTPS://UNKNOW.NEWS/` → dokumenty 461/460;
+feedback → 200; audit i usage usunięte po teście.
+
+**Otwarte ryzyka:** endpoint nie aktualizuje jeszcze `result_count/search_latency_ms` w już
+utworzonym rekordzie audytu (pola pozostają nullable); można dodać przy dashboardzie etapu 12.
+Głęboki offset hybrydowy zwiększa liczbę kandydatów i docelowo powinien przejść na cursor/keyset.
+
+**PR/merge:** PR **#295**; hash merge'a do uzupełnienia po merge.
+
+**Następny krok:** Etap 9 — frontend interpretacji i edycji filtrów, w dwóch sesjach.
+
 ## 2026-07-18 — Etap 7, sesja B (autor i discovery source) — ETAP 7 UKOŃCZONY
 
 **Zakres wykonany:** `build_document_filters()` obsługuje wszystkie cztery pola nazwowe.
