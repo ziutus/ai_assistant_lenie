@@ -113,7 +113,9 @@ def record_interpretation(
         session.add(log)
         session.commit()
         return log.id
-    except Exception:
+    except (SystemExit, Exception):
+        # SystemExit included: config_loader's require() exits when DB config
+        # is missing — an audit write must never kill the search process.
         logger.exception("Failed to record search interpretation (status=%s)", status_value.value)
         if session is not None:
             try:
@@ -154,7 +156,7 @@ def record_feedback(
         log.feedback_at = func.now()
         session.commit()
         return True
-    except Exception:
+    except (SystemExit, Exception):
         logger.exception("Failed to record search feedback (log id=%s)", interpretation_log_id)
         if session is not None:
             try:

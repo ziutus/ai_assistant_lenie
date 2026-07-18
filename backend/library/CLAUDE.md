@@ -83,15 +83,18 @@ library/
 
 ### LLM Abstraction (`ai.py`)
 
-Entry point: `ai_ask(query, model, temperature, max_token_count, top_p) → AiResponse`
+Entry point: `ai_ask(query, model, temperature, max_token_count, top_p, *, system_prompt=None, response_format=None, operation="ai_ask", search_interpretation_log_id=None) → AiResponse`
 
 Supported models:
 - **OpenAI**: gpt-3.5-turbo, gpt-4, gpt-4o, gpt-4o-mini
 - **AWS Bedrock**: amazon.titan-tg1-large, amazon.nova-micro, amazon.nova-pro
 - **Google Vertex AI**: gemini-2.0-flash-lite-001
-- **CloudFerro**: Bielik-11B-v2.3-Instruct (Polish)
+- **CloudFerro**: Bielik-11B-v2.3-Instruct, Bielik-11B-v3.0-Instruct (Polish)
+- **ARK Labs**: `arklabs/<model>` (stateless/stateful GPU session variant)
 
 Helper: `ai_model_need_translation_to_english(model)` — checks if model requires English input.
+
+**Stage 3 of the search-rebuild plan (docs/search-rebuild-implementation-plan.md).** `system_prompt` is sent as a real system-role message — never string-concatenated with the user prompt — for providers that support it (`cloudferro`, `arklabs`); passing one for any other provider raises `ValueError`. `response_format` is forwarded to Sherlock only (`cloudferro`); other providers raise `ValueError`. **Verified live against CloudFerro Sherlock (2026-07-18):** `{"type": "json_schema", "json_schema": {...}}` is honored — the schema's required keys are imposed on the model's output — but `{"type": "json_object"}` is rejected with HTTP 400, so structured output requires a full JSON Schema, not the bare "give me JSON" mode. Provider-specific token field names (`prompt_tokens`/`completion_tokens` vs Bedrock's `input_tokens`/`output_tokens`) are unified internally before recording usage. After every call (success or exception) `ai_ask()` writes exactly one `llm_usage_logs` row via `library.llm_usage.recorder.record_llm_usage()` and attaches the resulting `UsageRecord` (tokens, latency, `usage_log_id`, `CostEstimate` with status) to `response.usage`; recorder failures (including `SystemExit` from `config_loader.require()` when DB config is absent) are logged and swallowed so a bad usage write never breaks the LLM call. `AiResponse` intentionally has **no** `cost_usd`/`cost`/`credits_used` attributes — cost lives only in `response.usage.cost` (stage 3b cleans up the modules that still probe for those dead attribute names in `timeline_events.py`).
 
 ### Embedding Abstraction (`embedding.py`)
 
