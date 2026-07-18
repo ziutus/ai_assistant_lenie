@@ -422,3 +422,84 @@ class TestAdjacentTagLinks:
         tags = '[czołgi](/tag/czolgi)[rosja](/tag/rosja)[militaria](/tag/militaria)'
         result = clean_article_text(f"{LONG_PARAGRAPH}\n{tags}", url="https://tech.wp.pl/test")["text"]
         assert result == LONG_PARAGRAPH
+
+
+class TestBankierExtraction:
+    URL = "https://www.bankier.pl/wiadomosc/Jakis-artykul-1234567.html"
+
+    # Kształt zdjęty z realnego dokumentu (bankier.pl, 2026-02) — menu nagłówka
+    # skrócone do reprezentatywnej próbki markerów.
+    RAW_PAGE = "\n".join([
+        "GIEŁDATytuł strony w tagu <title>",
+        "Podziel się",
+        "Skomentuj",
+        "21",
+        "Newsletter",
+        "Rynki",
+        "Giełda",
+        "Waluty",
+        "Zaloguj się / Zarejestruj",
+        "REKLAMA",
+        "Bankier.plRynkiGiełdaWiadomości",
+        "InneNotowania GPWESPI/EBIGiełdy światoweRekomendacjeKalendariumDywidendyNarzędziaPortfelForum",
+        "Ważny krok ws. budowy małych reaktorów jądrowych nad Wisłą",
+        "publikacja",
+        "2026-02-25 08:10",
+        "",
+        LONG_PARAGRAPH,
+        "",
+        "mcb/ osz/",
+        "",
+        "Źródło:",
+        "PAP Biznes",
+        "tematy",
+        "pknorlen",
+        "Polska elektrownia jądrowa",
+        "Komentarze\xa0(21)",  # bankier.pl łączy oba słowa twardą spacją
+        "dodaj komentarz",
+        "miketheripper2026-02-25 15:28",
+        "0",
+        "1",
+        "\"Nad Wisłą\" - będą lewitować czy wisieć?",
+        "Powiązane: pknorlen",
+        "Paweł Wojtunik wchodzi do zarządu Orlenu",
+        "Notowania",
+        "PKNORLEN",
+        "114,56-0,47%",
+        "Bankier.pl na skróty",
+        "Giełda",
+        "WIG30",
+    ])
+
+    def test_detects_bankier_portal(self):
+        assert _detect_portal(self.URL) == "bankier"
+
+    def test_cleaner_strips_nav_metadata_comments_and_footer_but_keeps_article(self):
+        result = clean_article_text(self.RAW_PAGE, url=self.URL)["text"]
+
+        assert LONG_PARAGRAPH in result
+
+        # Górne menu nagłówka i breadcrumb/podmenu
+        assert "Podziel się" not in result
+        assert "Newsletter" not in result
+        assert "Zaloguj się / Zarejestruj" not in result
+        assert "Bankier.plRynkiGiełdaWiadomości" not in result
+        assert "InneNotowania" not in result
+
+        # Metadane publikacji nad artykułem
+        assert "publikacja" not in result
+        assert "2026-02-25 08:10" not in result
+
+        # Źródło i tagi po artykule
+        assert "Źródło:" not in result
+        assert "PAP Biznes" not in result
+        assert "pknorlen" not in result
+
+        # Komentarze, powiązane artykuły, widget notowań, stopka-sitemapa
+        assert "Komentarze (21)" not in result
+        assert "będą lewitować" not in result
+        assert "Powiązane: pknorlen" not in result
+        assert "Paweł Wojtunik" not in result
+        assert "PKNORLEN" not in result
+        assert "Bankier.pl na skróty" not in result
+        assert "WIG30" not in result

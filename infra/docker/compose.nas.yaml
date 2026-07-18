@@ -33,6 +33,13 @@ services:
       - "5055:5000"
     env_file:
       - /share/ContainerNew/lenie-env/.env
+    # NOTE: this backend runs with SECRETS_BACKEND=vault, so entries here are
+    # NOT read by the app's config_loader (only bootstrap vars + Vault KV are)
+    # — kept only so `env`-backend/local runs of this compose file still work.
+    # The value that actually matters is in Vault: secret/lenie/dev SITE_RULES_PATH.
+    # To change it: MSYS_NO_PATHCONV=1 python scripts/env_to_vault.py vault set
+    # --env dev SITE_RULES_PATH=/app/config/site_rules.json, then restart the
+    # container. See docs/security/secrets-management.md#adding-new-variables.
     environment:
       SITE_RULES_PATH: /app/config/site_rules.json
     volumes:

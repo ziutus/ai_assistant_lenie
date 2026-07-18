@@ -88,6 +88,8 @@ def _detect_portal(url: str) -> str | None:
         return "natgeo"
     if "gazeta.pl" in url_lower:
         return "gazeta"
+    if "bankier.pl" in url_lower:
+        return "bankier"
     return None
 
 
@@ -141,6 +143,11 @@ PORTAL_FOOTER_MARKERS = {
         "Dziękujemy za przeczytanie",
         "#### Obserwuj nas",
     ],
+    # Komentarze rozpoczynają blok "Komentarze (N)" — za nim leży widget notowań,
+    # rekomendacje ("Powiązane"/"Najpopularniejsze"/"Polecane") i stopka-sitemapa.
+    "bankier": [
+        "Komentarze (",
+    ],
 }
 
 # Markery końca nawigacji/początku artykułu per portal.
@@ -151,6 +158,12 @@ PORTAL_START_AFTER_MARKERS: dict[str, list[str]] = {
     "wp": [
         "Prawdziwe dziennikarstwo. Niezależna redakcja. ZA DARMO.",
         "ZAPISZUDOSTĘPNIJ",
+    ],
+    # Ostatnia linia głównego menu nagłówka bankier.pl (obecna na każdej stronie
+    # niezależnie od kategorii artykułu) — za nią leży breadcrumb, podmenu sekcji
+    # i dopiero potem właściwy tytuł/treść.
+    "bankier": [
+        "Zaloguj się / Zarejestruj",
     ],
 }
 
@@ -220,7 +233,7 @@ def _find_footer_line(text: str, portal: str | None) -> int | None:
 
     lines = text.splitlines()
     for i, line in enumerate(lines):
-        stripped = line.strip()
+        stripped = line.strip().replace('\xa0', ' ')
         for marker in markers:
             if stripped.startswith(marker):
                 return i
@@ -242,7 +255,7 @@ def _find_start_line(text: str, portal: str | None) -> int | None:
 
     lines = text.splitlines()
     for i, line in enumerate(lines):
-        stripped = line.strip()
+        stripped = line.strip().replace('\xa0', ' ')
         for marker in PORTAL_START_AFTER_MARKERS[portal]:
             if marker in stripped:
                 return i
@@ -260,7 +273,7 @@ def _cut_at_footer(text: str, portal: str | None) -> str:
 
     lines = text.splitlines()
     for i, line in enumerate(lines):
-        stripped = line.strip()
+        stripped = line.strip().replace('\xa0', ' ')
         for marker in markers:
             if stripped.startswith(marker):
                 logger.debug(f"Footer marker found at line {i}: {marker}")
