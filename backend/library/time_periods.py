@@ -11,6 +11,7 @@ from library.config_loader import load_config
 from library.db.models import DocumentTimePeriod
 from library.llm_usage.report import usage_report
 from library.timeline_events import _chapters_for_document, _complete_array_prefix
+from library.year_normalization import coerce_year
 
 logger = logging.getLogger(__name__)
 
@@ -75,25 +76,13 @@ def parse_periods_response(raw_response: str) -> list[dict]:
     return periods
 
 
-def _coerce_year(value) -> int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        year = value
-    elif isinstance(value, str) and re.fullmatch(r"-?\d{1,5}", value.strip()):
-        year = int(value.strip())
-    else:
-        return None
-    return year if MIN_YEAR <= year <= MAX_YEAR else None
-
-
 def normalize_period(candidate: dict) -> dict | None:
     """Validate one LLM period candidate; BCE years are negative integers."""
     label = " ".join(str(candidate.get("period_label") or "").split())
     if not label:
         return None
-    start = _coerce_year(candidate.get("period_start_year"))
-    end = _coerce_year(candidate.get("period_end_year"))
+    start = coerce_year(candidate.get("period_start_year"), minimum=MIN_YEAR, maximum=MAX_YEAR)
+    end = coerce_year(candidate.get("period_end_year"), minimum=MIN_YEAR, maximum=MAX_YEAR)
     if start is not None and end is not None and start > end:
         start, end = end, start
     confidence = str(candidate.get("confidence") or "").strip().lower()

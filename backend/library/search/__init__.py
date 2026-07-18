@@ -7,6 +7,15 @@ collection) from day one, regardless of the legacy SQL column names.
 
 import importlib
 
+from library.search.temporal import (
+    ANCHOR_DICTIONARY_VERSION,
+    HISTORICAL_ANCHORS,
+    TemporalRelation,
+    TemporalRelationError,
+    enrich_subject_period,
+    resolve_anchor,
+    resolve_relation,
+)
 from library.search.types import (
     MAX_SEARCH_LIMIT,
     MAX_SUBJECT_YEAR,
@@ -26,6 +35,8 @@ from library.search.types import (
 )
 
 __all__ = [
+    "ANCHOR_DICTIONARY_VERSION",
+    "HISTORICAL_ANCHORS",
     "MAX_SEARCH_LIMIT",
     "MAX_SUBJECT_YEAR",
     "MIN_SUBJECT_YEAR",
@@ -38,13 +49,18 @@ __all__ = [
     "SearchQueryValidationError",
     "SearchRequest",
     "SearchSort",
+    "TemporalRelation",
+    "TemporalRelationError",
     "delete_expired_interpretations",
+    "enrich_subject_period",
     "normalize_date_range",
     "normalize_datetime_range",
     "normalize_year_range",
     "parsed_query_to_dict",
     "record_feedback",
     "record_interpretation",
+    "resolve_anchor",
+    "resolve_relation",
     "SearchQueryParseResult",
     "parse_search_query",
 ]
