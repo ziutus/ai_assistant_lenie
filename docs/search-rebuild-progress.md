@@ -5,6 +5,92 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 6, sesja A (wspólny builder filtrów SQL) — POŁOWA ETAPU
+
+**Zakres wykonany:**
+
+- Nowy `library/search/sql_filters.py` — `build_document_filters(filters: SearchFilters)`:
+  JEDEN builder zwracający listę predykatów SQLAlchemy przeciw kolumnom `WebDocument`,
+  stosowany identycznie przez `search_text()` i `get_similar()`.
+  - `collection_name` → `WebDocument.project` (dokładne dopasowanie; dziś to płaska kolumna
+    string, nie tabela słownikowa — bezpieczne bez rozwiązywania nazw, w przeciwieństwie do
+    autora/wydawcy).
+  - `published_on_from/to` → `WebDocument.date_from`; `ingested_at_from/to` →
+    `WebDocument.created_at`.
+  - `document_types`/`languages` → klauzule `IN`.
+  - `subject_period_start/end_year` → skorelowany podzapytanie `EXISTS` przeciw
+    `document_time_periods` (ta sama semantyka „brak roku po dowolnej stronie = otwarty zakres"
+    co poprzedni filtr pythonowy, teraz w SQL).
+  - `author_name`/`publisher_name`/`publisher_domain`/`discovery_source_name` → **rzuca
+    `NotImplementedError`** zamiast cicho ignorować (wymaga rozwiązania nazw na identyfikatory —
+    to etap 7, jeszcze niezbudowany; cichy brak filtra byłby gorszym błędem niż głośny wyjątek).
+- `stalker_web_documents_db_postgresql.py` — `search_text()` i `get_similar()` dostały nowy,
+  addytywny parametr `filters: SearchFilters | None`, stosowany przez `build_document_filters()`
+  PRZED `.limit()` (kolejność wywołań `.where()` w Pythonie nie wpływa na wygenerowany SQL —
+  WHERE zawsze poprzedza LIMIT niezależnie od kolejności w łańcuchu). Stary parametr `project`
+  zachowany bez zmian (kompatybilność wsteczna dla `test_code/embeddings_search.py`); oba się
+  łączą przez AND, jeśli podane razem.
+- `library/search_service.py` — `SearchService.search_similar()` (JEDYNA aktualnie żywa ścieżka
+  wyszukiwania, obsługuje `/website_similar`) przepięta: buduje `SearchFilters` wewnętrznie
+  z `project`/`period_from`/`period_to` i przekazuje do OBU wywołań repozytorium. Usunięto
+  `_documents_in_period()` i filtr postprocessingowy w Pythonie — okres jest teraz filtrowany
+  w SQL przed `LIMIT`, co naprawia realny błąd: poprzednio filtr okresu odrzucał kandydatów
+  z JUŻ ograniczonej przez LIMIT listy, więc pasujące dokumenty spoza pierwszych N kandydatów
+  nigdy nie miały szansy się pojawić. Odwrócony `period_from`/`period_to` jest zamieniany przez
+  `normalize_year_range()` (nie odrzucany); rok spoza domeny (`MIN_SUBJECT_YEAR`/
+  `MAX_SUBJECT_YEAR`) lub pusty string `project` degradują do braku filtra zamiast rzucać
+  `SearchQueryValidationError` — ta metoda zawsze przyjmowała niezaufane parametry HTTP i musi
+  nadal degradować się łagodnie, a nie zwracać 500.
+- Leniwy re-eksport `build_document_filters` w `library/search/__init__.py`.
+- Dokumentacja: `backend/library/CLAUDE.md`, `backend/tests/CLAUDE.md`.
+
+**Testy uruchomione:**
+
+- `tests/unit/test_search_sql_filters.py` (nowy, 19 testów): każde pole `SearchFilters` mapuje
+  na właściwy fragment SQL, `EXISTS`/korelacja po `web_documents.id`, semantyka otwartego zakresu,
+  4 pola nierozwiązane rzucają `NotImplementedError`, wiele filtrów łączy się w wiele warunków.
+- `tests/unit/test_repository_sql_filters.py` (nowy, 12 testów): **bezpośredni dowód warunku
+  zakończenia etapu** — `search_text()` i `get_similar()` dają IDENTYCZNE fragmenty SQL dla tych
+  samych filtrów (nie tylko „z konwencji", ale zweryfikowane porównaniem skompilowanego SQL);
+  filtr pojawia się przed `LIMIT` w skompilowanym zapytaniu (indeks stringa); `project`+`filters`
+  łączą się przez AND; brak filtrów = brak dodatkowych predykatów.
+- `tests/unit/test_search_service.py` — przepisana klasa `TestPeriodFilter` (usunięte testy
+  `_documents_in_period`, 6 nowych: okno okresu trafia jako `filters=`, brak okna = puste
+  `SearchFilters()`, odwrócony zakres zamieniany, rok spoza domeny degraduje się bez wyjątku,
+  pusty `project` degraduje się bez wyjątku) + zaktualizowane asercje `mock_similar.assert_called_
+  once_with(..., filters=...)` zamiast `project=...`.
+- Pełna suita `tests/unit/`: **1765 passed**; `uvx ruff check backend/`: czysty.
+- **E2E na żywej bazie NAS** (jedyny scenariusz z realnymi danymi produkcyjnymi w całym planie
+  do tej pory — to zmiana dotykająca JEDYNEGO aktualnie żywego endpointu wyszukiwania):
+  `search_text()` z filtrem `document_types` działa na realnym schemacie; znaleziono realny
+  wiersz `document_time_periods` (dok. 9144, 1975–2024, „współczesność") i potwierdzono, że
+  filtr okresu zbudowany z tych samych granic faktycznie zwraca dokument będący właścicielem
+  tego wiersza; `get_similar()` z filtrem `document_types` działa poprawnie na złączeniu
+  z `pgvector`; pełne `search_similar('wojna', period 1939-1945)` zwróciło 1 trafny wynik
+  (książka o kontekście historycznym pasującym do okresu) zamiast wcześniejszych 5 bez filtra —
+  potwierdza, że SQL-owy filtr okresu faktycznie zawęża wyniki w praktyce, nie tylko w testach
+  z mockiem.
+
+**Otwarte ryzyka:**
+
+- **Sesja B etapu 6 (NIEWYKONANA w tej sesji)**: „umożliwić wyszukiwanie wyłącznie po filtrach
+  bez generowania embeddingu" — dziś każde wywołanie `search_similar()` nadal generuje embedding
+  (nawet gdy interesują nas wyłącznie filtry, bez frazy tekstowej); potrzebna nowa metoda
+  (np. `SearchService.search_by_filters()` + `WebsitesDBPostgreSQL.list_by_filters()`) omijająca
+  całkowicie `embedding.get_embedding()`.
+- `author_name`/`publisher_name`/`publisher_domain`/`discovery_source_name` pozostają
+  nieobsługiwane (`NotImplementedError`) — żaden aktualny wywołujący ich nie ustawia, więc ryzyko
+  jest czysto teoretyczne, ale blokuje pełne wykorzystanie `SearchFilters` do czasu etapu 7.
+- Zgodność `languages` z konwencją zapisu w `web_documents.language` (zakładane małe litery,
+  np. „pl"/„en") nie została jawnie zweryfikowana na danych NAS w tej sesji — do sprawdzenia,
+  jeśli filtr językowy da nieoczekiwanie puste wyniki w przyszłości.
+- Obecny ranking (`SearchService._merge_results()`) pozostał bez zmian, zgodnie z zakresem etapu.
+
+**Następny krok:** Etap 6, sesja B — wyszukiwanie wyłącznie po filtrach (bez embeddingu):
+nowa metoda w `SearchService` + `WebsitesDBPostgreSQL` zwracająca dokumenty pasujące do
+`SearchFilters` bez frazy tekstowej, z sortowaniem (domyślnie `ingested_desc`). Etap `M`,
+druga połowa.
+
 ## 2026-07-18 — Etap 5 (czas i okresy historyczne) — UKOŃCZONY
 
 **Zakres wykonany:**

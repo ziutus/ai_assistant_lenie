@@ -36,6 +36,7 @@ Configuration in `backend/pyproject.toml` under `[tool.pytest.ini_options]`. The
 | `test_get_list_query.py` | `get_list()` ORM query construction |
 | `test_embedding_crud_orm.py` | Embedding add/delete via ORM |
 | `test_similarity_search_orm.py` | `get_similar()` pgvector ORM path |
+| `test_repository_sql_filters.py` | `search_text()`/`get_similar()` `filters=` wiring (stage 6): both apply identical SQL fragments for the same `SearchFilters` (proving the stage 6 acceptance criterion directly, not just by convention), filters appear before `LIMIT` in the compiled SQL, `project=`/`filters=` combine with AND |
 | `test_sql_parameterization.py` | SQL parameterization (no string interpolation) |
 | `test_import_log_tracker.py` | `ImportLog` model + `ImportLogTracker` context manager |
 | `test_removed_lines.py` | `DocumentRemovedLine` model + `_removed_lines_diff`/`_log_removed_lines` helpers (cleaner-training data) |
@@ -45,7 +46,8 @@ Configuration in `backend/pyproject.toml` under `[tool.pytest.ini_options]`. The
 | File | Covers |
 |------|--------|
 | `test_document_service.py` | `DocumentService` (create/import document) |
-| `test_search_service.py` | `SearchService` (embeddings, similarity) |
+| `test_search_service.py` | `SearchService` (embeddings, similarity); stage 6: `search_similar()` forwards a `SearchFilters` built from `project`/`period_from`/`period_to` to both repo calls, reversed period swapped not rejected, out-of-domain year and blank `project` degrade to no filter instead of raising |
+| `test_search_sql_filters.py` | `library/search/sql_filters.py` (stage 6): every `SearchFilters` field maps to the right SQL fragment (`collection_name`→`project` exact match, `published_on_*`→`date_from`, `ingested_at_*`→`created_at`, `document_types`/`languages`→`IN`, `subject_period_*`→correlated `EXISTS` against `document_time_periods` with open-ended-bound semantics), author/publisher/discovery-source fields raise `NotImplementedError` (stage 7 territory) instead of being silently ignored |
 | `test_search_types.py` | `library/search/types.py` — frozen search domain models: per-field validation, boundaries, reversed ranges, request variants |
 | `test_llm_usage_pricing.py` | `library/llm_usage/pricing.py` — exact Decimal Bielik/embedding cost math, UNKNOWN for non-token pricing, float money rejected |
 | `test_search_audit_models.py` | ORM metadata for `search_interpretation_logs`/`llm_pricing`/`llm_usage_logs` pinned to the stage-2 migrations |
