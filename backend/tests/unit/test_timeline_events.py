@@ -12,6 +12,15 @@ from library import chunk_review_routes, timeline_events
 from library.db.models import DocumentEvent
 
 
+def fake_usage(usage_log_id=1, total_tokens=1):
+    """Duck-typed UsageRecord for tests that stub ai_ask() directly."""
+    return SimpleNamespace(
+        usage_log_id=usage_log_id,
+        total_tokens=total_tokens,
+        cost=SimpleNamespace(total_cost=None, currency=None, status=SimpleNamespace(value="unknown")),
+    )
+
+
 def test_truncated_response_recovers_complete_objects():
     raw = '[{"date_text": "2020", "description": "Pierwsze", "quote": "Cytat"}, {"date_text": "2021"'
 
@@ -40,7 +49,7 @@ def test_invalid_json_is_counted_in_fragment_report(monkeypatch):
     monkeypatch.setattr(
         timeline_events,
         "ai_ask",
-        lambda *_args, **_kwargs: SimpleNamespace(response_text=raw, total_tokens=1),
+        lambda *_args, **_kwargs: SimpleNamespace(response_text=raw, usage=fake_usage()),
     )
 
     events, report = timeline_events.extract_fragment_events(fragment, 1, "model")
@@ -56,16 +65,22 @@ def test_invalid_json_is_summed_in_chapter_report(monkeypatch):
             "rejected_without_date": 0,
             "invalid_json": 1,
             "llm_calls": 1,
+            "usage_log_ids": [1],
             "llm_tokens": 10,
-            "llm_cost": None,
+            "llm_cost_amount": None,
+            "llm_cost_currency": None,
+            "llm_cost_status": "unknown",
         },
         {
             "rejected_without_quote": 0,
             "rejected_without_date": 0,
             "invalid_json": 0,
             "llm_calls": 1,
+            "usage_log_ids": [2],
             "llm_tokens": 10,
-            "llm_cost": None,
+            "llm_cost_amount": None,
+            "llm_cost_currency": None,
+            "llm_cost_status": "unknown",
         },
     ])
     monkeypatch.setattr(
@@ -83,6 +98,8 @@ def test_invalid_json_is_summed_in_chapter_report(monkeypatch):
     result = timeline_events.extract_document_events(None, SimpleNamespace(), model="model")
 
     assert result["chapters"][0]["invalid_json"] == 1
+    assert result["chapters"][0]["usage_log_ids"] == [1, 2]
+    assert result["chapters"][0]["llm_tokens"] == 20
 
 
 @pytest.mark.parametrize(
@@ -101,7 +118,7 @@ def test_llm_response_parsing_with_optional_markdown_fence(monkeypatch, wrapper)
     monkeypatch.setattr(
         timeline_events,
         "ai_ask",
-        lambda *_args, **_kwargs: SimpleNamespace(response_text=wrapper(payload), total_tokens=42),
+        lambda *_args, **_kwargs: SimpleNamespace(response_text=wrapper(payload), usage=fake_usage(total_tokens=42)),
     )
 
     events, report = timeline_events.extract_fragment_events(fragment, 3, "test-model")
@@ -124,7 +141,7 @@ def test_quote_outside_fragment_is_rejected(monkeypatch):
     monkeypatch.setattr(
         timeline_events,
         "ai_ask",
-        lambda *_args, **_kwargs: SimpleNamespace(response_text=payload, total_tokens=1),
+        lambda *_args, **_kwargs: SimpleNamespace(response_text=payload, usage=fake_usage()),
     )
 
     events, report = timeline_events.extract_fragment_events("W 1997 wydarzyło się coś innego.", 1, "model")
@@ -186,7 +203,7 @@ def test_grounded_quote_normalizes_typographic_dashes(monkeypatch):
     monkeypatch.setattr(
         timeline_events,
         "ai_ask",
-        lambda *_args, **_kwargs: SimpleNamespace(response_text=payload, total_tokens=1),
+        lambda *_args, **_kwargs: SimpleNamespace(response_text=payload, usage=fake_usage()),
     )
 
     events, report = timeline_events.extract_fragment_events(fragment, 1, "model")

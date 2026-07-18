@@ -14,6 +14,15 @@ from library import chunk_review_routes, tones  # noqa: E402
 from library.db.models import DocumentTone  # noqa: E402
 
 
+def fake_usage(usage_log_id=1, total_tokens=5):
+    """Duck-typed UsageRecord for tests that stub ai_ask() directly."""
+    return SimpleNamespace(
+        usage_log_id=usage_log_id,
+        total_tokens=total_tokens,
+        cost=SimpleNamespace(total_cost=None, currency=None, status=SimpleNamespace(value="unknown")),
+    )
+
+
 def _candidate(**overrides) -> dict:
     candidate = {
         "emocja": "gniewny",
@@ -85,7 +94,7 @@ def test_classify_fragment_reports_invalid_json(monkeypatch):
     monkeypatch.setattr(
         tones,
         "ai_ask",
-        lambda *_args, **_kwargs: SimpleNamespace(response_text="nie-json", total_tokens=5),
+        lambda *_args, **_kwargs: SimpleNamespace(response_text="nie-json", usage=fake_usage()),
     )
 
     tone, report = tones.classify_fragment("tekst", "model")
@@ -100,7 +109,7 @@ def test_classify_fragment_reports_rejected_candidate(monkeypatch):
     monkeypatch.setattr(
         tones,
         "ai_ask",
-        lambda *_args, **_kwargs: SimpleNamespace(response_text=payload, total_tokens=5),
+        lambda *_args, **_kwargs: SimpleNamespace(response_text=payload, usage=fake_usage()),
     )
 
     tone, report = tones.classify_fragment("tekst", "model")

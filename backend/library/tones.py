@@ -16,7 +16,8 @@ from unidecode import unidecode
 from library.ai import ai_ask
 from library.config_loader import load_config
 from library.db.models import DocumentTone
-from library.timeline_events import _chapters_for_document, _response_usage
+from library.llm_usage.report import usage_report
+from library.timeline_events import _chapters_for_document
 
 logger = logging.getLogger(__name__)
 
@@ -118,16 +119,16 @@ def normalize_tone(candidate: dict) -> dict | None:
 
 def classify_fragment(fragment: str, model: str) -> tuple[dict | None, dict]:
     """Make one LLM call and return the validated tone (or None) with a report."""
-    response = ai_ask(_tone_prompt(fragment), model=model, temperature=0.1, max_token_count=500)
-    tokens, cost = _response_usage(response)
+    response = ai_ask(
+        _tone_prompt(fragment), model=model, temperature=0.1, max_token_count=500,
+        operation="tone_classification",
+    )
     candidate = parse_tone_response(response.response_text)
     tone = normalize_tone(candidate) if candidate is not None else None
     return tone, {
         "invalid_json": int(candidate is None),
         "rejected_invalid": int(candidate is not None and tone is None),
-        "llm_calls": 1,
-        "llm_tokens": tokens,
-        "llm_cost": cost,
+        **usage_report(response.usage).as_dict(),
     }
 
 
