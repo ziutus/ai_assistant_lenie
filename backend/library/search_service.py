@@ -118,6 +118,52 @@ class SearchService:
         """
         return self.repo.list_by_filters(filters, limit=limit, offset=offset, sort=sort)
 
+    def search(
+        self,
+        query: str | None,
+        filters: SearchFilters,
+        *,
+        limit: int = 20,
+        offset: int = 0,
+        sort: SearchSort = SearchSort.RELEVANCE,
+    ) -> list[dict]:
+        """Execute the stage-8 explicit contract with arbitrary filters.
+
+        A missing query is filter-only and never generates an embedding.
+        Offset is currently supported on the filter-only path; hybrid
+        relevance pagination fetches enough candidates and slices the merged
+        ranking deterministically.
+        """
+        sort = SearchSort(sort)
+        if query is None:
+            return self.search_by_filters(filters, limit=limit, offset=offset, sort=sort)
+
+        candidate_limit = max((limit + offset) * 5, 20)
+        lexical = self.repo.search_text(query, limit=candidate_limit, filters=filters)
+        model = self._get_model()
+        embedding_result = embedding.get_embedding(model=model, text=query)
+        semantic = []
+        if embedding_result.status == "success" and embedding_result.embedding:
+            semantic = self.repo.get_similar(
+                embedding_result.embedding, model, limit=candidate_limit, filters=filters,
+            ) or []
+        elif not lexical:
+            raise RuntimeError(f"Embedding generation failed: {embedding_result.status}")
+        else:
+            logger.warning("Embedding generation failed; returning lexical results: %s",
+                           embedding_result.status)
+        merged = self._merge_results(query, lexical, semantic, limit + offset)
+        if sort is SearchSort.PUBLISHED_DESC:
+            merged.sort(key=lambda item: (item.get("date_from") is not None,
+                                          item.get("date_from") or ""), reverse=True)
+        elif sort is SearchSort.PUBLISHED_ASC:
+            merged.sort(key=lambda item: (item.get("date_from") is None,
+                                          item.get("date_from") or ""))
+        elif sort is SearchSort.INGESTED_DESC:
+            merged.sort(key=lambda item: (item.get("created_at") is not None,
+                                          item.get("created_at") or ""), reverse=True)
+        return merged[offset:offset + limit]
+
     # Letters with no Unicode canonical decomposition (NFKD leaves them alone,
     # unlike e.g. "ó" -> "o" + combining acute) but that PostgreSQL's unaccent()
     # folds anyway. Kept in sync with search_text()'s SQL-side folding so a
