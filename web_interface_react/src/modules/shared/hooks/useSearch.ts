@@ -1,69 +1,84 @@
 import React from "react";
-import {AuthorizationContext} from "../context/authorizationContext";
 import axios from "axios";
+import { AuthorizationContext } from "../context/authorizationContext";
 
-export const useSearch = ({ callback }: { callback: () => void }) => {
-  const [data, setData] = React.useState<any[] | null>(null);
+export interface SearchInterpretation {
+  query: string | null;
+  author_name: string | null;
+  publisher_name: string | null;
+  publisher_domain: string | null;
+  discovery_source_name: string | null;
+  collection_name: string | null;
+  published_on_from: string | null;
+  published_on_to: string | null;
+  ingested_at_from: string | null;
+  ingested_at_to: string | null;
+  subject_period_start_year: number | null;
+  subject_period_end_year: number | null;
+  temporal_expression: string | null;
+  document_types: string[];
+  languages: string[];
+  sort: string;
+  interpretation_summary: string;
+  warnings: string[];
+  clarification_required: boolean;
+  clarification_question: string | null;
+  model_confidence: string;
+}
+
+export interface SearchResponse {
+  search_id: number | null;
+  interpretation: SearchInterpretation;
+  status: string;
+  fallback_used: boolean;
+  results: any[];
+  clarification_required: boolean;
+  clarification_question: string | null;
+}
+
+export const buildNaturalSearchPayload = (naturalQuery: string, limit: string) => ({
+  natural_query: naturalQuery.trim(),
+  limit: Number(limit),
+});
+
+export const useSearch = () => {
   const [message, setMessage] = React.useState("");
   const [isLoading, setIsLoading] = React.useState(false);
   const [isError, setIsError] = React.useState(false);
-  const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [results, setResults] = React.useState<any[] | null>(null);
-  const [searchSimilar, setSearchSimilar] = React.useState('');
+  const [searchResponse, setSearchResponse] = React.useState<SearchResponse | null>(null);
+  const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
 
-  const handleSearchSimilar = async (
-    search?: string, searchLimit?: string, translate?: boolean,
-    periodFrom?: string, periodTo?: string,
-  ) => {
+  const handleSearch = React.useCallback(async (naturalQuery: string, limit: string) => {
     setIsLoading(true);
-    console.log("searching: " + search)
-    console.log("searching limit: " + searchLimit)
-    console.log("translate: " + translate);
-
-    // AWS Serverless two-step flow (ai_embedding_get + website_similar) removed
-    // 2026-07-04 — the AWS document API is decommissioned.
-    {
-      try {
-        const response = await axios.post(`${apiUrl}/website_similar`, {
-          model: "amazon.titan-embed-text-v1",
-          search: search,
-          limit: searchLimit,
-          translate: translate,
-          ...(periodFrom?.trim() ? { period_from: periodFrom.trim() } : {}),
-          ...(periodTo?.trim() ? { period_to: periodTo.trim() } : {}),
-        }, {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'x-api-key': `${apiKey}`,
-          },
-        });
-        console.log(response.data.message);
-        console.log(response.data);
-        if (response.data.websites != null) {
-          setData(response.data.websites);
-          setResults(response.data.websites)
-        }
-        console.log("end of handleSearchSimilar2");
-        setIsLoading(false);
-        setIsError(false);
-      } catch (error: any) {
-        console.error("There was an error on handleGetList2!", error);
-        let message = error.message;
-        if (
-            error.response &&
-            error.response.status &&
-            error.response.status === 400
-        ) {
-          message += " Check your API key first";
-        }
-        setIsLoading(false);
-        setIsError(true);
-        setMessage(`There was an error on handleSearchSimilar2. ${message}`);
-      }
+    setIsError(false);
+    setMessage("");
+    try {
+      const response = await axios.post<SearchResponse>(
+        `${apiUrl}/search`,
+        buildNaturalSearchPayload(naturalQuery, limit),
+        { headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` } },
+      );
+      setSearchResponse(response.data);
+      setResults(response.data.results ?? []);
+    } catch (error: any) {
+      const apiMessage = error.response?.data?.message;
+      setIsError(true);
+      setMessage(apiMessage || error.message || "Nie udało się wykonać wyszukiwania.");
+    } finally {
+      setIsLoading(false);
     }
+  }, [apiKey, apiUrl]);
+
+  const clearSearch = React.useCallback(() => {
+    setResults(null);
+    setSearchResponse(null);
+    setMessage("");
+    setIsError(false);
+  }, []);
+
+  return {
+    isError, isLoading, results, searchResponse, message,
+    handleSearch, clearSearch,
   };
-
-
-
-  return { isError, isLoading, results, setResults, message, setMessage, handleSearchSimilar };
 };

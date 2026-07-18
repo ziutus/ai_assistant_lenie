@@ -1,8 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import App from "./App";
 import AuthorizationProvider from "./modules/shared/context/authorizationContext";
+
+vi.mock("axios", () => ({
+  default: {
+    get: vi.fn().mockResolvedValue({ data: { app_version: "test" } }),
+    post: vi.fn().mockResolvedValue({ data: {} }),
+  },
+}));
 
 describe("App", () => {
   it("renders connect page when no API key is set", () => {
