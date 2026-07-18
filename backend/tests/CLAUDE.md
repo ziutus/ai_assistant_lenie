@@ -47,6 +47,10 @@ Configuration in `backend/pyproject.toml` under `[tool.pytest.ini_options]`. The
 | `test_document_service.py` | `DocumentService` (create/import document) |
 | `test_search_service.py` | `SearchService` (embeddings, similarity) |
 | `test_search_types.py` | `library/search/types.py` — frozen search domain models: per-field validation, boundaries, reversed ranges, request variants |
+| `test_llm_usage_pricing.py` | `library/llm_usage/pricing.py` — exact Decimal Bielik/embedding cost math, UNKNOWN for non-token pricing, float money rejected |
+| `test_search_audit_models.py` | ORM metadata for `search_interpretation_logs`/`llm_pricing`/`llm_usage_logs` pinned to the stage-2 migrations |
+| `test_search_audit_repository.py` | `library/search/audit_repository.py` — all interpretation statuses, field truncation, JSONB serialization, feedback write/update, retention sweep, DB failures swallowed (fake sessions) |
+| `test_llm_usage_recorder.py` | `library/llm_usage/recorder.py` — exactly one row per call, pricing snapshot + Decimal estimate, reported cost priority, unknown/credits/subscription modes, float money rejected, DB failures swallowed |
 | `test_flask_endpoints_orm.py` | ORM-backed endpoints; error responses use generic messages (details logged, not leaked) |
 | `test_flask_endpoints_document_states.py` | `GET /document_states` |
 | `test_website_get_validation.py` | `/website_get` input validation |
