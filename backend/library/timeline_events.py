@@ -5,7 +5,6 @@ import datetime
 import json
 import logging
 import re
-from collections.abc import Iterable
 
 import dateparser
 from sqlalchemy import delete
@@ -14,6 +13,7 @@ from unidecode import unidecode
 from library.ai import ai_ask
 from library.config_loader import load_config
 from library.db.models import DocumentEvent
+from library.llm_usage.report import combine_usage_reports, usage_report
 from library.text_functions import detect_chapters
 
 logger = logging.getLogger(__name__)
@@ -336,24 +336,12 @@ FRAGMENT:
 """
 
 
-def _response_usage(response) -> tuple[int, float | None]:
-    tokens = getattr(response, "total_tokens", None)
-    if tokens is None:
-        tokens = sum(
-            int(getattr(response, name, 0) or 0)
-            for name in ("prompt_tokens", "completion_tokens", "input_tokens", "output_tokens")
-        )
-    for name in ("cost_usd", "cost", "credits_used"):
-        value = getattr(response, name, None)
-        if value is not None:
-            return int(tokens or 0), float(value)
-    return int(tokens or 0), None
-
-
 def extract_fragment_events(fragment: str, chapter_position: int | None, model: str) -> tuple[list[dict], dict]:
     """Make one LLM call and retain only grounded events with normalizable dates."""
-    response = ai_ask(_timeline_prompt(fragment), model=model, temperature=0.1, max_token_count=4000)
-    tokens, cost = _response_usage(response)
+    response = ai_ask(
+        _timeline_prompt(fragment), model=model, temperature=0.1, max_token_count=4000,
+        operation="timeline_event_extraction",
+    )
     events: list[dict] = []
     rejected_quote = rejected_date = 0
     candidates, invalid_json = _parse_events_response(response.response_text)
@@ -379,9 +367,7 @@ def extract_fragment_events(fragment: str, chapter_position: int | None, model: 
         "rejected_without_quote": rejected_quote,
         "rejected_without_date": rejected_date,
         "invalid_json": int(invalid_json),
-        "llm_calls": 1,
-        "llm_tokens": tokens,
-        "llm_cost": cost,
+        **usage_report(response.usage).as_dict(),
     }
 
 
@@ -407,11 +393,6 @@ def _chapters_for_document(doc, selected_position: int | None = None) -> list[di
     ]
 
 
-def _combine_costs(costs: Iterable[float | None]) -> float | None:
-    values = list(costs)
-    return sum(value for value in values if value is not None) if values and all(v is not None for v in values) else None
-
-
 def extract_document_events(session, doc, model: str | None = None, *, chapter_position: int | None = None) -> dict:
     """Extract events without mutating the session; return events and per-chapter reports."""
     del session  # Kept in the public API for symmetry with refresh_document_events.
@@ -433,9 +414,7 @@ def extract_document_events(session, doc, model: str | None = None, *, chapter_p
             "rejected_without_quote": sum(r["rejected_without_quote"] for r in fragment_reports),
             "rejected_without_date": sum(r["rejected_without_date"] for r in fragment_reports),
             "invalid_json": sum(r["invalid_json"] for r in fragment_reports),
-            "llm_calls": sum(r["llm_calls"] for r in fragment_reports),
-            "llm_tokens": sum(r["llm_tokens"] for r in fragment_reports),
-            "llm_cost": _combine_costs(r["llm_cost"] for r in fragment_reports),
+            **combine_usage_reports(fragment_reports),
         })
     return {"model": selected_model, "events": events, "chapters": chapter_reports}
 
