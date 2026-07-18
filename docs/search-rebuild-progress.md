@@ -25,7 +25,7 @@ feedback → 200; audit i usage usunięte po teście.
 utworzonym rekordzie audytu (pola pozostają nullable); można dodać przy dashboardzie etapu 12.
 Głęboki offset hybrydowy zwiększa liczbę kandydatów i docelowo powinien przejść na cursor/keyset.
 
-**PR/merge:** PR **#295**; hash merge'a do uzupełnienia po merge.
+**PR/merge:** PR **#295**, merge **73cf356**.
 
 **Następny krok:** Etap 9 — frontend interpretacji i edycji filtrów, w dwóch sesjach.
 
