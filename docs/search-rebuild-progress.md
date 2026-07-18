@@ -5,6 +5,32 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 10, iteracja 1 (baseline Bielika) — UKOŃCZONA
+
+**Zakres wykonany:** dodano powtarzalny runner `imports/evaluate_search_queries.py` oraz
+deterministyczny scorer częściowych oczekiwań fixture. Runner mierzy poprawność JSON i pól,
+latency, tokeny oraz koszt, pomija pusty `edge-06` przed LLM i domyślnie sprząta wyłącznie dokładne
+ID audytu/usage utworzone przez dany przebieg. Prawdziwy Bielik 11B przez Sherlock wykonał 42
+zapytania: 42/42 poprawne JSON-y, 0 fallbacków, 22/42 (52,38%) przypadków w pełni zgodnych w
+ścisłym scorerze. Raport z metodologią, trafnością per pole i klasyfikacją błędów zapisano w
+`docs/search-rebuild-bielik-baseline.md`. Dominujący błąd to 16 przypadków niedostatecznego
+oczyszczenia pola `query`; kolejne grupy to okres treści, discovery source, typ wideo i daty.
+
+**Testy uruchomione:** `tests/unit/`: **1830 passed** (4 nowe testy scorera);
+`uvx ruff check backend/`: czysty. Live Bielik/Sherlock: **42 wywołania**, 104 899 tokenów,
+131 183 ms łącznie (średnio 3 123,40 ms), koszt 0,0587434400 EUR (`estimated`). Odczytowa
+weryfikacja NAS po sprzątaniu: **0** pozostałych rekordów usage i **0** interpretation z przebiegu.
+
+**Otwarte ryzyka:** ścisłe porównanie tekstu zaniża jakość dla stylistycznych wariantów i
+alternatyw opisanych tylko w `notes`. Prompt wymaga kolejnej mierzonej iteracji dla oczyszczania
+`query`, discovery source, ingested_at i lat p.n.e.; nie ma podstaw do fine-tuningu na 42
+odpowiedziach. Iteracja baseline celowo nie zmienia promptu, aby zachować uczciwy punkt odniesienia.
+
+**PR/merge:** PR **#300**, merge **d9c69cd**.
+
+**Następny krok:** Etap 10, iteracja 2 — ogólna korekta promptu/normalizatora dla najczęstszych
+klas błędów i ponowny identyczny pomiar; potem Etap 11 dopiero po stabilizacji `/search`.
+
 ## 2026-07-18 — Etap 9, sesja B (edycja filtrów i feedback) — ETAP 9 UKOŃCZONY
 
 **Zakres wykonany:** panel korekty pozwala edytować temat i aktywne filtry oraz usuwać każdy
