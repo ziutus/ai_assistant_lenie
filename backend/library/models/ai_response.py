@@ -13,3 +13,9 @@ class AiResponse:
         self.prompt_tokens = None
         self.completion_tokens = None
         self.id = None
+        # UsageRecord from library.llm_usage.recorder (tokens, latency,
+        # usage_log_id, cost summary with status), set by ai_ask() after each
+        # call. Cost lives ONLY here — never add cost_usd/cost/credits_used
+        # attributes to this class (see docs/search-rebuild-implementation-plan.md,
+        # stages 3/3b).
+        self.usage = None

@@ -49,6 +49,7 @@ class UsageRecord:
     completion_tokens: int | None
     total_tokens: int | None
     pricing_version: str | None
+    latency_ms: int | None = None
 
 
 def _decimal_money(name: str, value) -> Decimal | None:
@@ -188,11 +189,13 @@ def record_llm_usage(
             completion_tokens=completion,
             total_tokens=total,
             pricing_version=pricing.pricing_version if pricing else None,
+            latency_ms=latency_ms,
         )
-    except Exception:
-        # Usage accounting must never break the business call that used the
-        # LLM — but a lost record violates the one-record-per-call guarantee,
-        # so log loudly with the full context.
+    except (SystemExit, Exception):
+        # Usage accounting must never break (or kill — config_loader's
+        # require() raises SystemExit when DB config is missing) the business
+        # call that used the LLM. A lost record violates the
+        # one-record-per-call guarantee, so log loudly with the full context.
         logger.exception(
             "Failed to record LLM usage (operation=%s, provider=%s, model=%s)", operation, provider, model
         )
@@ -208,6 +211,7 @@ def record_llm_usage(
             completion_tokens=completion,
             total_tokens=total,
             pricing_version=None,
+            latency_ms=latency_ms,
         )
     finally:
         if session is not None:

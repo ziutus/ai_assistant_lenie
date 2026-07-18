@@ -85,6 +85,7 @@ class TestEstimatedCost:
         assert record.usage_log_id == 1
         assert record.cost.status is CostStatus.ESTIMATED
         assert record.cost.total_cost == Decimal("0.0008400000")
+        assert record.latency_ms == 1234
 
     def test_total_tokens_autofilled_from_components(self):
         factory = bielik_factory()
@@ -336,6 +337,23 @@ class TestFailurePaths:
         assert record.prompt_tokens == 10
         factory.session.rollback.assert_called_once()
         factory.session.close.assert_called_once()
+
+    def test_systemexit_from_session_factory_swallowed(self):
+        # config_loader's require() calls sys.exit(1) when DB config is
+        # missing; SystemExit is not an Exception and must be caught too.
+        def factory():
+            raise SystemExit(1)
+
+        record = record_llm_usage(
+            operation="search_query_parse",
+            provider="cloudferro",
+            model="Bielik-11B-v3.0-Instruct",
+            prompt_tokens=10,
+            completion_tokens=10,
+            session_factory=factory,
+        )
+        assert record.usage_log_id is None
+        assert record.cost.status is CostStatus.UNKNOWN
 
     def test_pricing_lookup_failure_swallowed(self):
         factory = FakeSessionFactory(fail="execute")
