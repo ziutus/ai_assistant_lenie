@@ -427,7 +427,7 @@ class TestDictCompatibility:
             "created_at", "document_type", "source", "date_from", "date_from_source", "original_id",
             "document_length", "chapter_list", "document_state", "document_state_error",
             "text_raw", "transcript_job_id", "ai_summary_needed", "author",
-            "note", "uuid", "project", "text_md", "transcript_needed",
+            "author_source", "note", "uuid", "project", "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths", "video_description",
             "quality",
         }

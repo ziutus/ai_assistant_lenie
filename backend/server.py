@@ -216,19 +216,27 @@ def url_add():
 
         session = get_scoped_session()
         service = DocumentService(session)
-        doc = service.create_document(
-            url=url_data.get("url", ""),
-            url_type=url_data.get("type", ""),
-            text=url_data.get("text", ""),
-            html=url_data.get("html", ""),
-            title=url_data.get("title", ""),
-            language=url_data.get("language", ""),
-            note=url_data.get("note", "default_note"),
-            paywall=url_data.get("paywall", False),
-            source=url_data.get("source", "own"),
-            ai_summary=url_data.get("ai_summary", False),
-            chapter_list=url_data.get("chapter_list", False),
-        )
+        if url_data.get("operation", "create") == "refresh":
+            doc = service.refresh_document_source(
+                document_id=url_data.get("target_document_id"),
+                url=url_data.get("url", ""),
+                html=url_data.get("html", ""),
+                text=url_data.get("text", ""),
+            )
+        else:
+            doc = service.create_document(
+                url=url_data.get("url", ""),
+                url_type=url_data.get("type", ""),
+                text=url_data.get("text", ""),
+                html=url_data.get("html", ""),
+                title=url_data.get("title", ""),
+                language=url_data.get("language", ""),
+                note=url_data.get("note", "default_note"),
+                paywall=url_data.get("paywall", False),
+                source=url_data.get("source", "own"),
+                ai_summary=url_data.get("ai_summary", False),
+                chapter_list=url_data.get("chapter_list", False),
+            )
         return {
             'status': 'success',
             'message': f'Successfully saved document with ID: {doc.id}',
