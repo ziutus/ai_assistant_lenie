@@ -5,7 +5,9 @@ import ListItemSearchSimilar from "../../../utils";
 import Input from "../components/Input/input";
 import Select from "../components/Select/select";
 import { SearchInterpretationPanel } from "../components/SearchInterpretationPanel";
-import { useSearch } from "../hooks/useSearch";
+import { SearchCriteriaEditor } from "../components/SearchCriteriaEditor";
+import { type SearchInterpretation, useSearch } from "../hooks/useSearch";
+import { explicitSearchParams, parseExplicitCriteria } from "../utils/searchCriteria";
 
 const ALLOWED_LIMITS = ["5", "10", "30", "50"];
 const DEFAULT_LIMIT = "10";
@@ -15,8 +17,18 @@ const Search = () => {
   const initialQuery = searchParams.get("q") ?? "";
   const limitParam = searchParams.get("limit") ?? DEFAULT_LIMIT;
   const initialLimit = ALLOWED_LIMITS.includes(limitParam) ? limitParam : DEFAULT_LIMIT;
+  const initialExplicitCriteria = searchParams.get("mode") === "explicit"
+    ? parseExplicitCriteria(searchParams.get("criteria")) : null;
   const [submittedQuery, setSubmittedQuery] = React.useState(initialQuery);
-  const { handleSearch, clearSearch, results, searchResponse, isLoading, message, isError } = useSearch();
+  const [draftCriteria, setDraftCriteria] = React.useState<SearchInterpretation | null>(initialExplicitCriteria);
+  const {
+    handleSearch, handleExplicitSearch, sendFeedback, clearSearch,
+    results, searchResponse, originSearchId, feedbackMessage, isLoading, message, isError,
+  } = useSearch();
+
+  React.useEffect(() => {
+    if (searchResponse?.interpretation) setDraftCriteria(searchResponse.interpretation);
+  }, [searchResponse]);
 
   const formik = useFormik({
     initialValues: { search: initialQuery, searchLimit: initialLimit },
@@ -32,17 +44,31 @@ const Search = () => {
 
   const initialSearchDone = React.useRef(false);
   React.useEffect(() => {
-    if (!initialSearchDone.current && initialQuery) {
+    if (!initialSearchDone.current && initialExplicitCriteria) {
+      initialSearchDone.current = true;
+      void handleExplicitSearch(initialExplicitCriteria, initialLimit);
+    } else if (!initialSearchDone.current && initialQuery) {
       initialSearchDone.current = true;
       void handleSearch(initialQuery, initialLimit);
     }
-  }, [handleSearch, initialQuery, initialLimit]);
+  }, [handleExplicitSearch, handleSearch, initialExplicitCriteria, initialQuery, initialLimit]);
 
   const handleClean = () => {
     formik.resetForm({ values: { search: "", searchLimit: DEFAULT_LIMIT } });
     clearSearch();
     setSubmittedQuery("");
+    setDraftCriteria(null);
     setSearchParams({});
+  };
+
+  const applyCorrection = async () => {
+    if (!draftCriteria) return;
+    setSubmittedQuery(draftCriteria.query ?? "");
+    const searched = await handleExplicitSearch(draftCriteria, formik.values.searchLimit);
+    if (searched) {
+      setSearchParams(explicitSearchParams(draftCriteria, formik.values.searchLimit));
+      if (originSearchId != null) await sendFeedback("partially_correct", draftCriteria);
+    }
   };
 
   return (
@@ -70,6 +96,18 @@ const Search = () => {
       {searchResponse && !isLoading && (
         <SearchInterpretationPanel interpretation={searchResponse.interpretation}
           fallbackUsed={searchResponse.fallback_used} />
+      )}
+      {draftCriteria && !isLoading && (
+        <SearchCriteriaEditor criteria={draftCriteria} disabled={isLoading}
+          onChange={setDraftCriteria} onApply={() => { void applyCorrection(); }} />
+      )}
+      {originSearchId != null && !isLoading && (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
+          <span style={{ color: "#475569", fontSize: ".84rem" }}>Czy interpretacja była poprawna?</span>
+          <button type="button" className="button" onClick={() => { void sendFeedback("correct"); }}>Tak</button>
+          <button type="button" className="button" onClick={() => { void sendFeedback("incorrect"); }}>Nie</button>
+          {feedbackMessage && <span role="status" style={{ fontSize: ".82rem" }}>{feedbackMessage}</span>}
+        </div>
       )}
       {results && !isLoading && (
         <div style={{ margin: "18px 0 10px", color: "#64748b", fontSize: ".85rem" }}>
