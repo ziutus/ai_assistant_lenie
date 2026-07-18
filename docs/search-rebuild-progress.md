@@ -5,6 +5,94 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 5 (czas i okresy historyczne) — UKOŃCZONY
+
+**Zakres wykonany:**
+
+- Nowy `library/year_normalization.py` — `coerce_year(value, minimum, maximum)`: wydzielone
+  z `time_periods.py`'s `_coerce_year` (BCE jako liczby ujemne, `bool` odrzucane mimo bycia
+  podklasą `int`, digit-string coerced, poza zakresem → `None`, nigdy wyjątek). `time_periods.py`
+  przepięty na tę funkcję (własne granice `MIN_YEAR=-10_000`/`MAX_YEAR=2_100` bez zmian — celowo
+  NIE ujednolicone z granicami wyszukiwania, żeby nie sprzęgać dwóch niezależnych funkcji).
+- Nowy `library/search/temporal.py`:
+  - `TemporalRelation` (exact/before/after/between/around).
+  - `HISTORICAL_ANCHORS` — mały wersjonowany słownik (`ANCHOR_DICTIONARY_VERSION="1"`) znanych
+    punktów odniesienia (początek/koniec I i II wojny światowej, upadek muru berlińskiego,
+    rozpad ZSRR, wejście Polski do UE/NATO, zamachy z 11 września itd.) z normalizacją
+    diakrytyki/wielkości liter przez `unidecode`.
+  - `resolve_anchor(text)` — dopasowanie tekstu do słownika, `None` gdy nierozpoznane (nigdy
+    zgadywanie).
+  - `resolve_relation(relation, year, year_end, span_years)` — deterministyczna arytmetyka:
+    `exact`→(rok,rok); `before`→(None,rok) [rok DOTYCZY, nie jest wykluczony]; `after`→(rok,None);
+    `between`→zamiana odwróconej kolejności przez `normalize_year_range` z etapu 1; `around`→
+    ±`span_years` (domyślnie 5) z przycięciem do `MIN_SUBJECT_YEAR`/`MAX_SUBJECT_YEAR` i ZAWSZE
+    ostrzeżeniem po polsku (reguła planu: oznaczać przybliżenia).
+  - `enrich_subject_period(start_year, end_year, relation, anchor_text)` — funkcja bezpieczeństwa:
+    wywoływana WYŁĄCZNIE gdy oba lata z LLM są `None`; jawny rok od LLM nigdy nie jest nadpisywany;
+    `between` nigdy nie jest rozwiązywane z pojedynczej kotwicy (potrzebuje dwóch jawnych lat);
+    nieznana kotwica zostawia granice `None` z ostrzeżeniem diagnostycznym zamiast zgadywania.
+    Sygnatura dotyka WYŁĄCZNIE `subject_period_start_year`/`subject_period_end_year` — strukturalna
+    gwarancja warunku zakończenia etapu (okres historyczny nie może stać się datą publikacji).
+- `library/search/parser.py` — schemat JSON i prompt rozszerzone o dwa pola zapasowe:
+  `subject_period_relation`, `subject_period_anchor_text` (oba wymagane w schemacie, nullable).
+  Prompt instruuje: podaj jawny rok gdy go znasz, pola zapasowe wypełnij TYLKO gdy rozpoznajesz
+  znany punkt odniesienia, ale nie jesteś pewien roku. Trzeci przykład w prompcie demonstruje
+  wzorzec użycia (upadek muru berlińskiego → `relation="after"`, jawne lata `null`).
+  `build_parsed_query()` woła `enrich_subject_period()` po normalizacji odwróconych zakresów;
+  ostrzeżenie z rozstrzygnięcia kotwicy dołączane do `warnings` obok istniejących.
+- Leniwe/bezpośrednie re-eksporty `library/search/temporal.py` w `library/search/__init__.py`
+  (moduł lekki, bez sqlalchemy — eksport bezpośredni, nie przez `__getattr__`).
+- Dokumentacja: `backend/library/CLAUDE.md`, `backend/tests/CLAUDE.md`.
+
+**Testy uruchomione:**
+
+- `tests/unit/test_year_normalization.py` (nowy, 13 testów).
+- `tests/unit/test_search_temporal.py` (nowy, 30 testów): każda relacja, przycinanie granic,
+  zamiana odwróconego `between`, każda gałąź `enrich_subject_period` (w tym „nigdy nie dotyka
+  `published_on`/`ingested_at`” — zweryfikowane przez introspekcję sygnatury funkcji).
+- `tests/unit/test_search_query_parser.py` — istniejące 30 testów przeszło BEZ ZMIAN (kompatybilność
+  wsteczna: payloady bez nowych pól po prostu dostają `None`/`None` z `.get()`, `enrich_subject_period`
+  od razu zwraca bez zmian, bo `start_year`/`end_year` są już ustawione) + nowa klasa
+  `TestSubjectPeriodAnchorEnrichment` (5 testów): rozstrzygnięcie kotwicy, jawny rok nigdy nie
+  nadpisywany, nierozpoznana kotwica, brak przecieku do `published_on`/`ingested_at`, pełny
+  przepływ `parse_search_query()` end-to-end (zmockowany LLM).
+- `tests/unit/test_time_periods.py` — bez zmian, przeszło (regresja po przepięciu na
+  `coerce_year`).
+- Pełna suita `tests/unit/`: **1734 passed**; `uvx ruff check backend/`: czysty.
+- **E2E na żywym Sherlocku + bazie NAS** z rozszerzonym schematem (22 wymagane pola): 3 zapytania.
+  1. Przykład z planu → `subject_period_start_year=1945` (LLM samo obliczyło, pola zapasowe
+     puste — zgodnie z instrukcją promptu).
+  2. „artykuly o gospodarce polski po wstapieniu do unii europejskiej” →
+     `subject_period_start_year=2004` (LLM samo obliczyło).
+  3. „cos o polityce po upadku muru berlinskiego” → **model faktycznie skorzystał z pola
+     zapasowego** (zostawił `subject_period_start_year=null`, ustawił `subject_period_relation=
+     "after"`, `subject_period_anchor_text="upadek muru berlinskiego"`); backend deterministycznie
+     rozstrzygnął na **1989** z widocznym ostrzeżeniem „Rok ustalony na podstawie znanego
+     wydarzenia: upadek muru berlińskiego = 1989.” — potwierdza, że mechanizm fallbacku działa
+     naprawdę, nie tylko w testach z mockiem.
+  Wszystkie 3 zostawiły dokładnie jeden wiersz audytu i jeden wiersz usage na NAS; posprzątane
+  po teście.
+
+**Otwarte ryzyka:**
+
+- `HISTORICAL_ANCHORS` to na razie ~20 wpisów, tylko polskie/europejskie punkty odniesienia
+  najczęściej pojawiające się w kontekście artykułów w bazie — rozbudowa słownika to naturalna
+  praca bieżąca (bump `ANCHOR_DICTIONARY_VERSION` przy każdej zmianie).
+- `resolve_anchor()` wymaga dokładnego dopasowania znormalizowanej frazy (bez fuzzy matching) —
+  drobne odchylenia w sformułowaniu modelu (np. „obalenie” zamiast „upadek” muru berlińskiego)
+  są już w słowniku jako osobne klucze, ale nie każdy wariant będzie przewidziany; nierozpoznana
+  kotwica NIE blokuje wyszukiwania (bezpieczny fallback: granice zostają `None`), więc ryzyko jest
+  ograniczone do gorszej trafności, nie do błędu.
+- Rozstrzyganie BEFORE/AFTER jako granic WŁĄCZNYCH (dokument „przed 1945” może wspominać też
+  1945) to świadoma decyzja projektowa bez alternatywy do przetestowania w tej sesji — do rewizji
+  przy etapie 10 (ewaluacja jakości), jeśli okaże się mylące dla użytkowników.
+- Etap 10 (ewaluacja na pełnym fixture 43 zapytań) nadal nie uruchomiony — 3 zapytania z tej
+  sesji to znowu punktowa weryfikacja, nie pełny raport.
+
+**Następny krok:** Etap 6 — wspólne filtry SQL (jeden builder filtrów dla lexical i vector
+search, filtr okresu przeniesiony z Pythona do SQL przed `LIMIT`, wyszukiwanie wyłącznie po
+filtrach bez generowania embeddingu). Etap `M` — rozbić na dwie sesje.
+
 ## 2026-07-18 — Etap 4 (samodzielny SearchQueryParser) — UKOŃCZONY
 
 **Zakres wykonany:**
