@@ -5,6 +5,31 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 7, sesja B (autor i discovery source) — ETAP 7 UKOŃCZONY
+
+**Zakres wykonany:** `build_document_filters()` obsługuje wszystkie cztery pola nazwowe.
+Autor jest filtrowany przez `document_persons.role='author'`, `persons.canonical_name` i
+`person_aliases.alias`; fizyczne `web_documents.author` służy jako byline fallback wyłącznie dla
+dokumentów bez relacyjnego autora. `discovery_source_name` mapuje się na obecną tabelę `sources`
+i `web_documents.source`; kod nie importuje ani nie odpytuje `information_sources`. Nowy
+`search/name_resolution.py` jawnie zwraca 0/1/N autorów lub discovery sources i nie wystawia
+pojedynczego id przy N>1. Fizycznych rename'ów nie wykonano (etap 11).
+
+**Testy uruchomione:** `tests/unit/`: **1797 passed**; `uvx ruff check backend/`: czysty.
+E2E NAS: autor `Jacek Losik` → 1 osoba i dokumenty 9245/476; discovery source
+`https://unknow.news/` (zapytanie uppercase) → 1 i dokumenty 461/460/459; realna kolizja
+`artur rubinstein` → 2 osoby (248, 265), pojedyncze id `None`. Sesja B nie zawiera migracji;
+NAS pozostaje na zweryfikowanym w 7A head `f5a6b7c8d9e0`.
+
+**Otwarte ryzyka:** fallback byline używa dopasowania substring dla legacy danych, więc mniej
+precyzyjne przypadki mogą wymagać kuracji relacyjnych autorów. Rejestr zawiera realne duplikaty
+osób (np. Artur Rubinstein); zgodnie z kontraktem są raportowane jako niejednoznaczne, nie scalane.
+
+**PR/merge:** PR **#293**; hash merge'a do uzupełnienia po merge sesji B.
+
+**Następny krok:** Etap 8 — nowe endpointy `POST /search/parse`, `POST /search` i feedback,
+z jawną obsługą niejednoznacznych wyników resolverów.
+
 ## 2026-07-18 — Etap 7, sesja A (publisherzy i domeny) — UKOŃCZONA
 
 **Zakres wykonany:** migracja `f5a6b7c8d9e0` tworzy `publishers`, globalnie unikalne
@@ -25,7 +50,7 @@ realna domena `00xbyte.github.io` → dokładnie 1; dwa transakcyjne publishery 
 jeden dokument bez rozpoznawalnego hosta pozostaje bez publishera. `author_name` i
 `discovery_source_name` nadal celowo rzucają `NotImplementedError` do sesji B.
 
-**PR/merge:** PR **#292**; hash merge'a do uzupełnienia po merge sesji A.
+**PR/merge:** PR **#292**, merge **828c4a1**.
 
 **Następny krok:** etap 7, sesja B — autor przez `document_persons.role='author'` i aliasy z
 fallbackiem do fizycznych pól `author`/`author_source` (docelowo byline/byline_method), oraz

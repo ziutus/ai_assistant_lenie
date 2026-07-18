@@ -73,10 +73,10 @@ class TestListByFiltersApplied:
         sql = _compiled_sql(session)
         assert sql.index("document_type") < sql.index("LIMIT")
 
-    def test_unresolved_name_field_raises(self):
-        repo, _ = _repo_with_mock_session()
-        with pytest.raises(NotImplementedError, match="author_name"):
-            repo.list_by_filters(SearchFilters(author_name="Jan Kowalski"))
+    def test_author_name_filter_is_applied(self):
+        repo, session = _repo_with_mock_session()
+        repo.list_by_filters(SearchFilters(author_name="Jan Kowalski"))
+        assert "document_persons.role = 'author'" in _compiled_sql(session)
 
 
 class TestListByFiltersSort:
