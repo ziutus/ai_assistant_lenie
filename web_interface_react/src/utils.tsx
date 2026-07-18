@@ -4,12 +4,12 @@ import { buildObsidianNoteUrl } from "./modules/shared/utils/obsidian";
 interface ListItemSearchSimilarProps {
   query: string;
   item: {
-    similarity: number;
+    similarity?: number | null;
     semantic_similarity?: number;
     text_score?: number;
-    search_match?: "text" | "semantic" | "hybrid";
+    search_match?: "text" | "semantic" | "hybrid" | "filters_only";
     id: number | null;
-    text: string;
+    text?: string;
     title?: string | null;
     document_type?: string | null;
     website_id: number;
@@ -28,7 +28,7 @@ const meaningfulTerms = (query: string) =>
   Array.from(new Set(query.trim().split(/\s+/).filter(term => term.length >= 3)))
     .sort((a, b) => b.length - a.length);
 
-const makeSnippet = (text: string, query: string, maxLength = 460) => {
+const makeSnippet = (text: string | undefined, query: string, maxLength = 460) => {
   const compact = (text || "").replace(/\s+/g, " ").trim();
   if (compact.length <= maxLength) return compact;
 
@@ -61,6 +61,7 @@ const MATCH_LABELS = {
   text: "dopasowanie tekstowe",
   semantic: "dopasowanie semantyczne",
   hybrid: "dopasowanie hybrydowe",
+  filters_only: "dopasowanie filtrów",
 };
 
 const ListItemSearchSimilar = ({ item, query }: ListItemSearchSimilarProps) => {
