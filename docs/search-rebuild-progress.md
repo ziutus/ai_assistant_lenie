@@ -5,6 +5,30 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 9, sesja A (frontend interpretacji) — POŁOWA ETAPU
+
+**Zakres wykonany:** `web_interface_react` przestawiony z legacy `/website_similar` na
+`POST /search` z `{natural_query, limit}`. Hook `useSearch` przechowuje razem wyniki i pełny
+`SearchResponse` (search_id, interpretation, status, fallback). Strona `/search` pokazuje panel
+„Bielik zinterpretował zapytanie jako” z tematem, aktywnymi filtrami, podsumowaniem, warnings,
+fallbackiem i pytaniem doprecyzowującym. Interpretacja pozostaje w stanie strony po odpowiedzi.
+Legacy pola okresu/translate usunięto z naturalnego formularza, bo backend słusznie zabrania
+mieszania natural_query z jawnymi filtrami; wrócą jako edytowalne filtry w sesji B.
+
+**Testy uruchomione:** Vitest **7 passed** (3 pliki); `npm run build` czysty (TypeScript strict,
+Vite: 310 modułów). Nowe testy przypinają payload natural_query bez legacy pól oraz widoczność
+query/filtrów/warnings/fallback/clarification. Istniejący smoke test App emituje ostrzeżenia React
+`act(...)` po asynchronicznym odświeżeniu listy, ale nie ma unhandled rejection i przechodzi.
+
+**Otwarte ryzyka:** sesja A nie oferuje jeszcze korekty filtrów, feedbacku ani shareable URL dla
+jawnych kryteriów — to dokładny zakres sesji B. Wyniki filter-only mają skromniejszy kształt niż
+hybrydowe; komponent wyników będzie wymagał utwardzenia w 9B przy korektach do samego filtra.
+
+**PR/merge:** PR **#297**; hash merge'a do uzupełnienia po merge sesji A.
+
+**Następny krok:** Etap 9, sesja B — edytowalne/usuwalne filtry, ponowne wyszukiwanie bez LLM,
+feedback z corrected_query i shareable URL jawnych filtrów.
+
 ## 2026-07-18 — Etap 8 (nowe endpointy wyszukiwania) — UKOŃCZONY
 
 **Zakres wykonany:** nowy blueprint `library/search_routes.py`, zarejestrowany w `server.py`:
