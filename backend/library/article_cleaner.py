@@ -3,7 +3,7 @@
 Główne wejście: clean_article_text(text, url) — zwraca dict {text, links, images}.
 Obrazki i linki są zamieniane na markery [imgN] / [linkN], a ich metadane
 trafiają do osobnych list. Reguły czyszczenia: generyczne (wspólne dla
-wszystkich portali) + specyficzne per portal (onet, money, wp).
+wszystkich portali) + specyficzne per portal (onet, money, wp, gazeta, bankier).
 
 Wydzielone z imports/article_browser.py, aby logika była testowalna
 i reużywalna w skryptach batch.
@@ -329,6 +329,56 @@ def _clean_lines_ithardware(lines: list[str]) -> list[str]:
     return [line for line in lines if line.strip() not in {"Play", "ad"}]
 
 
+def _clean_lines_bankier(lines: list[str]) -> list[str]:
+    """Czyszczenie specyficzne dla bankier.pl.
+
+    Breadcrumb i podmenu sekcji różnią się treścią per kategoria artykułu
+    (Giełda/Gospodarka/Podatki/...), więc zamiast dopasowania po dokładnym
+    tekście rozpoznajemy je po kształcie: krótki wiersz zaczynający się od
+    "Bankier.pl" (breadcrumb sklejony bez spacji) albo wiersz zawierający
+    kilka charakterystycznych nazw sekcji podmenu naraz.
+    """
+    subnav_keywords = ("Notowania", "Kalendarium", "Dywidendy", "Narzędzia", "Portfel", "Forum")
+    cleaned = []
+    skip_source_value = False
+    in_tags = False
+    for line in lines:
+        stripped = line.strip()
+
+        if stripped == "Źródło:":
+            skip_source_value = True
+            continue
+        if skip_source_value:
+            if not stripped:
+                continue
+            skip_source_value = False
+            continue
+
+        if stripped == "tematy":
+            in_tags = True
+            continue
+        if in_tags:
+            if not stripped:
+                in_tags = False
+                continue
+            if len(stripped) < 60:
+                continue
+            in_tags = False
+
+        if stripped in ("publikacja", "ad"):
+            continue
+        if stripped.startswith("Bankier.pl") and len(stripped) < 80:
+            continue
+        if sum(kw in stripped for kw in subnav_keywords) >= 3:
+            continue
+        # Samodzielna data publikacji: "2026-02-25 08:10"
+        if re.match(r'^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}$', stripped):
+            continue
+
+        cleaned.append(line)
+    return cleaned
+
+
 def _clean_lines_gazeta(lines: list[str]) -> list[str]:
     """Usuń śródtekstowe karty rekomendacji Gazeta.pl, zachowując dalszy artykuł."""
     cleaned = []
@@ -500,6 +550,8 @@ def clean_article_text(text: str, url: str = "") -> dict:
         lines = _clean_lines_wp(lines)
     elif portal == "gazeta":
         lines = _clean_lines_gazeta(lines)
+    elif portal == "bankier":
+        lines = _clean_lines_bankier(lines)
     elif "ithardware.pl" in url.lower():
         lines = _clean_lines_ithardware(lines)
 
@@ -510,4 +562,5 @@ def clean_article_text(text: str, url: str = "") -> dict:
         "text": text.strip(),
         "links": extracted_links,
         "images": extracted_images,
+        "portal": portal,
     }

@@ -155,7 +155,7 @@ class TestWebDocumentColumns:
     EXPECTED_COLUMNS = {
         "id", "summary", "url", "language", "tags", "text",
         "paywall", "title", "created_at", "document_type",
-        "source", "date_from", "original_id", "document_length",
+        "source", "date_from", "date_from_source", "original_id", "document_length",
         "chapter_list", "document_state", "document_state_error",
         "text_raw", "transcript_job_id", "ai_summary_needed",
         "author", "note", "uuid", "project", "text_md",
@@ -165,7 +165,7 @@ class TestWebDocumentColumns:
     }
 
     def test_column_count(self):
-        assert len(_column_names(WebDocument)) == 32
+        assert len(_column_names(WebDocument)) == 33
 
     def test_all_column_names(self):
         assert _column_names(WebDocument) == self.EXPECTED_COLUMNS
@@ -497,14 +497,14 @@ class TestValidate:
 # ---------------------------------------------------------------------------
 
 class TestDict:
-    def test_dict_has_34_keys(self):
+    def test_dict_has_35_keys(self):
         doc = _make_doc(
             title="Test",
             document_state_error="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
-        assert len(result) == 34
+        assert len(result) == 35
 
     def test_dict_keys(self):
         doc = _make_doc(
@@ -516,7 +516,7 @@ class TestDict:
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
             "summary", "url", "language", "tags", "text", "paywall", "title",
-            "created_at", "document_type", "source", "date_from", "original_id",
+            "created_at", "document_type", "source", "date_from", "date_from_source", "original_id",
             "document_length", "chapter_list", "document_state",
             "document_state_error", "text_raw", "transcript_job_id",
             "ai_summary_needed", "author", "note", "uuid", "project",
