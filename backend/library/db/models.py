@@ -241,7 +241,14 @@ class WebDocument(Base):
     transcript_job_id: Mapped[str | None] = mapped_column(Text)
     ai_summary_needed: Mapped[bool | None] = mapped_column(Boolean, server_default=sa_text("false"))
     # Content creator: YouTube channel name, article author, etc. — metadata about who made it.
+    # Multiple authors are stored comma-separated; the structured links live in
+    # document_persons (role="author"), this column is the display cache.
     author: Mapped[str | None] = mapped_column(Text)
+    # How author was set — "manual" (reviewer typed it on /chunks) or "llm"
+    # (extract_author / pipeline step 11b2). NULL for legacy/import-set values.
+    # Mirrors date_from_source: lets a future pass find documents where the
+    # byline extraction failed and a human had to fix it.
+    author_source: Mapped[str | None] = mapped_column(String(10))
     note: Mapped[str | None] = mapped_column(Text)
     uuid: Mapped[str] = mapped_column(
         String(100), nullable=False, unique=True,
@@ -434,6 +441,7 @@ class WebDocument(Base):
             "transcript_job_id": self.transcript_job_id,
             "ai_summary_needed": self.ai_summary_needed,
             "author": self.author,
+            "author_source": self.author_source,
             "note": self.note,
             "uuid": self.uuid,
             "project": self.project,

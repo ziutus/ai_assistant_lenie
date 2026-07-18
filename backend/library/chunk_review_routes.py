@@ -34,7 +34,7 @@ from sqlalchemy import func, or_, select, text as sa_text, update as sa_update
 from library.db.engine import get_scoped_session
 from library.db.models import (
     CitedPublication, DocumentAnalysisJob, DocumentAnalysisRun, DocumentChunk, DocumentCitedPublication,
-    DocumentPerson, DocumentRemovedLine, DocumentTopicSection, Person,
+    DocumentRemovedLine, DocumentTopicSection,
     WebDocument, WebsiteEmbedding,
 )
 
@@ -1164,16 +1164,10 @@ def get_run_chunks(run_id: int):
         abort(404, f"Run {run_id} not found")
 
     doc = session.get(WebDocument, run.document_id)
-    author_person = None
+    author_persons = []
     if isinstance(doc, WebDocument):
-        author_person = session.execute(
-            select(Person.id, Person.description)
-            .join(DocumentPerson, DocumentPerson.person_id == Person.id)
-            .where(
-                DocumentPerson.document_id == run.document_id,
-                DocumentPerson.role == "author",
-            ).limit(1)
-        ).first()
+        from library.author_service import get_document_authors
+        author_persons = get_document_authors(session, run.document_id)
     segments = [] if lite else _parse_segments(doc.text_raw if doc else None)
 
     topic_sections = session.scalars(
@@ -1267,8 +1261,8 @@ def get_run_chunks(run_id: int):
             "original_id": doc.original_id if doc else "",
             "document_type": doc.document_type if doc else "",
             "author": getattr(doc, "author", "") if doc else "",
-            "author_person_id": author_person.id if author_person else None,
-            "author_description": author_person.description if author_person else None,
+            "author_source": getattr(doc, "author_source", None) if doc else None,
+            "author_persons": author_persons,
             "countries": doc_countries,
             "thematic_tags": doc_thematic_tags,
             "quality": getattr(doc, "quality", None) if doc else None,
@@ -1655,18 +1649,19 @@ def extract_author(run_id: int):
 
     try:
         from library.chunk_llm_analysis import extract_author_info
-        author = extract_author_info(source_text, run.model)
+        author_names = extract_author_info(source_text, run.model)
     except Exception:
         logger.exception("extract_author_info failed for run %d", run_id)
         return jsonify({"status": "error", "message": "LLM call failed"}), 500
 
-    if not author:
+    if not author_names:
         return jsonify({"status": "success", "author": None})
 
     doc = session.get(WebDocument, run.document_id)
     if doc is None:
         abort(404, f"Document {run.document_id} not found")
-    doc.author = author
+    from library.author_service import set_document_authors
+    author_persons = set_document_authors(session, doc, author_names, source="llm")
     try:
         session.commit()
     except Exception:
@@ -1674,7 +1669,12 @@ def extract_author(run_id: int):
         logger.exception("DB save failed for run %d author", run_id)
         return jsonify({"status": "error", "message": "DB save failed"}), 500
 
-    return jsonify({"status": "success", "author": author})
+    return jsonify({
+        "status": "success",
+        "author": doc.author,
+        "author_source": doc.author_source,
+        "author_persons": author_persons,
+    })
 
 
 # ---------------------------------------------------------------------------
@@ -1803,6 +1803,50 @@ def set_date_from(doc_id: int):
         "status": "success",
         "date_from": doc.date_from.isoformat() if doc.date_from else None,
         "date_from_source": doc.date_from_source,
+    })
+
+
+# ---------------------------------------------------------------------------
+# API: POST /document/<doc_id>/author
+# ---------------------------------------------------------------------------
+
+@bp.route("/document/<int:doc_id>/author", methods=["POST"])
+def set_author(doc_id: int):
+    """Manually set (or clear) the document's author(s).
+
+    Companion to extract_author above — the reviewer pastes the byline from
+    the original page instead of asking the LLM. Accepts co-authors in one
+    string ("Michał Rogalski, Piotr Gruszka" — also "i"/"oraz"/";" work as
+    separators) and links each of them in document_persons (role="author",
+    confidence=manual_confirmed). null clears the author and its links.
+    """
+    from library.author_service import set_document_authors, split_author_names
+
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    author_str = data.get("author")
+    if author_str is not None and not isinstance(author_str, str):
+        return jsonify({"status": "error", "message": "author must be a string or null"}), 400
+
+    names = split_author_names(author_str or "")
+    author_persons = set_document_authors(session, doc, names, source="manual")
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("DB save failed for document %d author", doc_id)
+        return jsonify({"status": "error", "message": "DB save failed"}), 500
+
+    return jsonify({
+        "status": "success",
+        "author": doc.author,
+        "author_source": doc.author_source,
+        "author_persons": author_persons,
     })
 
 
