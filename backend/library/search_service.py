@@ -16,7 +16,7 @@ import unicodedata
 from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
-from library.search.types import SearchFilters, SearchQueryValidationError, normalize_year_range
+from library.search.types import SearchFilters, SearchQueryValidationError, SearchSort, normalize_year_range
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 import library.embedding as embedding
 
@@ -98,6 +98,25 @@ class SearchService:
             logger.warning("Embedding generation failed; returning lexical results: %s", result.status)
 
         return self._merge_results(text, lexical, semantic, limit)
+
+    def search_by_filters(
+        self,
+        filters: SearchFilters,
+        limit: int = 20,
+        offset: int = 0,
+        sort: SearchSort = SearchSort.RELEVANCE,
+    ) -> list[dict]:
+        """Filter-only listing: no text query, no embedding generated (stage 6 session B).
+
+        For "find documents matching these criteria" with no free-text
+        phrase — e.g. "webpage articles from 2020" — where calling
+        embedding.get_embedding() would be wasted latency/cost for a query
+        that carries no text to embed. An empty ``filters`` legally lists
+        everything, newest first (matches ParsedSearchQuery's "no criteria
+        means list everything" semantics); RELEVANCE has no meaning without
+        a query and falls back to the same ordering as INGESTED_DESC.
+        """
+        return self.repo.list_by_filters(filters, limit=limit, offset=offset, sort=sort)
 
     # Letters with no Unicode canonical decomposition (NFKD leaves them alone,
     # unlike e.g. "ó" -> "o" + combining acute) but that PostgreSQL's unaccent()

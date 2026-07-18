@@ -5,6 +5,66 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 6, sesja B (wyszukiwanie samymi filtrami, bez embeddingu) — ETAP 6 UKOŃCZONY
+
+**Zakres wykonany:**
+
+- `stalker_web_documents_db_postgresql.py` — nowa metoda `list_by_filters(filters, limit, offset,
+  sort)`: czyste filtrowanie dokumentów bez frazy tekstowej i bez wywołania embeddingu. Używa
+  TEGO SAMEGO `build_document_filters()` co `search_text()`/`get_similar()` z sesji A (trzy
+  metody, jeden builder). Pusty `SearchFilters()` legalnie listuje wszystko, najnowsze pierwsze
+  — zgodnie z filozofią „brak kryteriów = lista wszystkiego" już przyjętą w `ParsedSearchQuery`
+  (etap 1). Sortowanie: `SearchSort.PUBLISHED_DESC/ASC` → `date_from`, `INGESTED_DESC` →
+  `created_at DESC`, `RELEVANCE` → to samo co `INGESTED_DESC` (brak sygnału trafności bez frazy).
+  Wynik jako uproszczony słownik (`website_id`, `title`, `url`, `document_type`, `project`,
+  `language`, `date_from`, `created_at`, `similarity=None`, `search_match="filters_only"`).
+- `library/search_service.py` — nowa metoda `SearchService.search_by_filters(filters, limit,
+  offset, sort)`: cienki delegat do `repo.list_by_filters()`. **Nigdy nie wywołuje
+  `embedding.get_embedding()`** — to jest właściwy warunek zakończenia sesji B („wyszukiwanie
+  wyłącznie po filtrach bez generowania embeddingu"), zweryfikowany wprost testem
+  `mock_get_embedding.assert_not_called()`.
+- Dokumentacja: `backend/library/CLAUDE.md` (etap 6 oznaczony jako kompletny), `backend/tests/CLAUDE.md`.
+
+**Testy uruchomione:**
+
+- `tests/unit/test_list_by_filters.py` (nowy, 16 testów): pusty filtr = brak `WHERE`, filtry
+  stosowane przed `LIMIT`, każda wartość `SearchSort` mapuje na właściwą kolumnę/kierunek
+  `ORDER BY` (w tym string `"published_desc"` zamiast enuma), `limit`/`offset` w SQL, kształt
+  wynikowego słownika, `NotImplementedError` dla pól wymagających rozwiązania nazw, brak
+  `session.commit()`.
+- `tests/unit/test_search_service.py` — nowa klasa `TestSearchByFilters` (4 testy): delegacja
+  do `repo.list_by_filters()` z poprawnymi argumentami, wartości domyślne, **embedding nigdy nie
+  jest generowany**, pusty filtr jest dozwolony.
+- Pełna suita `tests/unit/`: **1785 passed**; `uvx ruff check backend/`: czysty.
+- **E2E na żywej bazie NAS**: `search_by_filters(SearchFilters())` zwróciło 5 najnowszych
+  dokumentów; filtr `document_types=("webpage",)` zadziałał; sortowanie `PUBLISHED_DESC` dało
+  posortowaną listę dat; filtr okresu 1939–1945 zwrócił dokładnie te same 2 dokumenty
+  (9204, 9144) co w sesji A przez `search_similar()` — potwierdza spójność między trzema
+  ścieżkami korzystającymi z tego samego buildera. Zapytania wykonały się natychmiastowo
+  (brak oczekiwania na CloudFerro Sherlock/embedding) — namacalny dowód, że embedding
+  rzeczywiście nie jest generowany.
+
+**Otwarte ryzyka:**
+
+- `search_by_filters()`/`list_by_filters()` nie mają jeszcze żadnego wywołującego z HTTP —
+  podłączenie do endpointu to etap 8.
+- `author_name`/`publisher_name`/`publisher_domain`/`discovery_source_name` nadal nieobsługiwane
+  (`NotImplementedError`, dziedziczone z sesji A) — etap 7 to rozwiąże.
+- Ranking i scoring `SearchService._merge_results()` pozostają bez zmian — `list_by_filters()`
+  nie przechodzi przez ten kod wcale (nie ma czego scorować bez frazy), zgodnie z zakresem etapu.
+
+**Warunek zakończenia etapu 6 (z planu) spełniony w całości**: lexical i vector search korzystają
+z identycznych ograniczeń (sesja A, dowiedzione testem porównującym SQL), a wyszukiwanie
+wyłącznie po filtrach nie generuje embeddingu (sesja B, dowiedzione testem `assert_not_called`
+oraz obserwacją czasu wykonania na żywej bazie).
+
+**Następny krok:** Etap 7 — autor, publisher i discovery source (`M`, rozbić na dwie sesje).
+Sesja A: dodać `publishers`/`publisher_domains`, backfill domen z URL, rozwiązywanie
+publisher name/domain → `publisher_id`. Sesja B: filtrowanie autora przez
+`document_persons.role='author'` + aliasy (z fallbackiem do `byline`), `sources` →
+`discovery_sources` w nowym kodzie. To rozwiąże `NotImplementedError` w `build_document_filters()`
+dla czterech pól nazwowych.
+
 ## 2026-07-18 — Etap 6, sesja A (wspólny builder filtrów SQL) — POŁOWA ETAPU
 
 **Zakres wykonany:**
