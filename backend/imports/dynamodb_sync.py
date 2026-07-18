@@ -183,6 +183,41 @@ def save_cache_files(doc_id: int, text_content: str | None, html_content: str | 
         print(f"  Cache: saved {path} ({len(text_content)} chars)")
 
 
+def refresh_existing_document(session, item: dict, text_content: str | None,
+                              html_content: str | None, cache_dir: str) -> int:
+    """Apply an extension-captured source revision to an existing document.
+
+    The previous S3 object remains untouched. The DynamoDB create event retains
+    its UUID, while this refresh event points the document at the new object.
+    Only deterministic author metadata is refreshed here; article analysis,
+    chunks and embeddings are deliberately left intact.
+    """
+    target_id = int(item["target_document_id"])
+    doc = session.get(WebDocument, target_id)
+    if doc is None:
+        raise ValueError(f"refresh target document {target_id} does not exist")
+    if doc.url != item.get("url"):
+        raise ValueError(f"refresh URL does not match document {target_id}")
+    if not html_content:
+        raise ValueError("refresh HTML is missing from S3")
+
+    new_uuid = item.get("uuid") or item.get("s3_uuid")
+    if not new_uuid:
+        raise ValueError("refresh S3 UUID is missing")
+
+    doc.uuid = new_uuid
+    doc.text_raw = html_content
+    save_cache_files(doc.id, text_content, html_content, cache_dir)
+
+    from library.article_metadata import extract_article_authors
+    from library.author_service import set_document_authors
+
+    authors = extract_article_authors(html_content, doc.url)
+    set_document_authors(session, doc, authors, source="html")
+    session.commit()
+    print(f"  REFRESHED (id={doc.id}, authors={authors or 'none'})")
+    return doc.id
+
 def process_article_content(doc_id: int, cache_base_dir: str,
                              session, skip_llm: bool = False) -> tuple[bool, bool]:
     """Convert HTML to markdown and optionally run LLM article extraction.
@@ -437,6 +472,7 @@ def main():
 
     # Sync items
     added = 0
+    refreshed = 0
     skipped = 0
     errors = 0
     md_converted = 0
@@ -470,10 +506,35 @@ def main():
                 text_content = None
                 html_content = None
 
+                if item.get("operation", "create") == "refresh":
+                    if args.dry_run:
+                        print(f"  WOULD REFRESH document id={item.get('target_document_id')}")
+                        refreshed += 1
+                        continue
+                    if args.skip_s3:
+                        print("  ERROR: refresh requires S3 download")
+                        errors += 1
+                        continue
+                    doc_uuid = item.get("uuid") or item.get("s3_uuid")
+                    text_content, html_content = fetch_s3_content(s3_client, bucket, doc_uuid)
+                    try:
+                        refresh_existing_document(session, item, text_content, html_content, args.data_dir)
+                        refreshed += 1
+                    except Exception as e:
+                        session.rollback()
+                        print(f"  ERROR refreshing: {e}")
+                        errors += 1
+                    continue
+
                 if not args.dry_run:
                     try:
                         existing = WebDocument.get_by_url(session, item.get("url", ""))
                     except Exception as e:
+                        # Any PostgreSQL statement error aborts the whole
+                        # transaction until rollback. Without this, one bad
+                        # item makes every later URL check fail with
+                        # InFailedSqlTransaction.
+                        session.rollback()
                         print(f"  ERROR checking URL: {e}")
                         errors += 1
                         continue
@@ -525,6 +586,7 @@ def main():
     print("\n=== Summary ===")
     print(f"Total processed: {len(items)}")
     print(f"Added: {added}")
+    print(f"Refreshed: {refreshed}")
     print(f"Skipped (already exist): {skipped}")
     print(f"Errors: {errors}")
     if md_converted or llm_extracted:

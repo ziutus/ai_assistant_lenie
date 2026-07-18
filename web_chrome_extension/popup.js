@@ -34,6 +34,13 @@ document.addEventListener('DOMContentLoaded', function () {
   const newSourceContainer = document.getElementById('newSourceContainer');
   const newSourceNameInput = document.getElementById('newSourceName');
   const addSourceButton = document.getElementById('addSourceButton');
+  const refreshExisting = document.getElementById('refreshExisting');
+  const refreshDocumentId = document.getElementById('refreshDocumentId');
+  const refreshDocumentIdContainer = document.getElementById('refreshDocumentIdContainer');
+
+  refreshExisting.addEventListener('change', () => {
+    refreshDocumentIdContainer.style.display = refreshExisting.checked ? 'block' : 'none';
+  });
 
   const ADD_NEW_SOURCE = '__add_new__';
   let previousSourceValue = sourceSelect.value;
@@ -260,6 +267,15 @@ document.addEventListener('DOMContentLoaded', function () {
     sendButton.disabled = true;
     sendButton.textContent = 'Wysyłam...';
 
+    const targetDocumentId = Number.parseInt(refreshDocumentId.value, 10);
+    if (refreshExisting.checked && (!Number.isInteger(targetDocumentId) || targetDocumentId <= 0)) {
+      alert('Podaj prawidłowe ID istniejącego dokumentu.');
+      sendButton.style.backgroundColor = '';
+      sendButton.disabled = false;
+      sendButton.textContent = 'Wyślij';
+      return;
+    }
+
     chrome.tabs.query({ currentWindow: true, active: true }, function (tabs) {
       const pageUrl = tabs[0]?.url || '';
       chrome.scripting.executeScript({
@@ -283,6 +299,10 @@ document.addEventListener('DOMContentLoaded', function () {
             source: sourceSelect.value,
             chapter_list: chapter_list.value
           };
+          if (refreshExisting.checked) {
+            data.operation = 'refresh';
+            data.target_document_id = targetDocumentId;
+          }
 
           return fetch(serverUrl, {
             method: 'POST',
