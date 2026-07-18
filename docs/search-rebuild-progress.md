@@ -5,6 +5,32 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 9, sesja B (edycja filtrów i feedback) — ETAP 9 UKOŃCZONY
+
+**Zakres wykonany:** panel korekty pozwala edytować temat i aktywne filtry oraz usuwać każdy
+chip. „Szukaj z poprawionymi kryteriami” wysyła jawny `{query, filters, limit, sort}` do
+`POST /search` bez `natural_query`, więc nie wywołuje LLM; dopiero po udanym search zapisuje
+`partially_correct` z pełnym `corrected_query` do pierwotnego search_id. Przyciski Tak/Nie zapisują
+feedback `correct`/`incorrect`. URL `mode=explicit&criteria=<JSON>&limit=N` round-tripuje wszystkie
+jawne kryteria i po otwarciu wykonuje explicit search bez Bielika. Wyniki filter-only mają własną
+etykietę i bezpiecznie obsługują brak text/similarity.
+
+**Testy uruchomione:** TypeScript `npm run lint`: czysty; Vitest **11 passed** (5 plików);
+produkcyjny `npm run build`: czysty, 312 modułów. Testy obejmują edycję/usunięcie chipów,
+explicit payload bez natural_query/UI metadata i round-trip URL. E2E Flask+NAS: explicit search
+→ 200; feedback partially_correct → 200; zapisany corrected_query ma query=`gospodarka` i rok
+2004; rekord testowy usunięty (`cleanup=True`).
+
+**Otwarte ryzyka:** criteria w URL jest czytelnym JSON-em i może być długie; nie umieszcza sekretów,
+ale przy bardzo rozbudowanych filtrach warto później przejść na krótszy, wersjonowany codec.
+UI umożliwia edycję/usunięcie filtrów rozpoznanych przez Bielika, ale nie ma jeszcze pickera do
+dodawania całkiem nowego typu filtra, którego parser nie zwrócił.
+
+**PR/merge:** PR **#298**; hash merge'a do uzupełnienia po merge sesji B.
+
+**Następny krok:** Etap 10 — baseline ewaluacji 43 prawdziwych zapytań na Bieliku z raportem
+poprawności pól, latency, tokenów i kosztu.
+
 ## 2026-07-18 — Etap 9, sesja A (frontend interpretacji) — POŁOWA ETAPU
 
 **Zakres wykonany:** `web_interface_react` przestawiony z legacy `/website_similar` na
@@ -24,7 +50,7 @@ query/filtrów/warnings/fallback/clarification. Istniejący smoke test App emitu
 jawnych kryteriów — to dokładny zakres sesji B. Wyniki filter-only mają skromniejszy kształt niż
 hybrydowe; komponent wyników będzie wymagał utwardzenia w 9B przy korektach do samego filtra.
 
-**PR/merge:** PR **#297**; hash merge'a do uzupełnienia po merge sesji A.
+**PR/merge:** PR **#297**, merge **ddad12c**.
 
 **Następny krok:** Etap 9, sesja B — edytowalne/usuwalne filtry, ponowne wyszukiwanie bez LLM,
 feedback z corrected_query i shareable URL jawnych filtrów.

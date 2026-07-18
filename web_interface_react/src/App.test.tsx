@@ -10,6 +10,12 @@ vi.mock("axios", () => ({
     post: vi.fn().mockResolvedValue({ data: {} }),
   },
 }));
+vi.mock("./modules/shared/components/Authorization/authorization", () => ({
+  default: () => null,
+}));
+vi.mock("./modules/shared/pages/list", () => ({
+  default: () => <div data-testid="list-page" />,
+}));
 
 describe("App", () => {
   it("renders connect page when no API key is set", () => {
