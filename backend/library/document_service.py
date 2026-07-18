@@ -131,6 +131,39 @@ class DocumentService:
     # save_document — extracted from /website_save
     # ------------------------------------------------------------------
 
+    def refresh_document_source(self, document_id: int, url: str, html: str,
+                                text: str = "") -> WebDocument:
+        """Store a new captured source revision and re-extract deterministic authors."""
+        try:
+            document_id = int(document_id)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Refresh requires target_document_id") from exc
+        doc = WebDocument.get_by_id(self.session, document_id)
+        if doc is None:
+            raise ValueError("Refresh target document does not exist")
+        if doc.url != url:
+            raise ValueError("Refresh URL does not match target document")
+        if doc.document_type != "webpage" or not html:
+            raise ValueError("Refresh requires a webpage with HTML")
+
+        cfg = load_config()
+        bucket_name = cfg.get("AWS_S3_WEBSITE_CONTENT")
+        use_s3 = bucket_name is not None
+        s3_client = __import__("boto3").client("s3") if use_s3 else None
+        new_uuid = str(uuid.uuid4())
+        if text:
+            self._store_file(new_uuid, "txt", text, use_s3, s3_client, bucket_name)
+        self._store_file(new_uuid, "html", html, use_s3, s3_client, bucket_name)
+
+        doc.uuid = new_uuid
+        doc.text_raw = html
+        from library.article_metadata import extract_article_authors
+        from library.author_service import set_document_authors
+
+        set_document_authors(self.session, doc, extract_article_authors(html, url), source="html")
+        self.session.commit()
+        return doc
+
     def save_document(
         self,
         url: str,

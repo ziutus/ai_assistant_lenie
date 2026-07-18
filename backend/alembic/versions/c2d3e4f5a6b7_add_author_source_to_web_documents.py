@@ -18,7 +18,7 @@ def upgrade() -> None:
     op.execute("ALTER TABLE web_documents ADD COLUMN IF NOT EXISTS author_source VARCHAR(10)")
     op.execute("""
         ALTER TABLE web_documents ADD CONSTRAINT ck_web_documents_author_source
-        CHECK (author_source IS NULL OR author_source IN ('manual', 'llm'))
+        CHECK (author_source IS NULL OR author_source IN ('manual', 'llm', 'html'))
     """)
 
 
