@@ -113,6 +113,15 @@ interface CountryTag {
   name_pl: string;
 }
 
+interface AuthorPerson {
+  person_id: number;
+  link_id: number;
+  name: string;
+  description: string | null;
+  confidence: string;
+  wikidata_qid: string | null;
+}
+
 interface DocQuality {
   score: number;
   penalties: Record<string, number>;
@@ -521,8 +530,10 @@ const Chunks = () => {
   const [docType, setDocType]       = React.useState(initialDocType);
   const [docTitle, setDocTitle]     = React.useState("");
   const [docAuthor, setDocAuthor]   = React.useState("");
-  const [authorPersonId, setAuthorPersonId] = React.useState<number | null>(null);
-  const [authorDescription, setAuthorDescription] = React.useState("");
+  const [docAuthorSource, setDocAuthorSource] = React.useState<string | null>(null);
+  const [authorPersons, setAuthorPersons] = React.useState<AuthorPerson[]>([]);
+  const [authorInput, setAuthorInput] = React.useState("");
+  const [savingAuthor, setSavingAuthor] = React.useState(false);
   const [docDateFrom, setDocDateFrom] = React.useState<string | null>(null);
   const [docDateFromSource, setDocDateFromSource] = React.useState<string | null>(null);
   const [extractingDateFor, setExtractingDateFor] = React.useState<number | null>(null);
@@ -656,8 +667,9 @@ const Chunks = () => {
       setDocType(data.document?.document_type ?? "");
       setDocUrl(data.document?.url ?? "");
       setDocAuthor(data.document?.author ?? "");
-      setAuthorPersonId(data.document?.author_person_id ?? null);
-      setAuthorDescription(data.document?.author_description ?? "");
+      setDocAuthorSource(data.document?.author_source ?? null);
+      setAuthorPersons(data.document?.author_persons ?? []);
+      setAuthorInput(data.document?.author ?? "");
       setDocDateFrom(data.document?.date_from ?? null);
       setDocDateFromSource(data.document?.date_from_source ?? null);
       setDateInput(data.document?.date_from ?? "");
@@ -703,7 +715,8 @@ const Chunks = () => {
         if (data.document_type) setDocType(data.document_type);
         if (data.title) setDocTitle(data.title);
         if (data.url) setDocUrl(data.url);
-        if (data.author) setDocAuthor(data.author);
+        if (data.author) { setDocAuthor(data.author); setAuthorInput(data.author); }
+        if (data.author_source) setDocAuthorSource(data.author_source);
         if (data.date_from) { setDocDateFrom(data.date_from); setDateInput(data.date_from); }
         if (data.quality) setDocQuality(data.quality);
       } catch { /* analysis can still be configured manually */ }
@@ -1344,6 +1357,13 @@ const Chunks = () => {
   // Detect the article author (byline) from one specific chunk. Unlike speaker
   // detection, no position limit — a byline can appear at either the start or
   // the end of an article. Saves directly to doc.author (backend commits it).
+  const applyAuthorResponse = (data: { author: string; author_source?: string; author_persons?: AuthorPerson[] }) => {
+    setDocAuthor(data.author);
+    setAuthorInput(data.author);
+    setDocAuthorSource(data.author_source ?? "llm");
+    setAuthorPersons(data.author_persons ?? []);
+  };
+
   const extractAuthorFromChunk = async (chunkId: number) => {
     if (!selectedRun) return;
     setExtractingAuthorFor(chunkId);
@@ -1354,7 +1374,7 @@ const Chunks = () => {
       });
       const data = await r.json();
       if (data.status === "success" && data.author) {
-        setDocAuthor(data.author);
+        applyAuthorResponse(data);
         setInfo(`Ustawiono autora: ${data.author}`);
       }
       else if (data.status === "success") setError("Nie udało się rozpoznać autora w tym chunku");
@@ -1406,6 +1426,25 @@ const Chunks = () => {
     finally { setSavingDate(false); }
   };
 
+  // Manually save the byline typed/pasted into the input next to the "Autor"
+  // badge — the reviewer copying the byline off the original page (co-authors
+  // separated by commas or "i"/"oraz"), as opposed to the LLM detection above.
+  const saveAuthor = async () => {
+    if (!id || !authorInput.trim()) return;
+    setSavingAuthor(true);
+    try {
+      const r = await fetch(`${apiUrl}/document/${id}/author`, {
+        method: "POST", headers, body: JSON.stringify({ author: authorInput }),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        applyAuthorResponse({ ...data, author_source: data.author_source ?? "manual" });
+        setInfo(`Ustawiono autora: ${data.author}`);
+      } else setError("Błąd zapisu autora: " + (data.message ?? ""));
+    } catch { setError("Błąd połączenia przy zapisie autora"); }
+    finally { setSavingAuthor(false); }
+  };
+
   const extractAuthorFromLine = async (chunk: Chunk, lineIdx: number) => {
     if (!selectedRun) return;
     const lines = (chunk.original_text ?? "").split("\n");
@@ -1418,7 +1457,7 @@ const Chunks = () => {
       });
       const data = await r.json();
       if (data.status === "success" && data.author) {
-        setDocAuthor(data.author);
+        applyAuthorResponse(data);
         setInfo(`Ustawiono autora: ${data.author}. Linię autora możesz teraz oznaczyć × i usunąć.`);
       } else if (data.status === "success") setError("Nie udało się rozpoznać autora w tym kontekście");
       else setError("Błąd wykrywania autora: " + (data.message ?? ""));
@@ -1981,12 +2020,44 @@ const Chunks = () => {
           {docType && <span style={{ fontWeight: 400, color: "#64748b", fontSize: "0.7em" }}> ({DOC_TYPE_LABELS[docType] ?? docType}, #{id})</span>}
         </h2>
         {runMode === "article" && (
-          <span style={{ fontSize: "0.88em", padding: "3px 9px", borderRadius: 4, background: docAuthor ? "#f3e8ff" : "#f1f5f9", color: docAuthor ? "#6b21a8" : "#64748b" }}>
-            Autor: {docAuthor && authorPersonId
-              ? <NavLink to={`/persons/${authorPersonId}`} target="_blank" rel="noreferrer"
-                  title={authorDescription || "Podsumowanie autora i jego artykuły — otwórz w nowej karcie"}
-                  style={{ color: "inherit", fontWeight: 700 }}>{docAuthor}</NavLink>
+          <span style={{ fontSize: "0.88em", padding: "3px 9px", borderRadius: 4, background: docAuthor ? "#f3e8ff" : "#f1f5f9", color: docAuthor ? "#6b21a8" : "#64748b", display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            Autor:{" "}
+            {authorPersons.length > 0
+              ? authorPersons.map((p, i) => (
+                  <React.Fragment key={p.person_id}>
+                    {i > 0 && <span>, </span>}
+                    <NavLink to={`/persons/${p.person_id}`} target="_blank" rel="noreferrer"
+                      title={p.description || "Podsumowanie autora i jego artykuły — otwórz w nowej karcie"}
+                      style={{ color: "inherit", fontWeight: 700 }}>{p.name}</NavLink>
+                  </React.Fragment>
+                ))
               : <strong>{docAuthor || "nie wykryto"}</strong>}
+            {docAuthor && docAuthorSource && (
+              <span
+                title={docAuthorSource === "manual"
+                  ? "Wpisany ręcznie przez recenzenta — automatyka go nie znalazła"
+                  : "Wykryty przez LLM z treści dokumentu"}
+                style={{ fontSize: "0.85em", opacity: 0.75 }}
+              >
+                {docAuthorSource === "manual" ? "✍️" : "🤖"}
+              </span>
+            )}
+            <input
+              type="text"
+              value={authorInput}
+              onChange={e => setAuthorInput(e.target.value)}
+              placeholder="Imię Nazwisko, Imię Nazwisko"
+              title="Wpisz lub wklej autorów z oryginalnej strony — współautorów oddziel przecinkiem lub „i”"
+              style={{ fontSize: "0.9em", padding: "1px 3px", border: "1px solid #cbd5e1", borderRadius: 3, width: 180 }}
+            />
+            <button
+              onClick={saveAuthor}
+              disabled={!authorInput.trim() || savingAuthor}
+              title="Zapisz wpisanych autorów (utworzy też powiązania z rejestrem osób)"
+              style={{ padding: "1px 7px", border: "1px solid #cbd5e1", borderRadius: 3, background: "#fff", cursor: "pointer", fontSize: "0.9em", color: "#64748b" }}
+            >
+              {savingAuthor ? "…" : "💾"}
+            </button>
           </span>
         )}
         {runMode === "article" && (

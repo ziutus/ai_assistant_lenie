@@ -630,12 +630,13 @@ class DocumentAnalysisService:
             #       single chapter excerpt is not a reliable place to look for a byline.
             if not is_transcript and scope is None and not (getattr(doc, "author", None) or "").strip():
                 try:
+                    from library.author_service import set_document_authors
                     from library.chunk_llm_analysis import extract_author_info, head_tail_excerpt
 
-                    author_name = extract_author_info(head_tail_excerpt(text), model)
-                    if author_name:
-                        doc.author = author_name
-                        log(f"author detected: {author_name}")
+                    author_names = extract_author_info(head_tail_excerpt(text), model)
+                    if author_names:
+                        set_document_authors(self.session, doc, author_names, source="llm")
+                        log(f"author detected: {', '.join(author_names)}")
                 except Exception:
                     logger.exception("author extraction failed, continuing without author")
 
