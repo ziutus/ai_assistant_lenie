@@ -38,6 +38,8 @@ library/
 ├── person_registry.py       # NER person mentions → alias/Wikidata+LLM/fuzzy → document_persons links
 ├── search/           # Typed search domain models (stage 1 of docs/search-rebuild-implementation-plan.md)
 │   └── types.py      # ParsedSearchQuery, SearchFilters, SearchRequest, SearchFeedback + enums; frozen dataclasses validated at construction (SearchQueryValidationError), target domain names (published_on, subject_period_*), normalize_*_range() helpers for the future parser
+├── llm_usage/        # Central LLM usage & cost accounting (stage 2 of the search-rebuild plan)
+│   └── pricing.py    # estimate_cost() — Decimal-only per-token cost math (float money raises PricingError), PricingMode/CostStatus enums, UNKNOWN_COST sentinel; the ONLY place allowed to compute LLM call costs; backing tables: search_interpretation_logs, llm_pricing, llm_usage_logs (db/models.py)
 ├── stalker_web_documents_db_postgresql.py  # Query layer (ORM, list, search, similarity)
 ├── text_functions.py        # Text processing & splitting utilities
 ├── text_detect_language.py  # Language detection abstraction
