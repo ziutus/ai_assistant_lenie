@@ -48,8 +48,9 @@ Configuration in `backend/pyproject.toml` under `[tool.pytest.ini_options]`. The
 |------|--------|
 | `test_document_service.py` | `DocumentService` (create/import document) |
 | `test_search_service.py` | `SearchService` (embeddings, similarity); stage 6: `search_similar()` forwards a `SearchFilters` built from `project`/`period_from`/`period_to` to both repo calls, reversed period swapped not rejected, out-of-domain year and blank `project` degrade to no filter instead of raising; stage 6 session B: `search_by_filters()` delegates to `repo.list_by_filters()`, defaults, empty filters allowed, `embedding.get_embedding()` is never called |
-| `test_search_sql_filters.py` | Shared SQL filters; stage 7A verifies publisher name/domain map through `web_documents.publisher_id IN (subquery)` and therefore preserve every ambiguous match; author/discovery source remain `NotImplementedError` until 7B |
+| `test_search_sql_filters.py` | Shared SQL filters; stage 7 verifies publisher subqueries, structured author canonical/alias + guarded legacy byline fallback, and discovery source through `sources` with an explicit assertion that `information_sources` never appears |
 | `test_publisher_registry.py` | Stage 7A publisher resolution: empty/0/1/N cardinality, no arbitrary id for ambiguity, case/diacritic and domain normalization, publisher without domains, AND name+domain SQL |
+| `test_search_name_resolution.py` | Stage 7B explicit author/discovery-source 0/1/N resolution; aliases and unaccent SQL; no arbitrary id for ambiguity; no information-source confusion |
 | `test_search_types.py` | `library/search/types.py` — frozen search domain models: per-field validation, boundaries, reversed ranges, request variants |
 | `test_llm_usage_pricing.py` | `library/llm_usage/pricing.py` — exact Decimal Bielik/embedding cost math, UNKNOWN for non-token pricing, float money rejected |
 | `test_search_audit_models.py` | ORM metadata for `search_interpretation_logs`/`llm_pricing`/`llm_usage_logs` pinned to the stage-2 migrations |
