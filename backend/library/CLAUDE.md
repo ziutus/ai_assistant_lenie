@@ -36,10 +36,12 @@ library/
 ├── place_verification.py    # NER place candidates → geocoder (geocode_cache) → LLM → miejsce-* tags
 ├── wikidata_client.py       # Wikidata person search (humans only, P31=Q5) for disambiguation
 ├── person_registry.py       # NER person mentions → alias/Wikidata+LLM/fuzzy → document_persons links
-├── search/           # Typed search domain models (stage 1 of docs/search-rebuild-implementation-plan.md)
-│   └── types.py      # ParsedSearchQuery, SearchFilters, SearchRequest, SearchFeedback + enums; frozen dataclasses validated at construction (SearchQueryValidationError), target domain names (published_on, subject_period_*), normalize_*_range() helpers for the future parser
+├── search/           # Typed search domain models (stages 1-2 of docs/search-rebuild-implementation-plan.md)
+│   ├── types.py      # ParsedSearchQuery, SearchFilters, SearchRequest, SearchFeedback + enums; frozen dataclasses validated at construction (SearchQueryValidationError), target domain names (published_on, subject_period_*), normalize_*_range() helpers for the future parser
+│   └── audit_repository.py  # record_interpretation()/record_feedback() write search_interpretation_logs in their OWN session (a failed audit write is swallowed, never breaks the search path); field-length caps applied here (raw_query→MAX_QUERY_LENGTH, raw_response→20k, error_message→500, visible TRUNCATION_SUFFIX); parsed_query_to_dict() serializes ParsedSearchQuery to JSONB; delete_expired_interpretations() = 90-day retention sweep (ADR-017, errors propagate — maintenance path)
 ├── llm_usage/        # Central LLM usage & cost accounting (stage 2 of the search-rebuild plan)
-│   └── pricing.py    # estimate_cost() — Decimal-only per-token cost math (float money raises PricingError), PricingMode/CostStatus enums, UNKNOWN_COST sentinel; the ONLY place allowed to compute LLM call costs; backing tables: search_interpretation_logs, llm_pricing, llm_usage_logs (db/models.py)
+│   ├── pricing.py    # estimate_cost() — Decimal-only per-token cost math (float money raises PricingError), PricingMode/CostStatus enums, UNKNOWN_COST sentinel; the ONLY place allowed to compute LLM call costs; backing tables: search_interpretation_logs, llm_pricing, llm_usage_logs (db/models.py)
+│   └── recorder.py   # record_llm_usage() — the SINGLE write path for llm_usage_logs (exactly one row per LLM call); snapshots the active llm_pricing row, reported cost (Decimal + currency) beats the local estimate, missing price → cost_status='unknown' (never an error, never 0); own session, DB failures swallowed (usage_log_id=None); stage 3 wires this into ai.py
 ├── stalker_web_documents_db_postgresql.py  # Query layer (ORM, list, search, similarity)
 ├── text_functions.py        # Text processing & splitting utilities
 ├── text_detect_language.py  # Language detection abstraction
