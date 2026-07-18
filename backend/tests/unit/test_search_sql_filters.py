@@ -118,14 +118,26 @@ class TestSubjectPeriod:
         assert "period_end_year IS NULL" in sql
 
 
-class TestUnresolvedNameFields:
-    @pytest.mark.parametrize(
-        "field", ["author_name", "discovery_source_name"],
-    )
-    def test_raises_not_implemented_instead_of_silently_ignoring(self, field):
-        filters = SearchFilters(**{field: "Jan Kowalski" if "domain" not in field else "onet.pl"})
-        with pytest.raises(NotImplementedError, match=field):
-            build_document_filters(filters)
+class TestAuthorAndDiscoverySourceFilters:
+    def test_author_uses_role_canonical_name_and_alias(self):
+        sql = compiled(build_document_filters(SearchFilters(author_name="Jan Kowalski"))[0])
+        assert "document_persons.role = 'author'" in sql
+        assert "persons.canonical_name" in sql
+        assert "person_aliases.alias" in sql
+        assert "jan kowalski" in sql
+
+    def test_author_fallback_uses_byline_only_without_structured_author(self):
+        sql = compiled(build_document_filters(SearchFilters(author_name="Jan Kowalski"))[0])
+        assert "NOT (EXISTS" in sql
+        assert "web_documents.author" in sql
+        assert "LIKE" in sql
+
+    def test_discovery_source_uses_sources_not_information_sources(self):
+        sql = compiled(build_document_filters(SearchFilters(discovery_source_name="Unknow.News"))[0])
+        assert "web_documents.source IN" in sql
+        assert "FROM sources" in sql
+        assert "information_sources" not in sql
+        assert "unknow.news" in sql
 
 
 class TestPublisherFilters:
