@@ -168,6 +168,37 @@ Fragment artykułu:
     return None
 
 
+def extract_publication_date_info(text: str, model: str) -> str | None:
+    """Ask LLM to identify the article's publication date from a text excerpt.
+
+    Returns an ISO date string (YYYY-MM-DD), or None if extraction fails,
+    the date is ambiguous, or no date is found. The caller is responsible
+    for validating the returned string is a real calendar date.
+    """
+    prompt = f"""Z poniższego fragmentu artykułu spróbuj ustalić datę jego publikacji.
+Zwróć TYLKO obiekt JSON bez żadnego dodatkowego tekstu, w formacie:
+{{"date": "RRRR-MM-DD"}}
+
+Jeśli nie możesz jednoznacznie ustalić daty publikacji (np. widzisz tylko datę wydarzenia
+opisywanego w artykule, a nie datę jego napisania/publikacji), zwróć: {{"date": null}}
+
+Fragment artykułu:
+{text}"""
+
+    logger.info("extract_publication_date_info: len=%d", len(text))
+    response_text, _ = call_model(prompt, model, max_tokens=100)
+    try:
+        match = re.search(r'\{.*\}', response_text, re.DOTALL)
+        if match:
+            result = json.loads(match.group())
+            date_str = result.get("date")
+            if isinstance(date_str, str) and date_str.strip():
+                return date_str.strip()
+    except Exception:
+        logger.warning("extract_publication_date_info: failed to parse JSON response")
+    return None
+
+
 def assign_speakers(text: str, speaker1: str, speaker2: str) -> str:
     """Parse >> speaker-change markers from YouTube auto-transcript and label each turn.
 

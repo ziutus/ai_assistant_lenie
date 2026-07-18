@@ -34,6 +34,9 @@ Variables are split into two categories:
 
 Bootstrap variables: `SECRETS_BACKEND`, `SECRETS_ENV`, `PROJECT_CODE`, `VAULT_ADDR`, `VAULT_TOKEN`, `ENV_DATA`, `AWS_REGION`. Additionally, `VAULT_ENV` is recognized as a deprecated fallback for `SECRETS_ENV` (use `SECRETS_ENV` for new deployments).
 
+> **Pitfall — `docker-compose environment:` is silently ignored for non-bootstrap variables under `vault`/`aws` backends.**
+> `VaultBackend.load()` and `AWSSSMBackend.load()` build the `Config` dict from ONLY two sources: the bootstrap variables listed above (read from `os.environ`) and whatever is stored in the remote secret store. Any other key set under a service's `environment:` block in a compose file (e.g. `compose.nas.yaml`) is never read by `load_config()` — it sits in the container's `os.environ` but `Config.get()`/`Config.require()` never look there. This looks like it should work (Docker's normal env-var story) and fails silently: no error, just the code's hardcoded default. If you add a new `type: config` variable to `scripts/vars-classification.yaml` and it needs a different value on a `vault`/`aws` deployment than the code default, you MUST push it with `env_to_vault.py vault set --env <env> KEY=value` (see [Adding New Variables](#adding-new-variables)) — setting it in the compose file's `environment:` does nothing there. (Discovered 2026-07-18: `SITE_RULES_PATH` was set in `compose.nas.yaml`'s `environment:` but never in Vault, so `webpage_text_clean()` kept resolving the hardcoded default path instead.)
+
 ### Config Loader Flow
 
 ```
@@ -119,6 +122,12 @@ python scripts/env_to_vault.py vault set --env dev OPENAI_API_KEY=<your-openai-a
 # List all keys in Vault
 python scripts/env_to_vault.py vault list --env dev
 ```
+
+> **Windows/Git Bash pitfall**: if the value starts with `/` (a container path like `/app/config/site_rules.json`), Git Bash's MSYS layer silently rewrites it to a Windows path (e.g. `C:/Program Files/Git/app/config/site_rules.json`) before Python ever sees it — `vault get` will then show the mangled value with no error. Prefix the command with `MSYS_NO_PATHCONV=1` whenever a value starts with `/`:
+> ```bash
+> MSYS_NO_PATHCONV=1 python scripts/env_to_vault.py vault set --env dev SITE_RULES_PATH=/app/config/site_rules.json
+> ```
+> Always `vault get --env dev KEY` afterwards to confirm the stored value matches what you intended — this affects any `/`-prefixed value, not just paths.
 
 ## AWS SSM Parameter Store Setup
 
@@ -268,6 +277,19 @@ The Vault or SSM endpoint is not reachable. Check:
 - Network connectivity (VPN if accessing NAS Vault remotely)
 - Vault server is running and unsealed
 - For SSM: AWS region matches where parameters are stored
+
+### Variable Set in Docker Compose but the App Still Uses the Default
+
+Symptom: you added `KEY: value` under a service's `environment:` in a compose file (e.g. `compose.nas.yaml`), the container has it in `env` (`docker exec <container> env | grep KEY` shows it), but `cfg.get("KEY")` in the app returns `None` / the code's hardcoded default, and behavior doesn't change.
+
+Cause: on `vault`/`aws` backends, `load_config()` never reads arbitrary `os.environ` keys — only the bootstrap variables and whatever is in the remote secret store (see the pitfall note under [Bootstrap vs Application Variables](#bootstrap-vs-application-variables)). This is `docker-compose environment:`'s most common footgun in this project.
+
+Fix: push the value to the actual backend in use, then restart the container so it re-reads config at startup (the `Config` singleton is loaded once per process):
+```bash
+python scripts/env_to_vault.py vault set --env dev KEY=value   # or: ssm set
+# then restart the container so the new Vault/SSM value is picked up
+```
+Verify end-to-end: `vault get --env dev KEY` shows the intended value, then `docker exec <container> python -c "from library.config_loader import load_config; print(load_config().get('KEY'))"` after the restart.
 
 ### Unknown SECRETS_BACKEND Value
 
