@@ -54,9 +54,20 @@ def lambda_handler(event, context):
     paywall = url_data.get("paywall", False)
     source = url_data.get("source", "own")
     chapter_list = url_data.get("chapter_list", False)
+    operation = url_data.get("operation", "create")
+    target_document_id = url_data.get("target_document_id")
 
     if not target_url or not url_type:
         return _error_response("Missing required parameter(s): 'url' or 'type'")
+    if operation not in {"create", "refresh"}:
+        return _error_response("Invalid operation", 400)
+    if operation == "refresh":
+        try:
+            target_document_id = int(target_document_id)
+        except (TypeError, ValueError):
+            return _error_response("Refresh requires target_document_id", 400)
+        if target_document_id <= 0 or url_type != "webpage" or not html:
+            return _error_response("Refresh requires a webpage with HTML", 400)
 
     # Generuj unikalny identyfikator i timestamp
     uid = str(uuid.uuid4())
@@ -99,7 +110,11 @@ def lambda_handler(event, context):
             'chapter_list': chapter_list,
             'created_at': timestamp,
             'created_date': created_date,
+            'operation': operation,
         }
+
+        if operation == "refresh":
+            dynamodb_item['target_document_id'] = target_document_id
 
         # Dodaj s3_uuid tylko dla webpage
         if url_type == 'webpage':

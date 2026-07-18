@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).
 
+## [1.0.25] - 2026-07-18
+### Dodane
+- Tryb „Odśwież istniejący dokument” wysyłający aktualny, wyrenderowany HTML strony wraz z ID dokumentu Lenie.
+
 ## [1.0.24] - 2026-07-14
 ### Dodane
 - Lista źródeł (Source) pobierana dynamicznie z backendu (`GET /sources?active=1`) zamiast 4 zaszytych opcji; zaszyte opcje pozostają jako fallback offline (dodatkowo cache w `chrome.storage.local`)
@@ -45,4 +49,3 @@ Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym w
 ## [1.0.16] - 2025-01-19
 ### Dodano
 - Dodano obsługę automatycznego wykrywania języka strony.
-

@@ -140,29 +140,38 @@ def head_tail_excerpt(text: str, chars: int = 1500) -> str:
     return text[:chars] + "\n...\n" + text[-chars:]
 
 
-def extract_author_info(text: str, model: str) -> str | None:
-    """Ask LLM to identify the article's author (byline) from a text excerpt.
+def extract_author_info(text: str, model: str) -> list[str] | None:
+    """Ask LLM to identify the article's author(s) (byline) from a text excerpt.
 
-    Returns the author's name, or None if extraction fails or no author found.
+    Returns the list of author names (an article can have co-authors), or
+    None if extraction fails or no author found.
     """
-    prompt = f"""Z poniższego fragmentu artykułu spróbuj ustalić imię i nazwisko autora (dziennikarza, publicysty).
+    prompt = f"""Z poniższego fragmentu artykułu spróbuj ustalić imiona i nazwiska autorów (dziennikarzy, publicystów).
+Artykuł może mieć jednego autora lub kilku współautorów — wypisz wszystkich podpisanych pod artykułem.
 Zwróć TYLKO obiekt JSON bez żadnego dodatkowego tekstu, w formacie:
-{{"author": "Imię Nazwisko"}}
+{{"authors": ["Imię Nazwisko", "Imię Nazwisko"]}}
 
-Jeśli nie możesz jednoznacznie zidentyfikować autora, zwróć: {{"author": null}}
+Jeśli nie możesz jednoznacznie zidentyfikować żadnego autora, zwróć: {{"authors": null}}
 
 Fragment artykułu:
 {text}"""
 
     logger.info("extract_author_info: len=%d", len(text))
-    response_text, _ = call_model(prompt, model, max_tokens=100)
+    response_text, _ = call_model(prompt, model, max_tokens=200)
     try:
         match = re.search(r'\{.*\}', response_text, re.DOTALL)
         if match:
             result = json.loads(match.group())
-            author = result.get("author")
-            if isinstance(author, str) and author.strip():
-                return author.strip()
+            authors = result.get("authors")
+            # Tolerate a model answering with the older single-author shape.
+            if authors is None:
+                authors = result.get("author")
+            if isinstance(authors, str):
+                authors = [authors]
+            if isinstance(authors, list):
+                cleaned = [a.strip() for a in authors if isinstance(a, str) and a.strip()]
+                if cleaned:
+                    return cleaned
     except Exception:
         logger.warning("extract_author_info: failed to parse JSON response")
     return None

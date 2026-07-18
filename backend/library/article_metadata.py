@@ -12,6 +12,75 @@ def _is_wp_url(url: str) -> bool:
     return host == "wp.pl" or host.endswith(".wp.pl") or host == "o2.pl" or host.endswith(".o2.pl")
 
 
+def _is_onet_url(url: str) -> bool:
+    host = (urlparse(url).hostname or "").lower()
+    return host == "onet.pl" or host.endswith(".onet.pl")
+
+
+def _as_types(value) -> set[str]:
+    if isinstance(value, str):
+        return {value}
+    if isinstance(value, list):
+        return {item for item in value if isinstance(item, str)}
+    return set()
+
+
+def _author_names(value) -> list[str]:
+    values = value if isinstance(value, list) else [value]
+    names: list[str] = []
+    for item in values:
+        name = item.get("name") if isinstance(item, dict) else item if isinstance(item, str) else None
+        if name and name.strip() and name.strip().casefold() not in {n.casefold() for n in names}:
+            names.append(name.strip())
+    return names
+
+
+def _extract_onet_authors(html: str) -> list[str]:
+    """Read the byline from the Article object, never every Person in @graph."""
+    soup = BeautifulSoup(html, "html.parser")
+    article_types = {"Article", "NewsArticle", "ReportageNewsArticle", "AnalysisNewsArticle"}
+    for script in soup.select('script[type="application/ld+json"]'):
+        try:
+            payload = json.loads(script.string or script.get_text())
+        except (json.JSONDecodeError, TypeError):
+            continue
+        roots = payload if isinstance(payload, list) else [payload]
+        for root in roots:
+            if not isinstance(root, dict):
+                continue
+            objects = root.get("@graph", [root])
+            if not isinstance(objects, list):
+                objects = [objects]
+            for obj in objects:
+                if isinstance(obj, dict) and _as_types(obj.get("@type")) & article_types:
+                    names = _author_names(obj.get("author"))
+                    if names:
+                        return names
+
+    # Portal-specific fallback: only the compact byline immediately associated
+    # with the story. Profile cards later on the page repeat the same people.
+    names: list[str] = []
+    for link in soup.select('a[href*="/autorzy/"]'):
+        if link.find_parent(class_=lambda c: c and "author-xl" in " ".join(c if isinstance(c, list) else [c])):
+            continue
+        name = link.get_text(" ", strip=True)
+        if name and name.casefold() not in {n.casefold() for n in names}:
+            names.append(name)
+        if len(names) >= 10:
+            break
+    return names
+
+
+def extract_article_authors(html: str | None, url: str = "") -> list[str]:
+    """Extract all deterministic portal byline authors from raw HTML."""
+    if not html:
+        return []
+    if _is_onet_url(url):
+        return _extract_onet_authors(html)
+    author = extract_article_author(html, url)
+    return [author] if author else []
+
+
 def extract_article_author(html: str | None, url: str = "") -> str | None:
     """Extract a content author's name from raw HTML.
 
