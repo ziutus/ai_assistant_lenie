@@ -9,9 +9,11 @@ Provides:
 """
 
 import datetime
+import decimal
 import logging
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     CheckConstraint,
     Date,
@@ -1457,6 +1459,200 @@ class ApiKey(Base):
 
     def __repr__(self) -> str:
         return f"ApiKey(id={self.id!r}, kind={self.kind!r}, name={self.name!r}, active={self.active!r})"
+
+
+# ---------------------------------------------------------------------------
+# Search audit and LLM usage (docs/search-rebuild-implementation-plan.md, stage 2)
+# ---------------------------------------------------------------------------
+
+
+class SearchInterpretationLog(Base):
+    """Audit record of one attempt to interpret a natural-language search query.
+
+    Stores the raw user query, the raw LLM response, the parsed/normalised
+    interpretation and the outcome status (see InterpretationStatus in
+    library/search/types.py). User feedback and a corrected interpretation are
+    attached to the same row. Rows expire after the retention window
+    (ADR-017: 90 days) via expires_at; raw queries may contain private data.
+    """
+
+    __tablename__ = "search_interpretation_logs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    raw_query: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str | None] = mapped_column(String(100))
+    parser_version: Mapped[str | None] = mapped_column(String(50))
+    prompt_version: Mapped[str | None] = mapped_column(String(50))
+    raw_response: Mapped[str | None] = mapped_column(Text)
+    parsed_query: Mapped[dict | None] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(50))
+    error_message: Mapped[str | None] = mapped_column(Text)
+    fallback_used: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("FALSE"))
+    llm_latency_ms: Mapped[int | None] = mapped_column(Integer)
+    search_latency_ms: Mapped[int | None] = mapped_column(Integer)
+    result_count: Mapped[int | None] = mapped_column(Integer)
+    feedback_verdict: Mapped[str | None] = mapped_column(String(20))
+    feedback_comment: Mapped[str | None] = mapped_column(Text)
+    corrected_query: Mapped[dict | None] = mapped_column(JSONB)
+    feedback_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    expires_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=sa_text("NOW() + INTERVAL '90 days'"),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('parsed', 'ambiguous', 'invalid_json', 'validation_error', 'llm_error', 'fallback')",
+            name="ck_search_interpretation_logs_status",
+        ),
+        CheckConstraint(
+            "feedback_verdict IS NULL OR feedback_verdict IN ('correct', 'partially_correct', 'incorrect')",
+            name="ck_search_interpretation_logs_feedback",
+        ),
+        Index("idx_search_interpretation_logs_created", "created_at"),
+        Index("idx_search_interpretation_logs_status_created", "status", "created_at"),
+        Index("idx_search_interpretation_logs_expires", "expires_at"),
+    )
+
+    usage_logs: Mapped[list["LlmUsageLog"]] = relationship(back_populates="search_interpretation_log")
+
+    def __repr__(self) -> str:
+        return (
+            f"SearchInterpretationLog(id={self.id!r}, status={self.status!r}, "
+            f"fallback_used={self.fallback_used!r}, created_at={self.created_at!r})"
+        )
+
+
+class LlmPricing(Base):
+    """Versioned price list entry for one provider/model.
+
+    Rows are immutable facts: a price change is a new row with a new
+    pricing_version and effective_from, never an UPDATE — historical usage
+    records must keep pointing at the rates that were valid when they were
+    written. At most one open-ended (effective_to IS NULL) row per
+    provider/model is allowed (partial unique index).
+    """
+
+    __tablename__ = "llm_pricing"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    pricing_version: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    pricing_mode: Mapped[str] = mapped_column(String(20), nullable=False)
+    input_price_per_million: Mapped[decimal.Decimal | None] = mapped_column(Numeric(12, 6))
+    output_price_per_million: Mapped[decimal.Decimal | None] = mapped_column(Numeric(12, 6))
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    effective_from: Mapped[datetime.date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[datetime.date | None] = mapped_column(Date)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "pricing_mode IN ('per_token', 'per_request', 'credits', 'subscription', 'free', 'unknown')",
+            name="ck_llm_pricing_mode",
+        ),
+        Index(
+            "uq_llm_pricing_active_model",
+            "provider",
+            "model",
+            unique=True,
+            postgresql_where=sa_text("effective_to IS NULL"),
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"LlmPricing(id={self.id!r}, pricing_version={self.pricing_version!r}, "
+            f"provider={self.provider!r}, model={self.model!r})"
+        )
+
+
+class LlmUsageLog(Base):
+    """One record per LLM/embedding call, independent of provider and model.
+
+    Token counts are measured facts and are stored even when no price is
+    known. Rates and currency are a denormalised snapshot of the pricing row
+    used at write time, so later price changes never alter history. Money is
+    NUMERIC/Decimal only; cost_status says how cost_amount was obtained
+    (reported/estimated/allocated) or 'unknown' when it could not be.
+    """
+
+    __tablename__ = "llm_usage_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    request_id: Mapped[str | None] = mapped_column(String(64))
+    search_interpretation_log_id: Mapped[int | None] = mapped_column(
+        ForeignKey("search_interpretation_logs.id", ondelete="SET NULL"),
+    )
+    operation: Mapped[str] = mapped_column(String(50), nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    endpoint: Mapped[str | None] = mapped_column(String(200))
+    prompt_tokens: Mapped[int | None] = mapped_column(Integer)
+    completion_tokens: Mapped[int | None] = mapped_column(Integer)
+    total_tokens: Mapped[int | None] = mapped_column(Integer)
+    credits_used: Mapped[decimal.Decimal | None] = mapped_column(Numeric(18, 6))
+    pricing_mode: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'unknown'"))
+    pricing_version: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("llm_pricing.pricing_version"),
+    )
+    input_price_per_million: Mapped[decimal.Decimal | None] = mapped_column(Numeric(12, 6))
+    output_price_per_million: Mapped[decimal.Decimal | None] = mapped_column(Numeric(12, 6))
+    cost_amount: Mapped[decimal.Decimal | None] = mapped_column(Numeric(18, 10))
+    cost_currency: Mapped[str | None] = mapped_column(String(3))
+    cost_status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'unknown'"))
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("TRUE"))
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    called_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "pricing_mode IN ('per_token', 'per_request', 'credits', 'subscription', 'free', 'unknown')",
+            name="ck_llm_usage_logs_pricing_mode",
+        ),
+        CheckConstraint(
+            "cost_status IN ('reported', 'estimated', 'allocated', 'unknown')",
+            name="ck_llm_usage_logs_cost_status",
+        ),
+        CheckConstraint(
+            "(prompt_tokens IS NULL OR prompt_tokens >= 0)"
+            " AND (completion_tokens IS NULL OR completion_tokens >= 0)"
+            " AND (total_tokens IS NULL OR total_tokens >= 0)",
+            name="ck_llm_usage_logs_tokens_nonneg",
+        ),
+        Index("idx_llm_usage_logs_called", "called_at"),
+        Index("idx_llm_usage_logs_operation_called", "operation", "called_at"),
+        Index("idx_llm_usage_logs_provider_model_called", "provider", "model", "called_at"),
+        Index(
+            "idx_llm_usage_logs_interpretation",
+            "search_interpretation_log_id",
+            postgresql_where=sa_text("search_interpretation_log_id IS NOT NULL"),
+        ),
+    )
+
+    search_interpretation_log: Mapped["SearchInterpretationLog | None"] = relationship(
+        back_populates="usage_logs",
+    )
+    pricing: Mapped["LlmPricing | None"] = relationship(foreign_keys=[pricing_version])
+
+    def __repr__(self) -> str:
+        return (
+            f"LlmUsageLog(id={self.id!r}, operation={self.operation!r}, provider={self.provider!r}, "
+            f"model={self.model!r}, cost_status={self.cost_status!r})"
+        )
 
 
 # ---------------------------------------------------------------------------

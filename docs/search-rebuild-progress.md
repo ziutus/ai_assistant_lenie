@@ -5,6 +5,105 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 2, sesja B (repozytorium audytu + recorder usage) — ETAP 2 UKOŃCZONY
+
+**Zakres wykonany:**
+
+- `library/llm_usage/recorder.py` — `record_llm_usage()`: JEDYNA ścieżka zapisu do `llm_usage_logs`
+  (dokładnie jeden rekord na wywołanie LLM). Snapshot aktywnego wiersza `llm_pricing`
+  (stawki + waluta + `pricing_version` FK), koszt przez `estimate_cost()`; koszt raportowany
+  przez providera (Decimal + wymagana waluta) ma pierwszeństwo przed estymacją; brak ceny →
+  `cost_status='unknown'` (nigdy błąd, nigdy 0). Tokeny od providera sanityzowane (złe wartości →
+  NULL + warning, bez wyjątku); float dla pieniędzy (`reported_cost`, `credits_used`) →
+  `PricingError` (błąd programisty). Własna sesja; awaria DB połknięta (`usage_log_id=None`,
+  głośny log) — accounting nie może wywalić operacji biznesowej.
+- `library/search/audit_repository.py` — `record_interpretation()` (wszystkie statusy
+  `InterpretationStatus`; status `fallback` wymusza `fallback_used=True`; niepoprawny status →
+  ValueError eager, przed sesją), `record_feedback()` (zapis i nadpisanie werdyktu/komentarza/
+  `corrected_query`; brak wiersza → False), `delete_expired_interpretations()` (retencja 90 dni;
+  jako operacja utrzymaniowa PROPAGUJE błędy DB), `parsed_query_to_dict()` (ParsedSearchQuery →
+  JSON-safe dict dla JSONB: daty→ISO, enumy→value, tuple→list). Kontrola długości w warstwie
+  zapisu: `raw_query`→`MAX_QUERY_LENGTH` (1000), `raw_response`→20 000, `error_message`→500,
+  z widocznym `TRUNCATION_SUFFIX`. Zapisy we własnej sesji — awaria zapisu audytu nie psuje
+  wyszukiwania (zwraca None/False).
+- `__init__.py` obu pakietów: leniwe re-eksporty (PEP 562) — `library.search`/`library.llm_usage`
+  importują się nadal bez sqlalchemy w lekkim środowisku uvx.
+- Dokumentacja: `backend/library/CLAUDE.md`, `backend/tests/CLAUDE.md`.
+
+**Testy uruchomione:**
+
+- `tests/unit/test_llm_usage_recorder.py` (17) + `tests/unit/test_search_audit_repository.py` (25):
+  42 passed (mockowane sesje, bez DB — konwencja repo).
+- Pełna suita `tests/unit/`: **1624 passed**; `uvx ruff check backend/`: czysty.
+- E2E na bazie NAS (192.168.200.7:5434): pełny cykl `record_interpretation` → `record_feedback` →
+  `record_llm_usage` (1000+500 tokenów → 0.0008400000 EUR `estimated` z seedu
+  `cloudferro-bielik-2026-07-18`) → `delete_expired_interpretations` (0) → DELETE interpretacji
+  potwierdza `ON DELETE SET NULL` na usage → cleanup; tabele po teście puste (0/0).
+
+**Otwarte ryzyka:**
+
+- `delete_expired_interpretations()` nie jest nigdzie wywoływane cyklicznie — podpiąć w etapie 12
+  (job/cron) albo wywoływać przy okazji zapytań.
+- `feedback_at` ustawiane przez `func.now()` (zegar DB) — spójne z `created_at`, ale wartość
+  w obiekcie ORM przed odświeżeniem to wyrażenie SQL, nie datetime.
+- Alokacja kosztu abonamentowego (`allocated`) i sumowanie między walutami (EUR/PLN/USD) —
+  bez zmian, świadomie odłożone do etapu 12 (raporty).
+- Warunek zakończenia etapu 2 spełniony: błędy zapisywane bez wpływu na transakcję wyszukiwania,
+  jedno wywołanie LLM = jeden rekord usage.
+
+**Następny krok:** Etap 3 — poprawa abstrakcji LLM (`ai_ask()` z osobnym `system_prompt`,
+rola systemowa w Sherlocku, temperatura 0 dla parsera, structured output jeśli wspierany,
+po każdym callu zapis usage przez `record_llm_usage()`, `response.usage` bez atrybutów
+`cost_usd`/`cost`/`credits_used` na `AiResponse`). Etap `S` — jedna sesja.
+
+## 2026-07-18 — Etap 2, sesja A (migracje audytu + cennik + koszty Decimal) — POŁOWA ETAPU
+
+**Zakres wykonany:**
+
+- Migracja `d3e4f5a6b7c8` — `search_interpretation_logs`: raw_query, wersje modelu/parsera/promptu,
+  surowa odpowiedź, `parsed_query` JSONB, `status` (CHECK zgodny z `InterpretationStatus`),
+  bezpieczny kod/opis błędu, latencje, feedback (`feedback_verdict` CHECK, komentarz,
+  `corrected_query`), `expires_at NOT NULL DEFAULT now() + 90 dni` (ADR-017) + indeksy
+  (created_at, status+created_at, expires_at).
+- Migracja `e4f5a6b7c8d9` — `llm_pricing` (wersjonowany cennik, wiersze niemutowalne, częściowy
+  unikalny indeks „jeden otwarty cennik na provider/model", seed CloudFerro:
+  `cloudferro-bielik-2026-07-18` 0,56 EUR/1M we/wy, `cloudferro-bge-2026-07-18` 0,50 PLN netto/1M)
+  oraz `llm_usage_logs` (operation/provider/model, tokeny jako fakt pomiarowy, `credits_used`,
+  zdenormalizowany snapshot stawek + FK `pricing_version`, `cost_amount NUMERIC(18,10)`,
+  `cost_currency`, `cost_status` CHECK reported/estimated/allocated/unknown, opcjonalne FK
+  do interpretacji `ON DELETE SET NULL`, indeksy agregacyjne).
+- ORM: `SearchInterpretationLog`, `LlmPricing`, `LlmUsageLog` w `library/db/models.py`
+  (pieniądze jako `Decimal`/`Numeric`, nie float).
+- Nowy pakiet `library/llm_usage/` (`pricing.py`): `estimate_cost()` — koszt liczony wyłącznie
+  na `Decimal` (float dla stawki = `PricingError`), osobno składnik wejścia i wyjścia,
+  kwantyzacja do 10 miejsc (skala kolumny), tryby nie-tokenowe → `UNKNOWN_COST`
+  (brak ceny nigdy nie jest błędem biznesowym ani kosztem 0).
+- Dokumentacja: `backend/database/CLAUDE.md` (sekcja 3 nowych tabel), `backend/library/CLAUDE.md`,
+  `backend/tests/CLAUDE.md`.
+
+**Testy uruchomione:**
+
+- `tests/unit/test_llm_usage_pricing.py` (25) + `tests/unit/test_search_audit_models.py` (13): 38 passed.
+- Pełna suita `tests/unit/`: **1582 passed**; `uvx ruff check backend/`: czysty.
+- Migracje na bazie NAS (192.168.200.7:5434): `upgrade head` → weryfikacja psql (schemat + seed) →
+  `downgrade c2d3e4f5a6b7` (tabele znikają) → `upgrade head`; head = `e4f5a6b7c8d9`.
+- ORM round-trip na NAS (insert interpretacji + usage z kosztem 0.0008400000 EUR `estimated`,
+  `expires_at` = created_at + 90 dni) zakończony rollbackiem — nic nie zostało w bazie.
+
+**Otwarte ryzyka:**
+
+- Retencja 90 dni to na razie tylko `expires_at` + indeks — brak joba czyszczącego (do etapu 12
+  lub prostego DELETE w sesji B).
+- Kontrola długości `raw_query`/odpowiedzi/komunikatu błędu odłożona do repozytorium (sesja B) —
+  kolumny są TEXT, limity z `library/search/types.py` (`MAX_QUERY_LENGTH=1000`) zastosuje warstwa zapisu.
+- Alokacja kosztu abonamentowego (`allocated`) świadomie niezaimplementowana — `estimate_cost()`
+  zwraca `UNKNOWN_COST` dla trybów nie-tokenowych; alokacja to raport (etap 12).
+- Waluty per rekord (EUR/PLN/USD) — agregaty nie mogą sumować między walutami bez przeliczenia.
+
+**Następny krok:** Etap 2, sesja B — repozytorium audytu (zapis sukcesu/błędu/fallbacku poza
+transakcją wyszukiwania, kontrola długości pól, zapis i aktualizacja feedbacku, gwarancja
+dokładnie jednego rekordu usage na wywołanie LLM) + testy zapisu wszystkich statusów.
+
 ## 2026-07-18 — Etap 1 (typy domenowe wyszukiwania) — UKOŃCZONY
 
 **Zakres wykonany:**
