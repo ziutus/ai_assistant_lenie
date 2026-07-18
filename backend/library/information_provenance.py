@@ -84,9 +84,19 @@ def _normalize_known_source(item: dict) -> dict:
 
 def _json_array(raw: str) -> list[dict]:
     match = re.search(r"\[.*\]", raw, re.DOTALL)
-    if not match:
-        raise ValueError("LLM response contains no JSON array")
-    value = json.loads(match.group())
+    try:
+        value = json.loads(match.group()) if match else None
+    except json.JSONDecodeError:
+        value = None
+    if value is None:
+        # Odpowiedź bywa ucięta limitem tokenów — odzyskaj kompletne obiekty
+        # z prefiksu tablicy (ten sam mechanizm co przy wydarzeniach).
+        from library.timeline_events import _complete_array_prefix
+
+        repaired = _complete_array_prefix(raw)
+        if repaired is None:
+            raise ValueError("LLM response contains no recoverable JSON array")
+        value = json.loads(repaired)
     if not isinstance(value, list):
         raise ValueError("LLM response is not a JSON array")
     return [item for item in value if isinstance(item, dict)]
@@ -115,7 +125,9 @@ Pomiń niepewne pozycje poniżej confidence 60. Nie dopowiadaj domen ani URL-i.
 Tytuł: {title}
 Tekst:
 {text}"""
-    raw, _ = call_model(prompt, model, max_tokens=1200)
+    # 1200 tokenów nie starczało na artykuły z długą listą źródeł — odpowiedź
+    # była ucinana w połowie obiektu JSON.
+    raw, _ = call_model(prompt, model, max_tokens=2400)
     candidates = _json_array(raw)
     result = []
     for item in candidates:

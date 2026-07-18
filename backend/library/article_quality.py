@@ -125,24 +125,69 @@ _CLICKBAIT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Nagłówek bywa pogrubiony markdownem ("**Źródła:**"), stąd tolerancja [*_].
 _REFERENCES_HEADING_RE = re.compile(
-    r"^\s*(?:#{1,6}\s*)?(?:źródła|zrodla|bibliografia|references|literatura)\s*:?\s*$",
+    r"^\s*(?:#{1,6}\s*)?[*_]{0,3}\s*(?:źródła|zrodla|bibliografia|references|literatura)"
+    r"\s*:?\s*[*_]{0,3}\s*$",
     re.IGNORECASE,
 )
+
+# Pozycja listy pod nagłówkiem źródeł: "* The Guardian — \"tytuł\"", "- MSZ",
+# "1. Raport GUS". Wymagany marker listy — luźny akapit pod nagłówkiem to
+# już zwykła treść, nie pozycja bibliografii.
+_BIBLIOGRAPHY_ITEM_RE = re.compile(r"^(?:[*\-•]|\d{1,2}[.)])\s+(\S.*)$")
+
+# Separator "wydawca — tytuł" wewnątrz pozycji bibliografii.
+_BIBLIOGRAPHY_NAME_SPLIT_RE = re.compile(r"\s+[—–]\s+|\s+-\s+")
+
+
+def extract_press_bibliography(text: str) -> list[dict]:
+    """Pozycje listy źródeł prasowych/instytucjonalnych pod nagłówkiem "Źródła:".
+
+    Deterministyczny sygnał staranności dla bibliografii bez URL-i i DOI
+    (identyfikatory naukowe obsługuje cited_publications) — np.
+    "* The Guardian — \"tytuł\"" albo "* MSZ". Lista kończy się na pierwszej
+    linii bez markera wypunktowania.
+
+    Zwraca [{"source_name": "The Guardian", "raw_entry": "..."}, ...].
+    """
+    entries: list[dict] = []
+    in_section = False
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _REFERENCES_HEADING_RE.match(stripped):
+            in_section = True
+            continue
+        if not in_section:
+            continue
+        match = _BIBLIOGRAPHY_ITEM_RE.match(stripped)
+        if not match:
+            in_section = False
+            continue
+        raw_entry = match.group(1).strip()
+        name = _BIBLIOGRAPHY_NAME_SPLIT_RE.split(raw_entry, maxsplit=1)[0]
+        name = name.strip().strip("*_\"„”").strip()
+        if name:
+            entries.append({"source_name": name, "raw_entry": raw_entry})
+    return entries
 
 
 def is_references_section(text: str) -> bool:
     """True for a non-content chunk consisting of a references list.
 
     Such chunks are intentionally excluded from embeddings, but they are
-    evidence of diligence and must not count as editorial noise.
+    evidence of diligence and must not count as editorial noise. A references
+    list is recognised either by scholarly identifiers (PMID/DOI) or by a
+    bulleted press bibliography under the heading.
     """
     from library.cited_publications import extract_cited_publications
 
     lines = [line.strip() for line in (text or "").splitlines() if line.strip()]
-    if not lines or not extract_cited_publications(text):
+    if not lines or not _REFERENCES_HEADING_RE.match(lines[0]):
         return False
-    return bool(_REFERENCES_HEADING_RE.match(lines[0]))
+    return bool(extract_cited_publications(text) or extract_press_bibliography(text))
 
 
 def is_photo_caption_line(line: str) -> bool:
@@ -245,7 +290,12 @@ def is_clickbait_title(title: str | None) -> bool:
     return bool(title and _CLICKBAIT_RE.search(title))
 
 
-def _llm_rubric(text: str, model: str, cited_publications: list[dict] | None = None) -> dict | None:
+def _llm_rubric(
+    text: str,
+    model: str,
+    cited_publications: list[dict] | None = None,
+    press_bibliography: list[dict] | None = None,
+) -> dict | None:
     """Jedno wywołanie LLM: oceny 0-5 w trzech wymiarach staranności.
 
     Zwraca {"zrodla": n, "glebia": n, "jezyk": n, "uzasadnienie": "..."}
@@ -258,6 +308,10 @@ def _llm_rubric(text: str, model: str, cited_publications: list[dict] | None = N
         identifier = item.get("pmid") or item.get("pmcid") or item.get("doi") or item.get("canonical_url")
         if identifier:
             citation_lines.append(f"- {identifier}: {item.get('raw_citation') or item.get('canonical_url') or ''}")
+    # Bibliografia prasowa (sekcja "Źródła:") bywa wydzielona do osobnego
+    # chunka ZRODLA — rubryka widzi tylko TEMAT, więc listę trzeba dołożyć.
+    for item in press_bibliography or []:
+        citation_lines.append(f"- {item['source_name']}: {item['raw_entry']}")
     citation_context = "\n".join(citation_lines) or "brak automatycznie rozpoznanych publikacji"
 
     prompt = f"""Oceń staranność poniższego artykułu w trzech wymiarach, każdy w skali 0-5:
@@ -319,6 +373,7 @@ def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -
     full_text = "\n".join((s.get("original") or "") for s in chunk_sections)
     from library.cited_publications import extract_cited_publications
     cited_publications = extract_cited_publications(full_text)
+    press_bibliography = extract_press_bibliography(full_text)
     caption_evidence = photo_caption_candidates(full_text, getattr(doc, "url", None))
     photo_source_evidence = [
         item for item in caption_evidence
@@ -347,12 +402,14 @@ def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -
 
     rubric = None
     if model and temat_text.strip():
-        rubric = _llm_rubric(temat_text, model, cited_publications)
+        rubric = _llm_rubric(temat_text, model, cited_publications, press_bibliography)
         if rubric:
-            # Structured identifiers are grounded evidence, not an LLM guess.
-            # Prevent a separated references chunk from being scored as "no
-            # sources" merely because the rubric sees TEMAT prose separately.
-            citation_floor = 4 if len(cited_publications) >= 3 else 3 if len(cited_publications) == 2 else 2 if cited_publications else 0
+            # Structured identifiers and a named press bibliography are
+            # grounded evidence, not an LLM guess. Prevent a separated
+            # references chunk from being scored as "no sources" merely
+            # because the rubric sees TEMAT prose separately.
+            named_sources = len(cited_publications) + len(press_bibliography)
+            citation_floor = 4 if named_sources >= 3 else 3 if named_sources == 2 else 2 if named_sources else 0
             rubric["zrodla"] = max(rubric["zrodla"], citation_floor)
             rubric_sum = rubric["zrodla"] + rubric["glebia"] + rubric["jezyk"]
             penalties["llm_rubric"] = (15 - rubric_sum) * 2  # 0-30
@@ -370,6 +427,10 @@ def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -
             "reference_chars": reference_len,
             "temat_chars": len(temat_text),
             "cited_publications": len(cited_publications),
+            "press_bibliography": len(press_bibliography),
+            "press_bibliography_sources": [
+                item["source_name"] for item in press_bibliography[:20]
+            ],
         },
         "llm_rubric": rubric,
         "model": model if rubric else None,

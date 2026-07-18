@@ -2,13 +2,31 @@ import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from library.db.models import DocumentInformationSource
 from library.information_provenance import (
+    _json_array,
     extract_information_sources,
     extract_known_reporting_sources,
     publisher_domain,
     refresh_document_information_sources,
 )
+
+
+def test_json_array_recovers_complete_objects_from_truncated_response():
+    raw = ('[{"canonical_name": "The Guardian", "role": "cited", "confidence": 90},\n'
+           '{"canonical_name": "MSZ", "role": "data_source", "confidence": 85},\n'
+           '{"canonical_name": "World Population')
+
+    result = _json_array(raw)
+
+    assert [item["canonical_name"] for item in result] == ["The Guardian", "MSZ"]
+
+
+def test_json_array_raises_when_nothing_recoverable():
+    with pytest.raises(ValueError):
+        _json_array('Model odpowiedział prozą, bez JSON-a.')
 
 
 def test_publisher_domain_normalizes_www():
