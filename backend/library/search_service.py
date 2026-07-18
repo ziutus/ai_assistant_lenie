@@ -16,6 +16,7 @@ import unicodedata
 from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
+from library.search.types import SearchFilters, SearchQueryValidationError, normalize_year_range
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 import library.embedding as embedding
 
@@ -52,57 +53,51 @@ class SearchService:
         """Hybrid text/vector search returning unique documents.
 
         An optional period_from/period_to year window (BCE as negative years)
-        keeps only documents with a classified time period overlapping it.
-        Raises RuntimeError if embedding generation fails.
+        keeps only documents with a classified time period overlapping it —
+        applied in SQL, before LIMIT, via the same build_document_filters()
+        both search_text() and get_similar() use (stage 6 of the
+        search-rebuild plan; previously this filtered an already-LIMITed
+        Python candidate list, which could hide genuine matches beyond the
+        first N candidates). A reversed period_from/period_to is swapped,
+        not rejected — this method has no channel to surface a warning back
+        to the legacy /website_similar caller. An out-of-domain year (outside
+        [MIN_SUBJECT_YEAR, MAX_SUBJECT_YEAR], e.g. a malformed HTTP query
+        param) degrades to no period filter rather than raising — this
+        endpoint has always accepted untrusted params and must keep
+        degrading gracefully, not start returning 500s. Raises RuntimeError
+        if embedding generation fails.
         """
         if not text or not text.strip():
             return []
 
+        period_from, period_to, _swap_warning = normalize_year_range(period_from, period_to)
+        try:
+            filters = SearchFilters(
+                collection_name=project or None,
+                subject_period_start_year=period_from,
+                subject_period_end_year=period_to,
+            )
+        except SearchQueryValidationError:
+            logger.warning("Ignoring invalid search filters (project=%r, period=%r..%r)",
+                          project, period_from, period_to)
+            filters = SearchFilters()
+
         candidate_limit = max(limit * 5, 20)
-        lexical = self.repo.search_text(text, limit=candidate_limit, project=project)
+        lexical = self.repo.search_text(text, limit=candidate_limit, filters=filters)
 
         model = self._get_model()
         result = embedding.get_embedding(model=model, text=text)
         semantic = []
         if result.status == "success" and result.embedding:
             semantic = self.repo.get_similar(
-                result.embedding, model, limit=candidate_limit, project=project,
+                result.embedding, model, limit=candidate_limit, filters=filters,
             ) or []
         elif not lexical:
             raise RuntimeError(f"Embedding generation failed: {result.status}")
         else:
             logger.warning("Embedding generation failed; returning lexical results: %s", result.status)
 
-        if period_from is not None or period_to is not None:
-            allowed = self._documents_in_period(period_from, period_to)
-            lexical = [item for item in lexical if item["website_id"] in allowed]
-            semantic = [item for item in semantic if item["website_id"] in allowed]
-
         return self._merge_results(text, lexical, semantic, limit)
-
-    def _documents_in_period(self, period_from: int | None, period_to: int | None) -> set[int]:
-        """Ids of documents with a classified period overlapping [period_from, period_to].
-
-        A missing bound on either side (filter or stored row) is treated as
-        open-ended, so a label-only period ("starożytność" with no years)
-        never disqualifies its document.
-        """
-        from sqlalchemy import or_
-
-        from library.db.models import DocumentTimePeriod
-
-        query = self.session.query(DocumentTimePeriod.document_id)
-        if period_from is not None:
-            query = query.filter(or_(
-                DocumentTimePeriod.period_end_year.is_(None),
-                DocumentTimePeriod.period_end_year >= period_from,
-            ))
-        if period_to is not None:
-            query = query.filter(or_(
-                DocumentTimePeriod.period_start_year.is_(None),
-                DocumentTimePeriod.period_start_year <= period_to,
-            ))
-        return {row[0] for row in query.distinct()}
 
     # Letters with no Unicode canonical decomposition (NFKD leaves them alone,
     # unlike e.g. "ó" -> "o" + combining acute) but that PostgreSQL's unaccent()
