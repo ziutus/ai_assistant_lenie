@@ -74,6 +74,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `note` | `text` | User notes |
 | `paywall` | `boolean` | Whether content is behind a paywall (default: false) |
 | `date_from` | `date` | Publication date |
+| `date_from_source` | `varchar(10)` | How `date_from` was set: `manual` (reviewer typed it on `/chunks`) or `llm` (`extract_publication_date`); `NULL` for legacy/import-set values. CHECK constraint `ck_web_documents_date_from_source` |
 | `created_at` | `timestamp` | Row creation timestamp |
 | `document_length` | `integer` | Text length in characters |
 | `chapter_list` | `text` | Chapter/section list (for videos/transcripts) |

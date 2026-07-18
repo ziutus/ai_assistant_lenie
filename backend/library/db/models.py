@@ -218,6 +218,12 @@ class WebDocument(Base):
     # before_flush hook at the bottom of this module.
     source: Mapped[str | None] = mapped_column(Text, ForeignKey("sources.name"))
     date_from: Mapped[datetime.date | None] = mapped_column(Date)
+    # How date_from was set — "manual" (reviewer typed it on /chunks) or "llm"
+    # (extract_publication_date). NULL for legacy/import-set values (unknown
+    # provenance). Lets a future pass find documents where the automatic
+    # pipeline never found a date, to build deterministic per-portal rules —
+    # the same workflow document_removed_lines already does for cleanup rules.
+    date_from_source: Mapped[str | None] = mapped_column(String(10))
     original_id: Mapped[str | None] = mapped_column(Text)
     document_length: Mapped[int | None] = mapped_column(Integer)
     chapter_list: Mapped[str | None] = mapped_column(Text)
@@ -417,6 +423,7 @@ class WebDocument(Base):
             "document_type": self.document_type,
             "source": self.source,
             "date_from": self.date_from,
+            "date_from_source": self.date_from_source,
             "original_id": self.original_id,
             "document_length": self.document_length,
             "chapter_list": self.chapter_list,

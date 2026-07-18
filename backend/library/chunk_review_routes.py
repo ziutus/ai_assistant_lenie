@@ -26,7 +26,7 @@ import logging
 import threading
 import uuid
 from collections import Counter
-from datetime import datetime
+from datetime import date, datetime
 
 from flask import Blueprint, jsonify, request, abort
 from sqlalchemy import func, or_, select, text as sa_text, update as sa_update
@@ -512,6 +512,33 @@ def next_document_for_analysis(doc_id: int):
     })
 
 
+def _site_rules_file_status() -> dict:
+    """Check whether data/site_rules.json is actually present and non-empty
+    on THIS runtime — distinct from the per-portal rules baked into
+    article_cleaner.py/article_extractor.py, which reclean_preview's
+    ``portal`` field already covers.
+
+    site_rules.json is read fresh on every webpage_text_clean() call (no
+    cache), so a missing/empty file at download time silently produces no
+    cleanup — the rules exist in the repo/image but a runtime volume mount
+    can shadow data/ and hide them (this happened on the NAS deployment:
+    the named volume on /app/data pre-dated the file and was never
+    refreshed with it). Surfacing this here turns a silent "cleaning did
+    nothing" into an actionable configuration diagnostic.
+    """
+    import os
+
+    from library.config_loader import load_config
+    from library.website.website_download_context import load_site_rules
+
+    path = load_config().get("SITE_RULES_PATH", "data/site_rules.json")
+    if not os.path.isfile(path):
+        return {"ok": False, "path": path, "reason": "missing"}
+    if not load_site_rules(path):
+        return {"ok": False, "path": path, "reason": "empty_or_invalid"}
+    return {"ok": True, "path": path, "reason": None}
+
+
 @bp.route("/document/<int:doc_id>/reclean_preview", methods=["POST"])
 def reclean_preview(doc_id: int):
     """Preview current deterministic cleanup and optionally save it explicitly."""
@@ -534,7 +561,8 @@ def reclean_preview(doc_id: int):
             "message": f"Cleanup preview cannot analyze source field {field}",
         }), 400
 
-    after = clean_article_text(before, doc.url or "")["text"]
+    cleaned = clean_article_text(before, doc.url or "")
+    after = cleaned["text"]
     before_lines = before.splitlines()
     after_lines = after.splitlines()
     remaining = Counter(after_lines)
@@ -555,6 +583,8 @@ def reclean_preview(doc_id: int):
         "status": "success",
         "saved": save,
         "source_field": field,
+        "portal": cleaned["portal"],
+        "site_rules_file": _site_rules_file_status(),
         "before_length": len(before),
         "after_length": len(after),
         "before_line_count": len(before_lines),
@@ -1242,6 +1272,8 @@ def get_run_chunks(run_id: int):
             "countries": doc_countries,
             "thematic_tags": doc_thematic_tags,
             "quality": getattr(doc, "quality", None) if doc else None,
+            "date_from": doc.date_from.isoformat() if doc and doc.date_from else None,
+            "date_from_source": getattr(doc, "date_from_source", None) if doc else None,
         },
         "segments": segments,
         "lite": lite,
@@ -1643,6 +1675,135 @@ def extract_author(run_id: int):
         return jsonify({"status": "error", "message": "DB save failed"}), 500
 
     return jsonify({"status": "success", "author": author})
+
+
+# ---------------------------------------------------------------------------
+# API: POST /analysis_run/<run_id>/extract_publication_date
+# ---------------------------------------------------------------------------
+
+@bp.route("/analysis_run/<int:run_id>/extract_publication_date", methods=["POST"])
+def extract_publication_date(run_id: int):
+    """Extract the article's publication date using LLM.
+
+    Pass chunk_ids (JSON body) to use specific chunk(s) instead — e.g. a
+    chunk containing the dateline the reviewer identified. Without chunk_ids,
+    uses the head+tail of the whole document's text (a publication date
+    usually appears near the byline at the start, or in a source line at the
+    end). Saves the result directly to the document's date_from field,
+    always overwriting any existing value — this is a reviewer-triggered
+    manual action, mirroring extract_author above.
+    """
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        abort(404, f"Run {run_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    chunk_ids = data.get("chunk_ids")
+    context_text = data.get("context_text")
+
+    if context_text is not None:
+        if not isinstance(context_text, str):
+            return jsonify({"status": "error", "message": "context_text must be a string"}), 400
+        source_text = context_text.strip()[:12000]
+    elif chunk_ids:
+        if not isinstance(chunk_ids, list) or not all(isinstance(i, int) for i in chunk_ids):
+            return jsonify({"status": "error", "message": "chunk_ids must be a list of integers"}), 400
+        chunks = session.scalars(
+            select(DocumentChunk)
+            .where(DocumentChunk.run_id == run_id, DocumentChunk.id.in_(chunk_ids))
+            .order_by(DocumentChunk.position)
+        ).all()
+        if len(chunks) != len(set(chunk_ids)):
+            return jsonify({"status": "error", "message": "One or more chunk_ids not found in this run"}), 400
+        source_text = "\n\n".join(
+            c.corrected_text or c.original_text or "" for c in chunks
+        ).strip()
+    else:
+        doc = session.get(WebDocument, run.document_id)
+        if doc is None:
+            abort(404, f"Document {run.document_id} not found")
+        from library.chunk_llm_analysis import head_tail_excerpt
+        source_text = head_tail_excerpt(doc.text_md or doc.text or "")
+
+    if not source_text:
+        return jsonify({"status": "error", "message": "No text available for date extraction"}), 400
+
+    try:
+        from library.chunk_llm_analysis import extract_publication_date_info
+        date_str = extract_publication_date_info(source_text, run.model)
+    except Exception:
+        logger.exception("extract_publication_date_info failed for run %d", run_id)
+        return jsonify({"status": "error", "message": "LLM call failed"}), 500
+
+    if not date_str:
+        return jsonify({"status": "success", "date_from": None})
+
+    try:
+        parsed_date = date.fromisoformat(date_str)
+    except ValueError:
+        logger.warning("extract_publication_date_info: unparseable date %r for run %d", date_str, run_id)
+        return jsonify({"status": "success", "date_from": None})
+
+    doc = session.get(WebDocument, run.document_id)
+    if doc is None:
+        abort(404, f"Document {run.document_id} not found")
+    doc.date_from = parsed_date
+    doc.date_from_source = "llm"
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("DB save failed for run %d date_from", run_id)
+        return jsonify({"status": "error", "message": "DB save failed"}), 500
+
+    return jsonify({"status": "success", "date_from": parsed_date.isoformat(), "date_from_source": "llm"})
+
+
+# ---------------------------------------------------------------------------
+# API: POST /document/<doc_id>/date_from
+# ---------------------------------------------------------------------------
+
+@bp.route("/document/<int:doc_id>/date_from", methods=["POST"])
+def set_date_from(doc_id: int):
+    """Manually set (or clear) the document's publication date.
+
+    Companion to extract_publication_date above — this is the reviewer typing
+    a date directly (e.g. from the original page's calendar picker) instead
+    of asking the LLM to find one.
+    """
+    session = get_scoped_session()
+    doc = session.get(WebDocument, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    date_str = data.get("date_from")
+
+    if date_str is None:
+        doc.date_from = None
+        doc.date_from_source = None
+    else:
+        if not isinstance(date_str, str):
+            return jsonify({"status": "error", "message": "date_from must be a string or null"}), 400
+        try:
+            doc.date_from = date.fromisoformat(date_str)
+        except ValueError:
+            return jsonify({"status": "error", "message": f"Invalid date {date_str!r}, expected YYYY-MM-DD"}), 400
+        doc.date_from_source = "manual"
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("DB save failed for document %d date_from", doc_id)
+        return jsonify({"status": "error", "message": "DB save failed"}), 500
+
+    return jsonify({
+        "status": "success",
+        "date_from": doc.date_from.isoformat() if doc.date_from else None,
+        "date_from_source": doc.date_from_source,
+    })
 
 
 # ---------------------------------------------------------------------------

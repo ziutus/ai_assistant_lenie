@@ -85,8 +85,16 @@ interface Chapter {
   length: number;
 }
 
+interface SiteRulesFileStatus {
+  ok: boolean;
+  path: string;
+  reason: "missing" | "empty_or_invalid" | null;
+}
+
 interface RecleanPreview {
   source_field: string;
+  portal: string | null;
+  site_rules_file: SiteRulesFileStatus;
   before_length: number;
   after_length: number;
   before_line_count: number;
@@ -515,6 +523,11 @@ const Chunks = () => {
   const [docAuthor, setDocAuthor]   = React.useState("");
   const [authorPersonId, setAuthorPersonId] = React.useState<number | null>(null);
   const [authorDescription, setAuthorDescription] = React.useState("");
+  const [docDateFrom, setDocDateFrom] = React.useState<string | null>(null);
+  const [docDateFromSource, setDocDateFromSource] = React.useState<string | null>(null);
+  const [extractingDateFor, setExtractingDateFor] = React.useState<number | null>(null);
+  const [dateInput, setDateInput] = React.useState("");
+  const [savingDate, setSavingDate] = React.useState(false);
   const [docUrl, setDocUrl]         = React.useState("");
   const [docQuality, setDocQuality] = React.useState<DocQuality | null>(null);
   const [computingQuality, setComputingQuality] = React.useState(false);
@@ -645,6 +658,9 @@ const Chunks = () => {
       setDocAuthor(data.document?.author ?? "");
       setAuthorPersonId(data.document?.author_person_id ?? null);
       setAuthorDescription(data.document?.author_description ?? "");
+      setDocDateFrom(data.document?.date_from ?? null);
+      setDocDateFromSource(data.document?.date_from_source ?? null);
+      setDateInput(data.document?.date_from ?? "");
       setDocQuality(data.document?.quality ?? null);
       setDocCountries(data.document?.countries ?? []);
       setDocThematicTags(data.document?.thematic_tags ?? []);
@@ -688,6 +704,7 @@ const Chunks = () => {
         if (data.title) setDocTitle(data.title);
         if (data.url) setDocUrl(data.url);
         if (data.author) setDocAuthor(data.author);
+        if (data.date_from) { setDocDateFrom(data.date_from); setDateInput(data.date_from); }
         if (data.quality) setDocQuality(data.quality);
       } catch { /* analysis can still be configured manually */ }
     })();
@@ -1346,6 +1363,49 @@ const Chunks = () => {
     finally { setExtractingAuthorFor(null); }
   };
 
+  // Detect the publication date from one specific chunk. Mirrors extractAuthorFromChunk —
+  // no position limit, saves directly to doc.date_from (backend commits it).
+  const extractDateFromChunk = async (chunkId: number) => {
+    if (!selectedRun) return;
+    setExtractingDateFor(chunkId);
+    try {
+      const r = await fetch(`${apiUrl}/analysis_run/${selectedRun}/extract_publication_date`, {
+        method: "POST", headers,
+        body: JSON.stringify({ chunk_ids: [chunkId] }),
+      });
+      const data = await r.json();
+      if (data.status === "success" && data.date_from) {
+        setDocDateFrom(data.date_from);
+        setDocDateFromSource(data.date_from_source ?? "llm");
+        setDateInput(data.date_from);
+        setInfo(`Ustawiono datę publikacji: ${data.date_from}`);
+      }
+      else if (data.status === "success") setError("Nie udało się rozpoznać daty publikacji w tym chunku");
+      else setError("Błąd wykrywania daty publikacji: " + (data.message ?? ""));
+    } catch { setError("Błąd połączenia przy wykrywaniu daty publikacji"); }
+    finally { setExtractingDateFor(null); }
+  };
+
+  // Manually save the date typed into the calendar input next to the "Data
+  // publikacji" badge — the reviewer copying a date off the original page,
+  // as opposed to extractDateFromChunk's LLM-based detection above.
+  const saveDateFrom = async () => {
+    if (!id || !dateInput) return;
+    setSavingDate(true);
+    try {
+      const r = await fetch(`${apiUrl}/document/${id}/date_from`, {
+        method: "POST", headers, body: JSON.stringify({ date_from: dateInput }),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        setDocDateFrom(data.date_from);
+        setDocDateFromSource(data.date_from_source ?? "manual");
+        setInfo(`Ustawiono datę publikacji: ${data.date_from}`);
+      } else setError("Błąd zapisu daty publikacji: " + (data.message ?? ""));
+    } catch { setError("Błąd połączenia przy zapisie daty publikacji"); }
+    finally { setSavingDate(false); }
+  };
+
   const extractAuthorFromLine = async (chunk: Chunk, lineIdx: number) => {
     if (!selectedRun) return;
     const lines = (chunk.original_text ?? "").split("\n");
@@ -1706,6 +1766,16 @@ const Chunks = () => {
               )}
               {runMode === "article" && (
                 <button
+                  onClick={() => extractDateFromChunk(chunk.id)}
+                  disabled={extractingDateFor === chunk.id}
+                  title="Wykryj datę publikacji artykułu z tego chunka i zapisz ją w dokumencie"
+                  style={{ padding: "2px 8px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em", color: "#64748b" }}
+                >
+                  {extractingDateFor === chunk.id ? "📅 Wykrywam…" : "📅 Data"}
+                </button>
+              )}
+              {runMode === "article" && (
+                <button
                   onClick={() => refreshCitedPublications(chunk)}
                   disabled={refreshingCitationsFor !== null}
                   title="Odczytaj PMID, PMCID i DOI tylko z tego chunka; publikacje zostaną przypisane do całego dokumentu"
@@ -1919,6 +1989,36 @@ const Chunks = () => {
               : <strong>{docAuthor || "nie wykryto"}</strong>}
           </span>
         )}
+        {runMode === "article" && (
+          <span style={{ fontSize: "0.88em", padding: "3px 9px", borderRadius: 4, background: docDateFrom ? "#f3e8ff" : "#f1f5f9", color: docDateFrom ? "#6b21a8" : "#64748b", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            Data publikacji: <strong>{docDateFrom || "nie wykryto"}</strong>
+            {docDateFrom && docDateFromSource && (
+              <span
+                title={docDateFromSource === "manual"
+                  ? "Wpisana ręcznie przez recenzenta — automatyka jej nie znalazła"
+                  : "Wykryta przez LLM z treści chunka"}
+                style={{ fontSize: "0.85em", opacity: 0.75 }}
+              >
+                {docDateFromSource === "manual" ? "✍️" : "🤖"}
+              </span>
+            )}
+            <input
+              type="date"
+              value={dateInput}
+              onChange={e => setDateInput(e.target.value)}
+              title="Wpisz datę publikacji ręcznie, np. z kalendarza na oryginalnej stronie"
+              style={{ fontSize: "0.9em", padding: "1px 3px", border: "1px solid #cbd5e1", borderRadius: 3 }}
+            />
+            <button
+              onClick={saveDateFrom}
+              disabled={!dateInput || savingDate}
+              title="Zapisz wpisaną datę jako datę publikacji dokumentu"
+              style={{ padding: "1px 7px", border: "1px solid #cbd5e1", borderRadius: 3, background: "#fff", cursor: "pointer", fontSize: "0.9em", color: "#64748b" }}
+            >
+              {savingDate ? "…" : "💾"}
+            </button>
+          </span>
+        )}
         {EDITOR_TYPES.includes(docType) ? (
           <NavLink to={`/${docType}/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>← Edytuj dokument</NavLink>
         ) : (
@@ -2006,6 +2106,26 @@ const Chunks = () => {
                 background: useRecleaned ? "#dbeafe" : cleanupNeeded ? "#fef3c7" : "#dcfce7",
               }}>{useRecleaned ? "widok po czyszczeniu — użyty do podziału" : cleanupNeeded ? "wykryto elementy do czyszczenia" : "tekst nie wymaga ponownego czyszczenia"}</span>}
             </div>
+            {recleanPreview && !recleanPreview.portal && (
+              <div style={{
+                marginTop: 8, fontSize: "0.8em", padding: "6px 9px", borderRadius: 6,
+                color: "#92400e", background: "#fef3c7", border: "1px solid #fde68a",
+              }}>
+                ⚠ Brak reguł czyszczenia dla tego portalu — działa tylko czyszczenie generyczne,
+                nawigacja, komentarze, notowania czy sekcje rekomendacji mogą zostać w tekście.
+              </div>
+            )}
+            {recleanPreview && recleanPreview.site_rules_file && !recleanPreview.site_rules_file.ok && (
+              <div style={{
+                marginTop: 8, fontSize: "0.8em", padding: "6px 9px", borderRadius: 6,
+                color: "#991b1b", background: "#fee2e2", border: "1px solid #fecaca",
+              }}>
+                ⚠ Błąd konfiguracji środowiska: plik reguł czyszczenia (<code>{recleanPreview.site_rules_file.path}</code>)
+                {recleanPreview.site_rules_file.reason === "missing" ? " nie istnieje na tym serwerze" : " jest pusty lub uszkodzony na tym serwerze"} —
+                jest w repozytorium/GitHub, ale nie w działającym środowisku. Czyszczenie przy pobieraniu dokumentu
+                mogło nic nie usunąć niezależnie od reguł per-portal powyżej.
+              </div>
+            )}
             {recleanPreview && (
               <div style={{ marginTop: 8, fontSize: "0.8em", color: "#475569" }}>
                 <div>
