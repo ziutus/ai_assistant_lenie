@@ -5,6 +5,45 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 10, iteracja 2 (eksperyment prompt v2) — ODRZUCONA, ETAP 10 POZOSTAJE NA PROMPCIE v1
+
+**Zakres wykonany:** Po baseline (iteracja 1) uruchomiono identyczny fixture 43 zapytań z
+rozszerzonym promptem v2 zawierającym ogólne reguły oczyszczania `query`, discovery source,
+`ingested_at`, lat p.n.e. i typów wideo. Wynik pomiaru: pełna trafność wzrosła tylko z 22/42 do
+23/42, ale kluczowe pole `query` **pogorszyło się** z 25/41 do 23/41 trafności; tokeny i koszt
+wzrosły o 23,9% (129 923 tokenów, 0,0727568800 EUR wobec 104 899/0,0587434400 EUR w iteracji 1),
+średnia latencja wzrosła do 3 165,02 ms. Poprawa pojedynczych pól nie zrównoważyła regresji tematu
+i wzrostu kosztu, więc **prompt v2 nie został wdrożony** — produkcyjny parser pozostaje na
+promptcie v1 z iteracji 1 bez zmian kodu. Wynik i uzasadnienie odrzucenia udokumentowano w
+`docs/search-rebuild-bielik-baseline.md` (sekcja „Eksperyment prompt v2 — odrzucony”).
+
+**Testy uruchomione:** Brak zmian w kodzie produkcyjnym (prompt v2 był tylko eksperymentem
+pomiarowym, nigdy niescalonym z `library/search/parser.py`), więc pełna suita `tests/unit/` i
+`uvx ruff check backend/` pozostają bez zmian względem iteracji 1 (1830 passed / czysty).
+Weryfikacja to wyłącznie powtórzony przebieg `imports/evaluate_search_queries.py` na żywym
+Sherlocku + bazie NAS z tymczasowym promptem v2; runner posprzątał własne rekordy audytu/usage
+jak w iteracji 1.
+
+**Otwarte ryzyka:** Klasy błędów z iteracji 1 (oczyszczanie `query`, discovery source,
+`ingested_at`, BCE, typ wideo) pozostają nierozwiązane — ogólna korekta promptu okazała się zbyt
+szerokim narzędziem i psuje więcej niż naprawia. Zalecenie na przyszłość: mniejsza, izolowana
+korekta (np. wyłącznie oczyszczanie `query`) mierzona osobno od pozostałych klas błędów, albo
+przeniesienie bezpiecznych przypadków do deterministycznego normalizatora zamiast dalszej
+rozbudowy promptu. Ten wpis dokumentuje istniejący commit `d72196b`/PR #302 — sam wpis w
+dzienniku był pominięty w poprzedniej sesji, mimo że decyzja i dane były już zapisane w
+`bielik-baseline.md`.
+
+**PR/merge:** PR **#302** („Etap 10: wynik eksperymentu prompt v2”), merge **28ce82e**
+(2026-07-18T21:27:28Z), branch `feat/search-etap-10b-prompt` → `main`. PR zawiera wyłącznie
+zmianę dokumentacji (`docs/search-rebuild-bielik-baseline.md`, 10 linii) — brak zmian w kodzie.
+
+**Następny krok:** Etap 10, iteracja 3 (opcjonalna) — węższa, izolowana korekta
+promptu/normalizatora skupiona wyłącznie na oczyszczaniu pola `query` (16/42 błędów w iteracji 1,
+największa pojedyncza klasa), mierzona osobno od pozostałych klas błędów; albo, jeśli jakość
+promptu zostanie uznana za wystarczającą do dalszej pracy, przejście do Etapu 11 — fizyczne
+rename'y schematu (`L`, osobny mini-projekt, seria sesji), zgodnie z planem nierozpoczynany tego
+samego dnia co zmiany promptu/endpointu.
+
 ## 2026-07-18 — Etap 10, iteracja 1 (baseline Bielika) — UKOŃCZONA
 
 **Zakres wykonany:** dodano powtarzalny runner `imports/evaluate_search_queries.py` oraz
