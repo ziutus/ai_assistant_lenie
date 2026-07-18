@@ -55,6 +55,16 @@ Różnice stylistyczne w `temporal_expression` są liczone jako błędy ścisłe
 
 Nie zmieniono promptu w baseline’owym przebiegu. Najpierw utrwalamy pomiar i klasy błędów; kolejna iteracja powinna dodać ogólne reguły oraz przykłady dla oczyszczania `query`, discovery source, dat dodania i BCE, po czym uruchomić identyczny korpus ponownie. Nie ma podstaw do fine-tuningu na 42 odpowiedziach.
 
+### Eksperyment prompt v2 — odrzucony
+
+Po baseline uruchomiono identyczny pomiar z ogólnymi regułami oczyszczania `query`, discovery
+source, ingested_at, BCE i typów wideo. Pełna trafność wzrosła tylko z 22/42 do 23/42, natomiast
+kluczowe `query` spadło z 25/41 do 23/41. Tokeny i koszt wzrosły o 23,9% (129 923 tokeny,
+0,0727568800 EUR), średnia latencja do 3 165,02 ms. Poprawa pojedynczych pól nie równoważy regresji
+tematu i kosztu, dlatego prompt v2 nie został wdrożony; aktywny pozostaje prompt v1. Następna
+korekta powinna być mniejsza i mierzona osobno albo przenieść bezpieczne przypadki do
+deterministycznego normalizatora.
+
 Powtórzenie z katalogu `backend/` przy skonfigurowanym Sherlocku i NAS:
 
 ```powershell
