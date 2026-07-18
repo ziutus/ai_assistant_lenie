@@ -16,12 +16,13 @@ would be a much worse failure mode than a loud one caught in review.
 
 from __future__ import annotations
 
-from sqlalchemy import ColumnElement, exists, or_, select
+from sqlalchemy import ColumnElement, exists, func, or_, select
 
-from library.db.models import DocumentTimePeriod, WebDocument
+from library.db.models import DocumentTimePeriod, Publisher, PublisherDomain, WebDocument
+from library.publisher_registry import normalize_publisher_domain
 from library.search.types import SearchFilters
 
-_UNRESOLVED_NAME_FIELDS = ("author_name", "publisher_name", "publisher_domain", "discovery_source_name")
+_UNRESOLVED_NAME_FIELDS = ("author_name", "discovery_source_name")
 
 
 def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
@@ -40,6 +41,20 @@ def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
             )
 
     conditions: list[ColumnElement[bool]] = []
+
+    if filters.publisher_name is not None:
+        publisher_ids = select(Publisher.id).where(
+            func.unaccent(func.lower(Publisher.canonical_name))
+            == func.unaccent(filters.publisher_name.strip().lower()),
+        )
+        conditions.append(WebDocument.publisher_id.in_(publisher_ids))
+
+    if filters.publisher_domain is not None:
+        domain = normalize_publisher_domain(filters.publisher_domain)
+        publisher_ids = select(PublisherDomain.publisher_id).where(
+            func.lower(PublisherDomain.domain) == domain,
+        )
+        conditions.append(WebDocument.publisher_id.in_(publisher_ids))
 
     if filters.collection_name is not None:
         # Today collection_name maps onto the plain web_documents.project

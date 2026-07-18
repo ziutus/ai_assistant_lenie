@@ -120,12 +120,28 @@ class TestSubjectPeriod:
 
 class TestUnresolvedNameFields:
     @pytest.mark.parametrize(
-        "field", ["author_name", "publisher_name", "publisher_domain", "discovery_source_name"],
+        "field", ["author_name", "discovery_source_name"],
     )
     def test_raises_not_implemented_instead_of_silently_ignoring(self, field):
         filters = SearchFilters(**{field: "Jan Kowalski" if "domain" not in field else "onet.pl"})
         with pytest.raises(NotImplementedError, match=field):
             build_document_filters(filters)
+
+
+class TestPublisherFilters:
+    def test_name_uses_all_matching_publisher_ids(self):
+        sql = compiled(build_document_filters(SearchFilters(publisher_name="Onet.pl"))[0])
+        assert "web_documents.publisher_id IN" in sql
+        assert "SELECT publishers.id" in sql
+        assert "unaccent(lower(publishers.canonical_name))" in sql
+        assert "onet.pl" in sql
+
+    def test_domain_uses_unique_domain_mapping(self):
+        sql = compiled(build_document_filters(SearchFilters(publisher_domain="Onet.PL"))[0])
+        assert "web_documents.publisher_id IN" in sql
+        assert "publisher_domains.publisher_id" in sql
+        assert "lower(publisher_domains.domain)" in sql
+        assert "onet.pl" in sql
 
 
 class TestCombinedFilters:
