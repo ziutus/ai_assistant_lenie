@@ -36,6 +36,8 @@ library/
 ├── place_verification.py    # NER place candidates → geocoder (geocode_cache) → LLM → miejsce-* tags
 ├── wikidata_client.py       # Wikidata person search (humans only, P31=Q5) for disambiguation
 ├── person_registry.py       # NER person mentions → alias/Wikidata+LLM/fuzzy → document_persons links
+├── search/           # Typed search domain models (stage 1 of docs/search-rebuild-implementation-plan.md)
+│   └── types.py      # ParsedSearchQuery, SearchFilters, SearchRequest, SearchFeedback + enums; frozen dataclasses validated at construction (SearchQueryValidationError), target domain names (published_on, subject_period_*), normalize_*_range() helpers for the future parser
 ├── stalker_web_documents_db_postgresql.py  # Query layer (ORM, list, search, similarity)
 ├── text_functions.py        # Text processing & splitting utilities
 ├── text_detect_language.py  # Language detection abstraction
