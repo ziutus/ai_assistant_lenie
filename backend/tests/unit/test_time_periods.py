@@ -14,6 +14,15 @@ from library import chunk_review_routes, time_periods  # noqa: E402
 from library.db.models import DocumentTimePeriod  # noqa: E402
 
 
+def fake_usage(usage_log_id=1, total_tokens=1):
+    """Duck-typed UsageRecord for tests that stub ai_ask() directly."""
+    return SimpleNamespace(
+        usage_log_id=usage_log_id,
+        total_tokens=total_tokens,
+        cost=SimpleNamespace(total_cost=None, currency=None, status=SimpleNamespace(value="unknown")),
+    )
+
+
 def _period(**overrides) -> dict:
     period = {
         "period_label": "zimna wojna",
@@ -97,7 +106,7 @@ def test_classify_fragment_dedupes_labels_and_caps_count(monkeypatch):
     monkeypatch.setattr(
         time_periods,
         "ai_ask",
-        lambda *_args, **_kwargs: SimpleNamespace(response_text=payload, total_tokens=42),
+        lambda *_args, **_kwargs: SimpleNamespace(response_text=payload, usage=fake_usage(total_tokens=42)),
     )
 
     periods, report = time_periods.classify_fragment("tekst", "test-model")
@@ -113,7 +122,7 @@ def test_classify_fragment_counts_rejected_candidates(monkeypatch):
     monkeypatch.setattr(
         time_periods,
         "ai_ask",
-        lambda *_args, **_kwargs: SimpleNamespace(response_text=payload, total_tokens=1),
+        lambda *_args, **_kwargs: SimpleNamespace(response_text=payload, usage=fake_usage()),
     )
 
     periods, report = time_periods.classify_fragment("tekst", "model")
