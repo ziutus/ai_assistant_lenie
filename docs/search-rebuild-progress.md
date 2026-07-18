@@ -5,6 +5,77 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-18 — Etap 3 (poprawa abstrakcji LLM) — UKOŃCZONY
+
+**Zakres wykonany:**
+
+- `library/api/cloudferro/sherlock/sherlock.py` — nowy parametr `response_format` przekazywany
+  do klienta OpenAI SDK; `system_prompt` już istniał (bez zmian semantyki).
+- `library/ai.py` — przepisany routing modeli na wewnętrzne closure `call()` na provider:
+  - `system_prompt` jako osobny argument `ai_ask()`, wysyłany jako prawdziwa rola `system`
+    (nigdy konkatenacja z tekstem użytkownika); wspierane providery: `cloudferro`, `arklabs`
+    (dodano przekazanie do `arklabs_get_completion`, wcześniej ginęło); inny provider →
+    `ValueError` przed jakimkolwiek wywołaniem sieciowym.
+  - `response_format` jako osobny argument, przekazywany wyłącznie do `cloudferro` (Sherlock);
+    inny provider → `ValueError`.
+  - Ujednolicenie nazw pól tokenów: `prompt_tokens`/`completion_tokens` (OpenAI, Sherlock,
+    ARK Labs) vs `input_tokens`/`output_tokens` (Bedrock) → jeden widok przed zapisem usage.
+  - Po każdym wywołaniu (sukces i wyjątek) dokładnie jeden zapis przez
+    `library.llm_usage.recorder.record_llm_usage()`; `latency_ms` mierzony przez `time.monotonic()`
+    wokół wywołania providera. Zwrócony `UsageRecord` trafia do nowego atrybutu
+    `AiResponse.usage` (tokeny, latency, `usage_log_id`, `CostEstimate` ze statusem).
+    Awaria recordera (w tym `SystemExit` z `config_loader.require()` gdy brak configu DB —
+    dodano jawne przechwycenie w `ai.py`, `recorder.py` i `audit_repository.py`, bo `SystemExit`
+    NIE dziedziczy z `Exception`) jest logowana i połykana — nigdy nie wywala wywołania LLM.
+  - Nowe parametry `operation` (domyślnie `"ai_ask"`) i `search_interpretation_log_id`
+    przekazywane wprost do recordera (do użycia przez przyszły parser zapytań, etap 4).
+- `library/models/ai_response.py` — dodany atrybut `usage` (docstring: koszt żyje WYŁĄCZNIE tu,
+  zakaz dodawania `cost_usd`/`cost`/`credits_used` — sprzątanie sond w `timeline_events.py`
+  to świadomie osobny etap 3b, nietknięty w tej sesji).
+- `library/llm_usage/recorder.py` — `UsageRecord.latency_ms` (nowe pole), `except (SystemExit, Exception)`.
+- `library/search/audit_repository.py` — `except (SystemExit, Exception)` w obu miejscach zapisu
+  (ten sam powód co w recorderze).
+- Sonda na żywym CloudFerro Sherlock (rozstrzyga ryzyko z sekcji 10 planu): `response_format`
+  `{"type": "json_schema", ...}` jest respektowany (wymuszone klucze schematu w odpowiedzi),
+  `{"type": "json_object"}` odrzucany HTTP 400 — structured output wymaga pełnego JSON Schema.
+- Dokumentacja: `backend/library/CLAUDE.md` (pełny opis kontraktu `ai_ask()`), `backend/tests/CLAUDE.md`.
+
+**Testy uruchomione:**
+
+- `tests/unit/test_ai.py` przepisany od zera (18 testów): propagacja parametrów, system_prompt
+  jako osobna wiadomość (w tym odrzucenie dla OpenAI), response_format (w tym odrzucenie dla
+  OpenAI), ujednolicenie tokenów Bedrock, dokładnie jeden zapis usage przy sukcesie i przy
+  wyjątku, recorder failure/SystemExit nie psuje wywołania, nieznany model nie zapisuje usage,
+  `AiResponse` bez atrybutów kosztu.
+- `tests/unit/test_llm_usage_recorder.py` — dodany test `SystemExit` z `session_factory`
+  (18 testów, było 17).
+- Pełna suita `tests/unit/`: **1639 passed**; `uvx ruff check backend/`: czysty.
+- Regresja modułów-konsumentów `ai_ask()` (`tones.py`, `time_periods.py`, `timeline_events.py`,
+  `article_tagging.py`, `ai_intent_parser.py`): 121 passed, bez zmian w ich wywołaniach
+  pozycyjnych — kompatybilne wstecznie.
+- E2E na żywym Sherlocku + baza NAS (192.168.200.7:5434): `ai_ask()` z `system_prompt` +
+  `response_format` json_schema → poprawny, wymuszony JSON; `response.usage.usage_log_id`
+  ustawiony, koszt 0,0000476000 EUR `estimated` z seedu `cloudferro-bielik-2026-07-18`;
+  w bazie dokładnie 1 rekord dla `operation='stage3_verify'`; posprzątane po teście.
+
+**Otwarte ryzyka:**
+
+- Etap 3b (sprzątanie `_response_usage()`/`_combine_costs()` w `timeline_events.py`, `tones.py`,
+  `time_periods.py`) świadomie NIE wykonany w tej sesji — te moduły nadal sondują martwe
+  atrybuty kosztu przez `getattr`, teraz jeszcze bardziej martwe (mają realne dane w
+  `response.usage`, ale go nie czytają). Zgodnie z planem to następny krok.
+- `arklabs_get_completion()` nie ma parametru `response_format` (tylko Sherlock go dostał —
+  zgodne z zakresem etapu, ARK Labs nieprzetestowany na structured output).
+- `operation`/`search_interpretation_log_id` w `ai_ask()` nie są jeszcze używane przez żadnego
+  wywołującego (parser zapytań wyszukiwania to etap 4) — dziś każdy call domyślnie zapisuje
+  `operation="ai_ask"`, co warto doprecyzować przy okazji etapu 3b (moduły domenowe powinny
+  przekazywać własną nazwę operacji zamiast domyślnej).
+
+**Następny krok:** Etap 3b — sprzątanie usage w modułach domenowych: `timeline_events.py`,
+`tones.py`, `time_periods.py` mają czytać tokeny/koszt z `response.usage` zamiast z
+`_response_usage()`/`_combine_costs()`; usunąć te funkcje i ich importy między modułami;
+przy okazji nadać modułom sensowne wartości `operation=` w wywołaniach `ai_ask()`. Etap `S`.
+
 ## 2026-07-18 — Etap 2, sesja B (repozytorium audytu + recorder usage) — ETAP 2 UKOŃCZONY
 
 **Zakres wykonany:**

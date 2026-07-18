@@ -56,6 +56,7 @@ Configuration in `backend/pyproject.toml` under `[tool.pytest.ini_options]`. The
 | `test_website_get_validation.py` | `/website_get` input validation |
 | `test_metrics_endpoint.py` | `/metrics` |
 | `test_ai_intent_parser.py` | AI intent parser |
+| `test_ai.py` | `ai_ask()` (stage 3): system_prompt as a real system-role message (rejected for unsupported providers), response_format forwarded only to Sherlock, provider token-field unification (Bedrock input/output vs prompt/completion), exactly-one usage record on success and on exception, recorder failures (incl. SystemExit) swallowed without breaking the call |
 | `test_config_loader.py` | Config loader re-export (`unified_config_loader`) |
 
 ### Batch & Import Scripts

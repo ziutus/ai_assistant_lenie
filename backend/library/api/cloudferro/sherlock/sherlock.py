@@ -5,7 +5,17 @@ from library.models.ai_response import AiResponse
 
 def sherlock_get_completion(prompt: str, model: str = "Bielik-11B-v3.0-Instruct",
                             max_tokens=1000, temperature: float = 0.1,
-                            system_prompt: str | None = None) -> AiResponse:
+                            system_prompt: str | None = None,
+                            response_format: dict | None = None) -> AiResponse:
+    """One chat completion against CloudFerro Sherlock.
+
+    system_prompt is sent as a separate system-role message, never
+    concatenated with the user prompt. response_format is passed through to
+    the API; Sherlock enforces {"type": "json_schema", ...} (verified live
+    2026-07-18 — the schema's keys are imposed on the output) but rejects
+    {"type": "json_object"} with HTTP 400, so callers wanting structured
+    output must provide a full JSON Schema.
+    """
 
     ai_response = AiResponse(query=prompt, model=model)
     cfg = load_config()
@@ -20,11 +30,16 @@ def sherlock_get_completion(prompt: str, model: str = "Bielik-11B-v3.0-Instruct"
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
 
+    extra_args = {}
+    if response_format is not None:
+        extra_args["response_format"] = response_format
+
     chat_response = client.chat.completions.create(
         model=model,
         messages=messages,
         max_tokens=max_tokens,
         temperature=temperature,
+        **extra_args,
     )
 
     ai_response.id = chat_response.id
