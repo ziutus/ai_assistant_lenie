@@ -115,6 +115,12 @@ const SideNavigation = ({ isMenuOpen, toggleMenu }: SideNavigationProps) => {
           Information Sources
         </NavLink>
         <NavLink
+          to="/llm-costs"
+          className={({ isActive }) => isActive ? classes.activeLink : classes.link}
+        >
+          LLM Costs
+        </NavLink>
+        <NavLink
           to="/upload-file"
           className={({ isActive }) =>
             isActive ? classes.activeLink : classes.link

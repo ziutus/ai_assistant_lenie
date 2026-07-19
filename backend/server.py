@@ -16,6 +16,7 @@ from library.models.stalker_document_status_error import StalkerDocumentStatusEr
 from library.api_key_routes import bp as api_key_bp
 from library.auth import resolve_api_key
 from library.chunk_review_routes import bp as chunk_review_bp, start_analysis_worker
+from library.llm_cost_routes import bp as llm_cost_bp
 from library.reader_routes import bp as reader_bp
 from library.search_routes import bp as search_bp
 from library.youtube_processing import process_youtube_url
@@ -85,6 +86,7 @@ logging.info("Flask - enabling CORS for all routes")
 CORS(app)  # This will enable CORS for all routes
 
 app.register_blueprint(chunk_review_bp)
+app.register_blueprint(llm_cost_bp)
 app.register_blueprint(reader_bp)
 app.register_blueprint(api_key_bp)
 app.register_blueprint(search_bp)
