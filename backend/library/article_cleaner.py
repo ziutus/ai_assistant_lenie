@@ -519,7 +519,7 @@ def clean_article_text(text: str, url: str = "") -> dict:
 
     text = re.sub(r'\[([^\]]*)\]\(([^)]+)\)', replace_link, text)
 
-    # 6. Usuń stare referencje z webdocument_md_decode i osierocone markery
+    # 6. Usuń stare referencje z document_md_decode i osierocone markery
     text = re.sub(r'picture\[\d+\]:"[^"]*"', '', text)
     text = re.sub(r'link\[\d+\]:[^\n]*', '', text)
     # Osierocone [imgN] / [imgN: opis] — markery bez odpowiadającego obrazka

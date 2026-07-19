@@ -268,7 +268,7 @@ def action_save_note(doc, article_text: str) -> Optional[str]:
         f.write(f"# Notatka do artykułu: {doc.title}\n\n")
         f.write(f"- **Lenie ID**: {doc.id}\n")
         f.write(f"- **URL**: {doc.url}\n")
-        f.write(f"- **Data**: {doc.created_at}\n")
+        f.write(f"- **Data**: {doc.ingested_at}\n")
         f.write(f"- **Obsidian vault**: {OBSIDIAN_KNOWLEDGE_DIR}\n\n")
         f.write("## Moja notatka\n\n")
         f.write(f"{note_text}\n\n")
@@ -301,7 +301,7 @@ def action_obsidian(doc, article_text: str):
         ---
         TYTUŁ: {doc.title}
         URL: {doc.url}
-        DATA: {doc.created_at}
+        DATA: {doc.ingested_at}
         LENIE ID: {doc.id}
 
         TREŚĆ ARTYKUŁU:
@@ -782,7 +782,7 @@ def cmd_list(session, since: Optional[str] = None, portal: Optional[str] = None,
     print(f"\nArtykuły w bazie ({len(documents)}):\n")
 
     for doc in documents:
-        date_str = doc.created_at.strftime("%Y-%m-%d") if doc.created_at else "????"
+        date_str = doc.ingested_at.strftime("%Y-%m-%d") if doc.ingested_at else "????"
         state_short = (doc.processing_status or "?")[:15]
         title = (doc.title or "brak tytułu")[:70]
         reviewed = doc.reviewed_at.strftime("%Y-%m-%d") if doc.reviewed_at else "-"
@@ -884,7 +884,7 @@ def cmd_meta(session, article_id: Optional[int] = None):
         "uuid": str(doc.uuid) if doc.uuid else None,
         "title": doc.title,
         "url": doc.url,
-        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "ingested_at": doc.ingested_at.isoformat() if doc.ingested_at else None,
         "processing_status": doc.processing_status,
         "document_type": doc.document_type,
         "language": doc.language,
@@ -932,7 +932,7 @@ def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
         "uuid": str(doc.uuid) if doc.uuid else None,
         "title": doc.title,
         "url": doc.url,
-        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "ingested_at": doc.ingested_at.isoformat() if doc.ingested_at else None,
         "processing_status": doc.processing_status,
         "document_type": doc.document_type,
         "language": doc.language,
@@ -964,7 +964,7 @@ def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False
         print(f"Dokument {article_id} nie znaleziony.")
         sys.exit(1)
 
-    date_str = doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else "????"
+    date_str = doc.ingested_at.strftime("%Y-%m-%d %H:%M") if doc.ingested_at else "????"
     detected_portal = _detect_portal(doc.url) or "?"
 
     print(f"--- ID: {doc.id} ---")
@@ -1036,7 +1036,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
             session.refresh(doc)
         except Exception as e:
             print(f"  OSTRZEŻENIE: nie udało się odświeżyć dokumentu {doc.id}: {e}")
-        date_str = doc.created_at.strftime("%Y-%m-%d %H:%M") if doc.created_at else "????"
+        date_str = doc.ingested_at.strftime("%Y-%m-%d %H:%M") if doc.ingested_at else "????"
         detected_portal = _detect_portal(doc.url) or "?"
 
         os.system("cls" if os.name == "nt" else "clear")  # nosec B605 — constant command, no user input

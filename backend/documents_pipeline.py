@@ -4,7 +4,7 @@ import os
 import time
 
 script_start = time.monotonic()
-print("=== web_documents_do_the_needful_new.py ===")
+print("=== documents_pipeline.py ===")
 
 from library.config_loader import load_config  # noqa: E402
 
@@ -365,7 +365,7 @@ def _embed_document_from_markdown(session, websites, doc, model):
     """Fallback embedding for youtube/webpage docs without an approved-chunk run.
 
     Whole-document embedding: splits text_md (or text) into embedding-sized
-    pieces the same way webdocument_md_decode.py does (md_split_for_emb +
+    pieces the same way document_md_decode.py does (md_split_for_emb +
     md_remove_markdown), no chunk_id (not tied to a chunk analysis run).
     """
     from library.lenie_markdown import md_remove_markdown, md_split_for_emb
@@ -538,7 +538,7 @@ def main():
 
         # Step 6 (adding missing markdown entries) was removed — it was dead code
         # behind a hardcoded False flag and duplicated the standalone script
-        # web_documents_fix_missing_markdown.py. Use that script instead.
+        # documents_fix_missing_markdown.py. Use that script instead.
 
         print(f"\nAll done in {time.monotonic() - script_start:.1f}s, exiting with status 0")
     finally:

@@ -62,7 +62,7 @@ Quick reference of all backlog items. For full specifications (acceptance criter
 | B-86 | Triage CodeQL Clear-Text Logging Alerts (12 HIGH) | backlog | — |
 | B-87 | Fix Stack Trace Exposure in server.py Error Handlers (7 MEDIUM) | backlog | — |
 | B-88 | Review Reflected XSS Alerts in server.py (8 MEDIUM) | backlog | — |
-| B-89 | Fix ReDoS Vulnerability in webdocument_prepare_regexp_by_ai.py | backlog | — |
+| B-89 | Fix ReDoS Vulnerability in document_prepare_regexp_by_ai.py | backlog | — |
 | B-90 | Add Timeout to All requests Calls (6 locations) | backlog | — |
 | B-91 | Migrate SQL F-Strings to Parameterized Queries | backlog | — | **Note:** Migration to psycopg3 would solve this — psycopg3 uses server-side parameter binding by default, making f-string SQL construction unnecessary. Consider combining with psycopg2→psycopg3 migration. See [technology-choices.md](technology-choices.md#psycopg2-raw-sql-no-orm). |
 
@@ -72,7 +72,7 @@ Quick reference of all backlog items. For full specifications (acceptance criter
 |----|-------|--------|------------|
 | B-103 | Consolidate Document Processing Pipeline (do_the_needful + md_decode + article_browser) | backlog | — |
 
-**Epic B-103** — Trzy skrypty (`web_documents_do_the_needful_new.py`, `webdocument_md_decode.py`, `imports/article_browser.py`) mają nakładające się odpowiedzialności w ekstrakcji artykułów z markdown. Główne problemy:
+**Epic B-103** — Trzy skrypty (`documents_pipeline.py`, `document_md_decode.py`, `imports/article_browser.py`) mają nakładające się odpowiedzialności w ekstrakcji artykułów z markdown. Główne problemy:
 
 1. **`text_md` zapisywany z pełnym markdown** (cała strona z nawigacją) zamiast wyekstrahowanego artykułu — `do_the_needful` Step 2b zapisuje surowy markdown, a `md_decode` Step 2 wyciąga sam artykuł ale tylko do cache, nie nadpisuje `text_md`
 2. **Duplikacja ekstrakcji** — `md_decode` ma ekstrakcję regexp+LLM, `article_browser` ma własną ekstrakcję LLM (niezależną)

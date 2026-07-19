@@ -36,7 +36,7 @@ def client():
 class TestWebsiteList:
     def test_returns_correct_format(self, client):
         mock_list = [{"id": 1, "url": "https://example.com", "title": "Test",
-                       "document_type": "webpage", "created_at": "2026-03-09 10:30:45",
+                       "document_type": "webpage", "ingested_at": "2026-03-09 10:30:45",
                        "processing_status": "URL_ADDED", "processing_error_code": "NONE",
                        "note": None, "collection_id": None, "uuid": None}]
         mock_session = MagicMock()
@@ -111,7 +111,7 @@ class TestWebsiteGet:
             "id": 42, "url": "https://example.com", "title": "Test Doc",
             "next_id": 43, "next_type": "link", "previous_id": 41, "previous_type": "webpage",
             "summary": None, "language": "en", "tags": None, "text": "content",
-            "paywall": False, "created_at": "2026-03-09 10:00:00",
+            "paywall": False, "ingested_at": "2026-03-09 10:00:00",
             "document_type": "webpage", "source": None, "published_on": None,
             "original_id": None, "document_length": None, "chapter_list": None,
             "processing_status": "URL_ADDED", "processing_error_code": "NONE",

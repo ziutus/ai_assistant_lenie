@@ -73,14 +73,14 @@ Configuration in `backend/pyproject.toml` under `[tool.pytest.ini_options]`. The
 ### Batch & Import Scripts
 | File | Covers |
 |------|--------|
-| `test_batch_pipeline_orm.py` | `web_documents_do_the_needful_new.py` — AST/source checks (ORM imports, no legacy calls); `youtube_add.py` source checks |
+| `test_batch_pipeline_orm.py` | `documents_pipeline.py` — AST/source checks (ORM imports, no legacy calls); `youtube_add.py` source checks |
 | `test_dynamodb_sync_orm.py` / `test_dynamodb_sync_auto_since.py` | `dynamodb_sync.py` ORM usage; `--since` auto-detection (incl. `--dry-run` needs no DB) |
 | `test_unknown_news_import_orm.py` | Feed entry import logic (now in `feed_monitor.py`) |
 | `test_youtube_processing_orm.py` | `youtube_processing.py` ORM migration |
 | `test_feed_monitor_utils.py` | Pure helpers: `parse_date`, `strip_html`, `_parse_selection`, `apply_skip_filters`, `detect_document_type`, `build_feed_url` |
 | `test_article_browser_utils.py` | Pure helpers: `_trim_to_sentences`, `_article_full_text` |
 | `test_control_questions.py` | `parse_sections`, `sections_for_tags`, tag-needle invariants |
-| `test_md_decode_onet.py` | `clean_onet_artifacts()` from `webdocument_md_decode.py` |
+| `test_md_decode_onet.py` | `clean_onet_artifacts()` from `document_md_decode.py` |
 
 ### Article Processing (`library/`)
 | File | Covers |
@@ -122,7 +122,7 @@ All use Flask `app.test_client()` from `server.py` and **require PostgreSQL**.
 
 - **New tests**: pytest style — plain classes, bare `assert`, fixtures, `monkeypatch`, `parametrize`. **Legacy tests** (markdown/text group): `unittest.TestCase`.
 - **Heavy third-party deps** (`sqlalchemy`, `flask`): test modules guard with `pytest.importorskip("sqlalchemy")` at the top — in the lightweight uvx environment the whole module skips cleanly.
-- **Modules under test with heavy module-level imports** (`feed_monitor`, `article_browser`, `webdocument_md_decode`): tests install minimal stubs in `sys.modules` *only for the import of the module under test*, then remove them so the `importorskip` pattern in other modules keeps working. See the docstring in `test_feed_monitor_utils.py` for the `_ensure_importable` / `_remove_stubs` helpers.
+- **Modules under test with heavy module-level imports** (`feed_monitor`, `article_browser`, `document_md_decode`): tests install minimal stubs in `sys.modules` *only for the import of the module under test*, then remove them so the `importorskip` pattern in other modules keeps working. See the docstring in `test_feed_monitor_utils.py` for the `_ensure_importable` / `_remove_stubs` helpers.
 - **Lazy-imported dependencies** (e.g. `library.document_prepare` in `article_pipeline`): faked via `monkeypatch.setitem(sys.modules, ...)` per test — the real module (which pulls the optional `markitdown` extra) is never imported. See `test_article_pipeline.py`.
 - **Source-check tests**: `test_batch_pipeline_orm.py` parses script sources with `ast` to enforce ORM-only imports; script paths are resolved relative to the test file or assume cwd=`backend/`.
 - **No DB in unit tests**: ORM tests use model metadata and mocked sessions only.

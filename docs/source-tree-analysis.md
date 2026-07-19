@@ -80,9 +80,9 @@ lenie-server-2025/
 │   ├── imports/                       # Bulk import scripts
 │   ├── test_code/                     # Experimental/prototype scripts
 │   │
-│   ├── web_documents_do_the_needful_new.py  # Batch: full pipeline
-│   ├── webdocument_md_decode.py       # Batch: markdown processing
-│   ├── webdocument_prepare_regexp_by_ai.py  # Batch: AI regex generation
+│   ├── documents_pipeline.py  # Batch: full pipeline
+│   ├── document_md_decode.py       # Batch: markdown processing
+│   ├── document_prepare_regexp_by_ai.py  # Batch: AI regex generation
 │   └── youtube_add.py                 # CLI: YouTube video processing
 │
 ├── web_interface_react/        ★ Main React Frontend (7 pages)

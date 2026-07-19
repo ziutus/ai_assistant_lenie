@@ -285,7 +285,7 @@ class DocumentService:
             processing_status: Initial state (default: URL_ADDED)
             skip_if_exists: If True, return (existing, "skipped") for duplicate URLs
             **metadata: Any Document attribute (title, language, source, note,
-                        uuid, chapter_list, created_at, text, text_raw, summary,
+                        uuid, chapter_list, ingested_at, text, text_raw, summary,
                         paywall, published_on, collection_id, ai_summary_needed)
 
         Returns:

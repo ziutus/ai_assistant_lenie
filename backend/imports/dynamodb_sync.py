@@ -303,10 +303,14 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
 
     # Build metadata dict for import_document
     metadata = {}
-    for field in ("title", "language", "note", "chapter_list", "created_at"):
+    for field in ("title", "language", "note", "chapter_list"):
         value = item.get(field)
         if value is not None:
             metadata[field] = value
+    # DynamoDB items still carry "created_at"; ORM attribute is ingested_at
+    # since stage 11g (historical items keep the old field name).
+    if item.get("created_at") is not None:
+        metadata["ingested_at"] = item["created_at"]
     # DynamoDB still uses "s3_uuid"; ORM attribute is now "uuid" (ADR-015)
     uuid_value = item.get("uuid") or item.get("s3_uuid")
     if uuid_value is not None:

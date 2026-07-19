@@ -36,7 +36,7 @@ The SQS queue had no consumer since the SQS→RDS pipeline was removed, so the w
 
 On restore with a new queue consumer: re-add the SQS send in `url-add` (keep DynamoDB as the critical write!), redeploy `sqs-documents.yaml` first, and restore IAM `sqs:SendMessage` in `url-add.yaml`.
 
-**2026-07-03 follow-up:** the last consumer-side code — `step1_drain_sqs()` and the `--clean-sqs` flag in `backend/web_documents_do_the_needful_new.py` — was removed as dead code (the queue it drained no longer exists). To restore, recover the function from the git history of that file (`git log --follow -p -- backend/web_documents_do_the_needful_new.py`, look for the commit removing `step1_drain_sqs`); it mapped SQS message fields (camelCase → snake_case) onto `DocumentService.import_document()` and deleted messages after a successful insert. The `AWS_QUEUE_URL_ADD` variable is still defined in `scripts/vars-classification.yaml` and the k8s/helm config templates.
+**2026-07-03 follow-up:** the last consumer-side code — `step1_drain_sqs()` and the `--clean-sqs` flag in `backend/documents_pipeline.py` — was removed as dead code (the queue it drained no longer exists). To restore, recover the function from the git history of that file (`git log --follow -p -- backend/documents_pipeline.py`, look for the commit removing `step1_drain_sqs`); it mapped SQS message fields (camelCase → snake_case) onto `DocumentService.import_document()` and deleted messages after a successful insert. The `AWS_QUEUE_URL_ADD` variable is still defined in `scripts/vars-classification.yaml` and the k8s/helm config templates.
 
 ### 2026-07-02 (final cleanup pass) — frontend hosting
 
