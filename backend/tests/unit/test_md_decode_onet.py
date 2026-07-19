@@ -57,8 +57,8 @@ _ensure_importable("library.config_loader",
                        get=lambda *a, **kw: None, require=lambda *a, **kw: ""))
 _ensure_importable("library.db.engine", get_session=lambda: None)
 _ensure_importable("library.db.models", Document=type("Document", (), {}))
-_ensure_importable("library.stalker_web_documents_db_postgresql",
-                   WebsitesDBPostgreSQL=type("WebsitesDBPostgreSQL", (), {}))
+_ensure_importable("library.document_repository",
+                   DocumentRepository=type("DocumentRepository", (), {}))
 
 try:
     from webdocument_md_decode import clean_onet_artifacts

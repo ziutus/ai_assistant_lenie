@@ -1,4 +1,4 @@
-"""Tests for WebsitesDBPostgreSQL.list_by_filters() (stage 6 session B).
+"""Tests for DocumentRepository.list_by_filters() (stage 6 session B).
 
 Filter-only document listing: no text query, no embedding. No live
 database: statements are compiled to SQL text via the session-mock
@@ -12,13 +12,13 @@ import pytest
 pytest.importorskip("sqlalchemy")
 
 from library.search.types import SearchFilters, SearchSort  # noqa: E402
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL  # noqa: E402
+from library.document_repository import DocumentRepository  # noqa: E402
 
 
 def _repo_with_mock_session(rows=None):
     session = MagicMock()
     session.scalars.return_value.all.return_value = rows or []
-    return WebsitesDBPostgreSQL(session=session), session
+    return DocumentRepository(session=session), session
 
 
 def _compiled_sql(session) -> str:

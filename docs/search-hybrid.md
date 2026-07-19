@@ -4,10 +4,10 @@
 (`backend/library/search_service.py`), which combines two independent signals for the same
 query text:
 
-- **Lexical candidates** — `WebsitesDBPostgreSQL.search_text()`
-  (`backend/library/stalker_web_documents_db_postgresql.py`): a plain SQL `ILIKE` scan over
+- **Lexical candidates** — `DocumentRepository.search_text()`
+  (`backend/library/document_repository.py`): a plain SQL `ILIKE` scan over
   `title`/`tags`/`note`/`text`.
-- **Semantic candidates** — `WebsitesDBPostgreSQL.get_similar()`: pgvector cosine search over
+- **Semantic candidates** — `DocumentRepository.get_similar()`: pgvector cosine search over
   `websites_embeddings`.
 
 `SearchService._merge_results()` de-duplicates by document, scores each candidate from whichever

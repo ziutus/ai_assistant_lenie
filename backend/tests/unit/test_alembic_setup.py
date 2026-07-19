@@ -234,7 +234,7 @@ class TestFlaskTeardown:
         "PORT": "5000",
         "SECRETS_BACKEND": "env",
     })
-    @patch("library.stalker_web_documents_db_postgresql.WebsitesDBPostgreSQL")
+    @patch("library.document_repository.DocumentRepository")
     def test_teardown_handler_registered(self, mock_db_class):
         """Flask app must have a teardown_appcontext handler."""
         mock_db = MagicMock()
@@ -267,7 +267,7 @@ class TestFlaskTeardown:
         "PORT": "5000",
         "SECRETS_BACKEND": "env",
     })
-    @patch("library.stalker_web_documents_db_postgresql.WebsitesDBPostgreSQL")
+    @patch("library.document_repository.DocumentRepository")
     def test_teardown_calls_scoped_session_remove(self, mock_db_class):
         """Teardown handler must call get_scoped_session().remove()."""
         mock_db = MagicMock()

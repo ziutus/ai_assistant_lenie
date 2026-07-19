@@ -2,7 +2,7 @@
 
 Orchestrates document lifecycle operations by composing:
 - Document ORM model (data + domain methods)
-- WebsitesDBPostgreSQL repository (complex queries)
+- DocumentRepository repository (complex queries)
 - Library modules (website/, text_functions, text_transcript)
 
 No Flask dependencies — works in any context (Flask, MCP server, scripts).
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
 from library.db.models import Document
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+from library.document_repository import DocumentRepository
 from library.text_functions import split_text_for_embedding
 from library.text_transcript import chapters_text_to_list
 from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
@@ -34,7 +34,7 @@ class DocumentService:
 
     def __init__(self, session: Session):
         self.session = session
-        self.repo = WebsitesDBPostgreSQL(session)
+        self.repo = DocumentRepository(session)
 
     # ------------------------------------------------------------------
     # create_document — extracted from /url_add

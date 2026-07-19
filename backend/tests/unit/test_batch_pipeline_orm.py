@@ -230,7 +230,7 @@ class TestEmbeddingGeneration:
             "Batch pipeline Step 5 should use get_embedding() for embeddings"
 
     def test_embedding_uses_websites_db(self):
-        """Embedding storage should use WebsitesDBPostgreSQL methods."""
+        """Embedding storage should use DocumentRepository methods."""
         with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
             source = f.read()
 
@@ -241,19 +241,19 @@ class TestEmbeddingGeneration:
 
 
 # ---------------------------------------------------------------------------
-# Test: WebsitesDBPostgreSQL uses session
+# Test: DocumentRepository uses session
 # ---------------------------------------------------------------------------
 
 class TestWebsitesDBWithSession:
-    """Test that WebsitesDBPostgreSQL is created with session."""
+    """Test that DocumentRepository is created with session."""
 
     def test_websites_db_created_with_session(self):
-        """WebsitesDBPostgreSQL should be created with session parameter."""
+        """DocumentRepository should be created with session parameter."""
         with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
             source = f.read()
 
-        assert "WebsitesDBPostgreSQL(session=session)" in source, \
-            "WebsitesDBPostgreSQL should be created with session=session"
+        assert "DocumentRepository(session=session)" in source, \
+            "DocumentRepository should be created with session=session"
 
     def test_no_websites_close_call(self):
         """websites.close() should not be called — session.close() handles cleanup."""
@@ -303,7 +303,7 @@ class TestGetDocumentsMdNeededORM:
 
     def test_orm_branch_exists(self):
         """get_documents_md_needed should have an ORM branch."""
-        with open("library/stalker_web_documents_db_postgresql.py", "r") as f:
+        with open("library/document_repository.py", "r") as f:
             source = f.read()
 
         # Check that the method body contains self.session check

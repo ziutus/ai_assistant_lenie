@@ -565,7 +565,7 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     """Zapisz oczyszczony tekst do bazy, stwórz embedding, ustaw status."""
     from library.models.stalker_document_status import StalkerDocumentStatus
     from library.embedding import get_embedding
-    from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+    from library.document_repository import DocumentRepository
 
     text_only = article["text"]
     embedding_model = cfg.get("EMBEDDING_MODEL") or "BAAI/bge-m3"
@@ -670,7 +670,7 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     # 3. Twórz embedding
     print("  Tworzę embedding...")
     try:
-        wb_db = WebsitesDBPostgreSQL(session=session)
+        wb_db = DocumentRepository(session=session)
         # Usuń stare embeddingi dla tego dokumentu
         wb_db.embedding_delete(doc.id, embedding_model)
         session.commit()

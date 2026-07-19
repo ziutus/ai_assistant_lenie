@@ -5,6 +5,39 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-19 — Etap 11, sesja G część 1 (rename modułu repozytorium) — UKOŃCZONA; część 2 CZEKA NA DECYZJE
+
+**Zakres wykonany:** `library/stalker_web_documents_db_postgresql.py` → `library/document_repository.py`
+(git mv), klasa `WebsitesDBPostgreSQL` → `DocumentRepository`; zaktualizowane wszystkie importy
+(27 plików: serwisy, server.py, importy, batch, testy) i dokumentacja (CLAUDE.md x4,
+architecture-backend, data-models, integration-architecture, search-hybrid, person-ner-plan).
+Zero wpływu na API/wire — czysto wewnętrzny rename. Wdrożone na NAS.
+
+**Testy uruchomione:** `tests/unit/` **1830 passed**; ruff czysty. (Haczyk operacyjny: pierwszy
+deploy padł na znanym przejściowym timeoucie SSH w nas-deploy.sh — retry zadziałał.)
+
+**Część 2 — pomiar wykonany, wstrzymana do decyzji użytkownika:**
+- `document_state`→`processing_status` + `document_state_error`→`processing_error_code`:
+  **35 plików backendu + 13 plików klienckich** (shared/types, filtry listy, editory link/webpage/
+  youtube/movie/email w react I app2, `useDocumentStates`) + klucze JSON w większości odpowiedzi
+  + endpoint `/document_states` + tabele słownikowe `document_status_types`/
+  `document_status_error_types` (czy też przemianować?). Najszersza klientowo zmiana całego etapu.
+- `uuid`→`public_id`: dotyka **konwencji notatek Obsidian** użytkownika („Lenie AI uuid=..." —
+  utrwalone w istniejących notatkach i skillu obsidian-note) oraz nazewnictwa plików w S3.
+  Wymaga jawnej zgody na zmianę konwencji (stare notatki zostaną ze starą frazą).
+- `created_at`→`ingested_at`: kolumna tylko w `documents`, ale klucz JSON `created_at`
+  konsumowany przez react (utils/read/chunks); `created_at` istnieje też na innych tabelach —
+  zmiana musi być chirurgiczna, nie sed.
+- `period_from/to` (parametry legacy `/website_similar`) → znikną razem z endpointem w Etapie 12;
+  fizyczne kolumny `document_time_periods.period_start_year/period_end_year` — czy przemianować
+  na `subject_period_*` (pełna spójność) czy zostawić (prefiks tabeli już niesie kontekst)?
+- nazwy PLIKÓW skryptów batch (`web_documents_do_the_needful_new.py` itd.) — rename plików czy zostawić?
+
+**PR/merge:** PR #310, branch `feat/search-etap-11g-repository`.
+
+**Następny krok:** decyzje użytkownika do części 2 (powyżej), potem ostatnia sesja Etapu 11
+i aktualizacja warunku zakończenia w planie.
+
 ## 2026-07-19 — Etap 11, sesja F (rename `web_documents`→`documents`, `WebDocument`→`Document`) — UKOŃCZONA
 
 **Zakres wykonany:** migracja Alembic `f7a8b9c0d1e2` — rename tabeli, sekwencji

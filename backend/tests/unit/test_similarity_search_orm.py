@@ -47,13 +47,13 @@ def _make_row(**overrides):
 
 
 def _create_repo_with_session(execute_return=None):
-    """Create a WebsitesDBPostgreSQL instance with a mocked ORM session."""
+    """Create a DocumentRepository instance with a mocked ORM session."""
     mock_session = MagicMock()
     if execute_return is not None:
         mock_session.execute.return_value.all.return_value = execute_return
 
-    from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
-    repo = WebsitesDBPostgreSQL(session=mock_session)
+    from library.document_repository import DocumentRepository
+    repo = DocumentRepository(session=mock_session)
     return repo, mock_session
 
 
