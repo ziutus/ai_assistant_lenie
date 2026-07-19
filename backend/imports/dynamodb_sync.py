@@ -9,8 +9,9 @@ using the project/environment convention: /{project}/{env}/...
 
 Usage:
     cd backend
-    ./imports/dynamodb_sync.py                                  # auto-detect --since from last successful run
-    ./imports/dynamodb_sync.py --since 2026-02-20               # explicit date
+    ./imports/dynamodb_sync.py                                  # exact UTC watermark from last successful run
+    ./imports/dynamodb_sync.py --since 2026-02-20T14:30:00Z     # explicit timestamp
+    ./imports/dynamodb_sync.py --since 2026-02-20T15:30:00 --timezone Europe/Warsaw
     ./imports/dynamodb_sync.py --since 2026-02-20 --dry-run
     ./imports/dynamodb_sync.py --since 2026-02-20 --limit 10
     ./imports/dynamodb_sync.py --since 2026-02-20 --skip-s3
@@ -24,8 +25,9 @@ import argparse
 import os
 import sys
 from contextlib import nullcontext
-from datetime import date, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
@@ -103,18 +105,46 @@ def resolve_resource_names(project: str, env: str, table_override: str | None,
     return table_name, bucket
 
 
-def get_dynamodb_items(table_name: str, since_date: str) -> list[dict]:
-    """Query DynamoDB DateIndex GSI day-by-day from since_date to today."""
+def _parse_item_timestamp(value) -> datetime | None:
+    """Parse DynamoDB created_at; legacy naive values are UTC."""
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def parse_since(value: str, working_timezone: ZoneInfo) -> datetime:
+    """Parse a date or ISO timestamp in the configured zone and return UTC."""
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("expected YYYY-MM-DD or ISO-8601 datetime") from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=working_timezone)
+    return parsed.astimezone(timezone.utc).replace(microsecond=0)
+
+
+def format_timestamp(value: datetime, working_timezone: ZoneInfo) -> str:
+    return value.astimezone(working_timezone).isoformat(timespec="seconds")
+
+
+def get_dynamodb_items(table_name: str, since_utc: datetime) -> list[dict]:
+    """Query UTC DateIndex partitions and retain items at/after the exact watermark."""
     dynamodb = boto3.resource("dynamodb")
     table = dynamodb.Table(table_name)
 
-    since = datetime.strptime(since_date, "%Y-%m-%d")
-    today = datetime.now()
+    since_utc = since_utc.astimezone(timezone.utc)
+    current = since_utc.date()
+    today = datetime.now(timezone.utc).date()
     all_items = []
 
-    current = since
     while current <= today:
-        date_str = current.strftime("%Y-%m-%d")
+        date_str = current.isoformat()
         last_evaluated_key = None
 
         while True:
@@ -126,7 +156,11 @@ def get_dynamodb_items(table_name: str, since_date: str) -> list[dict]:
                 query_kwargs["ExclusiveStartKey"] = last_evaluated_key
 
             response = table.query(**query_kwargs)
-            all_items.extend(response["Items"])
+            all_items.extend(
+                item for item in response["Items"]
+                if (timestamp := _parse_item_timestamp(item.get("created_at"))) is None
+                or timestamp >= since_utc
+            )
 
             last_evaluated_key = response.get("LastEvaluatedKey")
             if not last_evaluated_key:
@@ -134,7 +168,7 @@ def get_dynamodb_items(table_name: str, since_date: str) -> list[dict]:
 
         current += timedelta(days=1)
 
-    print(f"DynamoDB: found {len(all_items)} items since {since_date}")
+    print(f"DynamoDB: found {len(all_items)} items since {since_utc.isoformat(timespec='seconds')} UTC")
     return all_items
 
 
@@ -349,26 +383,30 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
         return "error", None
 
 
-def get_last_successful_sync_date(session: "Session") -> date | None:
-    """Get until_date from the most recent successful dynamodb_sync run.
+def get_last_successful_sync_timestamp(session: "Session") -> datetime | None:
+    """Get the last successful run's start time as an exact UTC watermark.
 
-    Uses finished_at (not started_at) for ordering — ensures we get the most
-    recently *completed* run, not just the most recently *started* one.
+    Starting time is safer than finish time: items created while the previous
+    run queried the current UTC partition might not have been observed.
     """
     result = session.scalar(
-        select(ImportLog.until_date)
+        select(ImportLog.started_at)
         .where(ImportLog.script_name == "dynamodb_sync")
         .where(ImportLog.status == "success")
         .order_by(ImportLog.finished_at.desc())
         .limit(1)
     )
-    return result
+    if result is not None and result.tzinfo is None:
+        result = result.replace(tzinfo=timezone.utc)
+    return result.astimezone(timezone.utc).replace(microsecond=0) if result else None
 
 
 def main():
     parser = argparse.ArgumentParser(description="Sync documents from DynamoDB + S3 to local PostgreSQL")
-    parser.add_argument("--since", required=False, default=None, metavar="YYYY-MM-DD",
-                        help="Sync from this date (YYYY-MM-DD). If omitted, auto-detected from last successful run.")
+    parser.add_argument("--since", default=None, metavar="ISO-8601",
+                        help="Sync from this date/time; naive values use --timezone. Auto-detected when omitted.")
+    parser.add_argument("--timezone", default="UTC", metavar="IANA_ZONE",
+                        help="Working timezone for input/output timestamps (default: UTC)")
     parser.add_argument("--dry-run", action="store_true", help="Preview only, no DB writes or S3 downloads")
     parser.add_argument("--limit", type=int, default=0, help="Max documents to sync (0 = unlimited)")
     parser.add_argument("--skip-s3", action="store_true", help="Skip S3 file downloads (metadata only)")
@@ -385,20 +423,26 @@ def main():
     if args.data_dir is None:
         args.data_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
 
+    try:
+        working_timezone = ZoneInfo(args.timezone)
+    except ZoneInfoNotFoundError:
+        print(f"ERROR: unknown timezone '{args.timezone}' (use e.g. UTC or Europe/Warsaw)")
+        sys.exit(1)
+
     # Fail fast if the markdown conversion dependency is missing — better to
     # find out before AWS calls / DB writes than mid-run on the first webpage item.
     if not args.skip_s3 and not args.dry_run:
         check_markdown_deps_installed()
 
-    # Auto-detect last successful sync date. The DB connection doubles as a
+    # Auto-detect the exact watermark from the last successful sync. The DB connection doubles as a
     # fail-fast check before AWS calls; skipped for --dry-run with explicit
     # --since, which needs no database at all.
-    auto_date = None
+    auto_timestamp = None
     if args.since is None or not args.dry_run:
         try:
             detect_session = get_session()
             try:
-                auto_date = get_last_successful_sync_date(detect_session)
+                auto_timestamp = get_last_successful_sync_timestamp(detect_session)
             finally:
                 detect_session.close()
         except (SQLAlchemyError, OSError) as e:
@@ -407,25 +451,28 @@ def main():
             sys.exit(1)
 
     if args.since is None:
-        if auto_date is None:
-            print("ERROR: No previous sync found. Please provide --since YYYY-MM-DD for the first run.")
+        if auto_timestamp is None:
+            print("ERROR: No previous sync found. Please provide --since for the first run.")
             sys.exit(1)
-        args.since = auto_date.strftime("%Y-%m-%d")
-        print(f"Auto-detected --since {args.since} from last successful sync")
+        since_utc = auto_timestamp
+        args.since = format_timestamp(since_utc, working_timezone)
+        print(f"Auto-detected --since {args.since} from last successful sync start")
     else:
         try:
-            datetime.strptime(args.since, "%Y-%m-%d")
-        except ValueError:
-            print(f"ERROR: invalid date format '{args.since}', expected YYYY-MM-DD")
+            since_utc = parse_since(args.since, working_timezone)
+        except ValueError as exc:
+            print(f"ERROR: invalid --since '{args.since}': {exc}")
             sys.exit(1)
-        if auto_date:
-            print(f"Using explicit --since {args.since} (overriding auto-detected {auto_date})")
+        if auto_timestamp:
+            auto_display = format_timestamp(auto_timestamp, working_timezone)
+            print(f"Using explicit --since {args.since} (overriding auto-detected {auto_display})")
         else:
             print(f"Using explicit --since {args.since}")
 
     print("=== DynamoDB -> PostgreSQL sync ===")
     print(f"Project: {args.project}, Environment: {args.env}")
     print(f"Since: {args.since}")
+    print(f"Timezone: {args.timezone} (DynamoDB DateIndex is always queried by UTC day)")
     if args.dry_run:
         print("Mode: DRY-RUN (no changes)")
     if args.skip_s3:
@@ -463,7 +510,7 @@ def main():
     print()
 
     # Query DynamoDB
-    items = get_dynamodb_items(table_name, args.since)
+    items = get_dynamodb_items(table_name, since_utc)
     if not items:
         print("No items found. Done.")
         return
@@ -490,6 +537,8 @@ def main():
     if session and not args.dry_run:
         tracker_params = {
             "since": args.since,
+            "since_utc": since_utc.isoformat(timespec="seconds"),
+            "timezone": args.timezone,
             "limit": args.limit,
             "skip_s3": args.skip_s3,
             "project": args.project,
@@ -502,8 +551,7 @@ def main():
     try:
         with tracker_ctx as tracker:
             if tracker:
-                since_date = datetime.strptime(args.since, "%Y-%m-%d").date()
-                tracker.set_dates(since_date=since_date, until_date=datetime.now().date())
+                tracker.set_dates(since_date=since_utc.date(), until_date=datetime.now(timezone.utc).date())
 
             for i, item in enumerate(items, 1):
                 url = item.get("url", "(no url)")
