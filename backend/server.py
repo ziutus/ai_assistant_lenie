@@ -1245,7 +1245,7 @@ def ner_exclusions_add():
         doc = WebDocument.get_by_id(session, doc_id)
         if doc is None:
             return {"status": "error", "message": "Document not found"}, 404
-        author = (doc.author or "").strip() or None
+        author = (doc.byline or "").strip() or None
         if author is None:
             return {"status": "error", "message": "Document has no author to scope the exclusion to"}, 400
 
@@ -1545,7 +1545,7 @@ def website_save():
 
     link_id = request.form.get('id')
     attrs = {}
-    for attr in ('text', 'title', 'language', 'tags', 'summary', 'source', 'author', 'note'):
+    for attr in ('text', 'title', 'language', 'tags', 'summary', 'source', 'byline', 'note'):
         value = request.form.get(attr)
         if value is not None:
             attrs[attr] = value

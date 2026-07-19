@@ -72,7 +72,7 @@ class WebDocumentResponse(BaseModel):
     id: int
     url: str
     title: str | None = None
-    author: str | None = None
+    byline: str | None = None
     source: str | None = None
     language: str | None = None
     tags: str | None = None

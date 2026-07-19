@@ -76,7 +76,7 @@ def test_first_biography_fills_empty_person_description():
     )
     session = MagicMock()
     session.execute.return_value.scalars.return_value.first.return_value = link
-    doc = SimpleNamespace(id=9245, author="Jacek Losik")
+    doc = SimpleNamespace(id=9245, byline="Jacek Losik")
     result = {"decision": "auto_applied", "proposed_description": "Polski dziennikarz."}
 
     with patch("library.person_registry.find_by_alias", return_value=person), \
@@ -99,7 +99,7 @@ def test_new_information_is_queued_without_overwriting_description():
     )
     session = MagicMock()
     session.execute.return_value.scalars.return_value.first.return_value = link
-    doc = SimpleNamespace(id=9245, author="Jacek Losik")
+    doc = SimpleNamespace(id=9245, byline="Jacek Losik")
     result = {
         "decision": "new_information",
         "proposed_description": "Dziennikarz money.pl specjalizujący się w transporcie.",

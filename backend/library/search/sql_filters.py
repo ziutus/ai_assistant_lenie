@@ -122,7 +122,7 @@ def _author_match(name: str) -> ColumnElement[bool]:
             ),
         )
     )
-    legacy_byline = func.unaccent(func.lower(func.coalesce(WebDocument.author, ""))).ilike(
+    legacy_byline = func.unaccent(func.lower(func.coalesce(WebDocument.byline, ""))).ilike(
         func.unaccent(f"%{folded}%"),
     )
     return or_(exists(matching_link), and_(~exists(author_links), legacy_byline))

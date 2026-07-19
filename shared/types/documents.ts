@@ -1,6 +1,6 @@
 export interface WebDocument {
   id: string;
-  author: string;
+  byline: string;
   source: string;
   language: string;
   url: string;
@@ -22,7 +22,7 @@ export interface WebDocument {
 
 export const emptyDocument: WebDocument = {
   id: "",
-  author: "",
+  byline: "",
   source: "",
   language: "",
   url: "",

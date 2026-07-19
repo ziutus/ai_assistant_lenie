@@ -13,11 +13,11 @@ const SharedInputs = ({
     <>
       <Input
         disabled={isLoading}
-        value={formik.values.author}
+        value={formik.values.byline}
         label={"Author"}
         onChange={formik.handleChange}
-        id={"author"}
-        name={"author"}
+        id={"byline"}
+        name={"byline"}
         type={"text"}
       />
       <div className="flexBox">

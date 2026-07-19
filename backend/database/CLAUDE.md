@@ -70,7 +70,8 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `language` | `varchar(10)` | Detected language code |
 | `tags` | `text` | Comma-separated tags |
 | `source` | `text` | Discovery source (how the user found the document) — FK → `sources.name` (`fk_source`, `ON UPDATE CASCADE`); unknown values are auto-created by the ORM `before_flush` hook |
-| `author` | `text` | Document author |
+| `byline` | `text` | Document author(s) display cache (comma-separated); structured links in `document_persons` (role=`author`) |
+| `byline_method` | `varchar(10)` | How `byline` was set: `manual`, `llm` or `html`; `NULL` for legacy/import-set values. CHECK constraint `ck_web_documents_byline_method` |
 | `note` | `text` | User notes |
 | `paywall` | `boolean` | Whether content is behind a paywall (default: false) |
 | `published_on` | `date` | Publication date |
@@ -323,7 +324,7 @@ NER false-positive suppression dictionary, applied in `library/entity_service.py
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `entity_text` | `text NOT NULL` | Matched case-insensitively against the aggregated entity base form |
 | `entity_type` | `varchar(20) NOT NULL DEFAULT '*'` | `persName` / `geogName` / `placeName` / `*` (all types) |
-| `scope` | `varchar(10) NOT NULL DEFAULT 'global'` | `global` (every document) or `author` (only documents whose `web_documents.author` matches) |
+| `scope` | `varchar(10) NOT NULL DEFAULT 'global'` | `global` (every document) or `author` (only documents whose `web_documents.byline` matches) |
 | `author` | `text` | Author the rule is limited to (required when `scope='author'`, CHECK constraint) |
 | `note` | `text` | Optional human note (why excluded) |
 | `created_at` | `timestamp` | Row creation timestamp |
