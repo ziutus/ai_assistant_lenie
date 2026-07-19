@@ -45,6 +45,6 @@ def test_discovery_source_zero_one_many_and_case_insensitive_sql():
     assert result.count == 2
     assert result.id is None
     sql = str(session.scalars.call_args.args[0].compile(compile_kwargs={"literal_binds": True}))
-    assert "FROM sources" in sql
+    assert "FROM discovery_sources" in sql
     assert "information_sources" not in sql
-    assert "unaccent(lower(sources.name))" in sql
+    assert "unaccent(lower(discovery_sources.name))" in sql

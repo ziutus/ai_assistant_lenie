@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import func, select
 
-from library.db.models import Person, PersonAlias, Source
+from library.db.models import DiscoverySource, Person, PersonAlias
 
 
 @dataclass(frozen=True)
@@ -51,8 +51,8 @@ def resolve_discovery_source_name(session, name: str | None) -> NameResolution:
     if not name:
         return NameResolution(())
     rows = session.scalars(
-        select(Source)
-        .where(func.unaccent(func.lower(Source.name)) == func.unaccent(name))
-        .order_by(Source.id)
+        select(DiscoverySource)
+        .where(func.unaccent(func.lower(DiscoverySource.name)) == func.unaccent(name))
+        .order_by(DiscoverySource.id)
     ).all()
     return NameResolution(tuple(NameMatch(row.id, row.name) for row in rows))

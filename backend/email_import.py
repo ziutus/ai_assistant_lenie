@@ -350,7 +350,7 @@ def main():
         doc.byline = author
         doc.text = text
         doc.text_raw = text_raw
-        doc.source = args.source
+        doc.set_discovery_source(session, args.source)
         doc.original_id = msg_id
         doc.document_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name
         if language:

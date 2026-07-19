@@ -11,6 +11,7 @@ import pytest
 pytest.importorskip("sqlalchemy")
 
 from library.db.models import (
+    DiscoverySource,
     WebDocument,
     LinkDocument,
     YouTubeDocument,
@@ -219,7 +220,7 @@ class TestCreateFlow:
         doc.title = "Test Title"
         doc.created_at = now
         doc.document_type = "webpage"
-        doc.source = "manual"
+        doc.discovery_source = DiscoverySource(name="manual")
         doc.published_on = datetime.date(2026, 3, 1)
         doc.original_id = "orig-123"
         doc.document_length = 500
@@ -249,7 +250,7 @@ class TestCreateFlow:
         assert d["title"] == "Test Title"
         assert d["created_at"] == "2026-03-01 12:00:00"
         assert d["document_type"] == "webpage"
-        assert d["source"] == "manual"
+        assert d["source"] == "manual"  # name via discovery_source relationship
         assert d["published_on"] == datetime.date(2026, 3, 1)
         assert d["original_id"] == "orig-123"
         assert d["document_length"] == 500
@@ -424,7 +425,7 @@ class TestDictCompatibility:
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
             "summary", "url", "language", "tags", "text", "paywall", "title",
-            "created_at", "document_type", "source", "published_on", "published_on_method", "original_id",
+            "created_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "document_state", "document_state_error",
             "text_raw", "transcript_job_id", "ai_summary_needed", "byline",
             "byline_method", "note", "uuid", "collection_id", "text_md", "transcript_needed",
@@ -451,7 +452,7 @@ class TestDictCompatibility:
             title="Title",
             created_at=now,
             document_type="link",
-            source="import",
+            discovery_source=DiscoverySource(name="import"),
             published_on=datetime.date(2026, 2, 20),
             original_id="orig-1",
             document_length=200,

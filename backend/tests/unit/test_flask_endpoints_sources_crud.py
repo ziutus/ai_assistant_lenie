@@ -1,4 +1,4 @@
-"""Unit tests for the /sources CRUD endpoints and the Source auto-create hook."""
+"""Unit tests for the /sources CRUD endpoints and discovery-source resolution."""
 
 from unittest.mock import MagicMock, patch
 
@@ -134,74 +134,74 @@ class TestSourcesDelete:
         assert resp.status_code == 404
 
 
-class TestSourceEnsure:
+class TestDiscoverySourceEnsure:
     def test_returns_existing_row(self):
-        from library.db.models import Source
+        from library.db.models import DiscoverySource
         session = MagicMock()
         existing = MagicMock()
         session.execute.return_value.scalar_one_or_none.return_value = existing
-        assert Source.ensure(session, "  own  ") is existing
+        assert DiscoverySource.ensure(session, "  own  ") is existing
         session.add.assert_not_called()
 
     def test_creates_missing_row(self):
-        from library.db.models import Source
+        from library.db.models import DiscoverySource
         session = MagicMock()
         session.execute.return_value.scalar_one_or_none.return_value = None
-        row = Source.ensure(session, "nowe-zrodlo")
+        row = DiscoverySource.ensure(session, "nowe-zrodlo")
         assert row.name == "nowe-zrodlo"
         session.add.assert_called_once_with(row)
 
     def test_empty_name_returns_none(self):
-        from library.db.models import Source
+        from library.db.models import DiscoverySource
         session = MagicMock()
-        assert Source.ensure(session, "   ") is None
-        assert Source.ensure(session, None) is None
+        assert DiscoverySource.ensure(session, "   ") is None
+        assert DiscoverySource.ensure(session, None) is None
         session.add.assert_not_called()
 
 
-class TestBeforeFlushHook:
-    """The before_flush listener is called directly — no DB needed."""
+class TestSetDiscoverySource:
+    """WebDocument.set_discovery_source() — the stage-11d replacement for the
+    old before_flush auto-create hook. Wire format stays a NAME string."""
 
-    def _session(self, new=(), dirty=()):
+    def _session(self, existing=None):
         session = MagicMock()
-        session.new = list(new)
-        session.dirty = list(dirty)
-        session.execute.return_value.scalar_one_or_none.return_value = None
+        session.execute.return_value.scalar_one_or_none.return_value = existing
         return session
 
-    def test_auto_creates_source_for_new_document(self):
-        from library.db import models
-        doc = models.WebDocument(url="https://x", document_type="link", source="fresh")
-        session = self._session(new=[doc])
-        models._ensure_document_sources_exist(session, None, None)
-        added = session.add.call_args[0][0]
-        assert isinstance(added, models.Source)
-        assert added.name == "fresh"
-
-    def test_normalizes_whitespace_and_empty(self):
-        from library.db import models
-        doc = models.WebDocument(url="https://x", document_type="link", source="  own  ")
-        blank = models.WebDocument(url="https://y", document_type="link", source="   ")
-        session = self._session(new=[doc, blank])
-        models._ensure_document_sources_exist(session, None, None)
-        assert doc.source == "own"
-        assert blank.source is None
-        added = session.add.call_args[0][0]
-        assert added.name == "own"
-        assert session.add.call_count == 1
-
-    def test_dedupes_names_within_one_flush(self):
-        from library.db import models
-        docs = [models.WebDocument(url=f"https://x{i}", document_type="link", source="feed")
-                for i in range(3)]
-        session = self._session(new=docs)
-        models._ensure_document_sources_exist(session, None, None)
-        assert session.add.call_count == 1
-
-    def test_ignores_documents_without_source(self):
+    def test_auto_creates_source_for_unknown_name(self):
         from library.db import models
         doc = models.WebDocument(url="https://x", document_type="link")
-        session = self._session(new=[doc])
-        models._ensure_document_sources_exist(session, None, None)
+        session = self._session(existing=None)
+        doc.set_discovery_source(session, "fresh")
+        added = session.add.call_args[0][0]
+        assert isinstance(added, models.DiscoverySource)
+        assert added.name == "fresh"
+        assert doc.discovery_source is added
+        assert doc.discovery_source_name == "fresh"
+
+    def test_reuses_existing_row(self):
+        from library.db import models
+        existing = models.DiscoverySource(name="own")
+        doc = models.WebDocument(url="https://x", document_type="link")
+        session = self._session(existing=existing)
+        doc.set_discovery_source(session, "  own  ")
         session.add.assert_not_called()
-        assert doc.source is None
+        assert doc.discovery_source is existing
+
+    def test_blank_name_clears_fk(self):
+        from library.db import models
+        doc = models.WebDocument(url="https://x", document_type="link")
+        session = self._session()
+        doc.set_discovery_source(session, "   ")
+        session.add.assert_not_called()
+        assert doc.discovery_source is None
+        assert doc.discovery_source_id is None
+        assert doc.discovery_source_name is None
+
+    def test_none_clears_fk(self):
+        from library.db import models
+        doc = models.WebDocument(url="https://x", document_type="link")
+        session = self._session()
+        doc.set_discovery_source(session, None)
+        assert doc.discovery_source is None
+        assert doc.discovery_source_name is None

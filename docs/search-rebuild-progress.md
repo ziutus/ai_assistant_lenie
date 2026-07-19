@@ -5,6 +5,50 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-19 — Etap 11, sesja D (normalizacja `source`→`discovery_source_id` + `sources`→`discovery_sources`) — UKOŃCZONA
+
+**Zakres wykonany:** największa normalizacja etapu. **Decyzje użytkownika** (2026-07-19): format
+wire ZACHOWUJE nazwę pod kluczem `source` (wtyczka Chrome jest instalowana unpacked i
+aktualizowana ręcznie — rename pola złamałby stare instalacje po cichu); tabela przemianowana
+razem z kolumną w tej samej sesji. Migracja Alembic `d5e6f7a8b9c0`: `ALTER TABLE sources RENAME
+TO discovery_sources`, nowa kolumna `web_documents.discovery_source_id` FK + indeks, bezstratna
+migracja danych po nazwie (na NAS: **9110/9220** dokumentów zmapowanych, 110 miało NULL, 16
+źródeł), usunięcie `fk_source` (name-based, ON UPDATE CASCADE) i kolumny `source`. ORM: `Source`
+→ `DiscoverySource`, relacja `WebDocument.discovery_source`; hook `before_flush` (auto-create
+źródeł) USUNIĘTY — zastąpiony jawnym `WebDocument.set_discovery_source(session, name)` (nadal
+auto-tworzy nieznane nazwy) + property `discovery_source_name`. Punkty tłumaczenia
+nazwa→id: `DocumentService` (create/save/import — pole wire `source`), `youtube_processing`,
+`email_import`. API `/sources`: liczniki i DELETE po `id` zamiast nazwy; **PATCH rename już nie
+kaskaduje w DB** — dokumenty podążają przez FK (semantyka bez zmian, mechanizm lepszy).
+`sql_filters`/`name_resolution`: filtr discovery source przez subquery po id. `dict()` zwraca
+`source` (nazwa, zgodność) ORAZ `discovery_source_id`. `get_last_by_source()` po nazwie przez
+subquery. Init SQL: 03 + przepisany 28. Wtyczka Chrome i frontendy: **zero zmian w kodzie**
+(kontrakt wire nietknięty; tylko komentarze w `sources.tsx`/`shared/types`).
+
+**Testy uruchomione:** `tests/unit/` **1830 passed** (przepisane: `TestBeforeFlushHook` →
+`TestSetDiscoverySource`, `TestSourceEnsure` → `TestDiscoverySourceEnsure`, asercje SQL na
+`discovery_sources`); ruff czysty. Migracja na NAS: upgrade → psql (16 źródeł, 9110 zmapowanych,
+top: unknow.news 6896, own 1935) → downgrade (9110 wraca do kolumny tekstowej — bezstratnie) →
+upgrade → head `d5e6f7a8b9c0`. Deploy backendu na NAS od razu po migracji. E2E: `GET
+/sources?active=1` → 16 źródeł z licznikami po FK; `POST /url_add` z payloadem wtyczki
+(`source: "own"`) → dokument dostał FK na „own"; `/website_save` z NOWĄ nazwą źródła →
+auto-create zadziałał (id 25); `/website_get` zwraca `source` (nazwa) + `discovery_source_id`;
+`/search` z `discovery_source_name` po dokładnej nazwie → wyniki. Dokument testowy, testowe
+źródło i tymczasowy klucz API usunięte.
+
+**Otwarte ryzyka:** (1) filtr `discovery_source_name` wymaga DOKŁADNEJ nazwy (case/diakrytyki
+luzem, ale „unknow.news" ≠ „https://unknow.news/") — parser Bielika może zwracać krótką formę;
+rozwiązanie (aliasy źródeł albo dopasowanie substring) to osobna decyzja produktowa, nie zakres
+rename'ów. (2) Lambda `url-add` (DynamoDB, zdekomisjonowana ścieżka) zapisuje w itemach pole
+`source` z nazwą — `dynamodb_sync.py` mapuje je przez `import_document` (obsłużone), ale
+historyczne itemy w DynamoDB zachowują starą semantykę pola.
+
+**PR/merge:** PR #307, branch `feat/search-etap-11d-discovery-source`.
+
+**Następny krok:** Etap 11, sesja E — `websites_embeddings`→`document_embeddings` +
+`website_id`→`document_id` (dotyka `shared/types.SearchResult`, obu frontendów i slack_bota).
+Potem 11f (`web_documents`→`documents`, osobna sesja) i 11g (pipeline/uuid/created_at + aliasy).
+
 ## 2026-07-19 — Etap 11, sesja C (normalizacja `project`→`collection_id`) — UKOŃCZONA
 
 **Zakres wykonany:** pierwszy podetap normalizacyjny: migracja Alembic `c4d5e6f7a8b9` tworzy

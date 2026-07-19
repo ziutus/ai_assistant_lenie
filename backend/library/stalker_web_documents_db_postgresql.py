@@ -223,10 +223,13 @@ class WebsitesDBPostgreSQL:
     def get_last_unknown_news(self) -> datetime.date | None:
         return self.get_last_by_source('https://unknow.news/')
 
-    def get_last_by_source(self, source: str) -> datetime.date | None:
-        """Return the most recent published_on for documents with a given source."""
+    def get_last_by_source(self, source_name: str) -> datetime.date | None:
+        """Return the most recent published_on for documents with a given discovery source."""
+        from library.db.models import DiscoverySource
         stmt = select(func.max(WebDocument.published_on)).where(
-            WebDocument.source == source,
+            WebDocument.discovery_source_id.in_(
+                select(DiscoverySource.id).where(DiscoverySource.name == source_name)
+            ),
         )
         return self.session.execute(stmt).scalar()
 

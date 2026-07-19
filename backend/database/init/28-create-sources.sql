@@ -1,13 +1,16 @@
--- Migration: sources lookup table + FK on web_documents.source
--- source = how the user DISCOVERED the content ("own", "unknow.news", "friend") —
--- a recommendation channel, NOT the content creator (that is web_documents.author).
--- FK references name (ADR-010); ON UPDATE CASCADE so renaming a source in the
--- lookup table rewrites all documents atomically (same pattern as model_fk in
--- 10-add-foreign-keys.sql).
+-- Migration: discovery_sources lookup table + FK on web_documents.discovery_source_id
+-- discovery source = how the user DISCOVERED the content ("own", "unknow.news",
+-- "friend") — a recommendation channel, NOT the content creator (that is
+-- web_documents.byline). Stage 11d of the search rebuild normalized the old
+-- name-based FK (sources.name, ON UPDATE CASCADE) into a plain integer FK;
+-- renaming a source now only edits its lookup row. The HTTP wire format keeps
+-- the NAME (`source` field) — resolution happens in the backend
+-- (WebDocument.set_discovery_source, auto-creates unknown names).
+-- The discovery_source_id column itself is created in 03-create-table.sql.
 
 \c "lenie-ai";
 
-CREATE TABLE IF NOT EXISTS public.sources (
+CREATE TABLE IF NOT EXISTS public.discovery_sources (
     id          SERIAL PRIMARY KEY,
     name        VARCHAR UNIQUE NOT NULL,
     description TEXT,
@@ -15,10 +18,10 @@ CREATE TABLE IF NOT EXISTS public.sources (
     is_active   BOOLEAN NOT NULL DEFAULT TRUE
 );
 
-INSERT INTO public.sources (name) VALUES ('own') ON CONFLICT (name) DO NOTHING;
+INSERT INTO public.discovery_sources (name) VALUES ('own') ON CONFLICT (name) DO NOTHING;
 
 ALTER TABLE public.web_documents
-    ADD CONSTRAINT fk_source FOREIGN KEY (source)
-    REFERENCES public.sources(name) ON UPDATE CASCADE;
+    ADD CONSTRAINT web_documents_discovery_source_id_fkey
+    FOREIGN KEY (discovery_source_id) REFERENCES public.discovery_sources(id);
 
-SELECT 'Table sources created' AS status;
+SELECT 'Table discovery_sources created' AS status;
