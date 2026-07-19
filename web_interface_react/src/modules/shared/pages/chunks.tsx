@@ -534,8 +534,8 @@ const Chunks = () => {
   const [authorPersons, setAuthorPersons] = React.useState<AuthorPerson[]>([]);
   const [authorInput, setAuthorInput] = React.useState("");
   const [savingAuthor, setSavingAuthor] = React.useState(false);
-  const [docDateFrom, setDocDateFrom] = React.useState<string | null>(null);
-  const [docDateFromSource, setDocDateFromSource] = React.useState<string | null>(null);
+  const [docPublishedOn, setDocPublishedOn] = React.useState<string | null>(null);
+  const [docPublishedOnMethod, setDocPublishedOnMethod] = React.useState<string | null>(null);
   const [extractingDateFor, setExtractingDateFor] = React.useState<number | null>(null);
   const [dateInput, setDateInput] = React.useState("");
   const [savingDate, setSavingDate] = React.useState(false);
@@ -670,9 +670,9 @@ const Chunks = () => {
       setDocAuthorSource(data.document?.author_source ?? null);
       setAuthorPersons(data.document?.author_persons ?? []);
       setAuthorInput(data.document?.author ?? "");
-      setDocDateFrom(data.document?.date_from ?? null);
-      setDocDateFromSource(data.document?.date_from_source ?? null);
-      setDateInput(data.document?.date_from ?? "");
+      setDocPublishedOn(data.document?.published_on ?? null);
+      setDocPublishedOnMethod(data.document?.published_on_method ?? null);
+      setDateInput(data.document?.published_on ?? "");
       setDocQuality(data.document?.quality ?? null);
       setDocCountries(data.document?.countries ?? []);
       setDocThematicTags(data.document?.thematic_tags ?? []);
@@ -717,7 +717,7 @@ const Chunks = () => {
         if (data.url) setDocUrl(data.url);
         if (data.author) { setDocAuthor(data.author); setAuthorInput(data.author); }
         if (data.author_source) setDocAuthorSource(data.author_source);
-        if (data.date_from) { setDocDateFrom(data.date_from); setDateInput(data.date_from); }
+        if (data.published_on) { setDocPublishedOn(data.published_on); setDateInput(data.published_on); }
         if (data.quality) setDocQuality(data.quality);
       } catch { /* analysis can still be configured manually */ }
     })();
@@ -1384,8 +1384,8 @@ const Chunks = () => {
   };
 
   // Detect the publication date from one specific chunk. Mirrors extractAuthorFromChunk —
-  // no position limit, saves directly to doc.date_from (backend commits it).
-  const extractDateFromChunk = async (chunkId: number) => {
+  // no position limit, saves directly to doc.published_on (backend commits it).
+  const extractPublicationDateFromChunk = async (chunkId: number) => {
     if (!selectedRun) return;
     setExtractingDateFor(chunkId);
     try {
@@ -1394,11 +1394,11 @@ const Chunks = () => {
         body: JSON.stringify({ chunk_ids: [chunkId] }),
       });
       const data = await r.json();
-      if (data.status === "success" && data.date_from) {
-        setDocDateFrom(data.date_from);
-        setDocDateFromSource(data.date_from_source ?? "llm");
-        setDateInput(data.date_from);
-        setInfo(`Ustawiono datę publikacji: ${data.date_from}`);
+      if (data.status === "success" && data.published_on) {
+        setDocPublishedOn(data.published_on);
+        setDocPublishedOnMethod(data.published_on_method ?? "llm");
+        setDateInput(data.published_on);
+        setInfo(`Ustawiono datę publikacji: ${data.published_on}`);
       }
       else if (data.status === "success") setError("Nie udało się rozpoznać daty publikacji w tym chunku");
       else setError("Błąd wykrywania daty publikacji: " + (data.message ?? ""));
@@ -1408,19 +1408,19 @@ const Chunks = () => {
 
   // Manually save the date typed into the calendar input next to the "Data
   // publikacji" badge — the reviewer copying a date off the original page,
-  // as opposed to extractDateFromChunk's LLM-based detection above.
-  const saveDateFrom = async () => {
+  // as opposed to extractPublicationDateFromChunk's LLM-based detection above.
+  const savePublishedOn = async () => {
     if (!id || !dateInput) return;
     setSavingDate(true);
     try {
-      const r = await fetch(`${apiUrl}/document/${id}/date_from`, {
-        method: "POST", headers, body: JSON.stringify({ date_from: dateInput }),
+      const r = await fetch(`${apiUrl}/document/${id}/published_on`, {
+        method: "POST", headers, body: JSON.stringify({ published_on: dateInput }),
       });
       const data = await r.json();
       if (data.status === "success") {
-        setDocDateFrom(data.date_from);
-        setDocDateFromSource(data.date_from_source ?? "manual");
-        setInfo(`Ustawiono datę publikacji: ${data.date_from}`);
+        setDocPublishedOn(data.published_on);
+        setDocPublishedOnMethod(data.published_on_method ?? "manual");
+        setInfo(`Ustawiono datę publikacji: ${data.published_on}`);
       } else setError("Błąd zapisu daty publikacji: " + (data.message ?? ""));
     } catch { setError("Błąd połączenia przy zapisie daty publikacji"); }
     finally { setSavingDate(false); }
@@ -1805,7 +1805,7 @@ const Chunks = () => {
               )}
               {runMode === "article" && (
                 <button
-                  onClick={() => extractDateFromChunk(chunk.id)}
+                  onClick={() => extractPublicationDateFromChunk(chunk.id)}
                   disabled={extractingDateFor === chunk.id}
                   title="Wykryj datę publikacji artykułu z tego chunka i zapisz ją w dokumencie"
                   style={{ padding: "2px 8px", border: "1px solid #cbd5e1", borderRadius: 4, background: "#fff", cursor: "pointer", fontSize: "0.82em", color: "#64748b" }}
@@ -2061,16 +2061,16 @@ const Chunks = () => {
           </span>
         )}
         {runMode === "article" && (
-          <span style={{ fontSize: "0.88em", padding: "3px 9px", borderRadius: 4, background: docDateFrom ? "#f3e8ff" : "#f1f5f9", color: docDateFrom ? "#6b21a8" : "#64748b", display: "inline-flex", alignItems: "center", gap: 6 }}>
-            Data publikacji: <strong>{docDateFrom || "nie wykryto"}</strong>
-            {docDateFrom && docDateFromSource && (
+          <span style={{ fontSize: "0.88em", padding: "3px 9px", borderRadius: 4, background: docPublishedOn ? "#f3e8ff" : "#f1f5f9", color: docPublishedOn ? "#6b21a8" : "#64748b", display: "inline-flex", alignItems: "center", gap: 6 }}>
+            Data publikacji: <strong>{docPublishedOn || "nie wykryto"}</strong>
+            {docPublishedOn && docPublishedOnMethod && (
               <span
-                title={docDateFromSource === "manual"
+                title={docPublishedOnMethod === "manual"
                   ? "Wpisana ręcznie przez recenzenta — automatyka jej nie znalazła"
                   : "Wykryta przez LLM z treści chunka"}
                 style={{ fontSize: "0.85em", opacity: 0.75 }}
               >
-                {docDateFromSource === "manual" ? "✍️" : "🤖"}
+                {docPublishedOnMethod === "manual" ? "✍️" : "🤖"}
               </span>
             )}
             <input
@@ -2081,7 +2081,7 @@ const Chunks = () => {
               style={{ fontSize: "0.9em", padding: "1px 3px", border: "1px solid #cbd5e1", borderRadius: 3 }}
             />
             <button
-              onClick={saveDateFrom}
+              onClick={savePublishedOn}
               disabled={!dateInput || savingDate}
               title="Zapisz wpisaną datę jako datę publikacji dokumentu"
               style={{ padding: "1px 7px", border: "1px solid #cbd5e1", borderRadius: 3, background: "#fff", cursor: "pointer", fontSize: "0.9em", color: "#64748b" }}

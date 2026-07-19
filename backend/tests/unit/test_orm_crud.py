@@ -220,7 +220,7 @@ class TestCreateFlow:
         doc.created_at = now
         doc.document_type = "webpage"
         doc.source = "manual"
-        doc.date_from = datetime.date(2026, 3, 1)
+        doc.published_on = datetime.date(2026, 3, 1)
         doc.original_id = "orig-123"
         doc.document_length = 500
         doc.chapter_list = "ch1;ch2"
@@ -250,7 +250,7 @@ class TestCreateFlow:
         assert d["created_at"] == "2026-03-01 12:00:00"
         assert d["document_type"] == "webpage"
         assert d["source"] == "manual"
-        assert d["date_from"] == datetime.date(2026, 3, 1)
+        assert d["published_on"] == datetime.date(2026, 3, 1)
         assert d["original_id"] == "orig-123"
         assert d["document_length"] == 500
         assert d["chapter_list"] == "ch1;ch2"
@@ -424,7 +424,7 @@ class TestDictCompatibility:
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
             "summary", "url", "language", "tags", "text", "paywall", "title",
-            "created_at", "document_type", "source", "date_from", "date_from_source", "original_id",
+            "created_at", "document_type", "source", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "document_state", "document_state_error",
             "text_raw", "transcript_job_id", "ai_summary_needed", "author",
             "author_source", "note", "uuid", "project", "text_md", "transcript_needed",
@@ -452,7 +452,7 @@ class TestDictCompatibility:
             created_at=now,
             document_type="link",
             source="import",
-            date_from=datetime.date(2026, 2, 20),
+            published_on=datetime.date(2026, 2, 20),
             original_id="orig-1",
             document_length=200,
             chapter_list="ch1",

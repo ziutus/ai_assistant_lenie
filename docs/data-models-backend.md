@@ -29,7 +29,7 @@ Primary document storage table.
 | `author` | text | — | Content creator (YouTube channel name, article author) — metadata about who made the content |
 | `note` | text | — | User notes |
 | `paywall` | boolean | DEFAULT false | Paywall indicator |
-| `date_from` | date | — | Publication date |
+| `published_on` | date | — | Publication date |
 | `created_at` | timestamp | DEFAULT CURRENT_TIMESTAMP | Row creation time |
 | `document_length` | integer | — | Text length in characters |
 | `chapter_list` | text | — | Chapter/section list (JSON format for videos) |
@@ -40,7 +40,7 @@ Primary document storage table.
 | `uuid` | varchar(100) | NOT NULL DEFAULT gen_random_uuid(), UNIQUE | Global document identifier (ADR-015) |
 | `project` | varchar(100) | — | Project/collection grouping |
 
-**Indexes**: document_type, document_state, created_at, url, project, source, date_from, paywall, ai_summary_needed
+**Indexes**: document_type, document_state, created_at, url, project, source, published_on, paywall, ai_summary_needed
 
 ### Table: websites_embeddings (8 columns)
 

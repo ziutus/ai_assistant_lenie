@@ -208,12 +208,12 @@ def normalize_year_range(start: int | None, end: int | None) -> tuple[int | None
 
 
 def normalize_date_range(
-    date_from: date | None, date_to: date | None
+    start: date | None, end: date | None
 ) -> tuple[date | None, date | None, str | None]:
     """Swap a reversed publication-date range; warning is None when unchanged."""
-    if date_from is not None and date_to is not None and date_from > date_to:
-        return date_to, date_from, f"Odwrócony zakres dat: zamieniono {date_from.isoformat()} i {date_to.isoformat()}."
-    return date_from, date_to, None
+    if start is not None and end is not None and start > end:
+        return end, start, f"Odwrócony zakres dat: zamieniono {start.isoformat()} i {end.isoformat()}."
+    return start, end, None
 
 
 def normalize_datetime_range(

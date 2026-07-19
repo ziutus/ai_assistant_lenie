@@ -728,7 +728,7 @@ def document_chapters(doc_id: int):
         "thematic_tags": thematic_tags,
         "synthesis": doc_run.synthesis if doc_run else None,
         "quality": getattr(doc, "quality", None),
-        "date_from": doc.date_from.isoformat() if doc.date_from else None,
+        "published_on": doc.published_on.isoformat() if doc.published_on else None,
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
     })
 
@@ -1266,8 +1266,8 @@ def get_run_chunks(run_id: int):
             "countries": doc_countries,
             "thematic_tags": doc_thematic_tags,
             "quality": getattr(doc, "quality", None) if doc else None,
-            "date_from": doc.date_from.isoformat() if doc and doc.date_from else None,
-            "date_from_source": getattr(doc, "date_from_source", None) if doc else None,
+            "published_on": doc.published_on.isoformat() if doc and doc.published_on else None,
+            "published_on_method": getattr(doc, "published_on_method", None) if doc else None,
         },
         "segments": segments,
         "lite": lite,
@@ -1689,7 +1689,7 @@ def extract_publication_date(run_id: int):
     chunk containing the dateline the reviewer identified. Without chunk_ids,
     uses the head+tail of the whole document's text (a publication date
     usually appears near the byline at the start, or in a source line at the
-    end). Saves the result directly to the document's date_from field,
+    end). Saves the result directly to the document's published_on field,
     always overwriting any existing value — this is a reviewer-triggered
     manual action, mirroring extract_author above.
     """
@@ -1737,35 +1737,35 @@ def extract_publication_date(run_id: int):
         return jsonify({"status": "error", "message": "LLM call failed"}), 500
 
     if not date_str:
-        return jsonify({"status": "success", "date_from": None})
+        return jsonify({"status": "success", "published_on": None})
 
     try:
         parsed_date = date.fromisoformat(date_str)
     except ValueError:
         logger.warning("extract_publication_date_info: unparseable date %r for run %d", date_str, run_id)
-        return jsonify({"status": "success", "date_from": None})
+        return jsonify({"status": "success", "published_on": None})
 
     doc = session.get(WebDocument, run.document_id)
     if doc is None:
         abort(404, f"Document {run.document_id} not found")
-    doc.date_from = parsed_date
-    doc.date_from_source = "llm"
+    doc.published_on = parsed_date
+    doc.published_on_method = "llm"
     try:
         session.commit()
     except Exception:
         session.rollback()
-        logger.exception("DB save failed for run %d date_from", run_id)
+        logger.exception("DB save failed for run %d published_on", run_id)
         return jsonify({"status": "error", "message": "DB save failed"}), 500
 
-    return jsonify({"status": "success", "date_from": parsed_date.isoformat(), "date_from_source": "llm"})
+    return jsonify({"status": "success", "published_on": parsed_date.isoformat(), "published_on_method": "llm"})
 
 
 # ---------------------------------------------------------------------------
-# API: POST /document/<doc_id>/date_from
+# API: POST /document/<doc_id>/published_on
 # ---------------------------------------------------------------------------
 
-@bp.route("/document/<int:doc_id>/date_from", methods=["POST"])
-def set_date_from(doc_id: int):
+@bp.route("/document/<int:doc_id>/published_on", methods=["POST"])
+def set_published_on(doc_id: int):
     """Manually set (or clear) the document's publication date.
 
     Companion to extract_publication_date above — this is the reviewer typing
@@ -1778,31 +1778,31 @@ def set_date_from(doc_id: int):
         abort(404, f"Document {doc_id} not found")
 
     data = request.get_json(silent=True) or {}
-    date_str = data.get("date_from")
+    date_str = data.get("published_on")
 
     if date_str is None:
-        doc.date_from = None
-        doc.date_from_source = None
+        doc.published_on = None
+        doc.published_on_method = None
     else:
         if not isinstance(date_str, str):
-            return jsonify({"status": "error", "message": "date_from must be a string or null"}), 400
+            return jsonify({"status": "error", "message": "published_on must be a string or null"}), 400
         try:
-            doc.date_from = date.fromisoformat(date_str)
+            doc.published_on = date.fromisoformat(date_str)
         except ValueError:
             return jsonify({"status": "error", "message": f"Invalid date {date_str!r}, expected YYYY-MM-DD"}), 400
-        doc.date_from_source = "manual"
+        doc.published_on_method = "manual"
 
     try:
         session.commit()
     except Exception:
         session.rollback()
-        logger.exception("DB save failed for document %d date_from", doc_id)
+        logger.exception("DB save failed for document %d published_on", doc_id)
         return jsonify({"status": "error", "message": "DB save failed"}), 500
 
     return jsonify({
         "status": "success",
-        "date_from": doc.date_from.isoformat() if doc.date_from else None,
-        "date_from_source": doc.date_from_source,
+        "published_on": doc.published_on.isoformat() if doc.published_on else None,
+        "published_on_method": doc.published_on_method,
     })
 
 
