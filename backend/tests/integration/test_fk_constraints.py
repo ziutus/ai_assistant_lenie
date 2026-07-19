@@ -186,7 +186,7 @@ class TestSourceFKConstraints:
 
 @skip_no_db
 class TestEmbeddingFKConstraints:
-    """Test FK constraints on websites_embeddings table."""
+    """Test FK constraints on document_embeddings table."""
 
     def test_invalid_model_raises_integrity_error(self):
         """INSERT embedding with invalid model should raise IntegrityError."""
@@ -204,7 +204,7 @@ class TestEmbeddingFKConstraints:
             # Try to insert embedding with invalid model
             try:
                 session.execute(sa_text(
-                    "INSERT INTO websites_embeddings (website_id, model, text) "
+                    "INSERT INTO document_embeddings (document_id, model, text) "
                     "VALUES (:doc_id, 'nonexistent-model', 'test text')"
                 ).bindparams(doc_id=doc_id))
                 session.commit()

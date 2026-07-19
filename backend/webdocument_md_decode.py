@@ -524,7 +524,7 @@ if __name__ == '__main__':
 
                 for embedd in embedds.embedding:
                     wb_db.embedding_add(
-                        website_id=doc.id,
+                        document_id=doc.id,
                         embedding=embedd["embedding"],
                         language=doc.language,
                         text=parts[embedd["index"]],

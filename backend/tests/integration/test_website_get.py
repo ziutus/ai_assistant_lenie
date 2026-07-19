@@ -15,7 +15,7 @@ class TestWebsiteGetById(unittest.TestCase):
         # Testowanie poprawnego przypadku z id dostępnym w danych
         response = self.app.get('/website_get?id=1')
         self.assertEqual(response.status_code, 200)
-        expected_response = {"website_id": 1, "name": "Example Website"}
+        expected_response = {"document_id": 1, "name": "Example Website"}
         self.assertEqual(response.json, expected_response)
 
     def test_website_get_by_id_missing_id(self):

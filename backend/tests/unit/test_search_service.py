@@ -109,12 +109,12 @@ class TestSearchSimilar:
         session = _make_session()
         service = SearchService(session)
 
-        expected_results = [{"website_id": 1, "similarity": 0.9}]
+        expected_results = [{"document_id": 1, "similarity": 0.9}]
         with patch.object(service.repo, "search_text", return_value=[]), \
              patch.object(service.repo, "get_similar", return_value=expected_results) as mock_similar:
             result = service.search_similar("test query")
 
-        assert result[0]["website_id"] == 1
+        assert result[0]["document_id"] == 1
         assert result[0]["similarity"] == 0.9
         assert result[0]["search_match"] == "semantic"
         mock_similar.assert_called_once_with(
@@ -229,7 +229,7 @@ class TestSearchSimilar:
         mock_get_embedding.return_value = _make_embedding_result(status="error", embedding=[])
         service = SearchService(_make_session())
         lexical = [{
-            "website_id": 9242,
+            "document_id": 9242,
             "title": "Wojna w Ukrainie. Rosyjscy szpiedzy przenieśli działalność do Japonii",
             "text": "Artykuł o rosyjskich agentach w Japonii.",
             "similarity": 0.0,
@@ -238,7 +238,7 @@ class TestSearchSimilar:
              patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
             result = service.search_similar("Rosyjscy szpiedzy w Japonii", limit=10)
 
-        assert result[0]["website_id"] == 9242
+        assert result[0]["document_id"] == 9242
         assert result[0]["search_match"] == "text"
         assert result[0]["similarity"] > 0.5
         mock_similar.assert_not_called()
@@ -336,10 +336,10 @@ class TestSearchByFilters:
     def test_delegates_to_repo_list_by_filters(self):
         service = SearchService(_make_session())
         filters = SearchFilters(document_types=("webpage",))
-        with patch.object(service.repo, "list_by_filters", return_value=[{"website_id": 1}]) as mock_list:
+        with patch.object(service.repo, "list_by_filters", return_value=[{"document_id": 1}]) as mock_list:
             result = service.search_by_filters(filters, limit=15, offset=5, sort=SearchSort.PUBLISHED_DESC)
 
-        assert result == [{"website_id": 1}]
+        assert result == [{"document_id": 1}]
         mock_list.assert_called_once_with(filters, limit=15, offset=5, sort=SearchSort.PUBLISHED_DESC)
 
     def test_defaults(self):
@@ -360,7 +360,7 @@ class TestSearchByFilters:
 
     def test_empty_filters_allowed_lists_everything(self):
         service = SearchService(_make_session())
-        with patch.object(service.repo, "list_by_filters", return_value=[{"website_id": 1}, {"website_id": 2}]):
+        with patch.object(service.repo, "list_by_filters", return_value=[{"document_id": 1}, {"document_id": 2}]):
             result = service.search_by_filters(SearchFilters())
 
         assert len(result) == 2
@@ -385,7 +385,7 @@ class TestStage8Search:
         get_embedding.return_value = _make_embedding_result()
         service = SearchService(_make_session())
         filters = SearchFilters(author_name="Jan")
-        merged = [{"website_id": n} for n in range(6)]
+        merged = [{"document_id": n} for n in range(6)]
         with patch.object(service.repo, "search_text", return_value=[]) as lexical, \
              patch.object(service.repo, "get_similar", return_value=[]) as semantic, \
              patch.object(service, "_merge_results", return_value=merged) as merge:
@@ -401,9 +401,9 @@ class TestStage8Search:
         config.return_value.require.return_value = "model"
         get_embedding.return_value = _make_embedding_result(status="error")
         service = SearchService(_make_session())
-        with patch.object(service.repo, "search_text", return_value=[{"website_id": 1}]), \
-             patch.object(service, "_merge_results", return_value=[{"website_id": 1}]):
-            assert service.search("temat", SearchFilters()) == [{"website_id": 1}]
+        with patch.object(service.repo, "search_text", return_value=[{"document_id": 1}]), \
+             patch.object(service, "_merge_results", return_value=[{"document_id": 1}]):
+            assert service.search("temat", SearchFilters()) == [{"document_id": 1}]
 
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
@@ -412,9 +412,9 @@ class TestStage8Search:
         get_embedding.return_value = _make_embedding_result()
         service = SearchService(_make_session())
         merged = [
-            {"website_id": 1, "published_on": None},
-            {"website_id": 2, "published_on": "2020-01-01"},
-            {"website_id": 3, "published_on": "2022-01-01"},
+            {"document_id": 1, "published_on": None},
+            {"document_id": 2, "published_on": "2020-01-01"},
+            {"document_id": 3, "published_on": "2022-01-01"},
         ]
         with patch.object(service.repo, "search_text", return_value=[]), \
              patch.object(service.repo, "get_similar", return_value=[]), \
@@ -422,4 +422,4 @@ class TestStage8Search:
             result = service.search(
                 "temat", SearchFilters(), sort=SearchSort.PUBLISHED_DESC,
             )
-        assert [item["website_id"] for item in result] == [3, 2, 1]
+        assert [item["document_id"] for item in result] == [3, 2, 1]

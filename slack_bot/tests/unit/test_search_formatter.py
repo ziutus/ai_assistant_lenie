@@ -37,7 +37,7 @@ class TestFormatSearchResults:
     def test_single_result(self):
         results = [
             {
-                "website_id": 1,
+                "document_id": 1,
                 "title": "K8s Security Guide",
                 "url": "https://example.com/k8s",
                 "document_type": "webpage",

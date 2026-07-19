@@ -42,14 +42,14 @@ Primary document storage table.
 
 **Indexes**: document_type, document_state, created_at, url, collection_id, discovery_source_id, published_on, paywall, ai_summary_needed
 
-### Table: websites_embeddings (8 columns)
+### Table: document_embeddings (8 columns)
 
 Vector embeddings for similarity search.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | serial | PK | Auto-increment identifier |
-| `website_id` | integer | FK → web_documents.id (CASCADE) | Document reference |
+| `document_id` | integer | FK → web_documents.id (CASCADE) | Document reference |
 | `langauge` | varchar(10) | — | Language code (intentional typo kept for compatibility) |
 | `text` | text | — | Processed text that was embedded |
 | `text_original` | text | — | Original text before translation |
@@ -57,7 +57,7 @@ Vector embeddings for similarity search.
 | `model` | varchar(100) | NOT NULL | Embedding model identifier |
 | `created_at` | timestamp | DEFAULT CURRENT_TIMESTAMP | Timestamp |
 
-**Indexes**: website_id, model, IVFFlat index on embedding (cosine similarity)
+**Indexes**: document_id, model, IVFFlat index on embedding (cosine similarity)
 
 ## Document Processing States
 
@@ -141,7 +141,7 @@ Adds database persistence via raw psycopg2:
 Static query methods:
 - `get_list(limit, offset, document_type, document_state, ...) → list[dict]`
 - `get_similar(embedding_vector, model, limit) → list[dict]` — pgvector cosine search
-- `get_next_to_correct(website_id, document_type, document_state) → [int, str]`
+- `get_next_to_correct(document_id, document_type, document_state) → [int, str]`
 - `get_count(document_type, document_state) → int`
 
 ### Supporting Models
