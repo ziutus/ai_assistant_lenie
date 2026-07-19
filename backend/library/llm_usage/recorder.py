@@ -124,6 +124,8 @@ def record_llm_usage(
     endpoint: str | None = None,
     request_id: str | None = None,
     search_interpretation_log_id: int | None = None,
+    document_id: int | None = None,
+    analysis_job_id: str | None = None,
     credits_used: Decimal | None = None,
     reported_cost: Decimal | None = None,
     reported_cost_currency: str | None = None,
@@ -158,9 +160,15 @@ def record_llm_usage(
         pricing = _active_pricing(session, provider, model)
         cost = _resolve_cost(pricing, reported, reported_cost_currency, prompt, completion)
 
+        if document_id is None and analysis_job_id is None:
+            from library.llm_usage.context import current_usage_context
+            document_id, analysis_job_id = current_usage_context()
+
         log = LlmUsageLog(
             request_id=request_id,
             search_interpretation_log_id=search_interpretation_log_id,
+            document_id=document_id,
+            analysis_job_id=analysis_job_id,
             operation=operation,
             provider=provider,
             model=model,
