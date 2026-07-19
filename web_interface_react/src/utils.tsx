@@ -14,7 +14,7 @@ interface ListItemSearchSimilarProps {
     document_type?: string | null;
     website_id: number;
     url: string;
-    date_from?: string | null;
+    published_on?: string | null;
     created_at?: string | null;
     chunk_id?: number | null;
     obsidian_note_paths?: string[];
@@ -82,8 +82,8 @@ const ListItemSearchSimilar = ({ item, query }: ListItemSearchSimilarProps) => {
               {MATCH_LABELS[match]}
             </span>
             {item.document_type && <span>{item.document_type}</span>}
-            {formatDocDate(item.date_from) && <span title="Data publikacji">📅 {formatDocDate(item.date_from)}</span>}
-            {!item.date_from && formatDocDate(item.created_at) && (
+            {formatDocDate(item.published_on) && <span title="Data publikacji">📅 {formatDocDate(item.published_on)}</span>}
+            {!item.published_on && formatDocDate(item.created_at) && (
               <span title="Data dodania do Lenie (brak daty publikacji)">📅 dodano {formatDocDate(item.created_at)}</span>
             )}
             <span>ID {item.website_id}</span>

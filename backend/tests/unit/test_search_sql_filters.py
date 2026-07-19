@@ -38,7 +38,7 @@ class TestPublishedOn:
         conditions = build_document_filters(SearchFilters(published_on_from=datetime.date(2020, 1, 1)))
         assert len(conditions) == 1
         sql = compiled(conditions[0])
-        assert "date_from" in sql.lower()
+        assert "published_on" in sql.lower()
         assert ">=" in sql
 
     def test_to_only(self):

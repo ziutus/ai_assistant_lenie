@@ -41,7 +41,7 @@ class FakeBookDoc:
     document_type = "text"
     url = None
     quality = None
-    date_from = None
+    published_on = None
     created_at = None
 
 
@@ -477,7 +477,7 @@ class FakeTranscriptDoc:
     document_type = "youtube"
     tags = None
     url = None
-    date_from = None
+    published_on = None
     created_at = None
 
 

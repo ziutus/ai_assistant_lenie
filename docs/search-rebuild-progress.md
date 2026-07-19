@@ -5,6 +5,50 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-19 — Etap 11, sesja A (inwentaryzacja + rename `date_from`→`published_on`) — UKOŃCZONA
+
+**Zakres wykonany:** (1) Pełna inwentaryzacja wszystkich rename'ów Etapu 11 w
+[search-rebuild-etap11-inwentaryzacja.md](search-rebuild-etap11-inwentaryzacja.md) — kluczowe
+ustalenie: fizyczny schemat NAS przesuwa `source` (ma już FK po nazwie do `sources(name)` z PR
+#247) i `project` (wymaga nowej tabeli `collections`) z podetapu 1 do podetapu 2 (normalizacja);
+podetap 1 to tylko `date_from` i `author` z polami provenance. Realna skala jest mniejsza niż
+wstępne pomiary (23 pliki backendu dla `date_from`, nie 79 — tamten pomiar łapał venvy).
+(2) Wykonany w całości pierwszy fizyczny rename: `date_from`→`published_on`,
+`date_from_source`→`published_on_method` — migracja Alembic `a2b3c4d5e6f7` (rename kolumn +
+indeksu `idx_web_documents_published_on` + constraintu `ck_web_documents_published_on_method`),
+ORM, repozytorium, serwisy, **API** (ścieżka `POST /document/<id>/published_on` zamiast
+`.../date_from`, klucze JSON w `/website_list`, `/website_similar`, `/search`, `/chunks`,
+`extract_publication_date`), init SQL, frontend React (`utils.tsx`, `read.tsx`, `chunks.tsx`),
+dokumentacja (CLAUDE.md database/library, data-models-backend, api-type-sync-strategy).
+`shared/`, app2, wtyczka Chrome i lambdy nie zawierały `date_from` — bez zmian. Przy okazji
+naprawiony blocker builda Dockera frontendu: test `SearchCriteriaEditor.test.tsx` ze Stage 9B
+używał `.at(-1)` (ES2022) przy `lib: ES2020` w tsconfig — build obrazu padał od #298 (lokalnie
+maskowane cachem tsc); zamienione na indeksowanie.
+
+**Testy uruchomione:** baseline PRZED zmianami: `tests/unit/` **1830 passed**; PO zmianach:
+**1830 passed**; `uvx ruff check backend/` czysty; Vitest **11 passed**; `npm run build` czysty.
+Migracja na NAS: upgrade → weryfikacja psql (kolumny/indeks/constraint przemianowane, 6861
+dokumentów z datą) → downgrade (stare nazwy wracają) → upgrade → head `a2b3c4d5e6f7`
+potwierdzony. Deploy backend+frontend na NAS bezpośrednio po migracji. E2E na NAS (tymczasowy
+klucz serwisowy, usunięty po testach): `/website_list` 200, `/search` filter-only z
+`published_on_from` + `sort=published_desc` zwraca wyniki z kluczem `published_on`,
+`/website_similar` hybrydowo 3 wyniki, `POST /document/8614/published_on` set→clear z pełnym
+przywróceniem stanu (null/null).
+
+**Otwarte ryzyka:** (1) `database/init/` nie tworzy kolumn `published_on_method`/`author_source`
+(dodane tylko migracją) — init SQL i Alembic są od dawna częściowo rozjechane; nie pogorszone tą
+sesją, ale do wyrównania najpóźniej w podetapie 11f. (2) Nazwa metody frontendu
+`extractPublicationDateFromChunk` zawiera „DateFrom" tylko jako zbieg słów — grep na `date_from`
+w aktywnym kodzie jest czysty. (3) Wartości `published_on_method` celowo bez zmian (manual/llm)
+— rozszerzenie o import/url/html to osobna decyzja produktowa, nie rename.
+
+**PR/merge:** PR #304, branch `feat/search-etap-11a-published-on`.
+
+**Następny krok:** Etap 11, sesja B — `author`→`byline` + `author_source`→`byline_method`
+(większy zasięg frontendowy: `shared/types`, editory, panel autora w `/chunks`; decyzja o
+`ner_exclusions.author` — rekomendacja: zostawić). Potem 11c (`collections`), 11d
+(`discovery_source_id` + wtyczka Chrome), 11e (embeddings), 11f (`documents`), 11g (pipeline).
+
 ## 2026-07-18 — Etap 10, iteracja 2 (eksperyment prompt v2) — ODRZUCONA, ETAP 10 POZOSTAJE NA PROMPCIE v1
 
 **Zakres wykonany:** Po baseline (iteracja 1) uruchomiono identyczny fixture 43 zapytań z

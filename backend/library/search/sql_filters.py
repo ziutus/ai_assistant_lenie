@@ -75,9 +75,9 @@ def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
         conditions.append(WebDocument.project == filters.collection_name)
 
     if filters.published_on_from is not None:
-        conditions.append(WebDocument.date_from >= filters.published_on_from)
+        conditions.append(WebDocument.published_on >= filters.published_on_from)
     if filters.published_on_to is not None:
-        conditions.append(WebDocument.date_from <= filters.published_on_to)
+        conditions.append(WebDocument.published_on <= filters.published_on_to)
 
     if filters.ingested_at_from is not None:
         conditions.append(WebDocument.created_at >= filters.ingested_at_from)

@@ -49,8 +49,8 @@ Backend wykonuje deterministyczne zapytania SQL i pgvector. Frontend pokazuje, j
 | `website_id` | `document_id` | FK i pole odpowiedzi |
 | `source` | `discovery_source_id` | kanał pozyskania, nie portal |
 | `sources` | `discovery_sources` | tabela słownikowa |
-| `date_from` | `published_on` | data publikacji |
-| `date_from_source` | `published_on_method` | manual/html/llm/import/url |
+| `date_from` | `published_on` | data publikacji — **zrobione fizycznie (Etap 11a, migracja `a2b3c4d5e6f7`)** |
+| `date_from_source` | `published_on_method` | manual/html/llm/import/url — **zrobione fizycznie (Etap 11a)**; dopuszczalne wartości na razie bez zmian (manual/llm) |
 | `author` | `byline` | tekst prezentacyjny; autorzy relacyjnie w `document_persons` |
 | `author_source` | `byline_method` | sposób ustalenia byline |
 | `project` | `collection_id` | kolekcja tematyczna |

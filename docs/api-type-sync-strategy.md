@@ -94,7 +94,7 @@ class WebDocumentResponse(BaseModel):
     created_at: str | None = None        # formatted "%Y-%m-%d %H:%M:%S"
     title_english: str | None = None
     summary_english: str | None = None
-    date_from: str | None = None
+    published_on: str | None = None
     original_id: str | None = None
     document_length: int | None = None
     transcript_job_id: str | None = None

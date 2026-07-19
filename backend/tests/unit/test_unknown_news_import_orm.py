@@ -149,26 +149,26 @@ class TestCheckExisting:
         assert result is None
 
     @patch("imports.feed_monitor.WebDocument")
-    def test_date_from_corrected_on_existing(self, MockWebDoc):
-        """date_from correction logic works (tested via cmd_import's inline code)."""
-        # The date_from correction is done in cmd_import, not in _import_entry.
+    def test_published_on_corrected_on_existing(self, MockWebDoc):
+        """published_on correction logic works (tested via cmd_import's inline code)."""
+        # The published_on correction is done in cmd_import, not in _import_entry.
         # Here we verify the building blocks: check_existing finds the doc,
-        # and the doc's date_from can be set.
+        # and the doc's published_on can be set.
         session = _make_session()
         existing = MagicMock()
         existing.id = 5
-        existing.date_from = None
+        existing.published_on = None
         MockWebDoc.get_by_url.return_value = existing
 
         from imports.feed_monitor import check_existing, parse_date
 
         doc = check_existing(session, "https://example.com/news-article")
         assert doc is not None
-        assert doc.date_from is None
+        assert doc.published_on is None
 
         # Simulate the correction logic from cmd_import
         pub_date = parse_date("2026-03-01")
-        if pub_date and not doc.date_from:
-            doc.date_from = pub_date
+        if pub_date and not doc.published_on:
+            doc.published_on = pub_date
 
-        assert doc.date_from == pub_date
+        assert doc.published_on == pub_date

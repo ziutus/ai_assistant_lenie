@@ -584,7 +584,7 @@ class TestImportDocument:
                 chapter_list=True,
                 summary="A summary",
                 paywall=True,
-                date_from="2026-01-01",
+                published_on="2026-01-01",
                 project="test-project",
                 ai_summary_needed=True,
             )
