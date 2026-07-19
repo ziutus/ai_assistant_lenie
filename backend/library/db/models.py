@@ -186,6 +186,19 @@ class Source(Base):
         return f"Source(id={self.id!r}, name={self.name!r}, is_active={self.is_active!r})"
 
 
+class Collection(Base):
+    """Thematic collection a document belongs to (ADR-017: 1:N via collection_id)."""
+
+    __tablename__ = "collections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+
 class Publisher(Base):
     """Portal which published a document (not its discovery/information source)."""
 
@@ -288,7 +301,9 @@ class WebDocument(Base):
         String(100), nullable=False, unique=True,
         server_default=func.gen_random_uuid(),
     )
-    project: Mapped[str | None] = mapped_column(String(100))
+    collection_id: Mapped[int | None] = mapped_column(
+        ForeignKey("collections.id", ondelete="SET NULL"), index=True,
+    )
     text_md: Mapped[str | None] = mapped_column(Text)
     # Raw LLM article extraction output (pre clean_article_text) — diagnostic only,
     # intentionally NOT exposed via dict()/API (used for article_cleaner regression checks).
@@ -478,7 +493,7 @@ class WebDocument(Base):
             "byline_method": self.byline_method,
             "note": self.note,
             "uuid": self.uuid,
-            "project": self.project,
+            "collection_id": self.collection_id,
             "text_md": self.text_md,
             "transcript_needed": self.transcript_needed,
             "reviewed_at": self.reviewed_at.isoformat() if self.reviewed_at else None,

@@ -29,17 +29,17 @@ def db_instance(mock_session):
     return WebsitesDBPostgreSQL(session=mock_session)
 
 
-class TestGetListProjectFilter:
-    """Tests for the project filter in get_list()."""
+class TestGetListCollectionFilter:
+    """Tests for the collection_id filter in get_list()."""
 
-    def test_project_filter_calls_session_execute(self, db_instance, mock_session):
-        """Verify that get_list with project filter calls session.execute."""
-        db_instance.get_list(project="my-project")
+    def test_collection_filter_calls_session_execute(self, db_instance, mock_session):
+        """Verify that get_list with collection_id filter calls session.execute."""
+        db_instance.get_list(collection_id=5)
         assert mock_session.execute.called
 
-    def test_project_filter_does_not_affect_other_filters(self, db_instance, mock_session):
-        """Verify that project filter works independently from document_state."""
-        db_instance.get_list(project="test-project", document_state="ALL")
+    def test_collection_filter_does_not_affect_other_filters(self, db_instance, mock_session):
+        """Verify that collection_id filter works independently from document_state."""
+        db_instance.get_list(collection_id=5, document_state="ALL")
         assert mock_session.execute.called
 
 
@@ -66,7 +66,7 @@ class TestGetListParameterization:
         db_instance.get_list(
             document_type="webpage",
             document_state="URL_ADDED",
-            project="my-project",
+            collection_id=5,
             search_in_documents="test",
         )
         assert mock_session.execute.called

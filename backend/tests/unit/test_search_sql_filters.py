@@ -25,11 +25,12 @@ class TestEmptyFilters:
 
 
 class TestCollectionName:
-    def test_maps_to_web_documents_project_exact_match(self):
+    def test_resolves_name_through_collections_lookup(self):
         conditions = build_document_filters(SearchFilters(collection_name="lenie"))
         assert len(conditions) == 1
         sql = compiled(conditions[0])
-        assert "project" in sql.lower()
+        assert "collection_id" in sql
+        assert "collections" in sql
         assert "lenie" in sql
 
 
@@ -177,5 +178,5 @@ class TestCombinedFilters:
         ))
         stmt = select(WebDocument.id).where(*conditions)
         sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-        assert "web_documents.project" in sql
+        assert "web_documents.collection_id" in sql
         assert "web_documents.document_type" in sql

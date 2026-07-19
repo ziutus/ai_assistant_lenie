@@ -46,7 +46,7 @@ class SearchService:
         self,
         text: str,
         limit: int = 3,
-        project: str | None = None,
+        collection_name: str | None = None,
         period_from: int | None = None,
         period_to: int | None = None,
     ) -> list[dict]:
@@ -73,13 +73,13 @@ class SearchService:
         period_from, period_to, _swap_warning = normalize_year_range(period_from, period_to)
         try:
             filters = SearchFilters(
-                collection_name=project or None,
+                collection_name=collection_name or None,
                 subject_period_start_year=period_from,
                 subject_period_end_year=period_to,
             )
         except SearchQueryValidationError:
-            logger.warning("Ignoring invalid search filters (project=%r, period=%r..%r)",
-                          project, period_from, period_to)
+            logger.warning("Ignoring invalid search filters (collection=%r, period=%r..%r)",
+                          collection_name, period_from, period_to)
             filters = SearchFilters()
 
         candidate_limit = max(limit * 5, 20)

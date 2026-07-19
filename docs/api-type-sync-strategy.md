@@ -7,7 +7,7 @@ Frontend (`shared/types/`) and backend (`backend/library/`) define the same data
 | Issue | Detail |
 |-------|--------|
 | **`id` type mismatch** | TS: `string`, Python: `int` (serial PK) |
-| **`WebDocument` missing fields** | Backend `.dict()` returns 13 fields not in TS interface (paywall, created_at, title_english, project, etc.) |
+| **`WebDocument` missing fields** | Backend `.dict()` returns 13 fields not in TS interface (paywall, created_at, title_english, collection_id, etc.) |
 | **`ListItem` field count** | TS: 5 fields, backend returns 10 |
 | **`SearchResult` field count** | TS: 5 fields, backend returns 12 |
 | **Enums as plain strings** | Backend has typed enums (`StalkerDocumentStatus`, `StalkerDocumentType`, `StalkerDocumentStatusError`), frontend treats them as `string` |
@@ -100,7 +100,7 @@ class WebDocumentResponse(BaseModel):
     transcript_job_id: str | None = None
     ai_summary_needed: bool | None = None
     uuid: str | None = None
-    project: str | None = None
+    collection_id: int | None = None
 
 class WebDocumentListItem(BaseModel):
     id: int
@@ -111,7 +111,7 @@ class WebDocumentListItem(BaseModel):
     document_state: str
     document_state_error: str | None = None
     note: str | None = None
-    project: str | None = None
+    collection_id: int | None = None
     uuid: str | None = None
 
 class SearchResultItem(BaseModel):
@@ -126,7 +126,7 @@ class SearchResultItem(BaseModel):
     embeddings_text_length: int | None = None
     title: str | None = None
     document_type: str | None = None
-    project: str | None = None
+    collection_id: int | None = None
 ```
 
 ```python
