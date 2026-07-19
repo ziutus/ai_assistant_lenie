@@ -16,6 +16,7 @@ pytest.importorskip("sqlalchemy")
 from library.db.models import LlmPricing, LlmUsageLog  # noqa: E402
 from library.llm_usage.pricing import CostStatus, PricingError  # noqa: E402
 from library.llm_usage.recorder import record_llm_usage  # noqa: E402
+from library.llm_usage.context import llm_usage_context  # noqa: E402
 
 BIELIK_PRICING = dict(
     pricing_version="cloudferro-bielik-2026-07-18",
@@ -59,6 +60,21 @@ def bielik_factory(**kwargs) -> FakeSessionFactory:
 
 
 class TestEstimatedCost:
+    def test_document_analysis_context_is_attached_to_usage_row(self):
+        factory = bielik_factory()
+        with llm_usage_context(document_id=9258, analysis_job_id="a" * 32):
+            record_llm_usage(
+                operation="chunk_analysis",
+                provider="cloudferro",
+                model="Bielik-11B-v3.0-Instruct",
+                prompt_tokens=100,
+                completion_tokens=25,
+                session_factory=factory,
+            )
+
+        assert factory.added[0].document_id == 9258
+        assert factory.added[0].analysis_job_id == "a" * 32
+
     def test_per_token_pricing_writes_estimated_cost(self):
         factory = bielik_factory()
         record = record_llm_usage(

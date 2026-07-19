@@ -159,16 +159,18 @@ def _analysis_worker() -> None:
 
         work = get_session()
         try:
+            from library.llm_usage.context import llm_usage_context
             service = DocumentAnalysisService(work)
-            run = service.create_run(
-                doc_id=doc_id,
-                model=params["model"], chunk_size=params["chunk_size"],
-                no_synthesis=params["no_synthesis"],
-                progress_fn=lambda msg: _update_analysis_job(job_id, progress=msg),
-                mode=params["mode"], split_only=params["split_only"],
-                preclean=params["preclean"], reclean=params["reclean"],
-                scope_chapter=params.get("scope_chapter"),
-            )
+            with llm_usage_context(document_id=doc_id, analysis_job_id=job_id):
+                run = service.create_run(
+                    doc_id=doc_id,
+                    model=params["model"], chunk_size=params["chunk_size"],
+                    no_synthesis=params["no_synthesis"],
+                    progress_fn=lambda msg: _update_analysis_job(job_id, progress=msg),
+                    mode=params["mode"], split_only=params["split_only"],
+                    preclean=params["preclean"], reclean=params["reclean"],
+                    scope_chapter=params.get("scope_chapter"),
+                )
             ad_count = sum(1 for chunk in run.chunks if chunk.type == "REKLAMA")
             _update_analysis_job(
                 job_id, status="done", run_id=run.id,
