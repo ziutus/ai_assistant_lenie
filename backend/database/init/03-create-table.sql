@@ -31,7 +31,7 @@ create table web_documents
     byline               text,
     note                 text,
     uuid                 varchar(100) NOT NULL DEFAULT gen_random_uuid(),
-    project              varchar(100),
+    collection_id        integer,
     text_md              text,
     transcript_needed    boolean     default false
 );
@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_web_documents_document_type ON public.web_documen
 CREATE INDEX IF NOT EXISTS idx_web_documents_document_state ON public.web_documents(document_state);
 CREATE INDEX IF NOT EXISTS idx_web_documents_created_at ON public.web_documents(created_at);
 CREATE INDEX IF NOT EXISTS idx_web_documents_url ON public.web_documents(url);
-CREATE INDEX IF NOT EXISTS idx_web_documents_project ON public.web_documents(project);
+CREATE INDEX IF NOT EXISTS idx_web_documents_collection_id ON public.web_documents(collection_id);
 CREATE INDEX IF NOT EXISTS idx_web_documents_source ON public.web_documents(source);
 CREATE INDEX IF NOT EXISTS idx_web_documents_published_on ON public.web_documents(published_on);
 CREATE INDEX IF NOT EXISTS idx_web_documents_paywall ON public.web_documents(paywall);

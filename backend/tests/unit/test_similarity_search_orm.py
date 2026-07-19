@@ -14,7 +14,7 @@ sa = pytest.importorskip("sqlalchemy")
 EXPECTED_KEYS = {
     "website_id", "text", "similarity", "id", "url", "language",
     "text_original", "websites_text_length", "embeddings_text_length",
-    "title", "document_type", "project", "published_on", "created_at",
+    "title", "document_type", "collection_id", "published_on", "created_at",
     "chunk_id", "obsidian_note_paths",
 }
 
@@ -33,7 +33,7 @@ def _make_row(**overrides):
         "embeddings_text_length": 50,
         "title": "Test Doc",
         "document_type": "webpage",
-        "project": "lenie",
+        "collection_id": 3,
         "published_on": None,
         "created_at": None,
         "chunk_id": None,
@@ -112,19 +112,20 @@ class TestGetSimilarORM:
         assert result is None
         session.execute.assert_not_called()
 
-    def test_project_filtering(self):
-        row = _make_row(project="my-project")
+    def test_collection_filtering(self):
+        from library.search.types import SearchFilters
+        row = _make_row(collection_id=3)
         repo, session = _create_repo_with_session([row])
 
-        result = repo.get_similar([0.1], model="m", project="my-project")
+        result = repo.get_similar([0.1], model="m",
+                                  filters=SearchFilters(collection_name="my-collection"))
 
         assert len(result) == 1
-        # Verify execute was called (with project filter in the statement)
+        # Verify execute was called (with the collection filter in the statement)
         session.execute.assert_called_once()
-        # The statement passed to execute should include project filter
         stmt = session.execute.call_args[0][0]
         compiled = str(stmt.compile(compile_kwargs={"literal_binds": False}))
-        assert "project" in compiled.lower()
+        assert "collection" in compiled.lower()
 
     def test_minimal_similarity_default(self):
         repo, session = _create_repo_with_session([])

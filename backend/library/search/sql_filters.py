@@ -19,6 +19,7 @@ from __future__ import annotations
 from sqlalchemy import ColumnElement, and_, exists, func, or_, select
 
 from library.db.models import (
+    Collection,
     DocumentPerson,
     DocumentTimePeriod,
     Person,
@@ -68,11 +69,13 @@ def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
         conditions.append(WebDocument.source.in_(discovery_source_names))
 
     if filters.collection_name is not None:
-        # Today collection_name maps onto the plain web_documents.project
-        # string column (ADR-017: project is 100% NULL, kept as the future
-        # 1:N collection_id) — an exact match, not a lookup-table resolution
-        # like author/publisher, so it's safe to filter on directly now.
-        conditions.append(WebDocument.project == filters.collection_name)
+        # Stage 11c: collections is a real lookup table and web_documents
+        # carries collection_id (ADR-017: 1:N). Exact name match resolved
+        # through a subquery — an unknown collection name matches nothing.
+        collection_ids = select(Collection.id).where(
+            Collection.name == filters.collection_name,
+        )
+        conditions.append(WebDocument.collection_id.in_(collection_ids))
 
     if filters.published_on_from is not None:
         conditions.append(WebDocument.published_on >= filters.published_on_from)

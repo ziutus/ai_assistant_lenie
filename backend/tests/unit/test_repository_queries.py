@@ -76,7 +76,7 @@ class TestGetList:
         mock_row.document_state = "URL_ADDED"
         mock_row.document_state_error = None
         mock_row.note = "note"
-        mock_row.project = "lenie"
+        mock_row.collection_id = 3
         mock_row.uuid = "uuid-1"
         mock_row.byline = None
         mock_row.obsidian_note_paths = None
@@ -96,7 +96,7 @@ class TestGetList:
         assert result[0]["document_state"] == "URL_ADDED"
         assert result[0]["document_state_error"] is None
         assert result[0]["note"] == "note"
-        assert result[0]["project"] == "lenie"
+        assert result[0]["collection_id"] == 3
         assert result[0]["uuid"] == "uuid-1"
         assert result[0]["chunks_missing_obsidian_notes"] == 0
         assert result[0]["chunks_with_obsidian_notes"] == 0
@@ -108,7 +108,7 @@ class TestGetList:
         mock_row = _make_row(
             id=1, url="https://example.com", title="Test", document_type="webpage",
             created_at=datetime.datetime(2026, 1, 15, 10, 30, 0), document_state="URL_ADDED",
-            document_state_error=None, note=None, project=None, uuid=None, author=None,
+            document_state_error=None, note=None, collection_id=None, uuid=None, byline=None,
             obsidian_note_paths=None,
         )
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
@@ -128,7 +128,7 @@ class TestGetList:
         mock_row = _make_row(
             id=1, url="https://example.com", title="Test", document_type="webpage",
             created_at=datetime.datetime(2026, 1, 15, 10, 30, 0), document_state="URL_ADDED",
-            document_state_error=None, note=None, project=None, uuid=None, author=None,
+            document_state_error=None, note=None, collection_id=None, uuid=None, byline=None,
             obsidian_note_paths=["02-wiedza/Kraje/Chiny.md"],
         )
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
@@ -154,7 +154,7 @@ class TestGetList:
         repo = _make_repo(session)
         session.execute.return_value.all.return_value = []
 
-        result = repo.get_list(document_type="link", document_state="URL_ADDED", project="lenie")
+        result = repo.get_list(document_type="link", document_state="URL_ADDED", collection_id=3)
 
         assert result == []
         session.execute.assert_called_once()
@@ -240,7 +240,7 @@ class TestGetList:
         mock_row.document_state = "ERROR"
         mock_row.document_state_error = "ERROR_DOWNLOAD"
         mock_row.note = None
-        mock_row.project = None
+        mock_row.collection_id = None
         mock_row.uuid = None
 
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))

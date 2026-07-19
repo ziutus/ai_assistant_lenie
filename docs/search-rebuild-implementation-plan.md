@@ -53,7 +53,7 @@ Backend wykonuje deterministyczne zapytania SQL i pgvector. Frontend pokazuje, j
 | `date_from_source` | `published_on_method` | manual/html/llm/import/url — **zrobione fizycznie (Etap 11a)**; dopuszczalne wartości na razie bez zmian (manual/llm) |
 | `author` | `byline` | tekst prezentacyjny; autorzy relacyjnie w `document_persons` — **zrobione fizycznie (Etap 11b, migracja `b3c4d5e6f7a8`)** |
 | `author_source` | `byline_method` | sposób ustalenia byline (manual/llm/html) — **zrobione fizycznie (Etap 11b)** |
-| `project` | `collection_id` | kolekcja tematyczna |
+| `project` | `collection_id` | kolekcja tematyczna — **zrobione fizycznie (Etap 11c, migracja `c4d5e6f7a8b9`)**: tabela `collections` + FK, kolumna `project` usunięta (była w 100% pusta, ADR-017) |
 | `created_at` dokumentu | `ingested_at` | data dodania do Lenie |
 | `uuid` | `public_id` | publiczny stabilny identyfikator |
 | `document_state` | `processing_status` | stan pipeline'u |

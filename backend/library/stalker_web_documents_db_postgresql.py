@@ -22,7 +22,8 @@ class WebsitesDBPostgreSQL:
     # ------------------------------------------------------------------
 
     def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL",
-                 search_in_documents=None, count=False, project=None, ai_summary_needed: bool = None,
+                 search_in_documents=None, count=False, collection_id: int | None = None,
+                 ai_summary_needed: bool = None,
                  start_id=None, only_missing_obsidian_notes: bool = False,
                  only_has_obsidian_notes: bool = False) -> list[dict[str, Any]]:
 
@@ -32,7 +33,7 @@ class WebsitesDBPostgreSQL:
             stmt = select(
                 WebDocument.id, WebDocument.url, WebDocument.title, WebDocument.document_type,
                 WebDocument.created_at, WebDocument.document_state, WebDocument.document_state_error,
-                WebDocument.note, WebDocument.project, WebDocument.uuid, WebDocument.byline,
+                WebDocument.note, WebDocument.collection_id, WebDocument.uuid, WebDocument.byline,
                 WebDocument.obsidian_note_paths,
             )
 
@@ -43,8 +44,8 @@ class WebsitesDBPostgreSQL:
         if document_state != "ALL":
             stmt = stmt.where(WebDocument.document_state == document_state)
 
-        if project:
-            stmt = stmt.where(WebDocument.project == project)
+        if collection_id:
+            stmt = stmt.where(WebDocument.collection_id == collection_id)
 
         if ai_summary_needed is not None:
             stmt = stmt.where(WebDocument.ai_summary_needed == ai_summary_needed)
@@ -100,7 +101,7 @@ class WebsitesDBPostgreSQL:
                 "document_state": row.document_state,
                 "document_state_error": row.document_state_error,
                 "note": row.note,
-                "project": row.project,
+                "collection_id": row.collection_id,
                 "uuid": row.uuid,
                 "byline": row.byline,
                 "obsidian_note_paths": row.obsidian_note_paths or [],
@@ -237,7 +238,7 @@ class WebsitesDBPostgreSQL:
     # Similarity search
     # ------------------------------------------------------------------
 
-    def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30, project=None,
+    def get_similar(self, embedding, model: str, limit: int = 3, minimal_similarity: float = 0.30,
                     filters=None) -> list[dict[str, Any]] | None:
         """Vector similarity search.
 
@@ -245,9 +246,9 @@ class WebsitesDBPostgreSQL:
         applied via ``library.search.sql_filters.build_document_filters()``
         — the SAME builder ``search_text()`` uses — before ``LIMIT``, so
         vector and lexical search share identical constraints (stage 6
-        acceptance criterion). ``project`` is a separate, older exact-match
-        filter kept for existing callers; the two combine with AND if both
-        are given.
+        acceptance criterion). Collection filtering goes through
+        ``filters.collection_name`` (stage 11c removed the legacy ``project``
+        kwarg — no HTTP caller ever passed it).
         """
 
         if minimal_similarity is None:
@@ -275,7 +276,7 @@ class WebsitesDBPostgreSQL:
                 func.length(WebsiteEmbedding.text).label("embeddings_text_length"),
                 WebDocument.title,
                 WebDocument.document_type,
-                WebDocument.project,
+                WebDocument.collection_id,
                 WebDocument.published_on,
                 WebDocument.created_at,
                 WebsiteEmbedding.chunk_id,
@@ -293,9 +294,6 @@ class WebsitesDBPostgreSQL:
             .order_by(WebsiteEmbedding.embedding.cosine_distance(embedding))
             .limit(limit)
         )
-
-        if project:
-            stmt = stmt.where(WebDocument.project == project)
 
         if filters is not None:
             from library.search.sql_filters import build_document_filters
@@ -315,7 +313,7 @@ class WebsitesDBPostgreSQL:
                 "embeddings_text_length": r.embeddings_text_length,
                 "title": r.title,
                 "document_type": r.document_type,
-                "project": r.project,
+                "collection_id": r.collection_id,
                 "published_on": r.published_on.isoformat() if r.published_on else None,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "chunk_id": r.chunk_id,
@@ -324,7 +322,7 @@ class WebsitesDBPostgreSQL:
             for r in rows
         ]
 
-    def search_text(self, query: str, limit: int = 20, project=None, filters=None) -> list[dict[str, Any]]:
+    def search_text(self, query: str, limit: int = 20, filters=None) -> list[dict[str, Any]]:
         """Return documents matching query words in user-visible text fields.
 
         This deliberately uses portable ILIKE predicates instead of requiring a
@@ -369,9 +367,6 @@ class WebsitesDBPostgreSQL:
             .order_by(WebDocument.created_at.desc(), WebDocument.id.desc())
             .limit(limit)
         )
-        if project:
-            stmt = stmt.where(WebDocument.project == project)
-
         if filters is not None:
             from library.search.sql_filters import build_document_filters
             stmt = stmt.where(*build_document_filters(filters))
@@ -396,7 +391,7 @@ class WebsitesDBPostgreSQL:
                 "embeddings_text_length": 0,
                 "title": doc.title,
                 "document_type": doc.document_type,
-                "project": doc.project,
+                "collection_id": doc.collection_id,
                 "published_on": doc.published_on.isoformat() if doc.published_on else None,
                 "created_at": doc.created_at.isoformat() if doc.created_at else None,
                 "chunk_id": None,
@@ -447,7 +442,7 @@ class WebsitesDBPostgreSQL:
                 "title": doc.title,
                 "url": doc.url,
                 "document_type": doc.document_type,
-                "project": doc.project,
+                "collection_id": doc.collection_id,
                 "language": doc.language,
                 "published_on": doc.published_on.isoformat() if doc.published_on else None,
                 "created_at": doc.created_at.isoformat() if doc.created_at else None,

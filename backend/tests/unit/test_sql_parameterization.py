@@ -102,14 +102,15 @@ class TestGetSimilarParameterization:
         params = compiled.params
         assert any("DROP TABLE" in str(v) for v in params.values())
 
-    def test_malicious_project_string(self, db_instance):
-        """Project name with SQL injection payload should be safe."""
+    def test_malicious_collection_string(self, db_instance):
+        """Collection name with SQL injection payload should be safe."""
+        from library.search.types import SearchFilters
         embedding = [0.1] * 10
         result = db_instance.get_similar(
             embedding=embedding,
             model="text-embedding-ada-002",
             limit=3,
-            project="'; DELETE FROM web_documents; --",
+            filters=SearchFilters(collection_name="'; DELETE FROM web_documents; --"),
         )
         assert result == []
         db_instance.session.execute.assert_called_once()

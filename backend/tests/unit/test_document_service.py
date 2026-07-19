@@ -585,7 +585,7 @@ class TestImportDocument:
                 summary="A summary",
                 paywall=True,
                 published_on="2026-01-01",
-                project="test-project",
+                collection_id=7,
                 ai_summary_needed=True,
             )
 
@@ -597,7 +597,7 @@ class TestImportDocument:
         assert doc.uuid == "abc-123"
         assert doc.summary == "A summary"
         assert doc.paywall is True
-        assert doc.project == "test-project"
+        assert doc.collection_id == 7
 
     def test_import_skip_if_exists_false(self):
         """Import with skip_if_exists=False creates even if URL exists."""

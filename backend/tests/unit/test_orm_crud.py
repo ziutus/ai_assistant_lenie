@@ -232,7 +232,7 @@ class TestCreateFlow:
         doc.byline = "Author Name"
         doc.note = "A note"
         doc.uuid = "uuid-123"
-        doc.project = "lenie"
+        doc.collection_id = 3
         doc.text_md = "# Markdown"
         doc.transcript_needed = False
         doc.reviewed_at = reviewed
@@ -262,7 +262,7 @@ class TestCreateFlow:
         assert d["byline"] == "Author Name"
         assert d["note"] == "A note"
         assert d["uuid"] == "uuid-123"
-        assert d["project"] == "lenie"
+        assert d["collection_id"] == 3
         assert d["text_md"] == "# Markdown"
         assert d["transcript_needed"] is False
         assert d["reviewed_at"] == "2026-03-15T09:00:00"
@@ -427,7 +427,7 @@ class TestDictCompatibility:
             "created_at", "document_type", "source", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "document_state", "document_state_error",
             "text_raw", "transcript_job_id", "ai_summary_needed", "byline",
-            "byline_method", "note", "uuid", "project", "text_md", "transcript_needed",
+            "byline_method", "note", "uuid", "collection_id", "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths", "video_description",
             "quality",
         }
@@ -464,7 +464,7 @@ class TestDictCompatibility:
             byline="Auth",
             note="Note",
             uuid="s3-1",
-            project="lenie",
+            collection_id=3,
             text_md="md",
             transcript_needed=True,
         )
