@@ -223,8 +223,8 @@ class WebsitesDBPostgreSQL:
         return self.get_last_by_source('https://unknow.news/')
 
     def get_last_by_source(self, source: str) -> datetime.date | None:
-        """Return the most recent date_from for documents with a given source."""
-        stmt = select(func.max(WebDocument.date_from)).where(
+        """Return the most recent published_on for documents with a given source."""
+        stmt = select(func.max(WebDocument.published_on)).where(
             WebDocument.source == source,
         )
         return self.session.execute(stmt).scalar()
@@ -276,7 +276,7 @@ class WebsitesDBPostgreSQL:
                 WebDocument.title,
                 WebDocument.document_type,
                 WebDocument.project,
-                WebDocument.date_from,
+                WebDocument.published_on,
                 WebDocument.created_at,
                 WebsiteEmbedding.chunk_id,
                 DocumentChunk.obsidian_note_paths,
@@ -316,7 +316,7 @@ class WebsitesDBPostgreSQL:
                 "title": r.title,
                 "document_type": r.document_type,
                 "project": r.project,
-                "date_from": r.date_from.isoformat() if r.date_from else None,
+                "published_on": r.published_on.isoformat() if r.published_on else None,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "chunk_id": r.chunk_id,
                 "obsidian_note_paths": r.obsidian_note_paths or [],
@@ -397,7 +397,7 @@ class WebsitesDBPostgreSQL:
                 "title": doc.title,
                 "document_type": doc.document_type,
                 "project": doc.project,
-                "date_from": doc.date_from.isoformat() if doc.date_from else None,
+                "published_on": doc.published_on.isoformat() if doc.published_on else None,
                 "created_at": doc.created_at.isoformat() if doc.created_at else None,
                 "chunk_id": None,
                 "obsidian_note_paths": doc.obsidian_note_paths or [],
@@ -425,8 +425,8 @@ class WebsitesDBPostgreSQL:
         from library.search.types import SearchSort
 
         sort_columns = {
-            SearchSort.PUBLISHED_DESC: WebDocument.date_from.desc(),
-            SearchSort.PUBLISHED_ASC: WebDocument.date_from.asc(),
+            SearchSort.PUBLISHED_DESC: WebDocument.published_on.desc(),
+            SearchSort.PUBLISHED_ASC: WebDocument.published_on.asc(),
             SearchSort.INGESTED_DESC: WebDocument.created_at.desc(),
             SearchSort.RELEVANCE: WebDocument.created_at.desc(),
         }
@@ -449,7 +449,7 @@ class WebsitesDBPostgreSQL:
                 "document_type": doc.document_type,
                 "project": doc.project,
                 "language": doc.language,
-                "date_from": doc.date_from.isoformat() if doc.date_from else None,
+                "published_on": doc.published_on.isoformat() if doc.published_on else None,
                 "created_at": doc.created_at.isoformat() if doc.created_at else None,
                 "similarity": None,
                 "search_match": "filters_only",

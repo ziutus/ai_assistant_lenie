@@ -155,7 +155,7 @@ class TestWebDocumentColumns:
     EXPECTED_COLUMNS = {
         "id", "summary", "url", "language", "tags", "text",
         "paywall", "title", "created_at", "document_type",
-        "source", "publisher_id", "date_from", "date_from_source", "original_id", "document_length",
+        "source", "publisher_id", "published_on", "published_on_method", "original_id", "document_length",
         "chapter_list", "document_state", "document_state_error",
         "text_raw", "transcript_job_id", "ai_summary_needed",
         "author", "author_source", "note", "uuid", "project", "text_md",
@@ -220,8 +220,8 @@ class TestWebDocumentColumnTypes:
         fk = list(col.foreign_keys)[0]
         assert fk.target_fullname == "document_status_error_types.name"
 
-    def test_date_from_is_date(self):
-        col = _get_column(WebDocument, "date_from")
+    def test_published_on_is_date(self):
+        col = _get_column(WebDocument, "published_on")
         assert isinstance(col.type, Date)
 
     def test_document_length_is_integer(self):
@@ -516,7 +516,7 @@ class TestDict:
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
             "summary", "url", "language", "tags", "text", "paywall", "title",
-            "created_at", "document_type", "source", "date_from", "date_from_source", "original_id",
+            "created_at", "document_type", "source", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "document_state",
             "document_state_error", "text_raw", "transcript_job_id",
             "ai_summary_needed", "author", "author_source", "note", "uuid", "project",

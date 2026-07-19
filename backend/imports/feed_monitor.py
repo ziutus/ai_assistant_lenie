@@ -580,10 +580,10 @@ def cmd_import(feeds: list[dict], since: Optional[str] = None, source_filter: Op
             existing = check_existing(session, entry["url"])
             if existing:
                 existing_count += 1
-                # Correct missing date_from (like the old unknow.news importer did)
+                # Correct missing published_on (like the old unknow.news importer did)
                 pub_date = parse_date(entry["published"])
-                if pub_date and not existing.date_from:
-                    existing.date_from = pub_date
+                if pub_date and not existing.published_on:
+                    existing.published_on = pub_date
                     try:
                         session.commit()
                     except SQLAlchemyError:
@@ -742,7 +742,7 @@ def _import_entry(session, feed_config: dict, entry: dict, service=None) -> str:
 
     pub_date = parse_date(entry["published"])
     if pub_date:
-        metadata["date_from"] = pub_date
+        metadata["published_on"] = pub_date
 
     try:
         if service is None:

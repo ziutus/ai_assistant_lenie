@@ -112,7 +112,7 @@ class TestWebsiteGet:
             "next_id": 43, "next_type": "link", "previous_id": 41, "previous_type": "webpage",
             "summary": None, "language": "en", "tags": None, "text": "content",
             "paywall": False, "created_at": "2026-03-09 10:00:00",
-            "document_type": "webpage", "source": None, "date_from": None,
+            "document_type": "webpage", "source": None, "published_on": None,
             "original_id": None, "document_length": None, "chapter_list": None,
             "document_state": "URL_ADDED", "document_state_error": "NONE",
             "text_raw": None, "transcript_job_id": None, "ai_summary_needed": False,

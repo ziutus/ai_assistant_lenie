@@ -281,7 +281,7 @@ class DocumentService:
             skip_if_exists: If True, return (existing, "skipped") for duplicate URLs
             **metadata: Any WebDocument attribute (title, language, source, note,
                         uuid, chapter_list, created_at, text, text_raw, summary,
-                        paywall, date_from, project, ai_summary_needed)
+                        paywall, published_on, project, ai_summary_needed)
 
         Returns:
             (WebDocument, "added") for new documents
