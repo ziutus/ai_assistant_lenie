@@ -277,11 +277,11 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
   const handleGetEntryToReview = async (website: any) => {
     console.log("Getting first document ID to correct");
     setIsLoading(true);
-    let website_id: string | number;
+    let document_id: string | number;
     if (website.id > 0) {
-      website_id = website.id;
+      document_id = website.id;
     } else {
-      website_id = 1;
+      document_id = 1;
     }
 
     try {
@@ -289,7 +289,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
         `${apiUrl}/website_get_next_to_correct`,
         {
           params: {
-            id: website_id,
+            id: document_id,
           },
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
@@ -420,12 +420,12 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     }
   };
 
-  const handleYoutubeRetryCaptions = async (website_id: string | number) => {
+  const handleYoutubeRetryCaptions = async (document_id: string | number) => {
     setIsLoading(true);
     try {
       const response = await axios.post(
         `${apiUrl}/website_youtube_retry_captions`,
-        { id: website_id },
+        { id: document_id },
         {
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
@@ -447,16 +447,16 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     }
   };
 
-  const handleDeleteDocument = async (website_id: string) => {
+  const handleDeleteDocument = async (document_id: string) => {
     setIsLoading(true);
-    console.log("Deleting document with id: " + website_id);
+    console.log("Deleting document with id: " + document_id);
 
     try {
       const response = await axios.get(
         `${apiUrl}/website_delete`,
         {
           params: {
-            id: website_id,
+            id: document_id,
           },
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",

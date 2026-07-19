@@ -236,7 +236,7 @@ def client(monkeypatch, run_with_sections):
             return _ScalarsResult([run])
         if "document_topic_sections" in sql:
             return _ScalarsResult(sections)
-        return _ScalarsResult([101])  # websites_embeddings: embedded chunk ids
+        return _ScalarsResult([101])  # document_embeddings: embedded chunk ids
 
     fake_session.scalars.side_effect = route_scalars
     monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)

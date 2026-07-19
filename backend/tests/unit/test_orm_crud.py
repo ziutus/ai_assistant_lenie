@@ -19,7 +19,7 @@ from library.db.models import (
     WebpageDocument,
     TextMessageDocument,
     TextDocument,
-    WebsiteEmbedding,
+    DocumentEmbedding,
 )
 
 
@@ -327,17 +327,17 @@ class TestDeleteCascade:
         assert "merge" in rel.cascade
 
     def test_fk_ondelete_cascade(self):
-        """Verify FK ondelete=CASCADE on WebsiteEmbedding.website_id."""
+        """Verify FK ondelete=CASCADE on DocumentEmbedding.document_id."""
         from sqlalchemy import inspect as sa_inspect
-        mapper = sa_inspect(WebsiteEmbedding)
-        website_id_col = mapper.columns["website_id"]
-        fk = list(website_id_col.foreign_keys)[0]
+        mapper = sa_inspect(DocumentEmbedding)
+        document_id_col = mapper.columns["document_id"]
+        fk = list(document_id_col.foreign_keys)[0]
         assert fk.ondelete == "CASCADE"
 
     def test_delete_document_with_embedding(self):
         """Verify session.delete(doc) can be called with embeddings attached (interface contract)."""
         doc = _make_doc()
-        emb = WebsiteEmbedding(website_id=42, model="test-model", text="chunk")
+        emb = DocumentEmbedding(document_id=42, model="test-model", text="chunk")
         doc.embeddings = [emb]
 
         session = MagicMock()

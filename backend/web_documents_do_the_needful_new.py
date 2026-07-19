@@ -148,7 +148,7 @@ def step2a_process_youtube(session, websites):
             logging.error(f"Error processing document {movie[0]}: {e}")
 
 
-def _process_webpage_from_s3(session, s3, website_id: int, url: str, doc_uuid: str, cache_dir: str):
+def _process_webpage_from_s3(session, s3, document_id: int, url: str, doc_uuid: str, cache_dir: str):
     """Fetch webpage text/HTML from S3, convert to cleaned markdown, store on the document.
 
     Cache files are written in the {cache_dir}/{doc_id}/{doc_id}.ext convention
@@ -171,14 +171,14 @@ def _process_webpage_from_s3(session, s3, website_id: int, url: str, doc_uuid: s
     obj = s3.get_object(Bucket=bucket, Key=f"{doc_uuid}.html")
     content = obj['Body'].read().decode('utf-8')
 
-    doc_cache_dir = os.path.join(cache_dir, str(website_id))
+    doc_cache_dir = os.path.join(cache_dir, str(document_id))
     os.makedirs(doc_cache_dir, exist_ok=True)
-    page_file = os.path.join(doc_cache_dir, f"{website_id}.html")
+    page_file = os.path.join(doc_cache_dir, f"{document_id}.html")
     with open(page_file, 'w', encoding="utf-8") as file:
         file.write(content)
 
     # MarkItDown -> html2markdown -> html2text cascade; writes {id}.md to cache
-    markdown_text = prepare_markdown(website_id, web_doc, doc_cache_dir)
+    markdown_text = prepare_markdown(document_id, web_doc, doc_cache_dir)
     if not markdown_text:
         print('[ERROR] markdown conversion failed')
         return
@@ -186,7 +186,7 @@ def _process_webpage_from_s3(session, s3, website_id: int, url: str, doc_uuid: s
     md_cleaned = webpage_text_clean(url, markdown_text)
     web_doc.text_md = md_cleaned
 
-    md_clean_file = os.path.join(doc_cache_dir, f"{website_id}_clean.md")
+    md_clean_file = os.path.join(doc_cache_dir, f"{document_id}_clean.md")
     with open(md_clean_file, 'w', encoding="utf-8") as file:
         file.write(md_cleaned)
 
@@ -202,7 +202,7 @@ def _process_webpage_from_s3(session, s3, website_id: int, url: str, doc_uuid: s
     session.commit()
 
 
-def _process_webpage_live(session, website_id: int, url: str):
+def _process_webpage_live(session, document_id: int, url: str):
     """Download a webpage/link live, parse it and store the result on the document."""
     from library.models.stalker_document_status import StalkerDocumentStatus
     from library.models.stalker_document_status_error import StalkerDocumentStatusError
@@ -247,7 +247,7 @@ def _process_webpage_live(session, website_id: int, url: str):
 
     except Exception as e:
         session.rollback()
-        print(f"Error processing website {website_id}: {url}")
+        print(f"Error processing website {document_id}: {url}")
         print(str(e))
         return
 
@@ -268,13 +268,13 @@ def step2b_download_webpages(session, websites, boto_session, cache_dir):
     s3 = boto_session.client('s3')
 
     for website_nb, page_info in enumerate(website_data, 1):
-        website_id = int(page_info[0])
+        document_id = int(page_info[0])
         url = page_info[1]
         website_document_type = page_info[2]
         doc_uuid = page_info[3]
         progress = round((website_nb / websites_data_len) * 100)
 
-        print(f"Processing >{website_document_type}< {website_id} ({website_nb} from {websites_data_len} {progress}%):"
+        print(f"Processing >{website_document_type}< {document_id} ({website_nb} from {websites_data_len} {progress}%):"
               f" {url}")
 
         try:
@@ -284,13 +284,13 @@ def step2b_download_webpages(session, websites, boto_session, cache_dir):
 
             if website_document_type == "webpage" and doc_uuid:
                 try:
-                    _process_webpage_from_s3(session, s3, website_id, url, doc_uuid, cache_dir)
+                    _process_webpage_from_s3(session, s3, document_id, url, doc_uuid, cache_dir)
                 except Exception as e:
                     session.rollback()
                     print(f'An error occurred: {e}')
                     continue
             else:
-                _process_webpage_live(session, website_id, url)
+                _process_webpage_live(session, document_id, url)
         finally:
             print(".")
 
@@ -327,11 +327,11 @@ def step4_mark_transcribed_ready(session, websites):
     transcription_done = websites.get_transcription_done()
     transcription_done_len = len(transcription_done)
     print(f"entries to correct: {transcription_done_len}")
-    for website_nb, website_id in enumerate(transcription_done, 1):
+    for website_nb, document_id in enumerate(transcription_done, 1):
         progress = round((website_nb / transcription_done_len) * 100)
-        web_doc = WebDocument.get_by_id(session, website_id)
+        web_doc = WebDocument.get_by_id(session, document_id)
         if web_doc is None:
-            logging.error(f"Document {website_id} not found")
+            logging.error(f"Document {document_id} not found")
             continue
         print(f"Processing  {web_doc.id} {web_doc.document_type} ({website_nb} from {transcription_done_len} "
               f"{progress}%): "
@@ -414,10 +414,10 @@ def step5_create_embeddings(session, websites):
     embedding_needed_len = len(embedding_needed)
     print(f"entries to analyze: {embedding_needed_len}")
     search_service = SearchService(session)
-    for website_nb, website_id in enumerate(embedding_needed, 1):
-        doc = WebDocument.get_by_id(session, website_id)
+    for website_nb, document_id in enumerate(embedding_needed, 1):
+        doc = WebDocument.get_by_id(session, document_id)
         if doc is None:
-            logging.error(f"Document {website_id} not found")
+            logging.error(f"Document {document_id} not found")
             continue
         progress = round((website_nb / embedding_needed_len) * 100)
         print(f"Working on ID:{doc.id} ({website_nb} from {embedding_needed_len} {progress}%)"

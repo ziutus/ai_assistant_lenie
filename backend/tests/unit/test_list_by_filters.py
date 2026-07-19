@@ -138,7 +138,7 @@ class TestListByFiltersResultShape:
         repo, _ = _repo_with_mock_session([doc])
         result = repo.list_by_filters(SearchFilters())
         assert result == [{
-            "website_id": 42,
+            "document_id": 42,
             "title": "Artykuł",
             "url": "https://x.pl/a",
             "document_type": "webpage",

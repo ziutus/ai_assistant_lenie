@@ -65,7 +65,7 @@ class TestParseEndpoint:
 class TestSearchEndpoint:
     def test_explicit_filter_only_skips_parser_and_calls_service(self, client):
         service = MagicMock()
-        service.search.return_value = [{"website_id": 7}]
+        service.search.return_value = [{"document_id": 7}]
         with patch.object(routes, "SearchService", return_value=service):
             with patch.object(routes, "parse_search_query") as parser:
                 with patch.object(routes, "get_scoped_session", return_value=MagicMock()):
@@ -77,7 +77,7 @@ class TestSearchEndpoint:
         assert response.status_code == 200
         body = response.get_json()
         assert body["status"] == "explicit"
-        assert body["results"] == [{"website_id": 7}]
+        assert body["results"] == [{"document_id": 7}]
         assert body["pagination"] == {"limit": 5, "offset": 0, "returned": 1}
         parser.assert_not_called()
         args, kwargs = service.search.call_args

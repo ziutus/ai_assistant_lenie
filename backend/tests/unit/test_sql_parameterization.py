@@ -90,7 +90,7 @@ class TestGetSimilarParameterization:
         embedding = [0.1] * 10
         result = db_instance.get_similar(
             embedding=embedding,
-            model="'; DROP TABLE websites_embeddings; --",
+            model="'; DROP TABLE document_embeddings; --",
             limit=3,
         )
         assert result == []

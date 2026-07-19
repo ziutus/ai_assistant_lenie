@@ -681,7 +681,7 @@ def action_save_to_db(doc, article: dict, session) -> bool:
             doc.language = 'pl'
 
         wb_db.embedding_add(
-            website_id=doc.id,
+            document_id=doc.id,
             embedding=emb_result.embedding,
             language=doc.language,
             text=text_only,

@@ -12,7 +12,7 @@ interface ListItemSearchSimilarProps {
     text?: string;
     title?: string | null;
     document_type?: string | null;
-    website_id: number;
+    document_id: number;
     url: string;
     published_on?: string | null;
     created_at?: string | null;
@@ -74,8 +74,8 @@ const ListItemSearchSimilar = ({ item, query }: ListItemSearchSimilarProps) => {
     <article style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "16px 18px", background: "#fff", boxShadow: "0 1px 2px rgba(15,23,42,.04)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
         <div style={{ minWidth: 0 }}>
-          <a href={`/read/${item.website_id}`} style={{ color: "#0f4c81", fontSize: "1.05rem", fontWeight: 700, lineHeight: 1.35, textDecoration: "none" }}>
-            <Highlight text={item.title || `Dokument #${item.website_id}`} query={query} />
+          <a href={`/read/${item.document_id}`} style={{ color: "#0f4c81", fontSize: "1.05rem", fontWeight: 700, lineHeight: 1.35, textDecoration: "none" }}>
+            <Highlight text={item.title || `Dokument #${item.document_id}`} query={query} />
           </a>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 7, color: "#64748b", fontSize: ".76rem" }}>
             <span style={{ background: match === "text" ? "#ecfccb" : match === "hybrid" ? "#e0f2fe" : "#f1f5f9", color: "#334155", borderRadius: 999, padding: "2px 8px" }}>
@@ -86,7 +86,7 @@ const ListItemSearchSimilar = ({ item, query }: ListItemSearchSimilarProps) => {
             {!item.published_on && formatDocDate(item.created_at) && (
               <span title="Data dodania do Lenie (brak daty publikacji)">📅 dodano {formatDocDate(item.created_at)}</span>
             )}
-            <span>ID {item.website_id}</span>
+            <span>ID {item.document_id}</span>
             {item.chunk_id != null && <span>chunk #{item.chunk_id}</span>}
           </div>
         </div>
@@ -98,8 +98,8 @@ const ListItemSearchSimilar = ({ item, query }: ListItemSearchSimilarProps) => {
       {snippet && <p style={{ margin: "13px 0", color: "#334155", lineHeight: 1.58, fontSize: ".91rem" }}><Highlight text={snippet} query={query} /></p>}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", fontSize: ".82rem" }}>
-        <a href={`/read/${item.website_id}`} style={{ fontWeight: 600 }}>📖 Czytaj</a>
-        {item.chunk_id != null && <a href={`/chunks/${item.website_id}`}>🧩 Otwórz chunki</a>}
+        <a href={`/read/${item.document_id}`} style={{ fontWeight: 600 }}>📖 Czytaj</a>
+        {item.chunk_id != null && <a href={`/chunks/${item.document_id}`}>🧩 Otwórz chunki</a>}
         <a href={item.url} target="_blank" rel="noopener noreferrer">↗ Źródło</a>
         {notes.map(notePath => (
           <a key={notePath} href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>

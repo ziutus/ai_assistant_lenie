@@ -1,4 +1,4 @@
-"""Unit tests for ORM models (WebDocument, WebsiteEmbedding, STI subclasses,
+"""Unit tests for ORM models (WebDocument, DocumentEmbedding, STI subclasses,
 lookup table models).
 
 Tests model structure, column mappings, STI configuration, domain methods,
@@ -20,7 +20,7 @@ from library.db.models import (  # noqa: E402
     DocumentType,
     EmbeddingModel,
     WebDocument,
-    WebsiteEmbedding,
+    DocumentEmbedding,
     LinkDocument,
     YouTubeDocument,
     MovieDocument,
@@ -575,42 +575,42 @@ class TestDict:
 
 
 # ---------------------------------------------------------------------------
-# 5.11: WebsiteEmbedding has all 9 columns
+# 5.11: DocumentEmbedding has all 9 columns
 # ---------------------------------------------------------------------------
 
-class TestWebsiteEmbeddingColumns:
+class TestDocumentEmbeddingColumns:
     EXPECTED_COLUMNS = {
-        "id", "website_id", "language", "text",
+        "id", "document_id", "language", "text",
         "text_original", "embedding", "model", "created_at", "chunk_id",
     }
 
     def test_column_count(self):
-        assert len(_column_names(WebsiteEmbedding)) == 9
+        assert len(_column_names(DocumentEmbedding)) == 9
 
     def test_all_column_names(self):
-        assert _column_names(WebsiteEmbedding) == self.EXPECTED_COLUMNS
+        assert _column_names(DocumentEmbedding) == self.EXPECTED_COLUMNS
 
 
 # ---------------------------------------------------------------------------
-# 5.12: WebsiteEmbedding FK targets
+# 5.12: DocumentEmbedding FK targets
 # ---------------------------------------------------------------------------
 
-class TestWebsiteEmbeddingFK:
-    def test_website_id_fk_target(self):
-        col = _get_column(WebsiteEmbedding, "website_id")
+class TestDocumentEmbeddingFK:
+    def test_document_id_fk_target(self):
+        col = _get_column(DocumentEmbedding, "document_id")
         fk = list(col.foreign_keys)[0]
         assert fk.target_fullname == "web_documents.id"
 
-    def test_website_id_not_nullable(self):
-        col = _get_column(WebsiteEmbedding, "website_id")
+    def test_document_id_not_nullable(self):
+        col = _get_column(DocumentEmbedding, "document_id")
         assert not col.nullable
 
     def test_model_not_nullable(self):
-        col = _get_column(WebsiteEmbedding, "model")
+        col = _get_column(DocumentEmbedding, "model")
         assert not col.nullable
 
     def test_model_fk_target(self):
-        col = _get_column(WebsiteEmbedding, "model")
+        col = _get_column(DocumentEmbedding, "model")
         fk = list(col.foreign_keys)[0]
         assert fk.target_fullname == "embedding_models.name"
 
@@ -638,7 +638,7 @@ class TestEmbeddingsRelationship:
         assert rel.passive_deletes is True
 
     def test_back_populates(self):
-        mapper = inspect(WebsiteEmbedding).mapper
+        mapper = inspect(DocumentEmbedding).mapper
         assert "document" in mapper.relationships
 
 
@@ -660,7 +660,7 @@ class TestLookupRelationships:
         assert "document_state_error_ref" in mapper.relationships
 
     def test_model_ref_exists_on_embedding(self):
-        mapper = inspect(WebsiteEmbedding).mapper
+        mapper = inspect(DocumentEmbedding).mapper
         assert "model_ref" in mapper.relationships
 
     def test_document_type_ref_target(self):
@@ -679,7 +679,7 @@ class TestLookupRelationships:
         assert rel.mapper.class_ is DocumentStatusErrorType
 
     def test_model_ref_target(self):
-        mapper = inspect(WebsiteEmbedding).mapper
+        mapper = inspect(DocumentEmbedding).mapper
         rel = mapper.relationships["model_ref"]
         assert rel.mapper.class_ is EmbeddingModel
 
@@ -742,4 +742,4 @@ class TestBaseImport:
         assert issubclass(WebDocument, Base)
 
     def test_website_embedding_uses_engine_base(self):
-        assert issubclass(WebsiteEmbedding, Base)
+        assert issubclass(DocumentEmbedding, Base)

@@ -4,9 +4,9 @@
 
 \c "lenie-ai";
 
-ALTER TABLE public.websites_embeddings
+ALTER TABLE public.document_embeddings
     ADD COLUMN IF NOT EXISTS chunk_id INTEGER REFERENCES public.document_chunks(id) ON DELETE SET NULL;
 
-CREATE INDEX IF NOT EXISTS idx_websites_embeddings_chunk_id ON public.websites_embeddings(chunk_id);
+CREATE INDEX IF NOT EXISTS idx_document_embeddings_chunk_id ON public.document_embeddings(chunk_id);
 
-SELECT 'Column chunk_id added to websites_embeddings' AS status;
+SELECT 'Column chunk_id added to document_embeddings' AS status;

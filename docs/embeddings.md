@@ -8,12 +8,12 @@ Embeddings are numerical vector representations of text, used for semantic simil
 
 ## Database Schema
 
-Embeddings are stored in the `public.websites_embeddings` table:
+Embeddings are stored in the `public.document_embeddings` table:
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `website_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
 | `langauge` | `varchar(10)` | Language of the embedded text (note: legacy typo, kept for compatibility) |
 | `text` | `text` | Text that was actually embedded (may be translated to English) |
 | `text_original` | `text` | Original text before translation (if applicable) |
@@ -56,11 +56,11 @@ Each embedding model produces vectors of a different dimension. pgvector indexes
 
 ```sql
 CREATE INDEX idx_emb_ada002
-  ON public.websites_embeddings USING hnsw ((embedding::vector(1536)) vector_cosine_ops)
+  ON public.document_embeddings USING hnsw ((embedding::vector(1536)) vector_cosine_ops)
   WHERE model = 'text-embedding-ada-002';
 
 CREATE INDEX idx_emb_bge_m3
-  ON public.websites_embeddings USING hnsw ((embedding::vector(1024)) vector_cosine_ops)
+  ON public.document_embeddings USING hnsw ((embedding::vector(1024)) vector_cosine_ops)
   WHERE model = 'BAAI/bge-m3';
 ```
 
@@ -81,7 +81,7 @@ When adding support for a new embedding model:
 2. Add a new HNSW partial index in [`backend/database/init/04-create-table.sql`](../backend/database/init/04-create-table.sql):
    ```sql
    CREATE INDEX IF NOT EXISTS idx_emb_<short_name>
-     ON public.websites_embeddings USING hnsw (embedding vector_cosine_ops)
+     ON public.document_embeddings USING hnsw (embedding vector_cosine_ops)
      WHERE model = '<model-name>';
    ```
 3. For existing databases, run the `CREATE INDEX` statement manually.
@@ -91,7 +91,7 @@ When adding support for a new embedding model:
 Similarity search uses **cosine distance** (`<=>` operator in pgvector). The query:
 
 1. Converts user's search text into an embedding vector (using the same model as stored embeddings)
-2. Finds rows in `websites_embeddings` where `model` matches
+2. Finds rows in `document_embeddings` where `model` matches
 3. Ranks results by `1 - (embedding <=> query_vector)` (cosine similarity, 1.0 = identical)
 4. Filters out results below a minimum similarity threshold (default: 0.30)
 5. Joins with `web_documents` to return document metadata

@@ -35,7 +35,7 @@ from library.db.engine import get_scoped_session
 from library.db.models import (
     CitedPublication, DocumentAnalysisJob, DocumentAnalysisRun, DocumentChunk, DocumentCitedPublication,
     DocumentRemovedLine, DocumentTopicSection,
-    WebDocument, WebsiteEmbedding,
+    WebDocument, DocumentEmbedding,
 )
 
 logger = logging.getLogger(__name__)
@@ -1181,8 +1181,8 @@ def get_run_chunks(run_id: int):
     embedded_chunk_ids: set[int] = set()
     if chunk_ids:
         embedded_chunk_ids = set(session.scalars(
-            select(WebsiteEmbedding.chunk_id)
-            .where(WebsiteEmbedding.chunk_id.in_(chunk_ids))
+            select(DocumentEmbedding.chunk_id)
+            .where(DocumentEmbedding.chunk_id.in_(chunk_ids))
             .distinct()
         ).all())
 
