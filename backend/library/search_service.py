@@ -221,14 +221,14 @@ class SearchService:
         merged: dict[int, dict] = {}
 
         for item in semantic:
-            website_id = item["website_id"]
+            document_id = item["document_id"]
             candidate = dict(item)
             candidate["semantic_similarity"] = float(item.get("similarity") or 0.0)
             candidate["text_score"] = 0.0
-            merged[website_id] = candidate
+            merged[document_id] = candidate
 
         for item in lexical:
-            website_id = item["website_id"]
+            document_id = item["document_id"]
             title = self._normalise(item.get("title"))
             # Score against the full document text (text_for_scoring), not the
             # 1000-char display snippet (text) -- a match past the first 1000
@@ -254,13 +254,13 @@ class SearchService:
             text_score = min(1.0, 0.70 * coverage + 0.35 * title_coverage
                              + 0.20 * phrase_in_body + 0.35 * phrase_in_title)
 
-            candidate = merged.get(website_id, dict(item))
+            candidate = merged.get(document_id, dict(item))
             candidate["text_score"] = text_score
             candidate.setdefault("semantic_similarity", 0.0)
             # Prefer semantic chunk text/snippet when one exists.
             for key, value in item.items():
                 candidate.setdefault(key, value)
-            merged[website_id] = candidate
+            merged[document_id] = candidate
 
         for candidate in merged.values():
             semantic_score = candidate.get("semantic_similarity", 0.0)

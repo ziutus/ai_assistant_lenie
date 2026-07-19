@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import Float, and_, delete, func, literal, or_, select
 from sqlalchemy.orm import Session
 
-from library.db.models import DocumentAnalysisRun, DocumentChunk, WebDocument, WebsiteEmbedding
+from library.db.models import DocumentAnalysisRun, DocumentChunk, WebDocument, DocumentEmbedding
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.models.stalker_document_type import StalkerDocumentType
@@ -203,9 +203,9 @@ class WebsitesDBPostgreSQL:
         rows = self.session.execute(stmt).all()
         return [row[0] for row in rows]
 
-    def get_next_to_correct(self, website_id: int, document_type: str = "ALL",
+    def get_next_to_correct(self, document_id: int, document_type: str = "ALL",
                             document_state: str = "ALL") -> tuple[int, str] | int:
-        stmt = select(WebDocument.id, WebDocument.document_type).where(WebDocument.id > website_id)
+        stmt = select(WebDocument.id, WebDocument.document_type).where(WebDocument.id > document_id)
 
         if document_type != "ALL":
             stmt = stmt.where(WebDocument.document_type == document_type)
@@ -261,40 +261,40 @@ class WebsitesDBPostgreSQL:
 
         similarity = (
             literal(1) - func.cast(
-                WebsiteEmbedding.embedding.cosine_distance(embedding),
+                DocumentEmbedding.embedding.cosine_distance(embedding),
                 Float,
             )
         ).label("similarity")
 
         stmt = (
             select(
-                WebsiteEmbedding.website_id,
-                WebsiteEmbedding.text,
+                DocumentEmbedding.document_id,
+                DocumentEmbedding.text,
                 similarity,
-                WebsiteEmbedding.id,
+                DocumentEmbedding.id,
                 WebDocument.url,
                 WebDocument.language,
-                WebsiteEmbedding.text_original,
+                DocumentEmbedding.text_original,
                 func.length(WebDocument.text).label("websites_text_length"),
-                func.length(WebsiteEmbedding.text).label("embeddings_text_length"),
+                func.length(DocumentEmbedding.text).label("embeddings_text_length"),
                 WebDocument.title,
                 WebDocument.document_type,
                 WebDocument.collection_id,
                 WebDocument.published_on,
                 WebDocument.created_at,
-                WebsiteEmbedding.chunk_id,
+                DocumentEmbedding.chunk_id,
                 DocumentChunk.obsidian_note_paths,
             )
-            .outerjoin(WebDocument, WebsiteEmbedding.website_id == WebDocument.id)
-            .outerjoin(DocumentChunk, WebsiteEmbedding.chunk_id == DocumentChunk.id)
-            .where(WebsiteEmbedding.model == model)
+            .outerjoin(WebDocument, DocumentEmbedding.document_id == WebDocument.id)
+            .outerjoin(DocumentChunk, DocumentEmbedding.chunk_id == DocumentChunk.id)
+            .where(DocumentEmbedding.model == model)
             .where(
                 literal(1) - func.cast(
-                    WebsiteEmbedding.embedding.cosine_distance(embedding),
+                    DocumentEmbedding.embedding.cosine_distance(embedding),
                     Float,
                 ) > minimal_similarity
             )
-            .order_by(WebsiteEmbedding.embedding.cosine_distance(embedding))
+            .order_by(DocumentEmbedding.embedding.cosine_distance(embedding))
             .limit(limit)
         )
 
@@ -305,7 +305,7 @@ class WebsitesDBPostgreSQL:
         rows = self.session.execute(stmt).all()
         return [
             {
-                "website_id": r.website_id,
+                "document_id": r.document_id,
                 "text": r.text,
                 "similarity": float(r.similarity),
                 "id": r.id,
@@ -377,7 +377,7 @@ class WebsitesDBPostgreSQL:
         documents = self.session.scalars(stmt).all()
         return [
             {
-                "website_id": doc.id,
+                "document_id": doc.id,
                 "text": (doc.text or "")[:1000],
                 # Full (untruncated) text for SearchService._merge_results() coverage
                 # scoring only -- popped before the API response is returned. A
@@ -441,7 +441,7 @@ class WebsitesDBPostgreSQL:
         documents = self.session.scalars(stmt).all()
         return [
             {
-                "website_id": doc.id,
+                "document_id": doc.id,
                 "title": doc.title,
                 "url": doc.url,
                 "document_type": doc.document_type,
@@ -459,9 +459,9 @@ class WebsitesDBPostgreSQL:
     # Embedding CRUD
     # ------------------------------------------------------------------
 
-    def embedding_add(self, website_id, embedding, language, text, text_original, model, chunk_id=None) -> None:
-        emb = WebsiteEmbedding(
-            website_id=website_id,
+    def embedding_add(self, document_id, embedding, language, text, text_original, model, chunk_id=None) -> None:
+        emb = DocumentEmbedding(
+            document_id=document_id,
             language=language,
             text=text,
             text_original=text_original,
@@ -471,10 +471,10 @@ class WebsitesDBPostgreSQL:
         )
         self.session.add(emb)
 
-    def embedding_delete(self, website_id: int, model: str) -> None:
-        stmt = delete(WebsiteEmbedding).where(
-            WebsiteEmbedding.website_id == website_id,
-            WebsiteEmbedding.model == model,
+    def embedding_delete(self, document_id: int, model: str) -> None:
+        stmt = delete(DocumentEmbedding).where(
+            DocumentEmbedding.document_id == document_id,
+            DocumentEmbedding.model == model,
         )
         self.session.execute(stmt)
 
@@ -489,14 +489,14 @@ class WebsitesDBPostgreSQL:
         stmt = (
             select(WebDocument.id)
             .outerjoin(
-                WebsiteEmbedding,
+                DocumentEmbedding,
                 and_(
-                    WebDocument.id == WebsiteEmbedding.website_id,
-                    WebsiteEmbedding.model == embedding_model,
+                    WebDocument.id == DocumentEmbedding.document_id,
+                    DocumentEmbedding.model == embedding_model,
                 ),
             )
             .where(
-                WebsiteEmbedding.website_id.is_(None),
+                DocumentEmbedding.document_id.is_(None),
                 WebDocument.document_state.in_([
                     StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
                     StalkerDocumentStatus.EMBEDDING_EXIST.name,

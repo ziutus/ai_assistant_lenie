@@ -160,7 +160,7 @@ obu frontendach, wtyczce i większości backendu). Zmierzyć przed właściwą s
 2. **11b**: `author`→`byline` + `author_source`→`byline_method` — **WYKONANE** (migracja `b3c4d5e6f7a8`, wdrożone na NAS; `ner_exclusions.author` zostaje bez zmian — osobna tabela z własnym kontraktem).
 3. **11c**: `project`→`collection_id` — **WYKONANE** (migracja `c4d5e6f7a8b9`: tabela `collections` + FK, kolumna `project` usunięta; legacy kwarg `project` usunięty z repozytorium — żaden endpoint HTTP go nie przyjmował).
 4. **11d**: `source`→`discovery_source_id` + `sources`→`discovery_sources` — **WYKONANE** (migracja `d5e6f7a8b9c0` z bezstratną migracją danych 9110 dokumentów; format wire zachowuje NAZWĘ pod `source` — wtyczka Chrome bez zmian; hook `before_flush` zastąpiony jawnym `WebDocument.set_discovery_source()`).
-5. **11e**: `websites_embeddings`→`document_embeddings` + `website_id`→`document_id`.
+5. **11e**: `websites_embeddings`→`document_embeddings` + `website_id`→`document_id` — **WYKONANE** (migracja `e6f7a8b9c0d1`: tabela+kolumna+indeksy+constrainty; klucze API `document_id` w wynikach wyszukiwania; `shared/types.SearchResult`, react, slack_bot fixture).
 6. **11f**: `web_documents`→`documents` + FK.
 7. **11g**: `document_state`→`processing_status`, `created_at`→`ingested_at`, `uuid`→`public_id`, `website_similar`→usunięcie (po Etapie 12?), usunięcie aliasów zgodności.
 

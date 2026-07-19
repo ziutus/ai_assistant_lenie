@@ -6,7 +6,7 @@ import pytest
 
 sa = pytest.importorskip("sqlalchemy")
 
-from library.db.models import WebDocument, WebsiteEmbedding  # noqa: E402
+from library.db.models import WebDocument, DocumentEmbedding  # noqa: E402
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL  # noqa: E402
 
 
@@ -33,9 +33,9 @@ def repo(mock_session):
 
 class TestEmbeddingAddORM:
     def test_embedding_add_creates_website_embedding(self, repo, mock_session):
-        """Verify session.add() is called with correct WebsiteEmbedding attributes."""
+        """Verify session.add() is called with correct DocumentEmbedding attributes."""
         repo.embedding_add(
-            website_id=42,
+            document_id=42,
             embedding=[0.1, 0.2, 0.3],
             language="en",
             text="some text",
@@ -45,8 +45,8 @@ class TestEmbeddingAddORM:
 
         mock_session.add.assert_called_once()
         emb = mock_session.add.call_args[0][0]
-        assert isinstance(emb, WebsiteEmbedding)
-        assert emb.website_id == 42
+        assert isinstance(emb, DocumentEmbedding)
+        assert emb.document_id == 42
         assert emb.language == "en"
         assert emb.text == "some text"
         assert emb.text_original == "original text"
@@ -56,7 +56,7 @@ class TestEmbeddingAddORM:
     def test_embedding_add_does_not_commit(self, repo, mock_session):
         """Repository methods never commit — caller controls transactions."""
         repo.embedding_add(
-            website_id=1,
+            document_id=1,
             embedding=[0.5],
             language="pl",
             text="t",
@@ -68,7 +68,7 @@ class TestEmbeddingAddORM:
     def test_embedding_add_with_none_optional_fields(self, repo, mock_session):
         """Embedding add works when optional fields are None."""
         repo.embedding_add(
-            website_id=10,
+            document_id=10,
             embedding=[1.0],
             language=None,
             text=None,
@@ -89,8 +89,8 @@ class TestEmbeddingAddORM:
 
 class TestEmbeddingDeleteORM:
     def test_embedding_delete_executes_delete_statement(self, repo, mock_session):
-        """Verify session.execute() is called with DELETE filtered by website_id AND model."""
-        repo.embedding_delete(website_id=42, model="text-embedding-ada-002")
+        """Verify session.execute() is called with DELETE filtered by document_id AND model."""
+        repo.embedding_delete(document_id=42, model="text-embedding-ada-002")
 
         mock_session.execute.assert_called_once()
         stmt = mock_session.execute.call_args[0][0]
@@ -98,22 +98,22 @@ class TestEmbeddingDeleteORM:
         compiled = stmt.compile()
         sql_text = str(compiled)
         assert "DELETE" in sql_text.upper()
-        assert "websites_embeddings" in sql_text
+        assert "document_embeddings" in sql_text
 
     def test_embedding_delete_does_not_commit(self, repo, mock_session):
         """Repository methods never commit."""
-        repo.embedding_delete(website_id=1, model="m")
+        repo.embedding_delete(document_id=1, model="m")
         mock_session.commit.assert_not_called()
 
     def test_embedding_delete_filters_by_model(self, repo, mock_session):
         """Only embeddings for the specified model should be targeted."""
-        repo.embedding_delete(website_id=5, model="specific-model")
+        repo.embedding_delete(document_id=5, model="specific-model")
 
         stmt = mock_session.execute.call_args[0][0]
         compiled = stmt.compile()
-        # The WHERE clause should contain both website_id and model filters
+        # The WHERE clause should contain both document_id and model filters
         sql_text = str(compiled)
-        assert "website_id" in sql_text
+        assert "document_id" in sql_text
         assert "model" in sql_text
 
 
@@ -206,21 +206,21 @@ class TestDualModeConstructor:
 
 class TestRelationshipAppend:
     def test_embedding_relationship_fk(self):
-        """WebsiteEmbedding created via relationship sets correct FK reference."""
-        emb = WebsiteEmbedding(
-            website_id=99,
+        """DocumentEmbedding created via relationship sets correct FK reference."""
+        emb = DocumentEmbedding(
+            document_id=99,
             language="en",
             text="chunk",
             text_original="original chunk",
             embedding=[0.1, 0.2],
             model="test-model",
         )
-        assert emb.website_id == 99
+        assert emb.document_id == 99
         assert emb.model == "test-model"
 
     def test_website_embedding_has_document_relationship(self):
-        """WebsiteEmbedding model has 'document' relationship attribute."""
-        mapper = sa.inspect(WebsiteEmbedding)
+        """DocumentEmbedding model has 'document' relationship attribute."""
+        mapper = sa.inspect(DocumentEmbedding)
         rel_names = [r.key for r in mapper.relationships]
         assert "document" in rel_names
 

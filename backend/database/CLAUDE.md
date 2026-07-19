@@ -10,11 +10,11 @@ database/
     ├── 01-create-database.sql                    # Creates the "lenie-ai" database
     ├── 02-create-extension.sql                   # Installs pgvector extension
     ├── 03-create-table.sql                       # Creates web_documents table + indexes
-    ├── 04-create-table.sql                       # Creates websites_embeddings table + indexes
+    ├── 04-create-table.sql                       # Creates document_embeddings table + indexes
     ├── 05-migrate-ready-for-translation.sql
     ├── 06-drop-english-columns.sql
     ├── 07-add-transcript-needed.sql
-    ├── 08-fix-language-typo.sql                  # websites_embeddings.langauge → language
+    ├── 08-fix-language-typo.sql                  # document_embeddings.langauge → language
     ├── 09-create-lookup-tables.sql
     ├── 10-add-foreign-keys.sql
     ├── 11-create-transcription-log.sql
@@ -22,7 +22,7 @@ database/
     ├── 13-create-analysis-tables.sql             # document_analysis_runs, document_chunks, document_topic_sections
     ├── 14-add-speakers-to-analysis-runs.sql
     ├── 15-add-analysis-run-workflow-columns.sql  # mode, status, scope on document_analysis_runs
-    ├── 16-add-chunk-id-to-embeddings.sql         # websites_embeddings.chunk_id FK
+    ├── 16-add-chunk-id-to-embeddings.sql         # document_embeddings.chunk_id FK
     ├── 17-add-text-extracted-to-web-documents.sql
     ├── 18-create-document-removed-lines.sql
     ├── 19-create-reader-user-tables.sql          # users, user_reading_progress, user_document_notes
@@ -93,14 +93,14 @@ Main document storage. Each row represents a collected web resource (article, vi
 
 **Indexes:** `document_type`, `document_state`, `created_at`, `url`, `collection_id`, `discovery_source_id`, `published_on`, `paywall`, `ai_summary_needed`, `publisher_id`.
 
-### Table: `public.websites_embeddings`
+### Table: `public.document_embeddings`
 
 Vector embeddings for document chunks used in similarity search.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `website_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
 | `language` | `varchar(10)` | Language of the embedded text |
 | `text` | `text` | Translated/processed text that was embedded |
 | `text_original` | `text` | Original text before translation |
@@ -109,7 +109,7 @@ Vector embeddings for document chunks used in similarity search.
 | `chunk_id` | `integer` | FK → `document_chunks.id` (`ON DELETE SET NULL`), NULL for embeddings generated directly from the document (fallback path when no reviewed chunk run exists) |
 | `created_at` | `timestamp` | Row creation timestamp |
 
-**Indexes:** `website_id`, `model`, HNSW partial indexes on `embedding` per model (cosine similarity). Each embedding model has its own partial index to support different vector dimensions.
+**Indexes:** `document_id`, `model`, HNSW partial indexes on `embedding` per model (cosine similarity). Each embedding model has its own partial index to support different vector dimensions.
 
 ### Table: `public.document_analysis_runs`
 
@@ -407,7 +407,7 @@ docker build -f infra/docker/Postgresql/Dockerfile -t lenie-ai-db:latest .
 ## Application Access
 
 The backend accesses the database via SQLAlchemy ORM. Key files:
-- `backend/library/db/models.py` — ORM models (`WebDocument`, `WebsiteEmbedding`, lookup table models)
+- `backend/library/db/models.py` — ORM models (`WebDocument`, `DocumentEmbedding`, lookup table models)
 - `backend/library/db/engine.py` — engine & session factories (`get_session`, `get_scoped_session`)
 - `backend/library/stalker_web_documents_db_postgresql.py` — query layer (list, search, vector similarity)
 
@@ -415,5 +415,5 @@ Connection configured via environment variables: `POSTGRESQL_HOST`, `POSTGRESQL_
 
 ## Known Issues
 
-- The `langauge` typo in `websites_embeddings` was fixed — column renamed to `language` (migration: `08-fix-language-typo.sql`).
+- The `langauge` typo in `document_embeddings` was fixed — column renamed to `language` (migration: `08-fix-language-typo.sql`).
 - The `embedding` column uses dimensionless `vector` type to support multiple embedding models with different dimensions (e.g. OpenAI ada-002: 1536, Titan v2: 1024, BAAI/bge-multilingual-gemma2: 3584). Each model has a dedicated HNSW partial index. When adding a new embedding model, create a new partial index in `04-create-table.sql`.

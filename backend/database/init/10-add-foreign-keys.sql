@@ -1,4 +1,4 @@
--- Add foreign key constraints to web_documents and websites_embeddings
+-- Add foreign key constraints to web_documents and document_embeddings
 -- References lookup tables created in 09-create-lookup-tables.sql
 -- Story: B-95
 
@@ -17,8 +17,8 @@ ALTER TABLE public.web_documents
     ADD CONSTRAINT fk_document_state_error
     FOREIGN KEY (document_state_error) REFERENCES public.document_status_error_types(name);
 
--- websites_embeddings: 1 FK constraint with cascade
-ALTER TABLE public.websites_embeddings
+-- document_embeddings: 1 FK constraint with cascade
+ALTER TABLE public.document_embeddings
     ADD CONSTRAINT model_fk
     FOREIGN KEY (model) REFERENCES public.embedding_models(name) ON UPDATE CASCADE ON DELETE CASCADE;
 
@@ -26,5 +26,5 @@ ALTER TABLE public.websites_embeddings
 SELECT constraint_name, table_name, constraint_type
 FROM information_schema.table_constraints
 WHERE constraint_type = 'FOREIGN KEY'
-  AND table_name IN ('web_documents', 'websites_embeddings')
+  AND table_name IN ('web_documents', 'document_embeddings')
 ORDER BY table_name, constraint_name;
