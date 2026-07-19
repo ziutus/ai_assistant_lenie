@@ -121,7 +121,7 @@ class TestFeedMonitorImportEntry:
 class TestCheckExisting:
     """Tests for check_existing (duplicate detection)."""
 
-    @patch("imports.feed_monitor.WebDocument")
+    @patch("imports.feed_monitor.Document")
     def test_existing_document_found(self, MockWebDoc):
         """check_existing returns the existing document."""
         session = _make_session()
@@ -136,7 +136,7 @@ class TestCheckExisting:
         assert result is existing
         MockWebDoc.get_by_url.assert_called_once_with(session, "https://example.com/news-article")
 
-    @patch("imports.feed_monitor.WebDocument")
+    @patch("imports.feed_monitor.Document")
     def test_new_document_returns_none(self, MockWebDoc):
         """check_existing returns None for unknown URLs."""
         session = _make_session()
@@ -148,7 +148,7 @@ class TestCheckExisting:
 
         assert result is None
 
-    @patch("imports.feed_monitor.WebDocument")
+    @patch("imports.feed_monitor.Document")
     def test_published_on_corrected_on_existing(self, MockWebDoc):
         """published_on correction logic works (tested via cmd_import's inline code)."""
         # The published_on correction is done in cmd_import, not in _import_entry.

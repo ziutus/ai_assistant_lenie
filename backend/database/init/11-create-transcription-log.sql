@@ -5,7 +5,7 @@
 
 CREATE TABLE IF NOT EXISTS public.transcription_log (
     id SERIAL PRIMARY KEY,
-    document_id INTEGER REFERENCES public.web_documents(id) ON DELETE SET NULL,
+    document_id INTEGER REFERENCES public.documents(id) ON DELETE SET NULL,
     provider VARCHAR(50) NOT NULL,
     speech_model VARCHAR(100),
     audio_duration_seconds INTEGER NOT NULL,

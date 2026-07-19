@@ -5,7 +5,7 @@
 \c "lenie-ai";
 
 -- Tworzenie tabeli głównej dla dokumentów
-create table web_documents
+create table documents
 (
     id                   serial primary key,
     summary              text,
@@ -37,18 +37,18 @@ create table web_documents
 );
 
 -- Indeksy dla optymalizacji wydajności
-CREATE INDEX IF NOT EXISTS idx_web_documents_document_type ON public.web_documents(document_type);
-CREATE INDEX IF NOT EXISTS idx_web_documents_document_state ON public.web_documents(document_state);
-CREATE INDEX IF NOT EXISTS idx_web_documents_created_at ON public.web_documents(created_at);
-CREATE INDEX IF NOT EXISTS idx_web_documents_url ON public.web_documents(url);
-CREATE INDEX IF NOT EXISTS idx_web_documents_collection_id ON public.web_documents(collection_id);
-CREATE INDEX IF NOT EXISTS idx_web_documents_discovery_source_id ON public.web_documents(discovery_source_id);
-CREATE INDEX IF NOT EXISTS idx_web_documents_published_on ON public.web_documents(published_on);
-CREATE INDEX IF NOT EXISTS idx_web_documents_paywall ON public.web_documents(paywall);
-CREATE INDEX IF NOT EXISTS idx_web_documents_ai_flag ON public.web_documents(ai_summary_needed);
+CREATE INDEX IF NOT EXISTS idx_documents_document_type ON public.documents(document_type);
+CREATE INDEX IF NOT EXISTS idx_documents_document_state ON public.documents(document_state);
+CREATE INDEX IF NOT EXISTS idx_documents_created_at ON public.documents(created_at);
+CREATE INDEX IF NOT EXISTS idx_documents_url ON public.documents(url);
+CREATE INDEX IF NOT EXISTS idx_documents_collection_id ON public.documents(collection_id);
+CREATE INDEX IF NOT EXISTS idx_documents_discovery_source_id ON public.documents(discovery_source_id);
+CREATE INDEX IF NOT EXISTS idx_documents_published_on ON public.documents(published_on);
+CREATE INDEX IF NOT EXISTS idx_documents_paywall ON public.documents(paywall);
+CREATE INDEX IF NOT EXISTS idx_documents_ai_flag ON public.documents(ai_summary_needed);
 
 -- Unique constraint for uuid (global document identifier, ADR-015)
-ALTER TABLE public.web_documents ADD CONSTRAINT uq_web_documents_uuid UNIQUE (uuid);
+ALTER TABLE public.documents ADD CONSTRAINT uq_documents_uuid UNIQUE (uuid);
 
 -- Potwierdzenie utworzenia tabel
-SELECT 'Table web_documents created successfully in lenie-ai database' as status;
+SELECT 'Table documents created successfully in lenie-ai database' as status;

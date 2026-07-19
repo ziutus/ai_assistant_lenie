@@ -29,7 +29,7 @@ from library.config_loader import load_config
 cfg = load_config()  # noqa: F841 — side effect: populates os.environ for library modules
 
 from library.db.engine import get_session  # noqa: E402
-from library.db.models import WebDocument  # noqa: E402
+from library.db.models import Document  # noqa: E402
 from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: E402
 from library.models.stalker_document_type import StalkerDocumentType  # noqa: E402
 
@@ -339,12 +339,12 @@ def main():
     session = get_session()
     try:
         # Check for duplicates
-        existing = WebDocument.get_by_url(session, url)
+        existing = Document.get_by_url(session, url)
         if existing:
             print(f"\nEmail already exists in DB with ID: {existing.id}")
             sys.exit(0)
 
-        doc = WebDocument(url=url)
+        doc = Document(url=url)
         doc.document_type = StalkerDocumentType.email.name
         doc.title = subject
         doc.byline = author

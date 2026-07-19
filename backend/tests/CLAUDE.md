@@ -30,8 +30,8 @@ Configuration in `backend/pyproject.toml` under `[tool.pytest.ini_options]`. The
 | File | Covers |
 |------|--------|
 | `test_db_engine.py` | Engine singleton, session factories, `Base` |
-| `test_db_models.py` | `WebDocument` columns (30), STI subclasses (7), `dict()` output (33 keys), lookup models |
-| `test_orm_crud.py` | `WebDocument` CRUD, `dict()` compatibility |
+| `test_db_models.py` | `Document` columns (30), STI subclasses (7), `dict()` output (33 keys), lookup models |
+| `test_orm_crud.py` | `Document` CRUD, `dict()` compatibility |
 | `test_repository_queries.py` | `WebsitesDBPostgreSQL` repository queries |
 | `test_get_list_query.py` | `get_list()` ORM query construction |
 | `test_embedding_crud_orm.py` | Embedding add/delete via ORM |

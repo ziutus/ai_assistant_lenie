@@ -117,7 +117,7 @@ Reusable Python package providing a unified configuration loader with pluggable 
 See [`shared_python/unified-config-loader/README.md`](shared_python/unified-config-loader/README.md) for details.
 
 ### Shared Types (`shared/`)
-Shared TypeScript type definitions used by both frontend applications. Contains domain types (`WebDocument`, `ApiType`, `SearchResult`, `ListItem`), constants (`DEFAULT_API_URLS`), and factory values (`emptyDocument`). No build step — Vite transpiles directly via esbuild. Both frontends reference it through `@lenie/shared` alias (tsconfig `paths` + Vite `resolve.alias`). See `docs/shared-types.md` for details.
+Shared TypeScript type definitions used by both frontend applications. Contains domain types (`Document`, `ApiType`, `SearchResult`, `ListItem`), constants (`DEFAULT_API_URLS`), and factory values (`emptyDocument`). No build step — Vite transpiles directly via esbuild. Both frontends reference it through `@lenie/shared` alias (tsconfig `paths` + Vite `resolve.alias`). See `docs/shared-types.md` for details.
 
 ### Frontend (`web_interface_react/`)
 React 18 SPA (Vite) for document management and AI processing. Pages: document list with filtering, vector similarity search, chunk review (`/chunks/:id`), and per-type editors (link, webpage, youtube, movie) with AI tools (split for embedding, clean text). Formik for form state, axios for API calls, React Router v6. Single backend mode: Docker (Flask) — the AWS Serverless mode was removed entirely 2026-07-04 (Lambdas decommissioned 2026-07-02). Domain types imported from `shared/` via `@lenie/shared` alias.
@@ -201,7 +201,7 @@ All application variables (database, LLM, API keys, etc.) are defined in [`scrip
 PostgreSQL 18 with pgvector extension for vector similarity search. Schema defined in `backend/database/init/` (see `backend/database/CLAUDE.md` for full details).
 
 Core tables:
-- **`web_documents`** — documents with content, metadata, processing state, and multilingual fields
+- **`documents`** — documents with content, metadata, processing state, and multilingual fields
 - **`websites_embeddings`** — vector embeddings (dimensionless column, per-model HNSW partial indexes) with cosine similarity search
 
 The full model is much larger (chunk analysis runs/chunks/topic sections, NER entities/persons/exclusions, geocode and infrastructure caches, document references, reader progress/notes, users and API keys, import logs) — the authoritative inventory is [`backend/database/CLAUDE.md`](backend/database/CLAUDE.md); schema migrations live in `backend/alembic/`.

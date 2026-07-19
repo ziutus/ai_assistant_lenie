@@ -65,7 +65,7 @@ _ensure_importable("library.config_loader",
 _ensure_importable("library.db.engine", get_session=lambda: None)
 _ensure_importable("library.db.models",
                    ImportLog=type("ImportLog", (), {}),
-                   WebDocument=type("WebDocument", (), {}))
+                   Document=type("Document", (), {}))
 _ensure_importable("library.document_service", DocumentService=type("DocumentService", (), {}))
 _ensure_importable("library.import_log_tracker", ImportLogTracker=type("ImportLogTracker", (), {}))
 _ensure_importable("library.stalker_web_documents_db_postgresql",

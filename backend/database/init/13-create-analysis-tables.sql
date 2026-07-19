@@ -6,7 +6,7 @@
 -- Jedno uruchomienie analizy LLM dla dokumentu
 CREATE TABLE IF NOT EXISTS public.document_analysis_runs (
     id          SERIAL PRIMARY KEY,
-    document_id INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     model       VARCHAR(100) NOT NULL,
     chunk_size  INTEGER NOT NULL DEFAULT 5000,
     synthesis   TEXT,
@@ -21,7 +21,7 @@ CREATE INDEX IF NOT EXISTS idx_runs_document_id ON public.document_analysis_runs
 CREATE TABLE IF NOT EXISTS public.document_chunks (
     id                SERIAL PRIMARY KEY,
     run_id            INTEGER NOT NULL REFERENCES public.document_analysis_runs(id) ON DELETE CASCADE,
-    document_id       INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id       INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     position          SMALLINT NOT NULL,
     type              VARCHAR(20) NOT NULL,        -- TEMAT | REKLAMA | SZUM
     topic             VARCHAR(500),
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     split_second_type VARCHAR(20),                 -- typ drugiej części po podziale
     created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMP NOT NULL DEFAULT NOW(),
-    obsidian_note_paths TEXT[] NOT NULL DEFAULT '{}'  -- ścieżki do notatek Obsidian (analogicznie do web_documents)
+    obsidian_note_paths TEXT[] NOT NULL DEFAULT '{}'  -- ścieżki do notatek Obsidian (analogicznie do documents)
 );
 
 CREATE INDEX IF NOT EXISTS idx_chunks_run_id       ON public.document_chunks(run_id);
@@ -50,7 +50,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_chunks_run_position ON public.document_chu
 CREATE TABLE IF NOT EXISTS public.document_topic_sections (
     id              SERIAL PRIMARY KEY,
     run_id          INTEGER NOT NULL REFERENCES public.document_analysis_runs(id) ON DELETE CASCADE,
-    document_id     INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id     INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     position        SMALLINT NOT NULL,
     type            VARCHAR(20) NOT NULL,          -- TEMAT | REKLAMA | SZUM
     title           VARCHAR(500),

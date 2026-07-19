@@ -15,7 +15,7 @@
 
 CREATE TABLE IF NOT EXISTS public.document_entities (
     id            SERIAL PRIMARY KEY,
-    document_id   INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id   INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     entity_type   VARCHAR(20) NOT NULL,
     entity_text   TEXT NOT NULL,
     mention_count INTEGER NOT NULL DEFAULT 1,

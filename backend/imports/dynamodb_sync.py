@@ -38,7 +38,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from library.config_loader import load_config
 from library.db.engine import get_session
-from library.db.models import ImportLog, WebDocument
+from library.db.models import ImportLog, Document
 from library.document_service import DocumentService
 from library.import_log_tracker import ImportLogTracker
 from library.models.stalker_document_status import StalkerDocumentStatus
@@ -193,7 +193,7 @@ def refresh_existing_document(session, item: dict, text_content: str | None,
     chunks and embeddings are deliberately left intact.
     """
     target_id = int(item["target_document_id"])
-    doc = session.get(WebDocument, target_id)
+    doc = session.get(Document, target_id)
     if doc is None:
         raise ValueError(f"refresh target document {target_id} does not exist")
     if doc.url != item.get("url"):
@@ -236,7 +236,7 @@ def process_article_content(doc_id: int, cache_base_dir: str,
         print("  Process: no HTML in cache, skipping")
         return False, False
 
-    doc = WebDocument.get_by_id(session, doc_id)
+    doc = Document.get_by_id(session, doc_id)
     if doc is None:
         return False, False
 
@@ -528,7 +528,7 @@ def main():
 
                 if not args.dry_run:
                     try:
-                        existing = WebDocument.get_by_url(session, item.get("url", ""))
+                        existing = Document.get_by_url(session, item.get("url", ""))
                     except Exception as e:
                         # Any PostgreSQL statement error aborts the whole
                         # transaction until rollback. Without this, one bad

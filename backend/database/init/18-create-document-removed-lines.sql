@@ -4,13 +4,13 @@
 -- source: manual (line removed in chunk-review UI) | szum_chunk (whole
 --         SZUM/REKLAMA chunk dropped by apply_cleanup)
 -- run_id/chunk_id are SET NULL on delete so rows survive run cleanup and stay
--- usable for aggregate queries (portal derived via join on web_documents.url).
+-- usable for aggregate queries (portal derived via join on documents.url).
 
 \c "lenie-ai";
 
 CREATE TABLE IF NOT EXISTS public.document_removed_lines (
     id          SERIAL PRIMARY KEY,
-    document_id INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     run_id      INTEGER REFERENCES public.document_analysis_runs(id) ON DELETE SET NULL,
     chunk_id    INTEGER REFERENCES public.document_chunks(id) ON DELETE SET NULL,
     source      VARCHAR(20) NOT NULL,

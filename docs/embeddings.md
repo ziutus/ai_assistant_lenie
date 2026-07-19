@@ -13,7 +13,7 @@ Embeddings are stored in the `public.document_embeddings` table:
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE delete) |
 | `langauge` | `varchar(10)` | Language of the embedded text (note: legacy typo, kept for compatibility) |
 | `text` | `text` | Text that was actually embedded (may be translated to English) |
 | `text_original` | `text` | Original text before translation (if applicable) |
@@ -94,7 +94,7 @@ Similarity search uses **cosine distance** (`<=>` operator in pgvector). The que
 2. Finds rows in `document_embeddings` where `model` matches
 3. Ranks results by `1 - (embedding <=> query_vector)` (cosine similarity, 1.0 = identical)
 4. Filters out results below a minimum similarity threshold (default: 0.30)
-5. Joins with `web_documents` to return document metadata
+5. Joins with `documents` to return document metadata
 
 **Important**: Search queries and stored embeddings must use the **same model**. Vectors from different models are not comparable.
 
@@ -121,6 +121,6 @@ For more details on Polish embedding benchmarks, see [PL-MTEB: Polish Massive Te
 
 ## Relationship to Documents
 
-- Each document (`web_documents`) can have **multiple embedding rows** — one per text chunk (for long documents split into parts) or one per model.
-- Deleting a document (`web_documents`) automatically deletes all its embeddings via `ON DELETE CASCADE`.
+- Each document (`documents`) can have **multiple embedding rows** — one per text chunk (for long documents split into parts) or one per model.
+- Deleting a document (`documents`) automatically deletes all its embeddings via `ON DELETE CASCADE`.
 - The `embedding_delete(model)` method removes all embeddings for a specific document and model before re-generating them (idempotent update).

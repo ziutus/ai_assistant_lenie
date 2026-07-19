@@ -4,7 +4,7 @@ import logging
 
 from library.config_loader import load_config
 from library.db.engine import get_scoped_session
-from library.db.models import TranscriptionLog, WebDocument
+from library.db.models import TranscriptionLog, Document
 from library.document_service import DocumentService
 from library.search_service import SearchService
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
@@ -429,7 +429,7 @@ def website_entities_get():
         return error
 
     session = get_scoped_session()
-    doc = WebDocument.get_by_id(session, doc_id)
+    doc = Document.get_by_id(session, doc_id)
     if doc is None:
         return {"status": "error", "message": "Document not found"}, 404
 
@@ -458,7 +458,7 @@ def website_entities_refresh():
         return error
 
     session = get_scoped_session()
-    doc = WebDocument.get_by_id(session, doc_id)
+    doc = Document.get_by_id(session, doc_id)
     if doc is None:
         return {"status": "error", "message": "Document not found"}, 404
 
@@ -803,7 +803,7 @@ def document_information_sources(doc_id: int):
     from library.db.models import DocumentInformationSource
 
     session = get_scoped_session()
-    if session.get(WebDocument, doc_id) is None:
+    if session.get(Document, doc_id) is None:
         return {"status": "error", "message": "Document not found"}, 404
     links = session.scalars(select(DocumentInformationSource).where(
         DocumentInformationSource.document_id == doc_id
@@ -834,7 +834,7 @@ def document_cited_publications(doc_id: int):
     )
 
     session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
+    doc = session.get(Document, doc_id)
     if doc is None:
         return {"status": "error", "message": "Document not found"}, 404
     if request.method == 'POST':
@@ -1037,12 +1037,12 @@ def website_entities_delete(entity_id: int):
 
 @app.route('/tags', methods=['GET'])
 def tags_list():
-    """Distinct tags across web_documents (CSV column), most used first — editor autocomplete."""
+    """Distinct tags across documents (CSV column), most used first — editor autocomplete."""
     from sqlalchemy import select as sa_select
 
     session = get_scoped_session()
     rows = session.execute(
-        sa_select(WebDocument.tags).where(WebDocument.tags.isnot(None))
+        sa_select(Document.tags).where(Document.tags.isnot(None))
     ).scalars().all()
     counts: dict[str, int] = {}
     for tags in rows:
@@ -1068,7 +1068,7 @@ def _source_doc_count(session, source_id: int) -> int:
     from sqlalchemy import func as sa_func, select as sa_select
 
     return session.execute(
-        sa_select(sa_func.count()).where(WebDocument.discovery_source_id == source_id)
+        sa_select(sa_func.count()).where(Document.discovery_source_id == source_id)
     ).scalar_one()
 
 
@@ -1082,9 +1082,9 @@ def sources_list():
 
     session = get_scoped_session()
     counts = (
-        sa_select(WebDocument.discovery_source_id.label("source_id"), sa_func.count().label("cnt"))
-        .where(WebDocument.discovery_source_id.isnot(None))
-        .group_by(WebDocument.discovery_source_id)
+        sa_select(Document.discovery_source_id.label("source_id"), sa_func.count().label("cnt"))
+        .where(Document.discovery_source_id.isnot(None))
+        .group_by(Document.discovery_source_id)
         .subquery()
     )
     doc_count = sa_func.coalesce(counts.c.cnt, 0)
@@ -1244,7 +1244,7 @@ def ner_exclusions_add():
         if error:
             return {"status": "error",
                     "message": "scope=author requires author or document_id"}, 400
-        doc = WebDocument.get_by_id(session, doc_id)
+        doc = Document.get_by_id(session, doc_id)
         if doc is None:
             return {"status": "error", "message": "Document not found"}, 404
         author = (doc.byline or "").strip() or None

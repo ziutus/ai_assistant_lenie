@@ -160,7 +160,7 @@ class TestDiscoverySourceEnsure:
 
 
 class TestSetDiscoverySource:
-    """WebDocument.set_discovery_source() — the stage-11d replacement for the
+    """Document.set_discovery_source() — the stage-11d replacement for the
     old before_flush auto-create hook. Wire format stays a NAME string."""
 
     def _session(self, existing=None):
@@ -170,7 +170,7 @@ class TestSetDiscoverySource:
 
     def test_auto_creates_source_for_unknown_name(self):
         from library.db import models
-        doc = models.WebDocument(url="https://x", document_type="link")
+        doc = models.Document(url="https://x", document_type="link")
         session = self._session(existing=None)
         doc.set_discovery_source(session, "fresh")
         added = session.add.call_args[0][0]
@@ -182,7 +182,7 @@ class TestSetDiscoverySource:
     def test_reuses_existing_row(self):
         from library.db import models
         existing = models.DiscoverySource(name="own")
-        doc = models.WebDocument(url="https://x", document_type="link")
+        doc = models.Document(url="https://x", document_type="link")
         session = self._session(existing=existing)
         doc.set_discovery_source(session, "  own  ")
         session.add.assert_not_called()
@@ -190,7 +190,7 @@ class TestSetDiscoverySource:
 
     def test_blank_name_clears_fk(self):
         from library.db import models
-        doc = models.WebDocument(url="https://x", document_type="link")
+        doc = models.Document(url="https://x", document_type="link")
         session = self._session()
         doc.set_discovery_source(session, "   ")
         session.add.assert_not_called()
@@ -200,7 +200,7 @@ class TestSetDiscoverySource:
 
     def test_none_clears_fk(self):
         from library.db import models
-        doc = models.WebDocument(url="https://x", document_type="link")
+        doc = models.Document(url="https://x", document_type="link")
         session = self._session()
         doc.set_discovery_source(session, None)
         assert doc.discovery_source is None

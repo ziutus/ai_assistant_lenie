@@ -56,7 +56,7 @@ _ensure_importable("library.config_loader",
                    load_config=lambda: types.SimpleNamespace(
                        get=lambda *a, **kw: None, require=lambda *a, **kw: ""))
 _ensure_importable("library.db.engine", get_session=lambda: None)
-_ensure_importable("library.db.models", WebDocument=type("WebDocument", (), {}))
+_ensure_importable("library.db.models", Document=type("Document", (), {}))
 _ensure_importable("library.stalker_web_documents_db_postgresql",
                    WebsitesDBPostgreSQL=type("WebsitesDBPostgreSQL", (), {}))
 

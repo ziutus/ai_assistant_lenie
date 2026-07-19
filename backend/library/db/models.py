@@ -1,9 +1,9 @@
-"""SQLAlchemy ORM models for web_documents and document_embeddings tables.
+"""SQLAlchemy ORM models for documents and document_embeddings tables.
 
 Provides:
 - Lookup models: ``DocumentStatusType``, ``DocumentStatusErrorType``,
   ``DocumentType``, ``EmbeddingModel``
-- ``WebDocument`` — Single Table Inheritance model for web_documents
+- ``Document`` — Single Table Inheritance model for documents
 - 6 STI subclasses: LinkDocument, YouTubeDocument, MovieDocument, etc.
 - ``DocumentEmbedding`` — model for document_embeddings with pgvector support
 """
@@ -148,7 +148,7 @@ class EmbeddingModel(Base):
 class DiscoverySource(Base):
     """Discovery source lookup — how the user found a document (NOT its author).
 
-    web_documents.discovery_source_id references id (stage 11d normalization;
+    documents.discovery_source_id references id (stage 11d normalization;
     the old name-based fk_source with ON UPDATE CASCADE is gone — renaming a
     source only edits this row, documents follow via the id). Deactivated
     sources stay valid on existing documents but disappear from pickers
@@ -168,7 +168,7 @@ class DiscoverySource(Base):
     def ensure(cls, session: Session, name: str) -> "DiscoverySource | None":
         """Return the discovery-source row for ``name``, creating it if missing.
 
-        Single get-or-create used by WebDocument.set_discovery_source() and
+        Single get-or-create used by Document.set_discovery_source() and
         POST /sources — any write path may introduce a new source safely.
         """
         name = (name or "").strip()
@@ -229,12 +229,12 @@ class PublisherDomain(Base):
 
 
 # ---------------------------------------------------------------------------
-# WebDocument — Single Table Inheritance on web_documents
+# Document — Single Table Inheritance on documents
 # ---------------------------------------------------------------------------
 
 
-class WebDocument(Base):
-    __tablename__ = "web_documents"
+class Document(Base):
+    __tablename__ = "documents"
 
     # Primary key
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -360,7 +360,7 @@ class WebDocument(Base):
     # --- Classmethods (Story 27.1) ---
 
     @classmethod
-    def populate_neighbors(cls, session: Session, doc: "WebDocument") -> None:
+    def populate_neighbors(cls, session: Session, doc: "Document") -> None:
         """Populate transient navigation fields (next_id, next_type, previous_id, previous_type)."""
         next_row = session.execute(
             select(cls.id, cls.document_type)
@@ -389,7 +389,7 @@ class WebDocument(Base):
             doc.previous_type = None
 
     @classmethod
-    def get_by_id(cls, session: Session, doc_id: int, reach: bool = False) -> "WebDocument | None":
+    def get_by_id(cls, session: Session, doc_id: int, reach: bool = False) -> "Document | None":
         """Return document by primary key, or None if not found.
 
         When reach=True, populate transient navigation fields (next_id,
@@ -403,7 +403,7 @@ class WebDocument(Base):
         return doc
 
     @classmethod
-    def get_by_url(cls, session: Session, url: str) -> "WebDocument | None":
+    def get_by_url(cls, session: Session, url: str) -> "Document | None":
         """Return document matching the given URL, or None."""
         return session.scalars(
             select(cls).where(cls.url == url)
@@ -536,31 +536,31 @@ class WebDocument(Base):
 # ---------------------------------------------------------------------------
 
 
-class LinkDocument(WebDocument):
+class LinkDocument(Document):
     __mapper_args__ = {"polymorphic_identity": "link"}
 
 
-class YouTubeDocument(WebDocument):
+class YouTubeDocument(Document):
     __mapper_args__ = {"polymorphic_identity": "youtube"}
 
 
-class MovieDocument(WebDocument):
+class MovieDocument(Document):
     __mapper_args__ = {"polymorphic_identity": "movie"}
 
 
-class WebpageDocument(WebDocument):
+class WebpageDocument(Document):
     __mapper_args__ = {"polymorphic_identity": "webpage"}
 
 
-class TextMessageDocument(WebDocument):
+class TextMessageDocument(Document):
     __mapper_args__ = {"polymorphic_identity": "text_message"}
 
 
-class TextDocument(WebDocument):
+class TextDocument(Document):
     __mapper_args__ = {"polymorphic_identity": "text"}
 
 
-class SocialMediaPostDocument(WebDocument):
+class SocialMediaPostDocument(Document):
     __mapper_args__ = {"polymorphic_identity": "social_media_post"}
 
 
@@ -574,7 +574,7 @@ class DocumentEmbedding(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"),
+        ForeignKey("documents.id", ondelete="CASCADE"),
         nullable=False,
     )
     language: Mapped[str | None] = mapped_column(String(10))
@@ -592,7 +592,7 @@ class DocumentEmbedding(Base):
     )
 
     # Relationships
-    document: Mapped["WebDocument"] = relationship(back_populates="embeddings")
+    document: Mapped["Document"] = relationship(back_populates="embeddings")
     model_ref: Mapped["EmbeddingModel"] = relationship(foreign_keys=[model])
     chunk: Mapped["DocumentChunk | None"] = relationship(foreign_keys=[chunk_id])
 
@@ -607,7 +607,7 @@ class TranscriptionLog(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int | None] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="SET NULL"), nullable=True,
+        ForeignKey("documents.id", ondelete="SET NULL"), nullable=True,
     )
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
     speech_model: Mapped[str | None] = mapped_column(String(100))
@@ -618,7 +618,7 @@ class TranscriptionLog(Base):
         DateTime, server_default=sa_text("CURRENT_TIMESTAMP"),
     )
 
-    document: Mapped["WebDocument | None"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document | None"] = relationship(foreign_keys=[document_id])
 
     @classmethod
     def get_usage_summary(cls, session: Session, provider: str | None = None) -> dict:
@@ -704,7 +704,7 @@ class DocumentAnalysisRun(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     model: Mapped[str] = mapped_column(String(100), nullable=False)
     chunk_size: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("5000"))
@@ -726,7 +726,7 @@ class DocumentAnalysisRun(Base):
         DateTime, nullable=False, server_default=func.now(),
     )
 
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
     chunks: Mapped[list["DocumentChunk"]] = relationship(
         back_populates="run",
         cascade="all, delete-orphan",
@@ -750,7 +750,7 @@ class DocumentChunk(Base):
         ForeignKey("document_analysis_runs.id", ondelete="CASCADE"), nullable=False,
     )
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | ZRODLA | REKLAMA | SZUM
@@ -779,7 +779,7 @@ class DocumentChunk(Base):
     )
 
     run: Mapped["DocumentAnalysisRun"] = relationship(back_populates="chunks")
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
     def __repr__(self) -> str:
         return f"DocumentChunk(id={self.id!r}, run_id={self.run_id!r}, position={self.position!r}, type={self.type!r})"
@@ -793,7 +793,7 @@ class DocumentTopicSection(Base):
         ForeignKey("document_analysis_runs.id", ondelete="CASCADE"), nullable=False,
     )
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     position: Mapped[int] = mapped_column(SmallInteger, nullable=False)
     type: Mapped[str] = mapped_column(String(20), nullable=False)         # TEMAT | ZRODLA | REKLAMA | SZUM
@@ -808,7 +808,7 @@ class DocumentTopicSection(Base):
     )
 
     run: Mapped["DocumentAnalysisRun"] = relationship(back_populates="topic_sections")
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
     def __repr__(self) -> str:
         return f"DocumentTopicSection(id={self.id!r}, run_id={self.run_id!r}, position={self.position!r})"
@@ -822,14 +822,14 @@ class DocumentRemovedLine(Base):
     reviews should only inspect ``pending`` rows and record a terminal decision
     using ``scripts/review_removed_lines.py``. Rows survive run/chunk
     deletion (FKs SET NULL) so aggregate queries (e.g. most-removed lines per
-    portal, via join on web_documents.url) keep working over time.
+    portal, via join on documents.url) keep working over time.
     """
 
     __tablename__ = "document_removed_lines"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     run_id: Mapped[int | None] = mapped_column(
         ForeignKey("document_analysis_runs.id", ondelete="SET NULL"),
@@ -853,7 +853,7 @@ class DocumentRemovedLine(Base):
         DateTime, nullable=False, server_default=func.now(),
     )
 
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
     def __repr__(self) -> str:
         return f"DocumentRemovedLine(id={self.id!r}, document_id={self.document_id!r}, source={self.source!r})"
@@ -904,7 +904,7 @@ class DocumentReference(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     # 1-based, matches detect_chapters(); NULL = unassigned
     chapter_position: Mapped[int | None] = mapped_column(Integer)
@@ -917,7 +917,7 @@ class DocumentReference(Base):
         DateTime, nullable=False, server_default=func.now(),
     )
 
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
     def __repr__(self) -> str:
         return (
@@ -952,7 +952,7 @@ class DocumentCitedPublication(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     publication_id: Mapped[int] = mapped_column(
         ForeignKey("cited_publications.id", ondelete="CASCADE"), nullable=False,
@@ -970,7 +970,7 @@ class DocumentCitedPublication(Base):
         DateTime, nullable=False, server_default=func.now(),
     )
 
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
     publication: Mapped["CitedPublication"] = relationship(foreign_keys=[publication_id])
     chunk: Mapped["DocumentChunk | None"] = relationship(foreign_keys=[chunk_id])
 
@@ -989,7 +989,7 @@ class DocumentEvent(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     chapter_position: Mapped[int | None] = mapped_column(Integer)
     event_date: Mapped[datetime.date | None] = mapped_column(Date)
@@ -1003,7 +1003,7 @@ class DocumentEvent(Base):
         DateTime, nullable=False, server_default=func.now(),
     )
 
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
     def __repr__(self) -> str:
         return (
@@ -1027,7 +1027,7 @@ class DocumentTimePeriod(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     chapter_position: Mapped[int | None] = mapped_column(Integer)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
@@ -1040,7 +1040,7 @@ class DocumentTimePeriod(Base):
         DateTime, nullable=False, server_default=func.now(),
     )
 
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
     def __repr__(self) -> str:
         return (
@@ -1067,7 +1067,7 @@ class DocumentTone(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     chapter_position: Mapped[int | None] = mapped_column(Integer)
     emotion: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -1080,7 +1080,7 @@ class DocumentTone(Base):
         DateTime, nullable=False, server_default=func.now(),
     )
 
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
     def __repr__(self) -> str:
         return (
@@ -1108,7 +1108,7 @@ class DocumentAnalysisJob(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     run_id: Mapped[int | None] = mapped_column(
         ForeignKey("document_analysis_runs.id", ondelete="SET NULL"),
@@ -1126,7 +1126,7 @@ class DocumentAnalysisJob(Base):
     started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
     finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
     run: Mapped["DocumentAnalysisRun | None"] = relationship(foreign_keys=[run_id])
 
 
@@ -1178,7 +1178,7 @@ class DocumentEntity(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     # entity_type: persName | geogName | placeName (spaCy pl_core_news_lg labels)
     entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -1198,7 +1198,7 @@ class DocumentEntity(Base):
         DateTime, nullable=False, server_default=func.now(),
     )
 
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
     geocode: Mapped["GeocodeCache | None"] = relationship(foreign_keys=[geocode_id])
 
     def __repr__(self) -> str:
@@ -1301,7 +1301,7 @@ class DocumentPerson(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     person_id: Mapped[int] = mapped_column(
         ForeignKey("persons.id", ondelete="CASCADE"), nullable=False,
@@ -1317,7 +1317,7 @@ class DocumentPerson(Base):
         DateTime, nullable=False, server_default=func.now(),
     )
 
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
     person: Mapped["Person"] = relationship(foreign_keys=[person_id])
 
     def __repr__(self) -> str:
@@ -1374,7 +1374,7 @@ class DocumentInformationSource(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     source_id: Mapped[int] = mapped_column(
         ForeignKey("information_sources.id", ondelete="CASCADE"), nullable=False,
@@ -1392,7 +1392,7 @@ class DocumentInformationSource(Base):
         DateTime, nullable=False, server_default=func.now(),
     )
 
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
     source: Mapped["InformationSource"] = relationship(foreign_keys=[source_id])
 
 
@@ -1435,7 +1435,7 @@ class UserReadingProgress(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
     )
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     current_chapter: Mapped[int] = mapped_column(Integer, nullable=False)
     current_chapter_title: Mapped[str | None] = mapped_column(String(500))
@@ -1447,7 +1447,7 @@ class UserReadingProgress(Base):
     )
 
     user: Mapped["User"] = relationship(foreign_keys=[user_id])
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
     def __repr__(self) -> str:
         return (
@@ -1472,7 +1472,7 @@ class UserDocumentNote(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False,
     )
     document_id: Mapped[int] = mapped_column(
-        ForeignKey("web_documents.id", ondelete="CASCADE"), nullable=False,
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
     chapter_position: Mapped[int | None] = mapped_column(Integer)
     anchor_quote: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1497,7 +1497,7 @@ class UserDocumentNote(Base):
     )
 
     user: Mapped["User"] = relationship(foreign_keys=[user_id])
-    document: Mapped["WebDocument"] = relationship(foreign_keys=[document_id])
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
     def __repr__(self) -> str:
         return (
@@ -1732,6 +1732,6 @@ class LlmUsageLog(Base):
 
 
 # The pre-11d before_flush hook that auto-created `sources` rows for
-# WebDocument.source strings is gone: discovery-source resolution is explicit
-# now — every writer goes through WebDocument.set_discovery_source(), which
+# Document.source strings is gone: discovery-source resolution is explicit
+# now — every writer goes through Document.set_discovery_source(), which
 # auto-creates unknown names via DiscoverySource.ensure().

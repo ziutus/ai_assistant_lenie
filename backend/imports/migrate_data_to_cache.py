@@ -21,7 +21,7 @@ from glob import glob
 from sqlalchemy import select
 
 from library.config_loader import load_config
-from library.db.models import WebDocument
+from library.db.models import Document
 from library.db.engine import get_session
 
 cfg = load_config()
@@ -29,7 +29,7 @@ cfg = load_config()
 
 def get_uuid_to_doc_id_map(session, uuids: list[str]) -> dict[str, int]:
     """Query DB for doc.id by uuid. Returns {uuid: doc_id} mapping."""
-    stmt = select(WebDocument.id, WebDocument.uuid).where(WebDocument.uuid.in_(uuids))
+    stmt = select(Document.id, Document.uuid).where(Document.uuid.in_(uuids))
     rows = session.execute(stmt).all()
     return {row.uuid: row.id for row in rows}
 

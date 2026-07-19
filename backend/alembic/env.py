@@ -37,7 +37,7 @@ def include_object(object, name, type_, reflected, compare_to):
         and name == "document_state_error"
         and hasattr(object, "table")
         and object.table is not None
-        and object.table.name == "web_documents"
+        and object.table.name == "documents"
     ):
         return False
     return True

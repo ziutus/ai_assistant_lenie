@@ -16,7 +16,7 @@ import re
 from typing import Callable
 
 from library.db.models import (
-    DocumentAnalysisRun, DocumentChunk, DocumentTopicSection, WebDocument,
+    DocumentAnalysisRun, DocumentChunk, DocumentTopicSection, Document,
 )
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ def _sentence_head(text: str, max_chars: int = 300) -> str:
     return seg
 
 
-def _extract_text(doc: WebDocument, prefer_md: bool = False) -> tuple[str, str]:
+def _extract_text(doc: Document, prefer_md: bool = False) -> tuple[str, str]:
     """Return (text, field_name) from best available field.
 
     Priority: text → text_md → text_raw (JSON transcript → plain text).
@@ -263,7 +263,7 @@ def _synthesize(sections: list[dict], title: str, model: str, mode: str = "trans
         return ""
 
 
-def _apply_tags(doc: WebDocument, text: str) -> None:
+def _apply_tags(doc: Document, text: str) -> None:
     """Thematic + country tagging — same pipeline as article_browser.py's [w]/[k] actions.
 
     Merges newly detected tags into doc.tags rather than overwriting: repeat
@@ -361,7 +361,7 @@ class DocumentAnalysisService:
         """Create a new analysis run for an existing document and persist to DB.
 
         Args:
-            doc_id:       ID of document in web_documents.
+            doc_id:       ID of document in documents.
             model:        LLM model name (Bielik via Sherlock or "arklabs/<model>").
             chunk_size:   Max characters per chunk (default 5 000 ≈ 1 500 tokens).
             no_synthesis: Skip the final synthesis step.
@@ -412,7 +412,7 @@ class DocumentAnalysisService:
         session = self.session
 
         # 1. Load document
-        doc = WebDocument.get_by_id(session, doc_id)
+        doc = Document.get_by_id(session, doc_id)
         if doc is None:
             raise ValueError(f"Document {doc_id} not found")
 
@@ -821,7 +821,7 @@ def generate_embeddings_from_run(
     if run is None:
         raise ValueError(f"Run {run_id} not found")
 
-    doc = session.get(WebDocument, run.document_id)
+    doc = session.get(Document, run.document_id)
     if doc is None:
         raise ValueError(f"Document {run.document_id} not found")
 

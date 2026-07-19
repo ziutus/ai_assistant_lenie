@@ -121,7 +121,7 @@ class TestGetList:
         assert result[0]["chunks_with_obsidian_notes"] == 2
 
     def test_document_level_obsidian_note_paths_pass_through(self):
-        """web_documents.obsidian_note_paths (set by article_browser.py) must also surface."""
+        """documents.obsidian_note_paths (set by article_browser.py) must also surface."""
         session = MagicMock()
         repo = _make_repo(session)
 

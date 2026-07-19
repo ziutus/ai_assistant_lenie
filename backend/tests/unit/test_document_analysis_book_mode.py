@@ -18,7 +18,7 @@ import library.chunk_llm_analysis as llm  # noqa: E402
 import library.document_analysis_service as das  # noqa: E402
 from library import chunk_review_routes as crr  # noqa: E402
 from library.db.models import (  # noqa: E402
-    DocumentAnalysisRun, DocumentChunk, DocumentTopicSection, WebDocument,
+    DocumentAnalysisRun, DocumentChunk, DocumentTopicSection, Document,
 )
 from library.document_analysis_service import DocumentAnalysisService, _slice_chapter  # noqa: E402
 from library.text_functions import detect_chapters  # noqa: E402
@@ -82,7 +82,7 @@ def session():
 @pytest.fixture
 def book_env(monkeypatch, session):
     monkeypatch.setattr(
-        das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: FakeBookDoc()),
+        das.Document, "get_by_id", staticmethod(lambda _s, _id: FakeBookDoc()),
     )
     analyzed: list[str] = []
 
@@ -138,7 +138,7 @@ class TestScopeChapterRun:
             url = "https://tech.wp.pl/test"
 
         monkeypatch.setattr(
-            das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: WpDoc()),
+            das.Document, "get_by_id", staticmethod(lambda _s, _id: WpDoc()),
         )
         monkeypatch.setattr("library.entity_service.refresh_document_entities", lambda *_a, **_kw: [])
 
@@ -222,7 +222,7 @@ def client(monkeypatch, run_with_sections):
     def fake_get(model, pk):
         if model is DocumentAnalysisRun:
             return run if pk == run.id else None
-        if model is WebDocument:
+        if model is Document:
             return doc
         if model is DocumentTopicSection:
             return next((s for s in sections if s.id == pk), None)
@@ -501,7 +501,7 @@ def transcript_run():
 def transcript_client(monkeypatch, transcript_run):
     doc = FakeTranscriptDoc()
     fake_session = MagicMock()
-    fake_session.get.side_effect = lambda model, pk: doc if model is WebDocument and pk == 88 else None
+    fake_session.get.side_effect = lambda model, pk: doc if model is Document and pk == 88 else None
     # chapter-scoped synthesis lookup (GET /document/<id>/chapter/<pos>) — no
     # chapter-scoped run exists for this chunk-based-chapters document
     fake_session.scalars.side_effect = lambda *_a, **_kw: _ScalarsResult([])
@@ -551,7 +551,7 @@ class TestChaptersFallbackToChunks:
     def test_no_headers_and_no_run_returns_error(self, monkeypatch):
         doc = FakeTranscriptDoc()
         fake_session = MagicMock()
-        fake_session.get.side_effect = lambda model, pk: doc if model is WebDocument else None
+        fake_session.get.side_effect = lambda model, pk: doc if model is Document else None
         monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
         monkeypatch.setattr(crr, "_latest_run_for_document", lambda _session, _doc_id: None)
 

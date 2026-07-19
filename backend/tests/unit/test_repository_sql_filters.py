@@ -47,9 +47,9 @@ class TestGetSimilarFilters:
         repo, session = _repo_with_mock_session()
         repo.get_similar([0.1, 0.2], model="m", filters=FILTERS)
         sql = _compiled_sql(session)
-        assert "web_documents.document_type" in sql
+        assert "documents.document_type" in sql
         assert "'webpage'" in sql
-        assert "web_documents.language" in sql
+        assert "documents.language" in sql
         assert "'pl'" in sql
         assert "EXISTS" in sql
         assert "document_time_periods" in sql
@@ -66,7 +66,7 @@ class TestGetSimilarFilters:
         repo.get_similar([0.1, 0.2], model="m",
                          filters=replace(FILTERS, collection_name="lenie"))
         sql = _compiled_sql(session)
-        assert "web_documents.collection_id" in sql
+        assert "documents.collection_id" in sql
         assert "collections" in sql
         assert "'lenie'" in sql
         assert "document_type" in sql
@@ -84,9 +84,9 @@ class TestSearchTextFilters:
         repo, session = _repo_with_mock_session()
         repo.search_text("wojna", filters=FILTERS)
         sql = _compiled_sql(session)
-        assert "web_documents.document_type" in sql
+        assert "documents.document_type" in sql
         assert "'webpage'" in sql
-        assert "web_documents.language" in sql
+        assert "documents.language" in sql
         assert "'pl'" in sql
         assert "EXISTS" in sql
         assert "document_time_periods" in sql
@@ -110,10 +110,10 @@ class TestIdenticalConstraintsAcrossBothPaths:
     build_document_filters()."""
 
     @pytest.mark.parametrize("fragment", [
-        "web_documents.document_type IN ('webpage')",
-        "web_documents.language IN ('pl')",
+        "documents.document_type IN ('webpage')",
+        "documents.language IN ('pl')",
         "EXISTS (SELECT",
-        "document_time_periods.document_id = web_documents.id",
+        "document_time_periods.document_id = documents.id",
     ])
     def test_same_filter_fragment_in_both_statements(self, fragment):
         similar_repo, similar_session = _repo_with_mock_session()

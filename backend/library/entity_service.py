@@ -12,7 +12,7 @@ import re
 
 from sqlalchemy import delete, select, update
 
-from library.db.models import DocumentEntity, NerExclusion, WebDocument
+from library.db.models import DocumentEntity, NerExclusion, Document
 from library.ner_client import NERServiceUnavailable, aggregate_entities_detailed, extract_entities, is_available
 from library.ner_normalization import normalize_ner_text
 
@@ -28,7 +28,7 @@ def _record_ner_availability(session, document_id: int, *, unavailable: bool) ->
     """
     value = datetime.datetime.utcnow() if unavailable else None
     session.execute(
-        update(WebDocument).where(WebDocument.id == document_id).values(ner_unavailable_at=value),
+        update(Document).where(Document.id == document_id).values(ner_unavailable_at=value),
     )
     session.commit()
 
@@ -96,7 +96,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     # Success: clear a stale unavailable flag as part of the caller's own
     # transaction (no isolated commit needed — unlike the branches above,
     # there is no exception here for the caller to roll back).
-    doc = session.get(WebDocument, document_id)
+    doc = session.get(Document, document_id)
     if doc is not None and doc.ner_unavailable_at is not None:
         doc.ner_unavailable_at = None
 

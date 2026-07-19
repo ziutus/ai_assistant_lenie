@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS public.users (
 CREATE TABLE IF NOT EXISTS public.user_reading_progress (
     id                    SERIAL PRIMARY KEY,
     user_id               INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-    document_id           INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id           INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     current_chapter       INTEGER NOT NULL,
     current_chapter_title VARCHAR(500),
     read_chapters         INTEGER[] NOT NULL DEFAULT '{}',
@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS public.user_reading_progress (
 CREATE TABLE IF NOT EXISTS public.user_document_notes (
     id               SERIAL PRIMARY KEY,
     user_id          INTEGER NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
-    document_id      INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id      INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     chapter_position INTEGER,
     anchor_quote     TEXT NOT NULL,
     anchor_prefix    VARCHAR(100),

@@ -7,7 +7,7 @@ Frontend (`shared/types/`) and backend (`backend/library/`) define the same data
 | Issue | Detail |
 |-------|--------|
 | **`id` type mismatch** | TS: `string`, Python: `int` (serial PK) |
-| **`WebDocument` missing fields** | Backend `.dict()` returns 13 fields not in TS interface (paywall, created_at, title_english, collection_id, etc.) |
+| **`Document` missing fields** | Backend `.dict()` returns 13 fields not in TS interface (paywall, created_at, title_english, collection_id, etc.) |
 | **`ListItem` field count** | TS: 5 fields, backend returns 10 |
 | **`SearchResult` field count** | TS: 5 fields, backend returns 12 |
 | **Enums as plain strings** | Backend has typed enums (`StalkerDocumentStatus`, `StalkerDocumentType`, `StalkerDocumentStatusError`), frontend treats them as `string` |
@@ -37,7 +37,7 @@ Create Pydantic v2 models for all API response shapes. These replace the manual 
 ```
 backend/library/models/schemas/
 ├── __init__.py
-├── documents.py        # WebDocumentResponse, WebDocumentListItem, SearchResultItem
+├── documents.py        # WebDocumentResponse, DocumentListItem, SearchResultItem
 ├── api_responses.py    # ListResponse, SearchResponse, ErrorResponse, SuccessResponse
 └── enums.py            # Re-export existing enums with Pydantic-compatible serialization
 ```
@@ -102,7 +102,7 @@ class WebDocumentResponse(BaseModel):
     uuid: str | None = None
     collection_id: int | None = None
 
-class WebDocumentListItem(BaseModel):
+class DocumentListItem(BaseModel):
     id: int
     url: str
     title: str | None = None
@@ -137,7 +137,7 @@ class ListResponse(BaseModel):
     status: str
     message: str
     encoding: str
-    websites: list[WebDocumentListItem]
+    websites: list[DocumentListItem]
     all_results_count: int
 
 class SearchResponse(BaseModel):
@@ -177,7 +177,7 @@ Option A — manual export script:
 ```python
 # backend/scripts/generate_openapi.py
 import json
-from library.models.schemas.documents import WebDocumentResponse, WebDocumentListItem, SearchResultItem
+from library.models.schemas.documents import WebDocumentResponse, DocumentListItem, SearchResultItem
 from library.models.schemas.api_responses import ListResponse, SearchResponse
 
 schema = {
@@ -187,7 +187,7 @@ schema = {
     "components": {
         "schemas": {
             "WebDocumentResponse": WebDocumentResponse.model_json_schema(),
-            "WebDocumentListItem": WebDocumentListItem.model_json_schema(),
+            "DocumentListItem": DocumentListItem.model_json_schema(),
             "SearchResultItem": SearchResultItem.model_json_schema(),
             "ListResponse": ListResponse.model_json_schema(),
             "SearchResponse": SearchResponse.model_json_schema(),

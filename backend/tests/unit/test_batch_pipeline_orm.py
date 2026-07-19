@@ -1,10 +1,10 @@
 """Unit tests for web_documents_do_the_needful_new.py ORM migration (Story 29.2, Task 2).
 
 Verifies that the batch pipeline:
-- Uses WebDocument ORM model instead of StalkerWebDocumentDB
+- Uses Document ORM model instead of StalkerWebDocumentDB
 - Uses session.commit() instead of save()
 - Creates documents via session.add() + session.commit()
-- Detects duplicates via WebDocument.get_by_url()
+- Detects duplicates via Document.get_by_url()
 - Manages session lifecycle with try/finally
 """
 
@@ -56,7 +56,7 @@ class TestBatchPipelineNoLegacyImports:
             "web_documents_do_the_needful_new.py still imports StalkerWebDocumentDB"
 
     def test_imports_web_document(self):
-        """WebDocument should be imported from library.db.models."""
+        """Document should be imported from library.db.models."""
         import ast
 
         with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
@@ -67,11 +67,11 @@ class TestBatchPipelineNoLegacyImports:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module == "library.db.models":
                 for alias in node.names:
-                    if alias.name == "WebDocument":
+                    if alias.name == "Document":
                         has_web_document_import = True
 
         assert has_web_document_import, \
-            "web_documents_do_the_needful_new.py must import WebDocument from library.db.models"
+            "web_documents_do_the_needful_new.py must import Document from library.db.models"
 
     def test_imports_get_session(self):
         """get_session should be imported from library.db.engine."""
@@ -140,19 +140,19 @@ class TestBatchPipelineNoLegacyImports:
 
 
 # ---------------------------------------------------------------------------
-# Test: SQS message processing creates WebDocument via ORM
+# Test: SQS message processing creates Document via ORM
 # ---------------------------------------------------------------------------
 
 class TestSQSProcessing:
     """Test Step 1 (SQS drain) ORM migration."""
 
     def test_duplicate_url_detection_uses_get_by_url(self):
-        """Duplicate check should use WebDocument.get_by_url(), not StalkerWebDocumentDB."""
+        """Duplicate check should use Document.get_by_url(), not StalkerWebDocumentDB."""
         with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
             source = f.read()
 
-        assert "WebDocument.get_by_url" in source, \
-            "Batch pipeline should use WebDocument.get_by_url() for duplicate detection"
+        assert "Document.get_by_url" in source, \
+            "Batch pipeline should use Document.get_by_url() for duplicate detection"
 
     def test_new_document_uses_session_add(self):
         """New documents should be created via session.add()."""
@@ -309,6 +309,6 @@ class TestGetDocumentsMdNeededORM:
         # Check that the method body contains self.session check
         # Find the method and check for ORM pattern
         assert "def get_documents_md_needed" in source
-        # The ORM branch should use select() and WebDocument
-        assert "WebDocument.text_md.is_(None)" in source or "text_md.is_(None)" in source, \
+        # The ORM branch should use select() and Document
+        assert "Document.text_md.is_(None)" in source or "text_md.is_(None)" in source, \
             "get_documents_md_needed should have ORM branch with text_md.is_(None)"
