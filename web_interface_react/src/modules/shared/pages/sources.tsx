@@ -3,11 +3,12 @@ import axios from "axios";
 import { AuthorizationContext } from "../context/authorizationContext";
 import type { Source } from "../../../types";
 
-// Discovery-source management (table `sources`, GET/POST/PATCH/DELETE /sources).
+// Discovery-source management (table `discovery_sources`, GET/POST/PATCH/DELETE /sources).
 // source = how the user found a document ("own", "unknow.news", a friend) — a
-// recommendation channel, not the author. Renaming cascades to all documents
-// (fk_source is ON UPDATE CASCADE); sources in use cannot be deleted, only
-// deactivated (they disappear from pickers, history stays intact).
+// recommendation channel, not the author. Documents reference the row by id
+// (discovery_source_id, stage 11d), so renaming only edits the lookup row and
+// every document follows; sources in use cannot be deleted, only deactivated
+// (they disappear from pickers, history stays intact).
 
 const emptyForm = { name: "", description: "", url: "" };
 

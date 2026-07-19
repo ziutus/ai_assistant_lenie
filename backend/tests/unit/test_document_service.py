@@ -592,7 +592,7 @@ class TestImportDocument:
         assert status == "added"
         assert doc.title == "Full Title"
         assert doc.language == "en"
-        assert doc.source == "feed"
+        assert doc.discovery_source is not None  # resolved via DiscoverySource.ensure (mock session)
         assert doc.note == "some note"
         assert doc.uuid == "abc-123"
         assert doc.summary == "A summary"

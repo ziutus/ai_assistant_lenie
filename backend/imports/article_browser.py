@@ -888,7 +888,7 @@ def cmd_meta(session, article_id: Optional[int] = None):
         "document_state": doc.document_state,
         "document_type": doc.document_type,
         "language": doc.language,
-        "source": doc.source,
+        "source": doc.discovery_source_name,
         "byline": doc.byline,
         "note": doc.note,
         "summary": doc.summary,
@@ -936,7 +936,7 @@ def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
         "document_state": doc.document_state,
         "document_type": doc.document_type,
         "language": doc.language,
-        "source": doc.source,
+        "source": doc.discovery_source_name,
         "byline": doc.byline,
         "note": doc.note,
         "summary": doc.summary,
@@ -976,7 +976,7 @@ def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False
     print(f"  Cache:   {_get_cache_status(doc.id)}")
     print(f"  Typ:     {doc.document_type}")
     print(f"  Język:   {doc.language}")
-    print(f"  Źródło:  {doc.source}")
+    print(f"  Źródło:  {doc.discovery_source_name}")
     obsidian_paths = doc.obsidian_note_paths or []
     if obsidian_paths:
         print(f"  Obsidian: {len(obsidian_paths)} notatek")

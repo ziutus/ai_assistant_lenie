@@ -573,7 +573,7 @@ class TestWebsiteYoutubeRetryCaptions:
         mock_doc.language = "pl"
         mock_doc.chapter_list = None
         mock_doc.note = None
-        mock_doc.source = "own"
+        mock_doc.discovery_source_name = "own"
         return mock_doc
 
     def test_retries_when_no_transcript_yet(self, client):
@@ -599,7 +599,7 @@ class TestWebsiteYoutubeRetryCaptions:
             language=mock_doc.language,
             chapter_list=mock_doc.chapter_list,
             note=mock_doc.note,
-            source=mock_doc.source,
+            source=mock_doc.discovery_source_name,
             webshare_api_key=ANY,
         )
 

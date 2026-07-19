@@ -20,13 +20,13 @@ from sqlalchemy import ColumnElement, and_, exists, func, or_, select
 
 from library.db.models import (
     Collection,
+    DiscoverySource,
     DocumentPerson,
     DocumentTimePeriod,
     Person,
     PersonAlias,
     Publisher,
     PublisherDomain,
-    Source,
     WebDocument,
 )
 from library.publisher_registry import normalize_publisher_domain
@@ -59,14 +59,14 @@ def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
         conditions.append(WebDocument.publisher_id.in_(publisher_ids))
 
     if filters.discovery_source_name is not None:
-        # Physical names stay ``source``/``sources`` until stage 11, but the
-        # domain meaning here is explicitly the discovery channel.  Never
+        # Stage 11d: web_documents carries discovery_source_id (FK to the
+        # discovery_sources lookup); the filter still takes a NAME. Never
         # join information_sources (claim/reporting provenance).
-        discovery_source_names = select(Source.name).where(
-            func.unaccent(func.lower(Source.name))
+        discovery_source_ids = select(DiscoverySource.id).where(
+            func.unaccent(func.lower(DiscoverySource.name))
             == func.unaccent(filters.discovery_source_name.strip().lower()),
         )
-        conditions.append(WebDocument.source.in_(discovery_source_names))
+        conditions.append(WebDocument.discovery_source_id.in_(discovery_source_ids))
 
     if filters.collection_name is not None:
         # Stage 11c: collections is a real lookup table and web_documents
