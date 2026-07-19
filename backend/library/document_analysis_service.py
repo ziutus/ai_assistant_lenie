@@ -211,7 +211,7 @@ def _merge_topics(sections: list[dict], model: str, mode: str = "transcript") ->
         f"Fragmenty:\n{chunk_list}"
     )
     try:
-        response_text, _ = call_model(prompt, model, max_tokens=600)
+        response_text, _ = call_model(prompt, model, max_tokens=600, operation="topic_grouping")
         match = re.search(r'\[.*\]', response_text, re.DOTALL)
         if match:
             groups = json.loads(match.group())
@@ -256,7 +256,7 @@ def _synthesize(sections: list[dict], title: str, model: str, mode: str = "trans
         f"--- STRESZCZENIA SEKCJI ---\n{summaries}\n--- KONIEC ---"
     )
     try:
-        response_text, _ = call_model(prompt, model, SYNTHESIS_MAX_TOKENS)
+        response_text, _ = call_model(prompt, model, SYNTHESIS_MAX_TOKENS, operation="document_synthesis")
         return response_text.strip()
     except Exception:
         logger.exception("synthesis LLM call failed")

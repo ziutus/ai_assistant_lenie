@@ -12,7 +12,7 @@ from library import article_tagging
 
 def _fake_ai(response_text, calls=None):
     """Zwraca podróbkę ai_ask, opcjonalnie rejestrującą wywołania w `calls`."""
-    def fake(prompt, model, temperature=0.7, max_token_count=4096, top_p=0.9):
+    def fake(prompt, model, temperature=0.7, max_token_count=4096, top_p=0.9, **kwargs):
         if calls is not None:
             calls.append({"prompt": prompt, "model": model})
         return SimpleNamespace(response_text=response_text)

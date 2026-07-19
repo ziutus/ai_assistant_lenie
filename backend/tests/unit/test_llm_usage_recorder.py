@@ -62,7 +62,7 @@ def bielik_factory(**kwargs) -> FakeSessionFactory:
 class TestEstimatedCost:
     def test_document_analysis_context_is_attached_to_usage_row(self):
         factory = bielik_factory()
-        with llm_usage_context(document_id=9258, analysis_job_id="a" * 32):
+        with llm_usage_context(document_id=9258, analysis_job_id="a" * 32, analysis_run_id=123):
             record_llm_usage(
                 operation="chunk_analysis",
                 provider="cloudferro",
@@ -74,6 +74,19 @@ class TestEstimatedCost:
 
         assert factory.added[0].document_id == 9258
         assert factory.added[0].analysis_job_id == "a" * 32
+        assert factory.added[0].analysis_run_id == 123
+
+    def test_explicit_document_keeps_job_and_run_from_context(self):
+        factory = bielik_factory()
+        with llm_usage_context(document_id=1, analysis_job_id="b" * 32, analysis_run_id=456):
+            record_llm_usage(
+                operation="tone_classification", provider="cloudferro",
+                model="Bielik-11B-v3.0-Instruct", document_id=2,
+                session_factory=factory,
+            )
+        assert factory.added[0].document_id == 2
+        assert factory.added[0].analysis_job_id == "b" * 32
+        assert factory.added[0].analysis_run_id == 456
 
     def test_per_token_pricing_writes_estimated_cost(self):
         factory = bielik_factory()

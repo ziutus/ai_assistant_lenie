@@ -117,11 +117,12 @@ def normalize_tone(candidate: dict) -> dict | None:
     }
 
 
-def classify_fragment(fragment: str, model: str) -> tuple[dict | None, dict]:
+def classify_fragment(fragment: str, model: str, *, document_id: int | None = None) -> tuple[dict | None, dict]:
     """Make one LLM call and return the validated tone (or None) with a report."""
     response = ai_ask(
         _tone_prompt(fragment), model=model, temperature=0.1, max_token_count=500,
         operation="tone_classification",
+        document_id=document_id,
     )
     candidate = parse_tone_response(response.response_text)
     tone = normalize_tone(candidate) if candidate is not None else None
@@ -139,7 +140,9 @@ def extract_document_tones(session, doc, model: str | None = None, *, chapter_po
     tones: list[dict] = []
     chapter_reports: list[dict] = []
     for chapter in _chapters_for_document(doc, chapter_position):
-        tone, report = classify_fragment(chapter["text"][:MAX_FRAGMENT_CHARS], selected_model)
+        tone, report = classify_fragment(
+            chapter["text"][:MAX_FRAGMENT_CHARS], selected_model, document_id=getattr(doc, "id", None),
+        )
         if tone is not None:
             tones.append({"chapter_position": chapter["position"], **tone})
         chapter_reports.append({
