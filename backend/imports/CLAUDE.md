@@ -36,13 +36,14 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 
 **How it works:**
 1. Resolves DynamoDB table name and S3 bucket from SSM Parameter Store (or CLI overrides)
-2. Queries DynamoDB `DateIndex` GSI day-by-day from `--since` date to today (handles pagination)
-3. For each item, checks if URL already exists in local PostgreSQL (duplicate detection via `Document.get_by_url()`)
-4. For `webpage` type items with `uuid`: fetches `{uuid}.txt` and `{uuid}.html` from S3 into memory
-5. Inserts new documents via `DocumentService.import_document(skip_if_exists=True)`
-6. After insert, saves S3 content to cache as `{CACHE_DIR}/markdown/{doc.id}/{doc.id}.html` (same convention as `document_prepare.py`, so downstream tools can reuse cached files without re-downloading from S3)
-7. For webpages: converts HTML to markdown (`_step_1_all.md`) and runs LLM article extraction (CloudFerro primary, ARK Labs fallback) unless `--skip-llm`. On successful extraction, persists `text_extracted` (raw LLM output, pre-clean) and `text_md` (after `article_cleaner.clean_article_text()`) on the document — `--skip-llm` and failed extraction leave both fields untouched
-8. Sets `processing_status` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
+2. Resolves an exact incremental watermark with second precision. By default it uses the UTC start time of the latest successful run; using the start rather than finish prevents losing items created while that run was querying DynamoDB.
+3. Queries UTC `DateIndex` partitions day-by-day, handles pagination, then retains records with `created_at >= watermark`. The partition key `created_date` is always a UTC calendar date, independent of workstation time.
+4. For each item, checks if URL already exists in local PostgreSQL (duplicate detection via `Document.get_by_url()`)
+5. For `webpage` type items with `uuid`: fetches `{uuid}.txt` and `{uuid}.html` from S3 into memory
+6. Inserts new documents via `DocumentService.import_document(skip_if_exists=True)`
+7. After insert, saves S3 content to cache as `{CACHE_DIR}/markdown/{doc.id}/{doc.id}.html` (same convention as `document_prepare.py`, so downstream tools can reuse cached files without re-downloading from S3)
+8. For webpages: converts HTML to markdown (`_step_1_all.md`) and runs LLM article extraction (CloudFerro primary, ARK Labs fallback) unless `--skip-llm`. On successful extraction, persists `text_extracted` (raw LLM output, pre-clean) and `text_md` (after `article_cleaner.clean_article_text()`) on the document — `--skip-llm` and failed extraction leave both fields untouched
+9. Sets `processing_status` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
 
 **DynamoDB → PostgreSQL field mapping:**
 - `url` → `url`, `type` → `document_type`, `title` → `title`, `language` → `language`
@@ -53,8 +54,10 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 **Running:**
 ```bash
 cd backend
-./imports/dynamodb_sync.py                                  # auto-detect --since from last successful run
-./imports/dynamodb_sync.py --since 2026-02-20               # explicit date
+./imports/dynamodb_sync.py                                  # exact timestamp from latest successful run, UTC
+./imports/dynamodb_sync.py --since 2026-02-20T14:30:00Z     # explicit UTC timestamp
+./imports/dynamodb_sync.py --since 2026-02-20T15:30:00 --timezone Europe/Warsaw
+./imports/dynamodb_sync.py --since 2026-02-20               # midnight in --timezone
 ./imports/dynamodb_sync.py --since 2026-02-20 --dry-run
 ./imports/dynamodb_sync.py --since 2026-02-20 --limit 10
 ./imports/dynamodb_sync.py --since 2026-02-20 --skip-s3
@@ -62,7 +65,8 @@ cd backend
 ```
 
 **Arguments:**
-- `--since YYYY-MM-DD` (optional) — sync from this date. If omitted, auto-detected from last successful run in `import_logs`
+- `--since ISO-8601` (optional) — inclusive date/time watermark. A date means midnight; a naive timestamp is interpreted in `--timezone`; a timestamp with offset or `Z` keeps its own offset. If omitted, the start timestamp of the latest successful run is used with second precision.
+- `--timezone IANA_ZONE` — working timezone for parsing naive `--since` values and displaying the automatic watermark (default: `UTC`; example: `Europe/Warsaw`). DynamoDB partitions remain UTC regardless of this option.
 - `--dry-run` — preview only, no DB writes or S3 downloads
 - `--limit N` — max documents to sync (for testing)
 - `--skip-s3` — metadata only, skip S3 file downloads
@@ -75,6 +79,8 @@ cd backend
 - `-y`, `--yes` — skip confirmation prompt (for automation)
 
 Before executing any operations, the script displays source (AWS profile, region) and target (PostgreSQL host/db/port/user) information, then asks for confirmation (`Continue? [Y/n]`, Enter accepts). Use `-y` to skip the prompt.
+
+**UTC and incremental safety:** DynamoDB uses `created_date` as a UTC partition key and `created_at` as the precise creation timestamp. PostgreSQL import-log timestamps are also interpreted as UTC. The next automatic run starts inclusively from the previous successful run's `started_at`, not `finished_at`. This intentionally re-reads a small overlap, preventing an item written during the prior query from falling behind its watermark. URL deduplication makes this overlap idempotent. `--timezone` affects parsing and display only; comparisons and DynamoDB partition selection always use UTC.
 
 **SSM parameters used:**
 - `/{project}/{env}/dynamodb/documents/name` — DynamoDB table name
@@ -365,5 +371,5 @@ One-time migration script: copies UUID-named `.html`/`.txt` files from `imports/
 - All scripts bypass the REST API intentionally — they are meant for local or scheduled operations, not the web interface.
 - DB-writing scripts use ORM models (`Document` from `library.db.models`) with `get_session()` from `library.db.engine`. Session lifecycle: `session = get_session()` → `try` → `session.commit()` → `finally` → `session.close()`.
 - Document creation goes through `DocumentService.import_document(skip_if_exists=True)` (`library/document_service.py`), which handles duplicate detection via `Document.get_by_url()`.
-- Bulk import runs (`dynamodb_sync.py`, `feed_monitor.py`) are recorded in the `import_logs` table via `ImportLogTracker` (`library/import_log_tracker.py`); the last successful run is used to auto-detect the `--since` date.
+- Bulk import runs (`dynamodb_sync.py`, `feed_monitor.py`) are recorded in the `import_logs` table via `ImportLogTracker` (`library/import_log_tracker.py`). `dynamodb_sync.py` uses the latest successful run's UTC `started_at` as its exact automatic watermark. Legacy `since_date`/`until_date` remain day-level reporting fields; the exact UTC watermark and selected timezone are stored in `parameters`.
 - `control_questions.py` and `freedom_house_import.py` are standalone tools that never touch the database.
