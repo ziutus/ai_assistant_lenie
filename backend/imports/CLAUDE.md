@@ -20,7 +20,7 @@ imports/
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
 ├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
 ├── youtube_add.py            # Ad-hoc: process a single YouTube video (optionally + LLM analysis)
-├── youtube_backfill_author.py # One-off: fetch channel name for existing videos missing 'author'
+├── youtube_backfill_author.py # One-off: fetch channel name for existing videos missing 'byline'
 └── youtube_batch_analyze.py  # Bielik LLM chunk analysis of an existing document (by ID)
 ```
 
@@ -47,7 +47,7 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 **DynamoDB → PostgreSQL field mapping:**
 - `url` → `url`, `type` → `document_type`, `title` → `title`, `language` → `language`
 - `source` → `source` (default "own"), `note` → `note`, `paywall` → `paywall`
-- `chapter_list` → `chapter_list`, `s3_uuid` → `uuid` (backward-compat: reads both `uuid` and `s3_uuid` from DynamoDB), `created_at` → `created_at`
+- `chapter_list` → `chapter_list`, `s3_uuid` → `uuid` (backward-compat: reads both `uuid` and `s3_uuid` from DynamoDB), `created_at` → `ingested_at` (historical DynamoDB items keep the old field name)
 - S3 `{uuid}.txt` → `text`, S3 `{uuid}.html` → `text_raw`
 
 **Running:**
@@ -208,7 +208,7 @@ python imports/youtube_add.py <URL> --analyze --speaker1 "..." --speaker2 "..."
 
 ### `youtube_backfill_author.py`
 
-One-off backfill for the `author` field (YouTube channel name) on videos added before `youtube_processing.py` started setting it automatically (`process_youtube_url()` sets `web_document.author = youtube_file.author` on every new video). Queries `documents` for `document_type='youtube' AND author IS NULL`, re-fetches metadata per video via `pytubefix`, and commits per document.
+One-off backfill for the `byline` field (YouTube channel name) on videos added before `youtube_processing.py` started setting it automatically (`process_youtube_url()` sets the document byline from `youtube_file.author` on every new video). Queries `documents` for `document_type='youtube' AND byline IS NULL`, re-fetches metadata per video via `pytubefix`, and commits per document.
 
 **Data access: ORM (SQLAlchemy)** via `get_session()`.
 
