@@ -250,13 +250,13 @@ class WebDocument(Base):
     publisher_id: Mapped[int | None] = mapped_column(
         ForeignKey("publishers.id", ondelete="SET NULL"), index=True,
     )
-    date_from: Mapped[datetime.date | None] = mapped_column(Date)
-    # How date_from was set — "manual" (reviewer typed it on /chunks) or "llm"
+    published_on: Mapped[datetime.date | None] = mapped_column(Date)
+    # How published_on was set — "manual" (reviewer typed it on /chunks) or "llm"
     # (extract_publication_date). NULL for legacy/import-set values (unknown
     # provenance). Lets a future pass find documents where the automatic
     # pipeline never found a date, to build deterministic per-portal rules —
     # the same workflow document_removed_lines already does for cleanup rules.
-    date_from_source: Mapped[str | None] = mapped_column(String(10))
+    published_on_method: Mapped[str | None] = mapped_column(String(10))
     original_id: Mapped[str | None] = mapped_column(Text)
     document_length: Mapped[int | None] = mapped_column(Integer)
     chapter_list: Mapped[str | None] = mapped_column(Text)
@@ -279,7 +279,7 @@ class WebDocument(Base):
     author: Mapped[str | None] = mapped_column(Text)
     # How author was set — "manual" (reviewer typed it on /chunks) or "llm"
     # (extract_author / pipeline step 11b2). NULL for legacy/import-set values.
-    # Mirrors date_from_source: lets a future pass find documents where the
+    # Mirrors published_on_method: lets a future pass find documents where the
     # byline extraction failed and a human had to fix it.
     author_source: Mapped[str | None] = mapped_column(String(10))
     note: Mapped[str | None] = mapped_column(Text)
@@ -462,8 +462,8 @@ class WebDocument(Base):
             "created_at": created_at_str,
             "document_type": self.document_type,
             "source": self.source,
-            "date_from": self.date_from,
-            "date_from_source": self.date_from_source,
+            "published_on": self.published_on,
+            "published_on_method": self.published_on_method,
             "original_id": self.original_id,
             "document_length": self.document_length,
             "chapter_list": self.chapter_list,

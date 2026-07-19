@@ -387,7 +387,7 @@ const Read: React.FC = () => {
   const [citedPublications, setCitedPublications] = React.useState<CitedPublicationLink[]>([]);
   const [docQuality, setDocQuality] = React.useState<DocQuality | null>(null);
   const [docUrl, setDocUrl] = React.useState<string | null>(null);
-  const [docDateFrom, setDocDateFrom] = React.useState<string | null>(null);
+  const [docPublishedOn, setDocPublishedOn] = React.useState<string | null>(null);
   const [docCreatedAt, setDocCreatedAt] = React.useState<string | null>(null);
   const [content, setContent] = React.useState<ChapterContent | null>(null);
   // sidebar scope: current chapter (default) vs whole document
@@ -458,7 +458,7 @@ const Read: React.FC = () => {
         setSynthesis(data.synthesis ?? null);
         setDocQuality(data.quality ?? null);
         setDocUrl(data.url ?? null);
-        setDocDateFrom(data.date_from ?? null);
+        setDocPublishedOn(data.published_on ?? null);
         setDocCreatedAt(data.created_at ?? null);
       } catch (e) {
         setError(String(e));
@@ -850,9 +850,9 @@ const Read: React.FC = () => {
         <div style={{ marginLeft: "auto" }}><ReaderIdentityBadge identity={identity} /></div>
       </div>
 
-      {(docDateFrom || docCreatedAt || docUrl) && (
+      {(docPublishedOn || docCreatedAt || docUrl) && (
         <div style={{ fontSize: "0.82em", color: "#64748b", marginBottom: 10, display: "flex", gap: 14, flexWrap: "wrap" }}>
-          {docDateFrom && <span>📅 Opublikowano: {new Date(docDateFrom).toLocaleDateString("pl-PL")}</span>}
+          {docPublishedOn && <span>📅 Opublikowano: {new Date(docPublishedOn).toLocaleDateString("pl-PL")}</span>}
           {docCreatedAt && <span>Dodano do Lenie: {new Date(docCreatedAt).toLocaleDateString("pl-PL")}</span>}
           {docUrl && (
             <a href={docUrl} target="_blank" rel="noreferrer" style={{ color: "#0369a1", wordBreak: "break-all" }}>

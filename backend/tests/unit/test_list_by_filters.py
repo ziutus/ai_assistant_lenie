@@ -30,7 +30,7 @@ def _fake_document(**overrides):
     doc = MagicMock()
     defaults = {
         "id": 1, "title": "Tytuł", "url": "https://example.com", "document_type": "webpage",
-        "project": None, "language": "pl", "date_from": None, "created_at": None,
+        "project": None, "language": "pl", "published_on": None, "created_at": None,
     }
     defaults.update(overrides)
     for key, value in defaults.items():
@@ -90,13 +90,13 @@ class TestListByFiltersSort:
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters(), sort=SearchSort.PUBLISHED_DESC)
         sql = _compiled_sql(session)
-        assert "web_documents.date_from DESC" in sql
+        assert "web_documents.published_on DESC" in sql
 
     def test_published_asc(self):
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters(), sort=SearchSort.PUBLISHED_ASC)
         sql = _compiled_sql(session)
-        assert "web_documents.date_from ASC" in sql
+        assert "web_documents.published_on ASC" in sql
 
     def test_ingested_desc(self):
         repo, session = _repo_with_mock_session()
@@ -114,7 +114,7 @@ class TestListByFiltersSort:
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters(), sort="published_desc")
         sql = _compiled_sql(session)
-        assert "web_documents.date_from DESC" in sql
+        assert "web_documents.published_on DESC" in sql
 
 
 class TestListByFiltersLimitOffset:
@@ -133,7 +133,7 @@ class TestListByFiltersResultShape:
         doc = _fake_document(
             id=42, title="Artykuł", url="https://x.pl/a", document_type="webpage",
             project="lenie", language="pl",
-            date_from=datetime.date(2020, 1, 1), created_at=datetime.datetime(2020, 1, 2, 10, 0),
+            published_on=datetime.date(2020, 1, 1), created_at=datetime.datetime(2020, 1, 2, 10, 0),
         )
         repo, _ = _repo_with_mock_session([doc])
         result = repo.list_by_filters(SearchFilters())
@@ -144,16 +144,16 @@ class TestListByFiltersResultShape:
             "document_type": "webpage",
             "project": "lenie",
             "language": "pl",
-            "date_from": "2020-01-01",
+            "published_on": "2020-01-01",
             "created_at": "2020-01-02T10:00:00",
             "similarity": None,
             "search_match": "filters_only",
         }]
 
     def test_null_dates_become_none(self):
-        repo, _ = _repo_with_mock_session([_fake_document(date_from=None, created_at=None)])
+        repo, _ = _repo_with_mock_session([_fake_document(published_on=None, created_at=None)])
         result = repo.list_by_filters(SearchFilters())
-        assert result[0]["date_from"] is None
+        assert result[0]["published_on"] is None
         assert result[0]["created_at"] is None
 
     def test_no_commit_called(self):

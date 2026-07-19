@@ -73,8 +73,8 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `author` | `text` | Document author |
 | `note` | `text` | User notes |
 | `paywall` | `boolean` | Whether content is behind a paywall (default: false) |
-| `date_from` | `date` | Publication date |
-| `date_from_source` | `varchar(10)` | How `date_from` was set: `manual` (reviewer typed it on `/chunks`) or `llm` (`extract_publication_date`); `NULL` for legacy/import-set values. CHECK constraint `ck_web_documents_date_from_source` |
+| `published_on` | `date` | Publication date |
+| `published_on_method` | `varchar(10)` | How `published_on` was set: `manual` (reviewer typed it on `/chunks`) or `llm` (`extract_publication_date`); `NULL` for legacy/import-set values. CHECK constraint `ck_web_documents_published_on_method` |
 | `created_at` | `timestamp` | Row creation timestamp |
 | `document_length` | `integer` | Text length in characters |
 | `chapter_list` | `text` | Chapter/section list (for videos/transcripts) |
@@ -84,7 +84,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `uuid` | `varchar(100) NOT NULL DEFAULT gen_random_uuid()` | Global document identifier (ADR-015), UNIQUE |
 | `project` | `varchar(100)` | Project/collection grouping |
 
-**Indexes:** `document_type`, `document_state`, `created_at`, `url`, `project`, `source`, `date_from`, `paywall`, `ai_summary_needed`.
+**Indexes:** `document_type`, `document_state`, `created_at`, `url`, `project`, `source`, `published_on`, `paywall`, `ai_summary_needed`.
 
 ### Table: `public.websites_embeddings`
 

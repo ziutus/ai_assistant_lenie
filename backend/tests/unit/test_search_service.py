@@ -412,9 +412,9 @@ class TestStage8Search:
         get_embedding.return_value = _make_embedding_result()
         service = SearchService(_make_session())
         merged = [
-            {"website_id": 1, "date_from": None},
-            {"website_id": 2, "date_from": "2020-01-01"},
-            {"website_id": 3, "date_from": "2022-01-01"},
+            {"website_id": 1, "published_on": None},
+            {"website_id": 2, "published_on": "2020-01-01"},
+            {"website_id": 3, "published_on": "2022-01-01"},
         ]
         with patch.object(service.repo, "search_text", return_value=[]), \
              patch.object(service.repo, "get_similar", return_value=[]), \

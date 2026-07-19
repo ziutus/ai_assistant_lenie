@@ -154,11 +154,11 @@ class SearchService:
                            embedding_result.status)
         merged = self._merge_results(query, lexical, semantic, limit + offset)
         if sort is SearchSort.PUBLISHED_DESC:
-            merged.sort(key=lambda item: (item.get("date_from") is not None,
-                                          item.get("date_from") or ""), reverse=True)
+            merged.sort(key=lambda item: (item.get("published_on") is not None,
+                                          item.get("published_on") or ""), reverse=True)
         elif sort is SearchSort.PUBLISHED_ASC:
-            merged.sort(key=lambda item: (item.get("date_from") is None,
-                                          item.get("date_from") or ""))
+            merged.sort(key=lambda item: (item.get("published_on") is None,
+                                          item.get("published_on") or ""))
         elif sort is SearchSort.INGESTED_DESC:
             merged.sort(key=lambda item: (item.get("created_at") is not None,
                                           item.get("created_at") or ""), reverse=True)
