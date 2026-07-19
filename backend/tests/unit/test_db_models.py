@@ -158,7 +158,7 @@ class TestWebDocumentColumns:
         "source", "publisher_id", "published_on", "published_on_method", "original_id", "document_length",
         "chapter_list", "document_state", "document_state_error",
         "text_raw", "transcript_job_id", "ai_summary_needed",
-        "byline", "byline_method", "note", "uuid", "project", "text_md",
+        "byline", "byline_method", "note", "uuid", "collection_id", "text_md",
         "text_extracted", "transcript_needed", "reviewed_at",
         "obsidian_note_paths", "video_description", "ner_unavailable_at",
         "quality",
@@ -233,10 +233,11 @@ class TestWebDocumentColumnTypes:
         assert isinstance(col.type, String)
         assert col.type.length == 100
 
-    def test_project_is_string_100(self):
-        col = _get_column(WebDocument, "project")
-        assert isinstance(col.type, String)
-        assert col.type.length == 100
+    def test_collection_id_is_fk_to_collections(self):
+        col = _get_column(WebDocument, "collection_id")
+        fks = list(col.foreign_keys)
+        assert len(fks) == 1
+        assert fks[0].column.table.name == "collections"
 
     def test_text_fields_are_text_type(self):
         text_columns = [
@@ -519,7 +520,7 @@ class TestDict:
             "created_at", "document_type", "source", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "document_state",
             "document_state_error", "text_raw", "transcript_job_id",
-            "ai_summary_needed", "byline", "byline_method", "note", "uuid", "project",
+            "ai_summary_needed", "byline", "byline_method", "note", "uuid", "collection_id",
             "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths", "video_description",
             "quality",

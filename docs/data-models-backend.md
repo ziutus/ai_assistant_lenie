@@ -38,9 +38,9 @@ Primary document storage table.
 | `transcript_job_id` | text | — | Transcription service job ID |
 | `ai_summary_needed` | boolean | DEFAULT false | Flag for AI summary generation |
 | `uuid` | varchar(100) | NOT NULL DEFAULT gen_random_uuid(), UNIQUE | Global document identifier (ADR-015) |
-| `project` | varchar(100) | — | Project/collection grouping |
+| `collection_id` | integer | FK → collections.id | Thematic collection (ADR-017: 1:N; replaced `project` in stage 11c) |
 
-**Indexes**: document_type, document_state, created_at, url, project, source, published_on, paywall, ai_summary_needed
+**Indexes**: document_type, document_state, created_at, url, collection_id, source, published_on, paywall, ai_summary_needed
 
 ### Table: websites_embeddings (8 columns)
 

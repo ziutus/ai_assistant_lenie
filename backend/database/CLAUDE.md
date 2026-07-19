@@ -34,7 +34,13 @@ database/
     ├── 25-create-infra-geometries.sql            # infra_geometries (Overpass pipeline-route cache)
     ├── 26-create-document-references.sql         # document_references (book footnotes extracted from text_md)
     ├── 27-create-document-events.sql             # document_events (LLM-extracted document timeline)
-    └── 28-create-sources.sql                     # sources lookup + fk_source on web_documents.source
+    ├── 28-create-sources.sql                     # sources lookup + fk_source on web_documents.source
+    ├── 29-add-author-biography-review.sql
+    ├── 30-create-information-sources.sql         # information_sources (claim/reporting provenance)
+    ├── 31-add-tags-to-user-document-notes.sql
+    ├── 31-create-cited-publications.sql
+    ├── 32-create-document-analysis-jobs.sql
+    └── 33-create-collections.sql                 # collections lookup + FK on web_documents.collection_id (stage 11c)
 ```
 
 ## How Init Scripts Are Used
@@ -83,9 +89,9 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `transcript_job_id` | `text` | Transcription service job ID |
 | `ai_summary_needed` | `boolean` | Flag: needs AI summary (default: false) |
 | `uuid` | `varchar(100) NOT NULL DEFAULT gen_random_uuid()` | Global document identifier (ADR-015), UNIQUE |
-| `project` | `varchar(100)` | Project/collection grouping |
+| `collection_id` | `integer` | FK → `collections.id` (`ON DELETE SET NULL`) — thematic collection (ADR-017: 1:N; replaced the never-used `project` string column in stage 11c) |
 
-**Indexes:** `document_type`, `document_state`, `created_at`, `url`, `project`, `source`, `published_on`, `paywall`, `ai_summary_needed`.
+**Indexes:** `document_type`, `document_state`, `created_at`, `url`, `collection_id`, `source`, `published_on`, `paywall`, `ai_summary_needed`, `publisher_id`.
 
 ### Table: `public.websites_embeddings`
 

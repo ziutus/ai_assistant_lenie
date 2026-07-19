@@ -60,11 +60,14 @@ class TestGetSimilarFilters:
         sql = _compiled_sql(session)
         assert sql.index("document_type") < sql.index("LIMIT")
 
-    def test_project_and_filters_combine(self):
+    def test_collection_and_filters_combine(self):
+        from dataclasses import replace
         repo, session = _repo_with_mock_session()
-        repo.get_similar([0.1, 0.2], model="m", project="lenie", filters=FILTERS)
+        repo.get_similar([0.1, 0.2], model="m",
+                         filters=replace(FILTERS, collection_name="lenie"))
         sql = _compiled_sql(session)
-        assert "web_documents.project" in sql
+        assert "web_documents.collection_id" in sql
+        assert "collections" in sql
         assert "'lenie'" in sql
         assert "document_type" in sql
 
