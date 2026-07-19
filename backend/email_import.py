@@ -347,7 +347,7 @@ def main():
         doc = WebDocument(url=url)
         doc.document_type = StalkerDocumentType.email.name
         doc.title = subject
-        doc.author = author
+        doc.byline = author
         doc.text = text
         doc.text_raw = text_raw
         doc.source = args.source

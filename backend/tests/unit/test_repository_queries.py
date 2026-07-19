@@ -78,7 +78,7 @@ class TestGetList:
         mock_row.note = "note"
         mock_row.project = "lenie"
         mock_row.uuid = "uuid-1"
-        mock_row.author = None
+        mock_row.byline = None
         mock_row.obsidian_note_paths = None
 
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))

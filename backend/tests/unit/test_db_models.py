@@ -158,7 +158,7 @@ class TestWebDocumentColumns:
         "source", "publisher_id", "published_on", "published_on_method", "original_id", "document_length",
         "chapter_list", "document_state", "document_state_error",
         "text_raw", "transcript_job_id", "ai_summary_needed",
-        "author", "author_source", "note", "uuid", "project", "text_md",
+        "byline", "byline_method", "note", "uuid", "project", "text_md",
         "text_extracted", "transcript_needed", "reviewed_at",
         "obsidian_note_paths", "video_description", "ner_unavailable_at",
         "quality",
@@ -242,7 +242,7 @@ class TestWebDocumentColumnTypes:
         text_columns = [
             "summary", "tags", "text", "title", "text_raw",
             "text_md", "text_extracted", "chapter_list", "source",
-            "original_id", "transcript_job_id", "author", "note",
+            "original_id", "transcript_job_id", "byline", "note",
         ]
         for name in text_columns:
             col = _get_column(WebDocument, name)
@@ -519,7 +519,7 @@ class TestDict:
             "created_at", "document_type", "source", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "document_state",
             "document_state_error", "text_raw", "transcript_job_id",
-            "ai_summary_needed", "author", "author_source", "note", "uuid", "project",
+            "ai_summary_needed", "byline", "byline_method", "note", "uuid", "project",
             "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths", "video_description",
             "quality",

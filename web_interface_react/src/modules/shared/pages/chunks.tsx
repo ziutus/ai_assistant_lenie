@@ -666,10 +666,10 @@ const Chunks = () => {
       setVideoId(data.document?.original_id ?? "");
       setDocType(data.document?.document_type ?? "");
       setDocUrl(data.document?.url ?? "");
-      setDocAuthor(data.document?.author ?? "");
-      setDocAuthorSource(data.document?.author_source ?? null);
+      setDocAuthor(data.document?.byline ?? "");
+      setDocAuthorSource(data.document?.byline_method ?? null);
       setAuthorPersons(data.document?.author_persons ?? []);
-      setAuthorInput(data.document?.author ?? "");
+      setAuthorInput(data.document?.byline ?? "");
       setDocPublishedOn(data.document?.published_on ?? null);
       setDocPublishedOnMethod(data.document?.published_on_method ?? null);
       setDateInput(data.document?.published_on ?? "");
@@ -715,8 +715,8 @@ const Chunks = () => {
         if (data.document_type) setDocType(data.document_type);
         if (data.title) setDocTitle(data.title);
         if (data.url) setDocUrl(data.url);
-        if (data.author) { setDocAuthor(data.author); setAuthorInput(data.author); }
-        if (data.author_source) setDocAuthorSource(data.author_source);
+        if (data.byline) { setDocAuthor(data.byline); setAuthorInput(data.byline); }
+        if (data.byline_method) setDocAuthorSource(data.byline_method);
         if (data.published_on) { setDocPublishedOn(data.published_on); setDateInput(data.published_on); }
         if (data.quality) setDocQuality(data.quality);
       } catch { /* analysis can still be configured manually */ }
@@ -1356,11 +1356,11 @@ const Chunks = () => {
 
   // Detect the article author (byline) from one specific chunk. Unlike speaker
   // detection, no position limit — a byline can appear at either the start or
-  // the end of an article. Saves directly to doc.author (backend commits it).
-  const applyAuthorResponse = (data: { author: string; author_source?: string; author_persons?: AuthorPerson[] }) => {
-    setDocAuthor(data.author);
-    setAuthorInput(data.author);
-    setDocAuthorSource(data.author_source ?? "llm");
+  // the end of an article. Saves directly to doc.byline (backend commits it).
+  const applyAuthorResponse = (data: { byline: string; byline_method?: string; author_persons?: AuthorPerson[] }) => {
+    setDocAuthor(data.byline);
+    setAuthorInput(data.byline);
+    setDocAuthorSource(data.byline_method ?? "llm");
     setAuthorPersons(data.author_persons ?? []);
   };
 
@@ -1373,9 +1373,9 @@ const Chunks = () => {
         body: JSON.stringify({ chunk_ids: [chunkId] }),
       });
       const data = await r.json();
-      if (data.status === "success" && data.author) {
+      if (data.status === "success" && data.byline) {
         applyAuthorResponse(data);
-        setInfo(`Ustawiono autora: ${data.author}`);
+        setInfo(`Ustawiono autora: ${data.byline}`);
       }
       else if (data.status === "success") setError("Nie udało się rozpoznać autora w tym chunku");
       else setError("Błąd wykrywania autora: " + (data.message ?? ""));
@@ -1433,13 +1433,13 @@ const Chunks = () => {
     if (!id || !authorInput.trim()) return;
     setSavingAuthor(true);
     try {
-      const r = await fetch(`${apiUrl}/document/${id}/author`, {
-        method: "POST", headers, body: JSON.stringify({ author: authorInput }),
+      const r = await fetch(`${apiUrl}/document/${id}/byline`, {
+        method: "POST", headers, body: JSON.stringify({ byline: authorInput }),
       });
       const data = await r.json();
       if (data.status === "success") {
-        applyAuthorResponse({ ...data, author_source: data.author_source ?? "manual" });
-        setInfo(`Ustawiono autora: ${data.author}`);
+        applyAuthorResponse({ ...data, byline_method: data.byline_method ?? "manual" });
+        setInfo(`Ustawiono autora: ${data.byline}`);
       } else setError("Błąd zapisu autora: " + (data.message ?? ""));
     } catch { setError("Błąd połączenia przy zapisie autora"); }
     finally { setSavingAuthor(false); }
@@ -1456,9 +1456,9 @@ const Chunks = () => {
         method: "POST", headers, body: JSON.stringify({ context_text: contextText }),
       });
       const data = await r.json();
-      if (data.status === "success" && data.author) {
+      if (data.status === "success" && data.byline) {
         applyAuthorResponse(data);
-        setInfo(`Ustawiono autora: ${data.author}. Linię autora możesz teraz oznaczyć × i usunąć.`);
+        setInfo(`Ustawiono autora: ${data.byline}. Linię autora możesz teraz oznaczyć × i usunąć.`);
       } else if (data.status === "success") setError("Nie udało się rozpoznać autora w tym kontekście");
       else setError("Błąd wykrywania autora: " + (data.message ?? ""));
     } catch { setError("Błąd połączenia przy wykrywaniu autora"); }

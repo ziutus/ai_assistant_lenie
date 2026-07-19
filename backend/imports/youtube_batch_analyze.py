@@ -88,8 +88,8 @@ def main():
 
         print(f"Tytuł  : {doc.title}")
         print(f"Typ    : {doc.document_type} | Stan: {doc.document_state}")
-        if doc.author:
-            print(f"Autor  : {doc.author}")
+        if doc.byline:
+            print(f"Autor  : {doc.byline}")
 
         segments = _load_segments(getattr(doc, "text_raw", "") or "")
         if segments:

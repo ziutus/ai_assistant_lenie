@@ -391,7 +391,7 @@ def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -
     photo_source_penalty = min(15, sum(photo_source_penalty_details.values()))
     if photo_source_penalty:
         penalties["photo_sources"] = photo_source_penalty
-    if not (getattr(doc, "author", None) or "").strip():
+    if not (getattr(doc, "byline", None) or "").strip():
         penalties["missing_author"] = 10
     if noise_share > 0:
         penalties["noise_share"] = min(20, round(noise_share * 50))

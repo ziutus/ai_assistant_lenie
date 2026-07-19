@@ -213,7 +213,7 @@ def refresh_existing_document(session, item: dict, text_content: str | None,
     from library.author_service import set_document_authors
 
     authors = extract_article_authors(html_content, doc.url)
-    set_document_authors(session, doc, authors, source="html")
+    set_document_authors(session, doc, authors, method="html")
     session.commit()
     print(f"  REFRESHED (id={doc.id}, authors={authors or 'none'})")
     return doc.id
@@ -260,9 +260,9 @@ def process_article_content(doc_id: int, cache_base_dir: str,
         cleaned = clean_article_text(article, doc.url)
         doc.text_extracted = article
         doc.text_md = cleaned["text"]
-        if not doc.author:
+        if not doc.byline:
             with open(html_file, encoding="utf-8") as f:
-                doc.author = extract_article_author(f.read(), doc.url)
+                doc.byline = extract_article_author(f.read(), doc.url)
         try:
             session.commit()
             print(f"  Process: saved text_extracted/text_md ({len(cleaned['text'])} chars cleaned)")
