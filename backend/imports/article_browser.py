@@ -714,7 +714,7 @@ def _get_documents(session, limit: int = 50, since: Optional[str] = None,
     stmt = (
         select(Document.id)
         .where(Document.document_type == "webpage")
-        .order_by(Document.created_at.desc())
+        .order_by(Document.ingested_at.desc())
         .limit(limit)
     )
     if portal:
@@ -724,9 +724,9 @@ def _get_documents(session, limit: int = 50, since: Optional[str] = None,
         stmt = stmt.where(Document.processing_status == state)
     if since:
         since_date = datetime.strptime(since, "%Y-%m-%d")
-        # Dokumenty bez created_at przechodzą filtr (jak w starym filtrowaniu w Pythonie)
-        stmt = stmt.where(or_(Document.created_at.is_(None),
-                              Document.created_at >= since_date))
+        # Dokumenty bez ingested_at przechodzą filtr (jak w starym filtrowaniu w Pythonie)
+        stmt = stmt.where(or_(Document.ingested_at.is_(None),
+                              Document.ingested_at >= since_date))
     if not_reviewed:
         stmt = stmt.where(Document.reviewed_at.is_(None))
     if no_obsidian:
