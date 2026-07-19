@@ -209,7 +209,7 @@ def test_document_time_period_orm_model():
     assert isinstance(columns["period_start_year"].type, Integer)
     assert isinstance(columns["period_label"].type, String)
     assert isinstance(columns["evidence"].type, Text)
-    assert list(columns["document_id"].foreign_keys)[0].target_fullname == "web_documents.id"
+    assert list(columns["document_id"].foreign_keys)[0].target_fullname == "documents.id"
     assert "idx_document_time_periods_document_chapter" in {
         index.name for index in DocumentTimePeriod.__table__.indexes
     }

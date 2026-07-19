@@ -9,7 +9,7 @@ database/
 └── init/                                        # Docker entrypoint init scripts (run in alphabetical order)
     ├── 01-create-database.sql                    # Creates the "lenie-ai" database
     ├── 02-create-extension.sql                   # Installs pgvector extension
-    ├── 03-create-table.sql                       # Creates web_documents table + indexes
+    ├── 03-create-table.sql                       # Creates documents table + indexes
     ├── 04-create-table.sql                       # Creates document_embeddings table + indexes
     ├── 05-migrate-ready-for-translation.sql
     ├── 06-drop-english-columns.sql
@@ -34,13 +34,13 @@ database/
     ├── 25-create-infra-geometries.sql            # infra_geometries (Overpass pipeline-route cache)
     ├── 26-create-document-references.sql         # document_references (book footnotes extracted from text_md)
     ├── 27-create-document-events.sql             # document_events (LLM-extracted document timeline)
-    ├── 28-create-sources.sql                     # discovery_sources lookup + FK on web_documents.discovery_source_id
+    ├── 28-create-sources.sql                     # discovery_sources lookup + FK on documents.discovery_source_id
     ├── 29-add-author-biography-review.sql
     ├── 30-create-information-sources.sql         # information_sources (claim/reporting provenance)
     ├── 31-add-tags-to-user-document-notes.sql
     ├── 31-create-cited-publications.sql
     ├── 32-create-document-analysis-jobs.sql
-    └── 33-create-collections.sql                 # collections lookup + FK on web_documents.collection_id (stage 11c)
+    └── 33-create-collections.sql                 # collections lookup + FK on documents.collection_id (stage 11c)
 ```
 
 ## How Init Scripts Are Used
@@ -53,7 +53,7 @@ To re-initialize the database, delete the named volume (`lenie-ai-db-data-3`) an
 
 PostgreSQL 18 with the **pgvector** extension for vector similarity search.
 
-### Table: `public.web_documents`
+### Table: `public.documents`
 
 Main document storage. Each row represents a collected web resource (article, video, transcript, etc.).
 
@@ -75,13 +75,13 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `summary_english` | `text` | English translation of summary |
 | `language` | `varchar(10)` | Detected language code |
 | `tags` | `text` | Comma-separated tags |
-| `discovery_source_id` | `integer` | Discovery source (how the user found the document) — FK → `discovery_sources.id` (stage 11d; wire format keeps the NAME under `source`); unknown names are auto-created by `WebDocument.set_discovery_source()` |
+| `discovery_source_id` | `integer` | Discovery source (how the user found the document) — FK → `discovery_sources.id` (stage 11d; wire format keeps the NAME under `source`); unknown names are auto-created by `Document.set_discovery_source()` |
 | `byline` | `text` | Document author(s) display cache (comma-separated); structured links in `document_persons` (role=`author`) |
-| `byline_method` | `varchar(10)` | How `byline` was set: `manual`, `llm` or `html`; `NULL` for legacy/import-set values. CHECK constraint `ck_web_documents_byline_method` |
+| `byline_method` | `varchar(10)` | How `byline` was set: `manual`, `llm` or `html`; `NULL` for legacy/import-set values. CHECK constraint `ck_documents_byline_method` |
 | `note` | `text` | User notes |
 | `paywall` | `boolean` | Whether content is behind a paywall (default: false) |
 | `published_on` | `date` | Publication date |
-| `published_on_method` | `varchar(10)` | How `published_on` was set: `manual` (reviewer typed it on `/chunks`) or `llm` (`extract_publication_date`); `NULL` for legacy/import-set values. CHECK constraint `ck_web_documents_published_on_method` |
+| `published_on_method` | `varchar(10)` | How `published_on` was set: `manual` (reviewer typed it on `/chunks`) or `llm` (`extract_publication_date`); `NULL` for legacy/import-set values. CHECK constraint `ck_documents_published_on_method` |
 | `created_at` | `timestamp` | Row creation timestamp |
 | `document_length` | `integer` | Text length in characters |
 | `chapter_list` | `text` | Chapter/section list (for videos/transcripts) |
@@ -100,7 +100,7 @@ Vector embeddings for document chunks used in similarity search.
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE delete) |
 | `language` | `varchar(10)` | Language of the embedded text |
 | `text` | `text` | Translated/processed text that was embedded |
 | `text_original` | `text` | Original text before translation |
@@ -118,7 +118,7 @@ One row per chunk-analysis pass over a document (`library/document_analysis_serv
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE delete) |
 | `model` | `varchar(100) NOT NULL` | LLM model used for the analysis |
 | `chunk_size` | `integer NOT NULL DEFAULT 5000` | Target chunk size in characters |
 | `synthesis` | `text` | LLM-generated overview of the whole run (shown as a collapsible "Synteza" panel in `/chunks/:id`) |
@@ -136,7 +136,7 @@ One row per chunk produced by a run.
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `run_id` | `integer NOT NULL` | FK → `document_analysis_runs.id` (CASCADE delete) |
-| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE delete) |
 | `position` | `smallint NOT NULL` | 1-based order within the run |
 | `type` | `varchar(20) NOT NULL` | `TEMAT` (on-topic) / `REKLAMA` (sponsored) / `SZUM` (extraction junk — portal nav, cookie banners; auto-approved, excluded from note-writing) |
 | `topic` | `varchar(500)` | Short topic label |
@@ -159,7 +159,7 @@ LLM-synthesized grouping of a run's chunks by topic — drives the book/chapter 
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `run_id` | `integer NOT NULL` | FK → `document_analysis_runs.id` (CASCADE delete) |
-| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE delete) |
 | `position` | `smallint NOT NULL` | Order within the run |
 | `type` | `varchar(20) NOT NULL` | `TEMAT` / `REKLAMA` / `SZUM` |
 | `title` | `varchar(500)` | Section title (editable via `PATCH /topic_section/<id>`) |
@@ -169,12 +169,12 @@ LLM-synthesized grouping of a run's chunks by topic — drives the book/chapter 
 
 ### Table: `public.document_removed_lines`
 
-Training data for `article_cleaner.py`: lines a human manually removed from a chunk or document during review. Survives run/chunk deletion (`run_id`/`chunk_id` are `SET NULL`, not `CASCADE`) so aggregate queries (e.g. most-removed lines per portal, joined on `web_documents.url`) keep working after runs are re-created.
+Training data for `article_cleaner.py`: lines a human manually removed from a chunk or document during review. Survives run/chunk deletion (`run_id`/`chunk_id` are `SET NULL`, not `CASCADE`) so aggregate queries (e.g. most-removed lines per portal, joined on `documents.url`) keep working after runs are re-created.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE delete) |
 | `run_id` | `integer` | FK → `document_analysis_runs.id` (`SET NULL` on delete) |
 | `chunk_id` | `integer` | FK → `document_chunks.id` (`SET NULL` on delete) |
 | `source` | `varchar(20) NOT NULL` | `manual` (removed in chunk-review UI) or `szum_chunk` (whole SZUM/REKLAMA chunk dropped by "Wyczyść dokument") |
@@ -188,7 +188,7 @@ Raw NER entities (person/place mentions) per document — MVP of [`docs/ner-inte
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE delete) |
 | `entity_type` | `varchar(20) NOT NULL` | `persName` / `geogName` / `placeName` (spaCy `pl_core_news_lg` labels) |
 | `entity_text` | `text NOT NULL` | Base form of the mention (lemma when available — inflected variants aggregate into one row) |
 | `mention_count` | `integer NOT NULL DEFAULT 1` | Number of mentions aggregated into this row |
@@ -205,7 +205,7 @@ Footnotes/references extracted out of a book's `text_md` (`library/references.py
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `document_id` | `integer NOT NULL` | FK → `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE delete) |
 | `chapter_position` | `integer` | 1-based, matches `detect_chapters()`; `NULL` = unassigned |
 | `marker` | `varchar(10) NOT NULL` | Footnote number as printed ("18" — superscript markers normalized to digits) |
 | `ref_text` | `text NOT NULL` | Full footnote text |
@@ -221,7 +221,7 @@ source fragment; Polish exact and coarse dates are normalized for chronological 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `document_id` | `integer NOT NULL` | FK to `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK to `documents.id` (CASCADE delete) |
 | `chapter_position` | `integer` | 1-based position from `detect_chapters()`; `NULL` for chapterless documents |
 | `event_date` | `date` | Exact date or beginning of a normalized range |
 | `event_date_end` | `date` | End of a normalized month/year/decade/century range |
@@ -244,7 +244,7 @@ search filtering by period ("texts about the 1980s" = range overlap); BCE years 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `document_id` | `integer NOT NULL` | FK to `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK to `documents.id` (CASCADE delete) |
 | `chapter_position` | `integer` | 1-based position from `detect_chapters()`; `NULL` for chapterless documents |
 | `position` | `integer NOT NULL` | Order within the chapter, `0` = main period |
 | `period_label` | `varchar(100) NOT NULL` | Short Polish period name returned by the LLM |
@@ -267,7 +267,7 @@ in Python (LLM output with stripped diacritics is canonicalized, e.g. "srednia" 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `document_id` | `integer NOT NULL` | FK to `web_documents.id` (CASCADE delete) |
+| `document_id` | `integer NOT NULL` | FK to `documents.id` (CASCADE delete) |
 | `chapter_position` | `integer` | 1-based position from `detect_chapters()`; `NULL` for chapterless documents |
 | `emotion` | `varchar(20) NOT NULL` | Main emotion: `neutralny`, `radosny`, `smutny`, `gniewny`, `alarmistyczny`, `podniosły`, `refleksyjny` |
 | `secondary_emotions` | `varchar(100)` | Up to 2 extra emotions from the same list, comma-separated |
@@ -330,7 +330,7 @@ NER false-positive suppression dictionary, applied in `library/entity_service.py
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `entity_text` | `text NOT NULL` | Matched case-insensitively against the aggregated entity base form |
 | `entity_type` | `varchar(20) NOT NULL DEFAULT '*'` | `persName` / `geogName` / `placeName` / `*` (all types) |
-| `scope` | `varchar(10) NOT NULL DEFAULT 'global'` | `global` (every document) or `author` (only documents whose `web_documents.byline` matches) |
+| `scope` | `varchar(10) NOT NULL DEFAULT 'global'` | `global` (every document) or `author` (only documents whose `documents.byline` matches) |
 | `author` | `text` | Author the rule is limited to (required when `scope='author'`, CHECK constraint) |
 | `note` | `text` | Optional human note (why excluded) |
 | `created_at` | `timestamp` | Row creation timestamp |
@@ -339,7 +339,7 @@ NER false-positive suppression dictionary, applied in `library/entity_service.py
 
 ### Table: `public.discovery_sources`
 
-Discovery-source lookup — how the user found a document (`own`, a newsletter, a friend); a recommendation channel, NOT the content author. `web_documents.discovery_source_id` references `id` (stage 11d normalization — the old name-based `fk_source` with `ON UPDATE CASCADE` is gone; renaming a source now only edits this row, documents follow via the id); deletes are restricted (API allows DELETE only when no documents use the source — deactivate instead). Managed via `GET/POST /sources`, `PATCH/DELETE /sources/<id>` and the React `/sources` page; the Chrome extension loads the active list and can add new sources — the HTTP wire format keeps the NAME (`source` field). Unknown names arriving through any write path (imports, feeds, DynamoDB sync) are auto-created by `WebDocument.set_discovery_source()` in `library/db/models.py`.
+Discovery-source lookup — how the user found a document (`own`, a newsletter, a friend); a recommendation channel, NOT the content author. `documents.discovery_source_id` references `id` (stage 11d normalization — the old name-based `fk_source` with `ON UPDATE CASCADE` is gone; renaming a source now only edits this row, documents follow via the id); deletes are restricted (API allows DELETE only when no documents use the source — deactivate instead). Managed via `GET/POST /sources`, `PATCH/DELETE /sources/<id>` and the React `/sources` page; the Chrome extension loads the active list and can add new sources — the HTTP wire format keeps the NAME (`source` field). Unknown names arriving through any write path (imports, feeds, DynamoDB sync) are auto-created by `Document.set_discovery_source()` in `library/db/models.py`.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -361,7 +361,7 @@ Reader identity and API key tables (`users`, `user_reading_progress`, `user_docu
 
 ### Tables: `public.publishers`, `public.publisher_domains`
 
-Stage 7A search registry (migration `f5a6b7c8d9e0`). `publishers` stores the publication portal; `publisher_domains.domain` is globally unique and maps a normalized hostname to one publisher. `web_documents.publisher_id` is nullable (`ON DELETE SET NULL`, indexed). Migration backfills one bootstrap publisher per normalized hostname extracted from `web_documents.url`; its initial canonical name is the domain. This concept is separate from `sources` (discovery channel) and `information_sources` (claim/reporting provenance).
+Stage 7A search registry (migration `f5a6b7c8d9e0`). `publishers` stores the publication portal; `publisher_domains.domain` is globally unique and maps a normalized hostname to one publisher. `documents.publisher_id` is nullable (`ON DELETE SET NULL`, indexed). Migration backfills one bootstrap publisher per normalized hostname extracted from `documents.url`; its initial canonical name is the domain. This concept is separate from `sources` (discovery channel) and `information_sources` (claim/reporting provenance).
 
 ## Document Processing States
 
@@ -377,7 +377,7 @@ Special states:
 - `NEED_MANUAL_REVIEW` — automatic text cleanup failed; needs manual removal of ads, comments, and spam
 - `ERROR` / `TEMPORARY_ERROR` — processing failed (details in `document_state_error`)
 
-**Invariant — `document_state_error` must be reset on every successful transition.** The field only means something while the document is in an error state (`ERROR`/`TEMPORARY_ERROR`); once a retry succeeds and `document_state` moves on, any code that sets `document_state_error` on failure MUST also clear it (`StalkerDocumentStatusError.NONE.name`) on the corresponding success path in the same function. Otherwise the error becomes sticky forever — a later retry that succeeds leaves the stale value in place because nothing overwrites it. `WebDocument.validate()` in `db/models.py` follows this correctly (resets to `NONE` at the top before re-evaluating). `library/youtube_processing.py` did **not** follow it for `CAPTIONS_FETCH_ERROR`/transcription errors until this was fixed (2026-07-04) — a retry that fetched captions successfully left `CAPTIONS_FETCH_ERROR` from an earlier failed attempt in place indefinitely. When adding a new failure/retry branch to any pipeline step, always pair the error-setting line with a reset on the success path.
+**Invariant — `document_state_error` must be reset on every successful transition.** The field only means something while the document is in an error state (`ERROR`/`TEMPORARY_ERROR`); once a retry succeeds and `document_state` moves on, any code that sets `document_state_error` on failure MUST also clear it (`StalkerDocumentStatusError.NONE.name`) on the corresponding success path in the same function. Otherwise the error becomes sticky forever — a later retry that succeeds leaves the stale value in place because nothing overwrites it. `Document.validate()` in `db/models.py` follows this correctly (resets to `NONE` at the top before re-evaluating). `library/youtube_processing.py` did **not** follow it for `CAPTIONS_FETCH_ERROR`/transcription errors until this was fixed (2026-07-04) — a retry that fetched captions successfully left `CAPTIONS_FETCH_ERROR` from an earlier failed attempt in place indefinitely. When adding a new failure/retry branch to any pipeline step, always pair the error-setting line with a reset on the success path.
 
 ## Document Types
 
@@ -407,7 +407,7 @@ docker build -f infra/docker/Postgresql/Dockerfile -t lenie-ai-db:latest .
 ## Application Access
 
 The backend accesses the database via SQLAlchemy ORM. Key files:
-- `backend/library/db/models.py` — ORM models (`WebDocument`, `DocumentEmbedding`, lookup table models)
+- `backend/library/db/models.py` — ORM models (`Document`, `DocumentEmbedding`, lookup table models)
 - `backend/library/db/engine.py` — engine & session factories (`get_session`, `get_scoped_session`)
 - `backend/library/stalker_web_documents_db_postgresql.py` — query layer (list, search, vector similarity)
 

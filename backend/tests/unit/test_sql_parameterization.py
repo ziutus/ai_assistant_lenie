@@ -36,7 +36,7 @@ class TestGetDocumentsByUrlParameterization:
 
     def test_sql_injection_drop_table(self, db_instance):
         """SQL injection payload should be treated as literal string."""
-        result = db_instance.get_documents_by_url("'; DROP TABLE web_documents; --")
+        result = db_instance.get_documents_by_url("'; DROP TABLE documents; --")
         assert result == []
         db_instance.session.execute.assert_called_once()
         # The statement should contain the payload as a bound parameter, not raw SQL
@@ -110,7 +110,7 @@ class TestGetSimilarParameterization:
             embedding=embedding,
             model="text-embedding-ada-002",
             limit=3,
-            filters=SearchFilters(collection_name="'; DELETE FROM web_documents; --"),
+            filters=SearchFilters(collection_name="'; DELETE FROM documents; --"),
         )
         assert result == []
         db_instance.session.execute.assert_called_once()

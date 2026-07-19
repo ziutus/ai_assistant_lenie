@@ -43,8 +43,8 @@ Backend wykonuje deterministyczne zapytania SQL i pgvector. Frontend pokazuje, j
 
 | Obecnie | Nazwa docelowa | Uwagi |
 |---|---|---|
-| `web_documents` | `documents` | wszystkie typy dokumentów |
-| `WebDocument` | `Document` | model domenowy |
+| `web_documents` | `documents` | wszystkie typy dokumentów — **zrobione fizycznie (Etap 11f, migracja `f7a8b9c0d1e2`)**: tabela + sekwencja + 10 indeksów + 7 constraintów |
+| `WebDocument` | `Document` | model domenowy — **zrobione (Etap 11f)**: klasa ORM i interfejs TS w `shared/types` |
 | `websites_embeddings` | `document_embeddings` | embedding dokumentu/chunka — **zrobione fizycznie (Etap 11e, migracja `e6f7a8b9c0d1`)** |
 | `website_id` | `document_id` | FK i pole odpowiedzi — **zrobione fizycznie (Etap 11e)**: kolumna, ORM, klucze JSON wyników wyszukiwania, `shared/types`, frontendy |
 | `source` | `discovery_source_id` | kanał pozyskania, nie portal — **zrobione fizycznie (Etap 11d, migracja `d5e6f7a8b9c0`)**; format wire (`/url_add`, `/website_save`, `/website_get`) świadomie zachowuje NAZWĘ pod kluczem `source` (zgodność z wtyczką Chrome, decyzja 2026-07-19) |

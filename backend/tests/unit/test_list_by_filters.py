@@ -57,7 +57,7 @@ class TestListByFiltersApplied:
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters(document_types=("webpage",)))
         sql = _compiled_sql(session)
-        assert "web_documents.document_type IN" in sql
+        assert "documents.document_type IN" in sql
         assert "'webpage'" in sql
 
     def test_subject_period_filter_applied(self):
@@ -84,37 +84,37 @@ class TestListByFiltersSort:
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters())
         sql = _compiled_sql(session)
-        assert "web_documents.created_at DESC" in sql
+        assert "documents.created_at DESC" in sql
 
     def test_published_desc(self):
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters(), sort=SearchSort.PUBLISHED_DESC)
         sql = _compiled_sql(session)
-        assert "web_documents.published_on DESC" in sql
+        assert "documents.published_on DESC" in sql
 
     def test_published_asc(self):
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters(), sort=SearchSort.PUBLISHED_ASC)
         sql = _compiled_sql(session)
-        assert "web_documents.published_on ASC" in sql
+        assert "documents.published_on ASC" in sql
 
     def test_ingested_desc(self):
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters(), sort=SearchSort.INGESTED_DESC)
         sql = _compiled_sql(session)
-        assert "web_documents.created_at DESC" in sql
+        assert "documents.created_at DESC" in sql
 
     def test_relevance_falls_back_to_ingested_desc(self):
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters(), sort=SearchSort.RELEVANCE)
         sql = _compiled_sql(session)
-        assert "web_documents.created_at DESC" in sql
+        assert "documents.created_at DESC" in sql
 
     def test_string_sort_value_accepted(self):
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters(), sort="published_desc")
         sql = _compiled_sql(session)
-        assert "web_documents.published_on DESC" in sql
+        assert "documents.published_on DESC" in sql
 
 
 class TestListByFiltersLimitOffset:

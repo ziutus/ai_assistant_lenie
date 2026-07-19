@@ -4,6 +4,6 @@
 -- For existing deployments, run this migration manually against the database.
 -- Deploy the updated application code BEFORE running this migration.
 
-ALTER TABLE web_documents DROP COLUMN IF EXISTS text_english;
-ALTER TABLE web_documents DROP COLUMN IF EXISTS title_english;
-ALTER TABLE web_documents DROP COLUMN IF EXISTS summary_english;
+ALTER TABLE documents DROP COLUMN IF EXISTS text_english;
+ALTER TABLE documents DROP COLUMN IF EXISTS title_english;
+ALTER TABLE documents DROP COLUMN IF EXISTS summary_english;

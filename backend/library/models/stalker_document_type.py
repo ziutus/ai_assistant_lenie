@@ -2,7 +2,7 @@ from enum import Enum
 
 
 # Source of truth for valid document types. DB lookup table `document_types` is seeded from
-# these values and enforces them via FK constraint on `web_documents.document_type`.
+# these values and enforces them via FK constraint on `documents.document_type`.
 # Kept alongside FK for: early validation in setter methods, input aliases ("website"→"webpage",
 # "sms"→"text_message"), IDE autocomplete. See ADR-010 for rationale.
 class StalkerDocumentType(Enum):

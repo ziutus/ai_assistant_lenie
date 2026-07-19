@@ -6,7 +6,7 @@ Dwie warstwy:
   clickbaitowy tytuł,
 - rubryka LLM (jedno wywołanie): źródła / głębia / język, każdy wymiar 0-5.
 
-Wynik (0-100, im wyżej tym staranniej) trafia do web_documents.quality (JSONB).
+Wynik (0-100, im wyżej tym staranniej) trafia do documents.quality (JSONB).
 Wykrywanie podpisów zdjęć jest współdzielone z article_cleaner (usuwanie linii)
 — jedna definicja wzorców dla czyszczenia i punktacji.
 """

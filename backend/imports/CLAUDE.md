@@ -37,7 +37,7 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 **How it works:**
 1. Resolves DynamoDB table name and S3 bucket from SSM Parameter Store (or CLI overrides)
 2. Queries DynamoDB `DateIndex` GSI day-by-day from `--since` date to today (handles pagination)
-3. For each item, checks if URL already exists in local PostgreSQL (duplicate detection via `WebDocument.get_by_url()`)
+3. For each item, checks if URL already exists in local PostgreSQL (duplicate detection via `Document.get_by_url()`)
 4. For `webpage` type items with `uuid`: fetches `{uuid}.txt` and `{uuid}.html` from S3 into memory
 5. Inserts new documents via `DocumentService.import_document(skip_if_exists=True)`
 6. After insert, saves S3 content to cache as `{CACHE_DIR}/markdown/{doc.id}/{doc.id}.html` (same convention as `document_prepare.py`, so downstream tools can reuse cached files without re-downloading from S3)
@@ -208,7 +208,7 @@ python imports/youtube_add.py <URL> --analyze --speaker1 "..." --speaker2 "..."
 
 ### `youtube_backfill_author.py`
 
-One-off backfill for the `author` field (YouTube channel name) on videos added before `youtube_processing.py` started setting it automatically (`process_youtube_url()` sets `web_document.author = youtube_file.author` on every new video). Queries `web_documents` for `document_type='youtube' AND author IS NULL`, re-fetches metadata per video via `pytubefix`, and commits per document.
+One-off backfill for the `author` field (YouTube channel name) on videos added before `youtube_processing.py` started setting it automatically (`process_youtube_url()` sets `web_document.author = youtube_file.author` on every new video). Queries `documents` for `document_type='youtube' AND author IS NULL`, re-fetches metadata per video via `pytubefix`, and commits per document.
 
 **Data access: ORM (SQLAlchemy)** via `get_session()`.
 
@@ -290,7 +290,7 @@ python imports/fix_duplicate_analysis_runs.py --id 9245  # single document
 
 ### `fix_place_tags.py`
 
-One-off cleanup: merges duplicate `miejsce-*` tags created before `place_verification.py` started slugging tags from the geocoder's canonical spelling — inflected NER variants used to each get their own tag (`miejsce-kijowa` + `miejsce-kijow`). Recomputes each document's `miejsce-*` tags via `canonical_place_name()` on `geocode_cache.display_name` (no live geocoder calls) and rewrites `web_documents.tags`, dropping duplicates. Tags with no matching resolved place entity are left untouched. Run on the NAS DB 2026-07-11 (1 document updated).
+One-off cleanup: merges duplicate `miejsce-*` tags created before `place_verification.py` started slugging tags from the geocoder's canonical spelling — inflected NER variants used to each get their own tag (`miejsce-kijowa` + `miejsce-kijow`). Recomputes each document's `miejsce-*` tags via `canonical_place_name()` on `geocode_cache.display_name` (no live geocoder calls) and rewrites `documents.tags`, dropping duplicates. Tags with no matching resolved place entity are left untouched. Run on the NAS DB 2026-07-11 (1 document updated).
 
 **Data access: ORM (SQLAlchemy)** via `get_session()`.
 
@@ -363,7 +363,7 @@ One-time migration script: copies UUID-named `.html`/`.txt` files from `imports/
 ## Architecture Notes
 
 - All scripts bypass the REST API intentionally — they are meant for local or scheduled operations, not the web interface.
-- DB-writing scripts use ORM models (`WebDocument` from `library.db.models`) with `get_session()` from `library.db.engine`. Session lifecycle: `session = get_session()` → `try` → `session.commit()` → `finally` → `session.close()`.
-- Document creation goes through `DocumentService.import_document(skip_if_exists=True)` (`library/document_service.py`), which handles duplicate detection via `WebDocument.get_by_url()`.
+- DB-writing scripts use ORM models (`Document` from `library.db.models`) with `get_session()` from `library.db.engine`. Session lifecycle: `session = get_session()` → `try` → `session.commit()` → `finally` → `session.close()`.
+- Document creation goes through `DocumentService.import_document(skip_if_exists=True)` (`library/document_service.py`), which handles duplicate detection via `Document.get_by_url()`.
 - Bulk import runs (`dynamodb_sync.py`, `feed_monitor.py`) are recorded in the `import_logs` table via `ImportLogTracker` (`library/import_log_tracker.py`); the last successful run is used to auto-detect the `--since` date.
 - `control_questions.py` and `freedom_house_import.py` are standalone tools that never touch the database.

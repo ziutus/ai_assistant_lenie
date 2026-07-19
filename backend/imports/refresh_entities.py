@@ -13,7 +13,7 @@ from pathlib import Path
 from sqlalchemy import delete, select
 
 from library.db.engine import get_session
-from library.db.models import DocumentEntity, DocumentPerson, NerExclusion, WebDocument
+from library.db.models import DocumentEntity, DocumentPerson, NerExclusion, Document
 from library.entity_service import is_excluded
 from library.ner_client import aggregate_entities_detailed, extract_entities_strict
 from library.ner_normalization import normalize_ner_text
@@ -128,7 +128,7 @@ def _repair_person_links(session, doc_id: int, old_rows: list, mapping: dict[str
     return {"updated": updated, "removed": removed, "deduplicated": deduplicated}
 
 
-def repair_document(session, doc: WebDocument, *, dry_run: bool) -> dict:
+def repair_document(session, doc: Document, *, dry_run: bool) -> dict:
     text = doc.text_md or doc.text or ""
     if not text.strip():
         raise ValueError("document has no text")
@@ -216,7 +216,7 @@ def main() -> int:
     for doc_id in ids:
         with get_session() as session:
             try:
-                doc = session.get(WebDocument, doc_id)
+                doc = session.get(Document, doc_id)
                 if doc is None:
                     raise ValueError("document not found")
                 report = repair_document(session, doc, dry_run=args.dry_run)

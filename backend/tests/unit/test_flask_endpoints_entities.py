@@ -38,14 +38,14 @@ class TestWebsiteEntitiesGet:
 
     def test_document_not_found_returns_404(self, client):
         with patch("server.get_scoped_session", return_value=MagicMock()):
-            with patch("server.WebDocument") as MockDoc:
+            with patch("server.Document") as MockDoc:
                 MockDoc.get_by_id.return_value = None
                 resp = client.get("/website_entities?id=42", headers=API_HEADERS)
         assert resp.status_code == 404
 
     def test_returns_grouped_entities(self, client):
         with patch("server.get_scoped_session", return_value=MagicMock()):
-            with patch("server.WebDocument") as MockDoc:
+            with patch("server.Document") as MockDoc:
                 MockDoc.get_by_id.return_value = MagicMock(ner_unavailable_at=None)
                 with patch("library.entity_service.get_document_entities", return_value=GROUPED):
                     resp = client.get("/website_entities?id=42", headers=API_HEADERS)
@@ -61,7 +61,7 @@ class TestWebsiteEntitiesGet:
         import datetime as dt
 
         with patch("server.get_scoped_session", return_value=MagicMock()):
-            with patch("server.WebDocument") as MockDoc:
+            with patch("server.Document") as MockDoc:
                 MockDoc.get_by_id.return_value = MagicMock(
                     ner_unavailable_at=dt.datetime(2026, 7, 15, 6, 44, 0),
                 )
@@ -79,7 +79,7 @@ class TestWebsiteEntitiesRefresh:
     def test_document_without_text_returns_400(self, client):
         doc = MagicMock(text_md=None, text=None)
         with patch("server.get_scoped_session", return_value=MagicMock()):
-            with patch("server.WebDocument") as MockDoc:
+            with patch("server.Document") as MockDoc:
                 MockDoc.get_by_id.return_value = doc
                 resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
         assert resp.status_code == 400
@@ -88,7 +88,7 @@ class TestWebsiteEntitiesRefresh:
         doc = MagicMock(text_md="# Artykuł o Tusku", text=None)
         session = MagicMock()
         with patch("server.get_scoped_session", return_value=session):
-            with patch("server.WebDocument") as MockDoc:
+            with patch("server.Document") as MockDoc:
                 MockDoc.get_by_id.return_value = doc
                 with patch("library.entity_service.refresh_document_entities", return_value=[MagicMock()] * 2) as mock_refresh:
                     with patch("library.place_verification.verify_document_places",
@@ -120,7 +120,7 @@ class TestWebsiteEntitiesRefresh:
         doc = MagicMock(text_md="# Artykuł", text=None)
         session = MagicMock()
         with patch("server.get_scoped_session", return_value=session):
-            with patch("server.WebDocument") as MockDoc:
+            with patch("server.Document") as MockDoc:
                 MockDoc.get_by_id.return_value = doc
                 with patch("library.entity_service.refresh_document_entities",
                            side_effect=NERServiceUnavailable("boom")):
@@ -135,7 +135,7 @@ class TestWebsiteEntitiesRefresh:
         doc = MagicMock(text_md="# Artykuł", text=None)
         session = MagicMock()
         with patch("server.get_scoped_session", return_value=session):
-            with patch("server.WebDocument") as MockDoc:
+            with patch("server.Document") as MockDoc:
                 MockDoc.get_by_id.return_value = doc
                 with patch("library.entity_service.refresh_document_entities", return_value=[MagicMock()]):
                     with patch("library.place_verification.verify_document_places", side_effect=RuntimeError("boom")):

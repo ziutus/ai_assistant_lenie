@@ -161,7 +161,7 @@ All source files are TypeScript (`.ts`/`.tsx`). Strict mode enabled (`tsconfig.j
 
 Domain types are defined in `shared/` (project root) and imported via `@lenie/shared` alias:
 - `ApiType` — union type for API backend mode
-- `WebDocument` — document form fields interface
+- `Document` — document form fields interface
 - `emptyDocument` — factory constant
 - `DEFAULT_API_URLS` — default backend URLs per API type
 - `SearchResult`, `ListItem` — API response types

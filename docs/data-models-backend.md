@@ -4,7 +4,7 @@
 
 ## Database Schema
 
-### Table: web_documents (29 columns)
+### Table: documents (29 columns)
 
 Primary document storage table.
 
@@ -49,7 +49,7 @@ Vector embeddings for similarity search.
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | serial | PK | Auto-increment identifier |
-| `document_id` | integer | FK → web_documents.id (CASCADE) | Document reference |
+| `document_id` | integer | FK → documents.id (CASCADE) | Document reference |
 | `langauge` | varchar(10) | — | Language code (intentional typo kept for compatibility) |
 | `text` | text | — | Processed text that was embedded |
 | `text_original` | text | — | Original text before translation |
@@ -121,7 +121,7 @@ Vector embeddings for similarity search.
 
 ### StalkerWebDocument (base class)
 
-Core document model with ~30 attributes matching `web_documents` table. Key methods:
+Core document model with ~30 attributes matching `documents` table. Key methods:
 - `set_document_type(str)` — set type from string
 - `set_document_state(str)` — set state from string
 - `analyze()` — run content analysis

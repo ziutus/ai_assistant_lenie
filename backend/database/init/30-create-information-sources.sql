@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS public.information_source_aliases (
 
 CREATE TABLE IF NOT EXISTS public.document_information_sources (
     id SERIAL PRIMARY KEY,
-    document_id INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     source_id INTEGER NOT NULL REFERENCES public.information_sources(id) ON DELETE CASCADE,
     role VARCHAR(30) NOT NULL,
     raw_mention TEXT NOT NULL,

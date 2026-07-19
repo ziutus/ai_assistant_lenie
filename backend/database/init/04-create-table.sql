@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.document_embeddings (
                                                           embedding vector, -- bez ustalonego wymiaru — obsługa wielu modeli o różnych wymiarach
                                                           model VARCHAR(100) NOT NULL,
                                                           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                                                          FOREIGN KEY (document_id) REFERENCES public.web_documents(id) ON DELETE CASCADE
+                                                          FOREIGN KEY (document_id) REFERENCES public.documents(id) ON DELETE CASCADE
 );
 
 

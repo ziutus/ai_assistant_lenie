@@ -15,7 +15,7 @@ from library.config_loader import load_config
 cfg = load_config()  # noqa: F841 - populates configuration for DB and LLM clients
 
 from library.db.engine import get_session  # noqa: E402
-from library.db.models import WebDocument  # noqa: E402
+from library.db.models import Document  # noqa: E402
 from library.timeline_events import extract_document_events, refresh_document_events  # noqa: E402
 
 
@@ -41,7 +41,7 @@ def main() -> int:
 
     session = get_session()
     try:
-        doc = session.get(WebDocument, args.id)
+        doc = session.get(Document, args.id)
         if doc is None:
             raise SystemExit(f"Document {args.id} not found")
         if args.dry_run:

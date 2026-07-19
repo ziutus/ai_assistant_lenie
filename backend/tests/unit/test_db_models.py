@@ -1,4 +1,4 @@
-"""Unit tests for ORM models (WebDocument, DocumentEmbedding, STI subclasses,
+"""Unit tests for ORM models (Document, DocumentEmbedding, STI subclasses,
 lookup table models).
 
 Tests model structure, column mappings, STI configuration, domain methods,
@@ -19,7 +19,7 @@ from library.db.models import (  # noqa: E402
     DocumentStatusErrorType,
     DocumentType,
     EmbeddingModel,
-    WebDocument,
+    Document,
     DocumentEmbedding,
     LinkDocument,
     YouTubeDocument,
@@ -48,14 +48,14 @@ def _column_names(model):
 
 
 def _make_doc(**overrides):
-    """Create a minimal WebDocument instance for testing domain methods."""
+    """Create a minimal Document instance for testing domain methods."""
     defaults = {
         "url": "https://example.com",
         "document_type": "link",
         "document_state": "URL_ADDED",
     }
     defaults.update(overrides)
-    return WebDocument(**defaults)
+    return Document(**defaults)
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +148,7 @@ class TestEmbeddingModel:
 
 
 # ---------------------------------------------------------------------------
-# 5.1: WebDocument has all column attributes
+# 5.1: Document has all column attributes
 # ---------------------------------------------------------------------------
 
 class TestWebDocumentColumns:
@@ -165,10 +165,10 @@ class TestWebDocumentColumns:
     }
 
     def test_column_count(self):
-        assert len(_column_names(WebDocument)) == 35
+        assert len(_column_names(Document)) == 35
 
     def test_all_column_names(self):
-        assert _column_names(WebDocument) == self.EXPECTED_COLUMNS
+        assert _column_names(Document) == self.EXPECTED_COLUMNS
 
 
 # ---------------------------------------------------------------------------
@@ -177,29 +177,29 @@ class TestWebDocumentColumns:
 
 class TestWebDocumentColumnTypes:
     def test_id_is_integer_primary_key(self):
-        col = _get_column(WebDocument, "id")
+        col = _get_column(Document, "id")
         assert col.primary_key
 
     def test_url_is_text_not_nullable(self):
-        col = _get_column(WebDocument, "url")
+        col = _get_column(Document, "url")
         assert isinstance(col.type, Text)
         assert not col.nullable
 
     def test_language_is_string_10(self):
-        col = _get_column(WebDocument, "language")
+        col = _get_column(Document, "language")
         assert isinstance(col.type, String)
         assert col.type.length == 10
 
     def test_paywall_is_boolean(self):
-        col = _get_column(WebDocument, "paywall")
+        col = _get_column(Document, "paywall")
         assert isinstance(col.type, Boolean)
 
     def test_created_at_is_datetime(self):
-        col = _get_column(WebDocument, "created_at")
+        col = _get_column(Document, "created_at")
         assert isinstance(col.type, DateTime)
 
     def test_document_type_is_string_with_fk(self):
-        col = _get_column(WebDocument, "document_type")
+        col = _get_column(Document, "document_type")
         assert isinstance(col.type, String)
         assert col.type.length == 50
         assert not col.nullable
@@ -207,7 +207,7 @@ class TestWebDocumentColumnTypes:
         assert fk.target_fullname == "document_types.name"
 
     def test_document_state_is_string_with_fk(self):
-        col = _get_column(WebDocument, "document_state")
+        col = _get_column(Document, "document_state")
         assert isinstance(col.type, String)
         assert col.type.length == 50
         assert not col.nullable
@@ -215,26 +215,26 @@ class TestWebDocumentColumnTypes:
         assert fk.target_fullname == "document_status_types.name"
 
     def test_document_state_error_is_string_with_fk_nullable(self):
-        col = _get_column(WebDocument, "document_state_error")
+        col = _get_column(Document, "document_state_error")
         assert isinstance(col.type, String)
         fk = list(col.foreign_keys)[0]
         assert fk.target_fullname == "document_status_error_types.name"
 
     def test_published_on_is_date(self):
-        col = _get_column(WebDocument, "published_on")
+        col = _get_column(Document, "published_on")
         assert isinstance(col.type, Date)
 
     def test_document_length_is_integer(self):
-        col = _get_column(WebDocument, "document_length")
+        col = _get_column(Document, "document_length")
         assert isinstance(col.type, Integer)
 
     def test_uuid_is_string_100(self):
-        col = _get_column(WebDocument, "uuid")
+        col = _get_column(Document, "uuid")
         assert isinstance(col.type, String)
         assert col.type.length == 100
 
     def test_collection_id_is_fk_to_collections(self):
-        col = _get_column(WebDocument, "collection_id")
+        col = _get_column(Document, "collection_id")
         fks = list(col.foreign_keys)
         assert len(fks) == 1
         assert fks[0].column.table.name == "collections"
@@ -246,13 +246,13 @@ class TestWebDocumentColumnTypes:
             "original_id", "transcript_job_id", "byline", "note",
         ]
         for name in text_columns:
-            col = _get_column(WebDocument, name)
+            col = _get_column(Document, name)
             assert isinstance(col.type, Text), f"Column {name} should be Text"
 
     def test_boolean_fields(self):
         bool_columns = ["paywall", "ai_summary_needed", "transcript_needed"]
         for name in bool_columns:
-            col = _get_column(WebDocument, name)
+            col = _get_column(Document, name)
             assert isinstance(col.type, Boolean), f"Column {name} should be Boolean"
 
 
@@ -262,7 +262,7 @@ class TestWebDocumentColumnTypes:
 
 class TestSTIConfiguration:
     def test_polymorphic_on_is_document_type(self):
-        mapper = inspect(WebDocument).mapper
+        mapper = inspect(Document).mapper
         assert mapper.polymorphic_on is not None
         assert mapper.polymorphic_on.key == "document_type"
 
@@ -292,7 +292,7 @@ class TestSTISubclasses:
             assert "__tablename__" not in cls.__dict__, f"{cls.__name__} should not define __tablename__"
 
     def test_seven_subclasses_registered(self):
-        mapper = inspect(WebDocument).mapper
+        mapper = inspect(Document).mapper
         # 7 subclasses in polymorphic_map (base has no identity)
         assert len(mapper.polymorphic_map) == 7
 
@@ -599,7 +599,7 @@ class TestDocumentEmbeddingFK:
     def test_document_id_fk_target(self):
         col = _get_column(DocumentEmbedding, "document_id")
         fk = list(col.foreign_keys)[0]
-        assert fk.target_fullname == "web_documents.id"
+        assert fk.target_fullname == "documents.id"
 
     def test_document_id_not_nullable(self):
         col = _get_column(DocumentEmbedding, "document_id")
@@ -616,16 +616,16 @@ class TestDocumentEmbeddingFK:
 
 
 # ---------------------------------------------------------------------------
-# 5.13: WebDocument.embeddings relationship
+# 5.13: Document.embeddings relationship
 # ---------------------------------------------------------------------------
 
 class TestEmbeddingsRelationship:
     def test_relationship_exists(self):
-        mapper = inspect(WebDocument).mapper
+        mapper = inspect(Document).mapper
         assert "embeddings" in mapper.relationships
 
     def test_cascade_includes_delete_orphan(self):
-        mapper = inspect(WebDocument).mapper
+        mapper = inspect(Document).mapper
         rel = mapper.relationships["embeddings"]
         assert "delete-orphan" in rel.cascade
         assert "delete" in rel.cascade
@@ -633,7 +633,7 @@ class TestEmbeddingsRelationship:
         assert "merge" in rel.cascade
 
     def test_passive_deletes(self):
-        mapper = inspect(WebDocument).mapper
+        mapper = inspect(Document).mapper
         rel = mapper.relationships["embeddings"]
         assert rel.passive_deletes is True
 
@@ -648,15 +648,15 @@ class TestEmbeddingsRelationship:
 
 class TestLookupRelationships:
     def test_document_type_ref_exists(self):
-        mapper = inspect(WebDocument).mapper
+        mapper = inspect(Document).mapper
         assert "document_type_ref" in mapper.relationships
 
     def test_document_state_ref_exists(self):
-        mapper = inspect(WebDocument).mapper
+        mapper = inspect(Document).mapper
         assert "document_state_ref" in mapper.relationships
 
     def test_document_state_error_ref_exists(self):
-        mapper = inspect(WebDocument).mapper
+        mapper = inspect(Document).mapper
         assert "document_state_error_ref" in mapper.relationships
 
     def test_model_ref_exists_on_embedding(self):
@@ -664,17 +664,17 @@ class TestLookupRelationships:
         assert "model_ref" in mapper.relationships
 
     def test_document_type_ref_target(self):
-        mapper = inspect(WebDocument).mapper
+        mapper = inspect(Document).mapper
         rel = mapper.relationships["document_type_ref"]
         assert rel.mapper.class_ is DocumentType
 
     def test_document_state_ref_target(self):
-        mapper = inspect(WebDocument).mapper
+        mapper = inspect(Document).mapper
         rel = mapper.relationships["document_state_ref"]
         assert rel.mapper.class_ is DocumentStatusType
 
     def test_document_state_error_ref_target(self):
-        mapper = inspect(WebDocument).mapper
+        mapper = inspect(Document).mapper
         rel = mapper.relationships["document_state_error_ref"]
         assert rel.mapper.class_ is DocumentStatusErrorType
 
@@ -690,22 +690,22 @@ class TestLookupRelationships:
 
 class TestNavigationFields:
     def test_next_id_not_mapped(self):
-        assert "next_id" not in _column_names(WebDocument)
+        assert "next_id" not in _column_names(Document)
 
     def test_next_type_not_mapped(self):
-        assert "next_type" not in _column_names(WebDocument)
+        assert "next_type" not in _column_names(Document)
 
     def test_previous_id_not_mapped(self):
-        assert "previous_id" not in _column_names(WebDocument)
+        assert "previous_id" not in _column_names(Document)
 
     def test_previous_type_not_mapped(self):
-        assert "previous_type" not in _column_names(WebDocument)
+        assert "previous_type" not in _column_names(Document)
 
     def test_navigation_fields_are_class_attributes(self):
-        assert hasattr(WebDocument, "next_id")
-        assert hasattr(WebDocument, "next_type")
-        assert hasattr(WebDocument, "previous_id")
-        assert hasattr(WebDocument, "previous_type")
+        assert hasattr(Document, "next_id")
+        assert hasattr(Document, "next_type")
+        assert hasattr(Document, "previous_id")
+        assert hasattr(Document, "previous_type")
 
     def test_default_values_are_none(self):
         doc = _make_doc()
@@ -739,7 +739,7 @@ class TestFieldsAreStrings:
 
 class TestBaseImport:
     def test_web_document_uses_engine_base(self):
-        assert issubclass(WebDocument, Base)
+        assert issubclass(Document, Base)
 
     def test_website_embedding_uses_engine_base(self):
         assert issubclass(DocumentEmbedding, Base)

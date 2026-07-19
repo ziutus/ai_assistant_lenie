@@ -1,4 +1,4 @@
-export interface WebDocument {
+export interface Document {
   id: string;
   byline: string;
   source: string;
@@ -20,7 +20,7 @@ export interface WebDocument {
   previous_type: string;
 }
 
-export const emptyDocument: WebDocument = {
+export const emptyDocument: Document = {
   id: "",
   byline: "",
   source: "",

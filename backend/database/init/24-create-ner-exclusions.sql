@@ -6,7 +6,7 @@
 --              form (lemma) of a mention
 -- entity_type: persName | geogName | placeName | '*' (all types)
 -- scope:       'global' (every document) or 'author' (only documents whose
---              web_documents.author matches the author column — e.g. one
+--              documents.author matches the author column — e.g. one
 --              podcast channel whose STT keeps producing the same artifact)
 
 \c "lenie-ai";

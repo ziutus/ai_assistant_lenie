@@ -13,7 +13,7 @@ from library.config_loader import load_config
 
 from sqlalchemy.orm import Session
 
-from library.db.models import WebDocument, TranscriptionLog
+from library.db.models import Document, TranscriptionLog
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.models.stalker_document_type import StalkerDocumentType
@@ -62,7 +62,7 @@ def process_youtube_url(
     llm_model: str | None = None,
     skip_captions: bool = False,
     webshare_api_key: str | None = None,
-) -> "WebDocument":
+) -> "Document":
     """Process a YouTube URL: fetch metadata, download captions/transcription, store in DB.
 
     If the URL already exists in the database, the existing document is updated.
@@ -71,7 +71,7 @@ def process_youtube_url(
     The caller owns the session lifecycle — this function commits per-document
     but never closes the session.
 
-    Returns the WebDocument ORM instance with all processed data.
+    Returns the Document ORM instance with all processed data.
     """
 
     t_start = time.time()
@@ -88,12 +88,12 @@ def process_youtube_url(
         os.makedirs(cache_dir)
 
     # Load or create document in DB
-    web_document = WebDocument.get_by_url(session, youtube_url)
+    web_document = Document.get_by_url(session, youtube_url)
 
     if web_document is None:
         # New document — create via ORM
         logger.info(f"New YouTube URL, creating document: {youtube_url}")
-        web_document = WebDocument(url=youtube_url)
+        web_document = Document(url=youtube_url)
         web_document.set_document_type("youtube")
         web_document.set_discovery_source(session, source)
         if language:

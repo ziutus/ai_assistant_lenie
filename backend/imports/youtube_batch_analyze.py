@@ -37,7 +37,7 @@ load_config()
 from library.analysis_exports import export_analysis_run  # noqa: E402
 from library.chunk_llm_analysis import assign_speakers, remove_speech_fillers  # noqa: E402
 from library.db.engine import get_session  # noqa: E402
-from library.db.models import WebDocument  # noqa: E402
+from library.db.models import Document  # noqa: E402
 from library.document_analysis_service import (  # noqa: E402
     ANALYSIS_MODELS,
     CHUNK_CHARS,
@@ -81,7 +81,7 @@ def main():
     print(f"Pobieranie dokumentu {args.doc_id}...")
     session = get_session()
     try:
-        doc = WebDocument.get_by_id(session, args.doc_id)
+        doc = Document.get_by_id(session, args.doc_id)
         if doc is None:
             print(f"BŁĄD: Dokument {args.doc_id} nie znaleziony.")
             sys.exit(1)

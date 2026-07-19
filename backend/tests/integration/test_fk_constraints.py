@@ -28,14 +28,14 @@ skip_no_db = pytest.mark.skipif(not _db_available, reason="No database connectio
 
 @skip_no_db
 class TestDocumentFKConstraints:
-    """Test FK constraints on web_documents table."""
+    """Test FK constraints on documents table."""
 
     def test_invalid_document_state_raises_integrity_error(self):
         """INSERT with invalid document_state should raise IntegrityError."""
         session = get_session()
         try:
             session.execute(sa_text(
-                "INSERT INTO web_documents (url, document_type, document_state) "
+                "INSERT INTO documents (url, document_type, document_state) "
                 "VALUES ('https://fk-test-invalid-state.example.com', 'link', 'INVALID_STATE')"
             ))
             session.commit()
@@ -50,7 +50,7 @@ class TestDocumentFKConstraints:
         session = get_session()
         try:
             session.execute(sa_text(
-                "INSERT INTO web_documents (url, document_type, document_state) "
+                "INSERT INTO documents (url, document_type, document_state) "
                 "VALUES ('https://fk-test-invalid-type.example.com', 'INVALID_TYPE', 'URL_ADDED')"
             ))
             session.commit()
@@ -65,7 +65,7 @@ class TestDocumentFKConstraints:
         session = get_session()
         try:
             result = session.execute(sa_text(
-                "INSERT INTO web_documents (url, document_type, document_state) "
+                "INSERT INTO documents (url, document_type, document_state) "
                 "VALUES ('https://fk-test-valid.example.com', 'link', 'URL_ADDED') "
                 "RETURNING id"
             ))
@@ -74,7 +74,7 @@ class TestDocumentFKConstraints:
 
             # Cleanup
             session.execute(sa_text(
-                "DELETE FROM web_documents WHERE id = :id"
+                "DELETE FROM documents WHERE id = :id"
             ).bindparams(id=doc_id))
             session.commit()
         finally:
@@ -83,14 +83,14 @@ class TestDocumentFKConstraints:
 
 @skip_no_db
 class TestSourceFKConstraints:
-    """FK on web_documents.source → sources.name (fk_source, ON UPDATE CASCADE)."""
+    """FK on documents.source → sources.name (fk_source, ON UPDATE CASCADE)."""
 
     def test_raw_insert_with_unknown_source_raises_integrity_error(self):
         """Core INSERT bypasses the ORM auto-create hook — FK must reject."""
         session = get_session()
         try:
             session.execute(sa_text(
-                "INSERT INTO web_documents (url, document_type, document_state, source) "
+                "INSERT INTO documents (url, document_type, document_state, source) "
                 "VALUES ('https://fk-test-src-raw.example.com', 'link', 'URL_ADDED', "
                 "'fk-test-no-such-source')"
             ))
@@ -105,7 +105,7 @@ class TestSourceFKConstraints:
         session = get_session()
         try:
             result = session.execute(sa_text(
-                "INSERT INTO web_documents (url, document_type, document_state, source) "
+                "INSERT INTO documents (url, document_type, document_state, source) "
                 "VALUES ('https://fk-test-src-null.example.com', 'link', 'URL_ADDED', NULL) "
                 "RETURNING id"
             ))
@@ -113,7 +113,7 @@ class TestSourceFKConstraints:
             session.commit()
 
             session.execute(sa_text(
-                "DELETE FROM web_documents WHERE id = :id"
+                "DELETE FROM documents WHERE id = :id"
             ).bindparams(id=doc_id))
             session.commit()
         finally:
@@ -121,12 +121,12 @@ class TestSourceFKConstraints:
 
     def test_orm_insert_auto_creates_unknown_source(self):
         """The before_flush hook creates the sources row for ORM write paths."""
-        from library.db.models import Source, WebDocument
+        from library.db.models import Source, Document
 
         name = "fk-test-auto-created-source"
         session = get_session()
         try:
-            doc = WebDocument(url="https://fk-test-src-orm.example.com",
+            doc = Document(url="https://fk-test-src-orm.example.com",
                               document_type="link", source=name)
             session.add(doc)
             session.commit()
@@ -147,7 +147,7 @@ class TestSourceFKConstraints:
             session.close()
 
     def test_rename_cascades_to_documents(self):
-        """UPDATE sources.name rewrites web_documents.source (ON UPDATE CASCADE)."""
+        """UPDATE sources.name rewrites documents.source (ON UPDATE CASCADE)."""
         old, new = "fk-test-rename-before", "fk-test-rename-after"
         session = get_session()
         try:
@@ -155,7 +155,7 @@ class TestSourceFKConstraints:
                 "INSERT INTO sources (name) VALUES (:name) ON CONFLICT (name) DO NOTHING"
             ).bindparams(name=old))
             result = session.execute(sa_text(
-                "INSERT INTO web_documents (url, document_type, document_state, source) "
+                "INSERT INTO documents (url, document_type, document_state, source) "
                 "VALUES ('https://fk-test-src-rename.example.com', 'link', 'URL_ADDED', :src) "
                 "RETURNING id"
             ).bindparams(src=old))
@@ -168,12 +168,12 @@ class TestSourceFKConstraints:
             session.commit()
 
             doc_source = session.execute(sa_text(
-                "SELECT source FROM web_documents WHERE id = :id"
+                "SELECT source FROM documents WHERE id = :id"
             ).bindparams(id=doc_id)).scalar()
             assert doc_source == new
 
             session.execute(sa_text(
-                "DELETE FROM web_documents WHERE id = :id"
+                "DELETE FROM documents WHERE id = :id"
             ).bindparams(id=doc_id))
             session.execute(sa_text(
                 "DELETE FROM sources WHERE name IN (:new, :old)"
@@ -194,7 +194,7 @@ class TestEmbeddingFKConstraints:
         try:
             # First create a valid document
             result = session.execute(sa_text(
-                "INSERT INTO web_documents (url, document_type, document_state) "
+                "INSERT INTO documents (url, document_type, document_state) "
                 "VALUES ('https://fk-test-emb.example.com', 'link', 'URL_ADDED') "
                 "RETURNING id"
             ))
@@ -214,7 +214,7 @@ class TestEmbeddingFKConstraints:
 
             # Cleanup
             session.execute(sa_text(
-                "DELETE FROM web_documents WHERE id = :id"
+                "DELETE FROM documents WHERE id = :id"
             ).bindparams(id=doc_id))
             session.commit()
         finally:

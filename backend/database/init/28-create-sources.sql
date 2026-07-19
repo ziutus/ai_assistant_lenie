@@ -1,7 +1,7 @@
--- Migration: discovery_sources lookup table + FK on web_documents.discovery_source_id
+-- Migration: discovery_sources lookup table + FK on documents.discovery_source_id
 -- discovery source = how the user DISCOVERED the content ("own", "unknow.news",
 -- "friend") — a recommendation channel, NOT the content creator (that is
--- web_documents.byline). Stage 11d of the search rebuild normalized the old
+-- documents.byline). Stage 11d of the search rebuild normalized the old
 -- name-based FK (sources.name, ON UPDATE CASCADE) into a plain integer FK;
 -- renaming a source now only edits its lookup row. The HTTP wire format keeps
 -- the NAME (`source` field) — resolution happens in the backend
@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS public.discovery_sources (
 
 INSERT INTO public.discovery_sources (name) VALUES ('own') ON CONFLICT (name) DO NOTHING;
 
-ALTER TABLE public.web_documents
-    ADD CONSTRAINT web_documents_discovery_source_id_fkey
+ALTER TABLE public.documents
+    ADD CONSTRAINT documents_discovery_source_id_fkey
     FOREIGN KEY (discovery_source_id) REFERENCES public.discovery_sources(id);
 
 SELECT 'Table discovery_sources created' AS status;

@@ -11,7 +11,7 @@
 
 CREATE TABLE IF NOT EXISTS public.document_references (
     id               SERIAL PRIMARY KEY,
-    document_id      INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id      INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     chapter_position INTEGER,
     marker           VARCHAR(10) NOT NULL,
     ref_text         TEXT NOT NULL,

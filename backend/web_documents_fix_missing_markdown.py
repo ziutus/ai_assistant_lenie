@@ -18,7 +18,7 @@ import boto3
 
 from library.config_loader import load_config
 from library.db.engine import get_session
-from library.db.models import WebDocument
+from library.db.models import Document
 from library.document_prepare import prepare_markdown
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
@@ -79,7 +79,7 @@ def main():
         s3 = boto3.client('s3')
 
         for document_id in md_needed:
-            doc = WebDocument.get_by_id(session, document_id)
+            doc = Document.get_by_id(session, document_id)
             if doc is None:
                 print(f"Document {document_id} not found, skipping")
                 continue

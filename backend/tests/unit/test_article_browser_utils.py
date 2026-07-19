@@ -58,7 +58,7 @@ _ensure_importable("library.config_loader",
                    load_config=lambda: types.SimpleNamespace(
                        get=lambda *a, **k: None, require=lambda *a, **k: ""))
 _ensure_importable("library.db.engine", get_session=lambda: None)
-_ensure_importable("library.db.models", WebDocument=type("WebDocument", (), {}))
+_ensure_importable("library.db.models", Document=type("Document", (), {}))
 
 try:
     from imports.article_browser import _article_full_text, _trim_to_sentences

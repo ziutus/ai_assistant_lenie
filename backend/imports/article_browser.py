@@ -61,7 +61,7 @@ from sqlalchemy.exc import InternalError as SqlInternalError
 
 from library.config_loader import load_config
 from library.db.engine import get_session
-from library.db.models import WebDocument
+from library.db.models import Document
 from library.article_extractor import _detect_portal
 from library.article_pipeline import ensure_raw_markdown, extract_article
 from library.article_cleaner import clean_article_text
@@ -705,35 +705,35 @@ def _get_documents(session, limit: int = 50, since: Optional[str] = None,
                    portal: Optional[str] = None, state: Optional[str] = None,
                    not_reviewed: bool = False, no_obsidian: bool = False,
                    not_cleaned: bool = False) -> list:
-    """Pobierz dokumenty z bazy z filtrami (po stronie SQL). Zwraca listę obiektów WebDocument.
+    """Pobierz dokumenty z bazy z filtrami (po stronie SQL). Zwraca listę obiektów Document.
 
     Najpierw jedno zapytanie o ID z pełnym filtrowaniem, potem ładowanie obiektów
     pojedynczo — dzięki temu dokument z uszkodzonym blokiem DB jest pomijany,
     a nie wywraca całego zapytania.
     """
     stmt = (
-        select(WebDocument.id)
-        .where(WebDocument.document_type == "webpage")
-        .order_by(WebDocument.created_at.desc())
+        select(Document.id)
+        .where(Document.document_type == "webpage")
+        .order_by(Document.created_at.desc())
         .limit(limit)
     )
     if portal:
         escaped = portal.replace("%", "\\%").replace("_", "\\_")
-        stmt = stmt.where(WebDocument.url.like(f"%{escaped}%", escape="\\"))
+        stmt = stmt.where(Document.url.like(f"%{escaped}%", escape="\\"))
     if state:
-        stmt = stmt.where(WebDocument.document_state == state)
+        stmt = stmt.where(Document.document_state == state)
     if since:
         since_date = datetime.strptime(since, "%Y-%m-%d")
         # Dokumenty bez created_at przechodzą filtr (jak w starym filtrowaniu w Pythonie)
-        stmt = stmt.where(or_(WebDocument.created_at.is_(None),
-                              WebDocument.created_at >= since_date))
+        stmt = stmt.where(or_(Document.created_at.is_(None),
+                              Document.created_at >= since_date))
     if not_reviewed:
-        stmt = stmt.where(WebDocument.reviewed_at.is_(None))
+        stmt = stmt.where(Document.reviewed_at.is_(None))
     if no_obsidian:
-        stmt = stmt.where(or_(WebDocument.obsidian_note_paths.is_(None),
-                              WebDocument.obsidian_note_paths == []))
+        stmt = stmt.where(or_(Document.obsidian_note_paths.is_(None),
+                              Document.obsidian_note_paths == []))
     if not_cleaned:
-        stmt = stmt.where(WebDocument.document_state.not_in([
+        stmt = stmt.where(Document.document_state.not_in([
             StalkerDocumentStatus.MD_SIMPLIFIED.name,
             StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
             StalkerDocumentStatus.EMBEDDING_EXIST.name,
@@ -747,7 +747,7 @@ def _get_documents(session, limit: int = 50, since: Optional[str] = None,
     results = []
     for doc_id in doc_ids:
         try:
-            doc = WebDocument.get_by_id(session, doc_id)
+            doc = Document.get_by_id(session, doc_id)
         except SqlInternalError as e:
             session.rollback()
             print(f"  OSTRZEŻENIE: pominięto dokument id={doc_id} — korupcja bloku DB: {e.orig}")
@@ -874,7 +874,7 @@ def cmd_meta(session, article_id: Optional[int] = None):
         print(json.dumps({"error": "--meta wymaga --id <ARTICLE_ID>"}), file=sys.stderr)
         sys.exit(1)
 
-    doc = WebDocument.get_by_id(session, article_id)
+    doc = Document.get_by_id(session, article_id)
     if doc is None:
         print(json.dumps({"error": f"Dokument {article_id} nie znaleziony."}), file=sys.stderr)
         sys.exit(1)
@@ -917,7 +917,7 @@ def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
         print(json.dumps({"error": "--dump wymaga --id <ARTICLE_ID>"}), file=sys.stderr)
         sys.exit(1)
 
-    doc = WebDocument.get_by_id(session, article_id)
+    doc = Document.get_by_id(session, article_id)
     if doc is None:
         print(json.dumps({"error": f"Dokument {article_id} nie znaleziony."}), file=sys.stderr)
         sys.exit(1)
@@ -959,7 +959,7 @@ def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False
         print("ERROR: --show wymaga --id <ARTICLE_ID>")
         sys.exit(1)
 
-    doc = WebDocument.get_by_id(session, article_id)
+    doc = Document.get_by_id(session, article_id)
     if doc is None:
         print(f"Dokument {article_id} nie znaleziony.")
         sys.exit(1)
@@ -1001,7 +1001,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
     """Interaktywny przegląd artykułów."""
     if start_id:
         # Gdy podano --id, zacznij od tego dokumentu (nawet jeśli nie jest na liście)
-        doc = WebDocument.get_by_id(session, start_id)
+        doc = Document.get_by_id(session, start_id)
         if doc is None:
             print(f"Dokument {start_id} nie znaleziony.")
             return

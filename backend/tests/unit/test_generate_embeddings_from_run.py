@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 
 import library.document_analysis_service as das
-from library.db.models import DocumentAnalysisRun, DocumentChunk, WebDocument
+from library.db.models import DocumentAnalysisRun, DocumentChunk, Document
 from library.document_analysis_service import generate_embeddings_from_run
 from library.models.embedding_result import EmbeddingResult
 
@@ -37,7 +37,7 @@ def fake_run():
 
 @pytest.fixture
 def fake_doc():
-    doc = MagicMock(spec=WebDocument)
+    doc = MagicMock(spec=Document)
     doc.id = 42
     doc.language = "pl"
     return doc
@@ -50,7 +50,7 @@ def session(fake_run, fake_doc):
     def _get(model, id_):
         if model is DocumentAnalysisRun:
             return fake_run
-        if model is WebDocument:
+        if model is Document:
             return fake_doc
         return None
 
