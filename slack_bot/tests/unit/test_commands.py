@@ -423,8 +423,8 @@ class TestHandleCheck:
             "id": 123,
             "url": "https://example.com/article",
             "document_type": "webpage",
-            "document_state": "URL_ADDED",
-            "created_at": "2026-01-15 10:30:45",
+            "processing_status": "URL_ADDED",
+            "ingested_at": "2026-01-15 10:30:45",
         }
         ack, respond = _make_ack_respond()
         command = {"text": "https://example.com/article"}
@@ -531,7 +531,7 @@ class TestHandleCheck:
     def test_missing_keys_in_response(self):
         """5.12: KeyError handling — missing keys in check_url response."""
         client = _make_mock_client()
-        client.check_url.return_value = {"id": 123}  # missing document_type, document_state, created_at
+        client.check_url.return_value = {"id": 123}  # missing document_type, processing_status, ingested_at
         ack, respond = _make_ack_respond()
         command = {"text": "https://example.com"}
 
@@ -553,8 +553,8 @@ class TestHandleInfo:
             "id": 123,
             "title": "Article Title",
             "document_type": "webpage",
-            "document_state": "URL_ADDED",
-            "created_at": "2026-01-15 10:30:45",
+            "processing_status": "URL_ADDED",
+            "ingested_at": "2026-01-15 10:30:45",
         }
         ack, respond = _make_ack_respond()
         command = {"text": "123"}
@@ -653,7 +653,7 @@ class TestHandleInfo:
         client = _make_mock_client()
         client.get_document.return_value = {
             "id": 1, "title": "T", "document_type": "link",
-            "document_state": "URL_ADDED", "created_at": "2026-01-01",
+            "processing_status": "URL_ADDED", "ingested_at": "2026-01-01",
         }
         call_order = []
         ack = MagicMock(side_effect=lambda: call_order.append("ack"))

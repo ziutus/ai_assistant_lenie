@@ -116,8 +116,8 @@ def _handle_check(ack: Callable, respond: Callable, client: LenieApiClient, comm
             respond(
                 text=f"Found in database (ID: {result['id']}). "
                 f"Type: {result['document_type']}. "
-                f"Status: {result['document_state']}. "
-                f"Added: {result['created_at']}."
+                f"Status: {result['processing_status']}. "
+                f"Added: {result['ingested_at']}."
             )
         else:
             respond(text="Not found in database.")
@@ -151,8 +151,8 @@ def _handle_info(ack: Callable, respond: Callable, client: LenieApiClient, comma
             text=f"Document #{document_id}\n"
             f"Title: {data['title']}\n"
             f"Type: {data['document_type']}\n"
-            f"Status: {data['document_state']}\n"
-            f"Added: {data['created_at']}"
+            f"Status: {data['processing_status']}\n"
+            f"Added: {data['ingested_at']}"
         )
     except ApiConnectionError:
         respond(text="Backend unreachable (connection timeout). Check if lenie-ai-server is running.")
