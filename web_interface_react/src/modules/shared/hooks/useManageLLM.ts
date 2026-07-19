@@ -158,7 +158,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
           text_md: text_tmp_md,
           language: website.language,
           document_type: website.document_type,
-          document_state: website.document_state,
+          processing_status: website.processing_status,
           chapter_list: website.chapter_list,
           byline: website.byline,
           note: website.note,
@@ -214,7 +214,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
           text_md: text_tmp_md,
           language: website.language,
           document_type: website.document_type,
-          document_state: "READY_FOR_EMBEDDING",
+          processing_status: "READY_FOR_EMBEDDING",
           chapter_list: website.chapter_list,
           byline: website.byline,
           note: website.note,
@@ -232,7 +232,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
       console.log("Getting next document ID to correct");
       console.log("id: " + website.id);
       console.log("document_type: " + website.document_type);
-      console.log("document_state: " + website.document_state);
+      console.log("processing_status: " + website.processing_status);
 
       const response2 = await axios.get(
         `${apiUrl}/website_get_next_to_correct`,
@@ -240,7 +240,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
           params: {
             id: website.id,
             document_type: selectedDocumentType,
-            document_state: selectedDocumentState
+            processing_status: selectedDocumentState
           },
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",
@@ -379,7 +379,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
       console.log("Getting next document ID to correct");
       console.log("id: " + website.id);
       console.log("document_type: " + website.document_type);
-      console.log("document_state: " + website.document_state);
+      console.log("processing_status: " + website.processing_status);
 
       const response2 = await axios.get(
         `${apiUrl}/website_get_next_to_correct`,
@@ -387,7 +387,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
           params: {
             id: website.id,
             document_type: selectedDocumentType,
-            document_state: selectedDocumentState
+            processing_status: selectedDocumentState
           },
           headers: {
             "Content-Type": "application/x-www-form-urlencoded",

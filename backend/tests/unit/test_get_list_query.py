@@ -38,8 +38,8 @@ class TestGetListCollectionFilter:
         assert mock_session.execute.called
 
     def test_collection_filter_does_not_affect_other_filters(self, db_instance, mock_session):
-        """Verify that collection_id filter works independently from document_state."""
-        db_instance.get_list(collection_id=5, document_state="ALL")
+        """Verify that collection_id filter works independently from processing_status."""
+        db_instance.get_list(collection_id=5, processing_status="ALL")
         assert mock_session.execute.called
 
 
@@ -51,9 +51,9 @@ class TestGetListParameterization:
         db_instance.get_list(document_type="webpage")
         assert mock_session.execute.called
 
-    def test_document_state_filter(self, db_instance, mock_session):
-        """Verify document_state filter triggers query execution."""
-        db_instance.get_list(document_state="URL_ADDED")
+    def test_processing_status_filter(self, db_instance, mock_session):
+        """Verify processing_status filter triggers query execution."""
+        db_instance.get_list(processing_status="URL_ADDED")
         assert mock_session.execute.called
 
     def test_search_in_documents_filter(self, db_instance, mock_session):
@@ -65,7 +65,7 @@ class TestGetListParameterization:
         """Verify combining multiple filters triggers query execution."""
         db_instance.get_list(
             document_type="webpage",
-            document_state="URL_ADDED",
+            processing_status="URL_ADDED",
             collection_id=5,
             search_in_documents="test",
         )

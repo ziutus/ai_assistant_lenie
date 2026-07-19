@@ -883,7 +883,7 @@ def generate_embeddings_from_run(
         session.commit()
 
     if created:
-        doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
+        doc.processing_status = StalkerDocumentStatus.EMBEDDING_EXIST.name
 
     session.commit()
     log(f"done: {created} embeddings created from {len(eligible)} chunks")

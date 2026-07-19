@@ -352,7 +352,7 @@ def main():
         doc.text_raw = text_raw
         doc.set_discovery_source(session, args.source)
         doc.original_id = msg_id
-        doc.document_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name
+        doc.processing_status = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name
         if language:
             doc.language = language
         if args.note:
@@ -363,7 +363,7 @@ def main():
 
         elapsed = time.time() - t_start
         print(f"\n  Document created with ID: {doc.id}")
-        print(f"  Status: {doc.document_state}")
+        print(f"  Status: {doc.processing_status}")
         print(f"  Elapsed: {elapsed:.2f}s")
 
     except Exception as e:

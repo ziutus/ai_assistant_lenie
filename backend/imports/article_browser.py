@@ -145,7 +145,7 @@ def get_article_text(doc, session) -> Optional[dict]:
         return None
 
     # 1. Jeśli tekst jest w bazie (MD_SIMPLIFIED, EMBEDDING_EXIST) — użyj go
-    if doc.text and len(doc.text) > 100 and doc.document_state in ("MD_SIMPLIFIED", "EMBEDDING_EXIST"):
+    if doc.text and len(doc.text) > 100 and doc.processing_status in ("MD_SIMPLIFIED", "EMBEDDING_EXIST"):
         return clean_article_text(doc.text, doc.url)
 
     cache_dir = os.path.join(CACHE_DIR_BASE, str(doc.id))
@@ -575,7 +575,7 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     print(f"    Linki: {len(article['links'])}")
     print(f"    Obrazki: {len(article['images'])}")
     print(f"    Embedding model: {embedding_model}")
-    print(f"    Status: {doc.document_state} → MD_SIMPLIFIED → EMBEDDING_EXIST")
+    print(f"    Status: {doc.processing_status} → MD_SIMPLIFIED → EMBEDDING_EXIST")
 
     if not _refresh_db_connection(session):
         return False
@@ -586,7 +586,7 @@ def action_save_to_db(doc, article: dict, session) -> bool:
         doc.text_raw = doc.text
 
     doc.text = text_only
-    doc.document_state = StalkerDocumentStatus.MD_SIMPLIFIED.name
+    doc.processing_status = StalkerDocumentStatus.MD_SIMPLIFIED.name
 
     # Zapisz autora z LLM markers jeśli dostępny
     import glob as glob_mod
@@ -689,7 +689,7 @@ def action_save_to_db(doc, article: dict, session) -> bool:
             model=embedding_model,
         )
 
-        doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
+        doc.processing_status = StalkerDocumentStatus.EMBEDDING_EXIST.name
         session.commit()
         print("  Embedding zapisany. Status: EMBEDDING_EXIST")
         return True
@@ -721,7 +721,7 @@ def _get_documents(session, limit: int = 50, since: Optional[str] = None,
         escaped = portal.replace("%", "\\%").replace("_", "\\_")
         stmt = stmt.where(Document.url.like(f"%{escaped}%", escape="\\"))
     if state:
-        stmt = stmt.where(Document.document_state == state)
+        stmt = stmt.where(Document.processing_status == state)
     if since:
         since_date = datetime.strptime(since, "%Y-%m-%d")
         # Dokumenty bez created_at przechodzą filtr (jak w starym filtrowaniu w Pythonie)
@@ -733,7 +733,7 @@ def _get_documents(session, limit: int = 50, since: Optional[str] = None,
         stmt = stmt.where(or_(Document.obsidian_note_paths.is_(None),
                               Document.obsidian_note_paths == []))
     if not_cleaned:
-        stmt = stmt.where(Document.document_state.not_in([
+        stmt = stmt.where(Document.processing_status.not_in([
             StalkerDocumentStatus.MD_SIMPLIFIED.name,
             StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
             StalkerDocumentStatus.EMBEDDING_EXIST.name,
@@ -783,7 +783,7 @@ def cmd_list(session, since: Optional[str] = None, portal: Optional[str] = None,
 
     for doc in documents:
         date_str = doc.created_at.strftime("%Y-%m-%d") if doc.created_at else "????"
-        state_short = (doc.document_state or "?")[:15]
+        state_short = (doc.processing_status or "?")[:15]
         title = (doc.title or "brak tytułu")[:70]
         reviewed = doc.reviewed_at.strftime("%Y-%m-%d") if doc.reviewed_at else "-"
         obsidian_count = len(doc.obsidian_note_paths or [])
@@ -834,7 +834,7 @@ def action_track_obsidian_path(doc, session):
 def action_mark_review(doc, session):
     """Przełącz status artykułu na NEED_MANUAL_REVIEW lub cofnij do poprzedniego."""
     from library.models.stalker_document_status import StalkerDocumentStatus
-    current = doc.document_state
+    current = doc.processing_status
     if current == StalkerDocumentStatus.NEED_MANUAL_REVIEW.name:
         print("  Aktualny status: NEED_MANUAL_REVIEW")
         print("  [1] MD_SIMPLIFIED  [2] DOCUMENT_INTO_DATABASE  [3] Anuluj")
@@ -854,7 +854,7 @@ def action_mark_review(doc, session):
         print(f"  Oznaczam do ręcznej poprawki: {current} → {new_state}")
 
     try:
-        doc.document_state = new_state
+        doc.processing_status = new_state
         session.commit()
         print(f"  Status zmieniony na: {new_state}")
     except Exception as e:
@@ -865,7 +865,7 @@ def action_mark_review(doc, session):
 def cmd_meta(session, article_id: Optional[int] = None):
     """Wypisz metadane artykułu jako JSON bez pola text — tanie wywołanie dla Claude Code.
 
-    Używane jako Step 1a w slash command /obsidian-note: sprawdź document_state
+    Używane jako Step 1a w slash command /obsidian-note: sprawdź processing_status
     przed podjęciem decyzji czy pobierać pełny tekst (--dump).
     """
     import json
@@ -885,7 +885,7 @@ def cmd_meta(session, article_id: Optional[int] = None):
         "title": doc.title,
         "url": doc.url,
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
-        "document_state": doc.document_state,
+        "processing_status": doc.processing_status,
         "document_type": doc.document_type,
         "language": doc.language,
         "source": doc.discovery_source_name,
@@ -933,7 +933,7 @@ def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
         "title": doc.title,
         "url": doc.url,
         "created_at": doc.created_at.isoformat() if doc.created_at else None,
-        "document_state": doc.document_state,
+        "processing_status": doc.processing_status,
         "document_type": doc.document_type,
         "language": doc.language,
         "source": doc.discovery_source_name,
@@ -972,7 +972,7 @@ def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False
     print(f"  Data:    {date_str}")
     print(f"  Portal:  {detected_portal}")
     print(f"  URL:     {doc.url}")
-    print(f"  Stan:    {doc.document_state}")
+    print(f"  Stan:    {doc.processing_status}")
     print(f"  Cache:   {_get_cache_status(doc.id)}")
     print(f"  Typ:     {doc.document_type}")
     print(f"  Język:   {doc.language}")
@@ -1045,7 +1045,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
         print(f"  Data:    {date_str}")
         print(f"  Portal:  {detected_portal}")
         print(f"  URL:     {doc.url}")
-        print(f"  Stan:    {doc.document_state}")
+        print(f"  Stan:    {doc.processing_status}")
         print(f"  Cache:   {_get_cache_status(doc.id)}")
         obsidian_paths = doc.obsidian_note_paths or []
         if obsidian_paths:
@@ -1084,7 +1084,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
         print()
 
         while True:
-            print(f"  ID: {doc.id}  Status: {doc.document_state}   (article_browser v{__version__})")
+            print(f"  ID: {doc.id}  Status: {doc.processing_status}   (article_browser v{__version__})")
             print("  [n]ext  [p]rev  [v]iew  [b]oundaries  [r]efresh  [w]rite to db  [s]ave note  [d]one/reviewed  [m]ark review  [o]bsidian  [c]ompare  [k]raje  [e]ncje  [q]uit")
             try:
                 action = _getch_action(f"  [{idx + 1}] > ")

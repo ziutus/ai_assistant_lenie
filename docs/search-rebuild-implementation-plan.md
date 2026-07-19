@@ -56,8 +56,8 @@ Backend wykonuje deterministyczne zapytania SQL i pgvector. Frontend pokazuje, j
 | `project` | `collection_id` | kolekcja tematyczna — **zrobione fizycznie (Etap 11c, migracja `c4d5e6f7a8b9`)**: tabela `collections` + FK, kolumna `project` usunięta (była w 100% pusta, ADR-017) |
 | `created_at` dokumentu | `ingested_at` | data dodania do Lenie |
 | `uuid` | `public_id` | publiczny stabilny identyfikator |
-| `document_state` | `processing_status` | stan pipeline'u |
-| `document_state_error` | `processing_error_code` | kod błędu pipeline'u |
+| `document_state` | `processing_status` | stan pipeline'u — **zrobione fizycznie (Etap 11g cz. 2a, migracja `a8b9c0d1e2f3`)** wraz z tabelami słownikowymi `processing_status_types`/`processing_error_types` i kluczami JSON/parametrami wire |
+| `document_state_error` | `processing_error_code` | kod błędu pipeline'u — **zrobione fizycznie (Etap 11g cz. 2a)** |
 | `website_similar` | `search` | właściwy endpoint wyszukiwania |
 | `period_from/to` | `subject_period_start/end_year` | okres, którego dotyczy treść |
 

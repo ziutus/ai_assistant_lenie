@@ -1,8 +1,8 @@
 from enum import Enum
 
 
-# Source of truth for valid document processing states. DB lookup table `document_status_types`
-# is seeded from these values and enforces them via FK constraint on `documents.document_state`.
+# Source of truth for valid document processing states. DB lookup table `processing_status_types`
+# is seeded from these values and enforces them via FK constraint on `documents.processing_status`.
 # Kept alongside FK for: early validation in setter methods, input aliases ("ERROR_DOWNLOAD"→"ERROR"),
 # IDE autocomplete. See ADR-010 for rationale.
 class StalkerDocumentStatus(Enum):

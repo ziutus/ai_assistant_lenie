@@ -107,7 +107,7 @@ def process_youtube_url(
     else:
         logger.info(f"Document already exists in DB with ID: {web_document.id}")
 
-    if not force_reprocess and web_document.id and web_document.document_state == StalkerDocumentStatus.EMBEDDING_EXIST.name:
+    if not force_reprocess and web_document.id and web_document.processing_status == StalkerDocumentStatus.EMBEDDING_EXIST.name:
         logger.info(f"Document {web_document.id} already has embeddings, skipping.")
         return web_document
 
@@ -124,7 +124,7 @@ def process_youtube_url(
         return web_document
 
     # Fetch metadata if URL_ADDED and pytube available
-    if web_document.document_state == StalkerDocumentStatus.URL_ADDED.name and youtube_file.can_pytube:
+    if web_document.processing_status == StalkerDocumentStatus.URL_ADDED.name and youtube_file.can_pytube:
         logger.info("Updating document metadata from YouTube")
         web_document.title = youtube_file.title
         web_document.byline = youtube_file.author
@@ -147,7 +147,7 @@ def process_youtube_url(
 
     # Set status to NEED_TRANSCRIPTION
     logger.info("Setting status NEED_TRANSCRIPTION")
-    web_document.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION.name
+    web_document.processing_status = StalkerDocumentStatus.NEED_TRANSCRIPTION.name
     session.commit()
 
     # Default language
@@ -157,14 +157,14 @@ def process_youtube_url(
         web_document.language = default_lang
 
     # Try YouTube captions first
-    if web_document.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION.name and skip_captions:
+    if web_document.processing_status == StalkerDocumentStatus.NEED_TRANSCRIPTION.name and skip_captions:
         logger.info("Skipping YouTube captions (skip_captions=True, likely IP blocked)")
-        web_document.document_state = StalkerDocumentStatus.TEMPORARY_ERROR.name
-        web_document.document_state_error = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
+        web_document.processing_status = StalkerDocumentStatus.TEMPORARY_ERROR.name
+        web_document.processing_error_code = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
         session.commit()
         return web_document
 
-    if web_document.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION.name:
+    if web_document.processing_status == StalkerDocumentStatus.NEED_TRANSCRIPTION.name:
         t0 = time.time()
         logger.info("Trying to use captions from YouTube")
         try:
@@ -201,9 +201,9 @@ def process_youtube_url(
 
             # Captions fetch succeeded — clear any stale error from a previous failed
             # attempt (e.g. CAPTIONS_FETCH_ERROR from a retry). See ADR-010 state-error
-            # convention: document_state_error must be reset on every successful transition,
+            # convention: processing_error_code must be reset on every successful transition,
             # not just left for the next terminal error to overwrite.
-            web_document.document_state_error = StalkerDocumentStatusError.NONE.name
+            web_document.processing_error_code = StalkerDocumentStatusError.NONE.name
 
             if transcript_text:
                 logger.info("Checking if transcript language matches expected language")
@@ -219,8 +219,8 @@ def process_youtube_url(
                     web_document.text = youtube_titles_to_text(transcript_text)
                     web_document.text_raw = transcript_text
                     web_document.language = language_detected
-                    web_document.document_state = StalkerDocumentStatus.ERROR.name
-                    web_document.document_state_error = StalkerDocumentStatusError.CAPTIONS_LANGUAGE_MISMATCH.name
+                    web_document.processing_status = StalkerDocumentStatus.ERROR.name
+                    web_document.processing_error_code = StalkerDocumentStatusError.CAPTIONS_LANGUAGE_MISMATCH.name
                     session.commit()
                     return web_document
                 else:
@@ -229,11 +229,11 @@ def process_youtube_url(
                             transcript_text, web_document.chapter_list
                         )
                         web_document.text = string_all
-                        web_document.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+                        web_document.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
                         session.commit()
                     elif transcript_text:
                         web_document.text = youtube_titles_to_text(transcript_text)
-                        web_document.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+                        web_document.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
                         session.commit()
 
                 # Store raw JSON (with start/duration timestamps) in text_raw.
@@ -250,8 +250,8 @@ def process_youtube_url(
         except Exception as e:
             logger.error(f"An unexpected error occurred while fetching captions: {e}")
             session.rollback()
-            web_document.document_state = StalkerDocumentStatus.TEMPORARY_ERROR.name
-            web_document.document_state_error = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
+            web_document.processing_status = StalkerDocumentStatus.TEMPORARY_ERROR.name
+            web_document.processing_error_code = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
             session.commit()
             return web_document
 
@@ -259,15 +259,15 @@ def process_youtube_url(
 
     # If still NEED_TRANSCRIPTION — check if paid transcription is authorized
     t0 = time.time()
-    if web_document.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION.name:
+    if web_document.processing_status == StalkerDocumentStatus.NEED_TRANSCRIPTION.name:
         if not web_document.transcript_needed:
             logger.info("YouTube captions not available and transcript_needed=False — skipping paid transcription")
-            web_document.document_state = StalkerDocumentStatus.ERROR.name
-            web_document.document_state_error = StalkerDocumentStatusError.NO_CAPTIONS_AVAILABLE.name
+            web_document.processing_status = StalkerDocumentStatus.ERROR.name
+            web_document.processing_error_code = StalkerDocumentStatusError.NO_CAPTIONS_AVAILABLE.name
             session.commit()
             return web_document
 
-        logger.info(f"Status: {web_document.document_state}")
+        logger.info(f"Status: {web_document.processing_status}")
         logger.info(f"Title: {web_document.title}")
         logger.info(f"Description: {youtube_file.description}")
         logger.info(f"Length: {youtube_file.length_minutes} min ({youtube_file.length_seconds} seconds)")
@@ -299,19 +299,19 @@ def process_youtube_url(
             transcript = transcriber.transcribe(youtube_file.path)
             web_document.transcript_job_id = transcript.id
             logger.info(f"[DONE] Transcript job ID: >{transcript.id}<")
-            web_document.document_state = StalkerDocumentStatus.TRANSCRIPTION_IN_PROGRESS.name
+            web_document.processing_status = StalkerDocumentStatus.TRANSCRIPTION_IN_PROGRESS.name
             session.commit()
 
         transcript = aai.Transcript.get_by_id(web_document.transcript_job_id)
         if transcript.status == aai.TranscriptStatus.error:
             error_msg = transcript.error or ""
             logger.error(f"Transcription failed: {error_msg}")
-            web_document.document_state = StalkerDocumentStatus.ERROR.name
+            web_document.processing_status = StalkerDocumentStatus.ERROR.name
             if "insufficient" in error_msg.lower() or "funds" in error_msg.lower():
-                web_document.document_state_error = StalkerDocumentStatusError.TRANSCRIPTION_INSUFFICIENT_FUNDS.name
+                web_document.processing_error_code = StalkerDocumentStatusError.TRANSCRIPTION_INSUFFICIENT_FUNDS.name
                 logger.warning("AssemblyAI: insufficient funds — check balance")
             else:
-                web_document.document_state_error = StalkerDocumentStatusError.TRANSCRIPTION_ERROR.name
+                web_document.processing_error_code = StalkerDocumentStatusError.TRANSCRIPTION_ERROR.name
             session.commit()
         elif transcript.status == "completed":
             text_raw = ""
@@ -322,10 +322,10 @@ def process_youtube_url(
             logger.debug(text_raw)
             web_document.text_raw = transcript.text
             web_document.text = text_raw
-            web_document.document_state = StalkerDocumentStatus.TRANSCRIPTION_DONE.name
+            web_document.processing_status = StalkerDocumentStatus.TRANSCRIPTION_DONE.name
             # Transcription succeeded — clear any stale error from an earlier failed
             # captions/transcription attempt (see ADR-010 state-error convention).
-            web_document.document_state_error = StalkerDocumentStatusError.NONE.name
+            web_document.processing_error_code = StalkerDocumentStatusError.NONE.name
 
             # Log transcription usage
             audio_duration = getattr(transcript, 'audio_duration', None) or 0

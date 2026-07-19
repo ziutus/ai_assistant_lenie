@@ -257,20 +257,20 @@ const SharedInputs = ({
       </div>
       <SourceSelect formik={formik} isLoading={isLoading} sources={sourceSuggestions} />
       <LanguageSelect formik={formik} isLoading={isLoading} />
-      {formik.values.document_state_error && (
+      {formik.values.processing_error_code && (
         <div>
           <p style={{ marginBottom: "10px", fontSize: "15px" }}>
-            Document state error: {formik.values.document_state_error}
+            Document state error: {formik.values.processing_error_code}
           </p>
         </div>
       )}
       <Select
         disabled={isLoading}
-        value={formik.values.document_state}
+        value={formik.values.processing_status}
         label={"Document state"}
         onChange={formik.handleChange}
-        id={"document_state"}
-        name={"document_state"}
+        id={"processing_status"}
+        name={"processing_status"}
         type={"text"}
       >
         <option value="NONE">DEFAULT NONE state</option>

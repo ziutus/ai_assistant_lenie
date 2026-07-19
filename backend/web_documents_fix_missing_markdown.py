@@ -97,8 +97,8 @@ def main():
             html = download_raw_html(url=doc.url)
             if not html:
                 print("empty response! [ERROR]")
-                doc.document_state = StalkerDocumentStatus.ERROR.name
-                doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD.name
+                doc.processing_status = StalkerDocumentStatus.ERROR.name
+                doc.processing_error_code = StalkerDocumentStatusError.ERROR_DOWNLOAD.name
                 session.commit()
                 continue
 

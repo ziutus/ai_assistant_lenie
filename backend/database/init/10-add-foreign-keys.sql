@@ -10,12 +10,12 @@ ALTER TABLE public.documents
     FOREIGN KEY (document_type) REFERENCES public.document_types(name);
 
 ALTER TABLE public.documents
-    ADD CONSTRAINT fk_document_state
-    FOREIGN KEY (document_state) REFERENCES public.document_status_types(name);
+    ADD CONSTRAINT fk_processing_status
+    FOREIGN KEY (processing_status) REFERENCES public.processing_status_types(name);
 
 ALTER TABLE public.documents
-    ADD CONSTRAINT fk_document_state_error
-    FOREIGN KEY (document_state_error) REFERENCES public.document_status_error_types(name);
+    ADD CONSTRAINT fk_processing_error_code
+    FOREIGN KEY (processing_error_code) REFERENCES public.processing_error_types(name);
 
 -- document_embeddings: 1 FK constraint with cascade
 ALTER TABLE public.document_embeddings

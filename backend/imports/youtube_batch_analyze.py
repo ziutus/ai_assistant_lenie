@@ -87,7 +87,7 @@ def main():
             sys.exit(1)
 
         print(f"Tytuł  : {doc.title}")
-        print(f"Typ    : {doc.document_type} | Stan: {doc.document_state}")
+        print(f"Typ    : {doc.document_type} | Stan: {doc.processing_status}")
         if doc.byline:
             print(f"Autor  : {doc.byline}")
 

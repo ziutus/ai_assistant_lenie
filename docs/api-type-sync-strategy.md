@@ -82,8 +82,8 @@ class WebDocumentResponse(BaseModel):
     text_english: str | None = None
     text_raw: str | None = None
     document_type: DocumentType
-    document_state: DocumentStatus
-    document_state_error: DocumentStatusError
+    processing_status: DocumentStatus
+    processing_error_code: DocumentStatusError
     chapter_list: str | None = None
     note: str | None = None
     next_id: int | None = None
@@ -108,8 +108,8 @@ class DocumentListItem(BaseModel):
     title: str | None = None
     document_type: str
     created_at: str
-    document_state: str
-    document_state_error: str | None = None
+    processing_status: str
+    processing_error_code: str | None = None
     note: str | None = None
     collection_id: int | None = None
     uuid: str | None = None

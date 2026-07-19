@@ -203,8 +203,8 @@ const List = () => {
               >
                 {(item.title && item.title.length > 10) ? item.url.substring(0, 50) + '...' : item.url}
               </a>
-              <span> {item.document_state}
-                {item.document_state_error !== 'NONE' && ` | ${item.document_state_error}`}
+              <span> {item.processing_status}
+                {item.processing_error_code !== 'NONE' && ` | ${item.processing_error_code}`}
               </span>
               {obsidian && (
                 <span
@@ -227,7 +227,7 @@ const List = () => {
               >
                 Edit
               </NavLink>
-              {["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.document_state) && (
+              {["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.processing_status) && (
                 <NavLink
                   className={"button"}
                   style={{ margin: "0 0 0 6px" }}
@@ -236,7 +236,7 @@ const List = () => {
                   Czytaj
                 </NavLink>
               )}
-              {["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.document_state) && (
+              {["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.processing_status) && (
                 <NavLink
                   className={"button"}
                   style={{ margin: "0 0 0 6px" }}
@@ -246,7 +246,7 @@ const List = () => {
                   Chunki
                 </NavLink>
               )}
-              {item.document_type === "youtube" && YOUTUBE_CAPTIONS_RETRY_STATES.includes(item.document_state) && (
+              {item.document_type === "youtube" && YOUTUBE_CAPTIONS_RETRY_STATES.includes(item.processing_status) && (
                 <button
                   className={"button"}
                   style={{ margin: "0 0 0 6px" }}

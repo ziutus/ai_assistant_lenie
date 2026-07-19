@@ -35,7 +35,7 @@ def _make_doc(**overrides):
         "url": "https://example.com/article",
         "title": "Test Article",
         "document_type": "webpage",
-        "document_state": "URL_ADDED",
+        "processing_status": "URL_ADDED",
         "created_at": datetime.datetime(2026, 1, 15, 10, 30, 0),
     }
     defaults.update(overrides)
@@ -194,7 +194,7 @@ class TestCreateFlow:
         doc = Document(
             url="https://example.com/new",
             document_type="webpage",
-            document_state="URL_ADDED",
+            processing_status="URL_ADDED",
         )
         session = MagicMock()
 
@@ -225,8 +225,8 @@ class TestCreateFlow:
         doc.original_id = "orig-123"
         doc.document_length = 500
         doc.chapter_list = "ch1;ch2"
-        doc.document_state = "DOCUMENT_INTO_DATABASE"
-        doc.document_state_error = "NONE"
+        doc.processing_status = "DOCUMENT_INTO_DATABASE"
+        doc.processing_error_code = "NONE"
         doc.text_raw = "Raw text"
         doc.transcript_job_id = "job-abc"
         doc.ai_summary_needed = True
@@ -255,8 +255,8 @@ class TestCreateFlow:
         assert d["original_id"] == "orig-123"
         assert d["document_length"] == 500
         assert d["chapter_list"] == "ch1;ch2"
-        assert d["document_state"] == "DOCUMENT_INTO_DATABASE"
-        assert d["document_state_error"] == "NONE"
+        assert d["processing_status"] == "DOCUMENT_INTO_DATABASE"
+        assert d["processing_error_code"] == "NONE"
         assert d["text_raw"] == "Raw text"
         assert d["transcript_job_id"] == "job-abc"
         assert d["ai_summary_needed"] is True
@@ -280,7 +280,7 @@ class TestCreateFlow:
             (TextDocument, "text"),
         ]
         for cls, expected_type in cases:
-            doc = cls(url="https://test.com", document_state="URL_ADDED")
+            doc = cls(url="https://test.com", processing_status="URL_ADDED")
             assert doc.document_type == expected_type, f"{cls.__name__} should have type {expected_type}"
 
 
@@ -296,10 +296,10 @@ class TestUpdateFlow:
         doc.title = "New Title"
         assert doc.title == "New Title"
 
-    def test_update_enum_via_set_document_state(self):
-        doc = _make_doc(document_state="URL_ADDED")
-        doc.set_document_state("DOCUMENT_INTO_DATABASE")
-        assert doc.document_state == "DOCUMENT_INTO_DATABASE"
+    def test_update_enum_via_set_processing_status(self):
+        doc = _make_doc(processing_status="URL_ADDED")
+        doc.set_processing_status("DOCUMENT_INTO_DATABASE")
+        assert doc.processing_status == "DOCUMENT_INTO_DATABASE"
 
     def test_none_values_stored_correctly(self):
         doc = _make_doc(title="Has Title", tags="some,tags")
@@ -370,24 +370,24 @@ class TestDictCompatibility:
         assert d["document_type"] == "youtube"
         assert isinstance(d["document_type"], str)
 
-    def test_enum_format_document_state(self):
-        """document_state should be a string."""
-        doc = _make_doc(document_state="EMBEDDING_EXIST")
+    def test_enum_format_processing_status(self):
+        """processing_status should be a string."""
+        doc = _make_doc(processing_status="EMBEDDING_EXIST")
         d = doc.dict()
-        assert d["document_state"] == "EMBEDDING_EXIST"
+        assert d["processing_status"] == "EMBEDDING_EXIST"
 
-    def test_enum_format_document_state_error(self):
-        """document_state_error should be a string, defaulting to 'NONE'."""
-        doc = _make_doc(document_state_error="TEXT_MISSING")
+    def test_enum_format_processing_error_code(self):
+        """processing_error_code should be a string, defaulting to 'NONE'."""
+        doc = _make_doc(processing_error_code="TEXT_MISSING")
         d = doc.dict()
-        assert d["document_state_error"] == "TEXT_MISSING"
+        assert d["processing_error_code"] == "TEXT_MISSING"
 
-    def test_enum_format_document_state_error_none(self):
-        """When document_state_error is None, dict should return 'NONE'."""
+    def test_enum_format_processing_error_code_none(self):
+        """When processing_error_code is None, dict should return 'NONE'."""
         doc = _make_doc()
-        doc.document_state_error = None
+        doc.processing_error_code = None
         d = doc.dict()
-        assert d["document_state_error"] == "NONE"
+        assert d["processing_error_code"] == "NONE"
 
     def test_transient_fields_populated(self):
         """Transient navigation fields should appear in dict when populated."""
@@ -417,16 +417,16 @@ class TestDictCompatibility:
         doc.id = None
         doc.url = "https://x.com"
         doc.document_type = "link"
-        doc.document_state = "URL_ADDED"
+        doc.processing_status = "URL_ADDED"
         doc.created_at = None
-        doc.document_state_error = None
+        doc.processing_error_code = None
 
         d = doc.dict()
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
             "summary", "url", "language", "tags", "text", "paywall", "title",
             "created_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
-            "document_length", "chapter_list", "document_state", "document_state_error",
+            "document_length", "chapter_list", "processing_status", "processing_error_code",
             "text_raw", "transcript_job_id", "ai_summary_needed", "byline",
             "byline_method", "note", "uuid", "collection_id", "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths", "video_description",
@@ -457,8 +457,8 @@ class TestDictCompatibility:
             original_id="orig-1",
             document_length=200,
             chapter_list="ch1",
-            document_state="EMBEDDING_EXIST",
-            document_state_error="NONE",
+            processing_status="EMBEDDING_EXIST",
+            processing_error_code="NONE",
             text_raw="Raw",
             transcript_job_id="j1",
             ai_summary_needed=False,
@@ -474,7 +474,7 @@ class TestDictCompatibility:
         # Key format checks (matching StalkerWebDocumentDB.dict())
         assert d["created_at"] == "2026-02-20 14:00:00"  # strftime format
         assert d["document_type"] == "link"  # .name
-        assert d["document_state"] == "EMBEDDING_EXIST"  # .name
-        assert d["document_state_error"] == "NONE"  # .name
+        assert d["processing_status"] == "EMBEDDING_EXIST"  # .name
+        assert d["processing_error_code"] == "NONE"  # .name
         assert isinstance(d["paywall"], bool)
         assert isinstance(d["document_length"], int)

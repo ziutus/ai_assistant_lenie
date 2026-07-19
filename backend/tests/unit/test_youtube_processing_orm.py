@@ -58,7 +58,7 @@ def mock_web_document():
     doc = MagicMock()
     doc.id = 42
     doc.url = "https://www.youtube.com/watch?v=test123"
-    doc.document_state = StalkerDocumentStatus.URL_ADDED
+    doc.processing_status = StalkerDocumentStatus.URL_ADDED
     doc.document_type = StalkerDocumentType.youtube
     doc.language = "en"
     doc.chapter_list = None
@@ -138,7 +138,7 @@ class TestNewDocumentCreation:
         new_doc = MagicMock()
         new_doc.id = 1
         new_doc.url = "https://www.youtube.com/watch?v=abc"
-        new_doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST  # skip processing
+        new_doc.processing_status = StalkerDocumentStatus.EMBEDDING_EXIST  # skip processing
         new_doc.language = "en"
         new_doc.chapter_list = None
         new_doc.transcript_job_id = None
@@ -170,7 +170,7 @@ class TestNewDocumentCreation:
         existing_doc = MagicMock()
         existing_doc.id = 42
         existing_doc.url = "https://www.youtube.com/watch?v=abc"
-        existing_doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST
+        existing_doc.processing_status = StalkerDocumentStatus.EMBEDDING_EXIST
         existing_doc.language = "en"
         existing_doc.chapter_list = None
         existing_doc.transcript_job_id = None
@@ -223,7 +223,7 @@ class TestSessionCommit:
         doc = MagicMock()
         doc.id = 1
         doc.url = "https://www.youtube.com/watch?v=abc"
-        doc.document_state = StalkerDocumentStatus.URL_ADDED
+        doc.processing_status = StalkerDocumentStatus.URL_ADDED
         doc.language = "en"
         doc.chapter_list = None
         doc.transcript_job_id = None
@@ -251,8 +251,8 @@ class TestSessionCommit:
 
             # Skip external transcription by setting doc state to something final
             def set_state(val):
-                doc.document_state = val
-            type(doc).document_state = PropertyMock(side_effect=[
+                doc.processing_status = val
+            type(doc).processing_status = PropertyMock(side_effect=[
                 StalkerDocumentStatus.URL_ADDED,   # initial check force_reprocess
                 StalkerDocumentStatus.URL_ADDED,   # metadata fetch check
                 StalkerDocumentStatus.NEED_TRANSCRIPTION,  # after set
@@ -274,11 +274,11 @@ class TestSessionCommit:
 
 
 # ---------------------------------------------------------------------------
-# Test: document_state_error is cleared on a successful captions fetch
+# Test: processing_error_code is cleared on a successful captions fetch
 # ---------------------------------------------------------------------------
 
 class TestDocumentStateErrorClearedOnSuccess:
-    """A stale document_state_error from a previous failed attempt must not
+    """A stale processing_error_code from a previous failed attempt must not
     survive a subsequent successful captions fetch (regression: it used to be
     sticky forever — see CAPTIONS_FETCH_ERROR left behind after a retry succeeded)."""
 
@@ -297,9 +297,9 @@ class TestDocumentStateErrorClearedOnSuccess:
         doc = MagicMock()
         doc.id = 1
         doc.url = "https://www.youtube.com/watch?v=abc"
-        doc.document_state = StalkerDocumentStatus.NEED_TRANSCRIPTION.name
+        doc.processing_status = StalkerDocumentStatus.NEED_TRANSCRIPTION.name
         # Stale error left over from an earlier failed attempt (the bug this test guards against)
-        doc.document_state_error = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
+        doc.processing_error_code = StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name
         doc.language = "pl"
         doc.chapter_list = None
         doc.transcript_job_id = None
@@ -331,5 +331,5 @@ class TestDocumentStateErrorClearedOnSuccess:
                 youtube_url="https://www.youtube.com/watch?v=abc",
             )
 
-        assert doc.document_state_error == StalkerDocumentStatusError.NONE.name
-        assert doc.document_state == StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+        assert doc.processing_error_code == StalkerDocumentStatusError.NONE.name
+        assert doc.processing_status == StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
