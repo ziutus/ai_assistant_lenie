@@ -1,9 +1,9 @@
 """Wspólne funkcje do pobierania HTML z S3 i konwersji do markdown.
 
 Używane przez:
-- webdocument_prepare_regexp_by_ai.py
+- document_prepare_regexp_by_ai.py
 - imports/article_browser.py
-- webdocument_md_decode.py
+- document_md_decode.py
 """
 
 import json
@@ -97,7 +97,7 @@ def save_document_info(document_id, doc, cache_dir):
         "title": doc.title,
         "language": doc.language,
         "uuid": doc.uuid,
-        "created_at": doc.created_at.strftime("%Y-%m-%d %H:%M:%S") if doc.created_at else None,
+        "ingested_at": doc.ingested_at.strftime("%Y-%m-%d %H:%M:%S") if doc.ingested_at else None,
         "document_type": doc.document_type if doc.document_type else None,
         "processing_status": doc.processing_status if doc.processing_status else None,
     }

@@ -7,7 +7,7 @@ cleaned result in the database.
 
 Usage:
     cd backend
-    python web_documents_fix_missing_markdown.py [--dry-run] [--limit N]
+    python documents_fix_missing_markdown.py [--dry-run] [--limit N]
 """
 
 import argparse

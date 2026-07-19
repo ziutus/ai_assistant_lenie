@@ -154,7 +154,7 @@ class TestEmbeddingModel:
 class TestWebDocumentColumns:
     EXPECTED_COLUMNS = {
         "id", "summary", "url", "language", "tags", "text",
-        "paywall", "title", "created_at", "document_type",
+        "paywall", "title", "ingested_at", "document_type",
         "discovery_source_id", "publisher_id", "published_on", "published_on_method", "original_id", "document_length",
         "chapter_list", "processing_status", "processing_error_code",
         "text_raw", "transcript_job_id", "ai_summary_needed",
@@ -194,8 +194,8 @@ class TestWebDocumentColumnTypes:
         col = _get_column(Document, "paywall")
         assert isinstance(col.type, Boolean)
 
-    def test_created_at_is_datetime(self):
-        col = _get_column(Document, "created_at")
+    def test_ingested_at_is_datetime(self):
+        col = _get_column(Document, "ingested_at")
         assert isinstance(col.type, DateTime)
 
     def test_document_type_is_string_with_fk(self):
@@ -503,7 +503,7 @@ class TestDict:
             title="Test",
             processing_error_code="NONE",
         )
-        doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
+        doc.ingested_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
         assert len(result) == 37
 
@@ -512,12 +512,12 @@ class TestDict:
             title="Test",
             processing_error_code="NONE",
         )
-        doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
+        doc.ingested_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
             "summary", "url", "language", "tags", "text", "paywall", "title",
-            "created_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
+            "ingested_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "processing_status",
             "processing_error_code", "text_raw", "transcript_job_id",
             "ai_summary_needed", "byline", "byline_method", "note", "uuid", "collection_id",
@@ -527,27 +527,27 @@ class TestDict:
         }
         assert set(result.keys()) == expected_keys
 
-    def test_dict_formats_created_at(self):
+    def test_dict_formats_ingested_at(self):
         doc = _make_doc(
             processing_error_code="NONE",
         )
-        doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
+        doc.ingested_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
-        assert result["created_at"] == "2025-01-15 10:30:00"
+        assert result["ingested_at"] == "2025-01-15 10:30:00"
 
-    def test_dict_created_at_none(self):
+    def test_dict_ingested_at_none(self):
         doc = _make_doc(
             processing_error_code="NONE",
         )
-        doc.created_at = None
+        doc.ingested_at = None
         result = doc.dict()
-        assert result["created_at"] is None
+        assert result["ingested_at"] is None
 
     def test_dict_string_values(self):
         doc = _make_doc(
             processing_error_code="NONE",
         )
-        doc.created_at = datetime.datetime(2025, 1, 1)
+        doc.ingested_at = datetime.datetime(2025, 1, 1)
         result = doc.dict()
         assert result["document_type"] == "link"
         assert result["processing_status"] == "URL_ADDED"
@@ -556,7 +556,7 @@ class TestDict:
     def test_dict_processing_error_code_none_returns_none_string(self):
         doc = _make_doc()
         doc.processing_error_code = None
-        doc.created_at = datetime.datetime(2025, 1, 1)
+        doc.ingested_at = datetime.datetime(2025, 1, 1)
         result = doc.dict()
         assert result["processing_error_code"] == "NONE"
 
@@ -564,7 +564,7 @@ class TestDict:
         doc = _make_doc(
             processing_error_code="NONE",
         )
-        doc.created_at = datetime.datetime(2025, 1, 1)
+        doc.ingested_at = datetime.datetime(2025, 1, 1)
         doc.next_id = 42
         doc.next_type = "youtube"
         result = doc.dict()

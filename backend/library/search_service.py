@@ -160,8 +160,8 @@ class SearchService:
             merged.sort(key=lambda item: (item.get("published_on") is None,
                                           item.get("published_on") or ""))
         elif sort is SearchSort.INGESTED_DESC:
-            merged.sort(key=lambda item: (item.get("created_at") is not None,
-                                          item.get("created_at") or ""), reverse=True)
+            merged.sort(key=lambda item: (item.get("ingested_at") is not None,
+                                          item.get("ingested_at") or ""), reverse=True)
         return merged[offset:offset + limit]
 
     # Letters with no Unicode canonical decomposition (NFKD leaves them alone,

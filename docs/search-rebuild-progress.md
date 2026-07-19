@@ -5,7 +5,43 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
-## 2026-07-19 — Etap 11, sesja G część 1 (rename modułu repozytorium) — UKOŃCZONA; część 2 CZEKA NA DECYZJE
+## 2026-07-19 — Etap 11, sesja G część 2 (statusy + ingested_at + subject_period + pliki batch) — **ETAP 11 ZAKOŃCZONY**
+
+**Decyzje użytkownika:** pełny rename statusów ze słownikami; `uuid` ZOSTAJE (konwencja
+Obsidian); `created_at`→`ingested_at` tak; okresy + pliki batch — oba.
+
+**Zakres wykonany (2 PR-y):**
+- **PR #311 (cz. 2a)** — migracja `a8b9c0d1e2f3`: `processing_status`/`processing_error_code` +
+  tabele słownikowe `processing_status_types` (16)/`processing_error_types` (18) + FK + indeks.
+  Backend 39 plików (m.in. `set_processing_status()`, `PROCESSING_STATUS_LOOKUP`, parametr wire
+  `processing_status` w `/website_list`, pole `/website_save`); klienci: shared/types, react
+  (filtry, editory, `useDocumentStates`), app2. Bez zmian: enum `StalkerDocumentStatus`
+  (wewnętrzny), ścieżka `/document_states`.
+- **PR #312 (cz. 2b)** — migracja `b9c0d1e2f3a4`: `documents.created_at`→`ingested_at` (TYLKO ta
+  tabela; chirurgicznie — `DocumentAnalysisRun.created_at` itd. zostają) + indeks;
+  `document_time_periods.period_label/start/end_year`→`subject_period_*` (spójnie z filtrami
+  wyszukiwania; klucze JSON czytnika i prompt LLM ekstrakcji też). Klucz JSON `ingested_at` w
+  `/website_list`/`/search`/`/website_get`/czytniku; react: `utils.tsx`, `read.tsx`,
+  `TimePeriodsPanel`. **Pliki batch przemianowane** (git mv): `documents_pipeline.py`,
+  `documents_fix_missing_markdown.py`, `document_md_decode.py`, `document_prepare_regexp_by_ai.py`
+  + referencje w testach source-check i docs. DynamoDB: historyczne itemy zachowują pole
+  `created_at` — `dynamodb_sync` mapuje je jawnie na `ingested_at`.
+
+**Testy:** obie części: `tests/unit/` **1830 passed**, ruff czysty, Vitest 11 passed, buildy
+React/app2 czyste; migracje na NAS pełnym cyklem (statusy: 16/18 wartości; 9220 dokumentów z
+ingested_at w obie strony; 3 kolumny okresów). Deploy backend+frontend(+app2 przy 2a) po każdej
+migracji. E2E: filtr `processing_status=EMBEDDING_EXIST`→7506; `/document_states` OK;
+`/document/9204/time_periods`→147 okresów z kluczami `subject_period_*`; `/search` z
+`sort=ingested_desc` zwraca `ingested_at`; stare klucze nieobecne.
+
+**ETAP 11 ZAKOŃCZONY.** Odstępstwa (udokumentowane w sekcji 7 planu): `uuid` zostaje, wire
+`source` (nazwa) zostaje, ścieżki `/website_*` do Etapu 12. Cały etap: 9 PR-ów (#304–#312),
+7 migracji (`a2b3c4d5e6f7`→`b9c0d1e2f3a4`), zero utraty danych, wszystko wdrożone na NAS.
+
+**Następny krok:** Etap 12 — wydajność i porządki (EXPLAIN ANALYZE, indeksy, decyzja FTS,
+usunięcie `/website_similar` i legacy parsera, dashboard błędów interpretacji i kosztów LLM).
+
+## 2026-07-19 — Etap 11, sesja G część 1 (rename modułu repozytorium) — UKOŃCZONA; część 2 CZEKAŁA NA DECYZJE (podjęte — patrz wpis wyżej)
 
 **Zakres wykonany:** `library/stalker_web_documents_db_postgresql.py` → `library/document_repository.py`
 (git mv), klasa `WebsitesDBPostgreSQL` → `DocumentRepository`; zaktualizowane wszystkie importy

@@ -4,9 +4,9 @@ import { AuthorizationContext } from "../../context/authorizationContext";
 export interface TimePeriodItem {
   chapter_position: number | null;
   position: number;
-  period_label: string;
-  period_start_year: number | null;
-  period_end_year: number | null;
+  subject_period_label: string;
+  subject_period_start_year: number | null;
+  subject_period_end_year: number | null;
   confidence: "high" | "medium" | "low";
   evidence: string | null;
 }
@@ -27,7 +27,7 @@ export function formatPeriodYear(year: number): string {
 }
 
 export function formatPeriodYears(period: TimePeriodItem): string | null {
-  const { period_start_year: start, period_end_year: end } = period;
+  const { subject_period_start_year: start, subject_period_end_year: end } = period;
   if (start == null && end == null) return null;
   if (start != null && end != null) {
     return start === end ? formatPeriodYear(start) : `${formatPeriodYear(start)}–${formatPeriodYear(end)}`;
@@ -73,23 +73,23 @@ const TimePeriodsPanel: React.FC<TimePeriodsPanelProps> = ({ docId, currentChapt
     }
     const byLabel = new Map<string, TimePeriodItem>();
     periods.forEach(period => {
-      const key = period.period_label.toLocaleLowerCase("pl");
+      const key = period.subject_period_label.toLocaleLowerCase("pl");
       const existing = byLabel.get(key);
       if (!existing) {
         byLabel.set(key, { ...period });
         return;
       }
-      if (period.period_start_year != null
-        && (existing.period_start_year == null || period.period_start_year < existing.period_start_year)) {
-        existing.period_start_year = period.period_start_year;
+      if (period.subject_period_start_year != null
+        && (existing.subject_period_start_year == null || period.subject_period_start_year < existing.subject_period_start_year)) {
+        existing.subject_period_start_year = period.subject_period_start_year;
       }
-      if (period.period_end_year != null
-        && (existing.period_end_year == null || period.period_end_year > existing.period_end_year)) {
-        existing.period_end_year = period.period_end_year;
+      if (period.subject_period_end_year != null
+        && (existing.subject_period_end_year == null || period.subject_period_end_year > existing.subject_period_end_year)) {
+        existing.subject_period_end_year = period.subject_period_end_year;
       }
     });
     return [...byLabel.values()].sort((a, b) =>
-      (a.period_start_year ?? Number.MAX_SAFE_INTEGER) - (b.period_start_year ?? Number.MAX_SAFE_INTEGER));
+      (a.subject_period_start_year ?? Number.MAX_SAFE_INTEGER) - (b.subject_period_start_year ?? Number.MAX_SAFE_INTEGER));
   }, [periods, scopeChapter, currentChapter]);
 
   if (periods.length === 0) return null;
@@ -135,7 +135,7 @@ const TimePeriodsPanel: React.FC<TimePeriodsPanelProps> = ({ docId, currentChapt
               .filter(Boolean).join(" — ");
             return (
               <span
-                key={`${period.chapter_position}-${period.position}-${period.period_label}`}
+                key={`${period.chapter_position}-${period.position}-${period.subject_period_label}`}
                 title={tooltip || undefined}
                 style={{
                   fontSize: "0.78em", padding: "2px 8px", borderRadius: 999,
@@ -144,7 +144,7 @@ const TimePeriodsPanel: React.FC<TimePeriodsPanelProps> = ({ docId, currentChapt
                   border: isMain ? "1px solid #bae6fd" : "1px solid transparent",
                 }}
               >
-                {period.period_label}
+                {period.subject_period_label}
                 {years && <span style={{ color: "#64748b", marginLeft: 5 }}>{years}</span>}
               </span>
             );

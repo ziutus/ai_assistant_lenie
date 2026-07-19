@@ -32,7 +32,7 @@ def register_lenie_tools(mcp: "FastMCP") -> None:
         """Return a list of unreviewed articles from the Lenie knowledge base.
 
         Articles are unreviewed when reviewed_at IS NULL or obsidian_note_paths is empty ([]).
-        Results are ordered newest-first (created_at DESC).
+        Results are ordered newest-first (ingested_at DESC).
 
         Args:
             limit: Maximum number of articles to return (default: 6).
@@ -66,7 +66,7 @@ def register_lenie_tools(mcp: "FastMCP") -> None:
 
             total_unreviewed = session.execute(count_stmt).scalar() or 0
 
-            stmt = stmt.order_by(Document.created_at.desc()).limit(limit).offset(offset)
+            stmt = stmt.order_by(Document.ingested_at.desc()).limit(limit).offset(offset)
             docs = session.execute(stmt).scalars().all()
 
             articles = []
@@ -78,7 +78,7 @@ def register_lenie_tools(mcp: "FastMCP") -> None:
                     "source": doc.url,
                     "size_kb": size_kb,
                     "user_note": doc.note,
-                    "added_at": doc.created_at.isoformat() if doc.created_at else None,
+                    "added_at": doc.ingested_at.isoformat() if doc.ingested_at else None,
                     "total_unreviewed": total_unreviewed,
                 })
 
@@ -124,7 +124,7 @@ def register_lenie_tools(mcp: "FastMCP") -> None:
                 "language": doc.language,
                 "user_note": doc.note,
                 "document_type": doc.document_type,
-                "added_at": doc.created_at.isoformat() if doc.created_at else None,
+                "added_at": doc.ingested_at.isoformat() if doc.ingested_at else None,
                 "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
                 "obsidian_note_paths": doc.obsidian_note_paths or [],
             }

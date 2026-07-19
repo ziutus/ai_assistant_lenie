@@ -729,7 +729,7 @@ def document_chapters(doc_id: int):
         "synthesis": doc_run.synthesis if doc_run else None,
         "quality": getattr(doc, "quality", None),
         "published_on": doc.published_on.isoformat() if doc.published_on else None,
-        "created_at": doc.created_at.isoformat() if doc.created_at else None,
+        "ingested_at": doc.ingested_at.isoformat() if doc.ingested_at else None,
     })
 
 
@@ -949,9 +949,9 @@ def document_time_periods(doc_id: int):
             {
                 "chapter_position": row.chapter_position,
                 "position": row.position,
-                "period_label": row.period_label,
-                "period_start_year": row.period_start_year,
-                "period_end_year": row.period_end_year,
+                "subject_period_label": row.subject_period_label,
+                "subject_period_start_year": row.subject_period_start_year,
+                "subject_period_end_year": row.subject_period_end_year,
                 "confidence": row.confidence,
                 "evidence": row.evidence,
             }

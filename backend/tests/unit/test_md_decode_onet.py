@@ -1,4 +1,4 @@
-"""Unit tests for clean_onet_artifacts() extracted from webdocument_md_decode.py.
+"""Unit tests for clean_onet_artifacts() extracted from document_md_decode.py.
 
 md_decode imports DB/LLM/markdown modules at module level. In the lightweight
 uvx pytest environment those are unavailable, so minimal stubs are injected
@@ -61,7 +61,7 @@ _ensure_importable("library.document_repository",
                    DocumentRepository=type("DocumentRepository", (), {}))
 
 try:
-    from webdocument_md_decode import clean_onet_artifacts
+    from document_md_decode import clean_onet_artifacts
 finally:
     _remove_stubs()
 

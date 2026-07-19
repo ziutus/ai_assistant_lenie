@@ -104,7 +104,7 @@ class TestSyncItemToPostgres:
 
     @patch("imports.dynamodb_sync.DocumentService")
     def test_created_at_set_via_orm(self, MockDocService):
-        """created_at is passed to DocumentService.import_document()."""
+        """DynamoDB created_at maps to the ingested_at metadata kwarg."""
         session = _make_session()
 
         mock_doc = MagicMock()
@@ -117,7 +117,7 @@ class TestSyncItemToPostgres:
         sync_item_to_postgres(item, None, None, dry_run=False, session=session)
 
         call_kwargs = MockDocService.return_value.import_document.call_args
-        assert call_kwargs[1]["created_at"] == "2026-01-15T10:30:00"
+        assert call_kwargs[1]["ingested_at"] == "2026-01-15T10:30:00"
 
     @patch("imports.dynamodb_sync.DocumentService")
     def test_chapter_list_set_via_orm(self, MockDocService):

@@ -789,7 +789,7 @@ def generate_embeddings_from_run(
     For each chunk with type == "TEMAT" and status == "approved": takes
     corrected_text (transcript mode) or original_text (article mode), splits it
     into embedding-sized pieces (md_split_for_emb, same splitter used by
-    webdocument_md_decode.py), strips markdown syntax, and stores one
+    document_md_decode.py), strips markdown syntax, and stores one
     DocumentEmbedding row per piece with chunk_id set. REKLAMA/SZUM chunks and
     non-approved TEMAT chunks are skipped.
 
