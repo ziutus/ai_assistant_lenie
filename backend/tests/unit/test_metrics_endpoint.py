@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 # Skip gracefully when run in minimal uvx environment without --with flags.
 #
 # NOTE: sys.modules mocking at module level is required because server.py
-# instantiates WebsitesDBPostgreSQL at import time. This means psycopg2 must
+# instantiates DocumentRepository at import time. This means psycopg2 must
 # be mocked BEFORE the import. Run unit and integration tests separately
 # (pytest tests/unit/ vs tests/integration/) to avoid mock contamination.
 try:

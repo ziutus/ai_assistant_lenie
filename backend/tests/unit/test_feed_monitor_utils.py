@@ -68,8 +68,8 @@ _ensure_importable("library.db.models",
                    Document=type("Document", (), {}))
 _ensure_importable("library.document_service", DocumentService=type("DocumentService", (), {}))
 _ensure_importable("library.import_log_tracker", ImportLogTracker=type("ImportLogTracker", (), {}))
-_ensure_importable("library.stalker_web_documents_db_postgresql",
-                   WebsitesDBPostgreSQL=type("WebsitesDBPostgreSQL", (), {}))
+_ensure_importable("library.document_repository",
+                   DocumentRepository=type("DocumentRepository", (), {}))
 
 try:
     from imports.feed_monitor import (

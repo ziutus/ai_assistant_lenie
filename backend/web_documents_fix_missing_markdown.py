@@ -22,7 +22,7 @@ from library.db.models import Document
 from library.document_prepare import prepare_markdown
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+from library.document_repository import DocumentRepository
 from library.website.website_download_context import download_raw_html, webpage_text_clean
 
 cfg = load_config()
@@ -62,7 +62,7 @@ def main():
 
     session = get_session()
     try:
-        websites = WebsitesDBPostgreSQL(session=session)
+        websites = DocumentRepository(session=session)
 
         print("Adding missing markdown entries")
 

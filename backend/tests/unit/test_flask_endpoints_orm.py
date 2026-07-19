@@ -41,7 +41,7 @@ class TestWebsiteList:
                        "note": None, "collection_id": None, "uuid": None}]
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebsitesDBPostgreSQL") as MockRepo:
+            with patch("server.DocumentRepository") as MockRepo:
                 repo_instance = MagicMock()
                 repo_instance.get_list.side_effect = lambda **kw: 1 if kw.get("count") else mock_list
                 MockRepo.return_value = repo_instance
@@ -59,7 +59,7 @@ class TestWebsiteList:
     def test_passes_query_params(self, client):
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebsitesDBPostgreSQL") as MockRepo:
+            with patch("server.DocumentRepository") as MockRepo:
                 repo_instance = MagicMock()
                 repo_instance.get_list.return_value = []
                 MockRepo.return_value = repo_instance
@@ -86,7 +86,7 @@ class TestWebsiteCount:
         mock_counts = {"webpage": 10, "link": 5, "ALL": 15}
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebsitesDBPostgreSQL") as MockRepo:
+            with patch("server.DocumentRepository") as MockRepo:
                 repo_instance = MagicMock()
                 repo_instance.get_count_by_type.return_value = mock_counts
                 MockRepo.return_value = repo_instance
@@ -166,7 +166,7 @@ class TestWebsiteGetNextToCorrect:
     def test_found(self, client):
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebsitesDBPostgreSQL") as MockRepo:
+            with patch("server.DocumentRepository") as MockRepo:
                 repo_instance = MagicMock()
                 repo_instance.get_next_to_correct.return_value = (43, "link")
                 MockRepo.return_value = repo_instance
@@ -182,7 +182,7 @@ class TestWebsiteGetNextToCorrect:
     def test_not_found_returns_minus_one(self, client):
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.WebsitesDBPostgreSQL") as MockRepo:
+            with patch("server.DocumentRepository") as MockRepo:
                 repo_instance = MagicMock()
                 repo_instance.get_next_to_correct.return_value = -1
                 MockRepo.return_value = repo_instance

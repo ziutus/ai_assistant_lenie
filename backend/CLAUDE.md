@@ -55,7 +55,7 @@ All routes (except health checks) require an `x-api-key` header. Keys live in th
 
 ### Storage
 
-- **Primary**: PostgreSQL via `WebsitesDBPostgreSQL`
+- **Primary**: PostgreSQL via `DocumentRepository`
 - **Files**: S3 (boto3) with local fallback to `/app/data/`
 
 ## Dependencies (`pyproject.toml`)
@@ -111,7 +111,7 @@ Ad-hoc single-item tools and bulk import scripts live in [`imports/`](imports/CL
 
 ### Database connectivity requirement
 
-Scripts marked **Yes** use `WebsitesDBPostgreSQL` with SQLAlchemy ORM session (`get_session()` from `library.db.engine`). The same applies to all scripts in `imports/`.
+Scripts marked **Yes** use `DocumentRepository` with SQLAlchemy ORM session (`get_session()` from `library.db.engine`). The same applies to all scripts in `imports/`.
 
 - **Local/Docker**: Connect to local PostgreSQL (`lenie-ai-db` on port 5433) — works out of the box.
 - **AWS RDS**: decommissioned 2026-07-02 (unused since ~2026-04; document sync now goes DynamoDB → S3 → local Postgres via `imports/dynamodb_sync.py`). The OpenVPN EC2 instance that provided access to it has also been terminated.

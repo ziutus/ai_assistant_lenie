@@ -114,7 +114,7 @@ class TestGenerateEmbeddingsBatching:
             def embedding_add(self, **kwargs):
                 added.append(kwargs)
 
-        monkeypatch.setattr("library.stalker_web_documents_db_postgresql.WebsitesDBPostgreSQL", FakeRepo)
+        monkeypatch.setattr("library.document_repository.DocumentRepository", FakeRepo)
         cfg = MagicMock()
         cfg.require.return_value = "BAAI/bge-multilingual-gemma2"
         monkeypatch.setattr("library.config_loader.load_config", lambda: cfg)
@@ -169,7 +169,7 @@ class TestGenerateEmbeddingsBatching:
             def embedding_add(self, **kwargs):
                 raise AssertionError("failed embeddings must not be stored")
 
-        monkeypatch.setattr("library.stalker_web_documents_db_postgresql.WebsitesDBPostgreSQL", FakeRepo)
+        monkeypatch.setattr("library.document_repository.DocumentRepository", FakeRepo)
         cfg = MM()
         cfg.require.return_value = "BAAI/bge-multilingual-gemma2"
         monkeypatch.setattr("library.config_loader.load_config", lambda: cfg)

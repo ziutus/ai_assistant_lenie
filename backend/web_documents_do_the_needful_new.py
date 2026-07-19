@@ -482,7 +482,7 @@ def main():
     print("Loading ORM & domain modules...", end=" ", flush=True)
     t0 = time.monotonic()
     from library.db.engine import get_session
-    from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+    from library.document_repository import DocumentRepository
     print(f"done ({time.monotonic() - t0:.1f}s)")
 
     # ORM session — single session for entire script
@@ -500,7 +500,7 @@ def main():
         # documents now arrive via imports/dynamodb_sync.py. On restoring a queue
         # mechanism, recover step1_drain_sqs() from git history of this file.
 
-        websites = WebsitesDBPostgreSQL(session=session)
+        websites = DocumentRepository(session=session)
 
         print("\nStep 2a: putting youtube movies data into database")
         step_start = time.monotonic()

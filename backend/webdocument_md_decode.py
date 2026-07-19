@@ -14,7 +14,7 @@ from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.db.engine import get_session
 from library.db.models import Document
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+from library.document_repository import DocumentRepository
 from library.config_loader import load_config
 
 logging.basicConfig(level=logging.DEBUG)
@@ -237,7 +237,7 @@ if __name__ == '__main__':
     llm_fallback_model = args.llm_model
 
     session = get_session()
-    wb_db = WebsitesDBPostgreSQL(session=session)
+    wb_db = DocumentRepository(session=session)
 
     # TODO: 7683 - need to correct related liks
     # TODO: 7741 - udostępnij artykuł - linki do ustąpienia do regexp: businessinsider_com_pl_2025_1.regex

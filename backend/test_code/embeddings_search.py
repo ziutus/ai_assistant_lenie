@@ -6,7 +6,7 @@ import logging
 import library.embedding as embedding
 from library.ai import ai_ask, ai_model_need_translation_to_english
 from library.config_loader import load_config
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+from library.document_repository import DocumentRepository
 from library.text_detect_language import text_language_detect
 from library.stalker_cache import cache_get, cache_write
 
@@ -90,7 +90,7 @@ if __name__ == '__main__':
             exit(1)
 
         # pprint(question_embedding)
-        websites = WebsitesDBPostgreSQL()
+        websites = DocumentRepository()
 
         similar_results = websites.get_similar(model=model_embedding, embedding=question_embedding.embedding, limit=30,
                                                minimal_similarity=args.minimal_similarity)

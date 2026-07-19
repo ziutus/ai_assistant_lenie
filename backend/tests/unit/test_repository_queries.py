@@ -1,4 +1,4 @@
-"""Unit tests for WebsitesDBPostgreSQL ORM repository queries (Story 27.2).
+"""Unit tests for DocumentRepository ORM repository queries (Story 27.2).
 
 All tests use mocked sessions — no database required.
 """
@@ -10,7 +10,7 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+from library.document_repository import DocumentRepository
 from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: F401
 from library.models.stalker_document_type import StalkerDocumentType  # noqa: F401
 
@@ -21,10 +21,10 @@ from library.models.stalker_document_type import StalkerDocumentType  # noqa: F4
 
 
 def _make_repo(session=None):
-    """Create a WebsitesDBPostgreSQL with a mocked session."""
+    """Create a DocumentRepository with a mocked session."""
     if session is None:
         session = MagicMock()
-    return WebsitesDBPostgreSQL(session)
+    return DocumentRepository(session)
 
 
 def _make_row(**kwargs):
@@ -43,17 +43,17 @@ def _make_row(**kwargs):
 class TestConstructor:
     def test_accepts_session(self):
         session = MagicMock()
-        repo = WebsitesDBPostgreSQL(session)
+        repo = DocumentRepository(session)
         assert repo.session is session
 
     def test_no_psycopg2_connection_when_session_provided(self):
         session = MagicMock()
-        repo = WebsitesDBPostgreSQL(session)
+        repo = DocumentRepository(session)
         assert not hasattr(repo, "conn")
 
     def test_no_embedding_attr_when_session_provided(self):
         session = MagicMock()
-        repo = WebsitesDBPostgreSQL(session)
+        repo = DocumentRepository(session)
         assert not hasattr(repo, "embedding")
 
 
@@ -602,6 +602,6 @@ class TestLoadNeighbors:
         assert doc.previous_type == "youtube"
 
     def test_session_is_required(self):
-        """WebsitesDBPostgreSQL requires a session parameter."""
+        """DocumentRepository requires a session parameter."""
         with pytest.raises(TypeError):
-            WebsitesDBPostgreSQL()
+            DocumentRepository()
