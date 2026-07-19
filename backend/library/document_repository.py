@@ -32,7 +32,7 @@ class DocumentRepository:
         else:
             stmt = select(
                 Document.id, Document.url, Document.title, Document.document_type,
-                Document.created_at, Document.processing_status, Document.processing_error_code,
+                Document.ingested_at, Document.processing_status, Document.processing_error_code,
                 Document.note, Document.collection_id, Document.uuid, Document.byline,
                 Document.obsidian_note_paths,
             )
@@ -82,7 +82,7 @@ class DocumentRepository:
         if count:
             return self.session.execute(stmt).scalar()
 
-        stmt = stmt.order_by(Document.created_at.desc())
+        stmt = stmt.order_by(Document.ingested_at.desc())
         stmt = stmt.limit(limit).offset(offset * limit)
 
         rows = self.session.execute(stmt).all()
@@ -97,7 +97,7 @@ class DocumentRepository:
                 "url": row.url,
                 "title": row.title,
                 "document_type": row.document_type,
-                "created_at": row.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                "ingested_at": row.ingested_at.strftime('%Y-%m-%d %H:%M:%S'),
                 "processing_status": row.processing_status,
                 "processing_error_code": row.processing_error_code,
                 "note": row.note,
@@ -281,7 +281,7 @@ class DocumentRepository:
                 Document.document_type,
                 Document.collection_id,
                 Document.published_on,
-                Document.created_at,
+                Document.ingested_at,
                 DocumentEmbedding.chunk_id,
                 DocumentChunk.obsidian_note_paths,
             )
@@ -318,7 +318,7 @@ class DocumentRepository:
                 "document_type": r.document_type,
                 "collection_id": r.collection_id,
                 "published_on": r.published_on.isoformat() if r.published_on else None,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "ingested_at": r.ingested_at.isoformat() if r.ingested_at else None,
                 "chunk_id": r.chunk_id,
                 "obsidian_note_paths": r.obsidian_note_paths or [],
             }
@@ -367,7 +367,7 @@ class DocumentRepository:
         stmt = (
             select(Document)
             .where(or_(*conditions))
-            .order_by(Document.created_at.desc(), Document.id.desc())
+            .order_by(Document.ingested_at.desc(), Document.id.desc())
             .limit(limit)
         )
         if filters is not None:
@@ -396,7 +396,7 @@ class DocumentRepository:
                 "document_type": doc.document_type,
                 "collection_id": doc.collection_id,
                 "published_on": doc.published_on.isoformat() if doc.published_on else None,
-                "created_at": doc.created_at.isoformat() if doc.created_at else None,
+                "ingested_at": doc.ingested_at.isoformat() if doc.ingested_at else None,
                 "chunk_id": None,
                 "obsidian_note_paths": doc.obsidian_note_paths or [],
                 "tags": doc.tags,
@@ -425,8 +425,8 @@ class DocumentRepository:
         sort_columns = {
             SearchSort.PUBLISHED_DESC: Document.published_on.desc(),
             SearchSort.PUBLISHED_ASC: Document.published_on.asc(),
-            SearchSort.INGESTED_DESC: Document.created_at.desc(),
-            SearchSort.RELEVANCE: Document.created_at.desc(),
+            SearchSort.INGESTED_DESC: Document.ingested_at.desc(),
+            SearchSort.RELEVANCE: Document.ingested_at.desc(),
         }
         order = sort_columns[SearchSort(sort) if sort is not None else SearchSort.RELEVANCE]
 
@@ -448,7 +448,7 @@ class DocumentRepository:
                 "collection_id": doc.collection_id,
                 "language": doc.language,
                 "published_on": doc.published_on.isoformat() if doc.published_on else None,
-                "created_at": doc.created_at.isoformat() if doc.created_at else None,
+                "ingested_at": doc.ingested_at.isoformat() if doc.ingested_at else None,
                 "similarity": None,
                 "search_match": "filters_only",
             }

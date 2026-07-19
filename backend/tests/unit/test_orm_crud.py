@@ -36,7 +36,7 @@ def _make_doc(**overrides):
         "title": "Test Article",
         "document_type": "webpage",
         "processing_status": "URL_ADDED",
-        "created_at": datetime.datetime(2026, 1, 15, 10, 30, 0),
+        "ingested_at": datetime.datetime(2026, 1, 15, 10, 30, 0),
     }
     defaults.update(overrides)
     doc = Document()
@@ -218,7 +218,7 @@ class TestCreateFlow:
         doc.text = "Full text content"
         doc.paywall = False
         doc.title = "Test Title"
-        doc.created_at = now
+        doc.ingested_at = now
         doc.document_type = "webpage"
         doc.discovery_source = DiscoverySource(name="manual")
         doc.published_on = datetime.date(2026, 3, 1)
@@ -248,7 +248,7 @@ class TestCreateFlow:
         assert d["text"] == "Full text content"
         assert d["paywall"] is False
         assert d["title"] == "Test Title"
-        assert d["created_at"] == "2026-03-01 12:00:00"
+        assert d["ingested_at"] == "2026-03-01 12:00:00"
         assert d["document_type"] == "webpage"
         assert d["source"] == "manual"  # name via discovery_source relationship
         assert d["published_on"] == datetime.date(2026, 3, 1)
@@ -353,15 +353,15 @@ class TestDeleteCascade:
 class TestDictCompatibility:
     def test_date_format(self):
         """Dates should be formatted as 'YYYY-MM-DD HH:MM:SS'."""
-        doc = _make_doc(created_at=datetime.datetime(2026, 1, 15, 10, 30, 0))
+        doc = _make_doc(ingested_at=datetime.datetime(2026, 1, 15, 10, 30, 0))
         d = doc.dict()
-        assert d["created_at"] == "2026-01-15 10:30:00"
+        assert d["ingested_at"] == "2026-01-15 10:30:00"
 
     def test_date_none(self):
-        """None created_at should produce None in dict."""
-        doc = _make_doc(created_at=None)
+        """None ingested_at should produce None in dict."""
+        doc = _make_doc(ingested_at=None)
         d = doc.dict()
-        assert d["created_at"] is None
+        assert d["ingested_at"] is None
 
     def test_enum_format_document_type(self):
         """document_type should be a string."""
@@ -418,14 +418,14 @@ class TestDictCompatibility:
         doc.url = "https://x.com"
         doc.document_type = "link"
         doc.processing_status = "URL_ADDED"
-        doc.created_at = None
+        doc.ingested_at = None
         doc.processing_error_code = None
 
         d = doc.dict()
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
             "summary", "url", "language", "tags", "text", "paywall", "title",
-            "created_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
+            "ingested_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "processing_status", "processing_error_code",
             "text_raw", "transcript_job_id", "ai_summary_needed", "byline",
             "byline_method", "note", "uuid", "collection_id", "text_md", "transcript_needed",
@@ -450,7 +450,7 @@ class TestDictCompatibility:
             text="Some text",
             paywall=True,
             title="Title",
-            created_at=now,
+            ingested_at=now,
             document_type="link",
             discovery_source=DiscoverySource(name="import"),
             published_on=datetime.date(2026, 2, 20),
@@ -472,7 +472,7 @@ class TestDictCompatibility:
         d = doc.dict()
 
         # Key format checks (matching StalkerWebDocumentDB.dict())
-        assert d["created_at"] == "2026-02-20 14:00:00"  # strftime format
+        assert d["ingested_at"] == "2026-02-20 14:00:00"  # strftime format
         assert d["document_type"] == "link"  # .name
         assert d["processing_status"] == "EMBEDDING_EXIST"  # .name
         assert d["processing_error_code"] == "NONE"  # .name

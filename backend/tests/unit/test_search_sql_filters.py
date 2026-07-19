@@ -61,7 +61,7 @@ class TestIngestedAt:
         )
         assert len(conditions) == 1
         sql = compiled(conditions[0])
-        assert "created_at" in sql.lower()
+        assert "ingested_at" in sql.lower()
         assert ">=" in sql
 
     def test_to_only(self):
@@ -116,7 +116,7 @@ class TestSubjectPeriod:
     def test_open_ended_stored_row_matches_via_or_is_null(self):
         conditions = build_document_filters(SearchFilters(subject_period_start_year=1939))
         sql = compiled(conditions[0])
-        assert "period_end_year IS NULL" in sql
+        assert "subject_period_end_year IS NULL" in sql
 
 
 class TestAuthorAndDiscoverySourceFilters:

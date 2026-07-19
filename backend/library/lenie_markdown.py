@@ -1,6 +1,6 @@
 import re
 
-# from webdocument_md_decode import logger
+# from document_md_decode import logger
 
 def remove_new_line_only_in_string(text, string):
     for wynik in re.finditer(string.replace("\n", " "), text.replace("\n", " ")):

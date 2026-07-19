@@ -57,7 +57,7 @@ def _make_doc(
     doc.url = url
     doc.text = text
     doc.note = note
-    doc.created_at = created_at or datetime.datetime(2026, 1, 15, 12, 0, 0)
+    doc.ingested_at = created_at or datetime.datetime(2026, 1, 15, 12, 0, 0)
     doc.document_type = document_type
     return doc
 
@@ -244,9 +244,9 @@ class TestLenieUnreviewedArticles:
         assert result["articles"][0]["size_kb"] == 0
 
     def test_null_created_at_yields_none_added_at(self):
-        """doc.created_at=None → added_at=None (AC-2)."""
+        """doc.ingested_at=None → added_at=None (AC-2)."""
         doc = _make_doc(created_at=None)
-        doc.created_at = None
+        doc.ingested_at = None
         session = _mock_session([doc], total=1)
 
         tool = _get_tool()
@@ -296,7 +296,7 @@ def _make_full_doc(
     doc.note = note
     doc.language = language
     doc.document_type = document_type
-    doc.created_at = created_at or datetime.datetime(2026, 3, 10, 9, 0, 0)
+    doc.ingested_at = created_at or datetime.datetime(2026, 3, 10, 9, 0, 0)
     doc.reviewed_at = reviewed_at
     doc.obsidian_note_paths = obsidian_note_paths if obsidian_note_paths is not None else []
     return doc
@@ -405,9 +405,9 @@ class TestLenieGetArticle:
         session.close.assert_called_once()
 
     def test_null_created_at_yields_none_added_at(self):
-        """doc.created_at=None → added_at=None in response (AC-2)."""
+        """doc.ingested_at=None → added_at=None in response (AC-2)."""
         doc = _make_full_doc()
-        doc.created_at = None
+        doc.ingested_at = None
         session = _mock_session_single(doc)
 
         tool = _get_get_article_tool()

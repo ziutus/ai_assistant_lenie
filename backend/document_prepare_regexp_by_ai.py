@@ -7,7 +7,7 @@ Pobiera HTML z S3, konwertuje do markdown, a następnie:
 3. Zapisuje wyekstrahowany artykuł i metadane do cache
 
 Użycie:
-    uv run python webdocument_prepare_regexp_by_ai.py 8779 8786
+    uv run python document_prepare_regexp_by_ai.py 8779 8786
 """
 
 import sys

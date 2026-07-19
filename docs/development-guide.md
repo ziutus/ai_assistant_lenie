@@ -454,7 +454,7 @@ make aws-start-openvpn  # Start OpenVPN EC2 + update DNS
 For batch processing scripts that access AWS RDS:
 1. Start OpenVPN: `make aws-start-openvpn`
 2. Connect to VPN
-3. Run batch script (e.g., `python backend/web_documents_do_the_needful_new.py`)
+3. Run batch script (e.g., `python backend/documents_pipeline.py`)
 
 ## Project Conventions
 

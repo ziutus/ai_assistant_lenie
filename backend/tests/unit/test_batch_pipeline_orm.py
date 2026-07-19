@@ -1,4 +1,4 @@
-"""Unit tests for web_documents_do_the_needful_new.py ORM migration (Story 29.2, Task 2).
+"""Unit tests for documents_pipeline.py ORM migration (Story 29.2, Task 2).
 
 Verifies that the batch pipeline:
 - Uses Document ORM model instead of StalkerWebDocumentDB
@@ -33,13 +33,13 @@ def mock_session():
 # ---------------------------------------------------------------------------
 
 class TestBatchPipelineNoLegacyImports:
-    """Verify web_documents_do_the_needful_new.py uses ORM imports."""
+    """Verify documents_pipeline.py uses ORM imports."""
 
     def test_no_stalker_web_document_db_import(self):
         """StalkerWebDocumentDB should not be imported."""
         import ast
 
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         tree = ast.parse(source)
@@ -53,13 +53,13 @@ class TestBatchPipelineNoLegacyImports:
                     imports.append(alias.name)
 
         assert "StalkerWebDocumentDB" not in imports, \
-            "web_documents_do_the_needful_new.py still imports StalkerWebDocumentDB"
+            "documents_pipeline.py still imports StalkerWebDocumentDB"
 
     def test_imports_web_document(self):
         """Document should be imported from library.db.models."""
         import ast
 
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         tree = ast.parse(source)
@@ -71,13 +71,13 @@ class TestBatchPipelineNoLegacyImports:
                         has_web_document_import = True
 
         assert has_web_document_import, \
-            "web_documents_do_the_needful_new.py must import Document from library.db.models"
+            "documents_pipeline.py must import Document from library.db.models"
 
     def test_imports_get_session(self):
         """get_session should be imported from library.db.engine."""
         import ast
 
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         tree = ast.parse(source)
@@ -89,13 +89,13 @@ class TestBatchPipelineNoLegacyImports:
                         has_get_session_import = True
 
         assert has_get_session_import, \
-            "web_documents_do_the_needful_new.py must import get_session from library.db.engine"
+            "documents_pipeline.py must import get_session from library.db.engine"
 
     def test_imports_search_service(self):
         """SearchService should be imported from library.search_service."""
         import ast
 
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         tree = ast.parse(source)
@@ -107,11 +107,11 @@ class TestBatchPipelineNoLegacyImports:
                         has_search_service_import = True
 
         assert has_search_service_import, \
-            "web_documents_do_the_needful_new.py must import SearchService from library.search_service"
+            "documents_pipeline.py must import SearchService from library.search_service"
 
     def test_no_save_calls(self):
         """No .save() calls should remain in the batch pipeline."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         # Count .save() calls (excluding comments)
@@ -124,19 +124,19 @@ class TestBatchPipelineNoLegacyImports:
 
     def test_no_cursor_execute_calls(self):
         """No cursor.execute() calls should exist in the batch pipeline."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         assert "cursor.execute" not in source, \
-            "web_documents_do_the_needful_new.py should not use cursor.execute()"
+            "documents_pipeline.py should not use cursor.execute()"
 
     def test_no_psycopg2_import(self):
         """psycopg2 should not be imported."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         assert "import psycopg2" not in source, \
-            "web_documents_do_the_needful_new.py should not import psycopg2"
+            "documents_pipeline.py should not import psycopg2"
 
 
 # ---------------------------------------------------------------------------
@@ -148,7 +148,7 @@ class TestSQSProcessing:
 
     def test_duplicate_url_detection_uses_get_by_url(self):
         """Duplicate check should use Document.get_by_url(), not StalkerWebDocumentDB."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         assert "Document.get_by_url" in source, \
@@ -156,7 +156,7 @@ class TestSQSProcessing:
 
     def test_new_document_uses_session_add(self):
         """New documents should be created via session.add()."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         assert "session.add(" in source, \
@@ -164,7 +164,7 @@ class TestSQSProcessing:
 
     def test_session_commit_used(self):
         """session.commit() should be used instead of save()."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         assert "session.commit()" in source, \
@@ -180,7 +180,7 @@ class TestDocumentStateTransitions:
 
     def test_state_transitions_use_enum_name(self):
         """State changes should use StalkerDocumentStatus enum .name for string storage."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         # Check that state assignments use enum .name (B-96: columns store strings)
@@ -199,7 +199,7 @@ class TestSessionLifecycle:
 
     def test_session_close_in_finally(self):
         """Session should be closed in a finally block."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         assert "session.close()" in source, \
@@ -207,7 +207,7 @@ class TestSessionLifecycle:
 
     def test_session_rollback_on_error(self):
         """Session should rollback on error."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         assert "session.rollback()" in source, \
@@ -223,7 +223,7 @@ class TestEmbeddingGeneration:
 
     def test_embedding_uses_get_embedding(self):
         """Embedding generation should use get_embedding() function."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         assert "get_embedding(" in source, \
@@ -231,7 +231,7 @@ class TestEmbeddingGeneration:
 
     def test_embedding_uses_websites_db(self):
         """Embedding storage should use DocumentRepository methods."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         assert "websites.embedding_delete(" in source, \
@@ -249,7 +249,7 @@ class TestWebsitesDBWithSession:
 
     def test_websites_db_created_with_session(self):
         """DocumentRepository should be created with session parameter."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         assert "DocumentRepository(session=session)" in source, \
@@ -257,7 +257,7 @@ class TestWebsitesDBWithSession:
 
     def test_no_websites_close_call(self):
         """websites.close() should not be called — session.close() handles cleanup."""
-        with open("web_documents_do_the_needful_new.py", "r", encoding="utf-8") as f:
+        with open("documents_pipeline.py", "r", encoding="utf-8") as f:
             source = f.read()
 
         assert "websites.close()" not in source, \

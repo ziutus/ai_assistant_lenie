@@ -42,7 +42,7 @@ class FakeBookDoc:
     url = None
     quality = None
     published_on = None
-    created_at = None
+    ingested_at = None
 
 
 # ---------------------------------------------------------------------------
@@ -478,7 +478,7 @@ class FakeTranscriptDoc:
     tags = None
     url = None
     published_on = None
-    created_at = None
+    ingested_at = None
 
 
 @pytest.fixture
