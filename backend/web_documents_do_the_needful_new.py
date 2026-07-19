@@ -104,17 +104,17 @@ def create_boto_session():
 
 def get_or_create_document(session, url: str):
     """Return existing document for URL or a new one added to the session."""
-    from library.db.models import WebDocument
-    doc = WebDocument.get_by_url(session, url)
+    from library.db.models import Document
+    doc = Document.get_by_url(session, url)
     if doc is None:
-        doc = WebDocument(url=url)
+        doc = Document(url=url)
         session.add(doc)
     return doc
 
 
 def step2a_process_youtube(session, websites):
     """Step 2a: download captions/transcriptions for newly added YouTube videos."""
-    from library.db.models import WebDocument
+    from library.db.models import Document
     from library.models.stalker_document_status_error import StalkerDocumentStatusError
     from library.youtube_processing import process_youtube_url
 
@@ -124,7 +124,7 @@ def step2a_process_youtube(session, websites):
     for movie in website_data:
         logging.info(f"Working on document ID: {movie[0]}")
         try:
-            web_document = WebDocument.get_by_id(session, int(movie[0]))
+            web_document = Document.get_by_id(session, int(movie[0]))
             if web_document is None:
                 logging.error(f"Document {movie[0]} not found")
                 continue
@@ -297,7 +297,7 @@ def step2b_download_webpages(session, websites, boto_session, cache_dir):
 
 def step3_clean_markdown(session, websites):
     """Step 3: re-clean text_md for documents in NEED_CLEAN_MD state."""
-    from library.db.models import WebDocument
+    from library.db.models import Document
     from library.models.stalker_document_status import StalkerDocumentStatus
     from library.website.website_download_context import webpage_text_clean
 
@@ -306,7 +306,7 @@ def step3_clean_markdown(session, websites):
     print(f"entries to correct: {markdown_correction_needed_len}")
     for document_nb, document in enumerate(markdown_correction_needed, 1):
         progress = round((document_nb / markdown_correction_needed_len) * 100)
-        web_doc = WebDocument.get_by_id(session, document['id'])
+        web_doc = Document.get_by_id(session, document['id'])
         if web_doc is None:
             logging.error(f"Document {document['id']} not found")
             continue
@@ -321,7 +321,7 @@ def step3_clean_markdown(session, websites):
 
 def step4_mark_transcribed_ready(session, websites):
     """Step 4: for YouTube videos with finished transcription, mark ready for embedding."""
-    from library.db.models import WebDocument
+    from library.db.models import Document
     from library.models.stalker_document_status import StalkerDocumentStatus
 
     transcription_done = websites.get_transcription_done()
@@ -329,7 +329,7 @@ def step4_mark_transcribed_ready(session, websites):
     print(f"entries to correct: {transcription_done_len}")
     for website_nb, document_id in enumerate(transcription_done, 1):
         progress = round((website_nb / transcription_done_len) * 100)
-        web_doc = WebDocument.get_by_id(session, document_id)
+        web_doc = Document.get_by_id(session, document_id)
         if web_doc is None:
             logging.error(f"Document {document_id} not found")
             continue
@@ -403,7 +403,7 @@ def step5_create_embeddings(session, websites):
                         otherwise falls back to a whole-document embedding
                         split from text_md/text (no chunk_id).
     """
-    from library.db.models import WebDocument
+    from library.db.models import Document
     from library.document_analysis_service import generate_embeddings_from_run
     from library.models.stalker_document_status import StalkerDocumentStatus
     from library.models.stalker_document_type import StalkerDocumentType
@@ -415,7 +415,7 @@ def step5_create_embeddings(session, websites):
     print(f"entries to analyze: {embedding_needed_len}")
     search_service = SearchService(session)
     for website_nb, document_id in enumerate(embedding_needed, 1):
-        doc = WebDocument.get_by_id(session, document_id)
+        doc = Document.get_by_id(session, document_id)
         if doc is None:
             logging.error(f"Document {document_id} not found")
             continue

@@ -4,7 +4,7 @@ Shared domain types used by both frontend applications (`web_interface_react` an
 
 ## Overview
 
-The `shared/` directory at the project root contains TypeScript type definitions and constants that are common across frontend applications. This avoids duplication of domain types like `WebDocument`, `ApiType`, and default API URLs.
+The `shared/` directory at the project root contains TypeScript type definitions and constants that are common across frontend applications. This avoids duplication of domain types like `Document`, `ApiType`, and default API URLs.
 
 **No build step required** — Vite transpiles shared `.ts` files directly via esbuild. TypeScript resolves imports via `tsconfig.json` paths.
 
@@ -16,7 +16,7 @@ shared/
 └── types/
     ├── index.ts            # Barrel re-exports
     ├── api.ts              # ApiType, DEFAULT_API_URLS
-    └── documents.ts        # WebDocument, emptyDocument, SearchResult, ListItem
+    └── documents.ts        # Document, emptyDocument, SearchResult, ListItem
 ```
 
 ## Exported Types and Values
@@ -32,7 +32,7 @@ shared/
 
 | Export | Kind | Description |
 |--------|------|-------------|
-| `WebDocument` | interface | Document form fields (id, title, text, metadata, etc.) |
+| `Document` | interface | Document form fields (id, title, text, metadata, etc.) |
 | `emptyDocument` | const | Factory value with all fields set to empty strings/null |
 | `SearchResult` | interface | Vector similarity search result |
 | `ListItem` | interface | Document list item (id, title, url, state, type) |

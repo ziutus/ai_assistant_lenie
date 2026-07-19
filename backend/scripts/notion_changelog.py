@@ -30,7 +30,7 @@ def get_recent_documents(conn, limit: int) -> list[dict]:
     """Fetch the most recently added documents from the database."""
     sql = """
         SELECT id, url, title, document_type, created_at
-        FROM public.web_documents
+        FROM public.documents
         ORDER BY created_at DESC
         LIMIT %s
     """

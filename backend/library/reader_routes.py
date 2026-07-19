@@ -24,7 +24,7 @@ from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import select
 
 from library.db.engine import get_scoped_session
-from library.db.models import User, UserDocumentNote, UserReadingProgress, WebDocument
+from library.db.models import User, UserDocumentNote, UserReadingProgress, Document
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,8 @@ def _require_user(session) -> User:
     return user
 
 
-def _get_document_or_404(session, doc_id: int) -> WebDocument:
-    doc = session.get(WebDocument, doc_id)
+def _get_document_or_404(session, doc_id: int) -> Document:
+    doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
     return doc

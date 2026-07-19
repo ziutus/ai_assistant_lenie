@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import Float, and_, delete, func, literal, or_, select
 from sqlalchemy.orm import Session
 
-from library.db.models import DocumentAnalysisRun, DocumentChunk, WebDocument, DocumentEmbedding
+from library.db.models import DocumentAnalysisRun, DocumentChunk, Document, DocumentEmbedding
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.models.stalker_document_type import StalkerDocumentType
@@ -28,53 +28,53 @@ class WebsitesDBPostgreSQL:
                  only_has_obsidian_notes: bool = False) -> list[dict[str, Any]]:
 
         if count:
-            stmt = select(func.count(WebDocument.id))
+            stmt = select(func.count(Document.id))
         else:
             stmt = select(
-                WebDocument.id, WebDocument.url, WebDocument.title, WebDocument.document_type,
-                WebDocument.created_at, WebDocument.document_state, WebDocument.document_state_error,
-                WebDocument.note, WebDocument.collection_id, WebDocument.uuid, WebDocument.byline,
-                WebDocument.obsidian_note_paths,
+                Document.id, Document.url, Document.title, Document.document_type,
+                Document.created_at, Document.document_state, Document.document_state_error,
+                Document.note, Document.collection_id, Document.uuid, Document.byline,
+                Document.obsidian_note_paths,
             )
 
         # Dynamic filters — column stores enum name strings directly
         if document_type != "ALL":
-            stmt = stmt.where(WebDocument.document_type == document_type)
+            stmt = stmt.where(Document.document_type == document_type)
 
         if document_state != "ALL":
-            stmt = stmt.where(WebDocument.document_state == document_state)
+            stmt = stmt.where(Document.document_state == document_state)
 
         if collection_id:
-            stmt = stmt.where(WebDocument.collection_id == collection_id)
+            stmt = stmt.where(Document.collection_id == collection_id)
 
         if ai_summary_needed is not None:
-            stmt = stmt.where(WebDocument.ai_summary_needed == ai_summary_needed)
+            stmt = stmt.where(Document.ai_summary_needed == ai_summary_needed)
 
         if start_id:
-            stmt = stmt.where(WebDocument.id >= int(start_id))
+            stmt = stmt.where(Document.id >= int(start_id))
 
         if search_in_documents:
             escaped = search_in_documents.replace("%", "\\%").replace("_", "\\_")
             pattern = f"%{escaped}%"
             stmt = stmt.where(or_(
-                WebDocument.url.ilike(pattern, escape="\\"),
-                WebDocument.text.ilike(pattern, escape="\\"),
-                WebDocument.title.ilike(pattern, escape="\\"),
-                WebDocument.summary.ilike(pattern, escape="\\"),
-                WebDocument.chapter_list.ilike(pattern, escape="\\"),
+                Document.url.ilike(pattern, escape="\\"),
+                Document.text.ilike(pattern, escape="\\"),
+                Document.title.ilike(pattern, escape="\\"),
+                Document.summary.ilike(pattern, escape="\\"),
+                Document.chapter_list.ilike(pattern, escape="\\"),
             ))
 
         if only_missing_obsidian_notes:
             stmt = stmt.where(select(DocumentChunk.id).where(
-                DocumentChunk.document_id == WebDocument.id,
+                DocumentChunk.document_id == Document.id,
                 *self._missing_obsidian_note_chunk_conditions(),
             ).exists())
 
         if only_has_obsidian_notes:
             stmt = stmt.where(or_(
-                func.coalesce(func.jsonb_array_length(WebDocument.obsidian_note_paths), 0) > 0,
+                func.coalesce(func.jsonb_array_length(Document.obsidian_note_paths), 0) > 0,
                 select(DocumentChunk.id).where(
-                    DocumentChunk.document_id == WebDocument.id,
+                    DocumentChunk.document_id == Document.id,
                     *self._has_obsidian_note_chunk_conditions(),
                 ).exists(),
             ))
@@ -82,7 +82,7 @@ class WebsitesDBPostgreSQL:
         if count:
             return self.session.execute(stmt).scalar()
 
-        stmt = stmt.order_by(WebDocument.created_at.desc())
+        stmt = stmt.order_by(Document.created_at.desc())
         stmt = stmt.limit(limit).offset(offset * limit)
 
         rows = self.session.execute(stmt).all()
@@ -151,14 +151,14 @@ class WebsitesDBPostgreSQL:
         return {doc_id: (missing, with_notes) for doc_id, missing, with_notes in self.session.execute(stmt).all()}
 
     def get_count(self, document_type: str = "ALL") -> int:
-        stmt = select(func.count(WebDocument.id))
+        stmt = select(func.count(Document.id))
         if document_type != "ALL":
-            stmt = stmt.where(WebDocument.document_type == document_type)
+            stmt = stmt.where(Document.document_type == document_type)
         return self.session.execute(stmt).scalar()
 
     def get_count_by_type(self) -> dict[str, int]:
         """Return document counts grouped by type, plus 'ALL' total."""
-        stmt = select(WebDocument.document_type, func.count(WebDocument.id)).group_by(WebDocument.document_type)
+        stmt = select(Document.document_type, func.count(Document.id)).group_by(Document.document_type)
         rows = self.session.execute(stmt).all()
         counts = {row[0]: row[1] for row in rows}
         counts["ALL"] = sum(counts.values())
@@ -166,8 +166,8 @@ class WebsitesDBPostgreSQL:
 
     def get_ready_for_download(self) -> list[tuple]:
         stmt = select(
-            WebDocument.id, WebDocument.url, WebDocument.document_type, WebDocument.uuid,
-        ).where(WebDocument.document_state == StalkerDocumentStatus.URL_ADDED.name)
+            Document.id, Document.url, Document.document_type, Document.uuid,
+        ).where(Document.document_state == StalkerDocumentStatus.URL_ADDED.name)
 
         rows = self.session.execute(stmt).all()
         return [
@@ -177,14 +177,14 @@ class WebsitesDBPostgreSQL:
 
     def get_youtube_just_added(self) -> list[tuple]:
         stmt = select(
-            WebDocument.id, WebDocument.url, WebDocument.document_type,
-            WebDocument.language, WebDocument.chapter_list, WebDocument.ai_summary_needed,
+            Document.id, Document.url, Document.document_type,
+            Document.language, Document.chapter_list, Document.ai_summary_needed,
         ).where(
-            WebDocument.document_type == StalkerDocumentType.youtube.name,
+            Document.document_type == StalkerDocumentType.youtube.name,
             or_(
-                WebDocument.document_state == StalkerDocumentStatus.URL_ADDED.name,
-                WebDocument.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION.name,
-                WebDocument.document_state == StalkerDocumentStatus.TEMPORARY_ERROR.name,
+                Document.document_state == StalkerDocumentStatus.URL_ADDED.name,
+                Document.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION.name,
+                Document.document_state == StalkerDocumentStatus.TEMPORARY_ERROR.name,
             ),
         )
 
@@ -196,24 +196,24 @@ class WebsitesDBPostgreSQL:
         ]
 
     def get_transcription_done(self) -> list[int]:
-        stmt = select(WebDocument.id).where(
-            WebDocument.document_state == StalkerDocumentStatus.TRANSCRIPTION_DONE.name,
-        ).order_by(WebDocument.id)
+        stmt = select(Document.id).where(
+            Document.document_state == StalkerDocumentStatus.TRANSCRIPTION_DONE.name,
+        ).order_by(Document.id)
 
         rows = self.session.execute(stmt).all()
         return [row[0] for row in rows]
 
     def get_next_to_correct(self, document_id: int, document_type: str = "ALL",
                             document_state: str = "ALL") -> tuple[int, str] | int:
-        stmt = select(WebDocument.id, WebDocument.document_type).where(WebDocument.id > document_id)
+        stmt = select(Document.id, Document.document_type).where(Document.id > document_id)
 
         if document_type != "ALL":
-            stmt = stmt.where(WebDocument.document_type == document_type)
+            stmt = stmt.where(Document.document_type == document_type)
 
         if document_state != "ALL":
-            stmt = stmt.where(WebDocument.document_state == document_state)
+            stmt = stmt.where(Document.document_state == document_state)
 
-        stmt = stmt.order_by(WebDocument.id.asc()).limit(1)
+        stmt = stmt.order_by(Document.id.asc()).limit(1)
 
         row = self.session.execute(stmt).first()
         if row is None:
@@ -226,8 +226,8 @@ class WebsitesDBPostgreSQL:
     def get_last_by_source(self, source_name: str) -> datetime.date | None:
         """Return the most recent published_on for documents with a given discovery source."""
         from library.db.models import DiscoverySource
-        stmt = select(func.max(WebDocument.published_on)).where(
-            WebDocument.discovery_source_id.in_(
+        stmt = select(func.max(Document.published_on)).where(
+            Document.discovery_source_id.in_(
                 select(DiscoverySource.id).where(DiscoverySource.name == source_name)
             ),
         )
@@ -235,7 +235,7 @@ class WebsitesDBPostgreSQL:
 
     def load_neighbors(self, doc) -> None:
         """Populate doc.next_id, next_type, previous_id, previous_type."""
-        WebDocument.populate_neighbors(self.session, doc)
+        Document.populate_neighbors(self.session, doc)
 
     # ------------------------------------------------------------------
     # Similarity search
@@ -272,20 +272,20 @@ class WebsitesDBPostgreSQL:
                 DocumentEmbedding.text,
                 similarity,
                 DocumentEmbedding.id,
-                WebDocument.url,
-                WebDocument.language,
+                Document.url,
+                Document.language,
                 DocumentEmbedding.text_original,
-                func.length(WebDocument.text).label("websites_text_length"),
+                func.length(Document.text).label("websites_text_length"),
                 func.length(DocumentEmbedding.text).label("embeddings_text_length"),
-                WebDocument.title,
-                WebDocument.document_type,
-                WebDocument.collection_id,
-                WebDocument.published_on,
-                WebDocument.created_at,
+                Document.title,
+                Document.document_type,
+                Document.collection_id,
+                Document.published_on,
+                Document.created_at,
                 DocumentEmbedding.chunk_id,
                 DocumentChunk.obsidian_note_paths,
             )
-            .outerjoin(WebDocument, DocumentEmbedding.document_id == WebDocument.id)
+            .outerjoin(Document, DocumentEmbedding.document_id == Document.id)
             .outerjoin(DocumentChunk, DocumentEmbedding.chunk_id == DocumentChunk.id)
             .where(DocumentEmbedding.model == model)
             .where(
@@ -353,21 +353,21 @@ class WebsitesDBPostgreSQL:
         tokens = list(dict.fromkeys(word for word in query.split() if len(word) >= 3))
         searchable = func.unaccent(func.concat_ws(
             " ",
-            func.coalesce(WebDocument.title, ""),
-            func.coalesce(WebDocument.tags, ""),
-            func.coalesce(WebDocument.note, ""),
-            func.coalesce(WebDocument.text, ""),
+            func.coalesce(Document.title, ""),
+            func.coalesce(Document.tags, ""),
+            func.coalesce(Document.note, ""),
+            func.coalesce(Document.text, ""),
         ))
-        title = func.unaccent(func.coalesce(WebDocument.title, ""))
+        title = func.unaccent(func.coalesce(Document.title, ""))
         phrase = func.unaccent(f"%{query}%")
         conditions = [title.ilike(phrase), searchable.ilike(phrase)]
         if tokens:
             conditions.append(and_(*(searchable.ilike(func.unaccent(f"%{token}%")) for token in tokens)))
 
         stmt = (
-            select(WebDocument)
+            select(Document)
             .where(or_(*conditions))
-            .order_by(WebDocument.created_at.desc(), WebDocument.id.desc())
+            .order_by(Document.created_at.desc(), Document.id.desc())
             .limit(limit)
         )
         if filters is not None:
@@ -423,17 +423,17 @@ class WebsitesDBPostgreSQL:
         from library.search.types import SearchSort
 
         sort_columns = {
-            SearchSort.PUBLISHED_DESC: WebDocument.published_on.desc(),
-            SearchSort.PUBLISHED_ASC: WebDocument.published_on.asc(),
-            SearchSort.INGESTED_DESC: WebDocument.created_at.desc(),
-            SearchSort.RELEVANCE: WebDocument.created_at.desc(),
+            SearchSort.PUBLISHED_DESC: Document.published_on.desc(),
+            SearchSort.PUBLISHED_ASC: Document.published_on.asc(),
+            SearchSort.INGESTED_DESC: Document.created_at.desc(),
+            SearchSort.RELEVANCE: Document.created_at.desc(),
         }
         order = sort_columns[SearchSort(sort) if sort is not None else SearchSort.RELEVANCE]
 
         stmt = (
-            select(WebDocument)
+            select(Document)
             .where(*build_document_filters(filters))
-            .order_by(order, WebDocument.id.desc())
+            .order_by(order, Document.id.desc())
             .limit(limit)
             .offset(offset)
         )
@@ -487,31 +487,31 @@ class WebsitesDBPostgreSQL:
         # processed automatically. DOCUMENT_INTO_DATABASE may still be waiting
         # for chunk review; closing that review starts indexing directly.
         stmt = (
-            select(WebDocument.id)
+            select(Document.id)
             .outerjoin(
                 DocumentEmbedding,
                 and_(
-                    WebDocument.id == DocumentEmbedding.document_id,
+                    Document.id == DocumentEmbedding.document_id,
                     DocumentEmbedding.model == embedding_model,
                 ),
             )
             .where(
                 DocumentEmbedding.document_id.is_(None),
-                WebDocument.document_state.in_([
+                Document.document_state.in_([
                     StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
                     StalkerDocumentStatus.EMBEDDING_EXIST.name,
                     StalkerDocumentStatus.MD_SIMPLIFIED.name,
                 ]),
                 or_(
-                    func.length(func.coalesce(WebDocument.text_md, "")) > 0,
-                    func.length(func.coalesce(WebDocument.text, "")) > 0,
+                    func.length(func.coalesce(Document.text_md, "")) > 0,
+                    func.length(func.coalesce(Document.text, "")) > 0,
                     and_(
-                        WebDocument.document_type == StalkerDocumentType.link.name,
-                        func.length(func.coalesce(WebDocument.title, "")) > 0,
+                        Document.document_type == StalkerDocumentType.link.name,
+                        func.length(func.coalesce(Document.title, "")) > 0,
                     ),
                 ),
             )
-            .order_by(WebDocument.id)
+            .order_by(Document.id)
         )
         rows = self.session.execute(stmt).all()
         return [row[0] for row in rows]
@@ -522,12 +522,12 @@ class WebsitesDBPostgreSQL:
         """
         min_id = int(min_id)
 
-        stmt = select(WebDocument.id).where(
-            WebDocument.text_md.is_(None),
-            or_(WebDocument.paywall == False, WebDocument.paywall.is_(None)),  # noqa: E712
-            WebDocument.document_type == StalkerDocumentType.webpage.name,
-            WebDocument.id > min_id,
-        ).order_by(WebDocument.id)
+        stmt = select(Document.id).where(
+            Document.text_md.is_(None),
+            or_(Document.paywall == False, Document.paywall.is_(None)),  # noqa: E712
+            Document.document_type == StalkerDocumentType.webpage.name,
+            Document.id > min_id,
+        ).order_by(Document.id)
         rows = self.session.execute(stmt).all()
         return [row[0] for row in rows]
 
@@ -541,17 +541,17 @@ class WebsitesDBPostgreSQL:
         escaped_url = url.replace("%", "\\%").replace("_", "\\_")
         pattern = f"{escaped_url}%"
 
-        stmt = select(WebDocument.id).where(
-            WebDocument.url.like(pattern, escape="\\"),
-            WebDocument.document_type == StalkerDocumentType.webpage.name,
-            WebDocument.id > min_id,
+        stmt = select(Document.id).where(
+            Document.url.like(pattern, escape="\\"),
+            Document.document_type == StalkerDocumentType.webpage.name,
+            Document.id > min_id,
             or_(
                 and_(
-                    WebDocument.document_state == StalkerDocumentStatus.ERROR.name,
-                    WebDocument.document_state_error == StalkerDocumentStatusError.REGEX_ERROR.name,
+                    Document.document_state == StalkerDocumentStatus.ERROR.name,
+                    Document.document_state_error == StalkerDocumentStatusError.REGEX_ERROR.name,
                 ),
-                WebDocument.document_state == StalkerDocumentStatus.URL_ADDED.name,
+                Document.document_state == StalkerDocumentStatus.URL_ADDED.name,
             ),
-        ).order_by(WebDocument.id)
+        ).order_by(Document.id)
         rows = self.session.execute(stmt).all()
         return [row[0] for row in rows]

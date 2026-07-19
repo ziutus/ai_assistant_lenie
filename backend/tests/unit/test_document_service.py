@@ -11,7 +11,7 @@ import pytest
 pytest.importorskip("sqlalchemy")
 
 from library.document_service import DocumentService
-from library.db.models import WebDocument
+from library.db.models import Document
 
 
 # ---------------------------------------------------------------------------
@@ -26,7 +26,7 @@ def _make_session():
 
 
 def _make_doc(**overrides):
-    """Return a WebDocument with safe defaults for testing."""
+    """Return a Document with safe defaults for testing."""
     defaults = {
         "url": "https://example.com",
         "document_type": "webpage",
@@ -35,7 +35,7 @@ def _make_doc(**overrides):
         "id": 42,
     }
     defaults.update(overrides)
-    doc = MagicMock(spec=WebDocument)
+    doc = MagicMock(spec=Document)
     for k, v in defaults.items():
         setattr(doc, k, v)
     doc.dict.return_value = defaults
@@ -186,7 +186,7 @@ class TestSaveDocument:
         session = _make_session()
         doc = _make_doc()
 
-        with patch.object(WebDocument, "get_by_id", return_value=doc):
+        with patch.object(Document, "get_by_id", return_value=doc):
             service = DocumentService(session)
             result = service.save_document(url="https://example.com", link_id=42, title="New Title")
 
@@ -198,8 +198,8 @@ class TestSaveDocument:
         session = _make_session()
         doc = _make_doc()
 
-        with patch.object(WebDocument, "get_by_id", return_value=None), \
-             patch.object(WebDocument, "get_by_url", return_value=doc):
+        with patch.object(Document, "get_by_id", return_value=None), \
+             patch.object(Document, "get_by_url", return_value=doc):
             service = DocumentService(session)
             result = service.save_document(url="https://example.com", title="Updated")
 
@@ -209,8 +209,8 @@ class TestSaveDocument:
         """Save creates a new document when not found by id or url."""
         session = _make_session()
 
-        with patch.object(WebDocument, "get_by_id", return_value=None), \
-             patch.object(WebDocument, "get_by_url", return_value=None):
+        with patch.object(Document, "get_by_id", return_value=None), \
+             patch.object(Document, "get_by_url", return_value=None):
             service = DocumentService(session)
             service.save_document(url="https://new.example.com")
 
@@ -230,7 +230,7 @@ class TestSaveDocument:
         session = _make_session()
         doc = _make_doc()
 
-        with patch.object(WebDocument, "get_by_id", return_value=doc):
+        with patch.object(Document, "get_by_id", return_value=doc):
             service = DocumentService(session)
             service.save_document(url="https://example.com", link_id=42, document_type="link")
 
@@ -242,7 +242,7 @@ class TestSaveDocument:
         doc = _make_doc()
         doc.set_document_type.side_effect = ValueError("invalid type")
 
-        with patch.object(WebDocument, "get_by_id", return_value=doc):
+        with patch.object(Document, "get_by_id", return_value=doc):
             service = DocumentService(session)
             with pytest.raises(ValueError):
                 service.save_document(url="https://example.com", link_id=42, document_type="invalid")
@@ -252,7 +252,7 @@ class TestSaveDocument:
         session = _make_session()
         doc = _make_doc()
 
-        with patch.object(WebDocument, "get_by_id", return_value=doc):
+        with patch.object(Document, "get_by_id", return_value=doc):
             service = DocumentService(session)
             service.save_document(url="https://example.com", link_id=42, document_state="NEED_MANUAL_REVIEW")
 
@@ -270,7 +270,7 @@ class TestDeleteDocument:
         session = _make_session()
         doc = _make_doc()
 
-        with patch.object(WebDocument, "get_by_id", return_value=doc):
+        with patch.object(Document, "get_by_id", return_value=doc):
             service = DocumentService(session)
             result = service.delete_document(42)
 
@@ -282,7 +282,7 @@ class TestDeleteDocument:
         """Delete a non-existent document returns False."""
         session = _make_session()
 
-        with patch.object(WebDocument, "get_by_id", return_value=None):
+        with patch.object(Document, "get_by_id", return_value=None):
             service = DocumentService(session)
             result = service.delete_document(999)
 
@@ -301,7 +301,7 @@ class TestGetDocument:
         session = _make_session()
         doc = _make_doc()
 
-        with patch.object(WebDocument, "get_by_id", return_value=doc) as mock_get:
+        with patch.object(Document, "get_by_id", return_value=doc) as mock_get:
             service = DocumentService(session)
             result = service.get_document(42)
 
@@ -312,7 +312,7 @@ class TestGetDocument:
         """Get a non-existent document returns None."""
         session = _make_session()
 
-        with patch.object(WebDocument, "get_by_id", return_value=None):
+        with patch.object(Document, "get_by_id", return_value=None):
             service = DocumentService(session)
             result = service.get_document(999)
 
@@ -323,7 +323,7 @@ class TestGetDocument:
         session = _make_session()
         doc = _make_doc()
 
-        with patch.object(WebDocument, "get_by_id", return_value=doc) as mock_get:
+        with patch.object(Document, "get_by_id", return_value=doc) as mock_get:
             service = DocumentService(session)
             service.get_document(42, reach=False)
 
@@ -485,7 +485,7 @@ class TestImportDocument:
         session = _make_session()
         service = DocumentService(session)
 
-        with patch.object(WebDocument, "get_by_url", return_value=None):
+        with patch.object(Document, "get_by_url", return_value=None):
             doc, status = service.import_document(
                 url="https://example.com/article",
                 document_type="link",
@@ -504,7 +504,7 @@ class TestImportDocument:
         session = _make_session()
         existing_doc = _make_doc(url="https://example.com/dup")
 
-        with patch.object(WebDocument, "get_by_url", return_value=existing_doc):
+        with patch.object(Document, "get_by_url", return_value=existing_doc):
             service = DocumentService(session)
             doc, status = service.import_document(
                 url="https://example.com/dup",
@@ -519,7 +519,7 @@ class TestImportDocument:
         """Import with text/html sets content directly on model (no S3)."""
         session = _make_session()
 
-        with patch.object(WebDocument, "get_by_url", return_value=None):
+        with patch.object(Document, "get_by_url", return_value=None):
             service = DocumentService(session)
             doc, status = service.import_document(
                 url="https://example.com/page",
@@ -536,7 +536,7 @@ class TestImportDocument:
         """Import with custom document_state sets it correctly."""
         session = _make_session()
 
-        with patch.object(WebDocument, "get_by_url", return_value=None):
+        with patch.object(Document, "get_by_url", return_value=None):
             service = DocumentService(session)
             doc, status = service.import_document(
                 url="https://example.com/ready",
@@ -550,7 +550,7 @@ class TestImportDocument:
         """Import without document_state defaults to URL_ADDED."""
         session = _make_session()
 
-        with patch.object(WebDocument, "get_by_url", return_value=None):
+        with patch.object(Document, "get_by_url", return_value=None):
             service = DocumentService(session)
             doc, status = service.import_document(
                 url="https://example.com/default",
@@ -571,7 +571,7 @@ class TestImportDocument:
         """Import with all metadata fields sets them on the document."""
         session = _make_session()
 
-        with patch.object(WebDocument, "get_by_url", return_value=None):
+        with patch.object(Document, "get_by_url", return_value=None):
             service = DocumentService(session)
             doc, status = service.import_document(
                 url="https://example.com/full",
@@ -604,7 +604,7 @@ class TestImportDocument:
         session = _make_session()
         existing_doc = _make_doc(url="https://example.com/dup2")
 
-        with patch.object(WebDocument, "get_by_url", return_value=existing_doc) as mock_get:
+        with patch.object(Document, "get_by_url", return_value=existing_doc) as mock_get:
             service = DocumentService(session)
             doc, status = service.import_document(
                 url="https://example.com/dup2",
@@ -620,7 +620,7 @@ class TestImportDocument:
         """Import ignores None metadata values."""
         session = _make_session()
 
-        with patch.object(WebDocument, "get_by_url", return_value=None):
+        with patch.object(Document, "get_by_url", return_value=None):
             service = DocumentService(session)
             doc, status = service.import_document(
                 url="https://example.com/none",

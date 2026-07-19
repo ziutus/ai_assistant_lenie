@@ -21,7 +21,7 @@ from library.config_loader import load_config
 cfg = load_config()  # noqa: F841 — side effect: populates os.environ for library modules
 
 from library.db.engine import get_session  # noqa: E402
-from library.db.models import WebDocument  # noqa: E402
+from library.db.models import Document  # noqa: E402
 from pytubefix import YouTube  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -85,10 +85,10 @@ def main():
 
     session = get_session()
     try:
-        query = session.query(WebDocument).filter(
-            WebDocument.document_type == "youtube",
-            WebDocument.byline.is_(None),
-        ).order_by(WebDocument.id)
+        query = session.query(Document).filter(
+            Document.document_type == "youtube",
+            Document.byline.is_(None),
+        ).order_by(Document.id)
         if args.limit:
             query = query.limit(args.limit)
         docs = query.all()

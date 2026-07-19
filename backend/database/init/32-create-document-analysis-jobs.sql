@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS public.document_analysis_jobs (
     id VARCHAR(32) PRIMARY KEY,
-    document_id INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     run_id INTEGER REFERENCES public.document_analysis_runs(id) ON DELETE SET NULL,
     status VARCHAR(20) NOT NULL DEFAULT 'queued',
     parameters JSONB NOT NULL,

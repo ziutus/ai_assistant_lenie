@@ -35,7 +35,7 @@ from library.db.engine import get_scoped_session
 from library.db.models import (
     CitedPublication, DocumentAnalysisJob, DocumentAnalysisRun, DocumentChunk, DocumentCitedPublication,
     DocumentRemovedLine, DocumentTopicSection,
-    WebDocument, DocumentEmbedding,
+    Document, DocumentEmbedding,
 )
 
 logger = logging.getLogger(__name__)
@@ -372,7 +372,7 @@ def analyze_document_chunks(doc_id: int):
             return jsonify({"status": "error", "message": "scope_chapter requires article mode"}), 400
 
     session = get_scoped_session()
-    if session.get(WebDocument, doc_id) is None:
+    if session.get(Document, doc_id) is None:
         abort(404, f"Document {doc_id} not found")
     active = session.scalars(
         select(DocumentAnalysisJob).where(
@@ -428,7 +428,7 @@ def split_preview(doc_id: int):
         return jsonify({"status": "error", "message": "reclean requires article mode"}), 400
 
     session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
+    doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
@@ -484,24 +484,24 @@ def next_document_for_analysis(doc_id: int):
     """Return the next document with usable text and no completed review."""
     session = get_scoped_session()
     has_text = or_(
-        func.length(WebDocument.text) > 100,
-        func.length(WebDocument.text_md) > 100,
-        func.length(WebDocument.text_raw) > 100,
+        func.length(Document.text) > 100,
+        func.length(Document.text_md) > 100,
+        func.length(Document.text_raw) > 100,
     )
     has_completed_run = select(DocumentAnalysisRun.id).where(
-        DocumentAnalysisRun.document_id == WebDocument.id,
+        DocumentAnalysisRun.document_id == Document.id,
         DocumentAnalysisRun.status == "reviewed",
     ).exists()
 
     def find_next(before_current: bool):
-        stmt = select(WebDocument.id, WebDocument.title).where(
-            WebDocument.id != doc_id,
+        stmt = select(Document.id, Document.title).where(
+            Document.id != doc_id,
             has_text,
             ~has_completed_run,
         )
         if before_current:
-            stmt = stmt.where(WebDocument.id < doc_id)
-        return session.execute(stmt.order_by(WebDocument.id.desc()).limit(1)).first()
+            stmt = stmt.where(Document.id < doc_id)
+        return session.execute(stmt.order_by(Document.id.desc()).limit(1)).first()
 
     row = find_next(True) or find_next(False)
     if row is None:
@@ -548,7 +548,7 @@ def reclean_preview(doc_id: int):
     data = request.get_json(silent=True) or {}
     save = bool(data.get("save", False))
     session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
+    doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
@@ -673,7 +673,7 @@ def document_chapters(doc_id: int):
     from library.text_functions import detect_chapters
 
     session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
+    doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
@@ -782,7 +782,7 @@ def document_chapter(doc_id: int, position: int):
     _chunk_based_chapters).
     """
     session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
+    doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
@@ -853,7 +853,7 @@ def document_chapter_entities(doc_id: int, position: int):
     from library.entity_service import filter_entities_to_text, get_document_entities
 
     session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
+    doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
@@ -891,7 +891,7 @@ def document_events(doc_id: int):
     from library.db.models import DocumentEvent
 
     session = get_scoped_session()
-    if session.get(WebDocument, doc_id) is None:
+    if session.get(Document, doc_id) is None:
         abort(404, f"Document {doc_id} not found")
 
     rows = (
@@ -929,7 +929,7 @@ def document_time_periods(doc_id: int):
     from library.db.models import DocumentTimePeriod
 
     session = get_scoped_session()
-    if session.get(WebDocument, doc_id) is None:
+    if session.get(Document, doc_id) is None:
         abort(404, f"Document {doc_id} not found")
 
     rows = (
@@ -966,7 +966,7 @@ def document_tones(doc_id: int):
     from library.db.models import DocumentTone
 
     session = get_scoped_session()
-    if session.get(WebDocument, doc_id) is None:
+    if session.get(Document, doc_id) is None:
         abort(404, f"Document {doc_id} not found")
 
     rows = (
@@ -1018,7 +1018,7 @@ def document_entity_occurrences(doc_id: int):
         return jsonify({"status": "error", "message": "text parameter required"}), 400
 
     session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
+    doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
@@ -1080,7 +1080,7 @@ def get_analysis_job(job_id: str):
 def get_document_analysis_job(doc_id: int):
     """Latest active job for a document, used to resume UI monitoring."""
     session = get_scoped_session()
-    if session.get(WebDocument, doc_id) is None:
+    if session.get(Document, doc_id) is None:
         abort(404, f"Document {doc_id} not found")
     job = session.scalars(
         select(DocumentAnalysisJob).where(
@@ -1163,9 +1163,9 @@ def get_run_chunks(run_id: int):
     if run is None:
         abort(404, f"Run {run_id} not found")
 
-    doc = session.get(WebDocument, run.document_id)
+    doc = session.get(Document, run.document_id)
     author_persons = []
-    if isinstance(doc, WebDocument):
+    if isinstance(doc, Document):
         from library.author_service import get_document_authors
         author_persons = get_document_authors(session, run.document_id)
     segments = [] if lite else _parse_segments(doc.text_raw if doc else None)
@@ -1448,7 +1448,7 @@ def apply_run_cleanup(run_id: int):
     if not cleaned:
         return jsonify({"status": "error", "message": "Run has no TEMAT chunks"}), 400
 
-    doc = session.get(WebDocument, run.document_id)
+    doc = session.get(Document, run.document_id)
     if doc is None:
         abort(404, f"Document {run.document_id} not found")
 
@@ -1638,7 +1638,7 @@ def extract_author(run_id: int):
             c.corrected_text or c.original_text or "" for c in chunks
         ).strip()
     else:
-        doc = session.get(WebDocument, run.document_id)
+        doc = session.get(Document, run.document_id)
         if doc is None:
             abort(404, f"Document {run.document_id} not found")
         from library.chunk_llm_analysis import head_tail_excerpt
@@ -1657,7 +1657,7 @@ def extract_author(run_id: int):
     if not author_names:
         return jsonify({"status": "success", "byline": None})
 
-    doc = session.get(WebDocument, run.document_id)
+    doc = session.get(Document, run.document_id)
     if doc is None:
         abort(404, f"Document {run.document_id} not found")
     from library.author_service import set_document_authors
@@ -1720,7 +1720,7 @@ def extract_publication_date(run_id: int):
             c.corrected_text or c.original_text or "" for c in chunks
         ).strip()
     else:
-        doc = session.get(WebDocument, run.document_id)
+        doc = session.get(Document, run.document_id)
         if doc is None:
             abort(404, f"Document {run.document_id} not found")
         from library.chunk_llm_analysis import head_tail_excerpt
@@ -1745,7 +1745,7 @@ def extract_publication_date(run_id: int):
         logger.warning("extract_publication_date_info: unparseable date %r for run %d", date_str, run_id)
         return jsonify({"status": "success", "published_on": None})
 
-    doc = session.get(WebDocument, run.document_id)
+    doc = session.get(Document, run.document_id)
     if doc is None:
         abort(404, f"Document {run.document_id} not found")
     doc.published_on = parsed_date
@@ -1773,7 +1773,7 @@ def set_published_on(doc_id: int):
     of asking the LLM to find one.
     """
     session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
+    doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
@@ -1823,7 +1823,7 @@ def set_byline(doc_id: int):
     from library.author_service import set_document_authors, split_author_names
 
     session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
+    doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
@@ -1861,10 +1861,10 @@ def compute_document_quality(doc_id: int):
     Body (optional JSON): {"run_id": N} — which analysis run's chunks to score;
     defaults to the document's newest run. Deterministic penalties + one LLM
     rubric call with the run's model (library/article_quality.py). Saves the
-    result to web_documents.quality and returns it.
+    result to documents.quality and returns it.
     """
     session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
+    doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
@@ -1931,7 +1931,7 @@ def report_extraction_issue(doc_id: int):
     and the error is visible next to its state.
     """
     session = get_scoped_session()
-    doc = session.get(WebDocument, doc_id)
+    doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
@@ -2001,7 +2001,7 @@ def update_chunk(chunk_id: int):
         # matches (junk lines like player controls repeat per embedded video)
         targets = {ln.strip() for ln in removed_lines if isinstance(ln, str) and ln.strip()}
         if targets:
-            doc = session.get(WebDocument, chunk.document_id)
+            doc = session.get(Document, chunk.document_id)
             if doc is not None:
                 for field in ("text", "text_md"):
                     value = getattr(doc, field, None)
@@ -2237,7 +2237,7 @@ def execute_split(chunk_id: int):
                             "message": f"split_at_seg {split_at} out of range [{seg_start}, {seg_end})"}), 400
 
         # Reconstruct text from raw transcript segments
-        doc = session.get(WebDocument, chunk.document_id)
+        doc = session.get(Document, chunk.document_id)
         segments = _parse_segments(doc.text_raw if doc else None)
 
         def _text_from_segs(start: int, end: int | None) -> str:

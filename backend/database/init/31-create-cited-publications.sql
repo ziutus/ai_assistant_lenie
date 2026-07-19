@@ -16,7 +16,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_cited_publications_url ON public.cited_publ
 
 CREATE TABLE IF NOT EXISTS public.document_cited_publications (
     id SERIAL PRIMARY KEY,
-    document_id INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     publication_id INTEGER NOT NULL REFERENCES public.cited_publications(id) ON DELETE CASCADE,
     chunk_id INTEGER REFERENCES public.document_chunks(id) ON DELETE SET NULL,
     raw_citation TEXT NOT NULL,

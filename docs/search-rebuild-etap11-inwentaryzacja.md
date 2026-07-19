@@ -161,7 +161,7 @@ obu frontendach, wtyczce i większości backendu). Zmierzyć przed właściwą s
 3. **11c**: `project`→`collection_id` — **WYKONANE** (migracja `c4d5e6f7a8b9`: tabela `collections` + FK, kolumna `project` usunięta; legacy kwarg `project` usunięty z repozytorium — żaden endpoint HTTP go nie przyjmował).
 4. **11d**: `source`→`discovery_source_id` + `sources`→`discovery_sources` — **WYKONANE** (migracja `d5e6f7a8b9c0` z bezstratną migracją danych 9110 dokumentów; format wire zachowuje NAZWĘ pod `source` — wtyczka Chrome bez zmian; hook `before_flush` zastąpiony jawnym `WebDocument.set_discovery_source()`).
 5. **11e**: `websites_embeddings`→`document_embeddings` + `website_id`→`document_id` — **WYKONANE** (migracja `e6f7a8b9c0d1`: tabela+kolumna+indeksy+constrainty; klucze API `document_id` w wynikach wyszukiwania; `shared/types.SearchResult`, react, slack_bot fixture).
-6. **11f**: `web_documents`→`documents` + FK.
+6. **11f**: `web_documents`→`documents` + FK — **WYKONANE** (migracja `f7a8b9c0d1e2`; klasa `WebDocument`→`Document` w ORM i TS; historia Alembic i nazwy plików skryptów batch celowo nietknięte; moduł `stalker_web_documents_db_postgresql`/klasa `WebsitesDBPostgreSQL` przeniesione do 11g).
 7. **11g**: `document_state`→`processing_status`, `created_at`→`ingested_at`, `uuid`→`public_id`, `website_similar`→usunięcie (po Etapie 12?), usunięcie aliasów zgodności.
 
 Każda sesja: migracja Alembic (upgrade→psql→downgrade→upgrade na NAS), pełna suita unit,

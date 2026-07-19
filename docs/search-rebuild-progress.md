@@ -5,6 +5,46 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-19 — Etap 11, sesja F (rename `web_documents`→`documents`, `WebDocument`→`Document`) — UKOŃCZONA
+
+**Zakres wykonany:** migracja Alembic `f7a8b9c0d1e2` — rename tabeli, sekwencji
+(`documents_id_seq`), 10 indeksów `idx_documents_*`, PK, unique uuid, 2 CHECK-ów i 3 FK
+(auto-nazwane constrainty NOT NULL z PG18 celowo bez zmian; FK w 15 tabelach zależnych podążają
+automatycznie, ich nazwy nigdy nie zawierały `web_documents`). Kod: `__tablename__` +
+`ForeignKey("documents.id")` w ~15 modelach, klasa **`WebDocument`→`Document`** globalnie w
+backendzie (51 plików; brak kolizji — `Document` firecrawla żyje tylko w site-packages), literały
+`web_documents` w init SQL (20 plików), testach (asercje kompilowanego SQL) i skryptach. TS:
+interfejs `WebDocument`→`Document` w `shared/types` + re-eksporty (żaden komponent nie importował
+nazwy bezpośrednio). Dokumentacja (CLAUDE.md x7, data-models, embeddings, shared-types,
+api-type-sync).
+
+**Celowo NIE ruszone:** historia migracji Alembic (odwołuje się do nazw z czasu powstania),
+nazwy PLIKÓW skryptów batch (`web_documents_do_the_needful_new.py` itd. — rename plików zerwałby
+ścieżki w docs/testach source-check; do rozważenia w 11g), moduł
+`library/stalker_web_documents_db_postgresql.py` + klasa `WebsitesDBPostgreSQL` (nazewnictwo
+repozytorium, nie schematu — zakres 11g), zrzuty w `backend/tmp/sql_data/`.
+
+**Testy uruchomione:** `tests/unit/` **1830 passed**; ruff czysty; Vitest 11 passed; build React
+i app2 czyste. Migracja na NAS: upgrade → psql (9220 dokumentów w `documents`, `web_documents`
+nie istnieje, 10 indeksów idx_documents_*) → downgrade (tabela wraca, 9220) → upgrade → head
+`f7a8b9c0d1e2`. Deploy backend+frontend na NAS. E2E: `/website_list` (9220), `/website_get`
+(byline/source/collection_id/published_on), `/search` filter-only, `/website_similar` hybrydowo
+— wszystko 200 na przemianowanej tabeli; klucz testowy usunięty.
+
+**Otwarte ryzyka:** brak nowych; ścieżki URL API (`/website_list`, `/website_get`, ...) nadal
+używają starego słowa „website" — ich rename to decyzja API-owa (breaking dla klientów),
+świadomie poza zakresem Etapu 11 (plan przewiduje tylko `website_similar`→`/search`, co już
+istnieje równolegle; usunięcie legacy endpointu = Etap 12).
+
+**PR/merge:** PR #309, branch `feat/search-etap-11f-documents`.
+
+**Następny krok:** Etap 11, sesja G (ostatnia): `document_state`→`processing_status`,
+`document_state_error`→`processing_error_code`, `created_at`→`ingested_at`, `uuid`→`public_id`,
+`period_from/to`→`subject_period_*` (zweryfikować czy zostało coś fizycznego), moduł
+`stalker_web_documents_db_postgresql`→`document_repository` + klasa `WebsitesDBPostgreSQL`→
+`DocumentRepository`, usunięcie aliasów zgodności. Zmierzyć skalę przed sesją —
+`document_state` jest w shared/, obu frontendach i wtyczce.
+
 ## 2026-07-19 — Etap 11, sesja E (rename `websites_embeddings`→`document_embeddings`, `website_id`→`document_id`) — UKOŃCZONA
 
 **Zakres wykonany:** migracja Alembic `e6f7a8b9c0d1` — rename tabeli, kolumny `website_id`→

@@ -55,7 +55,7 @@ class TestDocumentRemovedLineModel:
     def test_document_fk_cascade(self):
         col = inspect(DocumentRemovedLine).mapper.columns["document_id"]
         fk = next(iter(col.foreign_keys))
-        assert fk.column.table.name == "web_documents"
+        assert fk.column.table.name == "documents"
         assert fk.ondelete == "CASCADE"
         assert col.nullable is False
 

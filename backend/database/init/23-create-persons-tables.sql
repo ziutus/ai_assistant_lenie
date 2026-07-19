@@ -37,7 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_person_aliases_alias_trgm
 
 CREATE TABLE IF NOT EXISTS public.document_persons (
     id          SERIAL PRIMARY KEY,
-    document_id INTEGER NOT NULL REFERENCES public.web_documents(id) ON DELETE CASCADE,
+    document_id INTEGER NOT NULL REFERENCES public.documents(id) ON DELETE CASCADE,
     person_id   INTEGER NOT NULL REFERENCES public.persons(id) ON DELETE CASCADE,
     raw_mention TEXT NOT NULL,
     confidence  VARCHAR(20) NOT NULL,

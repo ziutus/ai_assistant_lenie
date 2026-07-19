@@ -15,7 +15,7 @@ flask = pytest.importorskip("flask")
 
 from library import reader_routes as rr  # noqa: E402
 from library.auth import AuthContext  # noqa: E402
-from library.db.models import User, UserDocumentNote, UserReadingProgress, WebDocument  # noqa: E402
+from library.db.models import User, UserDocumentNote, UserReadingProgress, Document  # noqa: E402
 
 
 READER_USER = User(username="krzysztof", display_name="Krzysztof")
@@ -51,7 +51,7 @@ def _make_note(**overrides) -> UserDocumentNote:
 @pytest.fixture
 def fake_session(monkeypatch):
     session = MagicMock()
-    doc = MagicMock(spec=WebDocument)
+    doc = MagicMock(spec=Document)
     doc.id = DOC_ID
 
     store = {"users": {1: READER_USER, 2: OTHER_USER}, "notes": {}, "doc": doc}
@@ -59,7 +59,7 @@ def fake_session(monkeypatch):
     def fake_get(model, pk):
         if model is User:
             return store["users"].get(pk)
-        if model is WebDocument:
+        if model is Document:
             return store["doc"] if pk == DOC_ID else None
         if model is UserDocumentNote:
             return store["notes"].get(pk)

@@ -24,7 +24,7 @@ from library.config_loader import load_config
 cfg = load_config()  # noqa: F841 — side effect: populates os.environ for library modules
 
 from library.db.engine import get_session  # noqa: E402
-from library.db.models import DocumentEntity, WebDocument  # noqa: E402
+from library.db.models import DocumentEntity, Document  # noqa: E402
 from library.locationiq_client import canonical_place_name  # noqa: E402
 from library.place_verification import PLACE_ENTITY_TYPES, _slugify  # noqa: E402
 
@@ -86,10 +86,10 @@ def main():
 
     session = get_session()
     try:
-        query = session.query(WebDocument).filter(WebDocument.tags.like(f"%{PREFIX}%"))
+        query = session.query(Document).filter(Document.tags.like(f"%{PREFIX}%"))
         if args.id:
-            query = query.filter(WebDocument.id == args.id)
-        docs = query.order_by(WebDocument.id).all()
+            query = query.filter(Document.id == args.id)
+        docs = query.order_by(Document.id).all()
         logging.info("Found %d documents with %s* tags", len(docs), PREFIX)
 
         changed = 0

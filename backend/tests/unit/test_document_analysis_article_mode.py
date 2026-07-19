@@ -42,7 +42,7 @@ def session():
 def article_env(monkeypatch, session):
     """Patch document lookup, LLM primitives and topic grouping/synthesis."""
     monkeypatch.setattr(
-        das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: FakeDoc()),
+        das.Document, "get_by_id", staticmethod(lambda _s, _id: FakeDoc()),
     )
 
     calls = {"article": 0, "transcript": 0, "speakers": 0, "fillers": 0, "tagging": 0}
@@ -229,7 +229,7 @@ class TestArticleMode:
 
     def test_tags_document_using_synthesis_text(self, session, article_env, monkeypatch):
         doc = FakeDoc()
-        monkeypatch.setattr(das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: doc))
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
         captured = {}
 
         def fake_tag_article(text, title):
@@ -249,7 +249,7 @@ class TestArticleMode:
 
     def test_tagging_skipped_for_split_only(self, session, article_env, monkeypatch):
         doc = FakeDoc()
-        monkeypatch.setattr(das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: doc))
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
 
         service = DocumentAnalysisService(session)
         service.create_run(doc_id=42, model="test-model", mode="article", chunk_size=300, split_only=True)
@@ -260,7 +260,7 @@ class TestArticleMode:
     def test_tagging_merges_with_existing_tags(self, session, article_env, monkeypatch):
         doc = FakeDoc()
         doc.tags = "kraj-niemcy"
-        monkeypatch.setattr(das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: doc))
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
         monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title: ["wojsko"])
         monkeypatch.setattr(
             "library.article_tagging.extract_countries_hybrid", lambda text, title: ["kraj-niemcy", "kraj-polska"],

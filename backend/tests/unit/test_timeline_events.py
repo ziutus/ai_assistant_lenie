@@ -287,7 +287,7 @@ def test_document_event_orm_model():
     assert isinstance(columns["sort_year"].type, Integer)
     assert isinstance(columns["date_precision"].type, String)
     assert isinstance(columns["description"].type, Text)
-    assert list(columns["document_id"].foreign_keys)[0].target_fullname == "web_documents.id"
+    assert list(columns["document_id"].foreign_keys)[0].target_fullname == "documents.id"
     assert "idx_document_events_document_sort_year" in {index.name for index in DocumentEvent.__table__.indexes}
 
 

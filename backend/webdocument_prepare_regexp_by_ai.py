@@ -15,7 +15,7 @@ import os.path
 import logging
 
 from library.db.engine import get_session
-from library.db.models import WebDocument
+from library.db.models import Document
 from library.config_loader import load_config
 from library.article_extractor import process_article_with_llm_fallback
 from library.document_prepare import prepare_markdown, save_document_info
@@ -53,7 +53,7 @@ if __name__ == '__main__':
 
     try:
         for document_id in documents:
-            doc = WebDocument.get_by_id(session, document_id)
+            doc = Document.get_by_id(session, document_id)
             if doc is None:
                 logger.warning(f"document_id: {document_id} Not found, skipping")
                 continue

@@ -1,6 +1,6 @@
 import type { ApiType } from '@lenie/shared/types';
 
-export type { ApiType, WebDocument, SearchResult, ListItem, Source } from '@lenie/shared/types';
+export type { ApiType, Document, SearchResult, ListItem, Source } from '@lenie/shared/types';
 export { emptyDocument, DEFAULT_API_URLS } from '@lenie/shared/types';
 
 export interface AuthorizationState {
