@@ -5,7 +5,9 @@ not fail when botocore/s3transfer are broken or unavailable.
 """
 
 import sys
+from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -35,6 +37,57 @@ for _name, _mock in [
         sys.modules[_name] = _mock
 
 from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: E402, F401
+
+
+class TestIncrementalWatermark:
+    def test_date_uses_midnight_in_configured_timezone(self):
+        from imports.dynamodb_sync import parse_since
+
+        result = parse_since("2026-07-20", ZoneInfo("Europe/Warsaw"))
+        assert result == datetime(2026, 7, 19, 22, 0, 0, tzinfo=timezone.utc)
+
+    def test_explicit_offset_wins_over_working_timezone(self):
+        from imports.dynamodb_sync import parse_since
+
+        result = parse_since("2026-07-20T01:02:03+02:00", ZoneInfo("UTC"))
+        assert result == datetime(2026, 7, 19, 23, 2, 3, tzinfo=timezone.utc)
+
+    def test_naive_timestamp_defaults_to_utc(self):
+        from imports.dynamodb_sync import parse_since
+
+        result = parse_since("2026-07-20T01:02:03", ZoneInfo("UTC"))
+        assert result == datetime(2026, 7, 20, 1, 2, 3, tzinfo=timezone.utc)
+
+    def test_last_successful_run_start_is_utc_to_seconds(self):
+        from imports.dynamodb_sync import get_last_successful_sync_timestamp
+
+        session = MagicMock()
+        session.scalar.return_value = datetime(2026, 7, 20, 1, 2, 3, 987654)
+        result = get_last_successful_sync_timestamp(session)
+        assert result == datetime(2026, 7, 20, 1, 2, 3, tzinfo=timezone.utc)
+
+    def test_dynamodb_items_are_filtered_by_exact_created_at(self, monkeypatch):
+        from imports import dynamodb_sync
+
+        table = MagicMock()
+        table.query.return_value = {
+            "Items": [
+                {"id": "old", "created_at": "2026-07-20T01:02:02"},
+                {"id": "edge", "created_at": "2026-07-20T01:02:03Z"},
+                {"id": "new", "created_at": "2026-07-20T01:02:04+00:00"},
+            ]
+        }
+        monkeypatch.setattr(dynamodb_sync.boto3, "resource", lambda *_args, **_kwargs: MagicMock(Table=lambda _n: table))
+        monkeypatch.setattr(
+            dynamodb_sync,
+            "datetime",
+            type("FixedDateTime", (datetime,), {"now": classmethod(lambda cls, tz=None: datetime(2026, 7, 20, 2, tzinfo=timezone.utc))}),
+        )
+
+        result = dynamodb_sync.get_dynamodb_items(
+            "table", datetime(2026, 7, 20, 1, 2, 3, tzinfo=timezone.utc),
+        )
+        assert [item["id"] for item in result] == ["edge", "new"]
 
 
 # ---------------------------------------------------------------------------
