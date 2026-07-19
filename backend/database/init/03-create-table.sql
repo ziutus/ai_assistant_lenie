@@ -17,7 +17,7 @@ create table web_documents
     title                text,
     created_at           timestamp   default CURRENT_TIMESTAMP,
     document_type        varchar(50) not null,
-    source               text,
+    discovery_source_id  integer,
     published_on            date,
     original_id          text,
     document_length      integer,
@@ -42,7 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_web_documents_document_state ON public.web_docume
 CREATE INDEX IF NOT EXISTS idx_web_documents_created_at ON public.web_documents(created_at);
 CREATE INDEX IF NOT EXISTS idx_web_documents_url ON public.web_documents(url);
 CREATE INDEX IF NOT EXISTS idx_web_documents_collection_id ON public.web_documents(collection_id);
-CREATE INDEX IF NOT EXISTS idx_web_documents_source ON public.web_documents(source);
+CREATE INDEX IF NOT EXISTS idx_web_documents_discovery_source_id ON public.web_documents(discovery_source_id);
 CREATE INDEX IF NOT EXISTS idx_web_documents_published_on ON public.web_documents(published_on);
 CREATE INDEX IF NOT EXISTS idx_web_documents_paywall ON public.web_documents(paywall);
 CREATE INDEX IF NOT EXISTS idx_web_documents_ai_flag ON public.web_documents(ai_summary_needed);

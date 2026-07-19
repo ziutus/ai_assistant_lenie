@@ -135,8 +135,8 @@ class TestAuthorAndDiscoverySourceFilters:
 
     def test_discovery_source_uses_sources_not_information_sources(self):
         sql = compiled(build_document_filters(SearchFilters(discovery_source_name="Unknow.News"))[0])
-        assert "web_documents.source IN" in sql
-        assert "FROM sources" in sql
+        assert "web_documents.discovery_source_id IN" in sql
+        assert "FROM discovery_sources" in sql
         assert "information_sources" not in sql
         assert "unknow.news" in sql
 

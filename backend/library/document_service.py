@@ -93,7 +93,7 @@ class DocumentService:
         doc.title = title
         doc.language = language
         doc.paywall = paywall
-        doc.source = source
+        doc.set_discovery_source(self.session, source)
         doc.ai_summary_needed = ai_summary
         doc.chapter_list = chapter_list
         doc.uuid = doc_uuid
@@ -193,10 +193,15 @@ class DocumentService:
         if document_state is not None:
             doc.set_document_state(document_state)
 
-        for attr in ("text", "title", "language", "tags", "summary", "source", "byline", "note"):
+        for attr in ("text", "title", "language", "tags", "summary", "byline", "note"):
             value = attrs.get(attr)
             if value is not None:
                 setattr(doc, attr, value)
+
+        # "source" arrives as a NAME (wire format) and resolves to the
+        # discovery_sources FK, auto-creating unknown names (stage 11d).
+        if attrs.get("source") is not None:
+            doc.set_discovery_source(self.session, attrs["source"])
 
         if document_type is not None:
             doc.set_document_type(document_type)
@@ -302,6 +307,13 @@ class DocumentService:
             doc.set_document_state(document_state)
         else:
             doc.set_document_state("URL_ADDED")
+
+        # "source" is the discovery-source NAME (wire/import format) — it
+        # resolves to the discovery_sources FK instead of a direct attribute
+        # (stage 11d normalization; unknown names are auto-created).
+        source_name = metadata.pop("source", None)
+        if source_name is not None:
+            doc.set_discovery_source(self.session, source_name)
 
         for attr, value in metadata.items():
             if value is not None:

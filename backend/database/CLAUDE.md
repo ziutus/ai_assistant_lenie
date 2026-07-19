@@ -34,7 +34,7 @@ database/
     ├── 25-create-infra-geometries.sql            # infra_geometries (Overpass pipeline-route cache)
     ├── 26-create-document-references.sql         # document_references (book footnotes extracted from text_md)
     ├── 27-create-document-events.sql             # document_events (LLM-extracted document timeline)
-    ├── 28-create-sources.sql                     # sources lookup + fk_source on web_documents.source
+    ├── 28-create-sources.sql                     # discovery_sources lookup + FK on web_documents.discovery_source_id
     ├── 29-add-author-biography-review.sql
     ├── 30-create-information-sources.sql         # information_sources (claim/reporting provenance)
     ├── 31-add-tags-to-user-document-notes.sql
@@ -75,7 +75,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `summary_english` | `text` | English translation of summary |
 | `language` | `varchar(10)` | Detected language code |
 | `tags` | `text` | Comma-separated tags |
-| `source` | `text` | Discovery source (how the user found the document) — FK → `sources.name` (`fk_source`, `ON UPDATE CASCADE`); unknown values are auto-created by the ORM `before_flush` hook |
+| `discovery_source_id` | `integer` | Discovery source (how the user found the document) — FK → `discovery_sources.id` (stage 11d; wire format keeps the NAME under `source`); unknown names are auto-created by `WebDocument.set_discovery_source()` |
 | `byline` | `text` | Document author(s) display cache (comma-separated); structured links in `document_persons` (role=`author`) |
 | `byline_method` | `varchar(10)` | How `byline` was set: `manual`, `llm` or `html`; `NULL` for legacy/import-set values. CHECK constraint `ck_web_documents_byline_method` |
 | `note` | `text` | User notes |
@@ -91,7 +91,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `uuid` | `varchar(100) NOT NULL DEFAULT gen_random_uuid()` | Global document identifier (ADR-015), UNIQUE |
 | `collection_id` | `integer` | FK → `collections.id` (`ON DELETE SET NULL`) — thematic collection (ADR-017: 1:N; replaced the never-used `project` string column in stage 11c) |
 
-**Indexes:** `document_type`, `document_state`, `created_at`, `url`, `collection_id`, `source`, `published_on`, `paywall`, `ai_summary_needed`, `publisher_id`.
+**Indexes:** `document_type`, `document_state`, `created_at`, `url`, `collection_id`, `discovery_source_id`, `published_on`, `paywall`, `ai_summary_needed`, `publisher_id`.
 
 ### Table: `public.websites_embeddings`
 
@@ -337,14 +337,14 @@ NER false-positive suppression dictionary, applied in `library/entity_service.py
 
 **Indexes:** unique on `(LOWER(entity_text), entity_type, scope, COALESCE(LOWER(author), ''))`.
 
-### Table: `public.sources`
+### Table: `public.discovery_sources`
 
-Discovery-source lookup — how the user found a document (`own`, a newsletter, a friend); a recommendation channel, NOT the content author. `web_documents.source` references `name` (ADR-010) with `ON UPDATE CASCADE`, so renaming a source rewrites all documents atomically; deletes are restricted (API allows DELETE only when no documents use the source — deactivate instead). Managed via `GET/POST /sources`, `PATCH/DELETE /sources/<id>` and the React `/sources` page; the Chrome extension loads the active list and can add new sources. Unknown values arriving through any ORM write path (imports, feeds, DynamoDB sync) are auto-created by the `before_flush` hook in `library/db/models.py`.
+Discovery-source lookup — how the user found a document (`own`, a newsletter, a friend); a recommendation channel, NOT the content author. `web_documents.discovery_source_id` references `id` (stage 11d normalization — the old name-based `fk_source` with `ON UPDATE CASCADE` is gone; renaming a source now only edits this row, documents follow via the id); deletes are restricted (API allows DELETE only when no documents use the source — deactivate instead). Managed via `GET/POST /sources`, `PATCH/DELETE /sources/<id>` and the React `/sources` page; the Chrome extension loads the active list and can add new sources — the HTTP wire format keeps the NAME (`source` field). Unknown names arriving through any write path (imports, feeds, DynamoDB sync) are auto-created by `WebDocument.set_discovery_source()` in `library/db/models.py`.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
-| `name` | `varchar UNIQUE NOT NULL` | Source name (FK target of `web_documents.source`) |
+| `name` | `varchar UNIQUE NOT NULL` | Source name (the HTTP wire format value) |
 | `description` | `text` | Optional human note (what the source is) |
 | `url` | `text` | Optional source website |
 | `is_active` | `boolean NOT NULL DEFAULT TRUE` | Inactive sources stay valid on existing documents but disappear from pickers (`GET /sources?active=1`) |

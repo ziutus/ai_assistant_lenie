@@ -25,7 +25,7 @@ Primary document storage table.
 | `summary_english` | text | — | Translated summary |
 | `language` | varchar(10) | — | Detected language code |
 | `tags` | text | — | Comma-separated tags |
-| `source` | text | — | How the user discovered this content (e.g. "own", "unknow.news", "friend") — used to evaluate recommendation quality |
+| `discovery_source_id` | integer | FK → discovery_sources.id | How the user discovered this content (wire format keeps the NAME under `source`; e.g. "own", "unknow.news", "friend") — used to evaluate recommendation quality |
 | `byline` | text | — | Content creator display cache (YouTube channel name, article author) — metadata about who made the content; structured links in `document_persons` (role=`author`) |
 | `note` | text | — | User notes |
 | `paywall` | boolean | DEFAULT false | Paywall indicator |
@@ -40,7 +40,7 @@ Primary document storage table.
 | `uuid` | varchar(100) | NOT NULL DEFAULT gen_random_uuid(), UNIQUE | Global document identifier (ADR-015) |
 | `collection_id` | integer | FK → collections.id | Thematic collection (ADR-017: 1:N; replaced `project` in stage 11c) |
 
-**Indexes**: document_type, document_state, created_at, url, collection_id, source, published_on, paywall, ai_summary_needed
+**Indexes**: document_type, document_state, created_at, url, collection_id, discovery_source_id, published_on, paywall, ai_summary_needed
 
 ### Table: websites_embeddings (8 columns)
 
