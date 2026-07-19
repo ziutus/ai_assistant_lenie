@@ -1,4 +1,4 @@
-"""Unit tests for SQL parameterization in WebsitesDBPostgreSQL (Story 31.3).
+"""Unit tests for SQL parameterization in DocumentRepository (Story 31.3).
 
 Verifies that query methods use parameterized queries and never pass
 user-controlled values as raw SQL. Tests cover SQL injection payloads,
@@ -18,12 +18,12 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 @pytest.fixture()
 def db_instance():
-    """Create WebsitesDBPostgreSQL with a mock session."""
-    from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+    """Create DocumentRepository with a mock session."""
+    from library.document_repository import DocumentRepository
 
     mock_session = MagicMock(spec=Session)
     mock_session.execute.return_value = MagicMock(all=MagicMock(return_value=[]))
-    return WebsitesDBPostgreSQL(session=mock_session)
+    return DocumentRepository(session=mock_session)
 
 
 class TestGetDocumentsByUrlParameterization:

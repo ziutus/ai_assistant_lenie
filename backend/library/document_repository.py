@@ -13,7 +13,7 @@ from library.models.stalker_document_type import StalkerDocumentType
 logger = logging.getLogger(__name__)
 
 
-class WebsitesDBPostgreSQL:
+class DocumentRepository:
     def __init__(self, session: Session):
         self.session = session
 

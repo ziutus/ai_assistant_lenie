@@ -1,7 +1,7 @@
 """SearchService - search and similarity logic extracted from Flask routes.
 
 Orchestrates vector similarity search by composing:
-- WebsitesDBPostgreSQL repository (similarity queries)
+- DocumentRepository repository (similarity queries)
 - library.embedding module (embedding generation)
 - library.config_loader (EMBEDDING_MODEL configuration)
 
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
 from library.search.types import SearchFilters, SearchQueryValidationError, SearchSort, normalize_year_range
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+from library.document_repository import DocumentRepository
 import library.embedding as embedding
 
 logger = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ class SearchService:
 
     def __init__(self, session: Session):
         self.session = session
-        self.repo = WebsitesDBPostgreSQL(session)
+        self.repo = DocumentRepository(session)
 
     def _get_model(self) -> str:
         """Return the configured embedding model name."""

@@ -162,7 +162,7 @@ obu frontendach, wtyczce i większości backendu). Zmierzyć przed właściwą s
 4. **11d**: `source`→`discovery_source_id` + `sources`→`discovery_sources` — **WYKONANE** (migracja `d5e6f7a8b9c0` z bezstratną migracją danych 9110 dokumentów; format wire zachowuje NAZWĘ pod `source` — wtyczka Chrome bez zmian; hook `before_flush` zastąpiony jawnym `WebDocument.set_discovery_source()`).
 5. **11e**: `websites_embeddings`→`document_embeddings` + `website_id`→`document_id` — **WYKONANE** (migracja `e6f7a8b9c0d1`: tabela+kolumna+indeksy+constrainty; klucze API `document_id` w wynikach wyszukiwania; `shared/types.SearchResult`, react, slack_bot fixture).
 6. **11f**: `web_documents`→`documents` + FK — **WYKONANE** (migracja `f7a8b9c0d1e2`; klasa `WebDocument`→`Document` w ORM i TS; historia Alembic i nazwy plików skryptów batch celowo nietknięte; moduł `stalker_web_documents_db_postgresql`/klasa `WebsitesDBPostgreSQL` przeniesione do 11g).
-7. **11g**: `document_state`→`processing_status`, `created_at`→`ingested_at`, `uuid`→`public_id`, `website_similar`→usunięcie (po Etapie 12?), usunięcie aliasów zgodności.
+7. **11g**: część 1 **WYKONANA** (`stalker_web_documents_db_postgresql`→`document_repository`, `WebsitesDBPostgreSQL`→`DocumentRepository` — 27 plików, zero wpływu na API). Część 2 (`document_state`→`processing_status`, `created_at`→`ingested_at`, `uuid`→`public_id`) — pomiar w dzienniku (wpis 2026-07-19 sesja G), **czeka na decyzje użytkownika** (35+13 plików, konwencja Obsidian „uuid", tabele słownikowe statusów). `website_similar` i `period_from/to` → usunięcie w Etapie 12.
 
 Każda sesja: migracja Alembic (upgrade→psql→downgrade→upgrade na NAS), pełna suita unit,
 ruff, deploy NAS bezpośrednio po migracji, E2E `/search` + frontend, wpis w dzienniku.

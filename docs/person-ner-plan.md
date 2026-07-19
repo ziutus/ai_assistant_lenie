@@ -147,7 +147,7 @@ WHERE p.canonical_name % :query OR pa.alias % :query;   -- operator pg_trgm
   `PersonAlias`, `DocumentPerson`, w stylu istniejących `DocumentChunk`,
   `DocumentAnalysisRun`.
 - **Query layer** — nowy moduł `library/person_registry.py` (analogicznie do
-  `country_gazetteer.py` dla wykrywania i `stalker_web_documents_db_postgresql.py`
+  `country_gazetteer.py` dla wykrywania i `document_repository.py`
   dla zapytań), z funkcjami typu `find_candidates(name)`, `resolve_or_create(name, wikidata_qid)`,
   `link_document(document_id, person_id, raw_mention, confidence)`.
 - **Ekstrakcja** — nowy moduł `library/article_person_tagging.py`, wzorowany

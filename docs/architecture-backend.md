@@ -13,7 +13,7 @@ Flask Route (server.py) â†’ check_auth_header() â†’ x-api-key validati
   â†“
 Library Service (library/*.py) â†’ business logic, LLM routing, text processing
   â†“
-Data Access (stalker_web_document_db.py, stalker_web_documents_db_postgresql.py) â†’ raw psycopg2
+Data Access (stalker_web_document_db.py, document_repository.py) â†’ raw psycopg2
   â†“
 PostgreSQL 18 + pgvector
 ```
@@ -70,7 +70,7 @@ Entry point: `get_embedding(model, text) â†’ EmbeddingResult`
 ```
 StalkerWebDocument (base, 30 attrs)
   â””â”€â”€ StalkerWebDocumentDB (+ save/delete/embedding ops)
-       â””â”€â”€ Uses WebsitesDBPostgreSQL (query layer)
+       â””â”€â”€ Uses DocumentRepository (query layer)
 ```
 
 ### Content Processing Pipeline
