@@ -82,7 +82,8 @@ class DocumentRepository:
         if count:
             return self.session.execute(stmt).scalar()
 
-        stmt = stmt.order_by(Document.ingested_at.desc())
+        # id tiebreaker keeps pagination stable when timestamps collide (stage 12)
+        stmt = stmt.order_by(Document.ingested_at.desc(), Document.id.desc())
         stmt = stmt.limit(limit).offset(offset * limit)
 
         rows = self.session.execute(stmt).all()

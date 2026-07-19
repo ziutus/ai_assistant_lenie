@@ -16,7 +16,7 @@ import unicodedata
 from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
-from library.search.types import SearchFilters, SearchQueryValidationError, SearchSort, normalize_year_range
+from library.search.types import SearchFilters, SearchSort
 from library.document_repository import DocumentRepository
 import library.embedding as embedding
 
@@ -42,62 +42,10 @@ class SearchService:
         """Generate embedding for text using configured model."""
         return embedding.get_embedding(model=self._get_model(), text=text)
 
-    def search_similar(
-        self,
-        text: str,
-        limit: int = 3,
-        collection_name: str | None = None,
-        period_from: int | None = None,
-        period_to: int | None = None,
-    ) -> list[dict]:
-        """Hybrid text/vector search returning unique documents.
-
-        An optional period_from/period_to year window (BCE as negative years)
-        keeps only documents with a classified time period overlapping it —
-        applied in SQL, before LIMIT, via the same build_document_filters()
-        both search_text() and get_similar() use (stage 6 of the
-        search-rebuild plan; previously this filtered an already-LIMITed
-        Python candidate list, which could hide genuine matches beyond the
-        first N candidates). A reversed period_from/period_to is swapped,
-        not rejected — this method has no channel to surface a warning back
-        to the legacy /website_similar caller. An out-of-domain year (outside
-        [MIN_SUBJECT_YEAR, MAX_SUBJECT_YEAR], e.g. a malformed HTTP query
-        param) degrades to no period filter rather than raising — this
-        endpoint has always accepted untrusted params and must keep
-        degrading gracefully, not start returning 500s. Raises RuntimeError
-        if embedding generation fails.
-        """
-        if not text or not text.strip():
-            return []
-
-        period_from, period_to, _swap_warning = normalize_year_range(period_from, period_to)
-        try:
-            filters = SearchFilters(
-                collection_name=collection_name or None,
-                subject_period_start_year=period_from,
-                subject_period_end_year=period_to,
-            )
-        except SearchQueryValidationError:
-            logger.warning("Ignoring invalid search filters (collection=%r, period=%r..%r)",
-                          collection_name, period_from, period_to)
-            filters = SearchFilters()
-
-        candidate_limit = max(limit * 5, 20)
-        lexical = self.repo.search_text(text, limit=candidate_limit, filters=filters)
-
-        model = self._get_model()
-        result = embedding.get_embedding(model=model, text=text)
-        semantic = []
-        if result.status == "success" and result.embedding:
-            semantic = self.repo.get_similar(
-                result.embedding, model, limit=candidate_limit, filters=filters,
-            ) or []
-        elif not lexical:
-            raise RuntimeError(f"Embedding generation failed: {result.status}")
-        else:
-            logger.warning("Embedding generation failed; returning lexical results: %s", result.status)
-
-        return self._merge_results(text, lexical, semantic, limit)
+    # search_similar() (the legacy /website_similar path) was removed in stage
+    # 12 — search() below is the only hybrid entry point; its explicit variant
+    # covers the same "query text + optional filters" behaviour with proper
+    # validation living in search_routes.py.
 
     def search_by_filters(
         self,

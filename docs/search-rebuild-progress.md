@@ -5,6 +5,48 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-19 — Etap 12 (wydajność i porządki) — **UKOŃCZONY; CAŁY PLAN PRZEBUDOWY WYSZUKIWANIA ZAMKNIĘTY**
+
+**Zakres wykonany:**
+- **Pomiary EXPLAIN ANALYZE na NAS** (9220 dok. / 3062 embeddingi): wszystkie podstawowe filtry
+  (data, okres, autor, język, publisher/discovery/collection) chodzą po indeksach w < 3 ms —
+  **żadne nowe indeksy nie były potrzebne**. Dwa świadome seq scany z progami rewizji
+  (szczegóły + tabela pomiarów w [search-hybrid.md](search-hybrid.md)): leg leksykalny ILIKE
+  1,4 s (decyzja: bez FTS/GIN — latencję i tak dominuje zdalny embedding ~5 s; próg: >3 s albo
+  >25 tys. dok. → `pg_trgm` GIN z otoczką immutable-unaccent) oraz wektorowy 207 ms (gemma2 ma
+  3584 wymiary > limit 2000 HNSW dla typu `vector` — dlatego nigdy nie miał indeksu; próg:
+  >25 tys. embeddingów → HNSW po `halfvec(3584)`).
+- **Usunięty `/website_similar`** + `SearchService.search_similar()` + helpery; slack_bot
+  (jedyny pozostały konsument) zmigrowany na jawny `POST /search` (bez wywołania LLM — ta sama
+  hybryda). Test przypina 404. **`/ai_parse_intent` ZOSTAJE** — slack_bot aktywnie używa go do
+  klasyfikacji komend DM (warunek „jeśli nie ma innych konsumentów" niespełniony).
+- **Stabilna paginacja**: `get_list()` dostał tiebreaker `id` przy sortowaniu po `ingested_at`
+  (pozostałe ścieżki już go miały).
+- **Raporty**: nowy `imports/search_reports.py` — interpretacje per dzień/status/fallback/latencja
+  + top kody błędów + feedback; koszty LLM per dzień/provider/model/operacja/waluta z sumami
+  i **alertem** na `cost_status='unknown'` oraz modele bez wpisu w `llm_pricing` (exit code 2 —
+  nadaje się na crona). 6 testów jednostkowych (kompilacja SQL); przebieg live na NAS — tabele
+  audytu obecnie puste (runner Etapu 10 sprzątał po sobie), raport poprawnie to raportuje.
+- **Bonus złapany przy deployu**: obraz slack-bota crash-loopował po rebuildzie — Dockerfile nie
+  kopiował `slack_bot/LICENSE`, którego wymaga build hatchlinga odpalany przez `uv run` na
+  starcie kontenera (ten sam wzorzec co frontend w #298: stary obraz maskował błąd builda).
+  Naprawione (`COPY ... LICENSE`), bot wstał: Socket Mode połączony, backend OK.
+
+**Testy uruchomione:** backend `tests/unit/` **1829 passed** (−10 testów legacy search_similar,
++1 pin 404, +6 raportów; wartościowe zachowania — degradacja przy awarii embeddingu, forwarding
+filtrów do obu ścieżek — przeniesione na `search()`); slack_bot **287 passed**; ruff czysty.
+Deploy backend+slack-bot na NAS; E2E: `/website_similar` → 404, `/search` z jawnym `query` →
+3 wyniki, kontener bota stabilny.
+
+**Otwarte ryzyka:** brak — progi rewizji wydajności zapisane w search-hybrid.md; dashboard
+graficzny świadomie pominięty (raport CLI wystarcza przy jednoosobowej skali).
+
+**PR/merge:** PR #313, branch `feat/search-etap-12-performance`.
+
+**Następny krok:** BRAK — plan przebudowy wyszukiwania (Etapy 0–12) jest w całości zamknięty.
+Ewentualne kontynuacje poza planem: iteracja 3 promptu Bielika (oczyszczanie `query`, 16/42
+błędów baseline'u), aliasy discovery sources (dokładna nazwa vs „unknow.news"), CRUD kolekcji.
+
 ## 2026-07-19 — Etap 11, sesja G część 2 (statusy + ingested_at + subject_period + pliki batch) — **ETAP 11 ZAKOŃCZONY**
 
 **Decyzje użytkownika:** pełny rename statusów ze słownikami; `uuid` ZOSTAJE (konwencja
