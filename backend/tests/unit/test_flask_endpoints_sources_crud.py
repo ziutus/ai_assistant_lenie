@@ -151,6 +151,16 @@ class TestDiscoverySourceEnsure:
         assert row.name == "nowe-zrodlo"
         session.add.assert_called_once_with(row)
 
+    def test_reuses_pending_row_before_flush(self):
+        from library.db.models import DiscoverySource
+        pending = DiscoverySource(name="nowe-zrodlo")
+        session = MagicMock()
+        session.new = [pending]
+
+        assert DiscoverySource.ensure(session, "nowe-zrodlo") is pending
+        session.execute.assert_not_called()
+        session.add.assert_not_called()
+
     def test_empty_name_returns_none(self):
         from library.db.models import DiscoverySource
         session = MagicMock()

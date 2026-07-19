@@ -174,6 +174,13 @@ class DiscoverySource(Base):
         name = (name or "").strip()
         if not name:
             return None
+        # A SELECT does not find pending instances before an explicit flush
+        # when autoflush is disabled. Reuse one already staged in this unit of
+        # work so two documents with the same new source cannot enqueue
+        # duplicate rows and violate discovery_sources.name at commit time.
+        for pending in session.new:
+            if isinstance(pending, cls) and pending.name == name:
+                return pending
         existing = session.execute(
             select(cls).where(cls.name == name)
         ).scalar_one_or_none()

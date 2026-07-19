@@ -29,9 +29,9 @@ from library.config_loader import load_config
 def get_recent_documents(conn, limit: int) -> list[dict]:
     """Fetch the most recently added documents from the database."""
     sql = """
-        SELECT id, url, title, document_type, created_at
+        SELECT id, url, title, document_type, ingested_at
         FROM public.documents
-        ORDER BY created_at DESC
+        ORDER BY ingested_at DESC
         LIMIT %s
     """
     with conn.cursor() as cur:
@@ -69,8 +69,8 @@ def build_notion_blocks(documents: list[dict]) -> list[dict]:
         title = doc.get("title") or "(no title)"
         url = doc.get("url") or ""
         created = ""
-        if doc.get("created_at"):
-            created = doc["created_at"].strftime("%Y-%m-%d") if isinstance(doc["created_at"], datetime) else str(doc["created_at"])
+        if doc.get("ingested_at"):
+            created = doc["ingested_at"].strftime("%Y-%m-%d") if isinstance(doc["ingested_at"], datetime) else str(doc["ingested_at"])
 
         url_cell = _rich_text_link(url, url) if url else _rich_text("")
 
@@ -159,7 +159,7 @@ def main():
 
     print(f"\nFetched {len(documents)} document(s):\n")
     for doc in documents:
-        created = doc.get("created_at", "")
+        created = doc.get("ingested_at", "")
         print(f"  [{doc.get('document_type', '?')}] {doc.get('title', '(no title)')} -- {doc.get('url', '')} ({created})")
 
     if args.dry_run:

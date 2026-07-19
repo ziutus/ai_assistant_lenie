@@ -153,7 +153,7 @@ class TestMentionCommandRouting:
         client = _make_mock_client()
         client.get_document.return_value = {
             "id": 123, "title": "T", "document_type": "link",
-            "document_state": "URL_ADDED", "created_at": "2026-01-01",
+            "processing_status": "URL_ADDED", "ingested_at": "2026-01-01",
         }
         handler_fn, _ = _get_handler(client)
         event = _make_mention_event("<@U123ABC> info 123")
