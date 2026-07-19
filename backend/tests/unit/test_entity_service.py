@@ -21,7 +21,7 @@ RAW = [
 def _session_with_exclusions(exclusions):
     session = MagicMock()
     session.execute.return_value.scalars.return_value.all.return_value = exclusions
-    session.get.return_value = MagicMock(author=None)
+    session.get.return_value = MagicMock(byline=None)
     return session
 
 
@@ -105,13 +105,13 @@ class TestRefreshDocumentEntities:
         exclusions = [NerExclusion(entity_text="Tusk", entity_type="*", scope="author",
                                    author="Good Times Bad Times")]
         session = _session_with_exclusions(exclusions)
-        session.get.return_value = MagicMock(author="Good Times Bad Times")
+        session.get.return_value = MagicMock(byline="Good Times Bad Times")
         with patch("library.entity_service.extract_entities", return_value=RAW):
             rows = refresh_document_entities(session, 42, "jakiś tekst")
         assert {r.entity_text for r in rows} == {"cieśnina Ormuz"}
 
         session2 = _session_with_exclusions(exclusions)
-        session2.get.return_value = MagicMock(author="Inny Kanał")
+        session2.get.return_value = MagicMock(byline="Inny Kanał")
         with patch("library.entity_service.extract_entities", return_value=RAW):
             rows2 = refresh_document_entities(session2, 42, "jakiś tekst")
         assert {r.entity_text for r in rows2} == {"Tusk", "cieśnina Ormuz"}

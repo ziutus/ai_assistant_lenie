@@ -95,7 +95,7 @@ def _filtered_groups(session, doc, raw: list[dict]) -> dict:
     exclusions = list(session.scalars(select(NerExclusion)).all())
     for key, group in list(groups.items()):
         raw_terms = [*group.get("raw_lemmas", []), *group.get("variants", [])]
-        if is_excluded(exclusions, key[0], key[1], doc.author, raw_terms=raw_terms):
+        if is_excluded(exclusions, key[0], key[1], doc.byline, raw_terms=raw_terms):
             del groups[key]
     return groups
 

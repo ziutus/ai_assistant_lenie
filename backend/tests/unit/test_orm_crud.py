@@ -229,7 +229,7 @@ class TestCreateFlow:
         doc.text_raw = "Raw text"
         doc.transcript_job_id = "job-abc"
         doc.ai_summary_needed = True
-        doc.author = "Author Name"
+        doc.byline = "Author Name"
         doc.note = "A note"
         doc.uuid = "uuid-123"
         doc.project = "lenie"
@@ -259,7 +259,7 @@ class TestCreateFlow:
         assert d["text_raw"] == "Raw text"
         assert d["transcript_job_id"] == "job-abc"
         assert d["ai_summary_needed"] is True
-        assert d["author"] == "Author Name"
+        assert d["byline"] == "Author Name"
         assert d["note"] == "A note"
         assert d["uuid"] == "uuid-123"
         assert d["project"] == "lenie"
@@ -426,8 +426,8 @@ class TestDictCompatibility:
             "summary", "url", "language", "tags", "text", "paywall", "title",
             "created_at", "document_type", "source", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "document_state", "document_state_error",
-            "text_raw", "transcript_job_id", "ai_summary_needed", "author",
-            "author_source", "note", "uuid", "project", "text_md", "transcript_needed",
+            "text_raw", "transcript_job_id", "ai_summary_needed", "byline",
+            "byline_method", "note", "uuid", "project", "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths", "video_description",
             "quality",
         }
@@ -461,7 +461,7 @@ class TestDictCompatibility:
             text_raw="Raw",
             transcript_job_id="j1",
             ai_summary_needed=False,
-            author="Auth",
+            byline="Auth",
             note="Note",
             uuid="s3-1",
             project="lenie",

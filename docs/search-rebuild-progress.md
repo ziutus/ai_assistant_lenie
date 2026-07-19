@@ -5,6 +5,45 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-19 — Etap 11, sesja B (rename `author`→`byline`) — UKOŃCZONA
+
+**Zakres wykonany:** drugi fizyczny rename podetapu 1: `author`→`byline`,
+`author_source`→`byline_method` — migracja Alembic `b3c4d5e6f7a8` (rename kolumn + constraintu
+`ck_web_documents_byline_method`; bez indeksu — kolumna go nie miała). Backend: ORM,
+`author_service.set_document_authors()` (parametr `source=` przemianowany na `method=` —
+usunięcie niejednoznacznego „source"; wartości manual/llm/html bez zmian), repozytorium,
+`sql_filters` (fallback byline), `article_quality`, `author_biography`, `entity_service`
+(odczyt byline dla wykluczeń o zasięgu autora), importy (dynamodb_sync, youtube_backfill_author,
+article_browser, youtube_batch_analyze, refresh_entities, email_import, youtube_processing).
+**API**: `POST /document/<id>/byline` (dawniej `.../author`), klucze JSON `byline`/`byline_method`
+w `/website_list`, `/website_get`, `/chunks`, `extract_author`; pole formularza `/website_save`
+to teraz `byline`. Klienci: `shared/types/documents.ts` (`WebDocument.byline`), React
+(`sharedInputs`, `useManageLLM`, `list`, `chunks`, initial values 5 editorów), **app2**
+(`sharedInputs.jsx`, `Links` — wbrew wcześniejszemu pomiarowi app2 MA pole author), Lambda
+`app-server-db` (dla spójności, niedeployowana). Wtyczka Chrome nie wysyła author — bez zmian.
+**NIE ruszone** (świadomie): `document_persons.role='author'`, `ner_exclusions.author` i jej
+API, `information_sources`, klucz `author` w promptach/odpowiedziach LLM
+(`article_extractor`/`chunk_llm_analysis`), `author_persons` w API, atrybut `stalker_youtube_file.author`
+(metadane pytubefix).
+
+**Testy uruchomione:** `tests/unit/` **1830 passed** (przed i po); ruff czysty; Vitest 11 passed;
+`npm run build` czysty (React i app2). Migracja na NAS: upgrade → psql (kolumny+constraint
+przemianowane, 538 dokumentów z byline) → downgrade → upgrade → head `b3c4d5e6f7a8`. Deploy
+backend+frontend+app2 na NAS od razu po migracji. E2E (tymczasowy klucz serwisowy, usunięty):
+`/website_list` zwraca `byline` (realne dane), `POST /document/8614/byline` set→clear z pełnym
+przywróceniem stanu (łącznie z usunięciem osieroconego rekordu `persons`), `/search` z filtrem
+`author_name` (ścieżka fallbacku byline w SQL) zwraca 1 wynik.
+
+**Otwarte ryzyka:** wartość `html` w `byline_method` jest zapisywana przez sync/refresh, ale
+CHECK constraint (przemianowany 1:1) dopuszcza manual/llm/html już od PR #247+ — bez zmian
+semantyki. Reszta ryzyk jak w sesji A (rozjazd init SQL vs Alembic).
+
+**PR/merge:** PR #305, branch `feat/search-etap-11b-byline`.
+
+**Następny krok:** Etap 11, sesja C — `project`→`collection_id` (nowa tabela `collections`,
+kolumna w 100% pusta = niskie ryzyko danych) albo od razu 11d (`source`→`discovery_source_id`,
+większa: migracja danych name→id + API `/sources` + wtyczka Chrome).
+
 ## 2026-07-19 — Etap 11, sesja A (inwentaryzacja + rename `date_from`→`published_on`) — UKOŃCZONA
 
 **Zakres wykonany:** (1) Pełna inwentaryzacja wszystkich rename'ów Etapu 11 w

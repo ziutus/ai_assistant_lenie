@@ -591,13 +591,13 @@ def action_save_to_db(doc, article: dict, session) -> bool:
     # Zapisz autora z LLM markers jeśli dostępny
     import glob as glob_mod
     markers_files = glob_mod.glob(os.path.join(CACHE_DIR_BASE, str(doc.id), "*_llm_markers.json"))
-    if markers_files and not doc.author:
+    if markers_files and not doc.byline:
         import json
         with open(markers_files[0], "r", encoding="utf-8") as f:
             markers_data = json.load(f)
         author = markers_data.get("markers", {}).get("author")
         if author:
-            doc.author = author
+            doc.byline = author
             print(f"    Autor: {author}")
 
     try:
@@ -889,7 +889,7 @@ def cmd_meta(session, article_id: Optional[int] = None):
         "document_type": doc.document_type,
         "language": doc.language,
         "source": doc.source,
-        "author": doc.author,
+        "byline": doc.byline,
         "note": doc.note,
         "summary": doc.summary,
         "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
@@ -937,7 +937,7 @@ def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
         "document_type": doc.document_type,
         "language": doc.language,
         "source": doc.source,
-        "author": doc.author,
+        "byline": doc.byline,
         "note": doc.note,
         "summary": doc.summary,
         "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,

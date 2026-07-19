@@ -116,7 +116,7 @@ class TestWebsiteGet:
             "original_id": None, "document_length": None, "chapter_list": None,
             "document_state": "URL_ADDED", "document_state_error": "NONE",
             "text_raw": None, "transcript_job_id": None, "ai_summary_needed": False,
-            "author": None, "note": None, "uuid": None, "project": None,
+            "byline": None, "note": None, "uuid": None, "project": None,
             "text_md": None, "transcript_needed": False,
         }
         mock_session = MagicMock()

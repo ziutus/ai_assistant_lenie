@@ -104,7 +104,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
 
     exclusions = list(session.execute(select(NerExclusion)).scalars().all())
     if exclusions:
-        author = getattr(doc, "author", None)
+        author = getattr(doc, "byline", None)
         excluded = [
             key
             for key, group in groups.items()

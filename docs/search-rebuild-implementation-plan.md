@@ -51,8 +51,8 @@ Backend wykonuje deterministyczne zapytania SQL i pgvector. Frontend pokazuje, j
 | `sources` | `discovery_sources` | tabela słownikowa |
 | `date_from` | `published_on` | data publikacji — **zrobione fizycznie (Etap 11a, migracja `a2b3c4d5e6f7`)** |
 | `date_from_source` | `published_on_method` | manual/html/llm/import/url — **zrobione fizycznie (Etap 11a)**; dopuszczalne wartości na razie bez zmian (manual/llm) |
-| `author` | `byline` | tekst prezentacyjny; autorzy relacyjnie w `document_persons` |
-| `author_source` | `byline_method` | sposób ustalenia byline |
+| `author` | `byline` | tekst prezentacyjny; autorzy relacyjnie w `document_persons` — **zrobione fizycznie (Etap 11b, migracja `b3c4d5e6f7a8`)** |
+| `author_source` | `byline_method` | sposób ustalenia byline (manual/llm/html) — **zrobione fizycznie (Etap 11b)** |
 | `project` | `collection_id` | kolekcja tematyczna |
 | `created_at` dokumentu | `ingested_at` | data dodania do Lenie |
 | `uuid` | `public_id` | publiczny stabilny identyfikator |

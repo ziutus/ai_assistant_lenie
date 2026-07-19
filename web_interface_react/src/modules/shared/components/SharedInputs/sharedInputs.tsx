@@ -135,9 +135,9 @@ const AuthorExtractButton = ({
         return;
       }
       const res = await axios.post(`${apiUrl}/analysis_run/${runs[0].id}/extract_author`, {}, { headers });
-      if (res.data.author) {
-        formik.setFieldValue("author", res.data.author);
-        setStatus(`Ustawiono autora: ${res.data.author}`);
+      if (res.data.byline) {
+        formik.setFieldValue("byline", res.data.byline);
+        setStatus(`Ustawiono autora: ${res.data.byline}`);
       } else {
         setStatus("Nie udało się rozpoznać autora.");
       }
@@ -190,11 +190,11 @@ const SharedInputs = ({
         <div className="flex-grow">
           <Input
             disabled={isLoading}
-            value={formik.values.author}
+            value={formik.values.byline}
             label={"Author"}
             onChange={formik.handleChange}
-            id={"author"}
-            name={"author"}
+            id={"byline"}
+            name={"byline"}
             type={"text"}
           />
         </div>

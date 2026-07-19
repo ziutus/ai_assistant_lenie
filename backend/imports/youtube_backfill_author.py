@@ -58,7 +58,7 @@ def fetch_author(url: str, proxies: dict[str, str] | None) -> str | None:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Backfill the 'author' (YouTube channel name) field for existing videos missing it."
+        description="Backfill the 'byline' (YouTube channel name) field for existing videos missing it."
     )
     parser.add_argument("--dry-run", action="store_true", help="Preview only, no DB writes")
     parser.add_argument("--limit", type=int, help="Max number of videos to process")
@@ -87,13 +87,13 @@ def main():
     try:
         query = session.query(WebDocument).filter(
             WebDocument.document_type == "youtube",
-            WebDocument.author.is_(None),
+            WebDocument.byline.is_(None),
         ).order_by(WebDocument.id)
         if args.limit:
             query = query.limit(args.limit)
         docs = query.all()
 
-        logging.info(f"Found {len(docs)} YouTube documents missing 'author'")
+        logging.info(f"Found {len(docs)} YouTube documents missing 'byline'")
 
         updated, failed = 0, 0
         for i, doc in enumerate(docs, start=1):
@@ -108,7 +108,7 @@ def main():
 
             logging.info(f"  author: {author}")
             if not args.dry_run:
-                doc.author = author
+                doc.byline = author
                 session.commit()
             updated += 1
             time.sleep(args.delay)

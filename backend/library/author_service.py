@@ -1,6 +1,6 @@
 """Structured document authorship — document_persons links with role="author".
 
-web_documents.author stays the comma-separated display cache; the source of
+web_documents.byline stays the comma-separated display cache; the source of
 truth for "who wrote this" is document_persons (role="author"), one row per
 co-author, resolved through the person registry so the same journalist links
 to one Person row across documents. Portal journalists usually have no
@@ -59,10 +59,11 @@ def split_author_names(raw: str) -> list[str]:
     return names
 
 
-def set_document_authors(session, doc, names: list[str], source: str) -> list[dict]:
-    """Set the document's authors: display cache + document_persons links.
+def set_document_authors(session, doc, names: list[str], method: str) -> list[dict]:
+    """Set the document's authors: display cache (byline) + document_persons links.
 
-    source: "manual" (reviewer typed the byline) or "llm" (byline extraction).
+    method: "manual" (reviewer typed the byline), "llm" (byline extraction)
+    or "html" (deterministic metadata extraction).
     Queues changes on the session without committing (caller owns the
     transaction). Returns the author list in get_document_authors() shape.
 
@@ -72,8 +73,8 @@ def set_document_authors(session, doc, names: list[str], source: str) -> list[di
     by the deletion are removed from the registry.
     """
     names = [n.strip() for n in names if n and n.strip()]
-    doc.author = ", ".join(names) or None
-    doc.author_source = source if names else None
+    doc.byline = ", ".join(names) or None
+    doc.byline_method = method if names else None
 
     existing = session.execute(
         select(DocumentPerson).where(
@@ -90,9 +91,9 @@ def set_document_authors(session, doc, names: list[str], source: str) -> list[di
             person = Person(canonical_name=name)
             session.add(person)
             session.flush()
-            confidence = CONFIDENCE_MANUAL_CONFIRMED if source == "manual" else CONFIDENCE_MANUAL_REVIEW
+            confidence = CONFIDENCE_MANUAL_CONFIRMED if method == "manual" else CONFIDENCE_MANUAL_REVIEW
         else:
-            confidence = CONFIDENCE_MANUAL_CONFIRMED if source == "manual" else CONFIDENCE_ALIAS
+            confidence = CONFIDENCE_MANUAL_CONFIRMED if method == "manual" else CONFIDENCE_ALIAS
         kept_person_ids.add(person.id)
 
         link = existing_by_person.get(person.id) or session.execute(
@@ -111,7 +112,7 @@ def set_document_authors(session, doc, names: list[str], source: str) -> list[di
             # confirmation upgrades confidence; never downgrade an existing
             # manual_confirmed/wikidata_matched link to manual_review.
             link.role = "author"
-            if source == "manual":
+            if method == "manual":
                 link.confidence = CONFIDENCE_MANUAL_CONFIRMED
 
     for link in existing:
