@@ -32,7 +32,7 @@ class WebsitesDBPostgreSQL:
             stmt = select(
                 WebDocument.id, WebDocument.url, WebDocument.title, WebDocument.document_type,
                 WebDocument.created_at, WebDocument.document_state, WebDocument.document_state_error,
-                WebDocument.note, WebDocument.project, WebDocument.uuid, WebDocument.author,
+                WebDocument.note, WebDocument.project, WebDocument.uuid, WebDocument.byline,
                 WebDocument.obsidian_note_paths,
             )
 
@@ -102,7 +102,7 @@ class WebsitesDBPostgreSQL:
                 "note": row.note,
                 "project": row.project,
                 "uuid": row.uuid,
-                "author": row.author,
+                "byline": row.byline,
                 "obsidian_note_paths": row.obsidian_note_paths or [],
                 "chunks_missing_obsidian_notes": missing,
                 "chunks_with_obsidian_notes": with_notes,

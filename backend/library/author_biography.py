@@ -112,7 +112,7 @@ def process_author_biography(session, doc, excerpt: str, model: str) -> dict:
     """Attach an author biography to its person and evaluate it with the LLM."""
     from library.person_registry import find_by_alias
 
-    author = (doc.author or "").strip()
+    author = (doc.byline or "").strip()
     person = find_by_alias(session, author)
     if person is None:
         person = Person(canonical_name=author)

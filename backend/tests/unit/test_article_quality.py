@@ -33,7 +33,7 @@ LONG_PARAGRAPH = (
 
 class _Doc:
     def __init__(self, author=None, title=None, url=None):
-        self.author = author
+        self.byline = author
         self.title = title
         self.url = url
 

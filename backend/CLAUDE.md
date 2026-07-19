@@ -149,14 +149,14 @@ pre-commit run         # Pre-commit hooks (includes TruffleHog secret detection)
 
 Tool config in `pyproject.toml`: ruff line-length=120, excludes `.git`, `__pycache__`, `venv`, `node_modules`.
 
-## Key Field Semantics: `source` vs `author`
+## Key Field Semantics: `source` vs `byline`
 
 These two fields on `web_documents` serve distinct purposes:
 
 - **`source`** — How the user *discovered* the content: `"own"` (found it themselves), `"unknow.news"` (from unknow.news newsletter), `"friend"` (personal recommendation), etc. This enables evaluating recommendation source quality over time (e.g. "links from source X tend to be low quality").
-- **`author`** — Who *created* the content: YouTube channel name, article author, blog name, etc. This is content metadata, not a discovery channel.
+- **`byline`** (renamed from `author` in stage 11b of the search rebuild) — Who *created* the content: YouTube channel name, article author, blog name, etc. This is content metadata, not a discovery channel. The comma-separated display cache; structured author links live in `document_persons` (role=`author`).
 
-Example: A YouTube video by "Good Times Bad Times Polska" found via unknow.news newsletter → `source="unknow.news"`, `author="Good Times Bad Times Polska"`.
+Example: A YouTube video by "Good Times Bad Times Polska" found via unknow.news newsletter → `source="unknow.news"`, `byline="Good Times Bad Times Polska"`.
 
 ## Subdirectory Documentation
 

@@ -69,10 +69,10 @@ class TestSetDocumentAuthors:
 
         with patch.object(auth_svc, "find_by_alias", return_value=None), \
                 patch.object(auth_svc, "get_document_authors", return_value=[]):
-            set_document_authors(session, doc, ["Michał Rogalski", "Piotr Gruszka"], source="manual")
+            set_document_authors(session, doc, ["Michał Rogalski", "Piotr Gruszka"], method="manual")
 
-        assert doc.author == "Michał Rogalski, Piotr Gruszka"
-        assert doc.author_source == "manual"
+        assert doc.byline == "Michał Rogalski, Piotr Gruszka"
+        assert doc.byline_method == "manual"
         added = [c.args[0] for c in session.add.call_args_list]
         persons = [a for a in added if isinstance(a, Person)]
         links = [a for a in added if isinstance(a, DocumentPerson)]
@@ -86,9 +86,9 @@ class TestSetDocumentAuthors:
 
         with patch.object(auth_svc, "find_by_alias", return_value=None), \
                 patch.object(auth_svc, "get_document_authors", return_value=[]):
-            set_document_authors(session, doc, ["Weronika Jaworska"], source="llm")
+            set_document_authors(session, doc, ["Weronika Jaworska"], method="llm")
 
-        assert doc.author_source == "llm"
+        assert doc.byline_method == "llm"
         links = [c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], DocumentPerson)]
         assert len(links) == 1
         assert links[0].confidence == "manual_review"
@@ -101,7 +101,7 @@ class TestSetDocumentAuthors:
 
         with patch.object(auth_svc, "find_by_alias", return_value=known), \
                 patch.object(auth_svc, "get_document_authors", return_value=[]):
-            set_document_authors(session, doc, ["Jacek Losik"], source="llm")
+            set_document_authors(session, doc, ["Jacek Losik"], method="llm")
 
         links = [c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], DocumentPerson)]
         assert len(links) == 1
@@ -117,7 +117,7 @@ class TestSetDocumentAuthors:
         with patch.object(auth_svc, "find_by_alias", return_value=None), \
                 patch.object(auth_svc, "get_document_authors", return_value=[]), \
                 patch.object(auth_svc, "_delete_person_if_orphaned") as orphan:
-            set_document_authors(session, doc, ["Nowy Autor"], source="manual")
+            set_document_authors(session, doc, ["Nowy Autor"], method="manual")
 
         session.delete.assert_called_once_with(stale)
         orphan.assert_called_once_with(session, 99)
@@ -140,7 +140,7 @@ class TestSetDocumentAuthors:
 
         with patch.object(auth_svc, "find_by_alias", return_value=known), \
                 patch.object(auth_svc, "get_document_authors", return_value=[]):
-            set_document_authors(session, doc, ["Donald Tusk"], source="llm")
+            set_document_authors(session, doc, ["Donald Tusk"], method="llm")
 
         assert mentioned_link.role == "author"
         # LLM extraction must not downgrade an existing confidence
@@ -155,10 +155,10 @@ class TestSetDocumentAuthors:
 
         with patch.object(auth_svc, "get_document_authors", return_value=[]), \
                 patch.object(auth_svc, "_delete_person_if_orphaned"):
-            set_document_authors(session, doc, [], source="manual")
+            set_document_authors(session, doc, [], method="manual")
 
-        assert doc.author is None
-        assert doc.author_source is None
+        assert doc.byline is None
+        assert doc.byline_method is None
         session.delete.assert_called_once_with(stale)
 
 

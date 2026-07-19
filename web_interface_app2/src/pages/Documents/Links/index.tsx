@@ -24,7 +24,7 @@ const LenieLink = () => {
     const formik = useFormik({
         initialValues: {
             id: "",
-            author: "",
+            byline: "",
             source: "",
             language: "",
             url: "",

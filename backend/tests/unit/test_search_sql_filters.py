@@ -129,7 +129,7 @@ class TestAuthorAndDiscoverySourceFilters:
     def test_author_fallback_uses_byline_only_without_structured_author(self):
         sql = compiled(build_document_filters(SearchFilters(author_name="Jan Kowalski"))[0])
         assert "NOT (EXISTS" in sql
-        assert "web_documents.author" in sql
+        assert "web_documents.byline" in sql
         assert "LIKE" in sql
 
     def test_discovery_source_uses_sources_not_information_sources(self):

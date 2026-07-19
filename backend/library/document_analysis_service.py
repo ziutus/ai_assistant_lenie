@@ -488,7 +488,7 @@ class DocumentAnalysisService:
                 log(f'scope: chapter {scope_chapter} "{scope}" ({len(text):,} chars)')
             from library.author_biography import extract_trailing_author_biography
 
-            article_body, author_bio = extract_trailing_author_biography(text, getattr(doc, "author", None))
+            article_body, author_bio = extract_trailing_author_biography(text, getattr(doc, "byline", None))
             preclean_meta: list[tuple[str, str | None]] = []
             if preclean:
                 log("preclean: detecting ads and noisy line ranges before final split...")
@@ -625,17 +625,17 @@ class DocumentAnalysisService:
 
             # 11b2. Article author fallback (LLM) — article_metadata.extract_article_author()
             #       (deterministic, WP.pl only) already ran at import time; this is a
-            #       fallback for everything else. Never overwrites an existing doc.author
+            #       fallback for everything else. Never overwrites an existing doc.byline
             #       (deterministic or manually entered). Whole-document runs only — a
             #       single chapter excerpt is not a reliable place to look for a byline.
-            if not is_transcript and scope is None and not (getattr(doc, "author", None) or "").strip():
+            if not is_transcript and scope is None and not (getattr(doc, "byline", None) or "").strip():
                 try:
                     from library.author_service import set_document_authors
                     from library.chunk_llm_analysis import extract_author_info, head_tail_excerpt
 
                     author_names = extract_author_info(head_tail_excerpt(text), model)
                     if author_names:
-                        set_document_authors(self.session, doc, author_names, source="llm")
+                        set_document_authors(self.session, doc, author_names, method="llm")
                         log(f"author detected: {', '.join(author_names)}")
                 except Exception:
                     logger.exception("author extraction failed, continuing without author")

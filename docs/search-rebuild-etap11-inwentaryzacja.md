@@ -157,7 +157,7 @@ obu frontendach, wtyczce i większości backendu). Zmierzyć przed właściwą s
 ## Rekomendowana kolejność sesji Etapu 11
 
 1. **11a**: `date_from`→`published_on` + `date_from_source`→`published_on_method` — **WYKONANE w tej samej sesji** (migracja `a2b3c4d5e6f7`, wdrożone na NAS; szczegóły we wpisie 2026-07-19 w [dzienniku](search-rebuild-progress.md)).
-2. **11b**: `author`→`byline` + `author_source`→`byline_method` (+ decyzja ner_exclusions).
+2. **11b**: `author`→`byline` + `author_source`→`byline_method` — **WYKONANE** (migracja `b3c4d5e6f7a8`, wdrożone na NAS; `ner_exclusions.author` zostaje bez zmian — osobna tabela z własnym kontraktem).
 3. **11c**: `project`→`collection_id` (nowa tabela `collections`, kolumna pusta = niskie ryzyko).
 4. **11d**: `source`→`discovery_source_id` (migracja danych + wtyczka Chrome + API /sources).
 5. **11e**: `websites_embeddings`→`document_embeddings` + `website_id`→`document_id`.

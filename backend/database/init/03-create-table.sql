@@ -28,7 +28,7 @@ create table web_documents
     text_raw             text,
     transcript_job_id    text,
     ai_summary_needed    boolean     default false,
-    author               text,
+    byline               text,
     note                 text,
     uuid                 varchar(100) NOT NULL DEFAULT gen_random_uuid(),
     project              varchar(100),

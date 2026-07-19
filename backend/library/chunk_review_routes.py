@@ -1260,8 +1260,8 @@ def get_run_chunks(run_id: int):
             "url": doc.url if doc else "",
             "original_id": doc.original_id if doc else "",
             "document_type": doc.document_type if doc else "",
-            "author": getattr(doc, "author", "") if doc else "",
-            "author_source": getattr(doc, "author_source", None) if doc else None,
+            "byline": getattr(doc, "byline", "") if doc else "",
+            "byline_method": getattr(doc, "byline_method", None) if doc else None,
             "author_persons": author_persons,
             "countries": doc_countries,
             "thematic_tags": doc_thematic_tags,
@@ -1605,7 +1605,7 @@ def extract_author(run_id: int):
     chunk containing the byline the reviewer identified. Without chunk_ids,
     uses the head+tail of the whole document's text (a byline can appear at
     the start or the end of an article). Saves the result directly to the
-    document's author field, always overwriting any existing value — this is
+    document's byline field, always overwriting any existing value — this is
     a reviewer-triggered manual action, unlike the automatic pipeline step in
     document_analysis_service.create_run() which never overwrites.
     """
@@ -1655,13 +1655,13 @@ def extract_author(run_id: int):
         return jsonify({"status": "error", "message": "LLM call failed"}), 500
 
     if not author_names:
-        return jsonify({"status": "success", "author": None})
+        return jsonify({"status": "success", "byline": None})
 
     doc = session.get(WebDocument, run.document_id)
     if doc is None:
         abort(404, f"Document {run.document_id} not found")
     from library.author_service import set_document_authors
-    author_persons = set_document_authors(session, doc, author_names, source="llm")
+    author_persons = set_document_authors(session, doc, author_names, method="llm")
     try:
         session.commit()
     except Exception:
@@ -1671,8 +1671,8 @@ def extract_author(run_id: int):
 
     return jsonify({
         "status": "success",
-        "author": doc.author,
-        "author_source": doc.author_source,
+        "byline": doc.byline,
+        "byline_method": doc.byline_method,
         "author_persons": author_persons,
     })
 
@@ -1807,12 +1807,12 @@ def set_published_on(doc_id: int):
 
 
 # ---------------------------------------------------------------------------
-# API: POST /document/<doc_id>/author
+# API: POST /document/<doc_id>/byline
 # ---------------------------------------------------------------------------
 
-@bp.route("/document/<int:doc_id>/author", methods=["POST"])
-def set_author(doc_id: int):
-    """Manually set (or clear) the document's author(s).
+@bp.route("/document/<int:doc_id>/byline", methods=["POST"])
+def set_byline(doc_id: int):
+    """Manually set (or clear) the document's author(s) (byline).
 
     Companion to extract_author above — the reviewer pastes the byline from
     the original page instead of asking the LLM. Accepts co-authors in one
@@ -1828,24 +1828,24 @@ def set_author(doc_id: int):
         abort(404, f"Document {doc_id} not found")
 
     data = request.get_json(silent=True) or {}
-    author_str = data.get("author")
+    author_str = data.get("byline")
     if author_str is not None and not isinstance(author_str, str):
-        return jsonify({"status": "error", "message": "author must be a string or null"}), 400
+        return jsonify({"status": "error", "message": "byline must be a string or null"}), 400
 
     names = split_author_names(author_str or "")
-    author_persons = set_document_authors(session, doc, names, source="manual")
+    author_persons = set_document_authors(session, doc, names, method="manual")
 
     try:
         session.commit()
     except Exception:
         session.rollback()
-        logger.exception("DB save failed for document %d author", doc_id)
+        logger.exception("DB save failed for document %d byline", doc_id)
         return jsonify({"status": "error", "message": "DB save failed"}), 500
 
     return jsonify({
         "status": "success",
-        "author": doc.author,
-        "author_source": doc.author_source,
+        "byline": doc.byline,
+        "byline_method": doc.byline_method,
         "author_persons": author_persons,
     })
 

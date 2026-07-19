@@ -276,12 +276,13 @@ class WebDocument(Base):
     # Content creator: YouTube channel name, article author, etc. — metadata about who made it.
     # Multiple authors are stored comma-separated; the structured links live in
     # document_persons (role="author"), this column is the display cache.
-    author: Mapped[str | None] = mapped_column(Text)
-    # How author was set — "manual" (reviewer typed it on /chunks) or "llm"
-    # (extract_author / pipeline step 11b2). NULL for legacy/import-set values.
+    byline: Mapped[str | None] = mapped_column(Text)
+    # How byline was set — "manual" (reviewer typed it on /chunks), "llm"
+    # (extract_author / pipeline step 11b2) or "html" (deterministic metadata
+    # extraction). NULL for legacy/import-set values.
     # Mirrors published_on_method: lets a future pass find documents where the
     # byline extraction failed and a human had to fix it.
-    author_source: Mapped[str | None] = mapped_column(String(10))
+    byline_method: Mapped[str | None] = mapped_column(String(10))
     note: Mapped[str | None] = mapped_column(Text)
     uuid: Mapped[str] = mapped_column(
         String(100), nullable=False, unique=True,
@@ -473,8 +474,8 @@ class WebDocument(Base):
             "text_raw": self.text_raw,
             "transcript_job_id": self.transcript_job_id,
             "ai_summary_needed": self.ai_summary_needed,
-            "author": self.author,
-            "author_source": self.author_source,
+            "byline": self.byline,
+            "byline_method": self.byline_method,
             "note": self.note,
             "uuid": self.uuid,
             "project": self.project,

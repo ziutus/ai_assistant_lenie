@@ -192,8 +192,8 @@ const List = () => {
             <div className={"flexBox"}>
               {item.id}&nbsp;&nbsp;|&nbsp;&nbsp;
               {item.title} &nbsp;
-              {item.author && (
-                <span style={{ color: "#6c757d", fontStyle: "italic" }}>({item.author}) </span>
+              {item.byline && (
+                <span style={{ color: "#6c757d", fontStyle: "italic" }}>({item.byline}) </span>
               )}
               <a
                 href={item.url}

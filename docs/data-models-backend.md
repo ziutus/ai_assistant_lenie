@@ -26,7 +26,7 @@ Primary document storage table.
 | `language` | varchar(10) | — | Detected language code |
 | `tags` | text | — | Comma-separated tags |
 | `source` | text | — | How the user discovered this content (e.g. "own", "unknow.news", "friend") — used to evaluate recommendation quality |
-| `author` | text | — | Content creator (YouTube channel name, article author) — metadata about who made the content |
+| `byline` | text | — | Content creator display cache (YouTube channel name, article author) — metadata about who made the content; structured links in `document_persons` (role=`author`) |
 | `note` | text | — | User notes |
 | `paywall` | boolean | DEFAULT false | Paywall indicator |
 | `published_on` | date | — | Publication date |

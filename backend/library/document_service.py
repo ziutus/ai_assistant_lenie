@@ -160,7 +160,7 @@ class DocumentService:
         from library.article_metadata import extract_article_authors
         from library.author_service import set_document_authors
 
-        set_document_authors(self.session, doc, extract_article_authors(html, url), source="html")
+        set_document_authors(self.session, doc, extract_article_authors(html, url), method="html")
         self.session.commit()
         return doc
 
@@ -174,7 +174,7 @@ class DocumentService:
     ) -> WebDocument:
         """Look up or create a document, apply attribute updates, and commit.
 
-        Accepted keyword attrs: text, title, language, tags, summary, source, author, note.
+        Accepted keyword attrs: text, title, language, tags, summary, source, byline, note.
         Raises ValueError for invalid document_type.
         Returns the saved WebDocument.
         """
@@ -193,7 +193,7 @@ class DocumentService:
         if document_state is not None:
             doc.set_document_state(document_state)
 
-        for attr in ("text", "title", "language", "tags", "summary", "source", "author", "note"):
+        for attr in ("text", "title", "language", "tags", "summary", "source", "byline", "note"):
             value = attrs.get(attr)
             if value is not None:
                 setattr(doc, attr, value)
