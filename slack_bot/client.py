@@ -144,8 +144,8 @@ def cmd_check(base_url: str, api_key: str, url: str, **_kwargs) -> None:
         doc = websites[0]
         ok(f"Found in database (ID: {doc.get('id', '?')})")
         info(f"  Type:    {doc.get('document_type', '?')}")
-        info(f"  Status:  {doc.get('document_state', '?')}")
-        info(f"  Added:   {doc.get('created_at', '?')}")
+        info(f"  Status:  {doc.get('processing_status', '?')}")
+        info(f"  Added:   {doc.get('ingested_at', '?')}")
     else:
         info("Not found in database.")
 
@@ -159,8 +159,8 @@ def cmd_info(base_url: str, api_key: str, document_id: int, **_kwargs) -> None:
     ok(f"Document #{document_id}")
     info(f"  Title:   {data.get('title', '?')}")
     info(f"  Type:    {data.get('document_type', '?')}")
-    info(f"  Status:  {data.get('document_state', '?')}")
-    info(f"  Added:   {data.get('created_at', '?')}")
+    info(f"  Status:  {data.get('processing_status', '?')}")
+    info(f"  Added:   {data.get('ingested_at', '?')}")
     url_val = data.get("url", "")
     if url_val:
         info(f"  URL:     {url_val}")

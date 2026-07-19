@@ -327,8 +327,8 @@ class TestDmHandleCheck:
             "id": 123,
             "url": "https://example.com/article",
             "document_type": "webpage",
-            "document_state": "URL_ADDED",
-            "created_at": "2026-01-15 10:30:45",
+            "processing_status": "URL_ADDED",
+            "ingested_at": "2026-01-15 10:30:45",
         }
         say = _make_say()
 
@@ -444,8 +444,8 @@ class TestDmHandleInfo:
             "id": 123,
             "title": "Article Title",
             "document_type": "webpage",
-            "document_state": "URL_ADDED",
-            "created_at": "2026-01-15 10:30:45",
+            "processing_status": "URL_ADDED",
+            "ingested_at": "2026-01-15 10:30:45",
         }
         say = _make_say()
 
@@ -835,7 +835,7 @@ class TestDmCommandParsing:
         client = _make_mock_client()
         client.get_document.return_value = {
             "id": 123, "title": "T", "document_type": "link",
-            "document_state": "URL_ADDED", "created_at": "2026-01-01",
+            "processing_status": "URL_ADDED", "ingested_at": "2026-01-01",
         }
         handler_fn, _ = self._get_handler(client)
         event = _make_dm_event("info 123")
@@ -1062,7 +1062,7 @@ class TestDmIntentParsing:
         client = _make_mock_client()
         client.get_document.return_value = {
             "id": 42, "title": "T", "document_type": "link",
-            "document_state": "URL_ADDED", "created_at": "2026-01-01",
+            "processing_status": "URL_ADDED", "ingested_at": "2026-01-01",
         }
         mock_parse.return_value = ParsedIntent(
             command="info", args={"id": 42}, confidence=0.92
