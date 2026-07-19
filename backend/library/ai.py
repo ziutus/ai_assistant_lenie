@@ -79,7 +79,9 @@ def _record_usage(**kwargs):
 
 def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: int = 4096, top_p: float = 0.9,
            *, system_prompt: str | None = None, response_format: dict | None = None,
-           operation: str = "ai_ask", search_interpretation_log_id: int | None = None) -> AiResponse:
+           operation: str = "ai_ask", search_interpretation_log_id: int | None = None,
+           arklabs_stateful: bool = False, document_id: int | None = None,
+           analysis_job_id: str | None = None, analysis_run_id: int | None = None) -> AiResponse:
 
     if model in OPENAI_MODELS:
         provider = "openai"
@@ -128,7 +130,8 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
             from library.api.arklabs.arklabs_completion import arklabs_get_completion
 
             return arklabs_get_completion(query, model=actual_model, temperature=temperature,
-                                          max_tokens=max_token_count, system_prompt=system_prompt)
+                                          max_tokens=max_token_count, system_prompt=system_prompt,
+                                          stateful=arklabs_stateful)
 
     elif model in GOOGLE_MODELS:
         provider = "google-vertexai"
@@ -161,6 +164,7 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
             error_code=type(exc).__name__,
             latency_ms=int((time.monotonic() - started) * 1000),
             search_interpretation_log_id=search_interpretation_log_id,
+            document_id=document_id, analysis_job_id=analysis_job_id, analysis_run_id=analysis_run_id,
         )
         raise
 
@@ -176,5 +180,6 @@ def ai_ask(query: str, model: str, temperature: float = 0.7, max_token_count: in
         request_id=getattr(ai_response, "id", None),
         latency_ms=latency_ms,
         search_interpretation_log_id=search_interpretation_log_id,
+        document_id=document_id, analysis_job_id=analysis_job_id, analysis_run_id=analysis_run_id,
     )
     return ai_response

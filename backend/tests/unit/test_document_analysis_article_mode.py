@@ -135,7 +135,7 @@ class TestSzumType:
     def test_article_chunk_szum_has_no_summary(self, monkeypatch):
         monkeypatch.setattr(
             llm, "call_model",
-            lambda prompt, model, max_tokens: ("### SZUM: menu i stopka strony\ncokolwiek", 10),
+            lambda prompt, model, max_tokens, **kwargs: ("### SZUM: menu i stopka strony\ncokolwiek", 10),
         )
         result = llm.analyze_article_chunk("Wróć na POLSKA ŚWIAT...", "m")
         assert result["type"] == "SZUM"
@@ -146,7 +146,7 @@ class TestSzumType:
     def test_article_chunk_temat_strips_streszczenie_prefix(self, monkeypatch):
         monkeypatch.setattr(
             llm, "call_model",
-            lambda prompt, model, max_tokens: ("### TEMAT: konflikt USA-Iran\nStreszczenie: Analiza sytuacji.", 10),
+            lambda prompt, model, max_tokens, **kwargs: ("### TEMAT: konflikt USA-Iran\nStreszczenie: Analiza sytuacji.", 10),
         )
         result = llm.analyze_article_chunk("Treść merytoryczna.", "m")
         assert result["type"] == "TEMAT"

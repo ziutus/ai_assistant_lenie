@@ -11,6 +11,8 @@ markdown całej strony (wejście dla ekstrakcji LLM i porównania boundaries).
 import logging
 import os
 
+from library.llm_usage.context import llm_usage_context
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,7 +49,8 @@ def ensure_raw_markdown(doc, cache_dir: str, verbose: bool = False) -> str | Non
 
 
 def extract_article(doc, cache_dir: str, verbose: bool = False, skip_llm: bool = False,
-                    arklabs_first: bool = False) -> tuple[str | None, str | None]:
+                    arklabs_first: bool = False,
+                    operation: str = "article_extraction") -> tuple[str | None, str | None]:
     """Surowy markdown + ekstrakcja artykułu przez LLM (CloudFerro/ARK Labs fallback).
 
     Zwraca (raw_markdown, extracted_article):
@@ -64,11 +67,13 @@ def extract_article(doc, cache_dir: str, verbose: bool = False, skip_llm: bool =
     if skip_llm:
         return markdown_text, None
 
-    article = process_article_with_llm_fallback(
-        markdown_text=markdown_text,
-        document_id=doc.id,
-        cache_dir=cache_dir,
-        url=doc.url,
-        arklabs_first=arklabs_first,
-    )
+    with llm_usage_context(document_id=doc.id):
+        article = process_article_with_llm_fallback(
+            markdown_text=markdown_text,
+            document_id=doc.id,
+            cache_dir=cache_dir,
+            url=doc.url,
+            arklabs_first=arklabs_first,
+            operation=operation,
+        )
     return markdown_text, article

@@ -331,7 +331,7 @@ Zwróć TYLKO obiekt JSON bez dodatkowego tekstu:
 --- KONIEC PUBLIKACJI ---
 Uwzględnij tę listę przy ocenie pola "zrodla", nawet jeśli została technicznie wydzielona poza tekst główny."""
     try:
-        raw, _ = call_model(prompt, model, RUBRIC_MAX_TOKENS)
+        raw, _ = call_model(prompt, model, RUBRIC_MAX_TOKENS, operation="document_quality")
         match = re.search(r"\{.*\}", raw, re.DOTALL)
         if not match:
             return None
