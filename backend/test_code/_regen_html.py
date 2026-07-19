@@ -9,7 +9,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from unified_config_loader import load_config
 from library.db.engine import get_session
-from library.db.models import WebDocument
+from library.db.models import Document
 
 from library.analysis_exports import save_html
 from library.document_analysis_service import _load_segments as _load_transcript_segments
@@ -60,7 +60,7 @@ def main():
 
     load_config()
     session = get_session()
-    doc = WebDocument.get_by_id(session, doc_id)
+    doc = Document.get_by_id(session, doc_id)
     if doc is None:
         print(f"BŁĄD: Dokument {doc_id} nie znaleziony.")
         sys.exit(1)

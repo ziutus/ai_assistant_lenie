@@ -1,6 +1,6 @@
 """Structured document authorship — document_persons links with role="author".
 
-web_documents.byline stays the comma-separated display cache; the source of
+documents.byline stays the comma-separated display cache; the source of
 truth for "who wrote this" is document_persons (role="author"), one row per
 co-author, resolved through the person registry so the same journalist links
 to one Person row across documents. Portal journalists usually have no

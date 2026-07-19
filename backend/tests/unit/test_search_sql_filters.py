@@ -110,7 +110,7 @@ class TestSubjectPeriod:
         )
         assert len(conditions) == 1
         sql = compiled(conditions[0])
-        assert "web_documents.id" in sql
+        assert "documents.id" in sql
         assert "document_time_periods.document_id" in sql
 
     def test_open_ended_stored_row_matches_via_or_is_null(self):
@@ -130,12 +130,12 @@ class TestAuthorAndDiscoverySourceFilters:
     def test_author_fallback_uses_byline_only_without_structured_author(self):
         sql = compiled(build_document_filters(SearchFilters(author_name="Jan Kowalski"))[0])
         assert "NOT (EXISTS" in sql
-        assert "web_documents.byline" in sql
+        assert "documents.byline" in sql
         assert "LIKE" in sql
 
     def test_discovery_source_uses_sources_not_information_sources(self):
         sql = compiled(build_document_filters(SearchFilters(discovery_source_name="Unknow.News"))[0])
-        assert "web_documents.discovery_source_id IN" in sql
+        assert "documents.discovery_source_id IN" in sql
         assert "FROM discovery_sources" in sql
         assert "information_sources" not in sql
         assert "unknow.news" in sql
@@ -144,14 +144,14 @@ class TestAuthorAndDiscoverySourceFilters:
 class TestPublisherFilters:
     def test_name_uses_all_matching_publisher_ids(self):
         sql = compiled(build_document_filters(SearchFilters(publisher_name="Onet.pl"))[0])
-        assert "web_documents.publisher_id IN" in sql
+        assert "documents.publisher_id IN" in sql
         assert "SELECT publishers.id" in sql
         assert "unaccent(lower(publishers.canonical_name))" in sql
         assert "onet.pl" in sql
 
     def test_domain_uses_unique_domain_mapping(self):
         sql = compiled(build_document_filters(SearchFilters(publisher_domain="Onet.PL"))[0])
-        assert "web_documents.publisher_id IN" in sql
+        assert "documents.publisher_id IN" in sql
         assert "publisher_domains.publisher_id" in sql
         assert "lower(publisher_domains.domain)" in sql
         assert "onet.pl" in sql
@@ -171,12 +171,12 @@ class TestCombinedFilters:
     def test_conditions_apply_cleanly_to_a_where_clause(self):
         from sqlalchemy import select
 
-        from library.db.models import WebDocument
+        from library.db.models import Document
 
         conditions = build_document_filters(SearchFilters(
             collection_name="lenie", document_types=("webpage",),
         ))
-        stmt = select(WebDocument.id).where(*conditions)
+        stmt = select(Document.id).where(*conditions)
         sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-        assert "web_documents.collection_id" in sql
-        assert "web_documents.document_type" in sql
+        assert "documents.collection_id" in sql
+        assert "documents.document_type" in sql

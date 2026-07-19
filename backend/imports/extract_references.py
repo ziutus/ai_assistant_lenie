@@ -22,7 +22,7 @@ from library.config_loader import load_config
 cfg = load_config()  # noqa: F841 — side effect: populates os.environ for library modules
 
 from library.db.engine import get_session  # noqa: E402
-from library.db.models import WebDocument  # noqa: E402
+from library.db.models import Document  # noqa: E402
 from library.references import extract_footnotes, refresh_document_references  # noqa: E402
 
 
@@ -37,7 +37,7 @@ def main():
 
     session = get_session()
     try:
-        doc = session.get(WebDocument, args.id)
+        doc = session.get(Document, args.id)
         if doc is None or not (doc.text_md or "").strip():
             raise SystemExit(f"Document {args.id} not found or has no text_md")
 

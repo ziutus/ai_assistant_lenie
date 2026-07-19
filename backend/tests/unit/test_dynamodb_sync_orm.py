@@ -241,7 +241,7 @@ class TestProcessArticleContent:
 
         monkeypatch.setattr(dynamodb_sync.os.path, "isfile", lambda p: True)
         monkeypatch.setattr(
-            dynamodb_sync, "WebDocument",
+            dynamodb_sync, "Document",
             MagicMock(get_by_id=MagicMock(return_value=doc)),
         )
         monkeypatch.setattr(

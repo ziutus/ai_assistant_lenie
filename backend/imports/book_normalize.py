@@ -195,7 +195,7 @@ def main() -> None:
     parser.add_argument("--map", required=True, help="book map JSON path")
     parser.add_argument("--input", help="input markdown file (alternative to --doc-id)")
     parser.add_argument("--output", help="output markdown file (with --input)")
-    parser.add_argument("--doc-id", type=int, help="web_documents.id to read text_md from")
+    parser.add_argument("--doc-id", type=int, help="documents.id to read text_md from")
     parser.add_argument("--write-db", action="store_true", help="update text_md in DB (with --doc-id)")
     args = parser.parse_args()
 
@@ -216,11 +216,11 @@ def main() -> None:
         parser.error("either --input or --doc-id is required")
 
     from library.db.engine import get_session
-    from library.db.models import WebDocument
+    from library.db.models import Document
 
     session = get_session()
     try:
-        doc = session.get(WebDocument, args.doc_id)
+        doc = session.get(Document, args.doc_id)
         if doc is None or not doc.text_md:
             raise SystemExit(f"document {args.doc_id} not found or has empty text_md")
         normalized, log = normalize_book(doc.text_md, book_map)

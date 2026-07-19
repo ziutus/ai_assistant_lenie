@@ -86,7 +86,7 @@ def session():
 
 @pytest.fixture
 def transcript_env(monkeypatch, session):
-    monkeypatch.setattr(das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: FakeYoutubeDoc()))
+    monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: FakeYoutubeDoc()))
 
     def fake_transcript(text, model, position=1, total=1, speakers=None, prev_context="", next_context=""):
         return {
@@ -118,7 +118,7 @@ class TestCreateRunUsesChapterSplit:
     def test_falls_back_to_sentence_split_without_chapter_list(self, transcript_env, monkeypatch):
         doc = FakeYoutubeDoc()
         doc.chapter_list = None
-        monkeypatch.setattr(das.WebDocument, "get_by_id", staticmethod(lambda _s, _id: doc))
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
 
         service = DocumentAnalysisService(transcript_env)
         service.create_run(doc_id=9216, model="test-model", mode="transcript", chunk_size=300)

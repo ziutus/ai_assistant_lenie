@@ -6,7 +6,7 @@ import pytest
 
 sa = pytest.importorskip("sqlalchemy")
 
-from library.db.models import WebDocument, DocumentEmbedding  # noqa: E402
+from library.db.models import Document, DocumentEmbedding  # noqa: E402
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL  # noqa: E402
 
 
@@ -225,7 +225,7 @@ class TestRelationshipAppend:
         assert "document" in rel_names
 
     def test_web_document_has_embeddings_relationship(self):
-        """WebDocument model has 'embeddings' relationship attribute."""
-        mapper = sa.inspect(WebDocument)
+        """Document model has 'embeddings' relationship attribute."""
+        mapper = sa.inspect(Document)
         rel_names = [r.key for r in mapper.relationships]
         assert "embeddings" in rel_names

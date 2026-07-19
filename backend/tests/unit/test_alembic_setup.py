@@ -137,12 +137,12 @@ class TestAlembicEnvMetadata:
 
     @patch.dict("os.environ", ENV_VARS, clear=False)
     def test_base_metadata_has_web_documents_table(self):
-        """Base.metadata should have web_documents table after models are imported."""
+        """Base.metadata should have documents table after models are imported."""
         import library.db.models  # noqa: F401
         from library.db.engine import Base
 
-        assert "web_documents" in Base.metadata.tables, \
-            "Base.metadata must contain web_documents table"
+        assert "documents" in Base.metadata.tables, \
+            "Base.metadata must contain documents table"
 
     @patch.dict("os.environ", ENV_VARS, clear=False)
     def test_base_metadata_has_document_embeddings_table(self):
@@ -188,7 +188,7 @@ class TestIncludeObjectFilter:
     def test_excludes_document_state_error_in_web_documents(self):
         fn = self._load_include_object()
         col = MagicMock()
-        col.table.name = "web_documents"
+        col.table.name = "documents"
         assert fn(col, "document_state_error", "column", True, None) is False
 
     def test_includes_document_state_error_in_other_table(self):
@@ -200,12 +200,12 @@ class TestIncludeObjectFilter:
     def test_includes_regular_columns(self):
         fn = self._load_include_object()
         col = MagicMock()
-        col.table.name = "web_documents"
+        col.table.name = "documents"
         assert fn(col, "title", "column", True, None) is True
 
     def test_includes_tables(self):
         fn = self._load_include_object()
-        assert fn(MagicMock(), "web_documents", "table", True, None) is True
+        assert fn(MagicMock(), "documents", "table", True, None) is True
 
     def test_includes_lookup_tables(self):
         """Lookup tables (B-94) are included now that B-96 added ORM models."""

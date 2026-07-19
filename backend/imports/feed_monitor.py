@@ -41,7 +41,7 @@ from sqlalchemy import select
 
 from library.config_loader import load_config
 from library.db.engine import get_session
-from library.db.models import ImportLog, WebDocument
+from library.db.models import ImportLog, Document
 from library.document_service import DocumentService
 from library.import_log_tracker import ImportLogTracker
 from library.models.stalker_document_status import StalkerDocumentStatus
@@ -334,9 +334,9 @@ def resolve_default_state(feed_config: dict) -> str:
     return feed_config.get("default_state") or StalkerDocumentStatus.URL_ADDED.name
 
 
-def check_existing(session, url: str) -> Optional[WebDocument]:
+def check_existing(session, url: str) -> Optional[Document]:
     try:
-        return WebDocument.get_by_url(session, url)
+        return Document.get_by_url(session, url)
     except SQLAlchemyError:
         # Rollback, żeby przerwana transakcja nie wywracała kolejnych zapytań
         session.rollback()

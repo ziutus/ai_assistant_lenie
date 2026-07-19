@@ -1,4 +1,4 @@
-"""Unit tests for WebDocument ORM CRUD operations (Story 27.1).
+"""Unit tests for Document ORM CRUD operations (Story 27.1).
 
 All tests use mocked sessions — no database required.
 """
@@ -12,7 +12,7 @@ pytest.importorskip("sqlalchemy")
 
 from library.db.models import (
     DiscoverySource,
-    WebDocument,
+    Document,
     LinkDocument,
     YouTubeDocument,
     MovieDocument,
@@ -29,7 +29,7 @@ from library.db.models import (
 
 
 def _make_doc(**overrides):
-    """Create a WebDocument with sensible defaults."""
+    """Create a Document with sensible defaults."""
     defaults = {
         "id": 42,
         "url": "https://example.com/article",
@@ -39,7 +39,7 @@ def _make_doc(**overrides):
         "created_at": datetime.datetime(2026, 1, 15, 10, 30, 0),
     }
     defaults.update(overrides)
-    doc = WebDocument()
+    doc = Document()
     for k, v in defaults.items():
         setattr(doc, k, v)
     return doc
@@ -56,16 +56,16 @@ class TestGetById:
         session = MagicMock()
         session.get.return_value = doc
 
-        result = WebDocument.get_by_id(session, 42)
+        result = Document.get_by_id(session, 42)
 
-        session.get.assert_called_once_with(WebDocument, 42)
+        session.get.assert_called_once_with(Document, 42)
         assert result is doc
 
     def test_not_found(self):
         session = MagicMock()
         session.get.return_value = None
 
-        result = WebDocument.get_by_id(session, 999)
+        result = Document.get_by_id(session, 999)
 
         assert result is None
 
@@ -82,7 +82,7 @@ class TestGetById:
             MagicMock(first=MagicMock(return_value=prev_row)),
         ]
 
-        result = WebDocument.get_by_id(session, 10, reach=True)
+        result = Document.get_by_id(session, 10, reach=True)
 
         assert result is doc
         assert result.next_id == 11
@@ -101,7 +101,7 @@ class TestGetById:
             MagicMock(first=MagicMock(return_value=None)),
         ]
 
-        result = WebDocument.get_by_id(session, 1, reach=True)
+        result = Document.get_by_id(session, 1, reach=True)
 
         assert result is doc
         assert result.next_id is None
@@ -114,7 +114,7 @@ class TestGetById:
         session = MagicMock()
         session.get.return_value = doc
 
-        WebDocument.get_by_id(session, 42, reach=False)
+        Document.get_by_id(session, 42, reach=False)
 
         session.execute.assert_not_called()
 
@@ -122,7 +122,7 @@ class TestGetById:
         session = MagicMock()
         session.get.return_value = None
 
-        result = WebDocument.get_by_id(session, 999, reach=True)
+        result = Document.get_by_id(session, 999, reach=True)
 
         assert result is None
         session.execute.assert_not_called()
@@ -141,7 +141,7 @@ class TestGetById:
             MagicMock(first=MagicMock(return_value=prev_row)),
         ]
 
-        result = WebDocument.get_by_id(session, 10, reach=True)
+        result = Document.get_by_id(session, 10, reach=True)
 
         assert result.next_id == 11
         assert result.next_type == "link"
@@ -160,7 +160,7 @@ class TestGetByUrl:
         session = MagicMock()
         session.scalars.return_value.first.return_value = doc
 
-        result = WebDocument.get_by_url(session, "https://example.com/article")
+        result = Document.get_by_url(session, "https://example.com/article")
 
         assert result is doc
 
@@ -168,7 +168,7 @@ class TestGetByUrl:
         session = MagicMock()
         session.scalars.return_value.first.return_value = None
 
-        result = WebDocument.get_by_url(session, "https://nonexistent.com")
+        result = Document.get_by_url(session, "https://nonexistent.com")
 
         assert result is None
 
@@ -177,7 +177,7 @@ class TestGetByUrl:
         session = MagicMock()
         session.scalars.return_value.first.return_value = doc
 
-        result = WebDocument.get_by_url(session, "https://example.com/path?q=hello%20world&lang=pl#section")
+        result = Document.get_by_url(session, "https://example.com/path?q=hello%20world&lang=pl#section")
 
         assert result is doc
         assert result.url == "https://example.com/path?q=hello%20world&lang=pl#section"
@@ -190,8 +190,8 @@ class TestGetByUrl:
 
 class TestCreateFlow:
     def test_create_basic_document(self):
-        """Verify WebDocument can be constructed and added to session (interface contract)."""
-        doc = WebDocument(
+        """Verify Document can be constructed and added to session (interface contract)."""
+        doc = Document(
             url="https://example.com/new",
             document_type="webpage",
             document_state="URL_ADDED",
@@ -209,7 +209,7 @@ class TestCreateFlow:
         """Create a document with all 28 columns and verify via dict()."""
         now = datetime.datetime(2026, 3, 1, 12, 0, 0)
         reviewed = datetime.datetime(2026, 3, 15, 9, 0, 0)
-        doc = WebDocument()
+        doc = Document()
         doc.id = 1
         doc.summary = "Test summary"
         doc.url = "https://example.com"
@@ -316,9 +316,9 @@ class TestUpdateFlow:
 
 class TestDeleteCascade:
     def test_cascade_config_on_relationship(self):
-        """Verify cascade is configured on WebDocument.embeddings relationship."""
+        """Verify cascade is configured on Document.embeddings relationship."""
         from sqlalchemy import inspect as sa_inspect
-        mapper = sa_inspect(WebDocument)
+        mapper = sa_inspect(Document)
         rel = mapper.relationships["embeddings"]
         # "all" expands to individual cascade options; check key ones
         assert "delete" in rel.cascade
@@ -413,7 +413,7 @@ class TestDictCompatibility:
 
     def test_all_keys_present_including_none(self):
         """dict() should include all keys even when values are None."""
-        doc = WebDocument()
+        doc = Document()
         doc.id = None
         doc.url = "https://x.com"
         doc.document_type = "link"

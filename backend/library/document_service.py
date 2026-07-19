@@ -1,7 +1,7 @@
 """DocumentService — business logic extracted from Flask routes.
 
 Orchestrates document lifecycle operations by composing:
-- WebDocument ORM model (data + domain methods)
+- Document ORM model (data + domain methods)
 - WebsitesDBPostgreSQL repository (complex queries)
 - Library modules (website/, text_functions, text_transcript)
 
@@ -16,7 +16,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
-from library.db.models import WebDocument
+from library.db.models import Document
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.text_functions import split_text_for_embedding
 from library.text_transcript import chapters_text_to_list
@@ -53,10 +53,10 @@ class DocumentService:
         source: str = "own",
         ai_summary: bool = False,
         chapter_list: bool = False,
-    ) -> WebDocument:
+    ) -> Document:
         """Create a new document, optionally storing text/html to S3 or local disk.
 
-        Returns the persisted WebDocument with its assigned id.
+        Returns the persisted Document with its assigned id.
         Raises ValueError for missing required params, RuntimeError for storage/DB failures.
         """
         if not url or not url_type:
@@ -87,7 +87,7 @@ class DocumentService:
             else:
                 logger.info("Missing HTML part!")
 
-        doc = WebDocument(url=url)
+        doc = Document(url=url)
         doc.set_document_type(url_type)
         doc.note = note
         doc.title = title
@@ -132,13 +132,13 @@ class DocumentService:
     # ------------------------------------------------------------------
 
     def refresh_document_source(self, document_id: int, url: str, html: str,
-                                text: str = "") -> WebDocument:
+                                text: str = "") -> Document:
         """Store a new captured source revision and re-extract deterministic authors."""
         try:
             document_id = int(document_id)
         except (TypeError, ValueError) as exc:
             raise ValueError("Refresh requires target_document_id") from exc
-        doc = WebDocument.get_by_id(self.session, document_id)
+        doc = Document.get_by_id(self.session, document_id)
         if doc is None:
             raise ValueError("Refresh target document does not exist")
         if doc.url != url:
@@ -171,23 +171,23 @@ class DocumentService:
         document_state: str | None = None,
         document_type: str | None = None,
         **attrs,
-    ) -> WebDocument:
+    ) -> Document:
         """Look up or create a document, apply attribute updates, and commit.
 
         Accepted keyword attrs: text, title, language, tags, summary, source, byline, note.
         Raises ValueError for invalid document_type.
-        Returns the saved WebDocument.
+        Returns the saved Document.
         """
         if not url:
             raise ValueError("Missing data. Make sure you provide 'url'")
 
         if link_id is not None:
-            doc = WebDocument.get_by_id(self.session, int(link_id))
+            doc = Document.get_by_id(self.session, int(link_id))
         else:
-            doc = WebDocument.get_by_url(self.session, url)
+            doc = Document.get_by_url(self.session, url)
 
         if doc is None:
-            doc = WebDocument(url=url)
+            doc = Document(url=url)
             self.session.add(doc)
 
         if document_state is not None:
@@ -217,7 +217,7 @@ class DocumentService:
 
     def delete_document(self, doc_id: int) -> bool:
         """Delete a document by ID. Returns True if deleted, False if not found."""
-        doc = WebDocument.get_by_id(self.session, doc_id)
+        doc = Document.get_by_id(self.session, doc_id)
         if doc is None:
             return False
 
@@ -229,12 +229,12 @@ class DocumentService:
     # get_document — extracted from /website_get
     # ------------------------------------------------------------------
 
-    def get_document(self, doc_id: int, reach: bool = True) -> WebDocument | None:
+    def get_document(self, doc_id: int, reach: bool = True) -> Document | None:
         """Retrieve a document by ID with optional neighbor population.
 
         Returns None if not found.
         """
-        return WebDocument.get_by_id(self.session, doc_id, reach=reach)
+        return Document.get_by_id(self.session, doc_id, reach=reach)
 
     # ------------------------------------------------------------------
     # Content methods — thin wrappers around library calls
@@ -273,7 +273,7 @@ class DocumentService:
         document_state: str | None = None,
         skip_if_exists: bool = True,
         **metadata,
-    ) -> tuple[WebDocument | None, str]:
+    ) -> tuple[Document | None, str]:
         """Import a document from an external source.
 
         Unlike create_document(), does NOT upload content to S3.
@@ -284,23 +284,23 @@ class DocumentService:
             document_type: Document type string (link, webpage, youtube, etc.)
             document_state: Initial state (default: URL_ADDED)
             skip_if_exists: If True, return (existing, "skipped") for duplicate URLs
-            **metadata: Any WebDocument attribute (title, language, source, note,
+            **metadata: Any Document attribute (title, language, source, note,
                         uuid, chapter_list, created_at, text, text_raw, summary,
                         paywall, published_on, collection_id, ai_summary_needed)
 
         Returns:
-            (WebDocument, "added") for new documents
+            (Document, "added") for new documents
             (existing_doc, "skipped") if URL exists and skip_if_exists=True
         """
         if not url:
             raise ValueError("Missing required parameter: 'url'")
 
         if skip_if_exists:
-            existing = WebDocument.get_by_url(self.session, url)
+            existing = Document.get_by_url(self.session, url)
             if existing is not None:
                 return existing, "skipped"
 
-        doc = WebDocument(url=url)
+        doc = Document(url=url)
         doc.set_document_type(document_type)
 
         if document_state:

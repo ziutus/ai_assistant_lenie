@@ -3,9 +3,9 @@
 Verifies that process_youtube_url():
 - Accepts session parameter
 - Accepts ai_summary_needed and llm_model parameters (pre-existing bug fix)
-- Uses WebDocument ORM model instead of StalkerWebDocumentDB
+- Uses Document ORM model instead of StalkerWebDocumentDB
 - Calls session.commit() instead of save()
-- Returns WebDocument instance
+- Returns Document instance
 
 Pre-mocks boto3 so that importing library.youtube_processing (which
 transitively imports boto3 via text_detect_language) does not fail
@@ -51,7 +51,7 @@ def mock_session():
 
 @pytest.fixture
 def mock_web_document():
-    """A mock WebDocument ORM instance."""
+    """A mock Document ORM instance."""
     from library.models.stalker_document_status import StalkerDocumentStatus
     from library.models.stalker_document_type import StalkerDocumentType
 
@@ -105,16 +105,16 @@ class TestProcessYoutubeUrlSignature:
         assert "llm_model" in sig.parameters
 
     def test_return_annotation_is_web_document(self):
-        """Return type annotation should be WebDocument."""
+        """Return type annotation should be Document."""
         import inspect
         from library.youtube_processing import process_youtube_url
         sig = inspect.signature(process_youtube_url)
-        # Check that return annotation references WebDocument (not StalkerWebDocumentDB)
+        # Check that return annotation references Document (not StalkerWebDocumentDB)
         ret = sig.return_annotation
         assert ret is not inspect.Parameter.empty
         # Allow both string annotation and actual class
         ret_name = ret if isinstance(ret, str) else getattr(ret, "__name__", str(ret))
-        assert "WebDocument" in str(ret_name), f"Expected WebDocument return type, got {ret_name}"
+        assert "Document" in str(ret_name), f"Expected Document return type, got {ret_name}"
 
 
 # ---------------------------------------------------------------------------
@@ -125,9 +125,9 @@ class TestNewDocumentCreation:
     """Verify new YouTube documents are created via ORM."""
 
     @patch("library.youtube_processing.StalkerYoutubeFile")
-    @patch("library.youtube_processing.WebDocument")
+    @patch("library.youtube_processing.Document")
     def test_new_document_uses_orm(self, MockWebDocument, MockYoutubeFile, mock_session):
-        """When URL not found, should create WebDocument and session.add()."""
+        """When URL not found, should create Document and session.add()."""
         from library.youtube_processing import process_youtube_url
         from library.models.stalker_document_status import StalkerDocumentStatus
 
@@ -161,7 +161,7 @@ class TestNewDocumentCreation:
         mock_session.commit.assert_called()
 
     @patch("library.youtube_processing.StalkerYoutubeFile")
-    @patch("library.youtube_processing.WebDocument")
+    @patch("library.youtube_processing.Document")
     def test_existing_document_no_add(self, MockWebDocument, MockYoutubeFile, mock_session):
         """When URL exists, should NOT session.add() — just use existing doc."""
         from library.youtube_processing import process_youtube_url
@@ -200,10 +200,10 @@ class TestNoLegacyImports:
             "youtube_processing.py still imports StalkerWebDocumentDB"
 
     def test_imports_web_document(self):
-        """WebDocument should be imported from library.db.models."""
+        """Document should be imported from library.db.models."""
         import library.youtube_processing as mod
-        assert hasattr(mod, "WebDocument"), \
-            "youtube_processing.py must import WebDocument from library.db.models"
+        assert hasattr(mod, "Document"), \
+            "youtube_processing.py must import Document from library.db.models"
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +214,7 @@ class TestSessionCommit:
     """Verify session.commit() is called, not doc.save()."""
 
     @patch("library.youtube_processing.StalkerYoutubeFile")
-    @patch("library.youtube_processing.WebDocument")
+    @patch("library.youtube_processing.Document")
     def test_commit_called_for_metadata_update(self, MockWebDocument, MockYoutubeFile, mock_session):
         """When metadata is updated, session.commit() should be called."""
         from library.youtube_processing import process_youtube_url
@@ -286,7 +286,7 @@ class TestDocumentStateErrorClearedOnSuccess:
     @patch("library.youtube_processing.compare_language")
     @patch("library.youtube_processing.text_language_detect")
     @patch("library.youtube_processing.StalkerYoutubeFile")
-    @patch("library.youtube_processing.WebDocument")
+    @patch("library.youtube_processing.Document")
     def test_captions_success_clears_stale_error(
         self, MockWebDocument, MockYoutubeFile, mock_detect, mock_compare, mock_titles_to_text, mock_session
     ):

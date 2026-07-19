@@ -5,7 +5,7 @@
 
 \c "lenie-ai";
 
-ALTER TABLE public.web_documents
+ALTER TABLE public.documents
     ADD COLUMN IF NOT EXISTS text_extracted TEXT;
 
-SELECT 'Column text_extracted added to web_documents' AS status;
+SELECT 'Column text_extracted added to documents' AS status;

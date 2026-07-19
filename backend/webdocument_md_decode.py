@@ -13,7 +13,7 @@ from library.lenie_markdown import get_images_with_links_md, links_correct, proc
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.db.engine import get_session
-from library.db.models import WebDocument
+from library.db.models import Document
 from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
 from library.config_loader import load_config
 
@@ -262,7 +262,7 @@ if __name__ == '__main__':
                 document_id = document_tmp
 
             logger.info(f"Working on document_id {document_id}")
-            doc = WebDocument.get_by_id(session, document_id)
+            doc = Document.get_by_id(session, document_id)
             if doc is None:
                 logger.warning(f"Document {document_id} not found, skipping")
                 continue

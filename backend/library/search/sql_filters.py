@@ -1,7 +1,7 @@
 """Shared SQL filter builder for lexical and vector search (stage 6 of the plan).
 
 ``build_document_filters()`` turns a validated ``SearchFilters`` (stage 1)
-into SQLAlchemy predicates against ``WebDocument`` columns — including a
+into SQLAlchemy predicates against ``Document`` columns — including a
 correlated EXISTS subquery against ``document_time_periods`` for
 ``subject_period_*``. Both ``search_text()`` and ``get_similar()``
 (``library/stalker_web_documents_db_postgresql.py``) apply the *same* list
@@ -27,17 +27,17 @@ from library.db.models import (
     PersonAlias,
     Publisher,
     PublisherDomain,
-    WebDocument,
+    Document,
 )
 from library.publisher_registry import normalize_publisher_domain
 from library.search.types import SearchFilters
 
 def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
-    """Return WebDocument-scoped predicates for the given filters.
+    """Return Document-scoped predicates for the given filters.
 
     Every returned element is meant to be combined with AND (via
     ``.where(*conditions)`` or ``and_(*conditions)``) against a query that
-    already selects from/joins ``WebDocument``.
+    already selects from/joins ``Document``.
     """
     conditions: list[ColumnElement[bool]] = []
 
@@ -49,49 +49,49 @@ def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
             func.unaccent(func.lower(Publisher.canonical_name))
             == func.unaccent(filters.publisher_name.strip().lower()),
         )
-        conditions.append(WebDocument.publisher_id.in_(publisher_ids))
+        conditions.append(Document.publisher_id.in_(publisher_ids))
 
     if filters.publisher_domain is not None:
         domain = normalize_publisher_domain(filters.publisher_domain)
         publisher_ids = select(PublisherDomain.publisher_id).where(
             func.lower(PublisherDomain.domain) == domain,
         )
-        conditions.append(WebDocument.publisher_id.in_(publisher_ids))
+        conditions.append(Document.publisher_id.in_(publisher_ids))
 
     if filters.discovery_source_name is not None:
-        # Stage 11d: web_documents carries discovery_source_id (FK to the
+        # Stage 11d: documents carries discovery_source_id (FK to the
         # discovery_sources lookup); the filter still takes a NAME. Never
         # join information_sources (claim/reporting provenance).
         discovery_source_ids = select(DiscoverySource.id).where(
             func.unaccent(func.lower(DiscoverySource.name))
             == func.unaccent(filters.discovery_source_name.strip().lower()),
         )
-        conditions.append(WebDocument.discovery_source_id.in_(discovery_source_ids))
+        conditions.append(Document.discovery_source_id.in_(discovery_source_ids))
 
     if filters.collection_name is not None:
-        # Stage 11c: collections is a real lookup table and web_documents
+        # Stage 11c: collections is a real lookup table and documents
         # carries collection_id (ADR-017: 1:N). Exact name match resolved
         # through a subquery — an unknown collection name matches nothing.
         collection_ids = select(Collection.id).where(
             Collection.name == filters.collection_name,
         )
-        conditions.append(WebDocument.collection_id.in_(collection_ids))
+        conditions.append(Document.collection_id.in_(collection_ids))
 
     if filters.published_on_from is not None:
-        conditions.append(WebDocument.published_on >= filters.published_on_from)
+        conditions.append(Document.published_on >= filters.published_on_from)
     if filters.published_on_to is not None:
-        conditions.append(WebDocument.published_on <= filters.published_on_to)
+        conditions.append(Document.published_on <= filters.published_on_to)
 
     if filters.ingested_at_from is not None:
-        conditions.append(WebDocument.created_at >= filters.ingested_at_from)
+        conditions.append(Document.created_at >= filters.ingested_at_from)
     if filters.ingested_at_to is not None:
-        conditions.append(WebDocument.created_at <= filters.ingested_at_to)
+        conditions.append(Document.created_at <= filters.ingested_at_to)
 
     if filters.document_types:
-        conditions.append(WebDocument.document_type.in_(filters.document_types))
+        conditions.append(Document.document_type.in_(filters.document_types))
 
     if filters.languages:
-        conditions.append(WebDocument.language.in_(filters.languages))
+        conditions.append(Document.language.in_(filters.languages))
 
     if filters.subject_period_start_year is not None or filters.subject_period_end_year is not None:
         conditions.append(_subject_period_overlap(
@@ -109,7 +109,7 @@ def _author_match(name: str) -> ColumnElement[bool]:
     """
     folded = name.strip().lower()
     author_links = select(DocumentPerson.id).where(
-        DocumentPerson.document_id == WebDocument.id,
+        DocumentPerson.document_id == Document.id,
         DocumentPerson.role == "author",
     )
     matching_link = (
@@ -117,7 +117,7 @@ def _author_match(name: str) -> ColumnElement[bool]:
         .join(Person, DocumentPerson.person_id == Person.id)
         .outerjoin(PersonAlias, PersonAlias.person_id == Person.id)
         .where(
-            DocumentPerson.document_id == WebDocument.id,
+            DocumentPerson.document_id == Document.id,
             DocumentPerson.role == "author",
             or_(
                 func.unaccent(func.lower(Person.canonical_name)) == func.unaccent(folded),
@@ -125,7 +125,7 @@ def _author_match(name: str) -> ColumnElement[bool]:
             ),
         )
     )
-    legacy_byline = func.unaccent(func.lower(func.coalesce(WebDocument.byline, ""))).ilike(
+    legacy_byline = func.unaccent(func.lower(func.coalesce(Document.byline, ""))).ilike(
         func.unaccent(f"%{folded}%"),
     )
     return or_(exists(matching_link), and_(~exists(author_links), legacy_byline))
@@ -140,7 +140,7 @@ def _subject_period_overlap(start_year: int | None, end_year: int | None) -> Col
     Python-side filter used, now evaluated in SQL, before LIMIT, for both
     lexical and vector search.
     """
-    subquery = select(DocumentTimePeriod.id).where(DocumentTimePeriod.document_id == WebDocument.id)
+    subquery = select(DocumentTimePeriod.id).where(DocumentTimePeriod.document_id == Document.id)
     if start_year is not None:
         subquery = subquery.where(or_(
             DocumentTimePeriod.period_end_year.is_(None),

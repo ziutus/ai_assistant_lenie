@@ -1,6 +1,6 @@
 """Unit tests for article review tracking (Story 33.4).
 
-Tests WebDocument reviewed_at/obsidian_note_paths attributes, dict() output,
+Tests Document reviewed_at/obsidian_note_paths attributes, dict() output,
 and JSONB append logic.
 """
 
@@ -10,13 +10,13 @@ import pytest
 
 sa = pytest.importorskip("sqlalchemy")
 
-from library.db.models import WebDocument  # noqa: E402
+from library.db.models import Document  # noqa: E402
 
 
 @pytest.fixture
 def web_document():
-    """Create a minimal WebDocument instance for testing (no DB session needed)."""
-    doc = WebDocument(
+    """Create a minimal Document instance for testing (no DB session needed)."""
+    doc = Document(
         url="https://example.com/article",
         document_type="webpage",
         document_state="MD_SIMPLIFIED",
@@ -109,7 +109,7 @@ class TestFilterLogic:
     """Test Python-level filter logic matching _get_documents() implementation."""
 
     def _make_doc(self, reviewed_at=None, obsidian_note_paths=None):
-        doc = WebDocument(
+        doc = Document(
             url="https://example.com/test",
             document_type="webpage",
             document_state="MD_SIMPLIFIED",

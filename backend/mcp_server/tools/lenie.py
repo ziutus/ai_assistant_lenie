@@ -10,7 +10,7 @@ from sqlalchemy import Text as SaText
 from sqlalchemy.exc import OperationalError
 
 from library.db.engine import get_session
-from library.db.models import WebDocument
+from library.db.models import Document
 from mcp_server.errors import raise_article_not_found, raise_database_unavailable
 
 if TYPE_CHECKING:
@@ -47,26 +47,26 @@ def register_lenie_tools(mcp: "FastMCP") -> None:
         try:
             session = get_session()
             unreviewed_filter = or_(
-                WebDocument.reviewed_at.is_(None),
-                cast(WebDocument.obsidian_note_paths, SaText) == "[]",
+                Document.reviewed_at.is_(None),
+                cast(Document.obsidian_note_paths, SaText) == "[]",
             )
 
-            stmt = select(WebDocument).where(unreviewed_filter)
-            count_stmt = select(func.count(WebDocument.id)).where(unreviewed_filter)
+            stmt = select(Document).where(unreviewed_filter)
+            count_stmt = select(func.count(Document.id)).where(unreviewed_filter)
 
             if source_filter:
-                url_filter = WebDocument.url.ilike(f"%{source_filter}%")
+                url_filter = Document.url.ilike(f"%{source_filter}%")
                 stmt = stmt.where(url_filter)
                 count_stmt = count_stmt.where(url_filter)
 
             if type_filter:
-                type_f = WebDocument.document_type == type_filter
+                type_f = Document.document_type == type_filter
                 stmt = stmt.where(type_f)
                 count_stmt = count_stmt.where(type_f)
 
             total_unreviewed = session.execute(count_stmt).scalar() or 0
 
-            stmt = stmt.order_by(WebDocument.created_at.desc()).limit(limit).offset(offset)
+            stmt = stmt.order_by(Document.created_at.desc()).limit(limit).offset(offset)
             docs = session.execute(stmt).scalars().all()
 
             articles = []
@@ -94,7 +94,7 @@ def register_lenie_tools(mcp: "FastMCP") -> None:
         """Return the full content and metadata of a specific article from the Lenie knowledge base.
 
         Args:
-            article_id: Integer primary key from web_documents.id (shown in lenie_unreviewed_articles results).
+            article_id: Integer primary key from documents.id (shown in lenie_unreviewed_articles results).
 
         Returns:
             dict with full article data: id, title, source, size_kb, content, language,
@@ -108,7 +108,7 @@ def register_lenie_tools(mcp: "FastMCP") -> None:
         try:
             session = get_session()
             doc = session.execute(
-                select(WebDocument).where(WebDocument.id == article_id)
+                select(Document).where(Document.id == article_id)
             ).scalars().first()
 
             if doc is None:
