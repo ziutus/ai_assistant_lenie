@@ -145,13 +145,13 @@ class TestAlembicEnvMetadata:
             "Base.metadata must contain web_documents table"
 
     @patch.dict("os.environ", ENV_VARS, clear=False)
-    def test_base_metadata_has_websites_embeddings_table(self):
-        """Base.metadata should have websites_embeddings table after models are imported."""
+    def test_base_metadata_has_document_embeddings_table(self):
+        """Base.metadata should have document_embeddings table after models are imported."""
         import library.db.models  # noqa: F401
         from library.db.engine import Base
 
-        assert "websites_embeddings" in Base.metadata.tables, \
-            "Base.metadata must contain websites_embeddings table"
+        assert "document_embeddings" in Base.metadata.tables, \
+            "Base.metadata must contain document_embeddings table"
 
 
 # ---------------------------------------------------------------------------

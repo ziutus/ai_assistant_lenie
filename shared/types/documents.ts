@@ -57,7 +57,7 @@ export interface SearchResult {
   id: number;
   text: string;
   similarity: number;
-  website_id: number;
+  document_id: number;
   url: string;
   chunk_id: number | null;
   obsidian_note_paths: string[];

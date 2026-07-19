@@ -5,6 +5,40 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-19 — Etap 11, sesja E (rename `websites_embeddings`→`document_embeddings`, `website_id`→`document_id`) — UKOŃCZONA
+
+**Zakres wykonany:** migracja Alembic `e6f7a8b9c0d1` — rename tabeli, kolumny `website_id`→
+`document_id`, PK, trzech indeksów btree i dwóch constraintów FK (indeksy HNSW `idx_emb_*`
+nazwane po modelach zostają). ORM: `WebsiteEmbedding`→`DocumentEmbedding`. Backend: repozytorium
+(selecty + klucze dictów wyników), `search_service`, `server.py`, `document_analysis_service`
+(generowanie embeddingów z runów), `chunk_review_routes` (wskaźnik has_embeddings), batch
+(`web_documents_do_the_needful_new`, `webdocument_md_decode`, `article_browser`). **API**:
+klucz `website_id` w wynikach `/website_similar`, `/search` i `/website_split_for_embedding`
+to teraz `document_id`. Klienci: `shared/types.SearchResult.document_id`, react (`utils.tsx`,
+`search.tsx`, `useManageLLM` — także lokalne zmienne), slack_bot (formatter nie czytał tego
+klucza — zaktualizowana tylko fixture testowa). Init SQL: 04/08/10/16.
+
+**Haczyk złapany w testach na NAS:** pierwsza wersja downgrade'u odwoływała się do nazwy tabeli
+sprzed rename'u (statementy wykonują się w odwróconej kolejności, gdy tabela wciąż nazywa się
+`document_embeddings`) — transakcyjny DDL wycofał całość, baza została bezpiecznie na head;
+poprawione i cykl przetestowany ponownie (3062 embeddingi w obie strony).
+
+**Testy uruchomione:** `tests/unit/` **1830 passed**; ruff czysty; Vitest 11 passed; build React
+czysty; slack_bot `test_search_formatter` 13 passed. Migracja na NAS: upgrade → psql → downgrade
+(tabela i kolumna wracają, 3062 wiersze) → upgrade → head `e6f7a8b9c0d1`. Deploy
+backend+frontend na NAS. E2E: `/website_similar` i `/search` zwracają `document_id` (klucz
+`website_id` nieobecny); klucz testowy usunięty.
+
+**Otwarte ryzyka:** brak — rename czysto mechaniczny; jedyny konsument zewnętrzny klucza
+(`SearchResult` w react) zaktualizowany i wdrożony razem z backendem.
+
+**PR/merge:** PR #308, branch `feat/search-etap-11e-document-embeddings`.
+
+**Następny krok:** Etap 11, sesja F — `web_documents`→`documents` (92 pliki, głównie
+historia Alembic/init do POZOSTAWIENIA; aktywny kod: `__tablename__`, 15 FK w modelach,
+testy metadanych). Potem 11g (pipeline/uuid/created_at + aliasy + `subject_period` w
+`document_time_periods`? — zweryfikować co zostało z sekcji 3).
+
 ## 2026-07-19 — Etap 11, sesja D (normalizacja `source`→`discovery_source_id` + `sources`→`discovery_sources`) — UKOŃCZONA
 
 **Zakres wykonany:** największa normalizacja etapu. **Decyzje użytkownika** (2026-07-19): format

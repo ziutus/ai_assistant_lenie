@@ -262,7 +262,7 @@ class TestWebsiteSimilar:
         with patch("server.get_scoped_session", return_value=mock_session):
             with patch("server.SearchService") as MockService:
                 service_instance = MagicMock()
-                service_instance.search_similar.return_value = [{"website_id": 1, "similarity": 0.9}]
+                service_instance.search_similar.return_value = [{"document_id": 1, "similarity": 0.9}]
                 MockService.return_value = service_instance
 
                 resp = client.post("/website_similar", json={
@@ -285,7 +285,7 @@ class TestWebsiteSimilar:
             with patch("server.SearchService") as MockService:
                 service_instance = MagicMock()
                 service_instance.search_similar.return_value = [
-                    {"website_id": 1, "text": "t", "similarity": 0.9, "id": 10,
+                    {"document_id": 1, "text": "t", "similarity": 0.9, "id": 10,
                      "url": "https://example.com", "language": "en", "text_original": "t",
                      "websites_text_length": 100, "embeddings_text_length": 50,
                      "title": "Test", "document_type": "webpage", "collection_id": None}

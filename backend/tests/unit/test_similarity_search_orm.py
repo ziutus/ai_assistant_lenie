@@ -12,7 +12,7 @@ sa = pytest.importorskip("sqlalchemy")
 
 
 EXPECTED_KEYS = {
-    "website_id", "text", "similarity", "id", "url", "language",
+    "document_id", "text", "similarity", "id", "url", "language",
     "text_original", "websites_text_length", "embeddings_text_length",
     "title", "document_type", "collection_id", "published_on", "created_at",
     "chunk_id", "obsidian_note_paths",
@@ -22,7 +22,7 @@ EXPECTED_KEYS = {
 def _make_row(**overrides):
     """Create a mock result row with all 16 expected attributes."""
     defaults = {
-        "website_id": 1,
+        "document_id": 1,
         "text": "chunk text",
         "similarity": 0.85,
         "id": 10,
@@ -80,12 +80,12 @@ class TestGetSimilarORM:
         assert set(result[0].keys()) == EXPECTED_KEYS
 
     def test_result_values_match_row(self):
-        row = _make_row(website_id=42, similarity=0.92, title="My Doc")
+        row = _make_row(document_id=42, similarity=0.92, title="My Doc")
         repo, _ = _create_repo_with_session([row])
 
         result = repo.get_similar([0.1, 0.2], model="m")
 
-        assert result[0]["website_id"] == 42
+        assert result[0]["document_id"] == 42
         assert result[0]["similarity"] == 0.92
         assert result[0]["title"] == "My Doc"
 
@@ -183,14 +183,14 @@ class TestGetSimilarORM:
 
     def test_multiple_results(self):
         rows = [
-            _make_row(website_id=1, similarity=0.95),
-            _make_row(website_id=2, similarity=0.80),
-            _make_row(website_id=3, similarity=0.65),
+            _make_row(document_id=1, similarity=0.95),
+            _make_row(document_id=2, similarity=0.80),
+            _make_row(document_id=3, similarity=0.65),
         ]
         repo, _ = _create_repo_with_session(rows)
 
         result = repo.get_similar([0.1, 0.2], model="m", limit=3)
 
         assert len(result) == 3
-        assert result[0]["website_id"] == 1
-        assert result[2]["website_id"] == 3
+        assert result[0]["document_id"] == 1
+        assert result[2]["document_id"] == 3

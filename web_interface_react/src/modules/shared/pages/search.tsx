@@ -116,7 +116,7 @@ const Search = () => {
       )}
       <div style={{ display: "grid", gap: 12, maxWidth: 1050, paddingBottom: 30 }}>
         {results?.map(item => (
-          <ListItemSearchSimilar key={`${item.website_id}-${item.chunk_id ?? item.id ?? "text"}`}
+          <ListItemSearchSimilar key={`${item.document_id}-${item.chunk_id ?? item.id ?? "text"}`}
             item={item} query={searchResponse?.interpretation.query ?? submittedQuery} />
         ))}
       </div>

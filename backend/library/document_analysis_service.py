@@ -790,7 +790,7 @@ def generate_embeddings_from_run(
     corrected_text (transcript mode) or original_text (article mode), splits it
     into embedding-sized pieces (md_split_for_emb, same splitter used by
     webdocument_md_decode.py), strips markdown syntax, and stores one
-    WebsiteEmbedding row per piece with chunk_id set. REKLAMA/SZUM chunks and
+    DocumentEmbedding row per piece with chunk_id set. REKLAMA/SZUM chunks and
     non-approved TEMAT chunks are skipped.
 
     Pieces are embedded in batches of EMBEDDING_BATCH_SIZE (one provider API
@@ -805,7 +805,7 @@ def generate_embeddings_from_run(
     from sqlalchemy import delete, select
 
     from library.config_loader import load_config
-    from library.db.models import WebsiteEmbedding
+    from library.db.models import DocumentEmbedding
     from library.lenie_markdown import md_remove_markdown, md_split_for_emb
     from library.article_quality import remove_photo_caption_lines
     from library.models.stalker_document_status import StalkerDocumentStatus
@@ -835,7 +835,7 @@ def generate_embeddings_from_run(
 
     chunk_ids = [c.id for c in all_chunks]
     if chunk_ids:
-        session.execute(delete(WebsiteEmbedding).where(WebsiteEmbedding.chunk_id.in_(chunk_ids)))
+        session.execute(delete(DocumentEmbedding).where(DocumentEmbedding.chunk_id.in_(chunk_ids)))
         session.commit()
 
     if not doc.language:
@@ -871,7 +871,7 @@ def generate_embeddings_from_run(
                 )
                 continue
             websites.embedding_add(
-                website_id=doc.id,
+                document_id=doc.id,
                 embedding=result.embedding,
                 language=doc.language,
                 text=cleaned,

@@ -390,12 +390,12 @@ def website_get_by_id():
     # POST /analysis_run/<id>/generate_embeddings). Replaces the old frontend
     # guess based on counting "\n\n\n" separators.
     from sqlalchemy import func as sa_func, select as sa_select
-    from library.db.models import DocumentChunk, WebsiteEmbedding
+    from library.db.models import DocumentChunk, DocumentEmbedding
 
     result = doc.dict()
     result["embeddings_count"] = session.execute(
-        sa_select(sa_func.count()).select_from(WebsiteEmbedding)
-        .where(WebsiteEmbedding.website_id == link_id_int)
+        sa_select(sa_func.count()).select_from(DocumentEmbedding)
+        .where(DocumentEmbedding.document_id == link_id_int)
     ).scalar()
     result["approved_chunks_count"] = session.execute(
         sa_select(sa_func.count()).select_from(DocumentChunk)

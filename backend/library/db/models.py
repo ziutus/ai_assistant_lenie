@@ -1,11 +1,11 @@
-"""SQLAlchemy ORM models for web_documents and websites_embeddings tables.
+"""SQLAlchemy ORM models for web_documents and document_embeddings tables.
 
 Provides:
 - Lookup models: ``DocumentStatusType``, ``DocumentStatusErrorType``,
   ``DocumentType``, ``EmbeddingModel``
 - ``WebDocument`` — Single Table Inheritance model for web_documents
 - 6 STI subclasses: LinkDocument, YouTubeDocument, MovieDocument, etc.
-- ``WebsiteEmbedding`` — model for websites_embeddings with pgvector support
+- ``DocumentEmbedding`` — model for document_embeddings with pgvector support
 """
 
 import datetime
@@ -342,7 +342,7 @@ class WebDocument(Base):
     )
 
     # Relationship to embeddings
-    embeddings: Mapped[list["WebsiteEmbedding"]] = relationship(
+    embeddings: Mapped[list["DocumentEmbedding"]] = relationship(
         back_populates="document",
         cascade="all, delete-orphan",
         passive_deletes=True,
@@ -565,15 +565,15 @@ class SocialMediaPostDocument(WebDocument):
 
 
 # ---------------------------------------------------------------------------
-# WebsiteEmbedding — vector embeddings for document chunks
+# DocumentEmbedding — vector embeddings for document chunks
 # ---------------------------------------------------------------------------
 
 
-class WebsiteEmbedding(Base):
-    __tablename__ = "websites_embeddings"
+class DocumentEmbedding(Base):
+    __tablename__ = "document_embeddings"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    website_id: Mapped[int] = mapped_column(
+    document_id: Mapped[int] = mapped_column(
         ForeignKey("web_documents.id", ondelete="CASCADE"),
         nullable=False,
     )
