@@ -1904,7 +1904,9 @@ def compute_document_quality(doc_id: int):
     ]
     try:
         from library.article_quality import compute_quality
-        doc.quality = compute_quality(doc, sections, model=run.model)
+        from library.llm_usage.context import llm_usage_context
+        with llm_usage_context(document_id=doc_id, analysis_run_id=run.id):
+            doc.quality = compute_quality(doc, sections, model=run.model)
     except Exception:
         logger.exception("quality computation failed for document %d", doc_id)
         return jsonify({"status": "error", "message": "Quality computation failed"}), 500
@@ -2439,11 +2441,15 @@ def reanalyze_chunk(chunk_id: int):
                 .where(DocumentChunk.run_id == chunk.run_id)
             ) or 1
             from library.chunk_llm_analysis import analyze_article_chunk
-            result = analyze_article_chunk(text_to_analyze, model,
-                                           position=chunk.position, total=total)
+            from library.llm_usage.context import llm_usage_context
+            with llm_usage_context(document_id=run.document_id, analysis_run_id=run.id):
+                result = analyze_article_chunk(text_to_analyze, model,
+                                               position=chunk.position, total=total)
         elif mode == "semantic" and chunk.corrected_text and chunk.corrected_text.strip():
             from library.chunk_llm_analysis import analyze_chunk_semantic
-            result = analyze_chunk_semantic(chunk.corrected_text, model, speakers=speakers)
+            from library.llm_usage.context import llm_usage_context
+            with llm_usage_context(document_id=run.document_id, analysis_run_id=run.id):
+                result = analyze_chunk_semantic(chunk.corrected_text, model, speakers=speakers)
         else:
             text_to_analyze = chunk.original_text or ""
             if not text_to_analyze.strip():
@@ -2454,8 +2460,10 @@ def reanalyze_chunk(chunk_id: int):
                 .order_by(DocumentChunk.position)
             ).all()
             from library.chunk_llm_analysis import analyze_chunk
-            result = analyze_chunk(text_to_analyze, model, position=chunk.position,
-                                   total=len(all_chunks), speakers=speakers)
+            from library.llm_usage.context import llm_usage_context
+            with llm_usage_context(document_id=run.document_id, analysis_run_id=run.id):
+                result = analyze_chunk(text_to_analyze, model, position=chunk.position,
+                                       total=len(all_chunks), speakers=speakers)
     except Exception:
         logger.exception("LLM call failed for chunk %d (mode=%s)", chunk_id, mode)
         return jsonify({"status": "error", "message": "LLM call failed"}), 500

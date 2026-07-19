@@ -89,6 +89,11 @@ def llm_costs():
         .group_by(LlmUsageLog.analysis_job_id, DocumentAnalysisJob.run_id, LlmUsageLog.cost_currency)
         .order_by(func.min(LlmUsageLog.called_at).desc())
     ).all()
+    calls = []
+    if document_id is not None:
+        calls = session.scalars(
+            select(LlmUsageLog).where(*filters).order_by(LlmUsageLog.called_at.desc()).limit(1000)
+        ).all()
 
     return jsonify({
         "status": "success", "from": date_from.isoformat(), "to": date_to.isoformat(),
@@ -105,4 +110,12 @@ def llm_costs():
         "analyses": [{"job_id": r.analysis_job_id, "run_id": r.run_id, "currency": r.cost_currency,
                       "started_at": r.started_at.isoformat() if r.started_at else None,
                       "calls": r.calls, "tokens": r.tokens, "cost": _money(r.cost)} for r in jobs],
+        "calls": [{
+            "id": r.id, "document_id": r.document_id, "job_id": r.analysis_job_id,
+            "run_id": r.analysis_run_id, "called_at": r.called_at.isoformat(),
+            "operation": r.operation, "provider": r.provider, "model": r.model,
+            "prompt_tokens": r.prompt_tokens, "completion_tokens": r.completion_tokens,
+            "tokens": r.total_tokens, "cost": _money(r.cost_amount), "currency": r.cost_currency,
+            "cost_status": r.cost_status, "success": r.success, "error_code": r.error_code,
+        } for r in calls],
     })

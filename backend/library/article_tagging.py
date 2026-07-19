@@ -39,7 +39,8 @@ def tag_article_with_llm(text: str, title: str) -> list[str]:
         f"TYTUŁ: {title}\n\nTREŚĆ:\n{text[:3000]}"
     )
     try:
-        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=100)
+        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=100,
+                          operation="thematic_tagging")
         raw = response.response_text.strip().lower()
         found = [t.strip() for t in raw.split(",") if t.strip() in THEMATIC_TAGS]
         return found
@@ -60,7 +61,8 @@ def extract_countries_with_llm(text: str, title: str) -> list[str]:
         f"TYTUŁ: {title}\n\nTREŚĆ:\n{text[:3000]}"
     )
     try:
-        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=150)
+        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=150,
+                          operation="country_tagging")
         raw = response.response_text.strip().lower()
         if not raw:
             return []
@@ -129,7 +131,8 @@ def confirm_places_with_llm(text: str, title: str, candidate_names: list[str]) -
         f"TYTUŁ: {title}\n\nFRAGMENTY:\n{context[:6000]}"
     )
     try:
-        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=150)
+        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=150,
+                          operation="place_relevance")
         raw = response.response_text.strip()
         if not raw:
             return []
@@ -171,7 +174,8 @@ def confirm_person_with_llm(text: str, title: str, mention: str, candidates: lis
         f"TYTUŁ: {title}\n\nFRAGMENTY:\n{context[:3000]}"
     )
     try:
-        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=20)
+        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=20,
+                          operation="place_candidate_selection")
         raw = response.response_text.strip().upper()
         valid = {c["qid"] for c in candidates}
         for token in re.findall(r"Q\d+", raw):
@@ -210,7 +214,8 @@ def extract_countries_hybrid(text: str, title: str) -> list[str]:
         f"TYTUŁ: {title}\n\nTREŚĆ:\n{text[:3000]}"
     )
     try:
-        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=150)
+        response = ai_ask(prompt, model=_tagging_model(), temperature=0.0, max_token_count=150,
+                          operation="infrastructure_relevance")
         raw = response.response_text.strip()
         if not raw:
             return []

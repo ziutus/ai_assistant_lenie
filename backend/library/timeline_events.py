@@ -336,11 +336,13 @@ FRAGMENT:
 """
 
 
-def extract_fragment_events(fragment: str, chapter_position: int | None, model: str) -> tuple[list[dict], dict]:
+def extract_fragment_events(fragment: str, chapter_position: int | None, model: str,
+                            *, document_id: int | None = None) -> tuple[list[dict], dict]:
     """Make one LLM call and retain only grounded events with normalizable dates."""
     response = ai_ask(
         _timeline_prompt(fragment), model=model, temperature=0.1, max_token_count=4000,
         operation="timeline_event_extraction",
+        document_id=document_id,
     )
     events: list[dict] = []
     rejected_quote = rejected_date = 0
@@ -403,7 +405,9 @@ def extract_document_events(session, doc, model: str | None = None, *, chapter_p
         chapter_events: list[dict] = []
         fragment_reports: list[dict] = []
         for fragment in split_timeline_fragments(chapter["text"]):
-            extracted, report = extract_fragment_events(fragment, chapter["position"], selected_model)
+            extracted, report = extract_fragment_events(
+                fragment, chapter["position"], selected_model, document_id=getattr(doc, "id", None),
+            )
             chapter_events.extend(extracted)
             fragment_reports.append(report)
         events.extend(chapter_events)

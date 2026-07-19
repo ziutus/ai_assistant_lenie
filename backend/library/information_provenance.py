@@ -127,7 +127,7 @@ Tekst:
 {text}"""
     # 1200 tokenów nie starczało na artykuły z długą listą źródeł — odpowiedź
     # była ucinana w połowie obiektu JSON.
-    raw, _ = call_model(prompt, model, max_tokens=2400)
+    raw, _ = call_model(prompt, model, max_tokens=2400, operation="information_provenance")
     candidates = _json_array(raw)
     result = []
     for item in candidates:

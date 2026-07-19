@@ -243,7 +243,10 @@ def process_article_content(doc_id: int, cache_base_dir: str,
     print("  Process: converting HTML to markdown...")
     if not skip_llm:
         print("  Process: running LLM extraction (CloudFerro primary, ARK Labs fallback)...")
-    markdown_text, article = extract_article(doc, doc_cache_dir, verbose=True, skip_llm=skip_llm)
+    markdown_text, article = extract_article(
+        doc, doc_cache_dir, verbose=True, skip_llm=skip_llm,
+        operation="dynamodb_import_extraction",
+    )
 
     if not markdown_text:
         print("  Process: markdown conversion failed")
