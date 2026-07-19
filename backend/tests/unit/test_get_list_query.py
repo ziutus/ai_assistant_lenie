@@ -1,4 +1,4 @@
-"""Unit tests for WebsitesDBPostgreSQL.get_list() ORM query construction.
+"""Unit tests for DocumentRepository.get_list() ORM query construction.
 
 Tests verify that ORM filters are correctly applied via SQLAlchemy.
 Uses a mock Session to inspect generated statements.
@@ -23,10 +23,10 @@ def mock_session():
 
 @pytest.fixture
 def db_instance(mock_session):
-    """Create a WebsitesDBPostgreSQL instance with mock session."""
-    from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+    """Create a DocumentRepository instance with mock session."""
+    from library.document_repository import DocumentRepository
 
-    return WebsitesDBPostgreSQL(session=mock_session)
+    return DocumentRepository(session=mock_session)
 
 
 class TestGetListCollectionFilter:

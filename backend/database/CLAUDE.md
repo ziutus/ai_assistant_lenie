@@ -409,7 +409,7 @@ docker build -f infra/docker/Postgresql/Dockerfile -t lenie-ai-db:latest .
 The backend accesses the database via SQLAlchemy ORM. Key files:
 - `backend/library/db/models.py` — ORM models (`Document`, `DocumentEmbedding`, lookup table models)
 - `backend/library/db/engine.py` — engine & session factories (`get_session`, `get_scoped_session`)
-- `backend/library/stalker_web_documents_db_postgresql.py` — query layer (list, search, vector similarity)
+- `backend/library/document_repository.py` — query layer (list, search, vector similarity)
 
 Connection configured via environment variables: `POSTGRESQL_HOST`, `POSTGRESQL_DATABASE`, `POSTGRESQL_USER`, `POSTGRESQL_PASSWORD`, `POSTGRESQL_PORT`.
 

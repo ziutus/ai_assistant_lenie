@@ -12,14 +12,14 @@ import pytest
 pytest.importorskip("sqlalchemy")
 
 from library.search.types import SearchFilters  # noqa: E402
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL  # noqa: E402
+from library.document_repository import DocumentRepository  # noqa: E402
 
 
 def _repo_with_mock_session():
     session = MagicMock()
     session.execute.return_value.all.return_value = []
     session.scalars.return_value.all.return_value = []
-    return WebsitesDBPostgreSQL(session=session), session
+    return DocumentRepository(session=session), session
 
 
 def _compiled_sql(session) -> str:

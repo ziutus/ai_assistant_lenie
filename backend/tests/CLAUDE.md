@@ -32,7 +32,7 @@ Configuration in `backend/pyproject.toml` under `[tool.pytest.ini_options]`. The
 | `test_db_engine.py` | Engine singleton, session factories, `Base` |
 | `test_db_models.py` | `Document` columns (30), STI subclasses (7), `dict()` output (33 keys), lookup models |
 | `test_orm_crud.py` | `Document` CRUD, `dict()` compatibility |
-| `test_repository_queries.py` | `WebsitesDBPostgreSQL` repository queries |
+| `test_repository_queries.py` | `DocumentRepository` repository queries |
 | `test_get_list_query.py` | `get_list()` ORM query construction |
 | `test_embedding_crud_orm.py` | Embedding add/delete via ORM |
 | `test_similarity_search_orm.py` | `get_similar()` pgvector ORM path |

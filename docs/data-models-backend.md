@@ -136,7 +136,7 @@ Adds database persistence via raw psycopg2:
 - `embedding_delete(model)` — remove embeddings
 - `dict() → dict` — serialize to JSON
 
-### WebsitesDBPostgreSQL (query layer)
+### DocumentRepository (query layer)
 
 Static query methods:
 - `get_list(limit, offset, document_type, document_state, ...) → list[dict]`

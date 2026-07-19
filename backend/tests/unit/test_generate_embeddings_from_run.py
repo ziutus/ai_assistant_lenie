@@ -80,7 +80,7 @@ def embedding_env(monkeypatch):
             calls["embedding_add"].append(kwargs)
 
     monkeypatch.setattr(
-        "library.stalker_web_documents_db_postgresql.WebsitesDBPostgreSQL", FakeWebsitesDB,
+        "library.document_repository.DocumentRepository", FakeWebsitesDB,
     )
     monkeypatch.setattr(
         "library.embedding.get_embedding",

@@ -46,7 +46,7 @@ from library.document_service import DocumentService
 from library.import_log_tracker import ImportLogTracker
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_type import StalkerDocumentType
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+from library.document_repository import DocumentRepository
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _IMPORTS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -374,7 +374,7 @@ def determine_since_date(feed_config: dict, session, explicit_since: Optional[st
     # Try DB for auto_import feeds
     if feed_config.get("auto_import") and session:
         source_name = feed_config.get("source_id", feed_name)
-        websites = WebsitesDBPostgreSQL(session=session)
+        websites = DocumentRepository(session=session)
         last_date = websites.get_last_by_source(source_name)
         if last_date:
             # Show import_logs date as informational context

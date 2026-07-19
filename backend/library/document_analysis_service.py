@@ -809,7 +809,7 @@ def generate_embeddings_from_run(
     from library.lenie_markdown import md_remove_markdown, md_split_for_emb
     from library.article_quality import remove_photo_caption_lines
     from library.models.stalker_document_status import StalkerDocumentStatus
-    from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+    from library.document_repository import DocumentRepository
     import library.embedding as embedding
 
     def log(msg: str) -> None:
@@ -826,7 +826,7 @@ def generate_embeddings_from_run(
         raise ValueError(f"Document {run.document_id} not found")
 
     model = load_config().require("EMBEDDING_MODEL")
-    websites = WebsitesDBPostgreSQL(session)
+    websites = DocumentRepository(session)
 
     all_chunks = session.scalars(
         select(DocumentChunk).where(DocumentChunk.run_id == run_id)

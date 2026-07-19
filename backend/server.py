@@ -7,7 +7,7 @@ from library.db.engine import get_scoped_session
 from library.db.models import TranscriptionLog, Document
 from library.document_service import DocumentService
 from library.search_service import SearchService
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL
+from library.document_repository import DocumentRepository
 from library.website.website_paid import website_is_paid
 from library.ai_intent_parser import parse_intent
 from library.models.stalker_document_status import StalkerDocumentStatus
@@ -271,7 +271,7 @@ def website_list():
     logging.debug(document_type)
 
     session = get_scoped_session()
-    repo = WebsitesDBPostgreSQL(session)
+    repo = DocumentRepository(session)
     list_kwargs = {
         "document_type": document_type,
         "document_state": document_state,
@@ -299,7 +299,7 @@ def website_count():
     """Return document counts grouped by type in a single query."""
     logging.debug("Getting document counts by type")
     session = get_scoped_session()
-    repo = WebsitesDBPostgreSQL(session)
+    repo = DocumentRepository(session)
     counts = repo.get_count_by_type()
     return {"status": "success", "counts": counts}, 200
 
@@ -1301,7 +1301,7 @@ def website_get_next_to_correct():
                 "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
 
     session = get_scoped_session()
-    repo = WebsitesDBPostgreSQL(session)
+    repo = DocumentRepository(session)
     next_data = repo.get_next_to_correct(link_id)
     if next_data == -1:
         response = {

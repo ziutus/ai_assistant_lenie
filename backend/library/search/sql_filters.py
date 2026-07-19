@@ -4,7 +4,7 @@
 into SQLAlchemy predicates against ``Document`` columns — including a
 correlated EXISTS subquery against ``document_time_periods`` for
 ``subject_period_*``. Both ``search_text()`` and ``get_similar()``
-(``library/stalker_web_documents_db_postgresql.py``) apply the *same* list
+(``library/document_repository.py``) apply the *same* list
 via ``.where(*conditions)`` before ``LIMIT``, which is the stage 6
 acceptance criterion: lexical and vector search use identical constraints.
 

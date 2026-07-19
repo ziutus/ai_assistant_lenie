@@ -7,7 +7,7 @@ import pytest
 sa = pytest.importorskip("sqlalchemy")
 
 from library.db.models import Document, DocumentEmbedding  # noqa: E402
-from library.stalker_web_documents_db_postgresql import WebsitesDBPostgreSQL  # noqa: E402
+from library.document_repository import DocumentRepository  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -23,7 +23,7 @@ def mock_session():
 
 @pytest.fixture
 def repo(mock_session):
-    return WebsitesDBPostgreSQL(session=mock_session)
+    return DocumentRepository(session=mock_session)
 
 
 # ---------------------------------------------------------------------------
@@ -190,13 +190,13 @@ class TestGetDocumentsNeedingEmbeddingORM:
 class TestDualModeConstructor:
     def test_orm_mode_uses_session(self, mock_session):
         """When session is provided, ORM path is used."""
-        repo = WebsitesDBPostgreSQL(session=mock_session)
+        repo = DocumentRepository(session=mock_session)
         assert repo.session is mock_session
 
     def test_session_is_required(self):
         """Session parameter is required — no legacy psycopg2 fallback."""
         with pytest.raises(TypeError):
-            WebsitesDBPostgreSQL()
+            DocumentRepository()
 
 
 # ---------------------------------------------------------------------------

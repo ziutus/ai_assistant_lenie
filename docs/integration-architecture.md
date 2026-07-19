@@ -96,7 +96,7 @@ Step Function → Lambda (rds-start) → Lambda (sqs-into-rds) → PostgreSQL �
 
 ```
 React Frontend → GET /website_list or GET /website_get
-  → Flask/Lambda → WebsitesDBPostgreSQL.get_list() → PostgreSQL → JSON response
+  → Flask/Lambda → DocumentRepository.get_list() → PostgreSQL → JSON response
 ```
 
 ## Data Flow: Vector Similarity Search
