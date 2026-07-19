@@ -30,8 +30,8 @@ def _make_doc(**overrides):
     defaults = {
         "url": "https://example.com",
         "document_type": "webpage",
-        "document_state": "URL_ADDED",
-        "document_state_error": "NONE",
+        "processing_status": "URL_ADDED",
+        "processing_error_code": "NONE",
         "id": 42,
     }
     defaults.update(overrides)
@@ -248,15 +248,15 @@ class TestSaveDocument:
                 service.save_document(url="https://example.com", link_id=42, document_type="invalid")
 
     def test_save_with_state_transition(self):
-        """Save with document_state calls set_document_state."""
+        """Save with processing_status calls set_processing_status."""
         session = _make_session()
         doc = _make_doc()
 
         with patch.object(Document, "get_by_id", return_value=doc):
             service = DocumentService(session)
-            service.save_document(url="https://example.com", link_id=42, document_state="NEED_MANUAL_REVIEW")
+            service.save_document(url="https://example.com", link_id=42, processing_status="NEED_MANUAL_REVIEW")
 
-        doc.set_document_state.assert_called_once_with("NEED_MANUAL_REVIEW")
+        doc.set_processing_status.assert_called_once_with("NEED_MANUAL_REVIEW")
 
 
 # ---------------------------------------------------------------------------
@@ -532,8 +532,8 @@ class TestImportDocument:
         assert doc.text == "some text content"
         assert doc.text_raw == "<p>html content</p>"
 
-    def test_import_custom_document_state(self):
-        """Import with custom document_state sets it correctly."""
+    def test_import_custom_processing_status(self):
+        """Import with custom processing_status sets it correctly."""
         session = _make_session()
 
         with patch.object(Document, "get_by_url", return_value=None):
@@ -541,13 +541,13 @@ class TestImportDocument:
             doc, status = service.import_document(
                 url="https://example.com/ready",
                 document_type="link",
-                document_state="READY_FOR_EMBEDDING",
+                processing_status="READY_FOR_EMBEDDING",
             )
 
         assert status == "added"
 
     def test_import_default_state_url_added(self):
-        """Import without document_state defaults to URL_ADDED."""
+        """Import without processing_status defaults to URL_ADDED."""
         session = _make_session()
 
         with patch.object(Document, "get_by_url", return_value=None):

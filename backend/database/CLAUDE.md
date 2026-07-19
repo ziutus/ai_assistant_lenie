@@ -62,8 +62,8 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `url` | `text NOT NULL` | Source URL |
 | `document_type` | `varchar(50) NOT NULL` | One of: movie, youtube, link, webpage, text_message, text |
-| `document_state` | `varchar(50) NOT NULL` | Processing state (default: `URL_ADDED`) |
-| `document_state_error` | `text` | Error details when `document_state = ERROR` |
+| `processing_status` | `varchar(50) NOT NULL` | Processing state (default: `URL_ADDED`) |
+| `processing_error_code` | `text` | Error details when `processing_status = ERROR` |
 | `title` | `text` | Original title |
 | `title_english` | `text` | English translation of title |
 | `text` | `text` | Cleaned text content |
@@ -91,7 +91,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `uuid` | `varchar(100) NOT NULL DEFAULT gen_random_uuid()` | Global document identifier (ADR-015), UNIQUE |
 | `collection_id` | `integer` | FK → `collections.id` (`ON DELETE SET NULL`) — thematic collection (ADR-017: 1:N; replaced the never-used `project` string column in stage 11c) |
 
-**Indexes:** `document_type`, `document_state`, `created_at`, `url`, `collection_id`, `discovery_source_id`, `published_on`, `paywall`, `ai_summary_needed`, `publisher_id`.
+**Indexes:** `document_type`, `processing_status`, `created_at`, `url`, `collection_id`, `discovery_source_id`, `published_on`, `paywall`, `ai_summary_needed`, `publisher_id`.
 
 ### Table: `public.document_embeddings`
 
@@ -365,7 +365,7 @@ Stage 7A search registry (migration `f5a6b7c8d9e0`). `publishers` stores the pub
 
 ## Document Processing States
 
-The `document_state` column tracks a document through its processing pipeline (defined in `backend/library/models/stalker_document_status.py`):
+The `processing_status` column tracks a document through its processing pipeline (defined in `backend/library/models/stalker_document_status.py`):
 
 ```
 URL_ADDED → DOCUMENT_INTO_DATABASE → NEED_CLEAN_TEXT → NEED_CLEAN_MD → TEXT_TO_MD_DONE
@@ -375,9 +375,9 @@ URL_ADDED → DOCUMENT_INTO_DATABASE → NEED_CLEAN_TEXT → NEED_CLEAN_MD → T
 Special states:
 - `NEED_TRANSCRIPTION` / `TRANSCRIPTION_IN_PROGRESS` / `TRANSCRIPTION_DONE` — for audio/video content
 - `NEED_MANUAL_REVIEW` — automatic text cleanup failed; needs manual removal of ads, comments, and spam
-- `ERROR` / `TEMPORARY_ERROR` — processing failed (details in `document_state_error`)
+- `ERROR` / `TEMPORARY_ERROR` — processing failed (details in `processing_error_code`)
 
-**Invariant — `document_state_error` must be reset on every successful transition.** The field only means something while the document is in an error state (`ERROR`/`TEMPORARY_ERROR`); once a retry succeeds and `document_state` moves on, any code that sets `document_state_error` on failure MUST also clear it (`StalkerDocumentStatusError.NONE.name`) on the corresponding success path in the same function. Otherwise the error becomes sticky forever — a later retry that succeeds leaves the stale value in place because nothing overwrites it. `Document.validate()` in `db/models.py` follows this correctly (resets to `NONE` at the top before re-evaluating). `library/youtube_processing.py` did **not** follow it for `CAPTIONS_FETCH_ERROR`/transcription errors until this was fixed (2026-07-04) — a retry that fetched captions successfully left `CAPTIONS_FETCH_ERROR` from an earlier failed attempt in place indefinitely. When adding a new failure/retry branch to any pipeline step, always pair the error-setting line with a reset on the success path.
+**Invariant — `processing_error_code` must be reset on every successful transition.** The field only means something while the document is in an error state (`ERROR`/`TEMPORARY_ERROR`); once a retry succeeds and `processing_status` moves on, any code that sets `processing_error_code` on failure MUST also clear it (`StalkerDocumentStatusError.NONE.name`) on the corresponding success path in the same function. Otherwise the error becomes sticky forever — a later retry that succeeds leaves the stale value in place because nothing overwrites it. `Document.validate()` in `db/models.py` follows this correctly (resets to `NONE` at the top before re-evaluating). `library/youtube_processing.py` did **not** follow it for `CAPTIONS_FETCH_ERROR`/transcription errors until this was fixed (2026-07-04) — a retry that fetched captions successfully left `CAPTIONS_FETCH_ERROR` from an earlier failed attempt in place indefinitely. When adding a new failure/retry branch to any pipeline step, always pair the error-setting line with a reset on the success path.
 
 ## Document Types
 

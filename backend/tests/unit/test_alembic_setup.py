@@ -185,17 +185,17 @@ class TestIncludeObjectFilter:
         fn = self._load_include_object()
         assert fn(MagicMock(), "ix_web_documents_url", "index", True, None) is False
 
-    def test_excludes_document_state_error_in_web_documents(self):
+    def test_excludes_processing_error_code_in_web_documents(self):
         fn = self._load_include_object()
         col = MagicMock()
         col.table.name = "documents"
-        assert fn(col, "document_state_error", "column", True, None) is False
+        assert fn(col, "processing_error_code", "column", True, None) is False
 
-    def test_includes_document_state_error_in_other_table(self):
+    def test_includes_processing_error_code_in_other_table(self):
         fn = self._load_include_object()
         col = MagicMock()
         col.table.name = "other_table"
-        assert fn(col, "document_state_error", "column", True, None) is True
+        assert fn(col, "processing_error_code", "column", True, None) is True
 
     def test_includes_regular_columns(self):
         fn = self._load_include_object()
@@ -210,7 +210,7 @@ class TestIncludeObjectFilter:
     def test_includes_lookup_tables(self):
         """Lookup tables (B-94) are included now that B-96 added ORM models."""
         fn = self._load_include_object()
-        for table in ("document_status_types", "document_status_error_types", "document_types", "embedding_models"):
+        for table in ("processing_status_types", "processing_error_types", "document_types", "embedding_models"):
             assert fn(MagicMock(), table, "table", True, None) is True, f"{table} should be included"
 
 

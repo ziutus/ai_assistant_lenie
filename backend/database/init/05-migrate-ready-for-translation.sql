@@ -4,5 +4,5 @@
 -- For existing deployments, run this migration manually against the database.
 
 UPDATE documents
-SET document_state = 'READY_FOR_EMBEDDING'
-WHERE document_state = 'READY_FOR_TRANSLATION';
+SET processing_status = 'READY_FOR_EMBEDDING'
+WHERE processing_status = 'READY_FOR_TRANSLATION';

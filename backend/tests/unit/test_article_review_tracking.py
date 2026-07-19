@@ -19,7 +19,7 @@ def web_document():
     doc = Document(
         url="https://example.com/article",
         document_type="webpage",
-        document_state="MD_SIMPLIFIED",
+        processing_status="MD_SIMPLIFIED",
         title="Test Article",
     )
     return doc
@@ -112,7 +112,7 @@ class TestFilterLogic:
         doc = Document(
             url="https://example.com/test",
             document_type="webpage",
-            document_state="MD_SIMPLIFIED",
+            processing_status="MD_SIMPLIFIED",
             title="Test",
         )
         doc.reviewed_at = reviewed_at

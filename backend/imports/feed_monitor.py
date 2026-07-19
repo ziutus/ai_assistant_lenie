@@ -330,7 +330,7 @@ def detect_document_type(url: str) -> str:
 
 
 def resolve_default_state(feed_config: dict) -> str:
-    """Determine initial document_state from feed config (default: URL_ADDED)."""
+    """Determine initial processing_status from feed config (default: URL_ADDED)."""
     return feed_config.get("default_state") or StalkerDocumentStatus.URL_ADDED.name
 
 
@@ -750,7 +750,7 @@ def _import_entry(session, feed_config: dict, entry: dict, service=None) -> str:
         doc, status = service.import_document(
             url=url,
             document_type=doc_type,
-            document_state=doc_state,
+            processing_status=doc_state,
             skip_if_exists=True,
             **metadata,
         )

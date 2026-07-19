@@ -99,7 +99,7 @@ def save_document_info(document_id, doc, cache_dir):
         "uuid": doc.uuid,
         "created_at": doc.created_at.strftime("%Y-%m-%d %H:%M:%S") if doc.created_at else None,
         "document_type": doc.document_type if doc.document_type else None,
-        "document_state": doc.document_state if doc.document_state else None,
+        "processing_status": doc.processing_status if doc.processing_status else None,
     }
     with open(cache_file_info, "w", encoding="utf-8") as f:
         json.dump(doc_info, f, ensure_ascii=False, indent=2)

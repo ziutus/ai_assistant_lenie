@@ -92,7 +92,7 @@ class TestGenerateEmbeddingsBatching:
         from library.models.embedding_result import EmbeddingResult
 
         run = SimpleNamespace(id=21, document_id=9204)
-        doc = SimpleNamespace(id=9204, language="pl", document_state="DOCUMENT_INTO_DATABASE")
+        doc = SimpleNamespace(id=9204, language="pl", processing_status="DOCUMENT_INTO_DATABASE")
         chunks = [
             SimpleNamespace(
                 id=100 + i, type="TEMAT", status="approved",
@@ -141,7 +141,7 @@ class TestGenerateEmbeddingsBatching:
         assert batch_calls == [2, 2, 1]
         # commits: 1 after the delete + 1 per batch (3) + 1 final
         assert session.commit.call_count == 5
-        assert doc.document_state == "EMBEDDING_EXIST"
+        assert doc.processing_status == "EMBEDDING_EXIST"
 
     def test_failed_batch_items_are_counted_not_stored(self, monkeypatch):
         from library.models.embedding_result import EmbeddingResult
@@ -155,7 +155,7 @@ class TestGenerateEmbeddingsBatching:
         from unittest.mock import MagicMock as MM
 
         run = SimpleNamespace(id=21, document_id=9204)
-        doc = SimpleNamespace(id=9204, language="pl", document_state="DOCUMENT_INTO_DATABASE")
+        doc = SimpleNamespace(id=9204, language="pl", processing_status="DOCUMENT_INTO_DATABASE")
         chunks = [SimpleNamespace(id=101, type="TEMAT", status="approved",
                                   corrected_text=None, original_text="Tekst.", position=1)]
         session = MM()
@@ -178,4 +178,4 @@ class TestGenerateEmbeddingsBatching:
 
         assert result["embeddings_created"] == 0
         assert result["embeddings_failed"] == 1
-        assert doc.document_state == "DOCUMENT_INTO_DATABASE"
+        assert doc.processing_status == "DOCUMENT_INTO_DATABASE"

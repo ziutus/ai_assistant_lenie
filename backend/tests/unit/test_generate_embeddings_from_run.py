@@ -154,7 +154,7 @@ class TestGenerateEmbeddingsFromRun:
 
         generate_embeddings_from_run(session, 5)
 
-        assert fake_doc.document_state == "EMBEDDING_EXIST"
+        assert fake_doc.processing_status == "EMBEDDING_EXIST"
 
     def test_failed_embedding_provider_is_skipped_not_raised(self, session, embedding_env, monkeypatch):
         monkeypatch.setattr(

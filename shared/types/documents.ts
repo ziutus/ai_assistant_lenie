@@ -10,8 +10,8 @@ export interface Document {
   text: string;
   text_md: string;
   document_type: string;
-  document_state: string;
-  document_state_error: string;
+  processing_status: string;
+  processing_error_code: string;
   chapter_list: string;
   note: string;
   next_id: number | null;
@@ -32,8 +32,8 @@ export const emptyDocument: Document = {
   text: "",
   text_md: "",
   document_type: "",
-  document_state: "",
-  document_state_error: "",
+  processing_status: "",
+  processing_error_code: "",
   chapter_list: "",
   note: "",
   next_id: null,
@@ -67,6 +67,6 @@ export interface ListItem {
   id: number;
   title: string;
   url: string;
-  document_state: string;
+  processing_status: string;
   document_type: string;
 }
