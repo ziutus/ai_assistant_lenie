@@ -52,7 +52,7 @@ def _make_doc(**overrides):
     defaults = {
         "url": "https://example.com",
         "document_type": "link",
-        "document_state": "URL_ADDED",
+        "processing_status": "URL_ADDED",
     }
     defaults.update(overrides)
     return Document(**defaults)
@@ -64,7 +64,7 @@ def _make_doc(**overrides):
 
 class TestDocumentStatusType:
     def test_tablename(self):
-        assert DocumentStatusType.__tablename__ == "document_status_types"
+        assert DocumentStatusType.__tablename__ == "processing_status_types"
 
     def test_inherits_base(self):
         assert issubclass(DocumentStatusType, Base)
@@ -89,7 +89,7 @@ class TestDocumentStatusType:
 
 class TestDocumentStatusErrorType:
     def test_tablename(self):
-        assert DocumentStatusErrorType.__tablename__ == "document_status_error_types"
+        assert DocumentStatusErrorType.__tablename__ == "processing_error_types"
 
     def test_inherits_base(self):
         assert issubclass(DocumentStatusErrorType, Base)
@@ -156,7 +156,7 @@ class TestWebDocumentColumns:
         "id", "summary", "url", "language", "tags", "text",
         "paywall", "title", "created_at", "document_type",
         "discovery_source_id", "publisher_id", "published_on", "published_on_method", "original_id", "document_length",
-        "chapter_list", "document_state", "document_state_error",
+        "chapter_list", "processing_status", "processing_error_code",
         "text_raw", "transcript_job_id", "ai_summary_needed",
         "byline", "byline_method", "note", "uuid", "collection_id", "text_md",
         "text_extracted", "transcript_needed", "reviewed_at",
@@ -206,19 +206,19 @@ class TestWebDocumentColumnTypes:
         fk = list(col.foreign_keys)[0]
         assert fk.target_fullname == "document_types.name"
 
-    def test_document_state_is_string_with_fk(self):
-        col = _get_column(Document, "document_state")
+    def test_processing_status_is_string_with_fk(self):
+        col = _get_column(Document, "processing_status")
         assert isinstance(col.type, String)
         assert col.type.length == 50
         assert not col.nullable
         fk = list(col.foreign_keys)[0]
-        assert fk.target_fullname == "document_status_types.name"
+        assert fk.target_fullname == "processing_status_types.name"
 
-    def test_document_state_error_is_string_with_fk_nullable(self):
-        col = _get_column(Document, "document_state_error")
+    def test_processing_error_code_is_string_with_fk_nullable(self):
+        col = _get_column(Document, "processing_error_code")
         assert isinstance(col.type, String)
         fk = list(col.foreign_keys)[0]
-        assert fk.target_fullname == "document_status_error_types.name"
+        assert fk.target_fullname == "processing_error_types.name"
 
     def test_published_on_is_date(self):
         col = _get_column(Document, "published_on")
@@ -324,7 +324,7 @@ class TestSetDocumentType:
 
 
 # ---------------------------------------------------------------------------
-# 5.6: set_document_state() — stores string names
+# 5.6: set_processing_status() — stores string names
 # ---------------------------------------------------------------------------
 
 class TestSetDocumentState:
@@ -349,17 +349,17 @@ class TestSetDocumentState:
     ])
     def test_valid_states(self, input_str, expected):
         doc = _make_doc()
-        doc.set_document_state(input_str)
-        assert doc.document_state == expected
+        doc.set_processing_status(input_str)
+        assert doc.processing_status == expected
 
     def test_invalid_state_raises(self):
         doc = _make_doc()
         with pytest.raises(ValueError):
-            doc.set_document_state("NONEXISTENT")
+            doc.set_processing_status("NONEXISTENT")
 
 
 # ---------------------------------------------------------------------------
-# 5.6b: set_document_state_error() — stores string names
+# 5.6b: set_processing_error_code() — stores string names
 # ---------------------------------------------------------------------------
 
 class TestSetDocumentStateError:
@@ -385,13 +385,13 @@ class TestSetDocumentStateError:
     ])
     def test_valid_errors(self, input_str, expected):
         doc = _make_doc()
-        doc.set_document_state_error(input_str)
-        assert doc.document_state_error == expected
+        doc.set_processing_error_code(input_str)
+        assert doc.processing_error_code == expected
 
     def test_invalid_error_raises(self):
         doc = _make_doc()
         with pytest.raises(ValueError):
-            doc.set_document_state_error("NONEXISTENT_ERROR")
+            doc.set_processing_error_code("NONEXISTENT_ERROR")
 
 
 # ---------------------------------------------------------------------------
@@ -401,7 +401,7 @@ class TestSetDocumentStateError:
 class TestAnalyze:
     def test_skip_when_embedding_exist(self):
         doc = _make_doc(
-            document_state="EMBEDDING_EXIST",
+            processing_status="EMBEDDING_EXIST",
             text="some text",
         )
         doc.analyze()
@@ -452,19 +452,19 @@ class TestValidate:
     def test_missing_title_sets_need_manual_review(self):
         doc = _make_doc(title=None, document_type="movie")
         doc.validate()
-        assert doc.document_state == "NEED_MANUAL_REVIEW"
-        assert doc.document_state_error == "TITLE_MISSING"
+        assert doc.processing_status == "NEED_MANUAL_REVIEW"
+        assert doc.processing_error_code == "TITLE_MISSING"
 
     def test_short_title_sets_need_manual_review(self):
         doc = _make_doc(title="ab", document_type="movie")
         doc.validate()
-        assert doc.document_state == "NEED_MANUAL_REVIEW"
-        assert doc.document_state_error == "TITLE_MISSING"
+        assert doc.processing_status == "NEED_MANUAL_REVIEW"
+        assert doc.processing_error_code == "TITLE_MISSING"
 
     def test_valid_title_no_error(self):
         doc = _make_doc(title="Valid title", summary="Valid summary")
         doc.validate()
-        assert doc.document_state_error == "NONE"
+        assert doc.processing_error_code == "NONE"
 
     def test_link_missing_summary(self):
         doc = _make_doc(
@@ -473,7 +473,7 @@ class TestValidate:
             summary=None,
         )
         doc.validate()
-        assert doc.document_state_error == "LINK_SUMMARY_MISSING"
+        assert doc.processing_error_code == "LINK_SUMMARY_MISSING"
 
     def test_webpage_missing_text(self):
         doc = _make_doc(
@@ -481,16 +481,16 @@ class TestValidate:
             document_type="webpage",
         )
         doc.validate()
-        assert doc.document_state_error == "TEXT_MISSING"
+        assert doc.processing_error_code == "TEXT_MISSING"
 
     def test_embedding_exist_skips_validation(self):
         doc = _make_doc(
             title=None,
-            document_state="EMBEDDING_EXIST",
+            processing_status="EMBEDDING_EXIST",
         )
         doc.validate()
-        assert doc.document_state_error == "NONE"
-        assert doc.document_state == "EMBEDDING_EXIST"
+        assert doc.processing_error_code == "NONE"
+        assert doc.processing_status == "EMBEDDING_EXIST"
 
 
 # ---------------------------------------------------------------------------
@@ -501,7 +501,7 @@ class TestDict:
     def test_dict_has_37_keys(self):
         doc = _make_doc(
             title="Test",
-            document_state_error="NONE",
+            processing_error_code="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
@@ -510,7 +510,7 @@ class TestDict:
     def test_dict_keys(self):
         doc = _make_doc(
             title="Test",
-            document_state_error="NONE",
+            processing_error_code="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
@@ -518,8 +518,8 @@ class TestDict:
             "id", "next_id", "next_type", "previous_id", "previous_type",
             "summary", "url", "language", "tags", "text", "paywall", "title",
             "created_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
-            "document_length", "chapter_list", "document_state",
-            "document_state_error", "text_raw", "transcript_job_id",
+            "document_length", "chapter_list", "processing_status",
+            "processing_error_code", "text_raw", "transcript_job_id",
             "ai_summary_needed", "byline", "byline_method", "note", "uuid", "collection_id",
             "text_md", "transcript_needed",
             "reviewed_at", "obsidian_note_paths", "video_description",
@@ -529,7 +529,7 @@ class TestDict:
 
     def test_dict_formats_created_at(self):
         doc = _make_doc(
-            document_state_error="NONE",
+            processing_error_code="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
@@ -537,7 +537,7 @@ class TestDict:
 
     def test_dict_created_at_none(self):
         doc = _make_doc(
-            document_state_error="NONE",
+            processing_error_code="NONE",
         )
         doc.created_at = None
         result = doc.dict()
@@ -545,24 +545,24 @@ class TestDict:
 
     def test_dict_string_values(self):
         doc = _make_doc(
-            document_state_error="NONE",
+            processing_error_code="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 1)
         result = doc.dict()
         assert result["document_type"] == "link"
-        assert result["document_state"] == "URL_ADDED"
-        assert result["document_state_error"] == "NONE"
+        assert result["processing_status"] == "URL_ADDED"
+        assert result["processing_error_code"] == "NONE"
 
-    def test_dict_document_state_error_none_returns_none_string(self):
+    def test_dict_processing_error_code_none_returns_none_string(self):
         doc = _make_doc()
-        doc.document_state_error = None
+        doc.processing_error_code = None
         doc.created_at = datetime.datetime(2025, 1, 1)
         result = doc.dict()
-        assert result["document_state_error"] == "NONE"
+        assert result["processing_error_code"] == "NONE"
 
     def test_dict_navigation_fields(self):
         doc = _make_doc(
-            document_state_error="NONE",
+            processing_error_code="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 1)
         doc.next_id = 42
@@ -651,13 +651,13 @@ class TestLookupRelationships:
         mapper = inspect(Document).mapper
         assert "document_type_ref" in mapper.relationships
 
-    def test_document_state_ref_exists(self):
+    def test_processing_status_ref_exists(self):
         mapper = inspect(Document).mapper
-        assert "document_state_ref" in mapper.relationships
+        assert "processing_status_ref" in mapper.relationships
 
-    def test_document_state_error_ref_exists(self):
+    def test_processing_error_code_ref_exists(self):
         mapper = inspect(Document).mapper
-        assert "document_state_error_ref" in mapper.relationships
+        assert "processing_error_code_ref" in mapper.relationships
 
     def test_model_ref_exists_on_embedding(self):
         mapper = inspect(DocumentEmbedding).mapper
@@ -668,14 +668,14 @@ class TestLookupRelationships:
         rel = mapper.relationships["document_type_ref"]
         assert rel.mapper.class_ is DocumentType
 
-    def test_document_state_ref_target(self):
+    def test_processing_status_ref_target(self):
         mapper = inspect(Document).mapper
-        rel = mapper.relationships["document_state_ref"]
+        rel = mapper.relationships["processing_status_ref"]
         assert rel.mapper.class_ is DocumentStatusType
 
-    def test_document_state_error_ref_target(self):
+    def test_processing_error_code_ref_target(self):
         mapper = inspect(Document).mapper
-        rel = mapper.relationships["document_state_error_ref"]
+        rel = mapper.relationships["processing_error_code_ref"]
         assert rel.mapper.class_ is DocumentStatusErrorType
 
     def test_model_ref_target(self):
@@ -724,13 +724,13 @@ class TestFieldsAreStrings:
         doc = _make_doc()
         assert isinstance(doc.document_type, str)
 
-    def test_document_state_is_string(self):
+    def test_processing_status_is_string(self):
         doc = _make_doc()
-        assert isinstance(doc.document_state, str)
+        assert isinstance(doc.processing_status, str)
 
-    def test_document_state_error_is_string_when_set(self):
-        doc = _make_doc(document_state_error="NONE")
-        assert isinstance(doc.document_state_error, str)
+    def test_processing_error_code_is_string_when_set(self):
+        doc = _make_doc(processing_error_code="NONE")
+        assert isinstance(doc.processing_error_code, str)
 
 
 # ---------------------------------------------------------------------------

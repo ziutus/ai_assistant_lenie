@@ -30,16 +30,16 @@ skip_no_db = pytest.mark.skipif(not _db_available, reason="No database connectio
 class TestDocumentFKConstraints:
     """Test FK constraints on documents table."""
 
-    def test_invalid_document_state_raises_integrity_error(self):
-        """INSERT with invalid document_state should raise IntegrityError."""
+    def test_invalid_processing_status_raises_integrity_error(self):
+        """INSERT with invalid processing_status should raise IntegrityError."""
         session = get_session()
         try:
             session.execute(sa_text(
-                "INSERT INTO documents (url, document_type, document_state) "
+                "INSERT INTO documents (url, document_type, processing_status) "
                 "VALUES ('https://fk-test-invalid-state.example.com', 'link', 'INVALID_STATE')"
             ))
             session.commit()
-            pytest.fail("Expected IntegrityError for invalid document_state")
+            pytest.fail("Expected IntegrityError for invalid processing_status")
         except IntegrityError:
             session.rollback()
         finally:
@@ -50,7 +50,7 @@ class TestDocumentFKConstraints:
         session = get_session()
         try:
             session.execute(sa_text(
-                "INSERT INTO documents (url, document_type, document_state) "
+                "INSERT INTO documents (url, document_type, processing_status) "
                 "VALUES ('https://fk-test-invalid-type.example.com', 'INVALID_TYPE', 'URL_ADDED')"
             ))
             session.commit()
@@ -65,7 +65,7 @@ class TestDocumentFKConstraints:
         session = get_session()
         try:
             result = session.execute(sa_text(
-                "INSERT INTO documents (url, document_type, document_state) "
+                "INSERT INTO documents (url, document_type, processing_status) "
                 "VALUES ('https://fk-test-valid.example.com', 'link', 'URL_ADDED') "
                 "RETURNING id"
             ))
@@ -90,7 +90,7 @@ class TestSourceFKConstraints:
         session = get_session()
         try:
             session.execute(sa_text(
-                "INSERT INTO documents (url, document_type, document_state, source) "
+                "INSERT INTO documents (url, document_type, processing_status, source) "
                 "VALUES ('https://fk-test-src-raw.example.com', 'link', 'URL_ADDED', "
                 "'fk-test-no-such-source')"
             ))
@@ -105,7 +105,7 @@ class TestSourceFKConstraints:
         session = get_session()
         try:
             result = session.execute(sa_text(
-                "INSERT INTO documents (url, document_type, document_state, source) "
+                "INSERT INTO documents (url, document_type, processing_status, source) "
                 "VALUES ('https://fk-test-src-null.example.com', 'link', 'URL_ADDED', NULL) "
                 "RETURNING id"
             ))
@@ -155,7 +155,7 @@ class TestSourceFKConstraints:
                 "INSERT INTO sources (name) VALUES (:name) ON CONFLICT (name) DO NOTHING"
             ).bindparams(name=old))
             result = session.execute(sa_text(
-                "INSERT INTO documents (url, document_type, document_state, source) "
+                "INSERT INTO documents (url, document_type, processing_status, source) "
                 "VALUES ('https://fk-test-src-rename.example.com', 'link', 'URL_ADDED', :src) "
                 "RETURNING id"
             ).bindparams(src=old))
@@ -194,7 +194,7 @@ class TestEmbeddingFKConstraints:
         try:
             # First create a valid document
             result = session.execute(sa_text(
-                "INSERT INTO documents (url, document_type, document_state) "
+                "INSERT INTO documents (url, document_type, processing_status) "
                 "VALUES ('https://fk-test-emb.example.com', 'link', 'URL_ADDED') "
                 "RETURNING id"
             ))

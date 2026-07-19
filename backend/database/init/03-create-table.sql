@@ -23,8 +23,8 @@ create table documents
     document_length      integer,
     chapter_list         text,
     video_description    text,
-    document_state       varchar(50) default 'URL_ADDED'::character varying not null,
-    document_state_error text,
+    processing_status       varchar(50) default 'URL_ADDED'::character varying not null,
+    processing_error_code text,
     text_raw             text,
     transcript_job_id    text,
     ai_summary_needed    boolean     default false,
@@ -38,7 +38,7 @@ create table documents
 
 -- Indeksy dla optymalizacji wydajności
 CREATE INDEX IF NOT EXISTS idx_documents_document_type ON public.documents(document_type);
-CREATE INDEX IF NOT EXISTS idx_documents_document_state ON public.documents(document_state);
+CREATE INDEX IF NOT EXISTS idx_documents_processing_status ON public.documents(processing_status);
 CREATE INDEX IF NOT EXISTS idx_documents_created_at ON public.documents(created_at);
 CREATE INDEX IF NOT EXISTS idx_documents_url ON public.documents(url);
 CREATE INDEX IF NOT EXISTS idx_documents_collection_id ON public.documents(collection_id);

@@ -42,7 +42,7 @@ Incremental sync of documents from AWS DynamoDB and S3 webpage content to the lo
 5. Inserts new documents via `DocumentService.import_document(skip_if_exists=True)`
 6. After insert, saves S3 content to cache as `{CACHE_DIR}/markdown/{doc.id}/{doc.id}.html` (same convention as `document_prepare.py`, so downstream tools can reuse cached files without re-downloading from S3)
 7. For webpages: converts HTML to markdown (`_step_1_all.md`) and runs LLM article extraction (CloudFerro primary, ARK Labs fallback) unless `--skip-llm`. On successful extraction, persists `text_extracted` (raw LLM output, pre-clean) and `text_md` (after `article_cleaner.clean_article_text()`) on the document — `--skip-llm` and failed extraction leave both fields untouched
-8. Sets `document_state` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
+8. Sets `processing_status` to `DOCUMENT_INTO_DATABASE` (with S3 content) or `URL_ADDED` (without)
 
 **DynamoDB → PostgreSQL field mapping:**
 - `url` → `url`, `type` → `document_type`, `title` → `title`, `language` → `language`
@@ -104,7 +104,7 @@ Monitors RSS/Atom/JSON feeds defined in [`feeds.yaml`](feeds.yaml) and imports s
 
 **Date cutoff priority** (per feed): explicit `--since` → last import date from DB (`auto_import` feeds only) → `last_checked` from `feeds_state.yaml` → default 14 days back. `--since` accepts `YYYY-MM-DD` or natural language (`"last 2 weeks"`, `"3 days ago"`) parsed via dateparser.
 
-**`feeds.yaml` per-feed keys:** `name`, `type`, `url` or `channel_id`, `language`, `project`, `tags`, `auto_import`, `source_id` (value stored in the document `source` field), `default_state` (initial `document_state`, default `URL_ADDED`), `field_mapping` (json_api only), `skip_url_patterns` (prefix match), `skip_title_patterns` (regex, case-insensitive), `cache_path`, `disabled` (skipped unless explicitly selected via `--source`).
+**`feeds.yaml` per-feed keys:** `name`, `type`, `url` or `channel_id`, `language`, `project`, `tags`, `auto_import`, `source_id` (value stored in the document `source` field), `default_state` (initial `processing_status`, default `URL_ADDED`), `field_mapping` (json_api only), `skip_url_patterns` (prefix match), `skip_title_patterns` (regex, case-insensitive), `cache_path`, `disabled` (skipped unless explicitly selected via `--source`).
 
 **State:** `feeds_state.yaml` (gitignored) stores `last_checked` per feed, updated after each `--check`/`--import`/`--review` run.
 

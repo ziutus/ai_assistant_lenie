@@ -114,7 +114,7 @@ def main():
         doc_title = web_document.title
         doc_url = web_document.url
         doc_language = web_document.language
-        doc_state = web_document.document_state
+        doc_state = web_document.processing_status
         doc_text_len = len(web_document.text) if web_document.text else 0
         doc_summary = web_document.summary
 
