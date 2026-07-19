@@ -15,7 +15,7 @@ create table documents
     text                 text,
     paywall              boolean     default false,
     title                text,
-    created_at           timestamp   default CURRENT_TIMESTAMP,
+    ingested_at          timestamp   default CURRENT_TIMESTAMP,
     document_type        varchar(50) not null,
     discovery_source_id  integer,
     published_on            date,
@@ -39,7 +39,7 @@ create table documents
 -- Indeksy dla optymalizacji wydajności
 CREATE INDEX IF NOT EXISTS idx_documents_document_type ON public.documents(document_type);
 CREATE INDEX IF NOT EXISTS idx_documents_processing_status ON public.documents(processing_status);
-CREATE INDEX IF NOT EXISTS idx_documents_created_at ON public.documents(created_at);
+CREATE INDEX IF NOT EXISTS idx_documents_ingested_at ON public.documents(ingested_at);
 CREATE INDEX IF NOT EXISTS idx_documents_url ON public.documents(url);
 CREATE INDEX IF NOT EXISTS idx_documents_collection_id ON public.documents(collection_id);
 CREATE INDEX IF NOT EXISTS idx_documents_discovery_source_id ON public.documents(discovery_source_id);

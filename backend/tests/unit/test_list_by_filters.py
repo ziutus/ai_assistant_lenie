@@ -30,7 +30,7 @@ def _fake_document(**overrides):
     doc = MagicMock()
     defaults = {
         "id": 1, "title": "Tytuł", "url": "https://example.com", "document_type": "webpage",
-        "collection_id": None, "language": "pl", "published_on": None, "created_at": None,
+        "collection_id": None, "language": "pl", "published_on": None, "ingested_at": None,
     }
     defaults.update(overrides)
     for key, value in defaults.items():
@@ -80,11 +80,11 @@ class TestListByFiltersApplied:
 
 
 class TestListByFiltersSort:
-    def test_default_sort_is_newest_first_by_created_at(self):
+    def test_default_sort_is_newest_first_by_ingested_at(self):
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters())
         sql = _compiled_sql(session)
-        assert "documents.created_at DESC" in sql
+        assert "documents.ingested_at DESC" in sql
 
     def test_published_desc(self):
         repo, session = _repo_with_mock_session()
@@ -102,13 +102,13 @@ class TestListByFiltersSort:
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters(), sort=SearchSort.INGESTED_DESC)
         sql = _compiled_sql(session)
-        assert "documents.created_at DESC" in sql
+        assert "documents.ingested_at DESC" in sql
 
     def test_relevance_falls_back_to_ingested_desc(self):
         repo, session = _repo_with_mock_session()
         repo.list_by_filters(SearchFilters(), sort=SearchSort.RELEVANCE)
         sql = _compiled_sql(session)
-        assert "documents.created_at DESC" in sql
+        assert "documents.ingested_at DESC" in sql
 
     def test_string_sort_value_accepted(self):
         repo, session = _repo_with_mock_session()
@@ -133,7 +133,7 @@ class TestListByFiltersResultShape:
         doc = _fake_document(
             id=42, title="Artykuł", url="https://x.pl/a", document_type="webpage",
             collection_id=3, language="pl",
-            published_on=datetime.date(2020, 1, 1), created_at=datetime.datetime(2020, 1, 2, 10, 0),
+            published_on=datetime.date(2020, 1, 1), ingested_at=datetime.datetime(2020, 1, 2, 10, 0),
         )
         repo, _ = _repo_with_mock_session([doc])
         result = repo.list_by_filters(SearchFilters())
@@ -145,16 +145,16 @@ class TestListByFiltersResultShape:
             "collection_id": 3,
             "language": "pl",
             "published_on": "2020-01-01",
-            "created_at": "2020-01-02T10:00:00",
+            "ingested_at": "2020-01-02T10:00:00",
             "similarity": None,
             "search_match": "filters_only",
         }]
 
     def test_null_dates_become_none(self):
-        repo, _ = _repo_with_mock_session([_fake_document(published_on=None, created_at=None)])
+        repo, _ = _repo_with_mock_session([_fake_document(published_on=None, ingested_at=None)])
         result = repo.list_by_filters(SearchFilters())
         assert result[0]["published_on"] is None
-        assert result[0]["created_at"] is None
+        assert result[0]["ingested_at"] is None
 
     def test_no_commit_called(self):
         repo, session = _repo_with_mock_session([_fake_document()])

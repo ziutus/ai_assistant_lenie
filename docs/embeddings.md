@@ -19,7 +19,7 @@ Embeddings are stored in the `public.document_embeddings` table:
 | `text_original` | `text` | Original text before translation (if applicable) |
 | `embedding` | `vector` | The vector embedding — dimensionless, supports any model |
 | `model` | `varchar(100) NOT NULL` | Name of the embedding model used |
-| `created_at` | `timestamp` | Row creation timestamp |
+| `ingested_at` | `timestamp` | When the document entered Lenie (stage 11g rename from created_at; other tables keep their own created_at) |
 
 Schema file: [`backend/database/init/04-create-table.sql`](../backend/database/init/04-create-table.sql)
 

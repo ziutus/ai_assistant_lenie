@@ -40,7 +40,7 @@ Primary document storage table.
 | `uuid` | varchar(100) | NOT NULL DEFAULT gen_random_uuid(), UNIQUE | Global document identifier (ADR-015) |
 | `collection_id` | integer | FK → collections.id | Thematic collection (ADR-017: 1:N; replaced `project` in stage 11c) |
 
-**Indexes**: document_type, processing_status, created_at, url, collection_id, discovery_source_id, published_on, paywall, ai_summary_needed
+**Indexes**: document_type, processing_status, ingested_at, url, collection_id, discovery_source_id, published_on, paywall, ai_summary_needed
 
 ### Table: document_embeddings (8 columns)
 

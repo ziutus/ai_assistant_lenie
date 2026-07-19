@@ -29,9 +29,9 @@ def _time_period_prompt(fragment: str) -> str:
 
 Zwróć WYŁĄCZNIE poprawny JSON: listę od 1 do {MAX_PERIODS_PER_CHAPTER} okresów, główny okres jako pierwszy:
 [
-  {{"period_label": "krótka nazwa okresu po polsku, np. 'współczesność', 'zimna wojna', 'starożytny Egipt', 'II wojna światowa', 'średniowiecze'",
-    "period_start_year": <rok początkowy jako liczba całkowita; lata p.n.e. zapisuj jako liczby ujemne, np. panowanie Ramzesa II zaczęło się w -1279; null tylko gdy nie da się oszacować>,
-    "period_end_year": <rok końcowy jako liczba całkowita (p.n.e. ujemnie); dla współczesności użyj bieżącego roku; null tylko gdy nie da się oszacować>,
+  {{"subject_period_label": "krótka nazwa okresu po polsku, np. 'współczesność', 'zimna wojna', 'starożytny Egipt', 'II wojna światowa', 'średniowiecze'",
+    "subject_period_start_year": <rok początkowy jako liczba całkowita; lata p.n.e. zapisuj jako liczby ujemne, np. panowanie Ramzesa II zaczęło się w -1279; null tylko gdy nie da się oszacować>,
+    "subject_period_end_year": <rok końcowy jako liczba całkowita (p.n.e. ujemnie); dla współczesności użyj bieżącego roku; null tylko gdy nie da się oszacować>,
     "confidence": "high|medium|low",
     "evidence": "jedno zdanie: na jakiej podstawie z tekstu to określono"}}
 ]
@@ -78,11 +78,11 @@ def parse_periods_response(raw_response: str) -> list[dict]:
 
 def normalize_period(candidate: dict) -> dict | None:
     """Validate one LLM period candidate; BCE years are negative integers."""
-    label = " ".join(str(candidate.get("period_label") or "").split())
+    label = " ".join(str(candidate.get("subject_period_label") or "").split())
     if not label:
         return None
-    start = coerce_year(candidate.get("period_start_year"), minimum=MIN_YEAR, maximum=MAX_YEAR)
-    end = coerce_year(candidate.get("period_end_year"), minimum=MIN_YEAR, maximum=MAX_YEAR)
+    start = coerce_year(candidate.get("subject_period_start_year"), minimum=MIN_YEAR, maximum=MAX_YEAR)
+    end = coerce_year(candidate.get("subject_period_end_year"), minimum=MIN_YEAR, maximum=MAX_YEAR)
     if start is not None and end is not None and start > end:
         start, end = end, start
     confidence = str(candidate.get("confidence") or "").strip().lower()
@@ -90,9 +90,9 @@ def normalize_period(candidate: dict) -> dict | None:
         confidence = "low"
     evidence = str(candidate.get("evidence") or "").strip() or None
     return {
-        "period_label": label[:100],
-        "period_start_year": start,
-        "period_end_year": end,
+        "subject_period_label": label[:100],
+        "subject_period_start_year": start,
+        "subject_period_end_year": end,
         "confidence": confidence,
         "evidence": evidence,
     }
@@ -113,7 +113,7 @@ def classify_fragment(fragment: str, model: str) -> tuple[list[dict], dict]:
         if normalized is None:
             rejected += 1
             continue
-        label_key = normalized["period_label"].casefold()
+        label_key = normalized["subject_period_label"].casefold()
         if label_key in seen_labels:
             continue
         seen_labels.add(label_key)

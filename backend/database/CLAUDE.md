@@ -82,7 +82,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `paywall` | `boolean` | Whether content is behind a paywall (default: false) |
 | `published_on` | `date` | Publication date |
 | `published_on_method` | `varchar(10)` | How `published_on` was set: `manual` (reviewer typed it on `/chunks`) or `llm` (`extract_publication_date`); `NULL` for legacy/import-set values. CHECK constraint `ck_documents_published_on_method` |
-| `created_at` | `timestamp` | Row creation timestamp |
+| `ingested_at` | `timestamp` | When the document entered Lenie (stage 11g rename from created_at; other tables keep their own created_at) |
 | `document_length` | `integer` | Text length in characters |
 | `chapter_list` | `text` | Chapter/section list (for videos/transcripts) |
 | `original_id` | `text` | External identifier (e.g. YouTube video ID) |
@@ -91,7 +91,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `uuid` | `varchar(100) NOT NULL DEFAULT gen_random_uuid()` | Global document identifier (ADR-015), UNIQUE |
 | `collection_id` | `integer` | FK → `collections.id` (`ON DELETE SET NULL`) — thematic collection (ADR-017: 1:N; replaced the never-used `project` string column in stage 11c) |
 
-**Indexes:** `document_type`, `processing_status`, `created_at`, `url`, `collection_id`, `discovery_source_id`, `published_on`, `paywall`, `ai_summary_needed`, `publisher_id`.
+**Indexes:** `document_type`, `processing_status`, `ingested_at`, `url`, `collection_id`, `discovery_source_id`, `published_on`, `paywall`, `ai_summary_needed`, `publisher_id`.
 
 ### Table: `public.document_embeddings`
 

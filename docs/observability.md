@@ -29,9 +29,9 @@ The project has **minimal and fragmented observability**. Logging exists in most
 | Language detection | `library/text_detect_language.py:5` | N/A (module logger) | Default Python | No |
 | YouTube file | `library/stalker_youtube_file.py:11` | N/A (module logger) | Default Python | No |
 | Batch: youtube_add | `youtube_add.py:37` | Configurable (DEBUG/INFO via `-v` flag) | `%(asctime)s %(levelname)s %(name)s: %(message)s` | No |
-| Batch: do_the_needful | `web_documents_do_the_needful_new.py:22` | INFO | Default Python | No |
-| Batch: md_decode | `webdocument_md_decode.py:20-21` | DEBUG | Default Python | No |
-| Batch: regexp_by_ai | `webdocument_prepare_regexp_by_ai.py:21-22` | INFO | Default Python | No |
+| Batch: do_the_needful | `documents_pipeline.py:22` | INFO | Default Python | No |
+| Batch: md_decode | `document_md_decode.py:20-21` | DEBUG | Default Python | No |
+| Batch: regexp_by_ai | `document_prepare_regexp_by_ai.py:21-22` | INFO | Default Python | No |
 
 **Key finding:** No structured logging (JSON), no request ID tracking, no correlation IDs anywhere in the backend.
 

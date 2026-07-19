@@ -134,7 +134,7 @@ starą nazwę pola, `dynamodb_sync.py` musi mapować).
 
 `websites_embeddings.website_id` FK. Backend: 20 aktywnych plików (m.in. `db/models.py`,
 `stalker...` 13, `search_service.py` 5, `server.py`, `document_analysis_service.py`, batch
-`web_documents_do_the_needful_new.py` 17, testy ~8 plików). Klienci: `shared/types` (`SearchResult.website_id`),
+`documents_pipeline.py` 17, testy ~8 plików). Klienci: `shared/types` (`SearchResult.website_id`),
 react (`utils.tsx`, `search.tsx`, `useManageLLM.ts` 9), slack_bot (`test_search_formatter.py` —
 sprawdzić też src), Lambda `app-server-db`. Zależny od decyzji czy robić razem z rename tabeli
 `websites_embeddings` → `document_embeddings` (rekomendacja: tak, jedna migracja).
@@ -166,3 +166,12 @@ obu frontendach, wtyczce i większości backendu). Zmierzyć przed właściwą s
 
 Każda sesja: migracja Alembic (upgrade→psql→downgrade→upgrade na NAS), pełna suita unit,
 ruff, deploy NAS bezpośrednio po migracji, E2E `/search` + frontend, wpis w dzienniku.
+
+## STATUS KOŃCOWY (2026-07-19): ETAP 11 ZAKOŃCZONY
+
+Wszystkie sesje 11a–11g wykonane (PR #304–#312, 7 migracji `a2b3c4d5e6f7`→`b9c0d1e2f3a4`).
+Sesja 11g objęła dodatkowo: `processing_status`/`processing_error_code` + słowniki,
+`ingested_at`, `subject_period_*` w `document_time_periods`, rename plików batch
+(`documents_pipeline.py` itd.) i modułu repozytorium (`document_repository.DocumentRepository`).
+Świadome odstępstwa (decyzje użytkownika, udokumentowane w sekcji 7 planu): `uuid` zostaje,
+pole wire `source` (nazwa) zostaje, ścieżki `/website_*` do Etapu 12.

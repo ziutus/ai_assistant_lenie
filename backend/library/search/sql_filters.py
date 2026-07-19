@@ -83,9 +83,9 @@ def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
         conditions.append(Document.published_on <= filters.published_on_to)
 
     if filters.ingested_at_from is not None:
-        conditions.append(Document.created_at >= filters.ingested_at_from)
+        conditions.append(Document.ingested_at >= filters.ingested_at_from)
     if filters.ingested_at_to is not None:
-        conditions.append(Document.created_at <= filters.ingested_at_to)
+        conditions.append(Document.ingested_at <= filters.ingested_at_to)
 
     if filters.document_types:
         conditions.append(Document.document_type.in_(filters.document_types))
@@ -143,12 +143,12 @@ def _subject_period_overlap(start_year: int | None, end_year: int | None) -> Col
     subquery = select(DocumentTimePeriod.id).where(DocumentTimePeriod.document_id == Document.id)
     if start_year is not None:
         subquery = subquery.where(or_(
-            DocumentTimePeriod.period_end_year.is_(None),
-            DocumentTimePeriod.period_end_year >= start_year,
+            DocumentTimePeriod.subject_period_end_year.is_(None),
+            DocumentTimePeriod.subject_period_end_year >= start_year,
         ))
     if end_year is not None:
         subquery = subquery.where(or_(
-            DocumentTimePeriod.period_start_year.is_(None),
-            DocumentTimePeriod.period_start_year <= end_year,
+            DocumentTimePeriod.subject_period_start_year.is_(None),
+            DocumentTimePeriod.subject_period_start_year <= end_year,
         ))
     return exists(subquery)

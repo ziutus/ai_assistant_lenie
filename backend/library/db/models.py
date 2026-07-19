@@ -247,7 +247,9 @@ class Document(Base):
     text: Mapped[str | None] = mapped_column(Text)
     paywall: Mapped[bool | None] = mapped_column(Boolean, server_default=sa_text("false"))
     title: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime.datetime | None] = mapped_column(
+    # When the document entered Lenie (stage 11g rename from created_at) —
+    # distinct from published_on, which is when the content was published.
+    ingested_at: Mapped[datetime.datetime | None] = mapped_column(
         DateTime, server_default=sa_text("CURRENT_TIMESTAMP"),
     )
 
@@ -487,7 +489,7 @@ class Document(Base):
                 self.processing_error_code = StalkerDocumentStatusError.TEXT_MISSING.name
 
     def dict(self):
-        created_at_str = self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None
+        ingested_at_str = self.ingested_at.strftime("%Y-%m-%d %H:%M:%S") if self.ingested_at else None
         return {
             "id": self.id,
             "next_id": self.next_id,
@@ -501,7 +503,7 @@ class Document(Base):
             "text": self.text,
             "paywall": self.paywall,
             "title": self.title,
-            "created_at": created_at_str,
+            "ingested_at": ingested_at_str,
             "document_type": self.document_type,
             # Wire format keeps the NAME under "source" (Chrome extension /
             # editor compatibility); the FK is exposed alongside it.
@@ -1022,7 +1024,7 @@ class DocumentTimePeriod(Base):
             name="ck_document_time_periods_confidence",
         ),
         Index("idx_document_time_periods_document_chapter", "document_id", "chapter_position"),
-        Index("idx_document_time_periods_years", "period_start_year", "period_end_year"),
+        Index("idx_document_time_periods_years", "subject_period_start_year", "subject_period_end_year"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1031,9 +1033,9 @@ class DocumentTimePeriod(Base):
     )
     chapter_position: Mapped[int | None] = mapped_column(Integer)
     position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
-    period_label: Mapped[str] = mapped_column(String(100), nullable=False)
-    period_start_year: Mapped[int | None] = mapped_column(Integer)
-    period_end_year: Mapped[int | None] = mapped_column(Integer)
+    subject_period_label: Mapped[str] = mapped_column(String(100), nullable=False)
+    subject_period_start_year: Mapped[int | None] = mapped_column(Integer)
+    subject_period_end_year: Mapped[int | None] = mapped_column(Integer)
     confidence: Mapped[str] = mapped_column(String(10), nullable=False, default="low", server_default="low")
     evidence: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime.datetime] = mapped_column(
@@ -1045,7 +1047,7 @@ class DocumentTimePeriod(Base):
     def __repr__(self) -> str:
         return (
             f"DocumentTimePeriod(id={self.id!r}, document_id={self.document_id!r}, "
-            f"chapter={self.chapter_position!r}, period_label={self.period_label!r})"
+            f"chapter={self.chapter_position!r}, subject_period_label={self.subject_period_label!r})"
         )
 
 

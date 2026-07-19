@@ -26,10 +26,10 @@ backend/
 ├── test_code/                             # Experimental/prototype scripts
 │   └── CLAUDE.md                          # ↳ Detailed docs
 │
-├── web_documents_do_the_needful_new.py   # Batch: download, transcribe, embed documents
-├── web_documents_fix_missing_markdown.py # Batch: fix documents with missing markdown
-├── webdocument_md_decode.py              # Batch: markdown decoding & link processing
-├── webdocument_prepare_regexp_by_ai.py   # AI-driven regex pattern generation
+├── documents_pipeline.py   # Batch: download, transcribe, embed documents
+├── documents_fix_missing_markdown.py # Batch: fix documents with missing markdown
+├── document_md_decode.py              # Batch: markdown decoding & link processing
+├── document_prepare_regexp_by_ai.py   # AI-driven regex pattern generation
 │
 └── tmp/                                   # Runtime temp data (sql_data/, youtube_to_text/)
 ```
@@ -102,10 +102,10 @@ Standalone scripts for bulk document operations. Run manually, not part of the F
 
 | Script | Purpose | DB Access |
 |--------|---------|-----------|
-| `web_documents_do_the_needful_new.py` | Full pipeline: download webpage content, transcribe YouTube videos (AssemblyAI/AWS Transcribe), detect language, generate embeddings, store to PostgreSQL + S3 | **Yes** |
-| `web_documents_fix_missing_markdown.py` | Fix documents that are missing markdown content | **Yes** |
-| `webdocument_md_decode.py` | Markdown decoding, link extraction and correction, prepare content for embedding | **Yes** |
-| `webdocument_prepare_regexp_by_ai.py` | Generate site-specific regex patterns for article extraction using LLM | **Yes** |
+| `documents_pipeline.py` | Full pipeline: download webpage content, transcribe YouTube videos (AssemblyAI/AWS Transcribe), detect language, generate embeddings, store to PostgreSQL + S3 | **Yes** |
+| `documents_fix_missing_markdown.py` | Fix documents that are missing markdown content | **Yes** |
+| `document_md_decode.py` | Markdown decoding, link extraction and correction, prepare content for embedding | **Yes** |
+| `document_prepare_regexp_by_ai.py` | Generate site-specific regex patterns for article extraction using LLM | **Yes** |
 
 Ad-hoc single-item tools and bulk import scripts live in [`imports/`](imports/CLAUDE.md): `youtube_add.py`, `youtube_batch_analyze.py`, `dynamodb_sync.py`, `feed_monitor.py`, `article_browser.py`, `freedom_house_import.py`, `control_questions.py`, `migrate_data_to_cache.py`.
 

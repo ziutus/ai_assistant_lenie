@@ -54,12 +54,12 @@ Backend wykonuje deterministyczne zapytania SQL i pgvector. Frontend pokazuje, j
 | `author` | `byline` | tekst prezentacyjny; autorzy relacyjnie w `document_persons` — **zrobione fizycznie (Etap 11b, migracja `b3c4d5e6f7a8`)** |
 | `author_source` | `byline_method` | sposób ustalenia byline (manual/llm/html) — **zrobione fizycznie (Etap 11b)** |
 | `project` | `collection_id` | kolekcja tematyczna — **zrobione fizycznie (Etap 11c, migracja `c4d5e6f7a8b9`)**: tabela `collections` + FK, kolumna `project` usunięta (była w 100% pusta, ADR-017) |
-| `created_at` dokumentu | `ingested_at` | data dodania do Lenie |
-| `uuid` | `public_id` | publiczny stabilny identyfikator |
+| `created_at` dokumentu | `ingested_at` | data dodania do Lenie — **zrobione fizycznie (Etap 11g cz. 2b, migracja `b9c0d1e2f3a4`)**; inne tabele zachowują własne `created_at` |
+| `uuid` | `public_id` | publiczny stabilny identyfikator — **ŚWIADOME ODSTĘPSTWO (decyzja użytkownika 2026-07-19): zostaje `uuid`** — rename złamałby utrwaloną konwencję notatek Obsidian („Lenie AI uuid=...") |
 | `document_state` | `processing_status` | stan pipeline'u — **zrobione fizycznie (Etap 11g cz. 2a, migracja `a8b9c0d1e2f3`)** wraz z tabelami słownikowymi `processing_status_types`/`processing_error_types` i kluczami JSON/parametrami wire |
 | `document_state_error` | `processing_error_code` | kod błędu pipeline'u — **zrobione fizycznie (Etap 11g cz. 2a)** |
 | `website_similar` | `search` | właściwy endpoint wyszukiwania |
-| `period_from/to` | `subject_period_start/end_year` | okres, którego dotyczy treść |
+| `period_from/to` | `subject_period_start/end_year` | okres, którego dotyczy treść — filtry `/search` od Etapu 1; **kolumny `document_time_periods` przemianowane fizycznie (Etap 11g cz. 2b)**; parametry legacy `/website_similar` znikną z endpointem w Etapie 12 |
 
 Portal publikacji jest osobnym pojęciem od `discovery_source` i `information_sources`. Docelowo dokument ma `publisher_id`, a domeny wydawcy znajdują się w `publisher_domains`.
 
@@ -412,6 +412,14 @@ Podetapy, każdy jako osobny commit:
 Po każdym podetapie: migracja, testy ORM/repository i kontrola aktualnego head Alembic.
 
 Warunek zakończenia: w aktywnym kodzie i API nie pozostają nazwy `website_*`, `date_from` ani niejednoznaczne `source` dotyczące dokumentu.
+
+**Status 2026-07-19: ETAP 11 ZAKOŃCZONY** (sesje 11a–11g, PR #304–#312) z trzema świadomymi,
+udokumentowanymi odstępstwami: (1) `uuid` zostaje (konwencja Obsidian — decyzja użytkownika);
+(2) pole wire `source` (nazwa) zostaje w `/url_add`/`/website_save`/`/website_get` (zgodność z
+wtyczką Chrome — decyzja użytkownika), fizycznie jest `discovery_source_id`; (3) ścieżki URL
+legacy `/website_*` istnieją do czasu usunięcia `/website_similar` i przeglądu API w Etapie 12.
+Enum `StalkerDocumentStatus` i moduły `library/models/stalker_*` to wewnętrzne nazwy — nie były
+częścią słownika.
 
 ### Etap 12 — wydajność i porządki (`M`, 90–180 min)
 

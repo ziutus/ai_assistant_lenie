@@ -72,7 +72,7 @@ class TestGetList:
         mock_row.url = "https://example.com"
         mock_row.title = "Test"
         mock_row.document_type = "webpage"
-        mock_row.created_at = datetime.datetime(2026, 1, 15, 10, 30, 0)
+        mock_row.ingested_at = datetime.datetime(2026, 1, 15, 10, 30, 0)
         mock_row.processing_status = "URL_ADDED"
         mock_row.processing_error_code = None
         mock_row.note = "note"
@@ -92,7 +92,7 @@ class TestGetList:
         assert result[0]["url"] == "https://example.com"
         assert result[0]["title"] == "Test"
         assert result[0]["document_type"] == "webpage"
-        assert result[0]["created_at"] == "2026-01-15 10:30:00"
+        assert result[0]["ingested_at"] == "2026-01-15 10:30:00"
         assert result[0]["processing_status"] == "URL_ADDED"
         assert result[0]["processing_error_code"] is None
         assert result[0]["note"] == "note"
@@ -107,7 +107,7 @@ class TestGetList:
 
         mock_row = _make_row(
             id=1, url="https://example.com", title="Test", document_type="webpage",
-            created_at=datetime.datetime(2026, 1, 15, 10, 30, 0), processing_status="URL_ADDED",
+            ingested_at=datetime.datetime(2026, 1, 15, 10, 30, 0), processing_status="URL_ADDED",
             processing_error_code=None, note=None, collection_id=None, uuid=None, byline=None,
             obsidian_note_paths=None,
         )
@@ -127,7 +127,7 @@ class TestGetList:
 
         mock_row = _make_row(
             id=1, url="https://example.com", title="Test", document_type="webpage",
-            created_at=datetime.datetime(2026, 1, 15, 10, 30, 0), processing_status="URL_ADDED",
+            ingested_at=datetime.datetime(2026, 1, 15, 10, 30, 0), processing_status="URL_ADDED",
             processing_error_code=None, note=None, collection_id=None, uuid=None, byline=None,
             obsidian_note_paths=["02-wiedza/Kraje/Chiny.md"],
         )
@@ -236,7 +236,7 @@ class TestGetList:
         mock_row.url = "https://example.com/2"
         mock_row.title = "Test 2"
         mock_row.document_type = "link"
-        mock_row.created_at = datetime.datetime(2026, 2, 1, 8, 0, 0)
+        mock_row.ingested_at = datetime.datetime(2026, 2, 1, 8, 0, 0)
         mock_row.processing_status = "ERROR"
         mock_row.processing_error_code = "ERROR_DOWNLOAD"
         mock_row.note = None
