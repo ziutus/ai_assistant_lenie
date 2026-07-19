@@ -181,8 +181,8 @@ class TestSearchSimilar:
 
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
-    def test_custom_project(self, mock_config, mock_get_embedding):
-        """search_similar passes project filter to repo.get_similar()."""
+    def test_custom_collection(self, mock_config, mock_get_embedding):
+        """search_similar passes the collection filter to repo.get_similar()."""
         cfg = MagicMock()
         cfg.require.return_value = "text-embedding-ada-002"
         mock_config.return_value = cfg
@@ -193,7 +193,7 @@ class TestSearchSimilar:
         service = SearchService(session)
 
         with patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
-            service.search_similar("test query", project="my-project")
+            service.search_similar("test query", collection_name="my-project")
 
         mock_similar.assert_called_once_with(
             [0.1, 0.2, 0.3],
@@ -314,7 +314,7 @@ class TestPeriodFilter:
 
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
-    def test_blank_project_treated_as_no_collection_filter(self, mock_config, mock_get_embedding):
+    def test_blank_collection_treated_as_no_collection_filter(self, mock_config, mock_get_embedding):
         cfg = MagicMock()
         cfg.require.return_value = "test-model"
         mock_config.return_value = cfg
@@ -322,10 +322,10 @@ class TestPeriodFilter:
         service = SearchService(_make_session())
         with patch.object(service.repo, "search_text", return_value=[]), \
              patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
-            # An empty string used to be a falsy no-op (`if project:`);
+            # An empty string used to be a falsy no-op (`if project:` historically);
             # SearchFilters(collection_name="") would raise -- must still
             # degrade to "no collection filter", not crash.
-            service.search_similar("zapytanie", project="")
+            service.search_similar("zapytanie", collection_name="")
 
         assert mock_similar.call_args.kwargs["filters"] == SearchFilters()
 

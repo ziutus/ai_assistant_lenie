@@ -38,7 +38,7 @@ class TestWebsiteList:
         mock_list = [{"id": 1, "url": "https://example.com", "title": "Test",
                        "document_type": "webpage", "created_at": "2026-03-09 10:30:45",
                        "document_state": "URL_ADDED", "document_state_error": "NONE",
-                       "note": None, "project": None, "uuid": None}]
+                       "note": None, "collection_id": None, "uuid": None}]
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
             with patch("server.WebsitesDBPostgreSQL") as MockRepo:
@@ -116,7 +116,7 @@ class TestWebsiteGet:
             "original_id": None, "document_length": None, "chapter_list": None,
             "document_state": "URL_ADDED", "document_state_error": "NONE",
             "text_raw": None, "transcript_job_id": None, "ai_summary_needed": False,
-            "byline": None, "note": None, "uuid": None, "project": None,
+            "byline": None, "note": None, "uuid": None, "collection_id": None,
             "text_md": None, "transcript_needed": False,
         }
         mock_session = MagicMock()
@@ -288,7 +288,7 @@ class TestWebsiteSimilar:
                     {"website_id": 1, "text": "t", "similarity": 0.9, "id": 10,
                      "url": "https://example.com", "language": "en", "text_original": "t",
                      "websites_text_length": 100, "embeddings_text_length": 50,
-                     "title": "Test", "document_type": "webpage", "project": None}
+                     "title": "Test", "document_type": "webpage", "collection_id": None}
                 ]
                 MockService.return_value = service_instance
 

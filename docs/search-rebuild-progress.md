@@ -5,6 +5,43 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-07-19 — Etap 11, sesja C (normalizacja `project`→`collection_id`) — UKOŃCZONA
+
+**Zakres wykonany:** pierwszy podetap normalizacyjny: migracja Alembic `c4d5e6f7a8b9` tworzy
+tabelę `collections` (id, name UNIQUE, description, created_at), dodaje
+`web_documents.collection_id` FK (`ON DELETE SET NULL`) + indeks, przenosi defensywnie ewentualne
+wartości `project` (na NAS: 0 — kolumna była w 100% pusta, zgodnie z ADR-017) i USUWA kolumnę
+`project` z indeksem. Downgrade odtwarza kolumnę i dane z powrotem. ORM: nowy model `Collection`,
+`WebDocument.collection_id`, klucz `dict()` `collection_id`. Repozytorium: `get_list()` ma teraz
+parametr `collection_id: int` zamiast `project`; **z `get_similar()`/`search_text()` usunięto
+legacy kwarg `project`** — server.py nigdy go nie przekazywał (żaden endpoint HTTP nie przyjmuje
+project), filtrowanie kolekcją idzie wyłącznie przez `SearchFilters.collection_name`, teraz
+rozwiązywane subquery po `collections.name` → `collection_id`. `SearchService.search_similar()`
+parametr `project` przemianowany na `collection_name`. Init SQL: 03 ma `collection_id integer` +
+indeks, nowy `33-create-collections.sql` (tabela + FK po utworzeniu obu). Frontendy/wtyczka:
+zero zmian — żaden klient nie używał `project`.
+
+**Testy uruchomione:** `tests/unit/` **1830 passed** (12 plików testów zaktualizowanych:
+db_models — test FK zamiast String(100), get_list_query, document_service, flask_endpoints,
+list_by_filters, orm_crud, repository_queries, repository_sql_filters, similarity_search,
+search_service, search_sql_filters — asercje na subquery `collections`, sql_parameterization —
+injection przez `collection_name`); ruff czysty. Migracja na NAS: upgrade → psql (collections
+istnieje, 0 wierszy; `project` usunięty) → downgrade (project wraca, collections znika) →
+upgrade → head `c4d5e6f7a8b9`. Deploy backendu na NAS od razu po migracji. E2E: `/website_list`
+zwraca `collection_id`, `/search` z `collection_name` nieistniejącej kolekcji → 0 wyników
+(subquery działa), `/website_similar` hybrydowo 2 wyniki z kluczem `collection_id`.
+
+**Otwarte ryzyka:** tabela `collections` jest pusta i nie ma jeszcze API CRUD (nie było go też
+dla `project`) — UI/endpointy do zarządzania kolekcjami to osobna, przyszła funkcjonalność,
+nie zakres rename'ów. Parser Bielika nadal może zwracać `collection_name` — filtr po prostu
+nic nie znajdzie, dopóki kolekcje nie powstaną.
+
+**PR/merge:** PR #306, branch `feat/search-etap-11c-collections`.
+
+**Następny krok:** Etap 11, sesja D — `source`→`discovery_source_id` (największa normalizacja:
+migracja danych name→id na 9250+ dokumentach, przebudowa API `/sources`, hook `before_flush`,
+wtyczka Chrome, importy). Potem 11e (embeddings/website_id), 11f (documents), 11g (pipeline).
+
 ## 2026-07-19 — Etap 11, sesja B (rename `author`→`byline`) — UKOŃCZONA
 
 **Zakres wykonany:** drugi fizyczny rename podetapu 1: `author`→`byline`,

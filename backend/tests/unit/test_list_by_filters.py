@@ -30,7 +30,7 @@ def _fake_document(**overrides):
     doc = MagicMock()
     defaults = {
         "id": 1, "title": "Tytuł", "url": "https://example.com", "document_type": "webpage",
-        "project": None, "language": "pl", "published_on": None, "created_at": None,
+        "collection_id": None, "language": "pl", "published_on": None, "created_at": None,
     }
     defaults.update(overrides)
     for key, value in defaults.items():
@@ -132,7 +132,7 @@ class TestListByFiltersResultShape:
 
         doc = _fake_document(
             id=42, title="Artykuł", url="https://x.pl/a", document_type="webpage",
-            project="lenie", language="pl",
+            collection_id=3, language="pl",
             published_on=datetime.date(2020, 1, 1), created_at=datetime.datetime(2020, 1, 2, 10, 0),
         )
         repo, _ = _repo_with_mock_session([doc])
@@ -142,7 +142,7 @@ class TestListByFiltersResultShape:
             "title": "Artykuł",
             "url": "https://x.pl/a",
             "document_type": "webpage",
-            "project": "lenie",
+            "collection_id": 3,
             "language": "pl",
             "published_on": "2020-01-01",
             "created_at": "2020-01-02T10:00:00",
