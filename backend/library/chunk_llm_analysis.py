@@ -86,7 +86,7 @@ Gdy nic nie trzeba wykluczyć, zwróć [].
 --- PONUMEROWANE LINIE ---
 {numbered}
 --- KONIEC ---"""
-        raw, _ = call_model(prompt, model, PRECLEAN_MAX_TOKENS)
+        raw, _ = call_model(prompt, model, PRECLEAN_MAX_TOKENS, operation="article_preclean")
         for decision in _parse_cleanup_ranges(raw, batch_end - batch_start):
             for local_idx in range(decision["start_line"] - 1, decision["end_line"]):
                 labels[batch_start + local_idx] = (decision["type"], decision["reason"])
@@ -119,7 +119,7 @@ Fragment transkrypcji:
 {intro_text}"""
 
     logger.info("extract_speaker_info: len=%d", len(intro_text))
-    response_text, _ = call_model(prompt, model, max_tokens=300)
+    response_text, _ = call_model(prompt, model, max_tokens=300, operation="speaker_extraction")
     try:
         match = re.search(r'\[.*\]', response_text, re.DOTALL)
         if match:
@@ -157,7 +157,7 @@ Fragment artykułu:
 {text}"""
 
     logger.info("extract_author_info: len=%d", len(text))
-    response_text, _ = call_model(prompt, model, max_tokens=200)
+    response_text, _ = call_model(prompt, model, max_tokens=200, operation="author_extraction")
     try:
         match = re.search(r'\{.*\}', response_text, re.DOTALL)
         if match:
@@ -195,7 +195,7 @@ Fragment artykułu:
 {text}"""
 
     logger.info("extract_publication_date_info: len=%d", len(text))
-    response_text, _ = call_model(prompt, model, max_tokens=100)
+    response_text, _ = call_model(prompt, model, max_tokens=100, operation="publication_date_extraction")
     try:
         match = re.search(r'\{.*\}', response_text, re.DOTALL)
         if match:
@@ -242,16 +242,12 @@ def remove_speech_fillers(text: str) -> str:
     return text.strip()
 
 
-def call_model(prompt: str, model: str, max_tokens: int) -> tuple[str, int]:
-    """Call the appropriate LLM backend and return (response_text, token_count)."""
-    if model.startswith(_ARKLABS_PREFIX):
-        from library.api.arklabs.arklabs_completion import arklabs_get_completion
-        actual = f"speakleash/{model.removeprefix(_ARKLABS_PREFIX)}"
-        result = arklabs_get_completion(prompt, model=actual, max_tokens=max_tokens, temperature=0.2)
-    else:
-        from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
-        result = sherlock_get_completion(prompt, model=model, max_tokens=max_tokens, temperature=0.2)
-    tokens = getattr(result, "prompt_tokens", 0) or 0
+def call_model(prompt: str, model: str, max_tokens: int, *, operation: str = "document_analysis") -> tuple[str, int]:
+    """Call the audited LLM gateway and return (response_text, token_count)."""
+    from library.ai import ai_ask
+
+    result = ai_ask(prompt, model=model, max_token_count=max_tokens, temperature=0.2, operation=operation)
+    tokens = getattr(result, "total_tokens", 0) or 0
     return result.response_text, tokens
 
 
@@ -296,7 +292,7 @@ def rewrite_chunk_text(text: str, model: str, position: int = 1, total: int = 1,
     best = ""
     for attempt in range(1, 3):
         logger.info("rewrite chunk %d/%d, attempt %d, len=%d", position, total, attempt, len(text))
-        response_text, tokens = call_model(prompt, model, REWRITE_MAX_TOKENS)
+        response_text, tokens = call_model(prompt, model, REWRITE_MAX_TOKENS, operation="chunk_rewrite")
         logger.info("rewrite done: %d chars, %d tokens", len(response_text), tokens)
         if len(response_text) > len(best):
             best = response_text
@@ -332,7 +328,7 @@ Skup się na głównych tezach i wnioskach. Używaj imion rozmówców (nie pisz 
 --- KONIEC ---"""
 
     logger.info("summarize chunk, len=%d, speakers=%d", len(corrected_text), len(speakers or []))
-    response_text, tokens = call_model(prompt, model, SUMMARY_MAX_TOKENS)
+    response_text, tokens = call_model(prompt, model, SUMMARY_MAX_TOKENS, operation="chunk_summary")
     logger.info("summarize done: %d tokens", tokens)
     return response_text.strip()
 
@@ -377,7 +373,7 @@ Jeśli REKLAMA: nie dodawaj nic więcej.
 --- KONIEC ---"""
 
     logger.info("semantic analysis, len=%d, speakers=%d", len(corrected_text), len(speakers or []))
-    raw, tokens = call_model(prompt, model, SUMMARY_MAX_TOKENS)
+    raw, tokens = call_model(prompt, model, SUMMARY_MAX_TOKENS, operation="chunk_semantic_analysis")
     logger.info("semantic done: %d tokens", tokens)
 
     section_type, topic, summary_text = parse_rewritten_chunk(raw)
@@ -422,7 +418,7 @@ Jeśli ZRODLA, REKLAMA lub SZUM: nie dodawaj nic więcej.
 --- KONIEC ---"""
 
     logger.info("article analysis chunk %d/%d, len=%d", position, total, len(original_text))
-    raw, tokens = call_model(prompt, model, SUMMARY_MAX_TOKENS)
+    raw, tokens = call_model(prompt, model, SUMMARY_MAX_TOKENS, operation="article_chunk_analysis")
     logger.info("article analysis done: %d tokens", tokens)
 
     section_type, topic, summary_text = parse_rewritten_chunk(raw)

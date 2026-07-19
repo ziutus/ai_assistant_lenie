@@ -82,7 +82,7 @@ Nie dopowiadaj faktów. Zwróć wyłącznie JSON:
 Osoba: {person.canonical_name}
 Notka źródłowa:
 {excerpt}"""
-        raw, _ = call_model(prompt, model, max_tokens=350)
+        raw, _ = call_model(prompt, model, max_tokens=350, operation="author_biography_extract")
         result = _json_object(raw)
         description = str(result.get("description") or "").strip()
         if not description:
@@ -100,7 +100,7 @@ Osoba: {person.canonical_name}
 Obecny opis: {person.description}
 Nowa notka źródłowa:
 {excerpt}"""
-    raw, _ = call_model(prompt, model, max_tokens=600)
+    raw, _ = call_model(prompt, model, max_tokens=600, operation="author_biography_merge")
     result = _json_object(raw)
     allowed = {"no_new_information", "new_information", "conflicting_information"}
     if result.get("decision") not in allowed:

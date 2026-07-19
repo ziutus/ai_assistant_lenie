@@ -98,11 +98,12 @@ def normalize_period(candidate: dict) -> dict | None:
     }
 
 
-def classify_fragment(fragment: str, model: str) -> tuple[list[dict], dict]:
+def classify_fragment(fragment: str, model: str, *, document_id: int | None = None) -> tuple[list[dict], dict]:
     """Make one LLM call and retain valid, de-duplicated periods (main period first)."""
     response = ai_ask(
         _time_period_prompt(fragment), model=model, temperature=0.1, max_token_count=800,
         operation="time_period_classification",
+        document_id=document_id,
     )
     candidates, invalid_json = _parse_periods_response(response.response_text)
     periods: list[dict] = []
@@ -134,7 +135,9 @@ def extract_document_periods(session, doc, model: str | None = None, *, chapter_
     periods: list[dict] = []
     chapter_reports: list[dict] = []
     for chapter in _chapters_for_document(doc, chapter_position):
-        extracted, report = classify_fragment(chapter["text"][:MAX_FRAGMENT_CHARS], selected_model)
+        extracted, report = classify_fragment(
+            chapter["text"][:MAX_FRAGMENT_CHARS], selected_model, document_id=getattr(doc, "id", None),
+        )
         for position, period in enumerate(extracted):
             periods.append({
                 "chapter_position": chapter["position"],

@@ -8,7 +8,10 @@ type OperationRow = CostRow & { operation: string; model: string };
 type DailyRow = CostRow & { day: string };
 type AnalysisRow = CostRow & { job_id: string; run_id: number | null; started_at: string | null };
 type DocumentRow = CostRow & { document_id: number | null; title: string | null };
-type Report = { totals: CostRow[]; documents: DocumentRow[]; daily: DailyRow[]; operations: OperationRow[]; analyses: AnalysisRow[] };
+type CallRow = { id: number; document_id: number | null; job_id: string | null; run_id: number | null; called_at: string;
+  operation: string; provider: string; model: string; prompt_tokens: number | null; completion_tokens: number | null;
+  tokens: number | null; cost: string | null; currency: string | null; cost_status: string; success: boolean; error_code: string | null };
+type Report = { totals: CostRow[]; documents: DocumentRow[]; daily: DailyRow[]; operations: OperationRow[]; analyses: AnalysisRow[]; calls: CallRow[] };
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const money = (value: string | null, currency: string | null) => value == null ? "—" : `${Number(value).toFixed(6)} ${currency ?? "?"}`;
@@ -81,7 +84,20 @@ const LlmCosts = () => {
       {documentId && <><h3>Analizy dokumentu</h3><p style={{ color: "#64748b" }}>Powiązanie obejmuje wywołania wykonane po wdrożeniu tej funkcji.</p>
         <table style={tableStyle}><thead><tr><th style={th}>Data</th><th style={th}>Job / run</th><th style={th}>Koszt</th><th style={th}>Wywołania</th><th style={th}>Tokeny</th></tr></thead><tbody>
           {report.analyses.map((r, i) => <tr key={`${r.job_id}-${r.currency}-${i}`}><td style={td}>{r.started_at?.replace("T", " ").slice(0, 19)}</td><td style={td}>{r.job_id.slice(0, 8)} / {r.run_id ?? "—"}</td><td style={td}>{money(r.cost, r.currency)}</td><td style={td}>{r.calls}</td><td style={td}>{r.tokens.toLocaleString("pl")}</td></tr>)}
-        </tbody></table></>}
+        </tbody></table>
+        <h3>Historia operacji LLM</h3>
+        <table style={tableStyle}><thead><tr><th style={th}>Moment</th><th style={th}>Operacja</th><th style={th}>Dostawca / model</th><th style={th}>Run / job</th><th style={th}>Tokeny</th><th style={th}>Koszt</th><th style={th}>Status</th></tr></thead><tbody>
+          {report.calls.map(r => <tr key={r.id}>
+            <td style={td}>{r.called_at.replace("T", " ").slice(0, 19)}</td><td style={td}>{r.operation}</td>
+            <td style={td}>{r.provider}<br/><span style={{ color: "#64748b" }}>{r.model}</span></td>
+            <td style={td}>{r.run_id != null ? `run ${r.run_id}` : "—"}{r.job_id ? <><br/><span title={r.job_id}>job {r.job_id.slice(0, 8)}</span></> : null}</td>
+            <td style={td}>{r.tokens?.toLocaleString("pl") ?? "—"}<br/><span style={{ color: "#64748b" }}>{r.prompt_tokens ?? "?"} in / {r.completion_tokens ?? "?"} out</span></td>
+            <td style={td}>{money(r.cost, r.currency)}<br/><span style={{ color: r.cost_status === "unknown" ? "#b45309" : "#64748b" }}>{r.cost_status}</span></td>
+            <td style={td}>{r.success ? "OK" : <span style={{ color: "#b91c1c" }}>Błąd: {r.error_code ?? "nieznany"}</span>}</td>
+          </tr>)}
+        </tbody></table>
+        {!report.calls.length && <p>Brak zarejestrowanych operacji LLM dla dokumentu w tym okresie.</p>}
+      </>}
     </>}
   </div>;
 };

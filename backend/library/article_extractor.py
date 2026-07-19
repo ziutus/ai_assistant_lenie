@@ -384,7 +384,8 @@ def _parse_llm_json_response(response_text: str) -> dict | None:
 
 
 def extract_article_markers_with_llm(markdown_text: str, url: str = "",
-                                     model: str = "speakleash/Bielik-11B-v3.0-Instruct") -> dict | None:
+                                     model: str = "speakleash/Bielik-11B-v3.0-Instruct",
+                                     operation: str = "article_extraction") -> dict | None:
     """Wyślij markdown do ARK Labs (Bielik) i pobierz markery granic artykułu.
 
     Tryb stateful/stateless kontrolowany przez zmienną ARK_LABS_STATEFUL (domyślnie 0=stateless).
@@ -395,7 +396,7 @@ def extract_article_markers_with_llm(markdown_text: str, url: str = "",
         dict z polami: title, author, date, article_first_sentence, article_last_sentence, tags
         lub None w przypadku błędu
     """
-    from library.api.arklabs.arklabs_completion import arklabs_get_completion
+    from library.ai import ai_ask
 
     use_stateful = os.environ.get("ARK_LABS_STATEFUL", "0") == "1"
 
@@ -412,13 +413,15 @@ def extract_article_markers_with_llm(markdown_text: str, url: str = "",
     prompt = EXTRACTION_USER_PROMPT_TEMPLATE.format(markdown_text=cleaned)
 
     try:
-        response = arklabs_get_completion(
-            prompt=prompt,
-            model=model,
-            max_tokens=800,
+        gateway_model = f"arklabs/{model.removeprefix('speakleash/')}"
+        response = ai_ask(
+            query=prompt,
+            model=gateway_model,
+            max_token_count=800,
             temperature=0.1,
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
-            stateful=use_stateful,
+            operation=operation,
+            arklabs_stateful=use_stateful,
         )
 
         logger.info(f"LLM extraction tokens: prompt={response.prompt_tokens}, "
@@ -431,13 +434,14 @@ def extract_article_markers_with_llm(markdown_text: str, url: str = "",
         return None
 
 
-def _extract_markers_via_cloudferro(markdown_text: str, url: str = "") -> dict | None:
+def _extract_markers_via_cloudferro(markdown_text: str, url: str = "",
+                                    operation: str = "article_extraction") -> dict | None:
     """Wyślij markdown do CloudFerro Sherlock (Bielik) i pobierz markery granic artykułu.
 
     Używane jako fallback gdy ARK Labs jest niedostępny (timeout, 429).
     Returns: dict markerów lub None w przypadku błędu.
     """
-    from library.api.cloudferro.sherlock.sherlock import sherlock_get_completion
+    from library.ai import ai_ask
 
     portal = _detect_portal(url)
     trimmed = _trim_markdown_navigation(markdown_text)
@@ -449,12 +453,13 @@ def _extract_markers_via_cloudferro(markdown_text: str, url: str = "") -> dict |
     prompt = EXTRACTION_USER_PROMPT_TEMPLATE.format(markdown_text=cleaned)
 
     try:
-        response = sherlock_get_completion(
-            prompt=prompt,
+        response = ai_ask(
+            query=prompt,
             model=CLOUDFERRO_FALLBACK_MODEL,
-            max_tokens=800,
+            max_token_count=800,
             temperature=0.1,
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
+            operation=operation,
         )
 
         logger.info(f"CloudFerro extraction tokens: prompt={response.prompt_tokens}, "
@@ -651,7 +656,8 @@ def _escape_for_regex(line: str) -> str:
 def process_article_with_llm_fallback(markdown_text: str, document_id: int,
                                        cache_dir: str, url: str,
                                        model: str = "speakleash/Bielik-11B-v3.0-Instruct",
-                                       arklabs_first: bool = False) -> str | None:
+                                       arklabs_first: bool = False,
+                                       operation: str = "article_extraction") -> str | None:
     """Główna funkcja fallback: ekstrakcja artykułu przez LLM + generowanie regex draft.
 
     arklabs_first=True: ARK Labs primary (taniej, stateful $0.01/1M input),
@@ -669,19 +675,19 @@ def process_article_with_llm_fallback(markdown_text: str, document_id: int,
         fallback_name = "CloudFerro"
 
         def _primary(text, url):
-            return extract_article_markers_with_llm(text, url=url, model=model)
+            return extract_article_markers_with_llm(text, url=url, model=model, operation=operation)
 
         def _fallback(text, url):
-            return _extract_markers_via_cloudferro(text, url=url)
+            return _extract_markers_via_cloudferro(text, url=url, operation=operation)
     else:
         primary_name = "CloudFerro"
         fallback_name = "ARK Labs"
 
         def _primary(text, url):
-            return _extract_markers_via_cloudferro(text, url=url)
+            return _extract_markers_via_cloudferro(text, url=url, operation=operation)
 
         def _fallback(text, url):
-            return extract_article_markers_with_llm(text, url=url, model=model)
+            return extract_article_markers_with_llm(text, url=url, model=model, operation=operation)
 
     markers = None
     for attempt in range(2):

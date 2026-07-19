@@ -485,8 +485,10 @@ def website_entities_refresh():
     if rows:
         try:
             from library.place_verification import verify_document_places
+            from library.llm_usage.context import llm_usage_context
 
-            summary = verify_document_places(session, doc, text)
+            with llm_usage_context(document_id=doc_id):
+                summary = verify_document_places(session, doc, text)
             session.commit()
             place_tags = summary["tagged"]
         except Exception:
@@ -495,8 +497,10 @@ def website_entities_refresh():
 
         try:
             from library.person_registry import resolve_document_persons
+            from library.llm_usage.context import llm_usage_context
 
-            p_summary = resolve_document_persons(session, doc, text)
+            with llm_usage_context(document_id=doc_id):
+                p_summary = resolve_document_persons(session, doc, text)
             session.commit()
             persons_linked = len(p_summary["linked"])
         except Exception:

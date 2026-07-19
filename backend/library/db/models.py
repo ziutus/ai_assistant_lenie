@@ -1682,6 +1682,9 @@ class LlmUsageLog(Base):
     analysis_job_id: Mapped[str | None] = mapped_column(
         String(32), ForeignKey("document_analysis_jobs.id", ondelete="SET NULL"),
     )
+    analysis_run_id: Mapped[int | None] = mapped_column(
+        ForeignKey("document_analysis_runs.id", ondelete="SET NULL"),
+    )
     operation: Mapped[str] = mapped_column(String(50), nullable=False)
     provider: Mapped[str] = mapped_column(String(50), nullable=False)
     model: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -1729,6 +1732,7 @@ class LlmUsageLog(Base):
         Index("idx_llm_usage_logs_provider_model_called", "provider", "model", "called_at"),
         Index("idx_llm_usage_logs_document_called", "document_id", "called_at"),
         Index("idx_llm_usage_logs_analysis_job", "analysis_job_id"),
+        Index("idx_llm_usage_logs_analysis_run", "analysis_run_id"),
         Index(
             "idx_llm_usage_logs_interpretation",
             "search_interpretation_log_id",

@@ -64,7 +64,8 @@ def parse_intent(text: str, model: str | None = None) -> dict:
 
     try:
         from library.ai import ai_ask
-        ai_response = ai_ask(prompt, model=model, temperature=0.1, max_token_count=256)
+        ai_response = ai_ask(prompt, model=model, temperature=0.1, max_token_count=256,
+                             operation="intent_parsing")
         raw_response = ai_response.response_text
         if not raw_response:
             logger.warning("Empty LLM response for intent parsing")
