@@ -1064,11 +1064,11 @@ def _source_dict(row, count: int = 0):
     }
 
 
-def _source_doc_count(session, name: str) -> int:
+def _source_doc_count(session, source_id: int) -> int:
     from sqlalchemy import func as sa_func, select as sa_select
 
     return session.execute(
-        sa_select(sa_func.count()).where(WebDocument.source == name)
+        sa_select(sa_func.count()).where(WebDocument.discovery_source_id == source_id)
     ).scalar_one()
 
 
@@ -1078,20 +1078,21 @@ def sources_list():
 
     ?active=1 limits to is_active sources (editor/extension pickers)."""
     from sqlalchemy import func as sa_func, select as sa_select
-    from library.db.models import Source
+    from library.db.models import DiscoverySource
 
     session = get_scoped_session()
     counts = (
-        sa_select(WebDocument.source.label("name"), sa_func.count().label("cnt"))
-        .where(WebDocument.source.isnot(None))
-        .group_by(WebDocument.source)
+        sa_select(WebDocument.discovery_source_id.label("source_id"), sa_func.count().label("cnt"))
+        .where(WebDocument.discovery_source_id.isnot(None))
+        .group_by(WebDocument.discovery_source_id)
         .subquery()
     )
     doc_count = sa_func.coalesce(counts.c.cnt, 0)
-    query = sa_select(Source, doc_count).outerjoin(counts, counts.c.name == Source.name)
+    query = sa_select(DiscoverySource, doc_count).outerjoin(
+        counts, counts.c.source_id == DiscoverySource.id)
     if request.args.get('active') in ('1', 'true', 'yes'):
-        query = query.where(Source.is_active.is_(True))
-    rows = session.execute(query.order_by(doc_count.desc(), Source.name)).all()
+        query = query.where(DiscoverySource.is_active.is_(True))
+    rows = session.execute(query.order_by(doc_count.desc(), DiscoverySource.name)).all()
     return {"status": "success",
             "sources": [_source_dict(row, count) for row, count in rows]}, 200
 
@@ -1103,7 +1104,7 @@ def sources_add():
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
 
-    from library.db.models import Source
+    from library.db.models import DiscoverySource
 
     data = request.get_json(silent=True) or {}
     name = (data.get('name') or "").strip()
@@ -1111,7 +1112,7 @@ def sources_add():
         return {"status": "error", "message": "name is required"}, 400
 
     session = get_scoped_session()
-    row = Source(name=name,
+    row = DiscoverySource(name=name,
                  description=(data.get('description') or "").strip() or None,
                  url=(data.get('url') or "").strip() or None,
                  is_active=bool(data.get('is_active', True)))
@@ -1129,16 +1130,17 @@ def sources_add():
 
 @app.route('/sources/<int:source_id>', methods=['PATCH', 'OPTIONS'])
 def sources_update(source_id: int):
-    """Update a source. Renaming cascades to web_documents.source (fk_source
-    is ON UPDATE CASCADE), so all documents follow the new name atomically."""
+    """Update a source. Documents reference the row by id
+    (discovery_source_id), so renaming only edits this row — every document
+    follows the new name automatically."""
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
 
-    from library.db.models import Source
+    from library.db.models import DiscoverySource
 
     data = request.get_json(silent=True) or {}
     session = get_scoped_session()
-    row = session.get(Source, source_id)
+    row = session.get(DiscoverySource, source_id)
     if row is None:
         return {"status": "error", "message": "Source not found"}, 404
 
@@ -1162,7 +1164,7 @@ def sources_update(source_id: int):
         return {"status": "error", "message": "DB error (duplicate name?)"}, 409
 
     return jsonify({"status": "success",
-                    "source": _source_dict(row, _source_doc_count(session, row.name))}), 200
+                    "source": _source_dict(row, _source_doc_count(session, row.id))}), 200
 
 
 @app.route('/sources/<int:source_id>', methods=['DELETE', 'OPTIONS'])
@@ -1172,13 +1174,13 @@ def sources_delete(source_id: int):
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
 
-    from library.db.models import Source
+    from library.db.models import DiscoverySource
 
     session = get_scoped_session()
-    row = session.get(Source, source_id)
+    row = session.get(DiscoverySource, source_id)
     if row is None:
         return {"status": "error", "message": "Source not found"}, 404
-    used_by = _source_doc_count(session, row.name)
+    used_by = _source_doc_count(session, row.id)
     if used_by > 0:
         return jsonify({"status": "error",
                         "message": f"Source is used by {used_by} documents — deactivate it instead"}), 409
@@ -1469,7 +1471,7 @@ def website_youtube_retry_captions():
         language=doc.language,
         chapter_list=doc.chapter_list,
         note=doc.note,
-        source=doc.source,
+        source=doc.discovery_source_name,
         webshare_api_key=webshare_api_key,
     )
 

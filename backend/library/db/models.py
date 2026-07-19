@@ -26,7 +26,6 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
-    event,
     func,
     select,
     text as sa_text,
@@ -146,16 +145,18 @@ class EmbeddingModel(Base):
         return f"EmbeddingModel(id={self.id!r}, name={self.name!r})"
 
 
-class Source(Base):
+class DiscoverySource(Base):
     """Discovery source lookup — how the user found a document (NOT its author).
 
-    web_documents.source references name (ADR-010) with ON UPDATE CASCADE, so
-    renaming a source here rewrites all documents atomically. Deactivated
+    web_documents.discovery_source_id references id (stage 11d normalization;
+    the old name-based fk_source with ON UPDATE CASCADE is gone — renaming a
+    source only edits this row, documents follow via the id). Deactivated
     sources stay valid on existing documents but disappear from pickers
-    (GET /sources?active=1).
+    (GET /sources?active=1). The HTTP wire format keeps the NAME (`source`
+    field) — resolution to id happens in DocumentService/set_discovery_source.
     """
 
-    __tablename__ = "sources"
+    __tablename__ = "discovery_sources"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
@@ -164,11 +165,11 @@ class Source(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
 
     @classmethod
-    def ensure(cls, session: Session, name: str) -> "Source | None":
-        """Return the source row for ``name``, creating it if missing.
+    def ensure(cls, session: Session, name: str) -> "DiscoverySource | None":
+        """Return the discovery-source row for ``name``, creating it if missing.
 
-        Single get-or-create used by the before_flush hook and POST /sources —
-        any write path may introduce a new source without violating fk_source.
+        Single get-or-create used by WebDocument.set_discovery_source() and
+        POST /sources — any write path may introduce a new source safely.
         """
         name = (name or "").strip()
         if not name:
@@ -183,7 +184,7 @@ class Source(Base):
         return row
 
     def __repr__(self) -> str:
-        return f"Source(id={self.id!r}, name={self.name!r}, is_active={self.is_active!r})"
+        return f"DiscoverySource(id={self.id!r}, name={self.name!r}, is_active={self.is_active!r})"
 
 
 class Collection(Base):
@@ -256,10 +257,13 @@ class WebDocument(Base):
     )
 
     # How the user discovered this content (e.g. "own", "unknow.news", "friend").
-    # Used to evaluate recommendation source quality over time — NOT who created the content.
-    # FK by name (ADR-010); unknown values are auto-created in `sources` by the
-    # before_flush hook at the bottom of this module.
-    source: Mapped[str | None] = mapped_column(Text, ForeignKey("sources.name"))
+    # Used to evaluate recommendation source quality over time — NOT who created
+    # the content. FK by id since stage 11d; the wire format stays the NAME —
+    # writers resolve it via set_discovery_source() (auto-creates unknown names).
+    discovery_source_id: Mapped[int | None] = mapped_column(
+        ForeignKey("discovery_sources.id"), index=True,
+    )
+    discovery_source: Mapped["DiscoverySource | None"] = relationship("DiscoverySource")
     publisher_id: Mapped[int | None] = mapped_column(
         ForeignKey("publishers.id", ondelete="SET NULL"), index=True,
     )
@@ -421,6 +425,28 @@ class WebDocument(Base):
             raise ValueError("document_state must be one of the valid StalkerDocumentStatus values")
         self.document_state = mapped_state
 
+    def set_discovery_source(self, session: Session, name: str | None) -> None:
+        """Resolve a discovery-source NAME (the HTTP wire format) to the FK.
+
+        Unknown names are auto-created in discovery_sources (the stage-11d
+        replacement for the old before_flush hook). Empty/whitespace names
+        clear the FK — the pre-11d behaviour for blank `source` values.
+        """
+        name = (name or "").strip()
+        if not name:
+            self.discovery_source_id = None
+            self.discovery_source = None
+            return
+        row = DiscoverySource.ensure(session, name)
+        # A freshly created row has no id until flush; assigning the
+        # relationship lets the unit of work fill the FK on flush.
+        self.discovery_source = row
+
+    @property
+    def discovery_source_name(self) -> str | None:
+        """The discovery source's NAME — what the HTTP wire format exposes."""
+        return self.discovery_source.name if self.discovery_source else None
+
     def set_document_state_error(self, document_state_error: str | None) -> None:
         mapped_state_error = DOCUMENT_STATE_ERROR_LOOKUP.get(document_state_error)
         if mapped_state_error is None:
@@ -477,7 +503,10 @@ class WebDocument(Base):
             "title": self.title,
             "created_at": created_at_str,
             "document_type": self.document_type,
-            "source": self.source,
+            # Wire format keeps the NAME under "source" (Chrome extension /
+            # editor compatibility); the FK is exposed alongside it.
+            "source": self.discovery_source_name,
+            "discovery_source_id": self.discovery_source_id,
             "published_on": self.published_on,
             "published_on_method": self.published_on_method,
             "original_id": self.original_id,
@@ -1301,7 +1330,7 @@ class DocumentPerson(Base):
 class InformationSource(Base):
     """Canonical publisher/reporting/data source mentioned by documents.
 
-    This is intentionally separate from ``Source``: Source records how the
+    This is intentionally separate from ``DiscoverySource``: DiscoverySource records how the
     user discovered a document, while InformationSource records where claims
     or reporting contained in the document originated.
     """
@@ -1702,33 +1731,7 @@ class LlmUsageLog(Base):
         )
 
 
-# ---------------------------------------------------------------------------
-# Session events
-# ---------------------------------------------------------------------------
-
-
-@event.listens_for(Session, "before_flush")
-def _ensure_document_sources_exist(session: Session, flush_context, instances) -> None:
-    """Auto-create `sources` rows for WebDocument.source values (fk_source).
-
-    Single choke point for every ORM write path (server endpoints, imports,
-    feed monitor, DynamoDB sync, e-mail import): an unknown discovery source
-    becomes a new active `sources` row instead of an IntegrityError. The
-    unit of work inserts `sources` before `web_documents` (FK dependency).
-    """
-    seen: set[str] = set()
-    for obj in list(session.new) + list(session.dirty):
-        if not isinstance(obj, WebDocument):
-            continue
-        name = (obj.source or "").strip()
-        if not name:
-            # Whitespace-only values would violate fk_source — store NULL.
-            if obj.source is not None:
-                obj.source = None
-            continue
-        if obj.source != name:
-            obj.source = name
-        if name in seen:
-            continue
-        seen.add(name)
-        Source.ensure(session, name)
+# The pre-11d before_flush hook that auto-created `sources` rows for
+# WebDocument.source strings is gone: discovery-source resolution is explicit
+# now — every writer goes through WebDocument.set_discovery_source(), which
+# auto-creates unknown names via DiscoverySource.ensure().

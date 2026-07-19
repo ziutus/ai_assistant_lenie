@@ -155,7 +155,7 @@ class TestWebDocumentColumns:
     EXPECTED_COLUMNS = {
         "id", "summary", "url", "language", "tags", "text",
         "paywall", "title", "created_at", "document_type",
-        "source", "publisher_id", "published_on", "published_on_method", "original_id", "document_length",
+        "discovery_source_id", "publisher_id", "published_on", "published_on_method", "original_id", "document_length",
         "chapter_list", "document_state", "document_state_error",
         "text_raw", "transcript_job_id", "ai_summary_needed",
         "byline", "byline_method", "note", "uuid", "collection_id", "text_md",
@@ -242,7 +242,7 @@ class TestWebDocumentColumnTypes:
     def test_text_fields_are_text_type(self):
         text_columns = [
             "summary", "tags", "text", "title", "text_raw",
-            "text_md", "text_extracted", "chapter_list", "source",
+            "text_md", "text_extracted", "chapter_list",
             "original_id", "transcript_job_id", "byline", "note",
         ]
         for name in text_columns:
@@ -498,14 +498,14 @@ class TestValidate:
 # ---------------------------------------------------------------------------
 
 class TestDict:
-    def test_dict_has_36_keys(self):
+    def test_dict_has_37_keys(self):
         doc = _make_doc(
             title="Test",
             document_state_error="NONE",
         )
         doc.created_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
-        assert len(result) == 36
+        assert len(result) == 37
 
     def test_dict_keys(self):
         doc = _make_doc(
@@ -517,7 +517,7 @@ class TestDict:
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
             "summary", "url", "language", "tags", "text", "paywall", "title",
-            "created_at", "document_type", "source", "published_on", "published_on_method", "original_id",
+            "created_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "document_state",
             "document_state_error", "text_raw", "transcript_job_id",
             "ai_summary_needed", "byline", "byline_method", "note", "uuid", "collection_id",

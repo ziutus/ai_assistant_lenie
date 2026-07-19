@@ -95,7 +95,7 @@ def process_youtube_url(
         logger.info(f"New YouTube URL, creating document: {youtube_url}")
         web_document = WebDocument(url=youtube_url)
         web_document.set_document_type("youtube")
-        web_document.source = source
+        web_document.set_discovery_source(session, source)
         if language:
             web_document.language = language
         if chapter_list:
