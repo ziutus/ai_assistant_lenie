@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func, select
 
 from library.db.engine import get_scoped_session
-from library.db.models import DocumentAnalysisJob, LlmUsageLog
+from library.db.models import Document, DocumentAnalysisJob, LlmUsageLog
 
 bp = Blueprint("llm_costs", __name__)
 
@@ -64,6 +64,21 @@ def llm_costs():
         .where(*filters).group_by(LlmUsageLog.operation, LlmUsageLog.model, LlmUsageLog.cost_currency)
         .order_by(func.sum(LlmUsageLog.cost_amount).desc().nullslast())
     ).all()
+    documents = session.execute(
+        select(
+            LlmUsageLog.document_id,
+            Document.title,
+            LlmUsageLog.cost_currency,
+            func.count().label("calls"),
+            func.coalesce(func.sum(LlmUsageLog.total_tokens), 0).label("tokens"),
+            func.sum(LlmUsageLog.cost_amount).label("cost"),
+            func.count().filter(LlmUsageLog.cost_status == "unknown").label("unknown_calls"),
+        )
+        .outerjoin(Document, LlmUsageLog.document_id == Document.id)
+        .where(*filters)
+        .group_by(LlmUsageLog.document_id, Document.title, LlmUsageLog.cost_currency)
+        .order_by(func.sum(LlmUsageLog.cost_amount).desc().nullslast(), LlmUsageLog.document_id)
+    ).all()
     jobs = session.execute(
         select(LlmUsageLog.analysis_job_id, DocumentAnalysisJob.run_id, LlmUsageLog.cost_currency,
                func.min(LlmUsageLog.called_at).label("started_at"), func.count().label("calls"),
@@ -84,6 +99,9 @@ def llm_costs():
                    "tokens": r.tokens, "cost": _money(r.cost)} for r in daily],
         "operations": [{"operation": r.operation, "model": r.model, "currency": r.cost_currency,
                         "calls": r.calls, "tokens": r.tokens, "cost": _money(r.cost)} for r in operations],
+        "documents": [{"document_id": r.document_id, "title": r.title, "currency": r.cost_currency,
+                       "calls": r.calls, "tokens": r.tokens, "cost": _money(r.cost),
+                       "unknown_calls": r.unknown_calls} for r in documents],
         "analyses": [{"job_id": r.analysis_job_id, "run_id": r.run_id, "currency": r.cost_currency,
                       "started_at": r.started_at.isoformat() if r.started_at else None,
                       "calls": r.calls, "tokens": r.tokens, "cost": _money(r.cost)} for r in jobs],

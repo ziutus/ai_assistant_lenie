@@ -7,7 +7,8 @@ type CostRow = { currency: string | null; calls: number; tokens: number; cost: s
 type OperationRow = CostRow & { operation: string; model: string };
 type DailyRow = CostRow & { day: string };
 type AnalysisRow = CostRow & { job_id: string; run_id: number | null; started_at: string | null };
-type Report = { totals: CostRow[]; daily: DailyRow[]; operations: OperationRow[]; analyses: AnalysisRow[] };
+type DocumentRow = CostRow & { document_id: number | null; title: string | null };
+type Report = { totals: CostRow[]; documents: DocumentRow[]; daily: DailyRow[]; operations: OperationRow[]; analyses: AnalysisRow[] };
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const money = (value: string | null, currency: string | null) => value == null ? "—" : `${Number(value).toFixed(6)} ${currency ?? "?"}`;
@@ -59,6 +60,16 @@ const LlmCosts = () => {
           {!!r.unknown_calls && <div style={{ color: "#b45309" }}>{r.unknown_calls} bez wyceny</div>}
         </div>)}</div>
       {!report.totals.length && <p>Brak wywołań w wybranym okresie.</p>}
+      <h3>Koszt per dokument</h3>
+      <table style={tableStyle}><thead><tr><th style={th}>Dokument</th><th style={th}>Koszt</th><th style={th}>Wywołania</th><th style={th}>Tokeny</th><th style={th}>Wycena</th></tr></thead><tbody>
+        {report.documents.map((r, i) => <tr key={`${r.document_id ?? "none"}-${r.currency}-${i}`}>
+          <td style={td}>{r.document_id != null
+            ? <NavLink to={`/chunks/${r.document_id}`}>#{r.document_id} — {r.title || "bez tytułu"}</NavLink>
+            : <span style={{ color: "#64748b" }}>Nieprzypisane (starsze lub globalne wywołania)</span>}</td>
+          <td style={td}>{money(r.cost, r.currency)}</td><td style={td}>{r.calls}</td><td style={td}>{r.tokens.toLocaleString("pl")}</td>
+          <td style={td}>{r.unknown_calls ? <span style={{ color: "#b45309" }}>{r.unknown_calls} bez ceny</span> : "pełna"}</td>
+        </tr>)}
+      </tbody></table>
       <h3>Koszt dzienny</h3>
       <table style={tableStyle}><thead><tr><th style={th}>Dzień</th><th style={th}>Koszt</th><th style={th}>Wywołania</th><th style={th}>Tokeny</th></tr></thead><tbody>
         {report.daily.map((r, i) => <tr key={`${r.day}-${r.currency}-${i}`}><td style={td}>{r.day}</td><td style={td}>{money(r.cost, r.currency)}</td><td style={td}>{r.calls}</td><td style={td}>{r.tokens.toLocaleString("pl")}</td></tr>)}
