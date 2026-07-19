@@ -73,8 +73,8 @@ class TestGetList:
         mock_row.title = "Test"
         mock_row.document_type = "webpage"
         mock_row.created_at = datetime.datetime(2026, 1, 15, 10, 30, 0)
-        mock_row.document_state = "URL_ADDED"
-        mock_row.document_state_error = None
+        mock_row.processing_status = "URL_ADDED"
+        mock_row.processing_error_code = None
         mock_row.note = "note"
         mock_row.collection_id = 3
         mock_row.uuid = "uuid-1"
@@ -93,8 +93,8 @@ class TestGetList:
         assert result[0]["title"] == "Test"
         assert result[0]["document_type"] == "webpage"
         assert result[0]["created_at"] == "2026-01-15 10:30:00"
-        assert result[0]["document_state"] == "URL_ADDED"
-        assert result[0]["document_state_error"] is None
+        assert result[0]["processing_status"] == "URL_ADDED"
+        assert result[0]["processing_error_code"] is None
         assert result[0]["note"] == "note"
         assert result[0]["collection_id"] == 3
         assert result[0]["uuid"] == "uuid-1"
@@ -107,8 +107,8 @@ class TestGetList:
 
         mock_row = _make_row(
             id=1, url="https://example.com", title="Test", document_type="webpage",
-            created_at=datetime.datetime(2026, 1, 15, 10, 30, 0), document_state="URL_ADDED",
-            document_state_error=None, note=None, collection_id=None, uuid=None, byline=None,
+            created_at=datetime.datetime(2026, 1, 15, 10, 30, 0), processing_status="URL_ADDED",
+            processing_error_code=None, note=None, collection_id=None, uuid=None, byline=None,
             obsidian_note_paths=None,
         )
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
@@ -127,8 +127,8 @@ class TestGetList:
 
         mock_row = _make_row(
             id=1, url="https://example.com", title="Test", document_type="webpage",
-            created_at=datetime.datetime(2026, 1, 15, 10, 30, 0), document_state="URL_ADDED",
-            document_state_error=None, note=None, collection_id=None, uuid=None, byline=None,
+            created_at=datetime.datetime(2026, 1, 15, 10, 30, 0), processing_status="URL_ADDED",
+            processing_error_code=None, note=None, collection_id=None, uuid=None, byline=None,
             obsidian_note_paths=["02-wiedza/Kraje/Chiny.md"],
         )
         list_result = MagicMock(all=MagicMock(return_value=[mock_row]))
@@ -154,7 +154,7 @@ class TestGetList:
         repo = _make_repo(session)
         session.execute.return_value.all.return_value = []
 
-        result = repo.get_list(document_type="link", document_state="URL_ADDED", collection_id=3)
+        result = repo.get_list(document_type="link", processing_status="URL_ADDED", collection_id=3)
 
         assert result == []
         session.execute.assert_called_once()
@@ -226,8 +226,8 @@ class TestGetList:
         assert result == []
         session.execute.assert_called_once()
 
-    def test_document_state_error_with_string(self):
-        """document_state_error should be passed through as string or None."""
+    def test_processing_error_code_with_string(self):
+        """processing_error_code should be passed through as string or None."""
         session = MagicMock()
         repo = _make_repo(session)
 
@@ -237,8 +237,8 @@ class TestGetList:
         mock_row.title = "Test 2"
         mock_row.document_type = "link"
         mock_row.created_at = datetime.datetime(2026, 2, 1, 8, 0, 0)
-        mock_row.document_state = "ERROR"
-        mock_row.document_state_error = "ERROR_DOWNLOAD"
+        mock_row.processing_status = "ERROR"
+        mock_row.processing_error_code = "ERROR_DOWNLOAD"
         mock_row.note = None
         mock_row.collection_id = None
         mock_row.uuid = None
@@ -249,7 +249,7 @@ class TestGetList:
 
         result = repo.get_list()
 
-        assert result[0]["document_state_error"] == "ERROR_DOWNLOAD"
+        assert result[0]["processing_error_code"] == "ERROR_DOWNLOAD"
 
     def test_search_escapes_wildcards(self):
         """Verify % and _ in search string are escaped so LIKE treats them literally."""
@@ -466,7 +466,7 @@ class TestGetNextToCorrect:
         mock_row = (20, "youtube")
         session.execute.return_value.first.return_value = mock_row
 
-        result = repo.get_next_to_correct(10, document_state="NEED_MANUAL_REVIEW")
+        result = repo.get_next_to_correct(10, processing_status="NEED_MANUAL_REVIEW")
 
         assert result == (20, "youtube")
 

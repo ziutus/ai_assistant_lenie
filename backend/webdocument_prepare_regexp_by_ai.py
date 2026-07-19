@@ -60,7 +60,7 @@ if __name__ == '__main__':
 
             logger.info(f"document_id: {document_id} URL: {doc.url}")
             logger.info(f"document_id: {document_id} Title: {doc.title}")
-            logger.info(f"document_id: {document_id} State: {doc.document_state}")
+            logger.info(f"document_id: {document_id} State: {doc.processing_status}")
 
             cache_dir = os.path.join(cache_dir_base, str(document_id))
             os.makedirs(cache_dir, exist_ok=True)

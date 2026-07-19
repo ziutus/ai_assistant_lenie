@@ -264,7 +264,7 @@ def website_list():
     logging.debug(request.form)
 
     document_type = request.args.get('type', 'ALL')
-    document_state = request.args.get('document_state', 'ALL')
+    processing_status = request.args.get('processing_status', 'ALL')
     search_in_documents = request.args.get('search_in_document', '')
     only_missing_obsidian_notes = request.args.get('only_missing_obsidian_notes', '').lower() in ('1', 'true')
     only_has_obsidian_notes = request.args.get('only_has_obsidian_notes', '').lower() in ('1', 'true')
@@ -274,7 +274,7 @@ def website_list():
     repo = DocumentRepository(session)
     list_kwargs = {
         "document_type": document_type,
-        "document_state": document_state,
+        "processing_status": processing_status,
         "search_in_documents": search_in_documents,
         "only_missing_obsidian_notes": only_missing_obsidian_notes,
         "only_has_obsidian_notes": only_has_obsidian_notes,
@@ -1434,7 +1434,7 @@ _YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES = {
 @app.route('/website_youtube_retry_captions', methods=['POST'])
 def website_youtube_retry_captions():
     """Retry downloading YouTube captions for a document stuck in a no-transcript
-    state (e.g. document_state_error=CAPTIONS_FETCH_ERROR)."""
+    state (e.g. processing_error_code=CAPTIONS_FETCH_ERROR)."""
     doc_id = request.form.get('id')
     if not doc_id:
         json_data = request.get_json(silent=True) or {}
@@ -1457,10 +1457,10 @@ def website_youtube_retry_captions():
     if doc.document_type != StalkerDocumentType.youtube.name:
         return {"status": "error", "message": "Retry captions is only available for YouTube documents"}, 400
 
-    if doc.document_state not in _YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES:
+    if doc.processing_status not in _YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES:
         return {
             "status": "error",
-            "message": f"Document is in state '{doc.document_state}' — captions retry is only allowed "
+            "message": f"Document is in state '{doc.processing_status}' — captions retry is only allowed "
                        f"before a transcript has been captured ({', '.join(sorted(_YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES))})",
         }, 409
 
@@ -1479,8 +1479,8 @@ def website_youtube_retry_captions():
         "status": "success",
         "message": "Captions retry finished",
         "id": updated.id,
-        "document_state": updated.document_state,
-        "document_state_error": updated.document_state_error,
+        "processing_status": updated.processing_status,
+        "processing_error_code": updated.processing_error_code,
     }, 200
 
 
@@ -1558,7 +1558,7 @@ def website_save():
         doc = service.save_document(
             url=url,
             link_id=int(link_id) if link_id else None,
-            document_state=request.form.get('document_state'),
+            processing_status=request.form.get('processing_status'),
             document_type=request.form.get('document_type'),
             **attrs,
         )

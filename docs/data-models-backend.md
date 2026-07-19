@@ -13,8 +13,8 @@ Primary document storage table.
 | `id` | serial | PK | Auto-increment identifier |
 | `url` | text | NOT NULL | Source URL |
 | `document_type` | varchar(50) | NOT NULL | movie, youtube, link, webpage, text_message, text, email, social_media_post |
-| `document_state` | varchar(50) | NOT NULL, DEFAULT 'URL_ADDED' | Processing state (15 states) |
-| `document_state_error` | text | — | Error details when state=ERROR |
+| `processing_status` | varchar(50) | NOT NULL, DEFAULT 'URL_ADDED' | Processing state (15 states) |
+| `processing_error_code` | text | — | Error details when state=ERROR |
 | `title` | text | — | Original title |
 | `title_english` | text | — | Translated title |
 | `text` | text | — | Cleaned extracted text |
@@ -40,7 +40,7 @@ Primary document storage table.
 | `uuid` | varchar(100) | NOT NULL DEFAULT gen_random_uuid(), UNIQUE | Global document identifier (ADR-015) |
 | `collection_id` | integer | FK → collections.id | Thematic collection (ADR-017: 1:N; replaced `project` in stage 11c) |
 
-**Indexes**: document_type, document_state, created_at, url, collection_id, discovery_source_id, published_on, paywall, ai_summary_needed
+**Indexes**: document_type, processing_status, created_at, url, collection_id, discovery_source_id, published_on, paywall, ai_summary_needed
 
 ### Table: document_embeddings (8 columns)
 
@@ -123,7 +123,7 @@ Vector embeddings for similarity search.
 
 Core document model with ~30 attributes matching `documents` table. Key methods:
 - `set_document_type(str)` — set type from string
-- `set_document_state(str)` — set state from string
+- `set_processing_status(str)` — set state from string
 - `analyze()` — run content analysis
 - `validate()` — validate document data
 
@@ -139,10 +139,10 @@ Adds database persistence via raw psycopg2:
 ### DocumentRepository (query layer)
 
 Static query methods:
-- `get_list(limit, offset, document_type, document_state, ...) → list[dict]`
+- `get_list(limit, offset, document_type, processing_status, ...) → list[dict]`
 - `get_similar(embedding_vector, model, limit) → list[dict]` — pgvector cosine search
-- `get_next_to_correct(document_id, document_type, document_state) → [int, str]`
-- `get_count(document_type, document_state) → int`
+- `get_next_to_correct(document_id, document_type, processing_status) → [int, str]`
+- `get_count(document_type, processing_status) → int`
 
 ### Supporting Models
 

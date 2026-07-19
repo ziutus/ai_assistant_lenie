@@ -295,7 +295,7 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
     paywall = item.get("paywall", False)
     paywall_bool = paywall in (True, "true", "True", 1, "1")
 
-    # Determine document_state based on content availability
+    # Determine processing_status based on content availability
     if text_content or html_content:
         doc_state = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name
     else:
@@ -324,7 +324,7 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
         doc, status = service.import_document(
             url=url,
             document_type=doc_type,
-            document_state=doc_state,
+            processing_status=doc_state,
             skip_if_exists=True,
             **metadata,
         )

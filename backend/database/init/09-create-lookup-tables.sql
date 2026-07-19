@@ -1,16 +1,16 @@
 -- Create lookup tables and seed data for Project Lenie
--- Tables: document_status_types, document_status_error_types, document_types, embedding_models
+-- Tables: processing_status_types, processing_error_types, document_types, embedding_models
 
 \c "lenie-ai";
 
--- document_status_types (16 rows)
+-- processing_status_types (16 rows)
 -- Source: backend/library/models/stalker_document_status.py
-CREATE TABLE IF NOT EXISTS public.document_status_types (
+CREATE TABLE IF NOT EXISTS public.processing_status_types (
     id SERIAL PRIMARY KEY,
     name VARCHAR UNIQUE NOT NULL
 );
 
-INSERT INTO public.document_status_types (name) VALUES
+INSERT INTO public.processing_status_types (name) VALUES
     ('ERROR'),
     ('URL_ADDED'),
     ('NEED_TRANSCRIPTION'),
@@ -29,14 +29,14 @@ INSERT INTO public.document_status_types (name) VALUES
     ('TEMPORARY_ERROR')
 ON CONFLICT (name) DO NOTHING;
 
--- document_status_error_types (17 rows)
+-- processing_error_types (17 rows)
 -- Source: backend/library/models/stalker_document_status_error.py
-CREATE TABLE IF NOT EXISTS public.document_status_error_types (
+CREATE TABLE IF NOT EXISTS public.processing_error_types (
     id SERIAL PRIMARY KEY,
     name VARCHAR UNIQUE NOT NULL
 );
 
-INSERT INTO public.document_status_error_types (name) VALUES
+INSERT INTO public.processing_error_types (name) VALUES
     ('NONE'),
     ('ERROR_DOWNLOAD'),
     ('LINK_SUMMARY_MISSING'),
@@ -92,9 +92,9 @@ INSERT INTO public.embedding_models (name) VALUES
 ON CONFLICT (name) DO NOTHING;
 
 -- Verification
-SELECT 'document_status_types' AS table_name, count(*) AS row_count FROM public.document_status_types
+SELECT 'processing_status_types' AS table_name, count(*) AS row_count FROM public.processing_status_types
 UNION ALL
-SELECT 'document_status_error_types', count(*) FROM public.document_status_error_types
+SELECT 'processing_error_types', count(*) FROM public.processing_error_types
 UNION ALL
 SELECT 'document_types', count(*) FROM public.document_types
 UNION ALL

@@ -137,8 +137,8 @@ class TestSyncItemToPostgres:
         assert call_kwargs[1]["chapter_list"] == "ch1;ch2;ch3"
 
     @patch("imports.dynamodb_sync.DocumentService")
-    def test_document_state_with_s3_content(self, MockDocService):
-        """document_state is DOCUMENT_INTO_DATABASE when S3 content exists."""
+    def test_processing_status_with_s3_content(self, MockDocService):
+        """processing_status is DOCUMENT_INTO_DATABASE when S3 content exists."""
         session = _make_session()
 
         mock_doc = MagicMock()
@@ -151,11 +151,11 @@ class TestSyncItemToPostgres:
         sync_item_to_postgres(item, "some text", "<html>", dry_run=False, session=session)
 
         call_kwargs = MockDocService.return_value.import_document.call_args
-        assert call_kwargs[1]["document_state"] == "DOCUMENT_INTO_DATABASE"
+        assert call_kwargs[1]["processing_status"] == "DOCUMENT_INTO_DATABASE"
 
     @patch("imports.dynamodb_sync.DocumentService")
-    def test_document_state_without_content(self, MockDocService):
-        """document_state is URL_ADDED when no S3 content."""
+    def test_processing_status_without_content(self, MockDocService):
+        """processing_status is URL_ADDED when no S3 content."""
         session = _make_session()
 
         mock_doc = MagicMock()
@@ -168,7 +168,7 @@ class TestSyncItemToPostgres:
         sync_item_to_postgres(item, None, None, dry_run=False, session=session)
 
         call_kwargs = MockDocService.return_value.import_document.call_args
-        assert call_kwargs[1]["document_state"] == "URL_ADDED"
+        assert call_kwargs[1]["processing_status"] == "URL_ADDED"
 
     @patch("imports.dynamodb_sync.DocumentService")
     def test_dry_run_no_db_writes(self, MockDocService):

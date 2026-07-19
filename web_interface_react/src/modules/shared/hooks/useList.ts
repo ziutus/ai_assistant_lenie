@@ -37,7 +37,7 @@ export const useList = () => {
         },
         params: {
           type,
-          document_state: documentState,
+          processing_status: documentState,
           search_in_document: searchInDocument,
           only_missing_obsidian_notes: obsidianNotesFilter?.onlyMissing || undefined,
           only_has_obsidian_notes: obsidianNotesFilter?.onlyHas || undefined,

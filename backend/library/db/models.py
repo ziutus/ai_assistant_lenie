@@ -56,7 +56,7 @@ DOCUMENT_TYPE_LOOKUP = {
     "social": StalkerDocumentType.social_media_post.name,
 }
 
-DOCUMENT_STATE_LOOKUP = {
+PROCESSING_STATUS_LOOKUP = {
     "ERROR_DOWNLOAD": StalkerDocumentStatus.ERROR.name,
     "ERROR": StalkerDocumentStatus.ERROR.name,
     "URL_ADDED": StalkerDocumentStatus.URL_ADDED.name,
@@ -76,7 +76,7 @@ DOCUMENT_STATE_LOOKUP = {
     "TEMPORARY_ERROR": StalkerDocumentStatus.TEMPORARY_ERROR.name,
 }
 
-DOCUMENT_STATE_ERROR_LOOKUP = {
+PROCESSING_ERROR_CODE_LOOKUP = {
     None: StalkerDocumentStatusError.NONE.name,
     "NONE": StalkerDocumentStatusError.NONE.name,
     "ERROR_DOWNLOAD": StalkerDocumentStatusError.ERROR_DOWNLOAD.name,
@@ -106,7 +106,7 @@ DOCUMENT_STATE_ERROR_LOOKUP = {
 
 
 class DocumentStatusType(Base):
-    __tablename__ = "document_status_types"
+    __tablename__ = "processing_status_types"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
@@ -116,7 +116,7 @@ class DocumentStatusType(Base):
 
 
 class DocumentStatusErrorType(Base):
-    __tablename__ = "document_status_error_types"
+    __tablename__ = "processing_error_types"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String, unique=True, nullable=False)
@@ -279,12 +279,12 @@ class Document(Base):
     chapter_list: Mapped[str | None] = mapped_column(Text)
     video_description: Mapped[str | None] = mapped_column(Text)
 
-    document_state: Mapped[str] = mapped_column(
-        String(50), ForeignKey("document_status_types.name"),
+    processing_status: Mapped[str] = mapped_column(
+        String(50), ForeignKey("processing_status_types.name"),
         nullable=False, server_default="URL_ADDED",
     )
-    document_state_error: Mapped[str | None] = mapped_column(
-        String, ForeignKey("document_status_error_types.name"), nullable=True,
+    processing_error_code: Mapped[str | None] = mapped_column(
+        String, ForeignKey("processing_error_types.name"), nullable=True,
     )
 
     text_raw: Mapped[str | None] = mapped_column(Text)
@@ -334,11 +334,11 @@ class Document(Base):
     document_type_ref: Mapped["DocumentType"] = relationship(
         foreign_keys=[document_type],
     )
-    document_state_ref: Mapped["DocumentStatusType"] = relationship(
-        foreign_keys=[document_state],
+    processing_status_ref: Mapped["DocumentStatusType"] = relationship(
+        foreign_keys=[processing_status],
     )
-    document_state_error_ref: Mapped["DocumentStatusErrorType | None"] = relationship(
-        foreign_keys=[document_state_error],
+    processing_error_code_ref: Mapped["DocumentStatusErrorType | None"] = relationship(
+        foreign_keys=[processing_error_code],
     )
 
     # Relationship to embeddings
@@ -419,11 +419,11 @@ class Document(Base):
             )
         self.document_type = mapped_type
 
-    def set_document_state(self, document_state: str) -> None:
-        mapped_state = DOCUMENT_STATE_LOOKUP.get(document_state)
+    def set_processing_status(self, processing_status: str) -> None:
+        mapped_state = PROCESSING_STATUS_LOOKUP.get(processing_status)
         if mapped_state is None:
-            raise ValueError("document_state must be one of the valid StalkerDocumentStatus values")
-        self.document_state = mapped_state
+            raise ValueError("processing_status must be one of the valid StalkerDocumentStatus values")
+        self.processing_status = mapped_state
 
     def set_discovery_source(self, session: Session, name: str | None) -> None:
         """Resolve a discovery-source NAME (the HTTP wire format) to the FK.
@@ -447,16 +447,16 @@ class Document(Base):
         """The discovery source's NAME — what the HTTP wire format exposes."""
         return self.discovery_source.name if self.discovery_source else None
 
-    def set_document_state_error(self, document_state_error: str | None) -> None:
-        mapped_state_error = DOCUMENT_STATE_ERROR_LOOKUP.get(document_state_error)
+    def set_processing_error_code(self, processing_error_code: str | None) -> None:
+        mapped_state_error = PROCESSING_ERROR_CODE_LOOKUP.get(processing_error_code)
         if mapped_state_error is None:
             raise ValueError(
-                f"document_state_error must be one of the valid StalkerDocumentStatusError values, not >{document_state_error}<"
+                f"processing_error_code must be one of the valid StalkerDocumentStatusError values, not >{processing_error_code}<"
             )
-        self.document_state_error = mapped_state_error
+        self.processing_error_code = mapped_state_error
 
     def analyze(self) -> None:
-        if self.document_state == StalkerDocumentStatus.EMBEDDING_EXIST.name:
+        if self.processing_status == StalkerDocumentStatus.EMBEDDING_EXIST.name:
             return None
 
         if not self.text_raw:
@@ -467,24 +467,24 @@ class Document(Base):
             self.text = None
 
     def validate(self) -> None:
-        self.document_state_error = StalkerDocumentStatusError.NONE.name
+        self.processing_error_code = StalkerDocumentStatusError.NONE.name
 
-        if self.document_state == StalkerDocumentStatus.EMBEDDING_EXIST.name:
+        if self.processing_status == StalkerDocumentStatus.EMBEDDING_EXIST.name:
             return None
 
         if not self.title or len(self.title) < 3:
-            self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
-            self.document_state_error = StalkerDocumentStatusError.TITLE_MISSING.name
+            self.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+            self.processing_error_code = StalkerDocumentStatusError.TITLE_MISSING.name
 
         if self.document_type == StalkerDocumentType.link.name:
             if not self.summary or len(self.summary) < 3:
-                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
-                self.document_state_error = StalkerDocumentStatusError.LINK_SUMMARY_MISSING.name
+                self.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+                self.processing_error_code = StalkerDocumentStatusError.LINK_SUMMARY_MISSING.name
 
         if self.document_type == StalkerDocumentType.webpage.name:
             if not self.text or len(self.text) < 3:
-                self.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
-                self.document_state_error = StalkerDocumentStatusError.TEXT_MISSING.name
+                self.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+                self.processing_error_code = StalkerDocumentStatusError.TEXT_MISSING.name
 
     def dict(self):
         created_at_str = self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else None
@@ -513,8 +513,8 @@ class Document(Base):
             "document_length": self.document_length,
             "chapter_list": self.chapter_list,
             "video_description": self.video_description,
-            "document_state": self.document_state,
-            "document_state_error": self.document_state_error or "NONE",
+            "processing_status": self.processing_status,
+            "processing_error_code": self.processing_error_code or "NONE",
             "text_raw": self.text_raw,
             "transcript_job_id": self.transcript_job_id,
             "ai_summary_needed": self.ai_summary_needed,

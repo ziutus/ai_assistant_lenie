@@ -139,7 +139,7 @@ def step2a_process_youtube(session, websites):
                 skip_captions=youtube_captions_blocked,
                 webshare_api_key=cfg.get("WEBSHARE_API_KEY"),
             )
-            if result.document_state_error == StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name \
+            if result.processing_error_code == StalkerDocumentStatusError.CAPTIONS_FETCH_ERROR.name \
                     and not youtube_captions_blocked:
                 youtube_captions_blocked = True
                 logging.warning("YouTube captions blocked — skipping captions for remaining videos")
@@ -197,7 +197,7 @@ def _process_webpage_from_s3(session, s3, document_id: int, url: str, doc_uuid: 
 
     print("* ALL DONE, updating state to NEED_MANUAL_REVIEW (cleaning of text is needed) as it is >webpage<",
           end=" ")
-    web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+    web_doc.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
     print("[DONE]")
     session.commit()
 
@@ -215,8 +215,8 @@ def _process_webpage_live(session, document_id: int, url: str):
         if not raw_html:
             print("empty response! [ERROR]")
             web_doc = get_or_create_document(session, url)
-            web_doc.document_state = StalkerDocumentStatus.ERROR.name
-            web_doc.document_state_error = StalkerDocumentStatusError.ERROR_DOWNLOAD.name
+            web_doc.processing_status = StalkerDocumentStatus.ERROR.name
+            web_doc.processing_error_code = StalkerDocumentStatusError.ERROR_DOWNLOAD.name
             session.commit()
             return
 
@@ -239,9 +239,9 @@ def _process_webpage_live(session, document_id: int, url: str):
         web_doc.analyze()
         web_doc.validate()
 
-        if web_doc.document_state == StalkerDocumentStatus.URL_ADDED.name \
+        if web_doc.processing_status == StalkerDocumentStatus.URL_ADDED.name \
                 and web_doc.document_type == StalkerDocumentType.link.name:
-            web_doc.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING.name
+            web_doc.processing_status = StalkerDocumentStatus.READY_FOR_EMBEDDING.name
 
         session.commit()
 
@@ -254,7 +254,7 @@ def _process_webpage_live(session, document_id: int, url: str):
     if web_doc.document_type == StalkerDocumentType.webpage.name:
         print("* ALL DONE, updating state to NEED_MANUAL_REVIEW (cleaning of text is needed) as it is >webpage<",
               end=" ")
-        web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+        web_doc.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
         print("[DONE]")
         session.commit()
 
@@ -301,7 +301,7 @@ def step3_clean_markdown(session, websites):
     from library.models.stalker_document_status import StalkerDocumentStatus
     from library.website.website_download_context import webpage_text_clean
 
-    markdown_correction_needed = websites.get_list(document_state='NEED_CLEAN_MD')
+    markdown_correction_needed = websites.get_list(processing_status='NEED_CLEAN_MD')
     markdown_correction_needed_len = len(markdown_correction_needed)
     print(f"entries to correct: {markdown_correction_needed_len}")
     for document_nb, document in enumerate(markdown_correction_needed, 1):
@@ -315,7 +315,7 @@ def step3_clean_markdown(session, websites):
             f"{progress}%): "
             f"{web_doc.url}")
         web_doc.text_md = webpage_text_clean(web_doc.url, web_doc.text_md)
-        web_doc.document_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
+        web_doc.processing_status = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
         session.commit()
 
 
@@ -336,7 +336,7 @@ def step4_mark_transcribed_ready(session, websites):
         print(f"Processing  {web_doc.id} {web_doc.document_type} ({website_nb} from {transcription_done_len} "
               f"{progress}%): "
               f"{web_doc.url}")
-        web_doc.document_state = StalkerDocumentStatus.READY_FOR_EMBEDDING.name
+        web_doc.processing_status = StalkerDocumentStatus.READY_FOR_EMBEDDING.name
         session.commit()
 
 
@@ -435,7 +435,7 @@ def step5_create_embeddings(session, websites):
             websites.embedding_delete(doc.id, model)
             result = search_service.get_embedding(text)
             websites.embedding_add(doc.id, result.embedding, doc.language, text, text, model)
-            doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
+            doc.processing_status = StalkerDocumentStatus.EMBEDDING_EXIST.name
             session.commit()
 
         elif doc.document_type in (StalkerDocumentType.youtube.name, StalkerDocumentType.webpage.name):
@@ -448,7 +448,7 @@ def step5_create_embeddings(session, websites):
                 websites.embedding_delete(doc.id, model)
                 session.commit()
                 if _embed_document_from_markdown(session, websites, doc, model):
-                    doc.document_state = StalkerDocumentStatus.EMBEDDING_EXIST.name
+                    doc.processing_status = StalkerDocumentStatus.EMBEDDING_EXIST.name
                     session.commit()
                 else:
                     session.rollback()

@@ -21,7 +21,7 @@ class DocumentRepository:
     # Query methods — ORM via SQLAlchemy session
     # ------------------------------------------------------------------
 
-    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", document_state: str = "ALL",
+    def get_list(self, limit: int = 100, offset: int = 0, document_type: str = "ALL", processing_status: str = "ALL",
                  search_in_documents=None, count=False, collection_id: int | None = None,
                  ai_summary_needed: bool = None,
                  start_id=None, only_missing_obsidian_notes: bool = False,
@@ -32,7 +32,7 @@ class DocumentRepository:
         else:
             stmt = select(
                 Document.id, Document.url, Document.title, Document.document_type,
-                Document.created_at, Document.document_state, Document.document_state_error,
+                Document.created_at, Document.processing_status, Document.processing_error_code,
                 Document.note, Document.collection_id, Document.uuid, Document.byline,
                 Document.obsidian_note_paths,
             )
@@ -41,8 +41,8 @@ class DocumentRepository:
         if document_type != "ALL":
             stmt = stmt.where(Document.document_type == document_type)
 
-        if document_state != "ALL":
-            stmt = stmt.where(Document.document_state == document_state)
+        if processing_status != "ALL":
+            stmt = stmt.where(Document.processing_status == processing_status)
 
         if collection_id:
             stmt = stmt.where(Document.collection_id == collection_id)
@@ -98,8 +98,8 @@ class DocumentRepository:
                 "title": row.title,
                 "document_type": row.document_type,
                 "created_at": row.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-                "document_state": row.document_state,
-                "document_state_error": row.document_state_error,
+                "processing_status": row.processing_status,
+                "processing_error_code": row.processing_error_code,
                 "note": row.note,
                 "collection_id": row.collection_id,
                 "uuid": row.uuid,
@@ -167,7 +167,7 @@ class DocumentRepository:
     def get_ready_for_download(self) -> list[tuple]:
         stmt = select(
             Document.id, Document.url, Document.document_type, Document.uuid,
-        ).where(Document.document_state == StalkerDocumentStatus.URL_ADDED.name)
+        ).where(Document.processing_status == StalkerDocumentStatus.URL_ADDED.name)
 
         rows = self.session.execute(stmt).all()
         return [
@@ -182,9 +182,9 @@ class DocumentRepository:
         ).where(
             Document.document_type == StalkerDocumentType.youtube.name,
             or_(
-                Document.document_state == StalkerDocumentStatus.URL_ADDED.name,
-                Document.document_state == StalkerDocumentStatus.NEED_TRANSCRIPTION.name,
-                Document.document_state == StalkerDocumentStatus.TEMPORARY_ERROR.name,
+                Document.processing_status == StalkerDocumentStatus.URL_ADDED.name,
+                Document.processing_status == StalkerDocumentStatus.NEED_TRANSCRIPTION.name,
+                Document.processing_status == StalkerDocumentStatus.TEMPORARY_ERROR.name,
             ),
         )
 
@@ -197,21 +197,21 @@ class DocumentRepository:
 
     def get_transcription_done(self) -> list[int]:
         stmt = select(Document.id).where(
-            Document.document_state == StalkerDocumentStatus.TRANSCRIPTION_DONE.name,
+            Document.processing_status == StalkerDocumentStatus.TRANSCRIPTION_DONE.name,
         ).order_by(Document.id)
 
         rows = self.session.execute(stmt).all()
         return [row[0] for row in rows]
 
     def get_next_to_correct(self, document_id: int, document_type: str = "ALL",
-                            document_state: str = "ALL") -> tuple[int, str] | int:
+                            processing_status: str = "ALL") -> tuple[int, str] | int:
         stmt = select(Document.id, Document.document_type).where(Document.id > document_id)
 
         if document_type != "ALL":
             stmt = stmt.where(Document.document_type == document_type)
 
-        if document_state != "ALL":
-            stmt = stmt.where(Document.document_state == document_state)
+        if processing_status != "ALL":
+            stmt = stmt.where(Document.processing_status == processing_status)
 
         stmt = stmt.order_by(Document.id.asc()).limit(1)
 
@@ -497,7 +497,7 @@ class DocumentRepository:
             )
             .where(
                 DocumentEmbedding.document_id.is_(None),
-                Document.document_state.in_([
+                Document.processing_status.in_([
                     StalkerDocumentStatus.READY_FOR_EMBEDDING.name,
                     StalkerDocumentStatus.EMBEDDING_EXIST.name,
                     StalkerDocumentStatus.MD_SIMPLIFIED.name,
@@ -547,10 +547,10 @@ class DocumentRepository:
             Document.id > min_id,
             or_(
                 and_(
-                    Document.document_state == StalkerDocumentStatus.ERROR.name,
-                    Document.document_state_error == StalkerDocumentStatusError.REGEX_ERROR.name,
+                    Document.processing_status == StalkerDocumentStatus.ERROR.name,
+                    Document.processing_error_code == StalkerDocumentStatusError.REGEX_ERROR.name,
                 ),
-                Document.document_state == StalkerDocumentStatus.URL_ADDED.name,
+                Document.processing_status == StalkerDocumentStatus.URL_ADDED.name,
             ),
         ).order_by(Document.id)
         rows = self.session.execute(stmt).all()

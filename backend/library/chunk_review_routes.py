@@ -1926,7 +1926,7 @@ def report_extraction_issue(doc_id: int):
     """Reviewer-reported flag: the extracted article text is truncated or wrong
     compared with the original page.
 
-    Sets document_state=NEED_MANUAL_REVIEW + document_state_error=ARTICLE_TRUNCATED,
+    Sets processing_status=NEED_MANUAL_REVIEW + processing_error_code=ARTICLE_TRUNCATED,
     so the document lands in the default manual-review queue on the list page
     and the error is visible next to its state.
     """
@@ -1935,8 +1935,8 @@ def report_extraction_issue(doc_id: int):
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
-    doc.document_state = "NEED_MANUAL_REVIEW"
-    doc.document_state_error = "ARTICLE_TRUNCATED"
+    doc.processing_status = "NEED_MANUAL_REVIEW"
+    doc.processing_error_code = "ARTICLE_TRUNCATED"
     try:
         session.commit()
     except Exception:
@@ -1946,8 +1946,8 @@ def report_extraction_issue(doc_id: int):
 
     return jsonify({
         "status": "success",
-        "document_state": doc.document_state,
-        "document_state_error": doc.document_state_error,
+        "processing_status": doc.processing_status,
+        "processing_error_code": doc.processing_error_code,
     })
 
 

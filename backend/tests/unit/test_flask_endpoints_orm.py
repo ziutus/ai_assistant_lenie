@@ -37,7 +37,7 @@ class TestWebsiteList:
     def test_returns_correct_format(self, client):
         mock_list = [{"id": 1, "url": "https://example.com", "title": "Test",
                        "document_type": "webpage", "created_at": "2026-03-09 10:30:45",
-                       "document_state": "URL_ADDED", "document_state_error": "NONE",
+                       "processing_status": "URL_ADDED", "processing_error_code": "NONE",
                        "note": None, "collection_id": None, "uuid": None}]
         mock_session = MagicMock()
         with patch("server.get_scoped_session", return_value=mock_session):
@@ -65,14 +65,14 @@ class TestWebsiteList:
                 MockRepo.return_value = repo_instance
 
                 client.get(
-                    "/website_list?type=link&document_state=URL_ADDED&search_in_document=test",
+                    "/website_list?type=link&processing_status=URL_ADDED&search_in_document=test",
                     headers=API_HEADERS,
                 )
 
                 calls = repo_instance.get_list.call_args_list
                 assert len(calls) == 2
                 assert calls[0].kwargs["document_type"] == "link"
-                assert calls[0].kwargs["document_state"] == "URL_ADDED"
+                assert calls[0].kwargs["processing_status"] == "URL_ADDED"
                 assert calls[0].kwargs["search_in_documents"] == "test"
 
 
@@ -114,7 +114,7 @@ class TestWebsiteGet:
             "paywall": False, "created_at": "2026-03-09 10:00:00",
             "document_type": "webpage", "source": None, "published_on": None,
             "original_id": None, "document_length": None, "chapter_list": None,
-            "document_state": "URL_ADDED", "document_state_error": "NONE",
+            "processing_status": "URL_ADDED", "processing_error_code": "NONE",
             "text_raw": None, "transcript_job_id": None, "ai_summary_needed": False,
             "byline": None, "note": None, "uuid": None, "collection_id": None,
             "text_md": None, "transcript_needed": False,
@@ -408,7 +408,7 @@ class TestWebsiteSave:
                 resp = client.post("/website_save", data={
                     "url": "https://example.com",
                     "id": "42",
-                    "document_state": "URL_ADDED",
+                    "processing_status": "URL_ADDED",
                     "document_type": "webpage",
                     "text": "new text",
                     "title": "New Title",
@@ -433,7 +433,7 @@ class TestWebsiteSave:
                 resp = client.post("/website_save", data={
                     "url": "https://new.example.com",
                     "id": "999",
-                    "document_state": "URL_ADDED",
+                    "processing_status": "URL_ADDED",
                     "document_type": "link",
                     "title": "New Link",
                 }, headers=API_HEADERS)
@@ -452,7 +452,7 @@ class TestWebsiteSave:
                 resp = client.post("/website_save", data={
                     "url": "https://example.com",
                     "id": "42",
-                    "document_state": "URL_ADDED",
+                    "processing_status": "URL_ADDED",
                     "document_type": "webpage",
                 }, headers=API_HEADERS)
 
@@ -478,7 +478,7 @@ class TestWebsiteSave:
                 resp = client.post("/website_save", data={
                     "url": "https://example.com",
                     "id": "42",
-                    "document_state": "URL_ADDED",
+                    "processing_status": "URL_ADDED",
                     "document_type": "webpage",
                     "title": "Updated Title",
                     # 'text' is intentionally NOT submitted
@@ -564,12 +564,12 @@ class TestUrlAdd:
 
 
 class TestWebsiteYoutubeRetryCaptions:
-    def _mock_doc(self, document_type="youtube", document_state="TEMPORARY_ERROR"):
+    def _mock_doc(self, document_type="youtube", processing_status="TEMPORARY_ERROR"):
         mock_doc = MagicMock()
         mock_doc.id = 9163
         mock_doc.url = "https://www.youtube.com/watch?v=abc123"
         mock_doc.document_type = document_type
-        mock_doc.document_state = document_state
+        mock_doc.processing_status = processing_status
         mock_doc.language = "pl"
         mock_doc.chapter_list = None
         mock_doc.note = None
@@ -579,8 +579,8 @@ class TestWebsiteYoutubeRetryCaptions:
     def test_retries_when_no_transcript_yet(self, client):
         mock_session = MagicMock()
         mock_doc = self._mock_doc()
-        updated_doc = self._mock_doc(document_state="NEED_MANUAL_REVIEW")
-        updated_doc.document_state_error = "NONE"
+        updated_doc = self._mock_doc(processing_status="NEED_MANUAL_REVIEW")
+        updated_doc.processing_error_code = "NONE"
         with patch("server.get_scoped_session", return_value=mock_session):
             with patch("server.DocumentService") as MockDS:
                 mock_service = MagicMock()
@@ -592,7 +592,7 @@ class TestWebsiteYoutubeRetryCaptions:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["status"] == "success"
-        assert data["document_state"] == "NEED_MANUAL_REVIEW"
+        assert data["processing_status"] == "NEED_MANUAL_REVIEW"
         mock_process.assert_called_once_with(
             session=mock_session,
             youtube_url=mock_doc.url,
@@ -620,7 +620,7 @@ class TestWebsiteYoutubeRetryCaptions:
         """A document already past NEED_TRANSCRIPTION has a transcript — retry
         must not risk overwriting reviewed text."""
         mock_session = MagicMock()
-        mock_doc = self._mock_doc(document_state="NEED_MANUAL_REVIEW")
+        mock_doc = self._mock_doc(processing_status="NEED_MANUAL_REVIEW")
         with patch("server.get_scoped_session", return_value=mock_session):
             with patch("server.DocumentService") as MockDS:
                 mock_service = MagicMock()

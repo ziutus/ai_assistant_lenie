@@ -29,12 +29,12 @@ def include_object(object, name, type_, reflected, compare_to):
     """Exclude indexes and known-drift columns from autogenerate."""
     if type_ == "index":
         return False
-    # Ignore document_state_error type drift (DDL: TEXT, ORM: String without length)
+    # Ignore processing_error_code type drift (DDL: TEXT, ORM: String without length)
     # VARCHAR without length and TEXT are equivalent in PostgreSQL — no real schema change needed.
     # TODO: Remove this exclusion after standardizing the column type.
     if (
         type_ == "column"
-        and name == "document_state_error"
+        and name == "processing_error_code"
         and hasattr(object, "table")
         and object.table is not None
         and object.table.name == "documents"

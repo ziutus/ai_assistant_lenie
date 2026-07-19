@@ -97,7 +97,7 @@ class DocumentService:
         doc.ai_summary_needed = ai_summary
         doc.chapter_list = chapter_list
         doc.uuid = doc_uuid
-        doc.set_document_state("URL_ADDED")
+        doc.set_processing_status("URL_ADDED")
 
         self.session.add(doc)
         self.session.commit()
@@ -168,7 +168,7 @@ class DocumentService:
         self,
         url: str,
         link_id: int | None = None,
-        document_state: str | None = None,
+        processing_status: str | None = None,
         document_type: str | None = None,
         **attrs,
     ) -> Document:
@@ -190,8 +190,8 @@ class DocumentService:
             doc = Document(url=url)
             self.session.add(doc)
 
-        if document_state is not None:
-            doc.set_document_state(document_state)
+        if processing_status is not None:
+            doc.set_processing_status(processing_status)
 
         for attr in ("text", "title", "language", "tags", "summary", "byline", "note"):
             value = attrs.get(attr)
@@ -270,7 +270,7 @@ class DocumentService:
         self,
         url: str,
         document_type: str,
-        document_state: str | None = None,
+        processing_status: str | None = None,
         skip_if_exists: bool = True,
         **metadata,
     ) -> tuple[Document | None, str]:
@@ -282,7 +282,7 @@ class DocumentService:
         Args:
             url: Document URL (required)
             document_type: Document type string (link, webpage, youtube, etc.)
-            document_state: Initial state (default: URL_ADDED)
+            processing_status: Initial state (default: URL_ADDED)
             skip_if_exists: If True, return (existing, "skipped") for duplicate URLs
             **metadata: Any Document attribute (title, language, source, note,
                         uuid, chapter_list, created_at, text, text_raw, summary,
@@ -303,10 +303,10 @@ class DocumentService:
         doc = Document(url=url)
         doc.set_document_type(document_type)
 
-        if document_state:
-            doc.set_document_state(document_state)
+        if processing_status:
+            doc.set_processing_status(processing_status)
         else:
-            doc.set_document_state("URL_ADDED")
+            doc.set_processing_status("URL_ADDED")
 
         # "source" is the discovery-source NAME (wire/import format) — it
         # resolves to the discovery_sources FK instead of a direct attribute
