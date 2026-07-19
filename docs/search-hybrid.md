@@ -233,3 +233,44 @@ candidate at all; this is the inflection limitation below).
   covers individual countries, not continents ("Afryka" itself has no entry). Revisit once the
   tagging pipeline has run over most of the corpus and continents/regions are added to the
   gazetteer.
+
+## Wydajność — pomiary i decyzje Etapu 12 (2026-07-19, NAS, 9220 dokumentów / 3062 embeddingi)
+
+Zmierzone `EXPLAIN (ANALYZE)` na bazie NAS:
+
+| Zapytanie | Czas | Plan |
+|---|---:|---|
+| Filtr daty publikacji (`published_on >=` + typ) | 0,7 ms | index scan (`idx_documents_published_on`) |
+| Filtr okresu treści (EXISTS na `document_time_periods`) | 0,3 ms | index (`idx_document_time_periods_document_chapter`) |
+| Filtr autora (EXISTS `document_persons` role=author + `persons`) | 2,4 ms | index |
+| Filtr języka | 0,2 ms | — (9220 wierszy, nieistotne) |
+| Wektorowa top-10 (`<=>` gemma2) | **207 ms** | **seq scan** — patrz niżej |
+| Leksykalna (`unaccent(...) ILIKE` po title+tags+note+text) | **1404 ms** | seq scan po całych treściach — patrz niżej |
+
+**Decyzja: zostajemy przy ILIKE (bez FTS/GIN) — z progiem rewizji.** Uzasadnienie:
+1. Leg leksykalny (1,4 s) działa równolegle znaczeniowo z legiem wektorowym, którego łączny czas
+   i tak dominuje zdalne generowanie embeddingu zapytania (~5 s, CloudFerro). Przy obecnym
+   korpusie przyspieszenie SQL nie zmienia odczuwalnej latencji `/search`.
+2. `pg_trgm` GIN wymaga niemutowalnej otoczki na `unaccent()` (funkcja jest STABLE) i indeksu po
+   wyrażeniu identycznym z zapytaniem — po pełnych treściach książek indeks byłby duży i wolno
+   budowany; pełny FTS (`tsvector`) bez polskiego stemmingu (Morfologik/ispell) pogorszyłby
+   semantykę substring-match, którą obecnie mamy (patrz „Known limitations").
+3. **Próg rewizji:** leg leksykalny > 3 s albo korpus > 25 tys. dokumentów → wtedy `pg_trgm` GIN
+   z otoczką `immutable_unaccent()` na wyrażeniu z `search_text()` (mniejsze ryzyko niż FTS,
+   zachowuje substring-match), a stemming rozważyć osobno razem z Morfologikiem.
+
+**Decyzja: brak indeksu HNSW dla aktywnego modelu embeddingów — świadomie.** Model
+`BAAI/bge-multilingual-gemma2` ma **3584 wymiary**, powyżej limitu 2000 wymiarów HNSW dla typu
+`vector` w pgvector (stąd istnieją indeksy `idx_emb_*` tylko dla starych, mniejszych modeli).
+Seq scan po 3048 wektorach = 207 ms — akceptowalne. **Próg rewizji:** > 25 tys. embeddingów
+gemma2 albo > 1 s → indeks HNSW po rzutowaniu `halfvec(3584)` (pgvector ≥ 0.7 wspiera do 4000
+wymiarów dla halfvec; wymaga zmiany wyrażenia w `get_similar()` na identyczne z indeksem —
+`embedding::halfvec(3584) <=> zapytanie::halfvec(3584)` — i akceptacji fp16).
+
+**Porządki wykonane w Etapie 12:** usunięty `/website_similar` (slack_bot zmigrowany na jawny
+wariant `POST /search` — bez wywołania LLM) wraz z `SearchService.search_similar()`;
+`/ai_parse_intent` ZOSTAJE (slack_bot aktywnie używa go do klasyfikacji komend DM — warunek
+„brak innych konsumentów" niespełniony); `get_list()` dostał tiebreaker `id` w sortowaniu
+(stabilna paginacja przy identycznych timestampach); raporty: `imports/search_reports.py`
+(interpretacje + koszty LLM + alert `cost_status='unknown'`/brak wpisu w `llm_pricing`,
+exit code 2 przy alercie — nadaje się na cron).

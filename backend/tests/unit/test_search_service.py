@@ -91,15 +91,17 @@ class TestGetEmbedding:
 
 
 # ---------------------------------------------------------------------------
-# Tests: search_similar
+# Tests: search() — the only hybrid entry point (stage 12 removed the legacy
+# search_similar()/POST /website_similar path; behaviours worth keeping were
+# ported here).
 # ---------------------------------------------------------------------------
 
 
-class TestSearchSimilar:
+class TestHybridSearch:
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
     def test_happy_path_with_results(self, mock_config, mock_get_embedding):
-        """search_similar returns list of similar documents."""
+        """search() returns merged results from the semantic path."""
         cfg = MagicMock()
         cfg.require.return_value = "text-embedding-ada-002"
         mock_config.return_value = cfg
@@ -110,9 +112,8 @@ class TestSearchSimilar:
         service = SearchService(session)
 
         expected_results = [{"document_id": 1, "similarity": 0.9}]
-        with patch.object(service.repo, "search_text", return_value=[]), \
-             patch.object(service.repo, "get_similar", return_value=expected_results) as mock_similar:
-            result = service.search_similar("test query")
+        with patch.object(service.repo, "search_text", return_value=[]),              patch.object(service.repo, "get_similar", return_value=expected_results) as mock_similar:
+            result = service.search("test query", SearchFilters(), limit=3)
 
         assert result[0]["document_id"] == 1
         assert result[0]["similarity"] == 0.9
@@ -126,8 +127,8 @@ class TestSearchSimilar:
 
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
-    def test_embedding_failure_raises(self, mock_config, mock_get_embedding):
-        """search_similar raises RuntimeError when embedding generation fails."""
+    def test_embedding_failure_without_lexical_raises(self, mock_config, mock_get_embedding):
+        """search() raises RuntimeError when embedding fails and there are no lexical hits."""
         cfg = MagicMock()
         cfg.require.return_value = "text-embedding-ada-002"
         mock_config.return_value = cfg
@@ -137,13 +138,13 @@ class TestSearchSimilar:
         session = _make_session()
         service = SearchService(session)
 
-        with pytest.raises(RuntimeError, match="Embedding generation failed"):
-            service.search_similar("test query")
+        with patch.object(service.repo, "search_text", return_value=[]):
+            with pytest.raises(RuntimeError, match="Embedding generation failed"):
+                service.search("test query", SearchFilters(), limit=3)
 
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
-    def test_empty_embedding_raises(self, mock_config, mock_get_embedding):
-        """search_similar raises RuntimeError when embedding vector is empty."""
+    def test_empty_embedding_without_lexical_raises(self, mock_config, mock_get_embedding):
         cfg = MagicMock()
         cfg.require.return_value = "text-embedding-ada-002"
         mock_config.return_value = cfg
@@ -153,13 +154,13 @@ class TestSearchSimilar:
         session = _make_session()
         service = SearchService(session)
 
-        with pytest.raises(RuntimeError, match="Embedding generation failed"):
-            service.search_similar("test query")
+        with patch.object(service.repo, "search_text", return_value=[]):
+            with pytest.raises(RuntimeError, match="Embedding generation failed"):
+                service.search("test query", SearchFilters(), limit=3)
 
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
-    def test_custom_limit(self, mock_config, mock_get_embedding):
-        """search_similar passes custom limit to repo.get_similar()."""
+    def test_custom_limit_scales_candidate_pool(self, mock_config, mock_get_embedding):
         cfg = MagicMock()
         cfg.require.return_value = "text-embedding-ada-002"
         mock_config.return_value = cfg
@@ -169,8 +170,8 @@ class TestSearchSimilar:
         session = _make_session()
         service = SearchService(session)
 
-        with patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
-            service.search_similar("test query", limit=10)
+        with patch.object(service.repo, "search_text", return_value=[]),              patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
+            service.search("test query", SearchFilters(), limit=10)
 
         mock_similar.assert_called_once_with(
             [0.1, 0.2, 0.3],
@@ -181,31 +182,25 @@ class TestSearchSimilar:
 
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
-    def test_custom_collection(self, mock_config, mock_get_embedding):
-        """search_similar passes the collection filter to repo.get_similar()."""
+    def test_filters_forwarded_to_both_paths(self, mock_config, mock_get_embedding):
+        """The SAME SearchFilters reaches lexical and vector search (stage 6 criterion)."""
         cfg = MagicMock()
-        cfg.require.return_value = "text-embedding-ada-002"
+        cfg.require.return_value = "test-model"
         mock_config.return_value = cfg
-
         mock_get_embedding.return_value = _make_embedding_result()
+        service = SearchService(_make_session())
+        filters = SearchFilters(collection_name="my-project",
+                                subject_period_start_year=1939,
+                                subject_period_end_year=1945)
+        with patch.object(service.repo, "search_text", return_value=[]) as mock_text,              patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
+            service.search("zapytanie", filters, limit=10)
 
-        session = _make_session()
-        service = SearchService(session)
-
-        with patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
-            service.search_similar("test query", collection_name="my-project")
-
-        mock_similar.assert_called_once_with(
-            [0.1, 0.2, 0.3],
-            "text-embedding-ada-002",
-            limit=20,
-            filters=SearchFilters(collection_name="my-project"),
-        )
+        assert mock_text.call_args.kwargs["filters"] == filters
+        assert mock_similar.call_args.kwargs["filters"] == filters
 
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
     def test_empty_results(self, mock_config, mock_get_embedding):
-        """search_similar returns empty list when no similar documents found."""
         cfg = MagicMock()
         cfg.require.return_value = "text-embedding-ada-002"
         mock_config.return_value = cfg
@@ -215,14 +210,15 @@ class TestSearchSimilar:
         session = _make_session()
         service = SearchService(session)
 
-        with patch.object(service.repo, "get_similar", return_value=[]):
-            result = service.search_similar("obscure query")
+        with patch.object(service.repo, "search_text", return_value=[]),              patch.object(service.repo, "get_similar", return_value=[]):
+            result = service.search("obscure query", SearchFilters(), limit=3)
 
         assert result == []
 
     @patch("library.search_service.embedding.get_embedding")
     @patch("library.search_service.load_config")
     def test_exact_title_is_returned_without_document_embedding(self, mock_config, mock_get_embedding):
+        """Embedding failure degrades to lexical-only results instead of a 500."""
         cfg = MagicMock()
         cfg.require.return_value = "test-model"
         mock_config.return_value = cfg
@@ -234,100 +230,13 @@ class TestSearchSimilar:
             "text": "Artykuł o rosyjskich agentach w Japonii.",
             "similarity": 0.0,
         }]
-        with patch.object(service.repo, "search_text", return_value=lexical), \
-             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
-            result = service.search_similar("Rosyjscy szpiedzy w Japonii", limit=10)
+        with patch.object(service.repo, "search_text", return_value=lexical),              patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
+            result = service.search("Rosyjscy szpiedzy w Japonii", SearchFilters(), limit=10)
 
         assert result[0]["document_id"] == 9242
         assert result[0]["search_match"] == "text"
         assert result[0]["similarity"] > 0.5
         mock_similar.assert_not_called()
-
-
-class TestPeriodFilter:
-    """Stage 6: the period window is now a SearchFilters passed to the repo
-    (applied in SQL before LIMIT), not a Python-side post-filter -- see
-    tests/unit/test_repository_sql_filters.py for the SQL-level proof."""
-
-    @patch("library.search_service.embedding.get_embedding")
-    @patch("library.search_service.load_config")
-    def test_period_window_is_forwarded_as_filters(self, mock_config, mock_get_embedding):
-        cfg = MagicMock()
-        cfg.require.return_value = "test-model"
-        mock_config.return_value = cfg
-        mock_get_embedding.return_value = _make_embedding_result()
-        service = SearchService(_make_session())
-        with patch.object(service.repo, "search_text", return_value=[]) as mock_text, \
-             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
-            service.search_similar("zapytanie", limit=10, period_from=1939, period_to=1945)
-
-        expected_filters = SearchFilters(subject_period_start_year=1939, subject_period_end_year=1945)
-        assert mock_text.call_args.kwargs["filters"] == expected_filters
-        assert mock_similar.call_args.kwargs["filters"] == expected_filters
-
-    @patch("library.search_service.embedding.get_embedding")
-    @patch("library.search_service.load_config")
-    def test_no_period_window_yields_empty_filters(self, mock_config, mock_get_embedding):
-        cfg = MagicMock()
-        cfg.require.return_value = "test-model"
-        mock_config.return_value = cfg
-        mock_get_embedding.return_value = _make_embedding_result()
-        service = SearchService(_make_session())
-        with patch.object(service.repo, "search_text", return_value=[]), \
-             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
-            service.search_similar("zapytanie", limit=10)
-
-        assert mock_similar.call_args.kwargs["filters"] == SearchFilters()
-
-    @patch("library.search_service.embedding.get_embedding")
-    @patch("library.search_service.load_config")
-    def test_reversed_period_is_swapped_not_rejected(self, mock_config, mock_get_embedding):
-        cfg = MagicMock()
-        cfg.require.return_value = "test-model"
-        mock_config.return_value = cfg
-        mock_get_embedding.return_value = _make_embedding_result()
-        service = SearchService(_make_session())
-        with patch.object(service.repo, "search_text", return_value=[]), \
-             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
-            service.search_similar("zapytanie", period_from=1945, period_to=1939)
-
-        filters = mock_similar.call_args.kwargs["filters"]
-        assert filters.subject_period_start_year == 1939
-        assert filters.subject_period_end_year == 1945
-
-    @patch("library.search_service.embedding.get_embedding")
-    @patch("library.search_service.load_config")
-    def test_out_of_domain_year_degrades_to_no_filter_instead_of_raising(self, mock_config, mock_get_embedding):
-        cfg = MagicMock()
-        cfg.require.return_value = "test-model"
-        mock_config.return_value = cfg
-        mock_get_embedding.return_value = _make_embedding_result()
-        service = SearchService(_make_session())
-        with patch.object(service.repo, "search_text", return_value=[]), \
-             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
-            # 999_999 is outside [MIN_SUBJECT_YEAR, MAX_SUBJECT_YEAR] -- must
-            # not raise SearchQueryValidationError out of a public API that
-            # accepts untrusted HTTP params.
-            service.search_similar("zapytanie", period_from=999_999)
-
-        assert mock_similar.call_args.kwargs["filters"] == SearchFilters()
-
-    @patch("library.search_service.embedding.get_embedding")
-    @patch("library.search_service.load_config")
-    def test_blank_collection_treated_as_no_collection_filter(self, mock_config, mock_get_embedding):
-        cfg = MagicMock()
-        cfg.require.return_value = "test-model"
-        mock_config.return_value = cfg
-        mock_get_embedding.return_value = _make_embedding_result()
-        service = SearchService(_make_session())
-        with patch.object(service.repo, "search_text", return_value=[]), \
-             patch.object(service.repo, "get_similar", return_value=[]) as mock_similar:
-            # An empty string used to be a falsy no-op (`if project:` historically);
-            # SearchFilters(collection_name="") would raise -- must still
-            # degrade to "no collection filter", not crash.
-            service.search_similar("zapytanie", collection_name="")
-
-        assert mock_similar.call_args.kwargs["filters"] == SearchFilters()
 
 
 class TestSearchByFilters:
