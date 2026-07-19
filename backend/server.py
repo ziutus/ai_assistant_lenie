@@ -1332,25 +1332,6 @@ def _parse_search_text(req):
         return req.args.get('search')
 
 
-def _parse_search_params(req):
-    """Extract search text, limit and period-year window from request (form, JSON, or args)."""
-    if req.form:
-        source = req.form
-    elif req.json:
-        source = req.json
-    else:
-        source = req.args
-    return source.get('search'), source.get('limit'), source.get('period_from'), source.get('period_to')
-
-
-def _parse_period_year(value):
-    """Return the year filter as int (BCE negative), or None for empty/invalid input."""
-    try:
-        return int(str(value).strip())
-    except (TypeError, ValueError):
-        return None
-
-
 @app.route('/ai_get_embedding', methods=['POST'])
 def ai_get_embedding():
     text = _parse_search_text(request)
@@ -1366,26 +1347,9 @@ def ai_get_embedding():
             "embedding": embedds}), 200
 
 
-@app.route('/website_similar', methods=['POST'])
-def search_similar():
-    text, limit, period_from, period_to = _parse_search_params(request)
-
-    session = get_scoped_session()
-    service = SearchService(session)
-    try:
-        websites_list = service.search_similar(
-            text,
-            limit=int(limit) if limit else 3,
-            period_from=_parse_period_year(period_from),
-            period_to=_parse_period_year(period_to),
-        )
-    except RuntimeError:
-        logging.exception("Error searching for similar documents")
-        return jsonify({"status": "error", "message": "Error searching for similar documents", "encoding": "utf8", "text": text,
-                "websites": []}), 500
-
-    return jsonify({"status": "success", "message": "Dane odczytane pomyślnie.", "encoding": "utf8", "text": text,
-            "websites": websites_list}), 200
+# /website_similar was removed in stage 12 of the search rebuild — POST /search
+# (library/search_routes.py) is the only search endpoint; its explicit variant
+# ({"query": ..., "limit": ...}) runs the same hybrid ranking without the LLM.
 
 
 @app.route('/website_download_text_content', methods=['POST'])

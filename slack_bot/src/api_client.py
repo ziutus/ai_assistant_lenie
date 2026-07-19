@@ -132,9 +132,16 @@ class LenieApiClient:
         return self._request("POST", "/ai_parse_intent", json={"text": text})
 
     def search_similar(self, query: str, limit: int = 5) -> list[dict]:
-        """POST /website_similar — vector similarity search."""
-        data = self._request("POST", "/website_similar", json={"search": query, "limit": limit})
-        return data.get("websites", [])
+        """POST /search — hybrid text+vector search (explicit variant, no LLM call).
+
+        Stage 12 of the search rebuild removed the legacy /website_similar
+        endpoint; the explicit /search contract with a bare ``query`` runs the
+        same hybrid lexical+vector ranking without invoking the Bielik parser.
+        Result items keep the keys the formatter reads (title, url,
+        document_type, similarity, language).
+        """
+        data = self._request("POST", "/search", json={"query": query, "limit": limit})
+        return data.get("results", [])
 
 
 # --- Factory ---

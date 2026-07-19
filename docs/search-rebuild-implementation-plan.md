@@ -435,6 +435,16 @@ Zakres:
 
 Warunek zakończenia: brak znanych pełnych skanów dla podstawowych filtrów i brak martwego API.
 
+**Status 2026-07-19: ETAP 12 ZAKOŃCZONY** (PR #313). Pomiary EXPLAIN ANALYZE i decyzje
+(ILIKE zostaje z progiem rewizji; brak HNSW dla gemma2 świadomy — 3584 wym. > limit 2000 typu
+`vector`, ścieżka `halfvec` opisana) w [search-hybrid.md](search-hybrid.md). Wszystkie
+podstawowe filtry chodzą po indeksach (<3 ms) — nowe indeksy niepotrzebne. `/website_similar`
+i `SearchService.search_similar()` usunięte (slack_bot zmigrowany na jawny `POST /search`);
+`/ai_parse_intent` ZOSTAJE (slack_bot aktywnie używa — warunek „brak konsumentów" niespełniony).
+`get_list()` z tiebreakerem `id`. Raporty: `imports/search_reports.py` (interpretacje + koszty
+LLM + alert brakującego pricingu, exit 2 — pod crona). Dashboard graficzny świadomie pominięty —
+raport CLI pokrywa potrzebę przy obecnej skali (jednoosobowy projekt).
+
 ## 8. Proponowany rytm pracy przy limitach
 
 - Jedna sesja: dokładnie jeden etap `S` albo połowa etapu `M`.

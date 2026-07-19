@@ -251,77 +251,15 @@ class TestWebsiteDelete:
 
 
 # ---------------------------------------------------------------------------
-# /website_similar
+# /website_similar — removed in stage 12 (POST /search is the only search
+# endpoint); pin the removal so a stray revert is caught.
 # ---------------------------------------------------------------------------
 
 
-class TestWebsiteSimilar:
-    def test_search_service_used(self, client):
-        """Verify /website_similar delegates to SearchService."""
-        mock_session = MagicMock()
-        with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.SearchService") as MockService:
-                service_instance = MagicMock()
-                service_instance.search_similar.return_value = [{"document_id": 1, "similarity": 0.9}]
-                MockService.return_value = service_instance
-
-                resp = client.post("/website_similar", json={
-                    "search": "test query",
-                    "limit": 5,
-                }, headers=API_HEADERS, content_type="application/json")
-
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["status"] == "success"
-        MockService.assert_called_once_with(mock_session)
-        service_instance.search_similar.assert_called_once_with(
-            "test query", limit=5, period_from=None, period_to=None,
-        )
-
-    def test_returns_correct_json_structure(self, client):
-        """Verify endpoint returns status, message, websites keys."""
-        mock_session = MagicMock()
-        with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.SearchService") as MockService:
-                service_instance = MagicMock()
-                service_instance.search_similar.return_value = [
-                    {"document_id": 1, "text": "t", "similarity": 0.9, "id": 10,
-                     "url": "https://example.com", "language": "en", "text_original": "t",
-                     "websites_text_length": 100, "embeddings_text_length": 50,
-                     "title": "Test", "document_type": "webpage", "collection_id": None}
-                ]
-                MockService.return_value = service_instance
-
-                resp = client.post("/website_similar", json={
-                    "search": "test query",
-                    "limit": 3,
-                }, headers=API_HEADERS, content_type="application/json")
-
-        assert resp.status_code == 200
-        data = resp.get_json()
-        assert data["status"] == "success"
-        assert "message" in data
-        assert "websites" in data
-        assert len(data["websites"]) == 1
-
-    def test_limit_cast_to_int(self, client):
-        """Verify limit parameter from form/args (string) is cast to int."""
-        mock_session = MagicMock()
-        with patch("server.get_scoped_session", return_value=mock_session):
-            with patch("server.SearchService") as MockService:
-                service_instance = MagicMock()
-                service_instance.search_similar.return_value = []
-                MockService.return_value = service_instance
-
-                resp = client.post("/website_similar", data={
-                    "search": "test query",
-                    "limit": "7",
-                }, headers=API_HEADERS)
-
-        assert resp.status_code == 200
-        service_instance.search_similar.assert_called_once_with(
-            "test query", limit=7, period_from=None, period_to=None,
-        )
+class TestWebsiteSimilarRemoved:
+    def test_endpoint_is_gone(self, client):
+        resp = client.post("/website_similar", json={"search": "x"}, headers=API_HEADERS)
+        assert resp.status_code == 404
 
 
 # ---------------------------------------------------------------------------

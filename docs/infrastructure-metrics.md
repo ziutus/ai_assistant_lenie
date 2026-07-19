@@ -19,7 +19,7 @@ This file is the authoritative source for infrastructure counts. All other docum
 | 7 | `/website_is_paid` | POST | Metadata |
 | 8 | `/website_get_next_to_correct` | GET | Metadata |
 | 9 | `/ai_get_embedding` | POST | AI Operations |
-| 10 | `/website_similar` | POST | AI Operations |
+| 10 | ~~`/website_similar`~~ | POST | AI Operations — removed in stage 12 (`POST /search` replaces it) |
 | 11 | `/website_download_text_content` | POST | Content Processing |
 | 12 | `/website_text_remove_not_needed` | POST | Content Processing |
 | 13 | `/website_split_for_embedding` | POST | Content Processing |
