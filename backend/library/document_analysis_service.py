@@ -648,7 +648,7 @@ class DocumentAnalysisService:
                 try:
                     from library.article_quality import compute_quality
 
-                    doc.quality = compute_quality(doc, sections, model=model)
+                    doc.quality = compute_quality(doc, sections, model=model, session=self.session)
                     log(f"quality: {doc.quality['score']}/100 "
                         f"(penalties: {doc.quality['penalties'] or '-'})")
                 except Exception:
