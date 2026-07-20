@@ -1212,6 +1212,31 @@ def sources_delete(source_id: int):
     return jsonify({"status": "success", "deleted_id": source_id}), 200
 
 
+@app.route('/languages', methods=['GET'])
+def languages_list():
+    """Known languages lookup with per-language document counts, most used first.
+
+    documents.language is free text, not FK'd to this table (see Language
+    model docstring) — this backs the /search languages filter picker with
+    a curated, counted list rather than letting the UI guess valid codes."""
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library.db.models import Language
+
+    session = get_scoped_session()
+    counts = (
+        sa_select(Document.language.label("code"), sa_func.count().label("cnt"))
+        .where(Document.language.isnot(None))
+        .group_by(Document.language)
+        .subquery()
+    )
+    doc_count = sa_func.coalesce(counts.c.cnt, 0)
+    query = sa_select(Language, doc_count).outerjoin(counts, counts.c.code == Language.code)
+    rows = session.execute(query.order_by(doc_count.desc(), Language.code)).all()
+    return {"status": "success", "languages": [
+        {"code": row.code, "name_pl": row.name_pl, "count": count} for row, count in rows
+    ]}, 200
+
+
 def _exclusion_dict(row):
     return {
         "id": row.id, "entity_text": row.entity_text, "entity_type": row.entity_type,

@@ -1,5 +1,7 @@
 import React from "react";
+import axios from "axios";
 import type { SearchInterpretation } from "../hooks/useSearch";
+import { AuthorizationContext } from "../context/authorizationContext";
 import { DOCUMENT_TYPE_OPTIONS, SEARCH_FILTER_KEYS, type SearchFilterKey } from "../utils/searchCriteria";
 
 const LABELS: Record<SearchFilterKey, string> = {
@@ -16,6 +18,27 @@ const present = (value: unknown) => value != null && value !== ""
 
 const inputValue = (value: unknown) => Array.isArray(value) ? value.join(", ") : String(value ?? "");
 
+const CheckboxGroup = ({ label, options, selected, disabled, onToggle }: {
+  label: string;
+  options: { value: string; label: string }[];
+  selected: Set<string>;
+  disabled: boolean;
+  onToggle: (value: string) => void;
+}) => (
+  <fieldset style={{ border: "1px solid #cbd5e1", borderRadius: 8, padding: "5px 7px", background: "#fff" }}>
+    <legend style={{ fontSize: ".78rem", color: "#475569", padding: "0 4px" }}>{label}</legend>
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      {options.map(option => (
+        <label key={option.value} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: ".82rem" }}>
+          <input type="checkbox" disabled={disabled} checked={selected.has(option.value)}
+            onChange={() => onToggle(option.value)} />
+          {option.label}
+        </label>
+      ))}
+    </div>
+  </fieldset>
+);
+
 export const SearchCriteriaEditor = ({
   criteria, disabled, onChange, onApply,
   title = "Popraw interpretację", applyLabel = "Szukaj z poprawionymi kryteriami",
@@ -27,7 +50,22 @@ export const SearchCriteriaEditor = ({
   title?: string;
   applyLabel?: string;
 }) => {
-  // document_types is rendered as checkboxes below and never goes through update()/remove().
+  const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
+  const [languageOptions, setLanguageOptions] = React.useState<
+    { code: string; name_pl: string; count: number }[]
+  >([]);
+
+  React.useEffect(() => {
+    axios.get(`${apiUrl}/languages`, { headers: { "x-api-key": `${apiKey}` } })
+      .then(response => setLanguageOptions(response.data.languages ?? []))
+      .catch(() => undefined);
+  }, [apiUrl, apiKey]);
+
+  // document_types is always checkboxes; languages is checkboxes once GET /languages has
+  // answered, and falls back to the comma-separated text field below otherwise (so typing a
+  // code the picker doesn't know about yet still works — the backend filter itself stays a
+  // permissive regex, not an enum, see library/search/types.py). Neither goes through
+  // update()/remove() when rendered as checkboxes.
   const update = (key: SearchFilterKey, raw: string) => {
     let value: string | number | string[] | null = raw;
     if (key === "languages") {
@@ -38,6 +76,12 @@ export const SearchCriteriaEditor = ({
     onChange({ ...criteria, [key]: value });
   };
   const remove = (key: SearchFilterKey) => onChange({ ...criteria, [key]: key === "languages" ? [] : null });
+  const toggleArrayValue = (key: "document_types" | "languages", value: string) => onChange({
+    ...criteria,
+    [key]: criteria[key].includes(value)
+      ? criteria[key].filter(v => v !== value)
+      : [...criteria[key], value],
+  });
 
   return (
     <section aria-label={title} style={{ margin: "12px 0 18px", maxWidth: 1050 }}>
@@ -51,27 +95,20 @@ export const SearchCriteriaEditor = ({
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {SEARCH_FILTER_KEYS.map(key => {
           if (key === "document_types") {
-            const selected = new Set(criteria.document_types);
             return (
-              <fieldset key={key} style={{ border: "1px solid #cbd5e1", borderRadius: 8,
-                padding: "5px 7px", background: "#fff" }}>
-                <legend style={{ fontSize: ".78rem", color: "#475569", padding: "0 4px" }}>{LABELS[key]}</legend>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {DOCUMENT_TYPE_OPTIONS.map(option => (
-                    <label key={option.value} style={{ display: "flex", alignItems: "center",
-                      gap: 4, fontSize: ".82rem" }}>
-                      <input type="checkbox" disabled={disabled} checked={selected.has(option.value)}
-                        onChange={() => onChange({
-                          ...criteria,
-                          document_types: selected.has(option.value)
-                            ? criteria.document_types.filter(value => value !== option.value)
-                            : [...criteria.document_types, option.value],
-                        })} />
-                      {option.label}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
+              <CheckboxGroup key={key} label={LABELS[key]} disabled={disabled}
+                options={DOCUMENT_TYPE_OPTIONS} selected={new Set(criteria.document_types)}
+                onToggle={value => toggleArrayValue("document_types", value)} />
+            );
+          }
+          if (key === "languages" && languageOptions.length > 0) {
+            return (
+              <CheckboxGroup key={key} label={LABELS[key]} disabled={disabled}
+                options={languageOptions.map(option => ({
+                  value: option.code, label: `${option.name_pl} (${option.code})`,
+                }))}
+                selected={new Set(criteria.languages)}
+                onToggle={value => toggleArrayValue("languages", value)} />
             );
           }
           return (
