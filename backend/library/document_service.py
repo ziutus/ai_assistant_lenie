@@ -106,6 +106,7 @@ class DocumentService:
         doc.language = language
         doc.paywall = paywall
         doc.set_discovery_source(self.session, source)
+        doc.set_publisher_from_url(self.session)
         doc.ai_summary_needed = ai_summary
         doc.chapter_list = chapter_list
         doc.uuid = doc_uuid
@@ -203,6 +204,7 @@ class DocumentService:
 
         if doc is None:
             doc = Document(url=url)
+            doc.set_publisher_from_url(self.session)
             self.session.add(doc)
 
         if processing_status is not None:
@@ -317,6 +319,7 @@ class DocumentService:
 
         doc = Document(url=url)
         doc.set_document_type(document_type)
+        doc.set_publisher_from_url(self.session)
 
         if processing_status:
             doc.set_processing_status(processing_status)

@@ -1418,6 +1418,7 @@ dependencies = [
     { name = "requests" },
     { name = "ruamel-yaml" },
     { name = "sqlalchemy" },
+    { name = "tldextract" },
     { name = "unidecode" },
     { name = "unified-config-loader", extra = ["aws", "vault"] },
     { name = "youtube-transcript-api" },
@@ -1457,6 +1458,7 @@ all = [
     { name = "pytubefix" },
     { name = "requests" },
     { name = "sqlalchemy" },
+    { name = "tldextract" },
     { name = "unidecode" },
     { name = "urllib3" },
     { name = "youtube-transcript-api" },
@@ -1479,6 +1481,7 @@ docker = [
     { name = "pytubefix" },
     { name = "requests" },
     { name = "sqlalchemy" },
+    { name = "tldextract" },
     { name = "unidecode" },
     { name = "youtube-transcript-api" },
 ]
@@ -1592,6 +1595,9 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0,<3.0" },
     { name = "sqlalchemy", marker = "extra == 'all'", specifier = ">=2.0,<3.0" },
     { name = "sqlalchemy", marker = "extra == 'docker'", specifier = ">=2.0,<3.0" },
+    { name = "tldextract" },
+    { name = "tldextract", marker = "extra == 'all'" },
+    { name = "tldextract", marker = "extra == 'docker'" },
     { name = "unidecode" },
     { name = "unidecode", marker = "extra == 'all'" },
     { name = "unidecode", marker = "extra == 'docker'" },
@@ -3005,6 +3011,18 @@ wheels = [
 ]
 
 [[package]]
+name = "requests-file"
+version = "3.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3c/f8/5dc70102e4d337063452c82e1f0d95e39abfe67aa222ed8a5ddeb9df8de8/requests_file-3.0.1.tar.gz", hash = "sha256:f14243d7796c588f3521bd423c5dea2ee4cc730e54a3cac9574d78aca1272576", size = 6967, upload-time = "2025-10-20T18:56:42.279Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/d5/de8f089119205a09da657ed4784c584ede8381a0ce6821212a6d4ca47054/requests_file-3.0.1-py2.py3-none-any.whl", hash = "sha256:d0f5eb94353986d998f80ac63c7f146a307728be051d4d1cd390dbdb59c10fa2", size = 4514, upload-time = "2025-10-20T18:56:41.184Z" },
+]
+
+[[package]]
 name = "requests-oauthlib"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3339,6 +3357,21 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/46/58/8c37dea7bbf769b20d58e7ace7e5edfe65b849442b00ffcdd56be88697c6/tabulate-0.10.0.tar.gz", hash = "sha256:e2cfde8f79420f6deeffdeda9aaec3b6bc5abce947655d17ac662b126e48a60d", size = 91754, upload-time = "2026-03-04T18:55:34.402Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/99/55/db07de81b5c630da5cbf5c7df646580ca26dfaefa593667fc6f2fe016d2e/tabulate-0.10.0-py3-none-any.whl", hash = "sha256:f0b0622e567335c8fabaaa659f1b33bcb6ddfe2e496071b743aa113f8774f2d3", size = 39814, upload-time = "2026-03-04T18:55:31.284Z" },
+]
+
+[[package]]
+name = "tldextract"
+version = "5.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "filelock" },
+    { name = "idna" },
+    { name = "requests" },
+    { name = "requests-file" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/65/7b/644fbbb49564a6cb124a8582013315a41148dba2f72209bba14a84242bf0/tldextract-5.3.1.tar.gz", hash = "sha256:a72756ca170b2510315076383ea2993478f7da6f897eef1f4a5400735d5057fb", size = 126105, upload-time = "2025-12-28T23:58:05.532Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6d/42/0e49d6d0aac449ca71952ec5bae764af009754fcb2e76a5cc097543747b3/tldextract-5.3.1-py3-none-any.whl", hash = "sha256:6bfe36d518de569c572062b788e16a659ccaceffc486d243af0484e8ecf432d9", size = 105886, upload-time = "2025-12-28T23:58:04.071Z" },
 ]
 
 [[package]]
