@@ -9,20 +9,25 @@ subdomains on multi-tenant hosting platforms (foo.github.io, foo.vercel.app,
 foo.netlify.app), which register themselves in the PSL specifically so each
 tenant's subdomain counts as its own registrable domain.
 
-`_EXTRA_PRIVATE_SUFFIXES` covers platforms confirmed (2026-07-20, against
-this corpus) to have the same per-tenant-subdomain shape but that are *not*
-in the standard PSL: without it, every Substack newsletter or Medium blog
-author would merge into one "publisher". Extend only when a migration's
-merge report or new import data actually shows another such platform
-over-merging — this is a small, evidence-driven list, not a generic
-blog-platform registry.
+`_EXTRA_PRIVATE_SUFFIXES` covers platforms confirmed (2026-07-20, by dry-
+running this corpus's actual publisher_domains through registrable_domain())
+to have the same per-tenant-subdomain shape but that are *not* in the
+standard PSL: without it, every Substack newsletter, Medium/Hashnode/
+WordPress.com/Tumblr/Bearblog author, or mikr.us (a Polish per-user VPS
+host, subdomain-per-customer) would merge into one "publisher". Extend only
+when a migration's merge report or new import data actually shows another
+such platform over-merging — this is a small, evidence-driven list, not a
+generic blog-platform registry.
 """
 
 from urllib.parse import urlsplit
 
 import tldextract
 
-_EXTRA_PRIVATE_SUFFIXES = ("substack.com", "medium.com")
+_EXTRA_PRIVATE_SUFFIXES = (
+    "substack.com", "medium.com", "hashnode.dev", "wordpress.com", "tumblr.com",
+    "bearblog.dev", "mikr.us",
+)
 
 # cache_dir=None: never touch disk: no dependency on a writable cache
 # directory inside the backend/NAS container. suffix_list_urls=(): never
