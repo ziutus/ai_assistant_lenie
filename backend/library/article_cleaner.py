@@ -167,6 +167,9 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
     skip = {
         "Posłuchaj artykułu", "Skróć artykuł", "- x1 +", "x1", "Obserwuj",
         "Więcej pogłębionych treści", "Więcej treści premium dla Ciebie",
+        "Więcej takich artykułów znajdziesz na stronie głównej Onetu",
+        "Top 5 treści Premium", "CZYTAJ TAKŻE", "ZOBACZ RÓWNIEŻ",
+        "Dodaj w Google", "Wróć na", "Jesteś w strefie",
     }
     cleaned = []
     in_top_premium = False
@@ -209,6 +212,15 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
             continue
         # Reakcje: "[img1][img2]1,6 tys." lub "[img0][img1]385"
         if re.match(r'^(\[img\d+\])+[\d,]+(\s*tys\.)?$', stripped):
+            continue
+        # "Powiązane tematy: Karol Nawrocki Wołodymyr Zełenski ..."
+        if stripped.startswith("Powiązane tematy:"):
+            continue
+        # Byline redakcyjny: "Opracowanie: Mateusz Bałuka"
+        if re.match(r'^Opracowanie:\s+\S', stripped):
+            continue
+        # CTA rekomendacji: "**PRZECZYTAJ CAŁY TEKST** [linkN]", "**PRZECZYTAJ CAŁY WYWIAD**"
+        if re.match(r'^\*\*PRZECZYTAJ CAŁY [^*]+\*\*(?:\s+\[link\d+\])?$', stripped):
             continue
         cleaned.append(line)
     return cleaned
@@ -415,6 +427,76 @@ def _clean_lines_gazeta(lines: list[str]) -> list[str]:
     return cleaned
 
 
+# Kategorie photo_caption_candidates rozpoznane po jednoznacznym słowie-kluczu
+# agencji/licencji (nie po samej pozycji względem markera) — bezpieczne do
+# usunięcia z treści. "image_credit"/"image_description" to fallback samej
+# pozycji (linia tuż po [imgN], krótka, bez nagłówka) i bywa fałszywie
+# dopasowany do zwykłego akapitu (zob. test_standalone_image_line_preserved_
+# for_quality_and_collected) — dlatego NIE są tu usuwane hurtowo.
+_STRICT_CAPTION_CATEGORIES = {
+    "public_domain", "creative_commons", "own_or_private_archive",
+    "illustrative", "stock", "agency",
+}
+
+_IMG_MARKER_ALT_RE = re.compile(r'^\[img\d+(?::\s*([^\]]*))?\]\s*$')
+
+
+def _strip_photo_caption_lines(text: str, url: str) -> str:
+    """Usuń z treści linie-podpisy/credity zdjęć, których dane trafiły już
+    strukturalnie do document_images (_attach_image_captions) — zostawienie
+    ich w tekście artykułu jest tylko duplikacją. Marker [imgN] zostaje.
+
+    Dwa niezależne, bezpieczne sygnały:
+    1. Kategoria z jednoznacznym słowem-kluczem (_STRICT_CAPTION_CATEGORIES).
+    2. Para [linia-credit, linia dokładnie powtarzająca alt obrazka] tuż po
+       markerze — sama linia-credit rzadko ma rozpoznawalne słowo-klucz
+       (np. "Panthalassa/x / Wodne Sprawy"), ale jednoznaczne potwierdzenie
+       daje kolejna linia będąca dosłownym powtórzeniem alt-textu — realna
+       treść artykułu praktycznie nigdy nie powtarza dosłownie alt obrazka.
+    """
+    lines = text.splitlines()
+    remove_idx = {
+        item["line_index"] for item in photo_caption_candidates(text, url)
+        if item["category"] in _STRICT_CAPTION_CATEGORIES
+    }
+
+    pending_alt: str | None = None
+    pending_credit_idx: int | None = None
+    lines_left = 0
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        marker = _IMG_MARKER_ALT_RE.match(stripped)
+        if marker:
+            alt = (marker.group(1) or "").strip()
+            pending_alt = alt or None
+            pending_credit_idx = None
+            lines_left = 2 if pending_alt else 0
+            continue
+        if lines_left <= 0:
+            pending_alt = None
+            continue
+        lines_left -= 1
+        normalized = re.sub(r'\s+', ' ', stripped).casefold()
+        normalized_alt = re.sub(r'\s+', ' ', pending_alt or '').casefold()
+        if normalized == normalized_alt:
+            remove_idx.add(index)
+            if pending_credit_idx is not None:
+                remove_idx.add(pending_credit_idx)
+            pending_alt = None
+            lines_left = 0
+        elif pending_credit_idx is None and len(stripped) <= 120 and not stripped.startswith('#'):
+            pending_credit_idx = index
+        else:
+            pending_alt = None
+            lines_left = 0
+
+    if not remove_idx:
+        return text
+    return "\n".join(line for index, line in enumerate(lines) if index not in remove_idx)
+
+
 def _attach_image_captions(text: str, extracted_images: list[dict], url: str) -> None:
     """Dopisz caption_text/caption_category do extracted_images na podstawie linii
     sąsiadujących z markerem [imgN] w tekście — MUSI być wywołane zaraz po
@@ -501,6 +583,11 @@ def clean_article_text(text: str, url: str = "") -> dict:
     # 3b. Skojarz podpisy/credity z markerami, zanim dalsze czyszczenie
     # zdąży usunąć linię podpisu z tekstu.
     _attach_image_captions(text, extracted_images, url)
+
+    # 3c. Usuń z treści jednoznacznie rozpoznane linie-podpisy/credity zdjęć —
+    # dane trafiły już do extracted_images (document_images), zostawienie ich
+    # w tekście artykułu jest tylko duplikacją.
+    text = _strip_photo_caption_lines(text, url)
 
     # 4. Odetnij od footer markera portalu
     footer_line = _find_footer_line(text, portal)
