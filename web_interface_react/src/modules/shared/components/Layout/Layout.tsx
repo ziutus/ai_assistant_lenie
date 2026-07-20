@@ -17,9 +17,6 @@ const SideNavigation = ({ isMenuOpen, toggleMenu }: SideNavigationProps) => {
         <span>v{lenie_version}</span>
       </div>
       <div className={classes.linksContent}>
-        <NavLink to="/stats" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
-          Statystyki
-        </NavLink>
         <NavLink to="/list" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
           Links List
         </NavLink>
@@ -130,6 +127,14 @@ const SideNavigation = ({ isMenuOpen, toggleMenu }: SideNavigationProps) => {
           }
         >
           Upload File (Alfa)
+        </NavLink>
+        <NavLink
+          to="/stats"
+          className={({ isActive }) =>
+            isActive ? classes.activeLink : classes.link
+          }
+        >
+          Statystyki
         </NavLink>
         <NavLink
           to="/connect"
