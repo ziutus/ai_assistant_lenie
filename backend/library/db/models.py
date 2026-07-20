@@ -1016,10 +1016,12 @@ class DocumentImage(Base):
     ``clean_article_text()`` replaces inline ``![alt](url)`` markdown images
     with ``[imgN]`` markers in ``text_md`` — the URL used to be discarded.
     This table keeps the image (and its adjacent caption/credit line, when
-    present) so article_quality.py can score photo sourcing without needing
-    the image markup to still live inline in the text. Replace-per-document
-    semantics (like document_entities): each re-clean of a document replaces
-    its full row set.
+    present — attached via ``article_quality.photo_caption_candidates()``, the
+    same classification used to score photo sourcing) so article_quality.py
+    can score it without needing the image markup to still live inline in the
+    text. Replace-per-document semantics (like document_entities), written by
+    ``library.document_images.replace_document_images()``: each re-clean of a
+    document replaces its full row set.
     """
 
     __tablename__ = "document_images"
@@ -1036,7 +1038,9 @@ class DocumentImage(Base):
     url: Mapped[str] = mapped_column(Text, nullable=False)
     alt_text: Mapped[str | None] = mapped_column(Text)
     caption_text: Mapped[str | None] = mapped_column(Text)
-    # image_marker | image_description | image_credit (lenie_markdown.photo_caption_candidates)
+    # own_or_private_archive | agency | creative_commons | public_domain | stock |
+    # illustrative | image_credit | other | image_description — see
+    # article_quality.photo_caption_candidates() / PHOTO_SOURCE_PENALTY_WEIGHTS
     caption_category: Mapped[str | None] = mapped_column(String(30))
     is_stock_photo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     created_at: Mapped[datetime.datetime] = mapped_column(

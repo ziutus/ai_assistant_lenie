@@ -12,7 +12,10 @@ i reużywalna w skryptach batch.
 import re
 
 from library.article_extractor import _detect_portal, _find_footer_line, _find_start_line
+from library.article_quality import photo_caption_candidates
 from library.lenie_markdown import links_correct, md_square_brackets_in_one_line
+
+_IMG_MARKER_RE = re.compile(r'^\[img(\d+)(?::\s*[^\]]*)?\]\s*$')
 
 
 def _detect_h2_ads(text: str) -> set:
@@ -412,6 +415,25 @@ def _clean_lines_gazeta(lines: list[str]) -> list[str]:
     return cleaned
 
 
+def _attach_image_captions(text: str, extracted_images: list[dict], url: str) -> None:
+    """Dopisz caption_text/caption_category do extracted_images na podstawie linii
+    sąsiadujących z markerem [imgN] w tekście — MUSI być wywołane zaraz po
+    podstawieniu markerów (krok 3), zanim dalsze czyszczenie (portal/generyczne)
+    zdąży usunąć linię podpisu z tekstu. Reużywa article_quality.photo_caption_candidates
+    (ta sama klasyfikacja, co przy liczeniu kary za pochodzenie zdjęcia)."""
+    candidates = photo_caption_candidates(text, url)
+    pending_idx: int | None = None
+    for item in candidates:
+        if item["category"] == "image_marker":
+            marker = _IMG_MARKER_RE.match(item["text"])
+            pending_idx = int(marker.group(1)) if marker else None
+            continue
+        if pending_idx is not None and pending_idx < len(extracted_images):
+            extracted_images[pending_idx]["caption_text"] = item["text"]
+            extracted_images[pending_idx]["caption_category"] = item["category"]
+        pending_idx = None
+
+
 def clean_article_text(text: str, url: str = "") -> dict:
     """Wyczyść wyekstrahowany markdown. Zwraca dict: {text, links, images}."""
     extracted_links = []
@@ -475,6 +497,10 @@ def clean_article_text(text: str, url: str = "") -> dict:
     text = re.sub(r'!\[([^\]]*)\]\(([^)]*)\)', replace_image, text)
     # Linki owijające markery img: [[imgN]](url) → [imgN]
     text = re.sub(r'\[(\[img\d+[^\]]*\])\]\([^)]+\)', lambda m: m.group(1), text)
+
+    # 3b. Skojarz podpisy/credity z markerami, zanim dalsze czyszczenie
+    # zdąży usunąć linię podpisu z tekstu.
+    _attach_image_captions(text, extracted_images, url)
 
     # 4. Odetnij od footer markera portalu
     footer_line = _find_footer_line(text, portal)
