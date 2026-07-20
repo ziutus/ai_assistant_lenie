@@ -18,6 +18,7 @@ import PersonsReview from "./modules/shared/pages/personsReview";
 import Sources from "./modules/shared/pages/sources";
 import InformationSources from "./modules/shared/pages/informationSources";
 import LlmCosts from "./modules/shared/pages/llmCosts";
+import Stats from "./modules/shared/pages/stats";
 import { AuthorizationContext } from "./modules/shared/context/authorizationContext";
 
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -57,6 +58,7 @@ function App() {
                   <Route path="/sources" element={<Sources />} />
                   <Route path="/information-sources" element={<InformationSources />} />
                   <Route path="/llm-costs" element={<LlmCosts />} />
+                  <Route path="/stats" element={<Stats />} />
                   <Route path="/search" element={<Search />} />
                   <Route path="/upload-file" element={<UploadFile />} />
                   <Route path="*" element={<p>404</p>} />
