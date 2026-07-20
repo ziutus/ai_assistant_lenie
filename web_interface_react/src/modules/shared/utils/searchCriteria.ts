@@ -9,6 +9,19 @@ export const SEARCH_FILTER_KEYS = [
 
 export type SearchFilterKey = typeof SEARCH_FILTER_KEYS[number];
 
+// Mirrors the closed enum backend/library/models/stalker_document_type.py validates
+// document_types against (library/search/types.py:35, VALID_DOCUMENT_TYPES).
+export const DOCUMENT_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "webpage", label: "Strona WWW" },
+  { value: "youtube", label: "YouTube" },
+  { value: "movie", label: "Film" },
+  { value: "link", label: "Link" },
+  { value: "text", label: "Tekst" },
+  { value: "text_message", label: "SMS" },
+  { value: "email", label: "E-mail" },
+  { value: "social_media_post", label: "Post w social media" },
+];
+
 export const emptySearchCriteria = (query = ""): SearchInterpretation => ({
   query: query || null, author_name: null, publisher_name: null, publisher_domain: null,
   discovery_source_name: null, collection_name: null, published_on_from: null,
@@ -19,9 +32,16 @@ export const emptySearchCriteria = (query = ""): SearchInterpretation => ({
   clarification_required: false, clarification_question: null, model_confidence: "high",
 });
 
+const BARE_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export const buildExplicitSearchPayload = (criteria: SearchInterpretation, limit: string) => {
   const filters = Object.fromEntries(SEARCH_FILTER_KEYS.flatMap(key => {
-    const value = criteria[key];
+    // ingested_at is a timestamp column (Document.ingested_at <= filters.ingested_at_to); a
+    // bare <input type="date"> value would otherwise parse to midnight and exclude the whole
+    // day the user picked as the upper bound.
+    const value = key === "ingested_at_to" && typeof criteria[key] === "string"
+      && BARE_DATE_RE.test(criteria[key] as string)
+      ? `${criteria[key]}T23:59:59` : criteria[key];
     return value == null || value === "" || (Array.isArray(value) && value.length === 0)
       ? [] : [[key, value]];
   }));

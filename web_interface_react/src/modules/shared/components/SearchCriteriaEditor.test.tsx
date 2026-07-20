@@ -36,6 +36,27 @@ describe("SearchCriteriaEditor", () => {
     expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[0].author_name).toBe("Jan Kowalski");
   });
 
+  it("renders document_types as checkboxes and toggles them without free text", () => {
+    const onChange = vi.fn();
+    render(<SearchCriteriaEditor criteria={criteriaFixture()} disabled={false}
+      onChange={onChange} onApply={vi.fn()} />);
+    // criteriaFixture() already has document_types: ["webpage"]
+    expect(screen.getByRole("checkbox", { name: "Strona WWW" })).toHaveProperty("checked", true);
+    expect(screen.getByRole("checkbox", { name: "YouTube" })).toHaveProperty("checked", false);
+    fireEvent.click(screen.getByRole("checkbox", { name: "YouTube" }));
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[0].document_types)
+      .toEqual(["webpage", "youtube"]);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Strona WWW" }));
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[0].document_types).toEqual([]);
+  });
+
+  it("shows Publikacja/Dodano filters as date pickers", () => {
+    render(<SearchCriteriaEditor criteria={criteriaFixture()} disabled={false}
+      onChange={vi.fn()} onApply={vi.fn()} />);
+    expect(screen.getByLabelText("Publikacja od")).toHaveProperty("type", "date");
+    expect(screen.getByLabelText("Dodano od")).toHaveProperty("type", "date");
+  });
+
   it("supports a custom title and apply-button label for the advanced-search entry point", () => {
     render(<SearchCriteriaEditor criteria={criteriaFixture()} disabled={false}
       onChange={vi.fn()} onApply={vi.fn()} title="Kryteria wyszukiwania" applyLabel="Szukaj" />);
