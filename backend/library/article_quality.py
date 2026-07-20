@@ -346,11 +346,42 @@ Uwzględnij tę listę przy ocenie pola "zrodla", nawet jeśli została technicz
         return None
 
 
-def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -> dict:
+def _photo_source_evidence_from_db(session, document_id: int) -> list[dict] | None:
+    """Ewidencja pochodzenia zdjęć z document_images (zasilana przez
+    library.document_images.replace_document_images przy każdym czyszczeniu
+    tekstu), gdy dla dokumentu jest już dostępna.
+
+    Zwraca None — nie [] — gdy nie ma jeszcze żadnych wierszy, żeby wywołujący
+    mógł spaść na skan full_text (dokumenty sprzed tej tabeli albo bez
+    ponownego czyszczenia od jej wdrożenia). [] oznacza: sprawdzone, brak
+    kategoryzowanych podpisów — to już wiarygodna odpowiedź, nie fallback."""
+    from sqlalchemy import select
+
+    from library.db.models import DocumentImage
+
+    rows = session.scalars(
+        select(DocumentImage).where(DocumentImage.document_id == document_id)
+    ).all()
+    if not rows:
+        return None
+    return [
+        {"text": row.caption_text or "", "category": row.caption_category}
+        for row in rows
+        if row.caption_category in PHOTO_SOURCE_PENALTY_WEIGHTS
+    ]
+
+
+def compute_quality(
+    doc, chunk_sections: list[dict], model: str | None = None, session=None,
+) -> dict:
     """Policz ocenę staranności dokumentu na podstawie chunków z analizy.
 
     chunk_sections: [{"type": "TEMAT|REKLAMA|SZUM", "original": "tekst"}, ...]
     model: model LLM do rubryki; None = tylko kary deterministyczne.
+    session: gdy podana, ewidencja pochodzenia zdjęć jest czytana z
+        document_images zamiast skanowana regexem po full_text (patrz
+        _photo_source_evidence_from_db) — spada na skan tekstu, gdy
+        dokument nie ma jeszcze żadnych wierszy w tej tabeli.
 
     Wynik: {"score": 0-100, "penalties": {...}, "signals": {...},
             "llm_rubric": {...}|None, "model": ..., "computed_at": ISO}
@@ -374,11 +405,17 @@ def compute_quality(doc, chunk_sections: list[dict], model: str | None = None) -
     from library.cited_publications import extract_cited_publications
     cited_publications = extract_cited_publications(full_text)
     press_bibliography = extract_press_bibliography(full_text)
-    caption_evidence = photo_caption_candidates(full_text, getattr(doc, "url", None))
-    photo_source_evidence = [
-        item for item in caption_evidence
-        if item["category"] in PHOTO_SOURCE_PENALTY_WEIGHTS
-    ]
+
+    photo_source_evidence = None
+    document_id = getattr(doc, "id", None)
+    if session is not None and document_id is not None:
+        photo_source_evidence = _photo_source_evidence_from_db(session, document_id)
+    if photo_source_evidence is None:
+        caption_evidence = photo_caption_candidates(full_text, getattr(doc, "url", None))
+        photo_source_evidence = [
+            item for item in caption_evidence
+            if item["category"] in PHOTO_SOURCE_PENALTY_WEIGHTS
+        ]
     captions = len(photo_source_evidence)
     photo_source_penalty_details = Counter()
     for item in photo_source_evidence:
