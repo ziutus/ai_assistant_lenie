@@ -209,6 +209,29 @@ class Collection(Base):
     )
 
 
+class Language(Base):
+    """Known language lookup backing the /search languages filter picker.
+
+    documents.language stays free text (String(10), not FK'd to this
+    table) — language detection and every import path that writes it keep
+    working unchanged; this is a curated "known good" reference list, not
+    a hard constraint. Seeded by migration f3a4b5c6d7e8 from the distinct
+    codes observed in production after folding case/region variants.
+    """
+
+    __tablename__ = "languages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    name_pl: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return f"Language(id={self.id!r}, code={self.code!r})"
+
+
 class Publisher(Base):
     """Portal which published a document (not its discovery/information source)."""
 
