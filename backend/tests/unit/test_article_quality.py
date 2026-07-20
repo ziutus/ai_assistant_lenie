@@ -4,6 +4,9 @@ deterministic quality ("staranność") scoring.
 Pure-function tests, no DB/LLM/network (compute_quality tested with model=None).
 """
 
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 from library.article_quality import (
     compute_quality,
     count_photo_captions,
@@ -32,10 +35,18 @@ LONG_PARAGRAPH = (
 
 
 class _Doc:
-    def __init__(self, author=None, title=None, url=None):
+    def __init__(self, author=None, title=None, url=None, id=None):
         self.byline = author
         self.title = title
         self.url = url
+        self.id = id
+
+
+def _fake_session(rows):
+    """MagicMock session whose scalars(select(...)).all() returns the given rows."""
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = rows
+    return session
 
 
 class TestPhotoCaptionDetection:
@@ -309,6 +320,54 @@ class TestComputeQuality:
 
         assert "photo_sources" not in q["penalties"]
         assert q["signals"]["photo_captions"] == 0
+
+    def test_session_provided_but_no_document_images_rows_falls_back_to_text_scan(self):
+        session = _fake_session([])
+        secs = self._sections() + [{"type": "TEMAT", "original": "Fot. X / shutterstock"}]
+        doc = _Doc(author="A", title="T", id=9265)
+        q = compute_quality(doc, secs, model=None, session=session)
+
+        assert q["penalties"]["photo_sources"] == 3
+        assert q["signals"]["photo_caption_categories"] == {"stock": 1}
+
+    def test_session_with_document_images_rows_used_instead_of_text_scan(self):
+        """document_images is authoritative once populated — even when full_text
+        contains a caption-looking line that isn't reflected there."""
+        rows = [
+            SimpleNamespace(caption_text="Fot. X / shutterstock", caption_category="stock"),
+            SimpleNamespace(caption_text=None, caption_category=None),  # no caption found for this image
+        ]
+        session = _fake_session(rows)
+        secs = self._sections() + [{"type": "TEMAT", "original": "Fot. Y / getty images"}]
+        doc = _Doc(author="A", title="T", id=9265)
+        q = compute_quality(doc, secs, model=None, session=session)
+
+        assert q["penalties"]["photo_sources"] == 3
+        assert q["signals"]["photo_captions"] == 1
+        assert q["signals"]["photo_caption_categories"] == {"stock": 1}
+        assert q["signals"]["photo_caption_lines"] == ["Fot. X / shutterstock"]
+
+    def test_session_with_document_images_rows_all_uncategorized_means_no_penalty(self):
+        """Rows exist (already checked at clean time) but none carry a caption —
+        that is a real answer, not missing data, so no text-scan fallback."""
+        rows = [SimpleNamespace(caption_text=None, caption_category=None)]
+        session = _fake_session(rows)
+        secs = self._sections() + [{"type": "TEMAT", "original": "Fot. Y / getty images"}]
+        doc = _Doc(author="A", title="T", id=9265)
+        q = compute_quality(doc, secs, model=None, session=session)
+
+        assert "photo_sources" not in q["penalties"]
+        assert q["signals"]["photo_captions"] == 0
+
+    def test_session_without_doc_id_falls_back_to_text_scan(self):
+        session = _fake_session([SimpleNamespace(caption_text="x", caption_category="stock")])
+        secs = self._sections() + [{"type": "TEMAT", "original": "Fot. Y / getty images"}]
+        doc = _Doc(author="A", title="T", id=None)
+        q = compute_quality(doc, secs, model=None, session=session)
+
+        # doc has no id -> DB path skipped entirely, session.scalars never called
+        session.scalars.assert_not_called()
+        assert q["signals"]["photo_caption_categories"] == {"stock": 1}
 
     def test_noise_share_penalty(self):
         secs = [

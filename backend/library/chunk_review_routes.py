@@ -1909,7 +1909,7 @@ def compute_document_quality(doc_id: int):
         from library.article_quality import compute_quality
         from library.llm_usage.context import llm_usage_context
         with llm_usage_context(document_id=doc_id, analysis_run_id=run.id):
-            doc.quality = compute_quality(doc, sections, model=run.model)
+            doc.quality = compute_quality(doc, sections, model=run.model, session=session)
     except Exception:
         logger.exception("quality computation failed for document %d", doc_id)
         return jsonify({"status": "error", "message": "Quality computation failed"}), 500
