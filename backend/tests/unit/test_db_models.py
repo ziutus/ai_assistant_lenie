@@ -19,6 +19,7 @@ from library.db.models import (  # noqa: E402
     DocumentStatusErrorType,
     DocumentType,
     EmbeddingModel,
+    Language,
     Document,
     DocumentEmbedding,
     LinkDocument,
@@ -145,6 +146,27 @@ class TestEmbeddingModel:
     def test_repr(self):
         obj = EmbeddingModel(id=1, name="text-embedding-ada-002")
         assert repr(obj) == "EmbeddingModel(id=1, name='text-embedding-ada-002')"
+
+
+class TestLanguage:
+    def test_tablename(self):
+        assert Language.__tablename__ == "languages"
+
+    def test_inherits_base(self):
+        assert issubclass(Language, Base)
+
+    def test_columns(self):
+        cols = _column_names(Language)
+        assert cols == {"id", "code", "name_pl", "created_at"}
+
+    def test_instantiation(self):
+        obj = Language(code="pl", name_pl="polski")
+        assert obj.code == "pl"
+        assert obj.name_pl == "polski"
+
+    def test_repr(self):
+        obj = Language(id=1, code="pl")
+        assert repr(obj) == "Language(id=1, code='pl')"
 
 
 # ---------------------------------------------------------------------------

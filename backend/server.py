@@ -1212,6 +1212,33 @@ def sources_delete(source_id: int):
     return jsonify({"status": "success", "deleted_id": source_id}), 200
 
 
+@app.route('/languages', methods=['GET'])
+def languages_list():
+    """Languages currently used by at least one document, most used first.
+
+    documents.language is free text, not FK'd to the languages table (see
+    Language model docstring) — this backs the /search languages filter
+    picker. An inner join against actual usage on purpose: a language that
+    no document has (any more) would otherwise show up as a checkbox that
+    always returns zero results — the languages table is a superset of
+    codes ever seen, not a set of "selectable" values."""
+    from sqlalchemy import func as sa_func, select as sa_select
+    from library.db.models import Language
+
+    session = get_scoped_session()
+    counts = (
+        sa_select(Document.language.label("code"), sa_func.count().label("cnt"))
+        .where(Document.language.isnot(None))
+        .group_by(Document.language)
+        .subquery()
+    )
+    query = sa_select(Language, counts.c.cnt).join(counts, counts.c.code == Language.code)
+    rows = session.execute(query.order_by(counts.c.cnt.desc(), Language.code)).all()
+    return {"status": "success", "languages": [
+        {"code": row.code, "name_pl": row.name_pl, "count": count} for row, count in rows
+    ]}, 200
+
+
 def _exclusion_dict(row):
     return {
         "id": row.id, "entity_text": row.entity_text, "entity_type": row.entity_type,
