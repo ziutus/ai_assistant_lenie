@@ -516,11 +516,46 @@ def _attach_image_captions(text: str, extracted_images: list[dict], url: str) ->
         pending_idx = None
 
 
+_BULLET_LINE_RE = re.compile(r'^[*-]\s+\S')
+
+# Box "Poniżej streszczenie artykułu: Skrót przygotowany przez Onet Czat z AI,
+# może zawierać błędy." generuje zawsze dokładnie 5 punktów (zweryfikowane na
+# żywo na kilku artykułach onet.pl). Ekstrakcja LLM czasem gubi sam nagłówek
+# boxu, ale zostawia te 5 punktów jako pozorny początek artykułu — prawdziwy
+# lead (inaczej sformułowany, czasem pogrubiony, czasem nie) idzie zaraz po
+# nich. Liczba dokładnie 5 jest tu jedynym bezpiecznym sygnałem: prawdziwe
+# artykuły otwierające się wypunktowaniem nie mają aż tak przewidywalnej
+# długości, więc inne liczby zostają nietknięte.
+_AI_SUMMARY_BULLET_COUNT = 5
+
+
+def _strip_leading_onet_ai_summary(text: str) -> str:
+    """Usuń z początku tekstu wyciek 5-punktowego streszczenia Onet Czat z AI
+    (nagłówek boxu bywa już wycięty wcześniej w ekstrakcji, punkty zostają)."""
+    lines = text.splitlines()
+    idx = 0
+    while idx < len(lines) and not lines[idx].strip():
+        idx += 1
+
+    bullet_count = 0
+    j = idx
+    while j < len(lines) and _BULLET_LINE_RE.match(lines[j].strip()):
+        bullet_count += 1
+        j += 1
+
+    if bullet_count != _AI_SUMMARY_BULLET_COUNT:
+        return text
+    return "\n".join(lines[:idx] + lines[j:])
+
+
 def clean_article_text(text: str, url: str = "") -> dict:
     """Wyczyść wyekstrahowany markdown. Zwraca dict: {text, links, images}."""
     extracted_links = []
     extracted_images = []
     portal = _detect_portal(url)
+
+    if portal == "onet":
+        text = _strip_leading_onet_ai_summary(text)
 
     # 1. Napraw wieloliniowe linki i tagi markdown
     text = links_correct(text)
