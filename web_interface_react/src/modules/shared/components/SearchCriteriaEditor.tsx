@@ -105,7 +105,7 @@ export const SearchCriteriaEditor = ({
             return (
               <CheckboxGroup key={key} label={LABELS[key]} disabled={disabled}
                 options={languageOptions.map(option => ({
-                  value: option.code, label: `${option.name_pl} (${option.code})`,
+                  value: option.code, label: `${option.name_pl} (${option.code}) · ${option.count}`,
                 }))}
                 selected={new Set(criteria.languages)}
                 onToggle={value => toggleArrayValue("languages", value)} />
