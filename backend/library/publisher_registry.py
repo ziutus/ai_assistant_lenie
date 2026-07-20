@@ -8,6 +8,7 @@ import unicodedata
 from sqlalchemy import func, select
 
 from library.db.models import Publisher, PublisherDomain
+from library.publisher_domain import normalize_publisher_domain
 
 
 @dataclass(frozen=True)
@@ -30,13 +31,6 @@ class PublisherResolution:
     @property
     def publisher_id(self) -> int | None:
         return self.matches[0].publisher_id if self.count == 1 else None
-
-
-def normalize_publisher_domain(value: str | None) -> str | None:
-    value = (value or "").strip().casefold().rstrip(".")
-    if value.startswith("www."):
-        value = value[4:]
-    return value or None
 
 
 def _fold_name(value: str | None) -> str:
