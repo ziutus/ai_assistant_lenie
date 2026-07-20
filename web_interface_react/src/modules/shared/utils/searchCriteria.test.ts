@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildExplicitSearchPayload, explicitSearchParams, parseExplicitCriteria } from "./searchCriteria";
+import {
+  buildExplicitSearchPayload, emptySearchCriteria, explicitSearchParams, parseExplicitCriteria,
+} from "./searchCriteria";
 import { criteriaFixture } from "./searchCriteria.fixture";
 
 describe("explicit search criteria", () => {
@@ -22,5 +24,22 @@ describe("explicit search criteria", () => {
     expect(params.mode).toBe("explicit");
     expect(parseExplicitCriteria(params.criteria)).toEqual(criteria);
     expect(parseExplicitCriteria("not-json")).toBeNull();
+  });
+});
+
+describe("emptySearchCriteria", () => {
+  it("produces a criteria object with every filter unset and no query", () => {
+    const criteria = emptySearchCriteria();
+    expect(criteria.query).toBeNull();
+    expect(criteria.document_types).toEqual([]);
+    expect(criteria.languages).toEqual([]);
+    expect(criteria.subject_period_start_year).toBeNull();
+    const payload = buildExplicitSearchPayload(criteria, "10") as Record<string, any>;
+    expect(payload.query).toBeUndefined();
+    expect(payload.filters).toEqual({});
+  });
+
+  it("prefills the topic when given a query", () => {
+    expect(emptySearchCriteria("gospodarka").query).toBe("gospodarka");
   });
 });
