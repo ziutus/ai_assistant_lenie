@@ -19,6 +19,7 @@ from library.chunk_review_routes import bp as chunk_review_bp, start_analysis_wo
 from library.llm_cost_routes import bp as llm_cost_bp
 from library.reader_routes import bp as reader_bp
 from library.search_routes import bp as search_bp
+from library.stats_routes import bp as stats_bp
 from library.youtube_processing import process_youtube_url
 
 logging.basicConfig(level=logging.INFO)
@@ -90,6 +91,7 @@ app.register_blueprint(llm_cost_bp)
 app.register_blueprint(reader_bp)
 app.register_blueprint(api_key_bp)
 app.register_blueprint(search_bp)
+app.register_blueprint(stats_bp)
 start_analysis_worker()
 
 
