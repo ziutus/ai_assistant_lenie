@@ -33,6 +33,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship, validates
 
+from library.publisher_domain import normalize_publisher_domain, registrable_domain
 from library.url_normalization import canonicalize_url
 
 from pgvector.sqlalchemy import Vector
@@ -246,6 +247,32 @@ class Publisher(Base):
         back_populates="publisher", cascade="all, delete-orphan",
     )
 
+    @classmethod
+    def ensure(cls, session: Session, domain: str) -> "Publisher | None":
+        """Return the publisher owning `domain`, creating both if missing.
+
+        `domain` must already be a registrable domain (see
+        library/publisher_domain.registrable_domain()) — this only
+        case-folds it, it does not re-derive the registrable domain, so
+        callers control exactly what a "publisher" groups by. Mirrors
+        DiscoverySource.ensure()'s get-or-create/pending-flush pattern.
+        """
+        domain = normalize_publisher_domain(domain)
+        if not domain:
+            return None
+        for pending in session.new:
+            if isinstance(pending, PublisherDomain) and pending.domain == domain:
+                return pending.publisher
+        existing = session.execute(
+            select(PublisherDomain).where(PublisherDomain.domain == domain)
+        ).scalar_one_or_none()
+        if existing is not None:
+            return existing.publisher
+        publisher = cls(canonical_name=domain)
+        session.add(publisher)
+        session.add(PublisherDomain(domain=domain, publisher=publisher))
+        return publisher
+
 
 class PublisherDomain(Base):
     """Globally unique, normalized hostname belonging to one publisher."""
@@ -302,6 +329,7 @@ class Document(Base):
     publisher_id: Mapped[int | None] = mapped_column(
         ForeignKey("publishers.id", ondelete="SET NULL"), index=True,
     )
+    publisher: Mapped["Publisher | None"] = relationship("Publisher")
     published_on: Mapped[datetime.date | None] = mapped_column(Date)
     # How published_on was set — "manual" (reviewer typed it on /chunks) or "llm"
     # (extract_publication_date). NULL for legacy/import-set values (unknown
@@ -481,6 +509,21 @@ class Document(Base):
         # A freshly created row has no id until flush; assigning the
         # relationship lets the unit of work fill the FK on flush.
         self.discovery_source = row
+
+    def set_publisher_from_url(self, session: Session, url: str | None = None) -> None:
+        """Resolve this document's URL to a Publisher via its registrable domain.
+
+        Auto-creates an unknown domain's publisher (bootstrap-then-curate,
+        same as set_discovery_source()/DiscoverySource.ensure()). Uses the
+        registrable domain (library.publisher_domain.registrable_domain()),
+        not the raw hostname, so multi-section sites sharing one
+        organization's domain (tech.wp.pl, wiadomosci.wp.pl -> wp.pl)
+        resolve to the same publisher, while sites merely sharing a public
+        suffix (knf.gov.pl vs nik.gov.pl) or a multi-tenant hosting
+        platform (foo.github.io vs bar.github.io) correctly stay distinct.
+        """
+        domain = registrable_domain(url if url is not None else self.url)
+        self.publisher = Publisher.ensure(session, domain) if domain else None
 
     @property
     def discovery_source_name(self) -> str | None:
