@@ -117,6 +117,33 @@ class TestImageExtraction:
             "caption_text": "Dmytro Buiansky / shutterstock",
             "caption_category": "stock",
         }]
+        # Kategoria z jednoznacznym słowem-kluczem (stock) — usuwana z treści,
+        # dane podpisu przeżyły już wyżej w extracted_images.
+        assert "Dmytro Buiansky / shutterstock" not in result["text"]
+        assert "[img0: Zdjęcie]" in result["text"]
+
+    def test_credit_line_before_exact_alt_repeat_removed(self):
+        # Wzorzec z onet.pl/wodne-sprawy (dok. 9034): [imgN: alt] → linia-credit
+        # bez rozpoznawalnego słowa-klucza agencji → linia dosłownie powtarzająca alt.
+        text = (
+            f"{LONG_PARAGRAPH}\n\n![Panthalassa](https://example.com/foto.jpg)\n\n"
+            f"Panthalassa/x / Wodne Sprawy\n\nPanthalassa\n\n{LONG_PARAGRAPH}"
+        )
+        result = clean_article_text(text)
+        assert "[img0: Panthalassa]" in result["text"]
+        assert "Panthalassa/x / Wodne Sprawy" not in result["text"]
+        assert "\nPanthalassa\n" not in result["text"]
+        assert result["text"].count(LONG_PARAGRAPH) == 2
+
+    def test_credit_line_without_following_alt_repeat_kept(self):
+        # Bez potwierdzającej linii-alt-repeat sama krótka linia po markerze
+        # NIE jest usuwana (mogłaby być zwykłym akapitem) — tylko para jest bezpieczna.
+        text = (
+            f"{LONG_PARAGRAPH}\n\n![Panthalassa](https://example.com/foto.jpg)\n\n"
+            f"Zupełnie inna krótka linia\n\n{LONG_PARAGRAPH}"
+        )
+        result = clean_article_text(text)
+        assert "Zupełnie inna krótka linia" in result["text"]
 
     def test_image_with_empty_url_removed(self):
         text = f"Przed ![jakiś alt]() po.\n\n{LONG_PARAGRAPH}"
@@ -244,6 +271,27 @@ class TestOnetCleaning:
         result = clean_article_text(text, url="https://wiadomosci.onet.pl/swiat/jakis-artykul")
         assert "Posłuchaj artykułu" not in result["text"]
         assert LONG_PARAGRAPH in result["text"]
+
+    def test_onet_recommendation_and_channel_chrome_removed(self):
+        lines = [
+            "CZYTAJ TAKŻE",
+            "ZOBACZ RÓWNIEŻ",
+            "Top 5 treści Premium",
+            "Więcej takich artykułów znajdziesz na stronie głównej Onetu",
+            "Powiązane tematy: Karol Nawrocki Wołodymyr Zełenski Ukraina",
+            "Opracowanie: Mateusz Bałuka",
+            "**PRZECZYTAJ CAŁY WYWIAD** [link9]",
+            "Dodaj w Google",
+            "Wróć na",
+            "Jesteś w strefie",
+            "Treść artykułu onet.",
+        ]
+        assert _clean_lines_onet(lines) == ["Treść artykułu onet."]
+
+    def test_onet_opracowanie_prefix_requires_following_text(self):
+        # "Opracowanie:" bez nazwiska nie powinno paść ofiarą zbyt zachłannego regexu
+        lines = ["Opracowanie:", "Treść artykułu onet."]
+        assert _clean_lines_onet(lines) == ["Opracowanie:", "Treść artykułu onet."]
 
 
 class TestMoneyCleaning:
