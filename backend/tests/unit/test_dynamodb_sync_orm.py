@@ -281,14 +281,15 @@ class TestProcessArticleContent:
     and failed extraction must leave both fields untouched.
     """
 
-    def _run(self, monkeypatch, extract_result, skip_llm=False, commit_raises=False):
+    def _run(self, monkeypatch, extract_result, skip_llm=False, commit_raises=False, images=None):
         """Run process_article_content with mocked pipeline; return (result, doc, session, cleaner_calls)."""
         from imports import dynamodb_sync
 
         doc = MagicMock()
+        doc.id = 42
         doc.url = "https://example.com/article"
 
-        session = MagicMock(spec=["commit", "rollback"])
+        session = MagicMock(spec=["commit", "rollback", "execute", "add_all"])
         if commit_raises:
             session.commit.side_effect = RuntimeError("db down")
 
@@ -306,7 +307,7 @@ class TestProcessArticleContent:
 
         def fake_clean(text, url=""):
             cleaner_calls.append((text, url))
-            return {"text": f"CLEANED::{text}", "links": [], "images": []}
+            return {"text": f"CLEANED::{text}", "links": [], "images": images or []}
 
         monkeypatch.setattr("library.article_cleaner.clean_article_text", fake_clean)
 
@@ -326,6 +327,21 @@ class TestProcessArticleContent:
         assert cleaner_calls == [("extracted article", doc.url)]
         session.commit.assert_called_once()
         session.rollback.assert_not_called()
+        session.execute.assert_called_once()  # replace_document_images delete
+        session.add_all.assert_not_called()  # no images extracted
+
+    def test_success_persists_extracted_images(self, monkeypatch):
+        result, doc, session, cleaner_calls = self._run(
+            monkeypatch, extract_result=("raw markdown", "extracted article"),
+            images=[{"alt": "Zdjęcie", "url": "https://example.com/foto.jpg"}],
+        )
+
+        assert result == (True, True)
+        session.add_all.assert_called_once()
+        rows = list(session.add_all.call_args.args[0])
+        assert len(rows) == 1
+        assert rows[0].document_id == doc.id
+        assert rows[0].url == "https://example.com/foto.jpg"
 
     def test_skip_llm_does_not_touch_text_fields(self, monkeypatch):
         result, doc, session, cleaner_calls = self._run(

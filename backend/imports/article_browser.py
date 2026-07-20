@@ -615,6 +615,16 @@ def action_save_to_db(doc, article: dict, session) -> bool:
         print(f"  BŁĄD zapisu tekstu: {e}")
         return False
 
+    # 1b. Obrazki (url/alt/podpis) — replace semantics, jak encje NER poniżej
+    try:
+        from library.document_images import replace_document_images
+        image_rows = replace_document_images(session, doc.id, article["images"])
+        session.commit()
+        print(f"  Obrazki zapisane: {len(image_rows)}")
+    except Exception as e:
+        session.rollback()
+        print(f"  OSTRZEŻENIE: zapis obrazków nie powiódł się: {e}")
+
     # 2. Klasyfikacja tematyczna
     print("  Klasyfikuję artykuł tematycznie...")
     article_tags = tag_article_with_llm(text_only, doc.title or "")

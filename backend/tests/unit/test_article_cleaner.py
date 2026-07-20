@@ -95,10 +95,28 @@ class TestImageExtraction:
     def test_standalone_image_line_preserved_for_quality_and_collected(self):
         text = f"{LONG_PARAGRAPH}\n\n![Opis zdjęcia](https://example.com/foto.jpg)\n\nDrugi akapit."
         result = clean_article_text(text)
-        assert result["images"] == [{"alt": "Opis zdjęcia", "url": "https://example.com/foto.jpg"}]
+        # Linia bezpośrednio po markerze trafia do caption_text/caption_category
+        # (article_quality.photo_caption_candidates), nawet gdy to zwykły akapit,
+        # nie faktyczny podpis — to znana niedokładność współdzielonej heurystyki.
+        assert result["images"] == [{
+            "alt": "Opis zdjęcia", "url": "https://example.com/foto.jpg",
+            "caption_text": "Drugi akapit.", "caption_category": "image_credit",
+        }]
         # Marker pozostaje dla quality/UI; generator embeddingów filtruje jego kopię.
         assert "[img0: Opis zdjęcia]" in result["text"]
         assert "Drugi akapit." in result["text"]
+
+    def test_standalone_image_with_stock_caption_categorized(self):
+        text = (
+            f"{LONG_PARAGRAPH}\n\n![Zdjęcie](https://example.com/foto.jpg)\n\n"
+            f"Dmytro Buiansky / shutterstock\n\n{LONG_PARAGRAPH}"
+        )
+        result = clean_article_text(text)
+        assert result["images"] == [{
+            "alt": "Zdjęcie", "url": "https://example.com/foto.jpg",
+            "caption_text": "Dmytro Buiansky / shutterstock",
+            "caption_category": "stock",
+        }]
 
     def test_image_with_empty_url_removed(self):
         text = f"Przed ![jakiś alt]() po.\n\n{LONG_PARAGRAPH}"

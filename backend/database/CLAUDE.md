@@ -282,19 +282,19 @@ in Python (LLM output with stripped diacritics is canonicalized, e.g. "srednia" 
 
 ### Table: `public.document_images`
 
-Images extracted out of a document's article text (`library/article_cleaner.py`). `clean_article_text()` replaces inline `![alt](url)` markdown images with `[imgN]` markers in `text_md` — the URL used to be discarded on cleanup. This table preserves it (plus the adjacent caption/credit line, when present) so `article_quality.py` can score photo sourcing without the image markup needing to stay inline in the text shown to readers/LLM. Replace-per-document semantics (like `document_entities`): each re-clean of a document replaces its full row set. Not yet populated by any pipeline step — table + model only so far.
+Images extracted out of a document's article text (`library/article_cleaner.py`). `clean_article_text()` replaces inline `![alt](url)` markdown images with `[imgN]` markers in `text_md` — the URL used to be discarded on cleanup. This table preserves it (plus the adjacent caption/credit line, when present — attached via `article_quality.photo_caption_candidates()`, the same classification used to score photo sourcing) so `article_quality.py` can score it without the image markup needing to stay inline in the text shown to readers/LLM. Replace-per-document semantics (like `document_entities`), written by `library/document_images.py:replace_document_images()`, called from `imports/dynamodb_sync.py` (import), `library/chunk_review_routes.py` `reclean_preview` (manual save) and `imports/article_browser.py` ([w] write-to-db).
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `document_id` | `integer NOT NULL` | FK to `documents.id` (CASCADE delete) |
-| `chunk_id` | `integer` | FK to `document_chunks.id` (`SET NULL` on delete) |
+| `chunk_id` | `integer` | FK to `document_chunks.id` (`SET NULL` on delete) — always `NULL` for now, set aside for a future per-chunk association |
 | `position` | `smallint` | 0-based position of the `[imgN]` marker in the cleaned text |
 | `url` | `text NOT NULL` | Image URL |
 | `alt_text` | `text` | Alt text from `![alt](url)` |
 | `caption_text` | `text` | Adjacent caption/credit line, if any |
-| `caption_category` | `varchar(30)` | `image_marker` / `image_description` / `image_credit` (`lenie_markdown.photo_caption_candidates`) |
-| `is_stock_photo` | `boolean NOT NULL DEFAULT false` | Stock/agency source detected at extraction (shutterstock, getty, istock, ...) |
+| `caption_category` | `varchar(30)` | `own_or_private_archive` / `agency` / `creative_commons` / `public_domain` / `stock` / `illustrative` / `image_credit` / `other` / `image_description` (`article_quality.photo_caption_candidates` / `PHOTO_SOURCE_PENALTY_WEIGHTS`) |
+| `is_stock_photo` | `boolean NOT NULL DEFAULT false` | `caption_category == 'stock'` at extraction time |
 | `created_at` | `timestamp` | Row creation timestamp |
 
 **Index:** `document_id`.
