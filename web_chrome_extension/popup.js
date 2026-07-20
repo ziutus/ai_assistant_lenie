@@ -35,12 +35,6 @@ document.addEventListener('DOMContentLoaded', function () {
   const newSourceNameInput = document.getElementById('newSourceName');
   const addSourceButton = document.getElementById('addSourceButton');
   const refreshExisting = document.getElementById('refreshExisting');
-  const refreshDocumentId = document.getElementById('refreshDocumentId');
-  const refreshDocumentIdContainer = document.getElementById('refreshDocumentIdContainer');
-
-  refreshExisting.addEventListener('change', () => {
-    refreshDocumentIdContainer.style.display = refreshExisting.checked ? 'block' : 'none';
-  });
 
   const ADD_NEW_SOURCE = '__add_new__';
   let previousSourceValue = sourceSelect.value;
@@ -267,15 +261,6 @@ document.addEventListener('DOMContentLoaded', function () {
     sendButton.disabled = true;
     sendButton.textContent = 'Wysyłam...';
 
-    const targetDocumentId = Number.parseInt(refreshDocumentId.value, 10);
-    if (refreshExisting.checked && (!Number.isInteger(targetDocumentId) || targetDocumentId <= 0)) {
-      alert('Podaj prawidłowe ID istniejącego dokumentu.');
-      sendButton.style.backgroundColor = '';
-      sendButton.disabled = false;
-      sendButton.textContent = 'Wyślij';
-      return;
-    }
-
     chrome.tabs.query({ currentWindow: true, active: true }, function (tabs) {
       const pageUrl = tabs[0]?.url || '';
       chrome.scripting.executeScript({
@@ -300,8 +285,7 @@ document.addEventListener('DOMContentLoaded', function () {
             chapter_list: chapter_list.value
           };
           if (refreshExisting.checked) {
-            data.operation = 'refresh';
-            data.target_document_id = targetDocumentId;
+            data.operation = 'fill_missing_html';
           }
 
           return fetch(serverUrl, {
@@ -313,14 +297,21 @@ document.addEventListener('DOMContentLoaded', function () {
             body: JSON.stringify(data)
           });
         })
-        .then(response => {
-          if (!response.ok) {
-            throw new Error(`Serwer zwrócił błąd: ${response.status} - ${response.statusText}`);
+        .then(async response => {
+          const result = await response.json().catch(() => ({}));
+          if (response.status === 409 && result.status === 'already_exists') {
+            const suffix = result.missing_raw_html
+              ? ' Brakuje mu surowego HTML — możesz użyć opcji jego uzupełnienia.'
+              : '';
+            throw new Error(`Dokument jest już w bazie (ID: ${result.document_id}).${suffix}`);
           }
-          return response.json();
+          if (!response.ok) {
+            throw new Error(result.message || `Serwer zwrócił błąd: ${response.status} - ${response.statusText}`);
+          }
+          return result;
         })
-        .then(() => {
-          alert('Strona została dodana pomyślnie!');
+        .then(result => {
+          alert(result.status === 'queued' ? 'Zgłoszenie zostało przekazane do importu.' : 'Strona została dodana pomyślnie!');
           noteInput.value = '';
           setTimeout(() => window.close(), 500);
         })

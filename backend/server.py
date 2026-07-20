@@ -5,7 +5,7 @@ import logging
 from library.config_loader import load_config
 from library.db.engine import get_scoped_session
 from library.db.models import TranscriptionLog, Document
-from library.document_service import DocumentService
+from library.document_service import DocumentService, ExistingDocumentError
 from library.search_service import SearchService
 from library.document_repository import DocumentRepository
 from library.website.website_paid import website_is_paid
@@ -220,9 +220,11 @@ def url_add():
 
         session = get_scoped_session()
         service = DocumentService(session)
-        if url_data.get("operation", "create") == "refresh":
-            doc = service.refresh_document_source(
-                document_id=url_data.get("target_document_id"),
+        operation = url_data.get("operation", "create")
+        if operation not in {"create", "fill_missing_html"}:
+            raise ValueError("Invalid operation")
+        if operation == "fill_missing_html":
+            doc = service.fill_missing_source_html(
                 url=url_data.get("url", ""),
                 html=url_data.get("html", ""),
                 text=url_data.get("text", ""),
@@ -247,6 +249,14 @@ def url_add():
             'document_id': doc.id
         }, 200
 
+    except ExistingDocumentError as e:
+        doc = e.document
+        return {
+            'status': 'already_exists',
+            'message': f'Document already exists with ID: {doc.id}',
+            'document_id': doc.id,
+            'missing_raw_html': not bool(doc.text_raw),
+        }, 409
     except ValueError as e:
         logging.error("Validation error in /url_add: %s", e)
         return {'status': 'error', 'message': 'Invalid request data'}, 400

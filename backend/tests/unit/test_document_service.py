@@ -10,7 +10,7 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from library.document_service import DocumentService
+from library.document_service import DocumentService, ExistingDocumentError
 from library.db.models import Document
 
 
@@ -22,6 +22,7 @@ from library.db.models import Document
 def _make_session():
     """Return a mock SQLAlchemy session."""
     session = MagicMock()
+    session.scalars.return_value.first.return_value = None
     return session
 
 
@@ -65,6 +66,23 @@ class TestDocumentServiceInit:
 
 
 class TestCreateDocument:
+    @patch("library.document_service.load_config")
+    def test_duplicate_is_rejected_before_storage(self, mock_config):
+        existing = _make_doc(text_raw="<html>stored</html>")
+        session = _make_session()
+        service = DocumentService(session)
+
+        with patch.object(Document, "get_by_url", return_value=existing), \
+             patch.object(service, "_store_file") as mock_store, \
+             pytest.raises(ExistingDocumentError) as exc:
+            service.create_document(
+                url=existing.url, url_type="webpage", html="<html>new</html>",
+            )
+
+        assert exc.value.document is existing
+        mock_store.assert_not_called()
+        session.add.assert_not_called()
+
     @patch("library.document_service.load_config")
     def test_create_document_basic(self, mock_config):
         """Create a basic link document (no S3 storage)."""
@@ -428,6 +446,31 @@ class TestSplitForEmbedding:
 # ---------------------------------------------------------------------------
 # Tests: _store_file (private, but critical)
 # ---------------------------------------------------------------------------
+
+
+class TestFillMissingSourceHtml:
+    def test_rejects_document_that_already_has_raw_html(self):
+        session = _make_session()
+        existing = _make_doc(text_raw="<html>stored</html>")
+        service = DocumentService(session)
+
+        with patch.object(Document, "get_by_url", return_value=existing), \
+             pytest.raises(ValueError, match="already has raw HTML"):
+            service.fill_missing_source_html(
+                url=existing.url, html="<html>new</html>",
+            )
+
+        session.commit.assert_not_called()
+
+    def test_rejects_unknown_url(self):
+        session = _make_session()
+        service = DocumentService(session)
+
+        with patch.object(Document, "get_by_url", return_value=None), \
+             pytest.raises(ValueError, match="does not exist"):
+            service.fill_missing_source_html(
+                url="https://example.com/missing", html="<html>new</html>",
+            )
 
 
 class TestStoreFile:

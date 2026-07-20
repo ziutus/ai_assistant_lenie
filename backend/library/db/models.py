@@ -31,7 +31,9 @@ from sqlalchemy import (
     text as sa_text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
-from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
+from sqlalchemy.orm import Mapped, Session, mapped_column, relationship, validates
+
+from library.url_normalization import canonicalize_url
 
 from pgvector.sqlalchemy import Vector
 
@@ -249,6 +251,7 @@ class Document(Base):
     # Content fields (order matches DDL in 03-create-table.sql)
     summary: Mapped[str | None] = mapped_column(Text)
     url: Mapped[str] = mapped_column(Text, nullable=False)
+    canonical_url: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     language: Mapped[str | None] = mapped_column(String(10))
     tags: Mapped[str | None] = mapped_column(Text)
     text: Mapped[str | None] = mapped_column(Text)
@@ -413,10 +416,15 @@ class Document(Base):
 
     @classmethod
     def get_by_url(cls, session: Session, url: str) -> "Document | None":
-        """Return document matching the given URL, or None."""
+        """Return a document matching the canonical identity of the URL."""
         return session.scalars(
-            select(cls).where(cls.url == url)
+            select(cls).where(cls.canonical_url == canonicalize_url(url))
         ).first()
+
+    @validates("url")
+    def _set_canonical_url(self, _key: str, value: str) -> str:
+        self.canonical_url = canonicalize_url(value)
+        return value
 
     # --- Domain methods (migrated from stalker_web_document.py) ---
 
@@ -505,6 +513,7 @@ class Document(Base):
             "previous_type": self.previous_type,
             "summary": self.summary,
             "url": self.url,
+            "canonical_url": self.canonical_url,
             "language": self.language,
             "tags": self.tags,
             "text": self.text,

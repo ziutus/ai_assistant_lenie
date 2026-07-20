@@ -10,6 +10,7 @@ create table documents
     id                   serial primary key,
     summary              text,
     url                  text not null,
+    canonical_url        text not null,
     language             varchar(10),
     tags                 text,
     text                 text,
@@ -41,6 +42,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_document_type ON public.documents(docum
 CREATE INDEX IF NOT EXISTS idx_documents_processing_status ON public.documents(processing_status);
 CREATE INDEX IF NOT EXISTS idx_documents_ingested_at ON public.documents(ingested_at);
 CREATE INDEX IF NOT EXISTS idx_documents_url ON public.documents(url);
+CREATE INDEX IF NOT EXISTS idx_documents_canonical_url ON public.documents(canonical_url);
 CREATE INDEX IF NOT EXISTS idx_documents_collection_id ON public.documents(collection_id);
 CREATE INDEX IF NOT EXISTS idx_documents_discovery_source_id ON public.documents(discovery_source_id);
 CREATE INDEX IF NOT EXISTS idx_documents_published_on ON public.documents(published_on);

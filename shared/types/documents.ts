@@ -4,6 +4,7 @@ export interface Document {
   source: string;
   language: string;
   url: string;
+  canonical_url: string;
   tags: string;
   title: string;
   summary: string;
@@ -26,6 +27,7 @@ export const emptyDocument: Document = {
   source: "",
   language: "",
   url: "",
+  canonical_url: "",
   tags: "",
   title: "",
   summary: "",

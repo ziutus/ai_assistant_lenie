@@ -22,7 +22,9 @@ import re
 import subprocess
 import sys
 import time
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import urlparse
+
+from library.url_normalization import canonicalize_url
 
 from library.config_loader import load_config
 
@@ -129,13 +131,8 @@ def is_tracking_url(url: str) -> bool:
 
 
 def strip_utm_params(url: str) -> str:
-    """Remove UTM and other marketing query parameters from a URL."""
-    parsed = urlparse(url)
-    params = parse_qs(parsed.query, keep_blank_values=True)
-    clean_params = {k: v for k, v in params.items()
-                    if not k.startswith(("utm_", "mc_", "ss_", "vero_"))}
-    clean_query = urlencode(clean_params, doseq=True)
-    return urlunparse(parsed._replace(query=clean_query))
+    """Backward-compatible wrapper around shared URL canonicalization."""
+    return canonicalize_url(url)
 
 
 def resolve_tracking_url(url: str, timeout: int = 5) -> str:

@@ -182,6 +182,19 @@ class TestGetByUrl:
         assert result is doc
         assert result.url == "https://example.com/path?q=hello%20world&lang=pl#section"
 
+    def test_lookup_uses_canonical_url(self):
+        session = MagicMock()
+        Document.get_by_url(session, "HTTPS://Example.com/a/?utm_source=x#part")
+
+        statement = session.scalars.call_args.args[0]
+        assert "documents.canonical_url" in str(statement)
+        assert statement.compile().params["canonical_url_1"] == "https://example.com/a"
+
+    def test_setting_url_populates_canonical_url(self):
+        doc = Document(url="https://Example.com/a/?utm_source=x#part")
+        assert doc.url == "https://Example.com/a/?utm_source=x#part"
+        assert doc.canonical_url == "https://example.com/a"
+
 
 # ===================================================================
 # Task 3: ORM Create flow
@@ -424,7 +437,7 @@ class TestDictCompatibility:
         d = doc.dict()
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
-            "summary", "url", "language", "tags", "text", "paywall", "title",
+            "summary", "url", "canonical_url", "language", "tags", "text", "paywall", "title",
             "ingested_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "processing_status", "processing_error_code",
             "text_raw", "transcript_job_id", "ai_summary_needed", "byline",

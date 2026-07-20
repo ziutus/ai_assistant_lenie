@@ -100,12 +100,8 @@
 
       <div class="form-group form-check">
         <input type="checkbox" class="form-check-input" id="refreshExisting">
-        <label class="form-check-label" for="refreshExisting">Odśwież istniejący dokument</label>
-      </div>
-      <div class="form-group" id="refreshDocumentIdContainer" style="display: none;">
-        <label for="refreshDocumentId">ID dokumentu Lenie</label>
-        <input type="number" min="1" id="refreshDocumentId" class="form-control" placeholder="np. 421">
-        <small class="form-text text-muted">Zapisze nową kopię HTML i zaktualizuje wskazany dokument po synchronizacji.</small>
+        <label class="form-check-label" for="refreshExisting">Uzupełnij brakujący surowy HTML</label>
+        <small class="form-text text-muted">Operacja zostanie odrzucona, jeśli dokument dla tego URL ma już surowy HTML.</small>
       </div>
 
       <button id="sendButton" class="btn btn-primary btn-block">Wyślij</button>

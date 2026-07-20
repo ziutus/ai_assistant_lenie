@@ -219,21 +219,23 @@ def save_cache_files(doc_id: int, text_content: str | None, html_content: str | 
 
 def refresh_existing_document(session, item: dict, text_content: str | None,
                               html_content: str | None, cache_dir: str) -> int:
-    """Apply an extension-captured source revision to an existing document.
+    """Fill a missing raw HTML source on an existing document.
 
-    The previous S3 object remains untouched. The DynamoDB create event retains
-    its UUID, while this refresh event points the document at the new object.
+    Existing raw HTML is never replaced. The DynamoDB event retains its UUID,
+    while the document is pointed at that object only when its source is absent.
     Only deterministic author metadata is refreshed here; article analysis,
     chunks and embeddings are deliberately left intact.
     """
-    target_id = int(item["target_document_id"])
-    doc = session.get(Document, target_id)
+    doc = Document.get_by_url(session, item.get("url", ""))
     if doc is None:
-        raise ValueError(f"refresh target document {target_id} does not exist")
-    if doc.url != item.get("url"):
-        raise ValueError(f"refresh URL does not match document {target_id}")
+        raise ValueError("fill target document does not exist")
+    legacy_target_id = item.get("target_document_id")
+    if legacy_target_id is not None and doc.id != int(legacy_target_id):
+        raise ValueError("legacy refresh target does not match URL")
     if not html_content:
-        raise ValueError("refresh HTML is missing from S3")
+        raise ValueError("fill HTML is missing from S3")
+    if doc.text_raw:
+        raise ValueError(f"document {doc.id} already has raw HTML")
 
     new_uuid = item.get("uuid") or item.get("s3_uuid")
     if not new_uuid:
@@ -561,9 +563,9 @@ def main():
                 text_content = None
                 html_content = None
 
-                if item.get("operation", "create") == "refresh":
+                if item.get("operation", "create") in {"refresh", "fill_missing_html"}:
                     if args.dry_run:
-                        print(f"  WOULD REFRESH document id={item.get('target_document_id')}")
+                        print(f"  WOULD FILL MISSING HTML for URL={item.get('url')}")
                         refreshed += 1
                         continue
                     if args.skip_s3:
