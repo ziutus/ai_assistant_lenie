@@ -25,6 +25,14 @@ from library.website.website_download_context import download_raw_html, webpage_
 logger = logging.getLogger(__name__)
 
 
+class ExistingDocumentError(ValueError):
+    """Raised when an URL submitted as new already belongs to a document."""
+
+    def __init__(self, document: Document):
+        super().__init__(f"Document for URL already exists: {document.id}")
+        self.document = document
+
+
 class DocumentService:
     """Stateless service for document business logic.
 
@@ -61,6 +69,10 @@ class DocumentService:
         """
         if not url or not url_type:
             raise ValueError("Missing required parameter(s): 'url' or 'type'")
+
+        existing = Document.get_by_url(self.session, url)
+        if existing is not None:
+            raise ExistingDocumentError(existing)
 
         cfg = load_config()
         bucket_name = cfg.get("AWS_S3_WEBSITE_CONTENT")
@@ -131,20 +143,15 @@ class DocumentService:
     # save_document — extracted from /website_save
     # ------------------------------------------------------------------
 
-    def refresh_document_source(self, document_id: int, url: str, html: str,
-                                text: str = "") -> Document:
-        """Store a new captured source revision and re-extract deterministic authors."""
-        try:
-            document_id = int(document_id)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("Refresh requires target_document_id") from exc
-        doc = Document.get_by_id(self.session, document_id)
+    def fill_missing_source_html(self, url: str, html: str, text: str = "") -> Document:
+        """Attach captured HTML only when the existing document has no raw source."""
+        doc = Document.get_by_url(self.session, url)
         if doc is None:
-            raise ValueError("Refresh target document does not exist")
-        if doc.url != url:
-            raise ValueError("Refresh URL does not match target document")
+            raise ValueError("Document for URL does not exist")
         if doc.document_type != "webpage" or not html:
-            raise ValueError("Refresh requires a webpage with HTML")
+            raise ValueError("Filling source requires a webpage with HTML")
+        if doc.text_raw:
+            raise ValueError("Document already has raw HTML")
 
         cfg = load_config()
         bucket_name = cfg.get("AWS_S3_WEBSITE_CONTENT")
@@ -163,6 +170,14 @@ class DocumentService:
         set_document_authors(self.session, doc, extract_article_authors(html, url), method="html")
         self.session.commit()
         return doc
+
+    def refresh_document_source(self, document_id: int, url: str, html: str,
+                                text: str = "") -> Document:
+        """Backward-compatible entry point with safe fill-only semantics."""
+        doc = Document.get_by_id(self.session, int(document_id))
+        if doc is None or doc.url != url:
+            raise ValueError("Refresh target does not match URL")
+        return self.fill_missing_source_html(url=url, html=html, text=text)
 
     def save_document(
         self,

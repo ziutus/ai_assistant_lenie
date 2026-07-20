@@ -434,6 +434,28 @@ class TestWebsiteSave:
 
 
 class TestUrlAdd:
+    def test_duplicate_returns_existing_document_details(self, client):
+        from library.document_service import ExistingDocumentError
+
+        mock_session = MagicMock()
+        existing = MagicMock()
+        existing.id = 77
+        existing.text_raw = "<html>stored</html>"
+        with patch("server.get_scoped_session", return_value=mock_session), \
+             patch("server.DocumentService") as MockDS:
+            MockDS.return_value.create_document.side_effect = ExistingDocumentError(existing)
+            resp = client.post("/url_add", json={
+                "url": "https://example.com", "type": "webpage", "html": "<html>new</html>",
+            }, headers=API_HEADERS, content_type="application/json")
+
+        assert resp.status_code == 409
+        assert resp.get_json() == {
+            "status": "already_exists",
+            "message": "Document already exists with ID: 77",
+            "document_id": 77,
+            "missing_raw_html": False,
+        }
+
     def test_successful_add(self, client):
         mock_session = MagicMock()
         mock_doc = MagicMock()

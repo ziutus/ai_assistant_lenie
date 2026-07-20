@@ -59,7 +59,7 @@ def lambda_handler(event, context):
 
     if not target_url or not url_type:
         return _error_response("Missing required parameter(s): 'url' or 'type'")
-    if operation not in {"create", "refresh"}:
+    if operation not in {"create", "refresh", "fill_missing_html"}:
         return _error_response("Invalid operation", 400)
     if operation == "refresh":
         try:
@@ -68,6 +68,8 @@ def lambda_handler(event, context):
             return _error_response("Refresh requires target_document_id", 400)
         if target_document_id <= 0 or url_type != "webpage" or not html:
             return _error_response("Refresh requires a webpage with HTML", 400)
+    if operation == "fill_missing_html" and (url_type != "webpage" or not html):
+        return _error_response("Filling source requires a webpage with HTML", 400)
 
     # Generuj unikalny identyfikator i timestamp
     uid = str(uuid.uuid4())
@@ -127,7 +129,11 @@ def lambda_handler(event, context):
 
     return {
         'statusCode': 200,
-        'body': json.dumps(f'Successfully saved document, id: {uid}'),
+        'body': json.dumps({
+            'status': 'queued',
+            'message': 'Document submission queued for import',
+            'submission_id': uid,
+        }),
         'headers': {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Credentials': True,
