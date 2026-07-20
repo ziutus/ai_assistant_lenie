@@ -9,6 +9,16 @@ export const SEARCH_FILTER_KEYS = [
 
 export type SearchFilterKey = typeof SEARCH_FILTER_KEYS[number];
 
+export const emptySearchCriteria = (query = ""): SearchInterpretation => ({
+  query: query || null, author_name: null, publisher_name: null, publisher_domain: null,
+  discovery_source_name: null, collection_name: null, published_on_from: null,
+  published_on_to: null, ingested_at_from: null, ingested_at_to: null,
+  subject_period_start_year: null, subject_period_end_year: null, temporal_expression: null,
+  document_types: [], languages: [], sort: "relevance",
+  interpretation_summary: "Jawne kryteria wyszukiwania (bez interpretacji LLM).", warnings: [],
+  clarification_required: false, clarification_question: null, model_confidence: "high",
+});
+
 export const buildExplicitSearchPayload = (criteria: SearchInterpretation, limit: string) => {
   const filters = Object.fromEntries(SEARCH_FILTER_KEYS.flatMap(key => {
     const value = criteria[key];

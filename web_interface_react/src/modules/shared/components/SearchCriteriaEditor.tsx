@@ -16,11 +16,16 @@ const present = (value: unknown) => value != null && value !== ""
 
 const inputValue = (value: unknown) => Array.isArray(value) ? value.join(", ") : String(value ?? "");
 
-export const SearchCriteriaEditor = ({ criteria, disabled, onChange, onApply }: {
+export const SearchCriteriaEditor = ({
+  criteria, disabled, onChange, onApply,
+  title = "Popraw interpretację", applyLabel = "Szukaj z poprawionymi kryteriami",
+}: {
   criteria: SearchInterpretation;
   disabled: boolean;
   onChange: (criteria: SearchInterpretation) => void;
   onApply: () => void;
+  title?: string;
+  applyLabel?: string;
 }) => {
   const update = (key: SearchFilterKey, raw: string) => {
     let value: string | number | string[] | null = raw;
@@ -37,8 +42,8 @@ export const SearchCriteriaEditor = ({ criteria, disabled, onChange, onApply }: 
   });
 
   return (
-    <section aria-label="Korekta interpretacji" style={{ margin: "12px 0 18px", maxWidth: 1050 }}>
-      <h4 style={{ marginBottom: 8 }}>Popraw interpretację</h4>
+    <section aria-label={title} style={{ margin: "12px 0 18px", maxWidth: 1050 }}>
+      <h4 style={{ marginBottom: 8 }}>{title}</h4>
       <label style={{ display: "block", marginBottom: 8 }}>
         Temat
         <input aria-label="Temat" disabled={disabled} value={criteria.query ?? ""}
@@ -46,21 +51,24 @@ export const SearchCriteriaEditor = ({ criteria, disabled, onChange, onApply }: 
           style={{ display: "block", width: "min(600px, 100%)" }} />
       </label>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {SEARCH_FILTER_KEYS.filter(key => present(criteria[key])).map(key => (
+        {SEARCH_FILTER_KEYS.map(key => (
           <label key={key} style={{ display: "flex", alignItems: "center", gap: 5,
             border: "1px solid #cbd5e1", borderRadius: 8, padding: "5px 7px", background: "#fff" }}>
             <span style={{ fontSize: ".78rem", color: "#475569" }}>{LABELS[key]}</span>
             <input aria-label={LABELS[key]} disabled={disabled} value={inputValue(criteria[key])}
-              type={key.startsWith("subject_period_") ? "number" : "text"}
+              type={key === "published_on_from" || key === "published_on_to" ? "date"
+                : key.startsWith("subject_period_") ? "number" : "text"}
               onChange={event => update(key, event.target.value)} style={{ width: 130 }} />
-            <button aria-label={`Usuń filtr ${LABELS[key]}`} type="button" disabled={disabled}
-              onClick={() => remove(key)} style={{ border: 0, background: "transparent", cursor: "pointer" }}>×</button>
+            {present(criteria[key]) && (
+              <button aria-label={`Usuń filtr ${LABELS[key]}`} type="button" disabled={disabled}
+                onClick={() => remove(key)} style={{ border: 0, background: "transparent", cursor: "pointer" }}>×</button>
+            )}
           </label>
         ))}
       </div>
       <button type="button" className="button" disabled={disabled || (!criteria.query &&
         SEARCH_FILTER_KEYS.every(key => !present(criteria[key])))} onClick={onApply} style={{ marginTop: 10 }}>
-        Szukaj z poprawionymi kryteriami
+        {applyLabel}
       </button>
     </section>
   );
