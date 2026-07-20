@@ -576,9 +576,12 @@ def reclean_preview(doc_id: int):
             removed.append(line)
 
     if save:
+        from library.document_images import replace_document_images
+
         setattr(doc, field, after)
         doc.document_length = len(after)
         doc.quality = None
+        replace_document_images(session, doc.id, cleaned["images"])
         session.commit()
 
     return jsonify({

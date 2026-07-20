@@ -296,15 +296,19 @@ def process_article_content(doc_id: int, cache_base_dir: str,
         print(f"  Process: LLM OK ({len(article)} chars)")
         from library.article_metadata import extract_article_author
 
+        from library.document_images import replace_document_images
+
         cleaned = clean_article_text(article, doc.url)
         doc.text_extracted = article
         doc.text_md = cleaned["text"]
         if not doc.byline:
             with open(html_file, encoding="utf-8") as f:
                 doc.byline = extract_article_author(f.read(), doc.url)
+        image_rows = replace_document_images(session, doc.id, cleaned["images"])
         try:
             session.commit()
-            print(f"  Process: saved text_extracted/text_md ({len(cleaned['text'])} chars cleaned)")
+            print(f"  Process: saved text_extracted/text_md ({len(cleaned['text'])} chars cleaned, "
+                  f"{len(image_rows)} images)")
         except Exception:
             session.rollback()
             print(f"  WARNING: failed to save text_extracted/text_md for doc {doc_id}")
