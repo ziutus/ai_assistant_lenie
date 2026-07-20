@@ -1214,11 +1214,14 @@ def sources_delete(source_id: int):
 
 @app.route('/languages', methods=['GET'])
 def languages_list():
-    """Known languages lookup with per-language document counts, most used first.
+    """Languages currently used by at least one document, most used first.
 
-    documents.language is free text, not FK'd to this table (see Language
-    model docstring) — this backs the /search languages filter picker with
-    a curated, counted list rather than letting the UI guess valid codes."""
+    documents.language is free text, not FK'd to the languages table (see
+    Language model docstring) — this backs the /search languages filter
+    picker. An inner join against actual usage on purpose: a language that
+    no document has (any more) would otherwise show up as a checkbox that
+    always returns zero results — the languages table is a superset of
+    codes ever seen, not a set of "selectable" values."""
     from sqlalchemy import func as sa_func, select as sa_select
     from library.db.models import Language
 
@@ -1229,9 +1232,8 @@ def languages_list():
         .group_by(Document.language)
         .subquery()
     )
-    doc_count = sa_func.coalesce(counts.c.cnt, 0)
-    query = sa_select(Language, doc_count).outerjoin(counts, counts.c.code == Language.code)
-    rows = session.execute(query.order_by(doc_count.desc(), Language.code)).all()
+    query = sa_select(Language, counts.c.cnt).join(counts, counts.c.code == Language.code)
+    rows = session.execute(query.order_by(counts.c.cnt.desc(), Language.code)).all()
     return {"status": "success", "languages": [
         {"code": row.code, "name_pl": row.name_pl, "count": count} for row, count in rows
     ]}, 200

@@ -43,10 +43,13 @@ class TestLanguagesList:
             {"code": "en", "name_pl": "angielski", "count": 164},
         ]
 
-    def test_language_with_no_documents_yet_has_zero_count(self, client):
+    def test_only_languages_currently_used_by_a_document_are_returned(self, client):
+        # An inner join, on purpose: a language nobody's document has (any more) — e.g. one
+        # seeded by the migration but since edited away on its one document — must not appear
+        # as a checkbox that always returns zero results.
         session = MagicMock()
-        session.execute.return_value.all.return_value = [(_row("lt", "litewski"), 0)]
+        session.execute.return_value.all.return_value = [(_row("pl", "polski"), 8183)]
         with patch("server.get_scoped_session", return_value=session):
             resp = client.get("/languages", headers=API_HEADERS)
 
-        assert resp.get_json()["languages"] == [{"code": "lt", "name_pl": "litewski", "count": 0}]
+        assert resp.get_json()["languages"] == [{"code": "pl", "name_pl": "polski", "count": 8183}]

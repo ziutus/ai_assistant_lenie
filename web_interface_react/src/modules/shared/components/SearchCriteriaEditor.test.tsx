@@ -73,9 +73,9 @@ describe("SearchCriteriaEditor", () => {
     render(<SearchCriteriaEditor criteria={criteriaFixture()} disabled={false}
       onChange={onChange} onApply={vi.fn()} />);
     // criteriaFixture() already has languages: ["pl"]
-    expect(await screen.findByRole("checkbox", { name: "polski (pl)" })).toHaveProperty("checked", true);
+    expect(await screen.findByRole("checkbox", { name: "polski (pl) · 8182" })).toHaveProperty("checked", true);
     expect(screen.queryByLabelText("Języki")).toBeNull();
-    fireEvent.click(screen.getByRole("checkbox", { name: "angielski (en)" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "angielski (en) · 164" }));
     expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[0].languages).toEqual(["pl", "en"]);
   });
 
