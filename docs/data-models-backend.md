@@ -4,14 +4,15 @@
 
 ## Database Schema
 
-### Table: documents (29 columns)
+### Table: documents
 
 Primary document storage table.
 
 | Column | Type | Constraints | Description |
 |--------|------|-------------|-------------|
 | `id` | serial | PK | Auto-increment identifier |
-| `url` | text | NOT NULL | Source URL |
+| `url` | text | NOT NULL | Original source URL used for display and fetching |
+| `canonical_url` | text | NOT NULL | Normalized comparison key used for URL lookup and duplicate detection |
 | `document_type` | varchar(50) | NOT NULL | movie, youtube, link, webpage, text_message, text, email, social_media_post |
 | `processing_status` | varchar(50) | NOT NULL, DEFAULT 'URL_ADDED' | Processing state (15 states) |
 | `processing_error_code` | text | — | Error details when state=ERROR |
@@ -40,7 +41,9 @@ Primary document storage table.
 | `uuid` | varchar(100) | NOT NULL DEFAULT gen_random_uuid(), UNIQUE | Global document identifier (ADR-015) |
 | `collection_id` | integer | FK → collections.id | Thematic collection (ADR-017: 1:N; replaced `project` in stage 11c) |
 
-**Indexes**: document_type, processing_status, ingested_at, url, collection_id, discovery_source_id, published_on, paywall, ai_summary_needed
+**Indexes**: document_type, processing_status, ingested_at, url, canonical_url, collection_id, discovery_source_id, published_on, paywall, ai_summary_needed
+
+`canonical_url` is derived automatically whenever `Document.url` is assigned. It removes fragments and known tracking parameters, normalizes host casing/default ports/query ordering/trailing slashes, and canonicalizes common YouTube URL variants. Parameters that may identify content are retained. Historical collisions are reported by migration `e2f3a4b5c6d7`; they are not merged automatically, so the index is intentionally non-unique until those document groups are reviewed.
 
 ### Table: document_embeddings (8 columns)
 

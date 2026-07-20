@@ -4,6 +4,12 @@ Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).
 
+## [1.0.26] - 2026-07-20
+### Zmienione
+- Ponowne dodanie URL jest rozpoznawane jako duplikat zamiast tworzyć kolejny dokument.
+- Duplikaty są wykrywane po znormalizowanym adresie (m.in. bez fragmentów i parametrów śledzących).
+- „Odśwież istniejący dokument” zastąpiono bezpieczną operacją uzupełnienia brakującego surowego HTML, bez ręcznego podawania ID.
+
 ## [1.0.25] - 2026-07-18
 ### Dodane
 - Tryb „Odśwież istniejący dokument” wysyłający aktualny, wyrenderowany HTML strony wraz z ID dokumentu Lenie.

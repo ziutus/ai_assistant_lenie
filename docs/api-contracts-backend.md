@@ -32,8 +32,11 @@ Add a new document (URL) to the system.
     "chapter_list": ""
   }
   ```
-- **Response**: `{status, message, document_id}`
-- **Note**: In AWS serverless, replaced by `sqs-weblink-put-into` Lambda (S3 + DynamoDB + SQS flow)
+- **Success response (Flask)**: `{status: "success", message, document_id}`
+- **Duplicate response**: HTTP `409`, `{status: "already_exists", message, document_id, missing_raw_html}`. Duplicate identity is based on normalized `canonical_url`, not exact source-string equality.
+- **Fill missing source HTML**: send `operation: "fill_missing_html"` with the existing page URL and captured `html`. The backend resolves the document by canonical URL and accepts the operation only when `text_raw` is absent. It does not rerun analysis, chunking, embeddings, or LLM calls.
+- **AWS response**: `{status: "queued", message, submission_id}` because S3/DynamoDB submission precedes the PostgreSQL import.
+- **Note**: ordinary resubmission never refreshes existing content. Replacing an existing HTML source and regenerating derived data require a separate, explicit workflow.
 
 ### GET /website_list
 List documents with filters.
