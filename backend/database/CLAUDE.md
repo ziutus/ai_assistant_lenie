@@ -40,7 +40,8 @@ database/
     ├── 31-add-tags-to-user-document-notes.sql
     ├── 31-create-cited-publications.sql
     ├── 32-create-document-analysis-jobs.sql
-    └── 33-create-collections.sql                 # collections lookup + FK on documents.collection_id (stage 11c)
+    ├── 33-create-collections.sql                 # collections lookup + FK on documents.collection_id (stage 11c)
+    └── 34-create-document-images.sql             # document_images (images extracted from article text, url/caption preserved)
 ```
 
 ## How Init Scripts Are Used
@@ -278,6 +279,25 @@ in Python (LLM output with stripped diacritics is canonicalized, e.g. "srednia" 
 | `created_at` | `timestamp` | Row creation timestamp |
 
 **Index:** `(document_id, chapter_position)`.
+
+### Table: `public.document_images`
+
+Images extracted out of a document's article text (`library/article_cleaner.py`). `clean_article_text()` replaces inline `![alt](url)` markdown images with `[imgN]` markers in `text_md` — the URL used to be discarded on cleanup. This table preserves it (plus the adjacent caption/credit line, when present) so `article_quality.py` can score photo sourcing without the image markup needing to stay inline in the text shown to readers/LLM. Replace-per-document semantics (like `document_entities`): each re-clean of a document replaces its full row set. Not yet populated by any pipeline step — table + model only so far.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `document_id` | `integer NOT NULL` | FK to `documents.id` (CASCADE delete) |
+| `chunk_id` | `integer` | FK to `document_chunks.id` (`SET NULL` on delete) |
+| `position` | `smallint` | 0-based position of the `[imgN]` marker in the cleaned text |
+| `url` | `text NOT NULL` | Image URL |
+| `alt_text` | `text` | Alt text from `![alt](url)` |
+| `caption_text` | `text` | Adjacent caption/credit line, if any |
+| `caption_category` | `varchar(30)` | `image_marker` / `image_description` / `image_credit` (`lenie_markdown.photo_caption_candidates`) |
+| `is_stock_photo` | `boolean NOT NULL DEFAULT false` | Stock/agency source detected at extraction (shutterstock, getty, istock, ...) |
+| `created_at` | `timestamp` | Row creation timestamp |
+
+**Index:** `document_id`.
 
 ### Table: `public.infra_geometries`
 

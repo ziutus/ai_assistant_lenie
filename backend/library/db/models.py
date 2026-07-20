@@ -1010,6 +1010,45 @@ class DocumentReference(Base):
         )
 
 
+class DocumentImage(Base):
+    """Image extracted out of a document's article text (library/article_cleaner.py).
+
+    ``clean_article_text()`` replaces inline ``![alt](url)`` markdown images
+    with ``[imgN]`` markers in ``text_md`` — the URL used to be discarded.
+    This table keeps the image (and its adjacent caption/credit line, when
+    present) so article_quality.py can score photo sourcing without needing
+    the image markup to still live inline in the text. Replace-per-document
+    semantics (like document_entities): each re-clean of a document replaces
+    its full row set.
+    """
+
+    __tablename__ = "document_images"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    chunk_id: Mapped[int | None] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="SET NULL"),
+    )
+    # 0-based position of the [imgN] marker in the cleaned text
+    position: Mapped[int | None] = mapped_column(SmallInteger)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    alt_text: Mapped[str | None] = mapped_column(Text)
+    caption_text: Mapped[str | None] = mapped_column(Text)
+    # image_marker | image_description | image_credit (lenie_markdown.photo_caption_candidates)
+    caption_category: Mapped[str | None] = mapped_column(String(30))
+    is_stock_photo: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return f"DocumentImage(id={self.id!r}, document_id={self.document_id!r}, url={self.url!r})"
+
+
 class CitedPublication(Base):
     """A canonical scholarly work cited by one or more documents."""
 
