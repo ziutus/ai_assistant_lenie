@@ -11,6 +11,7 @@ from library.article_cleaner import (
     _clean_lines_wp,
     _detect_h2_ads,
     _is_portal_internal_link,
+    _strip_leading_onet_ai_summary,
     clean_article_text,
 )
 from library.article_extractor import _detect_portal, extract_article_by_markers
@@ -292,6 +293,57 @@ class TestOnetCleaning:
         # "Opracowanie:" bez nazwiska nie powinno paść ofiarą zbyt zachłannego regexu
         lines = ["Opracowanie:", "Treść artykułu onet."]
         assert _clean_lines_onet(lines) == ["Opracowanie:", "Treść artykułu onet."]
+
+    def test_strips_leading_five_bullet_ai_summary_leak(self):
+        # Box "Poniżej streszczenie artykułu: Skrót przygotowany przez Onet
+        # Czat z AI" generuje zawsze 5 punktów; ekstrakcja czasem gubi jego
+        # nagłówek i zostawia same punkty jako pozorny początek artykułu
+        # (zweryfikowane na żywo na onet.pl/informacje/magazynkontakt/...).
+        text = (
+            "* Punkt pierwszy streszczenia AI.\n"
+            "* Punkt drugi streszczenia AI.\n"
+            "* Punkt trzeci streszczenia AI.\n"
+            "* Punkt czwarty streszczenia AI.\n"
+            "* Punkt piąty streszczenia AI.\n\n"
+            f"**{LONG_PARAGRAPH}**"
+        )
+        result = _strip_leading_onet_ai_summary(text)
+        assert "Punkt pierwszy" not in result
+        assert "Punkt piąty" not in result
+        assert LONG_PARAGRAPH in result
+
+    def test_does_not_strip_leading_bullets_with_wrong_count(self):
+        # Tylko dokładnie 5 punktów jest bezpiecznym sygnałem (stały format
+        # boxu AI) — 4 lub 6 punktów to może być prawdziwa lista w artykule.
+        text = (
+            "* Punkt pierwszy.\n* Punkt drugi.\n* Punkt trzeci.\n* Punkt czwarty.\n\n"
+            f"{LONG_PARAGRAPH}"
+        )
+        assert _strip_leading_onet_ai_summary(text) == text
+
+    def test_does_not_strip_five_bullets_mid_article(self):
+        # Sygnał działa tylko na samym początku tekstu — pięć punktów
+        # gdzieś w środku prawdziwego artykułu (np. lista "kluczowych faktów")
+        # zostaje nietknięte.
+        text = (
+            f"{LONG_PARAGRAPH}\n\n"
+            "* Punkt pierwszy.\n* Punkt drugi.\n* Punkt trzeci.\n"
+            "* Punkt czwarty.\n* Punkt piąty.\n"
+        )
+        assert _strip_leading_onet_ai_summary(text) == text
+
+    def test_ai_summary_leak_stripped_end_to_end_via_clean_article_text(self):
+        text = (
+            "* Punkt pierwszy streszczenia AI.\n"
+            "* Punkt drugi streszczenia AI.\n"
+            "* Punkt trzeci streszczenia AI.\n"
+            "* Punkt czwarty streszczenia AI.\n"
+            "* Punkt piąty streszczenia AI.\n\n"
+            f"**{LONG_PARAGRAPH}**"
+        )
+        result = clean_article_text(text, url="https://www.onet.pl/informacje/onetwiadomosci/jakis-artykul")
+        assert "Punkt pierwszy" not in result["text"]
+        assert LONG_PARAGRAPH in result["text"]
 
 
 class TestMoneyCleaning:
