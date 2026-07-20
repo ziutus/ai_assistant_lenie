@@ -59,7 +59,16 @@
         "remove_string_regexp" : [
             "(?m)^Zapytaj o więcej Onet Czat z AI(?:\\s+\\[link\\d+\\])?\\s*$",
             "(?m)^Więcej (?:pogłębionych treści|treści premium dla Ciebie)\\s*$",
-            "(?m)^Dalszy ciąg artykułu pod materiałem wideo\\s*$"
+            "(?m)^Dalszy ciąg artykułu pod materiałem wideo\\s*$",
+            "(?m)^Więcej takich artykułów znajdziesz na stronie głównej Onetu\\s*$",
+            "(?m)^Top 5 treści Premium\\s*$",
+            "(?m)^(?:CZYTAJ TAKŻE|ZOBACZ RÓWNIEŻ)\\s*$",
+            "(?m)^Powiązane tematy:.*$",
+            "(?m)^Opracowanie: .+$",
+            "(?m)^\\*\\*PRZECZYTAJ CAŁY [^*\\n]+\\*\\*(?:\\s+\\[link\\d+\\])?\\s*$",
+            "(?m)^Dodaj w Google\\s*$",
+            "(?m)^Wróć na\\s*$",
+            "(?m)^Jesteś w strefie\\s*$"
         ]
     },
     "https://businessinsider.com.pl": {
