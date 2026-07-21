@@ -3,6 +3,8 @@
 Pure-function tests on synthetic markdown fixtures, no DB/LLM/network.
 """
 
+import datetime
+
 from library.article_cleaner import (
     _clean_lines_money,
     _clean_lines_onet,
@@ -15,6 +17,7 @@ from library.article_cleaner import (
     _strip_leading_onet_ai_summary,
     _strip_interia_chrome_blocks,
     clean_article_text,
+    resolve_relative_publication_date,
 )
 from library.article_extractor import _detect_portal, extract_article_by_markers
 
@@ -405,6 +408,50 @@ class TestInteriaCleaning:
         )
         assert "ElevenLabs" not in result["text"]
         assert "Treść artykułu." in result["text"]
+
+
+class TestResolveRelativePublicationDate:
+    # dok. 8865 (interia.pl): chunk SZUM zawierał dokładnie "Wczoraj, 12:58",
+    # ingested_at = 2026-04-13 07:10:45 -> published_on = 2026-04-12.
+    INGESTED_AT = datetime.datetime(2026, 4, 13, 7, 10, 45)
+
+    def test_yesterday_case_insensitive(self):
+        result = resolve_relative_publication_date("Wczoraj, 12:58", self.INGESTED_AT)
+        assert result == datetime.date(2026, 4, 12)
+
+    def test_yesterday_lowercase(self):
+        result = resolve_relative_publication_date("wczoraj, 22:30", self.INGESTED_AT)
+        assert result == datetime.date(2026, 4, 12)
+
+    def test_today(self):
+        result = resolve_relative_publication_date("Dziś, 06:00", self.INGESTED_AT)
+        assert result == datetime.date(2026, 4, 13)
+
+    def test_hours_ago_crosses_midnight(self):
+        # 07:10 minus 10 godzin = poprzedni dzień
+        result = resolve_relative_publication_date("10 godzin temu", self.INGESTED_AT)
+        assert result == datetime.date(2026, 4, 12)
+
+    def test_hours_ago_same_day(self):
+        result = resolve_relative_publication_date("2 godziny temu", self.INGESTED_AT)
+        assert result == datetime.date(2026, 4, 13)
+
+    def test_minutes_ago(self):
+        result = resolve_relative_publication_date("30 minut temu", self.INGESTED_AT)
+        assert result == datetime.date(2026, 4, 13)
+
+    def test_found_among_other_lines(self):
+        text = f"{LONG_PARAGRAPH}\n\nWczoraj, 12:58\n\n{LONG_PARAGRAPH}"
+        assert resolve_relative_publication_date(text, self.INGESTED_AT) == datetime.date(2026, 4, 12)
+
+    def test_no_match_returns_none(self):
+        assert resolve_relative_publication_date(LONG_PARAGRAPH, self.INGESTED_AT) is None
+
+    def test_no_ingested_at_returns_none(self):
+        assert resolve_relative_publication_date("Wczoraj, 12:58", None) is None
+
+    def test_empty_text_returns_none(self):
+        assert resolve_relative_publication_date("", self.INGESTED_AT) is None
 
 
 class TestMoneyCleaning:

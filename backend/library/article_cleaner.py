@@ -9,6 +9,7 @@ Wydzielone z imports/article_browser.py, aby logika była testowalna
 i reużywalna w skryptach batch.
 """
 
+import datetime
 import re
 
 from library.article_extractor import _detect_portal, _find_footer_line, _find_start_line
@@ -372,6 +373,16 @@ def _strip_interia_chrome_blocks(text: str) -> str:
     return text
 
 
+# Względne znaczniki czasu publikacji (interia.pl i najpewniej inne portale
+# korzystające z podobnych szablonów). Wspólne dla usuwania linii-szumu
+# (_clean_lines_interia) i dla resolve_relative_publication_date poniżej —
+# jedna definicja wzorców dla obu celów, tak jak photo_caption_candidates
+# jest współdzielone między czyszczeniem a oceną jakości.
+_RELATIVE_MINUTES_HOURS_AGO_RE = re.compile(r'^(\d+)\s+(minut\w*|godzin\w*)\s+temu$', re.IGNORECASE)
+_RELATIVE_YESTERDAY_RE = re.compile(r'^wczoraj,\s*(\d{1,2}):(\d{2})$', re.IGNORECASE)
+_RELATIVE_TODAY_RE = re.compile(r'^dzi[sś],\s*(\d{1,2}):(\d{2})$', re.IGNORECASE)
+
+
 def _clean_lines_interia(lines: list[str]) -> list[str]:
     """Czyszczenie specyficzne dla interia.pl (wydarzenia/biznes/motoryzacja/...)."""
     skip_exact = {"Udostępnij", "Odsłuchaj artykuł", "W skrócie", "Zobacz również:"}
@@ -380,14 +391,45 @@ def _clean_lines_interia(lines: list[str]) -> list[str]:
         stripped = line.strip()
         if stripped in skip_exact:
             continue
-        # Względny znacznik czasu: "11 minut temu", "2 godziny temu"
-        if re.match(r'^\d+\s+(?:minut\w*|godzin\w*)\s+temu$', stripped):
-            continue
-        # "wczoraj, 22:30"
-        if re.match(r'^wczoraj,\s*\d{1,2}:\d{2}$', stripped):
+        # Względny znacznik czasu: "11 minut temu", "2 godziny temu",
+        # "Wczoraj, 22:30", "Dziś, 09:15"
+        if (_RELATIVE_MINUTES_HOURS_AGO_RE.match(stripped)
+                or _RELATIVE_YESTERDAY_RE.match(stripped)
+                or _RELATIVE_TODAY_RE.match(stripped)):
             continue
         cleaned.append(line)
     return cleaned
+
+
+def resolve_relative_publication_date(
+    text: str, ingested_at: datetime.datetime | None,
+) -> datetime.date | None:
+    """Wykryj względny znacznik czasu publikacji (np. "Wczoraj, 12:58",
+    "3 godziny temu") w tekście i rozwiąż go na datę absolutną względem
+    ingested_at (kiedy pobraliśmy stronę — bez tego punktu odniesienia sama
+    linia nie wystarcza, bo "wczoraj" nie ma sensu bez wiadomo kiedy).
+
+    published_on jest kolumną typu date, więc precyzja co do godziny nie ma
+    znaczenia — liczy się tylko, na który dzień wypada wynik odjęcia.
+    Zwraca None, gdy ingested_at brak albo żaden wzorzec nie pasuje.
+    """
+    if ingested_at is None:
+        return None
+    for line in (text or "").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _RELATIVE_YESTERDAY_RE.match(stripped):
+            return (ingested_at - datetime.timedelta(days=1)).date()
+        if _RELATIVE_TODAY_RE.match(stripped):
+            return ingested_at.date()
+        m = _RELATIVE_MINUTES_HOURS_AGO_RE.match(stripped)
+        if m:
+            amount, unit = int(m.group(1)), m.group(2).lower()
+            delta = datetime.timedelta(hours=amount) if unit.startswith("godzin") \
+                else datetime.timedelta(minutes=amount)
+            return (ingested_at - delta).date()
+    return None
 
 
 def _clean_lines_bankier(lines: list[str]) -> list[str]:
