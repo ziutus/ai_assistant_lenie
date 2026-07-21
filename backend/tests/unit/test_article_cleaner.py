@@ -7,11 +7,13 @@ from library.article_cleaner import (
     _clean_lines_money,
     _clean_lines_onet,
     _clean_lines_ithardware,
+    _clean_lines_interia,
     _is_adjacent_tag_links_line,
     _clean_lines_wp,
     _detect_h2_ads,
     _is_portal_internal_link,
     _strip_leading_onet_ai_summary,
+    _strip_interia_chrome_blocks,
     clean_article_text,
 )
 from library.article_extractor import _detect_portal, extract_article_by_markers
@@ -344,6 +346,65 @@ class TestOnetCleaning:
         result = clean_article_text(text, url="https://www.onet.pl/informacje/onetwiadomosci/jakis-artykul")
         assert "Punkt pierwszy" not in result["text"]
         assert LONG_PARAGRAPH in result["text"]
+
+
+class TestInteriaCleaning:
+    URL = "https://wydarzenia.interia.pl/bliski-wschod/news-jakis-artykul,nId,1"
+
+    def test_nav_menu_block_removed_but_article_kept(self):
+        text = (
+            f"{LONG_PARAGRAPH}\n\n"
+            "Polska\nŚwiat\nWydarzenia lokalne\nOkiem Interii\nWojna w Ukrainie\n"
+            "Pogoda\nRedakcja\nReligia\nFelietoniści\nRaporty\nBaza wiedzy\nZielona Interia\n\n"
+            f"{LONG_PARAGRAPH}"
+        )
+        result = _strip_interia_chrome_blocks(text)
+        assert "Okiem Interii" not in result
+        assert result.count(LONG_PARAGRAPH) == 2
+
+    def test_reactions_block_removed(self):
+        text = f"{LONG_PARAGRAPH}\n\nSuper\nHahaha\nSzok\nSmutny\nZły\n\n{LONG_PARAGRAPH}"
+        result = _strip_interia_chrome_blocks(text)
+        assert "Hahaha" not in result
+
+    def test_single_reaction_word_in_real_content_kept(self):
+        # Pojedyncze słowo z paska reakcji, poza pełną sekwencją, to może być
+        # zwykła treść — usuwamy tylko całą, dokładną sekwencję 5 etykiet.
+        text = f"{LONG_PARAGRAPH}\n\nSzok\n\n{LONG_PARAGRAPH}"
+        assert _strip_interia_chrome_blocks(text) == text
+
+    def test_interia_share_audio_and_timestamps_removed(self):
+        lines = [
+            "Udostępnij", "Odsłuchaj artykuł", "W skrócie", "Zobacz również:",
+            "11 minut temu", "2 godziny temu",
+            "wczoraj, 22:30", "Treść artykułu interia.",
+        ]
+        assert _clean_lines_interia(lines) == ["Treść artykułu interia."]
+
+    def test_interia_portal_detected_end_to_end(self):
+        text = (
+            "Polska\nŚwiat\nWydarzenia lokalne\nOkiem Interii\nWojna w Ukrainie\n"
+            "Pogoda\nRedakcja\nReligia\nFelietoniści\nRaporty\nBaza wiedzy\nZielona Interia\n\n"
+            f"{LONG_PARAGRAPH}\n\nUdostępnij\n\n11 minut temu"
+        )
+        result = clean_article_text(text, url=self.URL)
+        assert "Okiem Interii" not in result["text"]
+        assert "Udostępnij" not in result["text"]
+        assert "11 minut temu" not in result["text"]
+        assert LONG_PARAGRAPH in result["text"]
+
+    def test_audio_ai_disclaimer_removed_generically(self):
+        # Ta sama etykieta wystąpiła już na onet.pl i interia.pl — reguła
+        # generyczna, niezależna od portalu.
+        lines = [
+            "Audio generowane przez AI (ElevenLabs) i może zawierać błędy",
+            "Treść artykułu.",
+        ]
+        result = clean_article_text(
+            "\n\n".join(lines), url="https://wydarzenia.interia.pl/x,nId,1"
+        )
+        assert "ElevenLabs" not in result["text"]
+        assert "Treść artykułu." in result["text"]
 
 
 class TestMoneyCleaning:
