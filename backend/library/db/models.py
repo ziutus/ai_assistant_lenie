@@ -331,11 +331,14 @@ class Document(Base):
     )
     publisher: Mapped["Publisher | None"] = relationship("Publisher")
     published_on: Mapped[datetime.date | None] = mapped_column(Date)
-    # How published_on was set — "manual" (reviewer typed it on /chunks) or "llm"
-    # (extract_publication_date). NULL for legacy/import-set values (unknown
-    # provenance). Lets a future pass find documents where the automatic
-    # pipeline never found a date, to build deterministic per-portal rules —
-    # the same workflow document_removed_lines already does for cleanup rules.
+    # How published_on was set — "manual" (reviewer typed it on /chunks), "llm"
+    # (extract_publication_date), or "relative" (resolve_relative_publication_date
+    # — a relative-date artifact like "Wczoraj, HH:MM" resolved deterministically
+    # against ingested_at, no LLM call). NULL for legacy/import-set values
+    # (unknown provenance). Lets a future pass find documents where the
+    # automatic pipeline never found a date, to build deterministic per-portal
+    # rules — the same workflow document_removed_lines already does for
+    # cleanup rules. ck_documents_published_on_method enforces this set.
     published_on_method: Mapped[str | None] = mapped_column(String(10))
     original_id: Mapped[str | None] = mapped_column(Text)
     document_length: Mapped[int | None] = mapped_column(Integer)
