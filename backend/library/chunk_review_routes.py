@@ -2074,6 +2074,11 @@ def delete_noise_chunk(chunk_id: int):
     This intentionally does not modify the source document. TEMAT chunks must
     be reclassified first, which protects substantive content from accidental
     deletion through the compact card action.
+
+    Before deleting, the chunk's full original_text is queued as a
+    DocumentRemovedLine (source=szum_chunk) — same pattern as apply_cleanup —
+    so the noise pattern survives for cleaner-rule mining instead of vanishing
+    with the row.
     """
     session = get_scoped_session()
     chunk = session.get(DocumentChunk, chunk_id)
@@ -2095,6 +2100,10 @@ def delete_noise_chunk(chunk_id: int):
         ]
 
     try:
+        _log_removed_lines(
+            session, document_id=chunk.document_id, run_id=run_id,
+            chunk_id=chunk.id, lines=[chunk.original_text], source="szum_chunk",
+        )
         session.delete(chunk)
         session.flush()
         # Two-phase shift avoids collisions with a possible unique(run, position).
