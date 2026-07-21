@@ -5,6 +5,7 @@ article mode must skip speaker/filler processing, use the markdown splitter,
 call analyze_article_chunk and persist mode/status on the run.
 """
 
+import datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -287,3 +288,52 @@ class TestArticleMode:
 
         assert run.mode == "transcript"
         assert article_env["article"] == 0
+
+
+class TestPublishedOnBackfill:
+    """create_run() step 2b: backfill published_on from a relative-date
+    artifact (e.g. interia.pl's "Wczoraj, HH:MM") resolved against
+    ingested_at — dok. 8865, zob. resolve_relative_publication_date."""
+
+    INGESTED_AT = datetime.datetime(2026, 4, 13, 7, 10, 45)
+
+    def test_backfills_from_relative_date_artifact(self, session, article_env, monkeypatch):
+        doc = FakeDoc()
+        doc.text_md = "Wczoraj, 12:58\n\n" + ARTICLE_TEXT
+        doc.ingested_at = self.INGESTED_AT
+        doc.published_on = None
+        doc.published_on_method = None
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+
+        service = DocumentAnalysisService(session)
+        service.create_run(doc_id=42, model="test-model", mode="article", chunk_size=300)
+
+        assert doc.published_on == datetime.date(2026, 4, 12)
+        assert doc.published_on_method == "relative"
+
+    def test_does_not_overwrite_existing_published_on(self, session, article_env, monkeypatch):
+        doc = FakeDoc()
+        doc.text_md = "Wczoraj, 12:58\n\n" + ARTICLE_TEXT
+        doc.ingested_at = self.INGESTED_AT
+        doc.published_on = datetime.date(2026, 1, 1)
+        doc.published_on_method = "manual"
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+
+        service = DocumentAnalysisService(session)
+        service.create_run(doc_id=42, model="test-model", mode="article", chunk_size=300)
+
+        assert doc.published_on == datetime.date(2026, 1, 1)
+        assert doc.published_on_method == "manual"
+
+    def test_no_artifact_leaves_published_on_none(self, session, article_env, monkeypatch):
+        doc = FakeDoc()
+        doc.ingested_at = self.INGESTED_AT
+        doc.published_on = None
+        doc.published_on_method = None
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+
+        service = DocumentAnalysisService(session)
+        service.create_run(doc_id=42, model="test-model", mode="article", chunk_size=300)
+
+        assert doc.published_on is None
+        assert doc.published_on_method is None
