@@ -128,7 +128,11 @@ def _clean_lines_generic(lines: list[str], h2_ad_titles: set) -> list[str]:
 
         # Frazy portalowe wspólne
         if stripped in ("Dalszy ciąg materiału pod wideo", "REKLAMAKONIEC REKLAMY",
-                        "REKLAMA", "KONIEC REKLAMY", "Lubię to", "[ ]", "Rozwiń", "Zwiń"):
+                        "REKLAMA", "KONIEC REKLAMY", "Lubię to", "[ ]", "Rozwiń", "Zwiń",
+                        "Treść zewnętrzna"):
+            continue
+        # Etykieta audio wygenerowanego AI (ElevenLabs) — potwierdzone na onet.pl i interia.pl
+        if stripped.startswith("Audio generowane przez AI"):
             continue
 
         # Kontrolki video playera
@@ -201,8 +205,6 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
             continue
         # "Więcej w Strefie Premium [linkN]"
         if "Więcej w Strefie Premium" in stripped:
-            continue
-        if stripped.startswith("Audio generowane"):
             continue
         # Data publikacji: "17 marca 2026, 12:31"
         if re.match(r'^\d{1,2}\s+\w+\s+\d{4},?\s+\d{1,2}:\d{2}$', stripped):
@@ -342,6 +344,50 @@ def _clean_lines_wp(lines: list[str]) -> list[str]:
 def _clean_lines_ithardware(lines: list[str]) -> list[str]:
     """Usuń kontrolki osadzonego playera ITHardware bez globalnych reguł Play/ad."""
     return [line for line in lines if line.strip() not in {"Play", "ad"}]
+
+
+# Menu sekcji nagłówka strony interia.pl — ten sam blok na każdej stronie
+# serwisu, konwerter HTML->markdown skleja je bez separatorów w kolejne linie.
+_INTERIA_NAV_MENU_ITEMS = [
+    "Polska", "Świat", "Wydarzenia lokalne", "Okiem Interii", "Wojna w Ukrainie",
+    "Pogoda", "Redakcja", "Religia", "Felietoniści", "Raporty", "Baza wiedzy",
+    "Zielona Interia",
+]
+_INTERIA_NAV_MENU_RE = re.compile(
+    r'\n\s*'.join(re.escape(item) for item in _INTERIA_NAV_MENU_ITEMS)
+)
+
+# Pasek reakcji emocji pod artykułem — stały zestaw 5 etykiet w tej kolejności.
+_INTERIA_REACTIONS_RE = re.compile(
+    r'\n\s*'.join(re.escape(item) for item in ("Super", "Hahaha", "Szok", "Smutny", "Zły"))
+)
+
+
+def _strip_interia_chrome_blocks(text: str) -> str:
+    """Usuń stałe, wieloliniowe bloki chrome interia.pl (menu nawigacji
+    nagłówka, pasek reakcji) — bezpieczne jako dopasowanie całej sekwencji,
+    bo prawdziwa treść artykułu nigdy nie powtarza jej dosłownie."""
+    text = _INTERIA_NAV_MENU_RE.sub("", text)
+    text = _INTERIA_REACTIONS_RE.sub("", text)
+    return text
+
+
+def _clean_lines_interia(lines: list[str]) -> list[str]:
+    """Czyszczenie specyficzne dla interia.pl (wydarzenia/biznes/motoryzacja/...)."""
+    skip_exact = {"Udostępnij", "Odsłuchaj artykuł", "W skrócie", "Zobacz również:"}
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped in skip_exact:
+            continue
+        # Względny znacznik czasu: "11 minut temu", "2 godziny temu"
+        if re.match(r'^\d+\s+(?:minut\w*|godzin\w*)\s+temu$', stripped):
+            continue
+        # "wczoraj, 22:30"
+        if re.match(r'^wczoraj,\s*\d{1,2}:\d{2}$', stripped):
+            continue
+        cleaned.append(line)
+    return cleaned
 
 
 def _clean_lines_bankier(lines: list[str]) -> list[str]:
@@ -556,6 +602,8 @@ def clean_article_text(text: str, url: str = "") -> dict:
 
     if portal == "onet":
         text = _strip_leading_onet_ai_summary(text)
+    elif portal == "interia":
+        text = _strip_interia_chrome_blocks(text)
 
     # 1. Napraw wieloliniowe linki i tagi markdown
     text = links_correct(text)
@@ -700,6 +748,8 @@ def clean_article_text(text: str, url: str = "") -> dict:
         lines = _clean_lines_gazeta(lines)
     elif portal == "bankier":
         lines = _clean_lines_bankier(lines)
+    elif portal == "interia":
+        lines = _clean_lines_interia(lines)
     elif "ithardware.pl" in url.lower():
         lines = _clean_lines_ithardware(lines)
 
