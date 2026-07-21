@@ -423,6 +423,20 @@ class DocumentAnalysisService:
 
         log(f"doc={doc_id} mode={mode} field={text_field} len={len(text):,}")
 
+        # 2b. Backfill published_on from a relative-date artifact in the raw
+        # text (e.g. interia.pl's "Wczoraj, HH:MM") resolved against
+        # ingested_at — never overwrites an already-known date. getattr()
+        # throughout: fixture/fake Document doubles in tests don't define
+        # these columns, mirroring the existing doc.url lookup above.
+        if not is_transcript and getattr(doc, "published_on", None) is None:
+            from library.article_cleaner import resolve_relative_publication_date
+
+            resolved = resolve_relative_publication_date(text, getattr(doc, "ingested_at", None))
+            if resolved is not None:
+                doc.published_on = resolved
+                doc.published_on_method = "relative"
+                log(f"published_on backfilled from relative-date artifact: {resolved.isoformat()}")
+
         if reclean:
             from library.article_cleaner import clean_article_text
 
