@@ -56,6 +56,6 @@ Packages that exceed these limits cannot be included in layers. Alternative appr
 - `infra/aws/serverless/lambda_layers/layer_create_lenie_all.sh` — layer build script (pytubefix removed)
 - `infra/aws/serverless/CLAUDE.md` — "Known Limitations" section
 - `infra/aws/CLAUDE.md` — "Lambda Serverless Constraints" section
-- `_bmad-output/planning-artifacts/epics/backlog.md` — B-67: Choose Compute Model for Serverless YouTube Processing
+- B-67: Choose Compute Model for Serverless YouTube Processing (private planning backlog, not part of this public repository)
 - `backend/library/stalker_youtube_file.py` — pytubefix consumer
 - `backend/library/youtube_processing.py` — pytubefix consumer (via stalker_youtube_file)

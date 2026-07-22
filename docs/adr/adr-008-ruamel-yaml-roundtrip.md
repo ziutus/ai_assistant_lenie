@@ -38,7 +38,7 @@ Use **`ruamel.yaml>=0.18`** instead of `pyyaml` for all YAML operations in `env_
 
 ### Related Artifacts
 
-- `_bmad-output/implementation-artifacts/tech-spec-env-to-vault-compare-review-classify.md` — tech-spec requiring ruamel.yaml
+- tech-spec requiring ruamel.yaml (private planning backlog, not part of this public repository)
 - `scripts/env_to_vault.py` — consumer (YAML loader infrastructure, Task 3)
 - `scripts/vars-classification.yaml` — the SSOT file that benefits from round-trip preservation
 - `backend/pyproject.toml` — dependency declaration (Task 1)

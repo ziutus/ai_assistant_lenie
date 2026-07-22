@@ -49,6 +49,8 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 
 ### Phase 4: Scaling & Deployment Options
 
+**Note (2026-07-22):** The realistic near-term deployment target is a self-hosted NAS (Docker Compose: Flask + PostgreSQL + MinIO + workers), not a hyperscaler — see [docs/deployment/README.md](docs/deployment/README.md) for what's actually being built vs. what's a thought experiment. ECS/EKS below are a low-priority, educational exploration (see [docs/deployment/hyperscalers/](docs/deployment/hyperscalers/)), not a near-term plan.
+
 - ECS deployment — containerized scaling with managed orchestration
 - EKS deployment — Kubernetes-based scaling for complex workloads
 - Multi-environment support — parameterized deployments across dev/qa/prod
@@ -62,22 +64,27 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 
 ### Phase 6: Multiuser Support
 
-- User authentication via AWS Cognito (registration, login, JWT tokens)
+**Superseded (2026-07-22):** Implemented differently than originally planned here — a household trust model (per-user API keys, no passwords, no Cognito) for a small circle of trusted users, not general-purpose multi-tenant auth. See [docs/deployment/nas/multi-user-household.md](docs/deployment/nas/multi-user-household.md) for what's actually built and in progress. Multi-tenant auth for untrusted users remains a separate, unimplemented thought experiment ([docs/deployment/commercial-multi-tenant-scaling-experiment.md](docs/deployment/commercial-multi-tenant-scaling-experiment.md)).
+
+- ~~User authentication via AWS Cognito (registration, login, JWT tokens)~~
 - Data ownership — `user_id` column in database tables, per-user data isolation
-- Replace shared `x-api-key` with per-user Cognito auth tokens across all clients
+- ~~Replace shared `x-api-key` with per-user Cognito auth tokens across all clients~~ — per-user API keys instead, see above
 - Login/logout UI in frontend applications (React SPA, Chrome extension, Add URL app)
 - User management admin panel (user list, blocking, per-user statistics)
 
 ## Current Architecture
 
-- **Backend** — Flask REST API (Python 3.11) serving 20 endpoints with `x-api-key` auth. Handles document CRUD, text processing, AI embeddings, and vector similarity search
-- **Web Interface** — React 18 SPA for browsing, editing, and AI-processing documents. Supports two backend modes: AWS Serverless (Lambda) and Docker (Flask)
+**The primary deployment target today is a self-hosted NAS, not AWS.** See [docs/deployment/README.md](docs/deployment/README.md) for the up-to-date map of what's actually running vs. what's a low-priority thought experiment.
+
+- **Backend** — Flask REST API (Python 3.11) serving document CRUD, text processing, AI embeddings, and vector similarity search, with `x-api-key` auth
+- **Web Interface** — React 18 SPA for browsing, editing, and AI-processing documents
 - **Browser Extension** — Chrome/Kiwi Manifest v3 extension for capturing webpages and sending them to the backend
-- **Database** — PostgreSQL 18 with pgvector for vector similarity search (multi-model, variable-dimension embeddings)
-- **AWS Serverless** — API Gateway, Lambda functions, SQS queues, Step Functions for cost-optimized processing
+- **Database** — PostgreSQL with pgvector for vector similarity search (multi-model, variable-dimension embeddings)
+- **Object storage** — MinIO on NAS / S3-compatible via a swappable `ObjectStorage` abstraction (see `backend/library/storage.py`, `docs/storage.md`) — the same interface covers MinIO, AWS S3, and other S3-compatible providers without provider-specific code branches
+- **NAS deployment (primary, active)** — Docker Compose stack (Flask + PostgreSQL + MinIO + workers) on a self-hosted QNAP NAS; see [docs/deployment/nas/](docs/deployment/nas/)
+- **AWS Serverless (dormant)** — API Gateway, Lambda, SQS, Step Functions; infrastructure exists but is not actively deployed, see [docs/aws-roadmap.md](docs/aws-roadmap.md)
 - **AI Services** — OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bielik
-- **Docker** — docker compose stack with Flask + PostgreSQL + React for local development
-- **Kubernetes** — Kustomize-based deployment with GKE dev overlay (experimental)
+- **Kubernetes** — Kustomize-based deployment with GKE dev overlay (experimental, not a near-term priority)
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture reference.
 
@@ -170,15 +177,15 @@ In this project, I'm using:
 * Python as the server backend
 * PostgreSQL as the embedding database
 * React as the web interface (under development)
-* HashiCorp Vault for secrets (for local and Kubernetes environments)
-* AWS as the deployment platform (as I'm lazy and don't want to manage infrastructure)
+* HashiCorp Vault for secrets
 
 Current deployment methods:
+* Docker Compose on a self-hosted NAS (production, primary target — see [docs/deployment/](docs/deployment/))
 * Docker Compose (local development)
-* AWS Lambda (production, event-driven serverless)
+* AWS Lambda (dormant — infrastructure exists but not actively deployed, see [docs/aws-roadmap.md](docs/aws-roadmap.md))
 * Kubernetes with Kustomize (experimental)
 
-See [Roadmap](#roadmap) for planned deployment options (ECS, EKS).
+See [docs/deployment/README.md](docs/deployment/README.md) for what's real vs. a thought experiment, and [Roadmap](#roadmap) for feature-level plans.
 
 ## Services That Can Be Used to Get Data
 
