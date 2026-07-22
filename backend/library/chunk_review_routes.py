@@ -1613,6 +1613,10 @@ def extract_author(run_id: int):
     document's byline field, always overwriting any existing value — this is
     a reviewer-triggered manual action, unlike the automatic pipeline step in
     document_analysis_service.create_run() which never overwrites.
+
+    Also isolates a trailing author-biography paragraph from doc.text_md, if
+    one is found (extract_trailing_author_biography() — same mechanism as the
+    11b2 pipeline step).
     """
     session = get_scoped_session()
     run = session.get(DocumentAnalysisRun, run_id)
@@ -1667,6 +1671,22 @@ def extract_author(run_id: int):
         abort(404, f"Document {run.document_id} not found")
     from library.author_service import set_document_authors
     author_persons = set_document_authors(session, doc, author_names, method="llm")
+
+    # The byline was just discovered by this manual action, so — same as the
+    # 11b2 automatic fallback in document_analysis_service.create_run() —
+    # extract_trailing_author_biography() never got a chance to isolate the
+    # "o autorze" widget from doc.text_md before this run's chunks were split.
+    # Do it now against the stored text_md: cheap (regex, no LLM), and keeps
+    # the NEXT run/reclean from re-surfacing it as its own chunk.
+    bio_paragraph_removed = False
+    from library.author_biography import extract_trailing_author_biography, process_author_biography
+
+    stripped_md, bio = extract_trailing_author_biography(doc.text_md or "", author_names[0])
+    if bio:
+        doc.text_md = stripped_md
+        process_author_biography(session, doc, bio, run.model)
+        bio_paragraph_removed = True
+
     try:
         session.commit()
     except Exception:
@@ -1679,6 +1699,7 @@ def extract_author(run_id: int):
         "byline": doc.byline,
         "byline_method": doc.byline_method,
         "author_persons": author_persons,
+        "bio_paragraph_removed": bio_paragraph_removed,
     })
 
 
