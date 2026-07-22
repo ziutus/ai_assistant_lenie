@@ -30,7 +30,7 @@ The Chrome/Kiwi browser extension remains essential for capturing content from t
 
 ## Roadmap
 
-**Where things actually stand (2026-07-22):** Phase 4 (NAS migration) is the only phase with active, in-progress work right now (storage abstraction, see `docs/deployment/nas/storage-and-jobs-migration-plan.md`). Phase 5 is done and then some. Phases 2/3/6 are started but paused/superseded — see their notes below. Progress isn't sequential by phase number.
+Progress isn't sequential by phase number below. Some phases are done, one was tried and reverted, and two (deeper scaling and multiuser/commercial planning) now live in a private planning repository, since that work involves business/strategy context that doesn't belong in an open-source README — this repo intentionally stays a thin open-source core.
 
 ### Phase 1: Current State
 
@@ -38,47 +38,23 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 
 ### Phase 2: MCP Server Foundation
 
-**Removed (2026-07-22):** A real `backend/mcp_server/` package existed (FastMCP-based) with two working tools (`lenie_unreviewed_articles`, `lenie_get_article` in `tools/lenie.py`), but it was a narrow starting slice, not the broader "search, retrieve, content management" surface described below, and turned out not to be needed for the actual Obsidian integration (see Phase 3). Removed from the codebase as unnecessary maintenance surface; archived at git tag `archive/mcp-server`.
-
-- Implement MCP server protocol — expose search, retrieve, and content management endpoints as MCP tools
-- Claude Desktop integration — configure Lenie-AI as an MCP server in Claude Desktop
-- API adaptation — adjust endpoint patterns for MCP tool consumption while maintaining backward compatibility with the existing REST API
-- ~~Remove legacy Add URL app (`web_add_url_react`) and its dedicated API Gateway~~ — Done (archived to `_archive/`, Chrome/Kiwi browser extension is the sole content submission interface)
+Tried and removed. A real `backend/mcp_server/` package existed (FastMCP-based, two working tools), but it was a narrow starting slice, not the broader "search, retrieve, content management" surface originally envisioned, and turned out not to be needed for the Obsidian integration that actually shipped (see Phase 3 below). Removed as unnecessary maintenance surface; archived at git tag `archive/mcp-server`.
 
 ### Phase 3: Obsidian Integration
 
-**Note (2026-07-22):** Obsidian integration exists today, but through a different path than planned here — the `/obsidian-note` skill + `article_browser.py` write notes to the vault directly, tracked via `obsidian_note_paths` on document chunks. The MCP route (`backend/mcp_server/tools/obsidian.py`) was still just a docstring, no implementation, when the MCP server was removed along with Phase 2 above.
-
-- Obsidian vault synchronization — link database content with markdown files in a local vault
-- Semantic search from within Obsidian via Claude Desktop + MCP — ask questions about your knowledge base without leaving your notes
-- Advanced vector search refinements for personal knowledge management workflows
+Done, through a different path than originally planned: the `/obsidian-note` skill + `article_browser.py` write notes directly to the vault, tracked via `obsidian_note_paths` on document chunks — no MCP server involved.
 
 ### Phase 4: Scaling & Deployment Options
 
-**Note (2026-07-22):** The realistic near-term deployment target is a self-hosted NAS (Docker Compose: Flask + PostgreSQL + MinIO + workers), not a hyperscaler — see [docs/deployment/README.md](docs/deployment/README.md) for what's actually being built vs. what's a thought experiment. ECS/EKS below are a low-priority, educational exploration (see [docs/deployment/hyperscalers/](docs/deployment/hyperscalers/)), not a near-term plan.
-
-- ECS deployment — containerized scaling with managed orchestration
-- EKS deployment — Kubernetes-based scaling for complex workloads
-- Multi-environment support — parameterized deployments across dev/qa/prod
+The realistic, actively-deployed target is a self-hosted NAS (Docker Compose: Flask + PostgreSQL + MinIO + workers) — see [docs/deployment/README.md](docs/deployment/README.md). Further scaling and deployment planning beyond that lives in a private repository.
 
 ### Phase 5: LLM Text Analysis
 
-**Done, and grew well beyond this original scope (2026-07-22):** person/place NER with canonicalization, a dated-events timeline, per-chapter tone/register classification, thematic tagging with country extraction, and a full chunk-review analysis pipeline — all implemented and deployed. See `backend/library/entity_service.py`, `person_registry.py`, `timeline_events.py`, `tones.py`, `article_tagging.py`, `document_analysis_service.py`.
-
-- Automatic document analysis via LLM — extract structured metadata as JSON (author, topic, countries, data source, people, organizations)
-- JSONB storage in PostgreSQL with GIN indexes for metadata search
-- Frontend UI for viewing, editing, and filtering by analysis results
-- Batch processing for existing documents without analysis
+Done, and grew well beyond this original scope: person/place NER with canonicalization, a dated-events timeline, per-chapter tone/register classification, thematic tagging with country extraction, and a full chunk-review analysis pipeline — all implemented and deployed. See `backend/library/entity_service.py`, `person_registry.py`, `timeline_events.py`, `tones.py`, `article_tagging.py`, `document_analysis_service.py`.
 
 ### Phase 6: Multiuser Support
 
-**Superseded (2026-07-22):** Implemented differently than originally planned here — a household trust model (per-user API keys, no passwords, no Cognito) for a small circle of trusted users, not general-purpose multi-tenant auth. See [docs/deployment/nas/multi-user-household.md](docs/deployment/nas/multi-user-household.md) for what's actually built and in progress. Multi-tenant auth for untrusted users remains a separate, unimplemented thought experiment ([docs/deployment/commercial-multi-tenant-scaling-experiment.md](docs/deployment/commercial-multi-tenant-scaling-experiment.md)).
-
-- ~~User authentication via AWS Cognito (registration, login, JWT tokens)~~
-- Data ownership — `user_id` column in database tables, per-user data isolation
-- ~~Replace shared `x-api-key` with per-user Cognito auth tokens across all clients~~ — per-user API keys instead, see above
-- Login/logout UI in frontend applications (React SPA, Chrome extension, Add URL app)
-- User management admin panel (user list, blocking, per-user statistics)
+The household trust model (per-user API keys, no passwords, shared library, a small circle of trusted users) is implemented — see [docs/deployment/nas/multi-user-household.md](docs/deployment/nas/multi-user-household.md). Broader multi-tenant/commercial user-access planning lives in a private repository, same as Phase 4 above.
 
 ## Current Architecture
 
