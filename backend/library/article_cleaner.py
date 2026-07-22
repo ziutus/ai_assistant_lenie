@@ -229,8 +229,35 @@ def _clean_lines_onet(lines: list[str]) -> list[str]:
     return cleaned
 
 
+# "o autorze" widget (wp.pl/o2.pl/money.pl — jedna CMS Grupy WP): zdjęcie,
+# imię i nazwisko, akapit biogramu, e-mail autora. Reguły niżej już usuwają
+# powtórzony podpis zdjęcia (_strip_photo_caption_lines), samą linię
+# "oprac. Nazwisko" i linię e-mail — ale akapit biogramu ("Dziennikarz
+# portalu finansowego money.pl. ...") zostawały jako pozorna treść artykułu.
+# Jedyny bezpieczny sygnał: akapit bezpośrednio poprzedzający linię
+# "x@grupawp.pl o autorze" — treść artykułu nigdy nie kończy się tuż przed
+# tym markerem, więc usunięcie poprzedzającego go akapitu nie tnie realnej treści.
+_AUTHOR_EMAIL_RE = re.compile(r'^[\w.+-]+@grupawp\.pl\s*o autorze$', re.IGNORECASE)
+
+
+def _remove_author_bio_paragraph(lines: list[str]) -> list[str]:
+    drop: set[int] = set()
+    for i, line in enumerate(lines):
+        if not _AUTHOR_EMAIL_RE.match(line.strip()):
+            continue
+        j = i - 1
+        while j >= 0 and not lines[j].strip():
+            j -= 1
+        if j >= 0:
+            drop.add(j)
+    if not drop:
+        return lines
+    return [line for k, line in enumerate(lines) if k not in drop]
+
+
 def _clean_lines_money(lines: list[str]) -> list[str]:
     """Czyszczenie specyficzne dla money.pl."""
+    lines = _remove_author_bio_paragraph(lines)
     skip_exact = {"Skomentuj", "Notowania", "Udostępnij", "Słuchaj", "Kopiuj link"}
     skip_startswith = ("Udostępnij na ", "Źródło zdjęć:", "Źródło artykułu:",
                        "oprac.", "Dźwięk został wygenerowany")
@@ -271,6 +298,7 @@ def _clean_lines_money(lines: list[str]) -> list[str]:
 
 def _clean_lines_wp(lines: list[str]) -> list[str]:
     """Czyszczenie specyficzne dla wp.pl/o2.pl/tech.wp.pl."""
+    lines = _remove_author_bio_paragraph(lines)
     skip_exact = {"Skomentuj", "Słuchaj", "Udostępnij", "Kopiuj link",
                   "Zaloguj", "Obserwuj nas na:", "Wyłączono komentarze"}
     skip_startswith = ("Udostępnij na ", "Dźwięk został wygenerowany",

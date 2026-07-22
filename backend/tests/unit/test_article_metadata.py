@@ -32,6 +32,23 @@ def test_wp_rule_does_not_apply_to_other_domains():
     assert extract_article_author(html, "https://example.com/artykul") is None
 
 
+def test_money_pl_strips_oprac_label_from_cauthor():
+    html = """
+    <meta name="author" content="Grupa Wirtualna Polska">
+    <script>window.page={"cauthor":"oprac. Przemysław Ciszak"};</script>
+    """
+    assert extract_article_author(html, "https://www.money.pl/gospodarka/artykul.html") == "Przemysław Ciszak"
+
+
+def test_money_pl_visible_byline_has_no_oprac_label_to_strip():
+    html = """
+    <div class="wp-article-author"><span>oprac.&nbsp;</span>
+      <a class="wp-article-author-link">Przemysław Ciszak</a>
+    </div>
+    """
+    assert extract_article_author(html, "https://www.money.pl/gospodarka/artykul.html") == "Przemysław Ciszak"
+
+
 def test_onet_extracts_multiple_authors_from_article_json_ld():
     html = '''<script type="application/ld+json">{
       "@context": "https://schema.org", "@graph": [
