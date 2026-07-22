@@ -337,3 +337,76 @@ class TestPublishedOnBackfill:
 
         assert doc.published_on is None
         assert doc.published_on_method is None
+
+
+class TestAuthorBiographyIsolationOnLateDetection:
+    """create_run() step 11b2: when the byline is only discovered by the LLM
+    fallback (i.e. AFTER this run's text was already split — see the
+    article-mode branch earlier in create_run(), which only isolates the
+    trailing "o autorze" widget when the byline is known ahead of time),
+    extract_trailing_author_biography() gets a second chance to strip it
+    from doc.text_md so the NEXT run/reclean doesn't re-surface it as its
+    own chunk. See [[project_article_author_detection]]/doc 9270 (money.pl/
+    o2.pl bio widget)."""
+
+    BIO_TEXT = (
+        "Jan Kowalski Dziennikarz o2.pl\n\n"
+        "Zajmował się dziennikarstwem od 2010 roku, pracował w kilku redakcjach lokalnych."
+    )
+
+    def test_bio_isolated_and_persisted_when_author_discovered_late(
+        self, session, article_env, monkeypatch,
+    ):
+        doc = FakeDoc()
+        doc.byline = None
+        doc.text_md = ARTICLE_TEXT.rstrip() + "\n\n" + self.BIO_TEXT
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+        monkeypatch.setattr(llm, "extract_author_info", lambda text, model: ["Jan Kowalski"])
+
+        def fake_set_authors(_session, doc, names, method):
+            doc.byline = ", ".join(names)
+            return {"linked": [], "skipped": []}
+
+        monkeypatch.setattr("library.author_service.set_document_authors", fake_set_authors)
+
+        bio_calls = []
+        monkeypatch.setattr(
+            "library.author_biography.process_author_biography",
+            lambda _session, _doc, bio, _model: bio_calls.append(bio) or {
+                "person_id": 1, "status": "auto_applied",
+            },
+        )
+
+        DocumentAnalysisService(session).create_run(
+            doc_id=42, model="test-model", mode="article", chunk_size=300,
+        )
+
+        assert doc.byline == "Jan Kowalski"
+        assert bio_calls == [self.BIO_TEXT]
+        assert "Zajmował się dziennikarstwem" not in doc.text_md
+
+    def test_no_bio_found_leaves_text_md_untouched(self, session, article_env, monkeypatch):
+        doc = FakeDoc()
+        doc.byline = None
+        doc.text_md = ARTICLE_TEXT
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+        monkeypatch.setattr(llm, "extract_author_info", lambda text, model: ["Jan Kowalski"])
+
+        monkeypatch.setattr(
+            "library.author_service.set_document_authors",
+            lambda _session, doc, names, method: setattr(doc, "byline", ", ".join(names))
+            or {"linked": [], "skipped": []},
+        )
+        bio_calls = []
+        monkeypatch.setattr(
+            "library.author_biography.process_author_biography",
+            lambda *a, **kw: bio_calls.append(a) or {"person_id": 1, "status": "auto_applied"},
+        )
+
+        DocumentAnalysisService(session).create_run(
+            doc_id=42, model="test-model", mode="article", chunk_size=300,
+        )
+
+        assert doc.byline == "Jan Kowalski"
+        assert bio_calls == []
+        assert doc.text_md == ARTICLE_TEXT

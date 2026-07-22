@@ -644,6 +644,10 @@ class DocumentAnalysisService:
             #       single chapter excerpt is not a reliable place to look for a byline.
             if not is_transcript and scope is None and not (getattr(doc, "byline", None) or "").strip():
                 try:
+                    from library.author_biography import (
+                        extract_trailing_author_biography,
+                        process_author_biography,
+                    )
                     from library.author_service import set_document_authors
                     from library.chunk_llm_analysis import extract_author_info, head_tail_excerpt
 
@@ -651,6 +655,22 @@ class DocumentAnalysisService:
                     if author_names:
                         set_document_authors(self.session, doc, author_names, method="llm")
                         log(f"author detected: {', '.join(author_names)}")
+
+                        # The byline wasn't known yet when this run's text was split
+                        # above (11b2 runs after chunking), so extract_trailing_author_biography()
+                        # never got a chance to isolate the "o autorze" widget from
+                        # doc.text_md the way it does when the byline is already known
+                        # (see the article-mode split earlier in this function). Do it
+                        # now against the stored text_md — cheap (regex, no LLM) and
+                        # keeps the NEXT run/reclean from re-surfacing it as its own
+                        # chunk; this run's already-created chunks are unaffected.
+                        stripped_md, bio = extract_trailing_author_biography(
+                            doc.text_md or "", author_names[0]
+                        )
+                        if bio:
+                            doc.text_md = stripped_md
+                            process_author_biography(self.session, doc, bio, model)
+                            log("author biography isolated from doc.text_md for future runs")
                 except Exception:
                     logger.exception("author extraction failed, continuing without author")
 
