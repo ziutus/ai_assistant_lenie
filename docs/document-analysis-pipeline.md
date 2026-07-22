@@ -47,7 +47,150 @@ flowchart TD
     R --> T[Wyszukiwanie hybrydowe]
     H --> U[Wyszukiwanie leksykalne po dokumencie i tagach]
     U --> T
+    P --> V[Tworzenie notatek z chunków TEMAT]
+    V --> W[Ścieżki notatek w DocumentChunk.obsidian_note_paths]
 ```
+
+### Trzy niezależne osie stanu
+
+Pipeline nie ma jednego wspólnego statusu. Te trzy osie zmieniają się niezależnie i nie należy
+zapisywać stanu notatek jako kolejnej wartości `Document.processing_status`:
+
+| Oś | Pole / źródło | Przykładowe stany |
+|---|---|---|
+| Techniczne przetwarzanie dokumentu | `Document.processing_status` | `DOCUMENT_INTO_DATABASE` → `EMBEDDING_EXIST` |
+| Analiza i recenzja | `DocumentAnalysisRun.status`, `DocumentChunk.status` | run: `created` → `in_review` → `reviewed`; chunk: `pending` → `approved` / `skipped` |
+| Notatki Obsidian (stan pochodny) | aktywne chunki `TEMAT` + `DocumentChunk.obsidian_note_paths` | `BRAK_NOTATEK`, `CZĘŚCIOWE`, `KOMPLETNE`, `NIE_DOTYCZY` |
+
+Stan notatek jest wyliczany, a nie przechowywany jako osobny enum:
+
+| Stan | Warunek dla aktywnych chunków `TEMAT` |
+|---|---|
+| `BRAK_NOTATEK` | istnieje co najmniej jeden chunk bez ścieżki notatki i żaden nie ma notatki |
+| `CZĘŚCIOWE` | część chunków ma `obsidian_note_paths`, a część nadal ich nie ma |
+| `KOMPLETNE` | nie ma brakujących chunków i co najmniej jeden chunk ma notatkę |
+| `NIE_DOTYCZY` | dokument nie ma aktywnych chunków `TEMAT` wymagających notatki |
+
+Do brakujących nie zaliczają się chunki `status="skipped"` ani chunki z runów
+`status="superseded"`. Starsza tablica `Document.obsidian_note_paths` nadal sygnalizuje notatki
+utworzone na poziomie całego dokumentu, natomiast nowy flow śledzi notatki dokładniej, per chunk.
+Repozytorium zwraca już liczniki `chunks_missing_obsidian_notes` i
+`chunks_with_obsidian_notes`, z których UI może wyprowadzić powyższy stan bez migracji bazy.
+
+## Mapy `Document.processing_status`
+
+`processing_status` jest starszą maszyną stanów technicznych dokumentu. Nie opisuje postępu
+analizy LLM, recenzji chunków ani notatek Obsidian. Obecnie obsługuje kilka nakładających się
+pipeline'ów, dlatego nie istnieje jedna poprawna strzałka przechodząca przez wszystkie wartości.
+
+### Nowy flow artykułu z recenzją chunków
+
+```mermaid
+stateDiagram-v2
+    [*] --> URL_ADDED: rekord bez pobranej treści
+    [*] --> DOCUMENT_INTO_DATABASE: import z treścią
+    URL_ADDED --> DOCUMENT_INTO_DATABASE: pobranie i zapis treści
+    DOCUMENT_INTO_DATABASE --> NEED_MANUAL_REVIEW: błąd lub obcięcie ekstrakcji
+    NEED_MANUAL_REVIEW --> DOCUMENT_INTO_DATABASE: ręczna naprawa / ponowna ekstrakcja
+    DOCUMENT_INTO_DATABASE --> EMBEDDING_EXIST: reviewed run + zatwierdzony TEMAT + utworzony embedding
+    NEED_MANUAL_REVIEW --> EMBEDDING_EXIST: po naprawie i skutecznym indeksowaniu
+```
+
+Analiza nie ustawia stanu pośredniego `READY_FOR_EMBEDDING`. Jej postęp jest zapisany w
+`DocumentAnalysisRun.status` i `DocumentChunk.status`. Dopiero
+`generate_embeddings_from_run()` ustawia `EMBEDDING_EXIST`, i tylko gdy zapisano co najmniej
+jeden embedding.
+
+### Starszy flow Markdown / batch
+
+```mermaid
+stateDiagram-v2
+    URL_ADDED --> NEED_MANUAL_REVIEW: pobranie strony webowej
+    URL_ADDED --> READY_FOR_EMBEDDING: link z tytułem i podsumowaniem
+    URL_ADDED --> NEED_CLEAN_MD: konwersja HTML do Markdown
+    NEED_CLEAN_MD --> NEED_MANUAL_REVIEW: documents_pipeline, ponowne czyszczenie
+    NEED_CLEAN_MD --> MD_SIMPLIFIED: document_md_decode, udana ekstrakcja
+    MD_SIMPLIFIED --> EMBEDDING_EXIST: article_browser lub batch embeddingów
+    READY_FOR_EMBEDDING --> EMBEDDING_EXIST: batch embeddingów
+    URL_ADDED --> ERROR: błąd pobrania
+    NEED_CLEAN_MD --> ERROR: błąd konwersji lub ekstrakcji
+```
+
+W tym flow `READY_FOR_EMBEDDING` jest nadal aktywnym kontraktem kolejki. Metoda
+`DocumentRepository.get_documents_needing_embedding()` wybiera dokumenty bez embeddingu w
+stanach `READY_FOR_EMBEDDING`, `MD_SIMPLIFIED` i — w celu regeneracji — `EMBEDDING_EXIST`.
+Celowo nie wybiera `DOCUMENT_INTO_DATABASE`, bo taki dokument może nadal czekać na recenzję
+chunków.
+
+### YouTube / transkrypcja
+
+```mermaid
+stateDiagram-v2
+    [*] --> URL_ADDED
+    URL_ADDED --> NEED_TRANSCRIPTION
+    NEED_TRANSCRIPTION --> TRANSCRIPTION_IN_PROGRESS: zlecenie STT
+    NEED_TRANSCRIPTION --> TRANSCRIPTION_DONE: dostępne napisy
+    TRANSCRIPTION_IN_PROGRESS --> TRANSCRIPTION_DONE: STT zakończone
+    TRANSCRIPTION_DONE --> READY_FOR_EMBEDDING: starszy batch
+    TRANSCRIPTION_DONE --> EMBEDDING_EXIST: run z zatwierdzonymi chunkami
+    NEED_TRANSCRIPTION --> TEMPORARY_ERROR: przejściowy brak napisów / API
+    TEMPORARY_ERROR --> NEED_TRANSCRIPTION: ponowienie
+    NEED_TRANSCRIPTION --> NEED_MANUAL_REVIEW: język lub materiał wymaga decyzji
+    NEED_TRANSCRIPTION --> ERROR: trwały błąd
+    TRANSCRIPTION_IN_PROGRESS --> ERROR: błąd STT
+```
+
+### Inwentaryzacja stanów
+
+| Stan | Status w kodzie | Obecna rola |
+|---|---|---|
+| `URL_ADDED` | aktywny | Punkt wejścia bez treści; kolejka pobierania i YouTube. |
+| `DOCUMENT_INTO_DATABASE` | aktywny | Import ma już treść; nowy flow może czekać na analizę i recenzję. |
+| `NEED_MANUAL_REVIEW` | aktywny | Stan wyjątkowy: brak danych, nieudana/obcięta ekstrakcja albo decyzja człowieka. Nie jest normalnym etapem sukcesu. |
+| `READY_FOR_EMBEDDING` | aktywny, starszy flow | Jawna kolejka batchowa dla linków, oczyszczonych dokumentów i transkrypcji. |
+| `MD_SIMPLIFIED` | aktywny, starszy flow | Oczyszczony Markdown gotowy do starszego indeksowania. |
+| `NEED_CLEAN_MD` | aktywny, starszy flow | Kolejka czyszczenia Markdown. |
+| `EMBEDDING_EXIST` | aktywny | Co najmniej jeden embedding został utworzony; nie gwarantuje kompletności notatek ani zakończonej recenzji wszystkich runów. |
+| `ERROR` | aktywny | Trwały błąd; szczegół znajduje się w `processing_error_code`. |
+| `TEMPORARY_ERROR` | aktywny dla YouTube | Błąd nadający się do ponowienia. |
+| `NEED_TRANSCRIPTION` | aktywny dla YouTube | Materiał oczekuje na napisy lub STT. |
+| `TRANSCRIPTION_IN_PROGRESS` | aktywny dla YouTube | Zewnętrzne STT pracuje. |
+| `TRANSCRIPTION_DONE` | aktywny dla YouTube | Transkrypcja gotowa; dalszy krok zależy od nowego lub starszego flow. |
+| `READY_FOR_TRANSLATION` | deprecated | Zachowany dla kompatybilności rekordów; endpoint tłumaczenia usunięto w ADR-001. |
+| `TEXT_TO_MD_DONE` | alias historyczny | Wejście o tej nazwie jest mapowane na `NEED_CLEAN_MD`; kod nie zapisuje tego stanu. |
+| `NEED_CLEAN_TEXT` | prawdopodobnie legacy | Brak aktywnego producenta i konsumenta poza ogólnym filtrowaniem po statusie. |
+| `TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS` | prawdopodobnie legacy | Pozostaje w enumie i słowniku DB, ale bieżący pipeline nie zapisuje tego stanu. |
+
+## Co trzeba uporządkować
+
+Poniższa kolejność minimalizuje ryzyko usunięcia stanu, który nadal trzyma historyczne rekordy
+lub zasila starszy skrypt:
+
+1. **Zmierzyć dane produkcyjne.** Policzyć dokumenty w każdym `processing_status`, ich typy,
+   ostatnią zmianę oraz obecność tekstu, runów i embeddingów. Bez tego nie usuwać wartości ze
+   słownika DB.
+2. **Wybrać jeden właścicielski pipeline artykułów.** Obecnie nowy flow
+   `DocumentAnalysisService` współistnieje z `documents_pipeline.py`, `document_md_decode.py` i
+   bezpośrednim embeddingiem w `article_browser.py`.
+3. **Ustalić semantykę `EMBEDDING_EXIST`.** Dziś oznacza „utworzono co najmniej jeden embedding”,
+   nie „indeks jest kompletny i aktualny”. Regeneracja usuwa i tworzy embeddingi partiami, więc
+   warto rozważyć osobny job/status indeksowania zamiast przeciążać stan dokumentu.
+4. **Zdecydować o `READY_FOR_EMBEDDING`.** Albo nowy flow zaczyna jawnie ustawiać ten stan po
+   recenzji, albo stan pozostaje wyłącznie kontraktem legacy i zostaje później usunięty razem ze
+   starszym batchem. Nie łączyć obu znaczeń bez migracji.
+5. **Usunąć stany potwierdzone jako martwe.** Kandydaci: `READY_FOR_TRANSLATION`,
+   `TEXT_TO_MD_DONE`, `NEED_CLEAN_TEXT`, `TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS`. Wymaga to
+   migracji istniejących rekordów, enumu, `PROCESSING_STATUS_LOOKUP`, tabeli
+   `processing_status_types`, testów i klientów API.
+6. **Nie dodawać Obsidiana do `processing_status`.** Udostępnić w API jeden wyliczony
+   `obsidian_status` na podstawie istniejących liczników, aby frontend i CLI nie implementowały
+   różnych reguł `BRAK_NOTATEK` / `CZĘŚCIOWE` / `KOMPLETNE` / `NIE_DOTYCZY`.
+7. **Rozdzielić błędy od etapów.** `NEED_MANUAL_REVIEW`, `ERROR` i `TEMPORARY_ERROR` są odnogami,
+   a nie kolejnymi krokami sukcesu. Dokumentacja i UI powinny pokazywać je jako wyjątki z
+   `processing_error_code`.
+8. **Dodać testy dozwolonych przejść.** Obecny enum ogranicza wartości, ale nie blokuje np.
+   bezpośredniego nadpisania dowolnego stanu na `EMBEDDING_EXIST`. Centralna funkcja przejścia
+   powinna logować źródło i odrzucać niedozwolone zmiany.
 
 ---
 

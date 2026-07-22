@@ -16,7 +16,7 @@ Primary document storage table.
 | `url` | text | NOT NULL | Original source URL used for display and fetching |
 | `canonical_url` | text | NOT NULL | Normalized comparison key used for URL lookup and duplicate detection |
 | `document_type` | varchar(50) | NOT NULL | movie, youtube, link, webpage, text_message, text, email, social_media_post |
-| `processing_status` | varchar(50) | NOT NULL, DEFAULT 'URL_ADDED' | Processing state (15 states) |
+| `processing_status` | varchar(50) | NOT NULL, DEFAULT 'URL_ADDED' | Techniczny stan przetwarzania (16 wartości; nie obejmuje recenzji runów ani notatek Obsidian) |
 | `processing_error_code` | text | — | Error details when state=ERROR |
 | `title` | text | — | Original title |
 | `title_english` | text | — | Translated title |
@@ -66,7 +66,10 @@ Vector embeddings for similarity search.
 
 ## Document Processing States
 
-15 states in `StalkerDocumentStatus` enum (`library/models/stalker_document_status.py`):
+16 wartości w enumie `StalkerDocumentStatus` (`library/models/stalker_document_status.py`). Nie
+tworzą jednego liniowego procesu: część należy do YouTube, część do starszego pipeline'u Markdown,
+a część do nowego flow analizy chunków. Szczegółowe diagramy i klasyfikacja aktywny/legacy są w
+[`document-analysis-pipeline.md`](document-analysis-pipeline.md#mapy-documentprocessing_status).
 
 | ID | State | Description |
 |----|-------|-------------|
@@ -77,7 +80,7 @@ Vector embeddings for similarity search.
 | 5 | TRANSCRIPTION_DONE | Transcription completed |
 | 6 | TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS | Transcription split by chapters |
 | 7 | NEED_MANUAL_REVIEW | Automatic text cleanup failed — needs manual removal of ads/comments/spam |
-| 8 | READY_FOR_TRANSLATION | Text ready for translation |
+| 8 | READY_FOR_TRANSLATION | Deprecated; zachowany dla kompatybilności historycznych rekordów |
 | 9 | READY_FOR_EMBEDDING | Content ready for embedding generation |
 | 10 | EMBEDDING_EXIST | Final state — embeddings generated |
 | 11 | DOCUMENT_INTO_DATABASE | Document stored in database |
@@ -85,8 +88,16 @@ Vector embeddings for similarity search.
 | 13 | NEED_CLEAN_MD | Markdown needs cleanup |
 | 14 | TEXT_TO_MD_DONE | Text to markdown conversion done |
 | 15 | MD_SIMPLIFIED | Markdown simplified |
+| 16 | TEMPORARY_ERROR | Błąd przejściowy, obecnie używany głównie w pipeline YouTube |
 
-**Typical flow**: URL_ADDED → DOCUMENT_INTO_DATABASE → NEED_MANUAL_REVIEW → READY_FOR_TRANSLATION → READY_FOR_EMBEDDING → EMBEDDING_EXIST
+Najczęstszy nowy flow artykułu z recenzją chunków:
+
+`URL_ADDED` → `DOCUMENT_INTO_DATABASE` → `EMBEDDING_EXIST`
+
+`NEED_MANUAL_REVIEW` jest odnogą wyjątkową, a nie obowiązkowym krokiem sukcesu. Postęp analizy
+jest przechowywany osobno w `DocumentAnalysisRun.status` i `DocumentChunk.status`. Stan notatek
+Obsidian jest wyliczany z `DocumentChunk.obsidian_note_paths`, a nie zapisywany w
+`processing_status`.
 
 ## Document Status Errors
 
