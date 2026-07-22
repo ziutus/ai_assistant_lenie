@@ -22,6 +22,33 @@ pobranie HTML → wyciągnięcie treści artykułu (LLM markery + regex per-port
   → embeddingi (automatycznie po zamknięciu) → wyszukiwanie hybrydowe
 ```
 
+```mermaid
+flowchart TD
+    A[HTML z cache lub storage] --> B[Konwersja HTML na Markdown]
+    B --> C[Wstępne czyszczenie per portal]
+    C --> D[LLM: markery początku i końca]
+    D --> E{Znany marker stopki?}
+    E -- tak --> F[Regex wyznacza koniec artykułu]
+    E -- nie --> G[Marker końca zwrócony przez LLM]
+    F --> H[documents.text_md]
+    G --> H
+    H --> I{Reclean?}
+    I -- tak --> J[Deterministyczne czyszczenie Markdown]
+    I -- nie --> K[Podział na chunki]
+    J --> K
+    K --> L[LLM per chunk: typ, temat, streszczenie]
+    L --> M[LLM: grupowanie, synteza i tagi]
+    M --> N[NER i wzbogacanie: miejsca, osoby, źródła, cytowania]
+    N --> O[(Run analizy i chunki w DB)]
+    O --> P[Recenzja człowieka]
+    P --> Q{Run zamknięty i ma zatwierdzony TEMAT?}
+    Q -- tak --> R[Embeddingi zatwierdzonych chunków]
+    Q -- nie --> S[Brak indeksowania wektorowego]
+    R --> T[Wyszukiwanie hybrydowe]
+    H --> U[Wyszukiwanie leksykalne po dokumencie i tagach]
+    U --> T
+```
+
 ---
 
 ## Pliki tymczasowe i S3 (cache dokumentu)
@@ -83,7 +110,7 @@ generyczne** (identyczne dla każdego dokumentu, niezależnie od portalu):
 | `_clean_markdown_for_llm` / `_cut_at_footer` (import) | **portal-specyficzny** — patrz tabela wyżej |
 | Ekstrakcja markerów przez LLM | ogólny prompt, ten sam dla każdego portalu |
 | Wyznaczenie finalnych granic (`extract_article_by_markers`) | **portal-specyficzny dla końca** (regex marker), ogólny dla początku (zawsze LLM) |
-| Autor — ekstrakcja deterministyczna (import) | **portal-specyficzny — TYLKO wp.pl/o2.pl/money.pl** (`article_metadata.py`), inne portale nie mają odpowiednika i całkowicie polegają na fallbacku LLM (13/11b2) |
+| Autor — ekstrakcja deterministyczna (import) | **portal-specyficzny — onet.pl oraz wp.pl/o2.pl/money.pl** (`article_metadata.py`); pozostałe portale polegają na fallbacku LLM (13/11b2) |
 | `clean_article_text` (reclean, Część 2 krok 3) | **portal-specyficzny** — patrz tabela wyżej |
 | Data publikacji z artefaktu względnego | ogólny (dopasowuje wzorce "wczoraj"/"N godzin temu" niezależnie od portalu) |
 | Biogram autora (`extract_trailing_author_biography`) | ogólny heurystyk (sygnały językowe), bez słownika portali — mimo że przypadek testowy/motywujący był wp.pl/o2.pl |
@@ -113,7 +140,7 @@ Dzieje się **raz**, przy dodaniu dokumentu (`imports/dynamodb_sync.py`,
 | 10 | `_find_footer_line()` | `article_extractor.py:219` | Szuka markera stopki (jak w kroku 6, ale na PEŁNYM, nieuciętym tekście) — potrzebne do wyznaczenia finalnego końca niezależnie od przycięcia z kroku 7. | REGEX |
 | 11 | `extract_article_by_markers()` | `article_extractor.py:508` | **Tu zapadają finalne granice — asymetrycznie:** początek = zawsze linia z `article_first_sentence` (krok 9). Koniec: **jeśli krok 10 znalazł footer marker → używa go i CAŁKOWICIE IGNORUJE `article_last_sentence` z LLM** (komentarz w kodzie: *„Footer marker jest pewny — LLM marker traktuj jako fallback"*); dopiero gdy portal nie ma markera, używa końca wskazanego przez LLM. | REGEX > LLM (regex wygrywa gdy dostępny) |
 | 12 | `generate_regex_draft()` | `article_extractor.py:560` | Zapisuje `.regex.draft` + `_llm_markers.json` z kontekstem 5 linii przed/po granicach — surowiec do RĘCZNEGO dopisania nowego portalu do `PORTAL_FOOTER_MARKERS`/`PORTAL_START_AFTER_MARKERS`. Pętla sprzężenia zwrotnego: nowy portal → LLM za każdym razem (drogo) → człowiek dopisuje regex → kolejne artykuły z tego portalu mają koniec za darmo. | REGEX (generowanie) |
-| 13 | `extract_article_author()` | `article_metadata.py:102` | Osobno, **niezależnie od 1-12**: dla wp.pl/o2.pl/money.pl wyciąga autora wprost z pola `"cauthor"` w surowym HTML (regex na JSON w skrypcie analitycznym strony) albo z selektora CSS `.wp-article-author-link`. Ustawia `doc.byline` już na tym etapie importu (stąd `byline_method` bywa `NULL` — "legacy/import-set"). | REGEX/HTML |
+| 13 | `extract_article_authors()` / `extract_article_author()` | `article_metadata.py:92` / `:102` | Osobno, **niezależnie od 1-12**: dla onet.pl czyta autorów z obiektu Article w JSON-LD (fallback: linki `/autorzy/`), a dla wp.pl/o2.pl/money.pl z pola `"cauthor"` albo selektora `.wp-article-author-link`. `set_document_authors(..., method="html")` zapisuje byline oraz powiązania z rejestrem osób. | REGEX/HTML |
 
 Efekt końcowy: `documents.text_md` = wyekstrahowany tekst artykułu (krok 11), ewentualnie
 `documents.byline` już ustawiony (krok 13, niezależnie od LLM).
@@ -136,11 +163,11 @@ nie numery komentarzy (te bywają nieciągłe, np. „11b2" — zachowane w nawi
 | 5 | `extract_trailing_author_biography(text, doc.byline)` | `document_analysis_service.py:499` → `author_biography.py:21` | **Tylko gdy `doc.byline` już znany** (np. z importu, krok 13 wyżej): szuka w ostatnich ~35% dokumentu akapitu z imieniem+nazwiskiem autora + językiem biograficznym (`BIO_SIGNALS_RE`: `jest\|prac\w*\|zajm\w*\|dziennikar\w*\|redakcj\w*\|...`) i WYCINA go z `article_body` przed podziałem na chunki. | REGEX |
 | 6 | `split_markdown_into_chunks()` | `document_analysis_service.py:500` → `text_functions.py:154` | Tnie na nagłówkach markdown (`#`...`######`), pakuje kolejne sekcje do `chunk_size` (domyślnie 5000 zn.); sekcja większa niż limit → dalszy podział na akapitach/zdaniach. Brak nagłówków → zwykły podział na akapity. | REGEX |
 | 7 *(jeśli krok 5 znalazł `author_bio`)* | dopisanie chunka biogramu | `document_analysis_service.py:502-503` | Biogram dołączany jako WŁASNY, OSTATNI chunk, z góry oznaczony `type="SZUM"`, `topic="Notka biograficzna autora"` — **bez wywołania LLM** (hardcoded). | REGEX (zero LLM) |
-| 8 | `analyze_article_chunk()` (per chunk) | `document_analysis_service.py:553` → `chunk_llm_analysis.py:389` | Dla każdego chunka (poza chunkiem biogramu z kroku 7, który dostaje etykietę za darmo): klasyfikacja `TEMAT`/`ZRODLA`/`REKLAMA`/`SZUM` + (jeśli TEMAT) streszczenie 2-3 zdania. `corrected_text` zawsze `None` w trybie article (markdown już czysty). | **LLM**, 1 call/chunk |
+| 8 | `analyze_article_chunk()` (per chunk) | `document_analysis_service.py:553` → `chunk_llm_analysis.py:314` | Dla każdego chunka (poza chunkiem biogramu z kroku 7, który dostaje etykietę za darmo): klasyfikacja `TEMAT`/`ZRODLA`/`REKLAMA`/`SZUM` + (jeśli TEMAT) streszczenie 2-3 zdania. `corrected_text` zawsze `None` w trybie article (markdown już czysty). | **LLM**, 1 call/chunk |
 | 9 | `_merge_topics()` | `document_analysis_service.py:567` → `:190` | Grupuje chunki wg tematu w `DocumentTopicSection` (widok "rozdziały" na `/chunks/:id` dla dużych runów). Pokrycie częściowe z założenia. | **LLM** |
 | 10 *(opcjonalny)* | `_synthesize()` | `document_analysis_service.py:604` → `:231` | Jedno zwięzłe podsumowanie całego dokumentu — wejście dla tagowania (11). | **LLM** |
 | 11 | `_apply_tags()` → `tag_article_with_llm()` + `extract_countries_hybrid()` | `document_analysis_service.py:616, 266` → `article_tagging.py` | Tagi tematyczne z zamkniętej listy `THEMATIC_TAGS` (LLM) + tagi `kraj-*`: `country_gazetteer.detect_countries()` (REGEX prescreen, ~190 krajów, dopasowanie rdzenia słowa) najpierw filtruje kandydatów — jeśli 0 kandydatów, LLM w ogóle nie jest wywoływany. | REGEX prescreen + **LLM** potwierdzenie |
-| 12 *(11b2, gdy `doc.byline` PUSTY)* | `extract_author_info(head_tail_excerpt(text), model)` | `document_analysis_service.py:632` → `chunk_llm_analysis.py:143, 135` | Fallback gdy import (krok 13 Części 1) nie ustalił autora: czyta pierwsze+ostatnie ~1500 zn. dokumentu, zwraca listę autorów (współautorstwo obsłużone). Nigdy nie nadpisuje istniejącego `doc.byline`. | **LLM** |
+| 12 *(11b2, gdy `doc.byline` PUSTY)* | `extract_author_info(head_tail_excerpt(text), model)` | `document_analysis_service.py:632` → `chunk_llm_analysis.py:68, 60` | Fallback gdy import (krok 13 Części 1) nie ustalił autora: czyta pierwsze+ostatnie ~1500 zn. dokumentu, zwraca listę autorów (współautorstwo obsłużone). Nigdy nie nadpisuje istniejącego `doc.byline`. | **LLM** |
 | 13 *(jeśli 12 znalazł autora)* | `extract_trailing_author_biography(doc.text_md, author_names[0])` (drugi raz!) | `document_analysis_service.py:645` → `author_biography.py:21` | Ten konkretny run ma już chunki podzielone (krok 6 był wcześniej) — więc to NIE zmienia liczby chunków tego runu. Zapisuje oczyszczony `doc.text_md` na przyszłość (kolejny reclean/run nie dostanie już tego biogramu jako osobnego chunka). Dodane w PR #349 (2026-07-22). | REGEX |
 | 14 *(jeśli 5 lub 13 znalazły biogram)* | `process_author_biography()` | `document_analysis_service.py:650, 710` → `author_biography.py:111` | Porównuje notkę biograficzną z istniejącym `Person.description` w rejestrze osób i decyduje: `auto_applied` / `no_new_information` / `needs_review` / `conflict`. | **LLM** |
 | 15 | `compute_quality()` | `document_analysis_service.py:663` → `article_quality.py` | Deterministyczne kary (brak źródeł, obcięty tekst, agencyjny/własny autor wydawcy → waga 0) + **jedno** wywołanie LLM (rubryka oceny). | REGEX kary + **LLM** (1 call) |
@@ -148,8 +175,8 @@ nie numery komentarzy (te bywają nieciągłe, np. „11b2" — zachowane w nawi
 | 17 | `verify_document_places()` | `document_analysis_service.py:691` → `place_verification.py` | Kandydaci z NER (typ `geogName`/`placeName`) → **LocationIQ** (geocoder, cache w `geocode_cache`) potwierdza istnienie → LLM potwierdza że miejsce jest faktycznie omawiane → tag `miejsce-<slug>`. | **SERWIS** (LocationIQ) + **LLM** |
 | 18 | `resolve_document_persons()` | `document_analysis_service.py:701` → `person_registry.py` | Kaskada: dokładny alias (bez sieci) → **Wikidata** (tylko ludzie P31=Q5) + LLM wybiera QID z zamkniętej listy → fuzzy match (pg_trgm) w rejestrze → nowa osoba bez QID (kolejka `manual_review`). | **SERWIS** (Wikidata) + **LLM** + fuzzy |
 | 19 | `refresh_document_information_sources()` | `document_analysis_service.py:718` → `information_provenance.py` | Wykrywa skąd artykuł czerpie informacje (agencje, inne media). | **LLM** |
-| 20 | `refresh_document_cited_publications()` | `document_analysis_service.py:778` → `cited_publications.py` | Wykrywa jakie publikacje są cytowane w tekście chunków. | **LLM** |
-| 21 | zapis do DB | `document_analysis_service.py:723-789` | `DocumentAnalysisRun` + `DocumentChunk` (1 rekord/chunk, status `pending`) + `DocumentTopicSection`. Jeden `session.commit()`. | REGEX/deterministyczne |
+| 20 | utworzenie rekordów runa i chunków | `document_analysis_service.py:723-774` | Buduje `DocumentAnalysisRun`, `DocumentChunk` (1 rekord/chunk, status `pending`) i `DocumentTopicSection`, po czym robi `flush`, aby nadać identyfikatory potrzebne w kolejnym kroku. | REGEX/deterministyczne |
+| 21 | `refresh_document_cited_publications()` + commit | `document_analysis_service.py:775-789` → `cited_publications.py` | Wykrywa publikacje cytowane w utworzonych chunkach, a następnie jeden `session.commit()` atomowo zapisuje run, chunki, sekcje i cytowania. | **LLM** + zapis DB |
 
 > **Usunięte 2026-07-22:** krok `preclean`/`propose_article_cleanup()` (LLM-owe wykrywanie zakresów REKLAMA/ZRODLA/SZUM przed podziałem na chunki) został skasowany z kodu — `llm_usage_logs` na NAS pokazał **zero wywołań** `operation='article_preclean'` mimo że checkbox w UI (`chunks.tsx`) domyślnie był zaznaczony; wszystkie realne runy powstawały przez UI z Pythonowym defaultem `preclean=False`. Ta sama klasyfikacja (`TEMAT`/`ZRODLA`/`REKLAMA`/`SZUM`) i tak już działa za darmo w kroku 8 (`analyze_article_chunk()`, per-chunk, wywoływany zawsze) — preclean tylko próbował robić to na poziomie linii przed podziałem, drożej i bez realnego użycia. Usunięto: `propose_article_cleanup()`/`_parse_cleanup_ranges()` (`chunk_llm_analysis.py`), parametr `preclean` w `create_run()`/`POST /analysis_run`, checkbox „najpierw wykryj reklamy i szum" w `chunks.tsx`.
 
@@ -179,7 +206,7 @@ nie numery komentarzy (te bywają nieciągłe, np. „11b2" — zachowane w nawi
   chunków `TEMAT`, zamknięcie review (`PATCH /analysis_run/<id>` → `status=reviewed`).
 - Zamknięcie z ≥1 zatwierdzonym chunkiem `TEMAT` **automatycznie odpala** `generate_embeddings_from_run()`
   w tle (`chunk_review_routes.py: update_run()` → `_start_embedding_job()`).
-- `generate_embeddings_from_run()` (`document_analysis_service.py:818`): tylko chunki
+- `generate_embeddings_from_run()` (`document_analysis_service.py:796`): tylko chunki
   `TEMAT`+`approved` → `md_split_for_emb()` (hierarchicznie H1→H2→H3→bold→akapity→zdania) →
   `md_remove_markdown()` → embedding w paczkach po 32 (`EMBEDDING_BATCH_SIZE`), commit po
   każdej paczce. Ponowne uruchomienie usuwa stare embeddingi tego runu i generuje od nowa.
@@ -208,9 +235,9 @@ nie numery komentarzy (te bywają nieciągłe, np. „11b2" — zachowane w nawi
   artykułem LLM nie widzi prawdziwego końca, a nie ma regexowego markera, który by to naprawił.
   Realne ryzyko cichego ucięcia treści — brak logowania tego przypadku.
 - **Kolejność autor→biogram** — dziś biogram jest wycinany PRZED podziałem tylko gdy `doc.byline`
-  znany z importu (krok 5). Dla portali bez deterministycznej ekstrakcji autor i tak zostanie
-  wykryty (krok 12), ale PO podziale — ten konkretny run i tak dostanie biogram jako osobny chunk
-  SZUM (za darmo, ale widoczny). Wyeliminowanie tego całkowicie wymagałoby przesunięcia wykrywania
+  znany z importu (krok 5). Dla portali bez deterministycznej ekstrakcji autor może zostać
+  wykryty dopiero w kroku 12, już PO podziale — w tym runie biogram pozostaje więc częścią wcześniej
+  utworzonego chunka i podlega zwykłej klasyfikacji LLM. Wyeliminowanie tego całkowicie wymagałoby przesunięcia wykrywania
   autora PRZED podział zawsze — kosztem 1 dodatkowego LLM call na starcie KAŻDEGO runu.
 
 ---
@@ -223,7 +250,7 @@ nie numery komentarzy (te bywają nieciągłe, np. „11b2" — zachowane w nawi
 | Wykrycie granic artykułu — początek | **LLM** (zawsze) |
 | Wykrycie granic artykułu — koniec | **REGEX** gdy portal znany, **LLM** tylko jako fallback |
 | Limit 15 000 zn. przed wysłaniem do LLM | REGEX (obcinanie, bez logowania strat) |
-| Autor (import, wp/o2/money) | REGEX/HTML |
+| Autor (import, onet/wp/o2/money) | REGEX/HTML |
 | Czyszczenie per-portal (`clean_article_text`) | REGEX (w całości) |
 | Biogram autora — wycięcie | REGEX |
 | Data publikacji z artefaktu względnego | REGEX |
