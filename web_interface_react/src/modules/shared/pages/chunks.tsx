@@ -557,7 +557,6 @@ const Chunks = () => {
   const [newModel, setNewModel]     = React.useState(MODELS[0]);
   const [newMode, setNewMode]       = React.useState("transcript");
   const [splitOnly, setSplitOnly]   = React.useState(false);
-  const [preclean, setPreclean]     = React.useState(true);
   const [chunkSize, setChunkSize]   = React.useState(5000);
   const [splitPreview, setSplitPreview] = React.useState<{ count: number; sizes: number[]; length: number } | null>(null);
   const [previewNonce, setPreviewNonce] = React.useState(0);
@@ -856,7 +855,6 @@ const Chunks = () => {
           model: newModel, chunk_size: chunkSize,
           mode,
           split_only: splitOnlyOverride ?? splitOnly,
-          preclean: mode === "article" && !(splitOnlyOverride ?? splitOnly) && preclean,
           reclean: mode === "article" && (recleanOverride ?? useRecleaned),
           ...(scope !== null ? { scope_chapter: scope } : {}),
         }),
@@ -2146,17 +2144,6 @@ const Chunks = () => {
                 {` (${splitPreview.length.toLocaleString("pl")} zn.)`}
               </>
             )}
-            {newMode === "article" && preclean && !splitOnly && (
-              <>
-                {" · "}
-                <span
-                  title="Osobny wstępny krok LLM: zanim tekst zostanie podzielony na chunki do recenzji, model oznacza dokładne zakresy reklam i szumu (np. nawigacja, stopka). Propozycja czyszczenia trafia do tego samego runu do zatwierdzenia przed docelowym podziałem."
-                  style={{ borderBottom: "1px dotted #94a3b8", cursor: "help" }}
-                >
-                  wykrywanie reklam i szumu
-                </span>
-              </>
-            )}
           </span>
           {runs.length > 0 && <button className="button" onClick={() => startAnalysis()} disabled={!!jobId}
             title={hasActiveRun ? "Uruchamia dodatkowy, osobny run — nie kontynuuje istniejącej analizy poniżej. Aby ją kontynuować, użyj przycisku w panelu procesu po prawej." : undefined}
@@ -2265,13 +2252,6 @@ const Chunks = () => {
             <input type="checkbox" checked={splitOnly} onChange={e => setSplitOnly(e.target.checked)} />
             tylko podział (bez analizy LLM)
           </label>
-          {newMode === "article" && !splitOnly && (
-            <label style={{ fontSize: "0.85em", display: "flex", alignItems: "center", gap: 4 }}
-              title="LLM najpierw oznaczy dokładne zakresy reklam i szumu. Propozycja oraz docelowy podział zostaną zapisane w jednym runie.">
-              <input type="checkbox" checked={preclean} onChange={e => setPreclean(e.target.checked)} />
-              najpierw wykryj reklamy i szum
-            </label>
-          )}
           {splitPreview && (
             <span style={{ fontSize: "0.82em", color: "#475569" }}
               title={`Rozmiary chunków: ${splitPreview.sizes.join(", ")} znaków`}>

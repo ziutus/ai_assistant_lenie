@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 REWRITE_MAX_TOKENS = 2_500
 REWRITE_MIN_RATIO = 0.80
 SUMMARY_MAX_TOKENS = 400
-PRECLEAN_MAX_TOKENS = 1_200
 
 SECTION_HEADER_RE = re.compile(r"^### (REKLAMA|TEMAT|ZRODLA|SZUM): ?(.+)$", re.MULTILINE)
 
@@ -27,80 +26,6 @@ _FILLER_SOUND_RE = re.compile(
 )
 _STANDALONE_Y_RE = re.compile(r"(?<!\w)y(?!\w)", re.IGNORECASE)
 _WORD_REPEAT_RE = re.compile(r"\b(\w+)\s+\1\b", re.IGNORECASE)
-
-
-def _parse_cleanup_ranges(raw: str, line_count: int) -> list[dict]:
-    """Parse and clamp line-range cleanup decisions returned by the LLM."""
-    match = re.search(r"\[.*\]", raw, re.DOTALL)
-    if not match:
-        return []
-    try:
-        rows = json.loads(match.group())
-    except (TypeError, ValueError):
-        return []
-    result = []
-    for row in rows if isinstance(rows, list) else []:
-        if not isinstance(row, dict) or row.get("type") not in {"REKLAMA", "ZRODLA", "SZUM"}:
-            continue
-        try:
-            start = max(1, min(line_count, int(row["start_line"])))
-            end = max(start, min(line_count, int(row["end_line"])))
-        except (KeyError, TypeError, ValueError):
-            continue
-        result.append({
-            "start_line": start, "end_line": end, "type": row["type"],
-            "reason": str(row.get("reason") or "Treść niemerytoryczna")[:500],
-        })
-    return result
-
-
-def propose_article_cleanup(text: str, model: str, max_chars: int = 12_000) -> list[dict]:
-    """Return a lossless TEMAT/REKLAMA/SZUM partition before final chunking.
-
-    The model only identifies exact numbered line ranges. Original text is never
-    rewritten, and anything not explicitly rejected remains TEMAT.
-    """
-    lines = text.splitlines()
-    if not lines:
-        return []
-    labels = [("TEMAT", "Treść merytoryczna") for _ in lines]
-    batch_start = 0
-    while batch_start < len(lines):
-        batch_end = batch_start
-        size = 0
-        while batch_end < len(lines) and (batch_end == batch_start or size + len(lines[batch_end]) + 12 <= max_chars):
-            size += len(lines[batch_end]) + 12
-            batch_end += 1
-        numbered = "\n".join(f"{i - batch_start + 1}: {lines[i]}" for i in range(batch_start, batch_end))
-        prompt = f"""Oceń linie surowego artykułu PRZED jego podziałem na fragmenty.
-Wskaż wyłącznie zakresy, które należy wykluczyć:
-- REKLAMA: sponsor, afiliacja, autopromocja, newsletter lub CTA,
-- ZRODLA: wydzielona bibliografia lub lista cytowanych publikacji/odnośników,
-- SZUM: menu, stopka, cookies, nawigacja, lista linków, podpis techniczny,
-  podpis pod zdjęciem / credit fotografa (np. "zdjęcie ilustracyjne", "fot. ...",
-  shutterstock, Getty, East News, PAP).
-Nie oznaczaj jako szum nagłówków ani krótkich merytorycznych akapitów.
-Zwróć TYLKO JSON: [{{"start_line": 2, "end_line": 4, "type": "SZUM", "reason": "lista linków"}}].
-Gdy nic nie trzeba wykluczyć, zwróć [].
-
---- PONUMEROWANE LINIE ---
-{numbered}
---- KONIEC ---"""
-        raw, _ = call_model(prompt, model, PRECLEAN_MAX_TOKENS, operation="article_preclean")
-        for decision in _parse_cleanup_ranges(raw, batch_end - batch_start):
-            for local_idx in range(decision["start_line"] - 1, decision["end_line"]):
-                labels[batch_start + local_idx] = (decision["type"], decision["reason"])
-        batch_start = batch_end
-
-    pieces: list[dict] = []
-    start = 0
-    for i in range(1, len(lines) + 1):
-        if i == len(lines) or labels[i] != labels[start]:
-            piece_text = "\n".join(lines[start:i]).strip()
-            if piece_text:
-                pieces.append({"type": labels[start][0], "topic": labels[start][1], "text": piece_text})
-            start = i
-    return pieces
 
 
 def extract_speaker_info(intro_text: str, model: str) -> list[dict]:

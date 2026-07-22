@@ -354,7 +354,6 @@ class DocumentAnalysisService:
         speakers: list[dict] | None = None,
         mode: str = "transcript",
         split_only: bool = False,
-        preclean: bool = False,
         reclean: bool = False,
         scope_chapter: int | None = None,
     ) -> DocumentAnalysisRun:
@@ -373,9 +372,6 @@ class DocumentAnalysisService:
             split_only:   Split into chunks WITHOUT any LLM calls — chunks land as
                           TEMAT/pending with no topic/summary, so the user can first
                           clean lines, merge or re-split, then analyze on demand.
-            preclean:     Article-only pre-pass: LLM marks exact REKLAMA/SZUM line
-                          ranges before final chunking. The resulting lossless proposal
-                          is saved in this same run without semantic chunk analysis.
             scope_chapter: 1-based chapter position (as returned by detect_chapters /
                           GET /document/<id>/chapters) — analyze only that chapter;
                           run.scope is set to the chapter title. Article mode only.
@@ -389,7 +385,7 @@ class DocumentAnalysisService:
         """
         from library.chunk_llm_analysis import (
             analyze_article_chunk, analyze_chunk, assign_speakers,
-            extract_speaker_info, propose_article_cleanup, remove_speech_fillers,
+            extract_speaker_info, remove_speech_fillers,
         )
         from library.text_functions import split_markdown_into_chunks, split_text_into_sentence_chunks
 
@@ -398,11 +394,9 @@ class DocumentAnalysisService:
         is_transcript = mode == "transcript"
         if scope_chapter is not None and is_transcript:
             raise ValueError("scope_chapter requires article mode")
-        if preclean and is_transcript:
-            raise ValueError("preclean requires article mode")
         if reclean and is_transcript:
             raise ValueError("reclean requires article mode")
-        proposal_only = split_only or preclean
+        proposal_only = split_only
 
         def log(msg: str) -> None:
             logger.info(msg)
@@ -503,26 +497,10 @@ class DocumentAnalysisService:
             from library.author_biography import extract_trailing_author_biography
 
             article_body, author_bio = extract_trailing_author_biography(text, getattr(doc, "byline", None))
-            preclean_meta: list[tuple[str, str | None]] = []
-            if preclean:
-                log("preclean: detecting ads and noisy line ranges before final split...")
-                proposed = propose_article_cleanup(article_body, model)
-                chunk_texts = []
-                for piece in proposed:
-                    piece_chunks = (
-                        split_markdown_into_chunks(piece["text"], chunk_size)
-                        if piece["type"] == "TEMAT" else [piece["text"]]
-                    )
-                    chunk_texts.extend(piece_chunks)
-                    preclean_meta.extend([(piece["type"], piece["topic"])] * len(piece_chunks))
-                log(f"preclean: {sum(1 for t, _ in preclean_meta if t != 'TEMAT')} excluded ranges proposed")
-            else:
-                chunk_texts = split_markdown_into_chunks(article_body, chunk_size)
+            chunk_texts = split_markdown_into_chunks(article_body, chunk_size)
             if author_bio:
                 chunk_texts.append(author_bio)
                 author_bio_position = len(chunk_texts) - 1
-                if preclean:
-                    preclean_meta.append(("SZUM", "Notka biograficzna autora"))
                 log(f"author biography isolated ({len(author_bio):,} chars)")
             segments = []
         log(f"split={len(chunk_texts)} chunks, max {chunk_size:,} chars")
@@ -540,8 +518,8 @@ class DocumentAnalysisService:
             log(f"proposal: {total} chunks without semantic LLM analysis")
             sections = [
                 {
-                    "type": preclean_meta[i][0] if preclean else ("SZUM" if i == author_bio_position else "TEMAT"),
-                    "topic": preclean_meta[i][1] if preclean else ("Notka biograficzna autora" if i == author_bio_position else None),
+                    "type": "SZUM" if i == author_bio_position else "TEMAT",
+                    "topic": "Notka biograficzna autora" if i == author_bio_position else None,
                     "original": chunk_text,
                     "text": None,
                     "ratio": None,

@@ -168,7 +168,7 @@ def _analysis_worker() -> None:
                     no_synthesis=params["no_synthesis"],
                     progress_fn=lambda msg: _update_analysis_job(job_id, progress=msg),
                     mode=params["mode"], split_only=params["split_only"],
-                    preclean=params["preclean"], reclean=params["reclean"],
+                    reclean=params["reclean"],
                     scope_chapter=params.get("scope_chapter"),
                 )
             ad_count = sum(1 for chunk in run.chunks if chunk.type == "REKLAMA")
@@ -341,8 +341,6 @@ def analyze_document_chunks(doc_id: int):
         no_synthesis — skip final synthesis step (default: false)
         mode         — "transcript" (default) or "article"
         split_only   — split into chunks without any LLM analysis (default: false)
-        preclean     — article-only LLM cleanup proposal before final split;
-                       saved as the first stage of the same run (default: false)
         scope_chapter — 1-based chapter position (see GET /document/<id>/chapters);
                        analyze only that chapter (article mode only)
 
@@ -356,13 +354,10 @@ def analyze_document_chunks(doc_id: int):
     no_synthesis = bool(data.get("no_synthesis", False))
     mode = data.get("mode", "transcript")
     split_only = bool(data.get("split_only", False))
-    preclean = bool(data.get("preclean", False))
     reclean = bool(data.get("reclean", False))
     scope_chapter = data.get("scope_chapter")
     if mode not in ANALYSIS_MODES:
         return jsonify({"status": "error", "message": f"Invalid mode: {mode}"}), 400
-    if preclean and mode != "article":
-        return jsonify({"status": "error", "message": "preclean requires article mode"}), 400
     if reclean and mode != "article":
         return jsonify({"status": "error", "message": "reclean requires article mode"}), 400
     if scope_chapter is not None:
@@ -394,7 +389,7 @@ def analyze_document_chunks(doc_id: int):
         parameters={
             "model": model, "chunk_size": chunk_size,
             "no_synthesis": no_synthesis, "mode": mode,
-            "split_only": split_only, "preclean": preclean,
+            "split_only": split_only,
             "reclean": reclean, "scope_chapter": scope_chapter,
         },
         progress="Oczekuje w kolejce",
