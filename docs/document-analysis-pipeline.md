@@ -31,13 +31,44 @@ Ten etap dzieje się raz, przy dodaniu dokumentu (`imports/dynamodb_sync.py`,
 |---|---|---|
 | Pobranie surowego HTML | deterministyczne (requests/BeautifulSoup) | `library/website/website_download_context.py` |
 | Konwersja HTML → markdown | deterministyczne (MarkItDown/html2markdown) | `library/article_pipeline.py: ensure_raw_markdown()` |
-| Wykrycie granic artykułu (gdzie zaczyna/kończy się właściwa treść vs. layout portalu) | **LLM** z regexowym fallbackiem gdy LLM zawiedzie | `library/article_extractor.py: process_article_with_llm_fallback()` (wywoływane przez `article_pipeline.py: extract_article()`) |
+| Wykrycie granic artykułu | **hybryda, asymetryczna między początkiem a końcem — patrz niżej** | `library/article_extractor.py: process_article_with_llm_fallback()` |
 | Autor — ekstrakcja deterministyczna (tylko wp.pl/o2.pl/money.pl, z pola `cauthor` w HTML lub selektora CSS) | **REGEX/HTML** | `library/article_metadata.py: extract_article_author()` |
 | Data publikacji — jeśli portal daje ją wprost | **REGEX/HTML** | (per-portal, różne miejsca) |
 
 Efekt: `documents.text_md` (markdown już z grubsza wyekstrahowany), ewentualnie `documents.byline`
 uzupełniony deterministycznie już na tym etapie (stąd `byline_method` bywa `NULL` — "legacy/import-set",
 patrz `library/db/models.py:363-368`).
+
+### Wykrywanie granic artykułu — jak dokładnie (nie jest to proste "LLM z fallbackiem")
+
+To dzieje się w dwóch zupełnie osobnych momentach, z różną rolą regexu i LLM:
+
+**a) Jednorazowa ekstrakcja przy imporcie** (`article_extractor.py`):
+1. **Regex — wstępne odchudzenie wejścia dla LLM** (nie wyznacza finalnych granic):
+   `_trim_markdown_navigation()` (znajdź ostatni H1, odetnij co wcześniej) +
+   `_clean_markdown_for_llm()` (per-portal regexy: utnij od stopki, pomiń znane sekcje
+   premium/reklamowe i pojedyncze linie-śmieci).
+2. **LLM** (Bielik, ARK Labs lub CloudFerro jako fallback) czyta oczyszczony tekst i zwraca
+   dokładny **cytat** pierwszego i ostatniego zdania artykułu (`article_first_sentence`/
+   `article_last_sentence`) — `extract_article_markers_with_llm()`.
+3. `extract_article_by_markers()` wyznacza finalne granice — **asymetrycznie**:
+   - **Początek** = zawsze marker z LLM. Brak regexowej alternatywy na tym etapie.
+   - **Koniec** = odwrotnie niż można by się spodziewać: jeśli portal ma zarejestrowany
+     deterministyczny marker stopki (`PORTAL_FOOTER_MARKERS`, np. `"Komentarze ("` dla
+     bankier.pl, `"Wybrane dla Ciebie"` dla wp.pl) — **regex wygrywa i całkowicie ignoruje
+     sugestię LLM** (`_find_footer_line()`). Marker z LLM jest używany **tylko** gdy portal
+     nie ma jeszcze zarejestrowanego markera stopki.
+
+**b) Każde kolejne czyszczenie** (`article_cleaner.py: clean_article_text()`, wołane przy
+   każdym `create_run()`/„Przeczyść i podziel ponownie") — to już **w 100% regex**, LLM
+   w ogóle nie bierze udziału; reużywa tych samych `_find_footer_line()`/`_find_start_line()`
+   co wyżej, ale tnie już wcześniej wyekstrahowany `text_md`.
+
+**Sprzężenie zwrotne**: `generate_regex_draft()` przy każdej ekstrakcji LLM zapisuje plik
+`.regex.draft` z kontekstem wokół znalezionych granic — surowiec do ręcznego dopisania nowego
+portalu do `PORTAL_FOOTER_MARKERS`/`PORTAL_START_AFTER_MARKERS`. W praktyce: nowy/nieznany
+portal → LLM znajduje granice za każdym razem (drogo) → człowiek przegląda draft i dopisuje
+regex → kolejne artykuły z tego portalu mają koniec wykrywany za darmo regexem.
 
 ---
 
