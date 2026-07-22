@@ -30,11 +30,15 @@ The Chrome/Kiwi browser extension remains essential for capturing content from t
 
 ## Roadmap
 
+**Where things actually stand (2026-07-22):** Phase 4 (NAS migration) is the only phase with active, in-progress work right now (storage abstraction, see `docs/deployment/nas/storage-and-jobs-migration-plan.md`). Phase 5 is done and then some. Phases 2/3/6 are started but paused/superseded — see their notes below. Progress isn't sequential by phase number.
+
 ### Phase 1: Current State
 
 See [Current Architecture](#current-architecture) for a detailed breakdown of what exists today — Flask REST API backend, React SPA frontend, PostgreSQL with pgvector, AWS serverless deployment, and Chrome/Kiwi browser extension.
 
 ### Phase 2: MCP Server Foundation
+
+**On hold (2026-07-22):** Turned out not to be needed for now — paused, not a priority. A real `backend/mcp_server/` package exists (FastMCP-based) with two working tools (`lenie_unreviewed_articles`, `lenie_get_article` in `tools/lenie.py`), but it's a narrow starting slice, not the broader "search, retrieve, content management" surface described below.
 
 - Implement MCP server protocol — expose search, retrieve, and content management endpoints as MCP tools
 - Claude Desktop integration — configure Lenie-AI as an MCP server in Claude Desktop
@@ -42,6 +46,8 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 - ~~Remove legacy Add URL app (`web_add_url_react`) and its dedicated API Gateway~~ — Done (archived to `_archive/`, Chrome/Kiwi browser extension is the sole content submission interface)
 
 ### Phase 3: Obsidian Integration
+
+**Note (2026-07-22):** Obsidian integration exists today, but through a different path than planned here — the `/obsidian-note` skill + `article_browser.py` write notes to the vault directly, tracked via `obsidian_note_paths` on document chunks. The MCP route (`backend/mcp_server/tools/obsidian.py`) is still just a docstring, no implementation — on hold along with Phase 2 above.
 
 - Obsidian vault synchronization — link database content with markdown files in a local vault
 - Semantic search from within Obsidian via Claude Desktop + MCP — ask questions about your knowledge base without leaving your notes
@@ -56,6 +62,8 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 - Multi-environment support — parameterized deployments across dev/qa/prod
 
 ### Phase 5: LLM Text Analysis
+
+**Done, and grew well beyond this original scope (2026-07-22):** person/place NER with canonicalization, a dated-events timeline, per-chapter tone/register classification, thematic tagging with country extraction, and a full chunk-review analysis pipeline — all implemented and deployed. See `backend/library/entity_service.py`, `person_registry.py`, `timeline_events.py`, `tones.py`, `article_tagging.py`, `document_analysis_service.py`.
 
 - Automatic document analysis via LLM — extract structured metadata as JSON (author, topic, countries, data source, people, organizations)
 - JSONB storage in PostgreSQL with GIN indexes for metadata search
