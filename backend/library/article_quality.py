@@ -29,8 +29,11 @@ SHORT_TEXT_CHARS = 1_500
 _CAPTION_MAX_CHARS = 120
 
 # Linie zaczynające się od typowego prefiksu creditu
+# Possessive quantifiers (Python 3.11+) — dwa sąsiadujące \s* rozdzielone
+# opcjonalną grupą dawały wielorakie sposoby podziału tego samego ciągu
+# spacji (polynomial ReDoS na długich liniach bez trafienia).
 _CAPTION_PREFIX_RE = re.compile(
-    r"^\s*(?:\*{1,2}|_)?\s*(?:fot\.|foto:|zdj[eę]cie:|zdj\.|źród[łl]o\s+zdj[eę]cia|autor\s+zdj[eę]cia)",
+    r"^\s*+(?:\*{1,2}|_)?\s*+(?:fot\.|foto:|zdj[eę]cie:|zdj\.|źród[łl]o\s+zdj[eę]cia|autor\s+zdj[eę]cia)",
     re.IGNORECASE,
 )
 
@@ -43,9 +46,12 @@ _CAPTION_STOCK_RE = re.compile(
     re.IGNORECASE,
 )
 
+# agencj\w+\s+wyborcz\w+: possessive \w++/\s++ — bez tego każde wystąpienie
+# "agencj..." bez pasującego "wyborcz" dawało pełny nawrót przez \w+ i \s+
+# (polynomial ReDoS na liniach z wieloma powtórzeniami "agencj").
 _CAPTION_AGENCY_SOURCE_RE = re.compile(
     r"(?:\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|\bBloomberg\b|"
-    r"\bForum\b\s*/|/\s*Forum\b|agencj\w+\s+wyborcz\w+)",
+    r"\bForum\b\s*/|/\s*Forum\b|agencj\w++\s++wyborcz\w+)",
     re.IGNORECASE,
 )
 
@@ -54,7 +60,7 @@ _CAPTION_AGENCY_RE = re.compile(
     r"adobe\s+stock|istock(?:photo)?|depositphotos|123rf|unsplash|pexels|"
     r"domena\s+publiczna|\bcc\s+by(?:-sa)?\b|creative\s+commons|archiwum\s+prywatne|©|"
     r"\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|\bBloomberg\b|"
-    r"\bForum\b\s*/|/\s*Forum\b|agencj\w+\s+wyborcz\w+)",
+    r"\bForum\b\s*/|/\s*Forum\b|agencj\w++\s++wyborcz\w+)",
     re.IGNORECASE,
 )
 
@@ -77,7 +83,7 @@ def _deglue_credits(line: str) -> str:
 # agencji w podpisie -> domeny serwisów tego wydawcy.
 PUBLISHER_OWN_AGENCIES: list[tuple[re.Pattern, tuple[str, ...]]] = [
     # Agencja Wyborcza.pl — agencja fotograficzna Agory
-    (re.compile(r"agencj\w+\s+wyborcz\w+", re.IGNORECASE),
+    (re.compile(r"agencj\w++\s++wyborcz\w+", re.IGNORECASE),
      ("wyborcza.pl", "gazeta.pl", "wyborcza.biz", "wysokieobcasy.pl", "tokfm.pl")),
 ]
 
@@ -231,7 +237,9 @@ def photo_caption_candidates(text: str, url: str | None = None) -> list[dict]:
             continue
         if stripped.startswith("[img"):
             candidates.append({"line_index": index, "text": stripped, "category": "image_marker"})
-            marker = re.match(r'^\[img\d+(?::\s*([^\]]*))?\]\s*$', stripped)
+            # possessive \s*+ / [^\]]*+: bez tego oba sposoby konsumowania
+            # spacji po ":" nakładały się (polynomial ReDoS na "[imgN: " + wiele spacji).
+            marker = re.match(r'^\[img\d+(?::\s*+([^\]]*+))?\]\s*+$', stripped)
             pending_image_alt = (marker.group(1) or "").strip() if marker else None
             pending_image_lines = 3 if marker else 0
             if not marker:
