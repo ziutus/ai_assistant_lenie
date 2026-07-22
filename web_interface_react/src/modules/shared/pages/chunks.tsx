@@ -1593,8 +1593,8 @@ const Chunks = () => {
   const reviewReady = tematChunks.length > 0 && unapprovedTematCount === 0 && chunksToAnalyze.length === 0;
   const workflowBusy = !!jobId || reanalyzingAll || approvingAll || !!embedJobId;
   const analyzedTematCount = tematChunks.filter(c => c.summary).length;
-  // Preclean leaves REKLAMA/SZUM chunks behind; a clean article leaves none,
-  // so once the LLM analysis produced summaries the detection step is also done.
+  // A noisy article leaves REKLAMA/SZUM chunks behind; a clean article leaves
+  // none, so once the LLM analysis produced summaries the detection step is done.
   const noiseMarkingDone = reklamaCount > 0 || analyzedTematCount > 0 || runStatus === "reviewed";
   const processComplete = runStatus === "reviewed" && embeddedCount > 0 && !embedJobId;
 
