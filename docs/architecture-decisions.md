@@ -1,6 +1,8 @@
 # Architecture Decision Records (ADR)
 
 > Living document tracking key architectural decisions in Project Lenie.
+>
+> **Uwaga (2026-07-22):** Ten plik jest podsumowaniem wygenerowanym 2026-02-13 i nie obejmuje nowszych decyzji (np. ADR-015: UUID jako globalny identyfikator dokumentu, ADR-017: search rebuild scope decisions). Traktuj [`docs/adr/`](adr/) jako kompletne i aktualne źródło prawdy — ten plik jako wygodne, ale niekompletne podsumowanie starszych wpisów.
 
 ## ADR-001: Remove `/translate` Endpoint and Use Native-Language Embeddings
 

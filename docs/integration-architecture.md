@@ -1,6 +1,8 @@
 # Integration Architecture
 
 > Generated: 2026-02-13 | Project: lenie-server-2025 | Type: Multi-part Monorepo
+>
+> **ZASTĄPIONE (2026-07-22):** Ten diagram zakłada, że tryb AWS Serverless (Lambda/API Gateway/DynamoDB) jest równoległym, aktywnym trybem obok Dockera — dziś AWS jest dormant/nieaktywny (`docs/aws-roadmap.md`), a jedyne aktywnie wdrażane środowisko to NAS (`docs/deployment/README.md`). `/website_similar` (wspomniany niżej jako endpoint AWS-trybu) został usunięty w Etapie 12 — dziś `POST /search` (patrz `docs/search-hybrid.md`). Zachowane jako zapis historyczny.
 
 ## Integration Overview
 

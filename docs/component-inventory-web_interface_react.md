@@ -1,6 +1,8 @@
 # Component Inventory — Main Frontend (web_interface_react)
 
 > Generated: 2026-02-13 | Part: web_interface_react | Type: React 18 SPA
+>
+> **Uwaga (2026-07-22):** Struktura komponentów jest prawdopodobnie w dużej mierze aktualna, ale konkretne szczegóły stron (np. `search.jsx` opisany niżej jako "Dual-path: AWS (2 calls) vs Docker (1 call)") odnoszą się do trybu AWS Serverless, dziś nieaktywnego (`docs/aws-roadmap.md`) — wyszukiwanie działa dziś przez `POST /search` (`docs/search-hybrid.md`). Zweryfikuj względem [`web_interface_react/CLAUDE.md`](../web_interface_react/CLAUDE.md) i rzeczywistego kodu przed poleganiem na szczegółach niżej.
 
 ## Component Hierarchy
 

@@ -252,3 +252,15 @@ Now we have Bielik (https://bielik.ai), which perfectly understands the magic of
 ![img.png](bielik_psy_pl.png)
 
 You can use Bielik on [CloudFerro.com](https://sherlock.cloudferro.com/#pricing)
+
+### Where Bielik is actually used today
+
+This isn't just a curiosity — Bielik (`Bielik-11B-v3.0-Instruct`/`v2.3-Instruct`, via CloudFerro Sherlock) is the default model behind most of the LLM-driven analysis in this project, wired through the common `ai_ask()` provider abstraction (`backend/library/ai.py`):
+
+- **Search query parsing** — `parse_search_query()` (`backend/library/search/parser.py`) turns a natural-language search request into structured filters (dates, authors, historical periods, sort order) behind `POST /search`; see the baseline evaluation in [`docs/search-rebuild-bielik-baseline.md`](docs/search-rebuild-bielik-baseline.md).
+- **Article thematic tagging & country extraction** — `article_tagging.py` (`DEFAULT_TAGGING_MODEL = "Bielik-11B-v3.0-Instruct"`, overridable via `TAGGING_MODEL`).
+- **Article boundary extraction** — `article_extractor.py`, separating real article text from portal noise.
+- **Chunk analysis pipeline** — `chunk_llm_analysis.py`/`document_analysis_service.py`: speaker extraction, rewriting, summarization, topic synthesis for the reader/Obsidian-note workflow.
+- **Tone, timeline, and time-period extraction** — `tones.py`, `timeline_events.py`, `time_periods.py`: per-chapter emotional tone/register, dated events, and historical periods a document discusses.
+
+Every call is routed and cost-tracked centrally (`library/llm_usage/`), regardless of which provider (Bielik, OpenAI, Bedrock, Vertex AI) actually served it. See [`backend/library/CLAUDE.md`](backend/library/CLAUDE.md) for the full provider abstraction and module list.

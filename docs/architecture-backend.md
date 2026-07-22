@@ -1,6 +1,8 @@
 ﻿# Architecture â€” Backend API
 
 > Generated: 2026-02-13 | Part: backend | Type: REST API | Framework: Flask
+>
+> **ZASTĄPIONE (2026-07-22):** Ten dokument opisuje stan sprzed kilku istotnych zmian — w szczególności "ORM: None (raw psycopg2)" poniżej jest nieaktualne od [ADR-004a](adr/adr-004a-sqlalchemy-orm-migration.md) (migracja do SQLAlchemy + Pydantic), a sekcja "AWS Lambda" opisuje dziś nieaktywny tor wdrożenia (patrz `docs/aws-roadmap.md`). Aktualna architektura backendu: [`backend/CLAUDE.md`](../backend/CLAUDE.md) i zagnieżdżone `CLAUDE.md` w `backend/library/`, `backend/database/`, `backend/imports/`. Reszta tego pliku (LLM/embedding abstraction, content pipeline, testing) może wciąż być w większości aktualna, ale nie została dziś zweryfikowana — traktuj jako zapis historyczny do potwierdzenia.
 
 ## Architecture Pattern
 
@@ -25,7 +27,7 @@ PostgreSQL 18 + pgvector
 | Language | Python | >= 3.11 |
 | Framework | Flask + Flask-CORS | latest |
 | Database | PostgreSQL + pgvector | 18 |
-| ORM | None (raw psycopg2) | â€” |
+| ORM | ~~None (raw psycopg2)~~ **superseded — SQLAlchemy 2.x + Alembic, see ADR-004a** | — |
 | Package Manager | uv (hatchling build) | latest |
 | LLM | OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bielik | multi-provider |
 | Embeddings | ada-002, Titan v1/v2, BAAI/bge-multilingual | 1024-1536 dim (model-dependent) |

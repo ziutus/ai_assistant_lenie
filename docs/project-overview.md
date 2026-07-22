@@ -1,6 +1,8 @@
 # Project Overview — Lenie Server 2025
 
 > Generated: 2026-02-13 | Version: 0.3.13.0 | Status: Active Development
+>
+> **ZASTĄPIONE (2026-07-22):** Ten dokument opisuje architekturę sprzed pivotu na NAS-first jako "aktualną" — w szczególności AWS Serverless jako główny tryb wdrożenia, "No ORM: raw psycopg2" (nieaktualne od ADR-004a, migracja do SQLAlchemy) i "License: MIT" (nieaktualne — projekt jest dziś na Business Source License 1.1, patrz [`LICENSE`](../LICENSE)). Aktualne źródła: [`CLAUDE.md`](../CLAUDE.md) (root), [`docs/deployment/README.md`](deployment/README.md). Reszta tego pliku zachowana jako zapis historyczny.
 
 ## Executive Summary
 

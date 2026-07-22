@@ -1,6 +1,8 @@
 # Backlog Reference
 
-Quick reference of all backlog items. For full specifications (acceptance criteria, technical notes, user stories), see the [main backlog](./../_bmad-output/planning-artifacts/epics/backlog.md).
+> **ZASTĄPIONE (2026-07-22):** Pełny, aktualny backlog jest dziś w prywatnym repo (`lenie-bmad-private`), nie w tym repozytorium — `_bmad-output/planning-artifacts/epics/backlog.md` już tu nie istnieje. Tabele poniżej to zapis historyczny stanu backlogu na 2026-02-13 do 2026-03-31 (patrz daty w kolumnie Status), nie aktualna lista zadań.
+
+Quick reference of all backlog items. For full specifications (acceptance criteria, technical notes, user stories), see the main backlog (private planning repo, not part of this public repository).
 
 ## Sprint 6: Security Verification
 

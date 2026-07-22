@@ -2,6 +2,8 @@
 
 A brief history of how Project Lenie evolved — key turning points, lessons learned, and why things are the way they are.
 
+> **Dopisek (2026-07-22):** Ta historia kończy się na "Trzech sprintach porządkowania infrastruktury" (luty-marzec 2026) i nie obejmuje późniejszego pivotu na architekturę NAS-first (Docker Compose: Flask + PostgreSQL + MinIO + workery na własnym QNAP, AWS Serverless dziś dormant) — patrz [`docs/deployment/README.md`](deployment/README.md) dla dalszego ciągu tej ewolucji.
+
 ## From English-Only Embeddings to Multilingual
 
 In the early days, embedding models only worked well with English text. Since most of the documents collected by Lenie are in Polish (news articles, social media posts, books), the system needed a translation step before generating embeddings. That's why the `/translate` endpoint existed and why the document processing pipeline includes a `READY_FOR_TRANSLATION` state.

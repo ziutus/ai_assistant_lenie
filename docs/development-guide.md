@@ -1,6 +1,8 @@
 # Development Guide
 
 > Generated: 2026-02-13 | Project: lenie-server-2025
+>
+> **Uwaga (2026-07-22):** Sekcje o środowisku deweloperskim (uv, WSL, debugpy, testy, line endings, MCP servers) są prawdopodobnie wciąż w dużej mierze aktualne — zweryfikuj względem [`CLAUDE.md`](../CLAUDE.md) (root), jeśli coś się nie zgadza. Dwie sekcje "Future" na końcu pliku (LLM Text Analysis, Multiuser Support) opisują plan sprzed pivotu na NAS-first i są oznaczone jako nieaktualne poniżej.
 
 ## Prerequisites
 
@@ -590,9 +592,9 @@ Common issues:
 
 ## Future: LLM Text Analysis (Phase 6)
 
-> **Status:** Backlog — po MVP (Security, MCP Server, Obsidian), przed Multiuser.
+> **Status: w dużej mierze już zaimplementowane inaczej (2026-07-22).** Automatyczna analiza LLM dokumentów (NER osób/miejsc, oś czasu wydarzeń, klasyfikacja tonu/okresów czasowych) już istnieje i jest wdrożona na NAS — patrz `backend/library/entity_service.py`, `backend/library/person_registry.py`, `docs/search-hybrid.md`. Sekcja poniżej to historyczny, wcześniejszy plan (prostszy, jedna kolumna JSONB) — nie odzwierciedla dzisiejszego, znacznie bardziej rozbudowanego stanu.
 
-Automatyczna analiza tekstu dokumentów przez LLM, zwracająca ustrukturyzowany JSON z metadanymi. Backlog items (B-29 do B-32) w `_bmad-output/implementation-artifacts/sprint-status.yaml`.
+Automatyczna analiza tekstu dokumentów przez LLM, zwracająca ustrukturyzowany JSON z metadanymi. Backlog items (B-29 do B-32) — prywatny backlog planowania, nie część tego publicznego repozytorium.
 
 ### Zakres
 
@@ -612,9 +614,9 @@ Automatyczna analiza tekstu dokumentów przez LLM, zwracająca ustrukturyzowany 
 
 ## Future: Multiuser Support (Phase 7)
 
-> **Status:** Backlog — planowane na samym końcu, po zakończeniu wszystkich faz łącznie z LLM Text Analysis.
+> **Status: SUPERSEDED (2026-07-22).** Zaimplementowane inaczej niż poniżej — household trust model (per-user API keys, brak haseł, brak Cognito) dla małego grona zaufanych użytkowników, nie ogólny multi-tenant przez AWS Cognito. Patrz [`docs/deployment/nas/multi-user-household.md`](deployment/nas/multi-user-household.md) dla aktualnego stanu. Pełny multi-tenant dla niezaufanych użytkowników pozostaje osobnym, niezaimplementowanym eksperymentem myślowym ([`docs/deployment/commercial-multi-tenant-scaling-experiment.md`](deployment/commercial-multi-tenant-scaling-experiment.md)).
 
-Sekcja multiuser umożliwi korzystanie z systemu przez wielu użytkowników na infrastrukturze AWS. Backlog items (B-23 do B-28) w `_bmad-output/implementation-artifacts/sprint-status.yaml`.
+Sekcja multiuser umożliwi korzystanie z systemu przez wielu użytkowników na infrastrukturze AWS. Backlog items (B-23 do B-28) — prywatny backlog planowania, nie część tego publicznego repozytorium.
 
 ### Zakres
 

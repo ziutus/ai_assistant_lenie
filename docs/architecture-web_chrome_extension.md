@@ -1,6 +1,8 @@
 # Architecture — Browser Extension (web_chrome_extension)
 
 > Generated: 2026-02-13 | Part: web_chrome_extension | Type: Chrome Extension (Manifest v3)
+>
+> **Uwaga (2026-07-22):** Popup/data-flow/permissions poniżej są prawdopodobnie wciąż aktualne. "Server URL (default: AWS API Gateway endpoint)" odzwierciedla dziś nieaktywny tor AWS (patrz `docs/aws-roadmap.md`) — docelowo powinien wskazywać na NAS, ale nie jest to jeszcze zmienione w kodzie (patrz otwarty wątek dostępu zdalnego w `docs/deployment/`). Zweryfikuj względem [`web_chrome_extension/CLAUDE.md`](../web_chrome_extension/CLAUDE.md) przed poleganiem na tym pliku.
 
 ## Architecture Pattern
 

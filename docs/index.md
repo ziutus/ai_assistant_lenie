@@ -1,6 +1,8 @@
 # Project Documentation Index — Lenie Server 2025
 
 > Generated: 2026-02-13 | Version: 0.3.13.0 | Scan: Exhaustive
+>
+> **ZASTĄPIONE (2026-07-22):** Ten indeks i większość dokumentów, do których linkuje, opisują architekturę sprzed pivotu na NAS-first (AWS serverless jako "current", Cognito jako plan multiuser) — traktuj je jako zapis historyczny, nie aktualny stan. **Aktualne źródła prawdy:** [`CLAUDE.md`](../CLAUDE.md) (root — mapa podprojektów i komendy) i [`docs/deployment/README.md`](deployment/README.md) (co jest realne, co jest eksperymentem myślowym). Inne pliki linkowane niżej (`source-tree-analysis.md`, `integration-architecture.md`, `api-contracts-backend.md`, `data-models-backend.md`, `component-inventory-*.md`, `technology-choices.md`, `system-evolution.md`, `infrastructure-metrics.md`) pochodzą z tego samego wygenerowanego 2026-02-13 zestawu i najprawdopodobniej mają ten sam problem — nie zostały jeszcze zweryfikowane.
 
 ## Project Overview
 
@@ -61,7 +63,7 @@
 - [System Evolution](./system-evolution.md) — How the project evolved: embedding strategy, infrastructure cleanup, cost-driven design
 
 ### Planning & Backlog
-- [Backlog Reference](./backlog-reference.md) — Quick reference of all backlog items (B-xx) with status and dependencies
+- [Backlog Reference](./backlog-reference.md) — historyczny stan backlogu (B-xx); pełny, aktualny backlog jest dziś w prywatnym repo (`lenie-bmad-private`), nie w tym repozytorium
 
 ### Guides
 - [Development Guide](./development-guide.md) — Prerequisites, setup, running, testing, code quality
@@ -105,11 +107,11 @@
 ## Getting Started
 
 ### For AI-Assisted Development
-1. Start with this `index.md` as the primary entry point
-2. Read [Project Overview](./project-overview.md) for high-level understanding
-3. Check [Architecture docs](./architecture-backend.md) for the part you're working on
-4. Reference [API Contracts](./api-contracts-backend.md) for endpoint details
-5. Use [Data Models](./data-models-backend.md) for database schema
+1. Start with [`CLAUDE.md`](../CLAUDE.md) (root) and [`docs/deployment/README.md`](deployment/README.md) — these are current, this `index.md` and the docs below it are not
+2. ~~Read Project Overview for high-level understanding~~ — superseded, see banner above
+3. Check [Architecture docs](./architecture-backend.md) for the part you're working on, but verify against `backend/CLAUDE.md` and sibling `CLAUDE.md` files first
+4. Reference [API Contracts](./api-contracts-backend.md) for endpoint details (unverified — same 2026-02-13 generation batch)
+5. Use [Data Models](./data-models-backend.md) for database schema (unverified — same 2026-02-13 generation batch)
 
 ### For Local Development
 1. Follow [Development Guide](./development-guide.md) for setup instructions

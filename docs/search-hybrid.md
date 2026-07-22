@@ -1,6 +1,13 @@
 # Hybrid document search
 
-`GET /search` (frontend `web_interface_react`) is backed by `SearchService.search_similar()`
+> **Poprawka (2026-07-22):** Ten dokument opisywał pierwotnie `GET /search` i `SearchService.search_similar()` —
+> ten endpoint/metoda zostały usunięte w Etapie 12 (patrz sekcja "Porządki wykonane w Etapie 12" niżej).
+> Dziś to `POST /search` (`backend/library/search_routes.py`) wywołujące `SearchService.search()`
+> (`backend/library/search_service.py`). Cała reszta tego dokumentu — analiza bugów, wagi scoringu,
+> decyzje wydajnościowe — dotyczy tej samej logiki merge/scoring, która przetrwała bez zmian pod nową nazwą
+> metody/endpointu; tylko nagłówek był nieaktualny.
+
+`POST /search` (frontend `web_interface_react`) is backed by `SearchService.search()`
 (`backend/library/search_service.py`), which combines two independent signals for the same
 query text:
 

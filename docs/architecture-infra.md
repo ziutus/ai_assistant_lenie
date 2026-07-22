@@ -1,6 +1,8 @@
 # Architecture — Infrastructure
 
 > Generated: 2026-02-13 | Part: infra | Type: Multi-cloud IaC
+>
+> **ZASTĄPIONE (2026-07-22):** Ten dokument nie wspomina o NAS-ie ani razu, mimo że to dziś jedyne aktywnie wdrażane środowisko (Docker Compose: Flask + PostgreSQL + MinIO + workery na własnym QNAP) — patrz [`docs/deployment/README.md`](deployment/README.md) i [`docs/deployment/nas/`](deployment/nas/). AWS Serverless (sekcja 2 poniżej) jest dziś nieaktywny/dormant (patrz `docs/aws-roadmap.md`), Kubernetes/GCloud pozostają eksperymentalne. Zachowane jako zapis historyczny stanu infrastruktury AWS/K8s.
 
 ## Architecture Pattern
 
