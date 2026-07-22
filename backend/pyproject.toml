@@ -41,7 +41,6 @@ dependencies = [
     "alembic>=1.13",
     "markitdown>=0.1.4",
     "apify-client>=2.5.0",
-    "mcp>=1.28.1,<2.0",
     "defusedxml>=0.7",
 ]
 
@@ -145,7 +144,7 @@ exclude-newer = "7 days"
 unified-config-loader = { path = "../shared_python/unified-config-loader" }
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "mcp_server/tests"]
+testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

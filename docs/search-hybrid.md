@@ -281,3 +281,7 @@ wariant `POST /search` — bez wywołania LLM) wraz z `SearchService.search_simi
 (stabilna paginacja przy identycznych timestampach); raporty: `imports/search_reports.py`
 (interpretacje + koszty LLM + alert `cost_status='unknown'`/brak wpisu w `llm_pricing`,
 exit code 2 przy alercie — nadaje się na cron).
+
+**Aktualizacja 2026-07-22:** `slack_bot` usunięty z repo (niepotrzebny do utrzymania,
+zarchiwizowany na tagu `archive/slack-bot`) — `/ai_parse_intent` nie ma już znanych
+konsumentów; do rozważenia usunięcie endpointu w osobnym PR.

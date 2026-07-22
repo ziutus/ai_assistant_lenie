@@ -51,7 +51,7 @@ Flask + Flask-CORS application exposing 23 REST API endpoints. **Version**: 0.3.
 | **Auth & identity** | `/whoami`, `/api_keys` (GET/POST), `/api_keys/<id>` (DELETE) — see `library/api_key_routes.py` |
 | **Health & Info** | `/` (root), `/healthz`, `/startup`, `/readiness`, `/liveness`, `/version`, `/metrics` |
 
-All routes (except health checks) require an `x-api-key` header. Keys live in the `api_keys` table (`library/auth.py`: SHA-256 hash lookup with an in-process TTL cache; `kind=user` keys carry the reader identity used by `reader_routes.py`, `kind=service` keys have full access but get 403 on reader endpoints). There is no shared/legacy key fallback — every client (frontend, Chrome extension, slack-bot) authenticates with its own key. Keys are managed via `imports/api_key_admin.py` (CLI) or the `/api_keys` endpoints (service keys only); the plaintext (`lk_usr_*`/`lk_svc_*`) is shown once at creation.
+All routes (except health checks) require an `x-api-key` header. Keys live in the `api_keys` table (`library/auth.py`: SHA-256 hash lookup with an in-process TTL cache; `kind=user` keys carry the reader identity used by `reader_routes.py`, `kind=service` keys have full access but get 403 on reader endpoints). There is no shared/legacy key fallback — every client (frontend, Chrome extension) authenticates with its own key. Keys are managed via `imports/api_key_admin.py` (CLI) or the `/api_keys` endpoints (service keys only); the plaintext (`lk_usr_*`/`lk_svc_*`) is shown once at creation.
 
 ### Storage
 

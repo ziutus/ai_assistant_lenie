@@ -38,7 +38,7 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 
 ### Phase 2: MCP Server Foundation
 
-**On hold (2026-07-22):** Turned out not to be needed for now — paused, not a priority. A real `backend/mcp_server/` package exists (FastMCP-based) with two working tools (`lenie_unreviewed_articles`, `lenie_get_article` in `tools/lenie.py`), but it's a narrow starting slice, not the broader "search, retrieve, content management" surface described below.
+**Removed (2026-07-22):** A real `backend/mcp_server/` package existed (FastMCP-based) with two working tools (`lenie_unreviewed_articles`, `lenie_get_article` in `tools/lenie.py`), but it was a narrow starting slice, not the broader "search, retrieve, content management" surface described below, and turned out not to be needed for the actual Obsidian integration (see Phase 3). Removed from the codebase as unnecessary maintenance surface; archived at git tag `archive/mcp-server`.
 
 - Implement MCP server protocol — expose search, retrieve, and content management endpoints as MCP tools
 - Claude Desktop integration — configure Lenie-AI as an MCP server in Claude Desktop
@@ -47,7 +47,7 @@ See [Current Architecture](#current-architecture) for a detailed breakdown of wh
 
 ### Phase 3: Obsidian Integration
 
-**Note (2026-07-22):** Obsidian integration exists today, but through a different path than planned here — the `/obsidian-note` skill + `article_browser.py` write notes to the vault directly, tracked via `obsidian_note_paths` on document chunks. The MCP route (`backend/mcp_server/tools/obsidian.py`) is still just a docstring, no implementation — on hold along with Phase 2 above.
+**Note (2026-07-22):** Obsidian integration exists today, but through a different path than planned here — the `/obsidian-note` skill + `article_browser.py` write notes to the vault directly, tracked via `obsidian_note_paths` on document chunks. The MCP route (`backend/mcp_server/tools/obsidian.py`) was still just a docstring, no implementation, when the MCP server was removed along with Phase 2 above.
 
 - Obsidian vault synchronization — link database content with markdown files in a local vault
 - Semantic search from within Obsidian via Claude Desktop + MCP — ask questions about your knowledge base without leaving your notes
