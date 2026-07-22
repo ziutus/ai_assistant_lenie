@@ -113,7 +113,7 @@ Key difference: `useSearch` uses two-step process for AWS (get embedding → sea
 
 ## Form State Management
 
-All editing pages use **Formik** with 20 fields: `id, author, source, language, url, tags, title, summary, text, text_md, text_english, document_type, document_state, document_state_error, chapter_list, note, next_id, previous_id, next_type, previous_type`
+Document editing forms operate on source-language `title`, `summary`, `text` and `text_md`; the removed `text_english` translation field is no longer part of the contract.
 
 No client-side validation schema defined. Validation handled server-side.
 

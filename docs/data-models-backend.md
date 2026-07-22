@@ -16,16 +16,13 @@ Primary document storage table.
 | `url` | text | NOT NULL | Original source URL used for display and fetching |
 | `canonical_url` | text | NOT NULL | Normalized comparison key used for URL lookup and duplicate detection |
 | `document_type` | varchar(50) | NOT NULL | movie, youtube, link, webpage, text_message, text, email, social_media_post |
-| `processing_status` | varchar(50) | NOT NULL, DEFAULT 'URL_ADDED' | Techniczny stan przetwarzania (16 wartości; nie obejmuje recenzji runów ani notatek Obsidian) |
+| `processing_status` | varchar(50) | NOT NULL, DEFAULT 'URL_ADDED' | Techniczny stan przetwarzania (15 wartości; nie obejmuje recenzji runów ani notatek Obsidian) |
 | `processing_error_code` | text | — | Error details when state=ERROR |
 | `title` | text | — | Original title |
-| `title_english` | text | — | Translated title |
 | `text` | text | — | Cleaned extracted text |
 | `text_raw` | text | — | Raw text before cleanup |
-| `text_english` | text | — | Translated text |
 | `text_md` | text | — | Markdown version |
 | `summary` | text | — | AI-generated summary |
-| `summary_english` | text | — | Translated summary |
 | `language` | varchar(10) | — | Detected language code |
 | `tags` | text | — | Comma-separated tags |
 | `discovery_source_id` | integer | FK → discovery_sources.id | How the user discovered this content (wire format keeps the NAME under `source`; e.g. "own", "unknow.news", "friend") — used to evaluate recommendation quality |
@@ -66,7 +63,7 @@ Vector embeddings for similarity search.
 
 ## Document Processing States
 
-16 wartości w enumie `StalkerDocumentStatus` (`library/models/stalker_document_status.py`). Nie
+15 wartości w enumie `StalkerDocumentStatus` (`library/models/stalker_document_status.py`). Nie
 tworzą jednego liniowego procesu: część należy do YouTube, część do starszego pipeline'u Markdown,
 a część do nowego flow analizy chunków. Szczegółowe diagramy i klasyfikacja aktywny/legacy są w
 [`document-analysis-pipeline.md`](document-analysis-pipeline.md#mapy-documentprocessing_status).
@@ -80,7 +77,6 @@ a część do nowego flow analizy chunków. Szczegółowe diagramy i klasyfikacj
 | 5 | TRANSCRIPTION_DONE | Transcription completed |
 | 6 | TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS | Transcription split by chapters |
 | 7 | NEED_MANUAL_REVIEW | Automatic text cleanup failed — needs manual removal of ads/comments/spam |
-| 8 | READY_FOR_TRANSLATION | Deprecated; zachowany dla kompatybilności historycznych rekordów |
 | 9 | READY_FOR_EMBEDDING | Content ready for embedding generation |
 | 10 | EMBEDDING_EXIST | Final state — embeddings generated |
 | 11 | DOCUMENT_INTO_DATABASE | Document stored in database |
@@ -101,7 +97,8 @@ Obsidian jest wyliczany z `DocumentChunk.obsidian_note_paths`, a nie zapisywany 
 
 ## Document Status Errors
 
-14 error states in `StalkerDocumentStatusError` enum:
+15 aktywnych kodów w enumie `StalkerDocumentStatusError`. Historyczne kody błędów tłumaczenia
+usunięto w migracji `d18f4a6b2c7e`:
 
 | ID | Error | Description |
 |----|-------|-------------|
@@ -109,16 +106,17 @@ Obsidian jest wyliczany z `DocumentChunk.obsidian_note_paths`, a nie zapisywany 
 | 2 | ERROR_DOWNLOAD | Download failed |
 | 3 | LINK_SUMMARY_MISSING | Summary missing for link |
 | 4 | TITLE_MISSING | Title not found |
-| 5 | TITLE_TRANSLATION_ERROR | Title translation failed |
 | 6 | TEXT_MISSING | No text content |
-| 7 | TEXT_TRANSLATION_ERROR | Text translation failed |
-| 8 | SUMMARY_TRANSLATION_ERROR | Summary translation failed |
 | 9 | NO_URL_ERROR | URL missing |
 | 10 | EMBEDDING_ERROR | Embedding generation failed |
-| 11 | MISSING_TRANSLATION | Translation missing |
-| 12 | TRANSLATION_ERROR | Translation failed |
 | 13 | REGEX_ERROR | Regex processing error |
 | 14 | TEXT_TO_MD_ERROR | Markdown conversion error |
+| 15 | NO_CAPTIONS_AVAILABLE | Brak dostępnych napisów |
+| 16 | CAPTIONS_LANGUAGE_MISMATCH | Język napisów nie pasuje do dokumentu |
+| 17 | CAPTIONS_FETCH_ERROR | Błąd pobierania napisów |
+| 18 | TRANSCRIPTION_ERROR | Błąd transkrypcji |
+| 19 | TRANSCRIPTION_INSUFFICIENT_FUNDS | Brak środków u dostawcy transkrypcji |
+| 20 | ARTICLE_TRUNCATED | Reviewer zgłosił obciętą lub błędnie wyekstrahowaną treść |
 
 ## Document Types
 

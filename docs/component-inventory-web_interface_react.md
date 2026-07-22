@@ -86,7 +86,7 @@ AuthorizationProvider
 - **AWS RUM**: CloudWatch Real User Monitoring (disabled on localhost)
 
 ### Formik (form state per page)
-All document editing pages use Formik with fields: `id, author, source, language, url, tags, title, summary, text, text_md, text_english, document_type, document_state, document_state_error, chapter_list, note, next_id, previous_id, next_type, previous_type`
+Document editing pages use source-language `title`, `summary`, `text` and `text_md`; translated `*_english` fields are no longer part of the model.
 
 ## Styling
 

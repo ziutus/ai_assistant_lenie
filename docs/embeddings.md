@@ -15,8 +15,8 @@ Embeddings are stored in the `public.document_embeddings` table:
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `document_id` | `integer NOT NULL` | FK → `documents.id` (CASCADE delete) |
 | `langauge` | `varchar(10)` | Language of the embedded text (note: legacy typo, kept for compatibility) |
-| `text` | `text` | Text that was actually embedded (may be translated to English) |
-| `text_original` | `text` | Original text before translation (if applicable) |
+| `text` | `text` | Source-language text that was embedded |
+| `text_original` | `text` | Source text retained for compatibility and display |
 | `embedding` | `vector` | The vector embedding — dimensionless, supports any model |
 | `model` | `varchar(100) NOT NULL` | Name of the embedding model used |
 | `ingested_at` | `timestamp` | When the document entered Lenie (stage 11g rename from created_at; other tables keep their own created_at) |
@@ -29,26 +29,23 @@ The `embedding` column uses pgvector's dimensionless `vector` type (no fixed dim
 
 ### Supported Models
 
-| Model | Provider | Dimensions | Multilingual | Translation Required | Cost (per 1M tokens) | Documentation |
+| Model | Provider | Dimensions | Multilingual | Status | Cost (per 1M tokens) | Documentation |
 |-------|----------|-----------|--------------|---------------------|---------------------|---------------|
-| `text-embedding-ada-002` | OpenAI | 1536 | Yes (but best with English) | **Yes** — translate to English first | $0.10 | [OpenAI Embeddings](https://platform.openai.com/docs/models/text-embedding-ada-002) |
+| `text-embedding-ada-002` | OpenAI | 1536 | Limited/legacy | Legacy compatibility | $0.10 | [OpenAI Embeddings](https://platform.openai.com/docs/models/text-embedding-ada-002) |
 | `amazon.titan-embed-text-v1` | AWS Bedrock | 1536 | Limited | No | $0.10 | [Titan Text Embeddings](https://docs.aws.amazon.com/bedrock/latest/userguide/titan-embedding-models.html) |
 | `amazon.titan-embed-text-v2:0` | AWS Bedrock | 1024 | Yes | No | $0.02 | [Titan Text Embeddings V2](https://aws.amazon.com/blogs/machine-learning/get-started-with-amazon-titan-text-embeddings-v2-a-new-state-of-the-art-embeddings-model-on-amazon-bedrock/) |
 | `BAAI/bge-multilingual-gemma2` | CloudFerro (Sherlock) | 3584 | **Yes** (incl. Polish) | No | 0.52 PLN | [Model card (HuggingFace)](https://huggingface.co/BAAI/bge-multilingual-gemma2), [Sherlock pricing](https://sherlock.cloudferro.com/pl#pricing) |
 | `intfloat/e5-mistral-7b-instruct` | CloudFerro (Sherlock) | 4096 | **Yes** (incl. Polish) | No | 0.52 PLN | [Model card (HuggingFace)](https://huggingface.co/intfloat/e5-mistral-7b-instruct), [Sherlock pricing](https://sherlock.cloudferro.com/pl#pricing) |
-| `dunzhang/stella_en_1.5B_v5` | CloudFerro (Sherlock) | 1024 | No (English only) | **Yes** — translate to English first | 0.26 PLN | [Model card (HuggingFace)](https://huggingface.co/dunzhang/stella_en_1.5B_v5), [Sherlock pricing](https://sherlock.cloudferro.com/pl#pricing) |
 | `BAAI/bge-m3` | ARK Labs | 1024 | **Yes** (100+ languages incl. Polish) | No | $0.01 | [Model card (HuggingFace)](https://huggingface.co/BAAI/bge-m3), [ARK Labs pricing](https://ark-labs.cloud/pricing/) |
 
 The active model is configured via the `EMBEDDING_MODEL` environment variable.
 
 ### Language Handling
 
-Some models work best (or only) with English text. The `embedding_need_translation()` function determines whether text must be translated to English before generating an embedding:
-
-- **Translation required**: `text-embedding-ada-002` — Polish text should be translated to English first. The translated text is stored in `text`, and the original Polish text in `text_original`.
-- **No translation needed**: All other models — they handle Polish text natively. The original text is stored directly in `text`.
-
-This distinction is important because the project primarily collects Polish-language content.
+Lenie nie ma automatycznego etapu tłumaczenia. Treść i zapytania są osadzane w języku źródłowym,
+dlatego aktywna konfiguracja musi wskazywać model wielojęzyczny. Modele historyczne pozostają w
+słowniku DB, aby istniejące wektory można było odczytać, ale anglojęzyczny
+`dunzhang/stella_en_1.5B_v5` nie jest już dostępny do generowania nowych embeddingów.
 
 ## Indexing Strategy
 
@@ -108,9 +105,8 @@ Since the project primarily collects Polish-language content, choosing the right
 | `BAAI/bge-m3` | Very good (100+ languages) | $0.01 (~0.04 PLN) | 1024 | **Best price/quality ratio** |
 | `intfloat/e5-mistral-7b-instruct` | Good | 0.52 PLN | 4096 | Same price as gemma2, lower Polish quality |
 | `amazon.titan-embed-text-v2:0` | Limited | $0.02 | 1024 | OK if already using AWS |
-| `dunzhang/stella_en_1.5B_v5` | Requires translation | 0.26 PLN | 1024 | English only — adds translation cost and latency |
 | `amazon.titan-embed-text-v1` | Limited | $0.10 | 1536 | Legacy, not recommended |
-| `text-embedding-ada-002` | Requires translation | $0.10 | 1536 | Legacy, expensive |
+| `text-embedding-ada-002` | Limited | $0.10 | 1536 | Legacy, expensive; prefer a multilingual model |
 
 **Recommended models:**
 

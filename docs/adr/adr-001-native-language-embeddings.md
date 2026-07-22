@@ -1,6 +1,6 @@
 # ADR-001: Remove `/translate` Endpoint and Use Native-Language Embeddings
 
-**Date:** 2026-02 (Sprint 3, Epic 10)
+**Date:** 2026-02 (Sprint 3, Epic 10); cleanup completed 2026-07-22
 **Status:** Accepted
 **Decision Makers:** Ziutus
 
@@ -12,13 +12,19 @@ Over time, multilingual embedding models became available and were integrated in
 - **AWS Titan Embed v2** (`amazon.titan-embed-text-v2:0`) — improved multilingual support
 - **CloudFerro Bielik/BGE** (`BAAI/bge-multilingual-gemma2`) — native Polish embedding support
 
-The `ai_model_need_translation_to_english(model)` helper function in `backend/library/ai.py` already handled model-specific translation requirements, but the `/translate` endpoint itself was broken — the backend module `library.translate` did not exist, making the endpoint non-functional.
+The removed implementation left compatibility-only workflow values and a helper classifying some
+LLMs as requiring English. No active production path consumed those values.
 
 ### Decision
 
 1. **Remove the `/translate` endpoint** from all layers (Lambda, API Gateway, React frontend).
 2. **Adopt native-language embeddings** as the standard approach — documents are embedded in their original language (primarily Polish) without prior translation.
-3. **Keep `READY_FOR_TRANSLATION` status** in the document processing pipeline for backward compatibility with existing database records.
+3. **Remove the obsolete translation workflow contract**: `READY_FOR_TRANSLATION`, five translation
+   error codes and the unused model helper. Historical rows are normalized by Alembic migration
+   `d18f4a6b2c7e`.
+4. **Do not offer an English-only embedding model** without a translation pipeline. The
+   English-only `dunzhang/stella_en_1.5B_v5` is no longer available for new embeddings; historical
+   vectors remain readable because their model name stays valid in the database lookup.
 
 ### Rationale
 
@@ -34,13 +40,14 @@ The `ai_model_need_translation_to_english(model)` helper function in `backend/li
 
 - **Positive:** Simpler pipeline, no translation cost/latency, preserves original text semantics, fewer moving parts.
 - **Positive:** Eliminates dependency on translation service availability.
-- **Negative:** `READY_FOR_TRANSLATION` status still exists in the pipeline enum — requires future cleanup or repurposing.
-- **Negative:** The `ai_model_need_translation_to_english()` function still exists for models that may require English input — not all models are equal.
+- **Positive:** Documents cannot become stuck in an unreachable translation state.
+- **Positive:** Translation failures no longer pollute the active error taxonomy.
+- **Negative:** Supporting a future English-only market/model requires a new, explicit translation
+  job rather than reusing `Document.processing_status`.
 
 ### Related Artifacts
 
 - Story 10.2: Remove `/translate` endpoint
 - Story 12.1: Codebase-wide stale reference verification
-- `backend/library/ai.py:17` — `ai_model_need_translation_to_english()`
-- `backend/library/models/stalker_document_status.py:13` — `READY_FOR_TRANSLATION` state
+- `backend/alembic/versions/d18f4a6b2c7e_remove_translation_processing_states.py`
 - `backend/library/embedding.py` — Embedding provider abstraction

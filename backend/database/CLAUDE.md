@@ -389,7 +389,7 @@ The `processing_status` column tracks a document through its processing pipeline
 
 ```
 URL_ADDED → DOCUMENT_INTO_DATABASE → NEED_CLEAN_TEXT → NEED_CLEAN_MD → TEXT_TO_MD_DONE
-    → MD_SIMPLIFIED → READY_FOR_TRANSLATION → READY_FOR_EMBEDDING → EMBEDDING_EXIST
+    → MD_SIMPLIFIED → READY_FOR_EMBEDDING → EMBEDDING_EXIST
 ```
 
 Special states:

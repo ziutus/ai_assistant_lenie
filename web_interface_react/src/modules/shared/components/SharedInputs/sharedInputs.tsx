@@ -282,7 +282,6 @@ const SharedInputs = ({
           TRANSCRIPTION_IN_PROGRESS
         </option>
         <option value="NEED_MANUAL_REVIEW">NEED_MANUAL_REVIEW</option>
-        <option value="READY_FOR_TRANSLATION">READY_FOR_TRANSLATION</option>
         <option value="READY_FOR_EMBEDDING">READY_FOR_EMBEDDING</option>
         <option value="EMBEDDING_EXIST">EMBEDDING_EXIST</option>
       </Select>

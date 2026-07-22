@@ -156,7 +156,6 @@ stateDiagram-v2
 | `NEED_TRANSCRIPTION` | aktywny dla YouTube | Materiał oczekuje na napisy lub STT. |
 | `TRANSCRIPTION_IN_PROGRESS` | aktywny dla YouTube | Zewnętrzne STT pracuje. |
 | `TRANSCRIPTION_DONE` | aktywny dla YouTube | Transkrypcja gotowa; dalszy krok zależy od nowego lub starszego flow. |
-| `READY_FOR_TRANSLATION` | deprecated | Zachowany dla kompatybilności rekordów; endpoint tłumaczenia usunięto w ADR-001. |
 | `TEXT_TO_MD_DONE` | alias historyczny | Wejście o tej nazwie jest mapowane na `NEED_CLEAN_MD`; kod nie zapisuje tego stanu. |
 | `NEED_CLEAN_TEXT` | prawdopodobnie legacy | Brak aktywnego producenta i konsumenta poza ogólnym filtrowaniem po statusie. |
 | `TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS` | prawdopodobnie legacy | Pozostaje w enumie i słowniku DB, ale bieżący pipeline nie zapisuje tego stanu. |
@@ -178,8 +177,9 @@ lub zasila starszy skrypt:
 4. **Zdecydować o `READY_FOR_EMBEDDING`.** Albo nowy flow zaczyna jawnie ustawiać ten stan po
    recenzji, albo stan pozostaje wyłącznie kontraktem legacy i zostaje później usunięty razem ze
    starszym batchem. Nie łączyć obu znaczeń bez migracji.
-5. **Usunąć stany potwierdzone jako martwe.** Kandydaci: `READY_FOR_TRANSLATION`,
-   `TEXT_TO_MD_DONE`, `NEED_CLEAN_TEXT`, `TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS`. Wymaga to
+5. **Usunąć pozostałe stany potwierdzone jako martwe.** Pipeline tłumaczenia usunięto w migracji
+   `d18f4a6b2c7e`. Pozostali kandydaci: `TEXT_TO_MD_DONE`, `NEED_CLEAN_TEXT`,
+   `TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS`. Wymaga to
    migracji istniejących rekordów, enumu, `PROCESSING_STATUS_LOOKUP`, tabeli
    `processing_status_types`, testów i klientów API.
 6. **Nie dodawać Obsidiana do `processing_status`.** Udostępnić w API jeden wyliczony
