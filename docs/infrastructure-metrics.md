@@ -1,6 +1,8 @@
 # Infrastructure Metrics — Single Source of Truth
 
 > Last verified: 2026-03-10 | Post-Sprint 10 (B-93: /document_states endpoint)
+>
+> **ZASTĄPIONE (2026-07-22):** Ten plik nie jest już "single source of truth" — backend ma dziś dużo więcej niż 20 endpointów (NER, osoby, oś czasu, ton, źródła, `/search`, auth), a AWS Serverless (sekcja niżej) jest dormant. Aktualne źródło: [`backend/CLAUDE.md`](../backend/CLAUDE.md) (pełna, utrzymywana lista endpointów) i [`docs/deployment/README.md`](deployment/README.md). Zachowane jako zapis historyczny stanu na 2026-03-10 (widać już wtedy poprawkę o usunięciu `/website_similar` w Etapie 12).
 
 This file is the authoritative source for infrastructure counts. All other documentation files should reference or be consistent with values here.
 

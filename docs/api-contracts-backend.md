@@ -1,6 +1,8 @@
 # API Contracts — Backend
 
 > Generated: 2026-02-13 | Part: backend | Type: REST API (Flask)
+>
+> **Uwaga (2026-07-22):** Backend ma dziś znacznie więcej niż 20 endpointów (NER/encje, osoby, oś czasu, ton, źródła, `/search`, `/whoami`, `/api_keys` itd.) — pełna, aktualna lista jest w [`backend/CLAUDE.md`](../backend/CLAUDE.md). "AWS response" warianty niżej dotyczą trybu AWS Serverless, dziś nieaktywnego (`docs/aws-roadmap.md`). Kontrakty CRUD (`/url_add` i pochodne) poniżej wyglądają na wciąż aktualne — zweryfikuj przy większych zmianach.
 
 ## Overview
 

@@ -1,6 +1,8 @@
 # Architecture — Main Frontend (web_interface_react)
 
 > Generated: 2026-02-13 | Part: web_interface_react | Type: React 18 SPA
+>
+> **Uwaga (2026-07-22):** Struktura komponentów/hooków/routingu poniżej jest prawdopodobnie wciąż aktualna, ale nie została dziś zweryfikowana. Odniesienia do "AWS Serverless" jako trybu backendu i hooki `useDatabase`/`useVpnServer`/`useSqs` dotyczą infrastruktury AWS, która jest dziś nieaktywna (patrz `docs/aws-roadmap.md`) — główny tryb to Docker/NAS. Zweryfikuj względem [`web_interface_react/CLAUDE.md`](../web_interface_react/CLAUDE.md), jeśli istnieje, przed poleganiem na tym pliku.
 
 ## Architecture Pattern
 

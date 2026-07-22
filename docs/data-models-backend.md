@@ -1,6 +1,8 @@
 # Data Models — Backend
 
 > Generated: 2026-02-13 | Part: backend | Database: PostgreSQL 18 + pgvector
+>
+> **Uwaga (2026-07-22):** Tabela `documents` poniżej wygląda na wciąż w dużej mierze aktualną (kolumny zgodne z dzisiejszym `backend/library/db/models.py`, SQLAlchemy ORM od ADR-004a) — ale przybyło od tego czasu wiele nowych tabel (encje/NER, osoby, oś czasu wydarzeń, okresy czasowe, tony, kolekcje, źródła, klucze API, koszty LLM) nieopisanych tutaj. Pełny, aktualny schemat: [`backend/database/CLAUDE.md`](../backend/database/CLAUDE.md).
 
 ## Database Schema
 

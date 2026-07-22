@@ -60,6 +60,6 @@ Additionally, the AWS Transcribe flow requires uploading video files to S3 first
 
 ### Related Artifacts
 
-- `_bmad-output/implementation-artifacts/stories-assemblyai-usage-tracking.md` — Story 6: Remove AWS Transcribe Dead Code
+- Story 6: Remove AWS Transcribe Dead Code (private planning backlog, not part of this public repository)
 - [ADR-007](#adr-007-pytubefix-excluded-from-lambda--serverless-youtube-processing-requires-alternative-compute) — Lambda constraints (YouTube processing already excluded from Lambda)
 - `backend/library/api/asemblyai/asemblyai_transcript.py` — remaining transcription implementation

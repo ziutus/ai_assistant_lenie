@@ -3,6 +3,8 @@
 > Living document describing the tools and technologies used in Project Lenie, with rationale for each choice.
 >
 > For deep architectural decisions with full context/consequences analysis, see [Architecture Decisions (ADR)](./architecture-decisions.md).
+>
+> **Uwaga (2026-07-22):** Większość wyborów narzędziowych (uv, PostgreSQL/pgvector, ruff itd.) jest wciąż aktualna. Rekomendacje przywiązane do AWS Lambda (np. "why 3.11 not 3.12+" niżej, uzasadnione warstwami Lambda) dotyczą toru AWS, dziś nieaktywnego — patrz `docs/deployment/README.md`. `docs/backlog-reference.md`, do którego linkują pozycje "Upgrade plan" niżej, zawiera już tylko historyczny stan backlogu — pełny, aktualny backlog jest w prywatnym repo.
 
 ## Language Runtimes
 

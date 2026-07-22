@@ -4,6 +4,8 @@
 **Status:** Accepted (CloudFormation); Proposed (CDK evaluation)
 **Decision Makers:** Ziutus
 
+**Note (2026-07-22):** This ADR concerns IaC for the AWS track specifically, which today is not the project's primary deployment target — see [`docs/deployment/README.md`](../deployment/README.md). The decision remains valid for if/when AWS work resumes.
+
 ## Context
 
 Project Lenie's AWS infrastructure is managed by **29 CloudFormation templates** deployed via a universal `deploy.sh` script. This setup was built incrementally across 3 infrastructure sprints (Feb–Mar 2026) and now covers the entire AWS stack: VPC, RDS, DynamoDB, SQS, S3, 11 Lambda functions, 2 API Gateways, Step Functions, CloudFront, ACM, and budget controls.

@@ -3,6 +3,8 @@
 > Plan rozwoju infrastruktury AWS w Project Lenie. Dokument zbiorczy — łączy informacje z [backlog-reference.md](backlog-reference.md), [aws-sync-backlog.md](aws-sync-backlog.md), [technology-choices.md](technology-choices.md) i [architecture-decisions.md](architecture-decisions.md).
 >
 > **Last updated:** 2026-03-31
+>
+> **Uwaga:** Główny kierunek rozwoju to dziś instalacja na własnym NAS, nie AWS — patrz [`docs/deployment/README.md`](deployment/README.md) jako aktualne źródło prawdy o architekturze i priorytetach. Ten dokument opisuje status istniejącej infrastruktury AWS (częściowo na pauzie, patrz "What's on hold" poniżej) oraz odrębny, czysto edukacyjny eksperyment myślowy "co gdyby dzisiejszy NAS-owy Lenie działał na AWS" — patrz [`docs/deployment/hyperscalers/aws-gcloud-experiment.md`](deployment/hyperscalers/aws-gcloud-experiment.md), który jest osobnym, nowszym dokumentem niż ten plik.
 
 ## Current State
 

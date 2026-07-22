@@ -107,3 +107,6 @@ backend/imports/feeds_state.yaml
 # Temporary planning notes
 planowanie_slack_part_2.txt
 
+# Artefakty BMad (brainstorming, plany, notatki) - prywatne, patrz lenie-bmad-private
+_bmad-output/
+

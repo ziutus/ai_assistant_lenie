@@ -3,7 +3,7 @@
 **Date:** 2026-03-28
 **Status:** Accepted
 **Decision Makers:** Ziutus
-**Backlog Item:** [B-101](../\_bmad-output/planning-artifacts/epics/backlog.md) — Track Obsidian Note Status for Articles
+**Backlog Item:** B-101 — Track Obsidian Note Status for Articles (planning backlog is tracked in a private repo, not part of this public repository)
 
 ## Context
 
@@ -71,10 +71,10 @@ This enables:
 
 ### Prerequisites
 
-The following backlog items must be completed first:
-- [B-33: AWS Cognito authentication](../\_bmad-output/implementation-artifacts/sprint-status.yaml)
-- [B-34: Add `user_id` to database schema](../\_bmad-output/implementation-artifacts/sprint-status.yaml)
-- [B-35: Enforce data isolation per user](../\_bmad-output/implementation-artifacts/sprint-status.yaml)
+The following backlog items must be completed first (tracked in the private planning backlog):
+- B-33: AWS Cognito authentication — **superseded**: the actually implemented multi-user model uses per-user API keys (household trust model), not Cognito, see `docs/deployment/nas/multi-user-household.md`
+- B-34: Add `user_id` to database schema
+- B-35: Enforce data isolation per user
 
 ### New Table Schema
 
@@ -169,9 +169,9 @@ ALTER TABLE web_documents DROP COLUMN obsidian_note_paths;
 
 ## Related Artifacts
 
-- [B-101: Track Obsidian Note Status for Articles](../\_bmad-output/planning-artifacts/epics/backlog.md)
-- [B-33: Implement user authentication with AWS Cognito](../\_bmad-output/implementation-artifacts/sprint-status.yaml)
-- [B-34: Add user ownership to database schema](../\_bmad-output/implementation-artifacts/sprint-status.yaml)
+- B-101: Track Obsidian Note Status for Articles (private planning backlog)
+- B-33: Implement user authentication with AWS Cognito (private planning backlog; superseded, see note above)
+- B-34: Add user ownership to database schema (private planning backlog)
 - [ADR-004a: Migrate to SQLAlchemy ORM](adr-004a-sqlalchemy-orm-migration.md) — ORM model changes follow this pattern
 - [ADR-010: Database Lookup Tables with Foreign Keys](adr-010-database-lookup-tables.md) — Alembic migration pattern
 - `backend/imports/article_browser.py` — primary consumer

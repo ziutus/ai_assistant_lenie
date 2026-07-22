@@ -1,6 +1,8 @@
 # Source Tree Analysis
 
 > Generated: 2026-02-13 | Project: lenie-server-2025 | Type: Multi-part Monorepo
+>
+> **ZASTĄPIONE (2026-07-22):** Drzewo poniżej pokazuje stan sprzed migracji na SQLAlchemy ORM (`stalker_web_document_db.py`/`stalker_web_documents_db_postgresql.py` → dziś `db/models.py`/`document_repository.py`, ADR-004a) i sprzed wielu nowych modułów (NER/encje, oś czasu, search hybrydowy, storage abstraction). Aktualna mapa katalogów: [`CLAUDE.md`](../CLAUDE.md) (root) i zagnieżdżone `CLAUDE.md` w każdym podkatalogu (`backend/CLAUDE.md`, `backend/library/CLAUDE.md` itd.). Zachowane jako zapis historyczny struktury na 2026-02-13.
 
 ## Project Root
 
