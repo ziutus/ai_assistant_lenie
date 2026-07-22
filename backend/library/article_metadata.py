@@ -8,13 +8,31 @@ from bs4 import BeautifulSoup
 
 
 def _is_wp_url(url: str) -> bool:
+    """Grupa Wirtualna Polska portals sharing the same CMS byline widget."""
     host = (urlparse(url).hostname or "").lower()
-    return host == "wp.pl" or host.endswith(".wp.pl") or host == "o2.pl" or host.endswith(".o2.pl")
+    return (
+        host == "wp.pl"
+        or host.endswith(".wp.pl")
+        or host == "o2.pl"
+        or host.endswith(".o2.pl")
+        or host == "money.pl"
+        or host.endswith(".money.pl")
+    )
 
 
 def _is_onet_url(url: str) -> bool:
     host = (urlparse(url).hostname or "").lower()
     return host == "onet.pl" or host.endswith(".onet.pl")
+
+
+# money.pl's "cauthor" value sometimes bakes in the "oprac." (opracowanie /
+# compiled by) label that is otherwise rendered as a separate <span> next to
+# the byline link, e.g. "oprac. Przemysław Ciszak" instead of just the name.
+_AUTHOR_LABEL_PREFIX_RE = re.compile(r"^\s*oprac\.?\s*:?\s*", re.IGNORECASE)
+
+
+def _strip_author_label_prefix(name: str) -> str:
+    return _AUTHOR_LABEL_PREFIX_RE.sub("", name).strip()
 
 
 def _as_types(value) -> set[str]:
@@ -101,13 +119,13 @@ def extract_article_author(html: str | None, url: str = "") -> str | None:
         except (json.JSONDecodeError, AttributeError):
             author = ""
         if author:
-            return author
+            return _strip_author_label_prefix(author)
 
     soup = BeautifulSoup(html, "html.parser")
     byline = soup.select_one("#wp-article-author-info .wp-article-author-link, .wp-article-author-link")
     if byline:
         author = byline.get_text(" ", strip=True)
         if author:
-            return author
+            return _strip_author_label_prefix(author)
 
     return None

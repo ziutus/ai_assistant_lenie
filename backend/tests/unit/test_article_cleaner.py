@@ -487,6 +487,25 @@ class TestMoneyCleaning:
             "Litera T w treści artykułu pozostaje.",
         ]
 
+    def test_money_author_bio_paragraph_removed(self):
+        lines = [
+            "Treść artykułu money.",
+            "",
+            "Dziennikarz portalu finansowego money.pl. Specjalizuje się w energetyce.",
+            "",
+            "przemyslaw.ciszak@grupawp.plo autorze",
+            "Źródło artykułu:",
+        ]
+        assert _clean_lines_money(lines) == ["Treść artykułu money.", "", ""]
+
+    def test_money_paragraph_not_removed_without_author_email_marker(self):
+        lines = [
+            "Treść artykułu money.",
+            "",
+            "Zwykły akapit, po którym nie ma widgetu o autorze.",
+        ]
+        assert _clean_lines_money(lines) == lines
+
 
 class TestWpCleaning:
     def test_wp_comments_author_and_tags_removed(self):
@@ -556,6 +575,16 @@ class TestWpCleaning:
             "Kontakt do autora: autor@grupawp.pl",
         ]
         assert _clean_lines_wp(lines) == ["Kontakt do autora: autor@grupawp.pl"]
+
+    def test_wp_author_bio_paragraph_removed(self):
+        lines = [
+            "Treść artykułu wp.",
+            "",
+            "Dziennikarz działu technologii Wirtualnej Polski.",
+            "",
+            "lukasz.maziewski@grupawp.plo autorze",
+        ]
+        assert _clean_lines_wp(lines) == ["Treść artykułu wp.", "", ""]
 
 
 class TestSafeUiArtifacts:
