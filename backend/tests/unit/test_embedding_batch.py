@@ -85,6 +85,10 @@ class TestGetEmbeddings:
         with pytest.raises(Exception, match="no model info"):
             embedding_module.get_embeddings("nieznany-model", ["a"])
 
+    def test_english_only_model_is_not_available_for_generation(self):
+        with pytest.raises(Exception, match="no model info"):
+            embedding_module.get_embeddings("dunzhang/stella_en_1.5B_v5", ["polski tekst"])
+
 
 class TestGenerateEmbeddingsBatching:
     def _run(self, monkeypatch, chunk_count=5, batch_size=2):

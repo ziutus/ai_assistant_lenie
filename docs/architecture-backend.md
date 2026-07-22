@@ -104,7 +104,7 @@ Standalone scripts for bulk operations (not part of Flask API):
 ### Document Lifecycle
 
 ```
-URL_ADDED â†’ DOCUMENT_INTO_DATABASE â†’ NEED_MANUAL_REVIEW â†’ READY_FOR_TRANSLATION â†’ READY_FOR_EMBEDDING â†’ EMBEDDING_EXIST
+URL_ADDED â†’ DOCUMENT_INTO_DATABASE â†’ EMBEDDING_EXIST
 ```
 
 15 processing states, 14 error states, 8 document types (movie, youtube, link, webpage, text_message, text, email, social_media_post)

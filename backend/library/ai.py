@@ -31,26 +31,6 @@ _SYSTEM_PROMPT_PROVIDERS = ("cloudferro", "arklabs")
 _RESPONSE_FORMAT_PROVIDERS = ("cloudferro",)
 
 
-def get_all_models_info():
-    return {
-        "amazon.titan-tg1-large": {"need_translation": True},
-        "gpt-4": {"need_translation": True},
-        "gpt-3.5-turbo": {"need_translation": True},
-        "Bielik-11B-v2.3-Instruct": {"need_translation": False},
-        "Bielik-11B-v3.0-Instruct": {"need_translation": False},
-        "arklabs/Bielik-11B-v3.0-Instruct": {"need_translation": False},
-        "gemini-2.0-flash-lite-001": {"need_translation": False},
-    }
-
-
-def ai_model_need_translation_to_english(model: str) -> bool:
-    models_info = get_all_models_info()
-    if model in models_info:
-        return models_info[model]["need_translation"]
-
-    raise Exception(f"DEBUG: Error, no model info for text {model}")
-
-
 def _unified_tokens(response) -> tuple[int | None, int | None, int | None]:
     """Map prompt/input and completion/output naming variants onto one view."""
     prompt = getattr(response, "prompt_tokens", None)

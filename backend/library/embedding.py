@@ -2,11 +2,10 @@ from library.models.embedding_result import EmbeddingResult
 
 
 embedding_models = {"amazon.titan-embed-text-v1", "amazon.titan-embed-text-v2:0", "text-embedding-ada-002",
-                    "BAAI/bge-multilingual-gemma2", "intfloat/e5-mistral-7b-instruct",
-                    "dunzhang/stella_en_1.5B_v5", "BAAI/bge-m3"}
+                    "BAAI/bge-multilingual-gemma2", "intfloat/e5-mistral-7b-instruct", "BAAI/bge-m3"}
 
 
-_SHERLOCK_MODELS = {"BAAI/bge-multilingual-gemma2", "intfloat/e5-mistral-7b-instruct", "dunzhang/stella_en_1.5B_v5"}
+_SHERLOCK_MODELS = {"BAAI/bge-multilingual-gemma2", "intfloat/e5-mistral-7b-instruct"}
 
 
 def get_embeddings(model: str, texts: list[str]) -> list[EmbeddingResult]:
@@ -64,8 +63,7 @@ def get_embedding(model: str, text: str) -> EmbeddingResult:
     elif model in ["openai_embedding", "text-embedding-ada-002"]:
         import library.api.openai.openai_embedding as openai_embedding
         return openai_embedding.get_embedding(text)
-    elif model in ["BAAI/bge-multilingual-gemma2", "intfloat/e5-mistral-7b-instruct",
-                    "dunzhang/stella_en_1.5B_v5"]:
+    elif model in ["BAAI/bge-multilingual-gemma2", "intfloat/e5-mistral-7b-instruct"]:
         from library.api.cloudferro.sherlock.sherlock_embedding import sherlock_create_embedding
         return sherlock_create_embedding(text, model)
     elif model in ["BAAI/bge-m3"]:

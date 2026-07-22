@@ -55,7 +55,7 @@ Get a single document by ID.
 ### POST /website_save
 Save/update a document.
 
-- **Request**: Form data — `url`, `id`, `document_state`, `text`, `text_english`, `title`, `language`, `tags`, `summary`, `source`, `author`, `note`, `document_type`
+- **Request**: Form data — `url`, `id`, `processing_status`, `text`, `title`, `language`, `tags`, `summary`, `source`, `author`, `note`, `document_type`
 - **Response**: `{status, message}`
 - **Side effect**: Calls `.analyze()` on saved document
 

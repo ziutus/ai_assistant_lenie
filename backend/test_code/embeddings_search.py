@@ -4,7 +4,7 @@ import argparse
 import logging
 
 import library.embedding as embedding
-from library.ai import ai_ask, ai_model_need_translation_to_english
+from library.ai import ai_ask
 from library.config_loader import load_config
 from library.document_repository import DocumentRepository
 from library.text_detect_language import text_language_detect
@@ -109,12 +109,9 @@ if __name__ == '__main__':
                 websites_in_result.append(result['website_id'])
             print(f"{result['website_id']} {result['id']} {result['similarity']} {result['url']}")
             print(result["title"])
-            if ai_model_need_translation_to_english(llm_model):
-                print(result["text"])
-                knowledge_database_txt += "\n---\n" + result["text"]
-            else:
-                print(result["text_original"])
-                knowledge_database_txt += "\n---\n" + result["text_original"]
+            source_text = result["text_original"] or result["text"]
+            print(source_text)
+            knowledge_database_txt += "\n---\n" + source_text
 
             print("\n")
         print("\nSummary:")

@@ -6,7 +6,7 @@ A brief history of how Project Lenie evolved — key turning points, lessons lea
 
 ## From English-Only Embeddings to Multilingual
 
-In the early days, embedding models only worked well with English text. Since most of the documents collected by Lenie are in Polish (news articles, social media posts, books), the system needed a translation step before generating embeddings. That's why the `/translate` endpoint existed and why the document processing pipeline includes a `READY_FOR_TRANSLATION` state.
+In the early days, embedding models only worked well with English text. Since most of the documents collected by Lenie are in Polish (news articles, social media posts, books), the system needed a translation step before generating embeddings. That's why the `/translate` endpoint and `READY_FOR_TRANSLATION` state originally existed.
 
 The approach was: download article → clean text → translate to English → generate embedding → store.
 
@@ -16,7 +16,10 @@ The decision to drop translation wasn't just about convenience. Translation is a
 
 There's a theoretical risk: without translation to a common language, the same content in Polish and English would produce different embeddings, potentially causing duplicate documents to go undetected. In practice, this doesn't apply to Lenie — the system collects news articles, books, and social media messages. The same article simply doesn't appear in multiple languages in the collection.
 
-The `/translate` endpoint was removed in Sprint 3 (February 2026). The `READY_FOR_TRANSLATION` processing state still exists in the database for backward compatibility with existing records.
+The `/translate` endpoint was removed in Sprint 3 (February 2026). The compatibility period ended
+on 2026-07-22: migration `d18f4a6b2c7e` moved any queued rows to `READY_FOR_EMBEDDING`, normalized
+historical translation errors and removed the obsolete state and error codes from the application
+and lookup tables.
 
 ## From Built-in AI to MCP-Based Knowledge Pipeline
 

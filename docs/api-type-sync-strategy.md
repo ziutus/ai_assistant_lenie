@@ -7,7 +7,7 @@ Frontend (`shared/types/`) and backend (`backend/library/`) define the same data
 | Issue | Detail |
 |-------|--------|
 | **`id` type mismatch** | TS: `string`, Python: `int` (serial PK) |
-| **`Document` missing fields** | Backend `.dict()` returns 13 fields not in TS interface (paywall, created_at, title_english, collection_id, etc.) |
+| **`Document` missing fields** | Backend `.dict()` returns fields not present in older TS snapshots (paywall, ingested_at, collection_id, etc.) |
 | **`ListItem` field count** | TS: 5 fields, backend returns 10 |
 | **`SearchResult` field count** | TS: 5 fields, backend returns 12 |
 | **Enums as plain strings** | Backend has typed enums (`StalkerDocumentStatus`, `StalkerDocumentType`, `StalkerDocumentStatusError`), frontend treats them as `string` |
@@ -79,7 +79,6 @@ class WebDocumentResponse(BaseModel):
     summary: str | None = None
     text: str | None = None
     text_md: str | None = None
-    text_english: str | None = None
     text_raw: str | None = None
     document_type: DocumentType
     processing_status: DocumentStatus
@@ -92,8 +91,6 @@ class WebDocumentResponse(BaseModel):
     previous_type: str | None = None
     paywall: bool | None = None
     created_at: str | None = None        # formatted "%Y-%m-%d %H:%M:%S"
-    title_english: str | None = None
-    summary_english: str | None = None
     published_on: str | None = None
     original_id: str | None = None
     document_length: int | None = None

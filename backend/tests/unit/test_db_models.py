@@ -358,7 +358,6 @@ class TestSetDocumentState:
         ("TRANSCRIPTION_DONE", "TRANSCRIPTION_DONE"),
         ("TRANSCRIPTION_IN_PROGRESS", "TRANSCRIPTION_IN_PROGRESS"),
         ("NEED_MANUAL_REVIEW", "NEED_MANUAL_REVIEW"),
-        ("READY_FOR_TRANSLATION", "READY_FOR_TRANSLATION"),
         ("READY_FOR_EMBEDDING", "READY_FOR_EMBEDDING"),
         ("EMBEDDING_EXIST", "EMBEDDING_EXIST"),
         ("DOCUMENT_INTO_DATABASE", "DOCUMENT_INTO_DATABASE"),
@@ -379,6 +378,11 @@ class TestSetDocumentState:
         with pytest.raises(ValueError):
             doc.set_processing_status("NONEXISTENT")
 
+    def test_removed_translation_state_raises(self):
+        doc = _make_doc()
+        with pytest.raises(ValueError):
+            doc.set_processing_status("READY_FOR_TRANSLATION")
+
 
 # ---------------------------------------------------------------------------
 # 5.6b: set_processing_error_code() — stores string names
@@ -392,13 +396,8 @@ class TestSetDocumentStateError:
         ("LINK_SUMMARY_MISSING", "LINK_SUMMARY_MISSING"),
         ("TITLE_MISSING", "TITLE_MISSING"),
         ("TEXT_MISSING", "TEXT_MISSING"),
-        ("TEXT_TRANSLATION_ERROR", "TEXT_TRANSLATION_ERROR"),
-        ("TITLE_TRANSLATION_ERROR", "TITLE_TRANSLATION_ERROR"),
-        ("SUMMARY_TRANSLATION_ERROR", "SUMMARY_TRANSLATION_ERROR"),
         ("NO_URL_ERROR", "NO_URL_ERROR"),
         ("EMBEDDING_ERROR", "EMBEDDING_ERROR"),
-        ("MISSING_TRANSLATION", "MISSING_TRANSLATION"),
-        ("TRANSLATION_ERROR", "TRANSLATION_ERROR"),
         ("REGEX_ERROR", "REGEX_ERROR"),
         ("TEXT_TO_MD_ERROR", "TEXT_TO_MD_ERROR"),
         ("NO_CAPTIONS_AVAILABLE", "NO_CAPTIONS_AVAILABLE"),
@@ -414,6 +413,18 @@ class TestSetDocumentStateError:
         doc = _make_doc()
         with pytest.raises(ValueError):
             doc.set_processing_error_code("NONEXISTENT_ERROR")
+
+    @pytest.mark.parametrize("error", [
+        "TITLE_TRANSLATION_ERROR",
+        "TEXT_TRANSLATION_ERROR",
+        "SUMMARY_TRANSLATION_ERROR",
+        "MISSING_TRANSLATION",
+        "TRANSLATION_ERROR",
+    ])
+    def test_removed_translation_errors_raise(self, error):
+        doc = _make_doc()
+        with pytest.raises(ValueError):
+            doc.set_processing_error_code(error)
 
 
 # ---------------------------------------------------------------------------

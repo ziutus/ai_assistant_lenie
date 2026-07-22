@@ -13,7 +13,6 @@ class StalkerDocumentStatus(Enum):
     TRANSCRIPTION_DONE = 5
     TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS = 6
     NEED_MANUAL_REVIEW = 7  # regexp + LLM extraction failed to produce clean article text — needs manual review
-    READY_FOR_TRANSLATION = 8  # deprecated — kept for DB compatibility
     READY_FOR_EMBEDDING = 9
     EMBEDDING_EXIST = 10
     DOCUMENT_INTO_DATABASE = 11
@@ -22,4 +21,3 @@ class StalkerDocumentStatus(Enum):
     TEXT_TO_MD_DONE = 14
     MD_SIMPLIFIED = 15
     TEMPORARY_ERROR = 16
-
