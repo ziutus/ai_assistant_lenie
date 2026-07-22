@@ -17,14 +17,11 @@ This is a side project. Please be aware that the code is under active refactorin
 
 ## Target Vision
 
-Lenie is evolving into something bigger: a **private knowledge base in an Obsidian vault, managed by Claude Desktop, powered by Lenie-AI as an MCP (Model Context Protocol) server** for searching and managing content.
+Today, Claude Code is the actual assistant managing the Obsidian knowledge base — the `/obsidian-note` skill and `article_browser.py` read and write the vault and the Lenie database directly (see Phase 3 below), no MCP server involved. Claude Desktop isn't part of the current workflow.
 
-Instead of interacting with Lenie through a web interface, the target workflow looks like this:
-1. **Claude Desktop** acts as the primary interface — you ask questions, request summaries, or search your knowledge base through natural conversation
-2. **Lenie-AI as MCP server** exposes its search, retrieval, and content management capabilities as MCP tools that Claude Desktop can call directly
-3. **Obsidian vault** serves as the persistent, human-readable knowledge store — notes, articles, transcriptions, and AI-generated summaries all live as markdown files you own and control
+The current priority is the core pipeline: cleaning captured content, analyzing it (NER, tone, timeline, tagging — see Phase 5), and finishing the NAS migration (see Phase 4, [docs/deployment/](docs/deployment/)).
 
-This means transitioning from the current architecture (Flask REST API + React SPA accessed through a browser) to an MCP server model where the AI assistant itself becomes the interface. The Flask backend's endpoints (semantic search, content download, text processing) become MCP tools. The React frontend becomes optional — useful for bulk operations and browsing, but no longer the primary way to interact with your knowledge.
+A possible next step, once that's solid: exposing Lenie's search/retrieval as an MCP server so Claude Desktop could become an alternative interface. Unlike Claude Code, Claude Desktop has no built-in file or API access — it needs an MCP server for everything, including reading the Obsidian vault itself. This was tried once already (see Phase 2) and reverted as premature; it may come back once the pipeline work above is done.
 
 The Chrome/Kiwi browser extension remains essential for capturing content from the web.
 
