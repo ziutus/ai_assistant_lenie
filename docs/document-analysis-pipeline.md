@@ -24,6 +24,75 @@ pobranie HTML → wyciągnięcie treści artykułu (LLM markery + regex per-port
 
 ---
 
+## Pliki tymczasowe i S3 (cache dokumentu)
+
+Cały import (Część 1) operuje na katalogu cache **per dokument**:
+`{CACHE_DIR}/markdown/{document_id}/` (`CACHE_DIR` z configu, domyślnie `tmp` —
+`imports/dynamodb_sync.py:450`). W nim, w kolejności powstawania:
+
+| Plik | Kto tworzy | Co zawiera |
+|---|---|---|
+| `{document_id}_info.json` | `article_pipeline.py: ensure_raw_markdown()` → `document_prepare.py: save_document_info()` | Metadane dokumentu (id, url, title, language, uuid, ingested_at, typ, status) — zapisywane PRZED pobraniem HTML. |
+| `{document_id}.html` | `document_prepare.py: prepare_markdown()` | Surowy HTML strony. Jeśli już jest w cache — używany bez pobierania. Jeśli brak — **pobierany z S3** (patrz niżej). |
+| `{document_id}.md` | `document_prepare.py: prepare_markdown()` | Markdown po konwersji HTML→MD. Trzy próby konwertera w kolejności, każda kolejna tylko gdy poprzednia dała redukcję rozmiaru <30%: `MarkItDown` → `html2markdown` → `html2text`. |
+| `{document_id}_step_1_all.md` | `article_pipeline.py: ensure_raw_markdown()` | **To ten sam tekst co `{document_id}.md`**, zapisany powtórnie pod inną nazwą (`step1_path()`) — historyczna konwencja nazewnicza, dwa pliki z identyczną zawartością na dysku. |
+| `{document_id}_llm_extracted_article.md` | `article_extractor.py: process_article_with_llm_fallback()` | Finalny tekst artykułu po zastosowaniu markerów LLM (krok 11 tabeli niżej). |
+| `{domain}_{document_id}.regex.draft` | `article_extractor.py: generate_regex_draft()` | Szkic reguły regex (kontekst 5 linii przed/po granicach) do ręcznego dopisania nowego portalu. |
+| `{domain}_{document_id}_llm_markers.json` | `article_extractor.py: generate_regex_draft()` | Surowe markery zwrócone przez LLM + numery linii — metadane obok draftu. |
+
+**Skąd bierze się HTML, gdy nie ma go w cache**: `document_prepare.py: prepare_markdown()`
+sprawdza najpierw `s3_file_exist()`, potem pobiera przez `s3_take_file()` z bucketu configu
+`AWS_S3_WEBSITE_CONTENT`, pod kluczem **`{doc.uuid}.html`** (nie `{document_id}.html` —
+S3 jest kluczowany po UUID dokumentu, cache lokalny po numerycznym ID). Brak HTML w S3 →
+`None`, cały import się zatrzymuje (log: "HTML nie znaleziony w S3").
+
+---
+
+## Ogólne vs specyficzne dla portalu — mapa pokrycia
+
+Portal jest rozpoznawany **raz**, przez `_detect_portal(url)` (`article_extractor.py:72`) —
+ta sama funkcja jest reużywana i w imporcie, i w reclean (`article_cleaner.py` importuje ją
+wprost, linia 15). Rozpoznaje: `onet` (+ fakt.pl), `money`, `wp` (+ o2.pl), `interia`,
+`businessinsider`, `natgeo`, `gazeta`, `bankier`. **Wyjątek:** `ithardware.pl` jest
+sprawdzany osobno, substring na URL wprost w `clean_article_text()` (`article_cleaner.py:823`)
+— nie przechodzi przez `_detect_portal()`, więc dla tego serwisu funkcja portal-detekcji
+zwróci `None`, ale reclean i tak dostanie dedykowane czyszczenie.
+
+Pokrycie **nie jest jednolite** — różne portale mają różny zestaw reguł na różnych etapach:
+
+| Portal | Import: marker stopki | Import: marker startu nawigacji | Import: sekcje premium | Import: linie-śmieci | Reclean: `_clean_lines_*()` |
+|---|:-:|:-:|:-:|:-:|:-:|
+| onet / fakt.pl | ✓ | – | ✓ | ✓ | ✓ `_clean_lines_onet` + `_strip_leading_onet_ai_summary` |
+| money.pl | ✓ | – | – | ✓ | ✓ `_clean_lines_money` (+ `_remove_author_bio_paragraph`) |
+| wp.pl / o2.pl | ✓ | ✓ | – | ✓ | ✓ `_clean_lines_wp` (+ `_remove_author_bio_paragraph`) |
+| interia.pl | ✓ | – | – | ✓ | ✓ `_clean_lines_interia` + `_strip_interia_chrome_blocks` |
+| businessinsider.com.pl | ✓ | – | – | ✓ | – (tylko `_clean_lines_generic`) |
+| national-geographic.pl | ✓ | – | ✓ | ✓ | – (tylko `_clean_lines_generic`) |
+| gazeta.pl | ✓ | – | – | – | ✓ `_clean_lines_gazeta` |
+| bankier.pl | ✓ | ✓ | – | – | ✓ `_clean_lines_bankier` |
+| ithardware.pl | – (poza `_detect_portal`) | – | – | – | ✓ `_clean_lines_ithardware` (wykrywany osobno) |
+| każdy inny/nieznany | – | – | – | – | tylko `_clean_lines_generic` |
+
+Które etapy pipeline'u (Część 1 i 2) są **w ogóle** świadome portalu, a które są **w pełni
+generyczne** (identyczne dla każdego dokumentu, niezależnie od portalu):
+
+| Etap | Ogólny czy portal-specyficzny? |
+|---|---|
+| Pobranie HTML, konwersja do markdown | w pełni ogólny |
+| `_trim_markdown_navigation` | ogólny (szuka ostatniego H1, nie zależy od portalu) |
+| `_clean_markdown_for_llm` / `_cut_at_footer` (import) | **portal-specyficzny** — patrz tabela wyżej |
+| Ekstrakcja markerów przez LLM | ogólny prompt, ten sam dla każdego portalu |
+| Wyznaczenie finalnych granic (`extract_article_by_markers`) | **portal-specyficzny dla końca** (regex marker), ogólny dla początku (zawsze LLM) |
+| Autor — ekstrakcja deterministyczna (import) | **portal-specyficzny — TYLKO wp.pl/o2.pl/money.pl** (`article_metadata.py`), inne portale nie mają odpowiednika i całkowicie polegają na fallbacku LLM (13/11b2) |
+| `clean_article_text` (reclean, Część 2 krok 3) | **portal-specyficzny** — patrz tabela wyżej |
+| Data publikacji z artefaktu względnego | ogólny (dopasowuje wzorce "wczoraj"/"N godzin temu" niezależnie od portalu) |
+| Biogram autora (`extract_trailing_author_biography`) | ogólny heurystyk (sygnały językowe), bez słownika portali — mimo że przypadek testowy/motywujący był wp.pl/o2.pl |
+| `preclean`/`propose_article_cleanup`, podział na chunki, klasyfikacja LLM, sekcje, synteza, tagowanie, autor-fallback, NER, miejsca, osoby, źródła, cytowania | w pełni ogólne, zero świadomości portalu |
+| Ocena staranności (`compute_quality`) | **w większości ogólny, z jednym wyjątkiem**: `PUBLISHER_OWN_AGENCIES` (`article_quality.py:82-90`) rozpoznaje własną agencję fotograficzną wydawcy (Agencja Wyborcza.pl na domenach `wyborcza.pl`/`gazeta.pl`/`wyborcza.biz`/`wysokieobcasy.pl`/`tokfm.pl` — grupa Agora) i obniża wagę takiego podpisu zdjęcia do 0, zamiast liczyć go jako "obcą" agencję. To OSOBNY, trzeci słownik portalowy — niezależny od `_detect_portal()`. |
+| Embeddingi, wyszukiwanie | w pełni ogólne |
+
+---
+
 ## Część 1 — Import: od HTML do `documents.text_md`
 
 Dzieje się **raz**, przy dodaniu dokumentu (`imports/dynamodb_sync.py`,
