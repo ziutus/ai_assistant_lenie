@@ -21,18 +21,6 @@ Poza tym jednym elementem **nic więcej w architekturze tego nie zakłada ani ni
 - embeddingi są generowane per `EMBEDDING_MODEL` skonfigurowany lokalnie — dwie instancje mogą mieć niekompatybilne wektory, więc synchronizacja samego wyszukiwania semantycznego nie jest trywialna;
 - NER/tagi/encje są dziś przycięte do `ner_exclusions` i słowników per instancja — mogą się różnić między instancjami dla tego samego tekstu.
 
-## Szkic wymagań funkcjonalnych (do doprecyzowania, gdy temat wróci)
-
-Nie plan implementacyjny — lista pytań/wymagań do rozstrzygnięcia, zanim to się stanie projektem:
-
-1. **Kierunek:** jednostronny eksport/import (ręczny, na żądanie) czy dwustronna, ciągła synchronizacja?
-2. **Zakres:** cała biblioteka czy selektywny zestaw (tag, kolekcja, źródło)?
-3. **Tożsamość instancji:** jak instancja B rozpoznaje i autoryzuje instancję A (osobna para kluczy per-instancja, nie per-użytkownik)?
-4. **Własność po transferze:** czy zsynchronizowany dokument jest tylko-do-odczytu (jak gość read-only, patrz `nas/multi-user-household.md`), czy w pełni lokalny po przyjęciu?
-5. **Deduplikacja:** `uuid` z ADR-015 rozwiązuje „czy to ten sam dokument”, ale nie „co zrobić, gdy oba mają go z różnymi tagami/notatkami”.
-6. **Koszt:** czy synchronizacja może wyzwalać ponowne, płatne przetwarzanie (embeddingi, LLM) po stronie odbiorcy, czy transferuje też gotowe wyniki?
-7. **Transport:** bezpośrednio instancja-instancja (wymaga sieciowej widoczności, dziś utrudnione przez brak stabilnego dostępu zdalnego — patrz `project_qnap_vpn_remote_access` w pamięci projektu) czy przez pośrednika (obiekt storage, plik eksportu)?
-
 ## Co NIE robić teraz
 
 Nic w kodzie. To jest jedyny dokument w `docs/deployment/`, który nie ma dziś żadnego „taniego kroku” do zrobienia — nawet model danych (poza już zrobionym ADR-015) nie jest jasny na tyle, żeby cokolwiek przygotowywać na zapas. Warto go odświeżyć, gdy pojawi się konkretny drugi właściciel instancji, z którym rzeczywiście chcę wymieniać dane.

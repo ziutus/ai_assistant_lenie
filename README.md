@@ -68,7 +68,6 @@ The household trust model (per-user API keys, no passwords, shared library, a sm
 - **NAS deployment (primary, active)** — Docker Compose stack (Flask + PostgreSQL + MinIO + workers) on a self-hosted QNAP NAS; see [docs/deployment/nas/](docs/deployment/nas/)
 - **AWS Serverless (dormant)** — API Gateway, Lambda, SQS, Step Functions; infrastructure exists but is not actively deployed, see [docs/aws-roadmap.md](docs/aws-roadmap.md)
 - **AI Services** — OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bielik
-- **Kubernetes** — Kustomize-based deployment with GKE dev overlay (experimental, not a near-term priority)
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture reference.
 
@@ -78,7 +77,7 @@ This project is licensed under the [Business Source License 1.1](LICENSE) (BSL 1
 
 - **What this means:** You can freely view, copy, modify, and use the code. Production use is permitted as long as you are not offering it as a competing managed/hosted service.
 - **Anti-cloud-provider clause:** Providing the functionality of this software to third parties as a managed service, platform service, or SaaS offering is not permitted under this license.
-- **Change Date:** On **2030-03-12**, the license automatically converts to the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), a fully permissive open-source license.
+- **Change Date:** On **2032-03-12**, the license automatically converts to the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), a fully permissive open-source license.
 
 BSL 1.1 is a "source-available" license created by MariaDB and adopted by companies such as HashiCorp, Sentry, and CockroachDB. It is not OSI-approved as "open-source." For details, see the [BSL 1.1 FAQ](https://mariadb.com/bsl-faq-mariadb/).
 
@@ -167,7 +166,6 @@ Current deployment methods:
 * Docker Compose on a self-hosted NAS (production, primary target — see [docs/deployment/](docs/deployment/))
 * Docker Compose (local development)
 * AWS Lambda (dormant — infrastructure exists but not actively deployed, see [docs/aws-roadmap.md](docs/aws-roadmap.md))
-* Kubernetes with Kustomize (experimental)
 
 See [docs/deployment/README.md](docs/deployment/README.md) for what's real vs. a thought experiment, and [Roadmap](#roadmap) for feature-level plans.
 

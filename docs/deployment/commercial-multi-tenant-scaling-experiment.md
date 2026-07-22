@@ -26,8 +26,6 @@ Ten dokument jest osobnym eksperymentem myślowym: co musiałoby się zmienić, 
 
 Praktyczna konsekwencja: architektura hobby/household powinna pozostać najprostsza z możliwych ([nas/multi-user-household.md](nas/multi-user-household.md)), ale model danych powinien od początku umożliwiać późniejsze dopisanie właściciela bez migracji — to jedyny element stąd, który już dziś tanio kupuje opcjonalność na przyszłość.
 
-## 3. Etapy i wzorce skalowania — szczegóły prywatne
+## 3. Kierunek skalowania
 
-Konkretna kolejność etapów, docelowa architektura (kolejki, workerzy, wybór Redis/Celery/Temporal), progi decyzyjne i profile realnych klientów, do których mogłoby to trafić, są świadomie **nieujawniane publicznie** — to już nie hipoteza, tylko konkretne decyzje/rozwiązanie. Ten wybór nie wynika z ograniczeń licencji (projekt jest na Business Source License 1.1, patrz [`LICENSE`](../../LICENSE)), tylko z ochrony przed odtworzeniem podejścia przez osobę (lub LLM) czytającą sam opis, bez dotykania kodu.
-
-Ogólny kierunek pozostaje jawny: skalowanie odbywałoby się stopniowo, w oparciu o mierzalne sygnały (nie prewencyjnie), zaczynając od tego, co już działa dla household (`nas/multi-user-household.md`), przez kolejne, coraz cięższe wzorce infrastrukturalne, dopiero gdy realna potrzeba (liczba użytkowników, obciążenie, wymagania bezpieczeństwa) to uzasadni.
+Skalowanie odbywałoby się stopniowo, w oparciu o mierzalne sygnały (nie prewencyjnie), zaczynając od tego, co już działa dla household (`nas/multi-user-household.md`), przez kolejne, coraz cięższe wzorce infrastrukturalne (kolejka zadań, cache, load balancing), dopiero gdy realna potrzeba (liczba użytkowników, obciążenie, wymagania bezpieczeństwa) to uzasadni. Konkretna architektura docelowa i harmonogram etapów to otwarte pytanie, nie rozstrzygnięty tu plan.

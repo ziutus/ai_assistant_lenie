@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Lenie is a personal AI assistant for collecting, managing, and searching data (articles, YouTube videos, books) using LLMs. It's a side project under active development — see `README.md` for the full narrative/vision. An MCP server prototype and a Slack bot were tried and removed 2026-07-22 as unnecessary maintenance surface — not needed for the actual Obsidian integration path (`/obsidian-note` skill + `article_browser.py`, see `README.md` Phase 2/3 notes); archived at git tags `archive/mcp-server` / `archive/slack-bot`.
 
-**Licensing**: Business Source License 1.1 (`LICENSE`) — free to use/modify/self-host, but may not be offered as a competing hosted/managed/SaaS service. Converts to Apache 2.0 on 2030-03-12.
+**Licensing**: Business Source License 1.1 (`LICENSE`) — free to use/modify/self-host, but may not be offered as a competing hosted/managed/SaaS service. Converts to Apache 2.0 on 2032-03-12.
 
 ## Deployment reality — read this before trusting other docs
 
@@ -31,7 +31,7 @@ Monorepo, each subproject with its own dependency environment. Most have their o
 | `web_chrome_extension/` | Chrome/Kiwi Manifest v3 extension, primary content-capture path | [web_chrome_extension/CLAUDE.md](web_chrome_extension/CLAUDE.md) |
 | `web_interface_app2/` | Placeholder app (only login works) — not in active use | [web_interface_app2/CLAUDE.md](web_interface_app2/CLAUDE.md) |
 | `web_landing_page/` | Static landing page | `web_landing_page/README.md` |
-| `infra/` | Docker Compose (local + NAS), AWS CloudFormation/Terraform/EKS, GCloud, Kubernetes Kustomize/Helm — AWS/K8s paths are historical, NAS Compose (`infra/docker/compose.nas.yaml`) is what's actually deployed |
+| `infra/` | Docker Compose (local + NAS), AWS CloudFormation/Terraform/EKS — AWS paths are historical/dormant, NAS Compose (`infra/docker/compose.nas.yaml`) is what's actually deployed. GCloud Terraform and Kubernetes Kustomize/Helm were removed 2026-07-22 as stale (predated storage abstraction/MinIO/Vault/ner_service); archived at git tags `archive/infra-gcloud` / `archive/infra-kubernetes` |
 | `docs/` | Architecture docs, ADRs (`docs/adr/`), deployment plans (`docs/deployment/`) |
 
 Each subproject manages its own Python/Node dependencies independently (no shared root lockfile) — `cd` into it before installing/running.

@@ -281,15 +281,13 @@ All run as one-off tools via `uvx` — not installed in project venv.
 - **Used in:** Serverless API (split into VPC and non-VPC functions)
 - **Why:** Pay-per-invocation, no server management. See [ADR-002](./architecture-decisions.md#adr-002-api-gateway-as-security-boundary-no-nat-gateway) for the VPC split rationale.
 
-### Kubernetes (Kustomize + Helm)
+### Kubernetes (Kustomize + Helm) — removed 2026-07-22
 
-- **Used in:** GKE deployment (`infra/kubernetes/`)
-- **Why Kustomize:** Overlay-based configuration without templating. Base + per-environment overlays.
+Was used for a GKE deployment (`infra/kubernetes/`), stale relative to the current NAS-first architecture (predated MinIO/Vault/`ner_service`/storage abstraction). Archived at git tag `archive/infra-kubernetes`.
 
-### Terraform
+### Terraform — removed 2026-07-22
 
-- **Used in:** GCloud infrastructure (Cloud Run)
-- **Why:** Standard IaC for non-AWS clouds. Used alongside CloudFormation (AWS) for multi-cloud support.
+Was used for GCloud infrastructure (Cloud Run, `infra/gcloud/`), same staleness reason as above. Archived at git tag `archive/infra-gcloud`.
 
 ## CI/CD
 
