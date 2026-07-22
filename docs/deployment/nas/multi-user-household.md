@@ -81,16 +81,16 @@ Celowo pomijane, dopóki nie zajdzie realna potrzeba (patrz sekcja 6):
 - presigned URLs ograniczone do właściciela obiektu;
 - synchronizacja/federacja między instancjami Lenie AI (patrz [../federation-experiment.md](../federation-experiment.md) — osobny, wczesny eksperyment myślowy).
 
-Wszystko to (poza federacją) jest opisane w [../commercial-multi-tenant-scaling-experiment.md](../commercial-multi-tenant-scaling-experiment.md) — świadomie tam, a nie tutaj.
+Wszystko to (poza federacją) wykracza poza zakres tego dokumentu — patrz [../commercial-multi-tenant-scaling-experiment.md](../commercial-multi-tenant-scaling-experiment.md).
 
 ## 6. Granica: kiedy household przestaje wystarczać
 
 | Sygnał | Co to znaczy | Gdzie szukać dalej |
 |---|---|---|
-| Ktoś niezaufany (poza rodziną/znajomymi) chce dostępu z prawem zapisu | Model „wspólna biblioteka” przestaje być bezpieczny | `../commercial-multi-tenant-scaling-experiment.md`, sekcja 2 i 3.1 (workspace, izolacja) |
-| Ktoś zaczyna generować nieproporcjonalnie duże koszty LLM/transkrypcji | Potrzebne limity/budżety per użytkownik | tamże, sekcja 3.8 |
-| Kilka osób jednocześnie zajmuje jedynego workera na długo | Potrzeba więcej niż jednego workera i fairness | tamże, sekcja 3.1 |
-| Ktoś chce mieć swoją *prywatną* (nie wspólną) bibliotekę dokumentów | To już inny produkt niż „wspólna biblioteka rodzinna” | tamże, sekcja 3.1 (pełny `owner_user_id`/`workspace_id`) |
+| Ktoś niezaufany (poza rodziną/znajomymi) chce dostępu z prawem zapisu | Model „wspólna biblioteka” przestaje być bezpieczny | `../commercial-multi-tenant-scaling-experiment.md` (workspace, izolacja) |
+| Ktoś zaczyna generować nieproporcjonalnie duże koszty LLM/transkrypcji | Potrzebne limity/budżety per użytkownik | tamże |
+| Kilka osób jednocześnie zajmuje jedynego workera na długo | Potrzeba więcej niż jednego workera i fairness | tamże |
+| Ktoś chce mieć swoją *prywatną* (nie wspólną) bibliotekę dokumentów | To już inny produkt niż „wspólna biblioteka rodzinna” | tamże (pełny `owner_user_id`/`workspace_id`) |
 | Chcę wymieniać dokumenty/tagi z inną instancją Lenie AI (moją drugą albo znajomego) | To osobna oś od liczby użytkowników w jednej instancji | [../federation-experiment.md](../federation-experiment.md) |
 
 Dopóki żaden z tych sygnałów się nie pojawił, sekcje 3 i 4 powyżej to całość potrzebnej specyfikacji.

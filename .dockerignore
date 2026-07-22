@@ -47,7 +47,6 @@ backend/.venv_wsl/
 **/*.md
 # IMPORTANT: Exceptions below MUST stay after **/*.md (Docker processes rules top-to-bottom)
 # These README.md files are required by hatchling build (pyproject.toml readme field)
-!slack_bot/README.md
 !shared_python/unified-config-loader/README.md
 !ner_service/README.md
 
@@ -63,7 +62,6 @@ infra/
 
 # Backend dev/test files (Dockerfile copies library/, data/ and server.py)
 backend/tests/
-backend/mcp_server/tests/
 backend/test_code/
 backend/tmp/
 backend/imports/

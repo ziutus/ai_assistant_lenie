@@ -69,17 +69,6 @@ services:
     networks:
       - lenie-net
 
-  lenie-ai-slack-bot:
-    image: 192.168.200.7:5005/lenie-ai-slack-bot:latest
-    container_name: lenie-ai-slack-bot
-    restart: unless-stopped
-    env_file:
-      - /share/ContainerNew/lenie-env/.env
-    networks:
-      - lenie-net
-    depends_on:
-      - lenie-ai-server
-
   lenie-minio:
     image: minio/minio:latest
     container_name: lenie-minio
@@ -99,6 +88,22 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  lenie-minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    env_file:
+      - /share/ContainerNew/lenie-env/minio.env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        until mc alias set lenie http://lenie-minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do sleep 2; done;
+        mc mb --ignore-existing lenie/lenie-storage
+    networks:
+      - lenie-net
+    depends_on:
+      lenie-minio:
+        condition: service_healthy
 
   lenie-registry:
     image: registry:2
@@ -167,26 +172,6 @@ services:
       - lenie-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8090/healthz"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
-
-  lenie-mcp-server:
-    image: 192.168.200.7:5005/lenie-mcp-server:latest
-    container_name: lenie-mcp-server
-    restart: unless-stopped
-    ports:
-      - "8081:8080"
-    env_file:
-      - /share/ContainerNew/lenie-env/mcp_server.env
-    networks:
-      - lenie-net
-    depends_on:
-      lenie-ai-db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3

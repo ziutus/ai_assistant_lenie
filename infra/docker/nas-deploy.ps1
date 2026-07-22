@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("frontend", "app2", "backend", "db", "slack-bot", "minio", "mcp-server", "ner-service", "all")]
+    [ValidateSet("frontend", "app2", "backend", "db", "minio", "ner-service", "all")]
     [string[]]$Service = @("all"),
     [switch]$SkipBuild,
     [switch]$ComposeOnly,
@@ -24,8 +24,6 @@ $Definitions = @{
     app2          = @{ Image = "lenie-ai-app2:latest"; RegistryImage = "$Registry/lenie-ai-app2:latest"; Dockerfile = "web_interface_app2/Dockerfile"; Compose = "lenie-ai-app2" }
     backend       = @{ Image = "lenie-ai-server:latest"; RegistryImage = "$Registry/lenie-ai-server:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-ai-server" }
     db            = @{ Image = "lenie-ai-db:latest"; RegistryImage = "$Registry/lenie-ai-db:latest"; Dockerfile = "infra/docker/Postgresql/Dockerfile"; Compose = "lenie-ai-db" }
-    "slack-bot"   = @{ Image = "lenie-ai-slack-bot:latest"; RegistryImage = "$Registry/lenie-ai-slack-bot:latest"; Dockerfile = "slack_bot/Dockerfile"; Compose = "lenie-ai-slack-bot" }
-    "mcp-server"  = @{ Image = "lenie-mcp-server:latest"; RegistryImage = "$Registry/lenie-mcp-server:latest"; Dockerfile = "infra/docker/Dockerfile.mcp"; Compose = "lenie-mcp-server" }
     "ner-service" = @{ Image = "lenie-ner-service:latest"; RegistryImage = "$Registry/lenie-ner-service:latest"; Dockerfile = "ner_service/Dockerfile"; Compose = "lenie-ner-service" }
     minio         = @{ Compose = "lenie-minio" }
 }

@@ -27,15 +27,6 @@ services:
       - lenie-ai-db-data-3:/var/lib/postgresql
 #      - ../../backend/database/init:/docker-entrypoint-initdb.d
     restart: unless-stopped
-  lenie-ai-slack-bot:
-    build:
-      context: ../..
-      dockerfile: slack_bot/Dockerfile
-    profiles: ["slack"]
-    env_file: .env
-    depends_on:
-      - lenie-ai-server
-    restart: unless-stopped
   lenie-ner-service:
     build:
       context: ../..
