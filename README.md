@@ -15,16 +15,29 @@ Lenie's functionalities represent an advanced integration of AI technology with 
 
 This is a side project. Please be aware that the code is under active refactoring and correction as I'm still learning Python and LLMs.
 
+## Table of Contents
+
+- [Target Vision](#target-vision)
+- [Roadmap](#roadmap)
+- [Current Architecture](#current-architecture)
+- [Supported Platforms](#supported-platforms)
+- [Differences Compared to Corporate Knowledge Bases](#differences-compared-to-corporate-knowledge-bases)
+- [Challenges to Solve When Building Such a Solution](#challenges-to-solve-when-building-such-a-solution)
+- [Scalability and Reliability](#scalability-and-reliability)
+- [Used Technologies](#used-technologies)
+- [Services That Can Be Used to Get Data](#services-that-can-be-used-to-get-data)
+- [Code Quality & Security](#code-quality--security)
+- [Documentation](#documentation)
+- [Why Do We Need Our Own LLM?](#why-do-we-need-our-own-llm)
+- [License](#license)
+
 ## Target Vision
 
-Lenie is evolving into something bigger: a **private knowledge base in an Obsidian vault, managed by Claude Desktop, powered by Lenie-AI as an MCP (Model Context Protocol) server** for searching and managing content.
+Today, Claude Code is the actual assistant managing the Obsidian knowledge base — the `/obsidian-note` skill and `article_browser.py` read and write the vault and the Lenie database directly (see Phase 3 below), no MCP server involved. Claude Desktop isn't part of the current workflow.
 
-Instead of interacting with Lenie through a web interface, the target workflow looks like this:
-1. **Claude Desktop** acts as the primary interface — you ask questions, request summaries, or search your knowledge base through natural conversation
-2. **Lenie-AI as MCP server** exposes its search, retrieval, and content management capabilities as MCP tools that Claude Desktop can call directly
-3. **Obsidian vault** serves as the persistent, human-readable knowledge store — notes, articles, transcriptions, and AI-generated summaries all live as markdown files you own and control
+The current priority is the core pipeline: cleaning captured content, analyzing it (NER, tone, timeline, tagging — see Phase 5), and finishing the NAS migration (see Phase 4, [docs/deployment/](docs/deployment/)).
 
-This means transitioning from the current architecture (Flask REST API + React SPA accessed through a browser) to an MCP server model where the AI assistant itself becomes the interface. The Flask backend's endpoints (semantic search, content download, text processing) become MCP tools. The React frontend becomes optional — useful for bulk operations and browsing, but no longer the primary way to interact with your knowledge.
+A possible next step, once that's solid: exposing Lenie's search/retrieval as an MCP server so Claude Desktop could become an alternative interface. Unlike Claude Code, Claude Desktop has no built-in file or API access — it needs an MCP server for everything, including reading the Obsidian vault itself. This was tried once already (see Phase 2) and reverted as premature; it may come back once the pipeline work above is done.
 
 The Chrome/Kiwi browser extension remains essential for capturing content from the web.
 
@@ -70,16 +83,6 @@ The household trust model (per-user API keys, no passwords, shared library, a sm
 - **AI Services** — OpenAI, AWS Bedrock, Google Vertex AI, CloudFerro Bielik
 
 See [CLAUDE.md](CLAUDE.md) for the full architecture reference.
-
-## License
-
-This project is licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
-
-- **What this means:** You can freely view, copy, modify, and use the code. Production use is permitted as long as you are not offering it as a competing managed/hosted service.
-- **Anti-cloud-provider clause:** Providing the functionality of this software to third parties as a managed service, platform service, or SaaS offering is not permitted under this license.
-- **Change Date:** On **2032-03-12**, the license automatically converts to the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), a fully permissive open-source license.
-
-BSL 1.1 is a "source-available" license created by MariaDB and adopted by companies such as HashiCorp, Sentry, and CockroachDB. It is not OSI-approved as "open-source." For details, see the [BSL 1.1 FAQ](https://mariadb.com/bsl-faq-mariadb/).
 
 ## Supported Platforms
 
@@ -246,3 +249,13 @@ This isn't just a curiosity — Bielik (`Bielik-11B-v3.0-Instruct`/`v2.3-Instruc
 - **Tone, timeline, and time-period extraction** — `tones.py`, `timeline_events.py`, `time_periods.py`: per-chapter emotional tone/register, dated events, and historical periods a document discusses.
 
 Every call is routed and cost-tracked centrally (`library/llm_usage/`), regardless of which provider (Bielik, OpenAI, Bedrock, Vertex AI) actually served it. See [`backend/library/CLAUDE.md`](backend/library/CLAUDE.md) for the full provider abstraction and module list.
+
+## License
+
+This project is licensed under the [Business Source License 1.1](LICENSE) (BSL 1.1).
+
+- **What this means:** You can freely view, copy, modify, and use the code. Production use is permitted as long as you are not offering it as a competing managed/hosted service.
+- **Anti-cloud-provider clause:** Providing the functionality of this software to third parties as a managed service, platform service, or SaaS offering is not permitted under this license.
+- **Change Date:** On **2032-03-12**, the license automatically converts to the [Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0), a fully permissive open-source license.
+
+BSL 1.1 is a "source-available" license created by MariaDB and adopted by companies such as HashiCorp, Sentry, and CockroachDB. It is not OSI-approved as "open-source." For details, see the [BSL 1.1 FAQ](https://mariadb.com/bsl-faq-mariadb/).
