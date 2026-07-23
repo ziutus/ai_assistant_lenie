@@ -1151,20 +1151,6 @@ const Read: React.FC = () => {
               </details>
             )}
 
-            {(personItems.length > 0 || organizationItems.length > 0 || placeItems.length > 0) && (
-              <details style={{
-                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
-                padding: 10, marginTop: 12, fontSize: "0.9em",
-              }}>
-                <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
-                  ✏️ Edytuj encje
-                </summary>
-                <div style={{ marginTop: 4 }}>
-                  <EntitiesPanel docId={id} onEntitiesChanged={handleEntitiesEdited} />
-                </div>
-              </details>
-            )}
-
             {scoped && !shownPersons.length && !shownOrganizations.length && !shownPlaceItems.length
               && !shownCountries.length && !shownMarkers.length && (
               <div style={{ fontSize: "0.8em", color: "#94a3b8", marginTop: 8 }}>
@@ -1210,6 +1196,25 @@ const Read: React.FC = () => {
               </details>
             )}
             </>}
+
+            {/* Outside the rightPanelLoading branch on purpose: EntitiesPanel must
+                not unmount/remount when chapter-scope loading toggles, or its
+                mount-effect fetch → onEntitiesChanged → entitiesEditVersion bump →
+                chapter-scope refetch → chapterScopeLoading toggle would remount it
+                again, looping forever. */}
+            {(personItems.length > 0 || organizationItems.length > 0 || placeItems.length > 0) && (
+              <details style={{
+                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
+                padding: 10, marginTop: 12, fontSize: "0.9em",
+              }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
+                  ✏️ Edytuj encje
+                </summary>
+                <div style={{ marginTop: 4 }}>
+                  <EntitiesPanel docId={id} onEntitiesChanged={handleEntitiesEdited} />
+                </div>
+              </details>
+            )}
           </div>
         )}
       </div>
