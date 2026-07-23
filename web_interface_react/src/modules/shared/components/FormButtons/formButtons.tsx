@@ -27,14 +27,14 @@ const FormButtons = ({
         className={"button"}
         onClick={() => handleSaveWebsiteToCorrect(formik.values)}
       >
-        Zapisz do poprawy
+        Zapisz
       </button>
       <button
         style={{ marginRight: "15px" }}
         className={"button"}
         onClick={() => handleSaveWebsiteNext(formik.values)}
       >
-        Zapisz i następny do poprawy
+        Zapisz jako gotowy i przejdź dalej
       </button>
       <button
         style={{ marginRight: "15px" }}
