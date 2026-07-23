@@ -128,14 +128,21 @@ def plan_entity_merges(session, index: dict[str, Organization], doc_id: int | No
 
 
 def apply_entity_merge(session, plan: dict) -> None:
-    surviving = session.get(DocumentEntity, plan["surviving_entity_id"])
-    surviving.entity_text = plan["canonical_name"]
-    surviving.mention_count = plan["new_mention_count"]
-    surviving.variants = plan["new_variants"]
+    # Delete duplicates BEFORE renaming the surviving row: the surviving row's
+    # canonical_name may already belong to another row in this document (the
+    # "Interia" + "Interii" reference case) — renaming first would collide
+    # with unique(document_id, entity_type, entity_text) while the duplicate
+    # still exists.
     for duplicate_id in plan["duplicate_entity_ids"]:
         duplicate = session.get(DocumentEntity, duplicate_id)
         if duplicate is not None:
             session.delete(duplicate)
+    session.flush()
+
+    surviving = session.get(DocumentEntity, plan["surviving_entity_id"])
+    surviving.entity_text = plan["canonical_name"]
+    surviving.mention_count = plan["new_mention_count"]
+    surviving.variants = plan["new_variants"]
     session.flush()
     if not plan["link_exists"]:
         session.add(DocumentOrganization(
