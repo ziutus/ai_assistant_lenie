@@ -205,6 +205,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         session.add_all([
             NerContextClassification(
                 document_id=document_id,
+                entity_type="persName",
                 entity_text=result["entity_text"],
                 predicted_class=result["predicted_class"],
                 confidence=result["confidence"],

@@ -3,7 +3,10 @@
 Pipeline per docs/ner-integration-plan.md and docs/geo-place-ner-plan.md:
 NER candidates (document_entities, geogName/placeName) → geocoder confirms the
 place exists (LocationIQ + match-quality check, cached in geocode_cache) →
-LLM confirms which verified places the article actually discusses → tags
+LLM confirms the mentions are actually about that place, not a homonymous
+non-geographic proper noun (library/place_context_classifier.py — e.g.
+"Wisła" as the air-defense system "Wisła-Narew-Pilica", not the river) → LLM
+confirms which of the survivors the article actually discusses → tags
 `miejsce-<slug>` merged into doc.tags (accumulating, like country tags).
 
 Tags are built from the geocoder's canonical spelling (canonical_place_name on
@@ -11,7 +14,8 @@ display_name), not the NER surface form: spaCy doesn't always lemmatize proper
 names, so "Kijów" and "Kijowa" arrive as separate entities — slugging the
 surface form used to produce duplicate tags (miejsce-kijow + miejsce-kijowa).
 Entities sharing a canonical name are grouped, and their mention counts merged,
-before the AUTO_CONFIRM_MENTIONS threshold and the LLM relevance check.
+before the context check, the AUTO_CONFIRM_MENTIONS threshold and the LLM
+relevance check.
 
 Countries are skipped entirely — they already have the kraj-* pipeline
 (country_gazetteer + extract_countries_hybrid) and the map highlights them
@@ -71,6 +75,47 @@ def _get_or_create_geocode(session, query: str) -> GeocodeCache:
     return row
 
 
+def remove_orphaned_tag(session, document, deleted_entity: DocumentEntity) -> str | None:
+    """Drop a miejsce-* tag after its last supporting entity is deleted.
+
+    verify_document_places() writes tags once, independent of document_entities
+    — deleting the entity row (DELETE /website_entities/<id>) used to leave a
+    stale tag behind (e.g. "Pilica" deleted from doc 9267 but miejsce-pilica
+    stayed in doc.tags). Call this before the caller commits the entity
+    deletion. Returns the removed tag, or None if nothing changed (entity
+    wasn't a resolved place, its tag wasn't present, or another entity of this
+    document still maps to the same canonical place/tag).
+    """
+    if deleted_entity.entity_type not in PLACE_ENTITY_TYPES:
+        return None
+    if deleted_entity.geocode is None or not deleted_entity.geocode.resolved:
+        return None
+    canonical = canonical_place_name(deleted_entity.entity_text, deleted_entity.geocode.display_name or "")
+    tag = f"miejsce-{_slugify(canonical)}"
+    existing = [t.strip() for t in (document.tags or "").split(",") if t.strip()]
+    if tag not in existing:
+        return None
+
+    remaining = (
+        session.query(DocumentEntity)
+        .filter(
+            DocumentEntity.document_id == document.id,
+            DocumentEntity.entity_type.in_(PLACE_ENTITY_TYPES),
+            DocumentEntity.id != deleted_entity.id,
+            DocumentEntity.geocode_id.isnot(None),
+        )
+        .all()
+    )
+    for ent in remaining:
+        if ent.geocode is not None and ent.geocode.resolved:
+            other_canonical = canonical_place_name(ent.entity_text, ent.geocode.display_name or "")
+            if f"miejsce-{_slugify(other_canonical)}" == tag:
+                return None
+
+    document.tags = ",".join(t for t in existing if t != tag)
+    return tag
+
+
 def verify_document_places(session, doc, text: str) -> dict:
     """Geocode the document's place entities and tag confirmed places.
 
@@ -110,6 +155,35 @@ def verify_document_places(session, doc, text: str) -> dict:
 
     tagged: list[str] = []
     if groups:
+        from library.place_context_classifier import classify_place_context_candidates
+
+        context_results = classify_place_context_candidates(text, doc.title or "", groups, doc.id)
+        if context_results:
+            from library.db.models import NerContextClassification
+
+            session.add_all([
+                NerContextClassification(
+                    document_id=doc.id,
+                    entity_type="placeName",
+                    entity_text=result["entity_text"],
+                    predicted_class=result["predicted_class"],
+                    confidence=result["confidence"],
+                    rationale=result["rationale"],
+                    context_excerpt=result["context"][:2000],
+                    model=result["model"],
+                    dropped=result["dropped"],
+                )
+                for result in context_results
+            ])
+            dropped_names = [result["key"] for result in context_results if result["dropped"]]
+            for name in dropped_names:
+                groups.pop(name, None)
+            if dropped_names:
+                logger.info(
+                    "Context verification dropped %d non-place mentions for doc %s: %s",
+                    len(dropped_names), doc.id, dropped_names,
+                )
+
         confirmed = [name for name, g in groups.items() if g["mentions"] >= AUTO_CONFIRM_MENTIONS]
         # The LLM searches the text for mention snippets, so it gets the surface
         # form (present in the text), and confirmations map back to canonical.

@@ -1108,7 +1108,10 @@ def website_entities_delete(entity_id: int):
 
     For persName entities the matching document_persons link (same document,
     raw_mention == entity_text) is removed too; a person left with no links
-    is dropped from the registry."""
+    is dropped from the registry. For geogName/placeName entities, the
+    corresponding miejsce-* tag (library/place_verification.py) is dropped
+    from the document too, unless another entity of this document still maps
+    to the same canonical place."""
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
 
@@ -1116,6 +1119,7 @@ def website_entities_delete(entity_id: int):
     from library import person_registry
     from library.db.models import DocumentEntity, DocumentPerson
     from library.entity_review_audit import record_entity_decision
+    from library.place_verification import PLACE_ENTITY_TYPES, remove_orphaned_tag
 
     data = request.get_json(silent=True) or {}
     decision = data.get("decision", "deleted")
@@ -1170,6 +1174,11 @@ def website_entities_delete(entity_id: int):
                 "variants": list(entity.variants or []),
             },
         )
+        removed_tag = None
+        if entity.entity_type in PLACE_ENTITY_TYPES:
+            document = session.get(Document, entity.document_id)
+            if document is not None:
+                removed_tag = remove_orphaned_tag(session, document, entity)
         session.delete(entity)
         session.commit()
     except Exception:
@@ -1178,6 +1187,7 @@ def website_entities_delete(entity_id: int):
         return {"status": "error", "message": "DB error"}, 500
 
     return jsonify({"status": "success", "deleted_entity_id": entity_id,
+                    "removed_tag": removed_tag,
                     "person_link_removed": link_result is not None,
                     "person_deleted": bool(link_result and link_result.get("person_deleted"))}), 200
 
@@ -1352,8 +1362,11 @@ def document_organizations_merge(doc_id: int):
     this document, already resolved to an organization. Exactly one of
     target_entity_id (another orgName entity of this same document) or
     target_organization_id (any organization from the global registry search,
-    GET /organizations?q=) must be given. A document with embeddings must be
-    reopened for editing first — same 409 rule as POST /website_entities.
+    GET /organizations?q=) must be given. No embeddings-lock: unlike editing
+    document text or refreshing NER, a merge only consolidates existing
+    document_entities rows (mention_count/variants) — it never touches
+    text_md or invalidates embeddings, so it doesn't require reopening the
+    document (see the 2026-07 merge-lock discussion in the entities panel).
     """
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
@@ -1361,7 +1374,6 @@ def document_organizations_merge(doc_id: int):
     from sqlalchemy import select
     from library import organization_registry
     from library.db.models import DocumentEntity, DocumentOrganization, Organization, OrganizationAlias
-    from library.document_editing import document_has_embeddings
     from library.entity_review_audit import record_entity_decision
 
     data = request.get_json(silent=True) or {}
@@ -1380,11 +1392,6 @@ def document_organizations_merge(doc_id: int):
     doc = Document.get_by_id(session, doc_id)
     if doc is None:
         return {"status": "error", "message": "Document not found"}, 404
-    if document_has_embeddings(session, doc_id):
-        return {
-            "status": "error",
-            "message": "Document has embeddings. Reopen it for editing before merging organizations.",
-        }, 409
 
     source_entity = session.get(DocumentEntity, source_entity_id)
     if source_entity is None or source_entity.document_id != doc_id or source_entity.entity_type != "orgName":
@@ -1508,15 +1515,16 @@ def document_places_merge(doc_id: int):
     misclassifications where the same real-world place was tagged orgName in
     one mention and geogName/placeName in another (e.g. "Kijów"). Per-document
     only — unlike orgName, places have no cross-document registry (see
-    library/entity_service.py:merge_document_entities). A document with
-    embeddings must be reopened for editing first — same 409 rule as
-    POST /website_entities.
+    library/entity_service.py:merge_document_entities). No embeddings-lock:
+    a merge only consolidates existing document_entities rows, it never
+    touches text_md or invalidates embeddings, so it doesn't require
+    reopening the document (see the 2026-07 merge-lock discussion in the
+    entities panel; same reasoning as POST /document/<id>/organizations/merge).
     """
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
 
     from library.db.models import DocumentEntity
-    from library.document_editing import document_has_embeddings
     from library.entity_review_audit import record_entity_decision
     from library.entity_service import MERGEABLE_PLACE_SOURCE_TYPES, PLACE_TYPES, merge_document_entities
 
@@ -1535,11 +1543,6 @@ def document_places_merge(doc_id: int):
     doc = Document.get_by_id(session, doc_id)
     if doc is None:
         return {"status": "error", "message": "Document not found"}, 404
-    if document_has_embeddings(session, doc_id):
-        return {
-            "status": "error",
-            "message": "Document has embeddings. Reopen it for editing before merging places.",
-        }, 409
 
     source_entity = session.get(DocumentEntity, source_entity_id)
     if (source_entity is None or source_entity.document_id != doc_id
