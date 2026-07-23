@@ -65,7 +65,8 @@ class TestWebsiteList:
                 MockRepo.return_value = repo_instance
 
                 client.get(
-                    "/website_list?type=link&processing_status=URL_ADDED&search_in_document=test&page=3&limit=25",
+                    "/website_list?type=link&processing_status=URL_ADDED&search_in_document=test"
+                    "&page=3&limit=25&without_embedding=true",
                     headers=API_HEADERS,
                 )
 
@@ -76,6 +77,8 @@ class TestWebsiteList:
                 assert calls[0].kwargs["search_in_documents"] == "test"
                 assert calls[0].kwargs["limit"] == 25
                 assert calls[0].kwargs["offset"] == 2
+                assert calls[0].kwargs["without_embedding"] is True
+                assert calls[1].kwargs["without_embedding"] is True
                 assert "limit" not in calls[1].kwargs
                 assert "offset" not in calls[1].kwargs
 

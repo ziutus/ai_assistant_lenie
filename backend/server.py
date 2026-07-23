@@ -282,6 +282,7 @@ def website_list():
     search_in_documents = request.args.get('search_in_document', '')
     only_missing_obsidian_notes = request.args.get('only_missing_obsidian_notes', '').lower() in ('1', 'true')
     only_has_obsidian_notes = request.args.get('only_has_obsidian_notes', '').lower() in ('1', 'true')
+    without_embedding = request.args.get('without_embedding', '').lower() in ('1', 'true')
     try:
         limit = min(max(int(request.args.get('limit', 100)), 1), 100)
         page = max(int(request.args.get('page', 1)), 1)
@@ -297,6 +298,7 @@ def website_list():
         "search_in_documents": search_in_documents,
         "only_missing_obsidian_notes": only_missing_obsidian_notes,
         "only_has_obsidian_notes": only_has_obsidian_notes,
+        "without_embedding": without_embedding,
         "limit": limit,
         "offset": page - 1,
     }

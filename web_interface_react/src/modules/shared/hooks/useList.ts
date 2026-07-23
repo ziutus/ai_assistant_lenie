@@ -17,6 +17,7 @@ export const useList = () => {
     obsidianNotesFilter?: { onlyMissing?: boolean; onlyHas?: boolean },
     page = 1,
     pageSize = 100,
+    withoutEmbedding = false,
   ) => {
     setIsLoading(true);
     try {
@@ -32,6 +33,7 @@ export const useList = () => {
           only_has_obsidian_notes: obsidianNotesFilter?.onlyHas || undefined,
           page,
           limit: pageSize,
+          without_embedding: withoutEmbedding || undefined,
         },
       });
       console.log(response.data.message);

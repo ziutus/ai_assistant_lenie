@@ -44,6 +44,9 @@ const List = () => {
   const [pageSize, setPageSize] = React.useState(
     [25, 50, 100].includes(parsedPageSize) ? parsedPageSize : 100,
   );
+  const [withoutEmbedding, setWithoutEmbedding] = React.useState(
+    searchParams.get("without_embedding") === "1",
+  );
   const [copyMessage, setCopyMessage] = React.useState("");
   const [expandedObsidian, setExpandedObsidian] = React.useState<Set<number>>(new Set());
 
@@ -62,7 +65,7 @@ const List = () => {
 
   const listUrlParams = (
     type: string, state: string, query: string, obsidian: "none" | "missing" | "has",
-    nextPage: number, nextPageSize: number,
+    nextPage: number, nextPageSize: number, nextWithoutEmbedding: boolean,
   ) => {
     const params: Record<string, string> = {};
     if (type !== "ALL") params.type = type;
@@ -71,17 +74,25 @@ const List = () => {
     if (obsidian !== "none") params.obsidian = obsidian;
     if (nextPage !== 1) params.page = String(nextPage);
     if (nextPageSize !== 100) params.page_size = String(nextPageSize);
+    if (nextWithoutEmbedding) params.without_embedding = "1";
     return params;
   };
 
   const loadPage = async (
     nextPage: number, type = selectedDocumentType, state = selectedDocumentState,
     query = searchInDocument, obsidian = obsidianFilter, nextPageSize = pageSize,
+    nextWithoutEmbedding = withoutEmbedding,
   ) => {
     setPage(nextPage);
     setPageSize(nextPageSize);
-    setSearchParams(listUrlParams(type, state, query, obsidian, nextPage, nextPageSize));
-    await handleGetList(type, state, query, obsidianFilterParams(obsidian), nextPage, nextPageSize);
+    setWithoutEmbedding(nextWithoutEmbedding);
+    setSearchParams(listUrlParams(
+      type, state, query, obsidian, nextPage, nextPageSize, nextWithoutEmbedding,
+    ));
+    await handleGetList(
+      type, state, query, obsidianFilterParams(obsidian), nextPage, nextPageSize,
+      nextWithoutEmbedding,
+    );
   };
 
   const initialLoadDone = React.useRef(false);
@@ -94,7 +105,7 @@ const List = () => {
     setSelectedDocumentType(type);
     setSelectedDocumentState(state);
     setSearchInDocument(query);
-    void loadPage(page, type, state, query, obsidianFilter, pageSize);
+    void loadPage(page, type, state, query, obsidianFilter, pageSize, withoutEmbedding);
     // URL parameters are intentionally read once; later changes go through loadPage().
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -153,6 +164,31 @@ const List = () => {
   const totalPages = Math.max(1, Math.ceil(dataAllLength / pageSize));
   const visiblePages = Array.from({ length: totalPages }, (_, index) => index + 1)
     .filter(number => number === 1 || number === totalPages || Math.abs(number - page) <= 2);
+
+  const pagination = (position: "top" | "bottom") => data && totalPages > 1 ? (
+    <nav aria-label={`Stronicowanie listy (${position === "top" ? "góra" : "dół"})`}
+      style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6,
+        padding: position === "top" ? "14px 0 8px" : "8px 0 30px" }}>
+      <button type="button" className="button" disabled={isLoading || page <= 1}
+        onClick={() => { void loadPage(page - 1); }}>Poprzednia</button>
+      {visiblePages.map((number, index) => {
+        const previous = visiblePages[index - 1];
+        return (
+          <React.Fragment key={number}>
+            {previous && number - previous > 1 && <span>…</span>}
+            <button type="button" className="button" disabled={isLoading || number === page}
+              aria-current={number === page ? "page" : undefined}
+              onClick={() => { void loadPage(number); }}
+              style={{ minWidth: 36, opacity: number === page ? .6 : 1 }}>
+              {number}
+            </button>
+          </React.Fragment>
+        );
+      })}
+      <button type="button" className="button" disabled={isLoading || page >= totalPages}
+        onClick={() => { void loadPage(page + 1); }}>Następna</button>
+    </nav>
+  ) : null;
 
   // Single compact indicator for the row — details (links, counts) live in an
   // expandable panel instead of cluttering the main line with several badges.
@@ -249,11 +285,20 @@ const List = () => {
           searchInDocument, obsidianFilter, Number(event.target.value)); }}>
         {[25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}
       </select>
+      <label style={{ marginLeft: 12 }}>
+        <input type="checkbox" checked={withoutEmbedding} disabled={isLoading}
+          onChange={event => { void loadPage(
+            1, selectedDocumentType, selectedDocumentState, searchInDocument,
+            obsidianFilter, pageSize, event.target.checked,
+          ); }} />
+        Without embedding
+      </label>
       <button type="button" className="button" disabled={isLoading}
         style={{ marginLeft: 12 }} onClick={() => { void copyListLink(); }}>
         Kopiuj link
       </button>
       {copyMessage && <span role="status" style={{ marginLeft: 8, fontSize: ".85rem" }}>{copyMessage}</span>}
+      {pagination("top")}
       <div>
         <p className={"errorText"}>{message}</p>
         {manageMessage && <p className={"errorText"}>{manageMessage}</p>}
@@ -380,29 +425,7 @@ const List = () => {
             );
           })}
       </ul>
-      {data && totalPages > 1 && (
-        <nav aria-label="Stronicowanie listy"
-          style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, padding: "8px 0 30px" }}>
-          <button type="button" className="button" disabled={isLoading || page <= 1}
-            onClick={() => { void loadPage(page - 1); }}>Poprzednia</button>
-          {visiblePages.map((number, index) => {
-            const previous = visiblePages[index - 1];
-            return (
-              <React.Fragment key={number}>
-                {previous && number - previous > 1 && <span>…</span>}
-                <button type="button" className="button" disabled={isLoading || number === page}
-                  aria-current={number === page ? "page" : undefined}
-                  onClick={() => { void loadPage(number); }}
-                  style={{ minWidth: 36, opacity: number === page ? .6 : 1 }}>
-                  {number}
-                </button>
-              </React.Fragment>
-            );
-          })}
-          <button type="button" className="button" disabled={isLoading || page >= totalPages}
-            onClick={() => { void loadPage(page + 1); }}>Następna</button>
-        </nav>
-      )}
+      {pagination("bottom")}
     </div>
   );
 };
