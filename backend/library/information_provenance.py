@@ -10,6 +10,7 @@ from sqlalchemy import delete, func, select
 from library.db.models import (
     DocumentEntity,
     DocumentInformationSource,
+    DocumentOrganization,
     InformationSource,
     InformationSourceAlias,
 )
@@ -88,7 +89,7 @@ def extract_ner_cited_sources(text: str, organizations: list[dict] | list[str]) 
     seen: set[str] = set()
     for organization in organizations:
         if isinstance(organization, str):
-            canonical_name, variants = organization, [organization]
+            canonical_name, variants, organization_id = organization, [organization], None
         else:
             canonical_name = str(organization.get("text") or organization.get("canonical_name") or "").strip()
             variants = [
@@ -96,6 +97,7 @@ def extract_ner_cited_sources(text: str, organizations: list[dict] | list[str]) 
                 for value in [canonical_name, *(organization.get("variants") or [])]
                 if str(value).strip()
             ]
+            organization_id = organization.get("organization_id")
         if not canonical_name:
             continue
         for sentence in sentences:
@@ -124,6 +126,7 @@ def extract_ner_cited_sources(text: str, organizations: list[dict] | list[str]) 
                 "evidence_excerpt": sentence[:1000],
                 "confidence": 90,
                 "extraction_method": "ner_context_rule",
+                "organization_id": organization_id,
             })
             break
     return result
@@ -232,7 +235,32 @@ def _find_source(session, canonical_name: str) -> InformationSource | None:
     return alias.source if alias is not None else None
 
 
+def _find_source_by_organization(session, organization_id: int) -> InformationSource | None:
+    return session.scalar(select(InformationSource).where(InformationSource.organization_id == organization_id))
+
+
 def _get_or_create_source(session, item: dict) -> InformationSource:
+    organization_id = item.get("organization_id")
+    if organization_id is not None:
+        # This source IS an organization already resolved via the
+        # organizations registry (library/organization_registry.py) — resolve
+        # by that FK, not by name, and don't maintain a second, independent
+        # alias set: name variants already live in organization_aliases.
+        # See docs/organization-ner-alias-plan.md, "Ustalenia z review".
+        source = _find_source_by_organization(session, organization_id)
+        if source is None:
+            source = InformationSource(
+                canonical_name=item["canonical_name"],
+                source_type=item.get("source_type"),
+                domain=item.get("domain"),
+                organization_id=organization_id,
+            )
+            session.add(source)
+            session.flush()
+        elif not source.domain and item.get("domain"):
+            source.domain = item["domain"]
+        return source
+
     source = _find_source(session, item["canonical_name"])
     if source is None:
         source = InformationSource(
@@ -284,8 +312,18 @@ def refresh_document_information_sources(session, doc, text: str, model: str) ->
         DocumentEntity.document_id == doc.id,
         DocumentEntity.entity_type == "orgName",
     )).scalars().all()
+    organization_ids_by_entity = {
+        link.document_entity_id: link.organization_id
+        for link in session.execute(select(DocumentOrganization).where(
+            DocumentOrganization.document_id == doc.id,
+        )).scalars().all()
+    }
     candidates = extract_ner_cited_sources(text, [
-        {"text": row.entity_text, "variants": row.variants or []}
+        {
+            "text": row.entity_text,
+            "variants": row.variants or [],
+            "organization_id": organization_ids_by_entity.get(row.id),
+        }
         for row in organization_rows
     ])
     candidates.extend(extract_known_reporting_sources(text))

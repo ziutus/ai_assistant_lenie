@@ -71,8 +71,8 @@ class TestRefreshDocumentEntities:
         with patch("library.entity_service.extract_entities", return_value=RAW):
             rows = refresh_document_entities(session, 42, "jakiś tekst")
 
-        # SELECT exclusions + replace temporal candidates + replace entities
-        assert session.execute.call_count == 3
+        # SELECT exclusions + replace temporal candidates + replace entities + replace document_organizations
+        assert session.execute.call_count == 4
         session.add_all.assert_called_once_with(rows)
         assert {(r.entity_type, r.entity_text, r.mention_count) for r in rows} == {
             ("persName", "Tusk", 2),
@@ -184,6 +184,45 @@ class TestRefreshDocumentEntities:
         assert len(classification_rows) == 1
         assert classification_rows[0].entity_text == "Pocisków"
         assert classification_rows[0].dropped is True
+
+
+class TestOrganizationMerging:
+    """docs/organization-ner-alias-plan.md reference case: doc 9267, Interia/Interii."""
+
+    def test_merges_orgname_lemma_split_and_creates_document_organization(self):
+        session = _session_with_exclusions([])
+        raw = [
+            {"text": "Interii", "label": "orgName", "lemma": "Interia"},
+            {"text": "Interią", "label": "orgName", "lemma": "Interia"},
+            {"text": "Interii", "label": "orgName", "lemma": "Interii"},
+            {"text": "Interii", "label": "orgName", "lemma": "Interii"},
+        ]
+        fake_org = MagicMock(id=7, canonical_name="Interia")
+        with patch("library.entity_service.extract_entities", return_value=raw), \
+             patch("library.entity_service.resolve_or_create",
+                   return_value=(fake_org, "canonical_matched")) as mock_resolve:
+            rows = refresh_document_entities(session, 42, "tekst")
+
+        assert len(rows) == 1
+        assert rows[0].entity_text == "Interia"
+        assert rows[0].mention_count == 4
+        assert set(rows[0].variants) == {"Interii", "Interią"}
+
+        # merge_ner_groups picked the richer-variant group's name before registry resolution
+        mock_resolve.assert_called_once()
+        called_name, called_variants = mock_resolve.call_args.args[1], mock_resolve.call_args.args[2]
+        assert called_name == "Interia"
+        assert set(called_variants) == {"Interii", "Interią"}
+
+        added_orgs = [
+            call.args[0] for call in session.add.call_args_list
+            if type(call.args[0]).__name__ == "DocumentOrganization"
+        ]
+        assert len(added_orgs) == 1
+        assert added_orgs[0].document_id == 42
+        assert added_orgs[0].organization_id == 7
+        assert added_orgs[0].confidence == "canonical_matched"
+        assert added_orgs[0].document_entity_id == rows[0].id
 
 
 class TestIsExcluded:

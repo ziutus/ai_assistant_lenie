@@ -1538,6 +1538,13 @@ class InformationSource(Base):
     source_type: Mapped[str | None] = mapped_column(String(30))
     domain: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
+    # Set only when this source IS an organization mentioned via NER (orgName).
+    # NULL for URL-domain publisher entries and LLM-extracted sources that
+    # never resolved through the organizations registry — see
+    # docs/organization-ner-alias-plan.md.
+    organization_id: Mapped[int | None] = mapped_column(
+        ForeignKey("organizations.id", ondelete="SET NULL"), unique=True,
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
@@ -1545,6 +1552,7 @@ class InformationSource(Base):
     aliases: Mapped[list["InformationSourceAlias"]] = relationship(
         back_populates="source", cascade="all, delete-orphan",
     )
+    organization: Mapped["Organization | None"] = relationship(foreign_keys=[organization_id])
 
 
 class InformationSourceAlias(Base):
@@ -1590,6 +1598,108 @@ class DocumentInformationSource(Base):
 
     document: Mapped["Document"] = relationship(foreign_keys=[document_id])
     source: Mapped["InformationSource"] = relationship(foreign_keys=[source_id])
+
+
+class Organization(Base):
+    """Canonical organization entity — one row per real organization (orgName NER).
+
+    Analogous to Person, but deliberately simpler: no Wikidata/LLM
+    disambiguation, no fuzzy auto-merge (docs/organization-ner-alias-plan.md).
+    canonical_name is intentionally not unique — two different organizations
+    could share a display name; disambiguation is out of scope for now.
+    """
+
+    __tablename__ = "organizations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(
+        String(100), nullable=False, unique=True, server_default=func.gen_random_uuid(),
+    )
+    canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
+    organization_type: Mapped[str | None] = mapped_column(String(30))
+    description: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    aliases: Mapped[list["OrganizationAlias"]] = relationship(
+        back_populates="organization", cascade="all, delete-orphan",
+    )
+
+    def __repr__(self) -> str:
+        return f"Organization(id={self.id!r}, canonical_name={self.canonical_name!r})"
+
+
+class OrganizationAlias(Base):
+    """Spelling variant of an organization's name seen in articles.
+
+    normalized_alias is globally unique (unlike PersonAlias/InformationSourceAlias,
+    which are unique only per-owner) — a name-merge decision must apply the same
+    way to every future document, so one alias can never point at two different
+    organizations (docs/organization-ner-alias-plan.md, point 3 of the review).
+    """
+
+    __tablename__ = "organization_aliases"
+    __table_args__ = (UniqueConstraint("normalized_alias"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False,
+    )
+    alias: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_alias: Mapped[str] = mapped_column(Text, nullable=False)
+    # alias_kind: inflection | abbreviation | former_name | manual | ner_observed
+    alias_kind: Mapped[str] = mapped_column(String(20), nullable=False, server_default="ner_observed")
+    # created_by: manual | migration | ner
+    created_by: Mapped[str] = mapped_column(String(20), nullable=False, server_default="ner")
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    organization: Mapped["Organization"] = relationship(back_populates="aliases")
+
+    def __repr__(self) -> str:
+        return f"OrganizationAlias(id={self.id!r}, organization_id={self.organization_id!r}, alias={self.alias!r})"
+
+
+class DocumentOrganization(Base):
+    """Document<->organization link (M:N).
+
+    A pure link, mirroring DocumentPerson — mention_count/variants stay in
+    DocumentEntity, not duplicated here (docs/organization-ner-alias-plan.md,
+    point 2 of the review).
+    """
+
+    __tablename__ = "document_organizations"
+    __table_args__ = (UniqueConstraint("document_id", "organization_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False,
+    )
+    document_entity_id: Mapped[int | None] = mapped_column(
+        ForeignKey("document_entities.id", ondelete="SET NULL"),
+    )
+    # confidence: alias_matched | canonical_matched | manual_confirmed | needs_review
+    confidence: Mapped[str] = mapped_column(String(20), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
+    organization: Mapped["Organization"] = relationship(foreign_keys=[organization_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"DocumentOrganization(id={self.id!r}, document_id={self.document_id!r}, "
+            f"organization_id={self.organization_id!r})"
+        )
 
 
 class User(Base):

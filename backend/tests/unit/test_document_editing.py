@@ -12,7 +12,8 @@ def test_reopen_invalidates_derived_rows_and_resets_status():
 
     result = reopen_document_for_editing(session, 42)
 
-    assert len(result["removed"]) == 13
+    assert len(result["removed"]) == 14
+    assert "document_organizations" in result["removed"]
     assert set(result["removed"].values()) == {2}
     assert document.processing_status == "NEED_CLEAN_MD"
     assert document.processing_error_code is None
