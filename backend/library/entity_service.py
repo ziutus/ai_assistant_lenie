@@ -12,11 +12,68 @@ import re
 
 from sqlalchemy import delete, select, update
 
-from library.db.models import DocumentEntity, NerExclusion, Document
+from library.db.models import (
+    Document,
+    DocumentEntity,
+    NerContextClassification,
+    NerExclusion,
+    NerTemporalCandidate,
+)
 from library.ner_client import NERServiceUnavailable, aggregate_entities_detailed, extract_entities, is_available
 from library.ner_normalization import normalize_ner_text
 
 logger = logging.getLogger(__name__)
+TEMPORAL_CONTEXT_WINDOW = 220
+COMPACT_DATE_RE = re.compile(
+    r"(?<!\d)(?:0?[1-9]|[12]\d|3[01])[./-](?:0?[1-9]|1[0-2])"
+    r"(?:[./-](?:\d{2}|\d{4}))?(?!\d)"
+)
+
+
+def _temporal_candidate_rows(document_id: int, text: str, raw: list[dict]) -> list[NerTemporalCandidate]:
+    """Locate raw NER date/time mentions in the canonical text with local context."""
+    lowered = text.casefold()
+    cursors: dict[str, int] = {}
+    located: list[tuple[int, int, str, str, str | None]] = [
+        (match.start(), match.end(), "date", match.group(0), match.group(0))
+        for match in COMPACT_DATE_RE.finditer(text)
+    ]
+    for entity in raw:
+        entity_type = entity.get("label")
+        raw_text = normalize_ner_text(entity.get("text") or "")
+        if entity_type not in {"date", "time"} or not raw_text:
+            continue
+        key = raw_text.casefold()
+        start = lowered.find(key, cursors.get(key, 0))
+        if start < 0:
+            start = lowered.find(key)
+        if start >= 0:
+            cursors[key] = start + len(raw_text)
+            end = start + len(raw_text)
+            if any(start < known_end and end > known_start for known_start, known_end, *_ in located):
+                continue
+        else:
+            end = start
+        located.append((
+            start, end, entity_type, raw_text,
+            normalize_ner_text(entity.get("lemma") or "") or None,
+        ))
+
+    rows = []
+    for start, end, entity_type, raw_text, lemma in sorted(located, key=lambda item: item[0]):
+        excerpt = (
+            text[max(0, start - TEMPORAL_CONTEXT_WINDOW):min(len(text), end + TEMPORAL_CONTEXT_WINDOW)].strip()
+            if start >= 0 else raw_text
+        )
+        rows.append(NerTemporalCandidate(
+            document_id=document_id,
+            entity_type=entity_type,
+            raw_text=raw_text,
+            lemma=lemma,
+            char_start=start if start >= 0 else None,
+            context_excerpt=excerpt,
+        ))
+    return rows
 
 
 def _record_ner_availability(session, document_id: int, *, unavailable: bool) -> None:
@@ -102,6 +159,15 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
 
     groups = aggregate_entities_detailed(raw)
 
+    # Date/time mentions are not ordinary sidebar entities. Keep them as
+    # grounded hints for the later timeline LLM stage.
+    session.execute(delete(NerTemporalCandidate).where(
+        NerTemporalCandidate.document_id == document_id,
+    ))
+    temporal_rows = _temporal_candidate_rows(document_id, text, raw)
+    if temporal_rows:
+        session.add_all(temporal_rows)
+
     exclusions = list(session.execute(select(NerExclusion)).scalars().all())
     if exclusions:
         author = getattr(doc, "byline", None)
@@ -122,6 +188,42 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
             logger.info("NER exclusions dropped %d entities for doc %s: %s",
                         len(excluded), document_id, [k[1] for k in excluded])
 
+    # spaCy occasionally labels a capitalized common noun as persName. Verify
+    # only ambiguous one-word candidates with cheap, batched Bielik calls.
+    # Fail open: malformed/unavailable LLM results leave entities untouched.
+    from library.person_context_classifier import classify_single_word_person_candidates
+
+    classifications = classify_single_word_person_candidates(
+        text,
+        getattr(doc, "title", None) or "",
+        groups,
+        document_id,
+    )
+    if classifications:
+        session.add_all([
+            NerContextClassification(
+                document_id=document_id,
+                entity_text=result["entity_text"],
+                predicted_class=result["predicted_class"],
+                confidence=result["confidence"],
+                rationale=result["rationale"],
+                context_excerpt=result["context"][:2000],
+                model=result["model"],
+                dropped=result["dropped"],
+            )
+            for result in classifications
+        ])
+        dropped_by_context = [result["key"] for result in classifications if result["dropped"]]
+        for key in dropped_by_context:
+            groups.pop(key, None)
+        if dropped_by_context:
+            logger.info(
+                "Context verification dropped %d false person entities for doc %s: %s",
+                len(dropped_by_context),
+                document_id,
+                [key[1] for key in dropped_by_context],
+            )
+
     session.execute(delete(DocumentEntity).where(DocumentEntity.document_id == document_id))
     rows = [
         DocumentEntity(
@@ -136,6 +238,15 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         )
     ]
     session.add_all(rows)
+    organization_groups = [
+        {"text": entity_text, "variants": group["variants"]}
+        for (entity_type, entity_text), group in groups.items()
+        if entity_type == "orgName"
+    ]
+    if doc is not None and organization_groups:
+        from library.information_provenance import refresh_ner_cited_sources
+
+        refresh_ner_cited_sources(session, doc, text, organization_groups)
     return rows
 
 
@@ -152,7 +263,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     raw_mention == entity_text) carry "person_id"/"canonical_name"/
     "person_description"/"wikidata_qid"/"confidence".
     """
-    from library.db.models import InfraGeometry
+    from library.db.models import DocumentInformationSource, InfraGeometry
     from library.person_registry import get_document_persons
 
     rows = (
@@ -162,8 +273,17 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         .all()
     )
     persons_by_mention = {p["raw_mention"]: p for p in get_document_persons(session, document_id)}
+    source_links = session.scalars(select(DocumentInformationSource).where(
+        DocumentInformationSource.document_id == document_id,
+        DocumentInformationSource.role == "cited",
+    )).all()
+    sources_by_name = {}
+    for link in source_links:
+        for name in [link.source.canonical_name, link.raw_mention]:
+            sources_by_name[normalize_ner_text(name).casefold()] = link
 
-    place_names = [r.entity_text for r in rows if r.entity_type != "persName"]
+    place_types = {"geogName", "placeName"}
+    place_names = [r.entity_text for r in rows if r.entity_type in place_types]
     pipelines_by_query: dict[str, InfraGeometry] = {}
     if place_names:
         infra_rows = (
@@ -173,7 +293,9 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         )
         pipelines_by_query = {r.query: r for r in infra_rows}
 
-    grouped: dict[str, list[dict]] = {"persName": [], "geogName": [], "placeName": []}
+    grouped: dict[str, list[dict]] = {
+        "persName": [], "orgName": [], "geogName": [], "placeName": [],
+    }
     for row in rows:
         item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,
                       "variants": row.variants or []}
@@ -183,7 +305,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 item["lat"] = float(row.geocode.lat) if row.geocode.lat is not None else None
                 item["lon"] = float(row.geocode.lon) if row.geocode.lon is not None else None
                 item["display_name"] = row.geocode.display_name
-        if row.entity_type != "persName" and row.entity_text in pipelines_by_query:
+        if row.entity_type in place_types and row.entity_text in pipelines_by_query:
             infra = pipelines_by_query[row.entity_text]
             item["pipeline"] = {
                 "kind": infra.kind,
@@ -199,6 +321,15 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             item["person_description"] = link["description"]
             item["wikidata_qid"] = link["wikidata_qid"]
             item["confidence"] = link["confidence"]
+        if row.entity_type == "orgName":
+            source_link = next((
+                sources_by_name.get(normalize_ner_text(name).casefold())
+                for name in [row.entity_text, *(row.variants or [])]
+                if sources_by_name.get(normalize_ner_text(name).casefold()) is not None
+            ), None)
+            if source_link is not None:
+                item["information_source_id"] = source_link.source_id
+                item["source_evidence"] = source_link.evidence_excerpt
         grouped.setdefault(row.entity_type, []).append(item)
     return grouped
 

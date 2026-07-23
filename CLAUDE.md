@@ -91,6 +91,10 @@ cd ner_service && .venv/Scripts/python -m pytest tests/ -q
 
 ## Conventions
 
+- The user tests every completed product change on the NAS. After implementing
+  and verifying a change, deploy it to the active NAS environment and provide
+  the test URL. Do not treat the change as handed off before deployment unless
+  the user explicitly asks for local-only work or no deployment.
 - Feature branch + PR to `main` always — never commit directly to `main` (branch protection also enforces this).
 - `.gitattributes` enforces LF line endings repo-wide; don't fight it on Windows.
 - Pre-commit hooks include gitleaks + TruffleHog secret scanning — don't bypass with `--no-verify`.

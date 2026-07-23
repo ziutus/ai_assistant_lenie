@@ -344,6 +344,19 @@ class TestChapterContentEndpoint:
 
 
 class TestSplitPreviewScopeChapter:
+    def test_post_uses_unsaved_text_from_editor(self, client):
+        text = "# Krótki artykuł\n\nTreść gotowa do zapisania."
+        resp = client.post(
+            "/document/77/split_preview?mode=article&chunk_size=5000",
+            json={"text": text},
+        )
+        data = resp.get_json()
+
+        assert resp.status_code == 200
+        assert data["source_field"] == "request"
+        assert data["text_length"] == len(text)
+        assert data["chunk_count"] == 1
+
     def test_preview_scoped_to_chapter(self, client):
         resp = client.get("/document/77/split_preview?mode=article&scope_chapter=2")
         data = resp.get_json()
@@ -363,6 +376,19 @@ class TestSplitPreviewScopeChapter:
 
 
 class TestAnalyzeChunksScopeValidation:
+    def test_auto_finalize_single_requires_split_only_article(self, client):
+        resp = client.post(
+            "/document/77/analyze_chunks",
+            json={"mode": "article", "auto_finalize_single": True},
+        )
+        assert resp.status_code == 400
+
+        resp = client.post(
+            "/document/77/analyze_chunks",
+            json={"mode": "transcript", "split_only": True, "auto_finalize_single": True},
+        )
+        assert resp.status_code == 400
+
     def test_scope_chapter_requires_article_mode(self, client):
         resp = client.post("/document/77/analyze_chunks",
                            json={"mode": "transcript", "scope_chapter": 2})

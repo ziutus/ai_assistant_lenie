@@ -419,20 +419,65 @@ def website_get_by_id():
     # POST /analysis_run/<id>/generate_embeddings). Replaces the old frontend
     # guess based on counting "\n\n\n" separators.
     from sqlalchemy import func as sa_func, select as sa_select
-    from library.db.models import DocumentChunk, DocumentEmbedding
+    from library.db.models import DocumentAnalysisRun, DocumentChunk, DocumentEmbedding
 
     result = doc.dict()
     result["embeddings_count"] = session.execute(
         sa_select(sa_func.count()).select_from(DocumentEmbedding)
         .where(DocumentEmbedding.document_id == link_id_int)
     ).scalar()
+    result["content_locked"] = bool(result["embeddings_count"])
     result["approved_chunks_count"] = session.execute(
         sa_select(sa_func.count()).select_from(DocumentChunk)
         .where(DocumentChunk.document_id == link_id_int,
                DocumentChunk.type == "TEMAT",
                DocumentChunk.status == "approved")
     ).scalar()
+    latest_run_id = session.execute(
+        sa_select(sa_func.max(DocumentAnalysisRun.id))
+        .where(
+            DocumentAnalysisRun.document_id == link_id_int,
+            DocumentAnalysisRun.status != "superseded",
+        )
+    ).scalar()
+    result["analysis_run_id"] = latest_run_id
+    if latest_run_id is None:
+        result["analysis_chunks_count"] = 0
+        result["pending_chunks_count"] = 0
+    else:
+        result["analysis_chunks_count"] = session.execute(
+            sa_select(sa_func.count()).select_from(DocumentChunk)
+            .where(DocumentChunk.run_id == latest_run_id)
+        ).scalar()
+        result["pending_chunks_count"] = session.execute(
+            sa_select(sa_func.count()).select_from(DocumentChunk)
+            .where(
+                DocumentChunk.run_id == latest_run_id,
+                DocumentChunk.status.in_((
+                    "pending", "needs_reanalysis", "split_requested", "split",
+                )),
+            )
+        ).scalar()
     return result, 200
+
+
+@app.route('/document/<int:doc_id>/reopen_editing', methods=['POST'])
+def reopen_document_editing(doc_id: int):
+    """Explicitly invalidate derived data before allowing content edits again."""
+    from library.document_editing import reopen_document_for_editing
+
+    session = get_scoped_session()
+    try:
+        result = reopen_document_for_editing(session, doc_id)
+    except LookupError:
+        return {"status": "error", "message": "Document not found"}, 404
+    except RuntimeError as exc:
+        return {"status": "error", "message": str(exc)}, 409
+    except Exception:
+        session.rollback()
+        logging.exception("failed to reopen document %s for editing", doc_id)
+        return {"status": "error", "message": "Failed to reopen document for editing"}, 500
+    return {"status": "success", **result}, 200
 
 
 def _entities_doc_id(raw_id):
@@ -494,6 +539,12 @@ def website_entities_refresh():
     text = doc.text_md or doc.text or ""
     if not text.strip():
         return {"status": "error", "message": "Document has no text content"}, 400
+    from library.document_editing import document_has_embeddings
+    if document_has_embeddings(session, doc_id):
+        return {
+            "status": "error",
+            "message": "Document has embeddings. Reopen it for editing before refreshing entities.",
+        }, 409
 
     try:
         rows = refresh_document_entities(session, doc_id, text)
@@ -708,7 +759,10 @@ def information_sources_list():
         )
         .outerjoin(DocumentInformationSource, DocumentInformationSource.source_id == InformationSource.id)
         .group_by(InformationSource.id)
-        .order_by(InformationSource.canonical_name)
+        .order_by(
+            func.count(func.distinct(DocumentInformationSource.document_id)).desc(),
+            InformationSource.canonical_name,
+        )
     )
     if query:
         pattern = f"%{query}%"
@@ -931,6 +985,7 @@ def _decide_person_link(link_id: int, require_review: bool):
     wikidata/alias match on any link.
     """
     from library import person_registry
+    from library.entity_review_audit import record_entity_decision
     from library.db.models import DocumentPerson, Person
 
     data = request.get_json(silent=True) or {}
@@ -945,11 +1000,23 @@ def _decide_person_link(link_id: int, require_review: bool):
     if require_review and link.confidence != person_registry.CONFIDENCE_MANUAL_REVIEW:
         return {"status": "error", "message": "Entry is not awaiting review"}, 409
 
+    audit_snapshot = {
+        "document_id": link.document_id,
+        "document_person_id": link.id,
+        "person_id": link.person_id,
+        "entity_type": "persName",
+        "entity_text": link.raw_mention,
+        "original_confidence": link.confidence,
+        "source_excerpt": link.source_excerpt,
+        "details": {"role": link.role, "review_queue": require_review},
+    }
     try:
         if action == "approve":
             result = person_registry.approve_review_link(session, link)
+            decision = "confirmed"
         elif action == "reject":
             result = person_registry.reject_review_link(session, link)
+            decision = "rejected"
         else:
             target_id, error = _entities_doc_id(data.get('target_person_id'))
             if error:
@@ -958,6 +1025,15 @@ def _decide_person_link(link_id: int, require_review: bool):
             if target is None:
                 return {"status": "error", "message": "Target person not found"}, 404
             result = person_registry.merge_review_link(session, link, target)
+            decision = "corrected"
+        record_entity_decision(
+            session,
+            **audit_snapshot,
+            decision=decision,
+            reason_code=(data.get("reason_code") or "").strip() or None,
+            comment=(data.get("comment") or "").strip() or None,
+            replacement_person_id=result.get("person_id") if action == "merge" else None,
+        )
         session.commit()
     except ValueError as exc:
         session.rollback()
@@ -1039,7 +1115,23 @@ def website_entities_delete(entity_id: int):
     from sqlalchemy import func as sa_func, select as sa_select
     from library import person_registry
     from library.db.models import DocumentEntity, DocumentPerson
+    from library.entity_review_audit import record_entity_decision
 
+    data = request.get_json(silent=True) or {}
+    decision = data.get("decision", "deleted")
+    allowed_decisions = {"deleted", "rejected", "excluded_global", "excluded_author"}
+    allowed_reasons = {
+        "not_a_person", "misread_name", "fictional_or_collective", "organization_as_person",
+        "duplicate_person", "wrong_person", "irrelevant", "other",
+    }
+    if decision not in allowed_decisions:
+        return {"status": "error", "message": "invalid entity review decision"}, 400
+    reason_code = (data.get("reason_code") or "").strip() or None
+    comment = (data.get("comment") or "").strip() or None
+    if reason_code is not None and reason_code not in allowed_reasons:
+        return {"status": "error", "message": "invalid entity review reason"}, 400
+    if reason_code == "other" and not comment:
+        return {"status": "error", "message": "comment is required for other reason"}, 400
     session = get_scoped_session()
     entity = session.get(DocumentEntity, entity_id)
     if entity is None:
@@ -1056,6 +1148,28 @@ def website_entities_delete(entity_id: int):
             ).scalars().first()
             if link is not None:
                 link_result = person_registry.reject_review_link(session, link)
+        record_entity_decision(
+            session,
+            document_id=entity.document_id,
+            document_entity_id=entity.id,
+            document_person_id=getattr(link, "id", None) if entity.entity_type == "persName" else None,
+            person_id=getattr(link, "person_id", None) if entity.entity_type == "persName" else None,
+            entity_type=entity.entity_type,
+            entity_text=entity.entity_text,
+            decision=decision,
+            reason_code=reason_code,
+            comment=comment,
+            original_confidence=(
+                getattr(link, "confidence", None) if entity.entity_type == "persName" else None
+            ),
+            source_excerpt=(
+                getattr(link, "source_excerpt", None) if entity.entity_type == "persName" else None
+            ),
+            details={
+                "mention_count": entity.mention_count,
+                "variants": list(entity.variants or []),
+            },
+        )
         session.delete(entity)
         session.commit()
     except Exception:
@@ -1291,8 +1405,11 @@ def ner_exclusions_add():
     if not entity_text:
         return {"status": "error", "message": "entity_text is required"}, 400
     entity_type = (data.get('entity_type') or "*").strip()
-    if entity_type not in ("*", "persName", "geogName", "placeName"):
-        return {"status": "error", "message": "entity_type must be persName, geogName, placeName or *"}, 400
+    if entity_type not in ("*", "persName", "orgName", "geogName", "placeName"):
+        return {
+            "status": "error",
+            "message": "entity_type must be persName, orgName, geogName, placeName or *",
+        }, 400
     scope = (data.get('scope') or "global").strip()
     if scope not in ("global", "author"):
         return {"status": "error", "message": "scope must be global or author"}, 400
@@ -1579,6 +1696,22 @@ def website_save():
     session = get_scoped_session()
     service = DocumentService(session)
     try:
+        if link_id:
+            from library.document_editing import document_has_embeddings
+
+            existing = session.get(Document, int(link_id))
+            if existing is not None and document_has_embeddings(session, existing.id):
+                content_changed = any(
+                    key in attrs and attrs[key] != (getattr(existing, key) or "")
+                    for key in ("text", "text_md")
+                )
+                requested_status = request.form.get('processing_status')
+                status_changed = bool(requested_status and requested_status != existing.processing_status)
+                if content_changed or status_changed:
+                    return {
+                        "status": "error",
+                        "message": "Document has embeddings. Reopen it for editing before changing content.",
+                    }, 409
         doc = service.save_document(
             url=url,
             link_id=int(link_id) if link_id else None,

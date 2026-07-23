@@ -7,12 +7,12 @@ import logging
 import re
 
 import dateparser
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from unidecode import unidecode
 
 from library.ai import ai_ask
 from library.config_loader import load_config
-from library.db.models import DocumentEvent
+from library.db.models import DocumentEvent, NerTemporalCandidate
 from library.llm_usage.report import combine_usage_reports, usage_report
 from library.text_functions import detect_chapters
 
@@ -116,12 +116,21 @@ def _roman_to_int(value: str) -> int | None:
     return total or None
 
 
-def normalize_date_text(date_text: str) -> dict | None:
+def normalize_date_text(date_text: str, reference_date: datetime.date | None = None) -> dict | None:
     """Normalize Polish exact and coarse date expressions for storage and sorting."""
     original = " ".join((date_text or "").split())
     if not original:
         return None
     plain = unidecode(original).casefold()
+
+    compact_day_match = re.fullmatch(r"\s*([0-3]?\d)[./-]([01]?\d)[.]?\s*", plain)
+    if compact_day_match and reference_date is not None:
+        day, month = int(compact_day_match.group(1)), int(compact_day_match.group(2))
+        try:
+            parsed = datetime.date(reference_date.year, month, day)
+        except ValueError:
+            return None
+        return _date_result("day", parsed.year, parsed, parsed)
 
     century_match = re.search(r"\b([ivxlcdm]+)\s+(?:wiek|wieku|w\.)\b", plain, re.IGNORECASE)
     if century_match:
@@ -319,9 +328,32 @@ def split_timeline_fragments(text: str, max_chars: int = MAX_FRAGMENT_CHARS) -> 
     return fragments
 
 
-def _timeline_prompt(fragment: str) -> str:
+def _timeline_prompt(
+    fragment: str,
+    temporal_hints: list[dict] | None = None,
+    reference_date: datetime.date | None = None,
+) -> str:
+    hints = ""
+    if temporal_hints:
+        listing = "\n".join(
+            f'- {hint["entity_type"]}: "{hint["raw_text"]}"'
+            for hint in temporal_hints
+        )
+        hints = f"""
+NER wykrył w tym fragmencie następujące kandydatury dat/godzin:
+{listing}
+Traktuj je wyłącznie jako wskazówki do sprawdzenia. Nie każda wzmianka musi
+opisywać wydarzenie i NER może się mylić.
+"""
+    reference = (
+        f"\nDatą odniesienia jest data publikacji dokumentu: {reference_date.isoformat()}. "
+        "Użyj jej tylko do interpretacji zapisów bez roku; zachowaj oryginalny zapis w date_text.\n"
+        if reference_date else ""
+    )
     return f"""Przeanalizuj poniższy fragment dokumentu i wyodrębnij wyłącznie wydarzenia opisywane w tekście,
 którym tekst przypisuje datę albo okres. Nie dodawaj wiedzy zewnętrznej ani nie zgaduj dat.
+{hints}
+{reference}
 
 Zwróć WYŁĄCZNIE poprawny JSON: listę obiektów:
 [
@@ -336,11 +368,19 @@ FRAGMENT:
 """
 
 
-def extract_fragment_events(fragment: str, chapter_position: int | None, model: str,
-                            *, document_id: int | None = None) -> tuple[list[dict], dict]:
+def extract_fragment_events(
+    fragment: str,
+    chapter_position: int | None,
+    model: str,
+    *,
+    document_id: int | None = None,
+    temporal_hints: list[dict] | None = None,
+    reference_date: datetime.date | None = None,
+) -> tuple[list[dict], dict]:
     """Make one LLM call and retain only grounded events with normalizable dates."""
     response = ai_ask(
-        _timeline_prompt(fragment), model=model, temperature=0.1, max_token_count=4000,
+        _timeline_prompt(fragment, temporal_hints, reference_date),
+        model=model, temperature=0.1, max_token_count=4000,
         operation="timeline_event_extraction",
         document_id=document_id,
     )
@@ -354,7 +394,7 @@ def extract_fragment_events(fragment: str, chapter_position: int | None, model: 
         if not description or not _quote_is_grounded(quote, fragment):
             rejected_quote += 1
             continue
-        normalized_date = normalize_date_text(date_text)
+        normalized_date = normalize_date_text(date_text, reference_date)
         if normalized_date is None:
             rejected_date += 1
             continue
@@ -369,6 +409,7 @@ def extract_fragment_events(fragment: str, chapter_position: int | None, model: 
         "rejected_without_quote": rejected_quote,
         "rejected_without_date": rejected_date,
         "invalid_json": int(invalid_json),
+        "ner_hint_count": len(temporal_hints or []),
         **usage_report(response.usage).as_dict(),
     }
 
@@ -397,16 +438,33 @@ def _chapters_for_document(doc, selected_position: int | None = None) -> list[di
 
 def extract_document_events(session, doc, model: str | None = None, *, chapter_position: int | None = None) -> dict:
     """Extract events without mutating the session; return events and per-chapter reports."""
-    del session  # Kept in the public API for symmetry with refresh_document_events.
     selected_model = model or load_config().get("TIMELINE_MODEL") or DEFAULT_TIMELINE_MODEL
+    temporal_candidates = []
+    if session is not None and getattr(doc, "id", None) is not None:
+        temporal_candidates = list(session.scalars(
+            select(NerTemporalCandidate)
+            .where(NerTemporalCandidate.document_id == doc.id)
+            .order_by(NerTemporalCandidate.char_start, NerTemporalCandidate.id)
+        ).all())
     events: list[dict] = []
     chapter_reports: list[dict] = []
+    reference_date = getattr(doc, "published_on", None)
+    if reference_date is None:
+        ingested_at = getattr(doc, "ingested_at", None)
+        reference_date = ingested_at.date() if isinstance(ingested_at, datetime.datetime) else ingested_at
     for chapter in _chapters_for_document(doc, chapter_position):
         chapter_events: list[dict] = []
         fragment_reports: list[dict] = []
         for fragment in split_timeline_fragments(chapter["text"]):
+            fragment_lower = fragment.casefold()
+            temporal_hints = [
+                {"entity_type": candidate.entity_type, "raw_text": candidate.raw_text}
+                for candidate in temporal_candidates
+                if candidate.raw_text.casefold() in fragment_lower
+            ][:40]
             extracted, report = extract_fragment_events(
                 fragment, chapter["position"], selected_model, document_id=getattr(doc, "id", None),
+                temporal_hints=temporal_hints, reference_date=reference_date,
             )
             chapter_events.extend(extracted)
             fragment_reports.append(report)
@@ -418,6 +476,7 @@ def extract_document_events(session, doc, model: str | None = None, *, chapter_p
             "rejected_without_quote": sum(r["rejected_without_quote"] for r in fragment_reports),
             "rejected_without_date": sum(r["rejected_without_date"] for r in fragment_reports),
             "invalid_json": sum(r["invalid_json"] for r in fragment_reports),
+            "ner_hint_count": sum(r.get("ner_hint_count", 0) for r in fragment_reports),
             **combine_usage_reports(fragment_reports),
         })
     return {"model": selected_model, "events": events, "chapters": chapter_reports}

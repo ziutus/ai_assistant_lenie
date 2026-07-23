@@ -39,6 +39,16 @@ def test_valid_json_response_is_parsed_without_changes():
     assert timeline_events.parse_events_response(json.dumps(payload)) == payload
 
 
+def test_timeline_prompt_includes_ner_hints_without_treating_them_as_events():
+    prompt = timeline_events._timeline_prompt(
+        "Spotkanie odbyło się 17 września 1939.",
+        [{"entity_type": "date", "raw_text": "17 września 1939"}],
+    )
+
+    assert 'date: "17 września 1939"' in prompt
+    assert "wyłącznie jako wskazówki" in prompt
+
+
 def test_invalid_json_is_counted_in_fragment_report(monkeypatch):
     fragment = "W 2020 wydarzyło się pierwsze wydarzenie."
     raw = json.dumps([{
@@ -183,6 +193,14 @@ def test_year_range_has_end_of_last_year():
 
     assert result is not None
     assert result["event_date_end"] == datetime.date(1939, 12, 31)
+
+
+def test_compact_day_month_uses_publication_year():
+    result = timeline_events.normalize_date_text("09.04", datetime.date(2026, 4, 9))
+
+    assert result is not None
+    assert result["event_date"] == datetime.date(2026, 4, 9)
+    assert result["date_precision"] == "day"
 
 
 def test_dateparser_result_with_unrelated_year_is_rejected(monkeypatch):

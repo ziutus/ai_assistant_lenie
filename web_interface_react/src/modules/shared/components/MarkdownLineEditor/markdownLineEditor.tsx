@@ -74,6 +74,7 @@ const MarkdownLineEditor = ({ formik, disabled }: { formik: any; disabled: boole
       }, { headers });
       if (response.data.published_on) {
         formik.setFieldValue("published_on", response.data.published_on);
+        formik.setFieldValue("published_on_method", response.data.published_on_method || "llm");
         setMessage(`Zapisano datę publikacji: ${response.data.published_on}.`);
       } else setMessage("Nie rozpoznano daty w zaznaczonych liniach.");
     } catch { setMessage("Nie udało się zapisać daty publikacji."); }

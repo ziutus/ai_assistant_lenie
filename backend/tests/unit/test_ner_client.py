@@ -183,10 +183,23 @@ class TestAggregateEntities:
             {"text": "wtorek", "label": "date", "lemma": "wtorek"},
             {"text": "Warszawa", "label": "placeName", "lemma": "Warszawa"},
         ]
-        assert aggregate_entities(entities) == {("placeName", "Warszawa"): 1}
+        assert aggregate_entities(entities) == {
+            ("orgName", "NATO"): 1,
+            ("placeName", "Warszawa"): 1,
+        }
 
     def test_default_types_cover_persons_and_places(self):
-        assert ENTITY_TYPES == ("persName", "geogName", "placeName")
+        assert ENTITY_TYPES == ("persName", "orgName", "geogName", "placeName")
+
+    def test_organizations_are_persisted_as_their_own_family(self):
+        entities = [
+            {"text": "Bloomberg", "label": "orgName", "lemma": "Bloomberg", "pos": "PROPN"},
+            {"text": "KCNA", "label": "orgName", "lemma": "KCNA", "pos": "PROPN"},
+        ]
+        assert aggregate_entities(entities) == {
+            ("orgName", "Bloomberg"): 1,
+            ("orgName", "KCNA"): 1,
+        }
 
     def test_skips_blank_entities(self):
         assert aggregate_entities([{"text": "  ", "label": "persName"}]) == {}
@@ -302,6 +315,25 @@ class TestAggregateNormalization:
 
     def test_non_nominal_root_is_rejected(self):
         entities = [{"text": "Polski", "label": "placeName", "lemma": "polski", "pos": "ADJ"}]
+        assert aggregate_entities(entities) == {}
+
+    def test_multiword_person_survives_bad_root_pos_and_uses_surface(self):
+        entities = [{
+            "text": "Kim Jong Sik",
+            "label": "persName",
+            "lemma": "kto Jong Sik",
+            "pos": "ADJ",
+        }]
+        assert aggregate_entities_detailed(entities) == {
+            ("persName", "Kim Jong Sik"): {
+                "count": 1,
+                "variants": ["Kim Jong Sik"],
+                "raw_lemmas": ["Kim Jong Sik"],
+            },
+        }
+
+    def test_single_word_person_with_bad_root_pos_is_still_rejected(self):
+        entities = [{"text": "Pocisków", "label": "persName", "lemma": "pocisk", "pos": "ADJ"}]
         assert aggregate_entities(entities) == {}
 
     def test_place_labels_merge_and_more_frequent_label_wins(self):

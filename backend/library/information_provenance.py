@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from sqlalchemy import delete, func, select
 
 from library.db.models import (
+    DocumentEntity,
     DocumentInformationSource,
     InformationSource,
     InformationSourceAlias,
@@ -33,6 +34,21 @@ REPORTING_VERBS = re.compile(
     r"donosi(?:ł|ła)?|informuje|poinformowa(?:ł|ła|ło)|napisa(?:ł|ła|ło))\b",
     re.IGNORECASE,
 )
+
+SOURCE_PREFIX = re.compile(
+    r"(?:\bwedług|\bzdaniem|\bza\b|\bjak\s+(?:podaje|informuje|donosi)|"
+    r"\bpowołując\s+się\s+na|\bna\s+podstawie|\bdane\s+(?:od|z))\b.{0,100}$",
+    re.IGNORECASE | re.DOTALL,
+)
+SOURCE_SUFFIX = re.compile(
+    r"^\s*(?:,?\s*)?(?:podaje|podają|informuje|informują|donosi|donoszą|"
+    r"poinformował(?:a|o)?|ustalił(?:a|o)?|ujawnił(?:a|o)?)\b",
+    re.IGNORECASE,
+)
+KNOWN_ORGANIZATION_SOURCES = {
+    "bloomberg": {"canonical_name": "Bloomberg", "source_type": "agency", "domain": "bloomberg.com"},
+    "kcna": {"canonical_name": "KCNA", "source_type": "agency", "domain": "kcna.kp"},
+}
 
 
 def publisher_domain(url: str) -> str | None:
@@ -62,6 +78,54 @@ def extract_known_reporting_sources(text: str) -> list[dict]:
                     "extraction_method": "rule",
                 })
                 break
+    return result
+
+
+def extract_ner_cited_sources(text: str, organizations: list[dict] | list[str]) -> list[dict]:
+    """Classify NER organizations as cited sources using grounded attribution phrases."""
+    sentences = [part.strip() for part in re.split(r"(?<=[.!?])\s+|\n+", text) if part.strip()]
+    result: list[dict] = []
+    seen: set[str] = set()
+    for organization in organizations:
+        if isinstance(organization, str):
+            canonical_name, variants = organization, [organization]
+        else:
+            canonical_name = str(organization.get("text") or organization.get("canonical_name") or "").strip()
+            variants = [
+                str(value).strip()
+                for value in [canonical_name, *(organization.get("variants") or [])]
+                if str(value).strip()
+            ]
+        if not canonical_name:
+            continue
+        for sentence in sentences:
+            match = next((
+                match
+                for variant in variants
+                if (match := re.search(rf"(?<!\w){re.escape(variant)}(?!\w)", sentence, re.IGNORECASE))
+            ), None)
+            if match is None:
+                continue
+            prefix_clause = re.split(r"[,;:]", sentence[:match.start()])[-1]
+            if not (SOURCE_PREFIX.search(prefix_clause) or SOURCE_SUFFIX.search(sentence[match.end():])):
+                continue
+            known = KNOWN_ORGANIZATION_SOURCES.get(canonical_name.casefold(), {})
+            normalized_name = known.get("canonical_name", canonical_name)
+            key = normalized_name.casefold()
+            if key in seen:
+                break
+            seen.add(key)
+            result.append({
+                "canonical_name": normalized_name,
+                "raw_mention": match.group(0),
+                "role": "cited",
+                "source_type": known.get("source_type", "organization"),
+                "domain": known.get("domain"),
+                "evidence_excerpt": sentence[:1000],
+                "confidence": 90,
+                "extraction_method": "ner_context_rule",
+            })
+            break
     return result
 
 
@@ -216,7 +280,15 @@ def refresh_document_information_sources(session, doc, text: str, model: str) ->
         ))
         created.append((publisher.canonical_name, "publisher"))
 
-    candidates = extract_known_reporting_sources(text)
+    organization_rows = session.execute(select(DocumentEntity).where(
+        DocumentEntity.document_id == doc.id,
+        DocumentEntity.entity_type == "orgName",
+    )).scalars().all()
+    candidates = extract_ner_cited_sources(text, [
+        {"text": row.entity_text, "variants": row.variants or []}
+        for row in organization_rows
+    ])
+    candidates.extend(extract_known_reporting_sources(text))
     try:
         llm_candidates = extract_information_sources(text, doc.title or "", model)
     except Exception:
@@ -243,4 +315,35 @@ def refresh_document_information_sources(session, doc, text: str, model: str) ->
             review_status="auto_accepted" if item["confidence"] >= 80 else "needs_review",
         ))
         created.append((source.canonical_name, item["role"]))
+    return {"sources": created}
+
+
+def refresh_ner_cited_sources(session, doc, text: str, organizations: list[dict]) -> dict:
+    """Refresh only cheap NER/context source links, preserving URL and LLM provenance."""
+    session.execute(delete(DocumentInformationSource).where(
+        DocumentInformationSource.document_id == doc.id,
+        DocumentInformationSource.extraction_method == "ner_context_rule",
+    ))
+    created = []
+    for item in extract_ner_cited_sources(text, organizations):
+        source = _get_or_create_source(session, item)
+        existing = session.scalar(select(DocumentInformationSource).where(
+            DocumentInformationSource.document_id == doc.id,
+            DocumentInformationSource.source_id == source.id,
+            DocumentInformationSource.role == "cited",
+        ))
+        if existing is not None:
+            continue
+        session.add(DocumentInformationSource(
+            document_id=doc.id,
+            source_id=source.id,
+            role="cited",
+            raw_mention=item["raw_mention"],
+            source_url=None,
+            evidence_excerpt=item["evidence_excerpt"],
+            confidence=item["confidence"],
+            extraction_method="ner_context_rule",
+            review_status="auto_accepted",
+        ))
+        created.append(source.canonical_name)
     return {"sources": created}

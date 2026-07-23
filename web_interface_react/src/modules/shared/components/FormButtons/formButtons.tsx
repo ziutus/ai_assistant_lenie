@@ -23,6 +23,8 @@ const FormButtons = ({
   return (
     <>
       <button
+        type="button"
+        disabled={isLoading}
         style={{ marginRight: "15px" }}
         className={"button"}
         onClick={() => handleSaveWebsiteToCorrect(formik.values)}
@@ -30,13 +32,19 @@ const FormButtons = ({
         Zapisz
       </button>
       <button
+        type="button"
+        disabled={isLoading}
         style={{ marginRight: "15px" }}
         className={"button"}
         onClick={() => handleSaveWebsiteNext(formik.values)}
       >
-        Zapisz jako gotowy i przejdź dalej
+        {formik.values.document_type === "webpage"
+          ? "Zatwierdź Markdown i przejdź do chunków"
+          : "Zapisz jako gotowy i przejdź dalej"}
       </button>
       <button
+        type="button"
+        disabled={isLoading}
         style={{ marginRight: "15px" }}
         className={"button"}
         onClick={() => handleDeleteDocumentNext?.(formik.values)}
@@ -47,7 +55,7 @@ const FormButtons = ({
       {isLoading && (
         <div className="loader" style={{ marginTop: "10px" }}></div>
       )}
-      {message && isError && (
+      {message && (
         <p className={isError ? "errorText" : ""} style={{ marginTop: "10px" }}>
           {message}
         </p>

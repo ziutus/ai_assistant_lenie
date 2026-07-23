@@ -55,6 +55,7 @@ interface ChapterContent {
 // document-level entities/countries filtered down to the chapter being read.
 interface ChapterScope {
   persons: EntityItem[];
+  organizations: EntityItem[];
   placeItems: EntityItem[];
   markers: PlaceMarker[];
   countries: CountryTag[];
@@ -375,6 +376,7 @@ const Read: React.FC = () => {
   const [countries, setCountries] = React.useState<CountryTag[]>([]);
   const [places, setPlaces] = React.useState<PlaceMarker[]>([]);
   const [personItems, setPersonItems] = React.useState<EntityItem[]>([]);
+  const [organizationItems, setOrganizationItems] = React.useState<EntityItem[]>([]);
   const [placeItems, setPlaceItems] = React.useState<EntityItem[]>([]);
   // Set when the last NER refresh found ner_service unreachable (backend:
   // web_documents.ner_unavailable_at) — distinguishes "service was down" from
@@ -498,6 +500,7 @@ const Read: React.FC = () => {
         if (data.status !== "success") return;
         const items = [...(data.entities?.geogName ?? []), ...(data.entities?.placeName ?? [])];
         setPersonItems(data.entities?.persName ?? []);
+        setOrganizationItems(data.entities?.orgName ?? []);
         setPlaceItems(items);
         setNerUnavailableAt(data.ner_unavailable_at ?? null);
         setPlaces(
@@ -532,6 +535,7 @@ const Read: React.FC = () => {
         const items = [...(data.entities?.geogName ?? []), ...(data.entities?.placeName ?? [])];
         setChapterScope({
           persons: data.entities?.persName ?? [],
+          organizations: data.entities?.orgName ?? [],
           placeItems: items,
           markers: items
             .filter((it: any) => it.verified === true && it.lat != null && it.lon != null)
@@ -553,7 +557,11 @@ const Read: React.FC = () => {
   React.useEffect(() => {
     const requested = searchParams.get("highlight")?.trim().toLowerCase();
     if (!requested || !chapterScope) return;
-    const items = [...chapterScope.persons, ...chapterScope.placeItems];
+    const items = [
+      ...chapterScope.persons,
+      ...chapterScope.organizations,
+      ...chapterScope.placeItems,
+    ];
     const item = items.find(candidate =>
       [candidate.text, ...(candidate.variants ?? [])].some(value => value.trim().toLowerCase() === requested));
     if (item) setHighlightTerms(entityHighlightTerms(item));
@@ -776,6 +784,7 @@ const Read: React.FC = () => {
   // document-level values until the chapter fetch lands (or when it fails)
   const scoped = scopeChapter ? chapterScope : null;
   const shownPersons = scoped ? scoped.persons : personItems;
+  const shownOrganizations = scoped ? scoped.organizations : organizationItems;
   const shownPlaceItems = scoped ? scoped.placeItems : placeItems;
   const shownMarkers = scoped ? scoped.markers : places;
   const shownCountries = scoped ? scoped.countries : countries;
@@ -1106,31 +1115,33 @@ const Read: React.FC = () => {
                 background: "#fff7ed", border: "1px solid #fdba74", borderRadius: 8,
                 padding: 10, marginTop: 12, fontSize: "0.85em", color: "#9a3412",
               }}>
-                ⚠️ Wykrywanie osób i miejsc nie powiodło się — serwis NER był niedostępny
+                ⚠️ Wykrywanie osób, organizacji i miejsc nie powiodło się — serwis NER był niedostępny
                 ({new Date(nerUnavailableAt).toLocaleString("pl-PL")}). Lista poniżej może być pusta lub niepełna,
                 niekoniecznie dlatego, że w dokumencie nic nie ma. Spróbuj ponownej analizy w edytorze dokumentu.
               </div>
             )}
 
-            {(shownPersons.length > 0 || shownPlaceItems.length > 0) && (
+            {(shownPersons.length > 0 || shownOrganizations.length > 0 || shownPlaceItems.length > 0) && (
               <details open style={{
                 background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
                 padding: 10, marginTop: 12, fontSize: "0.9em",
               }}>
                 <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
-                  👤 Osoby i miejsca ({shownPersons.length + shownPlaceItems.length})
+                  Encje ({shownPersons.length + shownOrganizations.length + shownPlaceItems.length})
                 </summary>
                 <EntityChips label={"👤 Osoby"} items={shownPersons} linkPersons searchUnresolvedPersons
+                  highlightMode={highlightMode} onHighlight={handleEntityHighlight} />
+                <EntityChips label={"🏢 Organizacje"} items={shownOrganizations}
                   highlightMode={highlightMode} onHighlight={handleEntityHighlight} />
                 <EntityChips label={"📍 Miejsca"} items={shownPlaceItems}
                   highlightMode={highlightMode} onHighlight={handleEntityHighlight} />
               </details>
             )}
 
-            {scoped && !shownPersons.length && !shownPlaceItems.length
+            {scoped && !shownPersons.length && !shownOrganizations.length && !shownPlaceItems.length
               && !shownCountries.length && !shownMarkers.length && (
               <div style={{ fontSize: "0.8em", color: "#94a3b8", marginTop: 8 }}>
-                Brak osób i miejsc w tym rozdziale.
+                Brak osób, organizacji i miejsc w tym rozdziale.
               </div>
             )}
 
