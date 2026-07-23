@@ -1497,6 +1497,103 @@ def document_organizations_merge(doc_id: int):
     }), 200
 
 
+@app.route('/document/<int:doc_id>/places/merge', methods=['POST', 'OPTIONS'])
+def document_places_merge(doc_id: int):
+    """Merge a place entity of a document into another place entity of the same document.
+
+    Body: {"source_entity_id": int, "target_entity_id": int, "comment": str|None}.
+    Both must be document_entities rows of this document. target_entity_id's
+    entity_type must be geogName or placeName (the survivor is always a
+    place); source_entity_id may additionally be orgName, covering NER
+    misclassifications where the same real-world place was tagged orgName in
+    one mention and geogName/placeName in another (e.g. "Kijów"). Per-document
+    only — unlike orgName, places have no cross-document registry (see
+    library/entity_service.py:merge_document_entities). A document with
+    embeddings must be reopened for editing first — same 409 rule as
+    POST /website_entities.
+    """
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import DocumentEntity
+    from library.document_editing import document_has_embeddings
+    from library.entity_review_audit import record_entity_decision
+    from library.entity_service import MERGEABLE_PLACE_SOURCE_TYPES, PLACE_TYPES, merge_document_entities
+
+    data = request.get_json(silent=True) or {}
+    source_entity_id, error = _entities_doc_id(data.get('source_entity_id'))
+    if error:
+        return error
+    target_entity_id, error = _entities_doc_id(data.get('target_entity_id'))
+    if error:
+        return error
+    if source_entity_id == target_entity_id:
+        return {"status": "error", "message": "source_entity_id and target_entity_id must differ"}, 400
+    comment = (data.get('comment') or "").strip() or None
+
+    session = get_scoped_session()
+    doc = Document.get_by_id(session, doc_id)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+    if document_has_embeddings(session, doc_id):
+        return {
+            "status": "error",
+            "message": "Document has embeddings. Reopen it for editing before merging places.",
+        }, 409
+
+    source_entity = session.get(DocumentEntity, source_entity_id)
+    if (source_entity is None or source_entity.document_id != doc_id
+            or source_entity.entity_type not in MERGEABLE_PLACE_SOURCE_TYPES):
+        return {
+            "status": "error",
+            "message": "source_entity_id must be a geogName/placeName/orgName entity of this document",
+        }, 400
+    target_entity = session.get(DocumentEntity, target_entity_id)
+    if (target_entity is None or target_entity.document_id != doc_id
+            or target_entity.entity_type not in PLACE_TYPES):
+        return {
+            "status": "error",
+            "message": "target_entity_id must be a geogName/placeName entity of this document",
+        }, 400
+
+    source_entity_text = source_entity.entity_text
+    source_entity_type = source_entity.entity_type
+    source_variants = list(source_entity.variants or [])
+
+    try:
+        merge_document_entities(source_entity, target_entity)
+        session.delete(source_entity)
+        session.flush()
+        record_entity_decision(
+            session,
+            document_id=doc_id,
+            document_entity_id=target_entity.id,
+            entity_type=target_entity.entity_type,
+            entity_text=target_entity.entity_text,
+            decision="place_merged",
+            comment=comment,
+            details={
+                "source_entity_text": source_entity_text,
+                "source_entity_type": source_entity_type,
+                "source_variants": source_variants,
+                "target_entity_text": target_entity.entity_text,
+            },
+        )
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("place merge failed for document %s", doc_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({
+        "status": "success",
+        "entity_id": target_entity.id,
+        "entity_text": target_entity.entity_text,
+        "mention_count": target_entity.mention_count,
+        "variants": target_entity.variants,
+    }), 200
+
+
 @app.route('/tags', methods=['GET'])
 def tags_list():
     """Distinct tags across documents (CSV column), most used first — editor autocomplete."""

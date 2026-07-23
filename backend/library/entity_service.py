@@ -450,3 +450,28 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
         kept.sort(key=lambda i: (-i["count"], i["text"]))
         filtered[entity_type] = kept
     return filtered
+
+
+PLACE_TYPES = ("geogName", "placeName")
+# orgName is accepted as a merge *source* (not target) to cover NER
+# misclassifications where the same real-world place was tagged orgName in
+# one mention and geogName/placeName in another within the same document
+# (e.g. "Kijów" — see docs discussion, no dedicated doc file yet).
+MERGEABLE_PLACE_SOURCE_TYPES = (*PLACE_TYPES, "orgName")
+
+
+def merge_document_entities(source: DocumentEntity, target: DocumentEntity) -> None:
+    """Fold source into target: sum mention_count, union variants, adopt a
+    missing geocode_id from source. Caller deletes source from the session and
+    owns the transaction/validation (document/type checks) — see
+    POST /document/<id>/places/merge in server.py. Unlike orgName merges,
+    places have no cross-document registry, so this is per-document only.
+    """
+    combined_variants = dict.fromkeys(target.variants or [])
+    for value in [source.entity_text, *(source.variants or [])]:
+        if value.casefold() != target.entity_text.casefold():
+            combined_variants.setdefault(value)
+    target.variants = list(combined_variants)
+    target.mention_count += source.mention_count
+    if target.geocode_id is None and source.geocode_id is not None:
+        target.geocode_id = source.geocode_id

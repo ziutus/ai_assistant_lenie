@@ -12,6 +12,7 @@ from library.entity_service import (  # noqa: E402
     _temporal_candidate_rows,
     get_document_entities,
     is_excluded,
+    merge_document_entities,
     refresh_document_entities,
 )
 
@@ -223,6 +224,58 @@ class TestOrganizationMerging:
         assert added_orgs[0].organization_id == 7
         assert added_orgs[0].confidence == "canonical_matched"
         assert added_orgs[0].document_entity_id == rows[0].id
+
+
+class TestMergeDocumentEntities:
+    """POST /document/<id>/places/merge (server.py) — per-document only, no cross-document registry."""
+
+    def test_sums_mention_count_and_unions_variants(self):
+        source = DocumentEntity(
+            document_id=9267, entity_type="placeName", entity_text="Amerykanin",
+            mention_count=1, variants=["Amerykanie"],
+        )
+        target = DocumentEntity(
+            document_id=9267, entity_type="placeName", entity_text="Amerykanów",
+            mention_count=1, variants=["Amerykanów"],
+        )
+        merge_document_entities(source, target)
+        assert target.mention_count == 2
+        assert set(target.variants) == {"Amerykanów", "Amerykanie", "Amerykanin"}
+
+    def test_target_adopts_missing_geocode_from_source(self):
+        """The Kijów case: orgName mention (no geocode) merged into the placeName mention."""
+        source = DocumentEntity(
+            document_id=9267, entity_type="orgName", entity_text="Kijów",
+            mention_count=1, variants=[], geocode_id=8,
+        )
+        target = DocumentEntity(
+            document_id=9267, entity_type="placeName", entity_text="Kijów",
+            mention_count=2, variants=["Kijów"], geocode_id=None,
+        )
+        merge_document_entities(source, target)
+        assert target.geocode_id == 8
+
+    def test_target_geocode_is_never_overwritten(self):
+        source = DocumentEntity(
+            document_id=9267, entity_type="placeName", entity_text="Kijowa",
+            mention_count=1, variants=[], geocode_id=99,
+        )
+        target = DocumentEntity(
+            document_id=9267, entity_type="placeName", entity_text="Kijów",
+            mention_count=1, variants=[], geocode_id=8,
+        )
+        merge_document_entities(source, target)
+        assert target.geocode_id == 8
+
+    def test_source_text_not_duplicated_as_variant_when_same_casefold(self):
+        source = DocumentEntity(
+            document_id=9267, entity_type="placeName", entity_text="kijów", mention_count=1, variants=[],
+        )
+        target = DocumentEntity(
+            document_id=9267, entity_type="placeName", entity_text="Kijów", mention_count=1, variants=[],
+        )
+        merge_document_entities(source, target)
+        assert target.variants == []
 
 
 class TestIsExcluded:
