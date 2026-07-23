@@ -212,10 +212,15 @@ const EntitiesPanel = ({
   docId,
   externalDisabled = false,
   onBusyChange,
+  onEntitiesChanged,
 }: {
   docId?: string | number;
   externalDisabled?: boolean;
   onBusyChange?: (busy: boolean) => void;
+  // Fires after a successful refresh/delete/merge/exclude — lets a host page
+  // that keeps its own copy of this document's entities (e.g. read.tsx's
+  // chapter-scoped sidebar) know it should refetch too.
+  onEntitiesChanged?: () => void;
 }) => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
@@ -263,6 +268,7 @@ const EntitiesPanel = ({
       .then((response) => {
         setEntities(response.data.entities);
         setNerUnavailableAt(response.data.ner_unavailable_at ?? null);
+        onEntitiesChanged?.();
       })
       .catch((error) => {
         console.error("Error fetching entities", error);
@@ -303,6 +309,7 @@ const EntitiesPanel = ({
       );
       setEntities(response.data.entities);
       setNerUnavailableAt(null);
+      onEntitiesChanged?.();
       if (response.data.refreshed === 0) {
         setMessage("Nie wykryto żadnych osób ani miejsc w tym dokumencie.");
       }
