@@ -356,6 +356,7 @@ class DocumentAnalysisService:
         split_only: bool = False,
         reclean: bool = False,
         scope_chapter: int | None = None,
+        document_enriched: bool = False,
     ) -> DocumentAnalysisRun:
         """Create a new analysis run for an existing document and persist to DB.
 
@@ -670,7 +671,7 @@ class DocumentAnalysisService:
         #      (no LLM), stored in document_entities with replace semantics, so
         #      chapter-scoped runs skip it (a single chapter's entities must not
         #      clobber the whole document's). See docs/ner-integration-plan.md.
-        if scope is None:
+        if scope is None and not document_enriched:
             try:
                 from library.entity_service import refresh_document_entities
                 from library.ner_client import NERServiceUnavailable

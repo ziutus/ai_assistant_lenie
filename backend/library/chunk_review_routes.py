@@ -162,6 +162,16 @@ def _analysis_worker() -> None:
             from library.llm_usage.context import llm_usage_context
             service = DocumentAnalysisService(work)
             with llm_usage_context(document_id=doc_id, analysis_job_id=job_id):
+                document_enriched = False
+                if params.get("enrich_document"):
+                    from library.document_enrichment import refresh_document_enrichment
+
+                    document = work.get(Document, doc_id)
+                    refresh_document_enrichment(
+                        work, document, params["model"],
+                        progress_fn=lambda msg: _update_analysis_job(job_id, progress=msg),
+                    )
+                    document_enriched = True
                 run = service.create_run(
                     doc_id=doc_id,
                     model=params["model"], chunk_size=params["chunk_size"],
@@ -170,13 +180,46 @@ def _analysis_worker() -> None:
                     mode=params["mode"], split_only=params["split_only"],
                     reclean=params["reclean"],
                     scope_chapter=params.get("scope_chapter"),
+                    document_enriched=document_enriched,
                 )
+            auto_finalized = False
+            if params.get("auto_finalize_single"):
+                chunks = work.scalars(
+                    select(DocumentChunk)
+                    .where(DocumentChunk.run_id == run.id)
+                    .order_by(DocumentChunk.position)
+                ).all()
+                document = work.get(Document, doc_id)
+                if (
+                    document is not None
+                    and document.processing_status == "MD_SIMPLIFIED"
+                    and run.mode == "article"
+                    and run.scope is None
+                    and len(chunks) == 1
+                    and chunks[0].type == "TEMAT"
+                ):
+                    chunks[0].status = "approved"
+                    run.status = "reviewed"
+                    work.commit()
+                    from library.document_analysis_service import generate_embeddings_from_run
+
+                    generate_embeddings_from_run(
+                        work, run.id,
+                        progress_fn=lambda msg: _update_analysis_job(
+                            job_id, progress=f"Automatyczny embedding: {msg}",
+                        ),
+                    )
+                    auto_finalized = True
             ad_count = sum(1 for chunk in run.chunks if chunk.type == "REKLAMA")
             _update_analysis_job(
                 job_id, status="done", run_id=run.id,
                 chunk_count=len(run.chunks), ad_count=ad_count,
                 topic_section_count=len(run.topic_sections),
-                progress=f"Gotowe: {len(run.chunks)} chunków, {len(run.topic_sections)} sekcji",
+                progress=(
+                    "Gotowe automatycznie: 1 zatwierdzony chunk i embedding"
+                    if auto_finalized
+                    else f"Gotowe: {len(run.chunks)} chunków, {len(run.topic_sections)} sekcji"
+                ),
                 finished_at=datetime.utcnow(),
             )
         except Exception as exc:
@@ -341,6 +384,8 @@ def analyze_document_chunks(doc_id: int):
         no_synthesis — skip final synthesis step (default: false)
         mode         — "transcript" (default) or "article"
         split_only   — split into chunks without any LLM analysis (default: false)
+        auto_finalize_single — for a reviewed MD_SIMPLIFIED article, automatically
+                       approve, close review and embed when the split has one chunk
         scope_chapter — 1-based chapter position (see GET /document/<id>/chapters);
                        analyze only that chapter (article mode only)
 
@@ -354,12 +399,19 @@ def analyze_document_chunks(doc_id: int):
     no_synthesis = bool(data.get("no_synthesis", False))
     mode = data.get("mode", "transcript")
     split_only = bool(data.get("split_only", False))
+    auto_finalize_single = bool(data.get("auto_finalize_single", False))
     reclean = bool(data.get("reclean", False))
     scope_chapter = data.get("scope_chapter")
+    enrich_document = bool(data.get("enrich_document", mode == "article" and scope_chapter is None))
     if mode not in ANALYSIS_MODES:
         return jsonify({"status": "error", "message": f"Invalid mode: {mode}"}), 400
     if reclean and mode != "article":
         return jsonify({"status": "error", "message": "reclean requires article mode"}), 400
+    if auto_finalize_single and (mode != "article" or not split_only):
+        return jsonify({
+            "status": "error",
+            "message": "auto_finalize_single requires article mode with split_only",
+        }), 400
     if scope_chapter is not None:
         try:
             scope_chapter = int(scope_chapter)
@@ -371,6 +423,12 @@ def analyze_document_chunks(doc_id: int):
     session = get_scoped_session()
     if session.get(Document, doc_id) is None:
         abort(404, f"Document {doc_id} not found")
+    from library.document_editing import document_has_embeddings
+    if document_has_embeddings(session, doc_id):
+        return jsonify({
+            "status": "error",
+            "message": "Document has embeddings. Reopen it for editing before starting a new analysis.",
+        }), 409
     active = session.scalars(
         select(DocumentAnalysisJob).where(
             DocumentAnalysisJob.document_id == doc_id,
@@ -390,6 +448,8 @@ def analyze_document_chunks(doc_id: int):
             "model": model, "chunk_size": chunk_size,
             "no_synthesis": no_synthesis, "mode": mode,
             "split_only": split_only,
+            "auto_finalize_single": auto_finalize_single,
+            "enrich_document": enrich_document,
             "reclean": reclean, "scope_chapter": scope_chapter,
         },
         progress="Oczekuje w kolejce",
@@ -400,7 +460,7 @@ def analyze_document_chunks(doc_id: int):
     return jsonify({"status": "queued", "job_id": job_id, "doc_id": doc_id})
 
 
-@bp.route("/document/<int:doc_id>/split_preview", methods=["GET"])
+@bp.route("/document/<int:doc_id>/split_preview", methods=["GET", "POST"])
 def split_preview(doc_id: int):
     """Preview how a document would split into chunks — no LLM calls, no DB writes.
 
@@ -429,7 +489,13 @@ def split_preview(doc_id: int):
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
-    text, field = _extract_text(doc, prefer_md=(mode == "article"))
+    submitted = request.get_json(silent=True) if request.method == "POST" else None
+    submitted_text = (submitted or {}).get("text")
+    if submitted_text is not None:
+        text = str(submitted_text)
+        field = "request"
+    else:
+        text, field = _extract_text(doc, prefer_md=(mode == "article"))
     if not text:
         return jsonify({"status": "error", "message": "Document has no usable text"}), 400
 
@@ -548,6 +614,13 @@ def reclean_preview(doc_id: int):
     doc = session.get(Document, doc_id)
     if doc is None:
         abort(404, f"Document {doc_id} not found")
+    if save:
+        from library.document_editing import document_has_embeddings
+        if document_has_embeddings(session, doc_id):
+            return jsonify({
+                "status": "error",
+                "message": "Document has embeddings. Reopen it for editing before changing Markdown.",
+            }), 409
 
     before, field = _extract_text(doc, prefer_md=True)
     if not before:
@@ -669,6 +742,7 @@ def extract_document_author(doc_id: int):
 @bp.route("/document/<int:doc_id>/extract_publication_date", methods=["POST"])
 def extract_document_publication_date(doc_id: int):
     """Extract and save publication date without requiring an analysis run."""
+    from library.article_cleaner import resolve_relative_publication_date
     from library.article_metadata import extract_article_publication_date
 
     session = get_scoped_session()
@@ -681,8 +755,16 @@ def extract_document_publication_date(doc_id: int):
     if context_text is not None and not isinstance(context_text, str):
         return jsonify({"status": "error", "message": "context_text must be a string"}), 400
 
-    date_str = None if context_text else extract_article_publication_date(doc.text_raw, doc.url or "")
-    method = "html" if date_str else "llm"
+    relative_date = resolve_relative_publication_date(
+        context_text or doc.text_md or doc.text or "",
+        doc.ingested_at,
+    )
+    date_str = relative_date.isoformat() if relative_date else None
+    method = "relative" if relative_date else "html"
+    if not date_str and not context_text:
+        date_str = extract_article_publication_date(doc.text_raw, doc.url or "")
+    if not date_str:
+        method = "llm"
     if not date_str:
         source_text = (context_text or _document_head_tail(doc)).strip()[:12000]
         if not source_text:
@@ -697,11 +779,21 @@ def extract_document_publication_date(doc_id: int):
             logger.exception("document publication-date extraction failed for %d", doc_id)
             return jsonify({"status": "error", "message": "Publication date extraction failed"}), 500
     if not date_str:
-        return jsonify({"status": "success", "published_on": None, "published_on_method": None})
+        return jsonify({
+            "status": "success",
+            "published_on": None,
+            "published_on_method": None,
+            "message": "Nie udało się rozpoznać daty publikacji w metadanych ani treści dokumentu.",
+        })
     try:
         doc.published_on = date.fromisoformat(date_str)
     except ValueError:
-        return jsonify({"status": "success", "published_on": None, "published_on_method": None})
+        return jsonify({
+            "status": "success",
+            "published_on": None,
+            "published_on_method": None,
+            "message": f"Rozpoznana wartość nie jest poprawną datą: {date_str}",
+        })
     doc.published_on_method = method
     session.commit()
     return jsonify({

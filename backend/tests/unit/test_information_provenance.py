@@ -9,9 +9,34 @@ from library.information_provenance import (
     _json_array,
     extract_information_sources,
     extract_known_reporting_sources,
+    extract_ner_cited_sources,
     publisher_domain,
     refresh_document_information_sources,
 )
+
+
+def test_ner_organizations_become_sources_only_with_attribution_context():
+    text = (
+        "Jak podaje agencja Bloomberg, powołując się na północnokoreańską "
+        "państwową agencję KCNA, Korea Północna przeprowadziła testy. NATO również wspomniano."
+    )
+
+    result = extract_ner_cited_sources(text, [
+        {"text": "Bloomberg", "variants": ["Bloomberg"]},
+        {"text": "KCNA", "variants": ["KCNA"]},
+        {"text": "Korea", "variants": ["Korea"]},
+        {"text": "NATO", "variants": ["NATO"]},
+    ])
+
+    assert [(item["canonical_name"], item["role"]) for item in result] == [
+        ("Bloomberg", "cited"),
+        ("KCNA", "cited"),
+    ]
+    assert all(item["extraction_method"] == "ner_context_rule" for item in result)
+
+
+def test_ner_bare_organization_mention_is_not_a_source():
+    assert extract_ner_cited_sources("Bloomberg otworzył nowe biuro.", ["Bloomberg"]) == []
 
 
 def test_json_array_recovers_complete_objects_from_truncated_response():

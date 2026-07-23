@@ -8,12 +8,14 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
   const [isLoading, setIsLoading] = React.useState(false);
   const [isError, setIsError] = React.useState(false);
   const [message, setMessage] = React.useState("");
+  const [autoFlowComplete, setAutoFlowComplete] = React.useState(false);
   const { apiKey, apiUrl, apiType } = React.useContext(AuthorizationContext);
   const navigate = useNavigate();
 
 
   const handleGetLinkByID = async (link_id: string, redirect = false) => {
     setIsLoading(true);
+    setAutoFlowComplete(false);
     // setLinkId(link_id);
     try {
       const response = await axios.get(`${apiUrl}/website_get`, {
@@ -192,6 +194,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
 
   const handleSaveWebsiteNext = async (website: any) => {
     setIsLoading(true);
+    setAutoFlowComplete(false);
 
     var text_tmp = website.text;
     var text_tmp_md = website.text_md;
@@ -213,7 +216,10 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
           text_md: text_tmp_md,
           language: website.language,
           document_type: website.document_type,
-          processing_status: "READY_FOR_EMBEDDING",
+          // A reviewed webpage is ready for chunking, not yet for embeddings.
+          processing_status: website.document_type === "webpage"
+            ? "MD_SIMPLIFIED"
+            : "READY_FOR_EMBEDDING",
           chapter_list: website.chapter_list,
           byline: website.byline,
           note: website.note,
@@ -226,7 +232,53 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
         },
       );
 
-      // formik.resetForm();
+      if (website.document_type === "webpage") {
+        const preview = await axios.post(
+          `${apiUrl}/document/${website.id}/split_preview?mode=article&chunk_size=5000`,
+          { text: text_tmp_md || text_tmp || "" },
+          { headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` } },
+        );
+        const isSingleChunk = preview.data.chunk_count === 1;
+        const analysis = await axios.post(
+          `${apiUrl}/document/${website.id}/analyze_chunks`,
+          {
+            mode: "article",
+            chunk_size: 5000,
+            split_only: true,
+            enrich_document: true,
+            auto_finalize_single: isSingleChunk,
+          },
+          { headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` } },
+        );
+        if (isSingleChunk) {
+          const jobId = analysis.data.job_id;
+          if (!jobId) throw new Error("Backend nie zwrócił identyfikatora automatycznego zadania");
+          for (let attempt = 0; attempt < 240; attempt += 1) {
+            const jobResponse = await axios.get(`${apiUrl}/analysis_job/${jobId}`, {
+              headers: { "x-api-key": `${apiKey}` },
+            });
+            const job = jobResponse.data.job;
+            setMessage(job?.progress || "Automatyczne przetwarzanie dokumentu…");
+            if (job?.status === "done") {
+              setMessage("Dokument zatwierdzony. Utworzono chunk i embedding.");
+              setIsLoading(false);
+              setIsError(false);
+              setAutoFlowComplete(true);
+              return;
+            }
+            if (job?.status === "failed") {
+              throw new Error(job.error || "Automatyczne przetwarzanie nie powiodło się");
+            }
+            await new Promise(resolve => window.setTimeout(resolve, 1500));
+          }
+          throw new Error("Przekroczono czas oczekiwania na automatyczne przetwarzanie");
+        }
+        setMessage(response.data.message);
+        setIsLoading(false);
+        setIsError(false);
+        navigate(`/chunks/${website.id}`, { state: { docType: "webpage" } });
+        return;
+      }
 
       console.log("Getting next document ID to correct");
       console.log("id: " + website.id);
@@ -270,6 +322,39 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
       setIsLoading(false);
       setIsError(true);
       setMessage(`There was an error saving the data: ${message}`);
+    }
+  };
+
+  const handleReturnToList = () => {
+    setAutoFlowComplete(false);
+    navigate("/list");
+  };
+
+  const handleNextAfterAutoFlow = async (website: any) => {
+    setIsLoading(true);
+    try {
+      const response = await axios.get(`${apiUrl}/website_get_next_to_correct`, {
+        params: {
+          id: website.id,
+          document_type: selectedDocumentType,
+          processing_status: selectedDocumentState,
+        },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "x-api-key": `${apiKey}`,
+        },
+      });
+      setAutoFlowComplete(false);
+      if (response.data.next_id && response.data.next_type) {
+        navigate(`/${response.data.next_type}/${response.data.next_id}`);
+      } else {
+        navigate("/list");
+      }
+    } catch (error: any) {
+      setIsError(true);
+      setMessage(`Nie udało się pobrać następnego dokumentu: ${error.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -487,6 +572,9 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     message,
     isError,
     isLoading,
+    autoFlowComplete,
+    handleReturnToList,
+    handleNextAfterAutoFlow,
     handleGetPageByUrl,
     handleSaveWebsiteNext,
     handleSaveWebsiteToCorrect,

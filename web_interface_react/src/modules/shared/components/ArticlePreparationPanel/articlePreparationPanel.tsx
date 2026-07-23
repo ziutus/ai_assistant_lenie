@@ -16,6 +16,9 @@ const ArticlePreparationPanel = ({ formik }: { formik: any }) => {
   const [preview, setPreview] = React.useState<CleanupPreview | null>(null);
   const [busy, setBusy] = React.useState<string | null>(null);
   const [message, setMessage] = React.useState("");
+  const [splitPreview, setSplitPreview] = React.useState<{
+    chunk_count: number; chunk_sizes: number[]; text_length: number;
+  } | null>(null);
   const headers = React.useMemo(() => ({
     "x-api-key": `${apiKey ?? ""}`,
     "Content-Type": "application/json",
@@ -35,6 +38,25 @@ const ArticlePreparationPanel = ({ formik }: { formik: any }) => {
   }, [apiUrl, formik.values.id, headers]);
 
   React.useEffect(() => { void loadPreview(); }, [loadPreview]);
+
+  React.useEffect(() => {
+    if (!formik.values.id) return;
+    const text = formik.values.text_md || formik.values.text || "";
+    if (!text.trim()) { setSplitPreview(null); return; }
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      try {
+        const response = await axios.post(
+          `${apiUrl}/document/${formik.values.id}/split_preview?mode=article&chunk_size=5000`,
+          { text }, { headers, signal: controller.signal },
+        );
+        setSplitPreview(response.data.status === "success" ? response.data : null);
+      } catch {
+        if (!controller.signal.aborted) setSplitPreview(null);
+      }
+    }, 350);
+    return () => { window.clearTimeout(timeout); controller.abort(); };
+  }, [apiUrl, formik.values.id, formik.values.text_md, formik.values.text, headers]);
 
   const refreshDocument = async () => {
     const response = await axios.get(`${apiUrl}/website_get`, {
@@ -70,9 +92,12 @@ const ArticlePreparationPanel = ({ formik }: { formik: any }) => {
         setMessage(`Autor: ${response.data.byline} (${response.data.byline_method}).`);
       } else if (kind === "date" && response.data.published_on) {
         formik.setFieldValue("published_on", response.data.published_on);
+        formik.setFieldValue("published_on_method", response.data.published_on_method || "llm");
         setMessage(`Data publikacji: ${response.data.published_on} (${response.data.published_on_method}).`);
       } else {
-        setMessage(kind === "author" ? "Nie znaleziono autora." : "Nie znaleziono daty publikacji.");
+        setMessage(kind === "author"
+          ? "Nie znaleziono autora."
+          : `⚠ ${response.data.message || "Nie udało się rozpoznać daty publikacji w metadanych ani treści."}`);
       }
     } catch { setMessage("Ekstrakcja metadanych nie powiodła się."); }
     finally { setBusy(null); }
@@ -97,6 +122,20 @@ const ArticlePreparationPanel = ({ formik }: { formik: any }) => {
           )}
         </div>
       )}
+      {splitPreview && (
+        <div style={{
+          fontSize: "0.9em", marginBottom: 9, padding: "7px 9px", borderRadius: 5,
+          background: splitPreview.chunk_count === 1 ? "#dcfce7" : "#eff6ff",
+          color: splitPreview.chunk_count === 1 ? "#166534" : "#1e40af",
+        }}>
+          Przewidywany podział: <strong>{splitPreview.chunk_count} {
+            splitPreview.chunk_count === 1 ? "chunk" : "chunki"
+          }</strong> ({splitPreview.text_length.toLocaleString("pl")} znaków).
+          {splitPreview.chunk_count === 1 && (
+            <> Po zatwierdzeniu chunk zostanie automatycznie zaakceptowany i zapisany w indeksie.</>
+          )}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button type="button" className="button" onClick={loadPreview} disabled={!!busy}>Sprawdź czyszczenie</button>
         <button type="button" className="button" onClick={saveCleanup} disabled={!!busy || !preview}>
@@ -110,7 +149,13 @@ const ArticlePreparationPanel = ({ formik }: { formik: any }) => {
         </button>
       </div>
       {formik.values.published_on && <div style={{ marginTop: 7 }}>Data publikacji: {formik.values.published_on}</div>}
-      {message && <div style={{ marginTop: 7 }}>{message}</div>}
+      {message && <div style={{
+        marginTop: 7,
+        padding: "6px 8px",
+        borderRadius: 4,
+        background: message.startsWith("⚠") ? "#fef3c7" : "#f0fdf4",
+        color: message.startsWith("⚠") ? "#92400e" : "#166534",
+      }}>{message}</div>}
     </section>
   );
 };

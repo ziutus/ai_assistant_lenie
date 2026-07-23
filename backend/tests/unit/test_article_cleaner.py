@@ -427,6 +427,10 @@ class TestResolveRelativePublicationDate:
         result = resolve_relative_publication_date("Dziś, 06:00", self.INGESTED_AT)
         assert result == datetime.date(2026, 4, 13)
 
+    def test_today_full_word(self):
+        result = resolve_relative_publication_date("Dzisiaj, 19:06", self.INGESTED_AT)
+        assert result == datetime.date(2026, 4, 13)
+
     def test_hours_ago_crosses_midnight(self):
         # 07:10 minus 10 godzin = poprzedni dzień
         result = resolve_relative_publication_date("10 godzin temu", self.INGESTED_AT)

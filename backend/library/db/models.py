@@ -1304,7 +1304,7 @@ class DocumentEntity(Base):
     document_id: Mapped[int] = mapped_column(
         ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
     )
-    # entity_type: persName | geogName | placeName (spaCy pl_core_news_lg labels)
+    # entity_type: persName | orgName | geogName | placeName
     entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
     # entity_text: base form of the mention (lemma when available)
     entity_text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1330,6 +1330,78 @@ class DocumentEntity(Base):
             f"DocumentEntity(id={self.id!r}, document_id={self.document_id!r}, "
             f"entity_type={self.entity_type!r}, entity_text={self.entity_text!r})"
         )
+
+
+class EntityReviewDecision(Base):
+    """Immutable audit trail for human decisions about detected entities."""
+
+    __tablename__ = "entity_review_decisions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"),
+    )
+    document_entity_id: Mapped[int | None] = mapped_column(BigInteger)
+    document_person_id: Mapped[int | None] = mapped_column(BigInteger)
+    person_id: Mapped[int | None] = mapped_column(BigInteger)
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    entity_text: Mapped[str] = mapped_column(Text, nullable=False)
+    decision: Mapped[str] = mapped_column(String(30), nullable=False)
+    reason_code: Mapped[str | None] = mapped_column(String(50))
+    comment: Mapped[str | None] = mapped_column(Text)
+    original_confidence: Mapped[str | None] = mapped_column(String(30))
+    replacement_person_id: Mapped[int | None] = mapped_column(BigInteger)
+    source_excerpt: Mapped[str | None] = mapped_column(Text)
+    details: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["Document | None"] = relationship(foreign_keys=[document_id])
+
+
+class NerContextClassification(Base):
+    """LLM verdict for an ambiguous one-word person candidate."""
+
+    __tablename__ = "ner_context_classifications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"),
+    )
+    entity_text: Mapped[str] = mapped_column(Text, nullable=False)
+    predicted_class: Mapped[str] = mapped_column(String(20), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(10), nullable=False)
+    rationale: Mapped[str | None] = mapped_column(Text)
+    context_excerpt: Mapped[str | None] = mapped_column(Text)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    dropped: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["Document | None"] = relationship(foreign_keys=[document_id])
+
+
+class NerTemporalCandidate(Base):
+    """Raw date/time mention detected by NER before timeline interpretation."""
+
+    __tablename__ = "ner_temporal_candidates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    entity_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    lemma: Mapped[str | None] = mapped_column(Text)
+    char_start: Mapped[int | None] = mapped_column(Integer)
+    context_excerpt: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
 
 class NerExclusion(Base):

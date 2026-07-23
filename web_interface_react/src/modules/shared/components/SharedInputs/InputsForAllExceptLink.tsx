@@ -1,9 +1,9 @@
 import React from "react";
-import { NavLink } from "react-router-dom";
 import Input from "../Input/input";
 import EntitiesPanel from "../EntitiesPanel/entitiesPanel";
 import ArticlePreparationPanel from "../ArticlePreparationPanel/articlePreparationPanel";
 import MarkdownLineEditor from "../MarkdownLineEditor/markdownLineEditor";
+import ArticleSourceComparison from "../ArticleSourceComparison/articleSourceComparison";
 
 interface InputsForAllExceptLinkProps {
   formik: any;
@@ -12,6 +12,7 @@ interface InputsForAllExceptLinkProps {
   // "Clean Text" applies portal cleanup rules (site_rules.json) — only makes
   // sense for webpage documents, so only the webpage editor passes true.
   showCleanText?: boolean;
+  onProcessingChange?: (busy: boolean) => void;
 }
 
 const InputsForAllExceptLink = ({
@@ -19,12 +20,21 @@ const InputsForAllExceptLink = ({
   handleRemoveNotNeededText,
   isLoading,
   showCleanText,
+  onProcessingChange,
 }: InputsForAllExceptLinkProps) => {
   return (
     <>
       {showCleanText && <ArticlePreparationPanel formik={formik} />}
       {showCleanText ? (
-        <MarkdownLineEditor formik={formik} disabled={isLoading} />
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(620px, 3fr) minmax(360px, 2fr)",
+          gap: 14,
+          alignItems: "start",
+        }}>
+          <MarkdownLineEditor formik={formik} disabled={isLoading} />
+          <ArticleSourceComparison formik={formik} />
+        </div>
       ) : formik.values.text_md && (
         <details style={{ marginBottom: "8px" }}>
           <summary style={{ cursor: "pointer" }}>Website MarkDown content</summary>
@@ -43,17 +53,6 @@ const InputsForAllExceptLink = ({
         <Input disabled={isLoading} value={formik.values.text} label={"Website content"}
           onChange={formik.handleChange} id={"text"} name={"text"} type={"text"} multiline />
       )}{" "}
-        <div style={{marginTop: "10px"}}>
-            {formik.values.id && (
-                <NavLink
-                    className={"button"}
-                    style={{marginRight: "10px"}}
-                    to={`/chunks/${formik.values.id}`}
-                >
-                    Przegląd chunków →
-                </NavLink>
-            )}
-        </div>
         {(showCleanText ? (formik.values.text_md || formik.values.text) : formik.values.text) && (
             <div style={{marginTop: "10px"}}>
                 Długość: {(showCleanText ? (formik.values.text_md || formik.values.text) : formik.values.text).length} znaków
@@ -96,7 +95,11 @@ const InputsForAllExceptLink = ({
         type={"text"}
         multiline
       />
-      <EntitiesPanel docId={formik.values.id} />
+      <EntitiesPanel
+        docId={formik.values.id}
+        externalDisabled={isLoading}
+        onBusyChange={onProcessingChange}
+      />
     </>
   );
 };

@@ -529,6 +529,7 @@ const Chunks = () => {
   const [videoId, setVideoId]       = React.useState("");
   const [docType, setDocType]       = React.useState(initialDocType);
   const [docTitle, setDocTitle]     = React.useState("");
+  const [docProcessingStatus, setDocProcessingStatus] = React.useState("");
   const [docAuthor, setDocAuthor]   = React.useState("");
   const [docAuthorSource, setDocAuthorSource] = React.useState<string | null>(null);
   const [authorPersons, setAuthorPersons] = React.useState<AuthorPerson[]>([]);
@@ -664,6 +665,9 @@ const Chunks = () => {
       setSegments(data.segments ?? []);
       setVideoId(data.document?.original_id ?? "");
       setDocType(data.document?.document_type ?? "");
+      if (data.document?.processing_status) {
+        setDocProcessingStatus(data.document.processing_status);
+      }
       setDocUrl(data.document?.url ?? "");
       setDocAuthor(data.document?.byline ?? "");
       setDocAuthorSource(data.document?.byline_method ?? null);
@@ -713,6 +717,7 @@ const Chunks = () => {
         const data = await r.json();
         if (data.document_type) setDocType(data.document_type);
         if (data.title) setDocTitle(data.title);
+        if (data.processing_status) setDocProcessingStatus(data.processing_status);
         if (data.url) setDocUrl(data.url);
         if (data.byline) { setDocAuthor(data.byline); setAuthorInput(data.byline); }
         if (data.byline_method) setDocAuthorSource(data.byline_method);
@@ -763,7 +768,14 @@ const Chunks = () => {
   // Before the first run, the user cannot know whether deterministic cleanup is
   // needed. Compare source and cleaner output automatically (read-only).
   React.useEffect(() => {
-    if (!id || newMode !== "article") { setRecleanPreview(null); return; }
+    if (
+      !id || newMode !== "article"
+      || ["MD_SIMPLIFIED", "EMBEDDING_EXIST"].includes(docProcessingStatus)
+    ) {
+      setRecleanPreview(null);
+      setUseRecleaned(false);
+      return;
+    }
     const controller = new AbortController();
     (async () => {
       try {
@@ -778,7 +790,7 @@ const Chunks = () => {
       } catch { /* The normal split preview still works if comparison is unavailable. */ }
     })();
     return () => controller.abort();
-  }, [id, newMode, apiUrl, apiKey, previewNonce]);
+  }, [id, newMode, docProcessingStatus, apiUrl, apiKey, previewNonce]);
 
   // ── Job polling ──
 
@@ -2018,6 +2030,13 @@ const Chunks = () => {
           Przegląd chunków — {docTitle || `dokument #${id}`}
           {docType && <span style={{ fontWeight: 400, color: "#64748b", fontSize: "0.7em" }}> ({DOC_TYPE_LABELS[docType] ?? docType}, #{id})</span>}
         </h2>
+        <span style={{
+          fontSize: "0.8em", fontWeight: 700, padding: "3px 9px", borderRadius: 10,
+          background: ["MD_SIMPLIFIED", "EMBEDDING_EXIST"].includes(docProcessingStatus) ? "#dcfce7" : "#f1f5f9",
+          color: ["MD_SIMPLIFIED", "EMBEDDING_EXIST"].includes(docProcessingStatus) ? "#166534" : "#475569",
+        }}>
+          Status dokumentu: {docProcessingStatus || "ładowanie…"}
+        </span>
         {runMode === "article" && (
           <span style={{ fontSize: "0.88em", padding: "3px 9px", borderRadius: 4, background: docAuthor ? "#f3e8ff" : "#f1f5f9", color: docAuthor ? "#6b21a8" : "#64748b", display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             Autor:{" "}
@@ -2152,7 +2171,7 @@ const Chunks = () => {
             {jobId ? `Analiza… (${jobStatus})` : hasActiveRun ? "+ Nowa analiza" : "▶ Rozpocznij analizę"}
           </button>}
         </div>
-        {newMode === "article" && (
+        {newMode === "article" && !["MD_SIMPLIFIED", "EMBEDDING_EXIST"].includes(docProcessingStatus) && (
           <div style={{ marginTop: 10, padding: "9px 11px", background: "#fff", border: "1px solid #dbeafe", borderRadius: 6 }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <strong style={{ fontSize: "0.84em", color: "#334155" }}>1. Kontrola tekstu i podział</strong>
@@ -2216,6 +2235,27 @@ const Chunks = () => {
                 </details>}
               </div>
             )}
+          </div>
+        )}
+        {newMode === "article" && ["MD_SIMPLIFIED", "EMBEDDING_EXIST"].includes(docProcessingStatus) && (
+          <div style={{
+            marginTop: 10, padding: "9px 11px", background: "#f0fdf4",
+            border: "1px solid #bbf7d0", borderRadius: 6,
+            display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap",
+          }}>
+            <strong style={{ fontSize: "0.84em", color: "#166534" }}>
+              Markdown zatwierdzony w edytorze
+            </strong>
+            <span style={{ fontSize: "0.8em", color: "#475569" }}>
+              Kontrola kompletności i czyszczenie zostały zakończone w poprzednim etapie.
+            </span>
+            <button className="button" onClick={() => startAnalysis("article", true, null, false)}
+              disabled={!!jobId} style={{ marginLeft: "auto", fontWeight: 700 }}>
+              {jobId ? `Dzielę… (${jobStatus})` : "Podziel tekst"}
+            </button>
+            <NavLink to={`/webpage/${id}`} style={{ fontSize: "0.8em" }}>
+              Wróć do kontroli tekstu
+            </NavLink>
           </div>
         )}
         <details style={{ marginTop: 9 }}>

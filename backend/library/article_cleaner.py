@@ -408,7 +408,7 @@ def _strip_interia_chrome_blocks(text: str) -> str:
 # jest współdzielone między czyszczeniem a oceną jakości.
 _RELATIVE_MINUTES_HOURS_AGO_RE = re.compile(r'^(\d+)\s+(minut\w*|godzin\w*)\s+temu$', re.IGNORECASE)
 _RELATIVE_YESTERDAY_RE = re.compile(r'^wczoraj,\s*(\d{1,2}):(\d{2})$', re.IGNORECASE)
-_RELATIVE_TODAY_RE = re.compile(r'^dzi[sś],\s*(\d{1,2}):(\d{2})$', re.IGNORECASE)
+_RELATIVE_TODAY_RE = re.compile(r'^dzi(?:s|ś|siaj),\s*(\d{1,2}):(\d{2})$', re.IGNORECASE)
 
 
 def _clean_lines_interia(lines: list[str]) -> list[str]:

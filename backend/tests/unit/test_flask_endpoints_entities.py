@@ -72,6 +72,16 @@ class TestWebsiteEntitiesGet:
 
 
 class TestWebsiteEntitiesRefresh:
+    def test_rejects_refresh_when_embeddings_exist(self, client):
+        doc = MagicMock(text_md="# Artykuł", text=None)
+        with patch("server.get_scoped_session", return_value=MagicMock()), \
+                patch("server.Document") as mock_document, \
+                patch("library.document_editing.document_has_embeddings", return_value=True):
+            mock_document.get_by_id.return_value = doc
+            resp = client.post("/website_entities", data={"id": "42"}, headers=API_HEADERS)
+
+        assert resp.status_code == 409
+
     def test_missing_id_returns_400(self, client):
         resp = client.post("/website_entities", data={}, headers=API_HEADERS)
         assert resp.status_code == 400
@@ -239,26 +249,45 @@ class TestWebsiteEntitiesDelete:
         assert resp.status_code == 404
 
     def test_deletes_place_entity_without_person_link(self, client):
-        entity = MagicMock(entity_type="geogName", entity_text="Starling", document_id=42)
+        entity = MagicMock(
+            id=7, entity_type="geogName", entity_text="Starling", document_id=42,
+            mention_count=2, variants=["Starlinga"],
+        )
         session = MagicMock()
         session.get.return_value = entity
-        with patch("server.get_scoped_session", return_value=session):
-            resp = client.delete("/website_entities/7", headers=API_HEADERS)
+        with patch("server.get_scoped_session", return_value=session), patch(
+            "library.entity_review_audit.record_entity_decision"
+        ) as audit:
+            resp = client.delete(
+                "/website_entities/7", json={"decision": "excluded_global"}, headers=API_HEADERS
+            )
 
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["deleted_entity_id"] == 7
         assert data["person_link_removed"] is False
+        assert audit.call_args.kwargs["decision"] == "excluded_global"
+        assert audit.call_args.kwargs["details"] == {
+            "mention_count": 2, "variants": ["Starlinga"],
+        }
         session.delete.assert_called_once_with(entity)
         session.commit.assert_called_once()
 
     def test_person_entity_removes_matching_link(self, client):
-        entity = MagicMock(entity_type="persName", entity_text="Starling", document_id=42)
-        link = MagicMock()
+        entity = MagicMock(
+            id=7, entity_type="persName", entity_text="Starling", document_id=42,
+            mention_count=1, variants=[],
+        )
+        link = MagicMock(
+            id=11, person_id=5, confidence="wikidata_matched",
+            source_excerpt="Starling powiedział...",
+        )
         session = MagicMock()
         session.get.return_value = entity
         session.execute.return_value.scalars.return_value.first.return_value = link
-        with patch("server.get_scoped_session", return_value=session):
+        with patch("server.get_scoped_session", return_value=session), patch(
+            "library.entity_review_audit.record_entity_decision"
+        ) as audit:
             with patch("library.person_registry.reject_review_link",
                        return_value={"action": "reject", "person_deleted": True}) as mock_reject:
                 resp = client.delete("/website_entities/7", headers=API_HEADERS)
@@ -268,7 +297,47 @@ class TestWebsiteEntitiesDelete:
         assert data["person_link_removed"] is True
         assert data["person_deleted"] is True
         mock_reject.assert_called_once_with(session, link)
+        assert audit.call_args.kwargs["document_person_id"] == 11
+        assert audit.call_args.kwargs["original_confidence"] == "wikidata_matched"
         session.delete.assert_called_once_with(entity)
+
+    def test_invalid_audit_decision_returns_400(self, client):
+        resp = client.delete(
+            "/website_entities/7", json={"decision": "unknown"}, headers=API_HEADERS
+        )
+        assert resp.status_code == 400
+
+    def test_other_reason_requires_comment(self, client):
+        resp = client.delete(
+            "/website_entities/7",
+            json={"decision": "rejected", "reason_code": "other"},
+            headers=API_HEADERS,
+        )
+        assert resp.status_code == 400
+
+    def test_reject_stores_reason_and_comment(self, client):
+        entity = MagicMock(
+            id=7, entity_type="geogName", entity_text="Starling", document_id=42,
+            mention_count=1, variants=[],
+        )
+        session = MagicMock()
+        session.get.return_value = entity
+        with patch("server.get_scoped_session", return_value=session), patch(
+            "library.entity_review_audit.record_entity_decision"
+        ) as audit:
+            resp = client.delete(
+                "/website_entities/7",
+                json={
+                    "decision": "rejected",
+                    "reason_code": "misread_name",
+                    "comment": "Artefakt transkrypcji",
+                },
+                headers=API_HEADERS,
+            )
+
+        assert resp.status_code == 200
+        assert audit.call_args.kwargs["reason_code"] == "misread_name"
+        assert audit.call_args.kwargs["comment"] == "Artefakt transkrypcji"
 
 
 class TestDocumentPersonsDecide:
@@ -285,10 +354,16 @@ class TestDocumentPersonsDecide:
 
     def test_reject_works_for_confident_link(self, client):
         """Editor path: no 409 gate — a wrong wikidata_matched link can be undone."""
-        link = MagicMock(confidence="wikidata_matched")
+        link = MagicMock(
+            id=1, document_id=42, person_id=5, raw_mention="Starling",
+            confidence="wikidata_matched", source_excerpt="Starling powiedział...",
+            role="mentioned",
+        )
         session = MagicMock()
         session.get.return_value = link
-        with patch("server.get_scoped_session", return_value=session):
+        with patch("server.get_scoped_session", return_value=session), patch(
+            "library.entity_review_audit.record_entity_decision"
+        ) as audit:
             with patch("library.person_registry.reject_review_link",
                        return_value={"action": "reject", "link_id": 1, "person_id": 5,
                                      "person_deleted": False}) as mock_reject:
@@ -297,6 +372,8 @@ class TestDocumentPersonsDecide:
         assert resp.status_code == 200
         assert resp.get_json()["action"] == "reject"
         mock_reject.assert_called_once_with(session, link)
+        assert audit.call_args.kwargs["decision"] == "rejected"
+        assert audit.call_args.kwargs["entity_text"] == "Starling"
         session.commit.assert_called_once()
 
     def test_review_queue_endpoint_still_gates_on_manual_review(self, client):

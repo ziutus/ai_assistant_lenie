@@ -147,6 +147,8 @@ class TestWebsiteGet:
         assert data["next_id"] == 43
         assert data["embeddings_count"] == 0
         assert data["approved_chunks_count"] == 0
+        assert data["analysis_chunks_count"] == 0
+        assert data["pending_chunks_count"] == 0
         mock_service.get_document.assert_called_once_with(42)
 
     def test_not_found_returns_404(self, client):
@@ -345,6 +347,21 @@ class TestAiGetEmbedding:
 
 
 class TestWebsiteSave:
+    def test_rejects_content_change_when_embeddings_exist(self, client):
+        existing = MagicMock(id=42, text="old", text_md="# Old", processing_status="EMBEDDING_EXIST")
+        mock_session = MagicMock()
+        mock_session.get.return_value = existing
+        with patch("server.get_scoped_session", return_value=mock_session), \
+                patch("library.document_editing.document_has_embeddings", return_value=True), \
+                patch("server.DocumentService") as mock_service:
+            resp = client.post("/website_save", data={
+                "url": "https://example.com", "id": "42",
+                "document_type": "webpage", "text_md": "# Changed",
+            }, headers=API_HEADERS)
+
+        assert resp.status_code == 409
+        mock_service.return_value.save_document.assert_not_called()
+
     def test_update_existing_doc(self, client):
         mock_doc = MagicMock()
         mock_doc.id = 42

@@ -36,10 +36,14 @@ export interface EntityItem {
   person_description?: string | null;
   wikidata_qid?: string | null;
   confidence?: string;
+  // Organization classified as an explicitly cited information source.
+  information_source_id?: number;
+  source_evidence?: string | null;
 }
 
 interface EntitiesByType {
   persName: EntityItem[];
+  orgName: EntityItem[];
   geogName: EntityItem[];
   placeName: EntityItem[];
 }
@@ -51,6 +55,17 @@ interface PersonSearchResult {
   wikidata_qid: string | null;
   aliases: string[];
 }
+
+const REVIEW_REASONS = [
+  { code: "not_a_person", label: "To nie jest osoba ani miejsce" },
+  { code: "misread_name", label: "Błędnie odczytana nazwa" },
+  { code: "fictional_or_collective", label: "Osoba fikcyjna lub zbiorowa" },
+  { code: "organization_as_person", label: "Organizacja rozpoznana jako osoba" },
+  { code: "duplicate_person", label: "Duplikat innej osoby" },
+  { code: "wrong_person", label: "Wskazano niewłaściwą osobę" },
+  { code: "irrelevant", label: "Encja nieistotna dla dokumentu" },
+  { code: "other", label: "Inny powód" },
+] as const;
 
 const chipStyle: React.CSSProperties = {
   display: "inline-block",
@@ -76,6 +91,7 @@ export const EntityChips = ({
   label,
   items,
   linkPersons,
+  linkInformationSources,
   searchUnresolvedPersons,
   actions,
   highlightMode,
@@ -85,6 +101,7 @@ export const EntityChips = ({
   items: EntityItem[];
   // Resolved persons (person_id) become links to /persons/:id — used by the reader view.
   linkPersons?: boolean;
+  linkInformationSources?: boolean;
   // Unresolved persons link to the registry search (/persons?q=) — stage 4
   // may not have run for the document yet, but the name is still searchable.
   searchUnresolvedPersons?: boolean;
@@ -151,6 +168,18 @@ export const EntityChips = ({
             </Link>
           );
         }
+        if (linkInformationSources && item.information_source_id != null) {
+          return (
+            <Link
+              key={item.text}
+              to={`/information-sources?id=${item.information_source_id}`}
+              style={{ textDecoration: "none" }}
+              title={item.source_evidence ?? "Źródło cytowane w dokumencie"}
+            >
+              {chip}
+            </Link>
+          );
+        }
         if (searchUnresolvedPersons && !isResolvedPerson) {
           return (
             <Link
@@ -169,7 +198,15 @@ export const EntityChips = ({
   );
 };
 
-const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
+const EntitiesPanel = ({
+  docId,
+  externalDisabled = false,
+  onBusyChange,
+}: {
+  docId?: string | number;
+  externalDisabled?: boolean;
+  onBusyChange?: (busy: boolean) => void;
+}) => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
@@ -188,6 +225,9 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
   const [aliasText, setAliasText] = React.useState("");
   // "Wyklucz" flow: entity to suppress in future NER runs (ner_exclusions)
   const [excludeFor, setExcludeFor] = React.useState<{ item: EntityItem; entityType: string } | null>(null);
+  const [deleteFor, setDeleteFor] = React.useState<EntityItem | null>(null);
+  const [reviewReason, setReviewReason] = React.useState("");
+  const [reviewComment, setReviewComment] = React.useState("");
 
   const headers = {
     "Content-Type": "application/x-www-form-urlencoded",
@@ -219,6 +259,9 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
     setMergeFor(null);
     setAliasFor(null);
     setExcludeFor(null);
+    setDeleteFor(null);
+    setReviewReason("");
+    setReviewComment("");
     fetchEntities();
   }, [docId, fetchEntities]);
 
@@ -227,6 +270,7 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
       return;
     }
     setIsRefreshing(true);
+    onBusyChange?.(true);
     setMessage("");
     try {
       // First call after an ner_service restart loads the spaCy model (~90s) —
@@ -251,15 +295,29 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
       }
     }
     setIsRefreshing(false);
+    onBusyChange?.(false);
   };
 
-  const handleDelete = async (item: EntityItem) => {
-    if (item.id == null) {
+  const handleDelete = async () => {
+    if (deleteFor?.id == null || !reviewReason) {
+      return;
+    }
+    if (reviewReason === "other" && !reviewComment.trim()) {
       return;
     }
     setMessage("");
     try {
-      await axios.delete(`${apiUrl}/website_entities/${item.id}`, { headers });
+      await axios.delete(`${apiUrl}/website_entities/${deleteFor.id}`, {
+        headers: jsonHeaders,
+        data: {
+          decision: "rejected",
+          reason_code: reviewReason,
+          comment: reviewComment.trim() || null,
+        },
+      });
+      setDeleteFor(null);
+      setReviewReason("");
+      setReviewComment("");
       fetchEntities();
     } catch (error: any) {
       console.error("Error deleting entity", error);
@@ -303,7 +361,7 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
   };
 
   const handleExclude = async (scope: "global" | "author") => {
-    if (!excludeFor) {
+    if (!excludeFor || !reviewReason || (reviewReason === "other" && !reviewComment.trim())) {
       return;
     }
     setMessage("");
@@ -319,9 +377,18 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
         { headers: jsonHeaders },
       );
       if (excludeFor.item.id != null) {
-        await axios.delete(`${apiUrl}/website_entities/${excludeFor.item.id}`, { headers });
+        await axios.delete(`${apiUrl}/website_entities/${excludeFor.item.id}`, {
+          headers: jsonHeaders,
+          data: {
+            decision: scope === "global" ? "excluded_global" : "excluded_author",
+            reason_code: reviewReason,
+            comment: reviewComment.trim() || null,
+          },
+        });
       }
       setExcludeFor(null);
+      setReviewReason("");
+      setReviewComment("");
       setMessage(`„${excludeFor.item.text}" wykluczono (${scope === "global" ? "globalnie" : "dla autora"}).`);
       fetchEntities();
     } catch (error: any) {
@@ -355,8 +422,41 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
   }
 
   const persons = entities?.persName ?? [];
+  const organizations = entities?.orgName ?? [];
+  const citedSources = organizations.filter((item) => item.information_source_id != null);
+  const otherOrganizations = organizations.filter((item) => item.information_source_id == null);
   const places = [...(entities?.geogName ?? []), ...(entities?.placeName ?? [])];
-  const isEmpty = !persons.length && !places.length;
+  const isEmpty = !persons.length && !organizations.length && !places.length;
+  const reviewFormValid = Boolean(reviewReason)
+    && (reviewReason !== "other" || Boolean(reviewComment.trim()));
+
+  const reviewFields = (
+    <>
+      <label style={{ display: "block", marginTop: 6 }}>
+        Powód <span style={{ color: "#a33" }}>*</span>
+        <select
+          value={reviewReason}
+          onChange={(event) => setReviewReason(event.target.value)}
+          style={{ display: "block", marginTop: 3, padding: "4px 8px", minWidth: 300 }}
+        >
+          <option value="">Wybierz powód…</option>
+          {REVIEW_REASONS.map((reason) => (
+            <option key={reason.code} value={reason.code}>{reason.label}</option>
+          ))}
+        </select>
+      </label>
+      <label style={{ display: "block", marginTop: 6 }}>
+        Komentarz {reviewReason === "other" ? <span style={{ color: "#a33" }}>*</span> : "(opcjonalny)"}
+        <textarea
+          value={reviewComment}
+          onChange={(event) => setReviewComment(event.target.value)}
+          placeholder="Co zostało rozpoznane błędnie?"
+          rows={2}
+          style={{ display: "block", marginTop: 3, padding: "4px 8px", width: "min(520px, 95%)" }}
+        />
+      </label>
+    </>
+  );
 
   const editActions = (entityType: string) => (item: EntityItem) => (
     <>
@@ -364,7 +464,14 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
         type="button"
         style={{ ...chipActionStyle, color: "#a33" }}
         title="Usuń encję (dla osoby usuwa też powiązanie z rejestrem)"
-        onClick={() => handleDelete(item)}
+        onClick={() => {
+          setDeleteFor(item);
+          setExcludeFor(null);
+          setMergeFor(null);
+          setAliasFor(null);
+          setReviewReason("");
+          setReviewComment("");
+        }}
       >
         ×
       </button>
@@ -372,7 +479,14 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
         type="button"
         style={{ ...chipActionStyle }}
         title="Usuń i nie wykrywaj więcej (słownik wykluczeń NER)"
-        onClick={() => { setExcludeFor({ item, entityType }); setMergeFor(null); setAliasFor(null); }}
+        onClick={() => {
+          setExcludeFor({ item, entityType });
+          setDeleteFor(null);
+          setMergeFor(null);
+          setAliasFor(null);
+          setReviewReason("");
+          setReviewComment("");
+        }}
       >
         🚫
       </button>
@@ -403,11 +517,11 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
     <div style={{ marginTop: "10px", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <strong>Osoby i miejsca (NER)</strong>
-        <button className={"button"} type="button" disabled={isRefreshing} onClick={handleRefresh}>
+        <button className={"button"} type="button" disabled={isRefreshing || externalDisabled} onClick={handleRefresh}>
           {isRefreshing ? "Wykrywam..." : "Wykryj osoby i miejsca"}
         </button>
         {!isEmpty && (
-          <button className={"button"} type="button" onClick={() => { setEditMode(!editMode); setMergeFor(null); setAliasFor(null); setExcludeFor(null); }}>
+          <button className={"button"} type="button" onClick={() => { setEditMode(!editMode); setMergeFor(null); setAliasFor(null); setExcludeFor(null); setDeleteFor(null); }}>
             {editMode ? "Zakończ edycję" : "Edytuj"}
           </button>
         )}
@@ -422,17 +536,52 @@ const EntitiesPanel = ({ docId }: { docId?: string | number }) => {
         </div>
       )}
       <EntityChips label={"Osoby"} items={persons} actions={editMode ? editActions("persName") : undefined} />
+      <EntityChips
+        label={"Źródła cytowane"}
+        items={citedSources}
+        linkInformationSources
+        actions={editMode ? editActions("orgName") : undefined}
+      />
+      <EntityChips
+        label={"Organizacje"}
+        items={otherOrganizations}
+        actions={editMode ? editActions("orgName") : undefined}
+      />
       <EntityChips label={"Miejsca"} items={places} actions={editMode ? editActions("*") : undefined} />
+
+      {editMode && deleteFor && (
+        <div style={{ marginTop: 8, padding: 8, background: "#fff4f0", borderRadius: 6 }}>
+          <div>Usuń „{deleteFor.text}” i zapisz informację o błędzie:</div>
+          {reviewFields}
+          <button
+            className={"button"}
+            type="button"
+            disabled={!reviewFormValid}
+            style={{ marginTop: 8 }}
+            onClick={handleDelete}
+          >
+            Usuń encję
+          </button>
+          <button
+            type="button"
+            style={{ ...chipActionStyle, marginLeft: 8 }}
+            onClick={() => setDeleteFor(null)}
+          >
+            ✕ anuluj
+          </button>
+        </div>
+      )}
 
       {editMode && excludeFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#fff4f0", borderRadius: 6 }}>
           <div style={{ marginBottom: 4 }}>
             Nie wykrywaj więcej „{excludeFor.item.text}":
           </div>
-          <button className={"button"} type="button" onClick={() => handleExclude("global")}>
+          {reviewFields}
+          <button className={"button"} type="button" disabled={!reviewFormValid} style={{ marginTop: 8 }} onClick={() => handleExclude("global")}>
             Globalnie
           </button>
-          <button className={"button"} type="button" style={{ marginLeft: 8 }} onClick={() => handleExclude("author")}>
+          <button className={"button"} type="button" disabled={!reviewFormValid} style={{ marginLeft: 8, marginTop: 8 }} onClick={() => handleExclude("author")}>
             Tylko dla autora tego dokumentu
           </button>
           <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setExcludeFor(null)}>✕ anuluj</button>

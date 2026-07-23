@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_NER_SERVICE_URL = "http://lenie-ner-service:8090"
 
 # Entity labels we persist (pl_core_news_lg also emits orgName, date, time, ...)
-ENTITY_TYPES = ("persName", "geogName", "placeName")
+ENTITY_TYPES = ("persName", "orgName", "geogName", "placeName")
 
 # First /ner call after a container restart loads the model (up to ~90s on the
 # NAS Celeron — see ner_service/README.md); later calls are sub-second.
@@ -235,8 +235,15 @@ def aggregate_entities_detailed(
             continue
 
         pos = normalize_ner_text(ent.get("pos") or "").upper() or None
+        multiword_person = label == "persName" and len(surface.split()) >= 2
         if pos is not None and pos not in {"NOUN", "PROPN"}:
-            continue
+            if not multiword_person:
+                continue
+            # spaCy's root token can be a Polish homograph instead of the
+            # foreign surname: "Kim Jong Sik" -> lemma "kto Jong Sik",
+            # POS=ADJ. The complete multiword surface is safer than that
+            # corrupted lemma and still goes through person resolution.
+            lemma = surface
         if is_rejected_surface_lemma_pair(surface, lemma, pos):
             continue
 
@@ -275,7 +282,11 @@ def aggregate_entities_detailed(
 
     merged: dict[tuple[str, str], dict] = {}
     for source in normalized_groups:
-        family = "persName" if source["label"] == "persName" else "place"
+        family = (
+            "place"
+            if source["label"] in {"geogName", "placeName"}
+            else source["label"]
+        )
         key = (family, source["base"].casefold())
         group = merged.setdefault(
             key,
