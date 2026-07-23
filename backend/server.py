@@ -282,6 +282,12 @@ def website_list():
     search_in_documents = request.args.get('search_in_document', '')
     only_missing_obsidian_notes = request.args.get('only_missing_obsidian_notes', '').lower() in ('1', 'true')
     only_has_obsidian_notes = request.args.get('only_has_obsidian_notes', '').lower() in ('1', 'true')
+    without_embedding = request.args.get('without_embedding', '').lower() in ('1', 'true')
+    try:
+        limit = min(max(int(request.args.get('limit', 100)), 1), 100)
+        page = max(int(request.args.get('page', 1)), 1)
+    except (TypeError, ValueError):
+        return {"status": "error", "message": "limit and page must be integers"}, 400
     logging.debug(document_type)
 
     session = get_scoped_session()
@@ -292,9 +298,13 @@ def website_list():
         "search_in_documents": search_in_documents,
         "only_missing_obsidian_notes": only_missing_obsidian_notes,
         "only_has_obsidian_notes": only_has_obsidian_notes,
+        "without_embedding": without_embedding,
+        "limit": limit,
+        "offset": page - 1,
     }
     websites_list = repo.get_list(**list_kwargs)
-    websites_list_count = repo.get_list(**list_kwargs, count=True)
+    count_kwargs = {key: value for key, value in list_kwargs.items() if key not in ("limit", "offset")}
+    websites_list_count = repo.get_list(**count_kwargs, count=True)
     logging.debug("website count: %s", websites_list_count)
 
     response = {
@@ -302,7 +312,12 @@ def website_list():
         "message": "Dane odczytane pomyślnie.",
         "encoding": "utf8",
         "websites": websites_list,
-        "all_results_count": websites_list_count
+        "all_results_count": websites_list_count,
+        "pagination": {
+            "page": page,
+            "page_size": limit,
+            "total_pages": max(1, (websites_list_count + limit - 1) // limit),
+        },
     }
 
     return response, 200

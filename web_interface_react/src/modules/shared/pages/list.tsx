@@ -1,7 +1,7 @@
 import React from "react";
 import { useList } from "../hooks/useList";
 import { useDocumentStates } from "../hooks/useDocumentStates";
-import { NavLink } from "react-router-dom";
+import { NavLink, useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import { useManageLLM } from "../hooks/useManageLLM";
 import { useFormik } from 'formik';
@@ -18,6 +18,7 @@ const NO_TEXT_STATES = ["URL_ADDED", "NEED_TRANSCRIPTION", "TRANSCRIPTION_IN_PRO
 const YOUTUBE_CAPTIONS_RETRY_STATES = ["TEMPORARY_ERROR", "URL_ADDED", "NEED_TRANSCRIPTION"];
 
 const List = () => {
+    const [searchParams, setSearchParams] = useSearchParams();
     const { isLoading, isError, data, message, handleGetList, dataAllLength } = useList();
     const { states: fetchedStates, types: fetchedTypes } = useDocumentStates();
 
@@ -32,7 +33,21 @@ const List = () => {
   const { selectedDocumentType, setSelectedDocumentType, selectedDocumentState, setSelectedDocumentState } = React.useContext(AuthorizationContext);
   const { searchInDocument, setSearchInDocument} = React.useContext(AuthorizationContext);
   const { searchType, setSearchType} = React.useContext(AuthorizationContext);
-  const [obsidianFilter, setObsidianFilter] = React.useState<"none" | "missing" | "has">(() => loadListFilters().obsidianFilter);
+  const initialObsidian = searchParams.get("obsidian");
+  const [obsidianFilter, setObsidianFilter] = React.useState<"none" | "missing" | "has">(
+    initialObsidian === "missing" || initialObsidian === "has"
+      ? initialObsidian : loadListFilters().obsidianFilter,
+  );
+  const parsedPage = Number(searchParams.get("page") ?? "1");
+  const parsedPageSize = Number(searchParams.get("page_size") ?? "100");
+  const [page, setPage] = React.useState(Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1);
+  const [pageSize, setPageSize] = React.useState(
+    [25, 50, 100].includes(parsedPageSize) ? parsedPageSize : 100,
+  );
+  const [withoutEmbedding, setWithoutEmbedding] = React.useState(
+    searchParams.get("without_embedding") === "1",
+  );
+  const [copyMessage, setCopyMessage] = React.useState("");
   const [expandedObsidian, setExpandedObsidian] = React.useState<Set<number>>(new Set());
 
   const toggleObsidianExpanded = (id: number) => {
@@ -48,35 +63,142 @@ const List = () => {
     onlyHas: filter === "has",
   });
 
+  const listUrlParams = (
+    type: string, state: string, query: string, obsidian: "none" | "missing" | "has",
+    nextPage: number, nextPageSize: number, nextWithoutEmbedding: boolean,
+  ) => {
+    const params: Record<string, string> = {};
+    if (type !== "ALL") params.type = type;
+    if (state !== "ALL") params.status = state;
+    if (query.trim()) params.q = query.trim();
+    if (obsidian !== "none") params.obsidian = obsidian;
+    if (nextPage !== 1) params.page = String(nextPage);
+    if (nextPageSize !== 100) params.page_size = String(nextPageSize);
+    if (nextWithoutEmbedding) params.without_embedding = "1";
+    return params;
+  };
+
+  const loadPage = async (
+    nextPage: number, type = selectedDocumentType, state = selectedDocumentState,
+    query = searchInDocument, obsidian = obsidianFilter, nextPageSize = pageSize,
+    nextWithoutEmbedding = withoutEmbedding,
+  ) => {
+    setPage(nextPage);
+    setPageSize(nextPageSize);
+    setWithoutEmbedding(nextWithoutEmbedding);
+    setSearchParams(listUrlParams(
+      type, state, query, obsidian, nextPage, nextPageSize, nextWithoutEmbedding,
+    ));
+    await handleGetList(
+      type, state, query, obsidianFilterParams(obsidian), nextPage, nextPageSize,
+      nextWithoutEmbedding,
+    );
+  };
+
+  const initialLoadDone = React.useRef(false);
+  React.useEffect(() => {
+    if (initialLoadDone.current) return;
+    initialLoadDone.current = true;
+    const type = searchParams.get("type") ?? selectedDocumentType;
+    const state = searchParams.get("status") ?? selectedDocumentState;
+    const query = searchParams.get("q") ?? searchInDocument;
+    setSelectedDocumentType(type);
+    setSelectedDocumentState(state);
+    setSearchInDocument(query);
+    void loadPage(page, type, state, query, obsidianFilter, pageSize, withoutEmbedding);
+    // URL parameters are intentionally read once; later changes go through loadPage().
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const { handleDeleteDocument, handleYoutubeRetryCaptions, message: manageMessage, isLoading: isRetrying } = useManageLLM({ formik, selectedDocumentType, selectedDocumentState });
 
   const handleTypeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
           setSelectedDocumentType(event.target.value);
-          handleGetList(event.target.value, selectedDocumentState, searchInDocument, obsidianFilterParams(obsidianFilter));
+          void loadPage(1, event.target.value);
   };
 
   const handleDocumentStateChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
           setSelectedDocumentState(event.target.value);
-          handleGetList(selectedDocumentType, event.target.value, searchInDocument, obsidianFilterParams(obsidianFilter));
+          void loadPage(1, selectedDocumentType, event.target.value);
   };
 
   const handleObsidianFilterChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
           const filter = event.target.value as "none" | "missing" | "has";
           setObsidianFilter(filter);
           saveListFilters({ obsidianFilter: filter });
-          handleGetList(selectedDocumentType, selectedDocumentState, searchInDocument, obsidianFilterParams(filter));
+          void loadPage(1, selectedDocumentType, selectedDocumentState, searchInDocument, filter);
   };
 
   const handleDocumentDeleteOnThisPage = async (document_id: string | number) => {
     console.log("handleDocumentDeleteOnThisPage, page id: " + document_id);
     await handleDeleteDocument(String(document_id));
-    handleGetList(selectedDocumentType, selectedDocumentState);
+    void loadPage(page);
   };
 
   const handleRetryCaptionsOnThisPage = async (document_id: string | number) => {
     await handleYoutubeRetryCaptions(document_id);
-    handleGetList(selectedDocumentType, selectedDocumentState, searchInDocument, obsidianFilterParams(obsidianFilter));
+    void loadPage(page);
   };
+
+  const copyListLink = async () => {
+    const url = window.location.href;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const input = document.createElement("textarea");
+        input.value = url;
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        document.body.removeChild(input);
+      }
+      setCopyMessage("Link skopiowany");
+    } catch {
+      setCopyMessage("Nie udało się skopiować linku");
+    }
+  };
+
+  const totalPages = Math.max(1, Math.ceil(dataAllLength / pageSize));
+  const visiblePages = Array.from({ length: totalPages }, (_, index) => index + 1)
+    .filter(number => number === 1 || number === totalPages || Math.abs(number - page) <= 2);
+
+  const pagination = (position: "top" | "bottom") => data && totalPages > 1 ? (
+    <nav aria-label={`Stronicowanie listy (${position === "top" ? "góra" : "dół"})`}
+      style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6,
+        padding: position === "top" ? "14px 0 8px" : "8px 0 30px" }}>
+      <button type="button" className="button" disabled={isLoading || page <= 1}
+        onClick={() => { void loadPage(page - 1); }}>Poprzednia</button>
+      {visiblePages.map((number, index) => {
+        const previous = visiblePages[index - 1];
+        return (
+          <React.Fragment key={number}>
+            {previous && number - previous > 1 && <span>…</span>}
+            <button type="button" className="button" disabled={isLoading || number === page}
+              aria-current={number === page ? "page" : undefined}
+              onClick={() => { void loadPage(number); }}
+              style={{ minWidth: 36, opacity: number === page ? .6 : 1 }}>
+              {number}
+            </button>
+          </React.Fragment>
+        );
+      })}
+      <button type="button" className="button" disabled={isLoading || page >= totalPages}
+        onClick={() => { void loadPage(page + 1); }}>Następna</button>
+      <label style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 8 }}>
+        Strona
+        <select value={Math.min(page, totalPages)} disabled={isLoading}
+          onChange={event => { void loadPage(Number(event.target.value)); }}>
+          {Array.from({ length: totalPages }, (_, index) => index + 1).map(number => (
+            <option key={number} value={number}>{number}</option>
+          ))}
+        </select>
+        z {totalPages}
+      </label>
+    </nav>
+  ) : null;
 
   // Single compact indicator for the row — details (links, counts) live in an
   // expandable panel instead of cluttering the main line with several badges.
@@ -156,7 +278,7 @@ const List = () => {
         disabled={isLoading}
         className={"button"}
         type={"button"}
-        onClick={() => handleGetList(selectedDocumentType, selectedDocumentState, searchInDocument, obsidianFilterParams(obsidianFilter))}
+        onClick={() => { void loadPage(1); }}
       >
         Search
       </button>
@@ -167,6 +289,26 @@ const List = () => {
         <option value="missing">tylko z brakującymi</option>
         <option value="has">tylko z notatką</option>
       </select>
+      <label htmlFor="page_size" style={{ marginLeft: 12 }}> Wyników na stronę: </label>
+      <select id="page_size" value={pageSize} disabled={isLoading}
+        onChange={event => { void loadPage(1, selectedDocumentType, selectedDocumentState,
+          searchInDocument, obsidianFilter, Number(event.target.value)); }}>
+        {[25, 50, 100].map(size => <option key={size} value={size}>{size}</option>)}
+      </select>
+      <label style={{ marginLeft: 12 }}>
+        <input type="checkbox" checked={withoutEmbedding} disabled={isLoading}
+          onChange={event => { void loadPage(
+            1, selectedDocumentType, selectedDocumentState, searchInDocument,
+            obsidianFilter, pageSize, event.target.checked,
+          ); }} />
+        Without embedding
+      </label>
+      <button type="button" className="button" disabled={isLoading}
+        style={{ marginLeft: 12 }} onClick={() => { void copyListLink(); }}>
+        Kopiuj link
+      </button>
+      {copyMessage && <span role="status" style={{ marginLeft: 8, fontSize: ".85rem" }}>{copyMessage}</span>}
+      {pagination("top")}
       <div>
         <p className={"errorText"}>{message}</p>
         {manageMessage && <p className={"errorText"}>{manageMessage}</p>}
@@ -293,6 +435,7 @@ const List = () => {
             );
           })}
       </ul>
+      {pagination("bottom")}
     </div>
   );
 };

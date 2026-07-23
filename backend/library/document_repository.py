@@ -25,7 +25,8 @@ class DocumentRepository:
                  search_in_documents=None, count=False, collection_id: int | None = None,
                  ai_summary_needed: bool = None,
                  start_id=None, only_missing_obsidian_notes: bool = False,
-                 only_has_obsidian_notes: bool = False) -> list[dict[str, Any]]:
+                 only_has_obsidian_notes: bool = False,
+                 without_embedding: bool = False) -> list[dict[str, Any]]:
 
         if count:
             stmt = select(func.count(Document.id))
@@ -79,6 +80,11 @@ class DocumentRepository:
                     *self._has_obsidian_note_chunk_conditions(),
                 ).exists(),
             ))
+
+        if without_embedding:
+            stmt = stmt.where(~select(DocumentEmbedding.id).where(
+                DocumentEmbedding.document_id == Document.id,
+            ).exists())
 
         if count:
             return self.session.execute(stmt).scalar()

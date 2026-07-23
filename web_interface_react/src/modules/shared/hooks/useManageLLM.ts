@@ -158,7 +158,6 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
           text_md: text_tmp_md,
           language: website.language,
           document_type: website.document_type,
-          processing_status: website.processing_status,
           chapter_list: website.chapter_list,
           byline: website.byline,
           note: website.note,

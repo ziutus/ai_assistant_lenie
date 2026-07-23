@@ -197,6 +197,18 @@ class TestGetList:
         assert result == []
         session.execute.assert_called_once()
 
+    def test_without_embedding_uses_not_exists_filter(self):
+        session = MagicMock()
+        repo = _make_repo(session)
+        session.execute.return_value.all.return_value = []
+
+        repo.get_list(without_embedding=True)
+
+        stmt = session.execute.call_args.args[0]
+        sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+        assert "NOT (EXISTS" in sql
+        assert "document_embeddings.document_id = documents.id" in sql
+
     def test_empty_result(self):
         session = MagicMock()
         repo = _make_repo(session)
