@@ -34,6 +34,7 @@ const Webpage = () => {
       processing_error_code: "",
       chapter_list: "",
       note: "",
+      published_on: "",
       next_id: null,
       previous_id: null,
       next_type: "",
@@ -71,7 +72,7 @@ const Webpage = () => {
           </NavLink>
         )}
       </div>
-      <form onSubmit={formik.handleSubmit} style={{ maxWidth: "800px" }}>
+      <form onSubmit={formik.handleSubmit} style={{ width: "min(1600px, calc(100vw - 48px))", maxWidth: "100%" }}>
         <SharedInputs
           formik={formik}
           isLoading={isLoading}

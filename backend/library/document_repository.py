@@ -59,6 +59,7 @@ class DocumentRepository:
             stmt = stmt.where(or_(
                 Document.url.ilike(pattern, escape="\\"),
                 Document.text.ilike(pattern, escape="\\"),
+                Document.text_md.ilike(pattern, escape="\\"),
                 Document.title.ilike(pattern, escape="\\"),
                 Document.summary.ilike(pattern, escape="\\"),
                 Document.chapter_list.ilike(pattern, escape="\\"),
@@ -276,7 +277,7 @@ class DocumentRepository:
                 Document.url,
                 Document.language,
                 DocumentEmbedding.text_original,
-                func.length(Document.text).label("websites_text_length"),
+                func.length(func.coalesce(func.nullif(Document.text_md, ""), Document.text)).label("websites_text_length"),
                 func.length(DocumentEmbedding.text).label("embeddings_text_length"),
                 Document.title,
                 Document.document_type,
@@ -357,7 +358,7 @@ class DocumentRepository:
             func.coalesce(Document.title, ""),
             func.coalesce(Document.tags, ""),
             func.coalesce(Document.note, ""),
-            func.coalesce(Document.text, ""),
+            func.coalesce(func.nullif(Document.text_md, ""), Document.text, ""),
         ))
         title = func.unaccent(func.coalesce(Document.title, ""))
         phrase = func.unaccent(f"%{query}%")
@@ -379,19 +380,19 @@ class DocumentRepository:
         return [
             {
                 "document_id": doc.id,
-                "text": (doc.text or "")[:1000],
+                "text": (doc.text_md or doc.text or "")[:1000],
                 # Full (untruncated) text for SearchService._merge_results() coverage
                 # scoring only -- popped before the API response is returned. A
                 # matching token past the first 1000 chars (a long article's intro
                 # is often boilerplate/AI summary, not the matched sentence) must
                 # not be scored as absent. See docs/search-hybrid.md.
-                "text_for_scoring": doc.text or "",
+                "text_for_scoring": doc.text_md or doc.text or "",
                 "similarity": 0.0,
                 "id": None,
                 "url": doc.url,
                 "language": doc.language,
-                "text_original": (doc.text or "")[:1000],
-                "websites_text_length": len(doc.text or ""),
+                "text_original": (doc.text_md or doc.text or "")[:1000],
+                "websites_text_length": len(doc.text_md or doc.text or ""),
                 "embeddings_text_length": 0,
                 "title": doc.title,
                 "document_type": doc.document_type,

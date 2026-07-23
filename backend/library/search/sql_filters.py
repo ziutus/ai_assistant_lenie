@@ -28,6 +28,7 @@ from library.db.models import (
     Publisher,
     PublisherDomain,
     Document,
+    DocumentEmbedding,
 )
 from library.publisher_registry import normalize_publisher_domain
 from library.search.types import SearchFilters
@@ -92,6 +93,11 @@ def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
 
     if filters.languages:
         conditions.append(Document.language.in_(filters.languages))
+
+    if filters.without_embedding:
+        conditions.append(~exists(
+            select(DocumentEmbedding.id).where(DocumentEmbedding.document_id == Document.id)
+        ))
 
     if filters.subject_period_start_year is not None or filters.subject_period_end_year is not None:
         conditions.append(_subject_period_overlap(

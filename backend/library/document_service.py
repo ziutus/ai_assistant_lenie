@@ -21,6 +21,7 @@ from library.document_repository import DocumentRepository
 from library.text_functions import split_text_for_embedding
 from library.text_transcript import chapters_text_to_list
 from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
+from library.storage import storage_from_config
 
 logger = logging.getLogger(__name__)
 
@@ -75,27 +76,18 @@ class DocumentService:
             raise ExistingDocumentError(existing)
 
         cfg = load_config()
-        bucket_name = cfg.get("AWS_S3_WEBSITE_CONTENT")
-        use_aws_s3 = bucket_name is not None
-
-        logger.info("Using AWS S3: %s", use_aws_s3)
+        storage = storage_from_config(cfg)
 
         doc_uuid = None
-
-        if use_aws_s3:
-            import boto3
-            s3_client = boto3.client("s3")
-        else:
-            s3_client = None
 
         if url_type == "webpage":
             uid = str(uuid.uuid4())
             doc_uuid = uid
 
             if text:
-                self._store_file(uid, "txt", text, use_aws_s3, s3_client, bucket_name)
+                self._store_file(uid, "txt", text, storage=storage)
             if html:
-                self._store_file(uid, "html", html, use_aws_s3, s3_client, bucket_name)
+                self._store_file(uid, "html", html, storage=storage)
             else:
                 logger.info("Missing HTML part!")
 
@@ -118,27 +110,29 @@ class DocumentService:
         logger.info("Successfully saved document to database with ID: %s", doc.id)
         return doc
 
-    def _store_file(self, uid: str, extension: str, content: str, use_s3: bool, s3_client, bucket_name: str | None) -> None:
-        """Store a file to S3 or local disk. Raises RuntimeError on failure."""
+    def _store_file(self, uid: str, extension: str, content: str, use_s3=None, s3_client=None,
+                    bucket_name: str | None = None, storage=None) -> None:
+        """Store a file through the configured backend. Legacy args remain for callers/tests."""
         file_name = f"{uid}.{extension}"
-
-        if use_s3:
+        if storage is None:  # compatibility for older direct callers
             try:
-                s3_client.put_object(Bucket=bucket_name, Key=file_name, Body=content)
-                logger.info("Successfully uploaded %s to %s", file_name, bucket_name)
+                if use_s3:
+                    s3_client.put_object(Bucket=bucket_name, Key=file_name, Body=content)
+                else:
+                    os.makedirs("/app/data", exist_ok=True)
+                    with open(f"/app/data/{file_name}", "w", encoding="utf-8") as handle:
+                        handle.write(content)
+                return
             except Exception as e:
-                logger.error("Failed to upload %s to %s: %s", file_name, bucket_name, e)
-                raise RuntimeError(f"Failed to upload {extension} file to storage") from e
-        else:
-            try:
-                os.makedirs("/app/data", exist_ok=True)
-                local_file_path = f"/app/data/{file_name}"
-                with open(local_file_path, "w", encoding="utf-8") as f:
-                    f.write(content)
-                logger.info("Successfully saved %s to /app/data/", file_name)
-            except Exception as e:
-                logger.error("Failed to save %s to /app/data/: %s", file_name, e)
-                raise RuntimeError(f"Failed to save {extension} file locally") from e
+                raise RuntimeError(f"Failed to upload {extension} file to storage" if use_s3 else
+                                   f"Failed to save {extension} file locally") from e
+        try:
+            storage.put_bytes(file_name, content.encode("utf-8"), f"text/{extension}; charset=utf-8")
+            logger.info("Successfully stored %s", file_name)
+        except Exception as e:
+            logger.error("Failed to store %s: %s", file_name, e)
+            raise RuntimeError(f"Failed to upload {extension} file to storage" if use_s3 else
+                               f"Failed to save {extension} file locally") from e
 
     # ------------------------------------------------------------------
     # save_document — extracted from /website_save
@@ -155,13 +149,11 @@ class DocumentService:
             raise ValueError("Document already has raw HTML")
 
         cfg = load_config()
-        bucket_name = cfg.get("AWS_S3_WEBSITE_CONTENT")
-        use_s3 = bucket_name is not None
-        s3_client = __import__("boto3").client("s3") if use_s3 else None
+        storage = storage_from_config(cfg)
         new_uuid = str(uuid.uuid4())
         if text:
-            self._store_file(new_uuid, "txt", text, use_s3, s3_client, bucket_name)
-        self._store_file(new_uuid, "html", html, use_s3, s3_client, bucket_name)
+            self._store_file(new_uuid, "txt", text, storage=storage)
+        self._store_file(new_uuid, "html", html, storage=storage)
 
         doc.uuid = new_uuid
         doc.text_raw = html
@@ -190,7 +182,12 @@ class DocumentService:
     ) -> Document:
         """Look up or create a document, apply attribute updates, and commit.
 
-        Accepted keyword attrs: text, title, language, tags, summary, source, byline, note.
+        Accepted keyword attrs: text, text_md, title, language, tags, summary,
+        source, byline, note.
+
+        For webpages ``text_md`` is the canonical editable article body.
+        ``text`` is maintained as a derived plain-text compatibility/search
+        representation so the two fields cannot silently diverge.
         Raises ValueError for invalid document_type.
         Returns the saved Document.
         """
@@ -210,7 +207,7 @@ class DocumentService:
         if processing_status is not None:
             doc.set_processing_status(processing_status)
 
-        for attr in ("text", "title", "language", "tags", "summary", "byline", "note"):
+        for attr in ("title", "language", "tags", "summary", "byline", "note"):
             value = attrs.get(attr)
             if value is not None:
                 setattr(doc, attr, value)
@@ -222,6 +219,28 @@ class DocumentService:
 
         if document_type is not None:
             doc.set_document_type(document_type)
+
+        effective_type = document_type or doc.document_type
+        submitted_text = attrs.get("text")
+        submitted_md = attrs.get("text_md")
+        if effective_type == "webpage":
+            # Legacy webpages may only have plain text. The next explicit save
+            # promotes it to the canonical Markdown field (plain text is valid
+            # Markdown), while all normal saves derive text from text_md.
+            canonical_md = submitted_md or submitted_text
+            if canonical_md is not None:
+                from library.lenie_markdown import md_remove_markdown
+
+                doc.text_md = canonical_md
+                doc.text = md_remove_markdown(canonical_md)
+                doc.document_length = len(canonical_md)
+                doc.quality = None
+        elif submitted_text is not None:
+            # Transcripts and other non-webpage documents keep plain text as
+            # their native canonical representation.
+            doc.text = submitted_text
+        if effective_type != "webpage" and submitted_md is not None:
+            doc.text_md = submitted_md
 
         doc.analyze()
 

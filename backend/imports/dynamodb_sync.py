@@ -44,6 +44,7 @@ from library.db.models import ImportLog, Document
 from library.document_service import DocumentService
 from library.import_log_tracker import ImportLogTracker
 from library.models.stalker_document_status import StalkerDocumentStatus
+from library.storage import LocalStorage, storage_from_config
 
 cfg = load_config()
 
@@ -199,7 +200,8 @@ def fetch_s3_content(s3_client, bucket: str, doc_uuid: str) -> tuple[str | None,
     return text_content, html_content
 
 
-def save_cache_files(doc_id: int, text_content: str | None, html_content: str | None, cache_dir: str):
+def save_cache_files(doc_id: int, text_content: str | None, html_content: str | None, cache_dir: str,
+                     storage=None):
     """Save S3 content to cache in document_prepare convention: {cache_dir}/{doc_id}/{doc_id}.ext"""
     doc_dir = os.path.join(cache_dir, str(doc_id))
     os.makedirs(doc_dir, exist_ok=True)
@@ -208,12 +210,16 @@ def save_cache_files(doc_id: int, text_content: str | None, html_content: str | 
         path = os.path.join(doc_dir, f"{doc_id}.html")
         with open(path, "w", encoding="utf-8") as f:
             f.write(html_content)
+        if storage and not isinstance(storage, LocalStorage):
+            storage.put_bytes(f"cache/markdown/{doc_id}/{doc_id}.html", html_content.encode("utf-8"), "text/html")
         print(f"  Cache: saved {path} ({len(html_content)} chars)")
 
     if text_content:
         path = os.path.join(doc_dir, f"{doc_id}.txt")
         with open(path, "w", encoding="utf-8") as f:
             f.write(text_content)
+        if storage and not isinstance(storage, LocalStorage):
+            storage.put_bytes(f"cache/markdown/{doc_id}/{doc_id}.txt", text_content.encode("utf-8"), "text/plain")
         print(f"  Cache: saved {path} ({len(text_content)} chars)")
 
 
@@ -316,6 +322,20 @@ def process_article_content(doc_id: int, cache_base_dir: str,
 
     print("  Process: LLM failed — no article markers extracted")
     return True, False
+
+
+def sync_generated_cache(doc_id: int, cache_base_dir: str, storage) -> None:
+    """Upload pipeline artifacts after local path-based processing finishes."""
+    if isinstance(storage, LocalStorage):
+        return
+    doc_dir = os.path.join(cache_base_dir, str(doc_id))
+    if not os.path.isdir(doc_dir):
+        return
+    for name in os.listdir(doc_dir):
+        path = os.path.join(doc_dir, name)
+        if os.path.isfile(path):
+            with open(path, "rb") as handle:
+                storage.put_bytes(f"cache/markdown/{doc_id}/{name}", handle.read())
 
 
 def sync_item_to_postgres(item: dict, text_content: str | None, html_content: str | None,
@@ -428,6 +448,7 @@ def main():
     # Resolve cache dir default from config
     if args.data_dir is None:
         args.data_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "markdown")
+    cache_storage = storage_from_config(cfg)
 
     try:
         working_timezone = ZoneInfo(args.timezone)
@@ -615,7 +636,7 @@ def main():
 
                 # Save cache files after successful insert (doc_id now available)
                 if result == "added" and doc_id and (text_content or html_content):
-                    save_cache_files(doc_id, text_content, html_content, args.data_dir)
+                    save_cache_files(doc_id, text_content, html_content, args.data_dir, cache_storage)
 
                 # Convert HTML to markdown + LLM extraction (webpage only, saves to cache)
                 if result == "added" and doc_id and doc_type == "webpage" and not args.skip_s3:
@@ -629,6 +650,7 @@ def main():
                         md_converted += 1
                     if llm_ok:
                         llm_extracted += 1
+                    sync_generated_cache(doc_id, args.data_dir, cache_storage)
 
                 if result == "added":
                     added += 1

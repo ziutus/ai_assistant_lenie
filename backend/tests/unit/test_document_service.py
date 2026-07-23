@@ -153,19 +153,19 @@ class TestCreateDocument:
             )
             assert mock_store.call_count == 1
 
+    @patch("library.document_service.storage_from_config")
     @patch("library.document_service.load_config")
-    def test_create_document_with_s3(self, mock_config):
-        """When S3 bucket configured, _store_file is called with S3 params."""
+    def test_create_document_with_s3(self, mock_config, mock_storage_from_config):
+        """Configured object storage is passed to every stored webpage part."""
         cfg = MagicMock()
-        cfg.get.return_value = "my-bucket"
         mock_config.return_value = cfg
+        storage = MagicMock()
+        mock_storage_from_config.return_value = storage
 
-        mock_boto3 = MagicMock()
         session = _make_session()
         service = DocumentService(session)
 
-        with patch.dict(sys.modules, {"boto3": mock_boto3}), \
-             patch.object(service, "_store_file") as mock_store:
+        with patch.object(service, "_store_file") as mock_store:
             service.create_document(
                 url="https://example.com",
                 url_type="webpage",
@@ -174,10 +174,8 @@ class TestCreateDocument:
             )
 
             assert mock_store.call_count == 2
-            # Verify S3 params are passed (use_s3=True, bucket="my-bucket")
             for call in mock_store.call_args_list:
-                assert call[0][3] is True  # use_s3
-                assert call[0][5] == "my-bucket"  # bucket_name
+                assert call.kwargs["storage"] is storage
 
     @patch("library.document_service.load_config")
     def test_create_document_invalid_type(self, mock_config):
@@ -199,6 +197,38 @@ class TestCreateDocument:
 
 
 class TestSaveDocument:
+    def test_webpage_markdown_is_canonical_and_plain_text_is_derived(self):
+        session = _make_session()
+        doc = _make_doc()
+        doc.document_type = "webpage"
+
+        with patch.object(Document, "get_by_id", return_value=doc):
+            service = DocumentService(session)
+            service.save_document(
+                url="https://example.com", link_id=42,
+                document_type="webpage", text="stale plain text",
+                text_md="# Heading\n\nArticle body",
+            )
+
+        assert doc.text_md == "# Heading\n\nArticle body"
+        assert doc.text == "Heading\n\nArticle body"
+        assert doc.document_length == len(doc.text_md)
+        assert doc.quality is None
+
+    def test_legacy_webpage_plain_text_is_promoted_to_markdown(self):
+        session = _make_session()
+        doc = _make_doc()
+        doc.document_type = "webpage"
+
+        with patch.object(Document, "get_by_id", return_value=doc):
+            DocumentService(session).save_document(
+                url="https://example.com", link_id=42,
+                document_type="webpage", text="Legacy article", text_md="",
+            )
+
+        assert doc.text_md == "Legacy article"
+        assert doc.text == "Legacy article"
+
     def test_save_existing_by_id(self):
         """Save updates an existing document found by ID."""
         session = _make_session()

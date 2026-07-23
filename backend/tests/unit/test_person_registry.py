@@ -208,6 +208,53 @@ class TestResolveDocumentPersons:
         mock_wd.assert_not_called()
         assert result["linked"] == [("Donald Tusk", "Donald Tusk", CONFIDENCE_ALIAS)]
 
+    def test_bare_surname_uses_context_instead_of_ambiguous_alias(self):
+        existing = _person(person_id=7, name="Donald Trump")
+        existing.wikidata_qid = "Q22686"
+        existing.description = "prezydent Stanów Zjednoczonych"
+        candidates = [
+            {"qid": "Q22686", "label": "Donald Trump", "description": "prezydent Stanów Zjednoczonych"},
+            {"qid": "Q3713655", "label": "Donald Trump Jr.", "description": "amerykański przedsiębiorca"},
+        ]
+        session = _session([_entity("Trump")])
+        qid_result = MagicMock()
+        qid_result.scalars.return_value.first.return_value = existing
+        link_result = MagicMock()
+        link_result.scalars.return_value.first.return_value = None
+        session.execute.side_effect = [qid_result, link_result]
+
+        with patch("library.person_registry.find_by_alias") as mock_alias, \
+                patch("library.person_registry._add_alias"), \
+                patch("library.wikidata_client.search_persons", return_value=candidates), \
+                patch("library.article_tagging.confirm_person_with_llm", return_value="Q22686") as mock_llm:
+            result = resolve_document_persons(session, _doc(title="Trump przemawia jako prezydent"), "prezydent Trump")
+
+        mock_alias.assert_not_called()
+        mock_llm.assert_called_once()
+        assert result["linked"] == [("Trump", "Donald Trump", CONFIDENCE_WIKIDATA)]
+
+    def test_wikidata_pick_enriches_existing_local_person_without_qid(self):
+        existing = _person(person_id=7, name="Donald Trump")
+        existing.wikidata_qid = None
+        existing.description = None
+        candidates = [
+            {"qid": "Q22686", "label": "Donald Trump", "description": "prezydent Stanów Zjednoczonych"},
+        ]
+        session = _session([_entity("Trump")])
+
+        with patch("library.person_registry.find_by_alias", return_value=existing) as mock_alias, \
+                patch("library.person_registry._add_alias"), \
+                patch("library.wikidata_client.search_persons", return_value=candidates), \
+                patch("library.article_tagging.confirm_person_with_llm", return_value="Q22686"):
+            result = resolve_document_persons(session, _doc(), "prezydent Trump")
+
+        mock_alias.assert_called_once_with(session, "Donald Trump")
+        assert existing.wikidata_qid == "Q22686"
+        assert existing.description == "prezydent Stanów Zjednoczonych"
+        assert result["linked"] == [("Trump", "Donald Trump", CONFIDENCE_WIKIDATA)]
+        created = [c.args[0] for c in session.add.call_args_list if isinstance(c.args[0], Person)]
+        assert created == []
+
     def test_single_word_without_wikidata_human_is_skipped(self):
         session = _session([_entity("Starlinek")])
         with patch("library.wikidata_client.search_persons", return_value=[]):

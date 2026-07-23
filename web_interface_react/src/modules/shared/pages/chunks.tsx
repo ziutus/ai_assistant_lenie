@@ -1593,9 +1593,10 @@ const Chunks = () => {
   const reviewReady = tematChunks.length > 0 && unapprovedTematCount === 0 && chunksToAnalyze.length === 0;
   const workflowBusy = !!jobId || reanalyzingAll || approvingAll || !!embedJobId;
   const analyzedTematCount = tematChunks.filter(c => c.summary).length;
-  // A noisy article leaves REKLAMA/SZUM chunks behind; a clean article leaves
-  // none, so once the LLM analysis produced summaries the detection step is done.
-  const noiseMarkingDone = reklamaCount > 0 || analyzedTematCount > 0 || runStatus === "reviewed";
+  const zrodlaCount = chunks.filter(c => c.type === "ZRODLA").length;
+  const adsCount = chunks.filter(c => c.type === "REKLAMA").length;
+  const noiseCount = chunks.filter(c => c.type === "SZUM").length;
+  const classificationSummary = `${tematChunks.length} TEMAT · ${zrodlaCount} ŹRÓDŁA · ${adsCount} REKLAMA · ${noiseCount} SZUM`;
   const processComplete = runStatus === "reviewed" && embeddedCount > 0 && !embedJobId;
 
   // ── User notes: match notes to chunks of the selected run ──
@@ -2318,24 +2319,19 @@ const Chunks = () => {
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
             {([
               {
-                label: "1. Analiza chunków",
+                label: "1. Klasyfikacja, tematy i streszczenia",
                 done: chunksToAnalyze.length === 0,
-                detail: chunksToAnalyze.length > 0 ? `${chunksToAnalyze.length} wymaga analizy` : `${tematChunks.length} treści TEMAT`,
+                detail: chunksToAnalyze.length > 0 ? `${chunksToAnalyze.length} wymaga analizy` : classificationSummary,
                 subs: [
                   {
                     label: "Podział na chunki",
                     done: chunkTotal > 0,
                     detail: chunkTotal > 0 ? `${chunkTotal} chunków` : "brak chunków",
                   },
-                  ...(runMode === "article" ? [{
-                    label: "Wykrywanie reklam i szumu",
-                    done: noiseMarkingDone,
-                    detail: reklamaCount > 0 ? `${reklamaCount} poza TEMAT` : noiseMarkingDone ? "nie wykryto" : "oczekuje",
-                  }] : []),
                   {
-                    label: "Analiza LLM (tematy i streszczenia)",
+                    label: runMode === "article" ? "Analiza LLM: klasyfikacja, tematy i streszczenia" : "Analiza LLM: tematy i streszczenia",
                     done: tematChunks.length > 0 && chunksToAnalyze.length === 0 && analyzedTematCount > 0,
-                    detail: `${analyzedTematCount}/${tematChunks.length} przeanalizowanych`,
+                    detail: chunksToAnalyze.length === 0 ? classificationSummary : `${analyzedTematCount}/${tematChunks.length} TEMAT przeanalizowanych`,
                   },
                 ],
               },

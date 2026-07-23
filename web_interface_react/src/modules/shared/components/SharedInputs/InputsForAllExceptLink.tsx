@@ -2,6 +2,8 @@ import React from "react";
 import { NavLink } from "react-router-dom";
 import Input from "../Input/input";
 import EntitiesPanel from "../EntitiesPanel/entitiesPanel";
+import ArticlePreparationPanel from "../ArticlePreparationPanel/articlePreparationPanel";
+import MarkdownLineEditor from "../MarkdownLineEditor/markdownLineEditor";
 
 interface InputsForAllExceptLinkProps {
   formik: any;
@@ -20,7 +22,10 @@ const InputsForAllExceptLink = ({
 }: InputsForAllExceptLinkProps) => {
   return (
     <>
-      {formik.values.text_md && (
+      {showCleanText && <ArticlePreparationPanel formik={formik} />}
+      {showCleanText ? (
+        <MarkdownLineEditor formik={formik} disabled={isLoading} />
+      ) : formik.values.text_md && (
         <details style={{ marginBottom: "8px" }}>
           <summary style={{ cursor: "pointer" }}>Website MarkDown content</summary>
           <Input
@@ -34,16 +39,10 @@ const InputsForAllExceptLink = ({
           />
         </details>
       )}
-      <Input
-        disabled={isLoading}
-        value={formik.values.text}
-        label={"Website content"}
-        onChange={formik.handleChange}
-        id={"text"}
-        name={"text"}
-        type={"text"}
-        multiline
-      />{" "}
+      {!showCleanText && (
+        <Input disabled={isLoading} value={formik.values.text} label={"Website content"}
+          onChange={formik.handleChange} id={"text"} name={"text"} type={"text"} multiline />
+      )}{" "}
         <div style={{marginTop: "10px"}}>
             {formik.values.id && (
                 <NavLink
@@ -54,21 +53,12 @@ const InputsForAllExceptLink = ({
                     Przegląd chunków →
                 </NavLink>
             )}
-            {showCleanText && (
-                <button
-                    className={"button"}
-                    style={{marginRight: "10px"}}
-                    onClick={() => handleRemoveNotNeededText(formik.values)}
-                >
-                    Clean Text
-                </button>
-            )}
         </div>
-        {formik.values.text && (
+        {(showCleanText ? (formik.values.text_md || formik.values.text) : formik.values.text) && (
             <div style={{marginTop: "10px"}}>
-                Długość: {formik.values.text.length} znaków
+                Długość: {(showCleanText ? (formik.values.text_md || formik.values.text) : formik.values.text).length} znaków
                 {" · "}
-                Słowa: {formik.values.text.trim().split(/\s+/).length}
+                Słowa: {(showCleanText ? (formik.values.text_md || formik.values.text) : formik.values.text).trim().split(/\s+/).length}
                 {formik.values.embeddings_count != null && (
                     <>
                         {" · "}
@@ -83,17 +73,19 @@ const InputsForAllExceptLink = ({
                 )}
             </div>
         )}
-        <br/>
+      <br/>
+      {!showCleanText && (
         <Input
-            disabled={isLoading}
-        value={formik.values.chapter_list}
-        label={"Chapter list:"}
-        onChange={formik.handleChange}
-        id={"chapter_list"}
-        name={"chapter_list"}
-        type={"text"}
-        multiline
-      />
+          disabled={isLoading}
+          value={formik.values.chapter_list}
+          label={"Chapter list:"}
+          onChange={formik.handleChange}
+          id={"chapter_list"}
+          name={"chapter_list"}
+          type={"text"}
+          multiline
+        />
+      )}
       <Input
         disabled={isLoading}
         value={formik.values.note}

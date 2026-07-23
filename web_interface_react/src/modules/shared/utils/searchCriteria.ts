@@ -4,7 +4,7 @@ export const SEARCH_FILTER_KEYS = [
   "author_name", "publisher_name", "publisher_domain", "discovery_source_name",
   "collection_name", "published_on_from", "published_on_to", "ingested_at_from",
   "ingested_at_to", "subject_period_start_year", "subject_period_end_year",
-  "document_types", "languages",
+  "document_types", "languages", "without_embedding",
 ] as const;
 
 export type SearchFilterKey = typeof SEARCH_FILTER_KEYS[number];
@@ -27,7 +27,7 @@ export const emptySearchCriteria = (query = ""): SearchInterpretation => ({
   discovery_source_name: null, collection_name: null, published_on_from: null,
   published_on_to: null, ingested_at_from: null, ingested_at_to: null,
   subject_period_start_year: null, subject_period_end_year: null, temporal_expression: null,
-  document_types: [], languages: [], sort: "relevance",
+  document_types: [], languages: [], without_embedding: false, sort: "relevance",
   interpretation_summary: "Jawne kryteria wyszukiwania (bez interpretacji LLM).", warnings: [],
   clarification_required: false, clarification_question: null, model_confidence: "high",
 });
@@ -42,7 +42,7 @@ export const buildExplicitSearchPayload = (criteria: SearchInterpretation, limit
     const value = key === "ingested_at_to" && typeof criteria[key] === "string"
       && BARE_DATE_RE.test(criteria[key] as string)
       ? `${criteria[key]}T23:59:59` : criteria[key];
-    return value == null || value === "" || (Array.isArray(value) && value.length === 0)
+    return value == null || value === "" || value === false || (Array.isArray(value) && value.length === 0)
       ? [] : [[key, value]];
   }));
   return {

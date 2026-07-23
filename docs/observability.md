@@ -1,8 +1,10 @@
 # Observability Strategy — Lenie Server 2025
 
-> Last updated: 2026-02-18 | Version: 0.3.13.0
+> Last updated: 2026-07-22 | Originally written for version 0.3.13.0
 
-This document describes the project's logging, tracing, and monitoring strategy across all deployment environments (AWS, Docker/local, Kubernetes, GCloud). It serves as the standard for current observability practices and a reference for future improvements.
+This document describes the project's logging, tracing, and monitoring strategy across its deployment environments (AWS Lambda, Docker/local). It serves as the standard for current observability practices and a reference for future improvements.
+
+**Note (2026-07-22):** The Kubernetes and GCloud sections that used to be here were removed along with `infra/kubernetes/`, `infra/gcloud/`, and `infra/aws/eks/` — those deployment targets no longer exist in this repo (stale relative to the current NAS-first architecture). The AWS Lambda inventory below (Lambda function list, `rds-*`/`ec2-*` functions) predates the 2026-07-02 RDS/SQS decommission and has not been re-verified since — treat those specific tables as historical, not current.
 
 **Note:** Source file line numbers referenced in this document were verified against version 0.3.13.0 and may drift with future code changes.
 
@@ -64,20 +66,6 @@ The project has **minimal and fragmented observability**. Logging exists in most
 
 **Warning:** `DataTraceEnabled: true` on the app API Gateway logs full request/response bodies to CloudWatch. Review this setting before enabling in production environments with sensitive data.
 
-### Kubernetes Health Probes
-
-Health probes are configured consistently across both Helm and Kustomize deployments:
-
-| Probe | Path | Port | Initial Delay | Period |
-|-------|------|------|---------------|--------|
-| startupProbe | `/startup` | 5000 | 5s | 10s |
-| readinessProbe | `/readiness` | 5000 | 10s | 10s |
-| livenessProbe | `/liveness` | 5000 | 10s | 30s |
-
-Sources:
-- Helm: `infra/kubernetes/helm/lenie-ai-server/values.yaml:99-116`
-- Kustomize: `infra/kubernetes/kustomize/base/server/server_deployment.yml:44-61`
-
 ### Frontend Monitoring
 
 All frontend applications currently have **no client-side monitoring or error tracking**:
@@ -95,8 +83,6 @@ AWS RUM (Real User Monitoring) was previously integrated but was completely remo
 |-------------|---------|---------|---------|------------|
 | **AWS Lambda** | CloudWatch (JSON via CF LoggingConfig for infra Lambdas — code still uses print(); basic Python logging for app Lambdas) | X-Ray on API GW app only | CloudWatch built-in | CloudWatch alarms (none configured) |
 | **Docker/local** | stdout/stderr (Python logging) | None | `/metrics` stub (returns 500 — view returns None) | None |
-| **Kubernetes** | stdout/stderr (Python logging) | None | `/metrics` stub (returns 500), health probes (startup, readiness, liveness) | None |
-| **GCloud** | Future: Cloud Logging | Future | Future | Future |
 
 ---
 
@@ -197,35 +183,6 @@ All log entries should use JSON format with the following required fields:
 1. Add `python-json-logger` or equivalent for structured JSON output
 2. Generate and propagate request IDs via Flask middleware
 3. Add Docker Compose healthcheck using `/healthz` endpoint
-
-### Kubernetes
-
-**Current setup:**
-- **Logging**: Python `logging` module outputs to stdout/stderr — Kubernetes captures container stdout as pod logs
-- **Tracing**: None
-- **Metrics**: `/metrics` endpoint exists (stub, currently returns 500) — could be consumed by Prometheus if implemented
-- **Health probes**: Fully configured (startupProbe, readinessProbe, livenessProbe) in both Helm and Kustomize deployments
-- **Pod logs**: Accessible via `kubectl logs <pod-name>`
-
-**Gaps:**
-- No log aggregation (future: stdout → Fluentd/Fluent Bit → centralized storage)
-- No Prometheus metrics implementation (stub endpoint only)
-- No distributed tracing (future: OpenTelemetry or Jaeger)
-
-**Recommended improvements (future stories):**
-1. Implement Prometheus metrics via `prometheus_client` library
-2. Deploy Fluent Bit DaemonSet for log aggregation
-3. Add OpenTelemetry instrumentation for distributed tracing
-
-### GCloud (Future)
-
-**Planned setup:**
-- **Logging**: Cloud Logging (automatic for GKE pods writing to stdout)
-- **Tracing**: Cloud Trace
-- **Metrics**: Cloud Monitoring
-- **Integration**: Cloud Logging agent auto-collects stdout/stderr from GKE containers
-
-No GCloud deployment exists yet — this section will be updated when GCloud support is implemented.
 
 ---
 
@@ -344,7 +301,7 @@ Self-hosting eliminates the 50k units/month limit and keeps all prompt/response 
 |------|----------|--------|----------|
 | **aws-xray-sdk** | `pyproject.toml:63` (docker extra), `pyproject.toml:82` (all extra) | Dependency installed in Docker and all extras. **NOT imported or used** in any application code. | **Keep for now** — needed when X-Ray instrumentation is implemented in Lambda application code. Remove if X-Ray approach is abandoned. |
 | **Langfuse** | `pyproject.toml:32` (base dependency), `library/api/openai/openai_my.py:5` (commented import: `# from langfuse.decorators import observe`) | Dependency installed. Import and `@observe()` decorator commented out (line 5, 14). | **Activate** — chosen as LLM observability tool. See [LLM Observability](#llm-observability) section for integration plan. |
-| **Prometheus `/metrics`** | `server.py:695-697` | Endpoint exists but implementation is `pass` (returns `None`, causing Flask 500 error). `prometheus_client` library is **NOT installed**. | **Keep stub** — implement with `prometheus_client` when Kubernetes monitoring is set up. The route registration ensures the path is reserved for future use. |
+| **Prometheus `/metrics`** | `server.py:695-697` | Endpoint exists but implementation is `pass` (returns `None`, causing Flask 500 error). `prometheus_client` library is **NOT installed**. | **Keep stub** — implement with `prometheus_client` if/when container-level monitoring is set up on the NAS. The route registration ensures the path is reserved for future use. |
 
 ### Removed Tools
 
@@ -361,7 +318,6 @@ Self-hosting eliminates the 50k units/month limit and keeps all prompt/response 
 | **CloudWatch Metrics** | API Gateway app stage | Active — via StageDescription MetricsEnabled |
 | **X-Ray (API Gateway level)** | `api-gw-app.yaml:589` | Active — TracingEnabled at API Gateway stage level (not SDK-level in application code) |
 | **Lambda LoggingConfig** | `api-gw-infra.yaml` | Active — JSON format, INFO level for infrastructure Lambda functions |
-| **Kubernetes health probes** | Helm + Kustomize configs | Active — startup, readiness, liveness probes configured |
 
 ---
 
@@ -389,7 +345,7 @@ Every API request should be logged with the following information for audit and 
 
 ### Implementation Approach (Future Story)
 
-**Flask (Docker/Kubernetes):**
+**Flask (Docker):**
 - Add `@app.before_request` middleware to generate `request_id` and record start time
 - Add `@app.after_request` middleware to log the audit entry with response status and duration
 - Store `request_id` in Flask's `g` object for propagation to downstream loggers

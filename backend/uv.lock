@@ -1350,7 +1350,7 @@ wheels = [
 
 [[package]]
 name = "lenie-server"
-version = "0.3.14.0"
+version = "0.3.15.5"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },

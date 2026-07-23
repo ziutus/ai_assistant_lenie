@@ -10,10 +10,10 @@ const LABELS: Record<SearchFilterKey, string> = {
   published_on_from: "Publikacja od", published_on_to: "Publikacja do",
   ingested_at_from: "Dodano od", ingested_at_to: "Dodano do",
   subject_period_start_year: "Okres od", subject_period_end_year: "Okres do",
-  document_types: "Typy", languages: "Języki",
+  document_types: "Typy", languages: "Języki", without_embedding: "Without embedding",
 };
 
-const present = (value: unknown) => value != null && value !== ""
+const present = (value: unknown) => value != null && value !== "" && value !== false
   && (!Array.isArray(value) || value.length > 0);
 
 const inputValue = (value: unknown) => Array.isArray(value) ? value.join(", ") : String(value ?? "");
@@ -75,7 +75,10 @@ export const SearchCriteriaEditor = ({
     }
     onChange({ ...criteria, [key]: value });
   };
-  const remove = (key: SearchFilterKey) => onChange({ ...criteria, [key]: key === "languages" ? [] : null });
+  const remove = (key: SearchFilterKey) => onChange({
+    ...criteria,
+    [key]: key === "languages" ? [] : key === "without_embedding" ? false : null,
+  });
   const toggleArrayValue = (key: "document_types" | "languages", value: string) => onChange({
     ...criteria,
     [key]: criteria[key].includes(value)
@@ -94,6 +97,16 @@ export const SearchCriteriaEditor = ({
       </label>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         {SEARCH_FILTER_KEYS.map(key => {
+          if (key === "without_embedding") {
+            return (
+              <label key={key} style={{ display: "flex", alignItems: "center", gap: 5,
+                border: "1px solid #cbd5e1", borderRadius: 8, padding: "5px 7px", background: "#fff" }}>
+                <input type="checkbox" disabled={disabled} checked={Boolean(criteria.without_embedding)}
+                  onChange={event => onChange({ ...criteria, without_embedding: event.target.checked })} />
+                <span style={{ fontSize: ".82rem", color: "#475569" }}>{LABELS[key]}</span>
+              </label>
+            );
+          }
           if (key === "document_types") {
             return (
               <CheckboxGroup key={key} label={LABELS[key]} disabled={disabled}
