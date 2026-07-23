@@ -61,11 +61,11 @@ class TestWebsiteList:
         with patch("server.get_scoped_session", return_value=mock_session):
             with patch("server.DocumentRepository") as MockRepo:
                 repo_instance = MagicMock()
-                repo_instance.get_list.return_value = []
+                repo_instance.get_list.side_effect = lambda **kw: 0 if kw.get("count") else []
                 MockRepo.return_value = repo_instance
 
                 client.get(
-                    "/website_list?type=link&processing_status=URL_ADDED&search_in_document=test",
+                    "/website_list?type=link&processing_status=URL_ADDED&search_in_document=test&page=3&limit=25",
                     headers=API_HEADERS,
                 )
 
@@ -74,6 +74,15 @@ class TestWebsiteList:
                 assert calls[0].kwargs["document_type"] == "link"
                 assert calls[0].kwargs["processing_status"] == "URL_ADDED"
                 assert calls[0].kwargs["search_in_documents"] == "test"
+                assert calls[0].kwargs["limit"] == 25
+                assert calls[0].kwargs["offset"] == 2
+                assert "limit" not in calls[1].kwargs
+                assert "offset" not in calls[1].kwargs
+
+    @pytest.mark.parametrize("query", ["page=bad", "limit=bad"])
+    def test_rejects_invalid_pagination(self, client, query):
+        resp = client.get(f"/website_list?{query}", headers=API_HEADERS)
+        assert resp.status_code == 400
 
 
 # ---------------------------------------------------------------------------

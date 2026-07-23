@@ -1,7 +1,6 @@
 import axios from "axios";
 import React from "react";
 import { AuthorizationContext } from "../context/authorizationContext";
-import { loadListFilters } from "../services/storage";
 
 export const useList = () => {
   const [data, setData] = React.useState<any[] | null>(null);
@@ -10,24 +9,14 @@ export const useList = () => {
   const [isLoading, setIsLoading] = React.useState(false);
   const [isError, setIsError] = React.useState(false);
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
-  const { selectedDocumentType, selectedDocumentState, searchInDocument } = React.useContext(AuthorizationContext);
-
-  React.useEffect(() => {
-    // Initial load reuses all persisted filters (incl. the list-local Obsidian
-    // filter), so a page reload shows the same results the user was browsing.
-    const { obsidianFilter } = loadListFilters();
-    handleGetList(selectedDocumentType, selectedDocumentState, searchInDocument, {
-      onlyMissing: obsidianFilter === "missing",
-      onlyHas: obsidianFilter === "has",
-    }).then(() => null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const handleGetList = async (
     type: string,
     documentState: string,
     searchInDocument?: string,
     obsidianNotesFilter?: { onlyMissing?: boolean; onlyHas?: boolean },
+    page = 1,
+    pageSize = 100,
   ) => {
     setIsLoading(true);
     try {
@@ -41,6 +30,8 @@ export const useList = () => {
           search_in_document: searchInDocument,
           only_missing_obsidian_notes: obsidianNotesFilter?.onlyMissing || undefined,
           only_has_obsidian_notes: obsidianNotesFilter?.onlyHas || undefined,
+          page,
+          limit: pageSize,
         },
       });
       console.log(response.data.message);
