@@ -41,9 +41,6 @@ const List = () => {
   const parsedPage = Number(searchParams.get("page") ?? "1");
   const parsedPageSize = Number(searchParams.get("page_size") ?? "100");
   const [page, setPage] = React.useState(Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1);
-  const [pageInput, setPageInput] = React.useState(String(
-    Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1,
-  ));
   const [pageSize, setPageSize] = React.useState(
     [25, 50, 100].includes(parsedPageSize) ? parsedPageSize : 100,
   );
@@ -168,21 +165,6 @@ const List = () => {
   const visiblePages = Array.from({ length: totalPages }, (_, index) => index + 1)
     .filter(number => number === 1 || number === totalPages || Math.abs(number - page) <= 2);
 
-  React.useEffect(() => {
-    setPageInput(String(page));
-  }, [page]);
-
-  const goToEnteredPage = () => {
-    const requested = Number(pageInput);
-    if (!Number.isFinite(requested)) {
-      setPageInput(String(page));
-      return;
-    }
-    const target = Math.min(totalPages, Math.max(1, Math.trunc(requested)));
-    setPageInput(String(target));
-    void loadPage(target);
-  };
-
   const pagination = (position: "top" | "bottom") => data && totalPages > 1 ? (
     <nav aria-label={`Stronicowanie listy (${position === "top" ? "góra" : "dół"})`}
       style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6,
@@ -207,19 +189,14 @@ const List = () => {
         onClick={() => { void loadPage(page + 1); }}>Następna</button>
       <label style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: 8 }}>
         Strona
-        <input type="number" min={1} max={totalPages} value={pageInput} disabled={isLoading}
-          onChange={event => setPageInput(event.target.value)}
-          onKeyDown={event => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              goToEnteredPage();
-            }
-          }}
-          style={{ width: 68 }} />
+        <select value={Math.min(page, totalPages)} disabled={isLoading}
+          onChange={event => { void loadPage(Number(event.target.value)); }}>
+          {Array.from({ length: totalPages }, (_, index) => index + 1).map(number => (
+            <option key={number} value={number}>{number}</option>
+          ))}
+        </select>
         z {totalPages}
       </label>
-      <button type="button" className="button" disabled={isLoading || pageInput === ""}
-        onClick={goToEnteredPage}>Przejdź</button>
     </nav>
   ) : null;
 
