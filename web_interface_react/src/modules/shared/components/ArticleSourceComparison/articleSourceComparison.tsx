@@ -1,7 +1,7 @@
 import React from "react";
 
 const normalize = (value: string) =>
-  value.replace(/\s+/g, " ").trim().toLocaleLowerCase("pl");
+  value.replace(/[*_`]+/g, "").replace(/\s+/g, " ").trim().toLocaleLowerCase("pl");
 
 const asPlainText = (raw: string) => {
   if (!raw) return "";
