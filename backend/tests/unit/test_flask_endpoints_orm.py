@@ -349,6 +349,7 @@ class TestWebsiteSave:
                     "processing_status": "URL_ADDED",
                     "document_type": "webpage",
                     "text": "new text",
+                    "text_md": "# New text",
                     "title": "New Title",
                 }, headers=API_HEADERS)
 
@@ -357,6 +358,7 @@ class TestWebsiteSave:
         assert data["status"] == "success"
         assert "42" in data["message"]
         mock_service.save_document.assert_called_once()
+        assert mock_service.save_document.call_args.kwargs["text_md"] == "# New text"
 
     def test_create_new_doc(self, client):
         mock_doc = MagicMock()

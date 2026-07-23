@@ -155,7 +155,9 @@ def execute_search():
     if parsed.clarification_required or ambiguities:
         response.update({
             "results": [],
-            "pagination": {"limit": limit, "offset": offset, "returned": 0},
+            "pagination": {
+                "limit": limit, "offset": offset, "returned": 0, "has_more": False,
+            },
             "clarification_required": True,
             "clarification_question": parsed.clarification_question,
             "ambiguities": ambiguities,
@@ -163,16 +165,20 @@ def execute_search():
         return jsonify(response), 200
 
     try:
-        results = SearchService(get_scoped_session()).search(
-            parsed.query, parsed.to_filters(), limit=limit, offset=offset, sort=sort,
+        results_with_sentinel = SearchService(get_scoped_session()).search(
+            parsed.query, parsed.to_filters(), limit=limit + 1, offset=offset, sort=sort,
         )
     except RuntimeError:
         logger.exception("Search execution failed")
         return jsonify({"status": "error", "message": "Search execution failed"}), 503
 
+    has_more = len(results_with_sentinel) > limit
+    results = results_with_sentinel[:limit]
     response.update({
         "results": results,
-        "pagination": {"limit": limit, "offset": offset, "returned": len(results)},
+        "pagination": {
+            "limit": limit, "offset": offset, "returned": len(results), "has_more": has_more,
+        },
         "clarification_required": False,
         "clarification_question": None,
         "ambiguities": [],

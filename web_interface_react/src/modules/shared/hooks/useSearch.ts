@@ -19,6 +19,7 @@ export interface SearchInterpretation {
   temporal_expression: string | null;
   document_types: string[];
   languages: string[];
+  without_embedding?: boolean;
   sort: string;
   interpretation_summary: string;
   warnings: string[];
@@ -35,11 +36,18 @@ export interface SearchResponse {
   results: any[];
   clarification_required: boolean;
   clarification_question: string | null;
+  pagination?: {
+    limit: number;
+    offset: number;
+    returned: number;
+    has_more: boolean;
+  };
 }
 
-export const buildNaturalSearchPayload = (naturalQuery: string, limit: string) => ({
+export const buildNaturalSearchPayload = (naturalQuery: string, limit: string, offset = 0) => ({
   natural_query: naturalQuery.trim(),
   limit: Number(limit),
+  ...(offset ? { offset } : {}),
 });
 
 export const useSearch = () => {
@@ -52,14 +60,14 @@ export const useSearch = () => {
   const [feedbackMessage, setFeedbackMessage] = React.useState("");
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
 
-  const handleSearch = React.useCallback(async (naturalQuery: string, limit: string) => {
+  const handleSearch = React.useCallback(async (naturalQuery: string, limit: string, offset = 0) => {
     setIsLoading(true);
     setIsError(false);
     setMessage("");
     try {
       const response = await axios.post<SearchResponse>(
         `${apiUrl}/search`,
-        buildNaturalSearchPayload(naturalQuery, limit),
+        buildNaturalSearchPayload(naturalQuery, limit, offset),
         { headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` } },
       );
       setSearchResponse(response.data);
@@ -75,14 +83,14 @@ export const useSearch = () => {
   }, [apiKey, apiUrl]);
 
   const handleExplicitSearch = React.useCallback(async (
-    criteria: SearchInterpretation, limit: string,
+    criteria: SearchInterpretation, limit: string, offset = 0,
   ) => {
     setIsLoading(true);
     setIsError(false);
     setMessage("");
     try {
       const response = await axios.post<SearchResponse>(`${apiUrl}/search`,
-        buildExplicitSearchPayload(criteria, limit), {
+        { ...buildExplicitSearchPayload(criteria, limit), ...(offset ? { offset } : {}) }, {
           headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` },
         });
       setSearchResponse(response.data);

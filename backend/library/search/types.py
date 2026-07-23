@@ -245,6 +245,7 @@ class SearchFilters:
     subject_period_end_year: int | None = None
     document_types: tuple[str, ...] = ()
     languages: tuple[str, ...] = ()
+    without_embedding: bool = False
 
     def __post_init__(self):
         set_ = object.__setattr__
@@ -261,12 +262,13 @@ class SearchFilters:
         set_(self, "subject_period_end_year", _opt_year("subject_period_end_year", self.subject_period_end_year))
         set_(self, "document_types", _document_types("document_types", self.document_types))
         set_(self, "languages", _languages("languages", self.languages))
+        set_(self, "without_embedding", _bool("without_embedding", self.without_embedding))
         _ordered("published_on_from", self.published_on_from, self.published_on_to)
         _ordered("ingested_at_from", self.ingested_at_from, self.ingested_at_to)
         _ordered("subject_period_start_year", self.subject_period_start_year, self.subject_period_end_year)
 
     def is_empty(self) -> bool:
-        return all(getattr(self, f.name) in (None, ()) for f in fields(self))
+        return all(getattr(self, f.name) in (None, (), False) for f in fields(self))
 
 
 @dataclass(frozen=True)
@@ -294,6 +296,7 @@ class ParsedSearchQuery:
     temporal_expression: str | None = None
     document_types: tuple[str, ...] = ()
     languages: tuple[str, ...] = ()
+    without_embedding: bool = False
     sort: SearchSort = SearchSort.RELEVANCE
     interpretation_summary: str = ""
     warnings: tuple[str, ...] = ()

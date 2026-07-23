@@ -1,6 +1,6 @@
 [project]
 name = "lenie-server"
-version = "0.3.14.0"
+version = "0.3.15.5"
 description = "Personal AI assistant for collecting, managing, and searching data using LLMs"
 readme = "README.md"
 requires-python = ">=3.11"

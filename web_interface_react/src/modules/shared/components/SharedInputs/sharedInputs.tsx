@@ -110,7 +110,10 @@ const SourceSelect = ({ formik, isLoading, sources }: { formik: any; isLoading: 
 // chunk_ids — the per-chunk variant lives in chunks.tsx, where a reviewer
 // can point at one specific chunk instead). Only shown for document types
 // that go through chunk analysis; link documents have no full text to run it on.
-const AUTHOR_EXTRACT_TYPES = ["webpage", "youtube", "movie", "email"];
+// Webpages expose document-level extraction in ArticlePreparationPanel; it
+// must not depend on an analysis run. This legacy run-backed button remains
+// useful for transcripts.
+const AUTHOR_EXTRACT_TYPES = ["youtube", "movie", "email"];
 
 const AuthorExtractButton = ({
   formik, isLoading, apiUrl, apiKey,

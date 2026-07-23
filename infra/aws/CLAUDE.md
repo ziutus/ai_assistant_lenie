@@ -27,7 +27,7 @@ No NAT Gateway (saves ~$30/month), DynamoDB PAY_PER_REQUEST billing, budget aler
 
 ### Lambda Serverless Constraints
 
-Lambda layers have a **50 MB zipped / 250 MB unzipped** size limit. This prevents including packages with large binary dependencies (e.g., `pytubefix` with its `nodejs-wheel-binaries` ~60 MB dependency). YouTube video processing is therefore **not available** in Lambda functions — only in Docker/K8s deployments and batch scripts.
+Lambda layers have a **50 MB zipped / 250 MB unzipped** size limit. This prevents including packages with large binary dependencies (e.g., `pytubefix` with its `nodejs-wheel-binaries` ~60 MB dependency). YouTube video processing is therefore **not available** in Lambda functions — only in Docker deployments and batch scripts.
 
 VPC-attached Lambdas cannot access AWS APIs or the internet without NAT Gateway (~$30/month) or VPC Endpoints (~$7-22/month), both exceeding the $8/month budget. VPC Lambdas must use Lambda environment variables for configuration instead of SSM Parameter Store.
 
@@ -42,8 +42,6 @@ aws/
 ├── CLAUDE.md
 ├── ubuntu_aws_cli_install.sh   # WSL/Ubuntu setup script for AWS CLI and tools
 ├── cloudformation/             # CloudFormation templates and deployment scripts
-│   └── CLAUDE.md
-├── eks/                        # EKS cluster configurations (eksctl + Karpenter)
 │   └── CLAUDE.md
 ├── serverless/                 # Lambda function source code, layers, and deploy scripts
 │   └── CLAUDE.md
@@ -60,9 +58,6 @@ Primary IaC approach. Custom `deploy.sh` script manages stack lifecycle (create/
 
 ### serverless/
 Lambda function source code and Lambda layer build scripts (psycopg2, lenie_all, openai). **1 deployed Lambda function remains: `url-add`** (CF-managed; source in `lambdas/url-add/`). `sqs-weblink-put-into` and `sqs-size` were deleted 2026-07-02 with the SQS pipeline. The app-server-db/internet document-serving Lambdas (formerly non-CF-managed) were deleted 2026-07-02; their sources and sanitized config snapshots stay in the repo for restoration. Includes packaging script (`zip_to_s3.sh`). See `serverless/CLAUDE.md` for details and [docs/aws-serverless-restoration.md](../../docs/aws-serverless-restoration.md) for the restoration guide.
-
-### eks/
-EKS cluster configurations. Main cluster `lenie-ai` (K8s 1.31, spot instances, us-east-1) and a Karpenter POC cluster. Managed via `eksctl` with addons: EBS CSI Driver, Metrics Server, Stakater Reloader, AWS Load Balancer Controller. Includes automated deployment script for Karpenter setup. See `eks/CLAUDE.md` for details.
 
 ### terraform/
 Terraform configuration (AWS provider ~> 5.0) covering VPC with 4 subnets (2 public + 2 private) and an EC2 bastion host module. Exists primarily for IaC comparison purposes. See `terraform/CLAUDE.md` for details.
@@ -89,7 +84,6 @@ Jenkins target (`aws-start-jenkins`) was removed since Jenkins is not currently 
 | Lambda | 1 function: `url-add` (Chrome extension ingestion → S3 + DynamoDB). All others deleted 2026-07-02 — see [docs/aws-serverless-restoration.md](../../docs/aws-serverless-restoration.md) |
 | API Gateway | 1 REST API (app: single `/url_add` endpoint) + custom domain `api.{env}.lenie-ai.eu` (root mapping only) |
 | EC2 | None running — the orphaned `ec2-lenie` stack was deleted 2026-07-02; only the (unused) launch template stack remains |
-| EKS | Kubernetes cluster (alternative deployment target) |
 | Route53 | DNS for lenie-ai.eu domain |
 | SSM Parameter Store | Cross-stack value sharing |
 | CloudWatch | Logging, Step Function execution monitoring |

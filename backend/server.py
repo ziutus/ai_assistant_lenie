@@ -28,7 +28,7 @@ cfg = load_config()
 
 secrets_backend = cfg.require("SECRETS_BACKEND", "env")
 
-APP_VERSION = "0.3.14.0"
+APP_VERSION = "0.3.15.5"
 BUILD_TIME = "2026.07.04 08:00"
 
 logging.info(f"APP VERSION={APP_VERSION} (build time:{BUILD_TIME})")
@@ -1556,7 +1556,7 @@ def website_save():
 
     link_id = request.form.get('id')
     attrs = {}
-    for attr in ('text', 'title', 'language', 'tags', 'summary', 'source', 'byline', 'note'):
+    for attr in ('text', 'text_md', 'title', 'language', 'tags', 'summary', 'source', 'byline', 'note'):
         value = request.form.get(attr)
         if value is not None:
             attrs[attr] = value

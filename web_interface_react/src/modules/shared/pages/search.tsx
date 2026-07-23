@@ -23,6 +23,7 @@ const Search = () => {
     initialExplicitCriteria ? "advanced" : "natural",
   );
   const [submittedQuery, setSubmittedQuery] = React.useState(initialQuery);
+  const [pageOffset, setPageOffset] = React.useState(0);
   const [draftCriteria, setDraftCriteria] = React.useState<SearchInterpretation | null>(initialExplicitCriteria);
   const [advancedCriteria, setAdvancedCriteria] = React.useState<SearchInterpretation>(
     initialExplicitCriteria ?? emptySearchCriteria(),
@@ -42,6 +43,7 @@ const Search = () => {
     initialValues: { search: initialQuery, searchLimit: initialLimit },
     onSubmit: async data => {
       const query = data.search.trim();
+      setPageOffset(0);
       setSubmittedQuery(query);
       const params: Record<string, string> = { q: query };
       if (data.searchLimit !== DEFAULT_LIMIT) params.limit = data.searchLimit;
@@ -65,6 +67,7 @@ const Search = () => {
     formik.resetForm({ values: { search: "", searchLimit: DEFAULT_LIMIT } });
     clearSearch();
     setSubmittedQuery("");
+    setPageOffset(0);
     setDraftCriteria(null);
     setAdvancedCriteria(emptySearchCriteria());
     setSearchParams({});
@@ -72,6 +75,7 @@ const Search = () => {
 
   const applyCorrection = async () => {
     if (!draftCriteria) return;
+    setPageOffset(0);
     setSubmittedQuery(draftCriteria.query ?? "");
     const searched = await handleExplicitSearch(draftCriteria, formik.values.searchLimit);
     if (searched) {
@@ -87,9 +91,20 @@ const Search = () => {
   };
 
   const submitAdvanced = async () => {
+    setPageOffset(0);
     setSubmittedQuery(advancedCriteria.query ?? "");
     const searched = await handleExplicitSearch(advancedCriteria, formik.values.searchLimit);
     if (searched) setSearchParams(explicitSearchParams(advancedCriteria, formik.values.searchLimit));
+  };
+
+  const changePage = async (nextOffset: number) => {
+    const offset = Math.max(0, nextOffset);
+    const searched = searchMode === "advanced"
+      ? await handleExplicitSearch(advancedCriteria, formik.values.searchLimit, offset)
+      : draftCriteria
+        ? await handleExplicitSearch(draftCriteria, formik.values.searchLimit, offset)
+        : await handleSearch(submittedQuery, formik.values.searchLimit, offset);
+    if (searched !== false) setPageOffset(offset);
   };
 
   return (
@@ -170,6 +185,22 @@ const Search = () => {
             item={item} query={searchResponse?.interpretation.query ?? submittedQuery} />
         ))}
       </div>
+      {results && !isLoading && (pageOffset > 0 || searchResponse?.pagination?.has_more) && (
+        <nav aria-label="Stronicowanie wyników"
+          style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 30 }}>
+          <button type="button" className="button" disabled={pageOffset === 0}
+            onClick={() => { void changePage(pageOffset - Number(formik.values.searchLimit)); }}>
+            Poprzednia
+          </button>
+          <span style={{ color: "#475569", fontSize: ".88rem" }}>
+            Strona {Math.floor(pageOffset / Number(formik.values.searchLimit)) + 1}
+          </span>
+          <button type="button" className="button" disabled={!searchResponse?.pagination?.has_more}
+            onClick={() => { void changePage(pageOffset + Number(formik.values.searchLimit)); }}>
+            Następna
+          </button>
+        </nav>
+      )}
     </div>
   );
 };

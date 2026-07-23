@@ -572,8 +572,16 @@ def reclean_preview(doc_id: int):
 
     if save:
         from library.document_images import replace_document_images
+        from library.lenie_markdown import md_remove_markdown
 
-        setattr(doc, field, after)
+        # Article preparation always establishes Markdown as the canonical
+        # webpage body, including legacy rows where only text existed.
+        if doc.document_type == "webpage":
+            doc.text_md = after
+            doc.text = md_remove_markdown(after)
+            field = "text_md"
+        else:
+            setattr(doc, field, after)
         doc.document_length = len(after)
         doc.quality = None
         replace_document_images(session, doc.id, cleaned["images"])
@@ -595,6 +603,177 @@ def reclean_preview(doc_id: int):
         "before_end_preview": before[-700:],
         "start_preview": after[:400],
         "end_preview": after[-700:],
+    })
+
+
+def _document_head_tail(doc: Document) -> str:
+    from library.chunk_llm_analysis import head_tail_excerpt
+
+    return head_tail_excerpt(doc.text_md or doc.text or "")
+
+
+@bp.route("/document/<int:doc_id>/extract_author", methods=["POST"])
+def extract_document_author(doc_id: int):
+    """Extract and save a byline without requiring an analysis run."""
+    from library.article_metadata import extract_article_authors
+    from library.author_service import set_document_authors
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    context_text = data.get("context_text")
+    biography_text = data.get("biography_text")
+    if context_text is not None and not isinstance(context_text, str):
+        return jsonify({"status": "error", "message": "context_text must be a string"}), 400
+    if biography_text is not None and not isinstance(biography_text, str):
+        return jsonify({"status": "error", "message": "biography_text must be a string"}), 400
+
+    names = [] if context_text else extract_article_authors(doc.text_raw, doc.url or "")
+    method = "html" if names else "llm"
+    if not names:
+        source_text = (context_text or _document_head_tail(doc)).strip()[:12000]
+        if not source_text:
+            return jsonify({"status": "error", "message": "Document has no text content"}), 400
+        try:
+            from library.chunk_llm_analysis import extract_author_info
+            from library.document_analysis_service import DEFAULT_ANALYSIS_MODEL
+
+            names = extract_author_info(source_text, DEFAULT_ANALYSIS_MODEL)
+            method = "llm"
+        except Exception:
+            logger.exception("document author extraction failed for %d", doc_id)
+            return jsonify({"status": "error", "message": "Author extraction failed"}), 500
+
+    if not names:
+        return jsonify({"status": "success", "byline": None, "byline_method": None})
+    author_persons = set_document_authors(session, doc, names, method=method)
+    biography = None
+    if biography_text and len(names) == 1:
+        from library.author_biography import process_author_biography
+        from library.document_analysis_service import DEFAULT_ANALYSIS_MODEL
+
+        biography = process_author_biography(
+            session, doc, biography_text.strip()[:12000], DEFAULT_ANALYSIS_MODEL,
+        )
+    session.commit()
+    return jsonify({
+        "status": "success", "byline": doc.byline,
+        "byline_method": doc.byline_method, "author_persons": author_persons,
+        "biography": biography,
+    })
+
+
+@bp.route("/document/<int:doc_id>/extract_publication_date", methods=["POST"])
+def extract_document_publication_date(doc_id: int):
+    """Extract and save publication date without requiring an analysis run."""
+    from library.article_metadata import extract_article_publication_date
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    context_text = data.get("context_text")
+    if context_text is not None and not isinstance(context_text, str):
+        return jsonify({"status": "error", "message": "context_text must be a string"}), 400
+
+    date_str = None if context_text else extract_article_publication_date(doc.text_raw, doc.url or "")
+    method = "html" if date_str else "llm"
+    if not date_str:
+        source_text = (context_text or _document_head_tail(doc)).strip()[:12000]
+        if not source_text:
+            return jsonify({"status": "error", "message": "Document has no text content"}), 400
+        try:
+            from library.chunk_llm_analysis import extract_publication_date_info
+            from library.document_analysis_service import DEFAULT_ANALYSIS_MODEL
+
+            date_str = extract_publication_date_info(source_text, DEFAULT_ANALYSIS_MODEL)
+            method = "llm"
+        except Exception:
+            logger.exception("document publication-date extraction failed for %d", doc_id)
+            return jsonify({"status": "error", "message": "Publication date extraction failed"}), 500
+    if not date_str:
+        return jsonify({"status": "success", "published_on": None, "published_on_method": None})
+    try:
+        doc.published_on = date.fromisoformat(date_str)
+    except ValueError:
+        return jsonify({"status": "success", "published_on": None, "published_on_method": None})
+    doc.published_on_method = method
+    session.commit()
+    return jsonify({
+        "status": "success", "published_on": doc.published_on.isoformat(),
+        "published_on_method": doc.published_on_method,
+    })
+
+
+@bp.route("/document/<int:doc_id>/extract_persons", methods=["POST"])
+def extract_document_persons(doc_id: int):
+    """Add people found in a reviewer-selected excerpt to the registry.
+
+    Unlike a full entity refresh this endpoint is deliberately additive: it
+    never removes entities already stored for the document.
+    """
+    from library.db.models import DocumentEntity
+    from library.ner_client import (
+        NERExtractionError, aggregate_entities_detailed, extract_entities_strict,
+    )
+    from library.person_registry import resolve_document_persons
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    context_text = data.get("context_text")
+    if not isinstance(context_text, str) or not context_text.strip():
+        return jsonify({"status": "error", "message": "context_text must be a non-empty string"}), 400
+    context_text = context_text.strip()[:12000]
+
+    try:
+        grouped = aggregate_entities_detailed(
+            extract_entities_strict(context_text), types=("persName",),
+        )
+    except NERExtractionError:
+        logger.exception("selected person extraction failed for document %d", doc_id)
+        return jsonify({"status": "error", "message": "Person extraction service is unavailable"}), 503
+
+    found: list[str] = []
+    for (entity_type, entity_text), details in grouped.items():
+        found.append(entity_text)
+        entity = session.scalars(select(DocumentEntity).where(
+            DocumentEntity.document_id == doc_id,
+            DocumentEntity.entity_type == entity_type,
+            func.lower(DocumentEntity.entity_text) == entity_text.lower(),
+        )).first()
+        variants = list(dict.fromkeys(details.get("variants", [])))
+        if entity is None:
+            session.add(DocumentEntity(
+                document_id=doc_id, entity_type=entity_type,
+                entity_text=entity_text, mention_count=details.get("count", 1),
+                variants=variants,
+            ))
+        else:
+            entity.mention_count = max(entity.mention_count or 1, details.get("count", 1))
+            entity.variants = list(dict.fromkeys([*(entity.variants or []), *variants]))
+
+    if not found:
+        return jsonify({"status": "success", "persons_found": [], "linked": [], "skipped": []})
+
+    session.flush()
+    resolution = resolve_document_persons(session, doc, context_text)
+    session.commit()
+    return jsonify({
+        "status": "success", "persons_found": found,
+        "linked": [
+            {"mention": mention, "person": canonical, "confidence": confidence}
+            for mention, canonical, confidence in resolution["linked"]
+        ],
+        "skipped": resolution["skipped"],
     })
 
 

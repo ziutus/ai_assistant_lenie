@@ -78,12 +78,31 @@ class TestSearchEndpoint:
         body = response.get_json()
         assert body["status"] == "explicit"
         assert body["results"] == [{"document_id": 7}]
-        assert body["pagination"] == {"limit": 5, "offset": 0, "returned": 1}
+        assert body["pagination"] == {
+            "limit": 5, "offset": 0, "returned": 1, "has_more": False,
+        }
         parser.assert_not_called()
         args, kwargs = service.search.call_args
         assert args[0] is None
         assert args[1].languages == ("pl",)
         assert kwargs["sort"] is SearchSort.PUBLISHED_DESC
+        assert kwargs["limit"] == 6
+
+    def test_pagination_uses_extra_result_as_has_more_sentinel(self, client):
+        service = MagicMock()
+        service.search.return_value = [{"document_id": i} for i in range(1, 5)]
+        with patch.object(routes, "SearchService", return_value=service):
+            with patch.object(routes, "get_scoped_session", return_value=MagicMock()):
+                response = client.post("/search", json={
+                    "filters": {"languages": ["pl"]}, "limit": 3, "offset": 6,
+                })
+        body = response.get_json()
+        assert [row["document_id"] for row in body["results"]] == [1, 2, 3]
+        assert body["pagination"] == {
+            "limit": 3, "offset": 6, "returned": 3, "has_more": True,
+        }
+        assert service.search.call_args.kwargs["limit"] == 4
+        assert service.search.call_args.kwargs["offset"] == 6
 
     def test_natural_query_parses_and_executes(self, client):
         service = MagicMock()

@@ -89,6 +89,27 @@ def _extract_onet_authors(html: str) -> list[str]:
     return names
 
 
+def _article_jsonld_objects(html: str):
+    """Yield JSON-LD objects describing the page's primary article."""
+    soup = BeautifulSoup(html, "html.parser")
+    article_types = {"Article", "NewsArticle", "ReportageNewsArticle", "AnalysisNewsArticle"}
+    for script in soup.select('script[type="application/ld+json"]'):
+        try:
+            payload = json.loads(script.string or script.get_text())
+        except (json.JSONDecodeError, TypeError):
+            continue
+        roots = payload if isinstance(payload, list) else [payload]
+        for root in roots:
+            if not isinstance(root, dict):
+                continue
+            objects = root.get("@graph", [root])
+            if not isinstance(objects, list):
+                objects = [objects]
+            for obj in objects:
+                if isinstance(obj, dict) and _as_types(obj.get("@type")) & article_types:
+                    yield obj
+
+
 def extract_article_authors(html: str | None, url: str = "") -> list[str]:
     """Extract all deterministic portal byline authors from raw HTML."""
     if not html:
@@ -96,7 +117,44 @@ def extract_article_authors(html: str | None, url: str = "") -> list[str]:
     if _is_onet_url(url):
         return _extract_onet_authors(html)
     author = extract_article_author(html, url)
-    return [author] if author else []
+    if author:
+        return [author]
+    for article in _article_jsonld_objects(html):
+        names = _author_names(article.get("author"))
+        if names:
+            return names
+    soup = BeautifulSoup(html, "html.parser")
+    meta = soup.select_one('meta[name="author"], meta[property="article:author"]')
+    value = (meta.get("content") or "").strip() if meta else ""
+    return [value] if value else []
+
+
+def extract_article_publication_date(html: str | None, url: str = "") -> str | None:
+    """Return an ISO publication date from structured HTML metadata."""
+    if not html:
+        return None
+    candidates: list[str] = []
+    for article in _article_jsonld_objects(html):
+        value = article.get("datePublished")
+        if isinstance(value, str):
+            candidates.append(value)
+    soup = BeautifulSoup(html, "html.parser")
+    for selector in (
+        'meta[property="article:published_time"]',
+        'meta[name="date"]',
+        'meta[name="pubdate"]',
+        'time[datetime]',
+    ):
+        node = soup.select_one(selector)
+        if node:
+            value = node.get("content") or node.get("datetime")
+            if value:
+                candidates.append(value)
+    for value in candidates:
+        match = re.search(r"(?<!\d)(\d{4}-\d{2}-\d{2})(?!\d)", value)
+        if match:
+            return match.group(1)
+    return None
 
 
 def extract_article_author(html: str | None, url: str = "") -> str | None:

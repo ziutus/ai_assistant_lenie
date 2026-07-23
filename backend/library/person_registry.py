@@ -146,8 +146,10 @@ def resolve_document_persons(session, doc, text: str) -> dict:
     for ent in entities:
         name = ent.entity_text.strip()
 
-        # 1. Known alias/canonical name — cheapest, no network
-        person = find_by_alias(session, name)
+        # 1. Known full alias/canonical name — cheapest, no network. A bare
+        # surname is context-dependent ("Trump" may mean Donald, Donald Jr.,
+        # Ivanka, ...), so it must go through contextual disambiguation below.
+        person = find_by_alias(session, name) if len(name.split()) >= 2 else None
         if person is not None:
             if _link(session, doc.id, person, name, CONFIDENCE_ALIAS):
                 linked.append((name, person.canonical_name, CONFIDENCE_ALIAS))
@@ -170,6 +172,12 @@ def resolve_document_persons(session, doc, text: str) -> dict:
                     select(Person).where(Person.wikidata_qid == qid)
                 ).scalars().first()
                 if person is None:
+                    # A local row may predate Wikidata enrichment. Reuse the
+                    # exact full label instead of creating a duplicate row.
+                    person = find_by_alias(session, chosen["label"])
+                    if person is not None and person.wikidata_qid not in (None, qid):
+                        person = None
+                if person is None:
                     person = Person(
                         canonical_name=chosen["label"],
                         wikidata_qid=qid,
@@ -177,6 +185,11 @@ def resolve_document_persons(session, doc, text: str) -> dict:
                     )
                     session.add(person)
                     session.flush()
+                else:
+                    if person.wikidata_qid is None:
+                        person.wikidata_qid = qid
+                    if not person.description and chosen["description"]:
+                        person.description = chosen["description"]
                 _add_alias(session, person, name)
                 if _link(session, doc.id, person, name, CONFIDENCE_WIKIDATA):
                     linked.append((name, person.canonical_name, CONFIDENCE_WIKIDATA))

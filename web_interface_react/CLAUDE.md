@@ -2,7 +2,7 @@
 
 React 18 single-page application for managing documents and running AI operations (text correction, embedding, similarity search). Built with **Vite** and **TypeScript**.
 
-**App version**: 0.3.14.0 | **Package version**: 0.3.14.0
+**App version**: 0.3.15.5 | **Package version**: 0.3.15.5
 
 ## Directory Structure
 

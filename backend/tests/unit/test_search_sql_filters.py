@@ -180,3 +180,9 @@ class TestCombinedFilters:
         sql = str(stmt.compile(compile_kwargs={"literal_binds": True}))
         assert "documents.collection_id" in sql
         assert "documents.document_type" in sql
+
+
+def test_without_embedding_uses_correlated_not_exists():
+    sql = compiled(build_document_filters(SearchFilters(without_embedding=True))[0])
+    assert "NOT (EXISTS" in sql
+    assert "document_embeddings.document_id = documents.id" in sql
