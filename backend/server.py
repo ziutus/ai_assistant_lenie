@@ -1182,6 +1182,321 @@ def website_entities_delete(entity_id: int):
                     "person_deleted": bool(link_result and link_result.get("person_deleted"))}), 200
 
 
+@app.route('/organizations', methods=['GET', 'POST', 'OPTIONS'])
+def organizations_collection():
+    """GET: search the global organization registry by name/alias.
+    POST: manually create an organization. Body: {"canonical_name": "...", "organization_type": "..."}.
+    See docs/organization-ner-alias-plan.md."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from sqlalchemy import func, or_, select
+    from library.db.models import DocumentOrganization, Organization, OrganizationAlias
+
+    session = get_scoped_session()
+
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        canonical_name = (data.get('canonical_name') or "").strip()
+        if not canonical_name:
+            return {"status": "error", "message": "canonical_name is required"}, 400
+        organization = Organization(
+            canonical_name=canonical_name,
+            organization_type=(data.get('organization_type') or "").strip() or None,
+            description=(data.get('description') or "").strip() or None,
+        )
+        session.add(organization)
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+            logging.exception("organization create failed")
+            return {"status": "error", "message": "DB error"}, 500
+        return jsonify({"status": "success", "id": organization.id,
+                        "canonical_name": organization.canonical_name}), 201
+
+    query = (request.args.get('q') or '').strip()
+    statement = (
+        select(
+            Organization,
+            func.count(func.distinct(DocumentOrganization.document_id)).label('document_count'),
+        )
+        .outerjoin(DocumentOrganization, DocumentOrganization.organization_id == Organization.id)
+        .group_by(Organization.id)
+        .order_by(
+            func.count(func.distinct(DocumentOrganization.document_id)).desc(),
+            Organization.canonical_name,
+        )
+    )
+    if query:
+        pattern = f"%{query}%"
+        alias_match = select(OrganizationAlias.organization_id).where(OrganizationAlias.alias.ilike(pattern))
+        statement = statement.where(or_(
+            Organization.canonical_name.ilike(pattern),
+            Organization.id.in_(alias_match),
+        ))
+    rows = session.execute(statement).all()
+    entries = [{
+        "id": organization.id,
+        "canonical_name": organization.canonical_name,
+        "organization_type": organization.organization_type,
+        "description": organization.description,
+        "aliases": [alias.alias for alias in organization.aliases],
+        "document_count": count,
+    } for organization, count in rows]
+    return {"status": "success", "count": len(entries), "entries": entries}, 200
+
+
+@app.route('/organizations/<int:organization_id>', methods=['GET'])
+def organization_get(organization_id: int):
+    """A single organization with its aliases and document count."""
+    from sqlalchemy import func, select
+    from library.db.models import DocumentOrganization, Organization
+
+    session = get_scoped_session()
+    organization = session.get(Organization, organization_id)
+    if organization is None:
+        return {"status": "error", "message": "Organization not found"}, 404
+    document_count = session.scalar(
+        select(func.count(func.distinct(DocumentOrganization.document_id)))
+        .where(DocumentOrganization.organization_id == organization_id)
+    )
+    return {
+        "status": "success",
+        "id": organization.id,
+        "canonical_name": organization.canonical_name,
+        "organization_type": organization.organization_type,
+        "description": organization.description,
+        "aliases": [
+            {"id": a.id, "alias": a.alias, "alias_kind": a.alias_kind, "created_by": a.created_by}
+            for a in organization.aliases
+        ],
+        "document_count": document_count or 0,
+    }, 200
+
+
+@app.route('/organizations/<int:organization_id>/aliases', methods=['POST', 'OPTIONS'])
+def organization_alias_add(organization_id: int):
+    """Manually add a global alias to an organization.
+
+    Body: {"alias": "...", "alias_kind": "manual"|"inflection"|"abbreviation"|"former_name"}.
+    Idempotent for the same organization; 409 when the alias already belongs
+    to a different organization."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library import organization_registry
+    from library.db.models import Organization
+
+    data = request.get_json(silent=True) or {}
+    alias = (data.get('alias') or "").strip()
+    if not alias:
+        return {"status": "error", "message": "alias is required"}, 400
+    alias_kind = (data.get('alias_kind') or "manual").strip()
+    if alias_kind not in {"inflection", "abbreviation", "former_name", "manual", "ner_observed"}:
+        return {"status": "error", "message": "invalid alias_kind"}, 400
+
+    session = get_scoped_session()
+    organization = session.get(Organization, organization_id)
+    if organization is None:
+        return {"status": "error", "message": "Organization not found"}, 404
+
+    try:
+        row = organization_registry.add_alias(session, organization, alias, alias_kind=alias_kind)
+        session.commit()
+    except organization_registry.AliasConflictError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc),
+                "existing_organization_id": exc.existing_organization_id}, 409
+    except Exception:
+        session.rollback()
+        logging.exception("alias add failed for organization %s", organization_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "organization_id": organization_id,
+                    "alias_id": row.id, "alias": row.alias}), 200
+
+
+@app.route('/organizations/<int:organization_id>/aliases/<int:alias_id>', methods=['DELETE', 'OPTIONS'])
+def organization_alias_delete(organization_id: int, alias_id: int):
+    """Remove a global alias. Does not touch audit history — future NER runs
+    simply stop applying this rule (docs/organization-ner-alias-plan.md)."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import OrganizationAlias
+
+    session = get_scoped_session()
+    alias = session.get(OrganizationAlias, alias_id)
+    if alias is None or alias.organization_id != organization_id:
+        return {"status": "error", "message": "Alias not found"}, 404
+
+    try:
+        session.delete(alias)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("alias delete failed for organization %s alias %s", organization_id, alias_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return {"status": "success", "deleted_alias_id": alias_id}, 200
+
+
+@app.route('/document/<int:doc_id>/organizations/merge', methods=['POST', 'OPTIONS'])
+def document_organizations_merge(doc_id: int):
+    """Merge an orgName entity of a document into another organization, globally.
+
+    Body: {"source_entity_id": int, "target_entity_id": int OR "target_organization_id": int,
+           "make_global_alias": bool (default true), "comment": str|None}.
+    source_entity_id must be a document_entities row (entity_type=orgName) of
+    this document, already resolved to an organization. Exactly one of
+    target_entity_id (another orgName entity of this same document) or
+    target_organization_id (any organization from the global registry search,
+    GET /organizations?q=) must be given. A document with embeddings must be
+    reopened for editing first — same 409 rule as POST /website_entities.
+    """
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from sqlalchemy import select
+    from library import organization_registry
+    from library.db.models import DocumentEntity, DocumentOrganization, Organization, OrganizationAlias
+    from library.document_editing import document_has_embeddings
+    from library.entity_review_audit import record_entity_decision
+
+    data = request.get_json(silent=True) or {}
+    source_entity_id, error = _entities_doc_id(data.get('source_entity_id'))
+    if error:
+        return error
+    has_target_entity = data.get('target_entity_id') not in (None, "")
+    has_target_organization = data.get('target_organization_id') not in (None, "")
+    if has_target_entity == has_target_organization:
+        return {"status": "error",
+                "message": "give exactly one of target_entity_id, target_organization_id"}, 400
+    make_global_alias = bool(data.get('make_global_alias', True))
+    comment = (data.get('comment') or "").strip() or None
+
+    session = get_scoped_session()
+    doc = Document.get_by_id(session, doc_id)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+    if document_has_embeddings(session, doc_id):
+        return {
+            "status": "error",
+            "message": "Document has embeddings. Reopen it for editing before merging organizations.",
+        }, 409
+
+    source_entity = session.get(DocumentEntity, source_entity_id)
+    if source_entity is None or source_entity.document_id != doc_id or source_entity.entity_type != "orgName":
+        return {"status": "error", "message": "source_entity_id must be an orgName entity of this document"}, 400
+    source_link = session.execute(select(DocumentOrganization).where(
+        DocumentOrganization.document_entity_id == source_entity.id,
+    )).scalars().first()
+    if source_link is None:
+        return {"status": "error", "message": "source_entity_id is not yet a resolved organization"}, 409
+
+    target_entity = None
+    if has_target_entity:
+        target_entity_id, error = _entities_doc_id(data.get('target_entity_id'))
+        if error:
+            return error
+        if target_entity_id == source_entity_id:
+            return {"status": "error", "message": "source_entity_id and target_entity_id must differ"}, 400
+        target_entity = session.get(DocumentEntity, target_entity_id)
+        if target_entity is None or target_entity.document_id != doc_id or target_entity.entity_type != "orgName":
+            return {"status": "error", "message": "target_entity_id must be an orgName entity of this document"}, 400
+        target_link = session.execute(select(DocumentOrganization).where(
+            DocumentOrganization.document_entity_id == target_entity.id,
+        )).scalars().first()
+        if target_link is None:
+            return {"status": "error", "message": "target_entity_id is not yet a resolved organization"}, 409
+        target_organization_id = target_link.organization_id
+    else:
+        target_organization_id, error = _entities_doc_id(data.get('target_organization_id'))
+        if error:
+            return error
+        target_organization = session.get(Organization, target_organization_id)
+        if target_organization is None:
+            return {"status": "error", "message": "Target organization not found"}, 404
+        if target_organization_id == source_link.organization_id:
+            return {"status": "error", "message": "source entity already belongs to this organization"}, 400
+
+    source_entity_text = source_entity.entity_text
+    source_entity_variants = list(source_entity.variants or [])
+    target_variants_before = list(target_entity.variants or []) if target_entity is not None else []
+
+    try:
+        result = organization_registry.merge(
+            session, source_link.organization_id, target_organization_id,
+            make_global_alias=make_global_alias,
+        )
+        if target_entity is not None:
+            # Both entities were already in this document — combine onto the target row.
+            target_entity.mention_count += source_entity.mention_count
+            combined_variants = dict.fromkeys(target_entity.variants or [])
+            for value in [source_entity_text, *source_entity_variants]:
+                if value.casefold() != target_entity.entity_text.casefold():
+                    combined_variants.setdefault(value)
+            target_entity.variants = list(combined_variants)
+            session.delete(source_entity)
+            surviving_entity = target_entity
+        else:
+            # Target organization wasn't mentioned in this document yet — the
+            # source row survives, renamed to the target's canonical name.
+            combined_variants = dict.fromkeys(source_entity.variants or [])
+            if source_entity_text.casefold() != result["canonical_name"].casefold():
+                combined_variants.setdefault(source_entity_text)
+            source_entity.entity_text = result["canonical_name"]
+            source_entity.variants = [
+                v for v in combined_variants if v.casefold() != result["canonical_name"].casefold()
+            ]
+            surviving_entity = source_entity
+        session.flush()
+
+        alias_id = None
+        if make_global_alias:
+            alias_row = session.execute(select(OrganizationAlias).where(
+                OrganizationAlias.normalized_alias == organization_registry.normalize_alias(source_entity_text),
+            )).scalars().first()
+            alias_id = alias_row.id if alias_row is not None else None
+
+        record_entity_decision(
+            session,
+            document_id=doc_id,
+            document_entity_id=surviving_entity.id,
+            entity_type="orgName",
+            entity_text=surviving_entity.entity_text,
+            decision="organization_merged",
+            comment=comment,
+            details={
+                "source_entity_text": source_entity_text,
+                "target_entity_text": result["canonical_name"],
+                "organization_id": result["organization_id"],
+                "alias_id": alias_id,
+                "global_alias": make_global_alias,
+                "source_variants": [source_entity_text, *source_entity_variants],
+                "target_variants_before": target_variants_before,
+            },
+        )
+        session.commit()
+    except organization_registry.AliasConflictError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc),
+                "existing_organization_id": exc.existing_organization_id}, 409
+    except Exception:
+        session.rollback()
+        logging.exception("organization merge failed for document %s", doc_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({
+        "status": "success",
+        "organization_id": result["organization_id"],
+        "canonical_name": result["canonical_name"],
+        "mention_count": surviving_entity.mention_count,
+        "variants": surviving_entity.variants,
+    }), 200
+
+
 @app.route('/tags', methods=['GET'])
 def tags_list():
     """Distinct tags across documents (CSV column), most used first — editor autocomplete."""

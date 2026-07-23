@@ -39,6 +39,9 @@ export interface EntityItem {
   // Organization classified as an explicitly cited information source.
   information_source_id?: number;
   source_evidence?: string | null;
+  // Global organization registry (orgName only) — present once resolved
+  // (library/organization_registry.py). Lets the editor offer "Połącz z…".
+  organization_id?: number;
 }
 
 interface EntitiesByType {
@@ -54,6 +57,13 @@ interface PersonSearchResult {
   description: string | null;
   wikidata_qid: string | null;
   aliases: string[];
+}
+
+interface OrganizationSearchResult {
+  id: number;
+  canonical_name: string;
+  aliases: string[];
+  document_count: number;
 }
 
 const REVIEW_REASONS = [
@@ -220,6 +230,10 @@ const EntitiesPanel = ({
   const [mergeFor, setMergeFor] = React.useState<EntityItem | null>(null);
   const [searchQ, setSearchQ] = React.useState("");
   const [searchResults, setSearchResults] = React.useState<PersonSearchResult[]>([]);
+  // "Połącz z…" flow (orgName): chip being merged into another organization
+  const [orgMergeFor, setOrgMergeFor] = React.useState<EntityItem | null>(null);
+  const [orgSearchQ, setOrgSearchQ] = React.useState("");
+  const [orgSearchResults, setOrgSearchResults] = React.useState<OrganizationSearchResult[]>([]);
   // "Dodaj alias" flow
   const [aliasFor, setAliasFor] = React.useState<EntityItem | null>(null);
   const [aliasText, setAliasText] = React.useState("");
@@ -257,6 +271,7 @@ const EntitiesPanel = ({
     setMessage("");
     setEditMode(false);
     setMergeFor(null);
+    setOrgMergeFor(null);
     setAliasFor(null);
     setExcludeFor(null);
     setDeleteFor(null);
@@ -357,6 +372,48 @@ const EntitiesPanel = ({
     } catch (error: any) {
       console.error("Error merging person link", error);
       setMessage(`Nie udało się zmienić osoby: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const handleOrgSearch = async (q: string) => {
+    setOrgSearchQ(q);
+    if (q.trim().length < 2) {
+      setOrgSearchResults([]);
+      return;
+    }
+    try {
+      const response = await axios.get(`${apiUrl}/organizations`, { params: { q }, headers });
+      setOrgSearchResults(response.data.entries ?? []);
+    } catch (error) {
+      console.error("Error searching organizations", error);
+    }
+  };
+
+  const handleOrgMergePick = async (
+    target: { targetEntityId?: number; targetOrganizationId?: number },
+  ) => {
+    if (orgMergeFor?.id == null) {
+      return;
+    }
+    setMessage("");
+    try {
+      await axios.post(
+        `${apiUrl}/document/${docId}/organizations/merge`,
+        {
+          source_entity_id: orgMergeFor.id,
+          target_entity_id: target.targetEntityId,
+          target_organization_id: target.targetOrganizationId,
+          make_global_alias: true,
+        },
+        { headers: jsonHeaders },
+      );
+      setOrgMergeFor(null);
+      setOrgSearchQ("");
+      setOrgSearchResults([]);
+      fetchEntities();
+    } catch (error: any) {
+      console.error("Error merging organization", error);
+      setMessage(`Nie udało się połączyć organizacji: ${error.response?.data?.message || error.message}`);
     }
   };
 
@@ -468,6 +525,7 @@ const EntitiesPanel = ({
           setDeleteFor(item);
           setExcludeFor(null);
           setMergeFor(null);
+          setOrgMergeFor(null);
           setAliasFor(null);
           setReviewReason("");
           setReviewComment("");
@@ -483,6 +541,7 @@ const EntitiesPanel = ({
           setExcludeFor({ item, entityType });
           setDeleteFor(null);
           setMergeFor(null);
+          setOrgMergeFor(null);
           setAliasFor(null);
           setReviewReason("");
           setReviewComment("");
@@ -496,6 +555,24 @@ const EntitiesPanel = ({
           style={{ ...chipActionStyle, color: "#1d5ca8" }}
           title="To inna osoba — wskaż właściwą w rejestrze"
           onClick={() => { setMergeFor(item); setAliasFor(null); setSearchQ(""); setSearchResults([]); }}
+        >
+          ↷
+        </button>
+      )}
+      {entityType === "orgName" && item.organization_id != null && (
+        <button
+          type="button"
+          style={{ ...chipActionStyle, color: "#1d5ca8" }}
+          title="Połącz z inną organizacją (globalnie, dla wszystkich dokumentów)"
+          onClick={() => {
+            setOrgMergeFor(item);
+            setDeleteFor(null);
+            setExcludeFor(null);
+            setMergeFor(null);
+            setAliasFor(null);
+            setOrgSearchQ("");
+            setOrgSearchResults([]);
+          }}
         >
           ↷
         </button>
@@ -521,7 +598,7 @@ const EntitiesPanel = ({
           {isRefreshing ? "Wykrywam..." : "Wykryj osoby i miejsca"}
         </button>
         {!isEmpty && (
-          <button className={"button"} type="button" onClick={() => { setEditMode(!editMode); setMergeFor(null); setAliasFor(null); setExcludeFor(null); setDeleteFor(null); }}>
+          <button className={"button"} type="button" onClick={() => { setEditMode(!editMode); setMergeFor(null); setOrgMergeFor(null); setAliasFor(null); setExcludeFor(null); setDeleteFor(null); }}>
             {editMode ? "Zakończ edycję" : "Edytuj"}
           </button>
         )}
@@ -606,6 +683,45 @@ const EntitiesPanel = ({
               {" "}<strong>{p.canonical_name}</strong>
               {p.description && <span style={{ color: "#667" }}> — {p.description}</span>}
               {p.wikidata_qid && <span style={{ color: "#999" }}> ({p.wikidata_qid})</span>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editMode && orgMergeFor && (
+        <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
+          <div style={{ marginBottom: 4 }}>
+            Połącz „{orgMergeFor.text}" z inną organizacją (globalnie — obowiązuje też w przyszłych dokumentach):
+            <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setOrgMergeFor(null)}>✕ anuluj</button>
+          </div>
+          {organizations.filter((o) => o.id !== orgMergeFor.id).length > 0 && (
+            <div style={{ marginBottom: 6 }}>
+              <div style={{ color: "#667", fontSize: "0.85em" }}>W tym dokumencie:</div>
+              {organizations.filter((o) => o.id !== orgMergeFor.id).map((o) => (
+                <div key={o.id} style={{ padding: "3px 0" }}>
+                  <button className={"button"} type="button" onClick={() => handleOrgMergePick({ targetEntityId: o.id })}>
+                    wybierz
+                  </button>
+                  {" "}<strong>{o.text}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ color: "#667", fontSize: "0.85em" }}>Albo szukaj w globalnym rejestrze:</div>
+          <input
+            value={orgSearchQ}
+            onChange={(e) => handleOrgSearch(e.target.value)}
+            placeholder="Nazwa organizacji…"
+            style={{ padding: "4px 8px", width: 260 }}
+          />
+          {orgSearchResults.filter((o) => o.id !== orgMergeFor.organization_id).map((o) => (
+            <div key={o.id} style={{ padding: "3px 0" }}>
+              <button className={"button"} type="button" onClick={() => handleOrgMergePick({ targetOrganizationId: o.id })}>
+                wybierz
+              </button>
+              {" "}<strong>{o.canonical_name}</strong>
+              {o.aliases.length > 0 && <span style={{ color: "#667" }}> ({o.aliases.join(", ")})</span>}
+              <span style={{ color: "#999" }}> — {o.document_count} dok.</span>
             </div>
           ))}
         </div>

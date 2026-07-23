@@ -15,12 +15,14 @@ from sqlalchemy import delete, select, update
 from library.db.models import (
     Document,
     DocumentEntity,
+    DocumentOrganization,
     NerContextClassification,
     NerExclusion,
     NerTemporalCandidate,
 )
 from library.ner_client import NERServiceUnavailable, aggregate_entities_detailed, extract_entities, is_available
 from library.ner_normalization import normalize_ner_text
+from library.organization_registry import merge_ner_groups, resolve_or_create
 
 logger = logging.getLogger(__name__)
 TEMPORAL_CONTEXT_WINDOW = 220
@@ -224,7 +226,41 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
                 [key[1] for key in dropped_by_context],
             )
 
+    # orgName groups: merge same-organization spelling splits within this one
+    # NER result (e.g. "Interia"/"Interii" both present as separate lemma
+    # groups), then resolve each merged group against the global organizations
+    # registry (docs/organization-ner-alias-plan.md). entity_text for orgName
+    # becomes the registry's canonical_name so /webpage, /read and chapter
+    # filtering never show the same organization twice.
+    org_keys = [key for key in groups if key[0] == "orgName"]
+    organization_confidence: dict[str, tuple[int, str]] = {}
+    if org_keys:
+        org_groups_by_name = {key[1]: groups[key] for key in org_keys}
+        merged_org_groups = merge_ner_groups(org_groups_by_name)
+        for key in org_keys:
+            del groups[key]
+        for name, group in merged_org_groups.items():
+            organization, confidence = resolve_or_create(session, name, group["variants"])
+            canonical_name = organization.canonical_name
+            merged_key = ("orgName", canonical_name)
+            existing = groups.get(merged_key)
+            surface_forms = [name, *group["variants"]]
+            if existing is not None:
+                existing["count"] += group["count"]
+                combined = dict.fromkeys(existing["variants"])
+                for value in surface_forms:
+                    if value.casefold() != canonical_name.casefold():
+                        combined.setdefault(value, None)
+                existing["variants"] = list(combined)
+            else:
+                distinct_variants = dict.fromkeys(
+                    value for value in surface_forms if value.casefold() != canonical_name.casefold()
+                )
+                groups[merged_key] = {"count": group["count"], "variants": list(distinct_variants)}
+            organization_confidence.setdefault(canonical_name, (organization.id, confidence))
+
     session.execute(delete(DocumentEntity).where(DocumentEntity.document_id == document_id))
+    session.execute(delete(DocumentOrganization).where(DocumentOrganization.document_id == document_id))
     rows = [
         DocumentEntity(
             document_id=document_id,
@@ -238,8 +274,24 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         )
     ]
     session.add_all(rows)
+    if organization_confidence:
+        session.flush()
+        rows_by_key = {(row.entity_type, row.entity_text): row for row in rows}
+        for entity_text, (organization_id, confidence) in organization_confidence.items():
+            row = rows_by_key.get(("orgName", entity_text))
+            session.add(DocumentOrganization(
+                document_id=document_id,
+                organization_id=organization_id,
+                document_entity_id=row.id if row is not None else None,
+                confidence=confidence,
+            ))
+
     organization_groups = [
-        {"text": entity_text, "variants": group["variants"]}
+        {
+            "text": entity_text,
+            "variants": group["variants"],
+            "organization_id": organization_confidence.get(entity_text, (None, None))[0],
+        }
         for (entity_type, entity_text), group in groups.items()
         if entity_type == "orgName"
     ]
@@ -263,7 +315,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     raw_mention == entity_text) carry "person_id"/"canonical_name"/
     "person_description"/"wikidata_qid"/"confidence".
     """
-    from library.db.models import DocumentInformationSource, InfraGeometry
+    from library.db.models import DocumentInformationSource, DocumentOrganization, InfraGeometry
     from library.person_registry import get_document_persons
 
     rows = (
@@ -281,6 +333,12 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     for link in source_links:
         for name in [link.source.canonical_name, link.raw_mention]:
             sources_by_name[normalize_ner_text(name).casefold()] = link
+    organization_ids_by_entity = {
+        link.document_entity_id: link.organization_id
+        for link in session.scalars(select(DocumentOrganization).where(
+            DocumentOrganization.document_id == document_id,
+        )).all()
+    }
 
     place_types = {"geogName", "placeName"}
     place_names = [r.entity_text for r in rows if r.entity_type in place_types]
@@ -330,6 +388,9 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             if source_link is not None:
                 item["information_source_id"] = source_link.source_id
                 item["source_evidence"] = source_link.evidence_excerpt
+            organization_id = organization_ids_by_entity.get(row.id)
+            if organization_id is not None:
+                item["organization_id"] = organization_id
         grouped.setdefault(row.entity_type, []).append(item)
     return grouped
 

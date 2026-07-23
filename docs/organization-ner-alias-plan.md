@@ -304,6 +304,80 @@ Preferowany podział:
 9. testy regresji;
 10. migracja, deploy i test dokumentu `9267` na NAS.
 
+## Ustalenia z review (2026-07-23)
+
+Przed implementacją przejrzano plan pod kątem zgodności z istniejącym kodem
+(`library/person_registry.py`, `library/entity_service.py`,
+`library/document_editing.py`, `library/information_provenance.py`,
+`entity_review_decisions`, migracje Alembic). Poniższe punkty doprecyzowują
+lub korygują założenia planu:
+
+1. **`reopen_document_for_editing()` musi zostać rozszerzony.**
+   `library/document_editing.py` kasuje przy reopenie m.in. `DocumentPerson`,
+   `DocumentEntity`, `DocumentInformationSource`. `DocumentOrganization` musi
+   trafić na tę listę modeli do usunięcia, inaczej po reopenie zostaną
+   osierocone linki dokument→organizacja. Globalny rejestr (`organizations`,
+   `organization_aliases`) **nie** jest usuwany przy reopenie — analogicznie
+   do `Person`/`PersonAlias`.
+
+2. **`document_organizations` jako czysty link, bez duplikowania liczników.**
+   Wzorzec osób (`DocumentPerson`) nie duplikuje `mention_count`/`variants` —
+   te dane żyją w `DocumentEntity`, link tylko wiąże encję z rejestrem
+   (`document_id`, `organization_id`, `document_entity_id`, `confidence`,
+   `created_at`, unikalność `(document_id, organization_id)`). Rezygnujemy z
+   `mention_count`/`variants` w `document_organizations` opisanych wcześniej w
+   sekcji „Proponowany model danych” — te dane pozostają wyłącznie w
+   `DocumentEntity`, tak jak dziś dla osób.
+
+3. **Unikalność aliasu globalna + `409` to świadome odejście od istniejącego
+   wzorca, nie analogia.** `PersonAlias` i `InformationSourceAlias` mają
+   unikalność tylko per-właściciel (`UniqueConstraint(person_id, alias)` /
+   `(source_id, alias)`), nie globalną. Dla `organization_aliases` celowo
+   wprowadzamy silniejszą gwarancję (`UNIQUE(normalized_alias)` globalnie +
+   `409` przy konflikcie), bo to jest kluczowe dla wymogu „raz połączone —
+   połączone wszędzie”.
+
+4. **Koegzystencja z `information_sources`/`information_source_aliases` —
+   rozwiązana przez jednokierunkowy FK, nie przez dryfowanie.**
+   `entity_service.py` już dziś woła
+   `information_provenance.refresh_ner_cited_sources()` na tych samych grupach
+   `orgName`, tworząc niezależny rejestr aliasów dla organizacji cytowanych
+   jako źródło (np. Bloomberg, KCNA), z inną normalizacją (`.lower()` zamiast
+   `normalize_ner_text().casefold()`). Zamiast zaakceptować dwa dryfujące
+   rejestry, `organizations` staje się jedynym miejscem rozstrzygania nazwy/
+   aliasu, a `information_sources` dostaje nullable, unikalny FK
+   `organization_id -> organizations.id` (kierunek odwrotny niż w pierwotnym
+   projekcie modelu danych, patrz sekcja „Proponowany model danych” —
+   `organizations.information_source_id` zostaje zastąpione tym polem po
+   stronie `information_sources`). `entity_service.py` rozwiązuje grupę
+   `orgName` przez rejestr organizacji **raz** i przekazuje `organization_id`
+   do `refresh_ner_cited_sources`, który dla wpisów z `organization_id`
+   szuka/tworzy `InformationSource` po tym FK zamiast po nazwie, i nie
+   dopisuje już osobnych `information_source_aliases` dla takich wpisów.
+   Migracja/backfill seeduje `Bloomberg`/`KCNA` jako organizacje (przenosząc
+   dane z hardkodowanego `KNOWN_ORGANIZATION_SOURCES`) i linkuje istniejące
+   `information_sources` do nowych organizacji po nazwie, żeby pierwszy
+   refresh po wdrożeniu nie utworzył duplikatów. Pełny opis mechanizmu:
+   `C:\Users\ziutus\.claude\plans\recursive-wondering-biscuit.md`.
+
+5. **Zmiany frontendowe są w zakresie, nie dodatkiem.**
+   `EntitiesPanel`/`EntityChips`
+   (`web_interface_react/src/modules/shared/components/EntitiesPanel/entitiesPanel.tsx`)
+   ma dziś pola `canonical_name`/`person_id`/`link_id` w `EntityItem`
+   wyłącznie dla `persName`, a akcja `mergeFor`/`handleMerge` wymaga
+   `link_id`, ustawianego tylko dla `persName`. Implementacja UI „Połącz
+   z…” wymaga: rozszerzenia `EntityItem` o pola organizacyjne
+   (`organization_id`, `organization_canonical_name` lub analogiczne),
+   osobnej gałęzi w logice merge dla `orgName`, oraz dopasowania klucza/etykiety
+   chipa tak, by pokazywał `canonical_name` zamiast surowego `entity_text`.
+
+6. **Nazewnictwo audytu.** W kodzie nie istnieje dziś `"person_merged"` —
+   scalenie osoby zapisuje `decision="corrected"`
+   (`server.py`, handler merge). `"organization_merged"` z tego planu jest
+   więc nową wartością, nie odwzorowaniem istniejącej konwencji — utrzymujemy
+   ją, bo jest czytelniejsza, ale nie zmieniamy istniejącego `"corrected"` dla
+   osób.
+
 ## Poza zakresem pierwszej implementacji
 
 - automatyczna disambiguacja organizacji przez LLM;
