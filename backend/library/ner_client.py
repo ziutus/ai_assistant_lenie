@@ -18,6 +18,7 @@ from library.ner_normalization import (
     canonical_country_for_surface,
     is_rejected_surface_lemma_pair,
     normalize_ner_text,
+    strip_markdown_emphasis,
 )
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,7 @@ def _extract_entities(text: str, *, strict: bool) -> list[dict]:
     """
     if not text or not text.strip():
         return []
+    text = strip_markdown_emphasis(text)
     collected: list[dict] = []
     for window_index, window in enumerate(_iter_windows(text), start=1):
         try:
