@@ -1,7 +1,7 @@
 import React from "react";
 
 const normalize = (value: string) =>
-  value.replace(/\s+/g, " ").trim().toLocaleLowerCase("pl");
+  value.replace(/[*_`]+/g, "").replace(/\s+/g, " ").trim().toLocaleLowerCase("pl");
 
 const asPlainText = (raw: string) => {
   if (!raw) return "";
@@ -19,13 +19,19 @@ const asPlainText = (raw: string) => {
 const usefulLines = (value: string) =>
   value.split(/\r?\n/).map(line => line.replace(/\s+/g, " ").trim()).filter(Boolean);
 
+const MIN_MATCH_LENGTH = 24;
+
 const findBoundary = (source: string[], candidates: string[], fromEnd = false) => {
   const ordered = fromEnd ? [...candidates].reverse() : candidates;
   for (const candidate of ordered) {
     const needle = normalize(candidate);
-    if (needle.length < 24) continue;
+    if (needle.length < MIN_MATCH_LENGTH) continue;
     const index = source.findIndex(line => {
       const haystack = normalize(line);
+      // Both sides must clear the length floor — otherwise a short nav/menu
+      // line (e.g. a single word repeated in the page chrome) can trivially
+      // satisfy needle.includes(haystack) just by containing that word.
+      if (haystack.length < MIN_MATCH_LENGTH) return false;
       return haystack.includes(needle) || needle.includes(haystack);
     });
     if (index >= 0) return index;
