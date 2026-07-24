@@ -170,6 +170,78 @@ class TestWebsiteGet:
         resp = client.get("/website_get", headers=API_HEADERS)
         assert resp.status_code == 400
 
+    def _mock_doc(self, *, text="Pełna treść artykułu.", text_raw=None):
+        mock_doc = MagicMock()
+        mock_doc.text = text
+        mock_doc.text_raw = text_raw
+        mock_doc.dict.return_value = {
+            "id": 42, "url": "https://example.com", "title": "Test Doc",
+            "next_id": None, "next_type": None, "previous_id": None, "previous_type": None,
+            "summary": None, "language": "en", "tags": None, "text": text,
+            "paywall": False, "ingested_at": "2026-03-09 10:00:00",
+            "document_type": "webpage", "source": None, "published_on": None,
+            "original_id": None, "document_length": None, "chapter_list": None,
+            "processing_status": "URL_ADDED", "processing_error_code": "NONE",
+            "text_raw": text_raw, "transcript_job_id": None, "ai_summary_needed": False,
+            "byline": None, "note": None, "uuid": None, "collection_id": None,
+            "text_md": None, "transcript_needed": False,
+        }
+        return mock_doc
+
+    def test_include_text_default_keeps_text_fields(self, client):
+        mock_doc = self._mock_doc(text="Pełna treść artykułu.")
+        mock_session = MagicMock()
+        mock_session.execute.return_value.scalar.return_value = 0
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = mock_doc
+                MockDS.return_value = mock_service
+
+                resp = client.get("/website_get?id=42", headers=API_HEADERS)
+
+        data = resp.get_json()
+        assert data["text"] == "Pełna treść artykułu."
+        assert "text_raw" in data
+        assert "text_md" in data
+        assert data["text_length"] == len("Pełna treść artykułu.")
+
+    def test_include_text_0_omits_text_fields_but_keeps_length(self, client):
+        mock_doc = self._mock_doc(text="Pełna treść artykułu.")
+        mock_session = MagicMock()
+        mock_session.execute.return_value.scalar.return_value = 0
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = mock_doc
+                MockDS.return_value = mock_service
+
+                resp = client.get("/website_get?id=42&include_text=0", headers=API_HEADERS)
+
+        data = resp.get_json()
+        assert "text" not in data
+        assert "text_raw" not in data
+        assert "text_md" not in data
+        assert data["text_length"] == len("Pełna treść artykułu.")
+        assert data["id"] == 42  # other metadata still present
+
+    def test_text_length_falls_back_to_text_raw(self, client):
+        # Raw states (URL_ADDED/DOCUMENT_INTO_DATABASE) only have text_raw —
+        # /obsidian-note Step 1a relies on text_length being non-zero here too.
+        mock_doc = self._mock_doc(text=None, text_raw="Surowy html-markdown.")
+        mock_session = MagicMock()
+        mock_session.execute.return_value.scalar.return_value = 0
+        with patch("server.get_scoped_session", return_value=mock_session):
+            with patch("server.DocumentService") as MockDS:
+                mock_service = MagicMock()
+                mock_service.get_document.return_value = mock_doc
+                MockDS.return_value = mock_service
+
+                resp = client.get("/website_get?id=42&include_text=0", headers=API_HEADERS)
+
+        data = resp.get_json()
+        assert data["text_length"] == len("Surowy html-markdown.")
+
 
 # ---------------------------------------------------------------------------
 # /website_get_next_to_correct

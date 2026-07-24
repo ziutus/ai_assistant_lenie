@@ -24,11 +24,15 @@ Execute ALL steps below in order. Do NOT skip step 6 (database update).
 
 ### Step 1: Fetch article metadata
 
+All calls below go to the backend REST API on the NAS (`http://192.168.200.7:5055`) with the service API key from `$env:LENIE_API_KEY` (see "Important" at the bottom — set once in your PowerShell profile, never in this file). `Invoke-RestMethod` parses the JSON response into a PowerShell object automatically — no manual `ConvertFrom-Json` needed.
+
 **Step 1a — metadata only (no text field, cheap):**
 
 ```powershell
-cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/article_browser.py --meta --id <ARTICLE_ID>
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/website_get?id=<ARTICLE_ID>&include_text=0" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
 ```
+
+Returns the document's metadata fields (`id`, `uuid`, `title`, `url`, `ingested_at`, `processing_status`, `document_type`, `language`, `source`, `byline`, `note`, `summary`, `reviewed_at`, `tags`, `obsidian_note_paths`, `chapter_list`, `video_description`, `text_length`, plus other editor-only fields you can ignore) — `text`/`text_raw`/`text_md` are omitted by `include_text=0`. `text_length` reflects the same `text`-or-`text_raw` fallback as Step 1c, so it's non-zero even for raw, not-yet-cleaned documents.
 
 Display the metadata to the user.
 
@@ -39,56 +43,60 @@ Every document type can have chunk analysis runs — mode `transcript` (youtube/
 A document can have **more than one run** (a book typically has one `split_only` run over the whole text plus one `article` run per chapter). List all runs first:
 
 ```powershell
-cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/article_browser.py --runs --id <ARTICLE_ID>
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/analysis_runs?doc_id=<ARTICLE_ID>" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
 ```
 
-Returns JSON: `{"doc_id", "runs": [{"run_id", "mode", "status", "scope", "model", "created_at", "temat_count", "analyzed_count", "approved_count"}, ...]}`.
+Returns JSON: `{"doc_id", "runs": [{"id", "mode", "status", "scope", "model", "created_at", "chunk_count", "temat_count", "analyzed_count", "approved_count", "workflow_stage"}, ...]}`. Note the run's own identifier is `id` here (not `run_id`) — that's the `<RUN_ID>` used in every call below.
 
 **Interpret the result:**
-- Empty `runs` array → proceed to **Step 1c** (fetch full text via `--dump`)
-- **One run** → auto-select it as `<RUN_ID>`, proceed straight to **Step 2a**
+- Empty `runs` array → proceed to **Step 1c** (fetch full text)
+- **One run** → auto-select its `id` as `<RUN_ID>`, proceed straight to **Step 2a**
 - **Multiple runs** → this is typically a book (chapter runs) or a document re-analyzed several times. Show the list to the user (id, mode, scope, temat/analyzed/approved counts). A run with `analyzed_count=0` is a `split_only` run — chunks exist but have no topic/summary yet, not usable for note-writing on its own (even if `approved_count` is non-zero — that can happen for stale/aborted runs where chunks were approved before topics were ever generated). Propose the run with the highest `analyzed_count` as the default (break ties by `approved_count`), but let the user pick a different `RUN_ID` (e.g. a specific chapter). Once a `RUN_ID` is chosen, proceed to **Step 2a**.
 
 **Fetch chunks + topic sections for the chosen run** (used by Step 2a — also re-run this after the user picks a different `RUN_ID` from the multi-run list above):
 
 ```powershell
-cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/article_browser.py --chunks --run-id <RUN_ID>
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/analysis_run/<RUN_ID>/chunks?lite=1" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
 ```
 
-Returns JSON: `{"run_id", "mode", "status", "scope", "model", "created_at", "temat_count", "reklama_szum_count", "chunks": [{"position", "status", "topic", "summary", "obsidian_note_paths"}, ...], "topic_sections": [{"section_id", "position", "title", "temat_count", "done_count", "chunk_positions"}, ...]}`. `chunks` is already filtered to `TEMAT` only (REKLAMA/SZUM counted separately in `reklama_szum_count`). This single call backs both the flat chunk list and the section-grouped view in Step 2a — no separate section query needed.
+Returns JSON with (among other editor-only fields you can ignore) `run` (`id`, `mode`, `status`, `scope`, `model`, `created_at`, `workflow_stage`), `chunk_total`, `chunks: [{"position", "type", "status", "topic", "summary", "obsidian_note_paths"}, ...]`, `topic_sections: [{"id", "position", "title", "chunk_positions", "temat_count", "approved_count", "notes_count"}, ...]`. Two differences from the old CLI output to apply yourself:
+- **`chunks` is NOT pre-filtered to `TEMAT`** — it includes every chunk type. Filter to `type == "TEMAT"` yourself; the rest (`ZRODLA`/`REKLAMA`/`SZUM`) is `chunk_total` minus your filtered count (equivalent to the old `reklama_szum_count`).
+- **No `done_count` per section** — derive it yourself from the (TEMAT-filtered) `chunks` array: for a section, `done_count` = count of chunks whose `position` is in that section's `chunk_positions` AND (`obsidian_note_paths` is non-empty OR `status == "skipped"`). This is the exact same predicate as the "Już w notatkach / pominięte" split used below — compute it once, reuse for both.
 
-If `mode=article`, chunk text (fetched later via `--chunk-text`) has `corrected_text=None` for every chunk — that is normal for this mode (no rewrite step), not a data quality issue. See the note in Step 2a's "Content usage rules".
+This single call backs both the flat chunk list and the section-grouped view in Step 2a — no separate section query needed.
+
+If `mode=article`, chunk text (fetched later in Step 2a) has `corrected_text=None` for every chunk — that is normal for this mode (no rewrite step), not a data quality issue. See the note in Step 2a's "Content usage rules".
 
 **Step 1c — Fetch full text (only when no chunks exist):**
 
 Check `document_type` from Step 1a to decide the rule:
 
 **For `youtube` or `movie`:**
-- Transcription is stored in `text` in the DB regardless of state — `--dump` always returns it.
-- If `text_length` from `--meta` is 0 → warn: "Brak transkrypcji dla tego dokumentu YouTube. Nie można utworzyć notatki."
-- Otherwise → proceed directly to `--dump`.
+- Transcription is stored in `text` in the DB regardless of state — the call below always returns it.
+- If `text_length` from Step 1a is 0 → warn: "Brak transkrypcji dla tego dokumentu YouTube. Nie można utworzyć notatki."
+- Otherwise → proceed directly to the full fetch.
 
 **For `webpage`, `link`, or other types:**
-- If `document_state` is `URL_ADDED` or `DOCUMENT_INTO_DATABASE` → **STOP and warn the user**:
+- If `processing_status` is `URL_ADDED` or `DOCUMENT_INTO_DATABASE` → **STOP and warn the user**:
   > "Artykuł ma status `{state}` — tekst jest surowy (zawiera szum nawigacyjny strony, reklamy itp.) i zużyje znacznie więcej tokenów niż czysty artykuł. Pobierać mimo to?"
   Proceed only if user confirms.
-- If `document_state` is `DOCUMENT_CLEANED` or any later state → proceed to `--dump`.
+- If `processing_status` is `DOCUMENT_CLEANED` or any later state → proceed to the full fetch.
 
 ```powershell
-cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/article_browser.py --dump --id <ARTICLE_ID>
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/website_get?id=<ARTICLE_ID>" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
 ```
 
-The `--dump` JSON adds one extra field to `--meta`: `text` (full article content).
+(`include_text` omitted — defaults to `1`, so `text`/`text_raw`/`text_md` are included alongside everything from Step 1a.) Use `text` as the article content; if it's empty (raw, not-yet-cleaned states), fall back to `text_raw` — same fallback `text_length` already applied for you in Step 1a.
 
 ### Step 2a: Chunk-based flow (document has existing analysis chunks)
 
 **Use this step whenever Step 1b found a run to use** (any document type — youtube/movie transcript chunks or webpage/link/text/book article chunks). This is the primary path whenever pre-reviewed chunks exist — it skips sending the full text to the LLM.
 
-**If `temat_count` from the `--chunks` JSON (Step 1b) is large (> 30 — same threshold as the `/chunks/:id` UI's `SECTION_VIEW_THRESHOLD`), use the section-grouped view below instead of the flat list.** Typical case: books with a run per chapter, or a `split_only` whole-book run. Otherwise skip straight to **"Flat chunk list"**.
+**If your TEMAT-filtered chunk count from Step 1b is large (> 30 — same threshold as the `/chunks/:id` UI's `SECTION_VIEW_THRESHOLD`), use the section-grouped view below instead of the flat list.** Typical case: books with a run per chapter, or a `split_only` whole-book run. Otherwise skip straight to **"Flat chunk list"**.
 
 #### Section-grouped view (large runs — books)
 
-No extra query needed — the `topic_sections` array from Step 1b's `--chunks` call already has everything: `chunk_positions` lists which chunk positions belong to each section, `temat_count`/`done_count` are precomputed. Chunks whose position doesn't appear in any section's `chunk_positions` are "uncovered" — topic sections don't always cover every `TEMAT` chunk (LLM synthesis is partial); group these under a synthetic "(chunki bez przypisanej sekcji)" entry.
+No extra query needed — the `topic_sections` array from Step 1b's call already has `chunk_positions` (which positions belong to each section) and `temat_count`; `done_count` you compute yourself per Step 1b's note above. Chunks whose position doesn't appear in any section's `chunk_positions` are "uncovered" — topic sections don't always cover every `TEMAT` chunk (LLM synthesis is partial); group these under a synthetic "(chunki bez przypisanej sekcji)" entry.
 
 **Display split into two groups (same top/bottom convention as the flat list):**
 - **Sekcje ukończone** (`done_count == temat_count`) at the TOP, compact one-liners: `Rozdział N: Tytuł — ✓ wszystkie opracowane (n tematów)`
@@ -132,28 +140,28 @@ Run #42 — Bielik-11B-v3.0-Instruct (2026-06-30) — 8 tematów, 3 reklamy
 
 **Ask the user:** "Które nieopracowane tematy (numery) chcesz opisać? (podaj numery, lub 'wszystkie' dla wszystkich nieopracowanych)"
 
-**For each selected chunk — fetch full text from DB (works for both modes):**
+**For each selected chunk — fetch full text (works for both modes):**
 
 ```powershell
-cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/article_browser.py --chunk-text --run-id <RUN_ID> --positions <comma_separated_positions>
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/analysis_run/<RUN_ID>/chunks?positions=<comma_separated_positions>" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
 ```
 
-Returns JSON: `{"run_id", "chunks": [{"position", "topic", "status", "text"}, ...]}`. `text` already applies the mode-aware fallback: `corrected_text` if present, else `original_text`.
+(No `lite` — full text for just the requested positions, without pulling the whole run.) Each item in `chunks` has `position`, `topic`, `status`, `original_text`, `corrected_text`. Unlike the old CLI's `--chunk-text`, the mode-aware fallback (below) is no longer pre-applied — pick the field yourself.
 
 **Content usage rules:**
 - If chunk has `summary` and `approved` status → use `summary` as the basis, enrich only if needed
-- If chunk needs detail → use the `text` field from `--chunk-text`:
-  - **mode=transcript** (youtube/movie) → this is `corrected_text` (cleaned STT transcript with fillers/rewrite applied) — never the raw `original_text`.
-  - **mode=article** (webpage/link/text/book) → this is `original_text` — `corrected_text` is **always `None` by design** for this mode (no rewrite step, source markdown is already clean). This is expected behavior, not missing data, and should NOT be flagged as a data quality issue to the user.
+- If chunk needs detail → pick the text field based on the run's `mode` (from Step 1b):
+  - **mode=transcript** (youtube/movie) → use `corrected_text` (cleaned STT transcript with fillers/rewrite applied) — never the raw `original_text`.
+  - **mode=article** (webpage/link/text/book) → use `original_text` — `corrected_text` is **always `None` by design** for this mode (no rewrite step, source markdown is already clean). This is expected behavior, not missing data, and should NOT be flagged as a data quality issue to the user.
 - If chunk is `pending`/`needs_reanalysis` → warn user and ask if they want to proceed anyway (this is a status-based check, orthogonal to which text field is populated)
 
 **Then proceed to Step 3** (find related notes).
 
 ### Step 2b: Standard content flow (no existing chunks)
 
-**Use this step when:** the document has no chunk analysis runs at all (Step 1b's `--runs` call returned an empty `runs` array) — regardless of document type. Since Step 1b now checks every type, this step mainly applies to documents that were never run through `/analyze_chunks` yet.
+**Use this step when:** the document has no chunk analysis runs at all (Step 1b's `/analysis_runs` call returned an empty `runs` array) — regardless of document type. Since Step 1b now checks every type, this step mainly applies to documents that were never run through `/analyze_chunks` yet.
 
-Check `document_type` and `text_length` from `--dump`:
+Check `document_type` (Step 1a) and `text_length` (Step 1c):
 
 #### Long YouTube video without chunks (document_type == "youtube" AND text_length > 10 000)
 
@@ -196,26 +204,25 @@ Report which notes were found and what they already contain.
 
 ### Step 4: Check geopolitical control questions (if applicable)
 
-Check the `tags` field from the metadata (Step 1a `--meta` output).
+Check the `tags` field from the metadata (Step 1a output). If `tags` is empty, skip this step entirely.
 
-If `tags` is non-empty, fetch only the relevant control questions by running:
+Otherwise, fetch the already-selected control-question answers for this document — a cheap-LLM router (`library/control_question_selection.py`) has already narrowed the tag-matched question bank down to the ones this specific document actually answers, so unlike the old flow there's no separate "check which are answered" pass to do yourself:
 
 ```powershell
-cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/control_questions.py --tags <tags_from_dump>
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/document/<ARTICLE_ID>/control_questions" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
 ```
 
-For example, if `tags` is `wojsko,gospodarka,sojusze`:
+Returns JSON: `{"doc_id", "control_questions": [{"chapter_position", "question_id", "question_header", "tags", "answer_summary", "evidence"}, ...]}`.
+
+**If `control_questions` is non-empty:** include those answers explicitly in the notes (as dedicated `##` sections matching the question topic, e.g. `## Aspiracje i cele strategiczne`, `## Konflikty`, `## Stan finansów`) using `answer_summary`/`evidence`.
+
+**If `control_questions` is empty:** this document may simply not touch any control question, or it may just never have been run through the router yet (e.g. added outside the automatic enrichment pipeline). Trigger it on demand — cheap, and a no-op if the tags genuinely don't match any question:
+
 ```powershell
-cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/control_questions.py --tags wojsko,gospodarka,sojusze
+cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/select_control_questions.py --id <ARTICLE_ID>
 ```
 
-The script returns only the `##` sections from the control questions file that are relevant to those tags — a small, focused subset instead of the full list.
-
-Then check which of the returned questions are **answered** by the article/chunks. Report only the ones that are answered — skip those with no data.
-
-If any questions are answered, include those answers explicitly in the notes (as dedicated `##` sections matching the question topic, e.g. `## Aspiracje i cele strategiczne`, `## Konflikty`, `## Stan finansów`).
-
-If `tags` is empty, skip this step entirely.
+Then re-run the `GET /document/<ARTICLE_ID>/control_questions` call above. If it's still empty, the document genuinely doesn't answer any of the tag-matched questions — move on without this section.
 
 ### Step 5: Discuss with user and create/update notes
 
@@ -232,7 +239,7 @@ Wait for user input on what to create/update. Then create/update the Obsidian .m
 - H1 heading
 - Content with `##` sections, `**bold**` for key points
 - Obsidian wiki-links `[[Country]]` for cross-references
-- Source line at the end: `Źródło: [Title](URL) (Lenie AI uuid=UUID)` — use the `uuid` field from `--meta` output (NOT the numeric `id`)
+- Source line at the end: `Źródło: [Title](URL) (Lenie AI uuid=UUID)` — use the `uuid` field from Step 1a's metadata (NOT the numeric `id`)
 
 **For chunk-based notes (Step 2a):** Add a reference to the chunk topic at the end of the source line if it covers a specific chunk, e.g.: `Źródło: [Title](URL) (Lenie AI uuid=UUID, chunk #3 — "Sytuacja gospodarcza")`
 
@@ -305,6 +312,7 @@ If the article topic relates to existing notes (e.g., country files, topic notes
 - Knowledge directory: `C:\Users\ziutus\Obsydian\personal\02-wiedza`
 - **NEVER use `uv run`** — it does not work in this project (hatchling build error)
 - Run Python commands via **PowerShell** with absolute cd: `cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python ...` — cd to absolute path is idempotent (works regardless of current directory; never use `cd backend &&` in Bash which fails when CWD is already backend)
+- **Steps 1a/1b/1c/2a/4 read the database via the REST API** on the NAS backend (`http://192.168.200.7:5055`), not via direct ORM/SQLAlchemy access from Windows — every call needs the `x-api-key` header set to `$env:LENIE_API_KEY` (a `kind=service` key created via `imports/api_key_admin.py create --kind service`; set once in your PowerShell profile, e.g. `notepad $PROFILE` — never hardcode the plaintext key in this file or in a command). If the variable is unset, `Invoke-RestMethod` will 401 — ask the user to set it before retrying. Steps 6's DB writes and Step 4's on-demand `select_control_questions.py` trigger are the only remaining direct-DB (ORM) calls in this skill — `--review`/`--list`/`--show`/`--notes` modes of `article_browser.py` are unrelated interactive tools, unaffected by this migration.
 - Always include source with Lenie AI **uuid** (not numeric id) — `doc.uuid` from database
 - **Always propose note content before saving** — wait for user approval
 - **Financial angle is mandatory** for tech/geopolitics/project notes — include or mark as TODO

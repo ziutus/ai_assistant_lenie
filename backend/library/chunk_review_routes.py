@@ -11,7 +11,7 @@ Endpoints:
   GET  /document/<doc_id>/chapter/<position> — one chapter's text (reader view)
   POST /document/<doc_id>/analyze_chunks     — create a new analysis run
   GET  /analysis_run/<run_id>/chunks         — run data (chunks + segments;
-                                               lite/section_id/offset/limit for books)
+                                               lite/section_id/positions/offset/limit for books)
   POST /analysis_run/<run_id>/extract_speakers
   POST /analysis_run/<run_id>/extract_author
   PATCH /analysis_run/<run_id>               — run workflow status
@@ -1429,6 +1429,9 @@ def list_runs():
                 "created_at": r.created_at.isoformat(),
                 "chunk_count": len(r.chunks),
                 "temat_count": sum(1 for c in r.chunks if c.type == "TEMAT"),
+                "analyzed_count": sum(
+                    1 for c in r.chunks if c.type == "TEMAT" and c.topic
+                ),
                 "approved_count": sum(
                     1 for c in r.chunks if c.type == "TEMAT" and c.status == "approved"
                 ),
@@ -1457,12 +1460,25 @@ def get_run_chunks(run_id: int):
         lite=1       — chunk dicts without full texts (text_preview/text_length
                        instead); segments are skipped too. For book-sized runs.
         section_id   — only chunks of that topic section (by chunk_positions).
-        offset/limit — slice of the (possibly section-filtered) chunk list.
+        positions    — comma-separated chunk positions (e.g. "1,3,6") — only
+                       those chunks. Combine with omitting lite to fetch full
+                       text for a handful of positions without pulling the
+                       whole (possibly book-sized) run.
+        offset/limit — slice of the (possibly section/positions-filtered) chunk list.
     """
     lite = request.args.get("lite", type=int) == 1
     section_id = request.args.get("section_id", type=int)
+    positions_param = request.args.get("positions")
     offset = request.args.get("offset", 0, type=int)
     limit = request.args.get("limit", type=int)
+
+    wanted_positions: set[int] | None = None
+    if positions_param:
+        try:
+            wanted_positions = {int(p.strip()) for p in positions_param.split(",") if p.strip()}
+        except ValueError:
+            return jsonify({"status": "error",
+                            "message": "positions must be a comma-separated list of integers"}), 400
 
     session = get_scoped_session()
     run = session.get(DocumentAnalysisRun, run_id)
@@ -1507,6 +1523,8 @@ def get_run_chunks(run_id: int):
                             "message": f"Topic section {section_id} not found in run {run_id}"}), 404
         wanted = set(section.chunk_positions or [])
         chunks = [c for c in chunks if c.position in wanted]
+    if wanted_positions is not None:
+        chunks = [c for c in chunks if c.position in wanted_positions]
     chunk_total = len(chunks)
     if offset:
         chunks = chunks[offset:]

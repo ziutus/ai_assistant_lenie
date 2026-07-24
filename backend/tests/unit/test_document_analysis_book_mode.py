@@ -405,6 +405,45 @@ class TestAnalyzeChunksScopeValidation:
         assert resp.status_code == 400
 
 
+class TestListRunsAnalyzedCount:
+    """GET /analysis_runs?doc_id= — analyzed_count distinguishes a split_only
+
+    run (chunks exist, approved, but no topic yet) from an actually analyzed
+    one, which approved_count alone can't do (a split_only run's chunks can
+    be pre-approved before topics are ever generated — a stale/aborted state,
+    see fix_duplicate_analysis_runs.py)."""
+
+    def test_analyzed_count_excludes_topicless_chunks(self, monkeypatch):
+        run = MagicMock(spec=DocumentAnalysisRun)
+        run.id = 5
+        run.document_id = 77
+        run.model = "Bielik-11B-v3.0-Instruct"
+        run.chunk_size = 5000
+        run.mode = "article"
+        run.status = "created"
+        run.scope = None
+        run.created_at = datetime.datetime(2026, 7, 20, 9, 0)
+        run.chunks = [
+            _make_chunk(id=201, position=1, topic="Temat 1", status="approved"),
+            _make_chunk(id=202, position=2, topic=None, status="approved"),  # split_only, pre-approved
+            _make_chunk(id=203, position=3, topic="Temat 3", status="pending"),
+            _make_chunk(id=204, position=4, type="SZUM", topic=None, status="approved"),
+        ]
+
+        fake_session = MagicMock()
+        fake_session.scalars.return_value = _ScalarsResult([run])
+        monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
+
+        app = flask.Flask(__name__)
+        app.register_blueprint(crr.bp)
+        data = app.test_client().get("/analysis_runs?doc_id=77").get_json()
+
+        run_out = data["runs"][0]
+        assert run_out["temat_count"] == 3
+        assert run_out["approved_count"] == 2
+        assert run_out["analyzed_count"] == 2
+
+
 class TestGetRunChunksLazy:
     def test_default_full_response_unchanged(self, client):
         data = client.get("/analysis_run/1/chunks").get_json()
@@ -467,6 +506,31 @@ class TestGetRunChunksLazy:
         by_pos = {c["position"]: c for c in data["chunks"]}
         assert by_pos[1]["has_embeddings"] is True
         assert by_pos[2]["has_embeddings"] is False
+
+    def test_positions_filter_returns_only_requested_positions(self, client):
+        data = client.get("/analysis_run/1/chunks?positions=1,3,5").get_json()
+
+        assert data["chunk_total"] == 3
+        assert [c["position"] for c in data["chunks"]] == [1, 3, 5]
+        # not combined with lite — full text still present, as used by the
+        # /obsidian-note skill to fetch a handful of chunk texts by position
+        assert data["chunks"][0]["original_text"] is not None
+
+    def test_positions_combines_with_lite(self, client):
+        data = client.get("/analysis_run/1/chunks?positions=2,4&lite=1").get_json()
+
+        assert [c["position"] for c in data["chunks"]] == [2, 4]
+        assert data["chunks"][0]["original_text"] is None
+
+    def test_positions_combines_with_section_filter(self, client):
+        # section 12 covers positions 3-5; requesting 1,3 intersects to just 3
+        data = client.get("/analysis_run/1/chunks?section_id=12&positions=1,3").get_json()
+
+        assert [c["position"] for c in data["chunks"]] == [3]
+
+    def test_positions_invalid_returns_400(self, client):
+        resp = client.get("/analysis_run/1/chunks?positions=abc")
+        assert resp.status_code == 400
 
 
 class TestPatchTopicSection:
