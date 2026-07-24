@@ -110,7 +110,7 @@ stateDiagram-v2
     URL_ADDED --> NEED_CLEAN_MD: konwersja HTML do Markdown
     NEED_CLEAN_MD --> NEED_MANUAL_REVIEW: documents_pipeline, ponowne czyszczenie
     NEED_CLEAN_MD --> MD_SIMPLIFIED: document_md_decode, udana ekstrakcja
-    MD_SIMPLIFIED --> EMBEDDING_EXIST: article_browser lub batch embeddingów
+    MD_SIMPLIFIED --> EMBEDDING_EXIST: batch embeddingów
     READY_FOR_EMBEDDING --> EMBEDDING_EXIST: batch embeddingów
     URL_ADDED --> ERROR: błąd pobrania
     NEED_CLEAN_MD --> ERROR: błąd konwersji lub ekstrakcji
@@ -169,8 +169,8 @@ lub zasila starszy skrypt:
    ostatnią zmianę oraz obecność tekstu, runów i embeddingów. Bez tego nie usuwać wartości ze
    słownika DB.
 2. **Wybrać jeden właścicielski pipeline artykułów.** Obecnie nowy flow
-   `DocumentAnalysisService` współistnieje z `documents_pipeline.py`, `document_md_decode.py` i
-   bezpośrednim embeddingiem w `article_browser.py`.
+   `DocumentAnalysisService` współistnieje z `documents_pipeline.py` i `document_md_decode.py`
+   (bezpośredni embedding w `article_browser.py` usunięty 2026-07-24 razem z resztą skryptu).
 3. **Ustalić semantykę `EMBEDDING_EXIST`.** Dziś oznacza „utworzono co najmniej jeden embedding”,
    nie „indeks jest kompletny i aktualny”. Regeneracja usuwa i tworzy embeddingi partiami, więc
    warto rozważyć osobny job/status indeksowania zamiast przeciążać stan dokumentu.
@@ -265,9 +265,9 @@ generyczne** (identyczne dla każdego dokumentu, niezależnie od portalu):
 
 ## Część 1 — Import: od HTML do `documents.text_md`
 
-Dzieje się **raz**, przy dodaniu dokumentu (`imports/dynamodb_sync.py`,
-`imports/article_browser.py`, rozszerzenie Chrome) — przed pierwszym kliknięciem
-"Rozpocznij analizę" na `/chunks`. Wejście: `library/article_pipeline.py: extract_article()`.
+Dzieje się **raz**, przy dodaniu dokumentu (`imports/dynamodb_sync.py`, rozszerzenie Chrome) —
+przed pierwszym kliknięciem "Rozpocznij analizę" na `/chunks`. Wejście:
+`library/article_pipeline.py: extract_article()`.
 
 | # | Funkcja | Plik:linia | Co robi | Mechanizm |
 |---|---|---|---|---|

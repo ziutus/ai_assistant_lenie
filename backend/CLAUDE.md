@@ -107,7 +107,7 @@ Standalone scripts for bulk document operations. Run manually, not part of the F
 | `document_md_decode.py` | Markdown decoding, link extraction and correction, prepare content for embedding | **Yes** |
 | `document_prepare_regexp_by_ai.py` | Generate site-specific regex patterns for article extraction using LLM | **Yes** |
 
-Ad-hoc single-item tools and bulk import scripts live in [`imports/`](imports/CLAUDE.md): `youtube_add.py`, `youtube_batch_analyze.py`, `dynamodb_sync.py`, `feed_monitor.py`, `article_browser.py`, `freedom_house_import.py`, `control_questions.py`, `migrate_data_to_cache.py`.
+Ad-hoc single-item tools and bulk import scripts live in [`imports/`](imports/CLAUDE.md): `youtube_add.py`, `youtube_batch_analyze.py`, `dynamodb_sync.py`, `feed_monitor.py`, `freedom_house_import.py`, `control_questions.py`, `migrate_data_to_cache.py`.
 
 ### Database connectivity requirement
 
@@ -166,7 +166,7 @@ Each subdirectory has its own `CLAUDE.md` with detailed documentation:
 |-----------|-----------|--------|
 | `library/` | [library/CLAUDE.md](library/CLAUDE.md) | Domain models, LLM abstraction, embedding generation, text processing, external API integrations |
 | `database/` | [database/CLAUDE.md](database/CLAUDE.md) | PostgreSQL schema, pgvector setup, `documents` and `document_embeddings` tables, 15 processing states |
-| `imports/` | [imports/CLAUDE.md](imports/CLAUDE.md) | CLI tools & import scripts: `youtube_add.py`, `youtube_batch_analyze.py`, `dynamodb_sync.py`, `feed_monitor.py`, `article_browser.py`, `freedom_house_import.py`, `control_questions.py` |
+| `imports/` | [imports/CLAUDE.md](imports/CLAUDE.md) | CLI tools & import scripts: `youtube_add.py`, `youtube_batch_analyze.py`, `dynamodb_sync.py`, `feed_monitor.py`, `freedom_house_import.py`, `control_questions.py` |
 | `data/` | [data/CLAUDE.md](data/CLAUDE.md) | Site-specific cleanup rules (`site_rules.json`), regex patterns for Polish news portals |
 | `tests/` | [tests/CLAUDE.md](tests/CLAUDE.md) | Unit tests (41 files: ORM, services, Flask endpoints, batch/import scripts, article & markdown processing) and integration tests (6 files: REST API endpoints, FK constraints) |
 | `test_code/` | [test_code/CLAUDE.md](test_code/CLAUDE.md) | Experimental scripts: RAG pipeline, LLM provider testing, Bielik text processing, cloud migrations |

@@ -84,7 +84,7 @@ def _record_ner_availability(session, document_id: int, *, unavailable: bool) ->
 
     Committed independently of the caller's transaction so the flag survives
     even when the caller rolls back after refresh_document_entities raises
-    (e.g. article_browser.py's except blocks).
+    (e.g. a caller's except block).
     """
     value = datetime.datetime.utcnow() if unavailable else None
     values = {"ner_unavailable_at": value}
@@ -141,7 +141,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     fails: sets doc.ner_unavailable_at and raises NERServiceUnavailable). Both
     of those writes commit immediately, independent of the caller's
     transaction, so the flag survives even when the caller rolls back on the
-    raised exception (e.g. article_browser.py's except blocks). Existing
+    raised exception (e.g. a caller's except block). Existing
     document_entities rows are left untouched on both empty-extraction paths —
     "no fresh data" must never erase previously detected entities. Entities
     matched by an ner_exclusions rule (global, or author-scoped for the

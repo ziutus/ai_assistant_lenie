@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project is
 
-Lenie is a personal AI assistant for collecting, managing, and searching data (articles, YouTube videos, books) using LLMs. It's a side project under active development — see `README.md` for the full narrative/vision. An MCP server prototype and a Slack bot were tried and removed 2026-07-22 as unnecessary maintenance surface — not needed for the actual Obsidian integration path (`/obsidian-note` skill + `article_browser.py`, see `README.md` Phase 2/3 notes); archived at git tags `archive/mcp-server` / `archive/slack-bot`.
+Lenie is a personal AI assistant for collecting, managing, and searching data (articles, YouTube videos, books) using LLMs. It's a side project under active development — see `README.md` for the full narrative/vision. An MCP server prototype and a Slack bot were tried and removed 2026-07-22 as unnecessary maintenance surface — not needed for the actual Obsidian integration path (`/obsidian-note` skill, see `README.md` Phase 2/3 notes); archived at git tags `archive/mcp-server` / `archive/slack-bot`. `backend/imports/article_browser.py`, the ORM-based article browser/reviewer the skill originally shelled out to, was itself removed 2026-07-24 once the skill moved to the REST API and the web UI (`/webpage/:id`, `/chunks/:id`) absorbed its remaining review functionality.
 
 **Licensing**: Business Source License 1.1 (`LICENSE`) — free to use/modify/self-host, but may not be offered as a competing hosted/managed/SaaS service. Converts to Apache 2.0 on 2032-03-12.
 

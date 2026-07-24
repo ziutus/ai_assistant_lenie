@@ -264,11 +264,11 @@ def _synthesize(sections: list[dict], title: str, model: str, mode: str = "trans
 
 
 def _apply_tags(doc: Document, text: str) -> None:
-    """Thematic + country tagging — same pipeline as article_browser.py's [k]raje action.
+    """Thematic + country tagging.
 
     Merges newly detected tags into doc.tags rather than overwriting: repeat
     analysis runs (e.g. one run per book chapter) should accumulate tags
-    across runs, not clobber ones set by a previous run or by article_browser.py.
+    across runs, not clobber ones set by a previous run.
     """
     from library.article_tagging import COUNTRY_TAG_TRIGGERS, extract_countries_hybrid, tag_article_with_llm
 
@@ -607,10 +607,10 @@ class DocumentAnalysisService:
             log("generating synthesis...")
             synthesis = _synthesize(sections, doc.title or f"Dokument {doc_id}", model, mode=mode)
 
-        # 11b. Thematic + country tagging (same as article_browser.py's [k]raje
-        #      action) — uses the synthesis as input when available (concise,
-        #      already LLM-summarized), else falls back to concatenated topic
-        #      summaries. Skipped for split_only: no LLM output exists yet.
+        # 11b. Thematic + country tagging — uses the synthesis as input when
+        #      available (concise, already LLM-summarized), else falls back to
+        #      concatenated topic summaries. Skipped for split_only: no LLM
+        #      output exists yet.
         if not proposal_only:
             tagging_text = (
                 synthesis

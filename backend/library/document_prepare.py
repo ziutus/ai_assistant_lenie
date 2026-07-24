@@ -2,7 +2,6 @@
 
 Używane przez:
 - document_prepare_regexp_by_ai.py
-- imports/article_browser.py
 - document_md_decode.py
 """
 

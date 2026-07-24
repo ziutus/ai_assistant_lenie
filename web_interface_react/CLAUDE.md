@@ -92,7 +92,7 @@ Reviews `DocumentAnalysisRun` / `DocumentChunk` / `DocumentTopicSection` data (`
 - **Run workflow status**: `created` → `in_review` → `reviewed`, toggled via "✔ Zamknij review" / "↺ Otwórz ponownie". A run may also be `superseded` ("zastąpiona nowszą" in the run selector) — set by the backend when a new run for the same document+scope replaces an unfinished one.
 - **Section view**: runs with more than `SECTION_VIEW_THRESHOLD` (30) `TEMAT` chunks switch to an accordion grouped by `DocumentTopicSection`, lazy-loading each section's chunks on expand (`?section_id=`); smaller/`split_only` runs page the flat chunk list (`?offset=&limit=`, `CHUNK_PAGE_SIZE` = 20).
 - **Synteza panel**: collapsible summary of the whole run (`run.synthesis`), collapsed by default.
-- **Tagi dokumentu**: thematic + country (`kraj-*`) tag chips from `data.document.thematic_tags`/`data.document.countries`, populated by `document_analysis_service._apply_tags()` at the end of `create_run()` (same tagging pipeline as `article_browser.py`'s `[k]raje` action).
+- **Tagi dokumentu**: thematic + country (`kraj-*`) tag chips from `data.document.thematic_tags`/`data.document.countries`, populated by `document_analysis_service._apply_tags()` at the end of `create_run()`.
 - **Embeddings**: 🟢/⚪ indicator per chunk (`has_embeddings`, derived from `document_embeddings.chunk_id`) + "Generuj embeddingi" button (`POST /analysis_run/<id>/generate_embeddings`) — only embeds `TEMAT` chunks with `status=approved`.
 - **Obsidian notes**: 📝 indicator with tooltip listing `chunk.obsidian_note_paths`, written by the `/obsidian-note` skill (`.claude/commands/obsidian-note.md`), not by this UI.
 

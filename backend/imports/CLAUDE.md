@@ -6,7 +6,6 @@ Standalone CLI scripts that add or manage documents in the Lenie database, bypas
 
 ```
 imports/
-├── article_browser.py        # Interactive browser / review tool for DB articles + Obsidian integration
 ├── control_questions.py      # Filter control questions from an Obsidian markdown file by tags (no DB)
 ├── import_control_questions.py # Sync the Obsidian control-question bank into the control_questions DB table
 ├── select_control_questions.py # Cheap-LLM (Bielik) router: which control questions a document actually answers
@@ -134,38 +133,13 @@ python imports/feed_monitor.py --review --source 12 --since "last 2 weeks"
 - `.env` with `POSTGRESQL_*` variables (for `--import`, and for `--check`/`--review` with `--db`)
 - Network access to the configured feed URLs
 
-### `article_browser.py`
+### `article_browser.py` (removed 2026-07-24)
 
-Interactive browser and review tool for articles already in the database. Displays cleaned article text, manages review state, and integrates with Claude Code to create/update Obsidian notes. The `/obsidian-note` slash command (both the Claude Code and Codex skill variants) reads document/chunk data via the backend REST API instead (`GET /website_get`, `/analysis_runs`, `/analysis_run/<id>/chunks`, `/document/<id>/control_questions`) — see [`.claude/commands/obsidian-note.md`](../../.claude/commands/obsidian-note.md) and [`.agents/skills/obsidian-note/references/workflow.md`](../../.agents/skills/obsidian-note/references/workflow.md). The JSON dump modes this tool used to expose for that purpose (`--meta`, `--dump`, `--dump-md`, `--runs`, `--chunks`, `--chunk-text`) were removed 2026-07-24 once both skills migrated off them.
-
-2026-07-24 also removed the `--review` actions that duplicated the React web UI's `/webpage/:id` (edit form) and `/chunks/:id` (chunk review) pages — see those pages' `EntitiesPanel`/`ArticleSourceComparison`/chunk-pipeline equivalents: `[v]iew`/`[b]oundaries` (text/cut-context is always visible in the edit form), `[e]ncje` (full equivalent in `EntitiesPanel`, which also adds editing/merge/exclusions this CLI never had), `[m]ark review` (status dropdown + Save), `[s]ave note` (`documents.note` field), and `[w]rite to db` (the old whole-document-embedding pipeline, superseded by the chunk-based `document_analysis_service` pipeline the UI drives). Same day, `[c]ompare` was also removed — it duplicated Step 3 ("Find related notes via index") of `/obsidian-note` (same Grep/Glob over `02-wiedza/`, minus that skill's preferred `_index.md` lookup). Remaining `--review` actions are unique to the CLI (no UI/skill equivalent): `[r]efresh` (full LLM re-extraction from HTML/S3, vs. the UI's rule-only re-clean), `[d]one` (`reviewed_at` — not settable from the UI at all), `[o]bsidian` (Claude Code note creation), `[k]raje` (manual country-tag extraction — the UI only gets this as a side effect of chunk analysis).
-
-**Data access: ORM (SQLAlchemy)** + cache files in `{CACHE_DIR}/markdown/{doc_id}/` + S3 fallback (downloads HTML and converts to markdown when cache is missing).
-
-**Modes** (mutually exclusive):
-- `--list` — list articles; `--format table` (default), `ids` (one ID per line, for scripting), `short` (ID + title)
-- `--review` — interactive per-article loop (see actions below); `--view` auto-displays text
-- `--show --id N` — display metadata + article text, non-interactive; `--check-urls` validates links/images via HEAD requests
-- `--notes` — list saved per-article notes from `tmp/article_notes/`
-
-**Filters** (for `--list` / `--review`): `--since`, `--portal` (URL substring), `--state`, `--limit`, `--not-reviewed` (`reviewed_at IS NULL`), `--no-obsidian` (no Obsidian notes yet), `--not-cleaned` (fast flow: states still processable by regexp+LLM, excludes `NEED_MANUAL_REVIEW`), `--manual-review` (slow flow: shortcut for `--state NEED_MANUAL_REVIEW`). All filtering happens SQL-side.
-
-**Text resolution order** (`get_article_text`): youtube/movie → transcript from `doc.text`; `doc.text` if state is `MD_SIMPLIFIED`/`EMBEDDING_EXIST`; cache files (`_step_2_1_article.md` preferred over `_llm_extracted_article.md`); otherwise download HTML from S3, convert to markdown (`_step_1_all.md`) and run LLM extraction. Cleaned via `library/article_cleaner.py`.
-
-**Review actions:** [n]ext, [p]rev, [r]efresh (clear LLM cache and re-extract from HTML/S3, then show the result), [d]one (set `reviewed_at`), [o]bsidian (Claude Code creates/updates an Obsidian note, then records the note path in `obsidian_note_paths`), [k]raje (extract country tags — gazetteer prescreen + LLM confirmation, `library/article_tagging.py:extract_countries_hybrid`), [q]uit. Tagging/NER/embedding/status-editing/notes now live in the web UI (`/webpage/:id`, `/chunks/:id`); note comparison lives in `/obsidian-note`'s Step 3 — see the note above.
-
-**Running:**
-```bash
-cd backend
-python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format short
-python imports/article_browser.py --review --not-cleaned
-python imports/article_browser.py --review --view --manual-review
-python imports/article_browser.py --show --id 8799 --check-urls
-```
-
-**Prerequisites:**
-- `.env` with `POSTGRESQL_*` variables, LLM API keys (extraction/tagging), S3 access for cache misses
-- `claude` CLI on PATH for the [o]bsidian action
+Formerly an interactive ORM-based browser/review tool for articles, and the data source the `/obsidian-note` skill shelled out to. Progressively hollowed out on 2026-07-24 as its responsibilities moved elsewhere, then deleted once nothing unique was left:
+- `--meta`/`--dump`/`--dump-md`/`--runs`/`--chunks`/`--chunk-text` (JSON dump modes for `/obsidian-note`) → replaced by the backend REST API (`GET /website_get`, `/analysis_runs`, `/analysis_run/<id>/chunks`, `/document/<id>/control_questions`), used by both the Claude Code (`.claude/commands/obsidian-note.md`) and Codex (`.agents/skills/obsidian-note/references/workflow.md`) skill variants.
+- `[v]iew`/`[b]oundaries`/`[e]ncje`/`[m]ark review`/`[s]ave note`/`[w]rite to db` (`--review` actions) → duplicated the React web UI's `/webpage/:id` (edit form) and `/chunks/:id` (chunk review) pages (`EntitiesPanel`, `ArticleSourceComparison`, the chunk-based `document_analysis_service` pipeline).
+- `[c]ompare` → duplicated `/obsidian-note`'s Step 3 ("Find related notes via index").
+- The rest (`--list`, `--show`, `--notes`, and `--review`'s `[n]ext`/`[p]rev`/`[r]efresh`/`[d]one`/`[o]bsidian`/`[k]raje`/`[q]uit`) had no replacement when removed — full history and the deleted implementation are in git (`git log -- backend/imports/article_browser.py`).
 - Obsidian vault path is currently hardcoded (`OBSIDIAN_VAULT` constant) — see backlog for moving it to config
 
 ### `youtube_add.py`

@@ -1,8 +1,7 @@
 """Tagowanie artykułów przez LLM: klasyfikacja tematyczna i ekstrakcja krajów.
 
 Model LLM jest konfigurowalny przez zmienną TAGGING_MODEL (config_loader),
-domyślnie Bielik. Wydzielone z imports/article_browser.py, aby można było
-tagować także w pipeline'ach batch.
+domyślnie Bielik.
 """
 
 import re
