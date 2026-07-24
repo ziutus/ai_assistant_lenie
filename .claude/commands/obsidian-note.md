@@ -216,10 +216,10 @@ Returns JSON: `{"doc_id", "control_questions": [{"chapter_position", "question_i
 
 **If `control_questions` is non-empty:** include those answers explicitly in the notes (as dedicated `##` sections matching the question topic, e.g. `## Aspiracje i cele strategiczne`, `## Konflikty`, `## Stan finansów`) using `answer_summary`/`evidence`.
 
-**If `control_questions` is empty:** this document may simply not touch any control question, or it may just never have been run through the router yet (e.g. added outside the automatic enrichment pipeline). Trigger it on demand — cheap, and a no-op if the tags genuinely don't match any question:
+**If `control_questions` is empty:** this document may simply not touch any control question, or it may just never have been run through the router yet (e.g. added outside the automatic enrichment pipeline). Trigger it on demand via REST — cheap, and a no-op if the tags genuinely don't match any question:
 
 ```powershell
-cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python imports/select_control_questions.py --id <ARTICLE_ID>
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/document/<ARTICLE_ID>/select_control_questions" -Method Post -Headers @{"x-api-key"=$env:LENIE_API_KEY}
 ```
 
 Then re-run the `GET /document/<ARTICLE_ID>/control_questions` call above. If it's still empty, the document genuinely doesn't answer any of the tag-matched questions — move on without this section.
@@ -328,7 +328,7 @@ If the article topic relates to existing notes (e.g., country files, topic notes
 - Knowledge directory: `C:\Users\ziutus\Obsydian\personal\02-wiedza`
 - **NEVER use `uv run`** — it does not work in this project (hatchling build error)
 - Run Python commands via **PowerShell** with absolute cd: `cd C:\Users\ziutus\git\_lenie-all\lenie-server-2025\backend; .venv/Scripts/python ...` — cd to absolute path is idempotent (works regardless of current directory; never use `cd backend &&` in Bash which fails when CWD is already backend)
-- **Steps 1a/1b/1c/2a/4 read the database via the REST API** on the NAS backend (`http://192.168.200.7:5055`), not via direct ORM/SQLAlchemy access from Windows — every call needs the `x-api-key` header set to `$env:LENIE_API_KEY` (a `kind=service` key created via `imports/api_key_admin.py create --kind service`; set once in your PowerShell profile, e.g. `notepad $PROFILE` — never hardcode the plaintext key in this file or in a command). If the variable is unset, `Invoke-RestMethod` will 401 — ask the user to set it before retrying. Steps 6's DB writes and Step 4's on-demand `select_control_questions.py` trigger are the only remaining direct-DB (ORM) calls in this skill — `--review`/`--list`/`--show`/`--notes` modes of `article_browser.py` are unrelated interactive tools, unaffected by this migration.
+- **Steps 1a/1b/1c/2a/4 (including its on-demand trigger) read/write the database via the REST API** on the NAS backend (`http://192.168.200.7:5055`), not via direct ORM/SQLAlchemy access from Windows — every call needs the `x-api-key` header set to `$env:LENIE_API_KEY` (a `kind=service` key created via `imports/api_key_admin.py create --kind service`; set once in your PowerShell profile, e.g. `notepad $PROFILE` — never hardcode the plaintext key in this file or in a command). If the variable is unset, `Invoke-RestMethod` will 401 — ask the user to set it before retrying. Step 6's DB writes are the only remaining direct-DB (ORM) calls in this skill — `--review`/`--list`/`--show`/`--notes` modes of `article_browser.py` are unrelated interactive tools, unaffected by this migration.
 - **Step 4b needs a second key**, `$env:LENIE_API_KEY_USER` (a `kind=user` key, e.g. created via `imports/api_key_admin.py create --kind user --user-id <id> --name obsidian-note-fragments`) — the reader-notes endpoint (`GET /document/<id>/notes`) is gated to user keys and 403s for the `kind=service` `$env:LENIE_API_KEY` used everywhere else. Set once in the PowerShell profile alongside `$env:LENIE_API_KEY`, never hardcoded here.
 - Always include source with Lenie AI **uuid** (not numeric id) — `doc.uuid` from database
 - **Always propose note content before saving** — wait for user approval

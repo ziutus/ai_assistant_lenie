@@ -389,8 +389,10 @@ Cheap-LLM (Bielik) router: for one document, selects which control questions (fr
 to the document's tags) are actually answered by its content, and stores the answers in
 `document_control_answers` (`library/control_question_selection.py`, replace semantics, per reader chapter for
 books). Zero LLM calls when the document has no tag matching any active question. Also runs automatically as
-part of `library/document_enrichment.py`'s per-document enrichment stage — this CLI is for manual/on-demand runs
-(e.g. from the `/obsidian-note` skill when enrichment hasn't run yet for a document).
+part of `library/document_enrichment.py`'s per-document enrichment stage — this CLI is for manual/local runs
+(dry-run preview, single-chapter reruns). The `/obsidian-note` skill's on-demand trigger goes through
+`POST /document/<id>/select_control_questions` instead (same `refresh_document_control_answers()` under the
+hood) so it doesn't need direct ORM/DB access from the caller's machine.
 
 **Data access: ORM (SQLAlchemy)** via `get_session()`.
 
