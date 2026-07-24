@@ -43,6 +43,10 @@ const LEGACY_USER_STORAGE_KEY = "lenie_userId";
 
 export const STANCE_ICON: Record<string, string> = { agree: "👍", disagree: "👎", neutral: "➖" };
 
+// Convention tag (not a dedicated column — see readerNotes.tsx history) marking a fragment the
+// user wants surfaced to the /obsidian-note skill as an explicit discussion point.
+export const LLM_DISCUSS_TAG = "llm-discuss";
+
 export const normalizeWs = (s: string) => s.replace(/\s+/g, " ").trim();
 
 // ── Identity ─────────────────────────────────────────────────────────────────
@@ -340,6 +344,11 @@ export const NotePopover: React.FC<{
           <button onClick={onCancel}>Anuluj</button>
         </span>
       </div>
+      <button type="button" onClick={() => onSave(noteText.trim(), stance,
+        [...tagText.split(",").map(t => t.trim()).filter(Boolean), LLM_DISCUSS_TAG])}
+        style={{ marginTop: 8, width: "100%" }}>
+        💬 Dodaj do przedyskutowania z LLM
+      </button>
       {onSearch && (
         <button type="button" onClick={() => onSearch(pending.quote)} style={{ marginTop: 8, width: "100%" }}>
           🔎 Szukaj tego fragmentu w bazie Lenie
@@ -381,6 +390,7 @@ export const NoteRow: React.FC<{
       </div>
       {(note.tags?.length ?? 0) > 0 && (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", margin: "3px 0" }}>
+          {note.tags.includes(LLM_DISCUSS_TAG) && <span title="Do przedyskutowania z LLM">💬</span>}
           {note.tags.map(tag => <span key={tag} style={{ color: "#0369a1" }}>#{tag}</span>)}
         </div>
       )}
