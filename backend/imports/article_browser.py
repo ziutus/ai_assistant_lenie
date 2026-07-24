@@ -28,8 +28,11 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
-__version__ = "0.9.0"
+__version__ = "0.9.1"
 # Changelog:
+#   0.9.1 — usunięto [c]ompare — pokrywał się z Krokiem 3 ("Find related notes via index")
+#           slash commandu /obsidian-note (ten sam Grep/Glob po 02-wiedza/, tylko bez
+#           preferowanego wyszukiwania po _index.md). Menu: n, p, r, d, o, k, q.
 #   0.9.0 — usunięto akcje --review zdublowane z web UI (/webpage/:id, /chunks/:id):
 #           [v]iew, [b]oundaries (tekst zawsze widoczny w formularzu / ArticleSourceComparison),
 #           [e]ncje (EntitiesPanel — pełny odpowiednik, bogatszy o edycję/merge/wykluczenia),
@@ -228,31 +231,6 @@ def action_obsidian(doc, article_text: str):
         TYTUŁ: {doc.title}
         URL: {doc.url}
         DATA: {doc.ingested_at}
-        LENIE ID: {doc.id}
-
-        TREŚĆ ARTYKUŁU:
-        {article_text}
-    """)
-    call_claude(prompt)
-
-
-def action_compare(doc, article_text: str):
-    """Wywołaj Claude Code aby porównał artykuł z istniejącymi notatkami."""
-    prompt = textwrap.dedent(f"""\
-        Przeczytaj poniższy artykuł, a następnie:
-
-        1. Przeszukaj folder "{OBSIDIAN_KNOWLEDGE_DIR}" — znajdź notatki powiązane tematycznie (Grep/Glob)
-        2. Porównaj informacje z artykułu z tym co jest w notatkach:
-           - Co NOWEGO wnosi ten artykuł?
-           - Czy coś jest SPRZECZNE z istniejącymi notatkami?
-           - Czy artykuł POTWIERDZA wcześniejsze ustalenia?
-        3. Podsumuj w 3-5 punktach po polsku
-
-        NIE modyfikuj żadnych plików — tylko analiza.
-
-        ---
-        TYTUŁ: {doc.title}
-        URL: {doc.url}
         LENIE ID: {doc.id}
 
         TREŚĆ ARTYKUŁU:
@@ -748,7 +726,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
 
         while True:
             print(f"  ID: {doc.id}  Status: {doc.processing_status}   (article_browser v{__version__})")
-            print("  [n]ext  [p]rev  [r]efresh  [d]one/reviewed  [o]bsidian  [c]ompare  [k]raje  [q]uit")
+            print("  [n]ext  [p]rev  [r]efresh  [d]one/reviewed  [o]bsidian  [k]raje  [q]uit")
             try:
                 action = _getch_action(f"  [{idx + 1}] > ")
             except (KeyboardInterrupt, EOFError):
@@ -798,15 +776,6 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                     print("  Nie udało się pobrać treści artykułu.")
                 break
 
-            elif action in ("c", "compare"):
-                if article is None:
-                    article = get_article_text(doc, session)
-                if article:
-                    action_compare(doc, _article_full_text(article))
-                else:
-                    print("  Nie udało się pobrać treści artykułu.")
-                continue
-
             elif action in ("k", "kraje"):
                 if article is None:
                     article = get_article_text(doc, session)
@@ -838,7 +807,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                 return
 
             else:
-                print("  Nieznana komenda. Użyj: n, p, r, d, o, c, k, q")
+                print("  Nieznana komenda. Użyj: n, p, r, d, o, k, q")
 
 
 def cmd_notes():
