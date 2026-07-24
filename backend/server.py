@@ -408,6 +408,8 @@ def website_get_by_id():
     if link_id_int <= 0:
         return {"status": "error", "message": "Invalid ID parameter — must be a positive integer"}, 400
 
+    include_text = request.args.get('include_text', '1') != '0'
+
     session = get_scoped_session()
     service = DocumentService(session)
     doc = service.get_document(link_id_int)
@@ -422,6 +424,15 @@ def website_get_by_id():
     from library.db.models import DocumentAnalysisRun, DocumentChunk, DocumentEmbedding
 
     result = doc.dict()
+    # text_length reflects the same text/text_raw fallback callers use to read
+    # content — computed before include_text=0 strips the fields below, so
+    # cheap metadata-only calls (e.g. /obsidian-note Step 1a) can still branch
+    # on document length without paying for the full text payload.
+    result["text_length"] = len(doc.text or doc.text_raw or "")
+    if not include_text:
+        result.pop("text", None)
+        result.pop("text_raw", None)
+        result.pop("text_md", None)
     result["embeddings_count"] = session.execute(
         sa_select(sa_func.count()).select_from(DocumentEmbedding)
         .where(DocumentEmbedding.document_id == link_id_int)
