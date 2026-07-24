@@ -28,8 +28,14 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
-__version__ = "0.8.0"
+__version__ = "0.9.0"
 # Changelog:
+#   0.9.0 — usunięto akcje --review zdublowane z web UI (/webpage/:id, /chunks/:id):
+#           [v]iew, [b]oundaries (tekst zawsze widoczny w formularzu / ArticleSourceComparison),
+#           [e]ncje (EntitiesPanel — pełny odpowiednik, bogatszy o edycję/merge/wykluczenia),
+#           [m]ark review (dropdown statusu + Zapisz), [s]ave note (pole documents.note),
+#           [w]rite to db (stary pipeline: tagi+NER+1 embedding całości — zastąpiony
+#           chunkowym pipeline'em document_analysis_service). Menu: n, p, r, d, o, c, k, q.
 #   0.8.0 — usunięto --meta/--dump/--dump-md/--runs/--chunks/--chunk-text (JSON tryby dla
 #           /obsidian-note) — oba skille (Claude Code i Codex) czytają teraz przez REST API
 #           backendu zamiast ORM z Windowsa; --review/--list/--show/--notes bez zmian
@@ -70,7 +76,7 @@ from library.db.models import Document
 from library.article_extractor import _detect_portal
 from library.article_pipeline import ensure_raw_markdown, extract_article
 from library.article_cleaner import clean_article_text
-from library.article_tagging import COUNTRY_TAG_TRIGGERS, extract_countries_hybrid, tag_article_with_llm
+from library.article_tagging import extract_countries_hybrid
 
 _BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OBSIDIAN_VAULT = r"C:\Users\ziutus\Obsydian\personal"
@@ -199,91 +205,6 @@ def _article_full_text(article: dict) -> str:
             desc = f" — {alt}" if alt else ""
             parts.append(f"  [img{i}]{desc} — {img['url']}")
     return "\n".join(parts)
-
-
-def _read_existing_note(doc_id: int) -> str | None:
-    """Odczytaj istniejącą notatkę użytkownika (sekcja 'Moja notatka')."""
-    note_file = os.path.join(NOTES_DIR, f"{doc_id}_note.md")
-    if not os.path.isfile(note_file):
-        return None
-    with open(note_file, "r", encoding="utf-8") as f:
-        content = f.read()
-    if "## Moja notatka" in content:
-        return content.split("## Moja notatka")[1].split("## Treść artykułu")[0].strip()
-    return None
-
-
-def action_save_note(doc, article_text: str) -> Optional[str]:
-    """Zapisz/edytuj notatkę użytkownika + treść artykułu do pliku.
-
-    Returns: ścieżka do pliku lub None
-    """
-    existing_note = _read_existing_note(doc.id)
-
-    if existing_note:
-        print("\n  Istniejąca notatka:")
-        for line in existing_note.splitlines():
-            print(f"     {line}")
-        print()
-        print("  [e]dytuj — napisz nową treść (zastąpi obecną)")
-        print("  [d]opisz — dopisz nowy tekst pod istniejącym")
-        print("  [Enter]  — anuluj")
-        try:
-            choice = input("  > ").strip().lower()
-        except (KeyboardInterrupt, EOFError):
-            print()
-            return None
-
-        if choice not in ("e", "edytuj", "d", "dopisz"):
-            print("  Anulowano.")
-            return None
-        append_mode = choice in ("d", "dopisz")
-    else:
-        append_mode = False
-
-    print("  Napisz co Cię zainteresowało (kilka linii, pusta linia kończy):")
-    note_lines = []
-    while True:
-        try:
-            line = input("  > ")
-        except (KeyboardInterrupt, EOFError):
-            print()
-            return None
-        if line.strip() == "":
-            break
-        note_lines.append(line)
-
-    if not note_lines:
-        print("  Pusta notatka — nie zapisano.")
-        return None
-
-    new_text = "\n".join(note_lines)
-    # Napraw surrogaty z WSL/Windows terminal
-    new_text = new_text.encode("utf-8", errors="surrogateescape").decode("utf-8", errors="replace")
-
-    if append_mode and existing_note:
-        note_text = existing_note + "\n\n" + new_text
-    else:
-        note_text = new_text
-
-    os.makedirs(NOTES_DIR, exist_ok=True)
-    note_file = os.path.join(NOTES_DIR, f"{doc.id}_note.md")
-
-    with open(note_file, "w", encoding="utf-8") as f:
-        f.write(f"# Notatka do artykułu: {doc.title}\n\n")
-        f.write(f"- **Lenie ID**: {doc.id}\n")
-        f.write(f"- **URL**: {doc.url}\n")
-        f.write(f"- **Data**: {doc.ingested_at}\n")
-        f.write(f"- **Obsidian vault**: {OBSIDIAN_KNOWLEDGE_DIR}\n\n")
-        f.write("## Moja notatka\n\n")
-        f.write(f"{note_text}\n\n")
-        f.write("## Treść artykułu\n\n")
-        f.write(f"{article_text}\n")
-
-    print(f"  Zapisano: {note_file}")
-    print("  Aby pracować nad notatką w Claude Code:")
-    print(f"    claude \"przeczytaj @{note_file} i dodaj do mojego Obsidian vault\"")
-    return note_file
 
 
 def action_obsidian(doc, article_text: str):
@@ -566,156 +487,6 @@ def _refresh_db_connection(session):
             return False
 
 
-def action_save_to_db(doc, article: dict, session) -> bool:
-    """Zapisz oczyszczony tekst do bazy, stwórz embedding, ustaw status."""
-    from library.models.stalker_document_status import StalkerDocumentStatus
-    from library.embedding import get_embedding
-    from library.document_repository import DocumentRepository
-
-    text_only = article["text"]
-    embedding_model = cfg.get("EMBEDDING_MODEL") or "BAAI/bge-m3"
-
-    print(f"  Zapisuję do bazy danych (ID: {doc.id})...")
-    print(f"    Tekst: {len(text_only)} znaków")
-    print(f"    Linki: {len(article['links'])}")
-    print(f"    Obrazki: {len(article['images'])}")
-    print(f"    Embedding model: {embedding_model}")
-    print(f"    Status: {doc.processing_status} → MD_SIMPLIFIED → EMBEDDING_EXIST")
-
-    if not _refresh_db_connection(session):
-        return False
-    session.refresh(doc)
-
-    # 1. Zapisz tekst
-    if doc.text and not doc.text_raw:
-        doc.text_raw = doc.text
-
-    doc.text = text_only
-    doc.processing_status = StalkerDocumentStatus.MD_SIMPLIFIED.name
-
-    # Zapisz autora z LLM markers jeśli dostępny
-    import glob as glob_mod
-    markers_files = glob_mod.glob(os.path.join(CACHE_DIR_BASE, str(doc.id), "*_llm_markers.json"))
-    if markers_files and not doc.byline:
-        import json
-        with open(markers_files[0], "r", encoding="utf-8") as f:
-            markers_data = json.load(f)
-        author = markers_data.get("markers", {}).get("author")
-        if author:
-            doc.byline = author
-            print(f"    Autor: {author}")
-
-    try:
-        session.commit()
-        print("  Tekst zapisany. Status: MD_SIMPLIFIED")
-    except Exception as e:
-        session.rollback()
-        print(f"  BŁĄD zapisu tekstu: {e}")
-        return False
-
-    # 1b. Obrazki (url/alt/podpis) — replace semantics, jak encje NER poniżej
-    try:
-        from library.document_images import replace_document_images
-        image_rows = replace_document_images(session, doc.id, article["images"])
-        session.commit()
-        print(f"  Obrazki zapisane: {len(image_rows)}")
-    except Exception as e:
-        session.rollback()
-        print(f"  OSTRZEŻENIE: zapis obrazków nie powiódł się: {e}")
-
-    # 2. Klasyfikacja tematyczna
-    print("  Klasyfikuję artykuł tematycznie...")
-    article_tags = tag_article_with_llm(text_only, doc.title or "")
-    country_tags = []
-    if article_tags and COUNTRY_TAG_TRIGGERS.intersection(article_tags):
-        print(f"  Wykrywam kraje (tagi: {', '.join(COUNTRY_TAG_TRIGGERS.intersection(article_tags))})...")
-        country_tags = extract_countries_hybrid(text_only, doc.title or "")
-    all_tags = article_tags + country_tags
-    if all_tags:
-        doc.tags = ",".join(all_tags)
-        try:
-            session.commit()
-            print(f"  Tagi: {', '.join(all_tags)}")
-        except Exception as e:
-            session.rollback()
-            print(f"  OSTRZEŻENIE: nie udało się zapisać tagów: {e}")
-    else:
-        print("  Brak tagów tematycznych.")
-
-    # 2b. Encje NER (osoby/miejsca) — offline, bez LLM; brak serwisu NER nie
-    #     przerywa zapisu (refresh_document_entities zwraca wtedy pustą listę)
-    print("  Wykrywam osoby i miejsca (NER)...")
-    try:
-        from library.entity_service import refresh_document_entities
-        entity_rows = refresh_document_entities(session, doc.id, text_only)
-        session.commit()
-        if entity_rows:
-            print(f"  Encje zapisane: {len(entity_rows)}")
-        else:
-            print("  Brak encji (lub serwis NER niedostępny).")
-    except Exception as e:
-        session.rollback()
-        print(f"  OSTRZEŻENIE: ekstrakcja encji nie powiodła się: {e}")
-
-    # 2c. Weryfikacja miejsc (etap 3): geokoder + LLM → tagi miejsce-*
-    try:
-        from library.place_verification import verify_document_places
-        summary = verify_document_places(session, doc, text_only)
-        session.commit()
-        if summary["tagged"]:
-            print(f"  Miejsca potwierdzone: {', '.join(summary['tagged'])}")
-        elif summary["resolved"]:
-            print(f"  Miejsca zweryfikowane geokoderem (LLM nie potwierdził istotności): {', '.join(summary['resolved'])}")
-    except Exception as e:
-        session.rollback()
-        print(f"  OSTRZEŻENIE: weryfikacja miejsc nie powiodła się: {e}")
-
-    # 2d. Rozpoznanie osób (etap 4): alias/Wikidata+LLM/fuzzy → document_persons
-    try:
-        from library.person_registry import resolve_document_persons
-        p_summary = resolve_document_persons(session, doc, text_only)
-        session.commit()
-        for name, canonical, confidence in p_summary["linked"]:
-            suffix = f" → {canonical}" if canonical != name else ""
-            print(f"  Osoba: {name}{suffix} [{confidence}]")
-    except Exception as e:
-        session.rollback()
-        print(f"  OSTRZEŻENIE: rozpoznanie osób nie powiodło się: {e}")
-
-    # 3. Twórz embedding
-    print("  Tworzę embedding...")
-    try:
-        wb_db = DocumentRepository(session=session)
-        # Usuń stare embeddingi dla tego dokumentu
-        wb_db.embedding_delete(doc.id, embedding_model)
-        session.commit()
-
-        emb_result = get_embedding(embedding_model, text_only)
-
-        if not doc.language:
-            doc.language = 'pl'
-
-        wb_db.embedding_add(
-            document_id=doc.id,
-            embedding=emb_result.embedding,
-            language=doc.language,
-            text=text_only,
-            text_original=text_only,
-            model=embedding_model,
-        )
-
-        doc.processing_status = StalkerDocumentStatus.EMBEDDING_EXIST.name
-        session.commit()
-        print("  Embedding zapisany. Status: EMBEDDING_EXIST")
-        return True
-
-    except Exception as e:
-        session.rollback()
-        print(f"  BŁĄD embeddingu: {e}")
-        print("  Tekst został zapisany (MD_SIMPLIFIED), ale embedding nie. Spróbuj ponownie.")
-        return False
-
-
 def _get_documents(session, limit: int = 50, since: Optional[str] = None,
                    portal: Optional[str] = None, state: Optional[str] = None,
                    not_reviewed: bool = False, no_obsidian: bool = False,
@@ -846,37 +617,6 @@ def action_track_obsidian_path(doc, session):
         print(f"  BŁĄD zapisu ścieżki: {e}")
 
 
-def action_mark_review(doc, session):
-    """Przełącz status artykułu na NEED_MANUAL_REVIEW lub cofnij do poprzedniego."""
-    from library.models.stalker_document_status import StalkerDocumentStatus
-    current = doc.processing_status
-    if current == StalkerDocumentStatus.NEED_MANUAL_REVIEW.name:
-        print("  Aktualny status: NEED_MANUAL_REVIEW")
-        print("  [1] MD_SIMPLIFIED  [2] DOCUMENT_INTO_DATABASE  [3] Anuluj")
-        try:
-            choice = input("  Nowy status > ").strip()
-        except (KeyboardInterrupt, EOFError):
-            return
-        new_state = {
-            "1": StalkerDocumentStatus.MD_SIMPLIFIED.name,
-            "2": StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name,
-        }.get(choice)
-        if not new_state:
-            print("  Anulowano.")
-            return
-    else:
-        new_state = StalkerDocumentStatus.NEED_MANUAL_REVIEW.name
-        print(f"  Oznaczam do ręcznej poprawki: {current} → {new_state}")
-
-    try:
-        doc.processing_status = new_state
-        session.commit()
-        print(f"  Status zmieniony na: {new_state}")
-    except Exception as e:
-        session.rollback()
-        print(f"  BŁĄD zmiany statusu: {e}")
-
-
 def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False):
     """Wyświetl artykuł (metadane + treść) i zakończ — tryb nieinteraktywny."""
     if article_id is None:
@@ -982,7 +722,6 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
         print(f"  Reviewed: {reviewed_str}")
 
         article = None  # lazy load (dict: text, links, images)
-        boundary_chars = 400  # reset kontekstu HEAD/TAIL przy każdym nowym artykule
 
         if auto_view:
             article = get_article_text(doc, session)
@@ -1009,7 +748,7 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
 
         while True:
             print(f"  ID: {doc.id}  Status: {doc.processing_status}   (article_browser v{__version__})")
-            print("  [n]ext  [p]rev  [v]iew  [b]oundaries  [r]efresh  [w]rite to db  [s]ave note  [d]one/reviewed  [m]ark review  [o]bsidian  [c]ompare  [k]raje  [e]ncje  [q]uit")
+            print("  [n]ext  [p]rev  [r]efresh  [d]one/reviewed  [o]bsidian  [c]ompare  [k]raje  [q]uit")
             try:
                 action = _getch_action(f"  [{idx + 1}] > ")
             except (KeyboardInterrupt, EOFError):
@@ -1045,48 +784,9 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                     print("  Nie udało się pobrać treści artykułu. Spróbuj [r]efresh ponownie za chwilę (problem z API).")
                 continue
 
-            elif action in ("v", "view"):
-                if article is None:
-                    article = get_article_text(doc, session)
-                if article:
-                    action_view(article, check_urls=check_urls, cut_context=None)
-                else:
-                    print("  Nie udało się pobrać treści artykułu. Spróbuj [r]efresh ponownie za chwilę (problem z API).")
-                continue
-
-            elif action in ("b", "boundaries"):
-                if article is None:
-                    article = get_article_text(doc, session)
-                if article:
-                    boundary_chars += 400  # +~2 zdania na każde naciśnięcie
-                    ctx = compute_cut_context(doc, article, context_chars=boundary_chars)
-                    action_view(article, check_urls=check_urls, cut_context=ctx)
-                    print(f"  [HEAD/TAIL rozszerzone do ~{boundary_chars} znaków — naciśnij [b] aby zobaczyć więcej]")
-                else:
-                    print("  Nie udało się pobrać treści artykułu.")
-                continue
-
-            elif action in ("w", "write"):
-                if article is None:
-                    article = get_article_text(doc, session)
-                if article:
-                    action_save_to_db(doc, article, session)
-                else:
-                    print("  Nie udało się pobrać treści artykułu.")
-                continue
-
             elif action in ("d", "done"):
                 action_mark_reviewed(doc, session)
                 continue
-
-            elif action in ("s", "save"):
-                if article is None:
-                    article = get_article_text(doc, session)
-                if article:
-                    action_save_note(doc, _article_full_text(article))
-                else:
-                    print("  Nie udało się pobrać treści artykułu.")
-                break
 
             elif action in ("o", "obsidian"):
                 if article is None:
@@ -1133,56 +833,12 @@ def cmd_review(session, since: Optional[str] = None, portal: Optional[str] = Non
                     print("  Nie udało się pobrać treści artykułu.")
                 continue
 
-            elif action in ("e", "encje"):
-                if article is None:
-                    article = get_article_text(doc, session)
-                if article:
-                    text_only = _article_full_text(article)
-                    print("  Wykrywam osoby i miejsca (NER)...")
-                    try:
-                        from library.entity_service import get_document_entities, refresh_document_entities
-                        rows = refresh_document_entities(session, doc.id, text_only)
-                        session.commit()
-                        if rows:
-                            from library.place_verification import verify_document_places
-                            summary = verify_document_places(session, doc, text_only)
-                            session.commit()
-                            from library.person_registry import resolve_document_persons
-                            p_summary = resolve_document_persons(session, doc, text_only)
-                            session.commit()
-                            grouped = get_document_entities(session, doc.id)
-                            for label, header in (("persName", "Osoby"), ("geogName", "Miejsca geograficzne"),
-                                                  ("placeName", "Miejsca administracyjne")):
-                                items = grouped.get(label) or []
-                                if items:
-                                    print(f"  {header}: " + ", ".join(
-                                        f"{it['text']} ({it['count']})"
-                                        + (" ✓" if it.get("verified") else "")
-                                        for it in items))
-                            if summary["tagged"]:
-                                print(f"  Tagi miejsc: {', '.join(summary['tagged'])}")
-                            for name, canonical, confidence in p_summary["linked"]:
-                                suffix = f" → {canonical}" if canonical != name else ""
-                                print(f"  Osoba: {name}{suffix} [{confidence}]")
-                        else:
-                            print("  Brak encji (lub serwis NER niedostępny).")
-                    except Exception as e:
-                        session.rollback()
-                        print(f"  OSTRZEŻENIE: ekstrakcja encji nie powiodła się: {e}")
-                else:
-                    print("  Nie udało się pobrać treści artykułu.")
-                continue
-
-            elif action in ("m", "mark"):
-                action_mark_review(doc, session)
-                continue
-
             elif action in ("q", "quit"):
                 print("Przegląd zakończony.")
                 return
 
             else:
-                print("  Nieznana komenda. Użyj: n, p, v, d, s, m, o, c, k, q")
+                print("  Nieznana komenda. Użyj: n, p, r, d, o, c, k, q")
 
 
 def cmd_notes():
