@@ -1309,6 +1309,46 @@ def document_control_questions(doc_id: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/select_control_questions", methods=["POST"])
+def select_document_control_questions(doc_id: int):
+    """Run the cheap-LLM control-question router on demand and store the answers.
+
+    Same replace-semantics as `imports/select_control_questions.py`, exposed over
+    REST so on-demand triggers (e.g. the /obsidian-note skill, Step 4) don't need
+    direct ORM/DB access from the caller's machine.
+    """
+    from library.control_question_selection import refresh_document_control_answers
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    chapter_position = data.get("chapter_position")
+    if chapter_position is not None and (not isinstance(chapter_position, int) or isinstance(chapter_position, bool)):
+        return jsonify({"status": "error", "message": "chapter_position must be an integer"}), 400
+    model = data.get("model")
+    if model is not None and not isinstance(model, str):
+        return jsonify({"status": "error", "message": "model must be a string"}), 400
+
+    try:
+        result = refresh_document_control_answers(session, doc, model, chapter_position=chapter_position)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("control question selection failed for %d", doc_id)
+        return jsonify({"status": "error", "message": "Control question selection failed"}), 500
+
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "model": result["model"],
+        "answers_count": len(result["rows"]),
+        "chapters": result["chapters"],
+    })
+
+
 @bp.route("/document/<int:doc_id>/entity_occurrences", methods=["GET"])
 def document_entity_occurrences(doc_id: int):
     """Per-chapter occurrence counts of an entity name in the document (?text=).
