@@ -33,6 +33,10 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({ docId, currentChapter, on
   const [events, setEvents] = React.useState<EventItem[] | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  // null until refresh_document_events/tones/time_periods has run at least
+  // once for this document (backend: documents.enrichment_run_at) — tells
+  // apart "never analyzed" from "analyzed, genuinely no dated events".
+  const [enrichmentRunAt, setEnrichmentRunAt] = React.useState<string | null>(null);
   const requestId = React.useRef(0);
 
   React.useEffect(() => {
@@ -42,6 +46,7 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({ docId, currentChapter, on
     setEvents(null);
     setLoading(false);
     setError(null);
+    setEnrichmentRunAt(null);
   }, [docId]);
 
   const loadEvents = React.useCallback(async () => {
@@ -59,6 +64,7 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({ docId, currentChapter, on
       }
       if (currentRequest === requestId.current) {
         setEvents((Array.isArray(data) ? data : data.events ?? []) as EventItem[]);
+        setEnrichmentRunAt(Array.isArray(data) ? null : data.enrichment_run_at ?? null);
       }
     } catch (fetchError) {
       if (currentRequest === requestId.current) setError(String(fetchError));
@@ -133,7 +139,9 @@ const TimelinePanel: React.FC<TimelinePanelProps> = ({ docId, currentChapter, on
       )}
       {!loading && !error && events !== null && shownEvents.length === 0 && (
         <div style={{ color: "#94a3b8", fontSize: "0.82em", marginTop: 10 }}>
-          {scopeChapter ? "Brak wydarzeń w tym rozdziale." : "Brak wydarzeń w dokumencie."}
+          {enrichmentRunAt
+            ? (scopeChapter ? "Brak wydarzeń w tym rozdziale." : "Brak wydarzeń w dokumencie.")
+            : "ℹ️ Dokument nie został jeszcze przeanalizowany pod kątem wydarzeń — to nie znaczy, że ich nie ma."}
         </div>
       )}
 

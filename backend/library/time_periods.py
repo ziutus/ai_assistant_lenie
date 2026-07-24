@@ -1,5 +1,6 @@
 """LLM-assisted classification of the historical period a document's content is about."""
 
+import datetime
 import json
 import logging
 import re
@@ -166,5 +167,6 @@ def refresh_document_periods(session, doc, model: str | None = None, *, chapter_
     ]
     session.add_all(rows)
     result["rows"] = rows
+    doc.enrichment_run_at = datetime.datetime.now()
     logger.info("time periods doc=%s: classified %d periods", doc.id, len(rows))
     return result

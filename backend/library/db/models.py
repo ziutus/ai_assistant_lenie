@@ -384,6 +384,17 @@ class Document(Base):
     # silently empty. Cleared on the next successful refresh (found or not).
     ner_unavailable_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
 
+    # Bumped by refresh_document_events/refresh_document_periods/refresh_document_tones
+    # (library/timeline_events.py, time_periods.py, tones.py) every time they run,
+    # regardless of how many rows they produce — lets the reader's Oś czasu/Ton/Okres
+    # treści panels tell "never analyzed" apart from "analyzed, found nothing".
+    enrichment_run_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+    # Bumped by refresh_document_entities (library/entity_service.py) on every
+    # successful run (found or not) — same "never checked" vs "checked, empty"
+    # distinction as enrichment_run_at, but for the entities sidebar. Separate
+    # from ner_unavailable_at, which only records the service-down failure case.
+    entities_checked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
     # Article quality ("staranność") assessment — JSONB: score 0-100, per-signal
     # penalties (photo captions, missing author, noise share, ...) and the LLM
     # rubric. Computed by library/article_quality.py at the end of an article-mode

@@ -495,5 +495,6 @@ def refresh_document_events(session, doc, model: str | None = None, *, chapter_p
     ]
     session.add_all(rows)
     result["rows"] = rows
+    doc.enrichment_run_at = datetime.datetime.now()
     logger.info("timeline doc=%s: extracted %d events", doc.id, len(rows))
     return result

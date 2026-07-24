@@ -87,8 +87,11 @@ def _record_ner_availability(session, document_id: int, *, unavailable: bool) ->
     (e.g. article_browser.py's except blocks).
     """
     value = datetime.datetime.utcnow() if unavailable else None
+    values = {"ner_unavailable_at": value}
+    if not unavailable:
+        values["entities_checked_at"] = datetime.datetime.now()
     session.execute(
-        update(Document).where(Document.id == document_id).values(ner_unavailable_at=value),
+        update(Document).where(Document.id == document_id).values(**values),
     )
     session.commit()
 
@@ -159,8 +162,10 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     # transaction (no isolated commit needed — unlike the branches above,
     # there is no exception here for the caller to roll back).
     doc = session.get(Document, document_id)
-    if doc is not None and doc.ner_unavailable_at is not None:
-        doc.ner_unavailable_at = None
+    if doc is not None:
+        if doc.ner_unavailable_at is not None:
+            doc.ner_unavailable_at = None
+        doc.entities_checked_at = datetime.datetime.now()
 
     groups = aggregate_entities_detailed(raw)
 

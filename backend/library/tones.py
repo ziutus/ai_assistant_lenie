@@ -6,6 +6,7 @@ mixing them into one label made the LLM drop the register (see the /read
 tone panel feasibility test, 2026-07-17).
 """
 
+import datetime
 import json
 import logging
 import re
@@ -167,5 +168,6 @@ def refresh_document_tones(session, doc, model: str | None = None, *, chapter_po
     ]
     session.add_all(rows)
     result["rows"] = rows
+    doc.enrichment_run_at = datetime.datetime.now()
     logger.info("tones doc=%s: classified %d chapters", doc.id, len(rows))
     return result

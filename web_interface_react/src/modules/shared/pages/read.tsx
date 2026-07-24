@@ -383,6 +383,10 @@ const Read: React.FC = () => {
   // "genuinely no persons/places in this document" so the reader can warn
   // instead of just staying silently empty.
   const [nerUnavailableAt, setNerUnavailableAt] = React.useState<string | null>(null);
+  // null until refresh_document_entities has successfully run at least once
+  // for this document (backend: documents.entities_checked_at) — tells apart
+  // "never analyzed" from "analyzed, genuinely no persons/places/organizations".
+  const [entitiesCheckedAt, setEntitiesCheckedAt] = React.useState<string | null>(null);
   // Bumped after an edit made via the "Edytuj encje" panel (EntitiesPanel,
   // rendered below) so the chapter-scoped effect refetches too — it's keyed
   // on [position, scopeChapter, ...], not on document_entities changing.
@@ -506,6 +510,7 @@ const Read: React.FC = () => {
       setOrganizationItems(data.entities?.orgName ?? []);
       setPlaceItems(items);
       setNerUnavailableAt(data.ner_unavailable_at ?? null);
+      setEntitiesCheckedAt(data.entities_checked_at ?? null);
       setPlaces(
         items
           .filter((it: any) => it.verified === true && it.lat != null && it.lon != null)
@@ -1131,6 +1136,17 @@ const Read: React.FC = () => {
                 ⚠️ Wykrywanie osób, organizacji i miejsc nie powiodło się — serwis NER był niedostępny
                 ({new Date(nerUnavailableAt).toLocaleString("pl-PL")}). Lista poniżej może być pusta lub niepełna,
                 niekoniecznie dlatego, że w dokumencie nic nie ma. Spróbuj ponownej analizy w edytorze dokumentu.
+              </div>
+            )}
+
+            {!nerUnavailableAt && !entitiesCheckedAt && (
+              <div style={{
+                background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: 8,
+                padding: 10, marginTop: 12, fontSize: "0.85em", color: "#64748b",
+              }}>
+                ℹ️ Ten dokument nie został jeszcze przeanalizowany pod kątem osób, organizacji i miejsc —
+                lista poniżej jest pusta, bo nikt jej nie sprawdzał, nie dlatego że nic w nim nie ma.
+                Uruchom wykrywanie encji w edytorze dokumentu.
               </div>
             )}
 
