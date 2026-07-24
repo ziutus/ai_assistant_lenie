@@ -1267,6 +1267,41 @@ def document_tones(doc_id: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/control_questions", methods=["GET"])
+def document_control_questions(doc_id: int):
+    """Return stored control-question answers, whole-document rows first, then chapter by chapter."""
+    from library.db.models import DocumentControlAnswer
+
+    session = get_scoped_session()
+    if session.get(Document, doc_id) is None:
+        abort(404, f"Document {doc_id} not found")
+
+    rows = (
+        session.query(DocumentControlAnswer)
+        .filter(DocumentControlAnswer.document_id == doc_id)
+        .order_by(
+            DocumentControlAnswer.chapter_position.asc().nullsfirst(),
+            DocumentControlAnswer.id.asc(),
+        )
+        .all()
+    )
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "control_questions": [
+            {
+                "chapter_position": row.chapter_position,
+                "question_id": row.question_id,
+                "question_header": row.question_header,
+                "tags": row.tags,
+                "answer_summary": row.answer_summary,
+                "evidence": row.evidence,
+            }
+            for row in rows
+        ],
+    })
+
+
 @bp.route("/document/<int:doc_id>/entity_occurrences", methods=["GET"])
 def document_entity_occurrences(doc_id: int):
     """Per-chapter occurrence counts of an entity name in the document (?text=).

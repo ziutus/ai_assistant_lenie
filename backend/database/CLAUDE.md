@@ -280,6 +280,50 @@ in Python (LLM output with stripped diacritics is canonicalized, e.g. "srednia" 
 
 **Index:** `(document_id, chapter_position)`.
 
+### Table: `public.control_questions`
+
+Lookup/reference table of geopolitical "control questions" (analytical prompts like "Jaką ma armię w porównaniu
+do innych?"), imported from the Obsidian vault's `_pytania_kontrolne/` question bank by
+`imports/import_control_questions.py` — replace semantics per `source_file` (safe to re-run after editing
+questions in Obsidian). The backend (NAS) has no runtime access to that vault, so this table is the only copy
+available to `library/control_question_selection.py`'s router at runtime.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `source_file` | `varchar(255) NOT NULL` | Originating `.md` filename in `_pytania_kontrolne/` |
+| `section_header` | `text NOT NULL` | The question itself (the `##`/`#` heading, hash markers stripped) |
+| `body` | `text` | Explanatory context/examples from under the heading; not yet used by the router |
+| `tags` | `varchar(255)` | Comma-separated thematic tags this question applies to (same convention as `documents.tags`) |
+| `position` | `integer NOT NULL` | Order within `source_file` |
+| `active` | `boolean NOT NULL` | Soft-disable a question without deleting history that references it |
+| `created_at` / `updated_at` | `timestamp` | Row timestamps |
+
+**Index:** `(source_file)`.
+
+### Table: `public.document_control_answers`
+
+Control questions a document actually answers, selected per reader chapter by the cheap-LLM (Bielik) router in
+`library/control_question_selection.py` — zero LLM calls when the document has no tag matching any active
+question. Managed with replace semantics by `refresh_document_control_answers()`; wired into
+`library/document_enrichment.py`'s automatic per-document enrichment stage. `question_header`/`tags` are a
+snapshot taken at selection time (not just the `question_id` FK) so a later re-import of the question bank never
+silently invalidates historical answers.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial PK` | Auto-incrementing primary key |
+| `document_id` | `integer NOT NULL` | FK to `documents.id` (CASCADE delete) |
+| `chapter_position` | `integer` | 1-based position from `detect_chapters()`; `NULL` for chapterless documents |
+| `question_id` | `integer` | FK to `control_questions.id` (`SET NULL` on delete) |
+| `question_header` | `text NOT NULL` | Snapshot of the question text at selection time |
+| `tags` | `varchar(255)` | Snapshot of the question's tags at selection time |
+| `answer_summary` | `text NOT NULL` | 1-2 sentence answer the router extracted from the fragment |
+| `evidence` | `text` | Optional short quote/pointer grounding the answer |
+| `created_at` | `timestamp` | Row creation timestamp |
+
+**Index:** `(document_id, chapter_position)`.
+
 ### Table: `public.document_images`
 
 Images extracted out of a document's article text (`library/article_cleaner.py`). `clean_article_text()` replaces inline `![alt](url)` markdown images with `[imgN]` markers in `text_md` — the URL used to be discarded on cleanup. This table preserves it (plus the adjacent caption/credit line, when present — attached via `article_quality.photo_caption_candidates()`, the same classification used to score photo sourcing) so `article_quality.py` can score it without the image markup needing to stay inline in the text shown to readers/LLM. Replace-per-document semantics (like `document_entities`), written by `library/document_images.py:replace_document_images()`, called from `imports/dynamodb_sync.py` (import), `library/chunk_review_routes.py` `reclean_preview` (manual save) and `imports/article_browser.py` ([w] write-to-db).

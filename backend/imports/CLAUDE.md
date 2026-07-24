@@ -8,6 +8,8 @@ Standalone CLI scripts that add or manage documents in the Lenie database, bypas
 imports/
 ├── article_browser.py        # Interactive browser / review tool for DB articles + Obsidian integration
 ├── control_questions.py      # Filter control questions from an Obsidian markdown file by tags (no DB)
+├── import_control_questions.py # Sync the Obsidian control-question bank into the control_questions DB table
+├── select_control_questions.py # Cheap-LLM (Bielik) router: which control questions a document actually answers
 ├── dynamodb_sync.py          # Sync documents from DynamoDB + S3 to local PostgreSQL
 ├── feed_monitor.py           # Monitor RSS/Atom/JSON feeds and import new entries
 ├── feeds.yaml                # Feed definitions for feed_monitor.py (committed)
@@ -361,6 +363,44 @@ python imports/control_questions.py --tags geopolityka --file path/to/questions.
 ```
 
 The default questions file path is currently hardcoded (Obsidian vault) — see backlog for moving it to config.
+
+### `import_control_questions.py`
+
+One-way sync of the Obsidian control-question bank (`_pytania_kontrolne/*.md`) into the `control_questions` DB
+table. Necessary because the backend (NAS) has no runtime access to the Obsidian vault, which lives only on the
+user's local machine — `library/control_question_selection.py`'s router reads this table, not the filesystem.
+Reuses `parse_sections()`/`TAG_TO_HEADERS` from `control_questions.py` (one heading = one question; body text is
+context/examples for a human author, not sub-questions). Replace semantics per `source_file` — safe to re-run
+after editing questions in Obsidian. **Does not touch the Lenie database** in dry-run (default) mode.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, only when `--apply` is passed.
+
+**Running:**
+```bash
+cd backend
+python imports/import_control_questions.py               # dry-run preview, all .md files in the default vault dir
+python imports/import_control_questions.py --apply
+python imports/import_control_questions.py --dir "C:\...\_pytania_kontrolne" --apply
+```
+
+### `select_control_questions.py`
+
+Cheap-LLM (Bielik) router: for one document, selects which control questions (from `control_questions`, filtered
+to the document's tags) are actually answered by its content, and stores the answers in
+`document_control_answers` (`library/control_question_selection.py`, replace semantics, per reader chapter for
+books). Zero LLM calls when the document has no tag matching any active question. Also runs automatically as
+part of `library/document_enrichment.py`'s per-document enrichment stage — this CLI is for manual/on-demand runs
+(e.g. from the `/obsidian-note` skill when enrichment hasn't run yet for a document).
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`.
+
+**Running:**
+```bash
+cd backend
+python imports/select_control_questions.py --id 9204 --dry-run     # preview, no DB writes
+python imports/select_control_questions.py --id 9204                # classify + store
+python imports/select_control_questions.py --id 9204 --chapter 37   # re-run one book chapter
+```
 
 ### `migrate_data_to_cache.py`
 

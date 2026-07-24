@@ -1213,6 +1213,77 @@ class DocumentTone(Base):
         )
 
 
+class ControlQuestion(Base):
+    """Geopolitical control question, imported from the Obsidian question bank.
+
+    Lookup/reference table (replace-semantics per source_file re-import) — see
+    imports/import_control_questions.py. Backend has no runtime access to the
+    Obsidian vault (local to the user's machine), so this table is the only
+    copy available to a document running on the NAS.
+    """
+
+    __tablename__ = "control_questions"
+    __table_args__ = (
+        Index("idx_control_questions_source_file", "source_file"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_file: Mapped[str] = mapped_column(String(255), nullable=False)
+    section_header: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[str | None] = mapped_column(String(255))
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return f"ControlQuestion(id={self.id!r}, section_header={self.section_header!r})"
+
+
+class DocumentControlAnswer(Base):
+    """Control question a document answers, selected by library/control_question_selection.py.
+
+    question_header/tags are a snapshot taken at selection time (not just the
+    question_id FK) so a later re-import of the question bank never silently
+    invalidates historical answers — same pattern as
+    DocumentInformationSource.raw_mention.
+    """
+
+    __tablename__ = "document_control_answers"
+    __table_args__ = (
+        Index("idx_document_control_answers_document_chapter", "document_id", "chapter_position"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("documents.id", ondelete="CASCADE"), nullable=False,
+    )
+    chapter_position: Mapped[int | None] = mapped_column(Integer)
+    question_id: Mapped[int | None] = mapped_column(
+        ForeignKey("control_questions.id", ondelete="SET NULL"),
+    )
+    question_header: Mapped[str] = mapped_column(Text, nullable=False)
+    tags: Mapped[str | None] = mapped_column(String(255))
+    answer_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"DocumentControlAnswer(id={self.id!r}, document_id={self.document_id!r}, "
+            f"question_header={self.question_header!r})"
+        )
+
+
 class DocumentAnalysisJob(Base):
     """Persistent queue entry for document chunk analysis.
 
