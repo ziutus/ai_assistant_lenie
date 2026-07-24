@@ -225,6 +225,46 @@ class TestArticleMode:
 
         assert doc.tags == "kraj-niemcy,wojsko,kraj-polska"
 
+    def test_single_chunk_run_skips_merge_topics_and_still_tags(self, session, monkeypatch):
+        """Regression: a single-chunk run used to end up with empty topic_sections
+        AND empty synthesis, starving 11b's tagging_text and silently leaving
+        doc.tags unset (found via a live /obsidian-note run on a real one-topic
+        article — 42 documents affected on the NAS DB at time of fix)."""
+        doc = FakeDoc()
+        doc.text = "Krótki akapit merytoryczny o jednym temacie. " * 5
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+
+        def fake_article(text, model, position=1, total=1):
+            return {
+                "type": "TEMAT", "topic": "jedyny temat",
+                "corrected_text": None, "summary": "streszczenie jedynego chunka",
+                "rewrite_ratio": None,
+            }
+
+        def fail_merge_topics(*_a, **_kw):
+            raise AssertionError("_merge_topics should be skipped for a single-chunk run")
+
+        monkeypatch.setattr(llm, "analyze_article_chunk", fake_article)
+        monkeypatch.setattr(das, "_merge_topics", fail_merge_topics)
+        monkeypatch.setattr(das, "_synthesize", lambda sections, title, model, mode="transcript": "")
+
+        captured = {}
+
+        def fake_tag_article(text, title):
+            captured["text"] = text
+            return ["geopolityka"]
+
+        monkeypatch.setattr("library.article_tagging.tag_article_with_llm", fake_tag_article)
+        monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
+
+        service = DocumentAnalysisService(session)
+        service.create_run(doc_id=42, model="test-model", mode="article", chunk_size=5000)
+
+        chunks = [o for o in session.added if isinstance(o, DocumentChunk)]
+        assert len(chunks) == 1
+        assert captured["text"] == "streszczenie jedynego chunka"
+        assert doc.tags == "geopolityka"
+
     def test_default_mode_is_transcript(self, session, article_env, monkeypatch):
         """Without mode argument the transcript pipeline runs (fillers get called)."""
         # Un-fail the transcript primitives — record calls instead
