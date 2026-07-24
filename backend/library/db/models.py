@@ -656,6 +656,10 @@ class SocialMediaPostDocument(Document):
     __mapper_args__ = {"polymorphic_identity": "social_media_post"}
 
 
+class EmailDocument(Document):
+    __mapper_args__ = {"polymorphic_identity": "email"}
+
+
 # ---------------------------------------------------------------------------
 # DocumentEmbedding — vector embeddings for document chunks
 # ---------------------------------------------------------------------------
