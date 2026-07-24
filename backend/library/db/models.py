@@ -1318,6 +1318,9 @@ class DocumentEntity(Base):
     geocode_id: Mapped[int | None] = mapped_column(
         ForeignKey("geocode_cache.id", ondelete="SET NULL"),
     )
+    # source: 'ner' (default, refresh_document_entities() may replace) | 'manual'
+    # (survives refresh — set by merge_document_entities())
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'ner'"))
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
