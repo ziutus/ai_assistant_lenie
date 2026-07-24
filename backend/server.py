@@ -523,6 +523,7 @@ def website_entities_get():
         "id": doc_id,
         "entities": get_document_entities(session, doc_id),
         "ner_unavailable_at": doc.ner_unavailable_at.isoformat() if doc.ner_unavailable_at else None,
+        "entities_checked_at": doc.entities_checked_at.isoformat() if doc.entities_checked_at else None,
     }, 200
 
 

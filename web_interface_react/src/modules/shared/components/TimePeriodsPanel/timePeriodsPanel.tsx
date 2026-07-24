@@ -39,12 +39,17 @@ const TimePeriodsPanel: React.FC<TimePeriodsPanelProps> = ({ docId, currentChapt
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [periods, setPeriods] = React.useState<TimePeriodItem[]>([]);
   const [scopeChapter, setScopeChapter] = React.useState(true);
+  // null until refresh_document_periods has run at least once for this
+  // document (backend: documents.enrichment_run_at) — tells apart "never
+  // analyzed" from "analyzed, genuinely no period classified".
+  const [enrichmentRunAt, setEnrichmentRunAt] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!docId) return;
     let cancelled = false;
     setPeriods([]);
     setScopeChapter(true);
+    setEnrichmentRunAt(null);
     (async () => {
       try {
         const response = await fetch(`${apiUrl}/document/${docId}/time_periods`, {
@@ -52,7 +57,10 @@ const TimePeriodsPanel: React.FC<TimePeriodsPanelProps> = ({ docId, currentChapt
         });
         const data = await response.json();
         if (!response.ok || (data.status && data.status !== "success")) return;
-        if (!cancelled) setPeriods((data.time_periods ?? []) as TimePeriodItem[]);
+        if (!cancelled) {
+          setPeriods((data.time_periods ?? []) as TimePeriodItem[]);
+          setEnrichmentRunAt(data.enrichment_run_at ?? null);
+        }
       } catch {
         // periods are optional decoration — a failed fetch just hides the panel
       }
@@ -92,7 +100,17 @@ const TimePeriodsPanel: React.FC<TimePeriodsPanelProps> = ({ docId, currentChapt
       (a.subject_period_start_year ?? Number.MAX_SAFE_INTEGER) - (b.subject_period_start_year ?? Number.MAX_SAFE_INTEGER));
   }, [periods, scopeChapter, currentChapter]);
 
-  if (periods.length === 0) return null;
+  if (periods.length === 0) {
+    if (enrichmentRunAt) return null; // genuinely analyzed, nothing to show
+    return (
+      <div style={{
+        background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: 8,
+        padding: 10, marginTop: 12, fontSize: "0.82em", color: "#64748b",
+      }}>
+        ⏳ ℹ️ Okres treści nie został jeszcze przeanalizowany.
+      </div>
+    );
+  }
 
   return (
     <div style={{

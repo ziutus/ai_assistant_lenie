@@ -1153,6 +1153,7 @@ def document_chapter_entities(doc_id: int, position: int):
         "chapter_total": chapter_total,
         "entities": entities,
         "countries": countries,
+        "entities_checked_at": doc.entities_checked_at.isoformat() if doc.entities_checked_at else None,
     })
 
 
@@ -1162,7 +1163,8 @@ def document_events(doc_id: int):
     from library.db.models import DocumentEvent
 
     session = get_scoped_session()
-    if session.get(Document, doc_id) is None:
+    doc = session.get(Document, doc_id)
+    if doc is None:
         abort(404, f"Document {doc_id} not found")
 
     rows = (
@@ -1178,6 +1180,7 @@ def document_events(doc_id: int):
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
+        "enrichment_run_at": doc.enrichment_run_at.isoformat() if doc.enrichment_run_at else None,
         "events": [
             {
                 "date_text": row.date_text,
@@ -1200,7 +1203,8 @@ def document_time_periods(doc_id: int):
     from library.db.models import DocumentTimePeriod
 
     session = get_scoped_session()
-    if session.get(Document, doc_id) is None:
+    doc = session.get(Document, doc_id)
+    if doc is None:
         abort(404, f"Document {doc_id} not found")
 
     rows = (
@@ -1216,6 +1220,7 @@ def document_time_periods(doc_id: int):
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
+        "enrichment_run_at": doc.enrichment_run_at.isoformat() if doc.enrichment_run_at else None,
         "time_periods": [
             {
                 "chapter_position": row.chapter_position,
@@ -1237,7 +1242,8 @@ def document_tones(doc_id: int):
     from library.db.models import DocumentTone
 
     session = get_scoped_session()
-    if session.get(Document, doc_id) is None:
+    doc = session.get(Document, doc_id)
+    if doc is None:
         abort(404, f"Document {doc_id} not found")
 
     rows = (
@@ -1252,6 +1258,7 @@ def document_tones(doc_id: int):
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
+        "enrichment_run_at": doc.enrichment_run_at.isoformat() if doc.enrichment_run_at else None,
         "tones": [
             {
                 "chapter_position": row.chapter_position,

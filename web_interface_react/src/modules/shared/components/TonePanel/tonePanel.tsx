@@ -32,11 +32,17 @@ const INTENSITY_DOTS: Record<ToneItem["intensity"], string> = {
 const TonePanel: React.FC<TonePanelProps> = ({ docId, currentChapter }) => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [tones, setTones] = React.useState<ToneItem[]>([]);
+  // null until refresh_document_tones has run at least once for this document
+  // (backend: documents.enrichment_run_at) — tells apart "never analyzed"
+  // from "analyzed, tones is empty" (which shouldn't normally happen, since
+  // every processed chapter always gets exactly one tone row).
+  const [enrichmentRunAt, setEnrichmentRunAt] = React.useState<string | null>(null);
 
   React.useEffect(() => {
     if (!docId) return;
     let cancelled = false;
     setTones([]);
+    setEnrichmentRunAt(null);
     (async () => {
       try {
         const response = await fetch(`${apiUrl}/document/${docId}/tones`, {
@@ -44,7 +50,10 @@ const TonePanel: React.FC<TonePanelProps> = ({ docId, currentChapter }) => {
         });
         const data = await response.json();
         if (!response.ok || (data.status && data.status !== "success")) return;
-        if (!cancelled) setTones((data.tones ?? []) as ToneItem[]);
+        if (!cancelled) {
+          setTones((data.tones ?? []) as ToneItem[]);
+          setEnrichmentRunAt(data.enrichment_run_at ?? null);
+        }
       } catch {
         // tone is optional decoration — a failed fetch just hides the panel
       }
@@ -59,7 +68,17 @@ const TonePanel: React.FC<TonePanelProps> = ({ docId, currentChapter }) => {
       ?? null;
   }, [tones, currentChapter]);
 
-  if (!tone) return null;
+  if (!tone) {
+    if (enrichmentRunAt) return null; // genuinely analyzed, nothing to show
+    return (
+      <div style={{
+        background: "#f8fafc", border: "1px dashed #cbd5e1", borderRadius: 8,
+        padding: 10, marginTop: 12, fontSize: "0.82em", color: "#64748b",
+      }}>
+        🎭 ℹ️ Ton dokumentu nie został jeszcze przeanalizowany.
+      </div>
+    );
+  }
 
   const registers = (tone.registers ?? "").split(",").map(r => r.trim()).filter(Boolean);
   const secondary = (tone.secondary_emotions ?? "").split(",").map(r => r.trim()).filter(Boolean);
