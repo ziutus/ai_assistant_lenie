@@ -564,8 +564,11 @@ class DocumentAnalysisService:
                 "summary": result["summary"],
             })
 
-        # 10. Group chunks into logical topic sections (skip LLM grouping for split_only)
-        topic_groups = [] if proposal_only else _merge_topics(sections, model, mode=mode)
+        # 10. Group chunks into logical topic sections (skip LLM grouping for
+        #     split_only, and for a single chunk — nothing to group, and asking
+        #     the LLM to merge one fragment into "usually 5-10 sections" tends to
+        #     come back with no valid group, silently starving 11b's tagging input)
+        topic_groups = [] if proposal_only or len(sections) <= 1 else _merge_topics(sections, model, mode=mode)
         if topic_groups:
             topic_sections_data = []
             for group in topic_groups:
@@ -609,8 +612,13 @@ class DocumentAnalysisService:
         #      already LLM-summarized), else falls back to concatenated topic
         #      summaries. Skipped for split_only: no LLM output exists yet.
         if not proposal_only:
-            tagging_text = synthesis or "\n\n".join(
-                ts["summary"] for ts in topic_sections_data if ts["summary"]
+            tagging_text = (
+                synthesis
+                or "\n\n".join(ts["summary"] for ts in topic_sections_data if ts["summary"])
+                # Last-resort fallback straight from per-chunk analysis (step 9) —
+                # covers cases where topic_sections_data itself ends up empty
+                # (e.g. _merge_topics returning no valid group).
+                or "\n\n".join(s["summary"] for s in sections if s["type"] == "TEMAT" and s["summary"])
             )
             if tagging_text:
                 log("tagging document...")
