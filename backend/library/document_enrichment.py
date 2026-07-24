@@ -84,5 +84,11 @@ def refresh_document_enrichment(
             "library.information_provenance", fromlist=["refresh_document_information_sources"],
         ).refresh_document_information_sources(session, doc, text, model),
     )
+    run_stage(
+        "control_questions", "Dobór pytań kontrolnych…",
+        lambda: __import__(
+            "library.control_question_selection", fromlist=["refresh_document_control_answers"],
+        ).refresh_document_control_answers(session, doc, model),
+    )
     progress("Wzbogacanie dokumentu zakończone")
     return results
