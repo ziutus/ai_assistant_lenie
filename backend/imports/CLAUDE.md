@@ -136,7 +136,7 @@ python imports/feed_monitor.py --review --source 12 --since "last 2 weeks"
 
 ### `article_browser.py`
 
-Interactive browser and review tool for articles already in the database. Displays cleaned article text, manages review state, tags, embeddings, and integrates with Claude Code to create/update Obsidian notes. Used by the `/obsidian-note` slash command (`--meta` for a cheap metadata check, then `--dump` for full text).
+Interactive browser and review tool for articles already in the database. Displays cleaned article text, manages review state, tags, embeddings, and integrates with Claude Code to create/update Obsidian notes. The `/obsidian-note` slash command (both the Claude Code and Codex skill variants) reads document/chunk data via the backend REST API instead (`GET /website_get`, `/analysis_runs`, `/analysis_run/<id>/chunks`, `/document/<id>/control_questions`) — see [`.claude/commands/obsidian-note.md`](../../.claude/commands/obsidian-note.md) and [`.agents/skills/obsidian-note/references/workflow.md`](../../.agents/skills/obsidian-note/references/workflow.md). The JSON dump modes this tool used to expose for that purpose (`--meta`, `--dump`, `--dump-md`, `--runs`, `--chunks`, `--chunk-text`) were removed 2026-07-24 once both skills migrated off them.
 
 **Data access: ORM (SQLAlchemy)** + cache files in `{CACHE_DIR}/markdown/{doc_id}/` + S3 fallback (downloads HTML and converts to markdown when cache is missing).
 
@@ -144,8 +144,6 @@ Interactive browser and review tool for articles already in the database. Displa
 - `--list` — list articles; `--format table` (default), `ids` (one ID per line, for scripting), `short` (ID + title)
 - `--review` — interactive per-article loop (see actions below); `--view` auto-displays text
 - `--show --id N` — display metadata + article text, non-interactive; `--check-urls` validates links/images via HEAD requests
-- `--meta --id N` — JSON metadata without text (cheap token usage for Claude Code)
-- `--dump --id N` / `--dump-md --id N` — JSON with full text (`text` or `text_md` field)
 - `--notes` — list saved per-article notes from `tmp/article_notes/`
 
 **Filters** (for `--list` / `--review`): `--since`, `--portal` (URL substring), `--state`, `--limit`, `--not-reviewed` (`reviewed_at IS NULL`), `--no-obsidian` (no Obsidian notes yet), `--not-cleaned` (fast flow: states still processable by regexp+LLM, excludes `NEED_MANUAL_REVIEW`), `--manual-review` (slow flow: shortcut for `--state NEED_MANUAL_REVIEW`). All filtering happens SQL-side.
@@ -161,8 +159,6 @@ python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format sho
 python imports/article_browser.py --review --not-cleaned
 python imports/article_browser.py --review --view --manual-review
 python imports/article_browser.py --show --id 8799 --check-urls
-python imports/article_browser.py --meta --id 8805
-python imports/article_browser.py --dump --id 8805
 ```
 
 **Prerequisites:**

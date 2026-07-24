@@ -10,16 +10,11 @@ Usage:
     python imports/article_browser.py --review --id 8786                  # Start from specific article
     python imports/article_browser.py --show --id 8799                    # Display article and exit (non-interactive)
     python imports/article_browser.py --show --id 8799 --check-urls       # Display with link validation
-    python imports/article_browser.py --meta --id 8805                    # JSON metadata only (no text) — cheap token usage
-    python imports/article_browser.py --dump --id 8805                    # JSON output for Claude Code (includes full text)
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW   # Articles needing manual review
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format ids    # Just IDs (for scripting)
     python imports/article_browser.py --list --state NEED_MANUAL_REVIEW --format short  # IDs + titles
     python imports/article_browser.py --review --not-cleaned                           # Fast flow: articles still cleanable by regexp+LLM (excludes NEED_MANUAL_REVIEW)
     python imports/article_browser.py --review --view --manual-review                 # Slow flow: dedicated pass over articles that need manual text cleanup (alias for --state NEED_MANUAL_REVIEW)
-    python imports/article_browser.py --runs --id 8805                                # JSON list of chunk analysis runs for a document (for /obsidian-note)
-    python imports/article_browser.py --chunks --run-id 42                            # JSON chunk list + topic sections for a run (for /obsidian-note)
-    python imports/article_browser.py --chunk-text --run-id 42 --positions 3,6        # JSON full text of selected chunks (for /obsidian-note)
 """
 
 import argparse
@@ -33,8 +28,11 @@ from typing import Optional
 
 from library.models.stalker_document_status import StalkerDocumentStatus
 
-__version__ = "0.7.0"
+__version__ = "0.8.0"
 # Changelog:
+#   0.8.0 — usunięto --meta/--dump/--dump-md/--runs/--chunks/--chunk-text (JSON tryby dla
+#           /obsidian-note) — oba skille (Claude Code i Codex) czytają teraz przez REST API
+#           backendu zamiast ORM z Windowsa; --review/--list/--show/--notes bez zmian
 #   0.7.0 — --runs/--chunks/--chunk-text: JSON zapytania o DocumentAnalysisRun/DocumentChunk/
 #           DocumentTopicSection wprost z CLI (zamiast ad-hoc `python -c` heredoków wklejanych
 #           w treść slash commandu /obsidian-note — łamały się pod PowerShell przy zagnieżdżonych
@@ -68,7 +66,7 @@ from sqlalchemy.exc import InternalError as SqlInternalError
 
 from library.config_loader import load_config
 from library.db.engine import get_session
-from library.db.models import Document, DocumentAnalysisRun, DocumentChunk, DocumentTopicSection
+from library.db.models import Document
 from library.article_extractor import _detect_portal
 from library.article_pipeline import ensure_raw_markdown, extract_article
 from library.article_cleaner import clean_article_text
@@ -879,236 +877,6 @@ def action_mark_review(doc, session):
         print(f"  BŁĄD zmiany statusu: {e}")
 
 
-def cmd_meta(session, article_id: Optional[int] = None):
-    """Wypisz metadane artykułu jako JSON bez pola text — tanie wywołanie dla Claude Code.
-
-    Używane jako Step 1a w slash command /obsidian-note: sprawdź processing_status
-    przed podjęciem decyzji czy pobierać pełny tekst (--dump).
-    """
-    import json
-
-    if article_id is None:
-        print(json.dumps({"error": "--meta wymaga --id <ARTICLE_ID>"}), file=sys.stderr)
-        sys.exit(1)
-
-    doc = Document.get_by_id(session, article_id)
-    if doc is None:
-        print(json.dumps({"error": f"Dokument {article_id} nie znaleziony."}), file=sys.stderr)
-        sys.exit(1)
-
-    result = {
-        "id": doc.id,
-        "uuid": str(doc.uuid) if doc.uuid else None,
-        "title": doc.title,
-        "url": doc.url,
-        "ingested_at": doc.ingested_at.isoformat() if doc.ingested_at else None,
-        "processing_status": doc.processing_status,
-        "document_type": doc.document_type,
-        "language": doc.language,
-        "source": doc.discovery_source_name,
-        "byline": doc.byline,
-        "note": doc.note,
-        "summary": doc.summary,
-        "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
-        "tags": doc.tags or "",
-        "obsidian_note_paths": doc.obsidian_note_paths or [],
-        "chapter_list": doc.chapter_list,
-        "video_description": doc.video_description,
-        "text_length": len(doc.text or doc.text_raw or ""),
-    }
-
-    sys.stdout.reconfigure(encoding="utf-8")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-
-
-def cmd_dump(session, article_id: Optional[int] = None, use_md: bool = False):
-    """Wypisz artykuł jako JSON na stdout — do użycia przez Claude Code slash commands.
-
-    --dump: tekst z pola `text` (czysta treść bez formatowania)
-    --dump-md: tekst z pola `text_md` (markdown z formatowaniem h1/h2/h3)
-    Wyjście jest UTF-8 JSON, bez interakcji, bez efektów ubocznych.
-    """
-    import json
-
-    if article_id is None:
-        print(json.dumps({"error": "--dump wymaga --id <ARTICLE_ID>"}), file=sys.stderr)
-        sys.exit(1)
-
-    doc = Document.get_by_id(session, article_id)
-    if doc is None:
-        print(json.dumps({"error": f"Dokument {article_id} nie znaleziony."}), file=sys.stderr)
-        sys.exit(1)
-
-    if use_md:
-        text = doc.text_md or doc.text or ""
-    else:
-        text = doc.text or doc.text_raw or ""
-
-    result = {
-        "id": doc.id,
-        "uuid": str(doc.uuid) if doc.uuid else None,
-        "title": doc.title,
-        "url": doc.url,
-        "ingested_at": doc.ingested_at.isoformat() if doc.ingested_at else None,
-        "processing_status": doc.processing_status,
-        "document_type": doc.document_type,
-        "language": doc.language,
-        "source": doc.discovery_source_name,
-        "byline": doc.byline,
-        "note": doc.note,
-        "summary": doc.summary,
-        "reviewed_at": doc.reviewed_at.isoformat() if doc.reviewed_at else None,
-        "tags": doc.tags or "",
-        "obsidian_note_paths": doc.obsidian_note_paths or [],
-        "chapter_list": doc.chapter_list,
-        "video_description": doc.video_description,
-        "text_length": len(text),
-        "text": text,
-    }
-
-    sys.stdout.reconfigure(encoding="utf-8")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-
-
-def cmd_runs(session, article_id: Optional[int] = None):
-    """Wypisz listę chunk analysis runs dla dokumentu jako JSON.
-
-    Używane jako Step 1b w slash command /obsidian-note: sprawdź czy dokument ma
-    już przeanalizowane chunki, zanim zdecydujesz o pobraniu pełnego tekstu (--dump).
-    """
-    import json
-
-    if article_id is None:
-        print(json.dumps({"error": "--runs wymaga --id <ARTICLE_ID>"}), file=sys.stderr)
-        sys.exit(1)
-
-    runs = session.query(DocumentAnalysisRun).filter_by(document_id=article_id) \
-        .order_by(DocumentAnalysisRun.created_at.desc()).all()
-
-    runs_out = []
-    for run in runs:
-        chunks = session.query(DocumentChunk).filter_by(run_id=run.id).all()
-        temat = [c for c in chunks if c.type == "TEMAT"]
-        analyzed = [c for c in temat if c.topic]
-        approved = [c for c in temat if c.status == "approved"]
-        runs_out.append({
-            "run_id": run.id,
-            "mode": run.mode,
-            "status": run.status,
-            "scope": run.scope,
-            "model": run.model,
-            "created_at": run.created_at.isoformat() if run.created_at else None,
-            "temat_count": len(temat),
-            "analyzed_count": len(analyzed),
-            "approved_count": len(approved),
-        })
-
-    sys.stdout.reconfigure(encoding="utf-8")
-    print(json.dumps({"doc_id": article_id, "runs": runs_out}, ensure_ascii=False, indent=2))
-
-
-def cmd_chunks(session, run_id: Optional[int] = None):
-    """Wypisz chunki TEMAT + sekcje tematyczne dla runa jako JSON.
-
-    Używane jako Step 2a w slash command /obsidian-note: lista chunków do wyboru
-    przez użytkownika (płaska lub — dla runów-książek — grupowana po topic_sections).
-    """
-    import json
-
-    if run_id is None:
-        print(json.dumps({"error": "--chunks wymaga --run-id <RUN_ID>"}), file=sys.stderr)
-        sys.exit(1)
-
-    run = session.get(DocumentAnalysisRun, run_id)
-    if run is None:
-        print(json.dumps({"error": f"Run {run_id} nie znaleziony."}), file=sys.stderr)
-        sys.exit(1)
-
-    all_chunks = session.query(DocumentChunk).filter_by(run_id=run_id) \
-        .order_by(DocumentChunk.position).all()
-    temat = [c for c in all_chunks if c.type == "TEMAT"]
-    reklama_szum_count = len(all_chunks) - len(temat)
-
-    sections = session.query(DocumentTopicSection).filter_by(run_id=run_id) \
-        .order_by(DocumentTopicSection.position).all()
-
-    chunks_out = [{
-        "position": c.position,
-        "status": c.status,
-        "topic": c.topic,
-        "summary": c.summary,
-        "obsidian_note_paths": c.obsidian_note_paths or [],
-    } for c in temat]
-
-    sections_out = []
-    for s in sections:
-        positions = set(s.chunk_positions or [])
-        members = [c for c in temat if c.position in positions]
-        done = sum(1 for c in members if c.obsidian_note_paths or c.status == "skipped")
-        sections_out.append({
-            "section_id": s.id,
-            "position": s.position,
-            "title": s.title,
-            "temat_count": len(members),
-            "done_count": done,
-            "chunk_positions": sorted(positions),
-        })
-
-    result = {
-        "run_id": run.id,
-        "mode": run.mode,
-        "status": run.status,
-        "scope": run.scope,
-        "model": run.model,
-        "created_at": run.created_at.isoformat() if run.created_at else None,
-        "temat_count": len(temat),
-        "reklama_szum_count": reklama_szum_count,
-        "chunks": chunks_out,
-        "topic_sections": sections_out,
-    }
-
-    sys.stdout.reconfigure(encoding="utf-8")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-
-
-def cmd_chunk_text(session, run_id: Optional[int] = None, positions: Optional[str] = None):
-    """Wypisz pełny tekst wybranych chunków (TEMAT) jako JSON.
-
-    Używane jako Step 2a w slash command /obsidian-note: treść chunków wybranych
-    przez użytkownika do opracowania w notatce. Zwraca corrected_text jeśli
-    dostępny (mode=transcript), inaczej original_text (mode=article —
-    corrected_text jest zawsze None, tak jest zaprojektowane, nie jest to błąd).
-    """
-    import json
-
-    if run_id is None or not positions:
-        print(json.dumps({"error": "--chunk-text wymaga --run-id <RUN_ID> --positions 1,3,5"}),
-              file=sys.stderr)
-        sys.exit(1)
-
-    try:
-        position_list = [int(p.strip()) for p in positions.split(",") if p.strip()]
-    except ValueError:
-        print(json.dumps({"error": "--positions musi być listą liczb oddzielonych przecinkami"}),
-              file=sys.stderr)
-        sys.exit(1)
-
-    chunks = session.query(DocumentChunk).filter(
-        DocumentChunk.run_id == run_id,
-        DocumentChunk.position.in_(position_list),
-    ).order_by(DocumentChunk.position).all()
-
-    chunks_out = [{
-        "position": c.position,
-        "topic": c.topic,
-        "status": c.status,
-        "text": c.corrected_text or c.original_text or "",
-    } for c in chunks]
-
-    sys.stdout.reconfigure(encoding="utf-8")
-    print(json.dumps({"run_id": run_id, "chunks": chunks_out}, ensure_ascii=False, indent=2))
-
-
 def cmd_show(session, article_id: Optional[int] = None, check_urls: bool = False):
     """Wyświetl artykuł (metadane + treść) i zakończ — tryb nieinteraktywny."""
     if article_id is None:
@@ -1451,20 +1219,12 @@ def main():
     group.add_argument("--list", action="store_true", help="Lista artykułów")
     group.add_argument("--review", action="store_true", help="Interaktywny przegląd")
     group.add_argument("--show", action="store_true", help="Wyświetl artykuł i zakończ (wymaga --id)")
-    group.add_argument("--meta", action="store_true", help="Wypisz metadane artykułu jako JSON bez tekstu — tanie wywołanie (wymaga --id)")
-    group.add_argument("--dump", action="store_true", help="Wypisz artykuł jako JSON — pole text (czysta treść)")
-    group.add_argument("--dump-md", action="store_true", help="Wypisz artykuł jako JSON — pole text_md (markdown z formatowaniem)")
     group.add_argument("--notes", action="store_true", help="Pokaż zapisane notatki do przetworzenia")
-    group.add_argument("--runs", action="store_true", help="JSON: lista chunk analysis runs dla dokumentu (wymaga --id)")
-    group.add_argument("--chunks", action="store_true", help="JSON: chunki TEMAT + topic sections dla runa (wymaga --run-id)")
-    group.add_argument("--chunk-text", action="store_true", help="JSON: pełny tekst wybranych chunków (wymaga --run-id --positions)")
 
     parser.add_argument("--since", default=None, help="Data od (YYYY-MM-DD)")
     parser.add_argument("--portal", default=None, help="Filtruj po portalu (np. onet.pl)")
     parser.add_argument("--state", default=None, help="Filtruj po stanie (np. MD_SIMPLIFIED)")
     parser.add_argument("--id", type=int, default=None, help="Zacznij od konkretnego ID")
-    parser.add_argument("--run-id", type=int, default=None, help="ID analysis run (dla --chunks / --chunk-text)")
-    parser.add_argument("--positions", default=None, help="Pozycje chunków oddzielone przecinkami (dla --chunk-text), np. 1,3,5")
     parser.add_argument("--view", action="store_true", help="Automatycznie pokaż treść przy --review")
     parser.add_argument("--check-urls", action="store_true", help="Sprawdź dostępność obrazków i linków")
     parser.add_argument("--limit", type=int, default=50, help="Maks. artykułów (domyślnie 50)")
@@ -1489,19 +1249,7 @@ def main():
     session = get_session()
 
     try:
-        if args.meta:
-            cmd_meta(session, article_id=args.id)
-        elif args.dump:
-            cmd_dump(session, article_id=args.id, use_md=False)
-        elif args.dump_md:
-            cmd_dump(session, article_id=args.id, use_md=True)
-        elif args.runs:
-            cmd_runs(session, article_id=args.id)
-        elif args.chunks:
-            cmd_chunks(session, run_id=args.run_id)
-        elif args.chunk_text:
-            cmd_chunk_text(session, run_id=args.run_id, positions=args.positions)
-        elif args.show:
+        if args.show:
             cmd_show(session, article_id=args.id, check_urls=args.check_urls)
         elif args.list:
             cmd_list(session, since=args.since, portal=args.portal,
