@@ -3,7 +3,8 @@
 Sits between the NER client (library/ner_client.py) and the document_entities
 table: extract → aggregate by (type, base form) → replace the document's rows.
 Entities are derived data, so a refresh replaces previous rows instead of
-merging (unlike doc.tags, which accumulates across runs).
+merging (unlike doc.tags, which accumulates across runs) — except rows with
+source='manual' (set by merge_document_entities()), which survive a refresh.
 """
 
 import datetime
@@ -142,7 +143,9 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     "no fresh data" must never erase previously detected entities. Entities
     matched by an ner_exclusions rule (global, or author-scoped for the
     document's author) are dropped before persisting — they never reach
-    person resolution or place verification.
+    person resolution or place verification. Rows with source='manual'
+    (merge_document_entities()) are never deleted; a fresh NER group that
+    collides with one is dropped instead of inserted.
     """
     raw = extract_entities(text)
     if not raw:
@@ -260,7 +263,40 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
                 groups[merged_key] = {"count": group["count"], "variants": list(distinct_variants)}
             organization_confidence.setdefault(canonical_name, (organization.id, confidence))
 
-    session.execute(delete(DocumentEntity).where(DocumentEntity.document_id == document_id))
+    # Manually merged rows (source='manual', set by merge_document_entities())
+    # survive the refresh. A fresh NER group colliding with one on
+    # (entity_type, casefold(entity_text)/variants) is dropped instead of
+    # inserted — otherwise it would either duplicate the merged name or
+    # violate the (document_id, entity_type, entity_text) unique constraint.
+    # The manual row itself is left completely untouched (no mention_count
+    # update) — the user already merged it and knows what they did.
+    manual_rows = (
+        session.query(DocumentEntity)
+        .filter(DocumentEntity.document_id == document_id, DocumentEntity.source == "manual")
+        .all()
+    )
+    manual_keys_by_type: dict[str, set[str]] = {}
+    for manual_row in manual_rows:
+        names = {manual_row.entity_text.casefold(), *(v.casefold() for v in (manual_row.variants or []))}
+        manual_keys_by_type.setdefault(manual_row.entity_type, set()).update(names)
+
+    colliding_keys = [
+        key for key in groups
+        if key[1].casefold() in manual_keys_by_type.get(key[0], set())
+        or any(v.casefold() in manual_keys_by_type.get(key[0], set()) for v in groups[key]["variants"])
+    ]
+    for key in colliding_keys:
+        del groups[key]
+    if colliding_keys:
+        logger.info(
+            "Skipped %d NER groups colliding with manually merged entities for doc %s: %s",
+            len(colliding_keys), document_id, [key[1] for key in colliding_keys],
+        )
+
+    session.execute(delete(DocumentEntity).where(
+        DocumentEntity.document_id == document_id,
+        DocumentEntity.source != "manual",
+    ))
     session.execute(delete(DocumentOrganization).where(DocumentOrganization.document_id == document_id))
     rows = [
         DocumentEntity(
@@ -467,6 +503,8 @@ def merge_document_entities(source: DocumentEntity, target: DocumentEntity) -> N
     owns the transaction/validation (document/type checks) — see
     POST /document/<id>/places/merge in server.py. Unlike orgName merges,
     places have no cross-document registry, so this is per-document only.
+    Marks target as source='manual' so refresh_document_entities() never
+    overwrites this merge on the next NER run.
     """
     combined_variants = dict.fromkeys(target.variants or [])
     for value in [source.entity_text, *(source.variants or [])]:
@@ -476,3 +514,4 @@ def merge_document_entities(source: DocumentEntity, target: DocumentEntity) -> N
     target.mention_count += source.mention_count
     if target.geocode_id is None and source.geocode_id is not None:
         target.geocode_id = source.geocode_id
+    target.source = "manual"

@@ -158,6 +158,42 @@ class TestRefreshDocumentEntities:
             rows2 = refresh_document_entities(session2, 42, "jakiś tekst")
         assert {r.entity_text for r in rows2} == {"Tusk", "cieśnina Ormuz"}
 
+    def test_manual_row_survives_and_colliding_ner_group_is_dropped(self):
+        """A merged (source='manual') place must survive a refresh untouched;
+        a fresh NER group matching it by entity_text OR a stored variant is
+        skipped instead of re-inserted (would violate the unique constraint
+        or duplicate the merged name)."""
+        manual_row = DocumentEntity(
+            document_id=42, entity_type="placeName", entity_text="Kijów",
+            mention_count=5, variants=["Kijowa"], source="manual",
+        )
+        session = _session_with_exclusions([])
+        session.query.return_value.filter.return_value.all.return_value = [manual_row]
+        raw = [
+            {"text": "Kijowa", "label": "placeName", "lemma": "Kijów"},
+            {"text": "Charków", "label": "placeName", "lemma": "Charków"},
+        ]
+        with patch("library.entity_service.extract_entities", return_value=raw):
+            rows = refresh_document_entities(session, 42, "jakiś tekst")
+
+        assert {r.entity_text for r in rows} == {"Charków"}
+        assert manual_row.mention_count == 5
+        assert manual_row.variants == ["Kijowa"]
+
+    def test_manual_row_of_different_type_does_not_block_non_colliding_group(self):
+        """A manual row only blocks groups of the same entity_type."""
+        manual_row = DocumentEntity(
+            document_id=42, entity_type="orgName", entity_text="Kijów",
+            mention_count=1, variants=[], source="manual",
+        )
+        session = _session_with_exclusions([])
+        session.query.return_value.filter.return_value.all.return_value = [manual_row]
+        raw = [{"text": "Kijów", "label": "placeName", "lemma": "Kijów"}]
+        with patch("library.entity_service.extract_entities", return_value=raw):
+            rows = refresh_document_entities(session, 42, "jakiś tekst")
+
+        assert {(r.entity_type, r.entity_text) for r in rows} == {("placeName", "Kijów")}
+
 
     def test_high_confidence_context_verdict_drops_false_person_and_records_it(self):
         session = _session_with_exclusions([])
@@ -241,6 +277,7 @@ class TestMergeDocumentEntities:
         merge_document_entities(source, target)
         assert target.mention_count == 2
         assert set(target.variants) == {"Amerykanów", "Amerykanie", "Amerykanin"}
+        assert target.source == "manual"
 
     def test_target_adopts_missing_geocode_from_source(self):
         """The Kijów case: orgName mention (no geocode) merged into the placeName mention."""
@@ -254,6 +291,7 @@ class TestMergeDocumentEntities:
         )
         merge_document_entities(source, target)
         assert target.geocode_id == 8
+        assert target.source == "manual"
 
     def test_target_geocode_is_never_overwritten(self):
         source = DocumentEntity(
@@ -266,6 +304,7 @@ class TestMergeDocumentEntities:
         )
         merge_document_entities(source, target)
         assert target.geocode_id == 8
+        assert target.source == "manual"
 
     def test_source_text_not_duplicated_as_variant_when_same_casefold(self):
         source = DocumentEntity(
@@ -276,6 +315,7 @@ class TestMergeDocumentEntities:
         )
         merge_document_entities(source, target)
         assert target.variants == []
+        assert target.source == "manual"
 
 
 class TestIsExcluded:
