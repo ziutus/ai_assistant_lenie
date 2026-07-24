@@ -6,7 +6,7 @@ import {
   normalizeWs, pendingNoteFromSelection, useReaderIdentity, useUserNotes,
 } from "../components/ReaderNotes/readerNotes";
 import type { CountryTag, PipelineLine, PlaceMarker } from "../components/CountryMap/countryMap";
-import { EntityChips, EntityItem } from "../components/EntitiesPanel/entitiesPanel";
+import EntitiesPanel, { EntityChips, EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timelinePanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
@@ -383,6 +383,10 @@ const Read: React.FC = () => {
   // "genuinely no persons/places in this document" so the reader can warn
   // instead of just staying silently empty.
   const [nerUnavailableAt, setNerUnavailableAt] = React.useState<string | null>(null);
+  // Bumped after an edit made via the "Edytuj encje" panel (EntitiesPanel,
+  // rendered below) so the chapter-scoped effect refetches too — it's keyed
+  // on [position, scopeChapter, ...], not on document_entities changing.
+  const [entitiesEditVersion, setEntitiesEditVersion] = React.useState(0);
   const [thematicTags, setThematicTags] = React.useState<string[]>([]);
   const [synthesis, setSynthesis] = React.useState<string | null>(null);
   const [informationSources, setInformationSources] = React.useState<InformationSourceLink[]>([]);
@@ -492,28 +496,37 @@ const Read: React.FC = () => {
   }, [apiUrl, id, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // verified NER places (stage 3) → point markers on the country map
-  React.useEffect(() => {
-    (async () => {
-      try {
-        const r = await fetch(`${apiUrl}/website_entities?id=${id}`, { headers });
-        const data = await r.json();
-        if (data.status !== "success") return;
-        const items = [...(data.entities?.geogName ?? []), ...(data.entities?.placeName ?? [])];
-        setPersonItems(data.entities?.persName ?? []);
-        setOrganizationItems(data.entities?.orgName ?? []);
-        setPlaceItems(items);
-        setNerUnavailableAt(data.ner_unavailable_at ?? null);
-        setPlaces(
-          items
-            .filter((it: any) => it.verified === true && it.lat != null && it.lon != null)
-            .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon })),
-        );
-      } catch {
-        // encje są ozdobnikiem widoku — brak nie blokuje czytnika
-      }
-    })();
+  const fetchEntities = React.useCallback(async () => {
+    try {
+      const r = await fetch(`${apiUrl}/website_entities?id=${id}`, { headers });
+      const data = await r.json();
+      if (data.status !== "success") return;
+      const items = [...(data.entities?.geogName ?? []), ...(data.entities?.placeName ?? [])];
+      setPersonItems(data.entities?.persName ?? []);
+      setOrganizationItems(data.entities?.orgName ?? []);
+      setPlaceItems(items);
+      setNerUnavailableAt(data.ner_unavailable_at ?? null);
+      setPlaces(
+        items
+          .filter((it: any) => it.verified === true && it.lat != null && it.lon != null)
+          .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon })),
+      );
+    } catch {
+      // encje są ozdobnikiem widoku — brak nie blokuje czytnika
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiUrl, id, apiKey]);
+
+  React.useEffect(() => {
+    fetchEntities();
+  }, [fetchEntities]);
+
+  // "Edytuj encje" panel (EntitiesPanel) changed something — refetch both the
+  // document-level and (if in scope) the chapter-scoped sidebar data.
+  const handleEntitiesEdited = React.useCallback(() => {
+    fetchEntities();
+    setEntitiesEditVersion((v) => v + 1);
+  }, [fetchEntities]);
 
   // chapter-scoped sidebar data — refetched when the reader moves to another
   // chapter; a failure falls back to the document-level entities (scope null)
@@ -549,7 +562,7 @@ const Read: React.FC = () => {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiUrl, id, position, scopeChapter, progressLoaded, apiKey]);
+  }, [apiUrl, id, position, scopeChapter, progressLoaded, apiKey, entitiesEditVersion]);
 
   // Resolve a raw ?highlight= mention to the variants that actually occur in
   // the loaded chapter. This keeps arrivals from the persons page aligned with
@@ -1183,6 +1196,25 @@ const Read: React.FC = () => {
               </details>
             )}
             </>}
+
+            {/* Outside the rightPanelLoading branch on purpose: EntitiesPanel must
+                not unmount/remount when chapter-scope loading toggles, or its
+                mount-effect fetch → onEntitiesChanged → entitiesEditVersion bump →
+                chapter-scope refetch → chapterScopeLoading toggle would remount it
+                again, looping forever. */}
+            {(personItems.length > 0 || organizationItems.length > 0 || placeItems.length > 0) && (
+              <details style={{
+                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
+                padding: 10, marginTop: 12, fontSize: "0.9em",
+              }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
+                  ✏️ Edytuj encje
+                </summary>
+                <div style={{ marginTop: 4 }}>
+                  <EntitiesPanel docId={id} onEntitiesChanged={handleEntitiesEdited} />
+                </div>
+              </details>
+            )}
           </div>
         )}
       </div>

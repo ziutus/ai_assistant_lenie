@@ -212,10 +212,15 @@ const EntitiesPanel = ({
   docId,
   externalDisabled = false,
   onBusyChange,
+  onEntitiesChanged,
 }: {
   docId?: string | number;
   externalDisabled?: boolean;
   onBusyChange?: (busy: boolean) => void;
+  // Fires after a successful refresh/delete/merge/exclude — lets a host page
+  // that keeps its own copy of this document's entities (e.g. read.tsx's
+  // chapter-scoped sidebar) know it should refetch too.
+  onEntitiesChanged?: () => void;
 }) => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
@@ -234,6 +239,11 @@ const EntitiesPanel = ({
   const [orgMergeFor, setOrgMergeFor] = React.useState<EntityItem | null>(null);
   const [orgSearchQ, setOrgSearchQ] = React.useState("");
   const [orgSearchResults, setOrgSearchResults] = React.useState<OrganizationSearchResult[]>([]);
+  // "Połącz z innym miejscem" flow (geogName/placeName, or a misclassified
+  // orgName mention of the same real-world place — e.g. "Kijów"): chip being
+  // merged into a place entity of this same document. Per-document only,
+  // unlike orgName merges — places have no cross-document registry.
+  const [placeMergeFor, setPlaceMergeFor] = React.useState<EntityItem | null>(null);
   // "Dodaj alias" flow
   const [aliasFor, setAliasFor] = React.useState<EntityItem | null>(null);
   const [aliasText, setAliasText] = React.useState("");
@@ -258,6 +268,7 @@ const EntitiesPanel = ({
       .then((response) => {
         setEntities(response.data.entities);
         setNerUnavailableAt(response.data.ner_unavailable_at ?? null);
+        onEntitiesChanged?.();
       })
       .catch((error) => {
         console.error("Error fetching entities", error);
@@ -272,6 +283,7 @@ const EntitiesPanel = ({
     setEditMode(false);
     setMergeFor(null);
     setOrgMergeFor(null);
+    setPlaceMergeFor(null);
     setAliasFor(null);
     setExcludeFor(null);
     setDeleteFor(null);
@@ -297,6 +309,7 @@ const EntitiesPanel = ({
       );
       setEntities(response.data.entities);
       setNerUnavailableAt(null);
+      onEntitiesChanged?.();
       if (response.data.refreshed === 0) {
         setMessage("Nie wykryto żadnych osób ani miejsc w tym dokumencie.");
       }
@@ -417,6 +430,25 @@ const EntitiesPanel = ({
     }
   };
 
+  const handlePlaceMergePick = async (target: EntityItem) => {
+    if (placeMergeFor?.id == null || target.id == null) {
+      return;
+    }
+    setMessage("");
+    try {
+      await axios.post(
+        `${apiUrl}/document/${docId}/places/merge`,
+        { source_entity_id: placeMergeFor.id, target_entity_id: target.id },
+        { headers: jsonHeaders },
+      );
+      setPlaceMergeFor(null);
+      fetchEntities();
+    } catch (error: any) {
+      console.error("Error merging place", error);
+      setMessage(`Nie udało się połączyć miejsc: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
   const handleExclude = async (scope: "global" | "author") => {
     if (!excludeFor || !reviewReason || (reviewReason === "other" && !reviewComment.trim())) {
       return;
@@ -526,6 +558,7 @@ const EntitiesPanel = ({
           setExcludeFor(null);
           setMergeFor(null);
           setOrgMergeFor(null);
+          setPlaceMergeFor(null);
           setAliasFor(null);
           setReviewReason("");
           setReviewComment("");
@@ -542,6 +575,7 @@ const EntitiesPanel = ({
           setDeleteFor(null);
           setMergeFor(null);
           setOrgMergeFor(null);
+          setPlaceMergeFor(null);
           setAliasFor(null);
           setReviewReason("");
           setReviewComment("");
@@ -569,9 +603,44 @@ const EntitiesPanel = ({
             setDeleteFor(null);
             setExcludeFor(null);
             setMergeFor(null);
+            setPlaceMergeFor(null);
             setAliasFor(null);
             setOrgSearchQ("");
             setOrgSearchResults([]);
+          }}
+        >
+          ↷
+        </button>
+      )}
+      {entityType === "orgName" && item.id != null && places.length > 0 && (
+        <button
+          type="button"
+          style={{ ...chipActionStyle, color: "#1d5ca8" }}
+          title="To nie organizacja, tylko miejsce — połącz z miejscem w tym dokumencie"
+          onClick={() => {
+            setPlaceMergeFor(item);
+            setDeleteFor(null);
+            setExcludeFor(null);
+            setMergeFor(null);
+            setOrgMergeFor(null);
+            setAliasFor(null);
+          }}
+        >
+          🗺️
+        </button>
+      )}
+      {entityType === "*" && item.id != null && places.filter((p) => p.id !== item.id).length > 0 && (
+        <button
+          type="button"
+          style={{ ...chipActionStyle, color: "#1d5ca8" }}
+          title="Połącz z innym miejscem w tym dokumencie"
+          onClick={() => {
+            setPlaceMergeFor(item);
+            setDeleteFor(null);
+            setExcludeFor(null);
+            setMergeFor(null);
+            setOrgMergeFor(null);
+            setAliasFor(null);
           }}
         >
           ↷
@@ -598,7 +667,7 @@ const EntitiesPanel = ({
           {isRefreshing ? "Wykrywam..." : "Wykryj osoby i miejsca"}
         </button>
         {!isEmpty && (
-          <button className={"button"} type="button" onClick={() => { setEditMode(!editMode); setMergeFor(null); setOrgMergeFor(null); setAliasFor(null); setExcludeFor(null); setDeleteFor(null); }}>
+          <button className={"button"} type="button" onClick={() => { setEditMode(!editMode); setMergeFor(null); setOrgMergeFor(null); setPlaceMergeFor(null); setAliasFor(null); setExcludeFor(null); setDeleteFor(null); }}>
             {editMode ? "Zakończ edycję" : "Edytuj"}
           </button>
         )}
@@ -722,6 +791,21 @@ const EntitiesPanel = ({
               {" "}<strong>{o.canonical_name}</strong>
               {o.aliases.length > 0 && <span style={{ color: "#667" }}> ({o.aliases.join(", ")})</span>}
               <span style={{ color: "#999" }}> — {o.document_count} dok.</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {editMode && placeMergeFor && (
+        <div style={{ marginTop: 8, padding: 8, background: "#f0f6ff", borderRadius: 6 }}>
+          <div style={{ marginBottom: 4 }}>
+            Połącz „{placeMergeFor.text}" z innym miejscem w tym dokumencie:
+            <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setPlaceMergeFor(null)}>✕ anuluj</button>
+          </div>
+          {places.filter((p) => p.id !== placeMergeFor.id).map((p) => (
+            <div key={p.id} style={{ padding: "3px 0" }}>
+              <button className={"button"} type="button" onClick={() => handlePlaceMergePick(p)}>wybierz</button>
+              {" "}<strong>{p.text}</strong>
             </div>
           ))}
         </div>

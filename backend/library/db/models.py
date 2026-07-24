@@ -1361,7 +1361,7 @@ class EntityReviewDecision(Base):
 
 
 class NerContextClassification(Base):
-    """LLM verdict for an ambiguous one-word person candidate."""
+    """LLM verdict for an ambiguous NER candidate (persName or geogName/placeName)."""
 
     __tablename__ = "ner_context_classifications"
 
@@ -1369,6 +1369,9 @@ class NerContextClassification(Base):
     document_id: Mapped[int | None] = mapped_column(
         ForeignKey("documents.id", ondelete="SET NULL"),
     )
+    # entity_type: persName (library/person_context_classifier.py) or
+    # geogName/placeName (library/place_context_classifier.py)
+    entity_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'persName'"))
     entity_text: Mapped[str] = mapped_column(Text, nullable=False)
     predicted_class: Mapped[str] = mapped_column(String(20), nullable=False)
     confidence: Mapped[str] = mapped_column(String(10), nullable=False)

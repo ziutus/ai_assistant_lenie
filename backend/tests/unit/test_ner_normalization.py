@@ -17,3 +17,21 @@ def test_missing_rules_file_falls_back_to_empty_rules(monkeypatch, tmp_path, cap
         assert not ner_normalization.is_rejected_surface_lemma_pair("Dana", "Dan", "PROPN")
     finally:
         ner_normalization.load_ner_normalization_rules.cache_clear()
+
+
+class TestStripMarkdownEmphasis:
+    def test_bold_marker_glued_to_word_is_blanked(self):
+        text = "źródło w Ministerstwie Aktywów Państwowych.**- Tymczasem ta koalicja"
+        result = ner_normalization.strip_markdown_emphasis(text)
+        assert "**" not in result
+        assert "Ministerstwie Aktywów Państwowych." in result
+
+    def test_preserves_length_and_surrounding_text(self):
+        text = "a **bold** b __also__ c"
+        result = ner_normalization.strip_markdown_emphasis(text)
+        assert len(result) == len(text)
+        assert result == "a   bold   b   also   c"
+
+    def test_text_without_markdown_is_unchanged(self):
+        text = "Donald Tusk spotkał się z premierem."
+        assert ner_normalization.strip_markdown_emphasis(text) == text

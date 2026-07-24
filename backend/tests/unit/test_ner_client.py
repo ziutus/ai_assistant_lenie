@@ -85,6 +85,18 @@ class TestExtractEntities:
             with patch("library.ner_client._service_url", return_value="http://ner:8090"):
                 assert extract_entities("tekst") == []
 
+    def test_markdown_emphasis_blanked_before_sending(self):
+        """** glued to a word with no whitespace must not reach the NER service intact
+        (backend/library/entity_service.py:129 refresh_document_entities docstring case:
+        it used to produce a spurious duplicate orgName entity like "X.**")."""
+        text = "źródło w Ministerstwie Aktywów Państwowych.**- Tymczasem ta koalicja"
+        with patch("library.ner_client.requests.post", return_value=_response([])) as mock_post:
+            with patch("library.ner_client._service_url", return_value="http://ner:8090"):
+                extract_entities(text)
+        sent_text = mock_post.call_args.kwargs["json"]["text"]
+        assert "**" not in sent_text
+        assert len(sent_text) == len(text)
+
     def test_long_text_processed_in_windows(self):
         """Tekst dłuższy niż MAX_TEXT_CHARS idzie oknami — wcześniej był ucinany do pierwszego okna."""
         with patch("library.ner_client.requests.post", return_value=_response([])) as mock_post:
