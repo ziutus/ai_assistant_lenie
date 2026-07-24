@@ -2,7 +2,6 @@
 
 Używane przez:
 - imports/dynamodb_sync.py (wsadowo: po synchronizacji z S3)
-- imports/article_browser.py (interaktywnie: pobieranie tekstu i boundaries)
 
 Konwencja cache: {CACHE_DIR}/markdown/{doc_id}/{doc_id}_step_1_all.md to surowy
 markdown całej strony (wejście dla ekstrakcji LLM i porównania boundaries).

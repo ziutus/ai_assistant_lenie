@@ -12,7 +12,7 @@
 
 ## Środowisko
 
-Ustal korzeń repozytorium przez `git rev-parse --show-toplevel`. Używaj interpretera `backend/.venv/Scripts/python.exe` oraz modułów projektu uruchamianych z katalogu `backend`.
+Ustal korzeń repozytorium przez `git rev-parse --show-toplevel`. Używaj interpretera `backend/.venv/Scripts/python.exe` oraz modułów projektu uruchamianych z katalogu `backend` tylko dla Kroku 6 (zapis do bazy) — odczyty w Kroku "Pobranie materiału" idą przez REST API backendu, nie przez ORM.
 
 W PowerShell sprawdź konfigurację vaulta bez wypisywania prywatnej zawartości:
 
@@ -23,16 +23,33 @@ $vault = (Resolve-Path -LiteralPath $env:LENIE_OBSIDIAN_VAULT).Path
 
 Każdą docelową ścieżkę rozwiąż względem `$vault` i odrzuć, jeśli wychodzi poza ten katalog. Nie stosuj twardo zakodowanej ścieżki profilu użytkownika.
 
+Sprawdź też, że serwisowy klucz API jest ustawiony:
+
+```powershell
+if (-not $env:LENIE_API_KEY) { throw 'Brak LENIE_API_KEY' }
+```
+
+Jeśli zmienna jest pusta, zatrzymaj się z instrukcją konfiguracji — nie wpisuj klucza wprost do poleceń ani do plików repozytorium.
+
 ## Pobranie materiału
+
+Wszystkie poniższe wywołania idą do backendu REST na NAS (`http://192.168.200.7:5055`) z nagłówkiem `x-api-key` ustawionym na `$env:LENIE_API_KEY`. `Invoke-RestMethod` sam parsuje odpowiedź JSON.
 
 Najpierw pobierz metadane:
 
 ```powershell
-Set-Location (Join-Path (git rev-parse --show-toplevel) 'backend')
-.\.venv\Scripts\python.exe imports\article_browser.py --meta --id <ARTICLE_ID>
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/website_get?id=<ARTICLE_ID>&include_text=0" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
 ```
 
-Sprawdź wszystkie `DocumentAnalysisRun` dla `document_id`, od najnowszego, wraz z liczbą chunków `TEMAT`, przeanalizowanych chunków z `topic` i chunków `approved`.
+Zwraca m.in. `id`, `uuid`, `title`, `url`, `ingested_at`, `processing_status`, `document_type`, `language`, `source`, `byline`, `note`, `summary`, `reviewed_at`, `tags`, `obsidian_note_paths`, `chapter_list`, `video_description`, `text_length` — pole `text`/`text_raw`/`text_md` jest pominięte przy `include_text=0`.
+
+Następnie sprawdź wszystkie runy analizy dla dokumentu:
+
+```powershell
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/analysis_runs?doc_id=<ARTICLE_ID>" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
+```
+
+Zwraca `{"doc_id", "runs": [{"id", "mode", "status", "scope", "model", "created_at", "chunk_count", "temat_count", "analyzed_count", "approved_count", "workflow_stage"}, ...]}` — identyfikator runu to pole `id`.
 
 - Brak runów: przejdź do pełnego tekstu.
 - Jeden użyteczny run: wybierz go.
@@ -42,14 +59,30 @@ Sprawdź wszystkie `DocumentAnalysisRun` dla `document_id`, od najnowszego, wraz
 Pełny tekst pobieraj tylko wtedy, gdy brak użytecznych chunków:
 
 ```powershell
-.\.venv\Scripts\python.exe imports\article_browser.py --dump --id <ARTICLE_ID>
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/website_get?id=<ARTICLE_ID>" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
 ```
+
+(`include_text` pominięte — domyślnie `1`, więc odpowiedź zawiera też `text`/`text_raw`/`text_md`.) Użyj `text` jako treści artykułu; jeśli jest puste (stan surowy, jeszcze nieoczyszczony), sięgnij po `text_raw`.
 
 Dla `webpage`, `link` lub podobnego typu ze stanem `URL_ADDED` albo `DOCUMENT_INTO_DATABASE` ostrzeż o surowym, zaszumionym tekście i zaczekaj na zgodę. Dla `youtube` lub `movie` zatrzymaj się, jeśli brak transkrypcji.
 
 ## Wybór treści
 
-Dla wybranego runu pobierz chunki `TEMAT` w kolejności `position`. Pokaż najpierw już opracowane lub pominięte, a potem nieopracowane. Nie mieszaj `REKLAMA` i `SZUM` z materiałem do notatek.
+Dla wybranego runu pobierz chunki (nagłówek `x-api-key` jak wyżej):
+
+```powershell
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/analysis_run/<RUN_ID>/chunks?lite=1" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
+```
+
+Zwraca `chunks: [{"position", "type", "status", "topic", "summary", "obsidian_note_paths"}, ...]` (niefiltrowane po typie — odfiltruj `type == "TEMAT"` sam) oraz `topic_sections: [{"id", "position", "title", "chunk_positions", "temat_count", "approved_count", "notes_count"}, ...]`. Pełny tekst wybranych pozycji pobierz osobno:
+
+```powershell
+Invoke-RestMethod -Uri "http://192.168.200.7:5055/analysis_run/<RUN_ID>/chunks?positions=<pozycje_po_przecinku>" -Headers @{"x-api-key"=$env:LENIE_API_KEY}
+```
+
+Każdy element zwraca `position`, `topic`, `status`, `original_text`, `corrected_text` — wybierz pole tekstu wg reguł niżej.
+
+Pokaż najpierw już opracowane lub pominięte, a potem nieopracowane. Nie mieszaj `REKLAMA` i `SZUM` z materiałem do notatek.
 
 - Dla maksymalnie 30 chunków pokaż płaską listę.
 - Dla większego runu pogrupuj przez `DocumentTopicSection`; uwzględnij również chunki nieprzypisane do sekcji.

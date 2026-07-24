@@ -147,11 +147,11 @@ def extract_entities_strict(text: str) -> list[dict]:
 def warmup_async() -> None:
     """Fire-and-forget /ner probe in a daemon thread to pre-load the spaCy model.
 
-    Call at the start of scripts that will use NER later (article_browser,
-    youtube analysis): the one-time model load (~90s on the NAS after a
-    container restart) then overlaps with S3 downloads / LLM calls instead of
-    stalling the first real extraction. Errors are ignored — warmup must be
-    invisible when the service is down.
+    Call at the start of scripts that will use NER later (youtube analysis):
+    the one-time model load (~90s on the NAS after a container restart) then
+    overlaps with S3 downloads / LLM calls instead of stalling the first real
+    extraction. Errors are ignored — warmup must be invisible when the
+    service is down.
     """
     import threading
 

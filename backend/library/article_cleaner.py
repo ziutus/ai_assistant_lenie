@@ -5,8 +5,7 @@ Obrazki i linki są zamieniane na markery [imgN] / [linkN], a ich metadane
 trafiają do osobnych list. Reguły czyszczenia: generyczne (wspólne dla
 wszystkich portali) + specyficzne per portal (onet, money, wp, gazeta, bankier).
 
-Wydzielone z imports/article_browser.py, aby logika była testowalna
-i reużywalna w skryptach batch.
+Testowalna i reużywalna w skryptach batch.
 """
 
 import datetime

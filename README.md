@@ -33,7 +33,7 @@ This is a side project. Please be aware that the code is under active refactorin
 
 ## Target Vision
 
-Today, Claude Code is the actual assistant managing the Obsidian knowledge base — the `/obsidian-note` skill and `article_browser.py` read and write the vault and the Lenie database directly (see Phase 3 below), no MCP server involved. Claude Desktop isn't part of the current workflow.
+Today, Claude Code is the actual assistant managing the Obsidian knowledge base — the `/obsidian-note` skill reads/writes the Lenie database via the backend REST API and writes the vault directly (see Phase 3 below), no MCP server involved. Claude Desktop isn't part of the current workflow.
 
 The current priority is the core pipeline: cleaning captured content, analyzing it (NER, tone, timeline, tagging — see Phase 5), and finishing the NAS migration (see Phase 4, [docs/deployment/](docs/deployment/)).
 
@@ -55,7 +55,7 @@ Tried and removed. A real `backend/mcp_server/` package existed (FastMCP-based, 
 
 ### Phase 3: Obsidian Integration
 
-Done, through a different path than originally planned: the `/obsidian-note` skill + `article_browser.py` write notes directly to the vault, tracked via `obsidian_note_paths` on document chunks — no MCP server involved.
+Done, through a different path than originally planned: the `/obsidian-note` skill writes notes directly to the vault, tracked via `obsidian_note_paths` on document chunks — no MCP server involved.
 
 ### Phase 4: Scaling & Deployment Options
 
