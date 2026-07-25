@@ -150,7 +150,7 @@ One row per chunk produced by a run.
 | `split_at_seg` | `integer` | Segment offset for a pending manual split |
 | `split_first_type` / `split_second_type` | `varchar(20)` | Resulting types after executing a split |
 | `created_at` / `updated_at` | `timestamp` | Row timestamps |
-| `obsidian_note_paths` | `text[] NOT NULL DEFAULT '{}'` | Vault-relative paths of notes written from this chunk (populated by the `/obsidian-note` skill) |
+| `obsidian_note_paths` | `text[] NOT NULL DEFAULT '{}'` | Vault-relative paths of notes written from this chunk (populated by the `/lenie-obsidian-note` skill) |
 
 ### Table: `public.document_topic_sections`
 

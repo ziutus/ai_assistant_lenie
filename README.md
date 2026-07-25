@@ -18,6 +18,7 @@ This is a side project. Please be aware that the code is under active refactorin
 ## Table of Contents
 
 - [Target Vision](#target-vision)
+- [Claude Code / Codex Skills](#claude-code--codex-skills)
 - [Roadmap](#roadmap)
 - [Current Architecture](#current-architecture)
 - [Supported Platforms](#supported-platforms)
@@ -33,13 +34,23 @@ This is a side project. Please be aware that the code is under active refactorin
 
 ## Target Vision
 
-Today, Claude Code is the actual assistant managing the Obsidian knowledge base — the `/obsidian-note` skill reads/writes the Lenie database via the backend REST API and writes the vault directly (see Phase 3 below), no MCP server involved. Claude Desktop isn't part of the current workflow.
+Today, Claude Code is the actual assistant managing the Obsidian knowledge base — the `/lenie-obsidian-note` skill reads/writes the Lenie database via the backend REST API and writes the vault directly (see Phase 3 below), no MCP server involved. Claude Desktop isn't part of the current workflow.
 
 The current priority is the core pipeline: cleaning captured content, analyzing it (NER, tone, timeline, tagging — see Phase 5), and finishing the NAS migration (see Phase 4, [docs/deployment/](docs/deployment/)).
 
 A possible next step, once that's solid: exposing Lenie's search/retrieval as an MCP server so Claude Desktop could become an alternative interface. Unlike Claude Code, Claude Desktop has no built-in file or API access — it needs an MCP server for everything, including reading the Obsidian vault itself. This was tried once already (see Phase 2) and reverted as premature; it may come back once the pipeline work above is done.
 
 The Chrome/Kiwi browser extension remains essential for capturing content from the web.
+
+## Claude Code / Codex Skills
+
+Lenie-specific skills are prefixed `lenie-` so they're easy to recognize alongside generic BMad/security skills. They're what actually drives day-to-day use of the assistant, invoked as Claude Code slash commands or Codex skills:
+
+| Skill | Where | What it does |
+|---|---|---|
+| `/lenie-obsidian-note` | `.claude/commands/lenie-obsidian-note.md` (Claude Code), `.agents/skills/lenie-obsidian-note/` (Codex) | Turns a Lenie article/chunk into an Obsidian vault note via the backend REST API, then syncs `obsidian_note_paths` back to the database. |
+| `/lenie-feed-review` | `.claude/commands/lenie-feed-review.md` | Walks through RSS feed entries saved for discussion (`feed_monitor.py --review`, `[d]iscuss`), fetches and summarizes each one, and lets you ask follow-up questions before deciding whether to import it. |
+| `/lenie-review-removed-lines` | `.claude/commands/lenie-review-removed-lines.md` | Reviews pending `document_removed_lines` candidates and proposes improvements to per-site article cleanup rules. |
 
 ## Roadmap
 
@@ -55,7 +66,7 @@ Tried and removed. A real `backend/mcp_server/` package existed (FastMCP-based, 
 
 ### Phase 3: Obsidian Integration
 
-Done, through a different path than originally planned: the `/obsidian-note` skill writes notes directly to the vault, tracked via `obsidian_note_paths` on document chunks — no MCP server involved.
+Done, through a different path than originally planned: the `/lenie-obsidian-note` skill writes notes directly to the vault, tracked via `obsidian_note_paths` on document chunks — no MCP server involved.
 
 ### Phase 4: Scaling & Deployment Options
 

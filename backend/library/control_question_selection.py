@@ -1,6 +1,6 @@
 """Cheap-LLM (Bielik) router that narrows control questions down to the ones a document answers.
 
-Two-stage pipeline (brainstorming session 2026-07-24): today's `/obsidian-note`
+Two-stage pipeline (brainstorming session 2026-07-24): today's `/lenie-obsidian-note`
 skill fetches the *entire* tag-matched set of control questions and asks the
 strong note-writing model to judge which ones are actually answered. This
 module is stage 1 — a cheap router that does that judgment call itself, so

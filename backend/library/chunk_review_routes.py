@@ -1314,7 +1314,7 @@ def select_document_control_questions(doc_id: int):
     """Run the cheap-LLM control-question router on demand and store the answers.
 
     Same replace-semantics as `imports/select_control_questions.py`, exposed over
-    REST so on-demand triggers (e.g. the /obsidian-note skill, Step 4) don't need
+    REST so on-demand triggers (e.g. the /lenie-obsidian-note skill, Step 4) don't need
     direct ORM/DB access from the caller's machine.
     """
     from library.control_question_selection import refresh_document_control_answers

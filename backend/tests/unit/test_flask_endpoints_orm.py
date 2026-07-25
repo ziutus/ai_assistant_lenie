@@ -227,7 +227,7 @@ class TestWebsiteGet:
 
     def test_text_length_falls_back_to_text_raw(self, client):
         # Raw states (URL_ADDED/DOCUMENT_INTO_DATABASE) only have text_raw —
-        # /obsidian-note Step 1a relies on text_length being non-zero here too.
+        # /lenie-obsidian-note Step 1a relies on text_length being non-zero here too.
         mock_doc = self._mock_doc(text=None, text_raw="Surowy html-markdown.")
         mock_session = MagicMock()
         mock_session.execute.return_value.scalar.return_value = 0

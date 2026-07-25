@@ -513,7 +513,7 @@ class TestGetRunChunksLazy:
         assert data["chunk_total"] == 3
         assert [c["position"] for c in data["chunks"]] == [1, 3, 5]
         # not combined with lite — full text still present, as used by the
-        # /obsidian-note skill to fetch a handful of chunk texts by position
+        # /lenie-obsidian-note skill to fetch a handful of chunk texts by position
         assert data["chunks"][0]["original_text"] is not None
 
     def test_positions_combines_with_lite(self, client):
