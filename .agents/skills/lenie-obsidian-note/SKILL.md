@@ -1,5 +1,5 @@
 ---
-name: obsidian-note
+name: lenie-obsidian-note
 description: Tworzy lub aktualizuje prywatne notatki Obsidian na podstawie artykułów i analiz zapisanych w bazie Lenie, a następnie synchronizuje ścieżki notatek oraz status przeglądu z bazą. Używaj, gdy użytkownik podaje identyfikator artykułu Lenie, prosi o analizę materiału do prywatnego vaulta, chce opracować wybrane chunki albo wzbogacić istniejące notatki wiedzy.
 ---
 

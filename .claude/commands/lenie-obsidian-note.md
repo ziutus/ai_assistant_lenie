@@ -7,9 +7,9 @@ Create or update Obsidian notes based on a Lenie DB article, then update the dat
 Parse `$ARGUMENTS` as: `<ARTICLE_ID> [optional comment about why this article is interesting]`
 
 Examples:
-- `/obsidian-note 8812` — just the ID
-- `/obsidian-note 8812 ciekawy wniosek o tym że "oś autokratów" to nie spójny sojusz` — ID + comment
-- `/obsidian-note 8802 reżim nie może skapitulować, bo utrata twarzy = koniec władzy` — ID + key insight
+- `/lenie-obsidian-note 8812` — just the ID
+- `/lenie-obsidian-note 8812 ciekawy wniosek o tym że "oś autokratów" to nie spójny sojusz` — ID + comment
+- `/lenie-obsidian-note 8802 reżim nie może skapitulować, bo utrata twarzy = koniec władzy` — ID + key insight
 
 If a comment is provided, treat it as **the user's key takeaway** — this is what matters most to them. Use it to:
 1. Focus the note on that specific insight (don't just summarize the whole article)

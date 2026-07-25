@@ -107,7 +107,7 @@ Monitors RSS/Atom/JSON feeds defined in [`feeds.yaml`](feeds.yaml) and imports s
 - `--list` — show configured feeds with type, language, project, tags, flags
 - `--check` — list new items from all (or one) feeds; `--db` marks NEW / IN DB; `--ignored` shows only entries filtered out by skip patterns
 - `--import` — import new items. Feeds with `auto_import: true` are imported without interaction; other feeds show a numbered list for interactive selection (`1,3,5`, `1-5`, `all`, `none`)
-- `--review` — interactive per-entry loop with actions: [n]ext, [a]dd to DB, [d]iscuss (append to `tmp/feed_review_discuss.md` for a later Claude Code session — see the `/feed-review` skill), [i]gnore (add a `skip_title_patterns` regex to `feeds.yaml`), [e]xplain (open `claude -p` on the URL), [q]uit
+- `--review` — interactive per-entry loop with actions: [n]ext, [a]dd to DB, [d]iscuss (append to `tmp/feed_review_discuss.md` for a later Claude Code session — see the `/lenie-feed-review` skill), [i]gnore (add a `skip_title_patterns` regex to `feeds.yaml`), [e]xplain (open `claude -p` on the URL), [q]uit
 
 **Date cutoff priority** (per feed): explicit `--since` → last import date from DB (`auto_import` feeds only) → `last_checked` from `feeds_state.yaml` → default 14 days back. `--since` accepts `YYYY-MM-DD` or natural language (`"last 2 weeks"`, `"3 days ago"`) parsed via dateparser.
 
@@ -135,10 +135,10 @@ python imports/feed_monitor.py --review --source 12 --since "last 2 weeks"
 
 ### `article_browser.py` (removed 2026-07-24)
 
-Formerly an interactive ORM-based browser/review tool for articles, and the data source the `/obsidian-note` skill shelled out to. Progressively hollowed out on 2026-07-24 as its responsibilities moved elsewhere, then deleted once nothing unique was left:
-- `--meta`/`--dump`/`--dump-md`/`--runs`/`--chunks`/`--chunk-text` (JSON dump modes for `/obsidian-note`) → replaced by the backend REST API (`GET /website_get`, `/analysis_runs`, `/analysis_run/<id>/chunks`, `/document/<id>/control_questions`), used by both the Claude Code (`.claude/commands/obsidian-note.md`) and Codex (`.agents/skills/obsidian-note/references/workflow.md`) skill variants.
+Formerly an interactive ORM-based browser/review tool for articles, and the data source the `/lenie-obsidian-note` skill shelled out to. Progressively hollowed out on 2026-07-24 as its responsibilities moved elsewhere, then deleted once nothing unique was left:
+- `--meta`/`--dump`/`--dump-md`/`--runs`/`--chunks`/`--chunk-text` (JSON dump modes for `/lenie-obsidian-note`) → replaced by the backend REST API (`GET /website_get`, `/analysis_runs`, `/analysis_run/<id>/chunks`, `/document/<id>/control_questions`), used by both the Claude Code (`.claude/commands/lenie-obsidian-note.md`) and Codex (`.agents/skills/lenie-obsidian-note/references/workflow.md`) skill variants.
 - `[v]iew`/`[b]oundaries`/`[e]ncje`/`[m]ark review`/`[s]ave note`/`[w]rite to db` (`--review` actions) → duplicated the React web UI's `/webpage/:id` (edit form) and `/chunks/:id` (chunk review) pages (`EntitiesPanel`, `ArticleSourceComparison`, the chunk-based `document_analysis_service` pipeline).
-- `[c]ompare` → duplicated `/obsidian-note`'s Step 3 ("Find related notes via index").
+- `[c]ompare` → duplicated `/lenie-obsidian-note`'s Step 3 ("Find related notes via index").
 - The rest (`--list`, `--show`, `--notes`, and `--review`'s `[n]ext`/`[p]rev`/`[r]efresh`/`[d]one`/`[o]bsidian`/`[k]raje`/`[q]uit`) had no replacement when removed — full history and the deleted implementation are in git (`git log -- backend/imports/article_browser.py`).
 - Obsidian vault path is currently hardcoded (`OBSIDIAN_VAULT` constant) — see backlog for moving it to config
 
@@ -362,7 +362,7 @@ to the document's tags) are actually answered by its content, and stores the ans
 `document_control_answers` (`library/control_question_selection.py`, replace semantics, per reader chapter for
 books). Zero LLM calls when the document has no tag matching any active question. Also runs automatically as
 part of `library/document_enrichment.py`'s per-document enrichment stage — this CLI is for manual/local runs
-(dry-run preview, single-chapter reruns). The `/obsidian-note` skill's on-demand trigger goes through
+(dry-run preview, single-chapter reruns). The `/lenie-obsidian-note` skill's on-demand trigger goes through
 `POST /document/<id>/select_control_questions` instead (same `refresh_document_control_answers()` under the
 hood) so it doesn't need direct ORM/DB access from the caller's machine.
 

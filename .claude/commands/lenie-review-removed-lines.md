@@ -1,5 +1,5 @@
 ---
-name: 'review-removed-lines'
+name: 'lenie-review-removed-lines'
 description: 'Analyze pending document_removed_lines candidates and improve website cleanup rules'
 ---
 

@@ -1,5 +1,5 @@
 ---
-name: 'feed-review'
+name: 'lenie-feed-review'
 description: 'Review saved feed articles from tmp/feed_review_discuss.md one by one — fetch, summarize, and discuss'
 ---
 

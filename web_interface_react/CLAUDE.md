@@ -94,7 +94,7 @@ Reviews `DocumentAnalysisRun` / `DocumentChunk` / `DocumentTopicSection` data (`
 - **Synteza panel**: collapsible summary of the whole run (`run.synthesis`), collapsed by default.
 - **Tagi dokumentu**: thematic + country (`kraj-*`) tag chips from `data.document.thematic_tags`/`data.document.countries`, populated by `document_analysis_service._apply_tags()` at the end of `create_run()`.
 - **Embeddings**: 🟢/⚪ indicator per chunk (`has_embeddings`, derived from `document_embeddings.chunk_id`) + "Generuj embeddingi" button (`POST /analysis_run/<id>/generate_embeddings`) — only embeds `TEMAT` chunks with `status=approved`.
-- **Obsidian notes**: 📝 indicator with tooltip listing `chunk.obsidian_note_paths`, written by the `/obsidian-note` skill (`.claude/commands/obsidian-note.md`), not by this UI.
+- **Obsidian notes**: 📝 indicator with tooltip listing `chunk.obsidian_note_paths`, written by the `/lenie-obsidian-note` skill (`.claude/commands/lenie-obsidian-note.md`), not by this UI.
 
 ## Architecture
 

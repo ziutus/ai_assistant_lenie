@@ -44,7 +44,7 @@ const LEGACY_USER_STORAGE_KEY = "lenie_userId";
 export const STANCE_ICON: Record<string, string> = { agree: "👍", disagree: "👎", neutral: "➖" };
 
 // Convention tag (not a dedicated column — see readerNotes.tsx history) marking a fragment the
-// user wants surfaced to the /obsidian-note skill as an explicit discussion point.
+// user wants surfaced to the /lenie-obsidian-note skill as an explicit discussion point.
 export const LLM_DISCUSS_TAG = "llm-discuss";
 
 export const normalizeWs = (s: string) => s.replace(/\s+/g, " ").trim();

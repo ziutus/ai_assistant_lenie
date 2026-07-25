@@ -1,0 +1,4 @@
+interface:
+  display_name: "Obsidian Note"
+  short_description: "Tw�rz notatki Obsidian z artyku��w Lenie"
+  default_prompt: "U�yj $lenie-obsidian-note, aby przeanalizowa� artyku� Lenie i przygotowa� pakiet zmian w notatkach."

@@ -8,7 +8,7 @@ up empty for a run with exactly one TEMAT chunk (grouping one fragment into
 group). The fix (same commit) skips _merge_topics for single-chunk runs and
 adds a fallback straight to the chunk's own summary, but documents analyzed
 before the fix are stuck with tags=NULL and are invisible to anything gated on
-tags (e.g. the /obsidian-note control-questions step). This script re-tags
+tags (e.g. the /lenie-obsidian-note control-questions step). This script re-tags
 them using the same _apply_tags() pipeline, from the chunk summary already on
 file — no LLM re-analysis of the article itself needed.
 

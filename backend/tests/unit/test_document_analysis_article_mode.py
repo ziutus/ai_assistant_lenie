@@ -228,7 +228,7 @@ class TestArticleMode:
     def test_single_chunk_run_skips_merge_topics_and_still_tags(self, session, monkeypatch):
         """Regression: a single-chunk run used to end up with empty topic_sections
         AND empty synthesis, starving 11b's tagging_text and silently leaving
-        doc.tags unset (found via a live /obsidian-note run on a real one-topic
+        doc.tags unset (found via a live /lenie-obsidian-note run on a real one-topic
         article — 42 documents affected on the NAS DB at time of fix)."""
         doc = FakeDoc()
         doc.text = "Krótki akapit merytoryczny o jednym temacie. " * 5
