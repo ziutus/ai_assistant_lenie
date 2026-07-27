@@ -10,12 +10,9 @@ imports/
 ├── import_control_questions.py # Sync the Obsidian control-question bank into the control_questions DB table
 ├── select_control_questions.py # Cheap-LLM (Bielik) router: which control questions a document actually answers
 ├── dynamodb_sync.py          # Sync documents from DynamoDB + S3 to local PostgreSQL
-├── feed_monitor.py           # Monitor RSS/Atom/JSON feeds and import new entries
-├── feeds.yaml                # Feed definitions for feed_monitor.py (committed)
 ├── extract_references.py     # Extract book footnotes from text_md into document_references
 ├── extract_time_periods.py   # Classify the historical period a document is about (per chapter for books)
 ├── extract_tones.py          # Classify emotional tone + language register per chapter
-├── feeds_state.yaml          # Per-feed last_checked state (gitignored, created at runtime)
 ├── fix_duplicate_analysis_runs.py # One-off: supersede abandoned duplicate analysis runs (same document+scope, never reviewed)
 ├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
@@ -92,9 +89,11 @@ Before executing any operations, the script displays source (AWS profile, region
 - `.env` file with `POSTGRESQL_*` variables
 - AWS credentials (via env vars or AWS profile) with SSM read, DynamoDB read, and S3 read access
 
-### `feed_monitor.py`
+### Legacy feed monitor (removed)
 
-Monitors RSS/Atom/JSON feeds defined in [`feeds.yaml`](feeds.yaml) and imports selected entries into the database. Replaces the old `unknown_news_import.py` script (removed; unknow.news is configured as a `json_api` feed with `auto_import: true`).
+Feed monitoring was moved to `library/feed_parser.py`, `library/feed_monitor_service.py`, the REST API and `worker.py`. The former CLI, YAML seed and file-based review flow were removed. The historical notes below are migration context only; do not use those commands.
+
+The former CLI feed monitor was removed. Feed sources and candidates now live in PostgreSQL and are handled by `library/feed_parser.py`, `library/feed_monitor_service.py`, the REST API and `worker.py`.
 
 **Data access: ORM (SQLAlchemy)** via `DocumentService.import_document()`. Run history is recorded in `import_logs` via `ImportLogTracker`. DB connection is optional for `--check`/`--review` (only used to mark entries as NEW / IN DB).
 
@@ -107,27 +106,24 @@ Monitors RSS/Atom/JSON feeds defined in [`feeds.yaml`](feeds.yaml) and imports s
 - `--list` — show configured feeds with type, language, project, tags, flags
 - `--check` — list new items from all (or one) feeds; `--db` marks NEW / IN DB; `--ignored` shows only entries filtered out by skip patterns
 - `--import` — import new items. Feeds with `auto_import: true` are imported without interaction; other feeds show a numbered list for interactive selection (`1,3,5`, `1-5`, `all`, `none`)
-- `--review` — interactive per-entry loop with actions: [n]ext, [a]dd to DB, [d]iscuss (append to `tmp/feed_review_discuss.md` for a later Claude Code session — see the `/lenie-feed-review` skill), [i]gnore (add a `skip_title_patterns` regex to `feeds.yaml`), [e]xplain (open `claude -p` on the URL), [q]uit
+- The old interactive review actions were replaced by the REST API and Web UI. Use `.claude/commands/lenie-feed-review.md` for the current workflow.
 
 **Date cutoff priority** (per feed): explicit `--since` → last import date from DB (`auto_import` feeds only) → `last_checked` from `feeds_state.yaml` → default 14 days back. `--since` accepts `YYYY-MM-DD` or natural language (`"last 2 weeks"`, `"3 days ago"`) parsed via dateparser.
 
-**`feeds.yaml` per-feed keys:** `name`, `type`, `url` or `channel_id`, `language`, `project`, `tags`, `auto_import`, `source_id` (value stored in the document `source` field), `default_state` (initial `processing_status`, default `URL_ADDED`), `field_mapping` (json_api only), `skip_url_patterns` (prefix match), `skip_title_patterns` (regex, case-insensitive), `cache_path`, `disabled` (skipped unless explicitly selected via `--source`).
+Feed configuration is stored in PostgreSQL `feed_sources`, including source URL, collection, tags, auto-import watermark and skip patterns.
 
-**State:** `feeds_state.yaml` (gitignored) stores `last_checked` per feed, updated after each `--check`/`--import`/`--review` run.
+**State:** check timestamps, errors and review decisions are stored in PostgreSQL.
 
 **Running:**
 ```bash
 cd backend
-python imports/feed_monitor.py --list
-python imports/feed_monitor.py --check --db
-python imports/feed_monitor.py --check --source "malak.cloud" --since 2026-03-01
-python imports/feed_monitor.py --import                              # interactive selection
-python imports/feed_monitor.py --import --source "unknow.news"       # auto-import feed
-python imports/feed_monitor.py --import --dry-run --limit 5
-python imports/feed_monitor.py --review --source 12 --since "last 2 weeks"
+GET /feed_sources
+POST /feed_sources/{id}/check
+GET /feed_items?status=new
+POST /feed_items/{id}/import
 ```
 
-`--source` accepts a feed name or its number from `--list` output.
+The Web UI exposes the same operations under **Feedy**, **Kuracja feedów** and **Joby**.
 
 **Prerequisites:**
 - `.env` with `POSTGRESQL_*` variables (for `--import`, and for `--check`/`--review` with `--db`)
@@ -385,5 +381,5 @@ One-time migration script: copies UUID-named `.html`/`.txt` files from `imports/
 - All scripts bypass the REST API intentionally — they are meant for local or scheduled operations, not the web interface.
 - DB-writing scripts use ORM models (`Document` from `library.db.models`) with `get_session()` from `library.db.engine`. Session lifecycle: `session = get_session()` → `try` → `session.commit()` → `finally` → `session.close()`.
 - Document creation goes through `DocumentService.import_document(skip_if_exists=True)` (`library/document_service.py`), which handles duplicate detection via `Document.get_by_url()`.
-- Bulk import runs (`dynamodb_sync.py`, `feed_monitor.py`) are recorded in the `import_logs` table via `ImportLogTracker` (`library/import_log_tracker.py`). `dynamodb_sync.py` uses the latest successful run's UTC `started_at` as its exact automatic watermark. Legacy `since_date`/`until_date` remain day-level reporting fields; the exact UTC watermark and selected timezone are stored in `parameters`.
+- Bulk import runs from the remaining CLI tools are recorded in the `import_logs` table via `ImportLogTracker` (`library/import_log_tracker.py`). `dynamodb_sync.py` uses the latest successful run's UTC `started_at` as its exact automatic watermark. Legacy `since_date`/`until_date` remain day-level reporting fields; the exact UTC watermark and selected timezone are stored in `parameters`.
 - `control_questions.py` and `freedom_house_import.py` are standalone tools that never touch the database.

@@ -136,6 +136,10 @@ const SideNavigation = ({ isMenuOpen, toggleMenu }: SideNavigationProps) => {
         >
           Statystyki
         </NavLink>
+        <NavLink to="/feeds" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Feedy</NavLink>
+        <NavLink to="/feed-review" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Kuracja feedów</NavLink>
+        <NavLink to="/llm-analysis" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Analizy LLM</NavLink>
+        <NavLink to="/jobs" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Joby</NavLink>
         <NavLink
           to="/connect"
           className={classes.link}

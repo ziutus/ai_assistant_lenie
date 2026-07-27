@@ -76,6 +76,7 @@ PROCESSING_STATUS_LOOKUP = {
     "MD_SIMPLIFIED": StalkerDocumentStatus.MD_SIMPLIFIED.name,
     "TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS": StalkerDocumentStatus.TRANSCRIPTION_DONE_AND_SPLIT_BY_CHAPTERS.name,
     "TEMPORARY_ERROR": StalkerDocumentStatus.TEMPORARY_ERROR.name,
+    "NEED_LLM_ANALYSIS": StalkerDocumentStatus.NEED_LLM_ANALYSIS.name,
 }
 
 PROCESSING_ERROR_CODE_LOOKUP = {
@@ -202,6 +203,114 @@ class Collection(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
+
+
+class FeedSource(Base):
+    """Persistent feed configuration; YAML is only a migration seed."""
+    __tablename__ = "feed_sources"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
+    type: Mapped[str] = mapped_column(String(30), nullable=False)
+    url: Mapped[str | None] = mapped_column(Text)
+    channel_id: Mapped[str | None] = mapped_column(String(128))
+    language: Mapped[str] = mapped_column(String(10), nullable=False, server_default=sa_text("'pl'"))
+    collection_id: Mapped[int | None] = mapped_column(ForeignKey("collections.id", ondelete="SET NULL"))
+    tags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    auto_import: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    auto_import_after: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    discovery_source_id: Mapped[int | None] = mapped_column(ForeignKey("discovery_sources.id", ondelete="SET NULL"))
+    default_state: Mapped[str] = mapped_column(String(50), nullable=False, server_default=sa_text("'URL_ADDED'"))
+    field_mapping: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa_text("'{}'::jsonb"))
+    skip_url_patterns: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    skip_title_patterns: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    last_checked_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_successful_import_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+class FeedItem(Base):
+    __tablename__ = "feed_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feed_source_id: Mapped[int] = mapped_column(ForeignKey("feed_sources.id", ondelete="RESTRICT"), nullable=False)
+    url: Mapped[str] = mapped_column(Text, nullable=False)
+    canonical_url: Mapped[str] = mapped_column(Text, nullable=False)
+    title: Mapped[str] = mapped_column(Text, nullable=False, server_default=sa_text("''"))
+    summary: Mapped[str | None] = mapped_column(Text)
+    published_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    raw_payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa_text("'{}'::jsonb"))
+    status: Mapped[str] = mapped_column(String(40), nullable=False, server_default=sa_text("'new'"))
+    first_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    last_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    review_note: Mapped[str | None] = mapped_column(Text)
+    ignored_pattern: Mapped[str | None] = mapped_column(Text)
+    last_error: Mapped[str | None] = mapped_column(Text)
+    __table_args__ = (
+        UniqueConstraint("feed_source_id", "canonical_url", name="uq_feed_items_source_canonical"),
+        Index("idx_feed_items_source_status", "feed_source_id", "status"),
+        Index("idx_feed_items_status_first_seen", "status", "first_seen_at"),
+    )
+
+
+class Job(Base):
+    __tablename__ = "jobs"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    type: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default=sa_text("'queued'"))
+    parameters: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default=sa_text("'{}'::jsonb"))
+    progress: Mapped[dict | None] = mapped_column(JSONB)
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("0"))
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("3"))
+    available_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    heartbeat_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    initiated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True)
+
+
+class FeedItemLlmAnalysis(Base):
+    __tablename__ = "feed_item_llm_analyses"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feed_item_id: Mapped[int] = mapped_column(ForeignKey("feed_items.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'requested'"))
+    requested_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    claimed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    claimed_by: Mapped[str | None] = mapped_column(String(255))
+    prompt_payload: Mapped[dict | None] = mapped_column(JSONB)
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    recommendation: Mapped[str | None] = mapped_column(String(30))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (Index("uq_feed_item_active_llm", "feed_item_id", unique=True,
+                            postgresql_where=sa_text("status IN ('requested', 'claimed')")),)
+
+
+class DocumentLlmAnalysis(Base):
+    __tablename__ = "document_llm_analyses"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'requested'"))
+    requested_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    claimed_by: Mapped[str | None] = mapped_column(String(255))
+    input_payload: Mapped[dict | None] = mapped_column(JSONB)
+    result: Mapped[dict | None] = mapped_column(JSONB)
+    next_status: Mapped[str | None] = mapped_column(String(50))
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Language(Base):
@@ -547,6 +656,8 @@ class Document(Base):
         self.processing_error_code = mapped_state_error
 
     def analyze(self) -> None:
+        if self.processing_status == StalkerDocumentStatus.NEED_LLM_ANALYSIS.name:
+            return None
         if self.processing_status == StalkerDocumentStatus.EMBEDDING_EXIST.name:
             return None
 
@@ -558,6 +669,8 @@ class Document(Base):
             self.text = None
 
     def validate(self) -> None:
+        if self.processing_status == StalkerDocumentStatus.NEED_LLM_ANALYSIS.name:
+            return None
         self.processing_error_code = StalkerDocumentStatusError.NONE.name
 
         if self.processing_status == StalkerDocumentStatus.EMBEDDING_EXIST.name:

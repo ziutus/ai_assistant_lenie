@@ -46,7 +46,7 @@ Automatically import YouTube watch history into Lenie to review recently watched
 
 | Endpoint | Data | Useful? |
 |----------|------|---------|
-| `subscriptions.list` | Subscribed channels | Already covered by `feeds.yaml` (`youtube_channel` type) |
+| `subscriptions.list` | Subscribed channels | Configure as `feed_sources.type = youtube_channel` in the Web UI/API |
 | `playlistItems.list` (playlist=LL) | Liked videos | Possible future source |
 | `playlists.list` | User's playlists | Possible future source |
 | `search.list` | Search results | Not relevant |

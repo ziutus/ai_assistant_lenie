@@ -44,6 +44,6 @@ Project Lenie ingests content from untrusted external sources (RSS feeds, web pa
 
 - [`docs/security/prompt-injection-defense.md`](security/prompt-injection-defense.md) — detailed description of current defenses
 - [`docs/security/pre-commit-verification.md`](security/pre-commit-verification.md) — secret detection (related security control)
-- `backend/imports/feed_monitor.py` — `strip_html()`, `apply_skip_filters()` — input sanitization
+- `backend/library/feed_parser.py` — `strip_html()`, `apply_skip_filters()` — input sanitization
 - `backend/library/ai.py` — LLM interaction layer
 - [ADR-005](#adr-005-remove-ai_ask-endpoint--delegate-ai-analysis-to-claude-desktop-via-mcp) — MCP architecture (Claude Desktop handles AI analysis, reducing in-app LLM attack surface)

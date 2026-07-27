@@ -299,7 +299,7 @@ class DocumentService:
         return webpage_text_clean(url, text)
 
     # ------------------------------------------------------------------
-    # import_document — for import scripts (dynamodb_sync, feed_monitor, batch pipeline)
+    # import_document — for import scripts (dynamodb_sync, feed monitor service, batch pipeline)
     # ------------------------------------------------------------------
 
     def import_document(

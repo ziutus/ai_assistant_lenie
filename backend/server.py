@@ -20,6 +20,8 @@ from library.llm_cost_routes import bp as llm_cost_bp
 from library.reader_routes import bp as reader_bp
 from library.search_routes import bp as search_bp
 from library.stats_routes import bp as stats_bp
+from library.feed_routes import bp as feed_bp
+from library.llm_analysis_routes import bp as llm_analysis_bp
 from library.youtube_processing import process_youtube_url
 
 logging.basicConfig(level=logging.INFO)
@@ -28,7 +30,7 @@ cfg = load_config()
 
 secrets_backend = cfg.require("SECRETS_BACKEND", "env")
 
-APP_VERSION = "0.3.15.5"
+APP_VERSION = "0.3.15.7"
 BUILD_TIME = "2026.07.04 08:00"
 
 logging.info(f"APP VERSION={APP_VERSION} (build time:{BUILD_TIME})")
@@ -92,6 +94,8 @@ app.register_blueprint(reader_bp)
 app.register_blueprint(api_key_bp)
 app.register_blueprint(search_bp)
 app.register_blueprint(stats_bp)
+app.register_blueprint(feed_bp)
+app.register_blueprint(llm_analysis_bp)
 start_analysis_worker()
 
 

@@ -15,7 +15,7 @@ set -euo pipefail
 # --- Configuration ---
 NAS_HOST="192.168.200.7"
 NAS_USER="admin"
-NAS_DOCKER="/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker"
+NAS_DOCKER="/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker"
 NAS_COMPOSE_DIR="/share/ContainerNew/lenie-compose"
 NAS_COMPOSE_FILE="${NAS_COMPOSE_DIR}/compose.nas.yaml"
 NAS_CONFIG_DIR="/share/ContainerNew/lenie-config"
@@ -32,6 +32,7 @@ declare -A SVC_IMAGE=(
     [frontend]="lenie-ai-frontend:latest"
     [app2]="lenie-ai-app2:latest"
     [backend]="lenie-ai-server:latest"
+    [worker]="lenie-ai-server:latest"
     [db]="lenie-ai-db:latest"
     [ner-service]="lenie-ner-service:latest"
 )
@@ -39,6 +40,7 @@ declare -A SVC_REGISTRY_IMAGE=(
     [frontend]="${REGISTRY}/lenie-ai-frontend:latest"
     [app2]="${REGISTRY}/lenie-ai-app2:latest"
     [backend]="${REGISTRY}/lenie-ai-server:latest"
+    [worker]="${REGISTRY}/lenie-ai-server:latest"
     [db]="${REGISTRY}/lenie-ai-db:latest"
     [ner-service]="${REGISTRY}/lenie-ner-service:latest"
 )
@@ -53,12 +55,13 @@ declare -A SVC_COMPOSE_NAME=(
     [frontend]="lenie-ai-frontend"
     [app2]="lenie-ai-app2"
     [backend]="lenie-ai-server"
+    [worker]="lenie-worker"
     [db]="lenie-ai-db"
     [minio]="lenie-minio"
     [ner-service]="lenie-ner-service"
 )
 
-ALL_SERVICES="db backend frontend app2"
+ALL_SERVICES="db backend worker frontend app2"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -123,11 +126,19 @@ push_image() {
     local image="${SVC_IMAGE[$svc]}"
     local registry_image="${SVC_REGISTRY_IMAGE[$svc]}"
 
-    log "Tagowanie ${image} → ${registry_image}..."
-    docker tag "$image" "$registry_image"
+    local archive_name="lenie-deploy-${svc}-$(date +%s)-$$.tar"
+    local local_archive="$(mktemp -p /tmp "${archive_name}.XXXXXX")"
+    local remote_archive="${NAS_COMPOSE_DIR}/${archive_name}"
+    trap 'rm -f "$local_archive"' RETURN
 
-    log "Pushowanie do registry: ${registry_image}..."
-    docker push "$registry_image"
+    log "Eksport obrazu ${image} do archiwum..."
+    docker save -o "$local_archive" "$image"
+    log "Transfer obrazu ${svc} na NAS..."
+    scp "$local_archive" "${NAS_USER}@${NAS_HOST}:${remote_archive}"
+    log "Ładowanie i publikacja obrazu ${registry_image} na NAS..."
+    nas_ssh "${NAS_DOCKER} load -i ${remote_archive} && ${NAS_DOCKER} tag ${image} ${registry_image} && ${NAS_DOCKER} push ${registry_image} && rm -f ${remote_archive}"
+    rm -f "$local_archive"
+    trap - RETURN
     ok "Obraz ${registry_image} w registry"
 }
 
@@ -242,7 +253,7 @@ while [[ $# -gt 0 ]]; do
         --sync-compose)  SYNC_COMPOSE="true"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
-        frontend|app2|backend|db|minio|ner-service) SERVICES="$SERVICES $1"; shift ;;
+frontend|app2|backend|worker|db|minio|ner-service) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
 done
@@ -264,10 +275,9 @@ echo -e "${GREEN}============================================${NC}"
 check_nas_connection
 sync_site_rules
 
-# Sync compose file if requested
-if [ "$SYNC_COMPOSE" = "true" ]; then
-    sync_compose
-fi
+# Compose must be updated before the migration runner; older Compose files do
+# not know the worker/migrate services.
+sync_compose
 
 if [ "$COMPOSE_ONLY" = "true" ]; then
     # Only compose up — no build, no push
@@ -282,6 +292,9 @@ else
         deploy_service "$svc" "$SKIP_BUILD"
     done
 
+    log "Uruchamianie migration runnera przed restartem aplikacji..."
+    nas_docker "compose -f ${NAS_COMPOSE_FILE} run --rm lenie-migrate"
+    ok "Migracje zakończone"
     deploy_on_nas "$SERVICES"
     show_status
 fi

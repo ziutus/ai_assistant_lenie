@@ -28,13 +28,13 @@ Content is stripped and cleaned before it reaches any LLM:
 
 | Mechanism | File | What It Does |
 |-----------|------|-------------|
-| HTML tag stripping | `imports/feed_monitor.py` → `strip_html()` | Removes all HTML tags, converts `<br>/<p>/<li>` to text, decodes entities |
+| HTML tag stripping | `library/feed_parser.py` → `strip_html()` | Removes HTML tags, converts simple breaks to text, and decodes entities |
 | Site-specific cleanup rules | `data/site_rules.json` | Per-domain regex rules removing navigation, ads, sharing buttons, legal notices |
 | Regex article extraction | `data/pages_analyze/*.regex` | Extracts only article body text, discarding page chrome |
 | Content cleanup (regexp) | `library/website/website_text_clean_regexp.py` | Per-domain regex patterns removing boilerplate (e.g., "Trwa ładowanie wpisu") |
 | Content cleanup (download) | `library/website/website_download_context.py` → `webpage_text_clean()` | Applies `site_rules.json` during download — remove before/after markers, literal strings, regex patterns |
-| Skip URL patterns | `imports/feeds.yaml` → `skip_url_patterns` | Blocks known spam/affiliate URLs at import time (e.g., `uw7.org/un`) |
-| Skip title patterns | `imports/feeds.yaml` → `skip_title_patterns` | Regex-based filtering of unwanted articles by title (e.g., region-specific AWS announcements) |
+| Skip URL patterns | PostgreSQL `feed_sources.skip_url_patterns` | Blocks known spam/affiliate URLs at import time |
+| Skip title patterns | PostgreSQL `feed_sources.skip_title_patterns` | Regex-based filtering of unwanted articles by title |
 
 **Effect:** By the time content reaches an LLM, it is plain text stripped of HTML, navigation, ads, and boilerplate. This removes common injection vectors hidden in HTML comments, invisible elements, or page metadata.
 

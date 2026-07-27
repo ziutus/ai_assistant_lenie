@@ -32,6 +32,9 @@ RUN printf '%s\n' "$DEPENDENCY_LAYER_REV" > /app/.dependency-layer-revision && \
 
 COPY backend/library ./library/
 COPY backend/data ./data/
+COPY backend/worker.py ./worker.py
+COPY backend/alembic.ini ./alembic.ini
+COPY backend/alembic ./alembic/
 #COPY backend/tests /app/tests/
 COPY backend/server.py .
 
@@ -49,4 +52,4 @@ EXPOSE 5000
 
 # Define the command to run your application
 #CMD ["python", "server.py"]
-ENTRYPOINT ["/app/.venv/bin/python", "server.py"]
+CMD ["/app/.venv/bin/python", "server.py"]
