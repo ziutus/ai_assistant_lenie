@@ -6,6 +6,8 @@ Standalone CLI scripts that add or manage documents in the Lenie database, bypas
 
 ```
 imports/
+├── book_import_pdf.py        # Import a book PDF (with a usable text layer) into a Document
+├── check_pdf_text_layer.py   # Check if a PDF has a usable text layer or needs OCR (no DB)
 ├── control_questions.py      # Filter control questions from an Obsidian markdown file by tags (no DB)
 ├── import_control_questions.py # Sync the Obsidian control-question bank into the control_questions DB table
 ├── select_control_questions.py # Cheap-LLM (Bielik) router: which control questions a document actually answers
@@ -23,6 +25,43 @@ imports/
 ```
 
 ## Scripts
+
+### `check_pdf_text_layer.py`
+
+Diagnostic for the book-PDF-import workflow: extracts text page-by-page with `pypdf` and reports what fraction of pages come back empty/near-empty. A high empty-page ratio means the PDF is scanned images with no embedded text layer and needs OCR (`test_code/ocr_mistral.py`, Mistral OCR API); a low ratio means the text layer can be used directly (no OCR cost/latency needed) before running it through `book_normalize.py` / `extract_references.py` and the rest of the chapter-based analysis pipeline. **Does not touch the Lenie database.**
+
+**Running:**
+```bash
+cd backend
+python imports/check_pdf_text_layer.py path/to/book.pdf                  # full scan, all pages
+python imports/check_pdf_text_layer.py path/to/book.pdf --sample 40      # quick check, 40 evenly-spaced pages
+python imports/check_pdf_text_layer.py path/to/book.pdf --show-sample 5  # also print 5 sample pages' text for manual QA
+```
+
+Exit code `0` when the text layer looks usable (`TEXT_LAYER_OK`), `1` otherwise (`OCR_NEEDED` or `UNCERTAIN`) — usable in scripts/CI-style checks.
+
+### `book_import_pdf.py`
+
+Thin CLI wrapper (all logic lives in `library/book_pdf_import.py`, pure functions on bytes/text with no filesystem assumptions beyond receiving the PDF as bytes, so the same code can later run from a worker/job instead of a developer machine — see `docs/deployment/nas/storage-and-jobs-migration-plan.md` Etap 3 "thin CLI wrapper" pattern). Extracts per-page text via `pypdf` (run [`check_pdf_text_layer.py`](#check_pdf_text_layerpy) first — no OCR step here), detects chapter boundaries via a regex marker (default matches the `// ROZDZIAŁ NNN //` running-head style used by Sekurak books — pass `--chapter-regex` for other layouts), strips repeated running heads/page numbers, joins hyphenated line-wrap words, and **escapes any stray `#`/`##`-prefixed lines in body text** (shell/config code samples in technical books commonly start with `# comment` — without escaping, `library/text_functions.py`'s `detect_chapters()` mistakes hundreds of these for real H1 headers and swamps the real chapter markers; found the hard way importing doc 9332, "Twierdza Linux"). Creates a `Document` (`document_type='text'`, synthetic `url` like `file:///ksiazki/<slug>.pdf`) with the resulting chapter-marked markdown in `text_md`, and stores the original PDF bytes through `library/storage.py`'s `ObjectStorage` abstraction (not a raw file write) so switching `STORAGE_BACKEND` to MinIO later needs no pipeline changes.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, only when `--apply` is passed.
+
+**Running:**
+```bash
+cd backend
+python imports/book_import_pdf.py book.pdf --title "..." --byline "..."             # dry-run: chapter preview, no DB writes
+python imports/book_import_pdf.py book.pdf --title "..." --byline "..." --apply     # creates the Document
+python imports/book_import_pdf.py book.pdf --title "..." --chapter-regex "..." --show 3
+```
+
+**Arguments:**
+- `--title TEXT` (required), `--byline TEXT`, `--source NAME` (default `own`)
+- `--url URL` — override the synthetic `file:///ksiazki/<slug>.pdf` URL
+- `--chapter-regex REGEX` — override the default `// ROZDZIAŁ NNN //` marker pattern
+- `--show N` — how many detected chapters to print in dry-run preview (default 5)
+- `--apply` — write to the database (default: dry-run only)
+
+After import, run [`extract_references.py`](#extract_referencespy) for book footnotes, then the usual per-chapter analyses (`extract_time_periods.py`, `extract_tones.py`, `select_control_questions.py`) and chunk review via `/chunks/:id`.
 
 ### `dynamodb_sync.py`
 
