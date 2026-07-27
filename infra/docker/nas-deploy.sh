@@ -121,11 +121,34 @@ build_image() {
     ok "Obraz ${image} zbudowany"
 }
 
+# Direct `docker push` to the NAS registry is the primary, documented method
+# (docs/CICD/NAS_Deployment.md) — requires the registry configured as an
+# insecure-registry in Docker Desktop's daemon.json:
+#   "insecure-registries": ["192.168.200.7:5005"]
+# Falls back to save -> scp -> load-on-NAS -> local-push (avoids a cross-network
+# push entirely) if the direct push fails. Covers two known intermittent Docker
+# Desktop bugs: "server gave HTTP response to HTTPS client" (insecure-registries
+# config lost, e.g. after a Docker Desktop update) and "file integrity checksum
+# failed for etc/apk/..." on Alpine-based images (storage layer corruption, see
+# docs/CICD/NAS_Deployment.md's troubleshooting section for the manual fix).
+# NOTE (2026-07-27): this fallback itself broke when local Docker Desktop was on
+# 29.6.1 vs the NAS's 27.1.2 - newer `docker save` emits an OCI blobs/ layout the
+# older `docker load` can't read ("invalid tar header" / "invalid diffID"). If
+# direct push ever fails again, check Docker Desktop's version drift from the
+# NAS before assuming this fallback will save you.
 push_image() {
     local svc="$1"
     local image="${SVC_IMAGE[$svc]}"
     local registry_image="${SVC_REGISTRY_IMAGE[$svc]}"
 
+    log "Push obrazu ${registry_image}..."
+    docker tag "$image" "$registry_image"
+    if docker push "$registry_image"; then
+        ok "Obraz ${registry_image} w registry"
+        return
+    fi
+
+    warn "Bezpośredni push nie powiódł się dla ${svc} — fallback save/scp/load-na-NAS"
     local archive_name="lenie-deploy-${svc}-$(date +%s)-$$.tar"
     local local_archive="$(mktemp -p /tmp "${archive_name}.XXXXXX")"
     local remote_archive="${NAS_COMPOSE_DIR}/${archive_name}"
@@ -139,7 +162,7 @@ push_image() {
     nas_ssh "${NAS_DOCKER} load -i ${remote_archive} && ${NAS_DOCKER} tag ${image} ${registry_image} && ${NAS_DOCKER} push ${registry_image} && rm -f ${remote_archive}"
     rm -f "$local_archive"
     trap - RETURN
-    ok "Obraz ${registry_image} w registry"
+    ok "Obraz ${registry_image} w registry (fallback)"
 }
 
 deploy_on_nas() {

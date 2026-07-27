@@ -481,6 +481,40 @@ Clean unused Docker images on NAS:
 $DOCKER system prune -a
 ```
 
+### Docker Desktop / NAS Docker version drift breaks save/scp/load
+
+2026-07-27: local Docker Desktop had auto-updated to 29.6.1 while the NAS
+(Container Station) stayed on 27.1.2-qnap8. This broke the save/scp/load
+fallback path (`nas-deploy.ps1`/`.sh`'s `push_image` used it unconditionally
+at the time): newer `docker save` emits an OCI-layout tar (`blobs/sha256/...`,
+no legacy `manifest.json`/per-layer folders), which the older `docker load`
+can't parse — symptoms seen, in order of attempted workaround: `archive/tar:
+invalid tar header` (plain save), same error with `--provenance=false
+--sbom=false`, `flate: corrupt input before offset ...` (via `docker buildx
+build --output type=docker`), and finally `invalid diffID for layer N`
+(after disabling Docker Desktop's containerd image store in Settings →
+General — this changes the local storage driver back to `overlay2` but does
+**not** change `docker save`'s output format, so it didn't help).
+
+**What actually fixed it:** switching to a direct `docker push` to the NAS
+registry (`docker tag ... 192.168.200.7:5005/...; docker push ...`) instead of
+save/scp/load — this uses the OCI Distribution (registry) API, which stayed
+compatible across the version gap even though the raw tar format did not. This
+required re-adding `"insecure-registries": ["192.168.200.7:5005"]` to Docker
+Desktop's Docker Engine JSON (see [Configure insecure-registries](#2-configure-insecure-registries)
+above) — it had been lost, most likely by the Docker Desktop update/reset.
+Worked for both a ~1.1GB backend image and the Alpine-based frontend image
+(no recurrence of the checksum bug below on this attempt).
+
+**Takeaway for next time:** if `nas-deploy.ps1`/`.sh` suddenly fails on image
+publish, check `docker version` locally vs. `ssh admin@192.168.200.7
+"/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker version"` for a
+version gap before deep-diagnosing tar/checksum errors — and check that
+insecure-registries is still configured (Docker Desktop updates can reset it).
+The deploy scripts now default to direct push with an automatic fallback to
+save/scp/load if push fails, but that fallback is exactly the path that broke
+here, so it won't rescue you from this specific failure mode again.
+
 ### docker push fails with "file integrity checksum failed"
 
 Known issue with Docker Desktop on Windows — `docker push` (and `docker save`) may fail with `file integrity checksum failed for "etc/apk/..."` for images using Alpine-based base images (e.g. `nginx:alpine`). The Docker Desktop storage layer becomes corrupted.
