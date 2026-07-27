@@ -50,10 +50,63 @@ _SENTENCE_END_RE = re.compile(r"[.!?”\"»]\s*$")
 # 1-2-hash line as a markdown H1/H2 header, so these must be neutralized before
 # our own "## <title>" markers are inserted, or they swamp the real chapter count.
 _LEADING_HASH_RE = re.compile(r"(?m)^(#{1,2})(?=\s)")
+# Book-specific: this book's subheadings render in a distinct "display" font
+# family at a size clearly above body text (body is NotoSerif @ 8.5pt; the
+# chapter running-head title also uses BarlowCondensed but at 11pt/Regular
+# weight, below this threshold, so it's excluded without extra bookkeeping).
+# A book with different subheading styling needs different constants here —
+# there's no universal PDF signal for "this line is a subheading".
+_HEADING_FONT_PREFIX = "BarlowCondensed"
+_HEADING_MIN_SIZE = 12.0
 
 
 def _escape_leading_hashes(text: str) -> str:
     return _LEADING_HASH_RE.sub(lambda m: "\\" + m.group(1), text)
+
+
+def detect_heading_texts(pdf_bytes: bytes) -> set[str]:
+    """Collect the exact text of lines styled as book subheadings, using
+    PyMuPDF's per-span font metadata (name + size) — plain text extraction
+    throws this away, so a subheading like "Nazewnictwo w książce" otherwise
+    blends into the surrounding paragraph text with no visual distinction.
+    A line counts only when EVERY span on it matches the heading style, so a
+    bolded word inside an ordinary sentence (same font family/size as body
+    text, just a different weight) is never mistaken for a heading.
+    """
+    import fitz
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    headings: set[str] = set()
+    for page in doc:
+        for block in page.get_text("dict")["blocks"]:
+            if block.get("type") != 0:
+                continue
+            for line in block["lines"]:
+                spans = [s for s in line["spans"] if s["text"].strip()]
+                if not spans:
+                    continue
+                if all(
+                    s["font"].startswith(_HEADING_FONT_PREFIX) and s["size"] >= _HEADING_MIN_SIZE
+                    for s in spans
+                ):
+                    text = "".join(s["text"] for s in spans).strip()
+                    if text:
+                        headings.add(text)
+    return headings
+
+
+def _mark_headings(text: str, heading_texts: set[str]) -> str:
+    if not heading_texts:
+        return text
+    lines = text.split("\n")
+    out = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped in heading_texts and not stripped.startswith("#"):
+            out.append(f"### {stripped}")
+        else:
+            out.append(line)
+    return "\n".join(out)
 
 
 def _find_chapter_marker_spans(text: str, pattern: re.Pattern) -> list[tuple[int, int, str, str]]:
@@ -144,18 +197,24 @@ def extract_pages(pdf_bytes: bytes) -> list[str]:
     return [page.get_text() for page in doc]
 
 
-def build_book_markdown(pages: list[str], chapter_regex: str = DEFAULT_CHAPTER_REGEX) -> BookMarkdownResult:
+def build_book_markdown(
+    pages: list[str],
+    chapter_regex: str = DEFAULT_CHAPTER_REGEX,
+    heading_texts: set[str] | None = None,
+) -> BookMarkdownResult:
     """Turn raw per-page PDF text into chapter-marked markdown.
 
     Strips every occurrence of the chapter marker (real chapter-start header
     and repeated running heads alike), strips standalone page-number lines,
-    joins words split by a soft hyphen (U+00AD) at a line wrap, and inserts a
+    joins words split by a soft hyphen (U+00AD) at a line wrap, marks book
+    subheadings as "### <title>" (see detect_heading_texts()), and inserts a
     single clean "## <title>" at each chapter's first occurrence. The chapter
     title used is the most common cleaned rendition across all its
     occurrences (running heads render a clean single-line title; the actual
     chapter-start page often wraps the all-caps title across lines).
     """
     pattern = re.compile(chapter_regex)
+    heading_texts = heading_texts or set()
 
     page_spans = [_find_chapter_marker_spans(page_text, pattern) for page_text in pages]
 
@@ -182,6 +241,7 @@ def build_book_markdown(pages: list[str], chapter_regex: str = DEFAULT_CHAPTER_R
         page_parts.append(page_text[cursor:])
         cleaned = "".join(page_parts)
         cleaned = _escape_leading_hashes(cleaned)
+        cleaned = _mark_headings(cleaned, heading_texts)
         chapter_key = chapter_start_pages.get(page_idx)
         if chapter_key is not None:
             body_parts.append(f"\n\n## {canonical_title[chapter_key]}\n\n")
@@ -228,7 +288,8 @@ def import_pdf_book(
     Returns (document, markdown_result) so callers can report chapter stats.
     """
     pages = extract_pages(pdf_bytes)
-    result = build_book_markdown(pages, chapter_regex=chapter_regex)
+    heading_texts = detect_heading_texts(pdf_bytes)
+    result = build_book_markdown(pages, chapter_regex=chapter_regex, heading_texts=heading_texts)
     if not result.chapters:
         raise ValueError(
             "No chapters detected with the given --chapter-regex — adjust the pattern "

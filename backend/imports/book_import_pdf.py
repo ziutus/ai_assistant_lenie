@@ -17,7 +17,13 @@ Running:
 import argparse
 import sys
 
-from library.book_pdf_import import DEFAULT_CHAPTER_REGEX, build_book_markdown, extract_pages, import_pdf_book
+from library.book_pdf_import import (
+    DEFAULT_CHAPTER_REGEX,
+    build_book_markdown,
+    detect_heading_texts,
+    extract_pages,
+    import_pdf_book,
+)
 from library.db.engine import get_session
 
 
@@ -38,9 +44,11 @@ def main() -> None:
 
     if not args.apply:
         pages = extract_pages(pdf_bytes)
-        result = build_book_markdown(pages, chapter_regex=args.chapter_regex)
+        heading_texts = detect_heading_texts(pdf_bytes)
+        result = build_book_markdown(pages, chapter_regex=args.chapter_regex, heading_texts=heading_texts)
         print(f"Plik: {args.file}")
         print(f"Wykryto rozdzialow: {len(result.chapters)}")
+        print(f"Wykryto podrozdzialow (### ): {len(heading_texts)}")
         print(f"Dlugosc markdown: {len(result.markdown)} znakow")
         print()
         for ch in result.chapters[: args.show]:
