@@ -12,10 +12,12 @@ from library.feed_parser import fetch_entries, apply_skip_filters, parse_publish
 from library.url_normalization import canonicalize_url
 
 logger = logging.getLogger(__name__)
+REVIEW_REASONS = {"not_interested", "duplicate", "already_known", "too_long", "other"}
 ACTIVE_TRANSITIONS = {
-    "new": {"llm_analysis_requested", "imported", "skipped", "ignored", "error"},
-    "llm_analysis_requested": {"imported", "skipped", "ignored", "error"},
-    "error": {"imported", "skipped", "ignored"},
+    "new": {"llm_analysis_requested", "saved_for_later", "imported", "skipped", "ignored", "error"},
+    "llm_analysis_requested": {"saved_for_later", "imported", "skipped", "ignored", "error"},
+    "saved_for_later": {"new", "imported", "skipped", "ignored"},
+    "error": {"saved_for_later", "imported", "skipped", "ignored"},
 }
 
 
@@ -151,7 +153,7 @@ def import_feed_item(item_id: int, session=None) -> tuple[FeedItem, Document]:
         item = session.get(FeedItem, item_id)
         if item is None:
             raise ValueError("feed item not found")
-        if item.status not in {"new", "llm_analysis_requested", "error"}:
+        if item.status not in {"new", "llm_analysis_requested", "saved_for_later", "error"}:
             raise ValueError("feed item cannot be imported from its current state")
         session.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 119954089))"), {"key": item.canonical_url}
@@ -189,21 +191,30 @@ def import_feed_item(item_id: int, session=None) -> tuple[FeedItem, Document]:
             session.close()
 
 
-def transition_item(session, item_id: int, target: str, user_id: int | None = None) -> FeedItem:
+def transition_item(
+    session, item_id: int, target: str, user_id: int | None = None, review_reason: str | None = None
+) -> FeedItem:
     item = session.get(FeedItem, item_id)
     if item is None:
         raise ValueError("feed item not found")
     if target not in ACTIVE_TRANSITIONS.get(item.status, set()):
         raise RuntimeError("invalid feed item state transition")
+    if review_reason is not None and review_reason not in REVIEW_REASONS:
+        raise ValueError("invalid review reason")
+    now = dt.datetime.now(dt.timezone.utc)
+    values = {"status": target, "updated_at": now}
+    if target == "saved_for_later":
+        values.update(saved_at=now, saved_by_user_id=user_id)
+    elif item.status == "saved_for_later" and target == "new":
+        values.update(saved_at=None, saved_by_user_id=None)
+    if target in {"skipped", "ignored"}:
+        values.update(reviewed_at=now, reviewed_by_user_id=user_id)
+    if target == "skipped":
+        values["review_reason"] = review_reason or "other"
     result = session.execute(
         update(FeedItem)
         .where(FeedItem.id == item_id, FeedItem.status == item.status)
-        .values(
-            status=target,
-            reviewed_at=dt.datetime.now(dt.timezone.utc),
-            reviewed_by_user_id=user_id,
-            updated_at=dt.datetime.now(dt.timezone.utc),
-        )
+        .values(**values)
     )
     if result.rowcount != 1:
         raise RuntimeError("feed item was changed concurrently")
@@ -244,7 +255,7 @@ def ignore_feed_item(session, item_id: int, field: str, pattern: str, user_id: i
             feed.skip_title_patterns = values
     now = dt.datetime.now(dt.timezone.utc)
     for candidate in session.scalars(
-        select(FeedItem).where(FeedItem.feed_source_id == feed.id, FeedItem.status == "new")
+        select(FeedItem).where(FeedItem.feed_source_id == feed.id, FeedItem.status.in_(["new", "saved_for_later"]))
     ).all():
         try:
             matches = (

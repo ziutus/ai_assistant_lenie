@@ -63,6 +63,17 @@ library/
 
 ## Key Modules
 
+### Feed review
+
+`feed_monitor_service.py` keeps feed candidates separate from imported
+documents. The `saved_for_later` state is a shared household queue: it stores
+`saved_at` and `saved_by_user_id`, but never creates a `Document` or enters the
+automatic import query. The REST API exposes `POST /feed_items/<id>/save-for-later`
+and `POST /feed_items/<id>/restore`; deferred items can later use the existing
+`/import`, `/skip`, or `/ignore` actions. Skips accept a structured `reason`
+(`not_interested`, `duplicate`, `already_known`, `too_long`, `other`) stored in
+`feed_items.review_reason` for future preference/AI filtering.
+
 ### Domain Model & Database
 
 - **`db/models.py`** — `Document` SQLAlchemy ORM model: ~30 attributes covering URL, text content (raw/English/markdown), metadata, processing state. Methods: `get_by_id()`, `get_by_url()`, `populate_neighbors()`. `DocumentEmbedding` model for vector embeddings — optional `chunk_id` FK to `DocumentChunk`, set when the embedding was generated from a reviewed chunk (`generate_embeddings_from_run()`) rather than the fallback whole-document split.

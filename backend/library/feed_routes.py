@@ -3,7 +3,7 @@
 import datetime as dt
 from zoneinfo import ZoneInfo
 from flask import Blueprint, abort, g, jsonify, request
-from sqlalchemy import select
+from sqlalchemy import select, case
 from library.db.engine import get_scoped_session
 from library.db.models import FeedSource, FeedItem, Job
 from library.feed_source_service import list_feeds, feed_to_dict, resolve_references
@@ -34,8 +34,11 @@ def _item_dict(item):
         "summary": item.summary,
         "published_at": item.published_at.isoformat() if item.published_at else None,
         "status": item.status,
+        "saved_at": item.saved_at.isoformat() if item.saved_at else None,
+        "saved_by_user_id": item.saved_by_user_id,
         "document_id": item.document_id,
         "review_note": item.review_note,
+        "review_reason": item.review_reason,
         "ignored_pattern": item.ignored_pattern,
         "first_seen_at": item.first_seen_at.isoformat() if item.first_seen_at else None,
     }
@@ -119,8 +122,15 @@ def check_feed(feed_id):
 def get_items():
     _user()
     session = get_scoped_session()
-    query = select(FeedItem).order_by(FeedItem.first_seen_at.desc())
     status = request.args.get("status")
+    order = [FeedItem.published_at.desc().nulls_last(), FeedItem.first_seen_at.desc()]
+    if status == "saved_for_later":
+        order = [
+            case((FeedItem.saved_at.is_(None), 1), else_=0),
+            FeedItem.saved_at.desc(),
+            FeedItem.first_seen_at.desc(),
+        ]
+    query = select(FeedItem).order_by(*order)
     if status:
         query = query.where(FeedItem.status == status)
     if request.args.get("feed_source_id"):
@@ -164,7 +174,35 @@ def import_item(item_id):
 
 @bp.post("/feed_items/<int:item_id>/skip")
 def skip_item(item_id):
-    item = transition_item(get_scoped_session(), item_id, "skipped", _user())
+    body = request.get_json(silent=True) or {}
+    try:
+        item = transition_item(get_scoped_session(), item_id, "skipped", _user(), body.get("reason"))
+    except ValueError as exc:
+        abort(400 if str(exc) == "invalid review reason" else 404, str(exc))
+    except RuntimeError as exc:
+        abort(409, str(exc))
+    return jsonify(_item_dict(item))
+
+
+@bp.post("/feed_items/<int:item_id>/save-for-later")
+def save_for_later(item_id):
+    try:
+        item = transition_item(get_scoped_session(), item_id, "saved_for_later", _user())
+    except ValueError as exc:
+        abort(404, str(exc))
+    except RuntimeError as exc:
+        abort(409, str(exc))
+    return jsonify(_item_dict(item))
+
+
+@bp.post("/feed_items/<int:item_id>/restore")
+def restore_item(item_id):
+    try:
+        item = transition_item(get_scoped_session(), item_id, "new", _user())
+    except ValueError as exc:
+        abort(404, str(exc))
+    except RuntimeError as exc:
+        abort(409, str(exc))
     return jsonify(_item_dict(item))
 
 

@@ -247,16 +247,28 @@ class FeedItem(Base):
     last_seen_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    saved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    saved_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     reviewed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
     review_note: Mapped[str | None] = mapped_column(Text)
+    review_reason: Mapped[str | None] = mapped_column(String(40))
     ignored_pattern: Mapped[str | None] = mapped_column(Text)
     last_error: Mapped[str | None] = mapped_column(Text)
     __table_args__ = (
         UniqueConstraint("feed_source_id", "canonical_url", name="uq_feed_items_source_canonical"),
+        CheckConstraint(
+            "status IN ('new','llm_analysis_requested','saved_for_later','imported','skipped','ignored','error')",
+            name="ck_feed_items_status",
+        ),
+        CheckConstraint(
+            "review_reason IS NULL OR review_reason IN ('not_interested','duplicate','already_known','too_long','other')",
+            name="ck_feed_items_review_reason",
+        ),
         Index("idx_feed_items_source_status", "feed_source_id", "status"),
         Index("idx_feed_items_status_first_seen", "status", "first_seen_at"),
+        Index("idx_feed_items_status_saved_at", "status", "saved_at"),
     )
 
 
