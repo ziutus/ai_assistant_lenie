@@ -3,6 +3,7 @@
 import datetime as dt
 import logging
 import re
+import regex as safe_regex
 from sqlalchemy import select, update, text
 from library.db.models import FeedSource, FeedItem, Document
 from library.db.engine import get_session
@@ -245,9 +246,14 @@ def ignore_feed_item(session, item_id: int, field: str, pattern: str, user_id: i
     for candidate in session.scalars(
         select(FeedItem).where(FeedItem.feed_source_id == feed.id, FeedItem.status == "new")
     ).all():
-        matches = (
-            candidate.url.startswith(pattern) if field == "url" else bool(re.search(pattern, candidate.title, re.I))
-        )
+        try:
+            matches = (
+                candidate.url.startswith(pattern)
+                if field == "url"
+                else bool(safe_regex.search(pattern, candidate.title, safe_regex.I, timeout=0.05))
+            )
+        except (safe_regex.error, TimeoutError):
+            matches = False
         if matches:
             (
                 candidate.status,

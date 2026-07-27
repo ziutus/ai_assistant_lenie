@@ -42,6 +42,7 @@ dependencies = [
     "markitdown>=0.1.4",
     "apify-client>=2.5.0",
     "defusedxml>=0.7",
+    "regex>=2026.5.9",
 ]
 
 [project.optional-dependencies]

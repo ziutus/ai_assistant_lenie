@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 import defusedxml.ElementTree as DET
+import regex as safe_regex
 import requests
 
 ATOM_NS = "http://www.w3.org/2005/Atom"
@@ -104,10 +105,10 @@ def apply_skip_filters(entries: list[dict], feed: dict) -> tuple[list[dict], lis
         if pattern is None:
             for candidate in titles:
                 try:
-                    if re.search(candidate, entry["title"], re.I):
+                    if safe_regex.search(candidate, entry["title"], safe_regex.I, timeout=0.05):
                         pattern = candidate
                         break
-                except re.error:
+                except (safe_regex.error, TimeoutError):
                     continue
         (ignored if pattern is not None else kept).append({**entry, "ignored_pattern": pattern} if pattern else entry)
     return kept, ignored
