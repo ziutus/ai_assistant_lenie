@@ -5,7 +5,7 @@ from typing import Any
 from sqlalchemy import Float, and_, delete, func, literal, or_, select
 from sqlalchemy.orm import Session
 
-from library.db.models import DocumentAnalysisRun, DocumentChunk, Document, DocumentEmbedding
+from library.db.models import ContentGroup, DocumentAnalysisRun, DocumentChunk, Document, DocumentEmbedding, DocumentGroupMembership
 from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.models.stalker_document_type import StalkerDocumentType
@@ -26,7 +26,10 @@ class DocumentRepository:
                  ai_summary_needed: bool = None,
                  start_id=None, only_missing_obsidian_notes: bool = False,
                  only_has_obsidian_notes: bool = False,
-                 without_embedding: bool = False) -> list[dict[str, Any]]:
+                 without_embedding: bool = False, topic_group_ids: list[int] | None = None,
+                 topic_match: str = "any", priority_group_id: int | None = None,
+                 without_topics: bool = False, without_priority: bool = False,
+                 sort: str = "newest") -> list[dict[str, Any]]:
 
         if count:
             stmt = select(func.count(Document.id))
@@ -86,16 +89,62 @@ class DocumentRepository:
                 DocumentEmbedding.document_id == Document.id,
             ).exists())
 
+        topic_group_ids = topic_group_ids or []
+        if topic_group_ids:
+            if topic_match not in {"any", "all"}:
+                raise ValueError("topic_match must be any or all")
+            if topic_match == "any":
+                stmt = stmt.where(select(DocumentGroupMembership.document_id).where(
+                    DocumentGroupMembership.document_id == Document.id,
+                    DocumentGroupMembership.group_id.in_(topic_group_ids),
+                    DocumentGroupMembership.group.has(and_(ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None))),
+                ).exists())
+            else:
+                for group_id in topic_group_ids:
+                    stmt = stmt.where(select(DocumentGroupMembership.document_id).where(
+                        DocumentGroupMembership.document_id == Document.id,
+                        DocumentGroupMembership.group_id == group_id,
+                        DocumentGroupMembership.group.has(and_(ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None))),
+                    ).exists())
+        if priority_group_id is not None:
+            stmt = stmt.where(select(DocumentGroupMembership.document_id).where(
+                DocumentGroupMembership.document_id == Document.id,
+                DocumentGroupMembership.group_id == priority_group_id,
+                DocumentGroupMembership.group.has(and_(ContentGroup.kind == "priority", ContentGroup.archived_at.is_(None))),
+            ).exists())
+        if without_topics:
+            stmt = stmt.where(~select(DocumentGroupMembership.document_id).where(
+                DocumentGroupMembership.document_id == Document.id,
+                DocumentGroupMembership.group.has(and_(ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None))),
+            ).exists())
+        if without_priority:
+            stmt = stmt.where(~select(DocumentGroupMembership.document_id).where(
+                DocumentGroupMembership.document_id == Document.id,
+                DocumentGroupMembership.group.has(and_(ContentGroup.kind == "priority", ContentGroup.archived_at.is_(None))),
+            ).exists())
+
         if count:
             return self.session.execute(stmt).scalar()
 
         # id tiebreaker keeps pagination stable when timestamps collide (stage 12)
-        stmt = stmt.order_by(Document.ingested_at.desc(), Document.id.desc())
+        if sort == "priority":
+            effective_rank = select(ContentGroup.priority_rank).join(
+                DocumentGroupMembership, DocumentGroupMembership.group_id == ContentGroup.id,
+            ).where(
+                DocumentGroupMembership.document_id == Document.id,
+                ContentGroup.kind == "priority", ContentGroup.archived_at.is_(None),
+            ).order_by(ContentGroup.priority_rank.asc()).limit(1).scalar_subquery()
+            stmt = stmt.order_by(effective_rank.asc().nulls_last(), Document.ingested_at.desc(), Document.id.desc())
+        elif sort == "newest":
+            stmt = stmt.order_by(Document.ingested_at.desc(), Document.id.desc())
+        else:
+            raise ValueError("sort must be newest or priority")
         stmt = stmt.limit(limit).offset(offset * limit)
 
         rows = self.session.execute(stmt).all()
         doc_ids = [row.id for row in rows]
         obsidian_notes_by_doc = self._count_obsidian_note_chunks(doc_ids)
+        groups_by_doc = self._load_document_groups(doc_ids)
 
         result = []
         for row in rows:
@@ -115,7 +164,25 @@ class DocumentRepository:
                 "obsidian_note_paths": row.obsidian_note_paths or [],
                 "chunks_missing_obsidian_notes": missing,
                 "chunks_with_obsidian_notes": with_notes,
+                "groups": groups_by_doc.get(row.id, {}).get("groups", []),
+                "effective_priority_rank": groups_by_doc.get(row.id, {}).get("effective_priority_rank"),
             })
+        return result
+
+    def _load_document_groups(self, doc_ids: list[int]) -> dict[int, dict[str, Any]]:
+        if not doc_ids:
+            return {}
+        rows = self.session.execute(
+            select(DocumentGroupMembership, ContentGroup)
+            .join(ContentGroup, ContentGroup.id == DocumentGroupMembership.group_id)
+            .where(DocumentGroupMembership.document_id.in_(doc_ids), ContentGroup.archived_at.is_(None))
+            .order_by(ContentGroup.kind, ContentGroup.priority_rank, ContentGroup.name)
+        ).all()
+        result: dict[int, dict[str, Any]] = {doc_id: {"groups": [], "effective_priority_rank": None} for doc_id in doc_ids}
+        for membership, group in rows:
+            result[membership.document_id]["groups"].append({"id": group.id, "name": group.name, "kind": group.kind, "priority_rank": group.priority_rank})
+            if group.kind == "priority" and result[membership.document_id]["effective_priority_rank"] is None:
+                result[membership.document_id]["effective_priority_rank"] = group.priority_rank
         return result
 
     @staticmethod

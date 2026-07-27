@@ -1,7 +1,8 @@
 import React from "react";
 import Layout from "./modules/shared/components/Layout/Layout";
 import Authorization from "./modules/shared/components/Authorization/authorization";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import ContentGroupsPanel from "./modules/shared/components/ContentGroupsPanel/ContentGroupsPanel";
 import Link from "./modules/shared/pages/link";
 import Webpage from "./modules/shared/pages/webpage";
 import Youtube from "./modules/shared/pages/youtube";
@@ -33,6 +34,11 @@ const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   return <>{children}</>;
 };
 
+const DocumentEditorWithGroups: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { id } = useParams();
+  return <>{id && <ContentGroupsPanel documentId={id} />}{children}</>;
+};
+
 function App() {
   const location = useLocation();
   const hideAuthorizationBar = location.pathname.startsWith("/read/");
@@ -49,11 +55,11 @@ function App() {
                 {!hideAuthorizationBar && <Authorization />}
                 <Routes>
                   <Route path="/" element={<Navigate to="/list" />} />
-                  <Route path="/webpage/:id?" element={<Webpage />} />
-                  <Route path="/link/:id?" element={<Link />} />
-                  <Route path="/movie/:id?" element={<Movie />} />
-                  <Route path="/youtube/:id?" element={<Youtube />} />
-                  <Route path="/email/:id?" element={<Email />} />
+                  <Route path="/webpage/:id?" element={<DocumentEditorWithGroups><Webpage /></DocumentEditorWithGroups>} />
+                  <Route path="/link/:id?" element={<DocumentEditorWithGroups><Link /></DocumentEditorWithGroups>} />
+                  <Route path="/movie/:id?" element={<DocumentEditorWithGroups><Movie /></DocumentEditorWithGroups>} />
+                  <Route path="/youtube/:id?" element={<DocumentEditorWithGroups><Youtube /></DocumentEditorWithGroups>} />
+                  <Route path="/email/:id?" element={<DocumentEditorWithGroups><Email /></DocumentEditorWithGroups>} />
                   <Route path="/chunks/:id" element={<Chunks />} />
                   <Route path="/read/:id" element={<Read />} />
                   <Route path="/list" element={<List />} />

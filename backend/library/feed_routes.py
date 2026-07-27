@@ -3,11 +3,23 @@
 import datetime as dt
 from zoneinfo import ZoneInfo
 from flask import Blueprint, abort, g, jsonify, request
-from sqlalchemy import select, case
+from sqlalchemy import select, case, func, and_
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 from library.db.engine import get_scoped_session
-from library.db.models import FeedSource, FeedItem, Job
+from library.db.models import ContentGroup, Document, FeedItemGroupMembership, FeedSource, FeedItem, FeedReviewDecision, Job
+from library.content_group_service import (
+    archive_group,
+    create_group,
+    group_to_dict,
+    replace_document_groups,
+    replace_feed_item_groups,
+    update_group,
+)
+from library.content_group_suggestion_service import decide_suggestion, request_suggestions
+from library.db.models import ContentGroupSuggestion, ContentGroupSuggestionRun
 from library.feed_source_service import list_feeds, feed_to_dict, resolve_references
-from library.feed_monitor_service import transition_item, save_review_note, import_feed_item, ignore_feed_item
+from library.feed_monitor_service import transition_item, save_review_note, import_feed_item, ignore_feed_item, record_review_decision, new_review_batch_id
 from library.job_queue import enqueue, retry, cancel
 
 bp = Blueprint("feeds", __name__)
@@ -25,6 +37,19 @@ def _service():
 
 
 def _item_dict(item):
+    groups = sorted(
+        [
+            {
+                "id": membership.group.id,
+                "name": membership.group.name,
+                "kind": membership.group.kind,
+                "priority_rank": membership.group.priority_rank,
+                "source": membership.source,
+            }
+            for membership in item.group_memberships
+        ],
+        key=lambda group: (group["kind"] != "priority", group["priority_rank"] if group["priority_rank"] is not None else 10**9, group["name"].casefold()),
+    )
     return {
         "id": item.id,
         "feed_source_id": item.feed_source_id,
@@ -41,7 +66,235 @@ def _item_dict(item):
         "review_reason": item.review_reason,
         "ignored_pattern": item.ignored_pattern,
         "first_seen_at": item.first_seen_at.isoformat() if item.first_seen_at else None,
+        "groups": groups,
     }
+
+
+@bp.get("/content_groups")
+def get_content_groups():
+    _user()
+    session = get_scoped_session()
+    query = select(ContentGroup).order_by(ContentGroup.kind, ContentGroup.name)
+    if request.args.get("include_archived") != "1":
+        query = query.where(ContentGroup.archived_at.is_(None))
+    return jsonify({"content_groups": [group_to_dict(group, session) for group in session.scalars(query).all()]})
+
+
+@bp.post("/content_groups")
+def post_content_group():
+    _user()
+    body = request.get_json(silent=True) or {}
+    try:
+        row = create_group(get_scoped_session(), body.get("name"), body.get("kind"), body.get("priority_rank"))
+        get_scoped_session().commit()
+    except ValueError as exc:
+        get_scoped_session().rollback()
+        abort(400, str(exc))
+    except IntegrityError:
+        get_scoped_session().rollback()
+        abort(409, "active group name already exists")
+    return jsonify(group_to_dict(row)), 201
+
+
+@bp.patch("/content_groups/<int:group_id>")
+def patch_content_group(group_id):
+    _user()
+    session = get_scoped_session()
+    row = session.get(ContentGroup, group_id)
+    if row is None:
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    try:
+        row = update_group(session, row, **{key: body[key] for key in {"name", "kind", "priority_rank"} if key in body})
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        abort(400, str(exc))
+    except IntegrityError:
+        session.rollback()
+        abort(409, "active group name already exists")
+    return jsonify(group_to_dict(row, session))
+
+
+@bp.delete("/content_groups/<int:group_id>")
+def delete_content_group(group_id):
+    _user()
+    session = get_scoped_session()
+    row = session.get(ContentGroup, group_id)
+    if row is None:
+        abort(404)
+    try:
+        archive_group(session, row)
+    except RuntimeError as exc:
+        session.rollback()
+        return jsonify({"error": str(exc), **getattr(exc, "counts", {})}), 409
+    return jsonify(group_to_dict(row, session))
+
+
+@bp.patch("/feed_items/<int:item_id>/groups")
+def patch_feed_item_groups(item_id):
+    _user()
+    session = get_scoped_session()
+    item = session.get(FeedItem, item_id)
+    if item is None:
+        abort(404)
+    if item.status != "saved_for_later":
+        abort(409, "only saved feed items can be edited")
+    previous_group_ids = [membership.group_id for membership in item.group_memberships]
+    previous_status = item.status
+    previous_document_id = item.document_id
+    previous_saved_at = item.saved_at
+    previous_review_reason = item.review_reason
+    previous_ignored_pattern = item.ignored_pattern
+    try:
+        body = request.get_json(silent=True) or {}
+        replace_feed_item_groups(session, item, body.get("group_ids"))
+        record_review_decision(
+            session, item, action="groups", previous_status=previous_status,
+            previous_document_id=previous_document_id, previous_saved_at=previous_saved_at,
+            previous_review_reason=previous_review_reason, previous_ignored_pattern=previous_ignored_pattern,
+            previous_group_ids=previous_group_ids, user_id=g.auth.user_id,
+            batch_id=body.get("batch_id") or new_review_batch_id(), job_id=body.get("job_id"),
+        )
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        abort(400, str(exc))
+    return jsonify(_item_dict(session.get(FeedItem, item_id)))
+
+
+@bp.get("/feed_items/<int:item_id>/groups")
+def get_feed_item_groups(item_id):
+    _user()
+    session = get_scoped_session()
+    item = session.get(FeedItem, item_id)
+    if item is None:
+        abort(404)
+    return jsonify({"feed_item_id": item_id, "groups": [
+        {"id": membership.group.id, "name": membership.group.name, "kind": membership.group.kind, "priority_rank": membership.group.priority_rank, "source": membership.source}
+        for membership in sorted(item.group_memberships, key=lambda row: row.group.name.casefold())
+    ]})
+
+
+@bp.get("/document/<int:document_id>/groups")
+def get_document_groups(document_id):
+    _user()
+    session = get_scoped_session()
+    document = session.get(Document, document_id)
+    if document is None:
+        abort(404)
+    groups = sorted(document.group_memberships, key=lambda membership: (membership.group.kind != "priority", membership.group.priority_rank or 10**9, membership.group.name.casefold()))
+    return jsonify({"document_id": document_id, "groups": [{**group_to_dict(membership.group), "source": membership.source} for membership in groups if membership.group.archived_at is None]})
+
+
+@bp.patch("/document/<int:document_id>/groups")
+def patch_document_groups(document_id):
+    _user()
+    session = get_scoped_session()
+    document = session.get(Document, document_id)
+    if document is None:
+        abort(404)
+    try:
+        replace_document_groups(session, document, (request.get_json(silent=True) or {}).get("group_ids"))
+    except ValueError as exc:
+        session.rollback()
+        abort(400, str(exc))
+    return get_document_groups()
+
+
+@bp.get("/document/<int:document_id>/origin-feed-groups")
+def get_origin_feed_groups(document_id):
+    _user()
+    session = get_scoped_session()
+    if session.get(Document, document_id) is None:
+        abort(404)
+    items = session.scalars(
+        select(FeedItem).where(FeedItem.document_id == document_id).options(
+            selectinload(FeedItem.group_memberships).selectinload(FeedItemGroupMembership.group)
+        ).order_by(FeedItem.id)
+    ).all()
+    return jsonify({"document_id": document_id, "feed_items": [
+        {"id": item.id, "canonical_url": item.canonical_url, "title": item.title, "groups": [
+            {"id": membership.group.id, "name": membership.group.name, "kind": membership.group.kind, "priority_rank": membership.group.priority_rank}
+            for membership in sorted(item.group_memberships, key=lambda row: row.group.name.casefold())
+        ]} for item in items
+    ]})
+
+
+def _suggestion_dict(suggestion):
+    return {
+        "id": suggestion.id,
+        "run_id": suggestion.run_id,
+        "group_id": suggestion.group_id,
+        "confidence": float(suggestion.confidence),
+        "reason": suggestion.reason,
+        "status": suggestion.status,
+        "membership_created": suggestion.membership_created,
+        "decided_by_user_id": suggestion.decided_by_user_id,
+        "decided_at": suggestion.decided_at.isoformat() if suggestion.decided_at else None,
+    }
+
+
+def _suggestions_response(session, target_type, target_id):
+    target_column = ContentGroupSuggestionRun.feed_item_id if target_type == "feed_item" else ContentGroupSuggestionRun.document_id
+    run = session.scalar(select(ContentGroupSuggestionRun).where(target_column == target_id).order_by(ContentGroupSuggestionRun.id.desc()))
+    if run is None:
+        return {"run": None, "suggestions": []}
+    return {"run": {"id": run.id, "status": run.status, "job_id": run.job_id, "error": run.error, "created_at": run.created_at.isoformat() if run.created_at else None}, "suggestions": [_suggestion_dict(item) for item in run.suggestions]}
+
+
+@bp.get("/feed_items/<int:item_id>/group-suggestions")
+def get_feed_suggestions(item_id):
+    _user()
+    session = get_scoped_session()
+    if session.get(FeedItem, item_id) is None:
+        abort(404)
+    return jsonify(_suggestions_response(session, "feed_item", item_id))
+
+
+@bp.get("/document/<int:document_id>/group-suggestions")
+def get_document_suggestions(document_id):
+    _user()
+    session = get_scoped_session()
+    if session.get(Document, document_id) is None:
+        abort(404)
+    return jsonify(_suggestions_response(session, "document", document_id))
+
+
+def _request_suggestions(target_type, target_id):
+    user_id = _user()
+    session = get_scoped_session()
+    try:
+        job, run = request_suggestions(session, target_type, target_id, user_id=user_id, force=bool((request.get_json(silent=True) or {}).get("force")))
+    except LookupError as exc:
+        abort(404, str(exc))
+    except ValueError as exc:
+        abort(400, str(exc))
+    return jsonify({"run": {"id": run.id, "status": run.status, "job_id": job.id if job else run.job_id}, "job": {"id": job.id, "type": job.type, "status": job.status} if job else None}), 202
+
+
+@bp.post("/feed_items/<int:item_id>/group-suggestions")
+def request_feed_suggestions(item_id):
+    return _request_suggestions("feed_item", item_id)
+
+
+@bp.post("/document/<int:document_id>/group-suggestions")
+def request_document_suggestions(document_id):
+    return _request_suggestions("document", document_id)
+
+
+@bp.post("/content_group_suggestions/<int:suggestion_id>/<action>")
+def decide_content_group_suggestion(suggestion_id, action):
+    user_id = _user()
+    if action not in {"accept", "dismiss", "revert"}:
+        abort(404)
+    try:
+        suggestion, target = decide_suggestion(get_scoped_session(), suggestion_id, action, user_id)
+    except LookupError as exc:
+        abort(404, str(exc))
+    except (RuntimeError, ValueError) as exc:
+        abort(409 if isinstance(exc, RuntimeError) else 400, str(exc))
+    return jsonify({"suggestion": _suggestion_dict(suggestion), "target_id": target.id})
 
 
 @bp.get("/feed_sources")
@@ -130,11 +383,44 @@ def get_items():
             FeedItem.saved_at.desc(),
             FeedItem.first_seen_at.desc(),
         ]
-    query = select(FeedItem).order_by(*order)
+    query = select(FeedItem).options(selectinload(FeedItem.group_memberships).selectinload(FeedItemGroupMembership.group)).order_by(*order)
     if status:
         query = query.where(FeedItem.status == status)
     if request.args.get("feed_source_id"):
         query = query.where(FeedItem.feed_source_id == int(request.args["feed_source_id"]))
+    try:
+        topic_ids = _parse_group_ids(request.args.get("topic_group_ids"))
+        priority_id = int(request.args["priority_group_id"]) if request.args.get("priority_group_id") else None
+        if topic_ids and request.args.get("without_topics") == "1":
+            abort(400, "topic_group_ids and without_topics are mutually exclusive")
+        if priority_id and request.args.get("without_priority") == "1":
+            abort(400, "priority_group_id and without_priority are mutually exclusive")
+        _validate_filter_groups(session, topic_ids, priority_id)
+        if topic_ids:
+            topic_exists = select(1).select_from(FeedItemGroupMembership).where(
+                FeedItemGroupMembership.feed_item_id == FeedItem.id,
+                FeedItemGroupMembership.group_id.in_(topic_ids),
+            )
+            if request.args.get("topic_match", "any") == "all":
+                for topic_id in topic_ids:
+                    query = query.where(select(1).select_from(FeedItemGroupMembership).where(
+                        FeedItemGroupMembership.feed_item_id == FeedItem.id,
+                        FeedItemGroupMembership.group_id == topic_id,
+                    ).exists())
+            elif request.args.get("topic_match", "any") == "any":
+                query = query.where(topic_exists.exists())
+            else:
+                abort(400, "topic_match must be any or all")
+        elif request.args.get("topic_match") not in {None, "any", "all"}:
+            abort(400, "topic_match must be any or all")
+        if priority_id:
+            query = query.where(select(1).select_from(FeedItemGroupMembership).where(FeedItemGroupMembership.feed_item_id == FeedItem.id, FeedItemGroupMembership.group_id == priority_id).exists())
+        if request.args.get("without_topics") == "1":
+            query = query.where(~select(1).select_from(FeedItemGroupMembership).where(FeedItemGroupMembership.feed_item_id == FeedItem.id, FeedItemGroupMembership.group.has(ContentGroup.kind == "topic")).exists())
+        if request.args.get("without_priority") == "1":
+            query = query.where(~select(1).select_from(FeedItemGroupMembership).where(FeedItemGroupMembership.feed_item_id == FeedItem.id, FeedItemGroupMembership.group.has(ContentGroup.kind == "priority")).exists())
+    except (TypeError, ValueError):
+        abort(400, "invalid group filter")
     limit = min(max(int(request.args.get("limit", 50)), 1), 200)
     offset = max(int(request.args.get("offset", 0)), 0)
     return jsonify(
@@ -144,6 +430,82 @@ def get_items():
             "offset": offset,
         }
     )
+
+
+def _decision_dict(row):
+    return {
+        "id": row.id, "batch_id": row.batch_id, "job_id": row.job_id,
+        "feed_item_id": row.feed_item_id, "feed_source_id": row.feed_item.feed_source_id,
+        "title": row.feed_item.title, "url": row.feed_item.url, "action": row.action,
+        "previous_status": row.previous_status, "new_status": row.new_status,
+        "previous_document_id": row.previous_document_id, "new_document_id": row.new_document_id,
+        "previous_group_ids": row.previous_group_ids or [], "new_group_ids": row.new_group_ids or [],
+        "metadata": row.metadata_json or {}, "created_at": row.created_at.isoformat(),
+        "undone_at": row.undone_at.isoformat() if row.undone_at else None,
+    }
+
+
+@bp.get("/feed_review_decisions")
+def get_review_decisions():
+    _user()
+    session = get_scoped_session()
+    query = select(FeedReviewDecision).join(FeedItem).order_by(FeedReviewDecision.created_at.desc(), FeedReviewDecision.id.desc())
+    if request.args.get("feed_source_id"):
+        query = query.where(FeedItem.feed_source_id == int(request.args["feed_source_id"]))
+    if request.args.get("batch_id"):
+        query = query.where(FeedReviewDecision.batch_id == request.args["batch_id"])
+    if request.args.get("job_id"):
+        query = query.where(FeedReviewDecision.job_id == request.args["job_id"])
+    if request.args.get("include_undone") != "1":
+        query = query.where(FeedReviewDecision.undone_at.is_(None))
+    limit = min(max(int(request.args.get("limit", 100)), 1), 500)
+    rows = session.scalars(query.limit(limit)).all()
+    return jsonify({"decisions": [_decision_dict(row) for row in rows]})
+
+
+@bp.post("/feed_review_decisions/<int:decision_id>/undo")
+def undo_review_decision(decision_id):
+    user_id = _user()
+    session = get_scoped_session()
+    row = session.get(FeedReviewDecision, decision_id)
+    if row is None:
+        abort(404)
+    if row.undone_at is not None:
+        abort(409, "decision already undone")
+    item = session.get(FeedItem, row.feed_item_id)
+    if item is None:
+        abort(404)
+    if item.status != row.new_status or item.document_id != row.new_document_id:
+        abort(409, "feed item changed after this decision; manual review required")
+    item.status = row.previous_status
+    item.document_id = row.previous_document_id
+    item.saved_at = row.previous_saved_at
+    item.review_reason = row.previous_review_reason
+    item.ignored_pattern = row.previous_ignored_pattern
+    item.updated_at = dt.datetime.now(dt.timezone.utc)
+    replace_feed_item_groups(session, item, row.previous_group_ids, commit=False)
+    row.undone_at = dt.datetime.now(dt.timezone.utc)
+    row.undone_by_user_id = user_id
+    session.commit()
+    return jsonify({"decision": _decision_dict(row), "feed_item": _item_dict(session.get(FeedItem, item.id))})
+
+
+def _parse_group_ids(raw):
+    if raw is None or raw == "":
+        return []
+    values = [int(value) for value in raw.split(",")]
+    if len(values) != len(set(values)) or any(value <= 0 for value in values):
+        raise ValueError("invalid group IDs")
+    return values
+
+
+def _validate_filter_groups(session, topic_ids, priority_id):
+    ids = topic_ids + ([priority_id] if priority_id else [])
+    if not ids:
+        return
+    groups = {group.id: group for group in session.scalars(select(ContentGroup).where(ContentGroup.id.in_(ids), ContentGroup.archived_at.is_(None))).all()}
+    if len(groups) != len(ids) or any(groups[group_id].kind != "topic" for group_id in topic_ids) or (priority_id and groups[priority_id].kind != "priority"):
+        raise ValueError("group filter has wrong kind or inactive group")
 
 
 @bp.get("/feed_items/<int:item_id>")
@@ -160,7 +522,11 @@ def import_item(item_id):
     _user()
     session = get_scoped_session()
     try:
-        item, doc = import_feed_item(item_id, session)
+        body = request.get_json(silent=True) or {}
+        item, doc = import_feed_item(
+            item_id, session, body.get("document_type"), g.auth.user_id,
+            keep_for_review=bool(body.get("keep_for_review", False)),
+        )
         item.reviewed_by_user_id = g.auth.user_id
         item.reviewed_at = dt.datetime.now(dt.timezone.utc)
         session.commit()
@@ -186,8 +552,9 @@ def skip_item(item_id):
 
 @bp.post("/feed_items/<int:item_id>/save-for-later")
 def save_for_later(item_id):
+    body = request.get_json(silent=True) or {}
     try:
-        item = transition_item(get_scoped_session(), item_id, "saved_for_later", _user())
+        item = transition_item(get_scoped_session(), item_id, "saved_for_later", _user(), group_ids=body.get("group_ids"))
     except ValueError as exc:
         abort(404, str(exc))
     except RuntimeError as exc:

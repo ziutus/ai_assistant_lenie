@@ -1,10 +1,11 @@
 from flask import Flask, Response, g, request, abort, jsonify
 from flask_cors import CORS
 import logging
+from sqlalchemy import select
 
 from library.config_loader import load_config
 from library.db.engine import get_scoped_session
-from library.db.models import TranscriptionLog, Document
+from library.db.models import ContentGroup, TranscriptionLog, Document
 from library.document_service import DocumentService, ExistingDocumentError
 from library.search_service import SearchService
 from library.document_repository import DocumentRepository
@@ -21,6 +22,7 @@ from library.reader_routes import bp as reader_bp
 from library.search_routes import bp as search_bp
 from library.stats_routes import bp as stats_bp
 from library.feed_routes import bp as feed_bp
+from library.feed_monitor_service import link_matching_feed_items_to_document
 from library.llm_analysis_routes import bp as llm_analysis_bp
 from library.youtube_processing import process_youtube_url
 
@@ -249,6 +251,8 @@ def url_add():
                 ai_summary=url_data.get("ai_summary", False),
                 chapter_list=url_data.get("chapter_list", False),
             )
+        link_matching_feed_items_to_document(session, doc)
+        session.commit()
         return {
             'status': 'success',
             'message': f'Successfully saved document with ID: {doc.id}',
@@ -257,6 +261,8 @@ def url_add():
 
     except ExistingDocumentError as e:
         doc = e.document
+        link_matching_feed_items_to_document(session, doc)
+        session.commit()
         return {
             'status': 'already_exists',
             'message': f'Document already exists with ID: {doc.id}',
@@ -288,6 +294,19 @@ def website_list():
     only_has_obsidian_notes = request.args.get('only_has_obsidian_notes', '').lower() in ('1', 'true')
     without_embedding = request.args.get('without_embedding', '').lower() in ('1', 'true')
     try:
+        topic_group_ids = [int(value) for value in request.args.get('topic_group_ids', '').split(',') if value]
+        priority_group_id = int(request.args['priority_group_id']) if request.args.get('priority_group_id') else None
+        topic_match = request.args.get('topic_match', 'any')
+        sort = request.args.get('sort', 'newest')
+        without_topics = request.args.get('without_topics', '').lower() in ('1', 'true')
+        without_priority = request.args.get('without_priority', '').lower() in ('1', 'true')
+        if len(topic_group_ids) != len(set(topic_group_ids)) or topic_match not in {'any', 'all'} or sort not in {'newest', 'priority'}:
+            raise ValueError
+        if topic_group_ids and without_topics or priority_group_id and without_priority:
+            raise ValueError
+    except (TypeError, ValueError):
+        return {"status": "error", "message": "invalid content group filter"}, 400
+    try:
         limit = min(max(int(request.args.get('limit', 100)), 1), 100)
         page = max(int(request.args.get('page', 1)), 1)
     except (TypeError, ValueError):
@@ -295,6 +314,11 @@ def website_list():
     logging.debug(document_type)
 
     session = get_scoped_session()
+    group_ids = topic_group_ids + ([priority_group_id] if priority_group_id else [])
+    if group_ids:
+        groups = {group.id: group for group in session.scalars(select(ContentGroup).where(ContentGroup.id.in_(group_ids), ContentGroup.archived_at.is_(None))).all()}
+        if len(groups) != len(group_ids) or any(groups[group_id].kind != 'topic' for group_id in topic_group_ids) or (priority_group_id and groups[priority_group_id].kind != 'priority'):
+            return {"status": "error", "message": "invalid content group filter"}, 400
     repo = DocumentRepository(session)
     list_kwargs = {
         "document_type": document_type,
@@ -305,8 +329,17 @@ def website_list():
         "without_embedding": without_embedding,
         "limit": limit,
         "offset": page - 1,
+        "topic_group_ids": topic_group_ids,
+        "topic_match": topic_match,
+        "priority_group_id": priority_group_id,
+        "without_topics": without_topics,
+        "without_priority": without_priority,
+        "sort": sort,
     }
-    websites_list = repo.get_list(**list_kwargs)
+    try:
+        websites_list = repo.get_list(**list_kwargs)
+    except ValueError as exc:
+        return {"status": "error", "message": str(exc)}, 400
     count_kwargs = {key: value for key, value in list_kwargs.items() if key not in ("limit", "offset")}
     websites_list_count = repo.get_list(**count_kwargs, count=True)
     logging.debug("website count: %s", websites_list_count)

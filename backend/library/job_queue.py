@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import select, update
 from library.db.models import Job
 
-JOB_TYPES = {"feed_check", "feed_check_all", "feed_auto_import", "feed_daily"}
+JOB_TYPES = {"feed_check", "feed_check_all", "feed_auto_import", "feed_daily", "content_group_suggest"}
 
 
 def enqueue(

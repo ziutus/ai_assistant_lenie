@@ -3,13 +3,15 @@
 import datetime as dt
 import logging
 import re
+import uuid
 import regex as safe_regex
 from sqlalchemy import select, update, text
-from library.db.models import FeedSource, FeedItem, Document
+from library.db.models import FeedSource, FeedItem, ContentGroup, Document, DocumentGroupMembership, FeedItemGroupMembership, FeedReviewDecision
 from library.db.engine import get_session
 from library.document_service import DocumentService
 from library.feed_parser import fetch_entries, apply_skip_filters, parse_published
 from library.url_normalization import canonicalize_url
+from library.content_group_service import replace_feed_item_groups
 
 logger = logging.getLogger(__name__)
 REVIEW_REASONS = {"not_interested", "duplicate", "already_known", "too_long", "other"}
@@ -30,6 +32,26 @@ def _feed_config(feed: FeedSource) -> dict:
         "skip_url_patterns": feed.skip_url_patterns or [],
         "skip_title_patterns": feed.skip_title_patterns or [],
     }
+
+
+def new_review_batch_id() -> str:
+    return uuid.uuid4().hex
+
+
+def record_review_decision(
+    session, item: FeedItem, *, action: str, previous_status: str, previous_document_id: int | None,
+    previous_saved_at, previous_review_reason: str | None, previous_ignored_pattern: str | None,
+    previous_group_ids: list[int], user_id: int | None = None, batch_id: str | None = None,
+    job_id: str | None = None, metadata: dict | None = None,
+) -> FeedReviewDecision:
+    session.add(FeedReviewDecision(
+        batch_id=batch_id or new_review_batch_id(), job_id=job_id, feed_item_id=item.id, user_id=user_id,
+        action=action, previous_status=previous_status, new_status=item.status,
+        previous_document_id=previous_document_id, new_document_id=item.document_id,
+        previous_saved_at=previous_saved_at, previous_review_reason=previous_review_reason,
+        previous_ignored_pattern=previous_ignored_pattern, previous_group_ids=previous_group_ids,
+        new_group_ids=[membership.group_id for membership in item.group_memberships], metadata_json=metadata or {},
+    ))
 
 
 def _upsert(session, feed: FeedSource, entry: dict, status: str = "new") -> FeedItem:
@@ -146,7 +168,10 @@ def run_auto_import(feed_source_id: int | None = None, session=None) -> dict:
             session.close()
 
 
-def import_feed_item(item_id: int, session=None) -> tuple[FeedItem, Document]:
+def import_feed_item(
+    item_id: int, session=None, document_type: str | None = None, user_id: int | None = None,
+    keep_for_review: bool = False,
+) -> tuple[FeedItem, Document]:
     own = session is None
     session = session or get_session()
     try:
@@ -155,6 +180,14 @@ def import_feed_item(item_id: int, session=None) -> tuple[FeedItem, Document]:
             raise ValueError("feed item not found")
         if item.status not in {"new", "llm_analysis_requested", "saved_for_later", "error"}:
             raise ValueError("feed item cannot be imported from its current state")
+        if document_type is not None and document_type not in {"link", "webpage", "youtube"}:
+            raise ValueError("document_type must be link, webpage or youtube")
+        previous_status = item.status
+        previous_document_id = item.document_id
+        previous_saved_at = item.saved_at
+        previous_review_reason = item.review_reason
+        previous_ignored_pattern = item.ignored_pattern
+        previous_group_ids = [membership.group_id for membership in item.group_memberships]
         session.execute(
             text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 119954089))"), {"key": item.canonical_url}
         )
@@ -163,7 +196,7 @@ def import_feed_item(item_id: int, session=None) -> tuple[FeedItem, Document]:
             feed = session.get(FeedSource, item.feed_source_id)
             doc, _ = DocumentService(session).import_document(
                 item.canonical_url,
-                "youtube" if "youtube" in feed.type else "link",
+                document_type or ("youtube" if "youtube" in feed.type else "link"),
                 processing_status=feed.default_state,
                 title=item.title,
                 summary=item.summary or "",
@@ -175,11 +208,22 @@ def import_feed_item(item_id: int, session=None) -> tuple[FeedItem, Document]:
             )
         else:
             doc = existing
+        copy_feed_groups_to_document(session, [item], doc, "feed_import")
         item.status, item.document_id, item.last_error, item.updated_at = (
-            "imported",
+            "saved_for_later" if keep_for_review else "imported",
             doc.id,
             None,
             dt.datetime.now(dt.timezone.utc),
+        )
+        if keep_for_review:
+            item.saved_at = dt.datetime.now(dt.timezone.utc)
+            item.saved_by_user_id = user_id
+        record_review_decision(
+            session, item, action="import", previous_status=previous_status,
+            previous_document_id=previous_document_id, previous_saved_at=previous_saved_at,
+            previous_review_reason=previous_review_reason, previous_ignored_pattern=previous_ignored_pattern,
+            previous_group_ids=previous_group_ids, user_id=user_id,
+            metadata={"document_type": document_type or "default", "keep_for_review": keep_for_review},
         )
         session.commit()
         return item, doc
@@ -192,7 +236,8 @@ def import_feed_item(item_id: int, session=None) -> tuple[FeedItem, Document]:
 
 
 def transition_item(
-    session, item_id: int, target: str, user_id: int | None = None, review_reason: str | None = None
+    session, item_id: int, target: str, user_id: int | None = None, review_reason: str | None = None,
+    group_ids: list[int] | None = None,
 ) -> FeedItem:
     item = session.get(FeedItem, item_id)
     if item is None:
@@ -201,6 +246,12 @@ def transition_item(
         raise RuntimeError("invalid feed item state transition")
     if review_reason is not None and review_reason not in REVIEW_REASONS:
         raise ValueError("invalid review reason")
+    previous_status = item.status
+    previous_document_id = item.document_id
+    previous_saved_at = item.saved_at
+    previous_review_reason = item.review_reason
+    previous_ignored_pattern = item.ignored_pattern
+    previous_group_ids = [membership.group_id for membership in item.group_memberships]
     now = dt.datetime.now(dt.timezone.utc)
     values = {"status": target, "updated_at": now}
     if target == "saved_for_later":
@@ -218,8 +269,69 @@ def transition_item(
     )
     if result.rowcount != 1:
         raise RuntimeError("feed item was changed concurrently")
+    if group_ids is not None:
+        replace_feed_item_groups(session, item, group_ids, commit=False)
+    record_review_decision(
+        session, item, action=target, previous_status=previous_status,
+        previous_document_id=previous_document_id, previous_saved_at=previous_saved_at,
+        previous_review_reason=previous_review_reason, previous_ignored_pattern=previous_ignored_pattern,
+        previous_group_ids=previous_group_ids, user_id=user_id,
+    )
     session.commit()
     return session.get(FeedItem, item_id)
+
+
+def copy_feed_groups_to_document(session, feed_items, document: Document, source: str) -> None:
+    """Copy active feed memberships into a document without changing provenance."""
+    if source not in {"feed_import", "chrome_link"}:
+        raise ValueError("invalid feed group copy source")
+    item_ids = [item.id if isinstance(item, FeedItem) else item for item in feed_items]
+    if not item_ids:
+        return
+    rows = session.execute(
+        select(FeedItemGroupMembership, ContentGroup)
+        .join(ContentGroup, ContentGroup.id == FeedItemGroupMembership.group_id)
+        .where(
+            FeedItemGroupMembership.feed_item_id.in_(item_ids),
+            ContentGroup.archived_at.is_(None),
+        )
+    ).all()
+    current = {
+        membership.group_id: membership
+        for membership in session.scalars(
+            select(DocumentGroupMembership).where(DocumentGroupMembership.document_id == document.id)
+        ).all()
+    }
+    topic_groups = {group.id: group for _, group in rows if group.kind == "topic"}
+    for group in topic_groups.values():
+        if group.id not in current:
+            session.add(DocumentGroupMembership(document_id=document.id, group_id=group.id, source=source))
+    if not any(membership.group.kind == "priority" for membership in current.values() if membership.group is not None):
+        priorities = [group for _, group in rows if group.kind == "priority"]
+        if priorities:
+            chosen = min(priorities, key=lambda group: (group.priority_rank, group.id))
+            if chosen.id not in current:
+                session.add(DocumentGroupMembership(document_id=document.id, group_id=chosen.id, source=source))
+    session.flush()
+
+
+def link_matching_feed_items_to_document(session, document: Document) -> int:
+    """Attach all feed entries for a canonical URL to a document idempotently."""
+    items = session.scalars(
+        select(FeedItem).where(FeedItem.canonical_url == document.canonical_url)
+    ).all()
+    linked = 0
+    for item in items:
+        if item.document_id != document.id:
+            item.document_id = document.id
+            linked += 1
+        if item.status in {"new", "llm_analysis_requested", "saved_for_later", "error"}:
+            item.status = "imported"
+        item.updated_at = dt.datetime.now(dt.timezone.utc)
+    if items:
+        copy_feed_groups_to_document(session, items, document, "chrome_link")
+    session.flush()
+    return linked
 
 
 def save_review_note(session, item_id: int, note: str) -> FeedItem:
@@ -254,6 +366,7 @@ def ignore_feed_item(session, item_id: int, field: str, pattern: str, user_id: i
         else:
             feed.skip_title_patterns = values
     now = dt.datetime.now(dt.timezone.utc)
+    batch_id = new_review_batch_id()
     for candidate in session.scalars(
         select(FeedItem).where(FeedItem.feed_source_id == feed.id, FeedItem.status.in_(["new", "saved_for_later"]))
     ).all():
@@ -266,6 +379,12 @@ def ignore_feed_item(session, item_id: int, field: str, pattern: str, user_id: i
         except (safe_regex.error, TimeoutError):
             matches = False
         if matches:
+            previous_status = candidate.status
+            previous_document_id = candidate.document_id
+            previous_saved_at = candidate.saved_at
+            previous_review_reason = candidate.review_reason
+            previous_ignored_pattern = candidate.ignored_pattern
+            previous_group_ids = [membership.group_id for membership in candidate.group_memberships]
             (
                 candidate.status,
                 candidate.ignored_pattern,
@@ -273,5 +392,12 @@ def ignore_feed_item(session, item_id: int, field: str, pattern: str, user_id: i
                 candidate.reviewed_by_user_id,
                 candidate.updated_at,
             ) = "ignored", pattern, now, user_id, now
+            record_review_decision(
+                session, candidate, action="ignore", previous_status=previous_status,
+                previous_document_id=previous_document_id, previous_saved_at=previous_saved_at,
+                previous_review_reason=previous_review_reason, previous_ignored_pattern=previous_ignored_pattern,
+                previous_group_ids=previous_group_ids, user_id=user_id, batch_id=batch_id,
+                metadata={"field": field, "pattern": pattern},
+            )
     session.commit()
     return session.get(FeedItem, item_id)

@@ -19,6 +19,26 @@ export interface Document {
   previous_id: number | null;
   next_type: string;
   previous_type: string;
+  groups?: ContentGroup[];
+}
+
+export interface ContentGroup {
+  id: number;
+  name: string;
+  kind: "topic" | "priority";
+  priority_rank: number | null;
+  archived_at?: string | null;
+  source?: string;
+}
+
+export interface ContentGroupSuggestion {
+  id: number;
+  run_id: number;
+  group_id: number;
+  confidence: number;
+  reason: string | null;
+  status: "pending" | "accepted" | "dismissed" | "reverted";
+  membership_created: boolean;
 }
 
 export const emptyDocument: Document = {
@@ -71,4 +91,6 @@ export interface ListItem {
   url: string;
   processing_status: string;
   document_type: string;
+  groups?: ContentGroup[];
+  effective_priority_rank?: number | null;
 }

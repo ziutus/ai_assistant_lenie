@@ -1,4 +1,4 @@
-"""NAS worker for the explicit feed job types; no shell or LLM execution."""
+"""NAS worker for feed and content-group suggestion jobs."""
 
 import argparse
 import datetime as dt
@@ -33,6 +33,10 @@ def execute(session, job: Job) -> dict:
         from library.feed_monitor_service import run_auto_import
 
         return {"check": check, "import": run_auto_import()}
+    if job.type == "content_group_suggest":
+        from library.content_group_suggestion_service import execute_suggestion_job
+
+        return execute_suggestion_job(session, job)
     raise ValueError("unsupported job")
 
 

@@ -7,6 +7,7 @@ import { useManageLLM } from "../hooks/useManageLLM";
 import { useFormik } from 'formik';
 import { buildObsidianNoteUrl } from "../utils/obsidian";
 import { loadListFilters, saveListFilters } from "../services/storage";
+import type { ContentGroup } from "../../../types";
 
 // States where a document has no usable text yet — showing "Czytaj"/"Chunki" there
 // would just open an empty page. Mirrors the backend's YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES
@@ -30,7 +31,7 @@ const List = () => {
     onSubmit: () => {},
   });
 
-  const { selectedDocumentType, setSelectedDocumentType, selectedDocumentState, setSelectedDocumentState } = React.useContext(AuthorizationContext);
+  const { apiUrl, apiKey, selectedDocumentType, setSelectedDocumentType, selectedDocumentState, setSelectedDocumentState } = React.useContext(AuthorizationContext);
   const { searchInDocument, setSearchInDocument} = React.useContext(AuthorizationContext);
   const { searchType, setSearchType} = React.useContext(AuthorizationContext);
   const initialObsidian = searchParams.get("obsidian");
@@ -49,6 +50,17 @@ const List = () => {
   );
   const [copyMessage, setCopyMessage] = React.useState("");
   const [expandedObsidian, setExpandedObsidian] = React.useState<Set<number>>(new Set());
+  const [contentGroups, setContentGroups] = React.useState<ContentGroup[]>([]);
+  const [topicGroupIds, setTopicGroupIds] = React.useState<number[]>(() => (searchParams.get("topic_group_ids") || "").split(",").filter(Boolean).map(Number));
+  const [topicMatch, setTopicMatch] = React.useState<"any" | "all">(searchParams.get("topic_match") === "all" ? "all" : "any");
+  const [priorityGroupId, setPriorityGroupId] = React.useState<number | undefined>(searchParams.get("priority_group_id") ? Number(searchParams.get("priority_group_id")) : undefined);
+  const [groupSort, setGroupSort] = React.useState<"newest" | "priority">(searchParams.get("sort") === "priority" ? "priority" : "newest");
+  const [withoutTopics, setWithoutTopics] = React.useState(searchParams.get("without_topics") === "1");
+  const [withoutPriority, setWithoutPriority] = React.useState(searchParams.get("without_priority") === "1");
+
+  React.useEffect(() => {
+    void fetch(`${apiUrl}/content_groups`, { headers: { "x-api-key": apiKey || "" } }).then(response => response.json()).then(body => setContentGroups(Array.isArray(body.content_groups) ? body.content_groups : [])).catch(() => undefined);
+  }, [apiUrl, apiKey]);
 
   const toggleObsidianExpanded = (id: number) => {
     setExpandedObsidian(prev => {
@@ -75,6 +87,12 @@ const List = () => {
     if (nextPage !== 1) params.page = String(nextPage);
     if (nextPageSize !== 100) params.page_size = String(nextPageSize);
     if (nextWithoutEmbedding) params.without_embedding = "1";
+    if (topicGroupIds.length) params.topic_group_ids = topicGroupIds.join(",");
+    if (topicMatch !== "any") params.topic_match = topicMatch;
+    if (priorityGroupId) params.priority_group_id = String(priorityGroupId);
+    if (groupSort !== "newest") params.sort = groupSort;
+    if (withoutTopics) params.without_topics = "1";
+    if (withoutPriority) params.without_priority = "1";
     return params;
   };
 
@@ -91,7 +109,7 @@ const List = () => {
     ));
     await handleGetList(
       type, state, query, obsidianFilterParams(obsidian), nextPage, nextPageSize,
-      nextWithoutEmbedding,
+      nextWithoutEmbedding, { topicGroupIds: withoutTopics ? [] : topicGroupIds, topicMatch, priorityGroupId: withoutPriority ? undefined : priorityGroupId, withoutTopics, withoutPriority, sort: groupSort },
     );
   };
 
@@ -303,6 +321,17 @@ const List = () => {
           ); }} />
         Without embedding
       </label>
+      <fieldset style={{ display: "inline-flex", gap: 8, marginLeft: 12, verticalAlign: "middle" }}>
+        <legend>Tematy</legend>
+        {contentGroups.filter(group => group.kind === "topic").map(group => (
+          <label key={group.id}><input type="checkbox" checked={topicGroupIds.includes(group.id)} onChange={event => setTopicGroupIds(ids => event.target.checked ? [...ids, group.id] : ids.filter(id => id !== group.id))} /> {group.name}</label>
+        ))}
+        <select aria-label="Dopasowanie tematów" value={topicMatch} onChange={event => setTopicMatch(event.target.value as "any" | "all")}><option value="any">Dowolny temat</option><option value="all">Wszystkie tematy</option></select>
+      </fieldset>
+      <label style={{ marginLeft: 12 }}>Priorytet <select value={priorityGroupId || ""} onChange={event => setPriorityGroupId(event.target.value ? Number(event.target.value) : undefined)}><option value="">Wszystkie</option>{contentGroups.filter(group => group.kind === "priority").map(group => <option key={group.id} value={group.id}>{group.name}</option>)}</select></label>
+      <label style={{ marginLeft: 12 }}>Sortowanie <select value={groupSort} onChange={event => setGroupSort(event.target.value as "newest" | "priority")}><option value="priority">Według priorytetu</option><option value="newest">Najnowsze</option></select></label>
+      <label style={{ marginLeft: 12 }}><input type="checkbox" checked={withoutTopics} onChange={event => { setWithoutTopics(event.target.checked); if (event.target.checked) setTopicGroupIds([]); }} /> Bez tematów</label>
+      <label style={{ marginLeft: 12 }}><input type="checkbox" checked={withoutPriority} onChange={event => { setWithoutPriority(event.target.checked); if (event.target.checked) setPriorityGroupId(undefined); }} /> Bez priorytetu</label>
       <button type="button" className="button" disabled={isLoading}
         style={{ marginLeft: 12 }} onClick={() => { void copyListLink(); }}>
         Kopiuj link
@@ -334,6 +363,7 @@ const List = () => {
             <div className={"flexBox"}>
               {item.id}&nbsp;&nbsp;|&nbsp;&nbsp;
               {item.title} &nbsp;
+              {item.groups?.map((group: ContentGroup) => <span key={group.id} style={{ background: group.kind === "priority" ? "#dbeafe" : "#f1f5f9", borderRadius: 10, padding: "2px 6px", marginRight: 4, fontSize: ".8em" }}>{group.name}</span>)}
               {item.byline && (
                 <span style={{ color: "#6c757d", fontStyle: "italic" }}>({item.byline}) </span>
               )}

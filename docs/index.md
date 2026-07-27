@@ -66,6 +66,7 @@
 - [Backlog Reference](./backlog-reference.md) — historyczny stan backlogu (B-xx); pełny, aktualny backlog jest dziś w prywatnym repo (`lenie-bmad-private`), nie w tym repozytorium
 
 ### Guides
+- [Feed i feed-review — przepływy](./feed-and-feed-review-flow.md) — lifecycle wpisu, decyzje importu, kolejka późniejsza, grupy, Bielik i historia cofania
 - [Development Guide](./development-guide.md) — Prerequisites, setup, running, testing, code quality
 - [Project Parts Metadata](./project-parts.json) — Machine-readable project structure
 

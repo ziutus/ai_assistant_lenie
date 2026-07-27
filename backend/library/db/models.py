@@ -232,6 +232,43 @@ class FeedSource(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class ContentGroup(Base):
+    """Shared user-managed topic or work-priority group."""
+
+    __tablename__ = "content_groups"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    priority_rank: Mapped[int | None] = mapped_column(Integer)
+    archived_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    __table_args__ = (
+        CheckConstraint("kind IN ('topic', 'priority')", name="ck_content_groups_kind"),
+        CheckConstraint(
+            "(kind = 'topic' AND priority_rank IS NULL) OR (kind = 'priority' AND priority_rank BETWEEN 1 AND 100)",
+            name="ck_content_groups_priority_rank",
+        ),
+        Index("uq_content_groups_active_lower_name", sa_text("lower(name)"), unique=True, postgresql_where=sa_text("archived_at IS NULL")),
+    )
+    feed_item_memberships: Mapped[list["FeedItemGroupMembership"]] = relationship(
+        back_populates="group", cascade="all, delete-orphan", overlaps="groups,group_memberships",
+    )
+    document_memberships: Mapped[list["DocumentGroupMembership"]] = relationship(
+        back_populates="group", cascade="all, delete-orphan", overlaps="groups,group_memberships",
+    )
+    suggestions: Mapped[list["ContentGroupSuggestion"]] = relationship(back_populates="group")
+    feed_items: Mapped[list["FeedItem"]] = relationship(
+        secondary="feed_item_group_memberships", back_populates="groups",
+        overlaps="feed_item_memberships,group_memberships,group,feed_item",
+    )
+    documents: Mapped[list["Document"]] = relationship(
+        secondary="document_group_memberships", back_populates="groups",
+        overlaps="document_memberships,group_memberships,group,document",
+    )
+
+
 class FeedItem(Base):
     __tablename__ = "feed_items"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -270,6 +307,37 @@ class FeedItem(Base):
         Index("idx_feed_items_status_first_seen", "status", "first_seen_at"),
         Index("idx_feed_items_status_saved_at", "status", "saved_at"),
     )
+    group_memberships: Mapped[list["FeedItemGroupMembership"]] = relationship(
+        back_populates="feed_item", cascade="all, delete-orphan", overlaps="groups",
+    )
+    groups: Mapped[list[ContentGroup]] = relationship(
+        secondary="feed_item_group_memberships", back_populates="feed_items",
+        overlaps="group_memberships,feed_item",
+    )
+
+
+class FeedReviewDecision(Base):
+    __tablename__ = "feed_review_decisions"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String(32), nullable=False)
+    job_id: Mapped[str | None] = mapped_column(String(32))
+    feed_item_id: Mapped[int] = mapped_column(ForeignKey("feed_items.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    action: Mapped[str] = mapped_column(String(40), nullable=False)
+    previous_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    new_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    previous_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    new_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    previous_saved_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    previous_review_reason: Mapped[str | None] = mapped_column(String(40))
+    previous_ignored_pattern: Mapped[str | None] = mapped_column(Text)
+    previous_group_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    new_group_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSONB, nullable=False, server_default=sa_text("'{}'::jsonb"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    undone_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    undone_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    feed_item: Mapped[FeedItem] = relationship()
 
 
 class Job(Base):
@@ -290,6 +358,89 @@ class Job(Base):
     finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
     initiated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True)
+    __table_args__ = (
+        CheckConstraint("type IN ('feed_check','feed_check_all','feed_auto_import','feed_daily','content_group_suggest')", name="ck_jobs_type"),
+    )
+
+
+class FeedItemGroupMembership(Base):
+    __tablename__ = "feed_item_group_memberships"
+
+    feed_item_id: Mapped[int] = mapped_column(ForeignKey("feed_items.id", ondelete="CASCADE"), primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("content_groups.id", ondelete="RESTRICT"), primary_key=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'manual'"))
+    source_suggestion_id: Mapped[int | None] = mapped_column(ForeignKey("content_group_suggestions.id", ondelete="SET NULL"))
+    feed_item: Mapped[FeedItem] = relationship(back_populates="group_memberships", overlaps="groups")
+    group: Mapped[ContentGroup] = relationship(back_populates="feed_item_memberships", overlaps="groups,group_memberships")
+    __table_args__ = (
+        CheckConstraint("source IN ('manual', 'llm_suggestion')", name="ck_feed_item_group_memberships_source"),
+        CheckConstraint("(source = 'llm_suggestion' AND source_suggestion_id IS NOT NULL) OR (source <> 'llm_suggestion' AND source_suggestion_id IS NULL)", name="ck_feed_item_group_memberships_suggestion_source"),
+        Index("idx_feed_item_group_memberships_group_id", "group_id"),
+    )
+
+
+class DocumentGroupMembership(Base):
+    __tablename__ = "document_group_memberships"
+
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("content_groups.id", ondelete="RESTRICT"), primary_key=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    source: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'manual'"))
+    source_suggestion_id: Mapped[int | None] = mapped_column(ForeignKey("content_group_suggestions.id", ondelete="SET NULL"))
+    document: Mapped["Document"] = relationship(back_populates="group_memberships", overlaps="groups")
+    group: Mapped[ContentGroup] = relationship(back_populates="document_memberships", overlaps="groups,group_memberships")
+    __table_args__ = (
+        CheckConstraint("source IN ('manual', 'feed_import', 'chrome_link', 'llm_suggestion')", name="ck_document_group_memberships_source"),
+        CheckConstraint("(source = 'llm_suggestion' AND source_suggestion_id IS NOT NULL) OR (source <> 'llm_suggestion' AND source_suggestion_id IS NULL)", name="ck_document_group_memberships_suggestion_source"),
+        Index("idx_document_group_memberships_group_id", "group_id"),
+    )
+
+
+class ContentGroupSuggestionRun(Base):
+    __tablename__ = "content_group_suggestion_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    feed_item_id: Mapped[int | None] = mapped_column(ForeignKey("feed_items.id", ondelete="CASCADE"))
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
+    job_id: Mapped[str | None] = mapped_column(ForeignKey("jobs.id", ondelete="SET NULL"))
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(30), nullable=False)
+    input_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    catalog_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    raw_result: Mapped[dict | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    completed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    suggestions: Mapped[list["ContentGroupSuggestion"]] = relationship(back_populates="run", cascade="all, delete-orphan")
+    __table_args__ = (
+        CheckConstraint("(feed_item_id IS NOT NULL) <> (document_id IS NOT NULL)", name="ck_content_group_suggestion_runs_one_target"),
+        CheckConstraint("status IN ('queued', 'running', 'completed', 'error')", name="ck_content_group_suggestion_runs_status"),
+        Index("uq_active_feed_group_suggestion_run", "feed_item_id", unique=True, postgresql_where=sa_text("feed_item_id IS NOT NULL AND status IN ('queued','running')")),
+        Index("uq_active_document_group_suggestion_run", "document_id", unique=True, postgresql_where=sa_text("document_id IS NOT NULL AND status IN ('queued','running')")),
+    )
+
+
+class ContentGroupSuggestion(Base):
+    __tablename__ = "content_group_suggestions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("content_group_suggestion_runs.id", ondelete="CASCADE"), nullable=False)
+    group_id: Mapped[int] = mapped_column(ForeignKey("content_groups.id", ondelete="RESTRICT"), nullable=False)
+    confidence: Mapped[decimal.Decimal] = mapped_column(Numeric(4, 3), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'pending'"))
+    membership_created: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    decided_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+    run: Mapped[ContentGroupSuggestionRun] = relationship(back_populates="suggestions")
+    group: Mapped[ContentGroup] = relationship(back_populates="suggestions")
+    __table_args__ = (
+        UniqueConstraint("run_id", "group_id"),
+        CheckConstraint("confidence BETWEEN 0 AND 1", name="ck_content_group_suggestions_confidence"),
+        CheckConstraint("status IN ('pending', 'accepted', 'dismissed', 'reverted')", name="ck_content_group_suggestions_status"),
+    )
 
 
 class FeedItemLlmAnalysis(Base):
@@ -538,6 +689,13 @@ class Document(Base):
         back_populates="document",
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    group_memberships: Mapped[list["DocumentGroupMembership"]] = relationship(
+        back_populates="document", cascade="all, delete-orphan", overlaps="groups",
+    )
+    groups: Mapped[list[ContentGroup]] = relationship(
+        secondary="document_group_memberships", back_populates="documents",
+        overlaps="group_memberships,document",
     )
 
     # STI configuration
