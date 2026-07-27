@@ -21,3 +21,4 @@ class StalkerDocumentStatus(Enum):
     TEXT_TO_MD_DONE = 14
     MD_SIMPLIFIED = 15
     TEMPORARY_ERROR = 16
+    NEED_LLM_ANALYSIS = 17

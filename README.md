@@ -49,7 +49,7 @@ Lenie-specific skills are prefixed `lenie-` so they're easy to recognize alongsi
 | Skill | Where | What it does |
 |---|---|---|
 | `/lenie-obsidian-note` | `.claude/commands/lenie-obsidian-note.md` (Claude Code), `.agents/skills/lenie-obsidian-note/` (Codex) | Turns a Lenie article/chunk into an Obsidian vault note via the backend REST API, then syncs `obsidian_note_paths` back to the database. |
-| `/lenie-feed-review` | `.claude/commands/lenie-feed-review.md` | Walks through RSS feed entries saved for discussion (`feed_monitor.py --review`, `[d]iscuss`), fetches and summarizes each one, and lets you ask follow-up questions before deciding whether to import it. |
+| `/lenie-feed-review` | `.claude/commands/lenie-feed-review.md` | Walks through new feed candidates from the REST API, fetches and summarizes each one, and lets you decide whether to import it. |
 | `/lenie-review-removed-lines` | `.claude/commands/lenie-review-removed-lines.md` | Reviews pending `document_removed_lines` candidates and proposes improvements to per-site article cleanup rules. |
 
 ## Roadmap

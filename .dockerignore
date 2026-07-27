@@ -65,6 +65,8 @@ backend/tests/
 backend/test_code/
 backend/tmp/
 backend/imports/
+!backend/imports/feeds.yaml
+!backend/imports/migrate_feeds_yaml_to_db.py
 
 # CI/CD configs
 .circleci/

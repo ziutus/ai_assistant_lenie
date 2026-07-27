@@ -51,6 +51,32 @@ services:
       lenie-ai-db:
         condition: service_healthy
 
+  lenie-worker:
+    image: 192.168.200.7:5005/lenie-ai-server:latest
+    container_name: lenie-worker
+    restart: unless-stopped
+    command: ["/app/.venv/bin/python", "worker.py"]
+    env_file:
+      - /share/ContainerNew/lenie-env/.env
+    networks:
+      - lenie-net
+    depends_on:
+      lenie-ai-db:
+        condition: service_healthy
+
+  lenie-migrate:
+    image: 192.168.200.7:5005/lenie-ai-server:latest
+    container_name: lenie-migrate
+    restart: "no"
+    command: ["/app/.venv/bin/alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
+    env_file:
+      - /share/ContainerNew/lenie-env/.env
+    networks:
+      - lenie-net
+    depends_on:
+      lenie-ai-db:
+        condition: service_healthy
+
   lenie-ai-frontend:
     image: 192.168.200.7:5005/lenie-ai-frontend:latest
     container_name: lenie-ai-frontend

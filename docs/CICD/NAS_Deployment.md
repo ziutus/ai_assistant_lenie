@@ -49,11 +49,11 @@ From any device on the local network:
 
 ### SSH Access
 
-SSH key-based authentication must be configured for `admin@192.168.200.7`:
+SSH key-based authentication must be configured for `admin@192.168.200.7`. Windows ships a native OpenSSH client (`ssh`/`scp`) — no WSL needed:
 
-```bash
-# From WSL (sshpass required):
-sshpass -p '<NAS_PASSWORD>' ssh-copy-id -i /mnt/c/Users/<USER>/.ssh/id_rsa.pub -o StrictHostKeyChecking=no admin@192.168.200.7
+```powershell
+# One-time key setup from PowerShell (equivalent of ssh-copy-id):
+Get-Content $env:USERPROFILE\.ssh\id_rsa.pub | ssh admin@192.168.200.7 "cat >> ~/.ssh/authorized_keys"
 
 # Verify:
 ssh admin@192.168.200.7 "echo OK"
@@ -170,34 +170,27 @@ $DOCKER exec lenie-registry du -sh /var/lib/registry
 
 ### Automated Deploy Script
 
-The script `infra/docker/nas-deploy.sh` handles building images, pushing to the private registry, and deploying via `docker compose`.
+`infra/docker/nas-deploy.ps1` (PowerShell, native Windows — no WSL) is the primary deploy path. It builds images, pushes to the private registry, and deploys via `docker compose` using the Windows OpenSSH client directly:
 
-```bash
+```powershell
 # Deploy all core services (build → push → compose up)
-./infra/docker/nas-deploy.sh
+.\infra\docker\nas-deploy.ps1
 
 # Deploy specific service(s)
-./infra/docker/nas-deploy.sh frontend
-./infra/docker/nas-deploy.sh backend app2
-
-# Deploy Slack Bot (build → push → compose up)
-./infra/docker/nas-deploy.sh slack-bot
-
-# Deploy MinIO (official image — no build, only compose pull/up)
-./infra/docker/nas-deploy.sh minio
+.\infra\docker\nas-deploy.ps1 -Service frontend
+.\infra\docker\nas-deploy.ps1 -Service backend,app2
 
 # Push existing image without rebuilding
-./infra/docker/nas-deploy.sh --skip-build backend
+.\infra\docker\nas-deploy.ps1 -Service backend -SkipBuild
 
 # Only run compose up on NAS (no build/push)
-./infra/docker/nas-deploy.sh --compose-only
+.\infra\docker\nas-deploy.ps1 -ComposeOnly
 
 # Copy compose.nas.yaml to NAS and deploy
-./infra/docker/nas-deploy.sh --sync-compose
-
-# Sync compose file and deploy specific services
-./infra/docker/nas-deploy.sh --sync-compose frontend app2
+.\infra\docker\nas-deploy.ps1 -SyncCompose
 ```
+
+`infra/docker/nas-deploy.sh` is the older bash equivalent (same steps, same flags in `--flag` form) — kept for Mac/Linux use, not required on Windows anymore.
 
 > **Note:** `slack-bot` and `minio` are not included in the default `all` target — they must be deployed explicitly. MinIO uses the official Docker Hub image, so the build/push step is skipped automatically.
 
@@ -215,8 +208,8 @@ The compose file lives at `/share/ContainerNew/lenie-compose/compose.nas.yaml` o
 
 To sync it to NAS:
 
-```bash
-./infra/docker/nas-deploy.sh --sync-compose
+```powershell
+.\infra\docker\nas-deploy.ps1 -SyncCompose
 # or manually:
 scp infra/docker/compose.nas.yaml admin@192.168.200.7:/share/ContainerNew/lenie-compose/compose.nas.yaml
 ```
@@ -472,8 +465,8 @@ Check logs for errors. Common issues:
 
 ### Rebuild and redeploy a single service
 
-```bash
-./infra/docker/nas-deploy.sh backend
+```powershell
+.\infra\docker\nas-deploy.ps1 -Service backend
 ```
 
 ### Disk space on NAS
@@ -509,10 +502,6 @@ docker save 192.168.200.7:5005/lenie-ai-frontend:latest | \
   ssh admin@192.168.200.7 \
   "/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker load"
 ```
-
-### WSL integration for make targets
-
-The `make nas-*` targets in the Makefile require WSL with Docker integration. Docker Desktop WSL integration must be enabled for the specific WSL distribution (Settings → Resources → WSL integration → enable Ubuntu-24.04/Fedora). Without this, `docker` commands inside WSL fail with "cannot connect to docker daemon".
 
 ### Registry troubleshooting
 

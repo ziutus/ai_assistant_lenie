@@ -47,12 +47,9 @@ Other useful tools from the PostgreSQL package:
 - `pg_restore` — database import/restore
 - `createdb` / `dropdb` — database management
 
-### WSL tools
+### NAS access tools
 
-For scripts requiring Linux (deploy, imports):
-- `ssh` — NAS access (`admin@192.168.200.7`)
-- `scp` — file transfer to/from NAS
-- `uv` — Python package manager (`~/.local/bin/uv`)
+`ssh`/`scp` ship with Windows (OpenSSH client) and work natively — no WSL required. This is what `infra/docker/nas-deploy.ps1` uses to reach the NAS (`admin@192.168.200.7`).
 
 ## Quick Start (Docker)
 
@@ -105,87 +102,15 @@ After `uv sync`, the project is installed as an editable package and Python reso
 
 ```bash
 cd backend
-./imports/feed_monitor.py --help
+Feed monitoring is operated through the REST API and Web UI (`/feeds`, `/feed-review`, `/jobs`).
 ./imports/dynamodb_sync.py --since 2026-02-20 --dry-run
 ```
 
-### WSL: Separate Virtual Environment Required
+### WSL not required
 
-The Windows `.venv` (`backend/.venv/`) **cannot be shared with WSL**. Python virtual environments are platform-specific — compiled packages (e.g., `psycopg2-binary`) produce `.pyd` files on Windows and `.so` files on Linux, and `pyvenv.cfg` stores an absolute path to the system interpreter.
+Backend scripts (`imports/*.py`) run fine from the Windows `.venv` — no separate Linux environment is needed. NAS deployment also runs natively from Windows via `infra/docker/nas-deploy.ps1`, which uses the Windows OpenSSH client directly.
 
-If you need to run backend scripts (e.g., `imports/feed_monitor.py`) from WSL, create a separate venv:
-
-```bash
-cd /mnt/c/Users/<user>/git/_lenie-all/lenie-server-2025/backend
-uv venv .venv_wsl
-source .venv_wsl/bin/activate
-uv sync --active
-./imports/feed_monitor.py --help
-```
-
-> **Why `--active`?** `uv sync` defaults to the project's `.venv` directory. Without `--active`, uv ignores the activated `.venv_wsl` and installs into `.venv` instead.
-
-> **Expected warning:** When WSL accesses files on a Windows filesystem (`/mnt/c/...`), uv may print: `warning: Failed to hardlink files; falling back to full copy`. This is normal — hardlinks don't work across the Linux/Windows filesystem boundary. Installation still completes correctly, just slower. The fix is in the "WSL: Final Bash Setup" section below.
-
-> **Note:** `.venv_wsl/` is already covered by `.gitignore` (`.venv*` pattern). Do not attempt to reuse the Windows `.venv/` from WSL — it will fail with `ModuleNotFoundError` for compiled packages.
-
-### WSL: Keeping `.venv_wsl` in Sync
-
-`.venv_wsl` is a **separate environment** that is not updated automatically when you change `pyproject.toml` or lock files on Windows. After any dependency change (adding/removing packages, adding path dependencies like `shared_python/`), you must sync `.venv_wsl` manually:
-
-```bash
-# Full sync from lock file (recommended after pyproject.toml changes)
-cd /mnt/c/Users/<user>/git/_lenie-all/lenie-server-2025/backend
-source .venv_wsl/bin/activate
-uv sync --active
-
-# Non-interactive variant (no activation needed, e.g. from scripts or Windows via `wsl bash -c`)
-UV_PROJECT_ENVIRONMENT=.venv_wsl uv sync
-
-# Or install a specific new path dependency
-uv pip install -e ../shared_python/unified-config-loader/ --python .venv_wsl/bin/python
-```
-
-> **Warning:** Never run plain `uv sync` from WSL without activation or `UV_PROJECT_ENVIRONMENT` — it targets the default `.venv` and overwrites the Windows environment with a Linux one. Note that `uv sync --python .venv_wsl/bin/python` does NOT work either: for `uv sync`, `--python` selects the interpreter version, not the target venv (unlike `uv pip`, where `--python` does point at the venv).
-
-**When to sync:**
-- After running `uv lock` on Windows (changed `pyproject.toml`)
-- After adding/removing a path dependency (e.g., `shared_python/`)
-- After pulling changes that modify `uv.lock`
-
-**Quick verification:**
-```bash
-.venv_wsl/bin/python -c "from library.config_loader import load_config; print('OK')"
-```
-
-### WSL: Final Bash Setup
-
-Add the following lines to your `~/.bashrc` (or `~/.zshrc`):
-
-```bash
-# --- Lenie project: WSL settings ---
-# Suppress uv hardlink warning (hardlinks don't work across Windows/Linux filesystem boundary)
-export UV_LINK_MODE=copy
-```
-
-Then reload your shell: `source ~/.bashrc`
-
-### WSL: Project Location and IDE Considerations
-
-**Keep the project on the Windows filesystem** (`/mnt/c/...`), not on the native WSL filesystem (`/home/<user>/...`).
-
-While the native Linux filesystem offers 5-10x faster I/O for shell operations (`git status`, `uv sync`, `npm install`), IDEs running on Windows access it through the `\\wsl$\` network bridge (9P protocol), which reverses the performance advantage:
-
-| Setup | Shell I/O | IDE indexing | IDE editing |
-|-------|-----------|-------------|-------------|
-| Project on `/mnt/c/` (Windows FS) | moderate | fast | fast |
-| Project on `/home/` (Linux FS) | fast | **slow** (via `\\wsl$\`) | noticeable lag |
-
-**PyCharm** supports WSL interpreters natively (Settings → Project → Python Interpreter → Add → WSL), so you can use the `.venv_wsl` interpreter while keeping files on the Windows filesystem. This gives the best of both worlds: fast IDE performance with access to Linux Python environment when needed.
-
-**VS Code** with the "Remote - WSL" extension works better with the native Linux filesystem (its server runs inside WSL), but since the project uses PyCharm, moving the repo is not recommended.
-
-**Recommended workflow:** Project on `/mnt/c/`, PyCharm with Windows interpreter for daily development, WSL with `.venv_wsl` only for running scripts that require Linux (deploy scripts, shell scripts, import scripts).
+A WSL-based `.venv_wsl` setup (separate venv under `backend/.venv_wsl/`, synced manually with `UV_PROJECT_ENVIRONMENT=.venv_wsl uv sync`) was used historically to run the project's bash scripts (e.g. the older `nas-deploy.sh`) directly under Linux. It is no longer part of the standard workflow — removed 2026-07-26 after confirming `nas-deploy.ps1` covers the same deploy path without WSL.
 
 ### Running
 
@@ -361,7 +286,7 @@ make lock                    # or: cd backend && uv lock
 make sync                    # or: cd backend && uv sync
 ```
 
-> **Remember:** After changing dependencies, also sync `.venv_wsl` if you use WSL. See [WSL: Keeping .venv_wsl in Sync](#wsl-keeping-venv_wsl-in-sync).
+> **Note:** the Windows `.venv` is the only environment to keep in sync — see [WSL not required](#wsl-not-required).
 
 ## Frontend Development (web_interface_react)
 

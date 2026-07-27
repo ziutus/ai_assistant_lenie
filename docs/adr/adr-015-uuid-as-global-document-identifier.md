@@ -13,7 +13,7 @@ Documents in `web_documents` are identified by an auto-incremented `id` (SERIAL)
 2. **Cross-instance synchronization** — no way to match documents between NAS and AWS databases.
 3. **Stable external links** — API links with `?id=8799` break when data is moved between instances.
 
-The table already has an `s3_uuid` column (`VARCHAR(100)`, nullable), but it is only populated for documents added through the AWS flow (Chrome Extension → Lambda `sqs-weblink-put-into` → DynamoDB → S3). Documents from `unknown_news_import.py`, `feed_monitor.py`, and manual inserts have `s3_uuid = NULL`.
+The table already has an `s3_uuid` column (`VARCHAR(100)`, nullable), but it is only populated for documents added through the AWS flow (Chrome Extension → Lambda `sqs-weblink-put-into` → DynamoDB → S3). Documents from the feed monitor service and manual inserts have `s3_uuid = NULL`.
 
 ## Decision
 

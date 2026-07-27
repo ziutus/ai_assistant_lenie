@@ -37,8 +37,8 @@ Backend — 23 pliki / 99 wystąpień, z czego aktywne:
 | Filtry SQL | `library/search/sql_filters.py` (2) | mapowanie `filters.published_on_*` → `WebDocument.date_from` (docelowe nazwy filtrów JUŻ istnieją) |
 | `library/search/types.py` (4) | tylko lokalne nazwy zmiennych w `normalize_date_range()` — kosmetyka, nie kontrakt |
 | Serwis dokumentów | `library/document_service.py` (1) | docstring `**metadata` |
-| Importy | `imports/feed_monitor.py` (4) | ustawianie `doc.date_from` z pub_date, `metadata["date_from"]` |
-| Testy | `test_unknown_news_import_orm` (9), `test_list_by_filters` (8), `test_orm_crud` (4), `test_db_models` (4), `test_search_service` (3), `test_similarity_search_orm` (2), `test_document_analysis_book_mode` (2), `test_search_sql_filters` (1), `test_document_service` (1), `test_flask_endpoints_orm` (1) | atrybuty ORM + klucze JSON |
+| Feed import | `library/feed_monitor_service.py` (4) | ustawianie `doc.date_from` z pub_date, `metadata["date_from"]` |
+| Testy | `test_feed_parser` plus existing ORM/search suites | atrybuty ORM + klucze JSON |
 | Init SQL | `database/init/03-create-table.sql` (2) | kolumna + indeks |
 | Dokumentacja | `backend/database/CLAUDE.md` (3), `backend/library/CLAUDE.md` (1), `docs/data-models-backend.md`, `docs/api-type-sync-strategy.md` | opisy |
 | NIE ruszać | `alembic/versions/b1c2d3e4f5a6_*` (historia migracji), `test_code/gcloud_firestore_example.py` (eksperyment) | — |
@@ -120,7 +120,7 @@ Backend (grep zawężony): 36 plików / 114 wystąpień; duży szum od innych po
 `set_document_authors(source=)` (metoda ustalenia), `SearchFilters.discovery_source` (już docelowe).
 Realnie dotknięte: `db/models.py` (kolumna + hook + relacja), `server.py` (`/sources` CRUD,
 `/url_add` default `"own"`, `_source_doc_count`), `stalker...` (`get_last_by_source`),
-`search/sql_filters.py` (filtr discovery source), importy (`feed_monitor`, `dynamodb_sync`
+`search/sql_filters.py` (filtr discovery source), importy (`feed_monitor_service`, `dynamodb_sync`
 `metadata["source"]`, `youtube_add`, `article_browser`, `email_import`), `mcp_server/tools/lenie.py`,
 testy (`test_flask_endpoints_sources_crud` 10, `test_flask_endpoints_tags_sources`, inne),
 init SQL `28-create-sources.sql` + `03-create-table.sql`.

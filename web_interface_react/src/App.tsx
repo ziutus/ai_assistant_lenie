@@ -19,6 +19,10 @@ import Sources from "./modules/shared/pages/sources";
 import InformationSources from "./modules/shared/pages/informationSources";
 import LlmCosts from "./modules/shared/pages/llmCosts";
 import Stats from "./modules/shared/pages/stats";
+import Feeds from "./modules/shared/pages/feeds";
+import FeedReview from "./modules/shared/pages/feedReview";
+import LlmAnalysis from "./modules/shared/pages/llmAnalysis";
+import Jobs from "./modules/shared/pages/jobs";
 import { AuthorizationContext } from "./modules/shared/context/authorizationContext";
 
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -59,6 +63,10 @@ function App() {
                   <Route path="/information-sources" element={<InformationSources />} />
                   <Route path="/llm-costs" element={<LlmCosts />} />
                   <Route path="/stats" element={<Stats />} />
+                  <Route path="/feeds" element={<Feeds />} />
+                  <Route path="/feed-review" element={<FeedReview />} />
+                  <Route path="/llm-analysis" element={<LlmAnalysis />} />
+                  <Route path="/jobs" element={<Jobs />} />
                   <Route path="/search" element={<Search />} />
                   <Route path="/upload-file" element={<UploadFile />} />
                   <Route path="*" element={<p>404</p>} />

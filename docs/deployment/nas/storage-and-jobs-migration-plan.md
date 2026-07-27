@@ -568,6 +568,18 @@ Decyzja nie powinna opierać się wyłącznie na cenie za GB. Należy porównać
 - dostępność narzędzi backupu oraz replikacji;
 - stopień rzeczywistej zgodności z używanym podzbiorem S3.
 
+### 16.11. Rozstrzygnięcie kolejki feed monitoringu
+
+Migracja feed monitoringu korzysta z generycznej tabeli `jobs` oraz kontenera
+`lenie-worker`. Worker jest sekwencyjny, posiada koordynacyjny advisory lock,
+heartbeat i recovery przeterminowanych zadań. Scheduler tworzy wyłącznie
+rekordy `feed_daily` z kluczem `feed_daily:YYYY-MM-DD` liczonym w
+`Europe/Warsaw`; nie wykonuje LLM ani `document_analysis_jobs`.
+
+`document_analysis_jobs` pozostaje osobną kolejką domenową wykonywaną przez
+backend. Przeniesienie jej do `jobs` i poza proces Flask nie jest częścią tej
+migracji.
+
 ### 16.10. Rekomendacja do dalszej analizy
 
 Do krótkiej listy dla instalacji Lenie należy przyjąć:

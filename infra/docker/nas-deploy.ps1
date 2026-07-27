@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("frontend", "app2", "backend", "db", "minio", "ner-service", "all")]
+    [ValidateSet("frontend", "app2", "backend", "worker", "db", "minio", "ner-service", "all")]
     [string[]]$Service = @("all"),
     [switch]$SkipBuild,
     [switch]$ComposeOnly,
@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 
 $NasHostName = "192.168.200.7"
 $NasUser = "admin"
-$NasDocker = "/share/CACHEDEV4_DATA/.qpkg/container-station/usr/bin/.libs/docker"
+$NasDocker = "/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker"
 $NasComposeDir = "/share/ContainerNew/lenie-compose"
 $NasComposeFile = "$NasComposeDir/compose.nas.yaml"
 $NasConfigDir = "/share/ContainerNew/lenie-config"
@@ -23,13 +23,14 @@ $Definitions = @{
     frontend      = @{ Image = "lenie-ai-frontend:latest"; RegistryImage = "$Registry/lenie-ai-frontend:latest"; Dockerfile = "web_interface_react/Dockerfile"; Compose = "lenie-ai-frontend" }
     app2          = @{ Image = "lenie-ai-app2:latest"; RegistryImage = "$Registry/lenie-ai-app2:latest"; Dockerfile = "web_interface_app2/Dockerfile"; Compose = "lenie-ai-app2" }
     backend       = @{ Image = "lenie-ai-server:latest"; RegistryImage = "$Registry/lenie-ai-server:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-ai-server" }
+    worker        = @{ Image = "lenie-ai-server:latest"; RegistryImage = "$Registry/lenie-ai-server:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-worker" }
     db            = @{ Image = "lenie-ai-db:latest"; RegistryImage = "$Registry/lenie-ai-db:latest"; Dockerfile = "infra/docker/Postgresql/Dockerfile"; Compose = "lenie-ai-db" }
     "ner-service" = @{ Image = "lenie-ner-service:latest"; RegistryImage = "$Registry/lenie-ner-service:latest"; Dockerfile = "ner_service/Dockerfile"; Compose = "lenie-ner-service" }
     minio         = @{ Compose = "lenie-minio" }
 }
 
 if ($Service -contains "all") {
-    $Services = @("db", "backend", "frontend", "app2")
+    $Services = @("db", "backend", "worker", "frontend", "app2")
 } else {
     $Services = $Service
 }
@@ -38,6 +39,21 @@ function Invoke-Checked {
     param([scriptblock]$Command, [string]$Description)
     & $Command
     if ($LASTEXITCODE -ne 0) { throw "$Description failed (exit code $LASTEXITCODE)." }
+}
+
+function Publish-ImageToNasRegistry {
+    param([hashtable]$Definition, [string]$Name)
+    $archiveName = "lenie-deploy-{0}-{1}.tar" -f $Name, ([guid]::NewGuid().ToString("N"))
+    $archive = Join-Path ([IO.Path]::GetTempPath()) $archiveName
+    $remoteArchive = "$NasComposeDir/$archiveName"
+    try {
+        Invoke-Checked { docker save -o $archive $Definition.Image } "Save $Name"
+        Invoke-Checked { scp $archive "$NasUser@$NasHostName`:$remoteArchive" } "Transfer $Name"
+        $remote = "$NasDocker load -i $remoteArchive && $NasDocker tag $($Definition.Image) $($Definition.RegistryImage) && $NasDocker push $($Definition.RegistryImage) && rm -f $remoteArchive"
+        Invoke-Checked { ssh "$NasUser@$NasHostName" $remote } "Publish $Name"
+    } finally {
+        if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+    }
 }
 
 Write-Host "Lenie NAS Deploy (PowerShell)" -ForegroundColor Green
@@ -69,8 +85,7 @@ if (-not $ComposeOnly) {
             if (-not $SkipBuild) {
                 Invoke-Checked { docker build --progress=plain -t $Def.Image -f $Def.Dockerfile . } "Build $Name"
             }
-            Invoke-Checked { docker tag $Def.Image $Def.RegistryImage } "Tag $Name"
-            Invoke-Checked { docker push $Def.RegistryImage } "Push $Name"
+            Publish-ImageToNasRegistry -Definition $Def -Name $Name
         }
     } finally {
         Pop-Location
@@ -80,6 +95,9 @@ if (-not $ComposeOnly) {
 $ComposeNames = @($Services | ForEach-Object { $Definitions[$_].Compose })
 foreach ($ComposeName in $ComposeNames) {
     Invoke-Checked { ssh "$NasUser@$NasHostName" "$NasDocker compose -f $NasComposeFile pull $ComposeName" } "Pull $ComposeName"
+}
+if ($Services -contains "backend" -or $Services -contains "worker") {
+    Invoke-Checked { ssh "$NasUser@$NasHostName" "$NasDocker compose -f $NasComposeFile run --rm lenie-migrate" } "Database migrations"
 }
 $NamesArgument = $ComposeNames -join " "
 Invoke-Checked { ssh "$NasUser@$NasHostName" "$NasDocker compose -f $NasComposeFile up -d $NamesArgument" } "Start services"
