@@ -99,11 +99,14 @@ def _mark_headings(text: str, heading_texts: set[str]) -> str:
     if not heading_texts:
         return text
     lines = text.split("\n")
-    out = []
+    out: list[str] = []
     for line in lines:
         stripped = line.strip()
         if stripped in heading_texts and not stripped.startswith("#"):
+            if out and out[-1].strip():
+                out.append("")
             out.append(f"### {stripped}")
+            out.append("")
         else:
             out.append(line)
     return "\n".join(out)
