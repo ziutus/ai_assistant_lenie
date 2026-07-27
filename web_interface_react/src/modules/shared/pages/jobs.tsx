@@ -12,6 +12,8 @@ type Job = {
   error?: string | null;
 };
 
+const JOBS_REFRESH_INTERVAL_MS = 30_000;
+
 const formatDetails = (job: Job) => job.error || job.result || job.progress || job.parameters || "—";
 
 export default function Jobs() {
@@ -29,7 +31,15 @@ export default function Jobs() {
     setRows(data.jobs || []);
   }, [apiUrl, apiKey]);
 
-  React.useEffect(() => { void load(); }, [load]);
+  React.useEffect(() => {
+    void load();
+
+    const timer = window.setInterval(() => {
+      void load();
+    }, JOBS_REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(timer);
+  }, [load]);
 
   return (
     <section>
