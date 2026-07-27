@@ -19,13 +19,14 @@ CREATE TABLE IF NOT EXISTS public.feed_items (
     id SERIAL PRIMARY KEY, feed_source_id INTEGER NOT NULL REFERENCES public.feed_sources(id) ON DELETE RESTRICT,
     url TEXT NOT NULL, canonical_url TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', summary TEXT,
     published_at TIMESTAMPTZ, raw_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
-    status VARCHAR(40) NOT NULL DEFAULT 'new' CHECK (status IN ('new','llm_analysis_requested','imported','skipped','ignored','error')),
+    status VARCHAR(40) NOT NULL DEFAULT 'new' CHECK (status IN ('new','llm_analysis_requested','saved_for_later','imported','skipped','ignored','error')),
     first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(), last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(), created_at TIMESTAMPTZ NOT NULL DEFAULT now(), updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    reviewed_at TIMESTAMPTZ, reviewed_by_user_id INTEGER REFERENCES public.users(id) ON DELETE SET NULL, document_id INTEGER REFERENCES public.documents(id) ON DELETE SET NULL, review_note TEXT, ignored_pattern TEXT, last_error TEXT,
+    saved_at TIMESTAMPTZ, saved_by_user_id INTEGER REFERENCES public.users(id) ON DELETE SET NULL, reviewed_at TIMESTAMPTZ, reviewed_by_user_id INTEGER REFERENCES public.users(id) ON DELETE SET NULL, document_id INTEGER REFERENCES public.documents(id) ON DELETE SET NULL, review_note TEXT, review_reason VARCHAR(40) CHECK (review_reason IS NULL OR review_reason IN ('not_interested','duplicate','already_known','too_long','other')), ignored_pattern TEXT, last_error TEXT,
     UNIQUE(feed_source_id, canonical_url)
 );
 CREATE INDEX IF NOT EXISTS idx_feed_items_source_status ON public.feed_items(feed_source_id,status);
 CREATE INDEX IF NOT EXISTS idx_feed_items_status_first_seen ON public.feed_items(status,first_seen_at);
+CREATE INDEX IF NOT EXISTS idx_feed_items_status_saved_at ON public.feed_items(status,saved_at);
 CREATE TABLE IF NOT EXISTS public.jobs (
     id VARCHAR(32) PRIMARY KEY, type VARCHAR(40) NOT NULL CHECK (type IN ('feed_check','feed_check_all','feed_auto_import','feed_daily')),
     status VARCHAR(30) NOT NULL DEFAULT 'queued' CHECK (status IN ('queued','running','done','failed','cancel_requested','cancelled')),
