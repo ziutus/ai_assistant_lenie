@@ -217,7 +217,8 @@ export default function FeedReview() {
             {maybeLaterGroup && <button disabled={busy || item.status === "saved_for_later"} onClick={() => void act(item.id, "save-for-later", { group_ids: [maybeLaterGroup.id] })}>
               Może kiedyś
             </button>}{" "}
-            {isVideo(item) ? <button disabled={busy} onClick={() => void act(item.id, "import", { document_type: "youtube" })}>Zaimportuj jako film</button> : <>
+            {isVideo(item) ? <><button disabled={busy} onClick={() => void act(item.id, "import", { document_type: "youtube" })}>Zaimportuj jako film</button>{" "}
+              <button className="button" disabled={busy} onClick={() => void act(item.id, "import", { document_type: "link" })}>Zaimportuj jako link (bez filmu)</button></> : <>
               <button disabled={busy} onClick={() => void act(item.id, "save-for-later")}>Zachowaj tylko link do oceny</button>{" "}
               <button className="button" disabled={busy} onClick={() => void act(item.id, "import", { document_type: "link", keep_for_review: true })}>Zaimportuj jako link i zapisz do przeczytania</button>{" "}
               <button disabled={busy} onClick={() => void act(item.id, "import", { document_type: "webpage" })}>Zaimportuj jako webpage</button>
@@ -225,7 +226,8 @@ export default function FeedReview() {
             <button disabled={busy} onClick={() => { setSkipItemId(item.id); setSkipReason("not_interested"); }}>Pomiń</button>{" "}
             <button disabled={busy} onClick={() => { setIgnoreItemId(item.id); setIgnorePattern(""); }}>Ignoruj</button>
           </> : <>
-            {isVideo(item) ? <button className="button" disabled={busy} onClick={() => void act(item.id, "import", { document_type: "youtube" })}>Zaimportuj jako film</button> : <>
+            {isVideo(item) ? <><button className="button" disabled={busy} onClick={() => void act(item.id, "import", { document_type: "youtube" })}>Zaimportuj jako film</button>{" "}
+              <button disabled={busy} onClick={() => void act(item.id, "import", { document_type: "link" })}>Zaimportuj jako link (bez filmu)</button></> : <>
               <button className="button" disabled={busy} onClick={() => void act(item.id, "import", { document_type: "link" })}>Zaimportuj jako link</button>{" "}
               <button disabled={busy} onClick={() => void act(item.id, "import", { document_type: "webpage" })}>Zaimportuj jako webpage</button>
             </>}{" "}
