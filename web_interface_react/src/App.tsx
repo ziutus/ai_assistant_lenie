@@ -56,6 +56,7 @@ function App() {
                 <Routes>
                   <Route path="/" element={<Navigate to="/list" />} />
                   <Route path="/webpage/:id?" element={<DocumentEditorWithGroups><Webpage /></DocumentEditorWithGroups>} />
+                  <Route path="/text/:id?" element={<DocumentEditorWithGroups><Webpage /></DocumentEditorWithGroups>} />
                   <Route path="/link/:id?" element={<DocumentEditorWithGroups><Link /></DocumentEditorWithGroups>} />
                   <Route path="/movie/:id?" element={<DocumentEditorWithGroups><Movie /></DocumentEditorWithGroups>} />
                   <Route path="/youtube/:id?" element={<DocumentEditorWithGroups><Youtube /></DocumentEditorWithGroups>} />
