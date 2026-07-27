@@ -210,7 +210,10 @@ export default function FeedReview() {
         {item.summary && <p>{item.summary}</p>}
         <ContentGroupsPanel feedItemId={item.id} initialGroups={item.groups} />
         <div>
-          {importedType ? <span style={{ color: "#166534", fontWeight: 600 }}>Zaimportowano jako {importedType === "youtube" ? "film" : importedType}</span> : view === "new" ? <>
+          {importedType ? <span style={{ color: "#166534", fontWeight: 600 }}>Zaimportowano jako {importedType === "youtube" ? "film" : importedType}</span> : item.status === "saved_for_later" ? <>
+            <span style={{ color: "#166534", fontWeight: 600 }}>Zachowano tylko link do oceny</span>{" "}
+            <button disabled={busy} onClick={() => void act(item.id, "restore")}>Przywróć do nowych</button>
+          </> : view === "new" ? <>
             <button className="button" disabled={busy || item.status === "saved_for_later"} onClick={() => void act(item.id, "save-for-later")}>
               {item.status === "saved_for_later" ? "Zapisano" : materialLabel(item)}
             </button>{" "}
