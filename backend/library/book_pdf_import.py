@@ -8,6 +8,18 @@ via imports/book_import_pdf.py) or a future ObjectStorage.get_bytes()/job-queue
 materialize() step (docs/deployment/nas/storage-and-jobs-migration-plan.md) —
 only the caller that supplies the bytes changes, not this module.
 
+Extraction uses PyMuPDF (fitz)'s plain per-page get_text() rather than pypdf:
+it marks a genuine line-wrap hyphenation with an explicit U+00AD soft hyphen
+(100% reliable dehyphenation, vs. guessing from a stray hyphen+space) and
+correctly separates visually-stacked text elements that pypdf sometimes runs
+together with no newline at all. PyMuPDF's "blocks" mode was also evaluated —
+it nicely groups whole flowing paragraphs for plain prose, but was dropped
+because it silently swallows repeated running-head occurrences (needed for
+canonical chapter-title selection below) on some PDFs. See
+docs/pdf-library-comparison.md for the full pypdf/pdfplumber/PyMuPDF comparison
+(NOTE: PyMuPDF is AGPL-3.0/commercial-licensed — fine for this self-hosted,
+non-SaaS use, but must be re-evaluated before any hosted/SaaS offering).
+
 Chapter detection is heuristic and regex-driven per book (no universal PDF
 chapter format exists) — the default pattern matches the "// ROZDZIAŁ NNN //"
 running-head style used by Sekurak books. Pass --chapter-regex for other
@@ -17,13 +29,11 @@ layouts. The output markdown must satisfy library.text_functions.detect_chapters
 
 from __future__ import annotations
 
-import io
 import re
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
 
-from pypdf import PdfReader
 from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
@@ -31,9 +41,10 @@ from library.db.models import Document
 from library.document_service import DocumentService
 from library.storage import storage_from_config
 
-DEFAULT_CHAPTER_REGEX = r"//\s*ROZDZIA[ŁL]\s*(\d+)\s*//([^\n]*)"
+DEFAULT_CHAPTER_REGEX = r"(?i)//\s*ROZDZIA[ŁL]\s*(\d+)\s*//"
 _PAGE_NUMBER_LINE_RE = re.compile(r"(?m)^\s*\d{1,4}\s*$\n?")
-_HYPHEN_LINEBREAK_RE = re.compile(r"(\w) -\s*\n(\w)", re.UNICODE)
+_BULLET_RE = re.compile(r"^\s*[▶▷•‣]|^\s*\d+[.)]\s")
+_SENTENCE_END_RE = re.compile(r"[.!?”\"»]\s*$")
 # Shell/config code samples in technical books often have lines like "# comment"
 # or "## section" — library.text_functions.detect_chapters() treats ANY
 # 1-2-hash line as a markdown H1/H2 header, so these must be neutralized before
@@ -43,6 +54,67 @@ _LEADING_HASH_RE = re.compile(r"(?m)^(#{1,2})(?=\s)")
 
 def _escape_leading_hashes(text: str) -> str:
     return _LEADING_HASH_RE.sub(lambda m: "\\" + m.group(1), text)
+
+
+def _find_chapter_marker_spans(text: str, pattern: re.Pattern) -> list[tuple[int, int, str, str]]:
+    """Locate each chapter-marker occurrence plus its title. Running heads
+    (repeated on almost every page) render the title on its own line right
+    after the marker; the actual chapter-start page instead wraps an all-caps
+    title across the marker's own line and the following one — so the title
+    is taken from whichever of those two lines is non-empty first.
+
+    Returns (span_start, span_end, chapter_key, title) tuples, span covering the
+    marker AND its title line so both can be removed from the body together
+    (a running head's title is not real chapter content, just page furniture).
+    """
+    spans: list[tuple[int, int, str, str]] = []
+    for m in pattern.finditer(text):
+        line_end = text.find("\n", m.end())
+        if line_end == -1:
+            line_end = len(text)
+        same_line_tail = text[m.end():line_end].strip()
+        if same_line_tail:
+            title, span_end = same_line_tail, line_end
+        else:
+            next_end = text.find("\n", line_end + 1)
+            if next_end == -1:
+                next_end = len(text)
+            title, span_end = text[line_end + 1:next_end].strip(), next_end
+        spans.append((m.start(), span_end, m.group(1), title))
+    return spans
+
+
+def _insert_paragraph_breaks(text: str) -> str:
+    """Insert an extra blank line after a wrapped line that looks like the end of
+    a prose paragraph (short + ends in sentence-final punctuation) and before
+    bullet list markers. PyMuPDF (like pypdf) emits exactly one "\\n" for both a
+    genuine paragraph break and a mid-paragraph line wrap, so without this a
+    markdown renderer (soft line breaks collapse to a space) shows the whole
+    chapter as one unbroken wall of text. Additive only — never merges or drops
+    a line, so code/config samples (common in technical books) are never
+    rewritten even where the heuristic misses a boundary.
+    """
+    lines = text.split("\n")
+    lengths = [len(line) for line in lines if len(line.strip()) > 20]
+    if not lengths:
+        return text
+    lengths.sort()
+    typical_width = lengths[int(len(lengths) * 0.75)]
+    short_threshold = typical_width * 0.75
+
+    out: list[str] = []
+    for i, line in enumerate(lines):
+        out.append(line)
+        stripped = line.strip()
+        next_line = lines[i + 1].strip() if i + 1 < len(lines) else ""
+        if not stripped or not next_line:
+            continue
+        next_is_bullet = bool(_BULLET_RE.match(next_line))
+        ends_sentence = bool(_SENTENCE_END_RE.search(stripped))
+        short_line = len(stripped) < short_threshold
+        if next_is_bullet or (ends_sentence and short_line):
+            out.append("")
+    return "\n".join(out)
 
 
 @dataclass
@@ -64,10 +136,12 @@ class BookMarkdownResult:
 
 
 def extract_pages(pdf_bytes: bytes) -> list[str]:
-    """Extract text per page via pypdf. Requires an existing text layer —
+    """Extract text per page via PyMuPDF (fitz). Requires an existing text layer —
     run imports/check_pdf_text_layer.py first if unsure."""
-    reader = PdfReader(io.BytesIO(pdf_bytes))
-    return [page.extract_text() or "" for page in reader.pages]
+    import fitz
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    return [page.get_text() for page in doc]
 
 
 def build_book_markdown(pages: list[str], chapter_regex: str = DEFAULT_CHAPTER_REGEX) -> BookMarkdownResult:
@@ -75,7 +149,7 @@ def build_book_markdown(pages: list[str], chapter_regex: str = DEFAULT_CHAPTER_R
 
     Strips every occurrence of the chapter marker (real chapter-start header
     and repeated running heads alike), strips standalone page-number lines,
-    joins words split by justified-text line-wrap hyphenation, and inserts a
+    joins words split by a soft hyphen (U+00AD) at a line wrap, and inserts a
     single clean "## <title>" at each chapter's first occurrence. The chapter
     title used is the most common cleaned rendition across all its
     occurrences (running heads render a clean single-line title; the actual
@@ -83,12 +157,12 @@ def build_book_markdown(pages: list[str], chapter_regex: str = DEFAULT_CHAPTER_R
     """
     pattern = re.compile(chapter_regex)
 
+    page_spans = [_find_chapter_marker_spans(page_text, pattern) for page_text in pages]
+
     titles_by_chapter: dict[str, Counter] = {}
     first_page_by_chapter: dict[str, int] = {}
-    for page_idx, page_text in enumerate(pages):
-        for m in pattern.finditer(page_text):
-            chapter_key = m.group(1)
-            title = m.group(2).strip()
+    for page_idx, spans in enumerate(page_spans):
+        for _start, _end, chapter_key, title in spans:
             if title:
                 titles_by_chapter.setdefault(chapter_key, Counter())[title] += 1
             first_page_by_chapter.setdefault(chapter_key, page_idx)
@@ -100,7 +174,13 @@ def build_book_markdown(pages: list[str], chapter_regex: str = DEFAULT_CHAPTER_R
 
     body_parts: list[str] = []
     for page_idx, page_text in enumerate(pages):
-        cleaned = pattern.sub("", page_text)
+        cursor = 0
+        page_parts = []
+        for start, end, _chapter_key, _title in page_spans[page_idx]:
+            page_parts.append(page_text[cursor:start])
+            cursor = end
+        page_parts.append(page_text[cursor:])
+        cleaned = "".join(page_parts)
         cleaned = _escape_leading_hashes(cleaned)
         chapter_key = chapter_start_pages.get(page_idx)
         if chapter_key is not None:
@@ -109,7 +189,9 @@ def build_book_markdown(pages: list[str], chapter_regex: str = DEFAULT_CHAPTER_R
 
     text = "".join(body_parts)
     text = _PAGE_NUMBER_LINE_RE.sub("", text)
-    text = _HYPHEN_LINEBREAK_RE.sub(r"\1\2", text)
+    # Soft hyphen marks a genuine line-wrap split — join directly, no hyphen kept.
+    text = text.replace("\xad\n", "").replace("\xad", "")
+    text = _insert_paragraph_breaks(text)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
 
     chapters: list[ChapterInfo] = []
