@@ -42,7 +42,28 @@ function Invoke-Checked {
 }
 
 function Publish-ImageToNasRegistry {
+    # Direct `docker push` to the NAS registry (192.168.200.7:5005) is the primary,
+    # documented method (docs/CICD/NAS_Deployment.md) — requires the registry to be
+    # configured as an insecure-registry in Docker Desktop's daemon.json:
+    #   "insecure-registries": ["192.168.200.7:5005"]
+    # (Settings -> Docker Engine -> edit JSON -> Apply & Restart). Falls back to the
+    # save -> scp -> load-on-NAS -> local-push path (avoids a cross-network push
+    # entirely) if the direct push fails — this covers two known intermittent Docker
+    # Desktop bugs: "server gave HTTP response to HTTPS client" (insecure-registries
+    # config lost, e.g. after a Docker Desktop update) and "file integrity checksum
+    # failed for etc/apk/..." on Alpine-based images (storage layer corruption, see
+    # docs/CICD/NAS_Deployment.md's troubleshooting section for the manual fix).
+    # NOTE (2026-07-27): this fallback itself broke when local Docker Desktop was
+    # on 29.6.1 vs the NAS's 27.1.2 - newer `docker save` emits an OCI blobs/ layout
+    # that the older `docker load` can't read ("invalid tar header" / "invalid
+    # diffID"). If direct push ever fails again, check Docker Desktop's version
+    # drift from the NAS before assuming this fallback will save you.
     param([hashtable]$Definition, [string]$Name)
+    docker tag $Definition.Image $Definition.RegistryImage
+    docker push $Definition.RegistryImage
+    if ($LASTEXITCODE -eq 0) { return }
+
+    Write-Host "Direct push failed for $Name - falling back to save/scp/load-on-NAS" -ForegroundColor Yellow
     $archiveName = "lenie-deploy-{0}-{1}.tar" -f $Name, ([guid]::NewGuid().ToString("N"))
     $archive = Join-Path ([IO.Path]::GetTempPath()) $archiveName
     $remoteArchive = "$NasComposeDir/$archiveName"
