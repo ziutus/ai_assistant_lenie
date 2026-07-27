@@ -72,12 +72,24 @@ def create_feed():
 
 @bp.patch("/feed_sources/<int:feed_id>")
 def update_feed(feed_id):
-    _service()
+    # Feed configuration is edited from the authenticated personal web panel.
+    _user()
     session = get_scoped_session()
     row = session.get(FeedSource, feed_id)
     if row is None:
         abort(404)
-    values = resolve_references(session, request.get_json(silent=True) or {})
+    body = request.get_json(silent=True) or {}
+    allowed = {"type", "url", "channel_id", "language", "tags", "auto_import", "disabled", "auto_import_after", "default_state", "field_mapping", "skip_url_patterns", "skip_title_patterns"}
+    if not isinstance(body, dict) or any(key not in allowed for key in body):
+        abort(400, "unsupported feed field")
+    merged = {key: getattr(row, key) for key in allowed if hasattr(row, key)}
+    merged.update(body)
+    if isinstance(merged.get("auto_import_after"), str):
+        try:
+            merged["auto_import_after"] = dt.datetime.fromisoformat(merged["auto_import_after"].replace("Z", "+00:00")) if merged["auto_import_after"] else None
+        except ValueError:
+            abort(400, "auto_import_after must be an ISO timestamp")
+    values = resolve_references(session, merged)
     values.pop("name", None)
     for key, value in values.items():
         setattr(row, key, value)
