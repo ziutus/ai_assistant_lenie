@@ -153,6 +153,33 @@ class TestCreateDocument:
             )
             assert mock_store.call_count == 1
 
+    @patch("library.document_service.load_config")
+    def test_create_social_media_post_keeps_plain_text_without_html_storage(self, mock_config):
+        """Social posts are stored as document text, not as noisy webpage HTML."""
+        cfg = MagicMock()
+        cfg.get.return_value = None
+        mock_config.return_value = cfg
+
+        session = _make_session()
+        service = DocumentService(session)
+
+        with patch.object(service, "_store_file") as mock_store:
+            service.create_document(
+                url="https://www.facebook.com/page/posts/pfbid123",
+                url_type="social_media_post",
+                text="Gra w lewary",
+                byline="Frontiersman",
+                original_id="pfbid123",
+            )
+
+        doc = session.add.call_args.args[0]
+        assert doc.text == "Gra w lewary"
+        assert doc.text_raw == "Gra w lewary"
+        assert doc.byline == "Frontiersman"
+        assert doc.original_id == "pfbid123"
+        assert doc.requires_login is True
+        mock_store.assert_not_called()
+
     @patch("library.document_service.storage_from_config")
     @patch("library.document_service.load_config")
     def test_create_document_with_s3(self, mock_config, mock_storage_from_config):

@@ -4,6 +4,31 @@ Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).
 
+## [1.0.31] - 2026-07-28
+### Poprawione
+- Numer wersji wyświetlany w popupie jest zgodny z wersją manifestu.
+
+## [1.0.27] - 2026-07-28
+### Dodane
+- Automatyczne rozpoznawanie adresów pojedynczych postów Facebooka.
+- Typ `social_media_post` oraz edytowalne pole treści posta.
+- Próba wyodrębnienia treści i autora posta bez importowania komentarzy oraz HTML Facebooka.
+- Ręczne uzupełnienie treści, gdy Facebook nie udostępni jej w DOM.
+
+## [1.0.28] - 2026-07-28
+### Poprawione
+- Ekstrakcja posta czeka na hydrację DOM Facebooka.
+- Dodano bezpieczny fallback do widocznego kontenera treści posta, gdy link posta nie znajduje się w DOM.
+
+## [1.0.29] - 2026-07-28
+### Dodane
+- Pole `requires_login`, niezależne od `paywall`.
+- Dla postów Facebooka pole jest domyślnie zaznaczone i wysyłane do backendu.
+
+## [1.0.30] - 2026-07-28
+### Poprawione
+- Automatyczne rozpoznawanie starszego formatu Facebooka `permalink.php?story_fbid=...`.
+
 ## [1.0.26] - 2026-07-20
 ### Zmienione
 - Ponowne dodanie URL jest rozpoznawane jako duplikat zamiast tworzyć kolejny dokument.

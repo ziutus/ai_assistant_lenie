@@ -177,18 +177,18 @@ class TestLanguage:
 class TestWebDocumentColumns:
     EXPECTED_COLUMNS = {
         "id", "summary", "url", "language", "tags", "text",
-        "paywall", "title", "ingested_at", "document_type",
+        "paywall", "requires_login", "title", "ingested_at", "document_type",
         "discovery_source_id", "publisher_id", "published_on", "published_on_method", "original_id", "document_length",
         "chapter_list", "processing_status", "processing_error_code",
         "text_raw", "transcript_job_id", "ai_summary_needed",
         "byline", "byline_method", "note", "uuid", "collection_id", "text_md",
         "text_extracted", "transcript_needed", "reviewed_at",
         "obsidian_note_paths", "video_description", "ner_unavailable_at",
-        "quality",
+        "quality", "canonical_url", "enrichment_run_at", "entities_checked_at",
     }
 
     def test_column_count(self):
-        assert len(_column_names(Document)) == 35
+        assert len(_column_names(Document)) == 39
 
     def test_all_column_names(self):
         assert _column_names(Document) == self.EXPECTED_COLUMNS
@@ -273,7 +273,7 @@ class TestWebDocumentColumnTypes:
             assert isinstance(col.type, Text), f"Column {name} should be Text"
 
     def test_boolean_fields(self):
-        bool_columns = ["paywall", "ai_summary_needed", "transcript_needed"]
+        bool_columns = ["paywall", "requires_login", "ai_summary_needed", "transcript_needed"]
         for name in bool_columns:
             col = _get_column(Document, name)
             assert isinstance(col.type, Boolean), f"Column {name} should be Boolean"
@@ -533,14 +533,14 @@ class TestValidate:
 # ---------------------------------------------------------------------------
 
 class TestDict:
-    def test_dict_has_37_keys(self):
+    def test_dict_has_39_keys(self):
         doc = _make_doc(
             title="Test",
             processing_error_code="NONE",
         )
         doc.ingested_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
-        assert len(result) == 37
+        assert len(result) == 39
 
     def test_dict_keys(self):
         doc = _make_doc(
@@ -551,7 +551,7 @@ class TestDict:
         result = doc.dict()
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
-            "summary", "url", "language", "tags", "text", "paywall", "title",
+            "summary", "url", "canonical_url", "language", "tags", "text", "paywall", "requires_login", "title",
             "ingested_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "processing_status",
             "processing_error_code", "text_raw", "transcript_job_id",

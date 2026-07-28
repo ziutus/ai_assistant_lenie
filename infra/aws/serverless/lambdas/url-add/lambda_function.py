@@ -39,8 +39,8 @@ def lambda_handler(event, context):
     url_data = json.loads(event["body"]) if isinstance(event["body"], str) else event["body"]
     url_data_print = json.loads(event["body"]) if isinstance(event["body"], str) else event["body"]
 
-    url_data_print["text"] = url_data_print["text"][:50]
-    url_data_print["html"] = url_data_print["html"][:50]
+    url_data_print["text"] = url_data_print.get("text", "")[:50]
+    url_data_print["html"] = url_data_print.get("html", "")[:50]
 
     logger.info('data which came by API gateway', extra={"body": url_data_print})
 
@@ -52,8 +52,17 @@ def lambda_handler(event, context):
     title = url_data.get("title", "")
     language = url_data.get("language", "")
     paywall = url_data.get("paywall", False)
+    raw_requires_login = url_data.get("requires_login")
+    requires_login = (
+        url_type == "social_media_post"
+        if raw_requires_login is None
+        else raw_requires_login in (True, "true", "True", 1, "1")
+    )
     source = url_data.get("source", "own")
     chapter_list = url_data.get("chapter_list", False)
+    byline = url_data.get("byline", "")
+    original_id = url_data.get("original_id")
+    published_on = url_data.get("published_on")
     operation = url_data.get("operation", "create")
     target_document_id = url_data.get("target_document_id")
 
@@ -76,7 +85,7 @@ def lambda_handler(event, context):
     timestamp = datetime.utcnow().isoformat()
     created_date = timestamp[:10]  # YYYY-MM-DD
 
-    if url_type == 'webpage':
+    if url_type in {'webpage', 'social_media_post'} and text:
 
         file_name = f"{uid}.txt"
         try:
@@ -109,6 +118,7 @@ def lambda_handler(event, context):
             'title': title,
             'language': language,
             'paywall': paywall,
+            'requires_login': requires_login,
             'chapter_list': chapter_list,
             'created_at': timestamp,
             'created_date': created_date,
@@ -118,8 +128,16 @@ def lambda_handler(event, context):
         if operation == "refresh":
             dynamodb_item['target_document_id'] = target_document_id
 
-        # Dodaj s3_uuid tylko dla webpage
-        if url_type == 'webpage':
+        if byline:
+            dynamodb_item['byline'] = byline
+        if original_id:
+            dynamodb_item['original_id'] = original_id
+        if published_on:
+            dynamodb_item['published_on'] = published_on
+
+        # Text for social posts is stored in the same S3 .txt convention as
+        # webpages, so the existing DynamoDB sync can import it unchanged.
+        if url_type in {'webpage', 'social_media_post'} and text:
             dynamodb_item['s3_uuid'] = uid
 
         table.put_item(Item=dynamodb_item)

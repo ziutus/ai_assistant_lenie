@@ -59,9 +59,13 @@ class DocumentService:
         language: str = "",
         note: str = "default_note",
         paywall: bool = False,
+        requires_login: bool | None = None,
         source: str = "own",
         ai_summary: bool = False,
         chapter_list: bool = False,
+        byline: str = "",
+        original_id: str | None = None,
+        published_on=None,
     ) -> Document:
         """Create a new document, optionally storing text/html to S3 or local disk.
 
@@ -97,6 +101,21 @@ class DocumentService:
         doc.title = title
         doc.language = language
         doc.paywall = paywall
+        doc.requires_login = (
+            url_type == "social_media_post" if requires_login is None else bool(requires_login)
+        )
+        if url_type == "social_media_post":
+            # Social posts arrive as already extracted plain text.  Do not
+            # send them through webpage HTML storage/cleanup, which would
+            # reintroduce Facebook UI and comments.
+            doc.text = text or None
+            doc.text_raw = text or None
+            doc.document_length = len(text) if text else None
+        doc.byline = byline or None
+        doc.original_id = original_id
+        if published_on:
+            doc.published_on = published_on
+            doc.published_on_method = "manual"
         doc.set_discovery_source(self.session, source)
         doc.set_publisher_from_url(self.session)
         doc.ai_summary_needed = ai_summary

@@ -572,6 +572,9 @@ class Document(Base):
     tags: Mapped[str | None] = mapped_column(Text)
     text: Mapped[str | None] = mapped_column(Text)
     paywall: Mapped[bool | None] = mapped_column(Boolean, server_default=sa_text("false"))
+    # The source may require an authenticated session even when the content
+    # is not paid (e.g. a Facebook post). This is separate from paywall.
+    requires_login: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     title: Mapped[str | None] = mapped_column(Text)
     # When the document entered Lenie (stage 11g rename from created_at) —
     # distinct from published_on, which is when the content was published.
@@ -875,6 +878,7 @@ class Document(Base):
             "tags": self.tags,
             "text": self.text,
             "paywall": self.paywall,
+            "requires_login": self.requires_login,
             "title": self.title,
             "ingested_at": ingested_at_str,
             "document_type": self.document_type,

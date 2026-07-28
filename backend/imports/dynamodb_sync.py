@@ -357,6 +357,12 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
     # Convert paywall to bool before passing to service
     paywall = item.get("paywall", False)
     paywall_bool = paywall in (True, "true", "True", 1, "1")
+    requires_login = item.get("requires_login")
+    requires_login_bool = (
+        doc_type == "social_media_post"
+        if requires_login is None
+        else requires_login in (True, "true", "True", 1, "1")
+    )
 
     # Determine processing_status based on content availability
     if text_content or html_content:
@@ -366,7 +372,7 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
 
     # Build metadata dict for import_document
     metadata = {}
-    for field in ("title", "language", "note", "chapter_list"):
+    for field in ("title", "language", "note", "chapter_list", "byline", "original_id", "published_on"):
         value = item.get(field)
         if value is not None:
             metadata[field] = value
@@ -380,6 +386,7 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
         metadata["uuid"] = uuid_value
     metadata["source"] = item.get("source", "own")
     metadata["paywall"] = paywall_bool
+    metadata["requires_login"] = requires_login_bool
     if text_content:
         metadata["text"] = text_content
     if html_content:
@@ -629,7 +636,7 @@ def main():
                 doc_uuid = item.get("uuid") or item.get("s3_uuid")
                 doc_type = item.get("type", "link")
 
-                if doc_uuid and doc_type == "webpage" and not args.skip_s3 and not args.dry_run:
+                if doc_uuid and doc_type in {"webpage", "social_media_post"} and not args.skip_s3 and not args.dry_run:
                     text_content, html_content = fetch_s3_content(s3_client, bucket, doc_uuid)
 
                 result, doc_id = sync_item_to_postgres(item, text_content, html_content, args.dry_run, session=session, service=doc_service)
