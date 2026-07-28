@@ -186,19 +186,33 @@ def _insert_image_markers(cleaned: str, image_numbers: list[int]) -> str:
     return "\n".join(out)
 
 
-def _page_chapter_positions(page_count: int, chapter_start_pages: dict[int, str]) -> list[int]:
-    """1-based chapter position each page belongs to (0 = before the first chapter).
+def _page_chapter_positions(
+    page_count: int, chapter_start_pages: dict[int, str], has_preamble: bool,
+) -> list[int]:
+    """Chapter position each page belongs to, in the reader's own numbering.
+
+    Must match library.text_functions.detect_chapters() exactly, since that's
+    what GET /document/<id>/chapter/<pos> actually uses to slice chapter text —
+    not ChapterInfo.position. detect_chapters() inserts a "(wstęp)" pseudo-chapter
+    at position 1 when there is real text before the first "## " header, which
+    shifts every real chapter's reader position up by one relative to
+    ChapterInfo.position (build_book_markdown()'s own, wstęp-unaware numbering).
+    When has_preamble is True: pages before the first chapter marker get
+    position 1 (the wstęp), and the i-th chapter (1-based) gets i + 1. When
+    False, there is no wstęp and numbering is unshifted (pages before any
+    marker — a degenerate case in practice — fall back to 0, "no chapter").
 
     Chapter start pages, sorted, correspond 1:1 (by rank) to the ChapterInfo
     entries build_book_markdown() emits — both are ordered by page position.
     """
     starts = sorted(chapter_start_pages.keys())
+    offset = 1 if has_preamble else 0
     positions: list[int] = []
-    current = 0
+    current = 1 if has_preamble else 0
     idx = 0
     for page_idx in range(page_count):
         while idx < len(starts) and starts[idx] <= page_idx:
-            current = idx + 1
+            current = idx + 1 + offset
             idx += 1
         positions.append(current)
     return positions
@@ -384,7 +398,11 @@ def build_book_markdown(
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         chapters.append(ChapterInfo(position=i + 1, title=m.group(1).strip(), char_start=m.start(), char_end=end))
 
-    page_chapter_positions = _page_chapter_positions(len(pages), chapter_start_pages)
+    # Mirrors detect_chapters()'s own "(wstęp)" condition exactly (same regex,
+    # same text) — see _page_chapter_positions()'s docstring for why this must
+    # stay in sync with the reader rather than being computed independently.
+    has_preamble = bool(chapters) and bool(text[:chapters[0].char_start].strip())
+    page_chapter_positions = _page_chapter_positions(len(pages), chapter_start_pages, has_preamble)
     return BookMarkdownResult(markdown=text, chapters=chapters, page_chapter_positions=page_chapter_positions)
 
 
