@@ -50,6 +50,8 @@ services:
     depends_on:
       lenie-ai-db:
         condition: service_healthy
+      lenie-minio:
+        condition: service_healthy
 
   lenie-worker:
     image: 192.168.200.7:5005/lenie-ai-server:latest
@@ -62,6 +64,8 @@ services:
       - lenie-net
     depends_on:
       lenie-ai-db:
+        condition: service_healthy
+      lenie-minio:
         condition: service_healthy
 
   lenie-migrate:
@@ -96,7 +100,11 @@ services:
       - lenie-net
 
   lenie-minio:
-    image: minio/minio:latest
+    # Pinned to the exact digest already running on this NAS (verified: RELEASE.2025-09-07T16-13-09Z).
+    # Newer community MinIO releases dropped the bundled web console and changed
+    # the toolset, which can silently break the "mc ready local" healthcheck below.
+    # Re-pin deliberately (and re-verify healthcheck + console) — do not float to :latest.
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: lenie-minio
     restart: unless-stopped
     ports:
@@ -116,7 +124,12 @@ services:
       retries: 3
 
   lenie-minio-init:
-    image: minio/mc:latest
+    # Pinned RELEASE.2025-08-13T08-35-41Z — the closest available mc release to the
+    # pinned lenie-minio server above (mc and minio are not released in lockstep,
+    # so there is no exact-date match; verified this tag pulls and its `mc ready`
+    # subcommand exists). Unlike lenie-minio, this container had never successfully
+    # run on this NAS before pinning — first deploy should be watched.
+    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     restart: "no"
     env_file:
       - /share/ContainerNew/lenie-env/minio.env

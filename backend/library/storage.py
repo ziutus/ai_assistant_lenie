@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Protocol
+from typing import Protocol
 
 
 class ObjectStorage(Protocol):
@@ -17,6 +17,7 @@ class ObjectStorage(Protocol):
     def get_bytes(self, key: str) -> bytes: ...
     def exists(self, key: str) -> bool: ...
     def iter_objects(self, prefix: str = ""): ...
+    def presigned_get_url(self, key: str, expires_in: int = 3600) -> str | None: ...
 
 
 def _safe_key(key: str) -> str:
@@ -61,11 +62,22 @@ class LocalStorage:
             if path.is_file():
                 yield StoredObject(path.relative_to(self.root).as_posix(), path.stat().st_size)
 
+    def presigned_get_url(self, key: str, expires_in: int = 3600) -> str | None:
+        # A local disk has nothing to sign. Callers degrade to a placeholder
+        # (url: null) — presigned links are only exercised against MinIO/S3 on the NAS.
+        return None
+
 
 class S3Storage:
     def __init__(self, bucket: str, endpoint_url: str | None = None, region: str | None = None,
-                 access_key: str | None = None, secret_key: str | None = None, client=None):
+                 access_key: str | None = None, secret_key: str | None = None, client=None,
+                 public_endpoint_url: str | None = None):
         self.bucket = bucket
+        self.region = region
+        self.access_key = access_key
+        self.secret_key = secret_key
+        self.public_endpoint_url = public_endpoint_url
+        self._presign_client_cache = None
         if client is None:
             import boto3
             kwargs = {"endpoint_url": endpoint_url, "region_name": region}
@@ -101,6 +113,33 @@ class S3Storage:
             for item in page.get("Contents", []):
                 yield StoredObject(item["Key"], item["Size"])
 
+    def _presign_client(self):
+        """Client used to sign links for the browser.
+
+        SigV4 signs the Host header, so a link generated against the internal
+        endpoint (http://lenie-minio:9000) won't work in a browser. When
+        public_endpoint_url is set, build a separate, lazily-created and
+        cached client pointed at that address instead.
+        """
+        if not self.public_endpoint_url:
+            return self.client
+        if self._presign_client_cache is None:
+            import boto3
+            kwargs = {"endpoint_url": self.public_endpoint_url, "region_name": self.region}
+            if self.access_key:
+                kwargs["aws_access_key_id"] = self.access_key
+            if self.secret_key:
+                kwargs["aws_secret_access_key"] = self.secret_key
+            self._presign_client_cache = boto3.client("s3", **{k: v for k, v in kwargs.items() if v})
+        return self._presign_client_cache
+
+    def presigned_get_url(self, key: str, expires_in: int = 3600) -> str | None:
+        return self._presign_client().generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": _safe_key(key)},
+            ExpiresIn=expires_in,
+        )
+
 
 def storage_from_config(cfg, *, local_root: str = "/app/data") -> ObjectStorage:
     """Build storage. STORAGE_BACKEND defaults to local for desktop installs."""
@@ -118,6 +157,7 @@ def storage_from_config(cfg, *, local_root: str = "/app/data") -> ObjectStorage:
         region=cfg.get("STORAGE_REGION") or cfg.get("AWS_REGION"),
         access_key=cfg.get("STORAGE_ACCESS_KEY") or cfg.get("AWS_ACCESS_KEY_ID"),
         secret_key=cfg.get("STORAGE_SECRET_KEY") or cfg.get("AWS_SECRET_ACCESS_KEY"),
+        public_endpoint_url=cfg.get("STORAGE_PUBLIC_ENDPOINT_URL"),
     )
 
 

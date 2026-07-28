@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("frontend", "app2", "backend", "worker", "db", "minio", "ner-service", "all")]
+    [ValidateSet("frontend", "app2", "backend", "worker", "db", "minio", "minio-init", "ner-service", "all")]
     [string[]]$Service = @("all"),
     [switch]$SkipBuild,
     [switch]$ComposeOnly,
@@ -27,6 +27,7 @@ $Definitions = @{
     db            = @{ Image = "lenie-ai-db:latest"; RegistryImage = "$Registry/lenie-ai-db:latest"; Dockerfile = "infra/docker/Postgresql/Dockerfile"; Compose = "lenie-ai-db" }
     "ner-service" = @{ Image = "lenie-ner-service:latest"; RegistryImage = "$Registry/lenie-ner-service:latest"; Dockerfile = "ner_service/Dockerfile"; Compose = "lenie-ner-service" }
     minio         = @{ Compose = "lenie-minio" }
+    "minio-init"  = @{ Compose = "lenie-minio-init" }
 }
 
 if ($Service -contains "all") {
