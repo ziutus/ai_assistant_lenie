@@ -326,19 +326,27 @@ silently invalidates historical answers.
 
 ### Table: `public.document_images`
 
-Images extracted out of a document's article text (`library/article_cleaner.py`). `clean_article_text()` replaces inline `![alt](url)` markdown images with `[imgN]` markers in `text_md` — the URL used to be discarded on cleanup. This table preserves it (plus the adjacent caption/credit line, when present — attached via `article_quality.photo_caption_candidates()`, the same classification used to score photo sourcing) so `article_quality.py` can score it without the image markup needing to stay inline in the text shown to readers/LLM. Replace-per-document semantics (like `document_entities`), written by `library/document_images.py:replace_document_images()`, called from `imports/dynamodb_sync.py` (import) and `library/chunk_review_routes.py` `reclean_preview` (manual save).
+Images belonging to a document, from one of two independent sources — distinguished by which of `url`/`storage_key` is set (`document_images_source_present` CHECK: exactly one required):
+
+- **url-sourced** — extracted out of a document's article text (`library/article_cleaner.py`). `clean_article_text()` replaces inline `![alt](url)` markdown images with `[imgN]` markers in `text_md` — the URL used to be discarded on cleanup. This table preserves it (plus the adjacent caption/credit line, when present — attached via `article_quality.photo_caption_candidates()`, the same classification used to score photo sourcing) so `article_quality.py` can score it without the image markup needing to stay inline in the text shown to readers/LLM.
+- **storage_key-sourced** — illustrations extracted from an imported book PDF (`library/book_pdf_import.py:extract_page_images()`), stored via `library/storage.py`'s `ObjectStorage` under `documents/<uuid>/images/<n>.<ext>`.
+
+Replace-per-document semantics (like `document_entities`), but the two sources are replaced independently by `library/document_images.py`'s `replace_document_images()` (url-sourced only, `storage_key IS NULL`; called from `imports/dynamodb_sync.py` and `library/chunk_review_routes.py`'s `reclean_preview`) and `replace_storage_images()` (storage_key-sourced only, `storage_key IS NOT NULL`; called from `book_pdf_import.py:import_pdf_book()` and the `imports/book_extract_images.py` backfill) — each filters its `DELETE` so re-cleaning a web article can never drop a book's PDF images, or vice versa.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `document_id` | `integer NOT NULL` | FK to `documents.id` (CASCADE delete) |
 | `chunk_id` | `integer` | FK to `document_chunks.id` (`SET NULL` on delete) — always `NULL` for now, set aside for a future per-chunk association |
-| `position` | `smallint` | 0-based position of the `[imgN]` marker in the cleaned text |
-| `url` | `text NOT NULL` | Image URL |
-| `alt_text` | `text` | Alt text from `![alt](url)` |
-| `caption_text` | `text` | Adjacent caption/credit line, if any |
-| `caption_category` | `varchar(30)` | `own_or_private_archive` / `agency` / `creative_commons` / `public_domain` / `stock` / `illustrative` / `image_credit` / `other` / `image_description` (`article_quality.photo_caption_candidates` / `PHOTO_SOURCE_PENALTY_WEIGHTS`) |
-| `is_stock_photo` | `boolean NOT NULL DEFAULT false` | `caption_category == 'stock'` at extraction time |
+| `position` | `smallint` | 0-based position of the `[imgN]` marker in the cleaned text (url-sourced); for storage_key-sourced rows, index used to build the storage key — `NULL` for backfilled images with no marker in the existing `text_md` |
+| `url` | `text` | External image URL (url-sourced rows only) |
+| `storage_key` | `text` | Object storage key (storage_key-sourced rows only) |
+| `page_number` | `smallint` | 1-based PDF page the image was extracted from (storage_key-sourced only) |
+| `chapter_position` | `smallint` | 1-based reader chapter position, `detect_chapters()` convention (storage_key-sourced only) |
+| `alt_text` | `text` | Alt text from `![alt](url)` (url-sourced) |
+| `caption_text` | `text` | Adjacent caption/credit line, if any (either source — PDF captions via `caption_for_page()`) |
+| `caption_category` | `varchar(30)` | `own_or_private_archive` / `agency` / `creative_commons` / `public_domain` / `stock` / `illustrative` / `image_credit` / `other` / `image_description` (`article_quality.photo_caption_candidates` / `PHOTO_SOURCE_PENALTY_WEIGHTS`) — url-sourced only |
+| `is_stock_photo` | `boolean NOT NULL DEFAULT false` | `caption_category == 'stock'` at extraction time (url-sourced only) |
 | `created_at` | `timestamp` | Row creation timestamp |
 
 **Index:** `document_id`.
