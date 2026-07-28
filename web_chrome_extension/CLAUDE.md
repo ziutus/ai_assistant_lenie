@@ -27,7 +27,7 @@ web_chrome_extension/
 3. **Content extraction** — captures full page text (`innerText`) and HTML (`outerHTML`) via `chrome.scripting.executeScript()`
 4. **Content type classification** — `webpage` (default), `link`, `youtube`, `movie`
 5. **YouTube detection** — auto-switches type to `youtube` when URL matches `youtube.com/watch`, shows chapter list field
-6. **Facebook post capture** — auto-switches type to `social_media_post` for a post URL, extracts only the post message when available, presents it for editing, and does not send Facebook HTML or comments
+6. **Social media post capture** — auto-switches type to `social_media_post` for Facebook or LinkedIn post URLs, extracts only the post message when available, presents it for editing, sends `social_platform`, and does not send service HTML or comments
 7. **Source tracking** — dropdown loaded from `GET {apiBase}/sources?active=1` (apiBase = serverUrl minus the `/url_add` suffix), with a "+ Dodaj nowe źródło…" option that creates a source via `POST /sources`. Last selection persisted (`chrome.storage.sync.lastSource`); fetched list cached in `chrome.storage.local.sourcesCache`. Offline / endpoint without `/sources` (AWS Gateway) → cache, then the 4 hardcoded fallback options in popup.html
 8. **Paywall flag** — boolean Yes/No radio buttons
 9. **Notes & chapters** — free-text note field, chapter list (visible for YouTube only)

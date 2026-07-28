@@ -177,7 +177,7 @@ class TestLanguage:
 class TestWebDocumentColumns:
     EXPECTED_COLUMNS = {
         "id", "summary", "url", "language", "tags", "text",
-        "paywall", "requires_login", "title", "ingested_at", "document_type",
+        "paywall", "requires_login", "social_platform", "title", "ingested_at", "document_type",
         "discovery_source_id", "publisher_id", "published_on", "published_on_method", "original_id", "document_length",
         "chapter_list", "processing_status", "processing_error_code",
         "text_raw", "transcript_job_id", "ai_summary_needed",
@@ -188,7 +188,7 @@ class TestWebDocumentColumns:
     }
 
     def test_column_count(self):
-        assert len(_column_names(Document)) == 39
+        assert len(_column_names(Document)) == 40
 
     def test_all_column_names(self):
         assert _column_names(Document) == self.EXPECTED_COLUMNS
@@ -540,7 +540,7 @@ class TestDict:
         )
         doc.ingested_at = datetime.datetime(2025, 1, 15, 10, 30, 0)
         result = doc.dict()
-        assert len(result) == 39
+        assert len(result) == 40
 
     def test_dict_keys(self):
         doc = _make_doc(
@@ -551,7 +551,7 @@ class TestDict:
         result = doc.dict()
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
-            "summary", "url", "canonical_url", "language", "tags", "text", "paywall", "requires_login", "title",
+            "summary", "url", "canonical_url", "language", "tags", "text", "paywall", "requires_login", "social_platform", "title",
             "ingested_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "processing_status",
             "processing_error_code", "text_raw", "transcript_job_id",

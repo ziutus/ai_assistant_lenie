@@ -60,6 +60,7 @@ class DocumentService:
         note: str = "default_note",
         paywall: bool = False,
         requires_login: bool | None = None,
+        social_platform: str | None = None,
         source: str = "own",
         ai_summary: bool = False,
         chapter_list: bool = False,
@@ -104,6 +105,7 @@ class DocumentService:
         doc.requires_login = (
             url_type == "social_media_post" if requires_login is None else bool(requires_login)
         )
+        doc.social_platform = social_platform or None
         if url_type == "social_media_post":
             # Social posts arrive as already extracted plain text.  Do not
             # send them through webpage HTML storage/cleanup, which would

@@ -4,6 +4,41 @@ Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).
 
+## [1.0.38] - 2026-07-28
+### Zmienione
+- Diagnostyka została przeniesiona do osobnej zakładki popupu.
+
+## [1.0.37] - 2026-07-28
+### Poprawione
+- Fallback LinkedIna nie pobiera już pierwszego komentarza jako treści głównego posta.
+- Ekstrakcja kończy się przy znaczniku `… more` lub bloku reakcji.
+
+## [1.0.36] - 2026-07-28
+### Zmienione
+- Język strony wybiera się z menu `pl`, `en` albo `inne`.
+- Po wybraniu `inne` pojawia się dodatkowe pole na kod/nazwę języka.
+- Dla postów społecznościowych język interfejsu serwisu nie nadpisuje wyboru użytkownika.
+
+## [1.0.35] - 2026-07-28
+### Poprawione
+- Dodano fallback ekstrakcji dla stron LinkedIna, które renderują post wyłącznie w `body.innerText`.
+
+## [1.0.34] - 2026-07-28
+### Poprawione
+- Rozszerzono ekstrakcję postów LinkedIn o dodatkowe kontenery, selektory i metadane strony.
+- Diagnostyka pokazuje teraz strukturę DOM istotną dla importu LinkedIna.
+
+## [1.0.33] - 2026-07-28
+### Dodane
+- Panel diagnostyczny popupu z informacjami o rozpoznaniu URL i ekstrakcji posta.
+- Możliwość skopiowania raportu diagnostycznego bez klucza API.
+
+## [1.0.32] - 2026-07-28
+### Dodane
+- Automatyczne rozpoznawanie i ekstrakcja pojedynczych postów LinkedIn.
+- Platforma posta (`facebook` lub `linkedin`) jest przekazywana do backendu i zapisywana w dokumencie.
+- Posty LinkedIn, podobnie jak Facebooka, są oznaczane jako wymagające zalogowania.
+
 ## [1.0.31] - 2026-07-28
 ### Poprawione
 - Numer wersji wyświetlany w popupie jest zgodny z wersją manifestu.

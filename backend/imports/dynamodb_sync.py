@@ -372,7 +372,7 @@ def sync_item_to_postgres(item: dict, text_content: str | None, html_content: st
 
     # Build metadata dict for import_document
     metadata = {}
-    for field in ("title", "language", "note", "chapter_list", "byline", "original_id", "published_on"):
+    for field in ("title", "language", "note", "chapter_list", "byline", "original_id", "published_on", "social_platform"):
         value = item.get(field)
         if value is not None:
             metadata[field] = value
