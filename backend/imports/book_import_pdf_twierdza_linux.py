@@ -1,6 +1,17 @@
-"""CLI wrapper for importing a book PDF into a Document (thin — all logic lives in
-library/book_pdf_import.py so the same code can later run from a worker/job instead
-of a developer machine, per docs/deployment/nas/storage-and-jobs-migration-plan.md).
+"""CLI wrapper for importing the book "Twierdza Linux. Bezpieczeństwo dla
+dociekliwych" into a Document (thin — all logic lives in
+library/book_pdf_import.py so the same code can later run from a worker/job
+instead of a developer machine, per
+docs/deployment/nas/storage-and-jobs-migration-plan.md).
+
+Every book needs its own thin script like this one: the shared engine in
+library/book_pdf_import.py is parameterized (chapter regex, subheading
+font/size), but there's no universal PDF signal for "this is a subheading" or
+"this line marks a new chapter" — each book's layout needs its own tuned
+values, hardcoded below as this book's defaults (still overridable via CLI
+for one-off experiments). A different book gets its own
+imports/book_import_pdf_<slug>.py with its own constants, built on the same
+library functions.
 
 Run imports/check_pdf_text_layer.py first — this script assumes the PDF has a
 usable text layer (no OCR step).
@@ -9,9 +20,9 @@ Data access: ORM (SQLAlchemy) via get_session(), only when --apply is passed.
 
 Running:
     cd backend
-    python imports/book_import_pdf.py book.pdf --title "..." --byline "..."               # dry-run
-    python imports/book_import_pdf.py book.pdf --title "..." --byline "..." --apply       # writes
-    python imports/book_import_pdf.py book.pdf --title "..." --chapter-regex "..." --show 3
+    python imports/book_import_pdf_twierdza_linux.py book.pdf                    # dry-run
+    python imports/book_import_pdf_twierdza_linux.py book.pdf --apply            # writes
+    python imports/book_import_pdf_twierdza_linux.py book.pdf --show 3
 """
 
 import argparse
@@ -27,15 +38,24 @@ from library.book_pdf_import import (
 )
 from library.db.engine import get_session
 
+# This book's own values — see the module docstring above.
+TITLE = "Twierdza Linux. Bezpieczeństwo dla dociekliwych"
+BYLINE = "Karol Szafrański"
+CHAPTER_REGEX = DEFAULT_CHAPTER_REGEX  # "// ROZDZIAŁ NNN //" running-head style (Sekurak)
+HEADING_FONT_PREFIX = "BarlowCondensed"
+HEADING_MIN_SIZE = 12.0
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("file", help="sciezka do pliku PDF")
-    parser.add_argument("--title", required=True, help="tytul ksiazki")
-    parser.add_argument("--byline", default=None, help="autor")
+    parser.add_argument("--title", default=TITLE, help="tytul ksiazki")
+    parser.add_argument("--byline", default=BYLINE, help="autor")
     parser.add_argument("--source", default="own", help="zrodlo odkrycia (domyslnie 'own')")
     parser.add_argument("--url", default=None, help="synthetic url override (domyslnie file:///ksiazki/<slug>.pdf)")
-    parser.add_argument("--chapter-regex", default=DEFAULT_CHAPTER_REGEX, help="regex markera rozdzialu")
+    parser.add_argument("--chapter-regex", default=CHAPTER_REGEX, help="regex markera rozdzialu")
+    parser.add_argument("--heading-font-prefix", default=HEADING_FONT_PREFIX, help="prefiks fontu podrozdzialow")
+    parser.add_argument("--heading-min-size", type=float, default=HEADING_MIN_SIZE, help="min. rozmiar fontu podrozdzialow")
     parser.add_argument("--show", type=int, default=5, metavar="N", help="ile rozdzialow pokazac w podglada dry-run")
     parser.add_argument("--no-images", action="store_true", help="pomin ekstrakcje obrazow (domyslnie wlaczona)")
     parser.add_argument("--apply", action="store_true", help="zapisz do bazy (domyslnie dry-run)")
@@ -47,7 +67,9 @@ def main() -> None:
 
     if not args.apply:
         pages = extract_pages(pdf_bytes)
-        heading_texts = detect_heading_texts(pdf_bytes)
+        heading_texts = detect_heading_texts(
+            pdf_bytes, font_prefix=args.heading_font_prefix, min_size=args.heading_min_size,
+        )
         images = extract_page_images(pdf_bytes) if extract_images else []
         images_by_page: dict[int, list[int]] = {}
         for position, image in enumerate(images):
@@ -84,6 +106,8 @@ def main() -> None:
             url=args.url,
             chapter_regex=args.chapter_regex,
             extract_images=extract_images,
+            heading_font_prefix=args.heading_font_prefix,
+            heading_min_size=args.heading_min_size,
         )
         print(f"Zapisano Document id={doc.id} uuid={doc.uuid}")
         print(f"Rozdzialow: {len(result.chapters)}, dlugosc markdown: {len(result.markdown)} znakow")

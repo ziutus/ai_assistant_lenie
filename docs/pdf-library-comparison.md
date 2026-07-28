@@ -1,7 +1,7 @@
 # Porównanie bibliotek do ekstrakcji tekstu z PDF
 
 Kontekst: import książek PDF do Lenie (`backend/library/book_pdf_import.py`,
-`backend/imports/book_import_pdf.py`, `backend/imports/check_pdf_text_layer.py`).
+`backend/imports/book_import_pdf_twierdza_linux.py`, `backend/imports/check_pdf_text_layer.py`).
 Porównanie zrobione 2026-07-27 na realnej książce technicznej ("Twierdza Linux.
 Bezpieczeństwo dla dociekliwych", Karol Szafrański, Sekurak) — 539 stron, dużo
 list punktowanych i bloków kodu/configu przeplecionych z prozą.
@@ -85,9 +85,12 @@ nigdy nie zostają rozerwane, nawet gdy heurystyka nie wykryje jakiejś granicy.
 
 ## Dla przyszłych importów książek
 
-- Jeśli nowa książka ma zupełnie inny styl żywej paginy niż
-  `// ROZDZIAŁ NNN //`, trzeba nadpisać `--chapter-regex` w
-  `imports/book_import_pdf.py` (patrz `backend/imports/CLAUDE.md`).
+- Każda książka dostaje własny cienki skrypt CLI
+  `imports/book_import_pdf_<slug>.py` (np. `book_import_pdf_twierdza_linux.py`)
+  ze swoimi stałymi (tytuł, autor, `--chapter-regex`,
+  `--heading-font-prefix`/`--heading-min-size`) — silnik w
+  `library/book_pdf_import.py` jest generyczny, parametryzowany (patrz
+  `backend/imports/CLAUDE.md`).
 - Jeśli tekst nadal wygląda jak ściana tekstu mimo `_insert_paragraph_breaks()`,
   prawdopodobnie ta konkretna książka ma inny styl typograficzny (np. inne
   znaki końca zdania, brak wcięć/bulletów) — heurystykę trzeba będzie

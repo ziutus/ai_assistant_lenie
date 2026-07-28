@@ -18,6 +18,7 @@ pytest.importorskip("sqlalchemy")
 from library.book_pdf_import import (  # noqa: E402
     build_book_markdown,
     caption_for_page,
+    detect_heading_texts,
     extract_page_images,
 )
 
@@ -82,6 +83,60 @@ class TestExtractPageImages:
         images = extract_page_images(b"fake-pdf-bytes")
 
         assert [(img.page_index, img.xref) for img in images] == [(0, 12), (1, 13)]
+
+
+# ---------------------------------------------------------------------------
+# detect_heading_texts — font_prefix/min_size are per-book overrides (each
+# book gets its own imports/book_import_pdf_<slug>.py with its own values)
+# ---------------------------------------------------------------------------
+
+
+class _FakeTextPage:
+    def __init__(self, lines):
+        # lines: list of list-of-span-dicts, one inner list per text line
+        self._lines = lines
+
+    def get_text(self, mode):
+        assert mode == "dict"
+        return {"blocks": [{"type": 0, "lines": [{"spans": spans} for spans in self._lines]}]}
+
+
+def _install_fake_fitz_text(monkeypatch, pages):
+    fake_fitz = types.ModuleType("fitz")
+    fake_doc = pages
+
+    class _FakeDoc:
+        def __iter__(self):
+            return iter(fake_doc)
+
+    fake_fitz.open = lambda stream, filetype: _FakeDoc()
+    monkeypatch.setitem(sys.modules, "fitz", fake_fitz)
+
+
+class TestDetectHeadingTexts:
+    def test_matches_default_font_and_size(self, monkeypatch):
+        page = _FakeTextPage([
+            [{"text": "Nazewnictwo w książce", "font": "BarlowCondensed-Bold", "size": 14.0}],
+            [{"text": "Zwykly akapit tekstu.", "font": "NotoSerif", "size": 8.5}],
+        ])
+        _install_fake_fitz_text(monkeypatch, [page])
+
+        headings = detect_heading_texts(b"fake-pdf-bytes")
+
+        assert headings == {"Nazewnictwo w książce"}
+
+    def test_custom_font_prefix_and_min_size_override_default(self, monkeypatch):
+        page = _FakeTextPage([
+            # Would NOT match the default BarlowCondensed/12.0, but should
+            # match a book-specific override.
+            [{"text": "Inny styl podrozdzialu", "font": "Montserrat-Bold", "size": 10.0}],
+        ])
+        _install_fake_fitz_text(monkeypatch, [page])
+
+        assert detect_heading_texts(b"fake-pdf-bytes") == set()
+        assert detect_heading_texts(
+            b"fake-pdf-bytes", font_prefix="Montserrat", min_size=10.0,
+        ) == {"Inny styl podrozdzialu"}
 
 
 # ---------------------------------------------------------------------------
