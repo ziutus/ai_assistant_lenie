@@ -4,7 +4,7 @@ into a Document with chapter-aware markdown.
 Pure functions operate on bytes/text only — no local filesystem assumptions
 beyond receiving the PDF as bytes. This keeps the pipeline portable: the same
 `import_pdf_book()` call works whether the bytes come from a local file (today,
-via imports/book_import_pdf.py) or a future ObjectStorage.get_bytes()/job-queue
+via imports/book_import_pdf_<slug>.py, one per book) or a future ObjectStorage.get_bytes()/job-queue
 materialize() step (docs/deployment/nas/storage-and-jobs-migration-plan.md) —
 only the caller that supplies the bytes changes, not this module.
 
@@ -50,12 +50,15 @@ _SENTENCE_END_RE = re.compile(r"[.!?”\"»]\s*$")
 # 1-2-hash line as a markdown H1/H2 header, so these must be neutralized before
 # our own "## <title>" markers are inserted, or they swamp the real chapter count.
 _LEADING_HASH_RE = re.compile(r"(?m)^(#{1,2})(?=\s)")
-# Book-specific: this book's subheadings render in a distinct "display" font
-# family at a size clearly above body text (body is NotoSerif @ 8.5pt; the
-# chapter running-head title also uses BarlowCondensed but at 11pt/Regular
-# weight, below this threshold, so it's excluded without extra bookkeeping).
-# A book with different subheading styling needs different constants here —
-# there's no universal PDF signal for "this line is a subheading".
+# Book-specific defaults for detect_heading_texts()/import_pdf_book() — tuned to
+# "Twierdza Linux" (imports/book_import_pdf_twierdza_linux.py): its subheadings
+# render in a distinct "display" font family at a size clearly above body text
+# (body is NotoSerif @ 8.5pt; the chapter running-head title also uses
+# BarlowCondensed but at 11pt/Regular weight, below this threshold, so it's
+# excluded without extra bookkeeping). There's no universal PDF signal for
+# "this line is a subheading" — a book with different subheading styling
+# should pass its own heading_font_prefix/heading_min_size instead of relying
+# on these defaults.
 _HEADING_FONT_PREFIX = "BarlowCondensed"
 _HEADING_MIN_SIZE = 12.0
 
@@ -72,7 +75,9 @@ def _escape_leading_hashes(text: str) -> str:
     return _LEADING_HASH_RE.sub(lambda m: "\\" + m.group(1), text)
 
 
-def detect_heading_texts(pdf_bytes: bytes) -> set[str]:
+def detect_heading_texts(
+    pdf_bytes: bytes, font_prefix: str = _HEADING_FONT_PREFIX, min_size: float = _HEADING_MIN_SIZE,
+) -> set[str]:
     """Collect the exact text of lines styled as book subheadings, using
     PyMuPDF's per-span font metadata (name + size) — plain text extraction
     throws this away, so a subheading like "Nazewnictwo w książce" otherwise
@@ -80,6 +85,11 @@ def detect_heading_texts(pdf_bytes: bytes) -> set[str]:
     A line counts only when EVERY span on it matches the heading style, so a
     bolded word inside an ordinary sentence (same font family/size as body
     text, just a different weight) is never mistaken for a heading.
+
+    font_prefix/min_size default to the Sekurak-style "Twierdza Linux" book
+    this module was built against — there is no universal PDF signal for
+    "this line is a subheading", so a different book's per-book import script
+    (imports/book_import_pdf_<slug>.py) should pass its own tuned values.
     """
     import fitz
 
@@ -94,7 +104,7 @@ def detect_heading_texts(pdf_bytes: bytes) -> set[str]:
                 if not spans:
                     continue
                 if all(
-                    s["font"].startswith(_HEADING_FONT_PREFIX) and s["size"] >= _HEADING_MIN_SIZE
+                    s["font"].startswith(font_prefix) and s["size"] >= min_size
                     for s in spans
                 ):
                     text = "".join(s["text"] for s in spans).strip()
@@ -425,13 +435,15 @@ def import_pdf_book(
     note: str = "default_note",
     chapter_regex: str = DEFAULT_CHAPTER_REGEX,
     extract_images: bool = True,
+    heading_font_prefix: str = _HEADING_FONT_PREFIX,
+    heading_min_size: float = _HEADING_MIN_SIZE,
 ) -> tuple[Document, BookMarkdownResult]:
     """Create a Document for a book PDF with chapter-aware text_md. Commits.
 
     Returns (document, markdown_result) so callers can report chapter stats.
     """
     pages = extract_pages(pdf_bytes)
-    heading_texts = detect_heading_texts(pdf_bytes)
+    heading_texts = detect_heading_texts(pdf_bytes, font_prefix=heading_font_prefix, min_size=heading_min_size)
     page_images = extract_page_images(pdf_bytes) if extract_images else []
     images_by_page: dict[int, list[int]] = {}
     for position, page_image in enumerate(page_images):
