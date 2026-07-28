@@ -29,6 +29,7 @@ layouts. The output markdown must satisfy library.text_functions.detect_chapters
 
 from __future__ import annotations
 
+import difflib
 import re
 import uuid
 from collections import Counter
@@ -43,6 +44,21 @@ from library.storage import storage_from_config
 
 DEFAULT_CHAPTER_REGEX = r"(?i)//\s*ROZDZIA[ŁL]\s*(\d+)\s*//"
 _PAGE_NUMBER_LINE_RE = re.compile(r"(?m)^\s*\d{1,4}\s*$\n?")
+# The "Spis tabel" back-matter page's dot-leader fill character (title ... N)
+# uses a font encoding PyMuPDF can't map to a real codepoint at all — it comes
+# out as genuine U+FFFD REPLACEMENT CHARACTER runs (confirmed: nowhere else in
+# this book, ~4000 occurrences on that one page alone), not something any
+# amount of post-processing can recover the "real" glyph for. Purely
+# decorative filler either way, so it's dropped rather than shown as garbage.
+_REPLACEMENT_CHAR_RUN_RE = re.compile(r"\s*�+")
+# Stray C0 control characters PyMuPDF occasionally decodes a broken/custom
+# glyph into instead of U+FFFD or the intended character — seen in this book
+# as a BACKSPACE (U+0008) tacked onto "Spis tabel" entries (renders as a
+# visible box in some browsers instead of vanishing) and a single SOH
+# (U+0001) standing in for one bullet icon glyph that failed to decode. Never
+# meaningful content, so dropped outright; \t/\n/\r are the only C0 codes
+# this book's markdown actually uses.
+_STRAY_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _BULLET_RE = re.compile(r"^\s*[▶▷•‣]|^\s*\d+[.)]\s")
 _SENTENCE_END_RE = re.compile(r"[.!?”\"»]\s*$")
 # Shell/config code samples in technical books often have lines like "# comment"
@@ -68,7 +84,37 @@ _HEADING_MIN_SIZE = 12.0
 _IMAGE_MIN_PIXELS = 100  # applies to each dimension
 _IMAGE_MIN_BYTES = 5 * 1024
 _CAPTION_RE = re.compile(r"(?m)^\s*((?:Rysunek|Rys\.|Ilustracja|Tabela|Zdj\.)\s*\d+[.:].*)$")
+_TABLE_CAPTION_RE = re.compile(r"(?m)^Tabela\s+(\d+)\.\s")
 CONTENT_TYPE_BY_EXT = {"png": "image/png", "jpeg": "image/jpeg", "jpg": "image/jpeg"}
+
+# Inline styling (apply_inline_styles()) — font-name signals for "Twierdza Linux"'s
+# own documented typographic conventions (its "Konwencje stosowane w książce"
+# section): monotype for commands/paths/terminal dumps, italic for foreign words
+# and mechanism names. Font-name prefixes/substrings only — a different book's
+# per-book script should pass its own.
+_MONOSPACE_FONT_PREFIXES = ("consolas", "mplus-1m")
+_ITALIC_FONT_NEEDLE = "ital"
+
+# Callout boxes ("Konwencje..." documents two: green info / red warning) are
+# rendered in the PDF as a colored graphic with no text-layer signal of its
+# own — but each is preceded by a standalone icon glyph line that DOES survive
+# plain text extraction: a real Unicode char for the green box, a private-use-area
+# glyph from the book's icon font for the red one (not portable/renderable
+# outside that font — used only as a detection signal, never rendered itself).
+_INFO_ICON = "ℹ"
+_WARNING_ICON = ""
+
+# Front/back-matter "part" sections (Od Autora, Wstęp, Słownik pojęć, ...) get a
+# big standalone opening-page title, same tier as a numbered chapter's but with
+# no "// ROZDZIAŁ N //"-style marker to regex-match — detect_named_sections()
+# instead matches by exact font/size + an explicit per-book title allowlist.
+# Two tiers observed in this book: an ALL-CAPS "eyebrow" (own running head,
+# e.g. "OD AUTORA") and/or a title-case opening title with no separate eyebrow
+# (e.g. "Podziękowania") — a section may have either or both.
+_SECTION_EYEBROW_FONT = "ChakraPetch-Bold"
+_SECTION_EYEBROW_SIZE = 18.0
+_SECTION_TITLE_FONT = "ChakraPetch-Regular"
+_SECTION_TITLE_SIZE = 16.0
 
 
 def _escape_leading_hashes(text: str) -> str:
@@ -111,6 +157,290 @@ def detect_heading_texts(
                     if text:
                         headings.add(text)
     return headings
+
+
+def detect_named_sections(
+    pdf_bytes: bytes,
+    eyebrow_titles: dict[str, str],
+    title_titles: dict[str, str],
+    eyebrow_font: str = _SECTION_EYEBROW_FONT,
+    eyebrow_size: float = _SECTION_EYEBROW_SIZE,
+    title_font: str = _SECTION_TITLE_FONT,
+    title_size: float = _SECTION_TITLE_SIZE,
+) -> dict[int, list[tuple[str, str]]]:
+    """Locate front/back-matter "part" section openers (Od Autora, Wstęp,
+    Słownik pojęć, ...) that get the same big standalone-title-page treatment
+    as a numbered chapter but have no "// ROZDZIAŁ N //"-style marker to
+    regex-match. Two font/size tiers are checked (a section may use either):
+    an ALL-CAPS "eyebrow" running head (eyebrow_titles, keyed by that exact
+    ALL-CAPS text) and/or a title-case opening title with no separate eyebrow
+    (title_titles, keyed by that exact text). Both dicts map the exact text as
+    it appears in the PDF to the canonical title to use as the "## " header —
+    an explicit allowlist, not "any line in this font/size", since numbered
+    chapters and the printed "SPIS TREŚCI" page itself also use this tier and
+    must NOT become extra chapters.
+
+    Returns {page_index: [(source_text, canonical_title), ...]} in reading
+    order per page — build_book_markdown() locates source_text within that
+    page's own extracted text and splices in "## canonical_title" there.
+    """
+    import fitz
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    found: dict[int, list[tuple[str, str]]] = {}
+    for page_idx, page in enumerate(doc):
+        for block in page.get_text("dict")["blocks"]:
+            if block.get("type") != 0:
+                continue
+            for line in block["lines"]:
+                spans = [s for s in line["spans"] if s["text"].strip()]
+                if not spans:
+                    continue
+                text = "".join(s["text"] for s in spans).strip()
+                canonical = None
+                if text in eyebrow_titles and all(
+                    s["font"] == eyebrow_font and abs(s["size"] - eyebrow_size) < 0.5 for s in spans
+                ):
+                    canonical = eyebrow_titles[text]
+                elif text in title_titles and all(
+                    s["font"] == title_font and abs(s["size"] - title_size) < 0.5 for s in spans
+                ):
+                    canonical = title_titles[text]
+                if canonical:
+                    found.setdefault(page_idx, []).append((text, canonical))
+    return found
+
+
+def _word_style(font: str, monospace_prefixes: tuple[str, ...], italic_needle: str) -> str | None:
+    font_lower = font.lower()
+    if font_lower.startswith(monospace_prefixes):
+        return "mono"
+    if italic_needle in font_lower:
+        return "ital"
+    return None
+
+
+_INLINE_MARKER = {"mono": "`", "ital": "*"}
+
+
+def apply_inline_styles(
+    pdf_bytes: bytes,
+    pages: list[str],
+    monospace_font_prefixes: tuple[str, ...] = _MONOSPACE_FONT_PREFIXES,
+    italic_font_needle: str = _ITALIC_FONT_NEEDLE,
+) -> list[str]:
+    """Wrap monospace runs in backticks and italic runs in asterisks, per this
+    book's own documented typographic conventions ("Konwencje stosowane w
+    książce": monotype for commands/paths/terminal dumps, italic for foreign
+    words and mechanism names) — font name only, see _MONOSPACE_FONT_PREFIXES/
+    _ITALIC_FONT_NEEDLE.
+
+    PyMuPDF's per-span dict-mode text can silently drop trailing punctuation
+    that plain get_text() keeps (observed: an italic word immediately
+    followed by a period lost the period entirely in dict-mode spans) — so
+    this never rebuilds page text from spans. Instead it takes page.get_text()
+    (or, if the page's text already differs from that — e.g. a table region
+    already replaced by insert_page_tables() — whatever `pages[i]` currently
+    is) as the one ground truth, aligns its whitespace-delimited tokens
+    against page.get_text("words") (same content, independently tokenized) via
+    difflib, and only wraps runs the alignment is confident about. Unmatched
+    regions (word reordering — seen on multi-column donor-name-list pages —
+    or content already replaced by an earlier pipeline step) are left exactly
+    as they were: this can only omit styling, never corrupt or lose text.
+    """
+    import fitz
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    out: list[str] = []
+    for page_idx, page in enumerate(doc):
+        current = pages[page_idx] if page_idx < len(pages) else page.get_text()
+        tokens = [(m.start(), m.end(), m.group()) for m in re.finditer(r"\S+", current)]
+        if not tokens:
+            out.append(current)
+            continue
+
+        spans: list[tuple[tuple[float, float, float, float], str]] = []
+        for block in page.get_text("dict")["blocks"]:
+            if block.get("type") != 0:
+                continue
+            for line in block["lines"]:
+                for s in line["spans"]:
+                    spans.append((s["bbox"], s["font"]))
+
+        styled_words: list[tuple[str, str | None]] = []
+        for x0, y0, x1, y1, text, *_rest in page.get_text("words"):
+            cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+            style = None
+            for (bx0, by0, bx1, by1), font in spans:
+                if bx0 - 1 <= cx <= bx1 + 1 and by0 - 1 <= cy <= by1 + 1:
+                    style = _word_style(font, monospace_font_prefixes, italic_font_needle)
+                    break
+            styled_words.append((text, style))
+
+        matcher = difflib.SequenceMatcher(
+            None, [t[2] for t in tokens], [w[0] for w in styled_words], autojunk=False,
+        )
+        token_style: dict[int, str] = {}
+        for block in matcher.get_matching_blocks():
+            for k in range(block.size):
+                style = styled_words[block.b + k][1]
+                if style:
+                    token_style[block.a + k] = style
+
+        runs: list[tuple[int, int, str]] = []
+        run_style: str | None = None
+        run_start = run_end = 0
+        for i, (start, end, _word) in enumerate(tokens):
+            style = token_style.get(i)
+            if style == run_style and style is not None:
+                run_end = end
+            else:
+                if run_style is not None:
+                    runs.append((run_start, run_end, run_style))
+                run_style = style
+                run_start, run_end = (start, end) if style else (0, 0)
+        if run_style is not None:
+            runs.append((run_start, run_end, run_style))
+
+        parts: list[str] = []
+        cursor = 0
+        for start, end, style in runs:
+            marker = _INLINE_MARKER[style]
+            parts.append(current[cursor:start])
+            parts.append(f"{marker}{current[start:end]}{marker}")
+            cursor = end
+        parts.append(current[cursor:])
+        out.append("".join(parts))
+    return out
+
+
+def _table_to_markdown(rows: list[list[str | None]]) -> str | None:
+    """Render a find_tables() row grid as a markdown table. None/blank first
+    row cells become an empty header cell; a completely empty table (header
+    only, no data rows, or a header with no non-blank cell) is not a real
+    table — return None so the caller falls back to leaving the raw text."""
+    if len(rows) < 2:
+        return None
+    cleaned = [[(cell or "").replace("\n", " ").strip().replace("|", "\\|") for cell in row] for row in rows]
+    if not any(cell for cell in cleaned[0]):
+        return None
+    width = max(len(row) for row in cleaned)
+    cleaned = [row + [""] * (width - len(row)) for row in cleaned]
+    lines = [
+        "| " + " | ".join(cleaned[0]) + " |",
+        "| " + " | ".join(["---"] * width) + " |",
+    ]
+    for row in cleaned[1:]:
+        lines.append("| " + " | ".join(row) + " |")
+    return "\n".join(lines)
+
+
+def insert_page_tables(pdf_bytes: bytes, pages: list[str]) -> list[str]:
+    """Replace each page's flattened table text with a real markdown table.
+
+    PyMuPDF's plain get_text() reads a table's cells in visual flow order with
+    no row/column delimiters at all — unreadable (header cells and data cells
+    of a multi-column table run together as if they were prose). find_tables()
+    gives real grid structure instead; page.get_text(clip=table.bbox) is used
+    to find exactly which slice of the page's own already-extracted text the
+    table occupies, so the (single, in-place) replacement can't drift out of
+    sync with whatever pipeline stage produced `pages` (this runs before
+    apply_inline_styles(), against the plain extract_pages() output).
+
+    A table split across a page boundary (a repeated header row on the next
+    page, common in this book) is NOT merged — each page's fragment becomes
+    its own markdown table, the continuation repeating its header. Still a
+    large readability improvement over the fully flattened original; merging
+    is a possible future refinement, not attempted here.
+    """
+    import fitz
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    out: list[str] = []
+    for page_idx, page in enumerate(doc):
+        current = pages[page_idx] if page_idx < len(pages) else page.get_text()
+        for table in page.find_tables().tables:
+            rows = table.extract()
+            markdown = _table_to_markdown(rows)
+            if markdown is None:
+                continue
+            clip_text = page.get_text(clip=table.bbox).strip()
+            if not clip_text or clip_text not in current:
+                continue
+            current = current.replace(clip_text, markdown, 1)
+        out.append(current)
+    return out
+
+
+def _link_table_captions(text: str) -> str:
+    """Give each "Tabela N. <title>" caption a #tabela-N anchor at its real
+    occurrence (the one immediately followed by a markdown table, from
+    insert_page_tables()) and turn every other occurrence of that same
+    caption text — in practice, the "Spis tabel" back-matter index, which
+    lists the identical caption with no table underneath — into a link to
+    that anchor. The link only encodes the anchor id, not a chapter position:
+    chapter numbering is computed fresh by detect_chapters() on every read
+    (GET /document/<id>/chapters), not fixed at import time, so the reader
+    resolves anchor -> chapter position at click time via
+    GET /document/<id>/anchor/<anchor_id> instead of trusting a number baked
+    in here. A table find_tables() failed to detect keeps its plain
+    unlinked caption text everywhere (nothing to jump to).
+    """
+    lines = text.split("\n")
+    real_occurrence_line: dict[str, int] = {}
+    for i, line in enumerate(lines):
+        match = _TABLE_CAPTION_RE.match(line)
+        if not match or match.group(1) in real_occurrence_line:
+            continue
+        next_nonblank = next((ln for ln in lines[i + 1:i + 3] if ln.strip()), "")
+        if next_nonblank.startswith("|"):
+            real_occurrence_line[match.group(1)] = i
+
+    out: list[str] = []
+    for i, line in enumerate(lines):
+        match = _TABLE_CAPTION_RE.match(line)
+        number = match.group(1) if match else None
+        if number is None or number not in real_occurrence_line:
+            out.append(line)
+        elif real_occurrence_line[number] == i:
+            out.extend([f"[#tabela-{number}]", "", f"**{line}**", ""])
+        else:
+            out.append(f"[{line}](anchor:tabela-{number})")
+    return "\n".join(out)
+
+
+def _wrap_callout_boxes(text: str, info_icon: str = _INFO_ICON, warning_icon: str = _WARNING_ICON) -> str:
+    """Wrap the paragraph following a standalone callout-icon line in
+    "[!INFO]"/"[!WARN]" markers (read.tsx renders these as a green/red box) —
+    see _INFO_ICON/_WARNING_ICON for what marks each color in the PDF text
+    layer. The icon line itself is dropped (it carries no readable content on
+    its own once separated from the box graphic)."""
+    lines = text.split("\n")
+    out: list[str] = []
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        kind = "INFO" if stripped == info_icon else "WARN" if stripped == warning_icon else None
+        if kind is None:
+            out.append(lines[i])
+            i += 1
+            continue
+        i += 1
+        while i < len(lines) and not lines[i].strip():
+            i += 1
+        para_lines: list[str] = []
+        while i < len(lines) and lines[i].strip() and lines[i].strip() not in (info_icon, warning_icon):
+            para_lines.append(lines[i])
+            i += 1
+        if not para_lines:
+            continue
+        if out and out[-1].strip():
+            out.append("")
+        out.append(f"[!{kind}]")
+        out.extend(para_lines)
+        out.append(f"[!/{kind}]")
+        out.append("")
+    return "\n".join(out)
 
 
 @dataclass
@@ -197,7 +527,7 @@ def _insert_image_markers(cleaned: str, image_numbers: list[int]) -> str:
 
 
 def _page_chapter_positions(
-    page_count: int, chapter_start_pages: dict[int, str], has_preamble: bool,
+    page_count: int, chapter_start_page_list: list[int], has_preamble: bool,
 ) -> list[int]:
     """Chapter position each page belongs to, in the reader's own numbering.
 
@@ -212,10 +542,17 @@ def _page_chapter_positions(
     False, there is no wstęp and numbering is unshifted (pages before any
     marker — a degenerate case in practice — fall back to 0, "no chapter").
 
-    Chapter start pages, sorted, correspond 1:1 (by rank) to the ChapterInfo
-    entries build_book_markdown() emits — both are ordered by page position.
+    chapter_start_page_list must be every "## " header's page, in the exact
+    order those headers appear in the final text — numbered chapters AND
+    extra_sections (front/back-matter) interleaved, not just numbered chapters
+    (a page can carry more than one front-matter header, e.g. this book's "Od
+    Wydawcy" and "Linux Early Access: podziękowania" both open on page 22 — a
+    duplicate page number here is one "## " header each, not a bug). Sorted,
+    it corresponds 1:1 (by rank) to the ChapterInfo entries build_book_markdown()
+    emits — both are ordered by page position (then by within-page position for
+    same-page entries, though this function only tracks page granularity).
     """
-    starts = sorted(chapter_start_pages.keys())
+    starts = sorted(chapter_start_page_list)
     offset = 1 if has_preamble else 0
     positions: list[int] = []
     current = 1 if has_preamble else 0
@@ -341,6 +678,8 @@ def build_book_markdown(
     chapter_regex: str = DEFAULT_CHAPTER_REGEX,
     heading_texts: set[str] | None = None,
     images_by_page: dict[int, list[int]] | None = None,
+    extra_sections: dict[int, list[tuple[str, str]]] | None = None,
+    promote_subheadings: dict[str, str] | None = None,
 ) -> BookMarkdownResult:
     """Turn raw per-page PDF text into chapter-marked markdown.
 
@@ -355,10 +694,22 @@ def build_book_markdown(
 
     images_by_page (page index -> list of image numbers N) inserts "[imgN]"
     markers — see _insert_image_markers().
+
+    extra_sections (see detect_named_sections()) inserts a "## <title>" at
+    each given page's exact source-text position — unlike numbered chapters
+    these aren't always alone at the top of their page (e.g. two front-matter
+    sections opening on the same page), so each is spliced in precisely where
+    its own source text was found, not just at page start. promote_subheadings
+    upgrades specific already-"### "-marked subheadings (exact text match, see
+    _mark_headings()/detect_heading_texts()) to real "## " chapters — this
+    book's back matter (Spis tabel/Spis rysunków/Bibliografia) shares its
+    styling with ordinary subheadings but is its own printed-TOC entry.
     """
     pattern = re.compile(chapter_regex)
     heading_texts = heading_texts or set()
     images_by_page = images_by_page or {}
+    extra_sections = extra_sections or {}
+    promote_subheadings = promote_subheadings or {}
 
     page_spans = [_find_chapter_marker_spans(page_text, pattern) for page_text in pages]
 
@@ -374,6 +725,11 @@ def build_book_markdown(
         key: counter.most_common(1)[0][0] for key, counter in titles_by_chapter.items()
     }
     chapter_start_pages = {page_idx: key for key, page_idx in first_page_by_chapter.items()}
+    # Page each promoted subheading (see promote_subheadings) lands on — needed
+    # alongside chapter_start_pages/extra_sections below to keep
+    # _page_chapter_positions()'s page->chapter mapping in sync with every kind
+    # of "## " header this function can now produce, not just numbered chapters.
+    promoted_start_pages: list[int] = []
 
     body_parts: list[str] = []
     for page_idx, page_text in enumerate(pages):
@@ -386,9 +742,28 @@ def build_book_markdown(
         cleaned = "".join(page_parts)
         cleaned = _escape_leading_hashes(cleaned)
         cleaned = _mark_headings(cleaned, heading_texts)
+        for promoted_source_text in promote_subheadings:
+            if f"### {promoted_source_text}" in cleaned:
+                promoted_start_pages.append(page_idx)
         image_numbers = images_by_page.get(page_idx)
         if image_numbers:
             cleaned = _insert_image_markers(cleaned, image_numbers)
+        page_extra_sections = extra_sections.get(page_idx)
+        if page_extra_sections:
+            extra_parts: list[str] = []
+            extra_cursor = 0
+            for source_text, section_title in page_extra_sections:
+                idx = cleaned.find(source_text, extra_cursor)
+                if idx == -1:
+                    continue
+                line_end = cleaned.find("\n", idx)
+                if line_end == -1:
+                    line_end = len(cleaned)
+                extra_parts.append(cleaned[extra_cursor:idx])
+                extra_parts.append(f"\n\n## {section_title}\n\n")
+                extra_cursor = line_end + 1
+            extra_parts.append(cleaned[extra_cursor:])
+            cleaned = "".join(extra_parts)
         chapter_key = chapter_start_pages.get(page_idx)
         if chapter_key is not None:
             body_parts.append(f"\n\n## {canonical_title[chapter_key]}\n\n")
@@ -396,10 +771,21 @@ def build_book_markdown(
 
     text = "".join(body_parts)
     text = _PAGE_NUMBER_LINE_RE.sub("", text)
+    text = _REPLACEMENT_CHAR_RUN_RE.sub("", text)
+    text = _STRAY_CONTROL_CHAR_RE.sub("", text)
     # Soft hyphen marks a genuine line-wrap split — join directly, no hyphen kept.
     text = text.replace("\xad\n", "").replace("\xad", "")
+    for source_text, promoted_title in promote_subheadings.items():
+        text = text.replace(f"### {source_text}", f"## {promoted_title}", 1)
+    # Paragraph breaks first — a callout paragraph's own end is often only
+    # marked by _insert_paragraph_breaks()'s heuristic, not a blank line
+    # already present in the raw extraction, so _wrap_callout_boxes() (which
+    # scopes each box to "until the next blank line") needs that heuristic to
+    # have already run or it swallows everything up to the next real one.
     text = _insert_paragraph_breaks(text)
+    text = _wrap_callout_boxes(text)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    text = _link_table_captions(text)
 
     chapters: list[ChapterInfo] = []
     header_re = re.compile(r"(?m)^## (.+)$")
@@ -412,7 +798,12 @@ def build_book_markdown(
     # same text) — see _page_chapter_positions()'s docstring for why this must
     # stay in sync with the reader rather than being computed independently.
     has_preamble = bool(chapters) and bool(text[:chapters[0].char_start].strip())
-    page_chapter_positions = _page_chapter_positions(len(pages), chapter_start_pages, has_preamble)
+    all_chapter_start_pages = (
+        list(chapter_start_pages.keys())
+        + [page_idx for page_idx, page_extra in extra_sections.items() for _ in page_extra]
+        + promoted_start_pages
+    )
+    page_chapter_positions = _page_chapter_positions(len(pages), all_chapter_start_pages, has_preamble)
     return BookMarkdownResult(markdown=text, chapters=chapters, page_chapter_positions=page_chapter_positions)
 
 
@@ -437,20 +828,44 @@ def import_pdf_book(
     extract_images: bool = True,
     heading_font_prefix: str = _HEADING_FONT_PREFIX,
     heading_min_size: float = _HEADING_MIN_SIZE,
+    extra_section_eyebrows: dict[str, str] | None = None,
+    extra_section_titles: dict[str, str] | None = None,
+    promote_subheadings: dict[str, str] | None = None,
+    detect_tables: bool = True,
+    apply_styles: bool = True,
 ) -> tuple[Document, BookMarkdownResult]:
     """Create a Document for a book PDF with chapter-aware text_md. Commits.
+
+    Pipeline order matters: tables are converted to markdown first (while
+    `pages` still holds plain, untouched extract_pages() text — insert_page_tables()
+    locates each table by an exact substring match against that text), then
+    inline monospace/italic styling is layered on top of whatever `pages` is
+    at that point (apply_inline_styles() re-derives its own alignment per
+    page and simply won't match already-replaced table regions, so it can't
+    corrupt them). extra_section_eyebrows/extra_section_titles/
+    promote_subheadings feed detect_named_sections() and build_book_markdown()
+    to turn this book's front/back-matter "part" sections into real, clickable
+    chapters alongside the numbered ones — see their docstrings.
 
     Returns (document, markdown_result) so callers can report chapter stats.
     """
     pages = extract_pages(pdf_bytes)
+    if detect_tables:
+        pages = insert_page_tables(pdf_bytes, pages)
+    if apply_styles:
+        pages = apply_inline_styles(pdf_bytes, pages)
     heading_texts = detect_heading_texts(pdf_bytes, font_prefix=heading_font_prefix, min_size=heading_min_size)
     page_images = extract_page_images(pdf_bytes) if extract_images else []
     images_by_page: dict[int, list[int]] = {}
     for position, page_image in enumerate(page_images):
         images_by_page.setdefault(page_image.page_index, []).append(position)
+    extra_sections = detect_named_sections(
+        pdf_bytes, extra_section_eyebrows or {}, extra_section_titles or {},
+    ) if (extra_section_eyebrows or extra_section_titles) else {}
 
     result = build_book_markdown(
         pages, chapter_regex=chapter_regex, heading_texts=heading_texts, images_by_page=images_by_page,
+        extra_sections=extra_sections, promote_subheadings=promote_subheadings,
     )
     if not result.chapters:
         raise ValueError(
