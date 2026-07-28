@@ -37,6 +37,12 @@
         <textarea id="pageDescription" class="form-control" rows="4" placeholder="Opis strony w metadanych"></textarea>
       </div>
 
+      <div id="facebookPostContainer" class="form-group" style="display: none;">
+        <label for="facebookPostText">Treść posta Facebook</label>
+        <textarea id="facebookPostText" class="form-control" rows="12" placeholder="Treść posta zostanie wykryta automatycznie. Możesz ją poprawić przed wysłaniem."></textarea>
+        <small class="form-text text-muted">Komentarze i elementy interfejsu Facebooka nie są importowane.</small>
+      </div>
+
       <label for="note">Notatka</label>
       <div class="form-group">
         <textarea id="note" class="form-control" rows="4" placeholder="Wpisz swoją notatkę"></textarea>
@@ -49,6 +55,7 @@
           <option value="link">Link</option>
           <option value="youtube">YouTube</option>
           <option value="movie">Movie</option>
+          <option value="social_media_post">Facebook post</option>
         </select>
       </div>
 
@@ -84,6 +91,12 @@
           <input type="radio" id="paywallFalse" name="paywall" value="false" checked aria-labelledby="paywallLabel paywallFalseLabel">
           <label for="paywallFalse" id="paywallFalseLabel" class="form-check-label">Nie</label>
         </div>
+      </div>
+
+      <div class="form-group form-check">
+        <input type="checkbox" class="form-check-input" id="requiresLogin">
+        <label class="form-check-label" for="requiresLogin">Wymaga zalogowania do źródła</label>
+        <small class="form-text text-muted">Dla postów Facebooka włączane automatycznie. Nie oznacza płatnego paywalla.</small>
       </div>
 
       <div class="form-group d-flex align-items-center">
@@ -132,7 +145,7 @@
   </div>
 
   <div class="mt-3">
-    Wersja <a href="https://github.com/ziutus/ai_assistant_lenie/blob/main/web_chrome_extension/CHANGELOG.md" target="_blank">1.0.25</a>
+    Wersja <a href="https://github.com/ziutus/ai_assistant_lenie/blob/main/web_chrome_extension/CHANGELOG.md" target="_blank">1.0.31</a>
   </div>
 </div>
 <script src="popup.js"></script>

@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', function () {
   const noteInput = document.getElementById('note');
   const sendButton = document.getElementById('sendButton');
   const paywallInputs = document.getElementsByName('paywall');
+  const requiresLoginInput = document.getElementById('requiresLogin');
   const typeSelect = document.getElementById('type');
   const sourceSelect = document.getElementById('source');
   const chapter_list = document.getElementById('chapter_list');
@@ -29,6 +30,8 @@ document.addEventListener('DOMContentLoaded', function () {
   const pageLanguageInput = document.getElementById('pageLanguage');
   const pageDescriptionInput = document.getElementById('pageDescription');
   const pageTitleInput = document.getElementById('pageTitle');
+  const facebookPostContainer = document.getElementById('facebookPostContainer');
+  const facebookPostTextInput = document.getElementById('facebookPostText');
   const toggleApiKeyVisibilityBtn = document.getElementById('toggleApiKeyVisibility');
   const apiKeyEye = document.getElementById('apiKeyEye');
   const newSourceContainer = document.getElementById('newSourceContainer');
@@ -38,6 +41,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const ADD_NEW_SOURCE = '__add_new__';
   let previousSourceValue = sourceSelect.value;
+  let detectedFacebookAuthor = '';
 
   // serverUrl stores the FULL /url_add endpoint URL (backward compatible with
   // existing installs) — derive the API base for the /sources endpoints.
@@ -165,8 +169,20 @@ document.addEventListener('DOMContentLoaded', function () {
     chapterListContainer.style.display = (typeSelect.value === 'youtube') ? 'block' : 'none';
   }
 
+  function toggleFacebookPostVisibility() {
+    const isFacebookPost = typeSelect.value === 'social_media_post';
+    facebookPostContainer.style.display = isFacebookPost ? 'block' : 'none';
+    refreshExisting.disabled = isFacebookPost;
+    if (isFacebookPost) refreshExisting.checked = false;
+    requiresLoginInput.checked = isFacebookPost;
+  }
+
   toggleChapterListVisibility();
-  typeSelect.addEventListener('change', toggleChapterListVisibility);
+  toggleFacebookPostVisibility();
+  typeSelect.addEventListener('change', () => {
+    toggleChapterListVisibility();
+    toggleFacebookPostVisibility();
+  });
 
   // Load settings
   chrome.storage.sync.get(['apiKey', 'serverUrl'], function (data) {
@@ -196,22 +212,66 @@ document.addEventListener('DOMContentLoaded', function () {
     chrome.storage.sync.set({ serverUrl: serverUrlInput.value });
   });
 
-  // Auto set type for YouTube and fetch metadata
+  // Auto set type for YouTube/Facebook and fetch metadata.
   chrome.tabs.query({ currentWindow: true, active: true }, function (tabs) {
     const pageUrl = tabs[0]?.url || '';
     if (pageUrl.startsWith('https://www.youtube.com/watch') || pageUrl.startsWith('http://www.youtube.com/watch')) {
       typeSelect.value = 'youtube';
       chapterListContainer.style.display = 'block';
     }
+    const isFacebookPost = /^https?:\/\/(www\.)?facebook\.com\/.+\/(posts|pfbid)/i.test(pageUrl)
+      || /^https?:\/\/(www\.)?facebook\.com\/permalink\.php\?.*story_fbid=pfbid/i.test(pageUrl);
+    if (isFacebookPost) {
+      typeSelect.value = 'social_media_post';
+      toggleFacebookPostVisibility();
+    }
 
     chrome.scripting.executeScript(
       {
         target: { tabId: tabs[0].id },
-        func: () => ({
-          title: document.title,
-          description: document.querySelector('meta[name="description"]')?.content || '',
-          language: document.documentElement.lang || navigator.language
-        })
+        func: async () => {
+          const clean = value => (value || '').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+          const isFacebook = /(^|\.)facebook\.com$/i.test(location.hostname);
+          const isVisible = element => {
+            if (!element) return false;
+            const style = getComputedStyle(element);
+            return style.display !== 'none' && style.visibility !== 'hidden' && element.innerText?.trim();
+          };
+          let postText = '';
+          let author = '';
+          if (isFacebook) {
+            // Facebook often hydrates the post after the popup opens. Give
+            // the page a short moment before inspecting its DOM.
+            await new Promise(resolve => setTimeout(resolve, 1200));
+            const postLink = [...document.querySelectorAll('a[href]')].find(a => {
+              const href = a.getAttribute('href') || '';
+              return /\/(posts|pfbid)/i.test(href) || /\/permalink\.php\?.*story_fbid=pfbid/i.test(href);
+            });
+            // Never fall back to the first feed article: it may be a
+            // different post and would silently import the wrong content.
+            const root = postLink?.closest('[role="article"], article');
+            const message = root?.querySelector('[data-ad-preview="message"], [data-ad-comet-preview="message"]')
+              || [...document.querySelectorAll('[data-ad-preview="message"], [data-ad-comet-preview="message"]')]
+                .filter(isVisible)
+                .sort((left, right) => (right.innerText?.length || 0) - (left.innerText?.length || 0))[0];
+            if (message) {
+              postText = clean(message.innerText);
+            } else if (root) {
+              const copy = root.cloneNode(true);
+              copy.querySelectorAll('[role="article"] [role="article"], [role="button"], [aria-label*="comment" i], [aria-label*="komentarz" i]').forEach(el => el.remove());
+              postText = clean(copy.innerText);
+            }
+            const authorLink = root?.querySelector('h2 a, h3 a, strong a');
+            author = clean(authorLink?.innerText || '');
+          }
+          return {
+            title: document.title,
+            description: document.querySelector('meta[name="description"]')?.content || '',
+            language: document.documentElement.lang || navigator.language,
+            postText,
+            author
+          };
+        }
       },
       (results) => {
         if (!results || !results[0] || chrome.runtime.lastError) {
@@ -222,6 +282,13 @@ document.addEventListener('DOMContentLoaded', function () {
           pageTitleInput.value = results[0].result.title || '';
           pageLanguageInput.value = results[0].result.language || '';
           pageDescriptionInput.value = results[0].result.description || '';
+          if (typeSelect.value === 'social_media_post') {
+            facebookPostTextInput.value = results[0].result.postText || '';
+            detectedFacebookAuthor = results[0].result.author || '';
+            if (results[0].result.author) {
+              pageDescriptionInput.value = `Autor: ${results[0].result.author}`;
+            }
+          }
         }
       }
     );
@@ -272,18 +339,24 @@ document.addEventListener('DOMContentLoaded', function () {
       })
         .then(result => {
           const { text, html } = result[0].result;
+          const isFacebookPost = type === 'social_media_post';
           const data = {
             note: note,
             url: pageUrl,
             type: type,
-            text: text,
-            html: html,
+            text: isFacebookPost ? facebookPostTextInput.value.trim() : text,
+            html: isFacebookPost ? '' : html,
             title: title,
             language: language,
             paywall: paywall,
+            requires_login: requiresLoginInput.checked,
             source: sourceSelect.value,
-            chapter_list: chapter_list.value
+            chapter_list: chapter_list.value,
+            byline: isFacebookPost ? detectedFacebookAuthor : ''
           };
+          if (isFacebookPost && !data.text) {
+            throw new Error('Nie znaleziono treści posta. Wklej ją do pola Treść posta.');
+          }
           if (refreshExisting.checked) {
             data.operation = 'fill_missing_html';
           }

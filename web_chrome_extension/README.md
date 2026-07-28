@@ -1,6 +1,8 @@
 # Lenie AI Assistant — Browser Extension
 
-Chrome/Kiwi browser extension for capturing webpages and sending them to the Lenie AI backend. Supports different content types: webpages, links, YouTube videos, and movies.
+Chrome/Kiwi browser extension for capturing webpages and sending them to the Lenie AI backend. Supports webpages, links, YouTube videos, movies and individual Facebook posts.
+
+For a Facebook post the extension sends only the editable post text. Comments, Facebook UI and page HTML are not imported. If Facebook hides the post content, paste it into the displayed text field before sending.
 
 See [CLAUDE.md](CLAUDE.md) for detailed technical documentation (features, API communication, data flow, permissions, directory structure).
 

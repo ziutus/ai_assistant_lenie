@@ -247,9 +247,13 @@ def url_add():
                 language=url_data.get("language", ""),
                 note=url_data.get("note", "default_note"),
                 paywall=url_data.get("paywall", False),
+                requires_login=url_data.get("requires_login"),
                 source=url_data.get("source", "own"),
                 ai_summary=url_data.get("ai_summary", False),
                 chapter_list=url_data.get("chapter_list", False),
+                byline=url_data.get("byline", ""),
+                original_id=url_data.get("original_id"),
+                published_on=url_data.get("published_on"),
             )
         link_matching_feed_items_to_document(session, doc)
         session.commit()
