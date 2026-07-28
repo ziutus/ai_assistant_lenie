@@ -108,12 +108,14 @@ class TestLinkTocEntries:
             "Treść rozdziału."
         )
         result = link_toc_entries(text)
-        assert "[1. Linux i bezpieczeństwo](anchor:toc-2)" in result
+        # "## Wstęp" opens at position 0 (no real preamble) and gets no
+        # anchor of its own, so the first (and only) anchor issued is toc-1.
+        assert "[1. Linux i bezpieczeństwo](anchor:toc-1)" in result
         # each entry is its own blank-line-delimited paragraph
-        assert "\n\n[1. Linux i bezpieczeństwo](anchor:toc-2)\n\n" in result
+        assert "\n\n[1. Linux i bezpieczeństwo](anchor:toc-1)\n\n" in result
         # an anchor sits right before the real header, not the index entry
-        assert result.index("[#toc-2]") < result.index("## Linux i bezpieczeństwo")
-        assert result.index("[#toc-2]") > result.index("[1. Linux i bezpieczeństwo]")
+        assert result.index("[#toc-1]") < result.index("## Linux i bezpieczeństwo")
+        assert result.index("[#toc-1]") > result.index("[1. Linux i bezpieczeństwo]")
 
     def test_subheading_entry_with_no_chapter_number_also_links(self):
         text = (
@@ -123,7 +125,7 @@ class TestLinkTocEntries:
             "Treść."
         )
         result = link_toc_entries(text)
-        assert "[Co to jest Linux?](anchor:toc-2)" in result
+        assert "[Co to jest Linux?](anchor:toc-1)" in result
 
     def test_entry_with_no_matching_header_keeps_plain_title_no_link(self):
         text = f"Coś, czego nie ma jako nagłówka {DOTS}73"
@@ -147,15 +149,85 @@ class TestLinkTocEntries:
             f"Checklista {DOTS}20\nCzęść druga"
         )
         result = link_toc_entries(text)
-        # counter numbers every "## "/"### " header in order (2 and 4 here — the
-        # "## Rozdział ..." headers are 1 and 3) — each duplicate-titled
-        # subheading gets its own distinct anchor, consumed in header order.
-        assert "[Checklista](anchor:toc-2)" in result
-        assert "[Checklista](anchor:toc-4)" in result
+        # "## Rozdział pierwszy" opens at position 0 and gets no anchor of
+        # its own; counting from there, "### Checklista" (1st) = toc-1,
+        # "## Rozdział drugi" = toc-2, "### Checklista" (2nd) = toc-3 — each
+        # duplicate-titled subheading gets its own distinct anchor, consumed
+        # in header order.
+        assert "[Checklista](anchor:toc-1)" in result
+        assert "[Checklista](anchor:toc-3)" in result
 
     def test_no_headers_and_no_toc_lines_leaves_text_untouched(self):
         text = "Zwykly tekst bez naglowkow i bez spisu tresci."
         assert link_toc_entries(text) == text
+
+    def test_recovers_subheading_missed_by_font_detection_and_links_it(self):
+        # The body line matching the TOC's own title has no "### " marker at
+        # all here — simulating detect_heading_texts()'s font/size heuristic
+        # missing it at import time. The book's own TOC still lists it, so
+        # link_toc_entries() should promote and link it anyway.
+        text = (
+            "## Rozdział\n\n"
+            f"Ukryty podtytuł {DOTS}42\n\n"
+            "Ukryty podtytuł\n\n"
+            "Treść akapitu."
+        )
+        result = link_toc_entries(text)
+        assert "### Ukryty podtytuł" in result
+        assert "[Ukryty podtytuł](anchor:toc-1)" in result
+
+    def test_does_not_promote_a_toc_entry_that_never_recurs_in_the_body(self):
+        # Same missing-heading shape, but the title genuinely doesn't appear
+        # again anywhere — nothing for _mark_headings() to promote, so the
+        # entry stays a plain, unlinked (but still dot-leader-stripped) line.
+        text = (
+            "## Rozdział\n\n"
+            f"Nigdzie indziej {DOTS}42\n\n"
+            "Treść akapitu bez powtórzenia tytułu."
+        )
+        result = link_toc_entries(text)
+        assert "###" not in result
+        assert "anchor:" not in result
+        assert "Nigdzie indziej" in result
+
+    def test_does_not_promote_a_toc_entry_matching_a_known_chapter_title(self):
+        # A numbered chapter entry's title is already a "## " header — must
+        # never be re-marked as a spurious "### " subheading of itself.
+        text = (
+            "## Rozdział pierwszy\n\n"
+            f"1. Rozdział pierwszy {DOTS}5\n\n"
+            "Treść rozdziału, w tym zdanie: Rozdział pierwszy."
+        )
+        result = link_toc_entries(text)
+        assert "### Rozdział pierwszy" not in result
+
+    def test_rerun_recovers_entry_left_unmatched_by_a_previous_run(self):
+        # Simulates text a previous link_toc_entries() run already produced:
+        # the TOC region has a bare, unmatched paragraph (nothing matched it
+        # last time) and the real body now has a matching line to promote.
+        text = (
+            "SPIS TREŚCI\n\n"
+            "Ukryty podtytuł\n\n"
+            "## Rozdział\n\n"
+            "Ukryty podtytuł\n\n"
+            "Treść akapitu."
+        )
+        result = link_toc_entries(text)
+        assert result.count("### Ukryty podtytuł") == 1
+        assert "[Ukryty podtytuł](anchor:toc-" in result
+        # the TOC region's own listing must NOT itself become a header
+        toc_region_text = result[: result.index("## Rozdział")]
+        assert "###" not in toc_region_text
+
+    def test_rerun_reuses_an_existing_anchor_instead_of_stacking_a_duplicate(self):
+        text = (
+            "[#toc-1]\n\n"
+            "## Rozdział\n\n"
+            "Treść."
+        )
+        result = link_toc_entries(text)
+        assert result == text
+        assert result.count("[#toc-1]") == 1
 
 
 class TestWrapCalloutBoxes:

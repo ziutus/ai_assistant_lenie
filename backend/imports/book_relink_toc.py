@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
-"""One-off backfill: apply library.book_pdf_import.link_toc_entries() to a
-book already imported before that function existed.
+"""Backfill: apply library.book_pdf_import.link_toc_entries() to an
+already-imported book's text_md.
 
 The book's own printed "SPIS TREŚCI" page was extracted as plain dot-leader
 prose ("Tytuł . . . . . . 19") that reads as one unbroken wall of text in the
 reader (see build_book_markdown()'s docstring). link_toc_entries() is a pure
 text -> text transform — no PDF re-extraction needed — so this backfill just
 loads the document's existing text_md, runs it through the same function new
-imports get automatically, and writes it back. Replace semantics, safe to
-re-run on a document it hasn't touched yet; already-processed documents
-(text_md already containing a "[#toc-" anchor) are skipped by default since
-running it twice would stack a second, redundant anchor in front of every
-header — pass --force to re-run anyway.
+imports get automatically, and writes it back.
+
+Safe to run more than once on the same document: link_toc_entries() is
+idempotent (an already-linked entry or already-placed anchor is recognized
+and left alone — see its docstring), and each re-run can still recover more
+subheadings than the last, since it treats the book's own TOC as the
+authoritative list of what subheadings should exist, not just whatever
+detect_heading_texts()'s font/size heuristic caught at original import time
+— useful e.g. after a chapter's text was edited and now contains a
+previously-missing subheading verbatim. Replace semantics.
 
 Usage:
     cd backend
     .venv/Scripts/python imports/book_relink_toc.py --id 9339             # dry-run (default)
     .venv/Scripts/python imports/book_relink_toc.py --id 9339 --apply
-    .venv/Scripts/python imports/book_relink_toc.py --id 9339 --apply --force  # re-run anyway
 """
 
 import argparse
@@ -38,7 +42,6 @@ def main():
     parser = argparse.ArgumentParser(description="Backfill: link SPIS TREŚCI entries in an already-imported book.")
     parser.add_argument("--id", type=int, required=True, help="Document id of the already-imported book")
     parser.add_argument("--apply", action="store_true", help="Write changes to the database (default: dry-run)")
-    parser.add_argument("--force", action="store_true", help="Re-run even if text_md already has [#toc- anchors")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -50,11 +53,6 @@ def main():
             raise SystemExit(f"Document {args.id} not found")
         if not doc.text_md:
             raise SystemExit(f"Document {args.id} has no text_md")
-        if "[#toc-" in doc.text_md and not args.force:
-            raise SystemExit(
-                f"Document {args.id} already has [#toc- anchors — looks already processed. "
-                "Pass --force to re-run anyway."
-            )
 
         new_text = link_toc_entries(doc.text_md)
         changed = new_text != doc.text_md
