@@ -17,6 +17,7 @@ from library.book_pdf_import import (  # noqa: E402
     _link_table_captions,
     _table_to_markdown,
     _wrap_callout_boxes,
+    link_toc_entries,
 )
 
 INFO = "ℹ"
@@ -92,6 +93,141 @@ class TestLinkTableCaptions:
     def test_no_tables_leaves_text_untouched(self):
         text = "Zwykly tekst bez zadnych tabel."
         assert _link_table_captions(text) == text
+
+
+DOTS = ". " * 20  # dot-leader fill, as extracted from the PDF: "Tytuł . . . . 35"
+
+
+class TestLinkTocEntries:
+    def test_entry_matching_a_chapter_becomes_a_link_on_its_own_line(self):
+        text = (
+            "## Wstęp\n\n"
+            f"1. Linux i bezpieczeństwo {DOTS}35\n"
+            "Dalszy tekst wstępu.\n\n"
+            "## Linux i bezpieczeństwo\n\n"
+            "Treść rozdziału."
+        )
+        result = link_toc_entries(text)
+        # "## Wstęp" opens at position 0 (no real preamble) and gets no
+        # anchor of its own, so the first (and only) anchor issued is toc-1.
+        assert "[1. Linux i bezpieczeństwo](anchor:toc-1)" in result
+        # each entry is its own blank-line-delimited paragraph
+        assert "\n\n[1. Linux i bezpieczeństwo](anchor:toc-1)\n\n" in result
+        # an anchor sits right before the real header, not the index entry
+        assert result.index("[#toc-1]") < result.index("## Linux i bezpieczeństwo")
+        assert result.index("[#toc-1]") > result.index("[1. Linux i bezpieczeństwo]")
+
+    def test_subheading_entry_with_no_chapter_number_also_links(self):
+        text = (
+            "## Rozdział\n\n"
+            f"Co to jest Linux? {DOTS}37\n\n"
+            "### Co to jest Linux?\n\n"
+            "Treść."
+        )
+        result = link_toc_entries(text)
+        assert "[Co to jest Linux?](anchor:toc-1)" in result
+
+    def test_entry_with_no_matching_header_keeps_plain_title_no_link(self):
+        text = f"Coś, czego nie ma jako nagłówka {DOTS}73"
+        result = link_toc_entries(text)
+        assert "anchor:" not in result
+        assert "Coś, czego nie ma jako nagłówka" in result
+        # dot leaders and the printed page number are gone, just the title remains
+        assert result.strip() == "Coś, czego nie ma jako nagłówka"
+
+    def test_short_dot_runs_are_not_touched(self):
+        text = "Zobacz str. 12. To jest zwykłe zdanie z kropkami... koniec."
+        assert link_toc_entries(text) == text
+
+    def test_duplicate_header_titles_consume_anchors_in_order(self):
+        text = (
+            "## Rozdział pierwszy\n\n"
+            "### Checklista\n\n"
+            "## Rozdział drugi\n\n"
+            "### Checklista\n\n"
+            f"Checklista {DOTS}10\nCzęść pierwsza\n"
+            f"Checklista {DOTS}20\nCzęść druga"
+        )
+        result = link_toc_entries(text)
+        # "## Rozdział pierwszy" opens at position 0 and gets no anchor of
+        # its own; counting from there, "### Checklista" (1st) = toc-1,
+        # "## Rozdział drugi" = toc-2, "### Checklista" (2nd) = toc-3 — each
+        # duplicate-titled subheading gets its own distinct anchor, consumed
+        # in header order.
+        assert "[Checklista](anchor:toc-1)" in result
+        assert "[Checklista](anchor:toc-3)" in result
+
+    def test_no_headers_and_no_toc_lines_leaves_text_untouched(self):
+        text = "Zwykly tekst bez naglowkow i bez spisu tresci."
+        assert link_toc_entries(text) == text
+
+    def test_recovers_subheading_missed_by_font_detection_and_links_it(self):
+        # The body line matching the TOC's own title has no "### " marker at
+        # all here — simulating detect_heading_texts()'s font/size heuristic
+        # missing it at import time. The book's own TOC still lists it, so
+        # link_toc_entries() should promote and link it anyway.
+        text = (
+            "## Rozdział\n\n"
+            f"Ukryty podtytuł {DOTS}42\n\n"
+            "Ukryty podtytuł\n\n"
+            "Treść akapitu."
+        )
+        result = link_toc_entries(text)
+        assert "### Ukryty podtytuł" in result
+        assert "[Ukryty podtytuł](anchor:toc-1)" in result
+
+    def test_does_not_promote_a_toc_entry_that_never_recurs_in_the_body(self):
+        # Same missing-heading shape, but the title genuinely doesn't appear
+        # again anywhere — nothing for _mark_headings() to promote, so the
+        # entry stays a plain, unlinked (but still dot-leader-stripped) line.
+        text = (
+            "## Rozdział\n\n"
+            f"Nigdzie indziej {DOTS}42\n\n"
+            "Treść akapitu bez powtórzenia tytułu."
+        )
+        result = link_toc_entries(text)
+        assert "###" not in result
+        assert "anchor:" not in result
+        assert "Nigdzie indziej" in result
+
+    def test_does_not_promote_a_toc_entry_matching_a_known_chapter_title(self):
+        # A numbered chapter entry's title is already a "## " header — must
+        # never be re-marked as a spurious "### " subheading of itself.
+        text = (
+            "## Rozdział pierwszy\n\n"
+            f"1. Rozdział pierwszy {DOTS}5\n\n"
+            "Treść rozdziału, w tym zdanie: Rozdział pierwszy."
+        )
+        result = link_toc_entries(text)
+        assert "### Rozdział pierwszy" not in result
+
+    def test_rerun_recovers_entry_left_unmatched_by_a_previous_run(self):
+        # Simulates text a previous link_toc_entries() run already produced:
+        # the TOC region has a bare, unmatched paragraph (nothing matched it
+        # last time) and the real body now has a matching line to promote.
+        text = (
+            "SPIS TREŚCI\n\n"
+            "Ukryty podtytuł\n\n"
+            "## Rozdział\n\n"
+            "Ukryty podtytuł\n\n"
+            "Treść akapitu."
+        )
+        result = link_toc_entries(text)
+        assert result.count("### Ukryty podtytuł") == 1
+        assert "[Ukryty podtytuł](anchor:toc-" in result
+        # the TOC region's own listing must NOT itself become a header
+        toc_region_text = result[: result.index("## Rozdział")]
+        assert "###" not in toc_region_text
+
+    def test_rerun_reuses_an_existing_anchor_instead_of_stacking_a_duplicate(self):
+        text = (
+            "[#toc-1]\n\n"
+            "## Rozdział\n\n"
+            "Treść."
+        )
+        result = link_toc_entries(text)
+        assert result == text
+        assert result.count("[#toc-1]") == 1
 
 
 class TestWrapCalloutBoxes:

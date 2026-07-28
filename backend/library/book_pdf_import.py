@@ -409,6 +409,239 @@ def _link_table_captions(text: str) -> str:
     return "\n".join(out)
 
 
+_HEADER_LINE_RE = re.compile(r"(?m)^(#{2,3}) (.+)$")
+# A printed book's own "SPIS TREŚCI" page — extracted as plain prose — renders
+# each entry as "Title . . . . . . . . 19" (a dot-leader fill to the page
+# number). 4+ repeated ". "/".  " groups is a strong, specific signal: normal
+# prose never runs that many dots in a row, so this can't misfire on an
+# ordinary sentence or ellipsis. `.*?` is non-greedy so it stops at the
+# FIRST run long enough to qualify, rather than swallowing a shorter one
+# inside a longer title.
+_TOC_ENTRY_RE = re.compile(r"(?m)^(?P<title>\S.*?)\s+(?:\.\s?){4,}(?P<page>\d{1,4})[ \t]*$")
+_TOC_CHAPTER_NUM_RE = re.compile(r"^\d+\.\s+")
+# The printed TOC page's own eyebrow line — plain text, deliberately never
+# itself turned into a "## " header (see detect_named_sections()'s docstring:
+# the SPIS TREŚCI page must not become an extra chapter). Bounds _toc_region()
+# below.
+_TOC_HEADING_RE = re.compile(r"(?im)^\s*spis\s+tre[śs]ci\s*$")
+_TOC_ALREADY_LINKED_RE = re.compile(r"^\[(?P<label>[^\]]+)\]\(anchor:toc-\d+\)$")
+# Detects an anchor a PREVIOUS link_toc_entries() run already placed right
+# before a header, so a re-run reuses it instead of stacking a duplicate.
+_TOC_ANCHOR_TAIL_RE = re.compile(r"\[#(toc-\d+)\]\s*$")
+
+
+def _normalize_toc_title(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _toc_title_candidates(raw_title: str) -> list[str]:
+    """Plausible normalized forms of a TOC entry's captured title, to look up
+    against real header text. Two independent, book-observed quirks stack
+    on top of "N. " chapter numbering: some front-matter entries print an
+    extra "." right where the dot leader begins even though the real header
+    has none (e.g. "Podziękowania." in the TOC vs "## Podziękowania"), so
+    each variant is tried both with and without its own trailing period.
+    """
+    variants = [raw_title, _TOC_CHAPTER_NUM_RE.sub("", raw_title)]
+    candidates: list[str] = []
+    for variant in variants:
+        variant = variant.strip()
+        candidates.append(_normalize_toc_title(variant))
+        if variant.endswith(".") and not variant.endswith(".."):
+            candidates.append(_normalize_toc_title(variant[:-1]))
+    return candidates
+
+
+def _toc_region(text: str) -> tuple[int, int] | None:
+    """Span of the book's own printed table-of-contents page(s): from its
+    "SPIS TREŚCI" eyebrow line to the first real "## " header that follows
+    it. None when no such eyebrow line exists — a book with a different (or
+    no) printed TOC convention, or plain text that predates this feature
+    entirely; callers fall back to scanning the whole document instead.
+    """
+    heading_match = _TOC_HEADING_RE.search(text)
+    if not heading_match:
+        return None
+    rest = text[heading_match.end():]
+    next_header = re.search(r"(?m)^## ", rest)
+    end = heading_match.end() + (next_header.start() if next_header else len(rest))
+    return heading_match.end(), end
+
+
+def _toc_entry_titles(text: str) -> list[str]:
+    """Every TOC entry's title text, whichever shape it currently has: a raw
+    dot-leader line ("Tytuł . . . . 19", a fresh import this function hasn't
+    processed yet — matched anywhere, since that exact shape doesn't occur
+    outside a printed TOC page) or an already-processed block from an
+    earlier link_toc_entries() run, either "[Label](anchor:toc-N)" (already
+    linked) or a bare single-line paragraph (left unmatched last time — only
+    read within _toc_region(), since a bare short paragraph isn't a reliable
+    "this is a title" signal anywhere else in the book). This dual reading is
+    what lets link_toc_entries() re-run on a document it has already
+    processed and still recover anything a previous run left unmatched.
+    """
+    titles = [m.group("title").strip() for m in _TOC_ENTRY_RE.finditer(text)]
+    region = _toc_region(text)
+    if region:
+        start, end = region
+        for block in text[start:end].split("\n\n"):
+            block = block.strip()
+            if not block or "\n" in block or block.startswith("#") or block.startswith("[#"):
+                continue
+            link_match = _TOC_ALREADY_LINKED_RE.match(block)
+            titles.append(link_match.group("label") if link_match else block)
+    return titles
+
+
+def _toc_derived_subheading_titles(text: str, known_titles: set[str]) -> set[str]:
+    """Subheading titles the book's own printed TOC claims exist but that
+    aren't already a real "## "/"### " header (known_titles — every existing
+    header's normalized text, so real chapters/sections are never
+    mistaken for a missing subheading). The PDF's font-based
+    detect_heading_texts() only catches a subheading when its every span
+    matches a specific font/size — real books have exceptions (a subheading
+    set in a slightly different weight/size, e.g.) that font detection alone
+    misses but the book's own table of contents still lists correctly. Only
+    the fully-cleaned candidate ("N. " prefix and a lone trailing "."
+    stripped, see _toc_title_candidates()) is proposed — the caller
+    (_mark_headings(), via link_toc_entries()) still requires that exact
+    text to recur as a standalone body line before promoting it to a real
+    header, so a false-positive TOC read can at worst fail to match
+    anything, never invent a heading out of nothing.
+    """
+    candidates: set[str] = set()
+    for raw_title in _toc_entry_titles(text):
+        variants = _toc_title_candidates(raw_title)
+        if any(v in known_titles for v in variants):
+            continue
+        candidates.add(variants[-1])
+    return candidates
+
+
+def link_toc_entries(text: str) -> str:
+    """Turn the book's own printed "SPIS TREŚCI" page — extracted as one
+    dot-leader-filled prose line per entry ("Tytuł . . . . . . 19"), which
+    reads as an unbroken wall of text once paragraph-joined for the reader —
+    into one entry per line, clickable wherever its title exactly matches a
+    real "## "/"### " header elsewhere in the book.
+
+    Before anything else, the TOC's own entries are used to recover
+    subheadings detect_heading_texts()'s font/size heuristic missed (see
+    _toc_derived_subheading_titles()) — a real subheading the book's own
+    contents page lists, but that never got its "### " marker at import
+    time, could otherwise never be linked at all. This also means
+    link_toc_entries() alone (no PDF/font info needed) can improve an
+    already-imported book's heading coverage — see imports/book_relink_toc.py.
+    Safe to call again on text a previous run already processed: an entry
+    already turned into a link isn't a missing subheading (its title is
+    already a real header — see _toc_derived_subheading_titles()'s
+    known_titles check), and _toc_entry_titles() reads an unmatched entry's
+    plain-paragraph form the same way it reads a fresh dot-leader line, so a
+    second run can still recover something the first one didn't.
+
+    Every "## "/"### " header (including ones just recovered above) gets a
+    unique "[#toc-N]" anchor placed right before it (harmless — an invisible
+    marker, same mechanism as _link_table_captions()'s "[#tabela-N]"). Each
+    dot-leader-terminated line is then looked up by its (whitespace-
+    normalized, leading "N. " stripped) title against those header texts; a
+    match becomes "[title](anchor:toc-N)", resolved at click time via
+    GET /document/<id>/anchor/<anchor_id> — computed fresh against the
+    document's current chapter layout, never a position baked in here. An
+    entry with no matching header (a running head bled into the line
+    mid-book, back-matter not itself a "## "/"### ") still gets its dot
+    leaders and printed page number stripped — that page number is the
+    original PDF's own pagination, meaningless in this chapter-based reader,
+    so dropping it beats showing a stale, confusing number. Each entry —
+    matched or not — is wrapped in its own blank-line-delimited paragraph so
+    the reader renders it on its own line instead of run together with its
+    neighbors.
+
+    The very first header, when it opens at the true start of the text
+    (position 0 — no real front matter at all), gets no anchor: prefixing it
+    would plant real, non-blank content before what detect_chapters() (both
+    here and at read time, since this is the same text ultimately persisted
+    to text_md) treats as "the first chapter", manufacturing a bogus, empty
+    "(wstęp)" pseudo-chapter for books that otherwise have no preamble.
+    """
+    known_titles = {_normalize_toc_title(m.group(2)) for m in _HEADER_LINE_RE.finditer(text)}
+    recovered = _toc_derived_subheading_titles(text, known_titles)
+    if recovered:
+        # Marking is scoped to AFTER the TOC page itself: on a re-run, an
+        # unmatched entry's own bare-paragraph form (see _toc_entry_titles())
+        # is textually identical to the real subheading it's supposed to
+        # point at — without this split, _mark_headings() would turn the
+        # TOC's own listing into a header too, not just the real occurrence.
+        region = _toc_region(text)
+        if region:
+            _, region_end = region
+            text = text[:region_end] + _mark_headings(text[region_end:], recovered)
+        else:
+            text = _mark_headings(text, recovered)
+
+    anchors_by_title: dict[str, list[str]] = {}
+    # A re-run's brand-new anchors (for just-recovered headers) must not
+    # restart numbering from 1 — that would collide with anchor ids a
+    # previous run already assigned elsewhere in the same text.
+    existing_numbers = [int(n) for n in re.findall(r"\[#toc-(\d+)\]", text)]
+    counter = max(existing_numbers, default=0)
+
+    def _record_header(match: re.Match) -> str:
+        nonlocal counter
+        title = _normalize_toc_title(match.group(2))
+        if match.start() == 0:
+            return match.group(0)
+        # A previous run may already have anchored this exact header — reuse
+        # that id (matched against the still-untouched original `text`, safe
+        # since re.sub() only builds the replacement text separately, never
+        # mutating `text` mid-scan) instead of stacking a second one.
+        existing = _TOC_ANCHOR_TAIL_RE.search(text[:match.start()])
+        anchor_id = existing.group(1) if existing else None
+        if anchor_id is None:
+            counter += 1
+            anchor_id = f"toc-{counter}"
+        anchors_by_title.setdefault(title, []).append(anchor_id)
+        if existing:
+            return match.group(0)
+        return f"[#{anchor_id}]\n\n{match.group(0)}"
+
+    text = _HEADER_LINE_RE.sub(_record_header, text)
+
+    def _replace_entry(match: re.Match) -> str:
+        raw_title = match.group("title").strip()
+        anchors = next(
+            (anchors_by_title[key] for key in _toc_title_candidates(raw_title) if anchors_by_title.get(key)),
+            None,
+        )
+        label = f"[{raw_title}](anchor:{anchors.pop(0)})" if anchors else raw_title
+        return f"\n\n{label}\n\n"
+
+    text = _TOC_ENTRY_RE.sub(_replace_entry, text)
+
+    # _TOC_ENTRY_RE only ever matches a still-raw dot-leader line — a re-run's
+    # bare, unmatched TOC-region paragraph (left over from a previous run
+    # that couldn't match it, possibly just recovered as a real header
+    # above) never has one to match. This is that shape's counterpart:
+    # anything in the TOC region that's still a bare, unlinked, single-line
+    # paragraph gets one more lookup against anchors_by_title.
+    region = _toc_region(text)
+    if region:
+        start, end = region
+        blocks = text[start:end].split("\n\n")
+        for i, block in enumerate(blocks):
+            stripped = block.strip()
+            if not stripped or "\n" in stripped or stripped.startswith("#") or stripped.startswith("["):
+                continue
+            anchors = next(
+                (anchors_by_title[key] for key in _toc_title_candidates(stripped) if anchors_by_title.get(key)),
+                None,
+            )
+            if anchors:
+                blocks[i] = f"[{stripped}](anchor:{anchors.pop(0)})"
+        text = text[:start] + "\n\n".join(blocks) + text[end:]
+
+    return re.sub(r"\n{3,}", "\n\n", text)
+
+
 def _wrap_callout_boxes(text: str, info_icon: str = _INFO_ICON, warning_icon: str = _WARNING_ICON) -> str:
     """Wrap the paragraph following a standalone callout-icon line in
     "[!INFO]"/"[!WARN]" markers (read.tsx renders these as a green/red box) —
@@ -712,6 +945,10 @@ def build_book_markdown(
     _mark_headings()/detect_heading_texts()) to real "## " chapters — this
     book's back matter (Spis tabel/Spis rysunków/Bibliografia) shares its
     styling with ordinary subheadings but is its own printed-TOC entry.
+
+    The book's own printed "SPIS TREŚCI" page is left as ordinary prose here
+    (it isn't itself a chapter) but is reformatted by link_toc_entries() —
+    one entry per line, clickable where its title matches a real header.
     """
     pattern = re.compile(chapter_regex)
     heading_texts = heading_texts or set()
@@ -794,6 +1031,7 @@ def build_book_markdown(
     text = _wrap_callout_boxes(text)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
     text = _link_table_captions(text)
+    text = link_toc_entries(text)
 
     chapters: list[ChapterInfo] = []
     header_re = re.compile(r"(?m)^## (.+)$")
