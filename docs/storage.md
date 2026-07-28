@@ -59,6 +59,19 @@ On `S3Storage` this calls `generate_presigned_url("get_object", ...)`. SigV4 sig
 
 Links expire after 3600 s (1 hour). Callers don't need to cache/refresh them client-side — a page reload (e.g. switching reader chapters) fetches a fresh link.
 
+## Running storage-writing scripts from a developer machine
+
+`STORAGE_ENDPOINT_URL=http://lenie-minio:9000` is a container-internal hostname — it only resolves inside the NAS's Docker network. Any script that writes through `storage_from_config()` from outside that network (a developer's own machine, not a `lenie-worker` container) needs `lenie-minio` to resolve to the NAS's LAN IP. MinIO's S3 API port is published on the host (`compose.nas.yaml`, `9000:9000`), so a hosts-file entry is enough — no tunnel needed:
+
+```console
+# Windows, PowerShell as Administrator:
+Add-Content -Path "C:\Windows\System32\drivers\etc\hosts" -Value "192.168.200.7`tlenie-minio"
+# Linux/macOS:
+echo "192.168.200.7  lenie-minio" | sudo tee -a /etc/hosts
+```
+
+Without this, `put_bytes()`/`presigned_get_url()`'s underlying boto3 client raises `EndpointConnectionError` trying to reach `lenie-minio`. This applies to `imports/storage_migrate.py` and any `imports/book_import_pdf_<slug>.py` run with `--apply` (both write the source file and extracted images through `ObjectStorage`) — the target hostname doesn't change, so this is a one-time setup step per developer machine, not per script run.
+
 ## Migration and accounting
 
 Run from `backend/`, with the target backend configured:

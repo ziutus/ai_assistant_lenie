@@ -1418,6 +1418,50 @@ def select_document_control_questions(doc_id: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/anchor/<string:anchor_id>", methods=["GET"])
+def document_anchor(doc_id: int, anchor_id: str):
+    """Resolve an in-text anchor marker ("[#anchor_id]", inserted by e.g.
+    library.book_pdf_import._link_table_captions() before a book's real table
+    occurrences) to the reader chapter position it currently falls in.
+
+    Chapter position is computed fresh here rather than trusting a number
+    baked into text_md at import time, since detect_chapters()'s numbering
+    depends on the document's current text (edits, "(wstęp)" presence) —
+    the same reason GET /document/<id>/chapters computes it on every call.
+    Pass ?reader=1 to match the compacted chapter list the reader UI actually
+    shows for short multi-chapter articles (irrelevant for books, included
+    for consistency with GET /document/<id>/chapters).
+    """
+    from library.document_analysis_service import _extract_text
+    from library.text_functions import detect_chapters
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    text, _field = _extract_text(doc, prefer_md=True)
+    marker = f"[#{anchor_id}]"
+    marker_pos = text.find(marker) if text else -1
+    if marker_pos == -1:
+        return jsonify({"status": "error", "message": f"Anchor {anchor_id!r} not found"}), 404
+
+    chapters = detect_chapters(text)
+    if request.args.get("reader") == "1" and chapters:
+        chapters, _reader_compact = _compact_reader_chapters(text, chapters)
+    match = next((c for c in chapters if c["char_start"] <= marker_pos < c["char_end"]), None)
+    if match is None:
+        return jsonify({"status": "error", "message": "Anchor found but not inside any chapter"}), 404
+
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "anchor_id": anchor_id,
+        "position": match["position"],
+        "title": match["title"],
+    })
+
+
 @bp.route("/document/<int:doc_id>/entity_occurrences", methods=["GET"])
 def document_entity_occurrences(doc_id: int):
     """Per-chapter occurrence counts of an entity name in the document (?text=).

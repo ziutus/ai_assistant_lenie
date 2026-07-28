@@ -144,6 +144,11 @@ const SOURCE_ROLE_LABELS: Record<string, string> = {
 // from our own [imgN] markers (book PDF images) handled by IMG_MARKER below.
 const IMAGE_LINE = /^!\[[^\]]*\]\([^)]*\)$/;
 const IMG_MARKER = /^\[img(\d+)\]$/;
+// In-text jump target inserted by e.g. library.book_pdf_import._link_table_captions()
+// before a book table's real occurrence — see ANCHOR_LINK in renderInline() for
+// the clickable link that navigates here (GET /document/:id/anchor/:anchor_id).
+const ANCHOR_MARKER = /^\[#([\w-]+)\]$/;
+const ANCHOR_LINK = /\[([^\]]+)\]\(anchor:([\w-]+)\)/g;
 
 /** Inline figure for a book-PDF image ([imgN] marker) or a chapter-end
  *  "Ilustracje" entry. url is null on a LocalStorage backend (no presigned
@@ -202,11 +207,39 @@ const SUP_TO_DIGIT: Record<string, string> = {
 };
 const supToNumber = (sup: string) => sup.split("").map(c => SUP_TO_DIGIT[c] ?? "").join("");
 
-function renderInline(text: string, refs?: Map<string, ChapterReference>): React.ReactNode[] {
-  // **bold**, *italic* and ¹⁸ footnote markers — enough for OCR-ed book prose
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)/g);
+function renderInline(
+  text: string,
+  refs?: Map<string, ChapterReference>,
+  onAnchorClick?: (anchorId: string) => void,
+): React.ReactNode[] {
+  // **bold**, *italic*, `code`, [label](anchor:id) jump links and ¹⁸ footnote
+  // markers — enough for OCR-ed book prose
+  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\(anchor:[\w-]+\)|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)/g);
   return parts.map((part, i) => {
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
+      return (
+        <code key={i} style={{
+          background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 4,
+          padding: "1px 4px", fontSize: "0.9em", fontFamily: "monospace",
+        }}>
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    const anchorLink = part.match(/^\[([^\]]+)\]\(anchor:([\w-]+)\)$/);
+    if (anchorLink) {
+      const [, label, anchorId] = anchorLink;
+      return (
+        <span
+          key={i}
+          onClick={() => onAnchorClick?.(anchorId)}
+          style={{ color: "#0369a1", cursor: onAnchorClick ? "pointer" : undefined, textDecoration: "underline" }}
+        >
+          {label}
+        </span>
+      );
+    }
     if (part.startsWith("*") && part.endsWith("*") && part.length > 2) return <em key={i}>{part.slice(1, -1)}</em>;
     if (/^[¹²³⁴⁵⁶⁷⁸⁹⁰]+$/.test(part)) {
       const ref = refs?.get(supToNumber(part));
@@ -278,6 +311,7 @@ function renderParagraphWithNotes(
   refs?: Map<string, ChapterReference>,
   highlightTerms?: string[],
   timelineAnchor?: string | null,
+  onAnchorClick?: (anchorId: string) => void,
 ): { nodes: React.ReactNode[]; paragraphTint: UserNote | null; timelineTint: boolean; timelineFound: boolean } {
   type Match = { idx: number; len: number; kind: "note" | "entity" | "timeline"; note?: UserNote };
   const noteMatches: Match[] = notes
@@ -300,14 +334,14 @@ function renderParagraphWithNotes(
   const timelineFound = timelineIndex >= 0 || timelineTint;
 
   if (matches.length === 0) {
-    return { nodes: renderInline(text, refs), paragraphTint, timelineTint, timelineFound };
+    return { nodes: renderInline(text, refs, onAnchorClick), paragraphTint, timelineTint, timelineFound };
   }
 
   const nodes: React.ReactNode[] = [];
   let cursor = 0;
   matches.forEach((m, i) => {
     if (m.idx < cursor) return; // overlapping match — skip
-    if (m.idx > cursor) nodes.push(...renderInline(text.slice(cursor, m.idx), refs));
+    if (m.idx > cursor) nodes.push(...renderInline(text.slice(cursor, m.idx), refs, onAnchorClick));
     const quoted = text.slice(m.idx, m.idx + m.len);
     if (m.kind === "note" && m.note) {
       nodes.push(
@@ -316,7 +350,7 @@ function renderParagraphWithNotes(
           title={`${STANCE_ICON[m.note.stance ?? ""] ?? "📝"} ${m.note.note_text}`}
           style={{ background: "#fef08a", padding: "0 1px", cursor: "help" }}
         >
-          {renderInline(quoted, refs)}
+          {renderInline(quoted, refs, onAnchorClick)}
         </mark>
       );
     } else if (m.kind === "timeline") {
@@ -326,7 +360,7 @@ function renderParagraphWithNotes(
           className="timeline-highlight"
           style={{ background: "#fed7aa", padding: "0 1px" }}
         >
-          {renderInline(quoted, refs)}
+          {renderInline(quoted, refs, onAnchorClick)}
         </mark>
       );
     } else {
@@ -336,14 +370,92 @@ function renderParagraphWithNotes(
           className="entity-highlight"
           style={{ background: "#bfdbfe", padding: "0 1px" }}
         >
-          {renderInline(quoted, refs)}
+          {renderInline(quoted, refs, onAnchorClick)}
         </mark>
       );
     }
     cursor = m.idx + m.len;
   });
-  if (cursor < text.length) nodes.push(...renderInline(text.slice(cursor), refs));
+  if (cursor < text.length) nodes.push(...renderInline(text.slice(cursor), refs, onAnchorClick));
   return { nodes, paragraphTint, timelineTint, timelineFound };
+}
+
+const CALLOUT_RE = /^\[!(INFO|WARN)\]\n([\s\S]*?)\n\[!\/\1\]$/;
+const TABLE_SEPARATOR_RE = /^\|(\s*:?-{2,}:?\s*\|)+$/;
+
+function parseTableRow(line: string): string[] {
+  const inner = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+  return inner.split(/(?<!\\)\|/).map(cell => cell.trim().replace(/\\\|/g, "|"));
+}
+
+function renderTableBlock(
+  trimmed: string,
+  key: number,
+  notes: UserNote[],
+  refs?: Map<string, ChapterReference>,
+): React.ReactNode | null {
+  const lines = trimmed.split("\n");
+  if (lines.length < 2 || !lines[0].trim().startsWith("|") || !TABLE_SEPARATOR_RE.test(lines[1].trim())) return null;
+  const header = parseTableRow(lines[0]);
+  const rows = lines.slice(2).map(parseTableRow);
+  const cell = (text: string) => renderParagraphWithNotes(text, notes, refs).nodes;
+  return (
+    <div key={key} style={{ overflowX: "auto", margin: "16px 0" }}>
+      <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.88em" }}>
+        <thead>
+          <tr>
+            {header.map((h, hi) => (
+              <th key={hi} style={{
+                border: "1px solid #e2e8f0", padding: "6px 10px", background: "#f8fafc",
+                textAlign: "left", verticalAlign: "top",
+              }}>
+                {cell(h)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, ri) => (
+            <tr key={ri}>
+              {row.map((c, ci) => (
+                <td key={ci} style={{ border: "1px solid #e2e8f0", padding: "6px 10px", verticalAlign: "top" }}>
+                  {cell(c)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function renderCalloutBlock(
+  trimmed: string,
+  key: number,
+  notes: UserNote[],
+  refs?: Map<string, ChapterReference>,
+  highlightTerms?: string[],
+  timelineAnchor?: string | null,
+): React.ReactNode | null {
+  const match = trimmed.match(CALLOUT_RE);
+  if (!match) return null;
+  const isWarn = match[1] === "WARN";
+  const { nodes } = renderParagraphWithNotes(
+    match[2].replace(/\n/g, " "), notes, refs, highlightTerms, timelineAnchor,
+  );
+  return (
+    <div key={key} style={{
+      display: "flex", gap: 8, alignItems: "flex-start",
+      background: isWarn ? "#fef2f2" : "#f0fdf4",
+      border: `1px solid ${isWarn ? "#fecaca" : "#bbf7d0"}`,
+      borderLeft: `4px solid ${isWarn ? "#dc2626" : "#16a34a"}`,
+      borderRadius: 8, padding: "10px 14px", margin: "16px 0", lineHeight: 1.6,
+    }}>
+      <span aria-hidden="true">{isWarn ? "⚠️" : "ℹ️"}</span>
+      <div>{nodes}</div>
+    </div>
+  );
 }
 
 function renderMarkdown(
@@ -353,6 +465,7 @@ function renderMarkdown(
   highlightTerms?: string[],
   timelineAnchor?: string | null,
   images?: Map<number, ChapterImage>,
+  onAnchorClick?: (anchorId: string) => void,
 ): React.ReactNode[] {
   const blocks = text.split(/\n\s*\n/);
   const out: React.ReactNode[] = [];
@@ -365,7 +478,22 @@ function renderMarkdown(
       if (img) out.push(renderChapterImage(img, i));
       return;
     }
+    const anchorMatch = trimmed.match(ANCHOR_MARKER);
+    if (anchorMatch) {
+      out.push(<span key={i} id={anchorMatch[1]} />);
+      return;
+    }
     if (IMAGE_LINE.test(trimmed)) return;
+    const callout = renderCalloutBlock(trimmed, i, notes, refs, highlightTerms, timelineAnchor);
+    if (callout) {
+      out.push(callout);
+      return;
+    }
+    const table = renderTableBlock(trimmed, i, notes, refs);
+    if (table) {
+      out.push(table);
+      return;
+    }
     const heading = trimmed.match(/^(#{1,6})\s+(.*)$/s);
     if (heading) {
       const level = Math.min(heading[1].length + 1, 6);
@@ -393,7 +521,7 @@ function renderMarkdown(
     const isNote = /^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,3} )\S*\s*(http|www|[A-ZŻŹĆĄŚĘŁÓŃ])/.test(trimmed) && trimmed.length < 400;
     const paraText = trimmed.replace(/\n/g, " ");
     const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
-      paraText, notes, refs, highlightTerms, timelineAnchor,
+      paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick,
     );
     out.push(
       <p key={i} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={isNote
@@ -478,6 +606,11 @@ const Read: React.FC = () => {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [tocOpen, setTocOpen] = React.useState(false);
+  // Set by an in-text anchor link (e.g. a "Spis tabel" entry) click — the
+  // target anchor id to scroll to once the (possibly different) chapter it
+  // resolved to has finished loading. See handleAnchorClick() and the effect
+  // scrolling to it below, modeled on the timelineHighlight effect.
+  const [pendingAnchorScroll, setPendingAnchorScroll] = React.useState<string | null>(null);
   const contentRef = React.useRef<HTMLDivElement>(null);
   const isDesktop = useIsDesktop();
 
@@ -727,6 +860,18 @@ const Read: React.FC = () => {
     return () => window.clearTimeout(t);
   }, [content, timelineHighlight]);
 
+  // Scroll to an in-text anchor (e.g. a book table) after handleAnchorClick()
+  // navigated to the chapter it lives in and that chapter's content loaded.
+  React.useEffect(() => {
+    if (!pendingAnchorScroll || !content) return;
+    const t = window.setTimeout(() => {
+      const el = contentRef.current?.querySelector<HTMLElement>(`#${CSS.escape(pendingAnchorScroll)}`);
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setPendingAnchorScroll(null);
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [content, pendingAnchorScroll]);
+
   // ── Actions ──
 
   const goTo = (pos: number | null) => {
@@ -742,6 +887,21 @@ const Read: React.FC = () => {
       });
     }
     setTocOpen(false);
+  };
+
+  // In-text anchor link click (e.g. a "Spis tabel" entry) — resolve which
+  // chapter the anchor currently falls in (computed fresh server-side, not
+  // trusted from a number baked into the link) and jump there.
+  const handleAnchorClick = async (anchorId: string) => {
+    try {
+      const r = await fetch(`${apiUrl}/document/${id}/anchor/${anchorId}?reader=1`, { headers });
+      const data = await r.json();
+      if (data.status !== "success") return;
+      setPendingAnchorScroll(anchorId);
+      goTo(data.position);
+    } catch {
+      // nothing to jump to — leave the link inert
+    }
   };
 
   const clearHighlight = () => {
@@ -1069,7 +1229,7 @@ const Read: React.FC = () => {
             <article style={{ fontSize: "1.02em" }} onContextMenu={onTextContextMenu}>
               {renderMarkdown(
                 content.text, chapterNotes, referencesByMarker, highlightTerms, timelineHighlight?.quote,
-                imagesByPosition,
+                imagesByPosition, handleAnchorClick,
               )}
             </article>
           )}
