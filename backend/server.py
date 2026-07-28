@@ -248,6 +248,7 @@ def url_add():
                 note=url_data.get("note", "default_note"),
                 paywall=url_data.get("paywall", False),
                 requires_login=url_data.get("requires_login"),
+                social_platform=url_data.get("social_platform"),
                 source=url_data.get("source", "own"),
                 ai_summary=url_data.get("ai_summary", False),
                 chapter_list=url_data.get("chapter_list", False),

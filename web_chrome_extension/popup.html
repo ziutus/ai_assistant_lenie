@@ -22,6 +22,9 @@
     <li class="nav-item">
       <a class="nav-link" data-tab="settings" aria-selected="false">Ustawienia</a>
     </li>
+    <li class="nav-item">
+      <a class="nav-link" data-tab="debug" aria-selected="false">Diagnostyka</a>
+    </li>
   </ul>
 
   <!-- Dodawanie strony -->
@@ -38,9 +41,9 @@
       </div>
 
       <div id="facebookPostContainer" class="form-group" style="display: none;">
-        <label for="facebookPostText">Treść posta Facebook</label>
+        <label for="facebookPostText">Treść posta</label>
         <textarea id="facebookPostText" class="form-control" rows="12" placeholder="Treść posta zostanie wykryta automatycznie. Możesz ją poprawić przed wysłaniem."></textarea>
-        <small class="form-text text-muted">Komentarze i elementy interfejsu Facebooka nie są importowane.</small>
+        <small class="form-text text-muted">Komentarze i elementy interfejsu serwisu nie są importowane.</small>
       </div>
 
       <label for="note">Notatka</label>
@@ -55,7 +58,7 @@
           <option value="link">Link</option>
           <option value="youtube">YouTube</option>
           <option value="movie">Movie</option>
-          <option value="social_media_post">Facebook post</option>
+          <option value="social_media_post">Social media post</option>
         </select>
       </div>
 
@@ -96,12 +99,17 @@
       <div class="form-group form-check">
         <input type="checkbox" class="form-check-input" id="requiresLogin">
         <label class="form-check-label" for="requiresLogin">Wymaga zalogowania do źródła</label>
-        <small class="form-text text-muted">Dla postów Facebooka włączane automatycznie. Nie oznacza płatnego paywalla.</small>
+        <small class="form-text text-muted">Dla postów Facebooka i LinkedIna włączane automatycznie. Nie oznacza płatnego paywalla.</small>
       </div>
 
-      <div class="form-group d-flex align-items-center">
-        <label for="pageLanguage" class="mr-2">Język strony</label>
-        <input type="text" id="pageLanguage" style="flex: 1;" placeholder="Język strony">
+      <div class="form-group">
+        <label for="pageLanguageSelect">Język strony</label>
+        <select id="pageLanguageSelect" class="form-control">
+          <option value="pl">pl (polski)</option>
+          <option value="en">en (English)</option>
+          <option value="other">inne</option>
+        </select>
+        <input type="text" id="pageLanguageOther" class="form-control mt-1" style="display: none;" placeholder="np. de, uk, cs">
       </div>
 
       <div id="chapterListContainer">
@@ -144,8 +152,19 @@
     </div>
   </div>
 
+  <div id="tab-debug" class="tab-pane" role="tabpanel">
+    <div class="mt-3">
+      <h5>Diagnostyka</h5>
+      <p class="text-muted">Raport nie zawiera klucza API. Skopiuj go i wklej przy zgłaszaniu problemu.</p>
+      <div id="debugContainer" class="form-group">
+        <textarea id="debugOutput" class="form-control" rows="18" readonly></textarea>
+        <button id="copyDebugButton" type="button" class="btn btn-outline-secondary btn-sm mt-1">Kopiuj diagnostykę</button>
+      </div>
+    </div>
+  </div>
+
   <div class="mt-3">
-    Wersja <a href="https://github.com/ziutus/ai_assistant_lenie/blob/main/web_chrome_extension/CHANGELOG.md" target="_blank">1.0.31</a>
+    Wersja <a href="https://github.com/ziutus/ai_assistant_lenie/blob/main/web_chrome_extension/CHANGELOG.md" target="_blank">1.0.38</a>
   </div>
 </div>
 <script src="popup.js"></script>

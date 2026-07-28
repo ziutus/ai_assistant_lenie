@@ -58,6 +58,7 @@ def lambda_handler(event, context):
         if raw_requires_login is None
         else raw_requires_login in (True, "true", "True", 1, "1")
     )
+    social_platform = url_data.get("social_platform")
     source = url_data.get("source", "own")
     chapter_list = url_data.get("chapter_list", False)
     byline = url_data.get("byline", "")
@@ -124,6 +125,9 @@ def lambda_handler(event, context):
             'created_date': created_date,
             'operation': operation,
         }
+
+        if social_platform:
+            dynamodb_item['social_platform'] = social_platform
 
         if operation == "refresh":
             dynamodb_item['target_document_id'] = target_document_id

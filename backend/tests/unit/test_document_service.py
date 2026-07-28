@@ -169,6 +169,7 @@ class TestCreateDocument:
                 url_type="social_media_post",
                 text="Gra w lewary",
                 byline="Frontiersman",
+                social_platform="facebook",
                 original_id="pfbid123",
             )
 
@@ -176,6 +177,7 @@ class TestCreateDocument:
         assert doc.text == "Gra w lewary"
         assert doc.text_raw == "Gra w lewary"
         assert doc.byline == "Frontiersman"
+        assert doc.social_platform == "facebook"
         assert doc.original_id == "pfbid123"
         assert doc.requires_login is True
         mock_store.assert_not_called()

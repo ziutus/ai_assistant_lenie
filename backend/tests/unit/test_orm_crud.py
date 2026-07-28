@@ -437,7 +437,7 @@ class TestDictCompatibility:
         d = doc.dict()
         expected_keys = {
             "id", "next_id", "next_type", "previous_id", "previous_type",
-            "summary", "url", "canonical_url", "language", "tags", "text", "paywall", "requires_login", "title",
+            "summary", "url", "canonical_url", "language", "tags", "text", "paywall", "requires_login", "social_platform", "title",
             "ingested_at", "document_type", "source", "discovery_source_id", "published_on", "published_on_method", "original_id",
             "document_length", "chapter_list", "processing_status", "processing_error_code",
             "text_raw", "transcript_job_id", "ai_summary_needed", "byline",
