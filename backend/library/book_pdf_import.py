@@ -523,6 +523,14 @@ def _insert_image_markers(cleaned: str, image_numbers: list[int]) -> str:
             out.append("")
         out.append(f"[img{number}]")
         out.append("")
+    if remaining:
+        # A marker with no following same-page line (no caption to anchor to)
+        # ends up last in `out` — "\n".join() doesn't emit a trailing separator
+        # for a final empty string, so without this the marker would only get
+        # a single "\n" before whatever page comes next, merging it into that
+        # page's first paragraph instead of standing alone (pages are
+        # concatenated with no separator in build_book_markdown()).
+        out.append("")
     return "\n".join(out)
 
 
