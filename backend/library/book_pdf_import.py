@@ -409,6 +409,98 @@ def _link_table_captions(text: str) -> str:
     return "\n".join(out)
 
 
+_HEADER_LINE_RE = re.compile(r"(?m)^(#{2,3}) (.+)$")
+# A printed book's own "SPIS TREŚCI" page — extracted as plain prose — renders
+# each entry as "Title . . . . . . . . 19" (a dot-leader fill to the page
+# number). 4+ repeated ". "/".  " groups is a strong, specific signal: normal
+# prose never runs that many dots in a row, so this can't misfire on an
+# ordinary sentence or ellipsis. `.*?` is non-greedy so it stops at the
+# FIRST run long enough to qualify, rather than swallowing a shorter one
+# inside a longer title.
+_TOC_ENTRY_RE = re.compile(r"(?m)^(?P<title>\S.*?)\s+(?:\.\s?){4,}(?P<page>\d{1,4})[ \t]*$")
+_TOC_CHAPTER_NUM_RE = re.compile(r"^\d+\.\s+")
+
+
+def _normalize_toc_title(text: str) -> str:
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _toc_title_candidates(raw_title: str) -> list[str]:
+    """Plausible normalized forms of a TOC entry's captured title, to look up
+    against real header text. Two independent, book-observed quirks stack
+    on top of "N. " chapter numbering: some front-matter entries print an
+    extra "." right where the dot leader begins even though the real header
+    has none (e.g. "Podziękowania." in the TOC vs "## Podziękowania"), so
+    each variant is tried both with and without its own trailing period.
+    """
+    variants = [raw_title, _TOC_CHAPTER_NUM_RE.sub("", raw_title)]
+    candidates: list[str] = []
+    for variant in variants:
+        variant = variant.strip()
+        candidates.append(_normalize_toc_title(variant))
+        if variant.endswith(".") and not variant.endswith(".."):
+            candidates.append(_normalize_toc_title(variant[:-1]))
+    return candidates
+
+
+def link_toc_entries(text: str) -> str:
+    """Turn the book's own printed "SPIS TREŚCI" page — extracted as one
+    dot-leader-filled prose line per entry ("Tytuł . . . . . . 19"), which
+    reads as an unbroken wall of text once paragraph-joined for the reader —
+    into one entry per line, clickable wherever its title exactly matches a
+    real "## "/"### " header elsewhere in the book.
+
+    Every "## "/"### " header gets a unique "[#toc-N]" anchor placed right
+    before it (harmless — an invisible marker, same mechanism as
+    _link_table_captions()'s "[#tabela-N]"). Each dot-leader-terminated line
+    is then looked up by its (whitespace-normalized, leading "N. " stripped)
+    title against those header texts; a match becomes "[title](anchor:toc-N)",
+    resolved at click time via GET /document/<id>/anchor/<anchor_id> —
+    computed fresh against the document's current chapter layout, never a
+    position baked in here. An entry with no matching header (a running head
+    bled into the line mid-book, back-matter not itself a "## "/"### ") still
+    gets its dot leaders and printed page number stripped — that page number
+    is the original PDF's own pagination, meaningless in this chapter-based
+    reader, so dropping it beats showing a stale, confusing number. Each
+    entry — matched or not — is wrapped in its own blank-line-delimited
+    paragraph so the reader renders it on its own line instead of run
+    together with its neighbors.
+
+    The very first header, when it opens at the true start of the text
+    (position 0 — no real front matter at all), gets no anchor: prefixing it
+    would plant real, non-blank content before what detect_chapters() (both
+    here and at read time, since this is the same text ultimately persisted
+    to text_md) treats as "the first chapter", manufacturing a bogus, empty
+    "(wstęp)" pseudo-chapter for books that otherwise have no preamble.
+    """
+    anchors_by_title: dict[str, list[str]] = {}
+    counter = 0
+
+    def _record_header(match: re.Match) -> str:
+        nonlocal counter
+        counter += 1
+        anchor_id = f"toc-{counter}"
+        title = _normalize_toc_title(match.group(2))
+        anchors_by_title.setdefault(title, []).append(anchor_id)
+        if match.start() == 0:
+            return match.group(0)
+        return f"[#{anchor_id}]\n\n{match.group(0)}"
+
+    text = _HEADER_LINE_RE.sub(_record_header, text)
+
+    def _replace_entry(match: re.Match) -> str:
+        raw_title = match.group("title").strip()
+        anchors = next(
+            (anchors_by_title[key] for key in _toc_title_candidates(raw_title) if anchors_by_title.get(key)),
+            None,
+        )
+        label = f"[{raw_title}](anchor:{anchors.pop(0)})" if anchors else raw_title
+        return f"\n\n{label}\n\n"
+
+    text = _TOC_ENTRY_RE.sub(_replace_entry, text)
+    return re.sub(r"\n{3,}", "\n\n", text)
+
+
 def _wrap_callout_boxes(text: str, info_icon: str = _INFO_ICON, warning_icon: str = _WARNING_ICON) -> str:
     """Wrap the paragraph following a standalone callout-icon line in
     "[!INFO]"/"[!WARN]" markers (read.tsx renders these as a green/red box) —
@@ -712,6 +804,10 @@ def build_book_markdown(
     _mark_headings()/detect_heading_texts()) to real "## " chapters — this
     book's back matter (Spis tabel/Spis rysunków/Bibliografia) shares its
     styling with ordinary subheadings but is its own printed-TOC entry.
+
+    The book's own printed "SPIS TREŚCI" page is left as ordinary prose here
+    (it isn't itself a chapter) but is reformatted by link_toc_entries() —
+    one entry per line, clickable where its title matches a real header.
     """
     pattern = re.compile(chapter_regex)
     heading_texts = heading_texts or set()
@@ -794,6 +890,7 @@ def build_book_markdown(
     text = _wrap_callout_boxes(text)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
     text = _link_table_captions(text)
+    text = link_toc_entries(text)
 
     chapters: list[ChapterInfo] = []
     header_re = re.compile(r"(?m)^## (.+)$")

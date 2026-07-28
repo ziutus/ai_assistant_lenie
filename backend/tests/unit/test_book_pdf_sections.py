@@ -17,6 +17,7 @@ from library.book_pdf_import import (  # noqa: E402
     _link_table_captions,
     _table_to_markdown,
     _wrap_callout_boxes,
+    link_toc_entries,
 )
 
 INFO = "ℹ"
@@ -92,6 +93,69 @@ class TestLinkTableCaptions:
     def test_no_tables_leaves_text_untouched(self):
         text = "Zwykly tekst bez zadnych tabel."
         assert _link_table_captions(text) == text
+
+
+DOTS = ". " * 20  # dot-leader fill, as extracted from the PDF: "Tytuł . . . . 35"
+
+
+class TestLinkTocEntries:
+    def test_entry_matching_a_chapter_becomes_a_link_on_its_own_line(self):
+        text = (
+            "## Wstęp\n\n"
+            f"1. Linux i bezpieczeństwo {DOTS}35\n"
+            "Dalszy tekst wstępu.\n\n"
+            "## Linux i bezpieczeństwo\n\n"
+            "Treść rozdziału."
+        )
+        result = link_toc_entries(text)
+        assert "[1. Linux i bezpieczeństwo](anchor:toc-2)" in result
+        # each entry is its own blank-line-delimited paragraph
+        assert "\n\n[1. Linux i bezpieczeństwo](anchor:toc-2)\n\n" in result
+        # an anchor sits right before the real header, not the index entry
+        assert result.index("[#toc-2]") < result.index("## Linux i bezpieczeństwo")
+        assert result.index("[#toc-2]") > result.index("[1. Linux i bezpieczeństwo]")
+
+    def test_subheading_entry_with_no_chapter_number_also_links(self):
+        text = (
+            "## Rozdział\n\n"
+            f"Co to jest Linux? {DOTS}37\n\n"
+            "### Co to jest Linux?\n\n"
+            "Treść."
+        )
+        result = link_toc_entries(text)
+        assert "[Co to jest Linux?](anchor:toc-2)" in result
+
+    def test_entry_with_no_matching_header_keeps_plain_title_no_link(self):
+        text = f"Coś, czego nie ma jako nagłówka {DOTS}73"
+        result = link_toc_entries(text)
+        assert "anchor:" not in result
+        assert "Coś, czego nie ma jako nagłówka" in result
+        # dot leaders and the printed page number are gone, just the title remains
+        assert result.strip() == "Coś, czego nie ma jako nagłówka"
+
+    def test_short_dot_runs_are_not_touched(self):
+        text = "Zobacz str. 12. To jest zwykłe zdanie z kropkami... koniec."
+        assert link_toc_entries(text) == text
+
+    def test_duplicate_header_titles_consume_anchors_in_order(self):
+        text = (
+            "## Rozdział pierwszy\n\n"
+            "### Checklista\n\n"
+            "## Rozdział drugi\n\n"
+            "### Checklista\n\n"
+            f"Checklista {DOTS}10\nCzęść pierwsza\n"
+            f"Checklista {DOTS}20\nCzęść druga"
+        )
+        result = link_toc_entries(text)
+        # counter numbers every "## "/"### " header in order (2 and 4 here — the
+        # "## Rozdział ..." headers are 1 and 3) — each duplicate-titled
+        # subheading gets its own distinct anchor, consumed in header order.
+        assert "[Checklista](anchor:toc-2)" in result
+        assert "[Checklista](anchor:toc-4)" in result
+
+    def test_no_headers_and_no_toc_lines_leaves_text_untouched(self):
+        text = "Zwykly tekst bez naglowkow i bez spisu tresci."
+        assert link_toc_entries(text) == text
 
 
 class TestWrapCalloutBoxes:
