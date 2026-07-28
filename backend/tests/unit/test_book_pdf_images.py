@@ -138,6 +138,9 @@ class TestBuildBookMarkdownImageMarkers:
 
 class TestPageChapterPositions:
     def test_length_matches_page_count_and_is_monotonic(self):
+        # Real front-matter text before the first chapter marker — detect_chapters()
+        # (the reader) inserts a "(wstęp)" pseudo-chapter at position 1 for this,
+        # so real chapter 1 becomes reader position 2, not 1.
         pages = ["intro text, no chapter marker here"] + [
             f"// ROZDZIAL {i} //\ntytul{i}\ntresc rozdzialu" for i in range(1, 4)
         ]
@@ -145,5 +148,36 @@ class TestPageChapterPositions:
 
         assert len(result.page_chapter_positions) == len(pages)
         assert result.page_chapter_positions == sorted(result.page_chapter_positions)
-        assert result.page_chapter_positions[0] == 0
-        assert result.page_chapter_positions[-1] == len(result.chapters)
+        assert result.page_chapter_positions[0] == 1  # wstęp
+        assert result.page_chapter_positions[-1] == len(result.chapters) + 1
+
+    def test_no_preamble_matches_chapter_position_unshifted(self):
+        # First page IS the first chapter marker — detect_chapters() has no
+        # front-matter text to turn into a "(wstęp)" pseudo-chapter, so chapter
+        # numbering is unshifted (real chapter 1 == reader position 1).
+        pages = [f"// ROZDZIAL {i} //\ntytul{i}\ntresc rozdzialu" for i in range(1, 3)]
+        result = build_book_markdown(pages)
+
+        assert result.page_chapter_positions == [1, 2]
+
+    def test_matches_reader_detect_chapters(self):
+        """Regression test for the reader/import chapter-numbering mismatch:
+        an image's stored chapter_position must be the SAME position
+        detect_chapters() (GET /document/<id>/chapter/<pos>) assigns to the
+        chapter whose text actually contains that image's [imgN] marker."""
+        from library.text_functions import detect_chapters
+
+        pages = [
+            "Strona tytulowa i wstep ksiazki.",
+            "// ROZDZIAL 1 //\ntytul1\ntresc rozdzialu pierwszego",
+            "// ROZDZIAL 2 //\ntytul2\ntresc rozdzialu drugiego",
+        ]
+        images_by_page = {0: [0], 1: [1], 2: [2]}
+        result = build_book_markdown(pages, images_by_page=images_by_page)
+
+        reader_chapters = detect_chapters(result.markdown)
+        for page_idx, marker_n in [(0, 0), (1, 1), (2, 2)]:
+            expected_position = result.page_chapter_positions[page_idx]
+            idx = result.markdown.index(f"[img{marker_n}]")
+            chapter = next(c for c in reader_chapters if c["position"] == expected_position)
+            assert chapter["char_start"] <= idx < chapter["char_end"]
