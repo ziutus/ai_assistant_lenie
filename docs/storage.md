@@ -38,6 +38,7 @@ NAS MinIO setup:
 ```env
 STORAGE_BACKEND=minio
 STORAGE_ENDPOINT_URL=http://lenie-minio:9000
+STORAGE_PUBLIC_ENDPOINT_URL=http://192.168.200.7:9000
 STORAGE_BUCKET=lenie-storage
 STORAGE_ACCESS_KEY=lenie-admin
 STORAGE_SECRET_KEY=change-me
@@ -47,6 +48,16 @@ STORAGE_REGION=us-east-1
 AWS S3 uses `STORAGE_BACKEND=s3`, omits `STORAGE_ENDPOINT_URL`, and can use the normal AWS credential chain. Google Cloud Storage is not S3 API compatible by default; use its interoperability/HMAC endpoint or add a native adapter later.
 
 `STORAGE_BACKEND` is explicit. The legacy `AWS_S3_WEBSITE_CONTENT` is accepted as a bucket-name fallback, but no longer selects cloud storage by itself.
+
+## Presigned URLs
+
+`ObjectStorage.presigned_get_url(key, expires_in=3600)` returns a time-limited URL the browser can fetch directly, without going through the API — needed because an `<img src>` request never carries the `x-api-key` header, so a proxied/authenticated route can't serve it.
+
+On `S3Storage` this calls `generate_presigned_url("get_object", ...)`. SigV4 signs the `Host` header, so a link generated against the container-internal endpoint (`STORAGE_ENDPOINT_URL=http://lenie-minio:9000`) would not validate when the browser fetches it — it would resolve to a host the browser can't reach. `STORAGE_PUBLIC_ENDPOINT_URL` (browser-reachable, e.g. `http://192.168.200.7:9000`) is used to build a second, lazily-created client just for signing; when it's unset (plain AWS S3, where the configured endpoint is already public), the normal client is reused.
+
+`LocalStorage.presigned_get_url()` always returns `None` — a local disk has nothing to sign. Callers degrade to a placeholder (no `<img>`, caption only); this path is only exercised in a plain single-computer Compose setup, real testing happens against MinIO on the NAS.
+
+Links expire after 3600 s (1 hour). Callers don't need to cache/refresh them client-side — a page reload (e.g. switching reader chapters) fetches a fresh link.
 
 ## Migration and accounting
 
@@ -61,6 +72,8 @@ python imports/storage_migrate.py usage --prefix cache
 ```
 
 Uploads are non-destructive and skip existing keys. Verify object counts before removing sources manually. The usage command counts logical bytes; physical MinIO usage can be larger because of filesystem overhead, versioning, erasure coding or replication.
+
+On the NAS, this migration step turned out to be a no-op: `lenie-ai-data` (mounted at `/app/data`) held a single stray file (`ner_normalization.json`) — writes to it had actually been failing silently (`root:root drwx-----x` ownership vs. the container's uid 1000), so there was nothing real to move.
 
 ## Cache boundary
 

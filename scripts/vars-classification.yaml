@@ -240,6 +240,67 @@ groups:
         example: "https://sqs.us-east-1.amazonaws.com/<account-id>/lenie_websites"
         used_by: [lambda]
 
+  storage:
+    description: "S3-compatible object storage (MinIO on NAS, or AWS S3) — backend/library/storage.py"
+    variables:
+      STORAGE_BACKEND:
+        description: "Storage backend selector (local | s3 | minio) — storage_from_config()"
+        type: config
+        required: false
+        default: "local"
+        example: "minio"
+        used_by: [docker, local]
+      STORAGE_LOCAL_ROOT:
+        description: "Filesystem root for STORAGE_BACKEND=local (desktop/dev default)"
+        type: config
+        required: false
+        default: "/app/data"
+        used_by: [docker, local]
+      STORAGE_BUCKET:
+        description: "S3/MinIO bucket name for durable document objects"
+        type: config
+        required_when: "STORAGE_BACKEND=s3 or STORAGE_BACKEND=minio"
+        example: "lenie-storage"
+        used_by: [docker, local]
+      STORAGE_ENDPOINT_URL:
+        description: "S3-compatible endpoint reachable from inside the Docker network (container-to-container calls)"
+        type: config
+        required: false
+        example: "http://lenie-minio:9000"
+        used_by: [docker]
+      STORAGE_PUBLIC_ENDPOINT_URL:
+        description: "S3-compatible endpoint reachable from the browser — used only to sign presigned GET URLs (SigV4 signs the Host header, so an internal-network endpoint won't validate in a browser). Unset on LocalStorage/AWS S3 (public endpoint already public)."
+        type: config
+        required: false
+        example: "http://192.168.200.7:9000"
+        used_by: [docker]
+      STORAGE_ACCESS_KEY:
+        description: "S3/MinIO access key (MinIO: same value as MINIO_ROOT_USER)"
+        type: secret
+        required_when: "STORAGE_BACKEND=minio"
+        used_by: [docker, local]
+      STORAGE_SECRET_KEY:
+        description: "S3/MinIO secret key (MinIO: same value as MINIO_ROOT_PASSWORD)"
+        type: secret
+        required_when: "STORAGE_BACKEND=minio"
+        used_by: [docker, local]
+      STORAGE_REGION:
+        description: "AWS region for SigV4 signing — arbitrary for MinIO, must be a real region for AWS S3"
+        type: config
+        required: false
+        example: "us-east-1"
+        used_by: [docker, local]
+      MINIO_ROOT_USER:
+        description: "MinIO server root username — the lenie-minio container's own credential, mirrored into STORAGE_ACCESS_KEY for the backend/worker"
+        type: secret
+        required_when: "MinIO container in use (infra/docker/compose.nas.yaml lenie-minio)"
+        used_by: [docker]
+      MINIO_ROOT_PASSWORD:
+        description: "MinIO server root password — mirrored into STORAGE_SECRET_KEY"
+        type: secret
+        required_when: "MinIO container in use (infra/docker/compose.nas.yaml lenie-minio)"
+        used_by: [docker]
+
   app:
     description: "Application runtime settings"
     variables:
