@@ -38,12 +38,27 @@ interface ChapterReference {
   url: string | null;
 }
 
+// Image extracted from an imported book PDF (document_images, storage_key-sourced)
+// — "inline" tells the reader whether the image has a [imgN] marker in the
+// chapter text (new imports) or needs to render in the chapter-end "Ilustracje"
+// section instead (backfilled books, imported before extraction existed).
+// "url" is a presigned MinIO link (null on a LocalStorage backend — placeholder).
+interface ChapterImage {
+  position: number | null;
+  url: string | null;
+  caption_text: string | null;
+  alt_text: string | null;
+  page_number: number | null;
+  inline: boolean;
+}
+
 interface ChapterContent {
   position: number;
   title: string;
   text: string;
   chapter_total: number;
   references?: ChapterReference[];
+  images?: ChapterImage[];
   // Synthesis of a run analysed with this chapter as scope (GET /document/:id/chapter/:pos) —
   // takes priority over the whole-document synthesis from GET /document/:id/chapters.
   synthesis_chapter?: string | null;
@@ -123,9 +138,40 @@ const SOURCE_ROLE_LABELS: Record<string, string> = {
   data_source: "Źródło danych",
 };
 
-// ── Minimal markdown rendering (headings, paragraphs, hr; images skipped) ────
+// ── Minimal markdown rendering (headings, paragraphs, hr, [imgN] figures) ────
 
+// Raw markdown image syntax (web-article text) — still skipped entirely, distinct
+// from our own [imgN] markers (book PDF images) handled by IMG_MARKER below.
 const IMAGE_LINE = /^!\[[^\]]*\]\([^)]*\)$/;
+const IMG_MARKER = /^\[img(\d+)\]$/;
+
+/** Inline figure for a book-PDF image ([imgN] marker) or a chapter-end
+ *  "Ilustracje" entry. url is null on a LocalStorage backend (no presigned
+ *  links) — shows the caption alone rather than a broken image box. */
+function renderChapterImage(img: ChapterImage, key: React.Key): React.ReactNode {
+  const figureStyle: React.CSSProperties = { margin: "20px 0", textAlign: "center" };
+  if (!img.url) {
+    return img.caption_text ? (
+      <figure key={key} style={figureStyle}>
+        <figcaption style={{ fontSize: "0.8em", color: "#64748b" }}>{img.caption_text}</figcaption>
+      </figure>
+    ) : null;
+  }
+  return (
+    <figure key={key} style={figureStyle}>
+      <a href={img.url} target="_blank" rel="noreferrer">
+        <img
+          src={img.url}
+          alt={img.alt_text ?? img.caption_text ?? ""}
+          style={{ maxWidth: "100%", height: "auto", borderRadius: 4 }}
+        />
+      </a>
+      {img.caption_text && (
+        <figcaption style={{ fontSize: "0.8em", color: "#64748b", marginTop: 6 }}>{img.caption_text}</figcaption>
+      )}
+    </figure>
+  );
+}
 
 /** Footnote text with its URL fragment rendered as a link. The backend stores
  *  the first URL it found in the footnote (normalized to https://), so the
@@ -306,12 +352,20 @@ function renderMarkdown(
   refs?: Map<string, ChapterReference>,
   highlightTerms?: string[],
   timelineAnchor?: string | null,
+  images?: Map<number, ChapterImage>,
 ): React.ReactNode[] {
   const blocks = text.split(/\n\s*\n/);
   const out: React.ReactNode[] = [];
   blocks.forEach((block, i) => {
     const trimmed = block.trim();
-    if (!trimmed || IMAGE_LINE.test(trimmed)) return;
+    if (!trimmed) return;
+    const markerMatch = trimmed.match(IMG_MARKER);
+    if (markerMatch) {
+      const img = images?.get(Number(markerMatch[1]));
+      if (img) out.push(renderChapterImage(img, i));
+      return;
+    }
+    if (IMAGE_LINE.test(trimmed)) return;
     const heading = trimmed.match(/^(#{1,6})\s+(.*)$/s);
     if (heading) {
       const level = Math.min(heading[1].length + 1, 6);
@@ -791,6 +845,15 @@ const Read: React.FC = () => {
     () => new Map((content?.references ?? []).map(r => [r.marker, r])),
     [content?.references]);
 
+  // book-PDF images by marker position — for [imgN] inline rendering
+  const imagesByPosition = React.useMemo(
+    () => new Map(
+      (content?.images ?? [])
+        .filter((img): img is ChapterImage & { position: number } => img.position !== null)
+        .map(img => [img.position, img]),
+    ),
+    [content?.images]);
+
   const anchoredNoteIds = React.useMemo(() => {
     if (!content) return new Set<number>();
     const normText = normalizeWs(content.text);
@@ -1006,6 +1069,7 @@ const Read: React.FC = () => {
             <article style={{ fontSize: "1.02em" }} onContextMenu={onTextContextMenu}>
               {renderMarkdown(
                 content.text, chapterNotes, referencesByMarker, highlightTerms, timelineHighlight?.quote,
+                imagesByPosition,
               )}
             </article>
           )}
@@ -1024,6 +1088,19 @@ const Read: React.FC = () => {
                   </li>
                 ))}
               </ol>
+            </details>
+          )}
+          {!loading && content && (content.images?.filter(img => !img.inline).length ?? 0) > 0 && (
+            <details open style={{
+              marginTop: 24, padding: "10px 14px", background: "#f8fafc",
+              border: "1px solid #e2e8f0", borderRadius: 8,
+            }}>
+              <summary style={{ cursor: "pointer", fontSize: "0.9em", fontWeight: 600 }}>
+                🖼 Ilustracje ({content.images!.filter(img => !img.inline).length})
+              </summary>
+              <div style={{ marginTop: 8 }}>
+                {content.images!.filter(img => !img.inline).map((img, i) => renderChapterImage(img, i))}
+              </div>
             </details>
           )}
           {navButtons}

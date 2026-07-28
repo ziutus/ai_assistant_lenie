@@ -1078,6 +1078,33 @@ def document_chapter(doc_id: int, position: int):
         for r in reference_query.order_by(DocumentReference.id).all()
     ]
 
+    # Images extracted from an imported book PDF (library/book_pdf_import.py) —
+    # storage_key IS NOT NULL rows only. Article/webpage images (url-sourced)
+    # are a deliberate scope limit here (ad risk on portal-hosted images), not
+    # a technical one — see library/document_images.py.
+    from library.config_loader import load_config
+    from library.db.models import DocumentImage
+    from library.storage import storage_from_config
+
+    image_query = session.query(DocumentImage).filter(
+        DocumentImage.document_id == doc_id,
+        DocumentImage.storage_key.is_not(None),
+    )
+    if chapter_total > 1:
+        image_query = image_query.filter(DocumentImage.chapter_position == position)
+    storage = storage_from_config(load_config())
+    images = [
+        {
+            "position": img.position,
+            "url": storage.presigned_get_url(img.storage_key),
+            "caption_text": img.caption_text,
+            "alt_text": img.alt_text,
+            "page_number": img.page_number,
+            "inline": img.position is not None and f"[img{img.position}]" in chapter_text,
+        }
+        for img in image_query.order_by(DocumentImage.page_number, DocumentImage.id).all()
+    ]
+
     # A run analysed with scope_chapter=position sets run.scope to the chapter
     # title (see document_analysis_service.create_run) — if one exists, its
     # synthesis is chapter-specific and takes priority over the whole-document
@@ -1100,9 +1127,51 @@ def document_chapter(doc_id: int, position: int):
         "text": chapter_text,
         "chapter_total": chapter_total,
         "references": references,
+        "images": images,
         "synthesis_chapter": chapter_run.synthesis if chapter_run else None,
         "prev": position - 1 if position > 1 else None,
         "next": position + 1 if position < chapter_total else None,
+    })
+
+
+@bp.route("/document/<int:doc_id>/images", methods=["GET"])
+def document_images(doc_id: int):
+    """Full list of a document's storage-backed images (book PDF illustrations).
+
+    Same item shape as the "images" field of GET /document/<id>/chapter/<pos>,
+    minus "inline" (no single chapter's text to check markers against here).
+    Diagnostic/editor use — the reader itself only ever calls the per-chapter
+    endpoint above.
+    """
+    from library.config_loader import load_config
+    from library.db.models import DocumentImage
+    from library.storage import storage_from_config
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    storage = storage_from_config(load_config())
+    images = session.query(DocumentImage).filter(
+        DocumentImage.document_id == doc_id,
+        DocumentImage.storage_key.is_not(None),
+    ).order_by(DocumentImage.page_number, DocumentImage.id).all()
+
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "images": [
+            {
+                "position": img.position,
+                "url": storage.presigned_get_url(img.storage_key),
+                "caption_text": img.caption_text,
+                "alt_text": img.alt_text,
+                "page_number": img.page_number,
+                "chapter_position": img.chapter_position,
+            }
+            for img in images
+        ],
     })
 
 
