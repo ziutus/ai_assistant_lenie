@@ -30,6 +30,7 @@ layouts. The output markdown must satisfy library.text_functions.detect_chapters
 from __future__ import annotations
 
 import difflib
+import logging
 import re
 import uuid
 from collections import Counter
@@ -41,6 +42,8 @@ from library.config_loader import load_config
 from library.db.models import Document
 from library.document_service import DocumentService
 from library.storage import storage_from_config
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CHAPTER_REGEX = r"(?i)//\s*ROZDZIA[ŁL]\s*(\d+)\s*//"
 _PAGE_NUMBER_LINE_RE = re.compile(r"(?m)^\s*\d{1,4}\s*$\n?")
@@ -1051,6 +1054,73 @@ def build_book_markdown(
     )
     page_chapter_positions = _page_chapter_positions(len(pages), all_chapter_start_pages, has_preamble)
     return BookMarkdownResult(markdown=text, chapters=chapters, page_chapter_positions=page_chapter_positions)
+
+
+def fetch_chapter_footnotes(url: str, timeout: float = 20.0, proxies: dict[str, str] | None = None) -> list[dict]:
+    """Fetch a book's own per-chapter endnote page and parse its footnotes.
+
+    Some publishers (Sekurak's "Twierdza Linux" companion microsite is the
+    first observed case: https://twierdza.sekurak.pl/rN/, one page per
+    chapter, r0 for the intro) publish each chapter's endnotes online as an
+    ordered list of "<li class="footnote-end">" entries, each usually
+    containing one "<a href>" link — e.g.:
+
+        <li class="footnote-end">Stallman R., <em>What's in a Name?</em>,
+        GNU Operating System, updated: 2021,
+        <a href="https://www.gnu.org/gnu/why-gnu-linux.html">...</a></li>
+
+    This is the authoritative, human-curated footnote text (with working
+    URLs) — used instead of trying to reconstruct footnotes from the PDF
+    text layer, where this book's inline markers don't carry any footnote
+    body text at all (they render as a plain digit glued directly onto the
+    preceding word, e.g. "esej2" — no separating space, no true Unicode
+    superscript, nothing library.references's OCR-tuned heuristics can
+    parse); only the online page has the actual reference text.
+
+    List order is the footnote's printed number (1-based) — callers assign
+    this as the "marker" for document_references.
+
+    proxies: an optional requests-style {"http": ..., "https": ...} proxy
+    dict — twierdza.sekurak.pl's Cloudflare front rate-limits/blocks some
+    residential IPs with an opaque 520 (confirmed independently from two
+    unrelated networks, so not a plain outage); routing through the
+    project's existing Webshare rotating-residential proxy
+    (library.webshare_ip_auth.get_proxy_credentials(), same one
+    library.youtube_processing.py uses) reliably got a 200 in testing.
+    Callers build this dict; this function stays proxy-agnostic.
+
+    Returns [] (with a logged warning) on any HTTP/parse failure or when the
+    page has no footnote-end entries — one missing/broken chapter page must
+    never fail the whole run.
+    """
+    import requests
+    from bs4 import BeautifulSoup
+
+    try:
+        resp = requests.get(
+            url, timeout=timeout, proxies=proxies,
+            headers={"User-Agent": "Mozilla/5.0 (compatible; LenieBot/1.0)"},
+        )
+        resp.raise_for_status()
+    except requests.RequestException as exc:
+        logger.warning("fetch_chapter_footnotes: %s failed: %s", url, exc)
+        return []
+
+    # resp.content (raw bytes), not resp.text: the site's Content-Type header
+    # carries no charset param, so requests falls back to Latin-1 per the HTTP
+    # spec default and silently mangles every non-ASCII character (observed:
+    # "’" -> "â\x80\x99", "ą" -> "Ä…") even though the page is genuinely UTF-8
+    # (its own <meta charset="utf-8">). BeautifulSoup's own encoding sniffer
+    # (on raw bytes) reads that meta tag and gets it right.
+    soup = BeautifulSoup(resp.content, "html.parser")
+    footnotes: list[dict] = []
+    for i, li in enumerate(soup.select("li.footnote-end"), start=1):
+        text = li.get_text(" ", strip=True)
+        if not text:
+            continue
+        link = li.find("a", href=True)
+        footnotes.append({"marker": str(i), "text": text, "url": link["href"] if link else None})
+    return footnotes
 
 
 def slugify(value: str) -> str:

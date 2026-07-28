@@ -97,6 +97,45 @@ def extract_footnotes(text: str) -> tuple[str, list[dict]]:
     return clean, footnotes
 
 
+def save_chapter_references(session, doc, footnotes_by_chapter: dict[int, list[dict]]) -> list:
+    """Replace doc's document_references with externally-sourced footnotes.
+
+    Counterpart to refresh_document_references() for books whose footnote
+    text isn't reconstructable from the PDF text layer at all — see
+    library.book_pdf_import.fetch_chapter_footnotes(), which fetches the
+    footnote text from the publisher's own per-chapter page instead. There is
+    no extraction/cleanup step here (no text to clean up), only the replace;
+    doc.text_md is left untouched.
+
+    footnotes_by_chapter maps a reader chapter_position (detect_chapters())
+    to that chapter's footnote dicts ({"marker", "text", "url"}), already in
+    the order they should be displayed/inserted (ascending id order is how
+    the reader queries them back, see chunk_review_routes.py).
+    """
+    from sqlalchemy import delete
+
+    from library.db.models import DocumentReference
+
+    session.execute(delete(DocumentReference).where(DocumentReference.document_id == doc.id))
+    rows = [
+        DocumentReference(
+            document_id=doc.id,
+            chapter_position=chapter_position,
+            marker=fn["marker"],
+            ref_text=fn["text"],
+            url=fn.get("url"),
+        )
+        for chapter_position, footnotes in footnotes_by_chapter.items()
+        for fn in footnotes
+    ]
+    session.add_all(rows)
+    logger.info(
+        "references doc=%s: saved %d externally-sourced footnotes across %d chapters",
+        doc.id, len(rows), len(footnotes_by_chapter),
+    )
+    return rows
+
+
 def refresh_document_references(session, doc) -> list:
     """Extract footnotes from doc.text_md into document_references rows.
 
