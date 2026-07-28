@@ -1306,17 +1306,26 @@ class DocumentReference(Base):
 
 
 class DocumentImage(Base):
-    """Image extracted out of a document's article text (library/article_cleaner.py).
+    """Image belonging to a document, from one of two sources.
 
-    ``clean_article_text()`` replaces inline ``![alt](url)`` markdown images
-    with ``[imgN]`` markers in ``text_md`` — the URL used to be discarded.
-    This table keeps the image (and its adjacent caption/credit line, when
-    present — attached via ``article_quality.photo_caption_candidates()``, the
-    same classification used to score photo sourcing) so article_quality.py
-    can score it without needing the image markup to still live inline in the
-    text. Replace-per-document semantics (like document_entities), written by
-    ``library.document_images.replace_document_images()``: each re-clean of a
-    document replaces its full row set.
+    ``url`` = external image belonging to a web article
+    (``library/article_cleaner.py``). ``clean_article_text()`` replaces inline
+    ``![alt](url)`` markdown images with ``[imgN]`` markers in ``text_md`` —
+    the URL used to be discarded. This table keeps the image (and its
+    adjacent caption/credit line, when present — attached via
+    ``article_quality.photo_caption_candidates()``, the same classification
+    used to score photo sourcing) so article_quality.py can score it without
+    needing the image markup to still live inline in the text.
+
+    ``storage_key`` = object in our own object storage (``library/storage.py``),
+    used for images extracted from imported book PDFs
+    (``library/book_pdf_import.py``). Exactly one of ``url``/``storage_key`` is
+    required per row (``document_images_source_present`` CHECK constraint).
+
+    Replace-per-document semantics (like document_entities), but the two
+    sources are replaced independently — see
+    ``library.document_images.replace_document_images()`` (url-sourced rows)
+    vs. ``replace_storage_images()`` (storage_key-sourced rows).
     """
 
     __tablename__ = "document_images"
@@ -1330,7 +1339,12 @@ class DocumentImage(Base):
     )
     # 0-based position of the [imgN] marker in the cleaned text
     position: Mapped[int | None] = mapped_column(SmallInteger)
-    url: Mapped[str] = mapped_column(Text, nullable=False)
+    url: Mapped[str | None] = mapped_column(Text)
+    storage_key: Mapped[str | None] = mapped_column(Text)
+    # 1-based PDF page the image was extracted from (storage_key rows only)
+    page_number: Mapped[int | None] = mapped_column(SmallInteger)
+    # 1-based reader chapter position (detect_chapters()), storage_key rows only
+    chapter_position: Mapped[int | None] = mapped_column(SmallInteger)
     alt_text: Mapped[str | None] = mapped_column(Text)
     caption_text: Mapped[str | None] = mapped_column(Text)
     # own_or_private_archive | agency | creative_commons | public_domain | stock |

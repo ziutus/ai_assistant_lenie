@@ -21,6 +21,7 @@ from library.book_pdf_import import (
     DEFAULT_CHAPTER_REGEX,
     build_book_markdown,
     detect_heading_texts,
+    extract_page_images,
     extract_pages,
     import_pdf_book,
 )
@@ -36,8 +37,10 @@ def main() -> None:
     parser.add_argument("--url", default=None, help="synthetic url override (domyslnie file:///ksiazki/<slug>.pdf)")
     parser.add_argument("--chapter-regex", default=DEFAULT_CHAPTER_REGEX, help="regex markera rozdzialu")
     parser.add_argument("--show", type=int, default=5, metavar="N", help="ile rozdzialow pokazac w podglada dry-run")
+    parser.add_argument("--no-images", action="store_true", help="pomin ekstrakcje obrazow (domyslnie wlaczona)")
     parser.add_argument("--apply", action="store_true", help="zapisz do bazy (domyslnie dry-run)")
     args = parser.parse_args()
+    extract_images = not args.no_images
 
     with open(args.file, "rb") as fh:
         pdf_bytes = fh.read()
@@ -45,11 +48,20 @@ def main() -> None:
     if not args.apply:
         pages = extract_pages(pdf_bytes)
         heading_texts = detect_heading_texts(pdf_bytes)
-        result = build_book_markdown(pages, chapter_regex=args.chapter_regex, heading_texts=heading_texts)
+        images = extract_page_images(pdf_bytes) if extract_images else []
+        images_by_page: dict[int, list[int]] = {}
+        for position, image in enumerate(images):
+            images_by_page.setdefault(image.page_index, []).append(position)
+        result = build_book_markdown(
+            pages, chapter_regex=args.chapter_regex, heading_texts=heading_texts, images_by_page=images_by_page,
+        )
         print(f"Plik: {args.file}")
         print(f"Wykryto rozdzialow: {len(result.chapters)}")
         print(f"Wykryto podrozdzialow (### ): {len(heading_texts)}")
         print(f"Dlugosc markdown: {len(result.markdown)} znakow")
+        if extract_images:
+            total_mb = sum(len(img.data) for img in images) / (1024 * 1024)
+            print(f"Obrazy: {len(images)} wykrytych po filtrze, {total_mb:.1f} MB")
         print()
         for ch in result.chapters[: args.show]:
             print(f"  {ch.position:>3}. {ch.title} ({ch.length} zn.)")
@@ -71,6 +83,7 @@ def main() -> None:
             source=args.source,
             url=args.url,
             chapter_regex=args.chapter_regex,
+            extract_images=extract_images,
         )
         print(f"Zapisano Document id={doc.id} uuid={doc.uuid}")
         print(f"Rozdzialow: {len(result.chapters)}, dlugosc markdown: {len(result.markdown)} znakow")

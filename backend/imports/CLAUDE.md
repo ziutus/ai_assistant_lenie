@@ -7,6 +7,7 @@ Standalone CLI scripts that add or manage documents in the Lenie database, bypas
 ```
 imports/
 ├── book_import_pdf.py        # Import a book PDF (with a usable text layer) into a Document
+├── book_extract_images.py    # Backfill: extract images for a book PDF already imported (no text_md rewrite)
 ├── check_pdf_text_layer.py   # Check if a PDF has a usable text layer or needs OCR (no DB)
 ├── control_questions.py      # Filter control questions from an Obsidian markdown file by tags (no DB)
 ├── import_control_questions.py # Sync the Obsidian control-question bank into the control_questions DB table
@@ -44,14 +45,17 @@ Exit code `0` when the text layer looks usable (`TEXT_LAYER_OK`), `1` otherwise 
 
 Thin CLI wrapper (all logic lives in `library/book_pdf_import.py`, pure functions on bytes/text with no filesystem assumptions beyond receiving the PDF as bytes, so the same code can later run from a worker/job instead of a developer machine — see `docs/deployment/nas/storage-and-jobs-migration-plan.md` Etap 3 "thin CLI wrapper" pattern). Extracts per-page text via **PyMuPDF (fitz)** (run [`check_pdf_text_layer.py`](#check_pdf_text_layerpy) first — no OCR step here; PyMuPDF was picked over `pypdf`/`pdfplumber` after a real comparison, see `docs/pdf-library-comparison.md` — notably PyMuPDF is AGPL-3.0/commercial-licensed, fine for this private non-SaaS use but flagged for re-evaluation before any hosted offering), detects chapter boundaries via a case-insensitive regex marker (default matches the `// ROZDZIAŁ NNN //` / `// Rozdział NNN //` running-head style used by Sekurak books — small-caps fonts render as true mixed case in PyMuPDF, unlike `pypdf` which normalized to uppercase; pass `--chapter-regex` for other layouts), strips repeated running heads/page numbers, joins words split by a soft hyphen (U+00AD) at a line wrap, inserts a paragraph break after a short line ending in sentence-final punctuation or before a bullet marker (additive only — never merges/drops a line, so code/config samples are never rewritten even where the heuristic misses a boundary), and **escapes any stray `#`/`##`-prefixed lines in body text** (shell/config code samples in technical books commonly start with `# comment` — without escaping, `library/text_functions.py`'s `detect_chapters()` mistakes hundreds of these for real H1 headers and swamps the real chapter markers; found the hard way importing doc 9332, "Twierdza Linux"). Also detects book subheadings via PDF font metadata (`detect_heading_texts()` — a line counts only when every span on it shares a distinct "display" font family at a size clearly above body text; book-specific constants, tune per book) and marks them `### <title>` so they don't visually blend into the surrounding paragraph in the reader — safely below `detect_chapters()`'s H1/H2 threshold. Creates a `Document` (`document_type='text'`, synthetic `url` like `file:///ksiazki/<slug>.pdf`) with the resulting chapter-marked markdown in `text_md`, and stores the original PDF bytes through `library/storage.py`'s `ObjectStorage` abstraction (not a raw file write) so switching `STORAGE_BACKEND` to MinIO later needs no pipeline changes.
 
+**Image extraction** (`extract_page_images()`, on by default, `--no-images` to skip): pulls embedded illustrations out of the PDF via PyMuPDF, deduplicated by xref (a running-head logo/icon reused across dozens of pages keeps only its first occurrence) and filtered by minimum pixel dimensions/byte size to drop decorative furniture. Each kept image is stored via `ObjectStorage` under `documents/<uuid>/images/<n>.<ext>` and written to `document_images` (`storage_key`-sourced rows — see `library/document_images.py`) with a `[imgN]` marker inserted into `text_md` right before its page's figure caption line (detected by `caption_for_page()`, e.g. "Rysunek 5. ..."), or appended at the end of the page when no caption line is found.
+
 **Data access: ORM (SQLAlchemy)** via `get_session()`, only when `--apply` is passed.
 
 **Running:**
 ```bash
 cd backend
-python imports/book_import_pdf.py book.pdf --title "..." --byline "..."             # dry-run: chapter preview, no DB writes
+python imports/book_import_pdf.py book.pdf --title "..." --byline "..."             # dry-run: chapter + image preview, no DB writes
 python imports/book_import_pdf.py book.pdf --title "..." --byline "..." --apply     # creates the Document
 python imports/book_import_pdf.py book.pdf --title "..." --chapter-regex "..." --show 3
+python imports/book_import_pdf.py book.pdf --title "..." --no-images --apply        # skip image extraction
 ```
 
 **Arguments:**
@@ -59,9 +63,29 @@ python imports/book_import_pdf.py book.pdf --title "..." --chapter-regex "..." -
 - `--url URL` — override the synthetic `file:///ksiazki/<slug>.pdf` URL
 - `--chapter-regex REGEX` — override the default `// ROZDZIAŁ NNN //` marker pattern
 - `--show N` — how many detected chapters to print in dry-run preview (default 5)
+- `--no-images` — skip image extraction (default: extraction on)
 - `--apply` — write to the database (default: dry-run only)
 
 After import, run [`extract_references.py`](#extract_referencespy) for book footnotes, then the usual per-chapter analyses (`extract_time_periods.py`, `extract_tones.py`, `select_control_questions.py`) and chunk review via `/chunks/:id`.
+
+### `book_extract_images.py`
+
+Backfill counterpart to `book_import_pdf.py`'s image extraction, for books imported before it existed. Re-derives per-page chapter positions by rebuilding markdown from the PDF (`build_book_markdown()`), but **never writes that markdown back** — the document's real `text_md` may already have been edited by `extract_references.py` (footnotes cut out), and overwriting it would lose that work. For the same reason this backfill never inserts `[imgN]` markers; images land in the reader's collapsible "Ilustracje" section instead of inline (`GET /document/<id>/chapter/<pos>`'s `inline` flag on each image). Also uploads the source PDF to storage if it isn't already there — a book imported while local storage writes were silently failing (permissions) never got its PDF saved at all.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, only when `--apply` is passed.
+
+**Running:**
+```bash
+cd backend
+python imports/book_extract_images.py --id 9332 --pdf "C:\...\twierdza-linux.pdf"           # dry-run
+python imports/book_extract_images.py --id 9332 --pdf "C:\...\twierdza-linux.pdf" --apply
+```
+
+**Arguments:**
+- `--id N` (required) — document id of the already-imported book
+- `--pdf PATH` (required) — path to the original PDF file
+- `--chapter-regex REGEX` — override the default `// ROZDZIAŁ NNN //` marker pattern
+- `--apply` — write to storage/database (default: dry-run only, prints per-chapter image counts)
 
 ### `dynamodb_sync.py`
 

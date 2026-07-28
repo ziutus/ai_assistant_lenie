@@ -15,7 +15,7 @@ pytest.importorskip("sqlalchemy")
 from sqlalchemy import inspect  # noqa: E402
 
 from library.db.models import DocumentImage  # noqa: E402
-from library.document_images import replace_document_images  # noqa: E402
+from library.document_images import replace_document_images, replace_storage_images  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -25,7 +25,8 @@ from library.document_images import replace_document_images  # noqa: E402
 
 class TestDocumentImageModel:
     EXPECTED_COLUMNS = {
-        "id", "document_id", "chunk_id", "position", "url", "alt_text",
+        "id", "document_id", "chunk_id", "position", "url", "storage_key",
+        "page_number", "chapter_position", "alt_text",
         "caption_text", "caption_category", "is_stock_photo", "created_at",
     }
 
@@ -50,8 +51,11 @@ class TestDocumentImageModel:
         assert fk.ondelete == "SET NULL"
         assert col.nullable is True
 
-    def test_url_not_nullable(self):
-        assert inspect(DocumentImage).mapper.columns["url"].nullable is False
+    def test_url_nullable(self):
+        assert inspect(DocumentImage).mapper.columns["url"].nullable is True
+
+    def test_storage_key_nullable(self):
+        assert inspect(DocumentImage).mapper.columns["storage_key"].nullable is True
 
 
 # ---------------------------------------------------------------------------
@@ -155,3 +159,73 @@ class TestReplaceDocumentImages:
             chunk_id=42,
         )
         assert rows[0].chunk_id == 42
+
+    def test_only_deletes_url_sourced_rows(self):
+        """A web-article reclean must never touch a book's storage_key rows."""
+        session = MagicMock(spec=["execute", "add_all"])
+        replace_document_images(session, document_id=9332, images=[])
+        delete_stmt = session.execute.call_args[0][0]
+        assert "storage_key" in str(delete_stmt.whereclause).lower()
+
+
+# ---------------------------------------------------------------------------
+# replace_storage_images
+# ---------------------------------------------------------------------------
+
+
+class TestReplaceStorageImages:
+    def _added_rows(self, session):
+        calls = session.add_all.call_args_list
+        assert len(calls) == 1
+        return list(calls[0].args[0])
+
+    def test_builds_one_row_per_image(self):
+        session = MagicMock(spec=["execute", "add_all"])
+        images = [
+            {"storage_key": "documents/uuid/images/1.png", "position": 3, "page_number": 12,
+             "chapter_position": 2, "caption_text": "Rysunek 1. Schemat"},
+            {"storage_key": "documents/uuid/images/2.png", "page_number": 15, "chapter_position": 2},
+        ]
+
+        rows = replace_storage_images(session, document_id=9332, images=images)
+
+        assert len(rows) == 2
+        stored = self._added_rows(session)
+        assert stored == rows
+        assert [r.storage_key for r in stored] == [
+            "documents/uuid/images/1.png", "documents/uuid/images/2.png",
+        ]
+        assert stored[0].position == 3
+        assert stored[1].position is None
+        assert [r.document_id for r in stored] == [9332, 9332]
+        assert stored[0].caption_text == "Rysunek 1. Schemat"
+
+    def test_skips_images_without_storage_key(self):
+        session = MagicMock(spec=["execute", "add_all"])
+        images = [{"storage_key": None, "page_number": 1}, {"storage_key": "documents/uuid/images/1.png"}]
+
+        rows = replace_storage_images(session, document_id=1, images=images)
+
+        assert len(rows) == 1
+        assert rows[0].storage_key == "documents/uuid/images/1.png"
+
+    def test_empty_images_list_does_not_call_add_all(self):
+        session = MagicMock(spec=["execute", "add_all"])
+        rows = replace_storage_images(session, document_id=1, images=[])
+
+        assert rows == []
+        session.add_all.assert_not_called()
+
+    def test_does_not_commit(self):
+        session = MagicMock(spec=["execute", "add_all", "commit"])
+        replace_storage_images(
+            session, document_id=1, images=[{"storage_key": "documents/uuid/images/1.png"}],
+        )
+        session.commit.assert_not_called()
+
+    def test_only_deletes_storage_key_sourced_rows(self):
+        """A book's PDF re-extraction must never touch a web article's url rows."""
+        session = MagicMock(spec=["execute", "add_all"])
+        replace_storage_images(session, document_id=9332, images=[])
+        delete_stmt = session.execute.call_args[0][0]
+        assert "storage_key" in str(delete_stmt.whereclause).lower()
