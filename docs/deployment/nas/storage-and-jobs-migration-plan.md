@@ -235,6 +235,19 @@ Pipeline nie powinien wiedzieć, gdzie fizycznie znajduje się durable storage. 
 - przygotować migrację z dry-run, checksumą i raportem;
 - nie usuwać źródeł przed weryfikacją migracji i backupu.
 
+**Zrobione (2026-07-28, PR #389/#390/#391):** MinIO faktycznie wystartowany na NAS
+(kontener `lenie-minio` był w stanie `Exited` od ~12 dni, `lenie-minio-init` nigdy
+się nie uruchomił — bucket `lenie-storage` nie istniał); `ObjectStorage` dostał
+`presigned_get_url()` (potrzebne, bo `<img src>` nie wysyła `x-api-key` — presigned
+URL to jedyny sposób serwowania obiektu wprost do przeglądarki bez proxy przez
+Flask), z osobnym, leniwie budowanym klientem dla `STORAGE_PUBLIC_ENDPOINT_URL`
+(SigV4 podpisuje `Host`, więc link podpisany na wewnętrznym adresie kontenerowym
+nie zadziała w przeglądarce). Pierwsze realne wykorzystanie: obrazy z importu
+książek PDF (`document_images.storage_key`) wyświetlane w czytniku `/read/:id`.
+Migracja danych z `/app/data` okazała się zbędna — wolumen był praktycznie pusty
+(zapis i tak nie działał przez uprawnienia, `root:root drwx-----x` vs. uid 1000
+kontenera), więc `imports/storage_migrate.py upload` nie miał czego przenosić.
+
 ### Etap 2 — ogólna kolejka jobów
 
 - dodać model oraz migrację bazy;
