@@ -18,7 +18,9 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   // Elements
-  const apiKeyInput = document.getElementById('apiKey');
+  const nasApiKeyInput = document.getElementById('nasApiKey');
+  const awsApiKeyInput = document.getElementById('awsApiKey');
+  const localServerUrlInput = document.getElementById('localServerUrl');
   const serverUrlInput = document.getElementById('serverUrl');
   const noteInput = document.getElementById('note');
   const sendButton = document.getElementById('sendButton');
@@ -34,8 +36,10 @@ document.addEventListener('DOMContentLoaded', function () {
   const pageTitleInput = document.getElementById('pageTitle');
   const facebookPostContainer = document.getElementById('facebookPostContainer');
   const facebookPostTextInput = document.getElementById('facebookPostText');
-  const toggleApiKeyVisibilityBtn = document.getElementById('toggleApiKeyVisibility');
-  const apiKeyEye = document.getElementById('apiKeyEye');
+  const toggleNasApiKeyVisibilityBtn = document.getElementById('toggleNasApiKeyVisibility');
+  const toggleAwsApiKeyVisibilityBtn = document.getElementById('toggleAwsApiKeyVisibility');
+  const nasApiKeyEye = document.getElementById('nasApiKeyEye');
+  const awsApiKeyEye = document.getElementById('awsApiKeyEye');
   const newSourceContainer = document.getElementById('newSourceContainer');
   const newSourceNameInput = document.getElementById('newSourceName');
   const addSourceButton = document.getElementById('addSourceButton');
@@ -48,7 +52,12 @@ document.addEventListener('DOMContentLoaded', function () {
   let previousSourceValue = sourceSelect.value;
   let detectedSocialAuthor = '';
   let detectedSocialPlatform = '';
-  const debugState = { version: '1.0.38' };
+  const debugState = { version: '1.0.42' };
+
+  const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
+  const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
+  const PROBE_TIMEOUT_MS = 1500;
+  const REQUEST_TIMEOUT_MS = 30000;
 
   function setLanguageValue(value) {
     const normalized = (value || '').trim().toLowerCase();
@@ -99,6 +108,52 @@ document.addEventListener('DOMContentLoaded', function () {
     return serverUrl.trim().replace(/\/url_add\/?$/, '');
   }
 
+  function endpointConfigs() {
+    return [
+      { url: localServerUrlInput.value.trim(), apiKey: nasApiKeyInput.value.trim(), role: 'nas' },
+      { url: serverUrlInput.value.trim(), apiKey: awsApiKeyInput.value.trim(), role: 'aws' }
+    ].filter((config, index, all) => config.url && config.apiKey
+      && all.findIndex(item => item.url === config.url) === index);
+  }
+
+  async function fetchWithTimeout(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function createExternalUuid() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  async function probeEndpoint(endpoint, apiKey) {
+    try {
+      const response = await fetchWithTimeout(endpoint, {
+        method: 'OPTIONS',
+        headers: { 'x-api-key': apiKey }
+      }, PROBE_TIMEOUT_MS);
+      return { ok: response.ok, status: response.status };
+    } catch (_) {
+      return { ok: false, status: 0 };
+    }
+  }
+
+  async function preferredEndpoint() {
+    for (const config of endpointConfigs()) {
+      if ((await probeEndpoint(config.url, config.apiKey)).ok) return config;
+    }
+    return null;
+  }
+
   function rebuildSourceOptions(names, selected) {
     sourceSelect.innerHTML = '';
     names.forEach(name => {
@@ -123,10 +178,15 @@ document.addEventListener('DOMContentLoaded', function () {
   // Offline / AWS Gateway URL (no /sources route) → cached list from
   // chrome.storage.local; without a cache the hardcoded HTML options stay.
   // Never blocks the popup.
-  function loadSources(apiKey, serverUrl) {
+  function loadSources() {
     chrome.storage.sync.get(['lastSource'], (sync) => {
       const lastSource = sync.lastSource;
-      fetch(apiBaseFrom(serverUrl) + '/sources?active=1', { headers: { 'x-api-key': apiKey } })
+      preferredEndpoint().then(config => {
+        if (!config) throw new Error('Brak dostępnego endpointu');
+        return fetchWithTimeout(apiBaseFrom(config.url) + '/sources?active=1', {
+          headers: { 'x-api-key': config.apiKey }
+        }, PROBE_TIMEOUT_MS);
+      })
         .then(response => {
           if (!response.ok) throw new Error(`${response.status}`);
           return response.json();
@@ -163,21 +223,23 @@ document.addEventListener('DOMContentLoaded', function () {
 
   addSourceButton.addEventListener('click', function () {
     const name = newSourceNameInput.value.trim();
-    const apiKey = apiKeyInput.value.trim();
-    const serverUrl = serverUrlInput.value.trim();
+    const endpoints = endpointConfigs();
     if (!name) {
       alert('Podaj nazwę nowego źródła');
       return;
     }
-    if (!apiKey || !serverUrl) {
-      alert('Uzupełnij ustawienia (klucz API i adres serwera)');
+    if (!endpoints.length) {
+      alert('Uzupełnij co najmniej jeden adres serwera i odpowiadający mu klucz API');
       return;
     }
     addSourceButton.disabled = true;
-    fetch(apiBaseFrom(serverUrl) + '/sources', {
+    preferredEndpoint().then(config => {
+      if (!config) throw new Error('NAS i AWS są niedostępne');
+      return fetchWithTimeout(apiBaseFrom(config.url) + '/sources', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
+      headers: { 'Content-Type': 'application/json', 'x-api-key': config.apiKey },
       body: JSON.stringify({ name: name })
+      }, REQUEST_TIMEOUT_MS);
     })
       .then(response => {
         // 409 = source already exists — just select it.
@@ -235,31 +297,39 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   // Load settings
-  chrome.storage.sync.get(['apiKey', 'serverUrl'], function (data) {
-    if (data.apiKey) apiKeyInput.value = data.apiKey;
+  chrome.storage.sync.get(['apiKey', 'nasApiKey', 'awsApiKey', 'serverUrl', 'localServerUrl'], function (data) {
+    const legacyApiKey = data.apiKey || '';
+    if (data.nasApiKey || legacyApiKey) nasApiKeyInput.value = data.nasApiKey || legacyApiKey;
+    if (data.awsApiKey || legacyApiKey) awsApiKeyInput.value = data.awsApiKey || legacyApiKey;
+    if (data.localServerUrl) localServerUrlInput.value = data.localServerUrl;
     if (data.serverUrl) serverUrlInput.value = data.serverUrl;
-    if (data.apiKey && data.serverUrl) {
-      loadSources(data.apiKey, data.serverUrl);
-    }
+    if (data.nasApiKey || data.awsApiKey || legacyApiKey) loadSources();
   });
 
   // Toggle API key visibility
-  toggleApiKeyVisibilityBtn?.addEventListener('click', function () {
-    if (!apiKeyInput) return;
-    const isPassword = apiKeyInput.type === 'password';
-    apiKeyInput.type = isPassword ? 'text' : 'password';
-    // Optional: change icon/text
-    if (apiKeyEye) {
-      apiKeyEye.textContent = isPassword ? '🙈' : '👁️';
-    }
-  });
+  function bindVisibilityToggle(button, input, eye) {
+    button?.addEventListener('click', function () {
+      if (!input) return;
+      const isPassword = input.type === 'password';
+      input.type = isPassword ? 'text' : 'password';
+      if (eye) eye.textContent = isPassword ? '🙈' : '👁️';
+    });
+  }
+  bindVisibilityToggle(toggleNasApiKeyVisibilityBtn, nasApiKeyInput, nasApiKeyEye);
+  bindVisibilityToggle(toggleAwsApiKeyVisibilityBtn, awsApiKeyInput, awsApiKeyEye);
 
   // Persist settings
-  apiKeyInput?.addEventListener('change', function () {
-    chrome.storage.sync.set({ apiKey: apiKeyInput.value });
+  nasApiKeyInput?.addEventListener('change', function () {
+    chrome.storage.sync.set({ nasApiKey: nasApiKeyInput.value });
+  });
+  awsApiKeyInput?.addEventListener('change', function () {
+    chrome.storage.sync.set({ awsApiKey: awsApiKeyInput.value });
   });
   serverUrlInput?.addEventListener('change', function () {
     chrome.storage.sync.set({ serverUrl: serverUrlInput.value });
+  });
+  localServerUrlInput?.addEventListener('change', function () {
+    chrome.storage.sync.set({ localServerUrl: localServerUrlInput.value });
   });
 
   function socialPlatformForUrl(url) {
@@ -467,19 +537,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Send
   sendButton.addEventListener('click', function () {
-    const apiKey = apiKeyInput.value.trim();
-    const serverUrl = serverUrlInput.value.trim();
+    const endpoints = endpointConfigs();
     const note = noteInput.value;
     const type = typeSelect.value;
     const title = pageTitleInput.value;
     const language = getLanguageValue();
 
-    if (!apiKey) {
-      alert('Podaj API KEY');
+    if (!endpoints.length) {
+      alert('Podaj adres i klucz API NAS albo AWS');
       return;
     }
-    if (!serverUrl) {
-      alert('Podaj adres serwera');
+    if (!endpoints.length) {
+      alert('Podaj adres NAS albo AWS');
       return;
     }
     if (pageLanguageSelect.value === 'other' && !language) {
@@ -531,6 +600,7 @@ document.addEventListener('DOMContentLoaded', function () {
             chapter_list: chapter_list.value,
             byline: isSocialPost ? detectedSocialAuthor : ''
           };
+          data.external_uuid = createExternalUuid();
           updateDebug({
             send_attempt: true,
             payload_type: data.type,
@@ -545,14 +615,34 @@ document.addEventListener('DOMContentLoaded', function () {
             data.operation = 'fill_missing_html';
           }
 
-          return fetch(serverUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': apiKey
-            },
-            body: JSON.stringify(data)
-          });
+          return (async () => {
+            const configs = endpointConfigs();
+            const localConfig = configs.find(config => config.role === 'nas');
+            const awsConfig = configs.find(config => config.role === 'aws');
+            const localProbe = localConfig ? await probeEndpoint(localConfig.url, localConfig.apiKey) : null;
+            if (localProbe && [401, 403].includes(localProbe.status)) {
+              updateDebug({ selected_endpoint: localConfig.url, endpoint_role: 'nas', auth_probe_status: localProbe.status });
+              throw new Error(`NAS odrzucił autoryzację (HTTP ${localProbe.status}). Sprawdź Klucz API NAS.`);
+            }
+            const localAvailable = Boolean(localProbe?.ok);
+            const config = localAvailable ? localConfig : awsConfig;
+            if (!config) throw new Error('NAS i AWS są niedostępne');
+            updateDebug({
+              selected_endpoint: config.url,
+              endpoint_role: config.role,
+              fallback_reason: localAvailable ? '' : 'nas_unavailable_before_post'
+            });
+            // Do not retry an uncertain POST against the other backend: NAS
+            // and AWS have separate databases, so that could create two docs.
+            return fetchWithTimeout(config.url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                    'x-api-key': config.apiKey
+              },
+              body: JSON.stringify(data)
+            }, REQUEST_TIMEOUT_MS);
+          })();
         })
         .then(async response => {
           const result = await response.json().catch(() => ({}));
@@ -563,7 +653,11 @@ document.addEventListener('DOMContentLoaded', function () {
             throw new Error(`Dokument jest już w bazie (ID: ${result.document_id}).${suffix}`);
           }
           if (!response.ok) {
-            throw new Error(result.message || `Serwer zwrócił błąd: ${response.status} - ${response.statusText}`);
+            const serverLabel = debugState.endpoint_role === 'nas' ? 'NAS' : 'AWS';
+            if ([401, 403].includes(response.status)) {
+              throw new Error(`${serverLabel} odrzucił autoryzację (HTTP ${response.status}). Sprawdź Klucz API ${serverLabel}.`);
+            }
+            throw new Error(`${serverLabel}: ${result.message || `serwer zwrócił błąd: ${response.status} - ${response.statusText}`}`);
           }
           return result;
         })

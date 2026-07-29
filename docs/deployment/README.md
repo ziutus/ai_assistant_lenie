@@ -6,6 +6,7 @@ Ten katalog grupuje dokumenty planistyczne według **etapu/środowiska wdrożeni
 
 - **[`nas/`](nas/)** — jedyny katalog opisujący coś, co faktycznie działa albo jest aktywnie wdrażane: własny QNAP NAS, dla mnie i kilku zaufanych domowników/znajomych.
   - [`storage-and-jobs-migration-plan.md`](nas/storage-and-jobs-migration-plan.md) — centralizacja storage (MinIO/S3-compatible) i jobów.
+  - [`dynamodb-sync-to-nas-implementation-plan.md`](nas/dynamodb-sync-to-nas-implementation-plan.md) — wykonawczy plan przejścia z tymczasowego bufora AWS na bezpośredni ingest przez VPN/NAS, zakończony usunięciem `dynamodb_sync.py`.
   - [`multi-user-household.md`](nas/multi-user-household.md) — kilku zaufanych użytkowników, bez planowania wydajności pod skalę.
 
 ## Co jest eksperymentem myślowym (nauka w wolnym czasie, niski priorytet)

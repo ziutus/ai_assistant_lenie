@@ -33,6 +33,7 @@ declare -A SVC_IMAGE=(
     [app2]="lenie-ai-app2:latest"
     [backend]="lenie-ai-server:latest"
     [worker]="lenie-ai-server:latest"
+    [document-worker]="lenie-ai-document-worker:latest"
     [db]="lenie-ai-db:latest"
     [ner-service]="lenie-ner-service:latest"
 )
@@ -41,6 +42,7 @@ declare -A SVC_REGISTRY_IMAGE=(
     [app2]="${REGISTRY}/lenie-ai-app2:latest"
     [backend]="${REGISTRY}/lenie-ai-server:latest"
     [worker]="${REGISTRY}/lenie-ai-server:latest"
+    [document-worker]="${REGISTRY}/lenie-ai-document-worker:latest"
     [db]="${REGISTRY}/lenie-ai-db:latest"
     [ner-service]="${REGISTRY}/lenie-ner-service:latest"
 )
@@ -48,6 +50,7 @@ declare -A SVC_DOCKERFILE=(
     [frontend]="web_interface_react/Dockerfile"
     [app2]="web_interface_app2/Dockerfile"
     [backend]="backend/Dockerfile"
+    [document-worker]="backend/Dockerfile"
     [db]="infra/docker/Postgresql/Dockerfile"
     [ner-service]="ner_service/Dockerfile"
 )
@@ -56,12 +59,13 @@ declare -A SVC_COMPOSE_NAME=(
     [app2]="lenie-ai-app2"
     [backend]="lenie-ai-server"
     [worker]="lenie-worker"
+    [document-worker]="lenie-document-worker"
     [db]="lenie-ai-db"
     [minio]="lenie-minio"
     [ner-service]="lenie-ner-service"
 )
 
-ALL_SERVICES="db backend worker frontend app2"
+ALL_SERVICES="db backend worker document-worker frontend app2"
 
 # --- Colors ---
 RED='\033[0;31m'
@@ -117,7 +121,11 @@ build_image() {
     cd "$PROJECT_ROOT"
     # Plain progress remains readable in non-interactive Codex/CI logs and
     # makes long dependency/export steps visible instead of buffering them.
-    docker build --progress=plain -t "$image" -f "$dockerfile" .
+    if [ "$svc" = "document-worker" ]; then
+        docker build --progress=plain --build-arg 'UV_EXTRA_ARGS=--extra docker --extra markdown' -t "$image" -f "$dockerfile" .
+    else
+        docker build --progress=plain -t "$image" -f "$dockerfile" .
+    fi
     ok "Obraz ${image} zbudowany"
 }
 
@@ -242,7 +250,7 @@ show_status() {
 usage() {
     echo "Usage: $0 [OPTIONS] [service ...]"
     echo ""
-    echo "Services: frontend, app2, backend, db, minio, ner-service, all (default: core services)"
+echo "Services: frontend, app2, backend, worker, document-worker, db, minio, ner-service, all (default: core services)"
     echo "  Note: 'all' deploys core services only (db, backend, frontend, app2)."
     echo "  minio and ner-service must be deployed explicitly."
     echo ""
@@ -276,7 +284,7 @@ while [[ $# -gt 0 ]]; do
         --sync-compose)  SYNC_COMPOSE="true"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
-frontend|app2|backend|worker|db|minio|ner-service) SERVICES="$SERVICES $1"; shift ;;
+        frontend|app2|backend|worker|document-worker|db|minio|ner-service) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
 done

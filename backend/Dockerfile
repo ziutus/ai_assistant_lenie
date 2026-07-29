@@ -27,8 +27,9 @@ COPY backend/pyproject.toml backend/uv.lock ./
 # Bump when a private registry contains a corrupted cached dependency blob.
 # Keeping the revision marker in the layer deliberately gives it a new digest.
 ARG DEPENDENCY_LAYER_REV=20260715-provenance
+ARG UV_EXTRA_ARGS="--extra docker"
 RUN printf '%s\n' "$DEPENDENCY_LAYER_REV" > /app/.dependency-layer-revision && \
-    uv sync --frozen --extra docker --no-dev --no-install-project
+    uv sync --frozen $UV_EXTRA_ARGS --no-dev --no-install-project
 
 COPY backend/library ./library/
 COPY backend/data ./data/
@@ -38,11 +39,13 @@ COPY backend/alembic ./alembic/
 #COPY backend/tests /app/tests/
 COPY backend/server.py .
 
-# Create a non-root user with specific UID and GID, and change ownership of the app directory
+# Create a non-root user with specific UID and GID. `/app/work` is also
+# prepared here because the NAS document worker mounts a named volume there;
+# Docker initializes a new empty volume from this directory's ownership.
 RUN groupadd -g 1000 lenie-ai-client && \
     useradd -u 1000 -g lenie-ai-client -m lenie-ai-client && \
-    mkdir -p /app/data && \
-    chown 1000:1000 /app/data
+    mkdir -p /app/data /app/work && \
+    chown -R 1000:1000 /app/data /app/work
 
 # Switch to the lenie-ai-client user
 USER lenie-ai-client

@@ -94,6 +94,9 @@ NAS_REGISTRY ?= 192.168.200.7:5005
 nas-build-server: ## Build backend image for NAS registry
 	docker build -t $(NAS_REGISTRY)/lenie-ai-server:latest -f backend/Dockerfile .
 
+nas-build-document-worker: ## Build document worker image with Markdown dependencies
+	docker build --build-arg 'UV_EXTRA_ARGS=--extra docker --extra markdown' -t $(NAS_REGISTRY)/lenie-ai-document-worker:latest -f backend/Dockerfile .
+
 nas-build-frontend: ## Build frontend image for NAS registry
 	docker build -t $(NAS_REGISTRY)/lenie-ai-frontend:latest -f web_interface_react/Dockerfile .
 
@@ -107,6 +110,9 @@ nas-build-all: ## Build all images for NAS registry
 
 nas-push-server: ## Push backend image to NAS registry
 	docker push $(NAS_REGISTRY)/lenie-ai-server:latest
+
+nas-push-document-worker: ## Push document worker image to NAS registry
+	docker push $(NAS_REGISTRY)/lenie-ai-document-worker:latest
 
 nas-push-frontend: ## Push frontend image to NAS registry
 	docker push $(NAS_REGISTRY)/lenie-ai-frontend:latest
@@ -122,6 +128,10 @@ nas-push-all: ## Push all images to NAS registry
 nas-release-server: ## Build and push backend image to NAS registry
 	$(MAKE) nas-build-server
 	$(MAKE) nas-push-server
+
+nas-release-document-worker: ## Build and push document worker image to NAS registry
+	$(MAKE) nas-build-document-worker
+	$(MAKE) nas-push-document-worker
 
 nas-release-frontend: ## Build and push frontend image to NAS registry
 	$(MAKE) nas-build-frontend

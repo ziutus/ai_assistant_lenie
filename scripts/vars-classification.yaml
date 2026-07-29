@@ -353,6 +353,13 @@ groups:
         default: "cache"
         example: "tmp/youtube_to_text"
         used_by: [docker, local]
+      DOCUMENT_WORK_DIR:
+        description: "Scratch directory for resumable document processing jobs"
+        type: config
+        required: false
+        default: "/app/work"
+        example: "/app/work"
+        used_by: [docker, local]
       SITE_RULES_PATH:
         description: "Path to hot-reloadable website cleanup rules JSON"
         type: config

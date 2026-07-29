@@ -463,6 +463,12 @@ Check logs for errors. Common issues:
 - **Port already in use** — check with `netstat -tlnp | grep <PORT>`
 - **Database connection refused** — ensure DB container is running and healthy (`docker compose ps`)
 
+The document worker's `/app/work` directory is prepared and owned by UID/GID
+`1000:1000` in `backend/Dockerfile`. This is required when Docker creates a
+fresh external volume `lenie-document-work`; do not remove that ownership fix
+from the image. Existing NAS volumes may be repaired without deleting data by
+running `docker exec -u 0 lenie-document-worker chown -R 1000:1000 /app/work`.
+
 ### Rebuild and redeploy a single service
 
 ```powershell

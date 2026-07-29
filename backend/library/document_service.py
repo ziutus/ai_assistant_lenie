@@ -21,7 +21,7 @@ from library.document_repository import DocumentRepository
 from library.text_functions import split_text_for_embedding
 from library.text_transcript import chapters_text_to_list
 from library.website.website_download_context import download_raw_html, webpage_raw_parse, webpage_text_clean
-from library.storage import storage_from_config
+from library.storage import ObjectStorage, storage_from_config
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +41,16 @@ class DocumentService:
     Raises ValueError for validation errors, RuntimeError for failures.
     """
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, storage: ObjectStorage | None = None):
         self.session = session
         self.repo = DocumentRepository(session)
+        self.storage = storage
+
+    def _get_storage(self) -> ObjectStorage:
+        """Return injected storage, constructing the legacy default lazily."""
+        if self.storage is None:
+            self.storage = storage_from_config(load_config())
+        return self.storage
 
     # ------------------------------------------------------------------
     # create_document — extracted from /url_add
@@ -67,6 +74,8 @@ class DocumentService:
         byline: str = "",
         original_id: str | None = None,
         published_on=None,
+        external_uuid: str | None = None,
+        ingested_at=None,
     ) -> Document:
         """Create a new document, optionally storing text/html to S3 or local disk.
 
@@ -80,13 +89,12 @@ class DocumentService:
         if existing is not None:
             raise ExistingDocumentError(existing)
 
-        cfg = load_config()
-        storage = storage_from_config(cfg)
+        storage = self._get_storage()
 
         doc_uuid = None
 
         if url_type == "webpage":
-            uid = str(uuid.uuid4())
+            uid = external_uuid or str(uuid.uuid4())
             doc_uuid = uid
 
             if text:
@@ -122,7 +130,11 @@ class DocumentService:
         doc.set_publisher_from_url(self.session)
         doc.ai_summary_needed = ai_summary
         doc.chapter_list = chapter_list
+        if ingested_at is not None:
+            doc.ingested_at = ingested_at
         doc.uuid = doc_uuid
+        if url_type == "webpage":
+            doc.text_raw = html or None
         doc.set_processing_status("URL_ADDED")
 
         self.session.add(doc)
@@ -159,7 +171,8 @@ class DocumentService:
     # save_document — extracted from /website_save
     # ------------------------------------------------------------------
 
-    def fill_missing_source_html(self, url: str, html: str, text: str = "") -> Document:
+    def fill_missing_source_html(self, url: str, html: str, text: str = "",
+                                 external_uuid: str | None = None) -> Document:
         """Attach captured HTML only when the existing document has no raw source."""
         doc = Document.get_by_url(self.session, url)
         if doc is None:
@@ -169,9 +182,8 @@ class DocumentService:
         if doc.text_raw:
             raise ValueError("Document already has raw HTML")
 
-        cfg = load_config()
-        storage = storage_from_config(cfg)
-        new_uuid = str(uuid.uuid4())
+        storage = self._get_storage()
+        new_uuid = external_uuid or str(uuid.uuid4())
         if text:
             self._store_file(new_uuid, "txt", text, storage=storage)
         self._store_file(new_uuid, "html", html, storage=storage)

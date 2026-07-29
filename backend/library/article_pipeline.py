@@ -11,6 +11,7 @@ import logging
 import os
 
 from library.llm_usage.context import llm_usage_context
+from library.storage import ObjectStorage
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ def step1_path(cache_dir: str, document_id: int) -> str:
     return os.path.join(cache_dir, f"{document_id}_step_1_all.md")
 
 
-def ensure_raw_markdown(doc, cache_dir: str, verbose: bool = False) -> str | None:
+def ensure_raw_markdown(doc, cache_dir: str, verbose: bool = False, storage: ObjectStorage | None = None) -> str | None:
     """Zwróć surowy markdown strony, pobierając i konwertując HTML gdy trzeba.
 
     Czyta {id}_step_1_all.md z cache jeśli istnieje. W przeciwnym razie pobiera
@@ -38,7 +39,10 @@ def ensure_raw_markdown(doc, cache_dir: str, verbose: bool = False) -> str | Non
             return f.read()
 
     save_document_info(doc.id, doc, cache_dir)
-    markdown_text = prepare_markdown(doc.id, doc, cache_dir, verbose=verbose)
+    prepare_kwargs = {"verbose": verbose}
+    if storage is not None:
+        prepare_kwargs["storage"] = storage
+    markdown_text = prepare_markdown(doc.id, doc, cache_dir, **prepare_kwargs)
     if not markdown_text:
         return None
 
@@ -47,9 +51,15 @@ def ensure_raw_markdown(doc, cache_dir: str, verbose: bool = False) -> str | Non
     return markdown_text
 
 
-def extract_article(doc, cache_dir: str, verbose: bool = False, skip_llm: bool = False,
-                    arklabs_first: bool = False,
-                    operation: str = "article_extraction") -> tuple[str | None, str | None]:
+def extract_article(
+    doc,
+    cache_dir: str,
+    verbose: bool = False,
+    skip_llm: bool = False,
+    arklabs_first: bool = False,
+    operation: str = "article_extraction",
+    storage: ObjectStorage | None = None,
+) -> tuple[str | None, str | None]:
     """Surowy markdown + ekstrakcja artykułu przez LLM (CloudFerro/ARK Labs fallback).
 
     Zwraca (raw_markdown, extracted_article):
@@ -59,7 +69,7 @@ def extract_article(doc, cache_dir: str, verbose: bool = False, skip_llm: bool =
     """
     from library.article_extractor import process_article_with_llm_fallback
 
-    markdown_text = ensure_raw_markdown(doc, cache_dir, verbose=verbose)
+    markdown_text = ensure_raw_markdown(doc, cache_dir, verbose=verbose, storage=storage)
     if not markdown_text:
         return None, None
 
