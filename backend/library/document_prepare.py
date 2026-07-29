@@ -13,8 +13,8 @@ from markitdown import MarkItDown
 from html2markdown import convert
 import html2text
 
-from library.api.aws.s3_aws import s3_file_exist, s3_take_file
 from library.config_loader import load_config
+from library.storage import ObjectStorage, storage_from_config
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +23,12 @@ def calculate_reduction(html_size, markdown_size):
     return ((html_size - markdown_size) / html_size) * 100
 
 
-def prepare_markdown(document_id, doc, cache_dir, verbose: bool = False) -> str | None:
-    """Pobierz HTML z S3 i skonwertuj do markdown. Zwraca tekst markdown lub None."""
-    cfg = load_config()
-    s3_bucket = cfg.get("AWS_S3_WEBSITE_CONTENT")
+def prepare_markdown(
+    document_id, doc, cache_dir, verbose: bool = False, storage: ObjectStorage | None = None
+) -> str | None:
+    """Materialize HTML through ObjectStorage and convert it to markdown."""
+    if storage is None:
+        storage = storage_from_config(load_config())
 
     cache_file_html = os.path.join(cache_dir, f"{document_id}.html")
     cache_file_md = os.path.join(cache_dir, f"{document_id}.md")
@@ -46,15 +48,18 @@ def prepare_markdown(document_id, doc, cache_dir, verbose: bool = False) -> str 
             _log("Brak uuid — nie mogę pobrać HTML")
             return None
 
-        s3_key = f"{doc.uuid}.html"
-        _log("[1/3] Sprawdzam HTML w S3...")
-        if not s3_file_exist(s3_bucket, s3_key):
-            _log("HTML nie znaleziony w S3")
+        storage_key = f"{doc.uuid}.html"
+        _log("[1/3] Sprawdzam HTML w object storage...")
+        if not storage.exists(storage_key):
+            _log("HTML nie znaleziony w object storage")
             return None
 
-        _log(f"[2/3] Pobieram HTML z S3 ({s3_key[:40]}...)")
-        if not s3_take_file(s3_bucket, s3_key, cache_file_html):
-            _log("Nie udało się pobrać HTML z S3")
+        _log(f"[2/3] Pobieram HTML ({storage_key[:40]}...)")
+        try:
+            with open(cache_file_html, "wb") as handle:
+                handle.write(storage.get_bytes(storage_key))
+        except Exception:
+            _log("Nie udało się pobrać HTML z object storage")
             return None
     else:
         _log(f"[1/3] HTML w cache: {cache_file_html}")

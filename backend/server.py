@@ -6,7 +6,8 @@ from sqlalchemy import select
 from library.config_loader import load_config
 from library.db.engine import get_scoped_session
 from library.db.models import ContentGroup, TranscriptionLog, Document
-from library.document_service import DocumentService, ExistingDocumentError
+from library.document_service import DocumentService
+from library.document_ingest_service import DocumentIngestService, IngestRequest
 from library.search_service import SearchService
 from library.document_repository import DocumentRepository
 from library.website.website_paid import website_is_paid
@@ -227,20 +228,10 @@ def url_add():
         logging.info('Data received by API', extra={"body": url_data_print})
 
         session = get_scoped_session()
-        service = DocumentService(session)
-        operation = url_data.get("operation", "create")
-        if operation not in {"create", "fill_missing_html"}:
-            raise ValueError("Invalid operation")
-        if operation == "fill_missing_html":
-            doc = service.fill_missing_source_html(
+        result = DocumentIngestService(session).ingest(
+            IngestRequest(
                 url=url_data.get("url", ""),
-                html=url_data.get("html", ""),
-                text=url_data.get("text", ""),
-            )
-        else:
-            doc = service.create_document(
-                url=url_data.get("url", ""),
-                url_type=url_data.get("type", ""),
+                document_type=url_data.get("type", ""),
                 text=url_data.get("text", ""),
                 html=url_data.get("html", ""),
                 title=url_data.get("title", ""),
@@ -255,25 +246,27 @@ def url_add():
                 byline=url_data.get("byline", ""),
                 original_id=url_data.get("original_id"),
                 published_on=url_data.get("published_on"),
-            )
+                operation=url_data.get("operation", "create"),
+                external_uuid=url_data.get("external_uuid"),
+                ingested_at=url_data.get("ingested_at"),
+            ),
+            initiated_by_user_id=getattr(getattr(g, "auth", None), "user_id", None),
+        )
+        doc = session.get(Document, result.document_id)
         link_matching_feed_items_to_document(session, doc)
         session.commit()
+        if result.status == "already_exists":
+            return {
+                'status': 'already_exists',
+                'message': f'Document already exists with ID: {doc.id}',
+                'document_id': doc.id,
+                'missing_raw_html': result.missing_raw_html,
+            }, 409
         return {
             'status': 'success',
             'message': f'Successfully saved document with ID: {doc.id}',
             'document_id': doc.id
         }, 200
-
-    except ExistingDocumentError as e:
-        doc = e.document
-        link_matching_feed_items_to_document(session, doc)
-        session.commit()
-        return {
-            'status': 'already_exists',
-            'message': f'Document already exists with ID: {doc.id}',
-            'document_id': doc.id,
-            'missing_raw_html': not bool(doc.text_raw),
-        }, 409
     except ValueError as e:
         logging.error("Validation error in /url_add: %s", e)
         return {'status': 'error', 'message': 'Invalid request data'}, 400

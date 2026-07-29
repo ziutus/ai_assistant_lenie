@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("frontend", "app2", "backend", "worker", "db", "minio", "minio-init", "ner-service", "all")]
+    [ValidateSet("frontend", "app2", "backend", "worker", "document-worker", "db", "minio", "minio-init", "ner-service", "all")]
     [string[]]$Service = @("all"),
     [switch]$SkipBuild,
     [switch]$ComposeOnly,
@@ -24,6 +24,7 @@ $Definitions = @{
     app2          = @{ Image = "lenie-ai-app2:latest"; RegistryImage = "$Registry/lenie-ai-app2:latest"; Dockerfile = "web_interface_app2/Dockerfile"; Compose = "lenie-ai-app2" }
     backend       = @{ Image = "lenie-ai-server:latest"; RegistryImage = "$Registry/lenie-ai-server:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-ai-server" }
     worker        = @{ Image = "lenie-ai-server:latest"; RegistryImage = "$Registry/lenie-ai-server:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-worker" }
+    "document-worker" = @{ Image = "lenie-ai-document-worker:latest"; RegistryImage = "$Registry/lenie-ai-document-worker:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-document-worker"; BuildArgs = @("--build-arg", "UV_EXTRA_ARGS=--extra docker --extra markdown") }
     db            = @{ Image = "lenie-ai-db:latest"; RegistryImage = "$Registry/lenie-ai-db:latest"; Dockerfile = "infra/docker/Postgresql/Dockerfile"; Compose = "lenie-ai-db" }
     "ner-service" = @{ Image = "lenie-ner-service:latest"; RegistryImage = "$Registry/lenie-ner-service:latest"; Dockerfile = "ner_service/Dockerfile"; Compose = "lenie-ner-service" }
     minio         = @{ Compose = "lenie-minio" }
@@ -31,7 +32,7 @@ $Definitions = @{
 }
 
 if ($Service -contains "all") {
-    $Services = @("db", "backend", "worker", "frontend", "app2")
+    $Services = @("db", "backend", "worker", "document-worker", "frontend", "app2")
 } else {
     $Services = $Service
 }
@@ -105,7 +106,8 @@ if (-not $ComposeOnly) {
             $Def = $Definitions[$Name]
             if (-not $Def.Dockerfile) { continue }
             if (-not $SkipBuild) {
-                Invoke-Checked { docker build --progress=plain -t $Def.Image -f $Def.Dockerfile . } "Build $Name"
+                $BuildArgs = @($Def.BuildArgs)
+                Invoke-Checked { docker build @BuildArgs --progress=plain -t $Def.Image -f $Def.Dockerfile . } "Build $Name"
             }
             Publish-ImageToNasRegistry -Definition $Def -Name $Name
         }
@@ -118,7 +120,7 @@ $ComposeNames = @($Services | ForEach-Object { $Definitions[$_].Compose })
 foreach ($ComposeName in $ComposeNames) {
     Invoke-Checked { ssh "$NasUser@$NasHostName" "$NasDocker compose -f $NasComposeFile pull $ComposeName" } "Pull $ComposeName"
 }
-if ($Services -contains "backend" -or $Services -contains "worker") {
+if ($Services -contains "backend" -or $Services -contains "worker" -or $Services -contains "document-worker") {
     Invoke-Checked { ssh "$NasUser@$NasHostName" "$NasDocker compose -f $NasComposeFile run --rm lenie-migrate" } "Database migrations"
 }
 $NamesArgument = $ComposeNames -join " "

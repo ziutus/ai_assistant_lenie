@@ -57,9 +57,29 @@ services:
     image: 192.168.200.7:5005/lenie-ai-server:latest
     container_name: lenie-worker
     restart: unless-stopped
-    command: ["/app/.venv/bin/python", "worker.py"]
+    command: ["/app/.venv/bin/python", "worker.py", "--scheduler", "--types", "feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest"]
     env_file:
       - /share/ContainerNew/lenie-env/.env
+    networks:
+      - lenie-net
+    depends_on:
+      lenie-ai-db:
+        condition: service_healthy
+      lenie-minio:
+        condition: service_healthy
+
+  lenie-document-worker:
+    image: 192.168.200.7:5005/lenie-ai-document-worker:latest
+    container_name: lenie-document-worker
+    restart: unless-stopped
+    command: ["/app/.venv/bin/python", "worker.py", "--types", "document_prepare"]
+    env_file:
+      - /share/ContainerNew/lenie-env/.env
+    environment:
+      DOCUMENT_WORK_DIR: /app/work
+      WORKER_HEARTBEAT_PATH: /tmp/lenie-document-worker-heartbeat
+    volumes:
+      - lenie-document-work:/app/work
     networks:
       - lenie-net
     depends_on:
@@ -229,4 +249,6 @@ volumes:
   lenie-minio-data:
     external: true
   lenie-registry-data:
+    external: true
+  lenie-document-work:
     external: true

@@ -4,6 +4,17 @@ Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).
 
+## [1.0.41] - 2026-07-29
+### Poprawione
+- Błędy autoryzacji wskazują teraz, czy odrzucił je NAS czy AWS, oraz które pole klucza należy sprawdzić.
+
+## [1.0.40] - 2026-07-29
+### Dodane
+- W sieci lokalnej rozszerzenie preferuje NAS (`192.168.200.7:5055`), a poza nią używa AWS jako fallbacku.
+- Ustawienia przechowują osobno adres NAS i adres AWS.
+- Klucze uwierzytelniające NAS i AWS są przechowywane osobno.
+- Dodano uprawnienia hosta dla lokalnego API NAS i AWS API Gateway.
+
 ## [1.0.38] - 2026-07-28
 ### Zmienione
 - Diagnostyka została przeniesiona do osobnej zakładki popupu.

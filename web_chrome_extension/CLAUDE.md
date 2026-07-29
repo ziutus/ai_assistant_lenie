@@ -39,7 +39,7 @@ Two-tab interface (~500px wide):
 | Tab | Content |
 |-----|---------|
 | **Dodaj** (Add) | Form: title, description, note, type, source, paywall, language, chapter list, Send button |
-| **Ustawienia** (Settings) | API key (password field with visibility toggle), server URL |
+| **Ustawienia** (Settings) | Separate NAS/AWS API keys (password fields with visibility toggle), NAS URL, AWS URL |
 
 ## API Communication
 
@@ -71,7 +71,7 @@ The endpoint corresponds to `/url_add` in `backend/server.py` (Docker/K8s) or th
 
 ### Error Handling
 
-- Validates API key and server URL are not empty before sending
+- Validates that at least one endpoint has both a URL and its API key before sending
 - Shows alert with HTTP status and error message on failure
 - Button disabled with "Wysyłam..." (Sending...) text during request
 - Popup auto-closes 500ms after successful submission
@@ -80,7 +80,7 @@ The endpoint corresponds to `/url_add` in `backend/server.py` (Docker/K8s) or th
 
 | Permission | Reason |
 |------------|--------|
-| `storage` | Persist API key and server URL in `chrome.storage.sync` |
+| `storage` | Persist NAS/AWS API keys and server URLs in `chrome.storage.sync` |
 | `activeTab` | Access the currently viewed tab |
 | `tabs` | Query tab URL and title |
 | `scripting` | Inject content extraction scripts into pages |
@@ -90,8 +90,10 @@ CSP: `script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'self'`
 ## Storage
 
 Uses `chrome.storage.sync` (encrypted by Chrome, synced across profiles):
-- `apiKey` — API authentication key
-- `serverUrl` — backend endpoint URL (full `/url_add` URL; the `/sources` calls derive the base from it)
+- `nasApiKey` — NAS API authentication key
+- `awsApiKey` — AWS API authentication key
+- `localServerUrl` — NAS endpoint URL (full `/url_add` URL)
+- `serverUrl` — AWS endpoint URL (full `/url_add` URL; legacy setting name retained)
 - `lastSource` — last selected source (restored on popup open)
 
 Uses `chrome.storage.local`:

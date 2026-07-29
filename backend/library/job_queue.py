@@ -5,7 +5,15 @@ import uuid
 from sqlalchemy import select, update
 from library.db.models import Job
 
-JOB_TYPES = {"feed_check", "feed_check_all", "feed_auto_import", "feed_daily", "content_group_suggest"}
+JOB_TYPES = {
+    "feed_check",
+    "feed_check_all",
+    "feed_auto_import",
+    "feed_daily",
+    "content_group_suggest",
+    "document_prepare",
+    "legacy_aws_pull",
+}
 
 
 def enqueue(
@@ -34,10 +42,20 @@ def enqueue(
     return job
 
 
-def claim(session) -> Job | None:
+def claim(session, allowed_types: set[str] | list[str] | tuple[str, ...]) -> Job | None:
+    allowed_types = set(allowed_types or ())
+    if not allowed_types:
+        raise ValueError("allowed_types must not be empty")
+    unsupported = allowed_types - JOB_TYPES
+    if unsupported:
+        raise ValueError(f"unsupported job types: {sorted(unsupported)}")
     row = session.execute(
         select(Job)
-        .where(Job.status == "queued", Job.available_at <= dt.datetime.now(dt.timezone.utc))
+        .where(
+            Job.status == "queued",
+            Job.type.in_(allowed_types),
+            Job.available_at <= dt.datetime.now(dt.timezone.utc),
+        )
         .order_by(Job.created_at)
         .with_for_update(skip_locked=True)
         .limit(1)
