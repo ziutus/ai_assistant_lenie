@@ -4,6 +4,10 @@ Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).
 
+## [1.0.42] - 2026-07-29
+### Poprawione
+- Identyfikator `external_uuid` jest generowany wyłącznie kryptograficznie bez fallbacku `Math.random()`.
+
 ## [1.0.41] - 2026-07-29
 ### Poprawione
 - Błędy autoryzacji wskazują teraz, czy odrzucił je NAS czy AWS, oraz które pole klucza należy sprawdzić.
