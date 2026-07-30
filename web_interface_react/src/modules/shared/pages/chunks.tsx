@@ -2025,6 +2025,9 @@ const Chunks = () => {
 
   return (
     <div className={selectedRun !== null ? "chunks-page chunks-page--with-flow" : "chunks-page"}>
+      <NavLink to={`/entities/${id}`} style={{ float: "right", fontSize: "0.85em", color: "#0369a1" }}>
+        Encje (NER)
+      </NavLink>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 6, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>
           Przegląd chunków — {docTitle || `dokument #${id}`}
