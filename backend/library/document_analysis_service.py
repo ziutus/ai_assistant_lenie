@@ -30,9 +30,19 @@ ANALYSIS_MODES = ("transcript", "article")
 SYNTHESIS_MAX_TOKENS = 2_000
 SYNTHESIS_MAX_INPUT_CHARS = 20_000
 # Chunk LLM calls are independent (see create_run's _analyze_one) and safe to
-# run concurrently; kept conservative pending a live check of CloudFerro
-# Sherlock's per-key concurrency limit.
-CHUNK_ANALYSIS_MAX_WORKERS = 19
+# run concurrently. Also caps book/article runs (hundreds of chunks) from
+# firing them all at once — actual concurrency is min(this, chunk_count), so
+# a typical video (10-25 chunks) runs nearly all of them in one wave while a
+# book never exceeds this many in flight.
+#
+# Live-tested on a 19-chunk video (2026-07-30, doc 9356/9353 investigation):
+# 1 worker -> 338.7s stage time, 17.8s avg/call, 0 errors
+# 4 workers -> 100.7s, 19.8s avg/call, 0 errors
+# 19 workers -> 33.7s, 31.7s avg/call (+78% vs baseline), 0 errors — no hard
+#   rate limit hit, but per-call latency degrades noticeably (soft ceiling,
+#   likely queuing/GPU contention on CloudFerro's side). Settled below that
+#   tested-safe point rather than extrapolating further untested.
+CHUNK_ANALYSIS_MAX_WORKERS = 16
 _SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT|ZRODLA|SZUM): ?(.+)$', re.MULTILINE)
 
 # Run statuses that mean review never finished — once a newer run of the same
