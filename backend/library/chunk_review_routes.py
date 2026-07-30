@@ -265,6 +265,23 @@ def _start_embedding_job(run_id: int) -> str:
                 _embedding_jobs[job_id]["progress"] = msg
 
             result = generate_embeddings_from_run(job_session, run_id, progress_fn=_progress)
+            # Transcript runs reach this point after human review, without the
+            # article-only enrich_document pass. Populate the reader metadata
+            # now, reusing the explicit NER result instead of running NER twice.
+            run = job_session.get(DocumentAnalysisRun, run_id)
+            document = job_session.get(Document, run.document_id) if run else None
+            if result["embeddings_created"] and document and document.enrichment_run_at is None:
+                _progress("Wzbogacanie osi czasu, okresu i tonu dokumentu...")
+                from library.document_enrichment import refresh_document_enrichment
+
+                enrichment = refresh_document_enrichment(
+                    job_session,
+                    document,
+                    run.model,
+                    progress_fn=_progress,
+                    reuse_existing_entities=True,
+                )
+                result["enrichment_errors"] = enrichment.get("errors", {})
             _embedding_jobs[job_id].update({
                 "status": "done", "result": result,
                 "progress": f"Gotowe: {result['embeddings_created']} embeddingów "
