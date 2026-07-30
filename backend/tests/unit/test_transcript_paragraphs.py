@@ -2,7 +2,7 @@
 
 import json
 
-from library.transcript_paragraphs import paragraphize_transcript
+from library.transcript_paragraphs import paragraphize_chunk_text, paragraphize_transcript
 
 
 TEXT = """## Rozdział pierwszy
@@ -47,3 +47,29 @@ def test_paragraphize_rejects_text_without_chapters():
         assert "no Markdown chapter headings" in str(exc)
     else:
         raise AssertionError("Expected paragraphization to require chapter headings")
+
+
+CHUNK_TEXT = (
+    "To jest pierwsze zdanie o ważnym zagadnieniu. Drugie zdanie rozwija ten sam temat. "
+    "Trzecie zdanie zamyka pierwszą myśl. Czwarte zdanie zaczyna zupełnie inny temat. "
+    "Piąte zdanie go objaśnia wystarczająco długo, aby przekroczyć minimalny próg wywołania modelu."
+)
+
+
+def test_paragraphize_chunk_text_works_without_chapter_headings(monkeypatch):
+    calls = []
+
+    def fake_ai_ask(prompt, **kwargs):
+        calls.append(kwargs)
+        return Response()
+
+    monkeypatch.setattr("library.ai.ai_ask", fake_ai_ask)
+
+    result = paragraphize_chunk_text(CHUNK_TEXT, document_id=9353, analysis_run_id=163)
+
+    assert result.model_calls == 1
+    assert result.paragraph_count == 2
+    assert "pierwszą myśl.\n\nCzwarte zdanie" in result.text
+    assert calls[0]["document_id"] == 9353
+    assert calls[0]["analysis_run_id"] == 163
+    assert calls[0]["operation"] == "transcript_paragraphization"
