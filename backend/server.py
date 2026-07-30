@@ -126,6 +126,11 @@ def request_too_large(_error):
 @app.route('/upload-file', methods=['POST', 'OPTIONS'])
 def upload_file():
     """Put a PDF/EPUB/MOBI into the durable, importer-facing upload area."""
+    # Browsers send a CORS preflight because the actual upload carries the
+    # custom x-api-key header. Do not fall through to request.files here: that
+    # made the preflight return 400, so the browser never issued the POST.
+    if request.method == 'OPTIONS':
+        return '', 204
     uploaded = request.files.get("file")
     if uploaded is None:
         return jsonify(error="multipart field 'file' is required"), 400
