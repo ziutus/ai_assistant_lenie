@@ -92,7 +92,7 @@ const LlmCosts = () => {
       <table style={tableStyle}><thead><tr><th style={th}>Dokument</th><th style={th}>Koszt</th><th style={th}>Wywołania</th><th style={th}>Tokeny</th><th style={th}>Wycena</th></tr></thead><tbody>
         {report.documents.map((r, i) => <tr key={`${r.document_id ?? "none"}-${r.currency}-${i}`}>
           <td style={td}>{r.document_id != null
-            ? <NavLink to={`/chunks/${r.document_id}`}>#{r.document_id} — {r.title || "bez tytułu"}</NavLink>
+            ? <NavLink to={`/llm-costs?document_id=${r.document_id}`}>#{r.document_id} — {r.title || "bez tytułu"}</NavLink>
             : <span style={{ color: "#64748b" }}>Nieprzypisane (starsze lub globalne wywołania)</span>}</td>
           <td style={td}>{money(r.cost, r.currency)}</td><td style={td}>{r.calls}</td><td style={td}>{r.tokens.toLocaleString("pl")}</td>
           <td style={td}>{r.unknown_calls ? <span style={{ color: "#b45309" }}>{r.unknown_calls} bez ceny</span> : "pełna"}</td>
