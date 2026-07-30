@@ -103,7 +103,7 @@ After `uv sync`, the project is installed as an editable package and Python reso
 ```bash
 cd backend
 Feed monitoring is operated through the REST API and Web UI (`/feeds`, `/feed-review`, `/jobs`).
-./imports/dynamodb_sync.py --since 2026-02-20 --dry-run
+./imports/dynamodb_sync.py --since 2026-02-20T00:00:00Z --dry-run
 ```
 
 ### WSL not required

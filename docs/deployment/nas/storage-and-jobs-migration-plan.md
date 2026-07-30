@@ -383,6 +383,20 @@ Lenie ma dziś działać dla kilku zaufanych osób (rodzina/znajomi), nie tylko 
 
 Skalowanie do usługi komercyjnej dla wielu, niezaufanych wobec siebie użytkowników (on-prem, chmura albo hybrydowo) to osobny, czysto edukacyjny eksperyment myślowy — patrz [commercial-multi-tenant-scaling-experiment.md](../commercial-multi-tenant-scaling-experiment.md). Jedyna rzecz stamtąd wartą zrobienia już teraz, bo jest tania: nadanie opcjonalnego właściciela (`initiated_by_user_id`) rekordom jobów, żeby uniknąć kosztownej migracji danych, gdyby taka decyzja kiedyś zapadła — opisane w [multi-user-household.md](multi-user-household.md).
 
+## PR4 — scheduler i panel Jobów (2026-07-29)
+
+Scheduler `legacy_aws_pull` jest zaimplementowany, ale pozostaje domyślnie
+wyłączony (`AWS_LEGACY_PULL_ENABLED=false`). Po jawnym włączeniu tworzy najwyżej
+jeden job na kubełek UTC określony przez `AWS_LEGACY_PULL_INTERVAL_MINUTES`.
+Aktywny job (`queued`, `running` albo `cancel_requested`) blokuje kolejne
+zlecenie. Panel Jobów pokazuje czasy, pełny wynik bridge'a i watermark.
+
+Akcje retry/cancel oraz ręczne zlecenie bridge'a są dostępne w panelu wyłącznie,
+gdy API potwierdziło autoryzację service. Dla klucza user panel pozostaje tylko
+do odczytu; ręczne wywołanie bridge'a jest wtedy możliwe przez API service.
+Włączenie flagi, wdrożenie i wyłączenie lokalnych schedulerów pozostają osobną
+decyzją operatorską.
+
 ## 16. Dostawcy i implementacje zgodne z S3
 
 Warstwa aplikacyjna nie powinna być związana z MinIO ani AWS. Dostawca ma być wybierany przez konfigurację endpointu, poświadczeń i niewielkiego zestawu opcji zgodności.

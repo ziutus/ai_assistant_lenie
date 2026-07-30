@@ -3,7 +3,7 @@
 import datetime as dt
 from zoneinfo import ZoneInfo
 from flask import Blueprint, abort, g, jsonify, request
-from sqlalchemy import select, case, func, and_
+from sqlalchemy import select, case, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from library.db.engine import get_scoped_session
@@ -17,10 +17,10 @@ from library.content_group_service import (
     update_group,
 )
 from library.content_group_suggestion_service import decide_suggestion, request_suggestions
-from library.db.models import ContentGroupSuggestion, ContentGroupSuggestionRun
+from library.db.models import ContentGroupSuggestionRun
 from library.feed_source_service import list_feeds, feed_to_dict, resolve_references
 from library.feed_monitor_service import transition_item, save_review_note, import_feed_item, ignore_feed_item, record_review_decision, new_review_batch_id
-from library.job_queue import enqueue, retry, cancel
+from library.job_queue import JOB_TYPES, enqueue, retry, cancel
 
 bp = Blueprint("feeds", __name__)
 
@@ -34,6 +34,44 @@ def _user():
 def _service():
     if getattr(g, "auth", None) is None or g.auth.kind != "service":
         abort(403, "service API key required")
+
+
+def _job_viewer() -> bool:
+    if getattr(g, "auth", None) is None or g.auth.kind not in {"user", "service"}:
+        abort(403, "user or service API key required")
+    return g.auth.kind == "service"
+
+
+def _job_capabilities() -> dict[str, bool]:
+    """Return permitted job actions for the authenticated principal."""
+    can_manage = _job_viewer()
+    return {
+        "manage_jobs": can_manage,
+        "run_legacy_aws_pull": can_manage or g.auth.kind == "user",
+    }
+
+
+def _timestamp(value):
+    return value.isoformat() if value else None
+
+
+def _job_dict(job: Job):
+    result = job.result or {}
+    return {
+        "id": job.id,
+        "type": job.type,
+        "status": job.status,
+        "parameters": job.parameters,
+        "progress": job.progress,
+        "result": job.result,
+        "error": job.error,
+        "attempt": job.attempt,
+        "max_attempts": job.max_attempts,
+        "created_at": _timestamp(job.created_at),
+        "started_at": _timestamp(job.started_at),
+        "finished_at": _timestamp(job.finished_at),
+        "watermark": result.get("watermark") if isinstance(result, dict) else None,
+    }
 
 
 def _item_dict(item):
@@ -597,68 +635,86 @@ def note_item(item_id):
 
 @bp.get("/jobs")
 def get_jobs():
-    _user()
+    capabilities = _job_capabilities()
     session = get_scoped_session()
+    try:
+        limit = min(max(int(request.args.get("limit", 50)), 1), 200)
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except ValueError:
+        abort(400, "limit and offset must be integers")
+    job_type = request.args.get("type") or None
+    status = request.args.get("status") or None
+    if job_type is not None and job_type not in JOB_TYPES:
+        abort(400, "unsupported job type")
+    allowed_statuses = {"queued", "running", "done", "failed", "cancel_requested", "cancelled"}
+    if status is not None and status not in allowed_statuses:
+        abort(400, "unsupported job status")
+    query = select(Job)
+    if job_type is not None:
+        query = query.where(Job.type == job_type)
+    if status is not None:
+        query = query.where(Job.status == status)
+    total = session.scalar(select(func.count()).select_from(query.subquery()))
+    rows = session.scalars(query.order_by(Job.created_at.desc()).offset(offset).limit(limit)).all()
     return jsonify(
         {
-            "jobs": [
-                {
-                    "id": x.id,
-                    "type": x.type,
-                    "status": x.status,
-                    "parameters": x.parameters,
-                    "progress": x.progress,
-                    "result": x.result,
-                    "error": x.error,
-                    "attempt": x.attempt,
-                }
-                for x in session.scalars(select(Job).order_by(Job.created_at.desc()).limit(200)).all()
-            ]
+            "jobs": [_job_dict(x) for x in rows],
+            "capabilities": capabilities,
+            "limit": limit,
+            "offset": offset,
+            "total": total,
+            "filters": {"type": job_type, "status": status},
         }
     )
 
 
 @bp.get("/jobs/<job_id>")
 def get_job(job_id):
-    _user()
+    _job_viewer()
     job = get_scoped_session().get(Job, job_id)
     if job is None:
         abort(404)
-    return jsonify(
-        {
-            "id": job.id,
-            "type": job.type,
-            "status": job.status,
-            "parameters": job.parameters,
-            "progress": job.progress,
-            "result": job.result,
-            "error": job.error,
-            "attempt": job.attempt,
-            "max_attempts": job.max_attempts,
-        }
-    )
+    return jsonify(_job_dict(job))
 
 
 @bp.post("/jobs")
 def create_job():
-    _service()
+    _job_viewer()
     session = get_scoped_session()
     body = request.get_json(silent=True) or {}
     typ = body.get("type")
     parameters = body.get("parameters") or {}
     if not isinstance(parameters, dict):
         abort(400, "parameters must be an object")
+    if g.auth.kind == "user" and typ != "legacy_aws_pull":
+        abort(403, "user API keys may create only legacy_aws_pull jobs")
     if typ in {"feed_check", "feed_auto_import"}:
         if set(parameters) != {"feed_source_id"} or not isinstance(parameters.get("feed_source_id"), int):
             abort(400, "this job requires only integer feed_source_id")
     elif typ in {"feed_check_all", "feed_daily"} and parameters:
         abort(400, "this job type does not accept parameters")
+    elif typ == "legacy_aws_pull":
+        allowed = {"since", "dry_run", "limit"}
+        if set(parameters) - allowed:
+            abort(400, "unsupported legacy_aws_pull parameter")
+        if "since" in parameters and parameters["since"] is not None and not isinstance(parameters["since"], str):
+            abort(400, "since must be null or an ISO-8601 timestamp")
+        if "dry_run" in parameters and not isinstance(parameters["dry_run"], bool):
+            abort(400, "dry_run must be boolean")
+        if "limit" in parameters and (not isinstance(parameters["limit"], int) or isinstance(parameters["limit"], bool) or not 0 <= parameters["limit"] <= 1000):
+            abort(400, "limit must be an integer from 0 to 1000")
     if typ == "feed_daily":
         key = f"feed_daily:{dt.datetime.now(dt.timezone.utc).astimezone(ZoneInfo('Europe/Warsaw')).date().isoformat()}"
     else:
         key = None
     try:
-        job = enqueue(session, typ, parameters, idempotency_key=key)
+        job = enqueue(
+            session,
+            typ,
+            parameters,
+            idempotency_key=key,
+            user_id=g.auth.user_id if g.auth.kind == "user" else None,
+        )
     except ValueError as exc:
         abort(400, str(exc))
     return jsonify({"id": job.id, "status": job.status}), 202

@@ -345,20 +345,20 @@ watermarku.
 Tymczasowy bridge nie używa SSM do odkrywania zasobów. Nazwy zapisać w Vault:
 
 ```text
-LEGACY_AWS_DYNAMODB_TABLE
-LEGACY_AWS_S3_BUCKET
-LEGACY_AWS_SYNC_ENABLED
-LEGACY_AWS_SYNC_INTERVAL_MINUTES
-LEGACY_AWS_SYNC_OVERLAP_SECONDS
+AWS_LEGACY_PULL_DYNAMODB_TABLE
+AWS_LEGACY_PULL_S3_BUCKET
+AWS_LEGACY_PULL_ENABLED
+AWS_LEGACY_PULL_INTERVAL_MINUTES
+AWS_LEGACY_PULL_OVERLAP_SECONDS
 ```
 
 Poświadczenia AWS:
 
 ```text
-AWS_ACCESS_KEY_ID
-AWS_SECRET_ACCESS_KEY
-AWS_SESSION_TOKEN  # opcjonalny
-AWS_REGION
+AWS_LEGACY_PULL_ACCESS_KEY_ID
+AWS_LEGACY_PULL_SECRET_ACCESS_KEY
+AWS_LEGACY_PULL_SESSION_TOKEN  # opcjonalny
+AWS_LEGACY_PULL_REGION
 AWS_ACCOUNT_ID     # opcjonalna kontrola konta
 ```
 
@@ -635,9 +635,9 @@ Zmień:
 
 ### Kroki
 
-1. Scheduler tworzy `legacy_aws_pull` tylko przy `LEGACY_AWS_SYNC_ENABLED=true`.
+1. Scheduler tworzy `legacy_aws_pull` tylko przy `AWS_LEGACY_PULL_ENABLED=true`.
 2. Domyślną wartością jest `false`.
-3. Interwał pobierać z `LEGACY_AWS_SYNC_INTERVAL_MINUTES`.
+3. Interwał pobierać z `AWS_LEGACY_PULL_INTERVAL_MINUTES`.
 4. Idempotency key generować z przedziału UTC.
 5. Nie tworzyć nowego joba, gdy istnieje `queued`, `running` albo
    `cancel_requested` tego samego typu.
@@ -688,7 +688,7 @@ bez jawnej zgody operatora.
 
 ### Rollback
 
-1. Ustawić `LEGACY_AWS_SYNC_ENABLED=false`.
+1. Ustawić `AWS_LEGACY_PULL_ENABLED=false`.
 2. Zatrzymać `lenie-cloud-bridge`.
 3. Nie usuwać danych z PostgreSQL ani MinIO.
 4. W razie konieczności uruchomić cienki wrapper lokalnie z jawnym `since`.
@@ -743,7 +743,7 @@ Wszystkie muszą być spełnione:
 - `backend/library/feed_routes.py` — usunąć możliwość wywołania;
 - `infra/docker/compose.nas.yaml` — usunąć `lenie-cloud-bridge`;
 - skrypty deploy — usunąć tę usługę;
-- `scripts/vars-classification.yaml` — oznaczyć/usunąć zmienne `LEGACY_AWS_*`;
+- `scripts/vars-classification.yaml` — oznaczyć/usunąć zmienne `AWS_LEGACY_PULL_*`;
 - Vault — usunięcie sekretów jest osobną operacją wymagającą zgody;
 - dokumentacja importów i deploymentu;
 - README-y wskazujące `dynamodb_sync.py` jako aktywną ścieżkę;

@@ -91,7 +91,11 @@ class DocumentService:
 
         storage = self._get_storage()
 
-        doc_uuid = None
+        # An external UUID is the import idempotency key for every document
+        # type, not just webpages.  Social posts do not use object storage,
+        # but must still retain the legacy UUID so a later bridge run finds
+        # the local record before attempting S3.
+        doc_uuid = external_uuid
 
         if url_type == "webpage":
             uid = external_uuid or str(uuid.uuid4())
@@ -132,7 +136,8 @@ class DocumentService:
         doc.chapter_list = chapter_list
         if ingested_at is not None:
             doc.ingested_at = ingested_at
-        doc.uuid = doc_uuid
+        if doc_uuid is not None:
+            doc.uuid = doc_uuid
         if url_type == "webpage":
             doc.text_raw = html or None
         doc.set_processing_status("URL_ADDED")

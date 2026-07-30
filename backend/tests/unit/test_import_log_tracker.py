@@ -194,3 +194,14 @@ class TestImportLogTracker:
 
         assert tracker.log.since_date == date(2026, 3, 1)
         assert tracker.log.until_date == date(2026, 3, 29)
+
+    @patch("library.import_log_tracker.get_session")
+    def test_mark_partial_is_not_a_success_watermark(self, mock_get_session):
+        session = _mock_get_session()
+        mock_get_session.return_value = session
+
+        with ImportLogTracker("bridge") as tracker:
+            tracker.mark_partial("diagnostic limit")
+
+        assert tracker.log.status == "partial"
+        assert tracker.log.notes == "diagnostic limit"

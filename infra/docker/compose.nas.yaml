@@ -88,6 +88,23 @@ services:
       lenie-minio:
         condition: service_healthy
 
+  lenie-cloud-bridge:
+    image: 192.168.200.7:5005/lenie-ai-server:latest
+    container_name: lenie-cloud-bridge
+    restart: unless-stopped
+    command: ["/app/.venv/bin/python", "worker.py", "--types", "legacy_aws_pull"]
+    env_file:
+      - /share/ContainerNew/lenie-env/.env
+    environment:
+      WORKER_HEARTBEAT_PATH: /tmp/lenie-cloud-bridge-heartbeat
+    networks:
+      - lenie-net
+    depends_on:
+      lenie-ai-db:
+        condition: service_healthy
+      lenie-minio:
+        condition: service_healthy
+
   lenie-migrate:
     image: 192.168.200.7:5005/lenie-ai-server:latest
     container_name: lenie-migrate

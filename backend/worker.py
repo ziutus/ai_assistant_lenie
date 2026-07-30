@@ -10,7 +10,7 @@ from sqlalchemy import text, select
 from library.db.engine import get_session
 from library.db.models import Job
 from library.feed_monitor_service import run_check
-from library.job_queue import claim, finish, heartbeat, recover_stale, enqueue
+from library.job_queue import claim, finish, heartbeat, recover_stale, enqueue, retry
 from library.job_queue import JOB_TYPES
 
 logger = logging.getLogger("lenie.worker")
@@ -47,7 +47,26 @@ def execute(session, job: Job, *, storage=None, work_dir: str = "/app/work") -> 
         from library.document_processing_service import execute_document_prepare
 
         return execute_document_prepare(session, job, storage, work_dir)
+    if job.type == "legacy_aws_pull":
+        from library.config_loader import load_config
+        from library.legacy_aws_pull_service import LegacyAwsPullService
+        from library.storage import storage_from_config
+
+        cfg = load_config()
+        return LegacyAwsPullService(session, storage or storage_from_config(cfg), cfg).run(job.parameters)
     raise ValueError("unsupported job")
+
+
+def handle_job_failure(session, job: Job, exc: Exception) -> None:
+    """Record a failed attempt before scheduling its retry."""
+    error = str(exc)[:2000]
+    if job.attempt < job.max_attempts:
+        # retry() deliberately accepts only a failed job.  Without this
+        # transition a partial bridge error left the job stuck as running.
+        finish(session, job, "failed", error=error)
+        retry(session, job)
+    else:
+        finish(session, job, "failed", error=error)
 
 
 def scheduler(session, now: dt.datetime) -> None:
@@ -56,6 +75,36 @@ def scheduler(session, now: dt.datetime) -> None:
     hour, minute = map(int, target.split(":", 1))
     if (local.hour, local.minute) >= (hour, minute):
         enqueue(session, "feed_daily", idempotency_key=f"feed_daily:{local.date().isoformat()}")
+    _schedule_legacy_aws_pull(session, now)
+
+
+def _schedule_legacy_aws_pull(session, now: dt.datetime) -> None:
+    """Create at most one bridge job per UTC interval when explicitly enabled."""
+    if os.getenv("AWS_LEGACY_PULL_ENABLED", "false").strip().lower() != "true":
+        return
+    try:
+        interval_minutes = int(os.getenv("AWS_LEGACY_PULL_INTERVAL_MINUTES", "15"))
+    except ValueError as exc:
+        raise ValueError("AWS_LEGACY_PULL_INTERVAL_MINUTES must be a positive integer") from exc
+    if interval_minutes <= 0:
+        raise ValueError("AWS_LEGACY_PULL_INTERVAL_MINUTES must be a positive integer")
+
+    utc_now = now.astimezone(dt.timezone.utc)
+    bucket_minute = utc_now.minute - (utc_now.minute % interval_minutes)
+    bucket = utc_now.replace(minute=bucket_minute, second=0, microsecond=0)
+    active = session.scalar(
+        select(Job.id).where(
+            Job.type == "legacy_aws_pull",
+            Job.status.in_(("queued", "running", "cancel_requested")),
+        ).limit(1)
+    )
+    if active is not None:
+        return
+    enqueue(
+        session,
+        "legacy_aws_pull",
+        idempotency_key=f"legacy_aws_pull:{bucket.strftime('%Y-%m-%dT%H:%MZ')}",
+    )
 
 
 def main() -> int:
@@ -125,12 +174,7 @@ def main() -> int:
                 finish(session, job, "cancelled", error=str(exc))
                 continue
             logger.exception("job failed id=%s", job.id)
-            if job.attempt < job.max_attempts:
-                from library.job_queue import retry
-
-                retry(session, job)
-            else:
-                finish(session, job, "failed", error=str(exc)[:2000])
+            handle_job_failure(session, job, exc)
         logger.info("job end id=%s elapsed=%.2fs", job.id, time.monotonic() - started)
 
 

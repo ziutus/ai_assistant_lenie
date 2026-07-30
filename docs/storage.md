@@ -90,4 +90,4 @@ On the NAS, this migration step turned out to be a no-op: `lenie-ai-data` (mount
 
 ## Cache boundary
 
-Source `.html/.txt` files are durable objects. Pipeline files under `CACHE_DIR` are a NAS-local worker scratch space because converters and LLM tools require paths. `dynamodb_sync.py` mirrors its cache to `cache/markdown/` in MinIO/S3 after processing. Other legacy pipelines must adopt the same materialize/process/sync lifecycle before desktop schedules can be retired.
+Source `.html/.txt` files are durable objects. Pipeline files under `CACHE_DIR` are a NAS-local worker scratch space because converters and LLM tools require paths. The temporary `legacy_aws_pull` bridge reads DynamoDB/S3 only to feed `DocumentIngestService`; it writes raw sources to MinIO and queues `document_prepare`. It never performs markdown conversion or LLM extraction itself. Other legacy pipelines must adopt the same materialize/process/sync lifecycle before desktop schedules can be retired.

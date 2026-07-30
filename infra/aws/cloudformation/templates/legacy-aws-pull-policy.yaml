@@ -1,0 +1,46 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Read-only IAM managed policy for the temporary NAS legacy_aws_pull bridge.
+  This stack deliberately creates no IAM user or access key.
+
+Parameters:
+  ProjectCode:
+    Type: String
+    Default: lenie
+    Description: Project prefix used by the legacy DynamoDB table and S3 bucket.
+  Environment:
+    Type: String
+    Default: dev
+    Description: Legacy AWS environment name.
+
+Resources:
+  LegacyAwsPullManagedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub '${ProjectCode}-${Environment}-legacy-aws-pull'
+      Description: Read-only pull of legacy Lenie documents from DynamoDB and S3 for NAS.
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: QueryLegacyDocumentsByDate
+            Effect: Allow
+            Action: dynamodb:Query
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectCode}_${Environment}_documents'
+              - !Sub 'arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectCode}_${Environment}_documents/index/DateIndex'
+          - Sid: ReadLegacySourceObjects
+            Effect: Allow
+            Action: s3:GetObject
+            Resource: !Sub 'arn:${AWS::Partition}:s3:::${ProjectCode}-${Environment}-website-content/*'
+          # S3 returns AccessDenied rather than NoSuchKey for a missing object
+          # unless ListBucket is allowed. This distinguishes missing legacy
+          # raw source from a genuine access failure.
+          - Sid: DistinguishMissingLegacySourceObjects
+            Effect: Allow
+            Action: s3:ListBucket
+            Resource: !Sub 'arn:${AWS::Partition}:s3:::${ProjectCode}-${Environment}-website-content'
+
+Outputs:
+  ManagedPolicyArn:
+    Description: Attach this managed policy to the dedicated NAS bridge IAM user.
+    Value: !Ref LegacyAwsPullManagedPolicy

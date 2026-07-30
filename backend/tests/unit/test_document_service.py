@@ -168,6 +168,7 @@ class TestCreateDocument:
                 url="https://www.facebook.com/page/posts/pfbid123",
                 url_type="social_media_post",
                 text="Gra w lewary",
+                external_uuid="legacy-social-uuid",
                 byline="Frontiersman",
                 social_platform="facebook",
                 original_id="pfbid123",
@@ -179,6 +180,7 @@ class TestCreateDocument:
         assert doc.byline == "Frontiersman"
         assert doc.social_platform == "facebook"
         assert doc.original_id == "pfbid123"
+        assert doc.uuid == "legacy-social-uuid"
         assert doc.requires_login is True
         mock_store.assert_not_called()
 

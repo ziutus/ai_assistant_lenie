@@ -393,6 +393,60 @@ groups:
   integrations:
     description: "Third-party service API keys and endpoints"
     variables:
+      AWS_LEGACY_PULL_DYNAMODB_TABLE:
+        description: "Legacy AWS DynamoDB table consumed by the temporary NAS bridge"
+        type: config
+        required: false
+        used_by: [docker]
+      AWS_LEGACY_PULL_S3_BUCKET:
+        description: "Legacy AWS S3 source bucket consumed by the temporary NAS bridge"
+        type: config
+        required: false
+        used_by: [docker]
+      AWS_LEGACY_PULL_ENABLED:
+        description: "Explicit scheduler switch for the temporary NAS legacy-AWS bridge"
+        type: config
+        required: false
+        default: "false"
+        used_by: [docker]
+      AWS_LEGACY_PULL_INTERVAL_MINUTES:
+        description: "UTC scheduler interval for the temporary NAS legacy-AWS bridge"
+        type: config
+        required: false
+        default: "15"
+        used_by: [docker]
+      AWS_LEGACY_PULL_OVERLAP_SECONDS:
+        description: "Overlap applied before the bridge watermark when querying DynamoDB"
+        type: config
+        required: false
+        default: "300"
+        used_by: [docker]
+      AWS_LEGACY_PULL_ACCESS_KEY_ID:
+        description: "AWS access key ID for the dedicated legacy NAS bridge IAM user"
+        type: secret
+        required: false
+        used_by: [docker]
+      AWS_LEGACY_PULL_SECRET_ACCESS_KEY:
+        description: "AWS secret access key for the dedicated legacy NAS bridge IAM user"
+        type: secret
+        required: false
+        used_by: [docker]
+      AWS_LEGACY_PULL_SESSION_TOKEN:
+        description: "Optional temporary AWS session token for the legacy NAS bridge"
+        type: secret
+        required: false
+        used_by: [docker]
+      AWS_LEGACY_PULL_REGION:
+        description: "AWS region of the legacy DynamoDB and S3 source buffer"
+        type: config
+        required: false
+        default: "us-east-1"
+        used_by: [docker]
+      AWS_LEGACY_PULL_ACCOUNT_ID:
+        description: "Optional expected AWS account ID for legacy bridge operational verification"
+        type: config
+        required: false
+        used_by: [docker]
       ASSEMBLYAI:
         description: "AssemblyAI API key for speech-to-text ($0.12/hour)"
         type: secret

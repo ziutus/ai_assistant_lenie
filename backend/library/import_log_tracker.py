@@ -29,6 +29,7 @@ class ImportLogTracker:
             script_name=script_name,
             parameters=parameters or {},
         )
+        self._partial_note: str | None = None
 
     def __enter__(self) -> "ImportLogTracker":
         self._log_session.add(self.log)
@@ -51,10 +52,17 @@ class ImportLogTracker:
         else:
             self.log.notes = note
 
+    def mark_partial(self, note: str) -> None:
+        """Finish normally without allowing this run to become a watermark."""
+        self._partial_note = note
+        self.add_note(note)
+
     def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
         self.log.finished_at = datetime.now(timezone.utc)
-        if exc_type is None:
+        if exc_type is None and self._partial_note is None:
             self.log.status = "success"
+        elif exc_type is None:
+            self.log.status = "partial"
         else:
             self.log.status = "error"
             self.log.error_message = str(exc_val)
