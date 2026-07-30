@@ -27,7 +27,7 @@ from library.feed_monitor_service import link_matching_feed_items_to_document
 from library.llm_analysis_routes import bp as llm_analysis_bp
 from library.youtube_processing import process_youtube_url
 from library.storage import storage_from_config
-from library.upload_storage import store_uploaded_file
+from library.upload_storage import list_uploaded_files, store_uploaded_file
 
 logging.basicConfig(level=logging.INFO)
 
@@ -142,6 +142,27 @@ def upload_file():
         size=result.size,
         format=result.extension.removeprefix("."),
     ), 201
+
+
+@app.route('/uploads', methods=['GET', 'OPTIONS'])
+def list_uploads():
+    """List importer-facing files staged in ObjectStorage/MinIO."""
+    try:
+        limit = min(max(int(request.args.get("limit", 100)), 1), 200)
+    except ValueError:
+        return jsonify(error="limit must be an integer"), 400
+    try:
+        uploads = list_uploaded_files(storage_from_config(cfg), limit)
+    except Exception:  # noqa: BLE001 - storage details must not leak to API clients
+        logging.exception("Could not list uploaded files")
+        return jsonify(error="could not list uploaded files"), 502
+    return jsonify({
+        "uploads": [
+            {"key": item.key, "filename": item.filename, "size": item.size, "format": item.extension.removeprefix(".")}
+            for item in uploads
+        ],
+        "limit": limit,
+    })
 
 @app.route('/', methods=['GET', 'OPTIONS'])
 def root():
