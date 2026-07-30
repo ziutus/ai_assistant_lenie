@@ -1074,6 +1074,9 @@ const Read: React.FC = () => {
 
   return (
     <div>
+      <NavLink to={`/entities/${id}`} style={{ float: "right", fontSize: "0.85em", color: "#0369a1" }}>
+        Encje (NER)
+      </NavLink>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>Czytelnik — dokument #{id}</h2>
         {docQuality && (

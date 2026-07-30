@@ -1,6 +1,6 @@
 import React from "react";
+import { NavLink } from "react-router-dom";
 import Input from "../Input/input";
-import EntitiesPanel from "../EntitiesPanel/entitiesPanel";
 import ArticlePreparationPanel from "../ArticlePreparationPanel/articlePreparationPanel";
 import MarkdownLineEditor from "../MarkdownLineEditor/markdownLineEditor";
 import ArticleSourceComparison from "../ArticleSourceComparison/articleSourceComparison";
@@ -95,11 +95,13 @@ const InputsForAllExceptLink = ({
         type={"text"}
         multiline
       />
-      <EntitiesPanel
-        docId={formik.values.id}
-        externalDisabled={isLoading}
-        onBusyChange={onProcessingChange}
-      />
+      {formik.values.id && (
+        <section style={{ marginTop: 16, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
+          <strong>Etap 2: osoby, miejsca i organizacje</strong>
+          <p style={{ margin: "5px 0 10px", color: "#475569" }}>Wykrywanie i korekta encji odbywają się na osobnym ekranie.</p>
+          <NavLink className="button" to={`/entities/${formik.values.id}`} aria-disabled={isLoading}>Przejdź do analizy encji (NER)</NavLink>
+        </section>
+      )}
     </>
   );
 };

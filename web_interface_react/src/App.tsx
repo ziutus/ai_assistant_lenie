@@ -25,6 +25,7 @@ import FeedReview from "./modules/shared/pages/feedReview";
 import LlmAnalysis from "./modules/shared/pages/llmAnalysis";
 import Jobs from "./modules/shared/pages/jobs";
 import Scheduler from "./modules/shared/pages/scheduler";
+import Entities from "./modules/shared/pages/entities";
 import { AuthorizationContext } from "./modules/shared/context/authorizationContext";
 
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -64,6 +65,7 @@ function App() {
                   <Route path="/email/:id?" element={<DocumentEditorWithGroups><Email /></DocumentEditorWithGroups>} />
                   <Route path="/chunks/:id" element={<Chunks />} />
                   <Route path="/read/:id" element={<Read />} />
+                  <Route path="/entities/:id" element={<Entities />} />
                   <Route path="/list" element={<List />} />
                   <Route path="/persons/:id?" element={<Persons />} />
                   <Route path="/persons-review" element={<PersonsReview />} />
