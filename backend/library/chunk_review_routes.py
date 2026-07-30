@@ -163,6 +163,7 @@ def _analysis_worker() -> None:
             service = DocumentAnalysisService(work)
             with llm_usage_context(document_id=doc_id, analysis_job_id=job_id):
                 document_enriched = False
+                reuse_existing_entities = bool(params.get("reuse_existing_entities"))
                 if params.get("enrich_document"):
                     from library.document_enrichment import refresh_document_enrichment
 
@@ -170,6 +171,7 @@ def _analysis_worker() -> None:
                     refresh_document_enrichment(
                         work, document, params["model"],
                         progress_fn=lambda msg: _update_analysis_job(job_id, progress=msg),
+                        reuse_existing_entities=reuse_existing_entities,
                     )
                     document_enriched = True
                 run = service.create_run(
@@ -181,6 +183,7 @@ def _analysis_worker() -> None:
                     reclean=params["reclean"],
                     scope_chapter=params.get("scope_chapter"),
                     document_enriched=document_enriched,
+                    reuse_existing_entities=reuse_existing_entities,
                 )
             auto_finalized = False
             if params.get("auto_finalize_single"):
@@ -421,8 +424,13 @@ def analyze_document_chunks(doc_id: int):
             return jsonify({"status": "error", "message": "scope_chapter requires article mode"}), 400
 
     session = get_scoped_session()
-    if session.get(Document, doc_id) is None:
+    doc = session.get(Document, doc_id)
+    if doc is None:
         abort(404, f"Document {doc_id} not found")
+    # An explicit NER refresh is an earlier review step. It stays valid until
+    # a write to the canonical text clears this marker (DocumentService and
+    # the cleanup endpoint do that), so a chunk run must not repeat it.
+    reuse_existing_entities = bool(doc.entities_checked_at)
     from library.document_editing import document_has_embeddings
     if document_has_embeddings(session, doc_id):
         return jsonify({
@@ -450,6 +458,7 @@ def analyze_document_chunks(doc_id: int):
             "split_only": split_only,
             "auto_finalize_single": auto_finalize_single,
             "enrich_document": enrich_document,
+            "reuse_existing_entities": reuse_existing_entities,
             "reclean": reclean, "scope_chapter": scope_chapter,
         },
         progress="Oczekuje w kolejce",
@@ -708,6 +717,8 @@ def reclean_preview(doc_id: int):
             setattr(doc, field, after)
         doc.document_length = len(after)
         doc.quality = None
+        doc.entities_checked_at = None
+        doc.ner_unavailable_at = None
         replace_document_images(session, doc.id, cleaned["images"])
         session.commit()
 
@@ -1996,6 +2007,8 @@ def apply_run_cleanup(run_id: int):
 
     length_before = len(getattr(doc, field) or "")
     setattr(doc, field, cleaned)
+    doc.entities_checked_at = None
+    doc.ner_unavailable_at = None
 
     # Log dropped SZUM/REKLAMA chunks as cleaner-training data. Deduped by
     # chunk_id so a repeated apply_cleanup does not double-log.

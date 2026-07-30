@@ -261,6 +261,9 @@ class DocumentService:
         effective_type = document_type or doc.document_type
         submitted_text = attrs.get("text")
         submitted_md = attrs.get("text_md")
+        previous_canonical_text = (
+            doc.text_md if effective_type == "webpage" and doc.text_md is not None else doc.text
+        ) or ""
         if effective_type == "webpage":
             # Legacy webpages may only have plain text. The next explicit save
             # promotes it to the canonical Markdown field (plain text is valid
@@ -279,6 +282,15 @@ class DocumentService:
             doc.text = submitted_text
         if effective_type != "webpage" and submitted_md is not None:
             doc.text_md = submitted_md
+
+        current_canonical_text = (
+            doc.text_md if effective_type == "webpage" and doc.text_md is not None else doc.text
+        ) or ""
+        if (submitted_text is not None or submitted_md is not None) and current_canonical_text != previous_canonical_text:
+            # A later chunk run must refresh entities against the edited text.
+            # Keep rows for review history, but mark them as stale immediately.
+            doc.entities_checked_at = None
+            doc.ner_unavailable_at = None
 
         doc.analyze()
 

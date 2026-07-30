@@ -363,6 +363,7 @@ class DocumentAnalysisService:
         reclean: bool = False,
         scope_chapter: int | None = None,
         document_enriched: bool = False,
+        reuse_existing_entities: bool = False,
     ) -> DocumentAnalysisRun:
         """Create a new analysis run for an existing document and persist to DB.
 
@@ -684,40 +685,46 @@ class DocumentAnalysisService:
         # 11c. NER entities (persons/places) on the full document text — offline
         #      (no LLM), stored in document_entities with replace semantics, so
         #      chapter-scoped runs skip it (a single chapter's entities must not
-        #      clobber the whole document's). See docs/ner-integration-plan.md.
+        #      clobber the whole document's). ``reuse_existing_entities`` means
+        #      the user already ran the explicit entity stage on this unchanged
+        #      document; do not make it (and its place/person follow-ups) pay twice.
         if scope is None and not document_enriched:
-            try:
-                from library.entity_service import refresh_document_entities
-                from library.ner_client import NERServiceUnavailable
+            if reuse_existing_entities:
+                log("entities: reusing earlier document-level NER result")
+            else:
+                try:
+                    from library.entity_service import refresh_document_entities
+                    from library.ner_client import NERServiceUnavailable
 
-                entity_rows = refresh_document_entities(session, doc_id, text)
-                log(f"entities={len(entity_rows)}")
-            except NERServiceUnavailable:
-                log("WARNING: NER service unavailable — entities not refreshed for this run")
-            except Exception:
-                logger.exception("entity extraction failed, continuing without entities")
+                    entity_rows = refresh_document_entities(session, doc_id, text)
+                    log(f"entities={len(entity_rows)}")
+                except NERServiceUnavailable:
+                    log("WARNING: NER service unavailable — entities not refreshed for this run")
+                except Exception:
+                    logger.exception("entity extraction failed, continuing without entities")
 
-            # 11d. Place verification (stage 3): geocoder confirms the places
-            #      exist (cached), LLM confirms relevance -> miejsce-* tags.
+                # 11d. Place verification (stage 3): geocoder confirms the places
+                #      exist (cached), LLM confirms relevance -> miejsce-* tags.
+                if not proposal_only:
+                    try:
+                        from library.place_verification import verify_document_places
+
+                        summary = verify_document_places(session, doc, text)
+                        log(f"places: {len(summary['resolved'])} resolved, tags: {summary['tagged'] or '-'}")
+                    except Exception:
+                        logger.exception("place verification failed, continuing without place tags")
+
+                    # 11e. Person resolution (stage 4): alias/Wikidata+LLM/fuzzy ->
+                    #      document_persons links (low confidence => manual_review).
+                    try:
+                        from library.person_registry import resolve_document_persons
+
+                        p_summary = resolve_document_persons(session, doc, text)
+                        log(f"persons: linked={len(p_summary['linked'])} skipped={len(p_summary['skipped'])}")
+                    except Exception:
+                        logger.exception("person resolution failed, continuing without person links")
+
             if not proposal_only:
-                try:
-                    from library.place_verification import verify_document_places
-
-                    summary = verify_document_places(session, doc, text)
-                    log(f"places: {len(summary['resolved'])} resolved, tags: {summary['tagged'] or '-'}")
-                except Exception:
-                    logger.exception("place verification failed, continuing without place tags")
-
-                # 11e. Person resolution (stage 4): alias/Wikidata+LLM/fuzzy ->
-                #      document_persons links (low confidence => manual_review).
-                try:
-                    from library.person_registry import resolve_document_persons
-
-                    p_summary = resolve_document_persons(session, doc, text)
-                    log(f"persons: linked={len(p_summary['linked'])} skipped={len(p_summary['skipped'])}")
-                except Exception:
-                    logger.exception("person resolution failed, continuing without person links")
-
                 if author_bio:
                     try:
                         from library.author_biography import process_author_biography

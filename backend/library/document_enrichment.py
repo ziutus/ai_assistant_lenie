@@ -13,6 +13,7 @@ def refresh_document_enrichment(
     doc,
     model: str,
     progress_fn: Callable[[str], None] | None = None,
+    reuse_existing_entities: bool = False,
 ) -> dict:
     """Refresh whole-document derived data from the canonical cleaned text.
 
@@ -42,24 +43,30 @@ def refresh_document_enrichment(
             logger.exception("enrichment stage %s failed for document %s", name, doc.id)
             errors[name] = str(exc)
 
-    run_stage(
-        "entities", "Wykrywanie osób i miejsc…",
-        lambda: {"count": len(__import__(
-            "library.entity_service", fromlist=["refresh_document_entities"],
-        ).refresh_document_entities(session, doc.id, text))},
-    )
-    run_stage(
-        "places", "Weryfikacja miejsc…",
-        lambda: __import__(
-            "library.place_verification", fromlist=["verify_document_places"],
-        ).verify_document_places(session, doc, text),
-    )
-    run_stage(
-        "persons", "Łączenie osób z rejestrem…",
-        lambda: __import__(
-            "library.person_registry", fromlist=["resolve_document_persons"],
-        ).resolve_document_persons(session, doc, text),
-    )
+    if reuse_existing_entities:
+        progress("Wykorzystuję wcześniejsze osoby i miejsca…")
+        results["entities"] = {"reused": True}
+        results["places"] = {"reused": True}
+        results["persons"] = {"reused": True}
+    else:
+        run_stage(
+            "entities", "Wykrywanie osób i miejsc…",
+            lambda: {"count": len(__import__(
+                "library.entity_service", fromlist=["refresh_document_entities"],
+            ).refresh_document_entities(session, doc.id, text))},
+        )
+        run_stage(
+            "places", "Weryfikacja miejsc…",
+            lambda: __import__(
+                "library.place_verification", fromlist=["verify_document_places"],
+            ).verify_document_places(session, doc, text),
+        )
+        run_stage(
+            "persons", "Łączenie osób z rejestrem…",
+            lambda: __import__(
+                "library.person_registry", fromlist=["resolve_document_persons"],
+            ).resolve_document_persons(session, doc, text),
+        )
     run_stage(
         "events", "Budowanie osi czasu…",
         lambda: __import__(
