@@ -58,6 +58,9 @@ const Youtube = () => {
   });
 
   const transcriptMissing = !String(formik.values.text || "").trim();
+  // Paragraphization is deliberately constrained to imported Markdown
+  // chapters, so the model can only add whitespace within a known section.
+  const hasMarkdownChapters = /^#{1,2} .+/m.test(String(formik.values.text || ""));
   const canFetchCaptions = Boolean(id) && transcriptMissing
     && ["URL_ADDED", "NEED_TRANSCRIPTION", "TEMPORARY_ERROR"].includes(formik.values.processing_status);
   const [captionMessage, setCaptionMessage] = React.useState("");
@@ -81,6 +84,7 @@ const Youtube = () => {
   };
 
   const paragraphizeTranscript = async () => {
+    if (!hasMarkdownChapters) return;
     if (!id || !window.confirm("Podzielić transkrypcję na akapity tematyczne przy użyciu Bielika? Tekst nie będzie parafrazowany.")) return;
     setParagraphizing(true);
     setParagraphMessage("");
@@ -132,7 +136,12 @@ const Youtube = () => {
             <div style={{ marginTop: 6, color: "#475569" }}>
               Bielik wskaże granice akapitów w obrębie istniejących rozdziałów. Zmieni wyłącznie odstępy między zdaniami.
             </div>
-            <button type="button" className="button" style={{ marginTop: 10 }} onClick={paragraphizeTranscript} disabled={paragraphizing || isLoading}>
+            {!hasMarkdownChapters && (
+              <div role="status" style={{ marginTop: 8, color: "#92400e" }}>
+                Nie można jeszcze podzielić transkrypcji na akapity: nie ma w niej rozdziałów. Rozdziały są importowane z ręcznie podanej listy czasowej albo z co najmniej dwóch znaczników czasu w opisie filmu YouTube. Ten film nie dostarcza żadnego z tych źródeł.
+              </div>
+            )}
+            <button type="button" className="button" style={{ marginTop: 10 }} onClick={paragraphizeTranscript} disabled={!hasMarkdownChapters || paragraphizing || isLoading}>
               {paragraphizing ? "Dzielę na akapity…" : "Podziel transkrypcję na akapity (Bielik)"}
             </button>
             {paragraphMessage && <div style={{ marginTop: 8 }}>{paragraphMessage}</div>}
