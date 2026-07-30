@@ -138,7 +138,10 @@ def paragraphize_transcript(text: str, *, document_id: int, model: str = DEFAULT
     """Add semantic paragraph spacing to each Markdown H1/H2 source chapter."""
     chapters = detect_chapters(text)
     if not chapters:
-        raise ValueError("Transcript has no Markdown chapter headings")
+        raise ValueError(
+            "Transcript has no Markdown chapter headings. "
+            "Import source chapter timestamps first, then re-create the transcript."
+        )
 
     output: list[str] = []
     total_paragraphs = 0
