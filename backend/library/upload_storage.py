@@ -29,6 +29,12 @@ class UploadedFile:
     extension: str
 
 
+def _filename_from_key(key: str) -> str:
+    """Recover the safe original filename from an upload object key."""
+    name = Path(key).name
+    return name.split("-", 1)[1] if "-" in name else name
+
+
 def validate_upload_filename(filename: str) -> tuple[str, str]:
     """Return a safe display filename and extension, or reject unsupported files."""
     safe_name = secure_filename(filename or "")
@@ -60,3 +66,18 @@ def get_uploaded_file(storage: ObjectStorage, key: str) -> bytes:
     if Path(normalized).suffix.lower() not in ALLOWED_EXTENSIONS:
         raise ValueError("upload storage key has an unsupported file type")
     return storage.get_bytes(normalized)
+
+
+def list_uploaded_files(storage: ObjectStorage, limit: int = 100) -> list[UploadedFile]:
+    """Return the newest-looking upload keys, excluding non-book objects."""
+    files = []
+    for obj in storage.iter_objects(f"{UPLOAD_PREFIX}/"):
+        extension = Path(obj.key).suffix.lower()
+        if extension in ALLOWED_EXTENSIONS:
+            files.append(UploadedFile(
+                key=obj.key,
+                filename=_filename_from_key(obj.key),
+                size=obj.size,
+                extension=extension,
+            ))
+    return sorted(files, key=lambda item: item.key, reverse=True)[:limit]

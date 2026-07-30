@@ -78,6 +78,11 @@ EPUB and MOBI are stored in the same area now; their format-specific importer
 can use `library.upload_storage.get_uploaded_file()` in the same way, without
 changing the UI or storage layout.
 
+`GET /uploads?limit=100` returns the staged files (`key`, filename, format and
+size) to authenticated clients, including AI agents. The upload page presents
+the same queue and allows copying the MinIO key. This is an upload queue, not
+the worker-job queue exposed by `GET /jobs`.
+
 ## Presigned URLs
 
 `ObjectStorage.presigned_get_url(key, expires_in=3600)` returns a time-limited URL the browser can fetch directly, without going through the API — needed because an `<img src>` request never carries the `x-api-key` header, so a proxied/authenticated route can't serve it.

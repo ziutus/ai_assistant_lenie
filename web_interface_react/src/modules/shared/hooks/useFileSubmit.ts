@@ -9,7 +9,7 @@ const useFileSubmit = () => {
   const [isSuccess, setIsSuccess] = React.useState(false);
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
 
-  const submitFile = async (fileInput: React.RefObject<HTMLInputElement | null>) => {
+  const submitFile = async (fileInput: React.RefObject<HTMLInputElement | null>): Promise<string | undefined> => {
     if (fileInput.current?.files?.[0]) {
       const file = fileInput.current.files[0];
       const formData = new FormData();
@@ -32,6 +32,7 @@ const useFileSubmit = () => {
         setIsError(false);
         setIsLoading(false);
         setMessage(`Plik zapisany w MinIO: ${response.data.key}`);
+        return response.data.key;
         // alert("File uploaded successfully.");
       } catch (error: any) {
         setIsSuccess(false);
@@ -39,6 +40,7 @@ const useFileSubmit = () => {
         setIsError(true);
         setMessage(`Error while uploading file: ${error} `);
         // console.log("Error while uploading file: ", error);
+        return undefined;
       }
     } else {
       setIsSuccess(false);
@@ -46,6 +48,7 @@ const useFileSubmit = () => {
       setIsError(true);
       setMessage("Please select a file.");
       // alert("Please select a file.");
+      return undefined;
     }
   };
   return { submitFile, isError, isLoading, isSuccess, message };
