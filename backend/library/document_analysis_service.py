@@ -861,6 +861,83 @@ class DocumentAnalysisService:
         return run
 
 
+def _document_has_markdown_chapters(doc: Document) -> bool:
+    from library.text_functions import detect_chapters
+
+    text, _field = _extract_text(doc, prefer_md=True)
+    return bool(detect_chapters(text)) if text else False
+
+
+def paragraphize_run_transcript_chunks(
+    session, run_id: int, *, model: str | None = None,
+    progress_fn: Callable[[str], None] | None = None,
+) -> dict:
+    """Add LLM-selected paragraph spacing to a transcript run's TEMAT chunks.
+
+    Only for YouTube videos with no source chapters: the reader's TEMAT-chunk
+    fallback (chunk_review_routes._chunk_based_chapters) renders each chunk's
+    corrected_text as a single wall of text, because the rewrite step
+    (chunk_llm_analysis.rewrite_chunk_text) only fixes punctuation/sentence
+    boundaries, never paragraph breaks. Chaptered videos already get paragraph
+    spacing earlier in the pipeline, on doc.text before chunking (see
+    paragraphize_transcript() / POST /document/<id>/paragraphize_transcript) —
+    this covers the chunk-based fallback that mechanism can't reach.
+
+    No-op (zero LLM calls) for: article-mode runs, movies, chaptered YouTube
+    videos, and any chunk whose corrected_text already has a blank line
+    (idempotent — safe to call again, e.g. on every "Generuj embeddingi").
+    """
+    from sqlalchemy import select
+
+    from library.transcript_paragraphs import paragraphize_chunk_text
+
+    def log(msg: str) -> None:
+        logger.info("[paragraphize run=%d] %s", run_id, msg)
+        if progress_fn:
+            progress_fn(msg)
+
+    run = session.get(DocumentAnalysisRun, run_id)
+    if run is None:
+        raise ValueError(f"Run {run_id} not found")
+    doc = session.get(Document, run.document_id)
+    if doc is None:
+        raise ValueError(f"Document {run.document_id} not found")
+
+    summary = {
+        "run_id": run_id, "document_id": doc.id,
+        "chunks_processed": 0, "chunks_changed": 0, "paragraphs_added": 0, "model_calls": 0,
+    }
+    if doc.document_type != "youtube" or run.mode != "transcript":
+        return summary
+    if _document_has_markdown_chapters(doc):
+        return summary
+
+    chunks = session.scalars(
+        select(DocumentChunk)
+        .where(DocumentChunk.run_id == run_id, DocumentChunk.type == "TEMAT")
+        .order_by(DocumentChunk.position)
+    ).all()
+
+    use_model = model or run.model
+    for chunk in chunks:
+        text = (chunk.corrected_text or "").strip()
+        if not text or re.search(r"\n\s*\n", text):
+            continue
+        summary["chunks_processed"] += 1
+        result = paragraphize_chunk_text(
+            text, document_id=doc.id, analysis_run_id=run_id, model=use_model,
+        )
+        summary["model_calls"] += result.model_calls
+        if result.text != text:
+            chunk.corrected_text = result.text
+            summary["chunks_changed"] += 1
+            summary["paragraphs_added"] += result.paragraph_count
+            session.commit()
+        log(f"chunk {chunk.position}: {result.paragraph_count} paragraphs, {result.model_calls} LLM calls")
+
+    return summary
+
+
 EMBEDDING_BATCH_SIZE = 32
 
 
@@ -907,6 +984,16 @@ def generate_embeddings_from_run(
     doc = session.get(Document, run.document_id)
     if doc is None:
         raise ValueError(f"Document {run.document_id} not found")
+
+    try:
+        paragraph_summary = paragraphize_run_transcript_chunks(session, run_id, progress_fn=progress_fn)
+        if paragraph_summary["chunks_changed"]:
+            log(
+                f"paragraphized {paragraph_summary['chunks_changed']}/{paragraph_summary['chunks_processed']} "
+                f"chunks before embedding ({paragraph_summary['paragraphs_added']} paragraph breaks added)"
+            )
+    except Exception:
+        logger.exception("transcript paragraphization failed for run %s, continuing with embedding generation", run_id)
 
     model = load_config().require("EMBEDDING_MODEL")
     websites = DocumentRepository(session)

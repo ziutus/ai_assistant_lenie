@@ -80,7 +80,9 @@ def _windows(sentences: list[str], max_chars: int = MAX_WINDOW_CHARS):
         yield start, current
 
 
-def _ask_for_boundaries(sentences: list[str], *, model: str, document_id: int) -> set[int]:
+def _ask_for_boundaries(
+    sentences: list[str], *, model: str, document_id: int, analysis_run_id: int | None = None,
+) -> set[int]:
     """Return 0-based indices of sentences after which a paragraph may end."""
     if len(sentences) < 2 or sum(len(sentence) for sentence in sentences) < MIN_PARAGRAPH_CHARS:
         return set()
@@ -101,6 +103,7 @@ def _ask_for_boundaries(sentences: list[str], *, model: str, document_id: int) -
         response_format=_RESPONSE_SCHEMA,
         operation="transcript_paragraphization",
         document_id=document_id,
+        analysis_run_id=analysis_run_id,
     )
     try:
         payload = json.loads(response.response_text)
@@ -112,14 +115,20 @@ def _ask_for_boundaries(sentences: list[str], *, model: str, document_id: int) -
     return {value - 1 for value in values if isinstance(value, int) and 1 <= value < len(sentences)}
 
 
-def _paragraphize_body(body: str, *, model: str, document_id: int) -> tuple[str, int, int]:
+def _paragraphize_body(
+    body: str, *, model: str, document_id: int, analysis_run_id: int | None = None,
+) -> tuple[str, int, int]:
     sentences = _sentences(body)
     boundaries: set[int] = set()
     calls = 0
     for start, window in _windows(sentences):
         if len(window) < 2 or sum(len(sentence) for sentence in window) < MIN_PARAGRAPH_CHARS:
             continue
-        boundaries.update(start + index for index in _ask_for_boundaries(window, model=model, document_id=document_id))
+        boundaries.update(
+            start + index for index in _ask_for_boundaries(
+                window, model=model, document_id=document_id, analysis_run_id=analysis_run_id,
+            )
+        )
         calls += 1
 
     if not boundaries:
@@ -134,7 +143,10 @@ def _paragraphize_body(body: str, *, model: str, document_id: int) -> tuple[str,
     return "".join(pieces), len(boundaries) + 1, calls
 
 
-def paragraphize_transcript(text: str, *, document_id: int, model: str = DEFAULT_ANALYSIS_MODEL) -> ParagraphizeResult:
+def paragraphize_transcript(
+    text: str, *, document_id: int, model: str = DEFAULT_ANALYSIS_MODEL,
+    analysis_run_id: int | None = None,
+) -> ParagraphizeResult:
     """Add semantic paragraph spacing to each Markdown H1/H2 source chapter."""
     chapters = detect_chapters(text)
     if not chapters:
@@ -151,7 +163,9 @@ def paragraphize_transcript(text: str, *, document_id: int, model: str = DEFAULT
         match = _HEADING_RE.match(source)
         if not match:
             raise ValueError("Transcript chapter does not start with a Markdown heading")
-        body, paragraphs, calls = _paragraphize_body(match.group(2), model=model, document_id=document_id)
+        body, paragraphs, calls = _paragraphize_body(
+            match.group(2), model=model, document_id=document_id, analysis_run_id=analysis_run_id,
+        )
         output.append(f"{match.group(1)}\n\n{body.strip()}")
         total_paragraphs += paragraphs
         total_calls += calls
@@ -160,6 +174,27 @@ def paragraphize_transcript(text: str, *, document_id: int, model: str = DEFAULT
         chapter_count=len(chapters),
         paragraph_count=total_paragraphs,
         model_calls=total_calls,
+    )
+
+
+def paragraphize_chunk_text(
+    text: str, *, document_id: int, model: str = DEFAULT_ANALYSIS_MODEL,
+    analysis_run_id: int | None = None,
+) -> ParagraphizeResult:
+    """Add semantic paragraph spacing to a single chunk body — no chapter heading required.
+
+    Used for the TEMAT-chunk reader fallback (YouTube videos with no source
+    chapters — see chunk_review_routes._chunk_based_chapters): each chunk's
+    corrected_text is paragraphized independently, in place, rather than
+    requiring the whole-document Markdown-chapter structure paragraphize_transcript()
+    needs. Same safety guarantee: the model only ever picks sentence
+    boundaries, it never rewrites content.
+    """
+    body, paragraphs, calls = _paragraphize_body(
+        text, model=model, document_id=document_id, analysis_run_id=analysis_run_id,
+    )
+    return ParagraphizeResult(
+        text=body.strip(), chapter_count=1, paragraph_count=paragraphs, model_calls=calls,
     )
 
 
