@@ -363,6 +363,19 @@ class Job(Base):
     )
 
 
+class ScheduledTask(Base):
+    """Application-owned definitions for all jobs created by the coordinator."""
+
+    __tablename__ = "scheduled_tasks"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("TRUE"))
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    times: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now(),
+    )
+
+
 class FeedItemGroupMembership(Base):
     __tablename__ = "feed_item_group_memberships"
 

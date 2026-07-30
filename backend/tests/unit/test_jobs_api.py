@@ -74,3 +74,32 @@ def test_user_cannot_create_other_job_types(monkeypatch):
         create_job()
 
     assert exc_info.value.code == 403
+
+
+def test_scheduler_exposes_config_next_runs_and_last_jobs(monkeypatch):
+    from library.feed_routes import get_scheduler
+
+    feed_job = SimpleNamespace(
+        id="daily", type="feed_daily", status="done", parameters={}, progress=None, result=None, error=None,
+        attempt=1, max_attempts=3, created_at=dt.datetime(2026, 7, 29, 4, 0, tzinfo=dt.timezone.utc),
+        started_at=None, finished_at=dt.datetime(2026, 7, 29, 4, 2, tzinfo=dt.timezone.utc),
+    )
+    feed_task = SimpleNamespace(id="feed_daily", enabled=True, timezone="Europe/Warsaw", times=["04:00"])
+    bridge_task = SimpleNamespace(id="legacy_aws_pull", enabled=True, timezone="Europe/Warsaw", times=["05:00", "17:00"])
+    session = MagicMock()
+    session.scalars.side_effect = [MagicMock(all=lambda: [feed_task, bridge_task]), MagicMock(first=lambda: feed_job), MagicMock(first=lambda: None)]
+    monkeypatch.setattr("library.feed_routes.get_scoped_session", lambda: session)
+    monkeypatch.setenv("FEED_TIMEZONE", "Europe/Warsaw")
+    monkeypatch.setenv("FEED_SCHEDULE_TIME", "04:00")
+    monkeypatch.setenv("AWS_LEGACY_PULL_ENABLED", "true")
+    monkeypatch.setenv("AWS_LEGACY_PULL_INTERVAL_MINUTES", "15")
+    app = Flask(__name__)
+
+    with app.test_request_context("/scheduler"):
+        g.auth = MagicMock(kind="service")
+        payload = get_scheduler().json
+
+    assert payload["schedules"][0]["schedule"] == "04:00"
+    assert payload["schedules"][0]["last_job"]["id"] == "daily"
+    assert payload["schedules"][1]["enabled"] is True
+    assert payload["schedules"][1]["times"] == ["05:00", "17:00"]

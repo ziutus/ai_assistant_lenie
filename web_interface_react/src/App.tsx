@@ -24,6 +24,7 @@ import Feeds from "./modules/shared/pages/feeds";
 import FeedReview from "./modules/shared/pages/feedReview";
 import LlmAnalysis from "./modules/shared/pages/llmAnalysis";
 import Jobs from "./modules/shared/pages/jobs";
+import Scheduler from "./modules/shared/pages/scheduler";
 import { AuthorizationContext } from "./modules/shared/context/authorizationContext";
 
 const RequireAuth: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -74,6 +75,7 @@ function App() {
                   <Route path="/feed-review" element={<FeedReview />} />
                   <Route path="/llm-analysis" element={<LlmAnalysis />} />
                   <Route path="/jobs" element={<Jobs />} />
+                  <Route path="/scheduler" element={<Scheduler />} />
                   <Route path="/search" element={<Search />} />
                   <Route path="/upload-file" element={<UploadFile />} />
                   <Route path="*" element={<p>404</p>} />
