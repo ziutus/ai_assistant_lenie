@@ -40,7 +40,9 @@ const FormButtons = ({
       >
         {formik.values.document_type === "webpage"
           ? "Zatwierdź Markdown i przejdź do chunków"
-          : "Zapisz jako gotowy i przejdź dalej"}
+          : formik.values.document_type === "youtube"
+            ? "Zapisz tekst i przejdź do analizy chunków"
+            : "Zapisz jako gotowy i przejdź dalej"}
       </button>
       <button
         type="button"
