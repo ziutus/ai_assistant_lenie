@@ -2258,6 +2258,23 @@ const Chunks = () => {
             </NavLink>
           </div>
         )}
+        {newMode === "transcript" && runs.length === 0 && (
+          <div style={{
+            marginTop: 10, padding: "10px 12px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6,
+            display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap",
+          }}>
+            <div>
+              <strong style={{ fontSize: "0.86em", color: "#1e3a8a" }}>1. Utwórz i przeanalizuj chunki</strong>
+              <div style={{ marginTop: 3, fontSize: "0.8em", color: "#475569" }}>
+                Transkrypcja ma już rozdziały i akapity. Bielik podzieli ją teraz na chunki tematyczne; po zakończeniu przejdziesz do ich przeglądu.
+              </div>
+            </div>
+            <button className="button" onClick={() => startAnalysis("transcript", false)} disabled={!!jobId}
+              style={{ marginLeft: "auto", fontWeight: 700 }}>
+              {jobId ? `Analizuję… (${jobStatus})` : "▶ Utwórz i przeanalizuj chunki"}
+            </button>
+          </div>
+        )}
         <details style={{ marginTop: 9 }}>
           <summary style={{ cursor: "pointer", color: "#64748b", fontSize: "0.82em", userSelect: "none" }}>
             Ustawienia zaawansowane
@@ -2766,8 +2783,9 @@ const Chunks = () => {
 
       {!loading && chunks.length === 0 && runs.length === 0 && (
         <p style={{ color: "#64748b", fontStyle: "italic" }}>
-          Brak przygotowanego podziału. W kroku „1. Kontrola tekstu i podział” sprawdź początek oraz koniec tekstu,
-          a następnie kliknij „{prepareButtonLabel}”.
+          {newMode === "transcript"
+            ? "Nie utworzono jeszcze chunków. Kliknij „Utwórz i przeanalizuj chunki” powyżej."
+            : <>Brak przygotowanego podziału. W kroku „1. Kontrola tekstu i podział” sprawdź początek oraz koniec tekstu, a następnie kliknij „{prepareButtonLabel}”.</>}
         </p>
       )}
 
