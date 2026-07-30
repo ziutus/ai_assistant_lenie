@@ -40,6 +40,9 @@ from library.book_pdf_import import (
     insert_page_tables,
 )
 from library.db.engine import get_session
+from library.config_loader import load_config
+from library.storage import storage_from_config
+from library.upload_storage import get_uploaded_file
 
 # This book's own values — see the module docstring above.
 TITLE = "Twierdza Linux. Bezpieczeństwo dla dociekliwych"
@@ -80,7 +83,8 @@ PROMOTE_SUBHEADINGS = {
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("file", help="sciezka do pliku PDF")
+    parser.add_argument("file", nargs="?", help="sciezka do lokalnego pliku PDF")
+    parser.add_argument("--storage-key", help="klucz uploads/... zwrocony przez formularz uploadu")
     parser.add_argument("--title", default=TITLE, help="tytul ksiazki")
     parser.add_argument("--byline", default=BYLINE, help="autor")
     parser.add_argument("--source", default="own", help="zrodlo odkrycia (domyslnie 'own')")
@@ -95,6 +99,8 @@ def main() -> None:
     parser.add_argument("--no-extra-sections", action="store_true", help="pomin front/back-matter jako rozdzialy")
     parser.add_argument("--apply", action="store_true", help="zapisz do bazy (domyslnie dry-run)")
     args = parser.parse_args()
+    if bool(args.file) == bool(args.storage_key):
+        parser.error("podaj dokladnie jedno: lokalny plik albo --storage-key uploads/...")
     extract_images = not args.no_images
     detect_tables = not args.no_tables
     apply_styles = not args.no_styles
@@ -102,8 +108,13 @@ def main() -> None:
     extra_titles = {} if args.no_extra_sections else EXTRA_SECTION_TITLES
     promote_subheadings = {} if args.no_extra_sections else PROMOTE_SUBHEADINGS
 
-    with open(args.file, "rb") as fh:
-        pdf_bytes = fh.read()
+    if args.storage_key:
+        pdf_bytes = get_uploaded_file(storage_from_config(load_config()), args.storage_key)
+        source_label = args.storage_key
+    else:
+        with open(args.file, "rb") as fh:
+            pdf_bytes = fh.read()
+        source_label = args.file
 
     if not args.apply:
         pages = extract_pages(pdf_bytes)
@@ -123,7 +134,7 @@ def main() -> None:
             pages, chapter_regex=args.chapter_regex, heading_texts=heading_texts, images_by_page=images_by_page,
             extra_sections=extra_sections, promote_subheadings=promote_subheadings,
         )
-        print(f"Plik: {args.file}")
+        print(f"Plik: {source_label}")
         print(f"Wykryto rozdzialow (laczna liczba ## ): {len(result.chapters)}")
         print(f"  w tym front/back-matter: {sum(len(v) for v in extra_sections.values()) + len(promote_subheadings)}")
         print(f"Wykryto podrozdzialow (### ): {len(heading_texts)}")

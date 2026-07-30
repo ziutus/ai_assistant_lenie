@@ -49,6 +49,35 @@ AWS S3 uses `STORAGE_BACKEND=s3`, omits `STORAGE_ENDPOINT_URL`, and can use the 
 
 `STORAGE_BACKEND` is explicit. The legacy `AWS_S3_WEBSITE_CONTENT` is accepted as a bucket-name fallback, but no longer selects cloud storage by itself.
 
+## Files uploaded for import
+
+The `/upload-file` page sends an authenticated `POST /upload-file` request to
+the configured Lenie API (not to the retired AWS API Gateway). The API writes
+the original file to the configured `ObjectStorage`, so on the NAS it lands in
+MinIO under a key like:
+
+```text
+uploads/2026/07/2dd1...-book.pdf
+```
+
+The upload area accepts PDF, EPUB and MOBI. It is a durable staging area,
+separate from the final document source and extracted artifacts; users should
+retain the returned key until an importer has completed. `UPLOAD_MAX_BYTES`
+sets the API limit and defaults to 250 MiB.
+
+The current PDF book wrapper can read an uploaded original directly, including
+from a developer machine that can reach MinIO:
+
+```console
+cd backend
+python imports/book_import_pdf_twierdza_linux.py \
+  --storage-key uploads/2026/07/2dd1...-book.pdf --apply
+```
+
+EPUB and MOBI are stored in the same area now; their format-specific importer
+can use `library.upload_storage.get_uploaded_file()` in the same way, without
+changing the UI or storage layout.
+
 ## Presigned URLs
 
 `ObjectStorage.presigned_get_url(key, expires_in=3600)` returns a time-limited URL the browser can fetch directly, without going through the API — needed because an `<img src>` request never carries the `x-api-key` header, so a proxied/authenticated route can't serve it.

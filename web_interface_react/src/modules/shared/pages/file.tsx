@@ -2,15 +2,15 @@ import React, { useRef } from "react";
 import useFileSubmit from "../hooks/useFileSubmit";
 
 const UploadFile = () => {
-  const { message, isLoading, isError, submitFile } = useFileSubmit();
+  const { message, isLoading, isError, isSuccess, submitFile } = useFileSubmit();
   const fileInput = useRef<HTMLInputElement | null>(null);
 
   return (
     <div>
-      <h2 style={{ marginBottom: "10px" }}>Upload File</h2>
+      <h2 style={{ marginBottom: "10px" }}>Plik do importu</h2>
       <input
         type="file"
-        accept=".jpg"
+        accept=".pdf,.epub,.mobi,application/pdf,application/epub+zip"
         ref={fileInput}
         style={{ width: "400px" }}
       />
@@ -33,6 +33,7 @@ const UploadFile = () => {
       </div>
 
       {isError && message && <div className="errorText">{message}</div>}
+      {isSuccess && message && <div>{message}</div>}
     </div>
   );
 };
