@@ -17,9 +17,10 @@ const useFileSubmit = () => {
       setIsLoading(true);
       setIsError(false);
       setIsSuccess(false);
+      const uploadUrl = `${apiUrl}/upload-file`;
       try {
         const response = await axios.post<{ key: string }>(
-          `${apiUrl}/upload-file`,
+          uploadUrl,
           formData,
           {
             headers: {
@@ -34,12 +35,25 @@ const useFileSubmit = () => {
         setMessage(`Plik zapisany w MinIO: ${response.data.key}`);
         return response.data.key;
         // alert("File uploaded successfully.");
-      } catch (error: any) {
+      } catch (error: unknown) {
         setIsSuccess(false);
         setIsLoading(false);
         setIsError(true);
-        setMessage(`Error while uploading file: ${error} `);
-        // console.log("Error while uploading file: ", error);
+        if (axios.isAxiosError(error)) {
+          const responseBody = error.response?.data;
+          const details = responseBody === undefined
+            ? error.message
+            : typeof responseBody === "string"
+              ? responseBody
+              : JSON.stringify(responseBody);
+          setMessage(
+            `Nie udało się wysłać pliku. Adres uploadu: ${uploadUrl}. `
+            + `HTTP: ${error.response?.status ?? "brak odpowiedzi"}; kod: ${error.code ?? "brak"}; szczegóły: ${details}`,
+          );
+          console.error("File upload failed", { uploadUrl, status: error.response?.status, code: error.code, responseBody });
+        } else {
+          setMessage(`Nie udało się wysłać pliku. Adres uploadu: ${uploadUrl}. Szczegóły: ${String(error)}`);
+        }
         return undefined;
       }
     } else {
