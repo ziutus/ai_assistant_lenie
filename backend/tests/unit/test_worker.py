@@ -45,13 +45,13 @@ def test_final_failure_is_not_retried(monkeypatch):
     retry.assert_not_called()
 
 
-def test_legacy_pull_scheduler_is_disabled_by_default(monkeypatch):
+def test_disabled_legacy_pull_task_is_not_scheduled(monkeypatch):
     session = MagicMock()
     enqueue = MagicMock()
-    monkeypatch.delenv("AWS_LEGACY_PULL_ENABLED", raising=False)
+    session.scalars.return_value.all.return_value = [MagicMock(id="legacy_aws_pull", enabled=False)]
     monkeypatch.setattr(worker, "enqueue", enqueue)
 
-    worker._schedule_legacy_aws_pull(session, dt.datetime(2026, 7, 29, 15, 25, tzinfo=dt.timezone.utc))
+    worker.scheduler(session, dt.datetime(2026, 7, 29, 15, 25, tzinfo=dt.timezone.utc))
 
     session.scalar.assert_not_called()
     enqueue.assert_not_called()
@@ -61,27 +61,25 @@ def test_legacy_pull_scheduler_uses_utc_bucket_and_skips_active_job(monkeypatch)
     session = MagicMock()
     session.scalar.return_value = None
     enqueue = MagicMock()
-    monkeypatch.setenv("AWS_LEGACY_PULL_ENABLED", "true")
-    monkeypatch.setenv("AWS_LEGACY_PULL_INTERVAL_MINUTES", "15")
     monkeypatch.setattr(worker, "enqueue", enqueue)
+    task = MagicMock(timezone="Europe/Warsaw")
 
     worker._schedule_legacy_aws_pull(
-        session, dt.datetime(2026, 7, 29, 17, 26, tzinfo=dt.timezone(dt.timedelta(hours=2)))
+        session, dt.datetime(2026, 7, 29, 17, 26, tzinfo=dt.timezone(dt.timedelta(hours=2))), task
     )
 
-    enqueue.assert_called_once_with(session, "legacy_aws_pull", idempotency_key="legacy_aws_pull:2026-07-29T15:15Z")
+    enqueue.assert_called_once_with(session, "legacy_aws_pull", idempotency_key="legacy_aws_pull:2026-07-29T17:26+0200")
     session.scalar.return_value = "already-active"
-    worker._schedule_legacy_aws_pull(session, dt.datetime(2026, 7, 29, 15, 30, tzinfo=dt.timezone.utc))
+    worker._schedule_legacy_aws_pull(session, dt.datetime(2026, 7, 29, 15, 30, tzinfo=dt.timezone.utc), task)
     enqueue.assert_called_once()
 
 
-def test_legacy_pull_scheduler_rejects_invalid_interval(monkeypatch):
-    monkeypatch.setenv("AWS_LEGACY_PULL_ENABLED", "true")
-    monkeypatch.setenv("AWS_LEGACY_PULL_INTERVAL_MINUTES", "0")
+def test_scheduler_rejects_invalid_task_time():
+    task = MagicMock(id="legacy_aws_pull", timezone="Europe/Warsaw", times=["invalid"])
 
     try:
-        worker._schedule_legacy_aws_pull(MagicMock(), dt.datetime.now(dt.timezone.utc))
+        worker._is_due(task, dt.datetime.now(dt.timezone.utc))
     except ValueError as exc:
-        assert str(exc) == "AWS_LEGACY_PULL_INTERVAL_MINUTES must be a positive integer"
+        assert str(exc) == "invalid schedule for legacy_aws_pull"
     else:
-        raise AssertionError("invalid interval must be rejected")
+        raise AssertionError("invalid schedule must be rejected")

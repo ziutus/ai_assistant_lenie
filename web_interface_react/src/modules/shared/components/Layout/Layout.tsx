@@ -140,6 +140,7 @@ const SideNavigation = ({ isMenuOpen, toggleMenu }: SideNavigationProps) => {
         <NavLink to="/feed-review" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Kuracja feedów</NavLink>
         <NavLink to="/llm-analysis" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Analizy LLM</NavLink>
         <NavLink to="/jobs" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Joby</NavLink>
+        <NavLink to="/scheduler" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Scheduler</NavLink>
         <NavLink
           to="/connect"
           className={classes.link}

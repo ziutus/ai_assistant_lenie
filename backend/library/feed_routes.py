@@ -1,13 +1,13 @@
 """REST API for feed configuration, curation and explicit jobs."""
 
 import datetime as dt
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import select, case, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from library.db.engine import get_scoped_session
-from library.db.models import ContentGroup, Document, FeedItemGroupMembership, FeedSource, FeedItem, FeedReviewDecision, Job
+from library.db.models import ContentGroup, Document, FeedItemGroupMembership, FeedSource, FeedItem, FeedReviewDecision, Job, ScheduledTask
 from library.content_group_service import (
     archive_group,
     create_group,
@@ -72,6 +72,30 @@ def _job_dict(job: Job):
         "finished_at": _timestamp(job.finished_at),
         "watermark": result.get("watermark") if isinstance(result, dict) else None,
     }
+
+
+def _next_task_run(now: dt.datetime, timezone: ZoneInfo, times: list[str]) -> dt.datetime:
+    """Return the next local scheduler tick from a task's configured times."""
+    local_now = now.astimezone(timezone)
+    candidates = []
+    for time_text in times:
+        hour, minute = map(int, time_text.split(":", 1))
+        scheduled = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if scheduled <= local_now:
+            scheduled += dt.timedelta(days=1)
+        candidates.append(scheduled)
+    return min(candidates)
+
+
+def _validate_schedule(timezone_name: str, times: list) -> list[str]:
+    try:
+        ZoneInfo(timezone_name)
+        normalized = sorted({f"{int(value.split(':', 1)[0]):02d}:{int(value.split(':', 1)[1]):02d}" for value in times})
+        if not normalized or any(not 0 <= int(value[:2]) <= 23 or not 0 <= int(value[3:]) <= 59 for value in normalized):
+            raise ValueError
+    except (AttributeError, TypeError, ValueError, ZoneInfoNotFoundError) as exc:
+        raise ValueError("timezone must be valid and times must contain HH:MM values") from exc
+    return normalized
 
 
 def _item_dict(item):
@@ -666,6 +690,63 @@ def get_jobs():
             "filters": {"type": job_type, "status": status},
         }
     )
+
+
+@bp.get("/scheduler")
+def get_scheduler():
+    """Expose database-owned scheduler configuration and recent executions."""
+    _job_viewer()
+    now = dt.datetime.now(dt.timezone.utc)
+    session = get_scoped_session()
+    tasks = {task.id: task for task in session.scalars(select(ScheduledTask)).all()}
+    schedules = []
+    for task_id, job_type, description in (
+        ("feed_daily", "feed_daily", "Codzienne sprawdzenie i automatyczny import feedów"),
+        ("legacy_aws_pull", "legacy_aws_pull", "Tymczasowa synchronizacja z legacy AWS"),
+    ):
+        task = tasks.get(task_id)
+        if task is None:
+            continue
+        try:
+            times = _validate_schedule(task.timezone, task.times)
+            next_run = _next_task_run(now, ZoneInfo(task.timezone), times) if task.enabled else None
+        except ValueError:
+            abort(500, f"invalid schedule for {task_id}")
+        last_job = session.scalars(select(Job).where(Job.type == job_type).order_by(Job.created_at.desc()).limit(1)).first()
+        schedules.append({
+            "id": task.id, "job_type": job_type, "enabled": task.enabled, "description": description,
+            "timezone": task.timezone, "times": times, "schedule": ", ".join(times),
+            "next_run_at": next_run.isoformat() if next_run else None,
+            "last_job": _job_dict(last_job) if last_job else None,
+        })
+    return jsonify({
+        "generated_at": now.isoformat(),
+        "schedules": schedules,
+    })
+
+
+@bp.patch("/scheduler/<task_id>")
+def update_scheduler(task_id):
+    _job_viewer()
+    task = get_scoped_session().get(ScheduledTask, task_id)
+    if task is None:
+        abort(404)
+    body = request.get_json(silent=True) or {}
+    if set(body) - {"enabled", "timezone", "times"}:
+        abort(400, "unsupported scheduler fields")
+    enabled = body.get("enabled", task.enabled)
+    timezone_name = body.get("timezone", task.timezone)
+    times = body.get("times", task.times)
+    if not isinstance(enabled, bool) or not isinstance(timezone_name, str) or not isinstance(times, list):
+        abort(400, "invalid scheduler fields")
+    try:
+        task.times = _validate_schedule(timezone_name, times)
+    except ValueError as exc:
+        abort(400, str(exc))
+    task.enabled = enabled
+    task.timezone = timezone_name
+    get_scoped_session().commit()
+    return jsonify({"id": task.id, "enabled": task.enabled, "timezone": task.timezone, "times": task.times})
 
 
 @bp.get("/jobs/<job_id>")

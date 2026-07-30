@@ -9,6 +9,12 @@ const KEYS = {
   listFilters: "lenie_listFilters",
 } as const;
 
+// Older frontend versions mistakenly persisted the frontend address as the
+// Docker API address. Port 3000 serves the React UI; the API is on port 5055.
+const RETIRED_API_URLS: ReadonlySet<string> = new Set([
+  "http://192.168.200.7:3000",
+]);
+
 export function loadConnectionConfig(): {
   apiType: ApiType;
   apiUrl: string;
@@ -18,9 +24,13 @@ export function loadConnectionConfig(): {
   // ignore any stale "AWS Serverless" value left in localStorage
   const apiType: ApiType = "Docker";
   const storedKey = localStorage.getItem(KEYS.apiKey);
+  const storedApiUrl = localStorage.getItem(KEYS.apiUrl);
+  const apiUrl = RETIRED_API_URLS.has(storedApiUrl ?? "")
+    ? DEFAULT_API_URLS[apiType]
+    : storedApiUrl || DEFAULT_API_URLS[apiType];
   return {
     apiType,
-    apiUrl: localStorage.getItem(KEYS.apiUrl) || DEFAULT_API_URLS[apiType],
+    apiUrl,
     apiKey: storedKey ? atob(storedKey) : undefined,
   };
 }

@@ -8,7 +8,7 @@ import time
 from zoneinfo import ZoneInfo
 from sqlalchemy import text, select
 from library.db.engine import get_session
-from library.db.models import Job
+from library.db.models import Job, ScheduledTask
 from library.feed_monitor_service import run_check
 from library.job_queue import claim, finish, heartbeat, recover_stale, enqueue, retry
 from library.job_queue import JOB_TYPES
@@ -70,28 +70,29 @@ def handle_job_failure(session, job: Job, exc: Exception) -> None:
 
 
 def scheduler(session, now: dt.datetime) -> None:
-    local = now.astimezone(ZoneInfo(os.getenv("FEED_TIMEZONE", "Europe/Warsaw")))
-    target = os.getenv("FEED_SCHEDULE_TIME", "04:00")
-    hour, minute = map(int, target.split(":", 1))
-    if (local.hour, local.minute) >= (hour, minute):
-        enqueue(session, "feed_daily", idempotency_key=f"feed_daily:{local.date().isoformat()}")
-    _schedule_legacy_aws_pull(session, now)
+    for task in session.scalars(select(ScheduledTask)).all():
+        if not task.enabled or not _is_due(task, now):
+            continue
+        if task.id == "feed_daily":
+            local = now.astimezone(ZoneInfo(task.timezone))
+            enqueue(session, "feed_daily", idempotency_key=f"feed_daily:{local.date().isoformat()}")
+        elif task.id == "legacy_aws_pull":
+            _schedule_legacy_aws_pull(session, now, task)
 
 
-def _schedule_legacy_aws_pull(session, now: dt.datetime) -> None:
-    """Create at most one bridge job per UTC interval when explicitly enabled."""
-    if os.getenv("AWS_LEGACY_PULL_ENABLED", "false").strip().lower() != "true":
-        return
+def _is_due(task: ScheduledTask, now: dt.datetime) -> bool:
+    """Return whether ``now`` falls in one of the task's configured local minutes."""
     try:
-        interval_minutes = int(os.getenv("AWS_LEGACY_PULL_INTERVAL_MINUTES", "15"))
-    except ValueError as exc:
-        raise ValueError("AWS_LEGACY_PULL_INTERVAL_MINUTES must be a positive integer") from exc
-    if interval_minutes <= 0:
-        raise ValueError("AWS_LEGACY_PULL_INTERVAL_MINUTES must be a positive integer")
+        local = now.astimezone(ZoneInfo(task.timezone))
+        times = {(int(value.split(":", 1)[0]), int(value.split(":", 1)[1])) for value in task.times}
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError(f"invalid schedule for {task.id}") from exc
+    return (local.hour, local.minute) in times
 
-    utc_now = now.astimezone(dt.timezone.utc)
-    bucket_minute = utc_now.minute - (utc_now.minute % interval_minutes)
-    bucket = utc_now.replace(minute=bucket_minute, second=0, microsecond=0)
+
+def _schedule_legacy_aws_pull(session, now: dt.datetime, task: ScheduledTask) -> None:
+    """Create at most one bridge job for each configured local schedule minute."""
+    local = now.astimezone(ZoneInfo(task.timezone)).replace(second=0, microsecond=0)
     active = session.scalar(
         select(Job.id).where(
             Job.type == "legacy_aws_pull",
@@ -103,7 +104,7 @@ def _schedule_legacy_aws_pull(session, now: dt.datetime) -> None:
     enqueue(
         session,
         "legacy_aws_pull",
-        idempotency_key=f"legacy_aws_pull:{bucket.strftime('%Y-%m-%dT%H:%MZ')}",
+        idempotency_key=f"legacy_aws_pull:{local.strftime('%Y-%m-%dT%H:%M%z')}",
     )
 
 
