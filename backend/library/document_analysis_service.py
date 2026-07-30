@@ -32,7 +32,7 @@ SYNTHESIS_MAX_INPUT_CHARS = 20_000
 # Chunk LLM calls are independent (see create_run's _analyze_one) and safe to
 # run concurrently; kept conservative pending a live check of CloudFerro
 # Sherlock's per-key concurrency limit.
-CHUNK_ANALYSIS_MAX_WORKERS = 4
+CHUNK_ANALYSIS_MAX_WORKERS = 19
 _SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT|ZRODLA|SZUM): ?(.+)$', re.MULTILINE)
 
 # Run statuses that mean review never finished — once a newer run of the same
