@@ -2266,7 +2266,8 @@ const Chunks = () => {
             <div>
               <strong style={{ fontSize: "0.86em", color: "#1e3a8a" }}>1. Utwórz i przeanalizuj chunki</strong>
               <div style={{ marginTop: 3, fontSize: "0.8em", color: "#475569" }}>
-                Transkrypcja ma już rozdziały i akapity. Bielik podzieli ją teraz na chunki tematyczne; po zakończeniu przejdziesz do ich przeglądu.
+                Rozdziały i akapity służą do czytania — pozostają bez zmian. Chunki są roboczymi fragmentami tematycznymi dla Bielika:
+                pozwalają przejrzeć temat, poprawić podział, odrzucić szum oraz później utworzyć embeddingi. Po zakończeniu przejdziesz do ich przeglądu.
               </div>
             </div>
             <button className="button" onClick={() => startAnalysis("transcript", false)} disabled={!!jobId}
