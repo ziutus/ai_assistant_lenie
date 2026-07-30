@@ -734,13 +734,9 @@ class DocumentAnalysisService:
                     except Exception:
                         logger.exception("author biography processing failed, continuing")
 
-                try:
-                    from library.information_provenance import refresh_document_information_sources
-
-                    provenance = refresh_document_information_sources(session, doc, text, model)
-                    log(f"information sources: {len(provenance['sources'])}")
-                except Exception:
-                    logger.exception("information-source extraction failed, continuing")
+                # Information provenance is a reader enrichment, not a
+                # prerequisite for chunk review or search.  It is requested
+                # explicitly through POST /document/<id>/enrich.
 
         # 12. Persist to DB. An unfinished earlier run of the same scope is an
         #     abandoned attempt once this one lands — supersede it so its

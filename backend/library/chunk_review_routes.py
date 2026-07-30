@@ -265,23 +265,11 @@ def _start_embedding_job(run_id: int) -> str:
                 _embedding_jobs[job_id]["progress"] = msg
 
             result = generate_embeddings_from_run(job_session, run_id, progress_fn=_progress)
-            # Transcript runs reach this point after human review, without the
-            # article-only enrich_document pass. Populate the reader metadata
-            # now, reusing the explicit NER result instead of running NER twice.
-            run = job_session.get(DocumentAnalysisRun, run_id)
-            document = job_session.get(Document, run.document_id) if run else None
-            if result["embeddings_created"] and document and document.enrichment_run_at is None:
-                _progress("Wzbogacanie osi czasu, okresu i tonu dokumentu...")
-                from library.document_enrichment import refresh_document_enrichment
-
-                enrichment = refresh_document_enrichment(
-                    job_session,
-                    document,
-                    run.model,
-                    progress_fn=_progress,
-                    reuse_existing_entities=True,
-                )
-                result["enrichment_errors"] = enrichment.get("errors", {})
+            # Embedding is the end of the default YouTube workflow.  Reader
+            # enrichments (timeline, tone, periods, provenance and control
+            # questions) are deliberately requested from the UI when useful;
+            # running them here made a cheap indexing action unexpectedly
+            # expensive.
             _embedding_jobs[job_id].update({
                 "status": "done", "result": result,
                 "progress": f"Gotowe: {result['embeddings_created']} embeddingów "
@@ -1495,6 +1483,62 @@ def select_document_control_questions(doc_id: int):
         "answers_count": len(result["rows"]),
         "chapters": result["chapters"],
     })
+
+
+@bp.route("/document/<int:doc_id>/enrich", methods=["POST"])
+def enrich_document_stage(doc_id: int):
+    """Run one opt-in reader enrichment stage.
+
+    These analyses used to run as an implicit side effect of creating
+    embeddings.  Keeping each stage explicit makes their cost and purpose
+    visible in the YouTube review flow.
+    """
+    from library.document_analysis_service import _extract_text
+
+    data = request.get_json(silent=True) or {}
+    stage = data.get("stage")
+    allowed = {"events", "time_periods", "tones", "information_sources", "control_questions"}
+    if stage not in allowed:
+        return jsonify({"status": "error", "message": "Invalid enrichment stage"}), 400
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    model = data.get("model")
+    if model is not None and not isinstance(model, str):
+        return jsonify({"status": "error", "message": "model must be a string"}), 400
+    if not model:
+        run = _latest_run_for_document(session, doc_id)
+        model = run.model if run else "Bielik-11B-v3.0-Instruct"
+
+    try:
+        if stage == "events":
+            from library.timeline_events import refresh_document_events
+            result = refresh_document_events(session, doc, model)
+        elif stage == "time_periods":
+            from library.time_periods import refresh_document_periods
+            result = refresh_document_periods(session, doc, model)
+        elif stage == "tones":
+            from library.tones import refresh_document_tones
+            result = refresh_document_tones(session, doc, model)
+        elif stage == "information_sources":
+            text, _ = _extract_text(doc, prefer_md=True)
+            if not text:
+                return jsonify({"status": "error", "message": "Document has no usable text"}), 400
+            from library.information_provenance import refresh_document_information_sources
+            result = refresh_document_information_sources(session, doc, text, model)
+        else:
+            from library.control_question_selection import refresh_document_control_answers
+            result = refresh_document_control_answers(session, doc, model)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("enrichment stage %s failed for document %s", stage, doc_id)
+        return jsonify({"status": "error", "message": "Enrichment stage failed"}), 500
+
+    return jsonify({"status": "success", "doc_id": doc_id, "stage": stage, "result": result})
 
 
 @bp.route("/document/<int:doc_id>/anchor/<string:anchor_id>", methods=["GET"])
