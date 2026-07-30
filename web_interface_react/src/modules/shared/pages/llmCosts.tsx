@@ -50,21 +50,37 @@ const LlmCosts = () => {
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
-  const load = React.useCallback(async () => {
+  const requestReport = React.useCallback(async (query: Record<string, string>) => {
     setLoading(true); setError("");
     try {
-      const query: Record<string, string> = {};
-      if (from) query.from = from;
-      if (to) query.to = to;
-      if (documentId.trim()) query.document_id = documentId.trim();
-      setParams(query);
       const response = await axios.get(`${apiUrl}/llm_costs`, { params: query, headers: { "x-api-key": apiKey ?? "" } });
       setReport(response.data);
     } catch (e: any) { setError(e.response?.data?.message ?? "Nie udało się pobrać kosztów LLM"); }
     finally { setLoading(false); }
-  }, [apiUrl, apiKey, from, to, documentId, setParams]);
+  }, [apiUrl, apiKey]);
 
-  React.useEffect(() => { void load(); }, []); // initial report only
+  const load = React.useCallback(() => {
+    const query: Record<string, string> = {};
+    if (from) query.from = from;
+    if (to) query.to = to;
+    if (documentId.trim()) query.document_id = documentId.trim();
+    setParams(query);
+    void requestReport(query);
+  }, [documentId, from, requestReport, setParams, to]);
+
+  React.useEffect(() => {
+    const nextDocumentId = params.get("document_id") ?? "";
+    const nextFrom = params.get("from") ?? (nextDocumentId ? "" : iso(new Date(now.getFullYear(), now.getMonth(), 1)));
+    const nextTo = params.get("to") ?? (nextDocumentId ? "" : iso(now));
+    setDocumentId(nextDocumentId);
+    setFrom(nextFrom);
+    setTo(nextTo);
+    const query: Record<string, string> = {};
+    if (nextFrom) query.from = nextFrom;
+    if (nextTo) query.to = nextTo;
+    if (nextDocumentId) query.document_id = nextDocumentId;
+    void requestReport(query);
+  }, [params, requestReport]);
 
   const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", marginTop: 10 };
   const th: React.CSSProperties = { textAlign: "left", padding: "7px 8px", borderBottom: "1px solid #cbd5e1" };
