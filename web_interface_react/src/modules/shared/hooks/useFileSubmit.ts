@@ -1,31 +1,37 @@
 import axios from "axios";
 import React from "react";
+import { AuthorizationContext } from "../context/authorizationContext";
 
 const useFileSubmit = () => {
   const [message, setMessage] = React.useState<string | null>(null);
   const [isLoading, setIsLoading] = React.useState(false);
   const [isError, setIsError] = React.useState(false);
   const [isSuccess, setIsSuccess] = React.useState(false);
+  const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
 
   const submitFile = async (fileInput: React.RefObject<HTMLInputElement | null>) => {
     if (fileInput.current?.files?.[0]) {
       const file = fileInput.current.files[0];
       const formData = new FormData();
       formData.append("file", file);
+      setIsLoading(true);
+      setIsError(false);
+      setIsSuccess(false);
       try {
-        await axios.post(
-          "https://y448yz22yk.execute-api.us-east-1.amazonaws.com/v1/upload-file-simple",
+        const response = await axios.post<{ key: string }>(
+          `${apiUrl}/upload-file`,
           formData,
           {
             headers: {
               "Content-Type": "multipart/form-data",
+              "x-api-key": apiKey ?? "",
             },
           },
         );
         setIsSuccess(true);
         setIsError(false);
         setIsLoading(false);
-        setMessage("File uploaded successfully.");
+        setMessage(`Plik zapisany w MinIO: ${response.data.key}`);
         // alert("File uploaded successfully.");
       } catch (error: any) {
         setIsSuccess(false);

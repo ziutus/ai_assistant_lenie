@@ -26,6 +26,8 @@ from library.feed_routes import bp as feed_bp
 from library.feed_monitor_service import link_matching_feed_items_to_document
 from library.llm_analysis_routes import bp as llm_analysis_bp
 from library.youtube_processing import process_youtube_url
+from library.storage import storage_from_config
+from library.upload_storage import store_uploaded_file
 
 logging.basicConfig(level=logging.INFO)
 
@@ -88,6 +90,7 @@ def check_auth_header():
 
 logging.info("Starting flask application")
 app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = int(cfg.get("UPLOAD_MAX_BYTES") or 250 * 1024 * 1024)
 logging.info("Flask - enabling CORS for all routes")
 CORS(app)  # This will enable CORS for all routes
 
@@ -113,6 +116,32 @@ def before_request_func():
     exempt_paths = ['/', '/healthz', '/startup', '/readiness', '/liveness', '/version']
     if request.path not in exempt_paths and request.method != 'OPTIONS':
         check_auth_header()
+
+
+@app.errorhandler(413)
+def request_too_large(_error):
+    return jsonify(error="file is too large"), 413
+
+
+@app.route('/upload-file', methods=['POST', 'OPTIONS'])
+def upload_file():
+    """Put a PDF/EPUB/MOBI into the durable, importer-facing upload area."""
+    uploaded = request.files.get("file")
+    if uploaded is None:
+        return jsonify(error="multipart field 'file' is required"), 400
+    try:
+        result = store_uploaded_file(storage_from_config(cfg), uploaded.filename, uploaded.read())
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except Exception:  # noqa: BLE001 - storage details must not leak to the browser
+        logging.exception("Could not store uploaded file")
+        return jsonify(error="could not store file"), 502
+    return jsonify(
+        key=result.key,
+        filename=result.filename,
+        size=result.size,
+        format=result.extension.removeprefix("."),
+    ), 201
 
 @app.route('/', methods=['GET', 'OPTIONS'])
 def root():
