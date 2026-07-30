@@ -135,6 +135,16 @@ interface DocQuality {
   llm_rubric?: { zrodla: number; glebia: number; jezyk: number; uzasadnienie?: string } | null;
 }
 
+type EnrichmentStage = "events" | "time_periods" | "tones" | "information_sources" | "control_questions";
+
+const OPTIONAL_ENRICHMENTS: { stage: EnrichmentStage; label: string; description: string }[] = [
+  { stage: "events", label: "Oś czasu", description: "Wykrywa datowane wydarzenia do widoku i filtrów." },
+  { stage: "time_periods", label: "Okresy historyczne", description: "Rozpoznaje epoki i zakresy lat omawiane w materiale." },
+  { stage: "tones", label: "Ton wypowiedzi", description: "Opisuje emocje, rejestr i nastawienie treści." },
+  { stage: "information_sources", label: "Źródła informacji", description: "Wskazuje osoby i organizacje, na których opiera się materiał." },
+  { stage: "control_questions", label: "Pytania kontrolne", description: "Dobiera pytania i odpowiedzi pomocne przy późniejszym przeglądzie." },
+];
+
 const QUALITY_PENALTY_LABELS: Record<string, string> = {
   photo_captions: "podpisy zdjęć",
   photo_sources: "pochodzenie zdjęć",
@@ -574,6 +584,7 @@ const Chunks = () => {
   const [deletingChunks, setDeletingChunks] = React.useState<Record<number, boolean>>({});
   const [reanalyzingAll, setReanalyzingAll] = React.useState(false);
   const [approvingAll, setApprovingAll] = React.useState(false);
+  const [enrichingStage, setEnrichingStage] = React.useState<EnrichmentStage | null>(null);
   const [splitStates, setSplitStates]     = React.useState<Record<number, SplitState>>({});
   const [lineEdits, setLineEdits]         = React.useState<Record<number, Set<number>>>({});
   const [savingLines, setSavingLines]     = React.useState<Record<number, boolean>>({});
@@ -979,12 +990,10 @@ const Chunks = () => {
     finally { setReanalyzing(prev => ({ ...prev, [chunkId]: false })); }
   };
 
-  // Chunks that still need an LLM pass: flagged for re-analysis OR fresh from
-  // a split-only run (pending TEMAT without a summary)
-  const chunksToAnalyze = chunks.filter(c =>
-    c.status === "needs_reanalysis"
-    || (c.type === "TEMAT" && c.status === "pending" && !c.summary)
-  );
+  // A split-only run is a valid, cheap path to searchable embeddings. Only
+  // explicit edits/splits require another LLM pass; semantic analysis remains
+  // available per chunk when the user wants titles or summaries.
+  const chunksToAnalyze = chunks.filter(c => c.status === "needs_reanalysis");
 
   const reanalyzeAll = async () => {
     if (!chunksToAnalyze.length) return;
@@ -1275,6 +1284,28 @@ const Chunks = () => {
         }
       } else { setError("Błąd zmiany statusu analizy"); }
     } catch { setError("Błąd połączenia przy zmianie statusu analizy"); }
+  };
+
+  const runOptionalEnrichment = async (stage: EnrichmentStage) => {
+    if (!id || enrichingStage) return;
+    setEnrichingStage(stage);
+    setError("");
+    setInfo("");
+    try {
+      const r = await fetch(`${apiUrl}/document/${id}/enrich`, {
+        method: "POST", headers, body: JSON.stringify({ stage, model: newModel }),
+      });
+      const data = await r.json();
+      if (!r.ok || data.status !== "success") {
+        throw new Error(data.message ?? "Nie udało się uruchomić analizy");
+      }
+      const label = OPTIONAL_ENRICHMENTS.find(item => item.stage === stage)?.label ?? stage;
+      setInfo(`Gotowe: ${label.toLocaleLowerCase("pl")}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Błąd opcjonalnej analizy");
+    } finally {
+      setEnrichingStage(null);
+    }
   };
 
   const applyCleanupAndResplit = async () => {
@@ -2267,15 +2298,16 @@ const Chunks = () => {
             display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap",
           }}>
             <div>
-              <strong style={{ fontSize: "0.86em", color: "#1e3a8a" }}>1. Utwórz i przeanalizuj chunki</strong>
+              <strong style={{ fontSize: "0.86em", color: "#1e3a8a" }}>1. Utwórz chunki do przeglądu</strong>
               <div style={{ marginTop: 3, fontSize: "0.8em", color: "#475569" }}>
-                Rozdziały i akapity służą do czytania — pozostają bez zmian. Chunki są roboczymi fragmentami tematycznymi dla Bielika:
-                pozwalają przejrzeć temat, poprawić podział, odrzucić szum oraz później utworzyć embeddingi. Po zakończeniu przejdziesz do ich przeglądu.
+                Rozdziały i akapity służą do czytania — pozostają bez zmian. Chunki są roboczymi,
+                timestampowanymi fragmentami do ręcznego przeglądu i embeddingów. Tytuły, streszczenia
+                oraz korekta STT uruchomisz tylko dla wybranych fragmentów.
               </div>
             </div>
-            <button className="button" onClick={() => startAnalysis("transcript", false)} disabled={!!jobId}
+            <button className="button" onClick={() => startAnalysis("transcript", true)} disabled={!!jobId}
               style={{ marginLeft: "auto", fontWeight: 700 }}>
-              {jobId ? `Analizuję… (${jobStatus})` : "▶ Utwórz i przeanalizuj chunki"}
+              {jobId ? `Dzielę… (${jobStatus})` : "▶ Utwórz chunki"}
             </button>
           </div>
         )}
@@ -2380,7 +2412,7 @@ const Chunks = () => {
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 8 }}>
             {([
               {
-                label: "1. Klasyfikacja, tematy i streszczenia",
+                label: "1. Podział i opcjonalna analiza",
                 done: chunksToAnalyze.length === 0,
                 detail: chunksToAnalyze.length > 0 ? `${chunksToAnalyze.length} wymaga analizy` : classificationSummary,
                 subs: [
@@ -2390,9 +2422,11 @@ const Chunks = () => {
                     detail: chunkTotal > 0 ? `${chunkTotal} chunków` : "brak chunków",
                   },
                   {
-                    label: runMode === "article" ? "Analiza LLM: klasyfikacja, tematy i streszczenia" : "Analiza LLM: tematy i streszczenia",
-                    done: tematChunks.length > 0 && chunksToAnalyze.length === 0 && analyzedTematCount > 0,
-                    detail: chunksToAnalyze.length === 0 ? classificationSummary : `${analyzedTematCount}/${tematChunks.length} TEMAT przeanalizowanych`,
+                    label: runMode === "article" ? "Analiza LLM: klasyfikacja, tematy i streszczenia" : "Analiza LLM: korekta, tematy i streszczenia",
+                    done: chunksToAnalyze.length === 0,
+                    detail: chunksToAnalyze.length > 0
+                      ? `${analyzedTematCount}/${tematChunks.length} TEMAT wymaga ponownej analizy`
+                      : analyzedTematCount > 0 ? `${analyzedTematCount}/${tematChunks.length} TEMAT przeanalizowanych` : "nie uruchomiono",
                   },
                 ],
               },
@@ -2462,7 +2496,7 @@ const Chunks = () => {
               </button>
             ) : runStatus !== "reviewed" ? (
               <button className="button" onClick={() => setRunWorkflowStatus("reviewed")} disabled={!reviewReady || workflowBusy}
-                title={!reviewReady ? "Najpierw przeanalizuj i zatwierdź wszystkie chunki TEMAT" : "Zamknij review i automatycznie utwórz embeddingi"}
+                title={!reviewReady ? "Najpierw zatwierdź wszystkie chunki TEMAT" : "Zamknij review i automatycznie utwórz embeddingi"}
                 style={{ background: reviewReady ? "#7c3aed" : "#cbd5e1", color: "#fff", border: "none", fontWeight: 700 }}>
                 Zakończ review i utwórz embeddingi
               </button>
@@ -2500,6 +2534,36 @@ const Chunks = () => {
             </span>
           </div>
         </aside>
+      )}
+
+      {selectedRun !== null && runStatus === "reviewed" && (
+        <section style={{
+          marginBottom: 14, padding: "14px 16px", border: "1px solid #cbd5e1",
+          borderRadius: 10, background: "#f8fafc",
+        }}>
+          <strong style={{ color: "#0f172a" }}>Dodatkowe analizy — na żądanie</strong>
+          <p style={{ margin: "5px 0 12px", fontSize: "0.82em", color: "#475569", lineHeight: 1.45 }}>
+            Embeddingi nie uruchamiają tych etapów automatycznie. Wybierz tylko informacje,
+            których użyjesz w czytniku, filtrach lub notatce.
+          </p>
+          <div style={{ display: "grid", gap: 8 }}>
+            {OPTIONAL_ENRICHMENTS.map(item => (
+              <div key={item.stage} style={{
+                display: "flex", gap: 12, alignItems: "center", padding: "8px 10px",
+                border: "1px solid #e2e8f0", background: "#fff", borderRadius: 6, flexWrap: "wrap",
+              }}>
+                <div style={{ flex: "1 1 320px" }}>
+                  <div style={{ fontWeight: 700, fontSize: "0.84em", color: "#334155" }}>{item.label}</div>
+                  <div style={{ marginTop: 2, fontSize: "0.78em", color: "#64748b" }}>{item.description}</div>
+                </div>
+                <button className="button" type="button" onClick={() => runOptionalEnrichment(item.stage)}
+                  disabled={enrichingStage !== null} style={{ whiteSpace: "nowrap" }}>
+                  {enrichingStage === item.stage ? "Analizuję…" : "Uruchom"}
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
       )}
 
       {(docThematicTags.length > 0 || docCountries.length > 0) && (
