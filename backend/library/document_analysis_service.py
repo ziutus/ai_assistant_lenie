@@ -29,6 +29,20 @@ ANALYSIS_MODELS = [DEFAULT_ANALYSIS_MODEL, f"arklabs/{DEFAULT_ANALYSIS_MODEL}"]
 ANALYSIS_MODES = ("transcript", "article")
 SYNTHESIS_MAX_TOKENS = 2_000
 SYNTHESIS_MAX_INPUT_CHARS = 20_000
+# Chunk LLM calls are independent (see create_run's _analyze_one) and safe to
+# run concurrently. Also caps book/article runs (hundreds of chunks) from
+# firing them all at once — actual concurrency is min(this, chunk_count), so
+# a typical video (10-25 chunks) runs nearly all of them in one wave while a
+# book never exceeds this many in flight.
+#
+# Live-tested on a 19-chunk video (2026-07-30, doc 9356/9353 investigation):
+# 1 worker -> 338.7s stage time, 17.8s avg/call, 0 errors
+# 4 workers -> 100.7s, 19.8s avg/call, 0 errors
+# 19 workers -> 33.7s, 31.7s avg/call (+78% vs baseline), 0 errors — no hard
+#   rate limit hit, but per-call latency degrades noticeably (soft ceiling,
+#   likely queuing/GPU contention on CloudFerro's side). Settled below that
+#   tested-safe point rather than extrapolating further untested.
+CHUNK_ANALYSIS_MAX_WORKERS = 16
 _SECTION_HEADER_RE = re.compile(r'^### (REKLAMA|TEMAT|ZRODLA|SZUM): ?(.+)$', re.MULTILINE)
 
 # Run statuses that mean review never finished — once a newer run of the same
@@ -538,30 +552,69 @@ class DocumentAnalysisService:
             chunk_texts_iter: list[str] = []
         else:
             chunk_texts_iter = chunk_texts
-        for i, chunk_text in enumerate(chunk_texts_iter):
-            log(f"chunk {i + 1}/{total} ({len(chunk_text):,} chars)...")
-            try:
-                if i == author_bio_position:
-                    result = {
-                        "type": "SZUM",
-                        "topic": "Notka biograficzna autora",
-                        "corrected_text": None,
-                        "summary": None,
-                        "rewrite_ratio": None,
-                    }
-                elif is_transcript:
-                    result = analyze_chunk(
-                        chunk_text, model,
-                        position=i + 1, total=total,
-                        speakers=speakers or None,
-                        prev_context=_sentence_tail(chunk_texts[i - 1]) if i > 0 else "",
-                        next_context=_sentence_head(chunk_texts[i + 1]) if i < total - 1 else "",
-                    )
-                else:
-                    result = analyze_article_chunk(chunk_text, model, position=i + 1, total=total)
-            except Exception as exc:
-                raise RuntimeError(f"LLM call failed for chunk {i + 1}/{total}: {exc}") from exc
 
+        def _analyze_one(i: int, chunk_text: str) -> dict:
+            if i == author_bio_position:
+                return {
+                    "type": "SZUM",
+                    "topic": "Notka biograficzna autora",
+                    "corrected_text": None,
+                    "summary": None,
+                    "rewrite_ratio": None,
+                }
+            if is_transcript:
+                return analyze_chunk(
+                    chunk_text, model,
+                    position=i + 1, total=total,
+                    speakers=speakers or None,
+                    prev_context=_sentence_tail(chunk_texts[i - 1]) if i > 0 else "",
+                    next_context=_sentence_head(chunk_texts[i + 1]) if i < total - 1 else "",
+                )
+            return analyze_article_chunk(chunk_text, model, position=i + 1, total=total)
+
+        # Chunks are independent LLM calls (boundary context comes from the raw
+        # split, not from a neighbor's result), so they can run concurrently.
+        # ai_ask() tags each usage row from a contextvar (llm_usage_context, set
+        # by the caller around create_run()) — contextvars are NOT inherited by
+        # new threads, so it must be re-entered explicitly inside each worker or
+        # parallel chunks would silently lose document_id/analysis_job_id on
+        # their llm_usage_logs rows.
+        results: list[dict] = [{}] * len(chunk_texts_iter)
+        if chunk_texts_iter:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            from library.llm_usage.context import current_usage_context, llm_usage_context
+
+            usage_document_id, usage_job_id, usage_run_id = current_usage_context()
+
+            def _run(i: int, chunk_text: str) -> dict:
+                with llm_usage_context(
+                    document_id=usage_document_id, analysis_job_id=usage_job_id, analysis_run_id=usage_run_id,
+                ):
+                    return _analyze_one(i, chunk_text)
+
+            log(f"analyzing {total} chunks (up to {CHUNK_ANALYSIS_MAX_WORKERS} concurrent)...")
+            max_workers = min(CHUNK_ANALYSIS_MAX_WORKERS, len(chunk_texts_iter))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_index = {
+                    executor.submit(_run, i, chunk_text): i
+                    for i, chunk_text in enumerate(chunk_texts_iter)
+                }
+                first_error: tuple[int, Exception] | None = None
+                for future in as_completed(future_to_index):
+                    i = future_to_index[future]
+                    try:
+                        results[i] = future.result()
+                        log(f"chunk {i + 1}/{total} done ({len(chunk_texts_iter[i]):,} chars)")
+                    except Exception as exc:
+                        if first_error is None or i < first_error[0]:
+                            first_error = (i, exc)
+                if first_error is not None:
+                    fail_i, exc = first_error
+                    raise RuntimeError(f"LLM call failed for chunk {fail_i + 1}/{total}: {exc}") from exc
+
+        for i, chunk_text in enumerate(chunk_texts_iter):
+            result = results[i]
             sections.append({
                 "type": result["type"],
                 "topic": result["topic"],
