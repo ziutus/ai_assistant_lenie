@@ -214,11 +214,16 @@ def split_text_by_sentences(text, max_words=200):
     # Usuwamy puste elementy
     fragmenty = [fragment for fragment in fragmenty if fragment]
 
+    parts = []
     for fragment in fragmenty:
-        if len(fragment.split()) > max_words:
-            raise "Please corect text first, there is no possiblity to split text by sentences"
+        words = fragment.split()
+        # A transcript can contain a very long utterance without sentence
+        # punctuation. It must still be indexable; do not abort the entire
+        # embedding job just because this last-resort splitter was reached.
+        for start in range(0, len(words), max_words):
+            parts.append(" ".join(words[start:start + max_words]))
 
-    return fragmenty
+    return parts
 
 
 def split_text_by_paragraphs(text, max_words=200):
