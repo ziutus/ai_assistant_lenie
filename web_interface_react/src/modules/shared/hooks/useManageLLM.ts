@@ -217,8 +217,12 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
           language: website.language,
           document_type: website.document_type,
           // A reviewed webpage is ready for chunking, not yet for embeddings.
+          // The YouTube flow opens the chunk review explicitly below, so keep
+          // it in manual review until that analysis has been completed.
           processing_status: website.document_type === "webpage"
             ? "MD_SIMPLIFIED"
+            : website.document_type === "youtube"
+              ? "NEED_MANUAL_REVIEW"
             : "READY_FOR_EMBEDDING",
           chapter_list: website.chapter_list,
           byline: website.byline,
@@ -277,6 +281,14 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
         setIsLoading(false);
         setIsError(false);
         navigate(`/chunks/${website.id}`, { state: { docType: "webpage" } });
+        return;
+      }
+
+      if (website.document_type === "youtube") {
+        setMessage(response.data.message);
+        setIsLoading(false);
+        setIsError(false);
+        navigate(`/chunks/${website.id}`, { state: { docType: "youtube" } });
         return;
       }
 
