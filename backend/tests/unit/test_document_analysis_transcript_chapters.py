@@ -113,6 +113,10 @@ def transcript_env(monkeypatch, session):
     monkeypatch.setattr(das, "_synthesize", lambda sections, title, model, mode="transcript": "")
     monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title: [])
     monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
+    monkeypatch.setattr("library.entity_service.refresh_document_entities", lambda session, doc_id, text: [])
+    monkeypatch.setattr("library.place_verification.verify_document_places", lambda session, doc, text: {"resolved": [], "tagged": []})
+    monkeypatch.setattr("library.person_registry.resolve_document_persons", lambda session, doc, text: {"linked": [], "skipped": []})
+    monkeypatch.setattr("library.information_provenance.refresh_document_information_sources", lambda session, doc, text, model: {"sources": []})
     return session
 
 
@@ -139,3 +143,15 @@ class TestCreateRunUsesChapterSplit:
         chunks = [o for o in transcript_env.added if isinstance(o, DocumentChunk)]
         # Blind char-count split ignores chapter boundaries — more/uneven pieces
         assert len(chunks) > 3
+
+    def test_reuses_earlier_ner_without_refreshing_entities(self, transcript_env, monkeypatch):
+        def should_not_run(*_args, **_kwargs):
+            raise AssertionError("NER must be reused, not rerun")
+
+        monkeypatch.setattr("library.entity_service.refresh_document_entities", should_not_run)
+        service = DocumentAnalysisService(transcript_env)
+
+        service.create_run(
+            doc_id=9216, model="test-model", mode="transcript",
+            reuse_existing_entities=True,
+        )
