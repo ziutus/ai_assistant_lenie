@@ -25,18 +25,23 @@ def _money(value):
 @bp.get("/llm_costs")
 def llm_costs():
     today = date.today()
+    document_id = request.args.get("document_id", type=int)
+    # A document report should cover its full lifecycle when opened directly.
+    # The global report deliberately retains its month-to-date default.
+    has_date_filter = bool(request.args.get("from") or request.args.get("to"))
     try:
-        date_from = _date_arg("from", today.replace(day=1))
-        date_to = _date_arg("to", today)
-        if date_to < date_from:
+        date_from = _date_arg("from", today.replace(day=1)) if (has_date_filter or document_id is None) else None
+        date_to = _date_arg("to", today) if (has_date_filter or document_id is None) else None
+        if date_from is not None and date_to is not None and date_to < date_from:
             raise ValueError("to must not be earlier than from")
     except ValueError as exc:
         return jsonify({"status": "error", "message": str(exc)}), 400
 
-    document_id = request.args.get("document_id", type=int)
-    start = datetime.combine(date_from, time.min)
-    end = datetime.combine(date_to + timedelta(days=1), time.min)
-    filters = [LlmUsageLog.called_at >= start, LlmUsageLog.called_at < end]
+    filters = []
+    if date_from is not None and date_to is not None:
+        start = datetime.combine(date_from, time.min)
+        end = datetime.combine(date_to + timedelta(days=1), time.min)
+        filters.extend([LlmUsageLog.called_at >= start, LlmUsageLog.called_at < end])
     if document_id is not None:
         filters.append(LlmUsageLog.document_id == document_id)
 
@@ -96,7 +101,8 @@ def llm_costs():
         ).all()
 
     return jsonify({
-        "status": "success", "from": date_from.isoformat(), "to": date_to.isoformat(),
+        "status": "success", "from": date_from.isoformat() if date_from else None,
+        "to": date_to.isoformat() if date_to else None,
         "document_id": document_id,
         "totals": [{"currency": r.cost_currency, "calls": r.calls, "tokens": r.tokens,
                     "cost": _money(r.cost), "unknown_calls": r.unknown_calls} for r in totals],

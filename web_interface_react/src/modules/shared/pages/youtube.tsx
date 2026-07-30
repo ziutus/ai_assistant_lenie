@@ -4,7 +4,7 @@ import { useFormik } from "formik";
 import { useManageLLM } from "../hooks/useManageLLM";
 import SharedInputs from "../components/SharedInputs/sharedInputs";
 import InputsForAllExceptLink from "../components/SharedInputs/InputsForAllExceptLink";
-import { useParams } from "react-router-dom";
+import { NavLink, useParams } from "react-router-dom";
 import FormButtons from "../components/FormButtons/formButtons";
 import { AuthorizationContext } from '../context/authorizationContext';
 
@@ -110,6 +110,7 @@ const Youtube = () => {
   return (
     <div>
       <h2 style={{ marginBottom: "10px" }}>Youtube</h2>
+      {id && <NavLink to={`/llm-costs?document_id=${id}`} style={{ display: "inline-block", marginBottom: 10, fontSize: "0.9em", color: "#0369a1" }}>💰 Koszty i etapy LLM</NavLink>}
       <form onSubmit={formik.handleSubmit} style={{ maxWidth: "800px" }}>
         {id && transcriptMissing && (
           <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
