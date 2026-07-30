@@ -504,7 +504,10 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     }
   };
 
-  const handleYoutubeRetryCaptions = async (document_id: string | number) => {
+  const handleYoutubeRetryCaptions = async (
+    document_id: string | number,
+    options: { localMessage?: boolean } = {},
+  ) => {
     setIsLoading(true);
     try {
       const response = await axios.post(
@@ -524,10 +527,12 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
     } catch (error: any) {
       console.error("There was an error on handleYoutubeRetryCaptions!", error);
       const message = error.response?.data?.message || error.message;
-      setMessage(`There was an error retrying YouTube captions: ${message}`);
+      if (!options.localMessage) {
+        setMessage(`There was an error retrying YouTube captions: ${message}`);
+      }
       setIsLoading(false);
       setIsError(true);
-      return null;
+      return { error: message };
     }
   };
 

@@ -342,6 +342,24 @@ scp infra/docker/nas.env admin@192.168.200.7:/share/ContainerNew/lenie-env/.env
 # Then restart the backend container
 ```
 
+### Writable cache for media processing
+
+`CACHE_DIR` is application configuration, but in the NAS deployment it is
+loaded from Vault together with the remaining application settings. It must be
+an absolute path writable by uid `1000`; never use a relative `tmp` path,
+because it resolves to `/app/tmp` and the non-root backend user cannot create
+it. The durable NAS value is `/app/data/cache`:
+
+```powershell
+.\backend\.venv\Scripts\python.exe scripts\env_to_vault.py vault set --env dev CACHE_DIR=/app/data/cache
+ssh admin@192.168.200.7 "/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker exec -u 0 lenie-ai-server sh -c 'mkdir -p /app/data/cache/youtube_to_text && chown -R 1000:1000 /app/data/cache'"
+ssh admin@192.168.200.7 "/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker restart lenie-ai-server"
+```
+
+Use the same directory for the other application-side pipelines that use
+`CACHE_DIR`. Source HTML/text remains durable in MinIO; this cache holds
+working files such as downloaded YouTube media and conversion intermediates.
+
 ## Vault
 
 HashiCorp Vault runs on the NAS for secrets management. Auto-unseal is configured via AWS KMS — Vault unseals itself automatically after every NAS restart.

@@ -2091,8 +2091,11 @@ _YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES = {
 
 @app.route('/website_youtube_retry_captions', methods=['POST'])
 def website_youtube_retry_captions():
-    """Retry downloading YouTube captions for a document stuck in a no-transcript
-    state (e.g. processing_error_code=CAPTIONS_FETCH_ERROR)."""
+    """Fetch YouTube captions for a document that has no transcript yet.
+
+    URL_ADDED is a first attempt; TEMPORARY_ERROR/NEED_TRANSCRIPTION are retries.
+    The endpoint name is retained for API compatibility.
+    """
     doc_id = request.form.get('id')
     if not doc_id:
         json_data = request.get_json(silent=True) or {}
@@ -2122,6 +2125,7 @@ def website_youtube_retry_captions():
                        f"before a transcript has been captured ({', '.join(sorted(_YOUTUBE_CAPTIONS_RETRY_ALLOWED_STATES))})",
         }, 409
 
+    first_attempt = doc.processing_status == StalkerDocumentStatus.URL_ADDED.name
     webshare_api_key = cfg.get("WEBSHARE_API_KEY")
     updated = process_youtube_url(
         session=session,
@@ -2135,7 +2139,7 @@ def website_youtube_retry_captions():
 
     return {
         "status": "success",
-        "message": "Captions retry finished",
+        "message": "Captions fetch finished" if first_attempt else "Captions retry finished",
         "id": updated.id,
         "processing_status": updated.processing_status,
         "processing_error_code": updated.processing_error_code,
@@ -2217,12 +2221,22 @@ def website_save():
             from library.document_editing import document_has_embeddings
 
             existing = session.get(Document, int(link_id))
+            requested_status = request.form.get('processing_status')
+            if (
+                existing is not None
+                and existing.document_type == StalkerDocumentType.youtube.name
+                and requested_status == StalkerDocumentStatus.READY_FOR_EMBEDDING.name
+                and not (attrs.get("text") if "text" in attrs else existing.text)
+            ):
+                return {
+                    "status": "error",
+                    "message": "YouTube document has no transcript. Fetch captions before marking it ready.",
+                }, 409
             if existing is not None and document_has_embeddings(session, existing.id):
                 content_changed = any(
                     key in attrs and attrs[key] != (getattr(existing, key) or "")
                     for key in ("text", "text_md")
                 )
-                requested_status = request.form.get('processing_status')
                 status_changed = bool(requested_status and requested_status != existing.processing_status)
                 if content_changed or status_changed:
                     return {

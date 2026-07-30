@@ -347,11 +347,11 @@ groups:
         example: "postgresql"
         used_by: [docker, lambda, local]
       CACHE_DIR:
-        description: "Directory for YouTube transcript cache"
+        description: "Writable cache directory for YouTube transcripts and document-processing scratch files"
         type: config
         required: false
-        default: "cache"
-        example: "tmp/youtube_to_text"
+        default: "tmp"
+        example: "/app/data/cache"
         used_by: [docker, local]
       DOCUMENT_WORK_DIR:
         description: "Scratch directory for resumable document processing jobs"

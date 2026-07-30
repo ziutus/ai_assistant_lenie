@@ -33,7 +33,7 @@ const FormButtons = ({
       </button>
       <button
         type="button"
-        disabled={isLoading}
+        disabled={isLoading || (formik.values.document_type === "youtube" && !String(formik.values.text || "").trim())}
         style={{ marginRight: "15px" }}
         className={"button"}
         onClick={() => handleSaveWebsiteNext(formik.values)}

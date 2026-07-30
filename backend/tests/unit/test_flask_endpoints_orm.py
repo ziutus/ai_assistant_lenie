@@ -710,3 +710,26 @@ class TestWebsiteYoutubeRetryCaptions:
     def test_missing_id_returns_400(self, client):
         resp = client.post("/website_youtube_retry_captions", data={}, headers=API_HEADERS)
         assert resp.status_code == 400
+
+
+class TestWebsiteSaveYoutubeTranscriptGuard:
+    def test_rejects_marking_youtube_ready_without_transcript(self, client):
+        mock_session = MagicMock()
+        existing = MagicMock()
+        existing.document_type = "youtube"
+        existing.text = ""
+        existing.id = 9348
+        mock_session.get.return_value = existing
+
+        with patch("server.get_scoped_session", return_value=mock_session), \
+             patch("library.document_editing.document_has_embeddings", return_value=False):
+            resp = client.post("/website_save", data={
+                "id": "9348",
+                "url": "https://www.youtube.com/watch?v=test",
+                "document_type": "youtube",
+                "processing_status": "READY_FOR_EMBEDDING",
+                "text": "",
+            }, headers=API_HEADERS)
+
+        assert resp.status_code == 409
+        assert resp.get_json()["message"] == "YouTube document has no transcript. Fetch captions before marking it ready."

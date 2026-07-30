@@ -90,7 +90,12 @@ def _append_with_chapters(
             target = _chapter_index(chapter_starts, float(entry[start_time_key]), chapter_nb)
             while chapter_nb < target:
                 chapter_nb += 1
-                string_all += ("\n\n" if string_all else "") + chapters[chapter_nb]['title'] + "\n"
+                # Persist source-supplied video chapters as reader-visible
+                # Markdown sections, just like book/article chapters.
+                # A blank line after the heading is required: the reader's
+                # Markdown renderer treats a heading and following text in one
+                # block as a single (bold) heading.
+                string_all += ("\n\n" if string_all else "") + f"## {chapters[chapter_nb]['title']}\n\n"
                 after_header = True
             if after_header:
                 string_all += content
