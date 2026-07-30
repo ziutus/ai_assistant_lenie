@@ -460,6 +460,57 @@ def analyze_document_chunks(doc_id: int):
     return jsonify({"status": "queued", "job_id": job_id, "doc_id": doc_id})
 
 
+@bp.route("/document/<int:doc_id>/paragraphize_transcript", methods=["POST"])
+def paragraphize_document_transcript(doc_id: int):
+    """Add Bielik-selected paragraph spacing to a chaptered video transcript.
+
+    The operation is deliberately unavailable after embedding generation:
+    paragraph boundaries affect all later chunk offsets.  It writes only
+    ``Document.text`` and retains the original H1/H2 chapter headings.
+    """
+    from library.document_editing import document_has_embeddings
+    from library.transcript_paragraphs import paragraphize_transcript
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+    if not (doc.text or "").strip():
+        return jsonify({"status": "error", "message": "Document has no transcript text"}), 400
+    if document_has_embeddings(session, doc_id):
+        return jsonify({
+            "status": "error",
+            "message": "Document has embeddings. Reopen it for editing before paragraphizing the transcript.",
+        }), 409
+    active = session.scalar(
+        select(DocumentAnalysisJob.id).where(
+            DocumentAnalysisJob.document_id == doc_id,
+            DocumentAnalysisJob.status.in_(("queued", "running")),
+        ).limit(1)
+    )
+    if active is not None:
+        return jsonify({"status": "error", "message": "Document analysis is currently running"}), 409
+
+    try:
+        result = paragraphize_transcript(doc.text, document_id=doc_id)
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    except Exception:
+        logger.exception("Transcript paragraphization failed for document %s", doc_id)
+        return jsonify({"status": "error", "message": "Paragraphization by the language model failed"}), 502
+
+    doc.text = result.text
+    session.commit()
+    return jsonify({
+        "status": "success",
+        "doc_id": doc_id,
+        "chapter_count": result.chapter_count,
+        "paragraph_count": result.paragraph_count,
+        "model_calls": result.model_calls,
+        "text_length": len(result.text),
+    })
+
+
 @bp.route("/document/<int:doc_id>/split_preview", methods=["GET", "POST"])
 def split_preview(doc_id: int):
     """Preview how a document would split into chunks — no LLM calls, no DB writes.

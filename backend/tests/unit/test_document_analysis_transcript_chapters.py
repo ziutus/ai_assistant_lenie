@@ -31,6 +31,19 @@ CHAPTER_LIST_TEXT = "00:00 Wstęp\n00:42 USA bombardują Iran\n13:17 Trump na sz
 
 
 class TestChapterChunksFromText:
+    def test_accepts_markdown_source_chapter_headings(self):
+        text = (
+            f"## {CHAPTER_TITLES[0]}\nPierwsza czÄ™Ĺ›Ä‡.\n\n"
+            f"## {CHAPTER_TITLES[1]}\nDruga czÄ™Ĺ›Ä‡.\n\n"
+            f"## {CHAPTER_TITLES[2]}\nTrzecia czÄ™Ĺ›Ä‡."
+        )
+        chunks = _chapter_chunks_from_text(text, CHAPTER_TITLES, chunk_size=5000)
+        assert chunks == [
+            f"## {CHAPTER_TITLES[0]}\nPierwsza czÄ™Ĺ›Ä‡.",
+            f"## {CHAPTER_TITLES[1]}\nDruga czÄ™Ĺ›Ä‡.",
+            f"## {CHAPTER_TITLES[2]}\nTrzecia czÄ™Ĺ›Ä‡.",
+        ]
+
     def test_splits_at_chapter_boundaries(self):
         chunks = _chapter_chunks_from_text(TRANSCRIPT_TEXT, CHAPTER_TITLES, chunk_size=5000)
         assert chunks is not None

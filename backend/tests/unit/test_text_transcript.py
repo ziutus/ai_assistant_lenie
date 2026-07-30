@@ -41,8 +41,8 @@ def test_youtube_split_chapters_from_zero():
         {"text": "c", "start": 70.0},
     ]
     result = text_transcript.youtube_titles_split_with_chapters(json.dumps(entries), chapters)
-    assert result.startswith("Start\na b")
-    assert "\n\nDalej\nc" in result
+    assert result.startswith("## Start\n\na b")
+    assert "\n\n## Dalej\n\nc" in result
 
 
 def test_youtube_split_intro_before_first_chapter():
@@ -61,8 +61,8 @@ def test_youtube_split_intro_before_first_chapter():
     ]
     result = text_transcript.youtube_titles_split_with_chapters(json.dumps(entries), chapters)
     assert result.startswith("intro jeden intro dwa intro trzy")
-    assert "\n\nPierwszy\ntresc pierwszego" in result
-    assert "\n\nDrugi\ntresc drugiego" in result
+    assert "\n\n## Pierwszy\n\ntresc pierwszego" in result
+    assert "\n\n## Drugi\n\ntresc drugiego" in result
 
 
 def test_youtube_split_empty_chapter_keeps_all_headers():
@@ -72,9 +72,9 @@ def test_youtube_split_empty_chapter_keeps_all_headers():
         {"text": "y", "start": 130.0},  # jumps straight to chapter C
     ]
     result = text_transcript.youtube_titles_split_with_chapters(json.dumps(entries), chapters)
-    assert "A\nx" in result
-    assert "B" in result
-    assert "C\ny" in result
+    assert "## A\n\nx" in result
+    assert "## B" in result
+    assert "## C\n\ny" in result
 
 
 def test_youtube_split_out_of_order_entry_does_not_reopen_chapter():
@@ -85,8 +85,8 @@ def test_youtube_split_out_of_order_entry_does_not_reopen_chapter():
         {"text": "z", "start": 65.0},  # slightly out of order — stays in B
     ]
     result = text_transcript.youtube_titles_split_with_chapters(json.dumps(entries), chapters)
-    assert "B\ny z" in result
-    assert result.count("B") == 1
+    assert "## B\n\ny z" in result
+    assert result.count("## B") == 1
 
 
 def test_text_split_with_chapters_intro_before_first_chapter():
@@ -104,4 +104,4 @@ def test_text_split_with_chapters_intro_before_first_chapter():
     }
     result = text_transcript.text_split_with_chapters(json.dumps(transcript), chapters)
     assert result.startswith("intro dalej.")
-    assert "\n\nPierwszy\ntresc" in result
+    assert "\n\n## Pierwszy\n\ntresc" in result

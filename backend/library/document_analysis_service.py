@@ -166,7 +166,13 @@ def _chapter_chunks_from_text(text: str, chapter_titles: list[str], chunk_size: 
         return None
     title_set = set(chapter_titles)
     blocks = text.split("\n\n")
-    found = sum(1 for b in blocks if b.split("\n", 1)[0].strip() in title_set)
+    # New transcripts use Markdown H2 chapter headings; accept legacy bare
+    # title lines too, so older documents remain chapter-aware for analysis.
+    def block_title(block: str) -> str:
+        first_line = block.split("\n", 1)[0].strip()
+        return re.sub(r"^#{1,6}\s+", "", first_line).strip()
+
+    found = sum(1 for b in blocks if block_title(b) in title_set)
     if found < (len(chapter_titles) + 1) // 2:  # require a strict majority
         return None
 
@@ -176,7 +182,7 @@ def _chapter_chunks_from_text(text: str, chapter_titles: list[str], chunk_size: 
     chunks: list[str] = []
     current = ""
     for block in blocks:
-        starts_chapter = block.split("\n", 1)[0].strip() in title_set
+        starts_chapter = block_title(block) in title_set
         if starts_chapter and current:
             chunks.extend(cap(current))
             current = block
