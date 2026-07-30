@@ -13,6 +13,28 @@ type CallRow = { id: number; document_id: number | null; job_id: string | null; 
   tokens: number | null; cost: string | null; currency: string | null; cost_status: string; success: boolean; error_code: string | null };
 type Report = { totals: CostRow[]; documents: DocumentRow[]; daily: DailyRow[]; operations: OperationRow[]; analyses: AnalysisRow[]; calls: CallRow[] };
 
+const OPERATION_LABELS: Record<string, string> = {
+  transcript_paragraphization: "Podział transkrypcji na akapity",
+  chunk_rewrite: "Korekta transkrypcji STT",
+  chunk_summary: "Streszczenia fragmentów",
+  chunk_semantic_analysis: "Klasyfikacja i streszczenia fragmentów",
+  topic_grouping: "Grupowanie fragmentów w sekcje",
+  document_synthesis: "Synteza całego materiału",
+  thematic_tagging: "Tagi tematyczne",
+  country_tagging: "Tagi krajów",
+  timeline_event_extraction: "Ekstrakcja wydarzeń na osi czasu",
+  time_period_classification: "Rozpoznawanie okresów historycznych",
+  tone_classification: "Analiza tonu",
+  control_question_selection: "Odpowiedzi na pytania kontrolne",
+  place_candidate_selection: "Wybór kandydatów na miejsca",
+  place_relevance: "Ocena istotności miejsc",
+  ner_person_context_verification: "Weryfikacja osób w kontekście",
+  ner_place_context_verification: "Weryfikacja miejsc w kontekście",
+  information_provenance: "Analiza źródeł informacji",
+  infrastructure_relevance: "Ocena znaczenia infrastruktury",
+};
+const operationLabel = (operation: string) => OPERATION_LABELS[operation] ?? operation;
+
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const money = (value: string | null, currency: string | null) => value == null ? "—" : `${Number(value).toFixed(6)} ${currency ?? "?"}`;
 
@@ -20,33 +42,52 @@ const LlmCosts = () => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [params, setParams] = useSearchParams();
   const now = new Date();
-  const [from, setFrom] = React.useState(params.get("from") ?? iso(new Date(now.getFullYear(), now.getMonth(), 1)));
-  const [to, setTo] = React.useState(params.get("to") ?? iso(now));
   const [documentId, setDocumentId] = React.useState(params.get("document_id") ?? "");
+  const isDocumentView = Boolean(params.get("document_id"));
+  const [from, setFrom] = React.useState(params.get("from") ?? (isDocumentView ? "" : iso(new Date(now.getFullYear(), now.getMonth(), 1))));
+  const [to, setTo] = React.useState(params.get("to") ?? (isDocumentView ? "" : iso(now)));
   const [report, setReport] = React.useState<Report | null>(null);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
-  const load = React.useCallback(async () => {
+  const requestReport = React.useCallback(async (query: Record<string, string>) => {
     setLoading(true); setError("");
     try {
-      const query: Record<string, string> = { from, to };
-      if (documentId.trim()) query.document_id = documentId.trim();
-      setParams(query);
       const response = await axios.get(`${apiUrl}/llm_costs`, { params: query, headers: { "x-api-key": apiKey ?? "" } });
       setReport(response.data);
     } catch (e: any) { setError(e.response?.data?.message ?? "Nie udało się pobrać kosztów LLM"); }
     finally { setLoading(false); }
-  }, [apiUrl, apiKey, from, to, documentId, setParams]);
+  }, [apiUrl, apiKey]);
 
-  React.useEffect(() => { void load(); }, []); // initial report only
+  const load = React.useCallback(() => {
+    const query: Record<string, string> = {};
+    if (from) query.from = from;
+    if (to) query.to = to;
+    if (documentId.trim()) query.document_id = documentId.trim();
+    setParams(query);
+    void requestReport(query);
+  }, [documentId, from, requestReport, setParams, to]);
+
+  React.useEffect(() => {
+    const nextDocumentId = params.get("document_id") ?? "";
+    const nextFrom = params.get("from") ?? (nextDocumentId ? "" : iso(new Date(now.getFullYear(), now.getMonth(), 1)));
+    const nextTo = params.get("to") ?? (nextDocumentId ? "" : iso(now));
+    setDocumentId(nextDocumentId);
+    setFrom(nextFrom);
+    setTo(nextTo);
+    const query: Record<string, string> = {};
+    if (nextFrom) query.from = nextFrom;
+    if (nextTo) query.to = nextTo;
+    if (nextDocumentId) query.document_id = nextDocumentId;
+    void requestReport(query);
+  }, [params, requestReport]);
 
   const tableStyle: React.CSSProperties = { width: "100%", borderCollapse: "collapse", marginTop: 10 };
   const th: React.CSSProperties = { textAlign: "left", padding: "7px 8px", borderBottom: "1px solid #cbd5e1" };
   const td: React.CSSProperties = { padding: "7px 8px", borderBottom: "1px solid #e2e8f0" };
 
   return <div>
-    <h2>Koszty LLM</h2>
+    <h2>{documentId ? `Koszty LLM — dokument #${documentId}` : "Koszty LLM"}</h2>
     <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "end", padding: 14, background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
       <label>Od<br/><input type="date" value={from} onChange={e => setFrom(e.target.value)} /></label>
       <label>Do<br/><input type="date" value={to} onChange={e => setTo(e.target.value)} /></label>
@@ -67,7 +108,7 @@ const LlmCosts = () => {
       <table style={tableStyle}><thead><tr><th style={th}>Dokument</th><th style={th}>Koszt</th><th style={th}>Wywołania</th><th style={th}>Tokeny</th><th style={th}>Wycena</th></tr></thead><tbody>
         {report.documents.map((r, i) => <tr key={`${r.document_id ?? "none"}-${r.currency}-${i}`}>
           <td style={td}>{r.document_id != null
-            ? <NavLink to={`/chunks/${r.document_id}`}>#{r.document_id} — {r.title || "bez tytułu"}</NavLink>
+            ? <NavLink to={`/llm-costs?document_id=${r.document_id}`}>#{r.document_id} — {r.title || "bez tytułu"}</NavLink>
             : <span style={{ color: "#64748b" }}>Nieprzypisane (starsze lub globalne wywołania)</span>}</td>
           <td style={td}>{money(r.cost, r.currency)}</td><td style={td}>{r.calls}</td><td style={td}>{r.tokens.toLocaleString("pl")}</td>
           <td style={td}>{r.unknown_calls ? <span style={{ color: "#b45309" }}>{r.unknown_calls} bez ceny</span> : "pełna"}</td>
@@ -77,9 +118,9 @@ const LlmCosts = () => {
       <table style={tableStyle}><thead><tr><th style={th}>Dzień</th><th style={th}>Koszt</th><th style={th}>Wywołania</th><th style={th}>Tokeny</th></tr></thead><tbody>
         {report.daily.map((r, i) => <tr key={`${r.day}-${r.currency}-${i}`}><td style={td}>{r.day}</td><td style={td}>{money(r.cost, r.currency)}</td><td style={td}>{r.calls}</td><td style={td}>{r.tokens.toLocaleString("pl")}</td></tr>)}
       </tbody></table>
-      <h3>Modele i operacje</h3>
+      <h3>{documentId ? "Co wykonano i ile to kosztowało" : "Modele i operacje"}</h3>
       <table style={tableStyle}><thead><tr><th style={th}>Operacja</th><th style={th}>Model</th><th style={th}>Koszt</th><th style={th}>Wywołania</th><th style={th}>Tokeny</th></tr></thead><tbody>
-        {report.operations.map((r, i) => <tr key={`${r.operation}-${r.model}-${r.currency}-${i}`}><td style={td}>{r.operation}</td><td style={td}>{r.model}</td><td style={td}>{money(r.cost, r.currency)}</td><td style={td}>{r.calls}</td><td style={td}>{r.tokens.toLocaleString("pl")}</td></tr>)}
+        {report.operations.map((r, i) => <tr key={`${r.operation}-${r.model}-${r.currency}-${i}`}><td style={td}>{documentId ? operationLabel(r.operation) : r.operation}{documentId && <div style={{ color: "#64748b", fontSize: "0.8em" }}>{r.operation}</div>}</td><td style={td}>{r.model}</td><td style={td}>{money(r.cost, r.currency)}</td><td style={td}>{r.calls}</td><td style={td}>{r.tokens.toLocaleString("pl")}</td></tr>)}
       </tbody></table>
       {documentId && <><h3>Analizy dokumentu</h3><p style={{ color: "#64748b" }}>Powiązanie obejmuje wywołania wykonane po wdrożeniu tej funkcji.</p>
         <table style={tableStyle}><thead><tr><th style={th}>Data</th><th style={th}>Job / run</th><th style={th}>Koszt</th><th style={th}>Wywołania</th><th style={th}>Tokeny</th></tr></thead><tbody>

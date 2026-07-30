@@ -1099,6 +1099,7 @@ const Read: React.FC = () => {
           <NavLink to={`/${documentType}/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>✏️ Edytuj</NavLink>
         )}
         <NavLink to={`/chunks/${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>Przegląd chunków</NavLink>
+        <NavLink to={`/llm-costs?document_id=${id}`} style={{ fontSize: "0.85em", color: "#0369a1" }}>💰 Koszty LLM</NavLink>
         <NavLink to="/list" style={{ fontSize: "0.85em", color: "#0369a1" }}>← Lista dokumentów</NavLink>
         <div style={{ marginLeft: "auto" }}><ReaderIdentityBadge identity={identity} /></div>
       </div>

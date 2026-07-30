@@ -6,6 +6,7 @@ call analyze_article_chunk and persist mode/status on the run.
 """
 
 import datetime
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -122,6 +123,80 @@ class TestSzumType:
         result = llm.analyze_article_chunk("Treść merytoryczna.", "m")
         assert result["type"] == "TEMAT"
         assert result["summary"] == "Analiza sytuacji."
+
+
+class TestCombinedTranscriptAnalysis:
+    def test_sherlock_combines_rewrite_and_summary_in_strict_json(self, monkeypatch):
+        calls = []
+        corrected = "To jest pełny tekst transkrypcji z poprawioną interpunkcją."
+
+        def fake_call(prompt, model, max_tokens, **kwargs):
+            calls.append((prompt, model, max_tokens, kwargs))
+            return (
+                json.dumps({
+                    "type": "TEMAT",
+                    "topic": "poprawiona interpunkcja",
+                    "summary": "Krótka synteza fragmentu.",
+                    "corrected_text": corrected,
+                }),
+                100,
+            )
+
+        monkeypatch.setattr(llm, "call_model", fake_call)
+        result = llm.analyze_chunk(
+            "To jest pełny tekst transkrypcji z poprawiona interpunkcja",
+            "Bielik-11B-v3.0-Instruct",
+        )
+
+        assert result == {
+            "type": "TEMAT",
+            "topic": "poprawiona interpunkcja",
+            "summary": "Krótka synteza fragmentu.",
+            "corrected_text": corrected,
+            "rewrite_ratio": 102,
+        }
+        assert len(calls) == 1
+        assert calls[0][3]["response_format"] == llm._COMBINED_TRANSCRIPT_RESPONSE_SCHEMA
+        assert calls[0][3]["system_prompt"] == llm._COMBINED_TRANSCRIPT_SYSTEM_PROMPT
+        assert calls[0][3]["operation"] == "chunk_combined_analysis"
+
+    def test_sherlock_retries_and_rejects_prompt_leak(self, monkeypatch):
+        calls = []
+
+        def fake_call(*_args, **_kwargs):
+            calls.append(1)
+            return (json.dumps({
+                "type": "TEMAT",
+                "topic": "temat",
+                "summary": "Podsumowanie.",
+                "corrected_text": "Wykonaj DWIE rzeczy. To jest fragment transkrypcji.",
+            }), 100)
+
+        monkeypatch.setattr(llm, "call_model", fake_call)
+        with pytest.raises(ValueError, match="failed validation"):
+            llm.analyze_combined_transcript_chunk(
+                "To jest fragment transkrypcji z wystarczającą liczbą słów.",
+                "Bielik-11B-v3.0-Instruct",
+            )
+        assert len(calls) == 2
+
+    def test_arklabs_keeps_two_pass_compatibility(self, monkeypatch):
+        monkeypatch.setattr(llm, "rewrite_chunk_text", lambda *_a, **_kw: ("### TEMAT: test\nTekst.", 100))
+        monkeypatch.setattr(llm, "summarize_chunk_text", lambda *_a, **_kw: "Streszczenie.")
+        result = llm.analyze_chunk("Tekst.", "arklabs/model")
+        assert result["corrected_text"] == "Tekst."
+        assert result["summary"] == "Streszczenie."
+
+    def test_sherlock_falls_back_to_two_pass_after_failed_combined_validation(self, monkeypatch):
+        monkeypatch.setattr(
+            llm, "analyze_combined_transcript_chunk",
+            lambda *_a, **_kw: (_ for _ in ()).throw(ValueError("failed validation")),
+        )
+        monkeypatch.setattr(llm, "rewrite_chunk_text", lambda *_a, **_kw: ("### TEMAT: test\nTekst.", 100))
+        monkeypatch.setattr(llm, "summarize_chunk_text", lambda *_a, **_kw: "Streszczenie.")
+        result = llm.analyze_chunk("Tekst.", "Bielik-11B-v3.0-Instruct")
+        assert result["corrected_text"] == "Tekst."
+        assert result["summary"] == "Streszczenie."
 
 
 class TestArticleMode:
