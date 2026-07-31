@@ -211,7 +211,11 @@ function runLabelText(r: AnalysisRun): string {
 type ChunkType = "TEMAT" | "ZRODLA" | "REKLAMA" | "SZUM";
 
 interface SplitState {
-  segIdx: number;
+  // Exactly one of segIdx/text is set: segIdx for the per-timestamp ✂ button
+  // (whole-segment granularity), text for a split point picked from a text
+  // selection (split_at_text — mid-segment granularity).
+  segIdx?: number;
+  text?: string;
   ts: string;
   firstType: ChunkType;
   secondType: ChunkType;
@@ -1363,6 +1367,13 @@ const Chunks = () => {
     }));
   };
 
+  const markSplitAtText = (chunkId: number, text: string) => {
+    setSplitStates(prev => ({
+      ...prev,
+      [chunkId]: { text, ts: "zaznaczenie", firstType: "REKLAMA", secondType: "TEMAT" },
+    }));
+  };
+
   const cancelSplit = (chunkId: number) => {
     setSplitStates(prev => { const n = { ...prev }; delete n[chunkId]; return n; });
   };
@@ -1374,7 +1385,10 @@ const Chunks = () => {
     try {
       const r = await fetch(`${apiUrl}/chunk/${chunkId}/execute_split`, {
         method: "POST", headers,
-        body: JSON.stringify({ split_at_seg: st.segIdx, split_first_type: st.firstType, split_second_type: st.secondType }),
+        body: JSON.stringify({
+          ...(st.text !== undefined ? { split_at_text: st.text } : { split_at_seg: st.segIdx }),
+          split_first_type: st.firstType, split_second_type: st.secondType,
+        }),
       });
       const data = await r.json();
       if (data.status === "success") {
@@ -2041,7 +2055,11 @@ const Chunks = () => {
             {/* Panel podziału */}
             {splitSt && (
               <div style={{ margin: "0 14px 14px", padding: "10px 12px", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 5, fontSize: "0.84em" }}>
-                <strong style={{ color: "#92400e" }}>✂ Punkt podziału: [{splitSt.ts}]</strong>
+                <strong style={{ color: "#92400e" }}>
+                  ✂ Punkt podziału: {splitSt.text
+                    ? `„${splitSt.text.length > 70 ? `${splitSt.text.slice(0, 70)}…` : splitSt.text}"`
+                    : `[${splitSt.ts}]`}
+                </strong>
                 <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
                   <label>Część 1 (przed):&nbsp;
                     <select value={splitSt.firstType}
@@ -2939,12 +2957,21 @@ const Chunks = () => {
       {/* Popover nowej notatki (zaznaczenie tekstu w treści chunka) */}
       {pendingNote && (
         <NotePopover pending={pendingNote} onSave={saveChunkNote} onCancel={() => setPendingNote(null)}
-          extraAction={pendingNote.removable ? {
-            label: "✕ Usuń ten fragment z chunka (np. reklamę)",
-            onClick: async () => {
-              if (await removeChunkSpan(pendingNote.chunkId, pendingNote.quote)) setPendingNote(null);
+          extraActions={pendingNote.removable ? [
+            {
+              label: "✕ Usuń ten fragment z chunka (np. reklamę)",
+              onClick: async () => {
+                if (await removeChunkSpan(pendingNote.chunkId, pendingNote.quote)) setPendingNote(null);
+              },
             },
-          } : undefined}
+            {
+              label: "✂ Podziel tutaj (nowy chunk zacznie się od zaznaczenia)",
+              onClick: () => {
+                markSplitAtText(pendingNote.chunkId, pendingNote.quote);
+                setPendingNote(null);
+              },
+            },
+          ] : undefined}
         />
       )}
     </div>

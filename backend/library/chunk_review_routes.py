@@ -342,6 +342,47 @@ def _parse_segments(text_raw: str | None) -> list[dict]:
     return []
 
 
+_WORD_CHAR = re.compile(r"\w", re.UNICODE)
+
+
+def _find_span_match(original: str, raw_span: str) -> tuple[re.Match | None, str, str | None]:
+    """Whitespace-tolerant search for a user-selected span inside `original`.
+
+    A browser text selection is single-spaced, but original_text (and raw
+    transcript segments) can be hard-wrapped mid-sentence with embedded
+    newlines — treat each whitespace run in the (normalized) span as \\s+
+    against `original`. Returns (match, normalized_span, error_message); on
+    success error_message is None, on failure match is None.
+    Shared by POST /chunk/<id>/remove_span and execute_split's split_at_text.
+    """
+    span = re.sub(r"\s+", " ", raw_span or "").strip()
+    if not span:
+        return None, span, "text must be a non-empty string"
+    pattern = re.compile(r"\s+".join(re.escape(word) for word in span.split()))
+    match = pattern.search(original)
+    if match is None:
+        return None, span, "text not found in this chunk's original_text"
+    return match, span, None
+
+
+def _starts_mid_word(original: str, match: re.Match, span: str) -> bool:
+    """True when the character right before the match and the span's own
+    first character are both word characters — the match starts by splitting
+    a word in half rather than at a real boundary."""
+    return bool(
+        match.start() > 0 and _WORD_CHAR.match(original[match.start() - 1])
+        and span[:1] and _WORD_CHAR.match(span[0])
+    )
+
+
+def _ends_mid_word(original: str, match: re.Match, span: str) -> bool:
+    """Same as _starts_mid_word, mirrored at the match's end."""
+    return bool(
+        match.end() < len(original) and _WORD_CHAR.match(original[match.end()])
+        and span[-1:] and _WORD_CHAR.match(span[-1])
+    )
+
+
 TEXT_PREVIEW_CHARS = 200
 
 
@@ -2839,6 +2880,12 @@ def execute_split(chunk_id: int):
         split_at_seg      — absolute transcript segment index (transcript chunks)
         split_at_line     — line index in original_text; the line starts part B
                             (article chunks without segments)
+        split_at_text     — text matched whitespace-tolerantly in original_text
+                            (see _find_span_match); the match starts part B —
+                            for a cut inside a segment/line too coarse-grained
+                            for split_at_seg/split_at_line. Like split_at_line,
+                            freezes both parts as plain text (seg_start/
+                            seg_end null).
         split_first_type  — type for part before split: TEMAT | REKLAMA | SZUM
         split_second_type — type for part after split:  TEMAT | REKLAMA | SZUM
 
@@ -2916,6 +2963,7 @@ def execute_split(chunk_id: int):
     # Allow split data from body OR from what's already stored on the chunk
     split_at = data.get("split_at_seg", chunk.split_at_seg)
     split_at_line = data.get("split_at_line")
+    split_at_text = data.get("split_at_text")
     first_type = data.get("split_first_type", chunk.split_first_type)
     second_type = data.get("split_second_type", chunk.split_second_type)
 
@@ -2924,7 +2972,33 @@ def execute_split(chunk_id: int):
     if second_type not in ALLOWED_TYPES:
         return jsonify({"status": "error", "message": f"Invalid split_second_type: {second_type}"}), 400
 
-    if split_at_line is not None:
+    if split_at_text is not None:
+        # Text-selection split (e.g. a transcript segment several sentences
+        # long, where the only split points offered by seg/line granularity
+        # don't land where the reviewer actually wants the cut). The matched
+        # text becomes the start of part B. Like split_at_line, this freezes
+        # the result as plain text (seg_start/seg_end null) — a text-based cut
+        # can't be mapped back onto raw segment indices the way a whole-
+        # segment split can.
+        if not isinstance(split_at_text, str):
+            return jsonify({"status": "error", "message": "split_at_text must be a non-empty string"}), 400
+        original = chunk.original_text or ""
+        match, marker, err = _find_span_match(original, split_at_text)
+        if err:
+            return jsonify({"status": "error", "message": err}), 400
+        if _starts_mid_word(original, match, marker):
+            return jsonify({"status": "error",
+                            "message": "split point is in the middle of a word — "
+                                       "extend the selection to a full word"}), 400
+        text_a = original[:match.start()].strip()
+        text_b = original[match.start():].strip()
+        if not text_a or not text_b:
+            return jsonify({"status": "error", "message": "Both parts must contain text"}), 400
+        seg_a = (None, None)
+        seg_b = (None, None)
+        status_a = "needs_reanalysis" if first_type == "TEMAT" else "approved"
+        status_b = "needs_reanalysis" if second_type == "TEMAT" else "approved"
+    elif split_at_line is not None:
         # Line-based split (article chunks — no transcript segments)
         lines = (chunk.original_text or "").split("\n")
         try:
@@ -3155,37 +3229,19 @@ def remove_chunk_span(chunk_id: int):
         abort(404, f"Chunk {chunk_id} not found")
 
     data = request.get_json(silent=True) or {}
-    span = data.get("text")
-    if not isinstance(span, str) or not span.strip():
+    raw_span = data.get("text")
+    if not isinstance(raw_span, str):
         return jsonify({"status": "error", "message": "text must be a non-empty string"}), 400
-    # Normalize like the frontend's browser-selection quote (single-spaced) —
-    # this is also the form stored in removed_text_spans, matched against the
-    # single-spaced live transcript reconstruction (SegmentsView/_text_from_segs).
-    span = re.sub(r"\s+", " ", span).strip()
 
     original = chunk.original_text or ""
-    # original_text can be hard-wrapped mid-sentence (embedded newlines from
-    # the original split), even though a selection made in the live view is
-    # single-spaced — match whitespace-tolerantly so it still finds it there.
-    pattern = re.compile(r"\s+".join(re.escape(word) for word in span.split()))
-    match = pattern.search(original)
-    if match is None:
-        return jsonify({"status": "error",
-                        "message": "text not found in this chunk's original_text"}), 400
+    match, span, err = _find_span_match(original, raw_span)
+    if err:
+        return jsonify({"status": "error", "message": err}), 400
 
     # Reject a cut that bisects a word at either edge (e.g. a selection off by
     # one character splices "Amer" + "adły" into "Ameradły") — word chars must
     # not be directly adjacent across the cut on either side.
-    word_char = re.compile(r"\w", re.UNICODE)
-    cuts_left_word = (
-        match.start() > 0 and word_char.match(original[match.start() - 1])
-        and span[:1] and word_char.match(span[0])
-    )
-    cuts_right_word = (
-        match.end() < len(original) and word_char.match(original[match.end()])
-        and span[-1:] and word_char.match(span[-1])
-    )
-    if cuts_left_word or cuts_right_word:
+    if _starts_mid_word(original, match, span) or _ends_mid_word(original, match, span):
         return jsonify({"status": "error",
                         "message": "selection cuts a word in half — extend it to full words"}), 400
 
