@@ -312,8 +312,9 @@ większa: migracja danych name→id + API `/sources` + wtyczka Chrome).
 
 ## 2026-07-19 — Etap 11, sesja A (inwentaryzacja + rename `date_from`→`published_on`) — UKOŃCZONA
 
-**Zakres wykonany:** (1) Pełna inwentaryzacja wszystkich rename'ów Etapu 11 w
-[search-rebuild-etap11-inwentaryzacja.md](search-rebuild-etap11-inwentaryzacja.md) — kluczowe
+**Zakres wykonany:** (1) Pełna inwentaryzacja wszystkich rename'ów Etapu 11 (dokument
+inwentaryzacyjny usunięty po zakończeniu etapu — decyzje nazewnicze w
+[ADR-017](adr/adr-017-search-rebuild-scope-decisions.md)) — kluczowe
 ustalenie: fizyczny schemat NAS przesuwa `source` (ma już FK po nazwie do `sources(name)` z PR
 #247) i `project` (wymaga nowej tabeli `collections`) z podetapu 1 do podetapu 2 (normalizacja);
 podetap 1 to tylko `date_from` i `author` z polami provenance. Realna skala jest mniejsza niż
