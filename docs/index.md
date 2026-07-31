@@ -41,7 +41,6 @@
 
 ### Overview & Structure
 - [Project Overview](./project-overview.md) — Executive summary, tech stack, design decisions
-- [Source Tree Analysis](./source-tree-analysis.md) — Annotated directory structure, critical folders, integration points
 - [Integration Architecture](./integration-architecture.md) — How parts communicate, data flows, shared dependencies
 
 ### Architecture (per part)
