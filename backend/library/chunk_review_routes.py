@@ -21,6 +21,7 @@ Endpoints:
   POST /chunk/<chunk_id>/reanalyze
 """
 
+import bisect
 import json
 import logging
 import threading
@@ -372,6 +373,46 @@ def _chunk_to_dict(
         "has_embeddings": bool(has_embeddings) if has_embeddings is not None else None,
         "photo_caption_line_indices": [item["line_index"] for item in caption_candidates],
     }
+
+
+def _video_chapters_seconds(doc: Document | None) -> list[dict]:
+    """YouTube description chapters (Document.chapter_list) as {position, title, start_seconds}.
+
+    Distinct from detect_chapters()'s markdown H1/H2 chapters (char offsets in
+    text_md, article-mode scoping) — these are video timestamps, used to tell
+    a transcript chunk (seg_start in seconds) which chapter it falls in.
+    """
+    if doc is None or not doc.chapter_list:
+        return []
+    from library.text_transcript import chapters_text_to_list, time_to_seconds
+    try:
+        parsed = chapters_text_to_list(doc.chapter_list)
+    except Exception:
+        logger.warning("Failed to parse chapter_list for document %d", doc.id)
+        return []
+    return [
+        {"position": i + 1, "title": ch["title"], "start_seconds": time_to_seconds(ch["start"])}
+        for i, ch in enumerate(parsed)
+    ]
+
+
+def _chunk_chapter_title(
+    seg_start_idx: int | None, segments: list[dict], video_chapters: list[dict], starts: list[int],
+) -> str | None:
+    """video_chapters/starts are seconds-based (see _video_chapters_seconds);
+    seg_start_idx is a chunk's index into `segments` (transcript entries) —
+    look up its actual video timestamp before comparing against chapter starts."""
+    if seg_start_idx is None or not video_chapters or not segments:
+        return None
+    if not (0 <= seg_start_idx < len(segments)):
+        return None
+    seconds = segments[seg_start_idx].get("start")
+    if seconds is None:
+        return None
+    idx = bisect.bisect_right(starts, seconds) - 1
+    if idx < 0:
+        return None
+    return video_chapters[idx]["title"]
 
 
 # ---------------------------------------------------------------------------
@@ -1774,6 +1815,9 @@ def get_run_chunks(run_id: int):
         from library.author_service import get_document_authors
         author_persons = get_document_authors(session, run.document_id)
     segments = [] if lite else _parse_segments(doc.text_raw if doc else None)
+    # chunk.seg_start/seg_end are indices into this segment list, not seconds —
+    # re-parse in lite mode too (skipped above) so chapter assignment still works.
+    chapter_segments = segments or (_parse_segments(doc.text_raw) if lite and doc is not None and doc.chapter_list else [])
 
     topic_sections = session.scalars(
         select(DocumentTopicSection)
@@ -1797,6 +1841,9 @@ def get_run_chunks(run_id: int):
     country_slugs = [t[len("kraj-"):] for t in doc_tags if t.startswith("kraj-")]
     doc_countries = [{"slug": slug, "name_pl": slug_to_name(slug) or slug} for slug in country_slugs]
     doc_thematic_tags = [t for t in doc_tags if not t.startswith("kraj-")]
+
+    video_chapters = _video_chapters_seconds(doc)
+    video_chapter_starts = [ch["start_seconds"] for ch in video_chapters]
 
     chunks = all_chunks
     if section_id is not None:
@@ -1875,6 +1922,7 @@ def get_run_chunks(run_id: int):
             "quality": getattr(doc, "quality", None) if doc else None,
             "published_on": doc.published_on.isoformat() if doc and doc.published_on else None,
             "published_on_method": getattr(doc, "published_on_method", None) if doc else None,
+            "video_chapters": video_chapters,
         },
         "segments": segments,
         "lite": lite,
@@ -1884,6 +1932,7 @@ def get_run_chunks(run_id: int):
             **_chunk_to_dict(c, has_embeddings=c.id in embedded_chunk_ids, lite=lite,
                              doc_url=doc.url if doc else None),
             "cited_publications": citations_by_chunk.get(c.id, []),
+            "chapter_title": _chunk_chapter_title(c.seg_start, chapter_segments, video_chapters, video_chapter_starts),
         } for c in chunks],
         "topic_sections": [
             {
