@@ -191,6 +191,27 @@ class TestCreateRunUsesChapterSplit:
         # Blind char-count split ignores chapter boundaries — more/uneven pieces
         assert len(chunks) > 3
 
+    def test_stray_speaker_marker_does_not_disable_chapter_split(self, transcript_env, monkeypatch):
+        # A single ">>" makes speaker_changes > 0 (is_multi_speaker=True), but
+        # with fewer than 2 extracted speakers assign_speakers() never runs —
+        # the text's block structure survives intact, so there's no reason to
+        # fall back to a blind split. split_only=True additionally skips
+        # speaker extraction entirely (step 4), which used to leave speakers=[]
+        # and, with the old is_multi_speaker-only gate, always blocked the
+        # chapter-aware path for any transcript containing a stray ">>".
+        doc = FakeYoutubeDoc()
+        doc.text = TRANSCRIPT_TEXT.replace("Zdanie o Iranie. ", ">> Zdanie o Iranie. ", 1)
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+
+        service = DocumentAnalysisService(transcript_env)
+        service.create_run(doc_id=9216, model="test-model", mode="transcript", split_only=True)
+
+        chunks = [o for o in transcript_env.added if isinstance(o, DocumentChunk)]
+        assert len(chunks) == 3
+        assert chunks[0].original_text.startswith("Wstęp")
+        assert chunks[1].original_text.startswith("USA bombardują Iran")
+        assert chunks[2].original_text.startswith("Trump na szczycie NATO")
+
     def test_reuses_earlier_ner_without_refreshing_entities(self, transcript_env, monkeypatch):
         def should_not_run(*_args, **_kwargs):
             raise AssertionError("NER must be reused, not rerun")

@@ -613,8 +613,10 @@ class DocumentAnalysisService:
 
             # 5. Label speaker turns from >> markers (must happen before splitting,
             #    so the rewrite prompt sees the [Name]: labels it is asked to preserve)
+            speaker_labels_applied = False
             if is_multi_speaker and len(speakers) >= 2:
                 text = assign_speakers(text, speakers[0]["name"], speakers[1]["name"])
+                speaker_labels_applied = True
                 log(f"labeled speaker turns: [{speakers[0]['name']}] / [{speakers[1]['name']}]")
 
             # 6. Remove speech fillers before splitting (cheaper than asking LLM)
@@ -623,8 +625,13 @@ class DocumentAnalysisService:
             # 7. Split into chunks — chapter-aware when the video has a YouTube
             #    chapter_list and speaker labeling didn't restructure the text
             #    (see _chapter_chunks_from_text); otherwise blind sentence-chunk split.
+            #    Gated on speaker_labels_applied rather than raw is_multi_speaker: a
+            #    stray ">>" with fewer than 2 extracted speakers (or split_only mode,
+            #    which skips extraction entirely — see step 4) never rebuilds the
+            #    text, so the block structure _chapter_chunks_from_text needs is
+            #    still intact and there's no reason to fall back to a blind split.
             chunk_texts = None
-            if not is_multi_speaker and getattr(doc, "chapter_list", None):
+            if not speaker_labels_applied and getattr(doc, "chapter_list", None):
                 from library.text_transcript import chapters_text_to_list
 
                 chapter_titles = [c["title"] for c in chapters_text_to_list(doc.chapter_list)]
