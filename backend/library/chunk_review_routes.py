@@ -3173,6 +3173,22 @@ def remove_chunk_span(chunk_id: int):
         return jsonify({"status": "error",
                         "message": "text not found in this chunk's original_text"}), 400
 
+    # Reject a cut that bisects a word at either edge (e.g. a selection off by
+    # one character splices "Amer" + "adły" into "Ameradły") — word chars must
+    # not be directly adjacent across the cut on either side.
+    word_char = re.compile(r"\w", re.UNICODE)
+    cuts_left_word = (
+        match.start() > 0 and word_char.match(original[match.start() - 1])
+        and span[:1] and word_char.match(span[0])
+    )
+    cuts_right_word = (
+        match.end() < len(original) and word_char.match(original[match.end()])
+        and span[-1:] and word_char.match(span[-1])
+    )
+    if cuts_left_word or cuts_right_word:
+        return jsonify({"status": "error",
+                        "message": "selection cuts a word in half — extend it to full words"}), 400
+
     try:
         cleaned = original[:match.start()] + original[match.end():]
         # Cutting a span can leave the rest of the transcript hard-wrapped
