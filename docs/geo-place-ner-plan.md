@@ -11,8 +11,10 @@
 > [`ner_service/`](../ner_service/README.md), tabele `document_entities` +
 > `geocode_cache`, tagi `miejsce-*`, markery na mapie w `/read/:id` — szczegóły
 > implementacji w [`ner-integration-plan.md`](ner-integration-plan.md) (etap 3).
-> Ten dokument pozostaje jako uzasadnienie decyzji (wybór spaCy, LocationIQ,
-> wymagania sprzętowe, opcje self-hostingu na przyszłość).
+> Zwięzły rekord decyzji: [`ADR-018`](adr/adr-018-geo-place-ner-locationiq.md).
+> Ten dokument pozostaje jako pełne uzasadnienie (porównanie modeli NER,
+> wymagania sprzętowe, przegląd hostowanych API geokodujących, opcje
+> self-hostingu na przyszłość), linkowany z ADR-018.
 > **Ostatnia aktualizacja:** 2026-07-10 (wcześniej 2026-07-09: weryfikacja przez Nominatim/OSM + przegląd hostowanych API)
 
 ## Problem
@@ -261,11 +263,23 @@ data-center'owy).
 Ewentualny GPU (Opcja 2) lub dysk pod self-hosted geokoder (Photon/Nominatim)
 to decyzje odroczone do momentu, gdy darmowe/tanie opcje przestaną wystarczać.
 
-## Otwarte pytania / dalsze kroki
+## Status pytań z fazy planowania
 
-- Jaki namespace tagów dla miejsc — `miejsce-*`? `geo-*`? Do ustalenia przy implementacji.
-- Czy tagować tylko `geogName`, czy też `placeName` (miasta) — ryzyko dużej liczby tagów per artykuł przy miastach.
-- Wybór dokładnej nazwy modelu HerBERT-NER na HuggingFace w momencie wdrożenia (ekosystem się zmienia).
-- Dokładna weryfikacja aktualnego cennika LocationIQ przed wdrożeniem (widoczne niespójności między źródłami w momencie pisania tego planu — sprawdzić `locationiq.com/pricing` na bieżąco).
-- Wizualizacja miejsc na mapie — krok weryfikacji (Nominatim/LocationIQ) zwraca współrzędne przy okazji, więc dane pod mapę byłyby "przy okazji", ale samo UI to osobny temat.
-- Brak wpisu w backlogu (`_bmad-output/planning-artifacts/epics/backlog.md`) — dodać jako osobne zadanie, gdy będzie gotowość do implementacji.
+Wszystkie poniższe pytania zostały rozstrzygnięte przy wdrożeniu (2026-07-10) —
+zapisane tu dla historii, patrz [`ADR-018`](adr/adr-018-geo-place-ner-locationiq.md)
+i [`ner-integration-plan.md`](ner-integration-plan.md) po aktualny stan:
+
+- **Namespace tagów** — `miejsce-*` (nie `geo-*`).
+- **Zakres tagowania** — tagowane są zarówno `geogName`, jak i `placeName`
+  (miasta); duplikaty pod różnymi odmianami nazwy scalane po kanonicznej
+  nazwie z geokodera przed progiem auto-potwierdzenia (`place_verification.py`).
+- **Model HerBERT-NER** — nie był potrzebny; spaCy `pl_core_news_lg` okazał się
+  wystarczający (patrz ADR-018 „Deferred"). Pozostaje opcją na przyszłość,
+  gdyby jakość przestała wystarczać.
+- **Wizualizacja na mapie** — zaimplementowana: markery w `/read/:id`.
+
+Pozostałe, wciąż otwarte tematy:
+
+- Bieżąca weryfikacja cennika LocationIQ przy większym wolumenie (darmowy
+  tier 5 000/dzień może przestać wystarczać) — wtedy rozważyć self-hosted
+  Photon zamiast podwyżki planu.
