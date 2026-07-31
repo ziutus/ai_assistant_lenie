@@ -61,6 +61,30 @@ class TestRemoveSpanEndpoint:
         assert data["chunk"]["status"] == "needs_reanalysis"
         fake_session.commit.assert_called_once()
 
+    def test_matches_whitespace_tolerantly_against_hard_wrapped_text(self, monkeypatch, app):
+        # original_text can be hard-wrapped mid-sentence (embedded \n) even
+        # though a selection made in the live transcript view (SegmentsView,
+        # single-space reconstruction from raw segments) is single-spaced —
+        # this is the exact mismatch caught live on doc 8790's chunk #1.
+        chunk = _make_chunk(
+            original_text="Amerykanie by fabryki półprzewodników zostałyby zburzone,\nżeby nie wpadły w ręce.",
+        )
+        fake_session = MagicMock()
+        fake_session.get.side_effect = lambda model, pk: chunk
+        monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
+
+        resp = app.test_client().post(
+            "/chunk/1/remove_span",
+            json={"text": "Amerykanie by fabryki półprzewodników zostałyby zburzone, żeby nie wpadły"},
+        )
+        data = resp.get_json()
+
+        assert resp.status_code == 200
+        assert data["chunk"]["original_text"] == "w ręce."
+        assert data["chunk"]["removed_text_spans"] == [
+            "Amerykanie by fabryki półprzewodników zostałyby zburzone, żeby nie wpadły",
+        ]
+
     def test_text_not_found_returns_400(self, monkeypatch, app):
         chunk = _make_chunk(original_text="Dzień dobry.")
         fake_session = MagicMock()

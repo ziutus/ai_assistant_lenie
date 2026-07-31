@@ -3147,7 +3147,7 @@ def remove_chunk_span(chunk_id: int):
     live segments — SegmentsView filters removed_text_spans out of each
     segment's displayed text rather than switching to a frozen text view.
 
-    Body (JSON): {"text": "<exact substring to remove, must occur once>"}
+    Body (JSON): {"text": "<substring to remove — matched whitespace-tolerantly>"}
     """
     session = get_scoped_session()
     chunk = session.get(DocumentChunk, chunk_id)
@@ -3158,16 +3158,27 @@ def remove_chunk_span(chunk_id: int):
     span = data.get("text")
     if not isinstance(span, str) or not span.strip():
         return jsonify({"status": "error", "message": "text must be a non-empty string"}), 400
-    span = span.strip()
+    # Normalize like the frontend's browser-selection quote (single-spaced) —
+    # this is also the form stored in removed_text_spans, matched against the
+    # single-spaced live transcript reconstruction (SegmentsView/_text_from_segs).
+    span = re.sub(r"\s+", " ", span).strip()
 
     original = chunk.original_text or ""
-    if span not in original:
+    # original_text can be hard-wrapped mid-sentence (embedded newlines from
+    # the original split), even though a selection made in the live view is
+    # single-spaced — match whitespace-tolerantly so it still finds it there.
+    pattern = re.compile(r"\s+".join(re.escape(word) for word in span.split()))
+    match = pattern.search(original)
+    if match is None:
         return jsonify({"status": "error",
                         "message": "text not found in this chunk's original_text"}), 400
 
     try:
-        cleaned = original.replace(span, "", 1)
-        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+        cleaned = original[:match.start()] + original[match.end():]
+        # Cutting a span can leave the rest of the transcript hard-wrapped
+        # around the seam; transcript chunks are flowing prose, so collapse
+        # all whitespace rather than only the immediate seam.
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
         chunk.original_text = cleaned
         spans = list(chunk.removed_text_spans or [])
         spans.append(span)
