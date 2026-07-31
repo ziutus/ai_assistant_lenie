@@ -509,9 +509,21 @@ potrzebne.
 
 #### Tabela decyzyjna: kiedy `/chunks/:id` pokazuje `[MM:SS]`, a kiedy nie
 
-Różnica **nie zależy od tego, czy analiza LLM w ogóle kiedykolwiek się odbyła dla dokumentu** —
-zależy wyłącznie od stanu KONKRETNEGO chunka w danym momencie. Warunek jest w
-`chunks.tsx:1903-1913`:
+**W skrócie:** różnica nie zależy od tego, czy analiza LLM w ogóle kiedykolwiek się odbyła dla
+całego dokumentu — zależy wyłącznie od stanu **konkretnego chunka** w danym momencie:
+
+| Sytuacja | `[MM:SS]` widoczne? |
+|---|---|
+| Chunk po „tylko podział”, przed analizą LLM | tak |
+| Chunk po pełnej analizie LLM (ma `corrected_text`) | nie |
+| Chunk po analizie, ale recenzent ręcznie kliknął przełącznik „Surowy” | tak (świadome porównanie) |
+| Chunk z transkrypcji AssemblyAI (STT płatne) zamiast napisów YouTube | nigdy, niezależnie od LLM — tam po prostu nie ma segmentów z czasem |
+| Dokumenty typu `article` (webpage) | nigdy — to zjawisko czysto YouTube'owe |
+
+W praktyce w jednym dokumencie część chunków może już mieć `[MM:SS]` schowane (przeanalizowane),
+a część je nadal pokazywać (jeszcze nie) — to normalny stan przejściowy podczas recenzji, nie
+niespójność czy błąd. Poniżej ten sam podział, ale z dokładnym warunkiem z kodu
+(`chunks.tsx:1903-1913`):
 
 ```
 isCorrectedView && hasCorrected ? <tekst poprawiony>
