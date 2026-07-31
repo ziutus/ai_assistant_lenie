@@ -315,7 +315,5 @@ Configuration files (`.circleci/config.yml`, `.gitlab-ci.yml`, `Jenkinsfile`) re
 ## Related Documents
 
 - [Architecture Decisions (ADR)](./architecture-decisions.md) — Deep decision records with full context and consequences
-- [Project Overview](./project-overview.md) — Executive summary with technology stack table
 - [Code Quality](./Code_Quality.md) — Security scanning tool usage
 - [Python Dependencies](./Python_Dependencies.md) — uv package management guide
-- [Development Guide](./development-guide.md) — Setup and usage instructions

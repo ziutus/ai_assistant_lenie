@@ -275,5 +275,3 @@ During migration, hand-written `shared/types/` coexists with generated types. On
 ## Related Documentation
 
 - [Shared Types](shared-types.md) — current shared TS types setup
-- [API Contracts](api-contracts-backend.md) — existing backend API documentation
-- [Architecture Backend](architecture-backend.md) — backend architecture overview

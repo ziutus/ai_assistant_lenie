@@ -2,7 +2,7 @@
 
 Vault stores application secrets for Project Lenie. Runs on the NAS as a Docker container with persistent file storage.
 
-> **Related docs:** [NAS_Deployment.md](NAS_Deployment.md) — full NAS stack, [../development-guide.md](../development-guide.md) — dev setup.
+> **Related docs:** [NAS_Deployment.md](NAS_Deployment.md) — full NAS stack.
 
 ## Architecture
 
