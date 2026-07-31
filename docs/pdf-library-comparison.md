@@ -1,5 +1,10 @@
 # Porównanie bibliotek do ekstrakcji tekstu z PDF
 
+> Decyzja i jej uzasadnienie (licencja AGPL PyMuPDF vs. BSL 1.1 projektu,
+> warunek rewizji przed SaaS) są sformalizowane w
+> [ADR-019](adr/adr-019-pymupdf-agpl-license.md) — ten dokument to pełna
+> analiza porównawcza, na którą ADR się powołuje.
+
 Kontekst: import książek PDF do Lenie (`backend/library/book_pdf_import.py`,
 `backend/imports/book_import_pdf_twierdza_linux.py`, `backend/imports/check_pdf_text_layer.py`).
 Porównanie zrobione 2026-07-27 na realnej książce technicznej ("Twierdza Linux.
