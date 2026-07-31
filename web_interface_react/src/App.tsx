@@ -8,6 +8,7 @@ import Webpage from "./modules/shared/pages/webpage";
 import Youtube from "./modules/shared/pages/youtube";
 import Movie from "./modules/shared/pages/movie";
 import Email from "./modules/shared/pages/email";
+import SocialMediaPost from "./modules/shared/pages/socialMediaPost";
 import Search from "./modules/shared/pages/search";
 import List from "./modules/shared/pages/list";
 import UploadFile from "./modules/shared/pages/file";
@@ -63,6 +64,7 @@ function App() {
                   <Route path="/movie/:id?" element={<DocumentEditorWithGroups><Movie /></DocumentEditorWithGroups>} />
                   <Route path="/youtube/:id?" element={<DocumentEditorWithGroups><Youtube /></DocumentEditorWithGroups>} />
                   <Route path="/email/:id?" element={<DocumentEditorWithGroups><Email /></DocumentEditorWithGroups>} />
+                  <Route path="/social_media_post/:id?" element={<DocumentEditorWithGroups><SocialMediaPost /></DocumentEditorWithGroups>} />
                   <Route path="/chunks/:id" element={<Chunks />} />
                   <Route path="/read/:id" element={<Read />} />
                   <Route path="/entities/:id" element={<Entities />} />
