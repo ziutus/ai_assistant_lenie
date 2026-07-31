@@ -1697,6 +1697,32 @@ const Chunks = () => {
   // ── Render ───────────────────────────────────────────────────────────────
 
   // Karta pojedynczego chunka — używana w widoku płaskim i w accordionie sekcji
+  // Full-width chapter divider inserted above the first chunk of each video
+  // chapter (chunk.chapter_title, from Document.chapter_list) — makes chapter
+  // boundaries visible so splitting/merging chunks doesn't cross into the next one.
+  const renderChunksWithChapters = (chunkList: Chunk[]) => {
+    const nodes: React.ReactNode[] = [];
+    let lastChapter: string | null = null;
+    chunkList.forEach(chunk => {
+      if (chunk.chapter_title && chunk.chapter_title !== lastChapter) {
+        nodes.push(
+          <div
+            key={`chapter-${chunk.id}`}
+            style={{
+              margin: "22px 0 10px", padding: "8px 14px", background: "#0f766e", color: "#fff",
+              borderRadius: 6, fontWeight: 700, fontSize: "0.95em",
+            }}
+          >
+            📖 {chunk.chapter_title}
+          </div>,
+        );
+        lastChapter = chunk.chapter_title;
+      }
+      nodes.push(renderChunkCard(chunk));
+    });
+    return nodes;
+  };
+
   const renderChunkCard = (chunk: Chunk) => {
         const hasCorrected = !!chunk.corrected_text;
         const chunkLength = chunk.text_length ?? (chunk.corrected_text ?? chunk.original_text ?? "").length;
@@ -1749,15 +1775,6 @@ const Chunks = () => {
               </span>
 
               {chunk.speaker && <span style={{ color: "#64748b" }}>🎙 {chunk.speaker}</span>}
-
-              {chunk.chapter_title && (
-                <span
-                  title="Rozdział wideo (z opisu YouTube), do którego przypisany jest ten chunk"
-                  style={{ color: "#0f766e", background: "#ccfbf1", padding: "1px 8px", borderRadius: 4, fontSize: "0.85em" }}
-                >
-                  📖 {chunk.chapter_title}
-                </span>
-              )}
 
               {!!chunk.obsidian_note_paths?.length && (
                 <span style={{ color: "#7c3aed", display: "inline-flex", alignItems: "center", gap: 4 }}>
@@ -2776,7 +2793,7 @@ const Chunks = () => {
       )}
 
       {/* Chunki — widok płaski */}
-      {!processComplete && !sectionView && visibleChunks.map(renderChunkCard)}
+      {!processComplete && !sectionView && renderChunksWithChapters(visibleChunks)}
 
       {/* Doładowanie kolejnej strony (duży run bez sekcji) */}
       {!processComplete && !sectionView && flatPaged && chunks.length < chunkTotal && (
@@ -2845,7 +2862,7 @@ const Chunks = () => {
             {expanded && (
               <div style={{ padding: "10px 14px", borderTop: "1px solid #e2e8f0" }}>
                 {secLoading && <div className="loader" />}
-                {!secLoading && secChunks.map(renderChunkCard)}
+                {!secLoading && renderChunksWithChapters(secChunks)}
                 {!secLoading && secChunks.length === 0 && (
                   <p style={{ color: "#94a3b8", fontStyle: "italic", margin: 0 }}>Brak widocznych chunków (sprawdź filtry).</p>
                 )}
