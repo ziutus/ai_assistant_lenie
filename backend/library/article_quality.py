@@ -59,8 +59,12 @@ _CAPTION_AGENCY_RE = re.compile(
     r"(?:zdj[eę]cie\s+ilustracyjne|shutterstock|getty\s*images?|east\s+news|"
     r"adobe\s+stock|istock(?:photo)?|depositphotos|123rf|unsplash|pexels|"
     r"domena\s+publiczna|\bcc\s+by(?:-sa)?\b|creative\s+commons|archiwum\s+prywatne|©|"
-    r"\bPAP\s*/|/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|\bBloomberg\b|"
-    r"\bForum\b\s*/|/\s*Forum\b|agencj\w++\s++wyborcz\w+)",
+    # (?<!/) on the "/ AGENCY" forms guards against a URL's "://" — e.g.
+    # "https://forum.example.com" or "https://pap.pl/..." — matching just
+    # because the agency name follows a slash; a real photo-credit slash is
+    # never itself preceded by another slash.
+    r"\bPAP\s*/|(?<!/)/\s*PAP\b|\bEPA\b|\bAFP\b|\bReuters\b|\bBloomberg\b|"
+    r"\bForum\b\s*/|(?<!/)/\s*Forum\b|agencj\w++\s++wyborcz\w+)",
     re.IGNORECASE,
 )
 
