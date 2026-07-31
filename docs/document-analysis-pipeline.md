@@ -488,6 +488,51 @@ z widoku po analizie, to efekt uboczny **przełączenia widoku frontendu** (krok
 istniejącym runie (przycisk „Analizuj chunki” widoczny po podziale split-only) albo od razu
 odznaczyć „tylko podział” przy tworzeniu nowej analizy.
 
+#### Po co w ogóle pokazywać `[MM:SS]`, skoro to nie część danych?
+
+Dwie konkretne funkcje robocze, obie sensowne wyłącznie *przed* korektą LLM, gdy chunk jest
+jeszcze surowym podziałem, a nie gotową treścią:
+
+1. **Link do momentu w oryginalnym wideo.** Każdy `[MM:SS]` to
+   `<a href="https://www.youtube.com/watch?v={videoId}&t={sekundy}">` (`chunks.tsx:341,353-357`)
+   — kliknięcie otwiera YouTube dokładnie w tym miejscu, żeby zweryfikować cytat albo poprawić
+   błąd STT przy źródle.
+2. **Punkty do ręcznego cięcia chunków.** Przycisk ✂ przy każdym segmencie (`chunks.tsx:363-375`,
+   `onMarkSplit`) pozwala wskazać dokładnie tę granicę jako miejsce podziału — naiwny podział
+   „tylko podział” tnie po prostu co ~5000 znaków, więc może wylądować w środku zdania albo w
+   środku bloku reklamowego. Segmenty z czasem dają precyzję na poziomie pojedynczej wypowiedzi,
+   żeby poprawić granicę **zanim** zapłaci się za wywołanie LLM.
+
+Gdy `corrected_text` już istnieje, ta faza przygotowania jest zamknięta — dalej tekst czyta się
+jako całość (czytnik, embeddingi, wyszukiwanie), więc granice pojedynczych napisów przestają być
+potrzebne.
+
+#### Tabela decyzyjna: kiedy `/chunks/:id` pokazuje `[MM:SS]`, a kiedy nie
+
+Różnica **nie zależy od tego, czy analiza LLM w ogóle kiedykolwiek się odbyła dla dokumentu** —
+zależy wyłącznie od stanu KONKRETNEGO chunka w danym momencie. Warunek jest w
+`chunks.tsx:1903-1913`:
+
+```
+isCorrectedView && hasCorrected ? <tekst poprawiony>
+  : chunkSegs.length > 0        ? <SegmentsView z [MM:SS]>
+  :                                <PlainTextLines bez [MM:SS]>
+```
+
+| Stan chunka | `corrected_text` | Segmenty (`text_raw` JSON) | Co widać |
+|---|:-:|:-:|---|
+| Świeżo po „tylko podział” (split_only), przed analizą LLM | `NULL` | są (napisy YouTube) | **`[MM:SS]` + ✂** (`SegmentsView`) |
+| Po pełnej analizie LLM (`▶ Pełna`) lub po „Analizuj chunki” | ustawiony | są | tekst poprawiony, **bez** `[MM:SS]` |
+| Po analizie, ale przełącznik „Surowy” kliknięty ręcznie | ustawiony (ale `isCorrectedView=false`) | są | wraca `SegmentsView` z `[MM:SS]` — recenzent może świadomie porównać surowy i poprawiony tekst |
+| `NULL` lub ustawiony, ale transkrypcja z AssemblyAI (STT płatne) zamiast napisów YouTube | dowolny | **brak** — `text_raw` to zwykły tekst, nie JSON | `PlainTextLines` (linie z przyciskami edycji), **bez** `[MM:SS]` niezależnie od tego, czy LLM już zadziałał |
+| Dokument typu `article` (webpage) | zawsze `NULL` w tym trybie | nie dotyczy (`segments=[]`) | `PlainTextLines`, `[MM:SS]` nigdy nie występuje — to zjawisko czysto YouTube'owe |
+
+Czyli praktyczna odpowiedź dla użytkownika dokumentacji: **to nie „LLM był czy nie był
+użyty w ogóle”, tylko „czy TEN chunk ma już `corrected_text`, i czy źródłem napisów było
+YouTube (nie AssemblyAI)”.** W jednym dokumencie część chunków może już mieć `[MM:SS]`
+schowane (po analizie), a część nadal je pokazywać (jeszcze nieprzeanalizowane) — to zwykły,
+oczekiwany stan przejściowy podczas recenzji.
+
 ### 5.3 Podział na chunki: wideo z rozdziałami vs bez rozdziałów
 
 ```mermaid
