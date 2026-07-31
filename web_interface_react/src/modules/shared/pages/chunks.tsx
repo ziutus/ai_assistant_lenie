@@ -325,6 +325,16 @@ function statusColor(status: string): React.CSSProperties {
 
 // ── Segments sub-component ───────────────────────────────────────────────────
 
+// Raw transcript segments can carry embedded newlines mid-sentence (hard-wrapped
+// at recording time), so a plain string.split(span) miss it — match whitespace-
+// tolerantly, same as the backend's remove_span endpoint.
+function stripRemovedSpan(text: string, span: string): string {
+  const words = span.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return text;
+  const pattern = new RegExp(words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"), "g");
+  return text.replace(pattern, "");
+}
+
 const SegmentsView: React.FC<{
   segs: Segment[];
   videoId: string;
@@ -340,7 +350,7 @@ const SegmentsView: React.FC<{
   const groups = groupSegments(segs, absOffset)
     .map(g => ({
       ...g,
-      text: removedSpans.reduce((t, span) => t.split(span).join(""), g.text).replace(/ {2,}/g, " ").trim(),
+      text: removedSpans.reduce((t, span) => stripRemovedSpan(t, span), g.text).replace(/\s{2,}/g, " ").trim(),
     }))
     .filter(g => g.text.length > 0);
   if (groups.length === 0) return <em style={{ color: "#94a3b8" }}>brak segmentów</em>;
