@@ -256,8 +256,8 @@ const SECTION_VIEW_THRESHOLD = 30;
 const CHUNK_PAGE_SIZE = 20;
 
 // Document types with an editor route in App.tsx. Types without one
-// (text, text_message, social_media_post) get a back-link to /list instead.
-const EDITOR_TYPES = ["webpage", "link", "youtube", "movie", "email"];
+// (text, text_message) get a back-link to /list instead.
+const EDITOR_TYPES = ["webpage", "link", "youtube", "movie", "email", "social_media_post"];
 
 const DOC_TYPE_LABELS: Record<string, string> = {
   webpage: "artykuł",

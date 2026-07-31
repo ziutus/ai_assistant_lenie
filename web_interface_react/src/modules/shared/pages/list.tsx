@@ -408,7 +408,13 @@ const List = () => {
                   Czytaj
                 </NavLink>
               )}
-              {["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.processing_status) && (
+              {(
+                // social_media_post text arrives at creation, not through the
+                // download pipeline, so it stays at URL_ADDED indefinitely —
+                // unlike the other types here, URL_ADDED does NOT mean "no text yet".
+                item.document_type === "social_media_post" ||
+                (["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.processing_status))
+              ) && (
                 <NavLink
                   className={"button"}
                   style={{ margin: "0 0 0 6px" }}
