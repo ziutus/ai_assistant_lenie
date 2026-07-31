@@ -15,7 +15,7 @@ The project moved from an AWS-serverless architecture (Lambda/API Gateway/Dynamo
 - `docs/deployment/nas/` — the only actively-deployed environment (own NAS, household users).
 - `docs/deployment/commercial-multi-tenant-scaling-experiment.md`, `federation-experiment.md`, `hyperscalers/`, `eu_cloud/`, `onprem/` — thought experiments, low priority, must not force complexity into current code.
 
-**Several root-level docs generated 2026-02-13 predate this pivot and describe the old AWS/Cognito-era plan as if current** — `docs/index.md`, `docs/development-guide.md`, `docs/project-overview.md`, `docs/architecture-*.md`, `docs/backlog-reference.md`, `docs/aws-roadmap.md`, and the "Future: Multiuser/LLM Text Analysis" sections at the bottom of `docs/development-guide.md` (Cognito auth, `_bmad-output/implementation-artifacts/sprint-status.yaml` backlog IDs — that backlog file no longer exists in this repo, it moved to a private repo). Treat these as historical unless cross-checked against `docs/deployment/` and the subdirectory `CLAUDE.md` files below.
+The BMad `document-project` full-scan output generated 2026-02-13 (`docs/index.md`, `docs/development-guide.md`, `docs/project-overview.md`, `docs/architecture-*.md`, `docs/api-contracts-backend.md`, `docs/data-models-backend.md`, `docs/component-inventory-*.md`, `docs/integration-architecture.md`, `docs/project-scan-report.json`, `docs/project-parts.json`) predated this pivot and described the old AWS/Cognito-era plan as current — it was removed 2026-07-31 as a one-time, never-refreshed scan artifact rather than maintained documentation. `docs/backlog-reference.md` and `docs/aws-roadmap.md` are separate, still-present docs from the same era — treat those as historical unless cross-checked against `docs/deployment/` and the subdirectory `CLAUDE.md` files below.
 
 BMad workflow output (`_bmad-output/`) is no longer stored in this repo — it was moved to a private repo (session/planning artifacts contain personal/business-strategy content not meant to be public) and `_bmad-output/` is gitignored here. `_bmad/*/config.yaml` point new BMad output there.
 
@@ -38,7 +38,7 @@ Each subproject manages its own Python/Node dependencies independently (no share
 
 ## Common commands
 
-Run from repo root unless noted. Full reference: `Makefile`, `docs/development-guide.md` (dated, verify against this file for anything infra-related).
+Run from repo root unless noted. Full reference: `Makefile`.
 
 ```bash
 # Docker stack (local dev)
@@ -86,7 +86,7 @@ cd ner_service && .venv/Scripts/python -m pytest tests/ -q
 - **Job execution**: today, batch scripts (`backend/documents_pipeline.py`, `backend/imports/*.py`) run manually/locally; the plan (`docs/deployment/nas/storage-and-jobs-migration-plan.md`) moves this to a PostgreSQL-backed job queue + worker on the NAS. Don't add new cron/local-only automation without checking that plan first.
 - **Multi-user model**: household trust model (`docs/deployment/nas/multi-user-household.md`) — shared document library, `kind=user` per person, no per-workspace data isolation. This is deliberately simpler than the (separate, thought-experiment-only) commercial multi-tenant model in `docs/deployment/commercial-multi-tenant-scaling-experiment.md`.
 - **NER / entities**: `backend/library/entity_service.py`, `backend/library/person_registry.py` — person canonicalization, aliases, manual-review queue, `ner_exclusions` false-positive suppression. Backed by `ner_service/` over the internal Docker network.
-- **Search**: hybrid (explicit filters + embeddings + LLM query parsing) — see `docs/search-hybrid.md` for the current design and known regressions/fixes, not `docs/architecture-backend.md` (stale, pre-rebuild).
+- **Search**: hybrid (explicit filters + embeddings + LLM query parsing) — see `docs/search-hybrid.md` for the current design and known regressions/fixes.
 - **`source` vs `byline`** on documents: `source` = how you discovered it (newsletter, friend, own), `byline` = who created it (author/channel). See `backend/CLAUDE.md` for the full explanation — a common source of confusion.
 
 ## Conventions

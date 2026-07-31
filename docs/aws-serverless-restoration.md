@@ -4,7 +4,7 @@
 **Account:** production application account (see `env.sh`, profile `default`), region `us-east-1`
 **Why this document exists:** in July 2026 the unused parts of the AWS serverless stack (RDS and everything that existed only to serve it) were decommissioned to cut cost and complexity. The intent is to possibly restore a serverless document-serving path in ~6 months, when the application has evolved. This document captures the exact prior state, the lessons from the audit, and a step-by-step restoration procedure so that restoration is mostly mechanical.
 
-Related: [architecture-infra.md](architecture-infra.md), [infra/aws/CLAUDE.md](../infra/aws/CLAUDE.md), [infra/aws/serverless/CLAUDE.md](../infra/aws/serverless/CLAUDE.md), [infra/aws/cloudformation/CLAUDE.md](../infra/aws/cloudformation/CLAUDE.md)
+Related: [infra/aws/CLAUDE.md](../infra/aws/CLAUDE.md), [infra/aws/serverless/CLAUDE.md](../infra/aws/serverless/CLAUDE.md), [infra/aws/cloudformation/CLAUDE.md](../infra/aws/cloudformation/CLAUDE.md)
 
 ---
 
