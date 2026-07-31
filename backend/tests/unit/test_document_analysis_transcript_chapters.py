@@ -83,6 +83,27 @@ class TestChapterChunksFromText:
         assert chunks[1].startswith("USA bombardują Iran\nZdanie o Iranie.")
         assert "zapraszam" not in chunks[1]
 
+    def test_rebalances_when_the_heading_is_its_own_blank_line_separated_block(self):
+        # Caught live on doc 8790: youtube_processing.py had put a blank line
+        # on BOTH sides of the "## Title" heading, so it lands as its own
+        # block (title_set membership, not a "#"-prefix check, is what makes
+        # block_title() recognize it) — a naive body = lines[1] after
+        # splitting on the first "\n" would have swallowed the whole heading
+        # into "body" instead of recognizing it as the heading.
+        text = (
+            "## Wstęp\n\nDzień dobry. Witam i\n\n"
+            + "## USA bombardują Iran\n\n zapraszam na program o Iranie.\n"
+            + "Zdanie o Iranie. " * 20
+            + "\n\n"
+            + "## Trump na szczycie NATO\n\n" + "Zdanie o NATO. " * 20
+        )
+        chunks = _chapter_chunks_from_text(text, CHAPTER_TITLES, chunk_size=5000)
+
+        assert chunks is not None
+        assert chunks[0] == "## Wstęp\n\nDzień dobry. Witam i zapraszam na program o Iranie."
+        assert chunks[1].startswith("## USA bombardują Iran\nZdanie o Iranie.")
+        assert "zapraszam" not in chunks[1]
+
     def test_does_not_touch_a_marker_that_already_lands_on_a_sentence_boundary(self):
         chunks = _chapter_chunks_from_text(TRANSCRIPT_TEXT, CHAPTER_TITLES, chunk_size=5000)
         assert chunks == [

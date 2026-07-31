@@ -281,50 +281,58 @@ def _chapter_chunks_from_text(text: str, chapter_titles: list[str], chunk_size: 
     for block in blocks:
         starts_chapter = block_title(block) in title_set
         if starts_chapter and current:
-            current, block = _rebalance_chapter_split(current, block)
-            chunks.extend(cap(current))
+            chunks.append(current)
             current = block
         else:
             current = f"{current}\n\n{block}" if current else block
     if current:
-        chunks.extend(cap(current))
-    return chunks
+        chunks.append(current)
+
+    chunks = _rebalance_chapter_chunks(chunks, title_set)
+    return [piece for chunk in chunks for piece in cap(chunk)]
 
 
 _SENTENCE_END_RE = re.compile(r'[.?!]["\')]?\s*$')
 _NEXT_SENTENCE_END_RE = re.compile(r'[.?!]["\')]?(\s|$)')
 
 
-def _rebalance_chapter_split(current: str, block: str) -> tuple[str, str]:
-    """Move an interrupted sentence from the start of `block`'s body back
-    onto `current` when a chapter heading lands mid-sentence.
+def _rebalance_chapter_chunks(chunks: list[str], title_set: set[str]) -> list[str]:
+    """Move an interrupted sentence from the start of each chunk's body back
+    onto the end of the previous chunk, when a chapter marker landed
+    mid-sentence.
 
     Video chapter markers are timestamp-based (youtube_processing.py inserts
-    them at the chapter's start second) and can fall anywhere in a spoken
-    sentence — `_chapter_chunks_from_text` otherwise cuts exactly there,
-    which reads as a broken sentence in the chunk review UI. `block`'s
-    heading line is left in place (still a useful topic hint for the LLM
-    step); only the prose that follows it moves.
+    them at the chapter's start second, and the start second is sometimes
+    set by hand by the video's author) and can fall anywhere in a spoken
+    sentence — the plain block split otherwise cuts exactly there, which
+    reads as a broken sentence in the chunk review UI. A chunk's leading
+    heading line (Markdown "## Title" or a legacy bare title line — same
+    recognition rule as block_title() above) is left in place (still a
+    useful topic hint for the LLM analysis step); only the prose that
+    follows it moves.
     """
-    if not current or _SENTENCE_END_RE.search(current):
-        return current, block
-    lines = block.split("\n", 1)
-    if len(lines) < 2:
-        return current, block
-    heading, rest = lines[0], lines[1]
-    stripped = rest.lstrip()
-    if not stripped:
-        return current, block
-    m = _NEXT_SENTENCE_END_RE.search(stripped)
-    if m is None:
-        return current, block
-    fragment = stripped[:m.end()].rstrip()
-    remainder = stripped[m.end():].lstrip()
-    if not fragment:
-        return current, block
-    new_current = f"{current} {fragment}".strip()
-    new_block = f"{heading}\n{remainder}" if remainder else heading
-    return new_current, new_block
+    for i in range(len(chunks) - 1):
+        prev = chunks[i]
+        if not prev or _SENTENCE_END_RE.search(prev):
+            continue
+        nxt = chunks[i + 1]
+        lines = nxt.split("\n", 1)
+        first_line_title = re.sub(r"^#{1,6}\s+", "", lines[0].strip()).strip() if lines else ""
+        has_heading = len(lines) == 2 and first_line_title in title_set
+        heading, body = (lines[0], lines[1]) if has_heading else (None, nxt)
+        stripped = body.lstrip()
+        if not stripped:
+            continue
+        m = _NEXT_SENTENCE_END_RE.search(stripped)
+        if m is None:
+            continue
+        fragment = stripped[:m.end()].rstrip()
+        remainder = stripped[m.end():].lstrip()
+        if not fragment:
+            continue
+        chunks[i] = f"{prev} {fragment}".strip()
+        chunks[i + 1] = f"{heading}\n{remainder}" if heading else remainder
+    return chunks
 
 
 def _merge_topics(sections: list[dict], model: str, mode: str = "transcript") -> list[dict]:
