@@ -18,12 +18,15 @@ Endpoints:
   PATCH /topic_section/<section_id>          — edit section title
   PATCH /chunk/<chunk_id>                    — update status / type / topic / split_at_seg
   POST /chunk/<chunk_id>/execute_split
+  POST /chunk/<chunk_id>/merge_with_next
+  POST /chunk/<chunk_id>/remove_span         — cut one exact substring out of original_text
   POST /chunk/<chunk_id>/reanalyze
 """
 
 import bisect
 import json
 import logging
+import re
 import threading
 import uuid
 from collections import Counter
@@ -370,6 +373,7 @@ def _chunk_to_dict(
         "split_first_type": c.split_first_type,
         "split_second_type": c.split_second_type,
         "obsidian_note_paths": c.obsidian_note_paths or [],
+        "removed_text_spans": c.removed_text_spans or [],
         "has_embeddings": bool(has_embeddings) if has_embeddings is not None else None,
         "photo_caption_line_indices": [item["line_index"] for item in caption_candidates],
     }
@@ -2966,6 +2970,12 @@ def execute_split(chunk_id: int):
 
         text_a = _text_from_segs(seg_start, split_at)
         text_b = _text_from_segs(split_at, seg_end)
+        # _text_from_segs rebuilds from raw transcript segments, which know
+        # nothing about spans a reviewer already cut with remove_span — reapply
+        # them so a split doesn't resurrect already-removed ad text.
+        for removed_span in chunk.removed_text_spans or []:
+            text_a = re.sub(r"[ \t]{2,}", " ", text_a.replace(removed_span, "")).strip()
+            text_b = re.sub(r"[ \t]{2,}", " ", text_b.replace(removed_span, "")).strip()
         seg_a = (seg_start, split_at)
         seg_b = (split_at, seg_end)
         status_a = "approved" if first_type in ("ZRODLA", "REKLAMA", "SZUM") else "pending"
@@ -2974,6 +2984,7 @@ def execute_split(chunk_id: int):
     orig_pos = chunk.position
     run_id = chunk.run_id
     doc_id = chunk.document_id
+    removed_spans_snapshot = list(chunk.removed_text_spans or [])
 
     try:
         # Shift positions after orig_pos to a temp range to avoid unique constraint violation,
@@ -3000,6 +3011,7 @@ def execute_split(chunk_id: int):
             corrected_text=None, summary=None,
             seg_start=seg_a[0], seg_end=seg_a[1],
             rewrite_ratio=None, status=status_a,
+            removed_text_spans=removed_spans_snapshot,
         )
 
         chunk_b = DocumentChunk(
@@ -3009,6 +3021,7 @@ def execute_split(chunk_id: int):
             corrected_text=None, summary=None,
             seg_start=seg_b[0], seg_end=seg_b[1],
             rewrite_ratio=None, status=status_b,
+            removed_text_spans=removed_spans_snapshot,
         )
 
         session.add(chunk_a)
@@ -3080,6 +3093,13 @@ def merge_with_next(chunk_id: int):
             if p not in merged_paths:
                 merged_paths.append(p)
         chunk.obsidian_note_paths = merged_paths
+        # Union removed_text_spans so SegmentsView keeps filtering both halves'
+        # cut-out ad text after the merge widens the chunk's seg_start:seg_end range.
+        merged_spans = list(chunk.removed_text_spans or [])
+        for s in next_chunk.removed_text_spans or []:
+            if s not in merged_spans:
+                merged_spans.append(s)
+        chunk.removed_text_spans = merged_spans
         chunk.updated_at = datetime.utcnow()
 
         removed_pos = next_chunk.position
@@ -3108,6 +3128,60 @@ def merge_with_next(chunk_id: int):
         return jsonify({"status": "error", "message": "DB error during merge"}), 500
 
     logger.info("Merged chunk %d with its successor (pos %d)", chunk_id, removed_pos)
+    return jsonify({"status": "success", "chunk": _chunk_to_dict(chunk)})
+
+
+# ---------------------------------------------------------------------------
+# API: POST /chunk/<chunk_id>/remove_span
+# ---------------------------------------------------------------------------
+
+@bp.route("/chunk/<int:chunk_id>/remove_span", methods=["POST"])
+def remove_chunk_span(chunk_id: int):
+    """Cut one exact substring out of a chunk's original_text — e.g. an ad
+    spliced mid-sentence into a transcript segment, which is too fine-grained
+    for line/segment removal or a full split.
+
+    Deliberately leaves seg_start/seg_end untouched (unlike the line-split
+    "article editor" path, which nulls them): the chunk keeps its video-chapter
+    attribution, and for transcript chunks the frontend keeps rendering from
+    live segments — SegmentsView filters removed_text_spans out of each
+    segment's displayed text rather than switching to a frozen text view.
+
+    Body (JSON): {"text": "<exact substring to remove, must occur once>"}
+    """
+    session = get_scoped_session()
+    chunk = session.get(DocumentChunk, chunk_id)
+    if chunk is None:
+        abort(404, f"Chunk {chunk_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    span = data.get("text")
+    if not isinstance(span, str) or not span.strip():
+        return jsonify({"status": "error", "message": "text must be a non-empty string"}), 400
+    span = span.strip()
+
+    original = chunk.original_text or ""
+    if span not in original:
+        return jsonify({"status": "error",
+                        "message": "text not found in this chunk's original_text"}), 400
+
+    try:
+        cleaned = original.replace(span, "", 1)
+        cleaned = re.sub(r"[ \t]{2,}", " ", cleaned).strip()
+        chunk.original_text = cleaned
+        spans = list(chunk.removed_text_spans or [])
+        spans.append(span)
+        chunk.removed_text_spans = spans
+        if chunk.type == "TEMAT":
+            chunk.status = "needs_reanalysis"
+        chunk.updated_at = datetime.utcnow()
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to remove span from chunk %d", chunk_id)
+        return jsonify({"status": "error", "message": "DB error during span removal"}), 500
+
+    logger.info("Removed a %d-char span from chunk %d", len(span), chunk_id)
     return jsonify({"status": "success", "chunk": _chunk_to_dict(chunk)})
 
 

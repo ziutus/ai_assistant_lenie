@@ -1176,6 +1176,13 @@ class DocumentChunk(Base):
     obsidian_note_paths: Mapped[list[str]] = mapped_column(
         ARRAY(String), nullable=False, server_default=sa_text("'{}'"),
     )
+    # Exact substrings a reviewer cut out of original_text (e.g. an ad spliced
+    # mid-sentence into a transcript segment) via POST /chunk/<id>/remove_span.
+    # Kept around (rather than only mutating original_text) so merge/split can
+    # re-apply them when they rebuild text from raw transcript segments.
+    removed_text_spans: Mapped[list[str]] = mapped_column(
+        ARRAY(String), nullable=False, server_default=sa_text("'{}'"),
+    )
 
     run: Mapped["DocumentAnalysisRun"] = relationship(back_populates="chunks")
     document: Mapped["Document"] = relationship(foreign_keys=[document_id])

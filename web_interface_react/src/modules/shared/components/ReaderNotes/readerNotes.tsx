@@ -292,7 +292,10 @@ export const NotePopover: React.FC<{
   onSave: (noteText: string, stance: string | null, tags: string[]) => void;
   onSearch?: (quote: string) => void;
   onCancel: () => void;
-}> = ({ pending, onSave, onSearch, onCancel }) => {
+  // Extra button rendered above the copy action — e.g. the chunk review's
+  // "cut this out of the chunk" (not applicable in the read-only reader).
+  extraAction?: { label: string; onClick: () => void };
+}> = ({ pending, onSave, onSearch, onCancel, extraAction }) => {
   const [noteText, setNoteText] = React.useState("");
   const [tagText, setTagText] = React.useState("");
   const [stance, setStance] = React.useState<string | null>(null);
@@ -352,6 +355,12 @@ export const NotePopover: React.FC<{
       {onSearch && (
         <button type="button" onClick={() => onSearch(pending.quote)} style={{ marginTop: 8, width: "100%" }}>
           🔎 Szukaj tego fragmentu w bazie Lenie
+        </button>
+      )}
+      {extraAction && (
+        <button type="button" onClick={extraAction.onClick}
+          style={{ marginTop: 8, width: "100%", color: "#b91c1c", borderColor: "#fca5a5" }}>
+          {extraAction.label}
         </button>
       )}
       <button type="button" onClick={async () => {
