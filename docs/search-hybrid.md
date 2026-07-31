@@ -243,6 +243,10 @@ candidate at all; this is the inflection limitation below).
 
 ## Wydajność — pomiary i decyzje Etapu 12 (2026-07-19, NAS, 9220 dokumentów / 3062 embeddingi)
 
+> Obie decyzje niżej (brak GIN dla legu leksykalnego, brak HNSW dla wektorów) są
+> sformalizowane w [ADR-020](adr/adr-020-search-indexing-deferred.md), razem z
+> progami rewizji.
+
 Zmierzone `EXPLAIN (ANALYZE)` na bazie NAS:
 
 | Zapytanie | Czas | Plan |
