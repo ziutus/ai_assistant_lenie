@@ -70,17 +70,25 @@ def links_correct(text):
         if inside_link and (text[i] == " " or text[i] == ")" or text[i] == "]"):
             inside_link = False
 
-        if inside_link and text[i] == '\r' and i + 1 < len(text) and text[i+1] == '\n':
-            i += 2
-            continue
-
-        if inside_link and text[i] == '\n':
-            i+=1
-            continue
-
-        if inside_link and text[i] == ' ':
-            i+=1
-            continue
+        if inside_link and text[i] in ("\r", "\n", " "):
+            # Whitespace inside a link is usually a converter line-wrap
+            # artifact and gets stripped so the URL stays intact (e.g.
+            # "https://google.\ncom" -> "https://google.com"). But if what
+            # follows clearly isn't a continuation of the same URL -- another
+            # "https://"/"http://" starting, or a capitalized word/sentence --
+            # this is a real boundary (e.g. a one-per-line list of separate
+            # source URLs, common in social media posts) and must be kept,
+            # or consecutive links/paragraphs get silently merged together.
+            j = i
+            while j < len(text) and text[j] in ("\r", "\n", " "):
+                j += 1
+            resumes_new_url = text[j:j + 8] == "https://" or text[j:j + 7] == "http://"
+            resumes_capitalized = j < len(text) and text[j].isupper()
+            if resumes_new_url or resumes_capitalized:
+                inside_link = False
+            else:
+                i += 1
+                continue
 
         text_new = text_new + text[i]
         i += 1

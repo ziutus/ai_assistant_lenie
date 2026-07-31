@@ -52,7 +52,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let previousSourceValue = sourceSelect.value;
   let detectedSocialAuthor = '';
   let detectedSocialPlatform = '';
-  const debugState = { version: '1.0.42' };
+  const debugState = { version: '1.0.43' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -378,6 +378,50 @@ document.addEventListener('DOMContentLoaded', function () {
         target: { tabId: tabs[0].id },
         func: async () => {
           const clean = value => (value || '').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+          // Facebook/LinkedIn render the post body and the reaction bar +
+          // comment thread inside the same container the extraction selectors
+          // grab (class names for the "noise" parts drift often enough that
+          // removing them by selector -- see the copy.querySelectorAll(...).remove()
+          // fallbacks below -- regularly misses). Cutting the extracted text at
+          // the first clear "post ends, engagement UI begins" line is more
+          // robust than chasing selector renames, and is applied to every
+          // extraction path (not just the body-text fallback) as a final pass.
+          const ENGAGEMENT_STOP_LINES = new Set([
+            'Like', 'Comment', 'Repost', 'Send', 'Show more', 'See translation', 'Translate',
+            'Most relevant', 'All comments', 'Top comments', 'Follow', 'Connect',
+            'Lubi\u0119 to!', 'Lubi\u0119 to', 'Skomentuj', 'Komentarz', 'Udost\u0119pnij', 'Wy\u015blij',
+            'Najtrafniejsze', 'Wszystkie komentarze', 'Zobacz t\u0142umaczenie', 'Przet\u0142umacz', 'Obserwuj'
+          ]);
+          const ENGAGEMENT_COUNT_RE = /^\d+\s+(?:reactions?|comments?|reposts?|shares?|repost(?:y|\u00f3w)?|komentarz(?:e|y)?|reakcj[ei]|udost\u0119pnie(?:\u0144|nia)?)$/i;
+          const trimAtEngagementBoundary = value => {
+            const lines = (value || '').split(/\r?\n/);
+            let stopIndex = -1;
+            let numericRun = 0;
+            let numericRunStart = -1;
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i].trim();
+              if (!line) continue;
+              if (/^(?:\u2026|\.\.\.)\s*more$/i.test(line) || ENGAGEMENT_STOP_LINES.has(line) || ENGAGEMENT_COUNT_RE.test(line)) {
+                stopIndex = i;
+                break;
+              }
+              // LinkedIn/Facebook often render the reaction/comment/share
+              // counters as bare numbers with no label once the post is
+              // scraped as plain innerText -- two in a row is not something
+              // real post prose produces.
+              if (/^\d{1,4}$/.test(line)) {
+                if (numericRun === 0) numericRunStart = i;
+                numericRun++;
+                if (numericRun >= 2) {
+                  stopIndex = numericRunStart;
+                  break;
+                }
+              } else {
+                numericRun = 0;
+              }
+            }
+            return (stopIndex >= 0 ? lines.slice(0, stopIndex) : lines).join('\n').trim();
+          };
           const hostname = location.hostname.toLowerCase();
           const isFacebook = hostname === 'facebook.com' || hostname.endsWith('.facebook.com');
           const isLinkedIn = hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com');
@@ -484,6 +528,9 @@ document.addEventListener('DOMContentLoaded', function () {
               meta_og_description: document.querySelector('meta[property="og:description"]')?.content || '',
               fallback_extraction: fallbackExtraction
             };
+          }
+          if (isFacebook || isLinkedIn) {
+            postText = trimAtEngagementBoundary(postText);
           }
           return {
             title: document.title,
