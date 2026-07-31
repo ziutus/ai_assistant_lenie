@@ -286,7 +286,12 @@ function secs2ts(s: number): string {
 }
 
 function groupSegments(segs: Segment[], absOffset: number): SegGroup[] {
-  const MAX = 8;
+  // Flushes at a sentence end; MAX is only a hard ceiling for filler-heavy/
+  // run-on speech with no punctuation for a long stretch, so a [timestamp]
+  // display group doesn't grow unbounded. Raised from 8: at 8 it routinely
+  // won the race against a sentence end and cut display groups mid-sentence
+  // even for perfectly normal-length sentences.
+  const MAX = 20;
   const groups: SegGroup[] = [];
   let curTexts: string[] = [];
   let curStart: number | null = null;
