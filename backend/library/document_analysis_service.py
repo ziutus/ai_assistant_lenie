@@ -281,6 +281,7 @@ def _chapter_chunks_from_text(text: str, chapter_titles: list[str], chunk_size: 
     for block in blocks:
         starts_chapter = block_title(block) in title_set
         if starts_chapter and current:
+            current, block = _rebalance_chapter_split(current, block)
             chunks.extend(cap(current))
             current = block
         else:
@@ -288,6 +289,42 @@ def _chapter_chunks_from_text(text: str, chapter_titles: list[str], chunk_size: 
     if current:
         chunks.extend(cap(current))
     return chunks
+
+
+_SENTENCE_END_RE = re.compile(r'[.?!]["\')]?\s*$')
+_NEXT_SENTENCE_END_RE = re.compile(r'[.?!]["\')]?(\s|$)')
+
+
+def _rebalance_chapter_split(current: str, block: str) -> tuple[str, str]:
+    """Move an interrupted sentence from the start of `block`'s body back
+    onto `current` when a chapter heading lands mid-sentence.
+
+    Video chapter markers are timestamp-based (youtube_processing.py inserts
+    them at the chapter's start second) and can fall anywhere in a spoken
+    sentence — `_chapter_chunks_from_text` otherwise cuts exactly there,
+    which reads as a broken sentence in the chunk review UI. `block`'s
+    heading line is left in place (still a useful topic hint for the LLM
+    step); only the prose that follows it moves.
+    """
+    if not current or _SENTENCE_END_RE.search(current):
+        return current, block
+    lines = block.split("\n", 1)
+    if len(lines) < 2:
+        return current, block
+    heading, rest = lines[0], lines[1]
+    stripped = rest.lstrip()
+    if not stripped:
+        return current, block
+    m = _NEXT_SENTENCE_END_RE.search(stripped)
+    if m is None:
+        return current, block
+    fragment = stripped[:m.end()].rstrip()
+    remainder = stripped[m.end():].lstrip()
+    if not fragment:
+        return current, block
+    new_current = f"{current} {fragment}".strip()
+    new_block = f"{heading}\n{remainder}" if remainder else heading
+    return new_current, new_block
 
 
 def _merge_topics(sections: list[dict], model: str, mode: str = "transcript") -> list[dict]:

@@ -65,6 +65,32 @@ class TestChapterChunksFromText:
     def test_empty_chapter_titles_returns_none(self):
         assert _chapter_chunks_from_text(TRANSCRIPT_TEXT, [], chunk_size=5000) is None
 
+    def test_rebalances_a_chapter_marker_landing_mid_sentence(self):
+        # Video chapters are timestamp-based (often set by hand by the
+        # author) and don't have to land on a sentence boundary — the
+        # marker here interrupts "Witam i zapraszam..." right after "i".
+        text = (
+            "Wstęp\nDzień dobry. Witam i\n\n"
+            + "USA bombardują Iran\n zapraszam na program o Iranie.\n"
+            + "Zdanie o Iranie. " * 20
+            + "\n\n"
+            + "Trump na szczycie NATO\n" + "Zdanie o NATO. " * 20
+        )
+        chunks = _chapter_chunks_from_text(text, CHAPTER_TITLES, chunk_size=5000)
+
+        assert chunks is not None
+        assert chunks[0] == "Wstęp\nDzień dobry. Witam i zapraszam na program o Iranie."
+        assert chunks[1].startswith("USA bombardują Iran\nZdanie o Iranie.")
+        assert "zapraszam" not in chunks[1]
+
+    def test_does_not_touch_a_marker_that_already_lands_on_a_sentence_boundary(self):
+        chunks = _chapter_chunks_from_text(TRANSCRIPT_TEXT, CHAPTER_TITLES, chunk_size=5000)
+        assert chunks == [
+            "Wstęp\n" + "Zdanie wstępu. " * 20,
+            "USA bombardują Iran\n" + "Zdanie o Iranie. " * 20,
+            "Trump na szczycie NATO\n" + "Zdanie o NATO. " * 20,
+        ]
+
     def test_oversized_chapter_gets_subsplit(self):
         long_text = (
             "Wstęp\n" + "Zdanie wstępu. " * 20 + "\n\n"
