@@ -26,7 +26,7 @@ interface Chunk {
   status: string;
   seg_start: number | null;
   seg_end: number | null;
-  chapter_title?: string | null;
+  chapter_titles?: string[] | null;
   obsidian_note_paths?: string[];
   has_embeddings?: boolean | null;
   photo_caption_line_indices?: number[];
@@ -1698,26 +1698,30 @@ const Chunks = () => {
 
   // Karta pojedynczego chunka — używana w widoku płaskim i w accordionie sekcji
   // Full-width chapter divider inserted above the first chunk of each video
-  // chapter (chunk.chapter_title, from Document.chapter_list) — makes chapter
-  // boundaries visible so splitting/merging chunks doesn't cross into the next one.
+  // chapter (chunk.chapter_titles, from Document.chapter_list). A chunk normally
+  // touches one chapter, but merge_with_next can swallow a chunk that used to be
+  // a chapter's first chunk — chapter_titles then lists every chapter the merged
+  // span covers, so we still render a divider per chapter instead of silently
+  // losing the boundary.
   const renderChunksWithChapters = (chunkList: Chunk[]) => {
     const nodes: React.ReactNode[] = [];
     let lastChapter: string | null = null;
     chunkList.forEach(chunk => {
-      if (chunk.chapter_title && chunk.chapter_title !== lastChapter) {
+      (chunk.chapter_titles ?? []).forEach(title => {
+        if (title === lastChapter) return;
         nodes.push(
           <div
-            key={`chapter-${chunk.id}`}
+            key={`chapter-${chunk.id}-${title}`}
             style={{
               margin: "22px 0 10px", padding: "8px 14px", background: "#0f766e", color: "#fff",
               borderRadius: 6, fontWeight: 700, fontSize: "0.95em",
             }}
           >
-            📖 {chunk.chapter_title}
+            📖 {title}
           </div>,
         );
-        lastChapter = chunk.chapter_title;
-      }
+        lastChapter = title;
+      });
       nodes.push(renderChunkCard(chunk));
     });
     return nodes;

@@ -396,23 +396,45 @@ def _video_chapters_seconds(doc: Document | None) -> list[dict]:
     ]
 
 
-def _chunk_chapter_title(
-    seg_start_idx: int | None, segments: list[dict], video_chapters: list[dict], starts: list[int],
-) -> str | None:
+def _chunk_chapters(
+    seg_start_idx: int | None, seg_end_idx: int | None,
+    segments: list[dict], video_chapters: list[dict], starts: list[int],
+) -> list[str]:
     """video_chapters/starts are seconds-based (see _video_chapters_seconds);
-    seg_start_idx is a chunk's index into `segments` (transcript entries) —
-    look up its actual video timestamp before comparing against chapter starts."""
+    seg_start_idx/seg_end_idx are a chunk's indices into `segments` (transcript
+    entries) — look up actual video timestamps before comparing against chapter
+    starts.
+
+    Returns every chapter the chunk's [seg_start, seg_end) span touches, in
+    order: the chapter active at seg_start (if any), followed by any further
+    chapters that *start* inside the span. A chunk normally touches one chapter;
+    after merge_with_next swallows a chunk that used to be a chapter's first
+    chunk, the merged chunk's span crosses into that chapter too — without this,
+    the chapter would silently disappear from the chunk list instead of showing
+    up (fully-covered) inside the merged chunk.
+    """
     if seg_start_idx is None or not video_chapters or not segments:
-        return None
+        return []
     if not (0 <= seg_start_idx < len(segments)):
-        return None
-    seconds = segments[seg_start_idx].get("start")
-    if seconds is None:
-        return None
-    idx = bisect.bisect_right(starts, seconds) - 1
-    if idx < 0:
-        return None
-    return video_chapters[idx]["title"]
+        return []
+    start_seconds = segments[seg_start_idx].get("start")
+    if start_seconds is None:
+        return []
+    if seg_end_idx is not None and 0 <= seg_end_idx < len(segments):
+        end_seconds = segments[seg_end_idx].get("start")
+    elif segments:
+        last_seconds = segments[-1].get("start")
+        end_seconds = None if last_seconds is None else last_seconds + 1
+    else:
+        end_seconds = None
+
+    idx = bisect.bisect_right(starts, start_seconds) - 1
+    titles = [] if idx < 0 else [video_chapters[idx]["title"]]
+    for chapter in video_chapters[idx + 1:]:
+        if end_seconds is not None and chapter["start_seconds"] >= end_seconds:
+            break
+        titles.append(chapter["title"])
+    return titles
 
 
 # ---------------------------------------------------------------------------
@@ -1932,7 +1954,9 @@ def get_run_chunks(run_id: int):
             **_chunk_to_dict(c, has_embeddings=c.id in embedded_chunk_ids, lite=lite,
                              doc_url=doc.url if doc else None),
             "cited_publications": citations_by_chunk.get(c.id, []),
-            "chapter_title": _chunk_chapter_title(c.seg_start, chapter_segments, video_chapters, video_chapter_starts),
+            "chapter_titles": _chunk_chapters(
+                c.seg_start, c.seg_end, chapter_segments, video_chapters, video_chapter_starts,
+            ),
         } for c in chunks],
         "topic_sections": [
             {
