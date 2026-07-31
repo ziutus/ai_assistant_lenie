@@ -9,8 +9,9 @@ z opisem co robi na wejściu/wyjściu i oznaczeniem mechanizmu:
 - **LLM** — wywołanie Bielika (Sherlock/ARK Labs), kosztuje, może się mylić
 - **SERWIS** — zewnętrzne API/mikroserwis (NER spaCy, LocationIQ, Wikidata) — nie LLM
 
-Stan na 2026-07-22, gałąź `main`. Kod źródłowy jest tu autorytetem — jeśli coś zmienisz
-w kodzie, zaktualizuj też ten plik (i linie, które na pewno się przesuną).
+Stan na 2026-07-22 (Część 1-4, dokumenty webowe), 2026-07-31 (Część 5, YouTube/transkrypcja),
+gałąź `main`. Kod źródłowy jest tu autorytetem — jeśli coś zmienisz w kodzie, zaktualizuj też
+ten plik (i linie, które na pewno się przesuną).
 
 ## Skrót w jednym zdaniu
 
@@ -293,8 +294,8 @@ Efekt końcowy: `documents.text_md` = wyekstrahowany tekst artykułu (krok 11), 
 ## Część 2 — `create_run()`: analiza chunków
 
 Wszystko poniżej to **jedno wywołanie** `DocumentAnalysisService.create_run()`
-(`document_analysis_service.py:347`), tryb `mode="article"` (pomijam gałąź `transcript` dla
-YouTube — pytanie dotyczy dokumentów webowych). Numeracja `#` = kolejność wykonania w kodzie,
+(`document_analysis_service.py:347`), tryb `mode="article"` (gałąź `transcript` dla YouTube —
+patrz Część 5 niżej). Numeracja `#` = kolejność wykonania w kodzie,
 nie numery komentarzy (te bywają nieciągłe, np. „11b2" — zachowane w nawiasie dla łatwego grep).
 
 | # | Funkcja / blok | Plik:linia | Co robi | Mechanizm |
@@ -382,6 +383,186 @@ nie numery komentarzy (te bywają nieciągłe, np. „11b2" — zachowane w nawi
   wykryty dopiero w kroku 12, już PO podziale — w tym runie biogram pozostaje więc częścią wcześniej
   utworzonego chunka i podlega zwykłej klasyfikacji LLM. Wyeliminowanie tego całkowicie wymagałoby przesunięcia wykrywania
   autora PRZED podział zawsze — kosztem 1 dodatkowego LLM call na starcie KAŻDEGO runu.
+
+---
+
+## Część 5 — YouTube / transkrypcja (`mode="transcript"`): od `URL_ADDED` do `EMBEDDING_EXIST`
+
+Gałąź pominięta w Części 1-4 (tamte dotyczą `mode="article"`, czyli stron webowych). Import
+dla YouTube nie przechodzi przez `article_pipeline.py` — wejściem jest
+`library/youtube_processing.py: process_youtube_url()`, wywoływane z `imports/youtube_add.py`
+i z endpointu dodawania linku w `server.py`.
+
+### 5.0 Diagram całości
+
+```mermaid
+flowchart TD
+    A[URL_ADDED: link YouTube dodany] --> B[pytube: tytuł, autor, opis, długość]
+    B --> C{Opis ma linie 'MM:SS Tytuł'?}
+    C -- tak, ≥2 linie --> D[chapter_list = rozdziały z opisu]
+    C -- nie --> E[chapter_list puste]
+    D --> F[NEED_TRANSCRIPTION]
+    E --> F
+    F --> G{Napisy YouTube dostępne?}
+    G -- tak --> H[youtube_transcript_api: JSON segmentów text+start+duration]
+    G -- nie, transcript_needed=True --> I[AssemblyAI STT płatne]
+    G -- nie, transcript_needed=False --> Z1[ERROR: NO_CAPTIONS_AVAILABLE]
+    H --> J[text_raw = JSON segmentów]
+    I --> K["text_raw = zwykły tekst (bez segmentów!)"]
+    J --> L{chapter_list ustawiony?}
+    L -- tak --> M["text = tekst + ## nagłówki rozdziałów\n(youtube_titles_split_with_chapters)"]
+    L -- nie --> N["text = zwykła sklejona proza\n(youtube_titles_to_text)"]
+    K --> O["text = akapity z AssemblyAI (paragraph.text)"]
+    M --> P[NEED_MANUAL_REVIEW]
+    N --> P
+    O --> P
+    P --> Q["Użytkownik: /chunks/:id → '+ Nowa analiza'"]
+    Q --> R{"'tylko podział' (split_only)?"}
+    R -- tak --> S["create_run: podział na chunki, BEZ wywołań LLM\nstatus=created, corrected_text=NULL"]
+    S --> S2["UI pokazuje SegmentsView: [MM:SS] z text_raw + nożyczki ✂\n(dopóki nie ma corrected_text)"]
+    S2 --> T["Użytkownik czyści/scala/dzieli chunki,\nklika 'Analizuj chunki'"]
+    R -- nie --> U["create_run: pełna analiza LLM per chunk\n(rewrite_chunk_text + summarize_chunk_text)"]
+    T --> U
+    U --> V["corrected_text zapisany →\nUI przełącza się na płynny tekst, [MM:SS] znika"]
+    V --> W["Zatwierdzenie chunków TEMAT + zamknięcie review\n(status=reviewed)"]
+    W --> X{"Wideo bez rozdziałów?"}
+    X -- tak --> X2["paragraphize_run_transcript_chunks():\nLLM dokleja podział na akapity"]
+    X -- nie --> Y[generate_embeddings_from_run]
+    X2 --> Y
+    Y --> AA[EMBEDDING_EXIST]
+```
+
+### 5.1 Import — `youtube_processing.py: process_youtube_url()`
+
+| # | Funkcja | Plik:linia | Co robi | Mechanizm |
+|---|---|---|---|---|
+| 1 | metadane pytube | `youtube_processing.py:127-144` | Gdy status `URL_ADDED`: tytuł, autor (`byline`), `original_id`, długość, opis (`video_description`). | zewnętrzne API (pytube/yt-dlp) |
+| 2 | `parse_chapters_from_description()` | `youtube_processing.py:30` | Regex `^(\d+:)?\d{1,2}:\d{2}\s+\S` na liniach opisu (np. `"1:49 Temat"`); ≥2 dopasowania → `doc.chapter_list`. Tylko gdy `chapter_list` nie był już podany ręcznie. | REGEX |
+| 3 | status → `NEED_TRANSCRIPTION` | `youtube_processing.py:150` | — | deterministyczne |
+| 4 | napisy YouTube | `youtube_processing.py:167-243` → `youtube_transcript_api` | Pobiera listę dostępnych języków, próbuje `web_document.language`, fallback `en`. Wynik: JSON `[{text, start, duration}, ...]` (`srt.to_raw_data()`). Wykrywa język wynikowego tekstu (`text_language_detect`) i przy niezgodności kończy w `ERROR/CAPTIONS_LANGUAGE_MISMATCH` zamiast fałszywie oznaczać dokument jako gotowy. | **SERWIS** (youtube_transcript_api) |
+| 5 *(brak napisów, `transcript_needed=True`)* | AssemblyAI STT | `youtube_processing.py:260-351` | Pobiera wideo (`youtube_file.download_video()`), zleca transkrypcję (`aai.Transcriber`), polluje status (`TRANSCRIPTION_IN_PROGRESS` → `TRANSCRIPTION_DONE`/`ERROR`). Loguje koszt do `TranscriptionLog`. | **SERWIS** (AssemblyAI), płatne |
+| 6a *(ma `chapter_list`)* | `youtube_titles_split_with_chapters()` | `youtube_processing.py:227-230` → `text_transcript.py:145` | Grupuje segmenty napisów pod nagłówki `## Tytuł rozdziału\n\n` wg granic czasowych z `chapter_list`. **Same cyfry czasu (`start`) są tu tylko kryterium przydziału do rozdziału — nie trafiają do wynikowego tekstu.** | REGEX/deterministyczne |
+| 6b *(brak `chapter_list`)* | `youtube_titles_to_text()` | `youtube_processing.py:235` → `text_transcript.py:136` | Sklejenie `entry["text"]` segmentów przez `\n`, bez żadnych znaczników czasu. | REGEX/deterministyczne |
+| 7 | `text_raw` | `youtube_processing.py:242` | Surowy JSON (napisy YouTube) albo zwykły tekst AssemblyAI (`transcript.text`, linia 323) — **struktura różna między dwoma źródłami**, patrz 5.2. | deterministyczne |
+| 8 | status → `NEED_MANUAL_REVIEW` | `youtube_processing.py:232, 236` | Dokument ma już `text`/`text_raw`, czeka na `/chunks/:id`. | deterministyczne |
+
+### 5.2 Gdzie żyją znaczniki czasu — i dlaczego nie ma osobnej funkcji "usuń timestampy"
+
+Odpowiedź wprost: **nie ma takiej funkcji, bo nie ma czego czyścić.** Liczby czasu (`MM:SS`)
+nigdy nie trafiają jako literalny tekst do `documents.text` ani do `DocumentChunk.corrected_text`
+— ani dla wideo z rozdziałami, ani bez. Istnieją wyłącznie w osobnych, ustrukturyzowanych
+polach, obok tekstu:
+
+| Reprezentacja | Pole w DB | Format | Kto tworzy | Do czego służy |
+|---|---|---|---|---|
+| Rozdziały z opisu wideo | `documents.chapter_list` | tekst wieloliniowy `"0:00 Temat\n1:23 Temat2"` | `parse_chapters_from_description()` (5.1 krok 2) albo ręcznie w edytorze | wyznacza granice `## nagłówków` w `text` (krok 6a) i granice chunków (5.3) |
+| Napisy YouTube (surowe) | `documents.text_raw` | JSON `[{text, start, duration}, ...]` | `youtube_transcript_api` (5.1 krok 4) | źródło `seg_start`/`seg_end` do podglądu `[MM:SS]` w recenzji chunków |
+| Transkrypcja STT AssemblyAI (płatna) | `documents.text_raw` | zwykły tekst, **bez segmentów** | `process_youtube_url():323` | `_load_segments()` zwraca `[]` → recenzja chunków **nigdy** nie pokazuje `[MM:SS]`, nawet przed korektą LLM |
+| Tekst do analizy | `documents.text` | markdown z `## nagłówkami` (jeśli `chapter_list`) albo czysta proza | krok 6a/6b wyżej | wejście `create_run()` — **nigdy nie zawiera cyfr czasu** |
+
+Skąd więc biorą się `[00:00]`, `[00:26]`... widoczne na `/chunks/:id`? To wyłącznie widok
+frontendu, budowany z `text_raw` (JSON napisów), nie z bazowego tekstu chunka:
+
+1. `_load_segments(doc.text_raw)` (`document_analysis_service.py:64`) parsuje JSON tylko gdy
+   zaczyna się od `[` — czyli tylko dla napisów YouTube, nigdy dla AssemblyAI.
+2. `_map_chunks_to_segments()` (`document_analysis_service.py:77`) proporcjonalnie (po liczbie
+   znaków) przypisuje każdemu chunkowi zakres indeksów segmentów → `DocumentChunk.seg_start`/`seg_end`.
+3. Frontend (`chunks.tsx:1712`) wycina `segments.slice(seg_start, seg_end)` i renderuje
+   `<SegmentsView>` z etykietą `[MM:SS]` przy każdym segmencie + przyciskiem ✂ do ręcznego
+   cięcia chunka dokładnie w tym miejscu.
+4. To dzieje się **tylko wtedy, gdy chunk nie ma jeszcze `corrected_text`**
+   (`chunks.tsx:1903-1913`: `isCorrectedView && hasCorrected ? <tekst poprawiony> :
+   chunkSegs.length > 0 ? <SegmentsView> : <PlainTextLines>`). To jest dokładnie sytuacja z
+   dokumentu 8790: run utworzony z zaznaczonym „tylko podział (bez analizy LLM)" —
+   `split_only=true` w `create_run()` pomija cały krok LLM (5.1/5.3), więc `corrected_text`
+   jest `NULL` i frontend nie ma czego innego pokazać niż surowe segmenty.
+
+**Czy to LLM "czyści" timestampy?** Nie wprost. `rewrite_chunk_text()`/`analyze_chunk()`
+(`chunk_llm_analysis.py:308,490`) nigdy nie widzą liczb czasu w promptcie — dostają tylko
+`original_text` (już bez cyfr, patrz tabela wyżej) po `remove_speech_fillers()`. Ich zadanie to
+poprawa interpunkcji i oczywistych błędów STT, nie usuwanie znaczników. To, że `[MM:SS]` znika
+z widoku po analizie, to efekt uboczny **przełączenia widoku frontendu** (krok 4 wyżej) na pole
+`corrected_text` — a nie efekt jakiejkolwiek funkcji czyszczącej dane.
+
+**Żeby pozbyć się `[MM:SS]` z widoku dokumentu 8790**: trzeba uruchomić właściwą analizę LLM na
+istniejącym runie (przycisk „Analizuj chunki” widoczny po podziale split-only) albo od razu
+odznaczyć „tylko podział” przy tworzeniu nowej analizy.
+
+### 5.3 Podział na chunki: wideo z rozdziałami vs bez rozdziałów
+
+```mermaid
+flowchart TD
+    A["text dokumentu"] --> B{"Wielu mówców? (znaczniki zmiany mówcy w tekście)"}
+    B -- tak --> C["assign_speakers(): tekst przebudowany na etykiety mówców\nniszczy strukturę bloków rozdziałów"]
+    C --> G["split_text_into_sentence_chunks:\npodział ślepy co chunk_size, na granicy zdania"]
+    B -- nie --> D{"doc.chapter_list ustawiony?"}
+    D -- nie --> G
+    D -- tak --> E["_chapter_chunks_from_text():\nszuka tytułów rozdziałów jako linii otwierających bloki tekstu"]
+    E --> F{"≥50% znanych tytułów odnalezionych?"}
+    F -- nie --> G
+    F -- tak --> H["podział na granicach rozdziałów wideo;\nrozdział dłuższy niż chunk_size dodatkowo dzielony na zdaniach"]
+```
+
+| | Z rozdziałami (`chapter_list`, monolog) | Bez rozdziałów (albo wielu mówców) |
+|---|---|---|
+| Funkcja dzieląca | `_chapter_chunks_from_text()` (`document_analysis_service.py:158`) | `split_text_into_sentence_chunks()` (`text_functions.py:63`) |
+| Granice chunków | zawsze na granicy rozdziału wideo; rozdział dłuższy niż `chunk_size` (domyślnie 5000 zn.) dodatkowo cięty na zdaniach | co ok. `chunk_size` znaków, zawsze na granicy zdania — transkrypcja nie ma akapitów, więc to jedyny naturalny punkt cięcia |
+| Warunek działania | tylko monolog (brak `>>`) **i** ≥50% znanych tytułów rozdziałów odnalezionych jako linie startowe bloków; inaczej cichy fallback do sentence-split | zawsze dostępny (fallback domyślny) |
+| Nagłówek w treści chunka | pierwszy chunk rozdziału zaczyna się od `## Tytuł rozdziału` | brak nagłówków — jeden ciągły blok zdań |
+| Rozdziały w czytniku (`/read`) | naturalne sekcje wideo (nagłówki markdown wykryte przez `detect_chapters()`) | fallback: każdy zatwierdzony chunk `TEMAT` = jeden „rozdział” czytnika (`chunk_review_routes._chunk_based_chapters`) |
+| Akapity wewnątrz chunka | brak automatycznych w treści źródłowej — ale `## nagłówek` już daje wizualny podział | **od 2026-07-30** (`transcript_paragraphs.py`, `paragraphize_run_transcript_chunks()`) LLM dokleja podziały na akapity dla `corrected_text` po zatwierdzeniu review, WYŁĄCZNIE dla tej gałęzi (patrz 5.4) |
+| `[MM:SS]` w recenzji chunków | te same zasady co 5.2 — zależy wyłącznie od tego, czy `corrected_text` istnieje, nie od obecności rozdziałów | jak wyżej |
+
+### 5.4 Krok dodatkowy dla wideo bez rozdziałów: `paragraphize_run_transcript_chunks()`
+
+Dodane 2026-07-30 (`library/transcript_paragraphs.py`), wołane automatycznie z
+`generate_embeddings_from_run()` (`document_analysis_service.py:989`) tuż przed generowaniem
+embeddingów. Bez rozdziałów `corrected_text` zostaje jedną ścianą tekstu (rewrite poprawia tylko
+interpunkcję zdań, nie akapity) — to psuje czytelność w `/read`. Dla każdego chunka `TEMAT` bez
+podwójnego `\n\n` w `corrected_text`: LLM dostaje ponumerowane zdania i wskazuje WYŁĄCZNIE
+numery, po których zaczyna się nowy akapit (schemat JSON `break_after`) — nigdy nie przepisuje
+treści. No-op (zero wywołań LLM) dla: trybu `article`, filmów, wideo z rozdziałami i chunków,
+które już mają podział na akapity — bezpieczne do wielokrotnego wywołania.
+
+### 5.5 Sekwencja end-to-end (aktorzy)
+
+```mermaid
+sequenceDiagram
+    actor U as Użytkownik
+    participant FE as Frontend (chunks.tsx)
+    participant API as Backend (chunk_review_routes.py)
+    participant SVC as DocumentAnalysisService
+    participant LLM as Bielik (Sherlock)
+    participant DB as PostgreSQL
+
+    Note over DB: Document.processing_status = URL_ADDED
+    U->>API: dodaje link YouTube (youtube_add / /url_add)
+    API->>DB: process_youtube_url(): metadane, napisy/STT, chapter_list
+    Note over DB: processing_status = NEED_MANUAL_REVIEW
+    U->>FE: otwiera /chunks/:id, "+ Nowa analiza"
+    alt "tylko podział" zaznaczone (split_only=true)
+        FE->>API: POST /analyze_chunks {split_only:true}
+        API->>SVC: create_run(mode="transcript", split_only=true)
+        SVC->>DB: podział na chunki BEZ LLM, status=created, corrected_text=NULL
+        Note over FE: SegmentsView — widoczne [MM:SS] z text_raw + ✂
+        U->>FE: czyści/scala/dzieli chunki
+        U->>FE: klika "Analizuj chunki"
+    end
+    FE->>API: POST /analyze_chunks (pełna analiza)
+    API->>SVC: create_run(mode="transcript") / dokończenie runu
+    SVC->>LLM: rewrite_chunk_text + summarize (równolegle, do 16 chunków naraz)
+    LLM-->>SVC: corrected_text, topic, summary
+    SVC->>DB: DocumentChunk.corrected_text, status=pending
+    Note over FE: widok przełącza się na tekst poprawiony — [MM:SS] znika z UI
+    U->>FE: zatwierdza chunki TEMAT
+    U->>FE: zamyka review
+    FE->>API: PATCH /analysis_run/:id {status:"reviewed"}
+    API->>SVC: generate_embeddings_from_run()
+    SVC->>SVC: paragraphize_run_transcript_chunks() (tylko wideo bez rozdziałów)
+    SVC->>LLM: podział na akapity (break_after), jeśli dotyczy
+    SVC->>DB: DocumentEmbedding (batch po 32, commit po każdej paczce)
+    Note over DB: processing_status = EMBEDDING_EXIST
+```
 
 ---
 
