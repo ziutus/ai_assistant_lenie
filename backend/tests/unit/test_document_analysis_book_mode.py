@@ -43,6 +43,7 @@ class FakeBookDoc:
     quality = None
     published_on = None
     ingested_at = None
+    chapter_list = None
 
 
 # ---------------------------------------------------------------------------

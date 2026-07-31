@@ -18,12 +18,15 @@ Endpoints:
   PATCH /topic_section/<section_id>          — edit section title
   PATCH /chunk/<chunk_id>                    — update status / type / topic / split_at_seg
   POST /chunk/<chunk_id>/execute_split
+  POST /chunk/<chunk_id>/merge_with_next
+  POST /chunk/<chunk_id>/remove_span         — cut one exact substring out of original_text
   POST /chunk/<chunk_id>/reanalyze
 """
 
 import bisect
 import json
 import logging
+import re
 import threading
 import uuid
 from collections import Counter
@@ -370,6 +373,7 @@ def _chunk_to_dict(
         "split_first_type": c.split_first_type,
         "split_second_type": c.split_second_type,
         "obsidian_note_paths": c.obsidian_note_paths or [],
+        "removed_text_spans": c.removed_text_spans or [],
         "has_embeddings": bool(has_embeddings) if has_embeddings is not None else None,
         "photo_caption_line_indices": [item["line_index"] for item in caption_candidates],
     }
@@ -396,23 +400,45 @@ def _video_chapters_seconds(doc: Document | None) -> list[dict]:
     ]
 
 
-def _chunk_chapter_title(
-    seg_start_idx: int | None, segments: list[dict], video_chapters: list[dict], starts: list[int],
-) -> str | None:
+def _chunk_chapters(
+    seg_start_idx: int | None, seg_end_idx: int | None,
+    segments: list[dict], video_chapters: list[dict], starts: list[int],
+) -> list[str]:
     """video_chapters/starts are seconds-based (see _video_chapters_seconds);
-    seg_start_idx is a chunk's index into `segments` (transcript entries) —
-    look up its actual video timestamp before comparing against chapter starts."""
+    seg_start_idx/seg_end_idx are a chunk's indices into `segments` (transcript
+    entries) — look up actual video timestamps before comparing against chapter
+    starts.
+
+    Returns every chapter the chunk's [seg_start, seg_end) span touches, in
+    order: the chapter active at seg_start (if any), followed by any further
+    chapters that *start* inside the span. A chunk normally touches one chapter;
+    after merge_with_next swallows a chunk that used to be a chapter's first
+    chunk, the merged chunk's span crosses into that chapter too — without this,
+    the chapter would silently disappear from the chunk list instead of showing
+    up (fully-covered) inside the merged chunk.
+    """
     if seg_start_idx is None or not video_chapters or not segments:
-        return None
+        return []
     if not (0 <= seg_start_idx < len(segments)):
-        return None
-    seconds = segments[seg_start_idx].get("start")
-    if seconds is None:
-        return None
-    idx = bisect.bisect_right(starts, seconds) - 1
-    if idx < 0:
-        return None
-    return video_chapters[idx]["title"]
+        return []
+    start_seconds = segments[seg_start_idx].get("start")
+    if start_seconds is None:
+        return []
+    if seg_end_idx is not None and 0 <= seg_end_idx < len(segments):
+        end_seconds = segments[seg_end_idx].get("start")
+    elif segments:
+        last_seconds = segments[-1].get("start")
+        end_seconds = None if last_seconds is None else last_seconds + 1
+    else:
+        end_seconds = None
+
+    idx = bisect.bisect_right(starts, start_seconds) - 1
+    titles = [] if idx < 0 else [video_chapters[idx]["title"]]
+    for chapter in video_chapters[idx + 1:]:
+        if end_seconds is not None and chapter["start_seconds"] >= end_seconds:
+            break
+        titles.append(chapter["title"])
+    return titles
 
 
 # ---------------------------------------------------------------------------
@@ -1932,7 +1958,9 @@ def get_run_chunks(run_id: int):
             **_chunk_to_dict(c, has_embeddings=c.id in embedded_chunk_ids, lite=lite,
                              doc_url=doc.url if doc else None),
             "cited_publications": citations_by_chunk.get(c.id, []),
-            "chapter_title": _chunk_chapter_title(c.seg_start, chapter_segments, video_chapters, video_chapter_starts),
+            "chapter_titles": _chunk_chapters(
+                c.seg_start, c.seg_end, chapter_segments, video_chapters, video_chapter_starts,
+            ),
         } for c in chunks],
         "topic_sections": [
             {
@@ -2942,6 +2970,12 @@ def execute_split(chunk_id: int):
 
         text_a = _text_from_segs(seg_start, split_at)
         text_b = _text_from_segs(split_at, seg_end)
+        # _text_from_segs rebuilds from raw transcript segments, which know
+        # nothing about spans a reviewer already cut with remove_span — reapply
+        # them so a split doesn't resurrect already-removed ad text.
+        for removed_span in chunk.removed_text_spans or []:
+            text_a = re.sub(r"[ \t]{2,}", " ", text_a.replace(removed_span, "")).strip()
+            text_b = re.sub(r"[ \t]{2,}", " ", text_b.replace(removed_span, "")).strip()
         seg_a = (seg_start, split_at)
         seg_b = (split_at, seg_end)
         status_a = "approved" if first_type in ("ZRODLA", "REKLAMA", "SZUM") else "pending"
@@ -2950,6 +2984,7 @@ def execute_split(chunk_id: int):
     orig_pos = chunk.position
     run_id = chunk.run_id
     doc_id = chunk.document_id
+    removed_spans_snapshot = list(chunk.removed_text_spans or [])
 
     try:
         # Shift positions after orig_pos to a temp range to avoid unique constraint violation,
@@ -2976,6 +3011,7 @@ def execute_split(chunk_id: int):
             corrected_text=None, summary=None,
             seg_start=seg_a[0], seg_end=seg_a[1],
             rewrite_ratio=None, status=status_a,
+            removed_text_spans=removed_spans_snapshot,
         )
 
         chunk_b = DocumentChunk(
@@ -2985,6 +3021,7 @@ def execute_split(chunk_id: int):
             corrected_text=None, summary=None,
             seg_start=seg_b[0], seg_end=seg_b[1],
             rewrite_ratio=None, status=status_b,
+            removed_text_spans=removed_spans_snapshot,
         )
 
         session.add(chunk_a)
@@ -3056,6 +3093,13 @@ def merge_with_next(chunk_id: int):
             if p not in merged_paths:
                 merged_paths.append(p)
         chunk.obsidian_note_paths = merged_paths
+        # Union removed_text_spans so SegmentsView keeps filtering both halves'
+        # cut-out ad text after the merge widens the chunk's seg_start:seg_end range.
+        merged_spans = list(chunk.removed_text_spans or [])
+        for s in next_chunk.removed_text_spans or []:
+            if s not in merged_spans:
+                merged_spans.append(s)
+        chunk.removed_text_spans = merged_spans
         chunk.updated_at = datetime.utcnow()
 
         removed_pos = next_chunk.position
@@ -3084,6 +3128,87 @@ def merge_with_next(chunk_id: int):
         return jsonify({"status": "error", "message": "DB error during merge"}), 500
 
     logger.info("Merged chunk %d with its successor (pos %d)", chunk_id, removed_pos)
+    return jsonify({"status": "success", "chunk": _chunk_to_dict(chunk)})
+
+
+# ---------------------------------------------------------------------------
+# API: POST /chunk/<chunk_id>/remove_span
+# ---------------------------------------------------------------------------
+
+@bp.route("/chunk/<int:chunk_id>/remove_span", methods=["POST"])
+def remove_chunk_span(chunk_id: int):
+    """Cut one exact substring out of a chunk's original_text — e.g. an ad
+    spliced mid-sentence into a transcript segment, which is too fine-grained
+    for line/segment removal or a full split.
+
+    Deliberately leaves seg_start/seg_end untouched (unlike the line-split
+    "article editor" path, which nulls them): the chunk keeps its video-chapter
+    attribution, and for transcript chunks the frontend keeps rendering from
+    live segments — SegmentsView filters removed_text_spans out of each
+    segment's displayed text rather than switching to a frozen text view.
+
+    Body (JSON): {"text": "<substring to remove — matched whitespace-tolerantly>"}
+    """
+    session = get_scoped_session()
+    chunk = session.get(DocumentChunk, chunk_id)
+    if chunk is None:
+        abort(404, f"Chunk {chunk_id} not found")
+
+    data = request.get_json(silent=True) or {}
+    span = data.get("text")
+    if not isinstance(span, str) or not span.strip():
+        return jsonify({"status": "error", "message": "text must be a non-empty string"}), 400
+    # Normalize like the frontend's browser-selection quote (single-spaced) —
+    # this is also the form stored in removed_text_spans, matched against the
+    # single-spaced live transcript reconstruction (SegmentsView/_text_from_segs).
+    span = re.sub(r"\s+", " ", span).strip()
+
+    original = chunk.original_text or ""
+    # original_text can be hard-wrapped mid-sentence (embedded newlines from
+    # the original split), even though a selection made in the live view is
+    # single-spaced — match whitespace-tolerantly so it still finds it there.
+    pattern = re.compile(r"\s+".join(re.escape(word) for word in span.split()))
+    match = pattern.search(original)
+    if match is None:
+        return jsonify({"status": "error",
+                        "message": "text not found in this chunk's original_text"}), 400
+
+    # Reject a cut that bisects a word at either edge (e.g. a selection off by
+    # one character splices "Amer" + "adły" into "Ameradły") — word chars must
+    # not be directly adjacent across the cut on either side.
+    word_char = re.compile(r"\w", re.UNICODE)
+    cuts_left_word = (
+        match.start() > 0 and word_char.match(original[match.start() - 1])
+        and span[:1] and word_char.match(span[0])
+    )
+    cuts_right_word = (
+        match.end() < len(original) and word_char.match(original[match.end()])
+        and span[-1:] and word_char.match(span[-1])
+    )
+    if cuts_left_word or cuts_right_word:
+        return jsonify({"status": "error",
+                        "message": "selection cuts a word in half — extend it to full words"}), 400
+
+    try:
+        cleaned = original[:match.start()] + original[match.end():]
+        # Cutting a span can leave the rest of the transcript hard-wrapped
+        # around the seam; transcript chunks are flowing prose, so collapse
+        # all whitespace rather than only the immediate seam.
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        chunk.original_text = cleaned
+        spans = list(chunk.removed_text_spans or [])
+        spans.append(span)
+        chunk.removed_text_spans = spans
+        if chunk.type == "TEMAT":
+            chunk.status = "needs_reanalysis"
+        chunk.updated_at = datetime.utcnow()
+        session.commit()
+    except Exception:
+        session.rollback()
+        logger.exception("Failed to remove span from chunk %d", chunk_id)
+        return jsonify({"status": "error", "message": "DB error during span removal"}), 500
+
+    logger.info("Removed a %d-char span from chunk %d", len(span), chunk_id)
     return jsonify({"status": "success", "chunk": _chunk_to_dict(chunk)})
 
 

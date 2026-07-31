@@ -26,8 +26,9 @@ interface Chunk {
   status: string;
   seg_start: number | null;
   seg_end: number | null;
-  chapter_title?: string | null;
+  chapter_titles?: string[] | null;
   obsidian_note_paths?: string[];
+  removed_text_spans?: string[] | null;
   has_embeddings?: boolean | null;
   photo_caption_line_indices?: number[];
   cited_publications?: CitedPublicationSummary[];
@@ -324,15 +325,34 @@ function statusColor(status: string): React.CSSProperties {
 
 // ── Segments sub-component ───────────────────────────────────────────────────
 
+// Raw transcript segments can carry embedded newlines mid-sentence (hard-wrapped
+// at recording time), so a plain string.split(span) miss it — match whitespace-
+// tolerantly, same as the backend's remove_span endpoint.
+function stripRemovedSpan(text: string, span: string): string {
+  const words = span.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return text;
+  const pattern = new RegExp(words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+"), "g");
+  return text.replace(pattern, "");
+}
+
 const SegmentsView: React.FC<{
   segs: Segment[];
   videoId: string;
   chunkId: number;
   absOffset: number;
   splitState: SplitState | undefined;
+  removedSpans: string[];
   onMarkSplit: (chunkId: number, absIdx: number, ts: string) => void;
-}> = ({ segs, videoId, chunkId, absOffset, splitState, onMarkSplit }) => {
-  const groups = groupSegments(segs, absOffset);
+}> = ({ segs, videoId, chunkId, absOffset, splitState, removedSpans, onMarkSplit }) => {
+  // remove_span cuts an exact substring out of chunk.original_text (e.g. an ad
+  // spliced mid-sentence) without touching seg_start/seg_end, so this live
+  // segment reconstruction has to re-apply the same cuts here to stay in sync.
+  const groups = groupSegments(segs, absOffset)
+    .map(g => ({
+      ...g,
+      text: removedSpans.reduce((t, span) => stripRemovedSpan(t, span), g.text).replace(/\s{2,}/g, " ").trim(),
+    }))
+    .filter(g => g.text.length > 0);
   if (groups.length === 0) return <em style={{ color: "#94a3b8" }}>brak segmentów</em>;
 
   return (
@@ -625,7 +645,8 @@ const Chunks = () => {
   const identity = useReaderIdentity(apiUrl, apiKey);
   const { userId } = identity;
   const { notes, createNote, saveNoteText, deleteNote } = useUserNotes(apiUrl, id, identity);
-  const [pendingNote, setPendingNote] = React.useState<(PendingNote & { chunkId: number }) | null>(null);
+  const [pendingNote, setPendingNote] =
+    React.useState<(PendingNote & { chunkId: number; removable: boolean }) | null>(null);
   const [expandedNoteChunks, setExpandedNoteChunks] = React.useState<Set<number>>(new Set());
 
   const headers = { "x-api-key": apiKey ?? "", "Content-Type": "application/json" };
@@ -1667,10 +1688,29 @@ const Chunks = () => {
     return byChunk;
   }, [notes, chunks, userId]);
 
-  const onChunkTextSelected = (chunkId: number) => {
+  const onChunkTextSelected = (chunkId: number, removable: boolean) => {
     if (!userId) return;
     const pending = pendingNoteFromSelection("p,div");
-    if (pending) setPendingNote({ ...pending, chunkId });
+    if (pending) setPendingNote({ ...pending, chunkId, removable });
+  };
+
+  const removeChunkSpan = async (chunkId: number, text: string): Promise<boolean> => {
+    try {
+      const r = await fetch(`${apiUrl}/chunk/${chunkId}/remove_span`, {
+        method: "POST", headers, body: JSON.stringify({ text }),
+      });
+      const data = await r.json();
+      if (data.status === "success") {
+        setChunks(prev => prev.map(c => c.id === chunkId ? { ...c, ...data.chunk } : c));
+        setInfo(`Usunięto zaznaczony fragment z chunka.`);
+        return true;
+      }
+      setError("Nie udało się usunąć fragmentu: " + (data.message ?? ""));
+      return false;
+    } catch {
+      setError("Błąd połączenia przy usuwaniu fragmentu");
+      return false;
+    }
   };
 
   const saveChunkNote = async (noteText: string, stance: string | null) => {
@@ -1698,26 +1738,30 @@ const Chunks = () => {
 
   // Karta pojedynczego chunka — używana w widoku płaskim i w accordionie sekcji
   // Full-width chapter divider inserted above the first chunk of each video
-  // chapter (chunk.chapter_title, from Document.chapter_list) — makes chapter
-  // boundaries visible so splitting/merging chunks doesn't cross into the next one.
+  // chapter (chunk.chapter_titles, from Document.chapter_list). A chunk normally
+  // touches one chapter, but merge_with_next can swallow a chunk that used to be
+  // a chapter's first chunk — chapter_titles then lists every chapter the merged
+  // span covers, so we still render a divider per chapter instead of silently
+  // losing the boundary.
   const renderChunksWithChapters = (chunkList: Chunk[]) => {
     const nodes: React.ReactNode[] = [];
     let lastChapter: string | null = null;
     chunkList.forEach(chunk => {
-      if (chunk.chapter_title && chunk.chapter_title !== lastChapter) {
+      (chunk.chapter_titles ?? []).forEach(title => {
+        if (title === lastChapter) return;
         nodes.push(
           <div
-            key={`chapter-${chunk.id}`}
+            key={`chapter-${chunk.id}-${title}`}
             style={{
               margin: "22px 0 10px", padding: "8px 14px", background: "#0f766e", color: "#fff",
               borderRadius: 6, fontWeight: 700, fontSize: "0.95em",
             }}
           >
-            📖 {chunk.chapter_title}
+            📖 {title}
           </div>,
         );
-        lastChapter = chunk.chapter_title;
-      }
+        lastChapter = title;
+      });
       nodes.push(renderChunkCard(chunk));
     });
     return nodes;
@@ -1926,7 +1970,7 @@ const Chunks = () => {
 
             {/* Treść: poprawiony tekst → segmenty transkrypcji → surowy tekst (artykuły) */}
             <div style={{ padding: "12px 14px", fontSize: "0.88em", lineHeight: 1.6 }}
-              onMouseUp={() => onChunkTextSelected(chunk.id)}>
+              onMouseUp={() => onChunkTextSelected(chunk.id, chunkSegs.length > 0 && !isCorrectedView)}>
               {isCorrectedView && hasCorrected ? (
                 <div style={{ whiteSpace: "pre-wrap", color: "#1e293b" }}>{chunk.corrected_text}</div>
               ) : chunkSegs.length > 0 ? (
@@ -1936,6 +1980,7 @@ const Chunks = () => {
                   chunkId={chunk.id}
                   absOffset={chunk.seg_start ?? 0}
                   splitState={splitSt}
+                  removedSpans={chunk.removed_text_spans ?? []}
                   onMarkSplit={markSplit}
                 />
               ) : (
@@ -2893,7 +2938,14 @@ const Chunks = () => {
 
       {/* Popover nowej notatki (zaznaczenie tekstu w treści chunka) */}
       {pendingNote && (
-        <NotePopover pending={pendingNote} onSave={saveChunkNote} onCancel={() => setPendingNote(null)} />
+        <NotePopover pending={pendingNote} onSave={saveChunkNote} onCancel={() => setPendingNote(null)}
+          extraAction={pendingNote.removable ? {
+            label: "✕ Usuń ten fragment z chunka (np. reklamę)",
+            onClick: async () => {
+              if (await removeChunkSpan(pendingNote.chunkId, pendingNote.quote)) setPendingNote(null);
+            },
+          } : undefined}
+        />
       )}
     </div>
   );
