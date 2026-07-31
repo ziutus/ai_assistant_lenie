@@ -26,6 +26,7 @@ interface Chunk {
   status: string;
   seg_start: number | null;
   seg_end: number | null;
+  chapter_title?: string | null;
   obsidian_note_paths?: string[];
   has_embeddings?: boolean | null;
   photo_caption_line_indices?: number[];
@@ -1748,6 +1749,15 @@ const Chunks = () => {
               </span>
 
               {chunk.speaker && <span style={{ color: "#64748b" }}>🎙 {chunk.speaker}</span>}
+
+              {chunk.chapter_title && (
+                <span
+                  title="Rozdział wideo (z opisu YouTube), do którego przypisany jest ten chunk"
+                  style={{ color: "#0f766e", background: "#ccfbf1", padding: "1px 8px", borderRadius: 4, fontSize: "0.85em" }}
+                >
+                  📖 {chunk.chapter_title}
+                </span>
+              )}
 
               {!!chunk.obsidian_note_paths?.length && (
                 <span style={{ color: "#7c3aed", display: "inline-flex", alignItems: "center", gap: 4 }}>
