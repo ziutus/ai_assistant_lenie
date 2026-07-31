@@ -292,10 +292,11 @@ export const NotePopover: React.FC<{
   onSave: (noteText: string, stance: string | null, tags: string[]) => void;
   onSearch?: (quote: string) => void;
   onCancel: () => void;
-  // Extra button rendered above the copy action — e.g. the chunk review's
-  // "cut this out of the chunk" (not applicable in the read-only reader).
-  extraAction?: { label: string; onClick: () => void };
-}> = ({ pending, onSave, onSearch, onCancel, extraAction }) => {
+  // Extra buttons rendered above the copy action — e.g. the chunk review's
+  // "cut this out of the chunk" / "split here" (not applicable in the
+  // read-only reader).
+  extraActions?: { label: string; onClick: () => void }[];
+}> = ({ pending, onSave, onSearch, onCancel, extraActions }) => {
   const [noteText, setNoteText] = React.useState("");
   const [tagText, setTagText] = React.useState("");
   const [stance, setStance] = React.useState<string | null>(null);
@@ -357,12 +358,12 @@ export const NotePopover: React.FC<{
           🔎 Szukaj tego fragmentu w bazie Lenie
         </button>
       )}
-      {extraAction && (
-        <button type="button" onClick={extraAction.onClick}
+      {(extraActions ?? []).map(action => (
+        <button key={action.label} type="button" onClick={action.onClick}
           style={{ marginTop: 8, width: "100%", color: "#b91c1c", borderColor: "#fca5a5" }}>
-          {extraAction.label}
+          {action.label}
         </button>
-      )}
+      ))}
       <button type="button" onClick={async () => {
         const copied = await copyText(pending.quote);
         if (copied) onCancel(); else setCopyStatus("failed");
