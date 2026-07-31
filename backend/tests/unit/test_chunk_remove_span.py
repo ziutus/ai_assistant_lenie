@@ -216,3 +216,94 @@ class TestRemoveSpanSurvivesMerge:
 
         assert resp.status_code == 200
         assert sorted(data["chunk"]["removed_text_spans"]) == ["reklama A", "reklama B"]
+
+
+class TestSplitAtText:
+    """split_at_text: cut a chunk in two at a whitespace-tolerant text match,
+    for a split point too fine-grained for split_at_seg/split_at_line —
+    e.g. a multi-sentence transcript segment. Freezes both halves as plain
+    text (seg_start/seg_end null), like split_at_line."""
+
+    def test_splits_at_matched_text_and_freezes_seg_info(self, monkeypatch, app):
+        chunk = _make_chunk(
+            id=20, seg_start=0, seg_end=5,
+            original_text="Reklama mBank tutaj.\nDzień dobry, zapraszam na program.",
+        )
+        fake_session = MagicMock()
+        fake_session.get.side_effect = lambda model, pk: chunk if model is DocumentChunk else None
+        monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
+        monkeypatch.setattr(
+            "library.cited_publications.refresh_document_cited_publications",
+            lambda *a, **kw: None,
+        )
+
+        resp = app.test_client().post(
+            "/chunk/20/execute_split",
+            json={
+                "split_at_text": "Dzień dobry, zapraszam na program.",
+                "split_first_type": "REKLAMA", "split_second_type": "TEMAT",
+            },
+        )
+        data = resp.get_json()
+
+        assert resp.status_code == 200
+        assert data["chunk_a"]["original_text"] == "Reklama mBank tutaj."
+        assert data["chunk_a"]["type"] == "REKLAMA"
+        assert data["chunk_a"]["seg_start"] is None
+        assert data["chunk_a"]["seg_end"] is None
+        assert data["chunk_b"]["original_text"] == "Dzień dobry, zapraszam na program."
+        assert data["chunk_b"]["type"] == "TEMAT"
+        assert data["chunk_b"]["status"] == "needs_reanalysis"
+        assert data["chunk_b"]["seg_start"] is None
+
+    def test_rejects_a_split_point_in_the_middle_of_a_word(self, monkeypatch, app):
+        chunk = _make_chunk(id=20, original_text="to Amerykanie by fabryki nie wpadły w ręce.")
+        fake_session = MagicMock()
+        fake_session.get.side_effect = lambda model, pk: chunk
+        monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
+
+        resp = app.test_client().post(
+            "/chunk/20/execute_split",
+            json={"split_at_text": "ykanie by fabryki", "split_first_type": "TEMAT", "split_second_type": "TEMAT"},
+        )
+
+        assert resp.status_code == 400
+        assert chunk.original_text == "to Amerykanie by fabryki nie wpadły w ręce."
+
+    def test_text_not_found_returns_400(self, monkeypatch, app):
+        chunk = _make_chunk(id=20, original_text="Dzień dobry.")
+        fake_session = MagicMock()
+        fake_session.get.side_effect = lambda model, pk: chunk
+        monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
+
+        resp = app.test_client().post(
+            "/chunk/20/execute_split",
+            json={"split_at_text": "nie ma mnie tutaj", "split_first_type": "TEMAT", "split_second_type": "TEMAT"},
+        )
+
+        assert resp.status_code == 400
+
+    def test_carries_forward_removed_text_spans_to_both_halves(self, monkeypatch, app):
+        chunk = _make_chunk(
+            id=20, original_text="Dzień dobry. Zapraszam na program.",
+            removed_text_spans=["Reklama wcześniej usunięta."],
+        )
+        fake_session = MagicMock()
+        fake_session.get.side_effect = lambda model, pk: chunk
+        monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
+        monkeypatch.setattr(
+            "library.cited_publications.refresh_document_cited_publications",
+            lambda *a, **kw: None,
+        )
+
+        resp = app.test_client().post(
+            "/chunk/20/execute_split",
+            json={
+                "split_at_text": "Zapraszam na program.",
+                "split_first_type": "TEMAT", "split_second_type": "TEMAT",
+            },
+        )
+        data = resp.get_json()
+
+        assert data["chunk_a"]["removed_text_spans"] == ["Reklama wcześniej usunięta."]
+        assert data["chunk_b"]["removed_text_spans"] == ["Reklama wcześniej usunięta."]

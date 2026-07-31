@@ -74,21 +74,104 @@ def _load_segments(text_raw: str | None) -> list[dict]:
     return []
 
 
+def _flatten_segment_words(segments: list[dict]) -> tuple[list[str], list[int]]:
+    """Raw segment text as a flat word stream, plus a parallel array mapping
+    each word back to the segment index it came from."""
+    words: list[str] = []
+    word_seg: list[int] = []
+    for idx, seg in enumerate(segments):
+        t = (seg.get("text") or "").strip()
+        if t.startswith(">>"):
+            t = t[2:].strip()
+        for w in t.split():
+            words.append(w)
+            word_seg.append(idx)
+    return words, word_seg
+
+
+def _locate_boundary_word(raw_words: list[str], tail_words: list[str], guess_idx: int) -> int | None:
+    """Search `raw_words` for `tail_words` in order (gaps between them are OK
+    — a couple may be speech fillers present in the raw transcript but
+    stripped from chunk_texts before splitting), closest to `guess_idx`.
+
+    Returns the raw word index right after the match, or None when not found
+    in the search window.
+    """
+    if not tail_words or not raw_words:
+        return None
+    window = max(80, len(raw_words) // 8)
+    lo = max(0, guess_idx - window)
+    hi = min(len(raw_words), guess_idx + window)
+    first = tail_words[0]
+    best: int | None = None
+    best_dist: int | None = None
+    max_gap = len(tail_words) + 6  # tolerate a handful of stripped fillers
+    for i in range(lo, hi):
+        if raw_words[i] != first:
+            continue
+        j, k = i, 0
+        while j < len(raw_words) and k < len(tail_words) and (j - i) < max_gap:
+            if raw_words[j] == tail_words[k]:
+                k += 1
+            j += 1
+        if k == len(tail_words):
+            dist = abs(i - guess_idx)
+            if best_dist is None or dist < best_dist:
+                best, best_dist = j, dist
+    return best
+
+
 def _map_chunks_to_segments(
     chunk_texts: list[str], segments: list[dict]
 ) -> list[tuple[int | None, int | None]]:
-    """Map each chunk to proportional range of segment indices (by character count)."""
+    """Map each chunk to a range of raw transcript segment indices.
+
+    chunk_texts is split (at sentence boundaries) from text that has already
+    had speech fillers stripped and, for multi-speaker transcripts, speaker
+    labels inserted (document_analysis_service steps 5-6) — it has diverged
+    character-for-character from the untouched raw `segments`, so a blind
+    character-count proportion can land a chunk boundary mid-sentence when
+    segments have uneven lengths.
+
+    For each chunk boundary this looks for the actual words ending that
+    chunk inside `segments`, searched near the proportional estimate
+    (_locate_boundary_word) — falling back to the plain proportion only when
+    no match is found nearby (e.g. the boundary falls in a filler-heavy
+    stretch), so an unmatched chunk still gets a computed range rather than
+    an error.
+    """
     total = sum(len(c) for c in chunk_texts)
     if not total or not segments:
         return [(None, None)] * len(chunk_texts)
     n = len(segments)
-    result = []
-    cum = 0
-    for chunk in chunk_texts:
-        start = round(n * cum / total)
-        cum += len(chunk)
-        end = round(n * cum / total)
-        result.append((min(start, n), min(end, n)))
+    raw_words, raw_word_seg = _flatten_segment_words(segments)
+
+    def _word_to_seg(word_idx: int) -> int:
+        if not raw_words:
+            return n
+        if word_idx <= 0:
+            return 0
+        if word_idx >= len(raw_words):
+            return n
+        return raw_word_seg[word_idx]
+
+    boundaries: list[int] = []  # segment index each chunk (but the last) ends at
+    cum_chars = 0
+    for chunk in chunk_texts[:-1]:
+        cum_chars += len(chunk)
+        guess_seg = round(n * cum_chars / total)
+        guess_word_idx = round(len(raw_words) * cum_chars / total) if raw_words else 0
+        tail_words = chunk.split()[-8:]
+        match = _locate_boundary_word(raw_words, tail_words, guess_word_idx)
+        boundary = _word_to_seg(match) if match is not None else guess_seg
+        boundaries.append(min(max(boundary, 0), n))
+
+    result: list[tuple[int, int]] = []
+    prev = 0
+    for boundary in boundaries:
+        result.append((prev, max(boundary, prev)))
+        prev = max(boundary, prev)
+    result.append((prev, n))
     return result
 
 
