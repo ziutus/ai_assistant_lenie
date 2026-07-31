@@ -2197,6 +2197,13 @@ const Chunks = () => {
         <div style={{ marginLeft: "auto" }}><ReaderIdentityBadge identity={identity} /></div>
       </div>
 
+      <p style={{ margin: "0 0 12px", fontSize: "0.85em", color: "#64748b", maxWidth: 900 }}>
+        <strong>Czym jest chunk?</strong> Chunk to spójny fragment dokumentu dotyczący jednego tematu
+        lub zagadnienia. Podział tekstu na chunki pozwala modelowi AI szybciej odnaleźć najbardziej
+        istotne informacje i udzielać trafniejszych odpowiedzi, bez konieczności analizowania całego
+        dokumentu.
+      </p>
+
       <div style={{ margin: "16px 0", padding: "12px 16px", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8 }}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ fontSize: "0.86em", color: "#475569" }}>
