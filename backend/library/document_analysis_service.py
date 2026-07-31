@@ -281,12 +281,57 @@ def _chapter_chunks_from_text(text: str, chapter_titles: list[str], chunk_size: 
     for block in blocks:
         starts_chapter = block_title(block) in title_set
         if starts_chapter and current:
-            chunks.extend(cap(current))
+            chunks.append(current)
             current = block
         else:
             current = f"{current}\n\n{block}" if current else block
     if current:
-        chunks.extend(cap(current))
+        chunks.append(current)
+
+    chunks = _rebalance_chapter_chunks(chunks, title_set)
+    return [piece for chunk in chunks for piece in cap(chunk)]
+
+
+_SENTENCE_END_RE = re.compile(r'[.?!]["\')]?\s*$')
+_NEXT_SENTENCE_END_RE = re.compile(r'[.?!]["\')]?(\s|$)')
+
+
+def _rebalance_chapter_chunks(chunks: list[str], title_set: set[str]) -> list[str]:
+    """Move an interrupted sentence from the start of each chunk's body back
+    onto the end of the previous chunk, when a chapter marker landed
+    mid-sentence.
+
+    Video chapter markers are timestamp-based (youtube_processing.py inserts
+    them at the chapter's start second, and the start second is sometimes
+    set by hand by the video's author) and can fall anywhere in a spoken
+    sentence — the plain block split otherwise cuts exactly there, which
+    reads as a broken sentence in the chunk review UI. A chunk's leading
+    heading line (Markdown "## Title" or a legacy bare title line — same
+    recognition rule as block_title() above) is left in place (still a
+    useful topic hint for the LLM analysis step); only the prose that
+    follows it moves.
+    """
+    for i in range(len(chunks) - 1):
+        prev = chunks[i]
+        if not prev or _SENTENCE_END_RE.search(prev):
+            continue
+        nxt = chunks[i + 1]
+        lines = nxt.split("\n", 1)
+        first_line_title = re.sub(r"^#{1,6}\s+", "", lines[0].strip()).strip() if lines else ""
+        has_heading = len(lines) == 2 and first_line_title in title_set
+        heading, body = (lines[0], lines[1]) if has_heading else (None, nxt)
+        stripped = body.lstrip()
+        if not stripped:
+            continue
+        m = _NEXT_SENTENCE_END_RE.search(stripped)
+        if m is None:
+            continue
+        fragment = stripped[:m.end()].rstrip()
+        remainder = stripped[m.end():].lstrip()
+        if not fragment:
+            continue
+        chunks[i] = f"{prev} {fragment}".strip()
+        chunks[i + 1] = f"{heading}\n{remainder}" if heading else remainder
     return chunks
 
 
@@ -568,8 +613,10 @@ class DocumentAnalysisService:
 
             # 5. Label speaker turns from >> markers (must happen before splitting,
             #    so the rewrite prompt sees the [Name]: labels it is asked to preserve)
+            speaker_labels_applied = False
             if is_multi_speaker and len(speakers) >= 2:
                 text = assign_speakers(text, speakers[0]["name"], speakers[1]["name"])
+                speaker_labels_applied = True
                 log(f"labeled speaker turns: [{speakers[0]['name']}] / [{speakers[1]['name']}]")
 
             # 6. Remove speech fillers before splitting (cheaper than asking LLM)
@@ -578,8 +625,13 @@ class DocumentAnalysisService:
             # 7. Split into chunks — chapter-aware when the video has a YouTube
             #    chapter_list and speaker labeling didn't restructure the text
             #    (see _chapter_chunks_from_text); otherwise blind sentence-chunk split.
+            #    Gated on speaker_labels_applied rather than raw is_multi_speaker: a
+            #    stray ">>" with fewer than 2 extracted speakers (or split_only mode,
+            #    which skips extraction entirely — see step 4) never rebuilds the
+            #    text, so the block structure _chapter_chunks_from_text needs is
+            #    still intact and there's no reason to fall back to a blind split.
             chunk_texts = None
-            if not is_multi_speaker and getattr(doc, "chapter_list", None):
+            if not speaker_labels_applied and getattr(doc, "chapter_list", None):
                 from library.text_transcript import chapters_text_to_list
 
                 chapter_titles = [c["title"] for c in chapters_text_to_list(doc.chapter_list)]

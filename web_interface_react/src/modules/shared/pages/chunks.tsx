@@ -290,9 +290,17 @@ function secs2ts(s: number): string {
 }
 
 function groupSegments(segs: Segment[], absOffset: number): SegGroup[] {
-  const MAX = 8;
+  // Flushes at a sentence end; MAX_CHARS is only a hard ceiling for filler-
+  // heavy/run-on speech with no punctuation for a very long stretch, so a
+  // [timestamp] display group doesn't grow unbounded. A raw-segment COUNT
+  // cap (previously 8, then 20) kept losing the race against ordinary
+  // multi-sentence stretches — AssemblyAI segments are short, so even 20 of
+  // them can fall short of the next sentence end. Character length tracks
+  // "this block is getting unreasonably long" much better than segment count.
+  const MAX_CHARS = 3000;
   const groups: SegGroup[] = [];
   let curTexts: string[] = [];
+  let curChars = 0;
   let curStart: number | null = null;
   let curIsSc = false;
   let curFirstRawIdx = 0;
@@ -300,7 +308,7 @@ function groupSegments(segs: Segment[], absOffset: number): SegGroup[] {
   function flush() {
     if (curTexts.length > 0 && curStart !== null) {
       groups.push({ absIdx: absOffset + curFirstRawIdx, start: curStart, text: curTexts.join(" "), isSpeakerChange: curIsSc });
-      curTexts = []; curStart = null; curIsSc = false;
+      curTexts = []; curChars = 0; curStart = null; curIsSc = false;
     }
   }
 
@@ -312,7 +320,8 @@ function groupSegments(segs: Segment[], absOffset: number): SegGroup[] {
     if (isSc && curTexts.length > 0) flush();
     if (curStart === null) { curStart = seg.start; curIsSc = isSc; curFirstRawIdx = rawIdx; }
     curTexts.push(text);
-    if (/[.?!…]$/.test(text) || curTexts.length >= MAX) flush();
+    curChars += text.length + 1;
+    if (/[.?!…]$/.test(text) || curChars >= MAX_CHARS) flush();
   });
   flush();
   return groups;
