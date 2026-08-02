@@ -351,6 +351,11 @@ const List = () => {
           data.map((item: any) => {
             const obsidian = obsidianSummary(item);
             const isExpanded = expandedObsidian.has(item.id);
+            // social_media_post text arrives at creation, not through the
+            // download pipeline, so it stays at URL_ADDED indefinitely —
+            // unlike the other types here, URL_ADDED does NOT mean "no text yet".
+            const hasReadableText = item.document_type === "social_media_post" ||
+              (["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.processing_status));
             return (
             <li
               key={item.id}
@@ -399,7 +404,7 @@ const List = () => {
               >
                 Edit
               </NavLink>
-              {["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.processing_status) && (
+              {hasReadableText && (
                 <NavLink
                   className={"button"}
                   style={{ margin: "0 0 0 6px" }}
@@ -408,13 +413,7 @@ const List = () => {
                   Czytaj
                 </NavLink>
               )}
-              {(
-                // social_media_post text arrives at creation, not through the
-                // download pipeline, so it stays at URL_ADDED indefinitely —
-                // unlike the other types here, URL_ADDED does NOT mean "no text yet".
-                item.document_type === "social_media_post" ||
-                (["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.processing_status))
-              ) && (
+              {hasReadableText && (
                 <NavLink
                   className={"button"}
                   style={{ margin: "0 0 0 6px" }}
