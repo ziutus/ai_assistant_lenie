@@ -48,6 +48,7 @@ def _job_capabilities() -> dict[str, bool]:
     return {
         "manage_jobs": can_manage,
         "run_legacy_aws_pull": can_manage or g.auth.kind == "user",
+        "run_feed_daily": can_manage or g.auth.kind == "user",
     }
 
 
@@ -768,8 +769,8 @@ def create_job():
     parameters = body.get("parameters") or {}
     if not isinstance(parameters, dict):
         abort(400, "parameters must be an object")
-    if g.auth.kind == "user" and typ != "legacy_aws_pull":
-        abort(403, "user API keys may create only legacy_aws_pull jobs")
+    if g.auth.kind == "user" and typ not in {"legacy_aws_pull", "feed_daily"}:
+        abort(403, "user API keys may create only legacy_aws_pull or feed_daily jobs")
     if typ in {"feed_check", "feed_auto_import"}:
         if set(parameters) != {"feed_source_id"} or not isinstance(parameters.get("feed_source_id"), int):
             abort(400, "this job requires only integer feed_source_id")

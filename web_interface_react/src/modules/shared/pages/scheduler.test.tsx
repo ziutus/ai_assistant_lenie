@@ -13,7 +13,7 @@ const auth: AuthorizationState = {
   selectedDocumentState: "NEED_MANUAL_REVIEW", setSelectedDocumentState: vi.fn(),
 };
 
-const schedulerResponse = (capabilities = { manage_jobs: true, run_legacy_aws_pull: true }) => ({
+const schedulerResponse = (capabilities = { manage_jobs: true, run_legacy_aws_pull: true, run_feed_daily: true }) => ({
   generated_at: "2026-07-30T10:00:00Z",
   schedules: [{ id: "feed_daily", job_type: "feed_daily", enabled: true, description: "Import feedów", timezone: "Europe/Warsaw", times: ["04:00"], schedule: "04:00", next_run_at: "2026-07-31T04:00:00+02:00", last_job: { id: "job-1", status: "done", finished_at: "2026-07-30T04:02:00Z" } }],
   capabilities,
@@ -50,7 +50,7 @@ describe("Scheduler", () => {
   });
 
   it("disables the button when the key lacks the capability", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(schedulerResponse({ manage_jobs: false, run_legacy_aws_pull: true })), { status: 200 })));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify(schedulerResponse({ manage_jobs: false, run_legacy_aws_pull: true, run_feed_daily: false })), { status: 200 })));
 
     render(<AuthorizationContext.Provider value={auth}><Scheduler /></AuthorizationContext.Provider>);
 

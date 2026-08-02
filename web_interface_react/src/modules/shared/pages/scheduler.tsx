@@ -6,14 +6,14 @@ type Schedule = {
   id: string; job_type: string; enabled: boolean; description: string; timezone: string;
   times: string[]; schedule: string; next_run_at?: string | null; last_job?: Job | null;
 };
-type Capabilities = { manage_jobs: boolean; run_legacy_aws_pull: boolean };
+type Capabilities = { manage_jobs: boolean; run_legacy_aws_pull: boolean; run_feed_daily: boolean };
 type SchedulerResponse = { generated_at: string; schedules: Schedule[]; capabilities: Capabilities };
 
 const REFRESH_INTERVAL_MS = 30_000;
 const formatDate = (value?: string | null) => value ? new Date(value).toLocaleString("pl-PL") : "—";
 const statusColor: Record<string, string> = { done: "#15803d", failed: "#b91c1c", running: "#1d4ed8", queued: "#475569", cancelled: "#475569" };
 const canRunNow = (jobType: string, capabilities: Capabilities) =>
-  jobType === "legacy_aws_pull" ? capabilities.run_legacy_aws_pull : capabilities.manage_jobs;
+  jobType === "legacy_aws_pull" ? capabilities.run_legacy_aws_pull : capabilities.run_feed_daily;
 
 function ScheduleCard({ schedule, capabilities, onSave, onRun }: {
   schedule: Schedule; capabilities: Capabilities;
