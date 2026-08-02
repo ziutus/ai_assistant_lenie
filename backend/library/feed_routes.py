@@ -695,7 +695,7 @@ def get_jobs():
 @bp.get("/scheduler")
 def get_scheduler():
     """Expose database-owned scheduler configuration and recent executions."""
-    _job_viewer()
+    capabilities = _job_capabilities()
     now = dt.datetime.now(dt.timezone.utc)
     session = get_scoped_session()
     tasks = {task.id: task for task in session.scalars(select(ScheduledTask)).all()}
@@ -722,6 +722,7 @@ def get_scheduler():
     return jsonify({
         "generated_at": now.isoformat(),
         "schedules": schedules,
+        "capabilities": capabilities,
     })
 
 

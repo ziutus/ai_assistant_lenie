@@ -103,3 +103,20 @@ def test_scheduler_exposes_config_next_runs_and_last_jobs(monkeypatch):
     assert payload["schedules"][0]["last_job"]["id"] == "daily"
     assert payload["schedules"][1]["enabled"] is True
     assert payload["schedules"][1]["times"] == ["05:00", "17:00"]
+    assert payload["capabilities"] == {"manage_jobs": True, "run_legacy_aws_pull": True}
+
+
+def test_scheduler_exposes_reader_capabilities(monkeypatch):
+    from library.feed_routes import get_scheduler
+
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    monkeypatch.setattr("library.feed_routes.get_scoped_session", lambda: session)
+    app = Flask(__name__)
+
+    with app.test_request_context("/scheduler"):
+        g.auth = SimpleNamespace(kind="user", user_id=1)
+        payload = get_scheduler().json
+
+    assert payload["capabilities"] == {"manage_jobs": False, "run_legacy_aws_pull": True}
+    assert payload["schedules"] == []
