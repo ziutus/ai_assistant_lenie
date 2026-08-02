@@ -28,7 +28,7 @@ def test_jobs_list_exposes_timestamps_result_watermark_and_service_capability(mo
         response = get_jobs()
 
     payload = response.json
-    assert payload["capabilities"] == {"manage_jobs": True, "run_legacy_aws_pull": True}
+    assert payload["capabilities"] == {"manage_jobs": True, "run_legacy_aws_pull": True, "run_feed_daily": True}
     assert payload["limit"] == 25
     assert payload["offset"] == 50
     assert payload["total"] == 1
@@ -41,7 +41,7 @@ def test_jobs_list_exposes_timestamps_result_watermark_and_service_capability(mo
     }]
 
 
-def test_user_can_create_only_bridge_job_and_is_recorded(monkeypatch):
+def test_user_can_create_legacy_aws_pull_job_and_is_recorded(monkeypatch):
     from library.feed_routes import create_job
 
     captured = {}
@@ -63,13 +63,36 @@ def test_user_can_create_only_bridge_job_and_is_recorded(monkeypatch):
     assert captured == {"job_type": "legacy_aws_pull", "parameters": {}, "idempotency_key": None, "user_id": 42}
 
 
+def test_user_can_manually_run_feed_daily(monkeypatch):
+    from library.feed_routes import create_job
+
+    captured = {}
+
+    def fake_enqueue(session, job_type, parameters, **kwargs):
+        captured.update(job_type=job_type, parameters=parameters, **kwargs)
+        return SimpleNamespace(id="user-feed-daily-job", status="queued")
+
+    monkeypatch.setattr("library.feed_routes.get_scoped_session", lambda: MagicMock())
+    monkeypatch.setattr("library.feed_routes.enqueue", fake_enqueue)
+    app = Flask(__name__)
+
+    with app.test_request_context("/jobs", method="POST", json={"type": "feed_daily"}):
+        g.auth = SimpleNamespace(kind="user", user_id=42)
+        response = create_job()
+
+    assert response[1] == 202
+    assert response[0].json == {"id": "user-feed-daily-job", "status": "queued"}
+    assert captured["job_type"] == "feed_daily"
+    assert captured["user_id"] == 42
+
+
 def test_user_cannot_create_other_job_types(monkeypatch):
     from library.feed_routes import create_job
 
     monkeypatch.setattr("library.feed_routes.get_scoped_session", lambda: MagicMock())
     app = Flask(__name__)
 
-    with app.test_request_context("/jobs", method="POST", json={"type": "feed_daily"}), pytest.raises(Exception) as exc_info:
+    with app.test_request_context("/jobs", method="POST", json={"type": "feed_check_all"}), pytest.raises(Exception) as exc_info:
         g.auth = SimpleNamespace(kind="user", user_id=42)
         create_job()
 
@@ -103,3 +126,20 @@ def test_scheduler_exposes_config_next_runs_and_last_jobs(monkeypatch):
     assert payload["schedules"][0]["last_job"]["id"] == "daily"
     assert payload["schedules"][1]["enabled"] is True
     assert payload["schedules"][1]["times"] == ["05:00", "17:00"]
+    assert payload["capabilities"] == {"manage_jobs": True, "run_legacy_aws_pull": True, "run_feed_daily": True}
+
+
+def test_scheduler_exposes_reader_capabilities(monkeypatch):
+    from library.feed_routes import get_scheduler
+
+    session = MagicMock()
+    session.scalars.return_value.all.return_value = []
+    monkeypatch.setattr("library.feed_routes.get_scoped_session", lambda: session)
+    app = Flask(__name__)
+
+    with app.test_request_context("/scheduler"):
+        g.auth = SimpleNamespace(kind="user", user_id=1)
+        payload = get_scheduler().json
+
+    assert payload["capabilities"] == {"manage_jobs": False, "run_legacy_aws_pull": True, "run_feed_daily": True}
+    assert payload["schedules"] == []
