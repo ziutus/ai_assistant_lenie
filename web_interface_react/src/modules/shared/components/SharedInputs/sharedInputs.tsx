@@ -323,6 +323,27 @@ const SharedInputs = ({
         </button>
       </div>
 
+      {formik.values.canonical_url &&
+        formik.values.canonical_url !== formik.values.url && (
+          <div className="flexBox" style={{ marginTop: "4px" }}>
+            <div
+              className="flex-grow"
+              style={{ fontSize: "13px", color: "#666", wordBreak: "break-all" }}
+            >
+              Canonical: {formik.values.canonical_url}
+            </div>
+            <a
+              className="button"
+              style={{ marginLeft: "10px" }}
+              href={formik.values.canonical_url}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open
+            </a>
+          </div>
+        )}
+
       <Input
         disabled={isLoading}
         value={formik.values.title}
