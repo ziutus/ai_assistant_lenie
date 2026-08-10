@@ -5,22 +5,32 @@ import { NavLink } from "react-router-dom";
 
 interface SideNavigationProps {
   isMenuOpen: boolean;
-  toggleMenu: () => void;
+  closeMenuOnMobile: () => void;
 }
 
-const SideNavigation = ({ isMenuOpen, toggleMenu }: SideNavigationProps) => {
-  const [addOpened, setAddOpened] = React.useState(true);
+const MOBILE_BREAKPOINT = 768;
+
+const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) => {
+  const [addOpened, setAddOpened] = React.useState(false);
   return (
     <aside className={`${classes.sideNavigation} ${isMenuOpen ? classes.menuOpen : classes.menuClosed}`}>
       <div className={classes.logo}>
         <h1>Lenie</h1>
         <span>v{lenie_version}</span>
       </div>
-      <div className={classes.linksContent}>
+      <div className={classes.linksContent} onClick={closeMenuOnMobile}>
         <NavLink to="/list" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
           Links List
         </NavLink>
-        <button className={classes.link} onClick={() => setAddOpened(!addOpened)}>Type </button>
+        <button
+          className={classes.link}
+          onClick={(e) => {
+            e.stopPropagation();
+            setAddOpened(!addOpened);
+          }}
+        >
+          {addOpened ? "▾" : "▸"} Nowy dokument
+        </button>
 
         {!!addOpened ? (
           <div className={classes.subLinkBox}>
@@ -160,13 +170,18 @@ interface LayoutProps {
 const Layout = ({ children }: LayoutProps) => {
     const [isMenuOpen, setIsMenuOpen] = React.useState(false);
     const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
+    const closeMenuOnMobile = () => {
+        if (window.innerWidth <= MOBILE_BREAKPOINT) {
+            setIsMenuOpen(false);
+        }
+    };
 
     return (
         <main>
             <button className={classes.hamburger} onClick={toggleMenu}>
                 &#9776;
             </button>
-            <SideNavigation isMenuOpen={isMenuOpen} toggleMenu={toggleMenu} />
+            <SideNavigation isMenuOpen={isMenuOpen} closeMenuOnMobile={closeMenuOnMobile} />
             <div
                 className={`${classes.scrim} ${isMenuOpen ? classes.scrimOpen : ""}`}
                 onClick={() => setIsMenuOpen(false)}

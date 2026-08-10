@@ -112,7 +112,7 @@
     margin-left: 50px; /* Adjust this as necessary */
 }
 
-.menuOpen + .content {
+.menuOpen ~ .content {
     margin-left: 250px; /* When menu is open */
 }
 
@@ -120,7 +120,7 @@
    the sidebar overlays the content instead of pushing it. */
 @media (max-width: 768px) {
     .content,
-    .menuOpen + .content {
+    .menuOpen ~ .content {
         margin-left: 0;
         padding: 55px 16px 16px; /* top clears the fixed hamburger; sides keep text off the screen edge */
     }
