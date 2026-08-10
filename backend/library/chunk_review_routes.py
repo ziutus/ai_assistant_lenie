@@ -1593,6 +1593,41 @@ def select_document_control_questions(doc_id: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/enrichment_status", methods=["GET"])
+def document_enrichment_status(doc_id: int):
+    """Report, per opt-in enrichment stage, whether it has already been run for
+    this document — so the /chunks "Dodatkowe analizy" buttons can show
+    "Uruchom ponownie" and a stored result count instead of always "Uruchom",
+    even on a fresh page load with nothing run yet this session.
+    """
+    from library.db.models import (
+        DocumentControlAnswer, DocumentEvent, DocumentInformationSource, DocumentTimePeriod, DocumentTone,
+    )
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    def count(model) -> int:
+        return session.scalar(
+            select(func.count()).select_from(model).where(model.document_id == doc_id)
+        ) or 0
+
+    # events/time_periods/tones share doc.enrichment_run_at (set by their
+    # refresh_* helpers); information_sources/control_questions don't touch
+    # it, so row existence is the only available "has this run before" signal.
+    shared_run_at = doc.enrichment_run_at.isoformat() if doc.enrichment_run_at else None
+    stages = {
+        "events": {"count": count(DocumentEvent), "last_run_at": shared_run_at},
+        "time_periods": {"count": count(DocumentTimePeriod), "last_run_at": shared_run_at},
+        "tones": {"count": count(DocumentTone), "last_run_at": shared_run_at},
+        "information_sources": {"count": count(DocumentInformationSource), "last_run_at": None},
+        "control_questions": {"count": count(DocumentControlAnswer), "last_run_at": None},
+    }
+    return jsonify({"status": "success", "doc_id": doc_id, "stages": stages})
+
+
 @bp.route("/document/<int:doc_id>/enrich", methods=["POST"])
 def enrich_document_stage(doc_id: int):
     """Run one opt-in reader enrichment stage.
@@ -1646,6 +1681,11 @@ def enrich_document_stage(doc_id: int):
         logger.exception("enrichment stage %s failed for document %s", stage, doc_id)
         return jsonify({"status": "error", "message": "Enrichment stage failed"}), 500
 
+    # refresh_document_events/periods/tones/control_answers stash the newly
+    # created ORM rows under "rows" for the caller's convenience — not JSON
+    # serializable, and the frontend only needs the counts already present
+    # in result's other list fields (events/periods/tones/answers/sources).
+    result.pop("rows", None)
     return jsonify({"status": "success", "doc_id": doc_id, "stage": stage, "result": result})
 
 

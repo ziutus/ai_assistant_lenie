@@ -324,6 +324,12 @@ else
     done
 
     log "Uruchamianie migration runnera przed restartem aplikacji..."
+    # lenie-migrate shares the backend image (lenie-ai-server:latest); without an
+    # explicit pull here it silently runs against whatever was last cached on the
+    # NAS docker host, even though a newer image with new migration files was just
+    # pushed to the registry above (compose only pulls the *requested* services
+    # further down, in deploy_on_nas, which runs AFTER this step).
+    nas_docker "compose -f ${NAS_COMPOSE_FILE} pull lenie-migrate"
     nas_docker "compose -f ${NAS_COMPOSE_FILE} run --rm lenie-migrate"
     ok "Migracje zakończone"
     deploy_on_nas "$SERVICES"
