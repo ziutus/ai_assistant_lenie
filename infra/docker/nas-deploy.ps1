@@ -121,6 +121,12 @@ foreach ($ComposeName in $ComposeNames) {
     Invoke-Checked { ssh "$NasUser@$NasHostName" "$NasDocker compose -f $NasComposeFile pull $ComposeName" } "Pull $ComposeName"
 }
 if ($Services -contains "backend" -or $Services -contains "worker" -or $Services -contains "document-worker") {
+    # lenie-migrate shares the backend image (lenie-ai-server:latest). Pulling the
+    # requested service above doesn't guarantee that image is fresh — e.g. a
+    # document-worker-only deploy pulls lenie-document-worker (a different image),
+    # so without an explicit pull here migrate can silently run against a stale
+    # cached lenie-ai-server:latest missing the migrations that were just pushed.
+    Invoke-Checked { ssh "$NasUser@$NasHostName" "$NasDocker compose -f $NasComposeFile pull lenie-migrate" } "Pull lenie-migrate"
     Invoke-Checked { ssh "$NasUser@$NasHostName" "$NasDocker compose -f $NasComposeFile run --rm lenie-migrate" } "Database migrations"
 }
 $NamesArgument = $ComposeNames -join " "

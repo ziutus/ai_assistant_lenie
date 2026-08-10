@@ -619,6 +619,9 @@ const Chunks = () => {
   const [reanalyzingAll, setReanalyzingAll] = React.useState(false);
   const [approvingAll, setApprovingAll] = React.useState(false);
   const [enrichingStage, setEnrichingStage] = React.useState<EnrichmentStage | null>(null);
+  const [enrichmentResults, setEnrichmentResults] = React.useState<
+    Partial<Record<EnrichmentStage, { ok: boolean; message: string }>>
+  >({});
   const [splitStates, setSplitStates]     = React.useState<Record<number, SplitState>>({});
   const [lineEdits, setLineEdits]         = React.useState<Record<number, Set<number>>>({});
   const [savingLines, setSavingLines]     = React.useState<Record<number, boolean>>({});
@@ -1326,6 +1329,7 @@ const Chunks = () => {
     setEnrichingStage(stage);
     setError("");
     setInfo("");
+    const label = OPTIONAL_ENRICHMENTS.find(item => item.stage === stage)?.label ?? stage;
     try {
       const r = await fetch(`${apiUrl}/document/${id}/enrich`, {
         method: "POST", headers, body: JSON.stringify({ stage, model: newModel }),
@@ -1334,10 +1338,19 @@ const Chunks = () => {
       if (!r.ok || data.status !== "success") {
         throw new Error(data.message ?? "Nie udało się uruchomić analizy");
       }
-      const label = OPTIONAL_ENRICHMENTS.find(item => item.stage === stage)?.label ?? stage;
-      setInfo(`Gotowe: ${label.toLocaleLowerCase("pl")}.`);
+      // result shape varies per stage — pick whichever array key is present.
+      const resultArray = ["events", "periods", "tones", "sources", "answers", "rows"]
+        .map(key => data.result?.[key])
+        .find(Array.isArray);
+      const countText = Array.isArray(resultArray) ? ` (${resultArray.length})` : "";
+      setEnrichmentResults(prev => ({
+        ...prev,
+        [stage]: { ok: true, message: `✓ Gotowe${countText}` },
+      }));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Błąd opcjonalnej analizy");
+      const message = e instanceof Error ? e.message : "Błąd opcjonalnej analizy";
+      setError(`${label}: ${message}`);
+      setEnrichmentResults(prev => ({ ...prev, [stage]: { ok: false, message: `✗ ${message}` } }));
     } finally {
       setEnrichingStage(null);
     }
@@ -2662,9 +2675,21 @@ const Chunks = () => {
                   <div style={{ fontWeight: 700, fontSize: "0.84em", color: "#334155" }}>{item.label}</div>
                   <div style={{ marginTop: 2, fontSize: "0.78em", color: "#64748b" }}>{item.description}</div>
                 </div>
+                {enrichmentResults[item.stage] && (
+                  <span style={{
+                    fontSize: "0.78em", fontWeight: 600, whiteSpace: "nowrap",
+                    color: enrichmentResults[item.stage]!.ok ? "#15803d" : "#b91c1c",
+                  }}>
+                    {enrichmentResults[item.stage]!.message}
+                  </span>
+                )}
                 <button className="button" type="button" onClick={() => runOptionalEnrichment(item.stage)}
                   disabled={enrichingStage !== null} style={{ whiteSpace: "nowrap" }}>
-                  {enrichingStage === item.stage ? "Analizuję…" : "Uruchom"}
+                  {enrichingStage === item.stage
+                    ? "Analizuję…"
+                    : enrichmentResults[item.stage]
+                      ? "Uruchom ponownie"
+                      : "Uruchom"}
                 </button>
               </div>
             ))}
