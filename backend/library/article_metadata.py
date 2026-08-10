@@ -43,11 +43,28 @@ def _as_types(value) -> set[str]:
     return set()
 
 
-def _author_names(value) -> list[str]:
+def _author_names(value, id_index: dict | None = None) -> list[str]:
+    """Resolve author name(s) from a JSON-LD ``author`` field value.
+
+    Some sites (e.g. gazeta.pl) put the author only as an ``@id`` reference
+    (``{"@id": "https://.../autor/<id>"}``) inside the Article node, with the
+    actual ``Person`` node (holding ``name``) listed separately in the same
+    ``@graph``. ``id_index`` — a map of every ``@id`` seen on the page to its
+    object — lets those references resolve to a real name instead of silently
+    disappearing.
+    """
     values = value if isinstance(value, list) else [value]
     names: list[str] = []
     for item in values:
-        name = item.get("name") if isinstance(item, dict) else item if isinstance(item, str) else None
+        name = None
+        if isinstance(item, dict):
+            name = item.get("name")
+            if not name and id_index:
+                ref = item.get("@id")
+                if isinstance(ref, str) and ref in id_index:
+                    name = id_index[ref].get("name")
+        elif isinstance(item, str):
+            name = item
         if name and name.strip() and name.strip().casefold() not in {n.casefold() for n in names}:
             names.append(name.strip())
     return names
@@ -89,10 +106,9 @@ def _extract_onet_authors(html: str) -> list[str]:
     return names
 
 
-def _article_jsonld_objects(html: str):
-    """Yield JSON-LD objects describing the page's primary article."""
+def _iter_jsonld_nodes(html: str):
+    """Yield every JSON-LD node (flattened ``@graph``) found on the page."""
     soup = BeautifulSoup(html, "html.parser")
-    article_types = {"Article", "NewsArticle", "ReportageNewsArticle", "AnalysisNewsArticle"}
     for script in soup.select('script[type="application/ld+json"]'):
         try:
             payload = json.loads(script.string or script.get_text())
@@ -106,8 +122,26 @@ def _article_jsonld_objects(html: str):
             if not isinstance(objects, list):
                 objects = [objects]
             for obj in objects:
-                if isinstance(obj, dict) and _as_types(obj.get("@type")) & article_types:
+                if isinstance(obj, dict):
                     yield obj
+
+
+def _jsonld_id_index(html: str) -> dict:
+    """Map every node's ``@id`` to itself, to resolve ``{"@id": ...}``-only references
+    (e.g. an Article's ``author`` pointing at a ``Person`` node listed elsewhere in
+    the same ``@graph`` instead of embedding the name inline)."""
+    return {
+        obj["@id"]: obj for obj in _iter_jsonld_nodes(html)
+        if isinstance(obj.get("@id"), str)
+    }
+
+
+def _article_jsonld_objects(html: str):
+    """Yield JSON-LD objects describing the page's primary article."""
+    article_types = {"Article", "NewsArticle", "ReportageNewsArticle", "AnalysisNewsArticle"}
+    for obj in _iter_jsonld_nodes(html):
+        if _as_types(obj.get("@type")) & article_types:
+            yield obj
 
 
 def extract_article_authors(html: str | None, url: str = "") -> list[str]:
@@ -119,8 +153,9 @@ def extract_article_authors(html: str | None, url: str = "") -> list[str]:
     author = extract_article_author(html, url)
     if author:
         return [author]
+    id_index = _jsonld_id_index(html)
     for article in _article_jsonld_objects(html):
-        names = _author_names(article.get("author"))
+        names = _author_names(article.get("author"), id_index)
         if names:
             return names
     soup = BeautifulSoup(html, "html.parser")
