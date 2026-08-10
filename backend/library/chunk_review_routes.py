@@ -1646,6 +1646,11 @@ def enrich_document_stage(doc_id: int):
         logger.exception("enrichment stage %s failed for document %s", stage, doc_id)
         return jsonify({"status": "error", "message": "Enrichment stage failed"}), 500
 
+    # refresh_document_events/periods/tones/control_answers stash the newly
+    # created ORM rows under "rows" for the caller's convenience — not JSON
+    # serializable, and the frontend only needs the counts already present
+    # in result's other list fields (events/periods/tones/answers/sources).
+    result.pop("rows", None)
     return jsonify({"status": "success", "doc_id": doc_id, "stage": stage, "result": result})
 
 
