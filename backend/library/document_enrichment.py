@@ -49,24 +49,52 @@ def refresh_document_enrichment(
         results["places"] = {"reused": True}
         results["persons"] = {"reused": True}
     else:
+        # A trailing "o autorze" widget (byline + bio paragraph) pollutes NER
+        # with the author's employer/alma mater as if they were discussed in
+        # the article. document_analysis_service.create_run() isolates this
+        # into its own SZUM chunk for review, but never strips it before its
+        # own entity extraction either — do it here so the person/place stages
+        # only see the actual article body. Persisted back to the source field
+        # so later runs (and the reader) don't see it again.
+        entity_text = text
+        author_bio = None
+        author = (getattr(doc, "byline", None) or "").strip()
+        if author:
+            from library.author_biography import extract_trailing_author_biography
+
+            stripped_text, author_bio = extract_trailing_author_biography(text, author)
+            if author_bio:
+                entity_text = stripped_text
+                progress("Wydzielam notkę biograficzną autora…")
+                if field in ("text_md", "text"):
+                    setattr(doc, field, stripped_text)
+                    session.commit()
+
         run_stage(
             "entities", "Wykrywanie osób i miejsc…",
             lambda: {"count": len(__import__(
                 "library.entity_service", fromlist=["refresh_document_entities"],
-            ).refresh_document_entities(session, doc.id, text))},
+            ).refresh_document_entities(session, doc.id, entity_text))},
         )
         run_stage(
             "places", "Weryfikacja miejsc…",
             lambda: __import__(
                 "library.place_verification", fromlist=["verify_document_places"],
-            ).verify_document_places(session, doc, text),
+            ).verify_document_places(session, doc, entity_text),
         )
         run_stage(
             "persons", "Łączenie osób z rejestrem…",
             lambda: __import__(
                 "library.person_registry", fromlist=["resolve_document_persons"],
-            ).resolve_document_persons(session, doc, text),
+            ).resolve_document_persons(session, doc, entity_text),
         )
+        if author_bio:
+            run_stage(
+                "author_biography", "Przetwarzanie notki biograficznej autora…",
+                lambda: __import__(
+                    "library.author_biography", fromlist=["process_author_biography"],
+                ).process_author_biography(session, doc, author_bio, model),
+            )
     run_stage(
         "events", "Budowanie osi czasu…",
         lambda: __import__(
