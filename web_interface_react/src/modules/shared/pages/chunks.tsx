@@ -775,6 +775,33 @@ const Chunks = () => {
       } catch { /* analysis can still be configured manually */ }
     })();
   }, [id, docType, docTitle, apiUrl, apiKey]);
+  // Opt-in enrichment stages (Oś czasu, Okresy historyczne, ...) can already
+  // have been run in an earlier session — without this, the "Dodatkowe
+  // analizy" buttons would only ever say "Uruchom" until re-run once now.
+  React.useEffect(() => {
+    if (!id) return;
+    setEnrichmentResults({});
+    (async () => {
+      try {
+        const r = await fetch(`${apiUrl}/document/${id}/enrichment_status`, {
+          headers: { "x-api-key": apiKey ?? "" },
+        });
+        const data = await r.json();
+        if (!r.ok || data.status !== "success") return;
+        const stages = data.stages as Record<string, { count: number; last_run_at: string | null }>;
+        const loaded: Partial<Record<EnrichmentStage, { ok: boolean; message: string }>> = {};
+        for (const [stage, info] of Object.entries(stages)) {
+          if (info.count > 0) {
+            const when = info.last_run_at
+              ? ` — ${new Date(info.last_run_at).toLocaleDateString("pl")}`
+              : "";
+            loaded[stage as EnrichmentStage] = { ok: true, message: `✓ Wykonano wcześniej (${info.count})${when}` };
+          }
+        }
+        setEnrichmentResults(loaded);
+      } catch { /* buttons just stay at their default "Uruchom" label */ }
+    })();
+  }, [id, apiUrl, apiKey]);
   // Clean documents (articles, webpages) default to article mode for new analyses
   React.useEffect(() => {
     if (docType && docType !== "youtube" && docType !== "movie") setNewMode("article");
