@@ -1,5 +1,6 @@
 import React from "react";
 import { buildObsidianNoteUrl } from "./modules/shared/utils/obsidian";
+import { toOpenableSourceUrl } from "./modules/shared/utils/sourceUrl";
 
 interface ListItemSearchSimilarProps {
   query: string;
@@ -100,7 +101,7 @@ const ListItemSearchSimilar = ({ item, query }: ListItemSearchSimilarProps) => {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "center", fontSize: ".82rem" }}>
         <a href={`/read/${item.document_id}`} style={{ fontWeight: 600 }}>📖 Czytaj</a>
         {item.chunk_id != null && <a href={`/chunks/${item.document_id}`}>🧩 Otwórz chunki</a>}
-        <a href={item.url} target="_blank" rel="noopener noreferrer">↗ Źródło</a>
+        <a href={toOpenableSourceUrl(item.url)} target="_blank" rel="noopener noreferrer">↗ Źródło</a>
         {notes.map(notePath => (
           <a key={notePath} href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>
             📝 {notePath.split("/").pop()?.replace(/\.md$/i, "")}

@@ -6,6 +6,7 @@ import { AuthorizationContext } from "../context/authorizationContext";
 import { useManageLLM } from "../hooks/useManageLLM";
 import { useFormik } from 'formik';
 import { buildObsidianNoteUrl } from "../utils/obsidian";
+import { toOpenableSourceUrl } from "../utils/sourceUrl";
 import { loadListFilters, saveListFilters } from "../services/storage";
 import type { ContentGroup } from "../../../types";
 
@@ -373,7 +374,7 @@ const List = () => {
                 <span style={{ color: "#6c757d", fontStyle: "italic" }}>({item.byline}) </span>
               )}
               <a
-                href={item.url}
+                href={toOpenableSourceUrl(item.url)}
                 style={{ color: "rgba(0,122,255)" }}
                 target="_blank"
                 rel="noopener noreferrer"
