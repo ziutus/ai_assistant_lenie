@@ -5,6 +5,22 @@ Nowe wpisy dopisywać NA GÓRZE.
 
 ---
 
+## 2026-08-11 — Frazy wyszukiwawcze Bielika — **WDROŻONE POZA ZAMKNIĘTYM PLANEM**
+
+**Problem:** dokument 9381 o audytorze NDA był znajdowany semantycznie dla „sprawdzenie NDA”,
+ale dopiero na 8. pozycji. Słowo „sprawdzenie” nie występuje w tekście, a użytkownik pamięta cel,
+niekoniecznie nazwę produktu.
+
+**Zakres:** migracja `ff6a7b8c9d0e` dodała `documents.search_terms`; Bielik tworzy 3–6 fraz po
+pełnej analizie tylko dla pustego pola; frazy są przeszukiwane razem z tytułem/tagami/notatką/
+treścią; jest endpoint dla dokumentów historycznych i przycisk w edytorze e-maila. Dla 9381
+zapisano m.in. `analiza umowy o poufności` i `narzędzie do sprawdzania NDA`.
+
+**Weryfikacja:** 75 testów backendu, TypeScript, migracja oraz deploy backendu i frontendu na NAS.
+
+**Ograniczenie:** frazy zwiększają recall, lecz nie zastępują przyszłego dostrojenia rankingu
+hybrydowego ani polskiego stemmingu.
+
 ## 2026-07-19 — Etap 12 (wydajność i porządki) — **UKOŃCZONY; CAŁY PLAN PRZEBUDOWY WYSZUKIWANIA ZAMKNIĘTY**
 
 **Zakres wykonany:**

@@ -672,7 +672,11 @@ def split_preview(doc_id: int):
     if not text:
         return jsonify({"status": "error", "message": "Document has no usable text"}), 400
 
-    if reclean:
+    # ``clean_article_text`` contains heuristics for extracted web articles.
+    # An email has no portal chrome; applying those generic rules to a
+    # newsletter can remove legitimate message content.  Email boilerplate is
+    # handled separately by sender-specific footer rules on import/edit.
+    if reclean and doc.document_type != "email":
         from library.article_cleaner import clean_article_text
 
         text = clean_article_text(text, doc.url or "")["text"]
@@ -804,8 +808,16 @@ def reclean_preview(doc_id: int):
             "message": f"Cleanup preview cannot analyze source field {field}",
         }), 400
 
-    cleaned = clean_article_text(before, doc.url or "")
-    after = cleaned["text"]
+    is_email = doc.document_type == "email"
+    if is_email:
+        # Do not run web-article cleanup over email content.  The frontend
+        # uses this explicit flag to explain why no portal-rule warning is
+        # relevant, while keeping the normal split preview available.
+        cleaned = {"text": before, "images": [], "portal": None}
+        after = before
+    else:
+        cleaned = clean_article_text(before, doc.url or "")
+        after = cleaned["text"]
     before_lines = before.splitlines()
     after_lines = after.splitlines()
     remaining = Counter(after_lines)
@@ -838,6 +850,11 @@ def reclean_preview(doc_id: int):
     return jsonify({
         "status": "success",
         "saved": save,
+        "cleanup_available": not is_email,
+        "cleanup_note": (
+            "E-mail nie używa reguł portali. Powtarzalną stopkę można oznaczyć dla adresu nadawcy."
+            if is_email else None
+        ),
         "source_field": field,
         "portal": cleaned["portal"],
         "site_rules_file": _site_rules_file_status(),

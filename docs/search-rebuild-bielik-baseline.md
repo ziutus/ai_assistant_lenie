@@ -1,5 +1,9 @@
 # Etap 10 — baseline ewaluacji Bielika 11B
 
+> **Uwaga (2026-08-11):** ten baseline mierzy parser zapytań, nie generowanie
+> `search_terms` dla dokumentów. Ten osobny etap Bielika opisuje
+> [search-hybrid.md](search-hybrid.md#frazy-wyszukiwawcze-search_terms).
+
 Data pomiaru: 2026-07-18. Model: `Bielik-11B-v3.0-Instruct` przez CloudFerro Sherlock. Fixture: `backend/tests/fixtures/search_query_cases.json`, wersja 1.
 
 ## Metodyka

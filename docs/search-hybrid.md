@@ -13,7 +13,7 @@ query text:
 
 - **Lexical candidates** — `DocumentRepository.search_text()`
   (`backend/library/document_repository.py`): a plain SQL `ILIKE` scan over
-  `title`/`tags`/`note`/`text`.
+  `title`/`tags`/`search_terms`/`note`/`text`.
 - **Semantic candidates** — `DocumentRepository.get_similar()`: pgvector cosine search over
   `websites_embeddings`.
 
@@ -22,6 +22,24 @@ signal(s) found it, and returns the top `limit` documents. Both the SQL layer an
 scoring layer independently "fold" query/document text into a comparable form, and — this is the
 part that bit us in practice — **the two foldings have to agree**, or a document can be found by
 one layer and then scored as a non-match by the other.
+
+## Frazy wyszukiwawcze (`search_terms`) — aktualizacja 2026-08-11
+
+`documents.search_terms` to osobne, edytowalne frazy wyszukiwawcze generowane przez Bielika;
+nie są częścią kontrolowanej taksonomii `tags`. Rozwiązują problem pamiętania celu dokumentu
+zamiast jego tytułu, np. „sprawdzenie NDA” zamiast „OpenNDA” lub „Audytor NDA”.
+
+Po pełnej analizie (nie przy `split_only`) `library.search_terms.generate_search_terms()` tworzy
+3–6 krótkich fraz z tytułu i tekstu analizy: nazwy pojęć, synonimy oraz frazę intencji
+użytkownika. Wartość jest generowana wyłącznie dla pustego pola, więc ręczna korekta pozostaje
+trwała. `POST /document/<id>/search_terms/generate` obsługuje dokumenty historyczne; edytor
+e-maila ma dla niego przycisk.
+
+`DocumentRepository.search_text()` przeszukuje `search_terms` razem z
+`title`/`tags`/`note`/`text`, a `SearchService._merge_results()` uwzględnia je w leksykalnym
+scoringu. Frazy zwiększają recall, ale nie zmieniają embeddingów ani nie rozwiązują jeszcze
+polskiej fleksji (`sprawdzenie` i `sprawdzania`) czy przewagi przypadkowego wyniku leksykalnego
+nad silnym wynikiem semantycznym.
 
 ## Why plain `ILIKE` is not enough
 
