@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedSocialPlatform = '';
   let detectedEmailAuthor = '';
   let detectedEmailId = '';
-  const debugState = { version: '1.0.45' };
+  const debugState = { version: '1.0.46' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -443,10 +443,14 @@ document.addEventListener('DOMContentLoaded', function () {
                  anchor.replaceWith(document.createTextNode(label));
                }
              });
-             // Gmail's nested div layout often yields a blank line after every
-             // visible line. Keep line breaks but remove visual spacer lines.
+             // Newsletter HTML uses spacer cells and zero-width characters,
+             // so a visually empty line is not always an empty string. Remove
+             // such lines while retaining every line containing real content.
              const text = clean(copy.innerText || copy.textContent || '')
-               .replace(/\n[ \t]*\n+/g, '\n');
+               .split(/\r?\n/)
+               .map(line => line.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/[ \t]+/g, ' ').trim())
+               .filter(Boolean)
+               .join('\n');
              return { text, links };
            };
            let postText = '';

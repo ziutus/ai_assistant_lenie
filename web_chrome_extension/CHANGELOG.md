@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [1.0.46] - 2026-08-11
+### Fixed
+- Import Gmaila usuwa również wiersze zawierające wyłącznie newsletterowe spacje i znaki niewidoczne.
+
 ## [1.0.45] - 2026-08-11
 ### Fixed
 - Import Gmaila usuwa puste wiersze wynikające z układu HTML wiadomości.
