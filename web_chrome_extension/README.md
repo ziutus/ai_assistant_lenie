@@ -4,7 +4,7 @@ Chrome/Kiwi browser extension for capturing webpages and sending them to the Len
 
 For a social media post the extension sends only the editable post text. Comments, service UI and page HTML are not imported. If Facebook or LinkedIn hides the post content, paste it into the displayed text field before sending.
 
-For Gmail the extension imports only the visible text of the most recently expanded message in the open conversation. It sends a synthetic `gmail://` identifier, not the Gmail page HTML, and the content remains editable in the popup before sending. It does not scan the inbox or use Google OAuth.
+For Gmail the extension imports only the visible text of the most recently expanded message in the open conversation. Visible links are kept as `label (URL)` and Gmail redirect URLs are unwrapped locally without opening them. It sends a synthetic `gmail://` identifier, not the Gmail page HTML, and the content remains editable in the popup before sending. It does not scan the inbox or use Google OAuth.
 
 See [CLAUDE.md](CLAUDE.md) for detailed technical documentation (features, API communication, data flow, permissions, directory structure).
 

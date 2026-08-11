@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedSocialPlatform = '';
   let detectedEmailAuthor = '';
   let detectedEmailId = '';
-  const debugState = { version: '1.0.43' };
+  const debugState = { version: '1.0.44' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -406,11 +406,45 @@ document.addEventListener('DOMContentLoaded', function () {
            const isFacebook = hostname === 'facebook.com' || hostname.endsWith('.facebook.com');
            const isLinkedIn = hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com');
            const isGmail = hostname === 'mail.google.com';
-          const isVisible = element => {
-            if (!element) return false;
-            const style = getComputedStyle(element);
-            return style.display !== 'none' && style.visibility !== 'hidden' && element.innerText?.trim();
-          };
+           const isVisible = element => {
+             if (!element) return false;
+             const style = getComputedStyle(element);
+             return style.display !== 'none' && style.visibility !== 'hidden' && element.innerText?.trim();
+           };
+           const normalizeEmailHref = rawHref => {
+             const value = (rawHref || '').trim();
+             if (!value || value.startsWith('#') || /^(?:mailto|tel|javascript):/i.test(value)) return '';
+             try {
+               const parsed = new URL(value, location.href);
+               // Gmail often wraps newsletter links in google.com/url?q=… .
+               // Read that destination locally; never follow the redirect,
+               // which could notify a tracking service that the mail was read.
+               if ((parsed.hostname === 'google.com' || parsed.hostname.endsWith('.google.com'))
+                 && parsed.pathname === '/url') {
+                 return parsed.searchParams.get('q') || parsed.searchParams.get('url') || parsed.href;
+               }
+               return parsed.href;
+             } catch (_) {
+               return value;
+             }
+           };
+           const emailTextWithLinks = body => {
+             if (!body) return { text: '', links: 0 };
+             const copy = body.cloneNode(true);
+             let links = 0;
+             copy.querySelectorAll('a[href]').forEach(anchor => {
+               const href = normalizeEmailHref(anchor.getAttribute('href') || anchor.href);
+               const label = clean(anchor.innerText || anchor.textContent || '');
+               if (href && label) {
+                 links += 1;
+                 const replacement = label === href ? label : `${label} (${href})`;
+                 anchor.replaceWith(document.createTextNode(replacement));
+               } else {
+                 anchor.replaceWith(document.createTextNode(label));
+               }
+             });
+             return { text: clean(copy.innerText || copy.textContent || ''), links };
+           };
            let postText = '';
            let author = '';
            let platform = '';
@@ -521,7 +555,8 @@ document.addEventListener('DOMContentLoaded', function () {
              const messageBodies = [...document.querySelectorAll('.a3s.aiL, .a3s')]
                .filter(isVisible);
              const body = messageBodies[messageBodies.length - 1];
-             emailText = clean(body?.innerText || '');
+             const extractedBody = emailTextWithLinks(body);
+             emailText = extractedBody.text;
              const messageRoot = body?.closest('[data-message-id], .adn, .h7');
              emailSubject = clean(document.querySelector('h2.hP, h2[data-thread-perm-id], [role="main"] h2')?.innerText || '');
              const sender = messageRoot?.querySelector('.gD[email], .gD')
@@ -533,6 +568,7 @@ document.addEventListener('DOMContentLoaded', function () {
              pageDebug = {
                body_candidates: messageBodies.length,
                selected_body_length: emailText.length,
+               extracted_link_count: extractedBody.links,
                email_id_found: Boolean(emailId),
              };
            }

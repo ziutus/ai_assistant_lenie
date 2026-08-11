@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [1.0.44] - 2026-08-11
+### Added
+- Linki widoczne w importowanej wiadomości Gmail są zapisywane jako `etykieta (URL)`.
+- Przekierowania Gmaila są rozpakowywane lokalnie, bez otwierania linków.
+
 ## [1.0.43] - 2026-08-11
 ### Added
 - Pilot importu pojedynczej otwartej wiadomości Gmail jako dokumentu `email`.
