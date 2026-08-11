@@ -1,8 +1,10 @@
 # Lenie AI Assistant — Browser Extension
 
-Chrome/Kiwi browser extension for capturing webpages and sending them to the Lenie AI backend. Supports webpages, links, YouTube videos, movies and individual Facebook or LinkedIn posts.
+Chrome/Kiwi browser extension for capturing webpages and sending them to the Lenie AI backend. Supports webpages, links, YouTube videos, movies, individual Facebook or LinkedIn posts, and an open Gmail message.
 
 For a social media post the extension sends only the editable post text. Comments, service UI and page HTML are not imported. If Facebook or LinkedIn hides the post content, paste it into the displayed text field before sending.
+
+For Gmail the extension imports only the visible text of the most recently expanded message in the open conversation. Visible links are kept as `label (URL)` and Gmail redirect URLs are unwrapped locally without opening them. It sends a synthetic `gmail://` identifier, not the Gmail page HTML, and the content remains editable in the popup before sending. It does not scan the inbox or use Google OAuth.
 
 See [CLAUDE.md](CLAUDE.md) for detailed technical documentation (features, API communication, data flow, permissions, directory structure).
 

@@ -335,6 +335,7 @@ class TestSetDocumentType:
         ("sms", "text_message"),
         ("text_message", "text_message"),
         ("text", "text"),
+        ("email", "email"),
     ])
     def test_valid_types(self, input_str, expected):
         doc = _make_doc()

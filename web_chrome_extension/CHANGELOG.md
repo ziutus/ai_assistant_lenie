@@ -1,5 +1,27 @@
 # CHANGELOG
 
+## [1.0.47] - 2026-08-11
+### Fixed
+- Import Gmaila zachowuje podziały akapitów i list widoczne w Gmailu, jednocześnie redukując newsletterowe wiersze-spacery.
+
+## [1.0.46] - 2026-08-11
+### Fixed
+- Import Gmaila usuwa również wiersze zawierające wyłącznie newsletterowe spacje i znaki niewidoczne.
+
+## [1.0.45] - 2026-08-11
+### Fixed
+- Import Gmaila usuwa puste wiersze wynikające z układu HTML wiadomości.
+
+## [1.0.44] - 2026-08-11
+### Added
+- Linki widoczne w importowanej wiadomości Gmail są zapisywane jako `etykieta (URL)`.
+- Przekierowania Gmaila są rozpakowywane lokalnie, bez otwierania linków.
+
+## [1.0.43] - 2026-08-11
+### Added
+- Pilot importu pojedynczej otwartej wiadomości Gmail jako dokumentu `email`.
+- Wysyłana jest wyłącznie widoczna treść wiadomości, bez HTML Gmaila i interfejsu skrzynki.
+
 Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).

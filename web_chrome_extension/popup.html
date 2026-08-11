@@ -40,10 +40,10 @@
         <textarea id="pageDescription" class="form-control" rows="4" placeholder="Opis strony w metadanych"></textarea>
       </div>
 
-      <div id="facebookPostContainer" class="form-group" style="display: none;">
-        <label for="facebookPostText">Treść posta</label>
-        <textarea id="facebookPostText" class="form-control" rows="12" placeholder="Treść posta zostanie wykryta automatycznie. Możesz ją poprawić przed wysłaniem."></textarea>
-        <small class="form-text text-muted">Komentarze i elementy interfejsu serwisu nie są importowane.</small>
+      <div id="capturedContentContainer" class="form-group" style="display: none;">
+        <label id="capturedContentLabel" for="capturedContentText">Treść</label>
+        <textarea id="capturedContentText" class="form-control" rows="12" placeholder="Treść zostanie wykryta automatycznie. Możesz ją poprawić przed wysłaniem."></textarea>
+        <small id="capturedContentHelp" class="form-text text-muted"></small>
       </div>
 
       <label for="note">Notatka</label>
@@ -58,6 +58,7 @@
           <option value="link">Link</option>
           <option value="youtube">YouTube</option>
           <option value="movie">Movie</option>
+          <option value="email">E-mail</option>
           <option value="social_media_post">Social media post</option>
         </select>
       </div>

@@ -55,6 +55,7 @@ DOCUMENT_TYPE_LOOKUP = {
     "sms": StalkerDocumentType.text_message.name,
     "text_message": StalkerDocumentType.text_message.name,
     "text": StalkerDocumentType.text.name,
+    "email": StalkerDocumentType.email.name,
     "social_media_post": StalkerDocumentType.social_media_post.name,
     "social": StalkerDocumentType.social_media_post.name,
 }
@@ -788,7 +789,7 @@ class Document(Base):
         mapped_type = DOCUMENT_TYPE_LOOKUP.get(document_type)
         if mapped_type is None:
             raise ValueError(
-                f"document_type must be one of 'movie', 'webpage', 'text_message', 'text', 'link', 'social_media_post' not >{document_type}<"
+                f"document_type must be one of 'movie', 'webpage', 'text_message', 'text', 'link', 'email', 'social_media_post' not >{document_type}<"
             )
         self.document_type = mapped_type
 

@@ -184,6 +184,33 @@ class TestCreateDocument:
         assert doc.requires_login is True
         mock_store.assert_not_called()
 
+    @patch("library.document_service.load_config")
+    def test_create_email_keeps_plain_text_without_html_storage(self, mock_config):
+        """Email content is captured by the browser and must not be treated as a webpage."""
+        mock_config.return_value = MagicMock()
+        session = _make_session()
+        service = DocumentService(session)
+
+        with patch.object(service, "_store_file") as mock_store:
+            service.create_document(
+                url="gmail://thread-abc123",
+                url_type="email",
+                text="Treść prywatnej wiadomości",
+                html="<div>Nie zapisuj HTML Gmaila</div>",
+                title="Temat wiadomości",
+                byline="Nadawca",
+                original_id="thread-abc123",
+            )
+
+        doc = session.add.call_args.args[0]
+        assert doc.document_type == "email"
+        assert doc.text == "Treść prywatnej wiadomości"
+        assert doc.text_raw == "Treść prywatnej wiadomości"
+        assert doc.document_length == len("Treść prywatnej wiadomości")
+        assert doc.requires_login is True
+        assert doc.original_id == "thread-abc123"
+        mock_store.assert_not_called()
+
     @patch("library.document_service.storage_from_config")
     @patch("library.document_service.load_config")
     def test_create_document_with_s3(self, mock_config, mock_storage_from_config):
