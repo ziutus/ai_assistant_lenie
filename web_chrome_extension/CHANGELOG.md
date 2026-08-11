@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [1.0.43] - 2026-08-11
+### Added
+- Pilot importu pojedynczej otwartej wiadomości Gmail jako dokumentu `email`.
+- Wysyłana jest wyłącznie widoczna treść wiadomości, bez HTML Gmaila i interfejsu skrzynki.
+
 Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).

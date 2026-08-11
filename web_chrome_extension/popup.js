@@ -34,8 +34,10 @@ document.addEventListener('DOMContentLoaded', function () {
   const pageLanguageOther = document.getElementById('pageLanguageOther');
   const pageDescriptionInput = document.getElementById('pageDescription');
   const pageTitleInput = document.getElementById('pageTitle');
-  const facebookPostContainer = document.getElementById('facebookPostContainer');
-  const facebookPostTextInput = document.getElementById('facebookPostText');
+  const capturedContentContainer = document.getElementById('capturedContentContainer');
+  const capturedContentLabel = document.getElementById('capturedContentLabel');
+  const capturedContentHelp = document.getElementById('capturedContentHelp');
+  const capturedContentTextInput = document.getElementById('capturedContentText');
   const toggleNasApiKeyVisibilityBtn = document.getElementById('toggleNasApiKeyVisibility');
   const toggleAwsApiKeyVisibilityBtn = document.getElementById('toggleAwsApiKeyVisibility');
   const nasApiKeyEye = document.getElementById('nasApiKeyEye');
@@ -52,7 +54,9 @@ document.addEventListener('DOMContentLoaded', function () {
   let previousSourceValue = sourceSelect.value;
   let detectedSocialAuthor = '';
   let detectedSocialPlatform = '';
-  const debugState = { version: '1.0.42' };
+  let detectedEmailAuthor = '';
+  let detectedEmailId = '';
+  const debugState = { version: '1.0.43' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -281,19 +285,25 @@ document.addEventListener('DOMContentLoaded', function () {
     chapterListContainer.style.display = (typeSelect.value === 'youtube') ? 'block' : 'none';
   }
 
-  function toggleFacebookPostVisibility() {
-    const isFacebookPost = typeSelect.value === 'social_media_post';
-    facebookPostContainer.style.display = isFacebookPost ? 'block' : 'none';
-    refreshExisting.disabled = isFacebookPost;
-    if (isFacebookPost) refreshExisting.checked = false;
-    requiresLoginInput.checked = isFacebookPost;
+  function toggleCapturedContentVisibility() {
+    const isSocialPost = typeSelect.value === 'social_media_post';
+    const isEmail = typeSelect.value === 'email';
+    const needsCapturedContent = isSocialPost || isEmail;
+    capturedContentContainer.style.display = needsCapturedContent ? 'block' : 'none';
+    capturedContentLabel.textContent = isEmail ? 'Treść e-maila' : 'Treść posta';
+    capturedContentHelp.textContent = isEmail
+      ? 'Importowana jest wyłącznie widoczna treść wiadomości, bez interfejsu Gmaila.'
+      : 'Komentarze i elementy interfejsu serwisu nie są importowane.';
+    refreshExisting.disabled = needsCapturedContent;
+    if (needsCapturedContent) refreshExisting.checked = false;
+    requiresLoginInput.checked = needsCapturedContent;
   }
 
   toggleChapterListVisibility();
-  toggleFacebookPostVisibility();
+  toggleCapturedContentVisibility();
   typeSelect.addEventListener('change', () => {
     toggleChapterListVisibility();
-    toggleFacebookPostVisibility();
+    toggleCapturedContentVisibility();
   });
 
   // Load settings
@@ -353,6 +363,15 @@ document.addEventListener('DOMContentLoaded', function () {
     return false;
   }
 
+  function isGmailMessageUrl(url) {
+    try {
+      return new URL(url).hostname.toLowerCase() === 'mail.google.com'
+        && /#(?:[^/]+\/)?(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/[^/?#]+/i.test(url);
+    } catch (_) {
+      return false;
+    }
+  }
+
   // Auto set type for YouTube/social posts and fetch metadata.
   chrome.tabs.query({ currentWindow: true, active: true }, function (tabs) {
     const pageUrl = tabs[0]?.url || '';
@@ -361,16 +380,21 @@ document.addEventListener('DOMContentLoaded', function () {
       chapterListContainer.style.display = 'block';
     }
     const isSocialPost = isSocialPostUrl(pageUrl);
+    const isGmailMessage = isGmailMessageUrl(pageUrl);
     updateDebug({
       page_url: pageUrl,
       page_hostname: (() => { try { return new URL(pageUrl).hostname; } catch (_) { return ''; } })(),
       detected_platform_from_url: socialPlatformForUrl(pageUrl),
       is_social_post_url: isSocialPost,
+      is_gmail_message_url: isGmailMessage,
       type_before_detection: typeSelect.value
     });
     if (isSocialPost) {
       typeSelect.value = 'social_media_post';
-      toggleFacebookPostVisibility();
+      toggleCapturedContentVisibility();
+    } else if (isGmailMessage) {
+      typeSelect.value = 'email';
+      toggleCapturedContentVisibility();
     }
 
     chrome.scripting.executeScript(
@@ -378,17 +402,22 @@ document.addEventListener('DOMContentLoaded', function () {
         target: { tabId: tabs[0].id },
         func: async () => {
           const clean = value => (value || '').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-          const hostname = location.hostname.toLowerCase();
-          const isFacebook = hostname === 'facebook.com' || hostname.endsWith('.facebook.com');
-          const isLinkedIn = hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com');
+           const hostname = location.hostname.toLowerCase();
+           const isFacebook = hostname === 'facebook.com' || hostname.endsWith('.facebook.com');
+           const isLinkedIn = hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com');
+           const isGmail = hostname === 'mail.google.com';
           const isVisible = element => {
             if (!element) return false;
             const style = getComputedStyle(element);
             return style.display !== 'none' && style.visibility !== 'hidden' && element.innerText?.trim();
           };
-          let postText = '';
-          let author = '';
-          let platform = '';
+           let postText = '';
+           let author = '';
+           let platform = '';
+           let emailText = '';
+           let emailAuthor = '';
+           let emailId = '';
+           let emailSubject = '';
           let pageDebug = {};
           let fallbackExtraction = '';
           if (isFacebook) {
@@ -416,7 +445,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
             const authorLink = root?.querySelector('h2 a, h3 a, strong a');
             author = clean(authorLink?.innerText || '');
-          } else if (isLinkedIn) {
+           } else if (isLinkedIn) {
             platform = 'linkedin';
             await new Promise(resolve => setTimeout(resolve, 1000));
             const rootSelectors = [
@@ -473,7 +502,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 fallbackExtraction = 'body_text_feed_post_engagement';
               }
             }
-            pageDebug = {
+             pageDebug = {
               body_text_length: (document.body?.innerText || '').length,
               body_text_preview: (document.body?.innerText || '').slice(0, 1000),
               root_selector_matches: Object.fromEntries(rootSelectors.map(selector => [selector, document.querySelectorAll(selector).length])),
@@ -482,17 +511,43 @@ document.addEventListener('DOMContentLoaded', function () {
               visible_message_candidates: messageCandidates.length,
               meta_description: document.querySelector('meta[name="description"]')?.content || '',
               meta_og_description: document.querySelector('meta[property="og:description"]')?.content || '',
-              fallback_extraction: fallbackExtraction
-            };
-          }
+               fallback_extraction: fallbackExtraction
+             };
+           } else if (isGmail) {
+             // Gmail renders a whole conversation in one document. Take the
+             // most recently expanded visible message body; the popup keeps it
+             // editable so the user can explicitly correct the selection.
+             await new Promise(resolve => setTimeout(resolve, 300));
+             const messageBodies = [...document.querySelectorAll('.a3s.aiL, .a3s')]
+               .filter(isVisible);
+             const body = messageBodies[messageBodies.length - 1];
+             emailText = clean(body?.innerText || '');
+             const messageRoot = body?.closest('[data-message-id], .adn, .h7');
+             emailSubject = clean(document.querySelector('h2.hP, h2[data-thread-perm-id], [role="main"] h2')?.innerText || '');
+             const sender = messageRoot?.querySelector('.gD[email], .gD')
+               || [...document.querySelectorAll('.gD[email], .gD')].filter(isVisible).pop();
+             emailAuthor = clean(sender?.innerText || sender?.getAttribute('name') || sender?.getAttribute('email') || '');
+             const hashMatch = location.hash.match(/\/(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/([^/?#]+)/i)
+               || location.hash.match(/#(?:[^/]+\/)?(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/([^/?#]+)/i);
+             emailId = hashMatch?.[1] || messageRoot?.getAttribute('data-message-id') || '';
+             pageDebug = {
+               body_candidates: messageBodies.length,
+               selected_body_length: emailText.length,
+               email_id_found: Boolean(emailId),
+             };
+           }
           return {
             title: document.title,
             description: document.querySelector('meta[name="description"]')?.content || '',
             language: document.documentElement.lang || navigator.language,
             postText,
             author,
-            platform,
-            pageDebug
+             platform,
+              emailText,
+              emailAuthor,
+              emailId,
+             emailSubject,
+              pageDebug
           };
         }
       },
@@ -510,24 +565,34 @@ document.addEventListener('DOMContentLoaded', function () {
             page_title: results[0].result.title || '',
             detected_platform_from_page: results[0].result.platform || '',
             detected_author: results[0].result.author || '',
-            extracted_text_length: (results[0].result.postText || '').length,
-            extracted_text_preview: (results[0].result.postText || '').slice(0, 500)
+            extracted_text_length: (results[0].result.postText || results[0].result.emailText || '').length,
+            extracted_text_preview: (results[0].result.postText || results[0].result.emailText || '').slice(0, 500)
             ,page_dom_debug: results[0].result.pageDebug || {}
           });
           pageTitleInput.value = results[0].result.title || '';
           // For social posts, the page language is often the LinkedIn/Facebook
           // UI language rather than the language of the post itself. Keep the
           // user's selected value instead of copying document.documentElement.lang.
-          if (typeSelect.value !== 'social_media_post') {
+          if (typeSelect.value !== 'social_media_post' && typeSelect.value !== 'email') {
             setLanguageValue(results[0].result.language || '');
           }
           pageDescriptionInput.value = results[0].result.description || '';
           if (typeSelect.value === 'social_media_post') {
-            facebookPostTextInput.value = results[0].result.postText || '';
+            capturedContentTextInput.value = results[0].result.postText || '';
             detectedSocialAuthor = results[0].result.author || '';
             detectedSocialPlatform = results[0].result.platform || '';
             if (results[0].result.author) {
               pageDescriptionInput.value = `Autor: ${results[0].result.author}`;
+            }
+          } else if (typeSelect.value === 'email') {
+            capturedContentTextInput.value = results[0].result.emailText || '';
+            detectedEmailAuthor = results[0].result.emailAuthor || '';
+            detectedEmailId = results[0].result.emailId || '';
+            if (results[0].result.emailAuthor) {
+              pageDescriptionInput.value = `Nadawca: ${results[0].result.emailAuthor}`;
+            }
+            if (results[0].result.emailSubject) {
+              pageTitleInput.value = results[0].result.emailSubject;
             }
           }
         }
@@ -585,12 +650,18 @@ document.addEventListener('DOMContentLoaded', function () {
         .then(result => {
           const { text, html } = result[0].result;
           const isSocialPost = type === 'social_media_post';
+          const isEmail = type === 'email';
+          const capturedText = capturedContentTextInput.value.trim();
+          const emailIdentity = detectedEmailId || (() => {
+            const match = pageUrl.match(/(?:#|\/)(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/([^/?#]+)/i);
+            return match?.[1] || '';
+          })();
           const data = {
             note: note,
-            url: pageUrl,
+            url: isEmail ? `gmail://${emailIdentity}` : pageUrl,
             type: type,
-            text: isSocialPost ? facebookPostTextInput.value.trim() : text,
-            html: isSocialPost ? '' : html,
+            text: (isSocialPost || isEmail) ? capturedText : text,
+            html: (isSocialPost || isEmail) ? '' : html,
             title: title,
             language: language,
             paywall: paywall,
@@ -598,7 +669,8 @@ document.addEventListener('DOMContentLoaded', function () {
             social_platform: isSocialPost ? detectedSocialPlatform || socialPlatformForUrl(pageUrl) : '',
             source: sourceSelect.value,
             chapter_list: chapter_list.value,
-            byline: isSocialPost ? detectedSocialAuthor : ''
+            byline: isSocialPost ? detectedSocialAuthor : (isEmail ? detectedEmailAuthor : ''),
+            original_id: isEmail ? emailIdentity : undefined,
           };
           data.external_uuid = createExternalUuid();
           updateDebug({
@@ -608,8 +680,13 @@ document.addEventListener('DOMContentLoaded', function () {
             payload_text_length: data.text.length,
             payload_requires_login: data.requires_login
           });
-          if (isSocialPost && !data.text) {
-            throw new Error('Nie znaleziono treści posta. Wklej ją do pola Treść posta.');
+          if ((isSocialPost || isEmail) && !data.text) {
+            throw new Error(isEmail
+              ? 'Nie znaleziono treści e-maila. Wklej ją do pola Treść e-maila.'
+              : 'Nie znaleziono treści posta. Wklej ją do pola Treść posta.');
+          }
+          if (isEmail && !emailIdentity) {
+            throw new Error('Nie znaleziono identyfikatora wiadomości Gmail. Otwórz pojedynczą wiadomość i spróbuj ponownie.');
           }
           if (refreshExisting.checked) {
             data.operation = 'fill_missing_html';

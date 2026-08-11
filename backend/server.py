@@ -276,10 +276,17 @@ def url_add():
             return {'status': 'error', 'message': 'No JSON data provided'}, 400
 
         url_data_print = url_data.copy()
-        if 'text' in url_data_print:
-            url_data_print['text'] = url_data_print['text'][:50]
-        if 'html' in url_data_print:
-            url_data_print['html'] = url_data_print['html'][:50]
+        if url_data.get("type") == "email":
+            # Mail content is private.  Keep useful diagnostics without
+            # leaking even a preview into server logs.
+            url_data_print.pop("text", None)
+            url_data_print.pop("html", None)
+            url_data_print["text_length"] = len(url_data.get("text") or "")
+        else:
+            if 'text' in url_data_print:
+                url_data_print['text'] = url_data_print['text'][:50]
+            if 'html' in url_data_print:
+                url_data_print['html'] = url_data_print['html'][:50]
         logging.info('Data received by API', extra={"body": url_data_print})
 
         session = get_scoped_session()

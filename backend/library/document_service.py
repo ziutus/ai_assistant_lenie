@@ -89,7 +89,10 @@ class DocumentService:
         if existing is not None:
             raise ExistingDocumentError(existing)
 
-        storage = self._get_storage()
+        # Plain-text captures (social posts, emails) never use object storage.
+        # Avoid constructing a storage backend for them so an import can work
+        # even when only the database/API is available.
+        storage = self._get_storage() if url_type == "webpage" else None
 
         # An external UUID is the import idempotency key for every document
         # type, not just webpages.  Social posts do not use object storage,
@@ -115,13 +118,13 @@ class DocumentService:
         doc.language = language
         doc.paywall = paywall
         doc.requires_login = (
-            url_type == "social_media_post" if requires_login is None else bool(requires_login)
+            url_type in {"social_media_post", "email"} if requires_login is None else bool(requires_login)
         )
         doc.social_platform = social_platform or None
-        if url_type == "social_media_post":
-            # Social posts arrive as already extracted plain text.  Do not
-            # send them through webpage HTML storage/cleanup, which would
-            # reintroduce Facebook UI and comments.
+        if url_type in {"social_media_post", "email"}:
+            # Social posts and emails arrive as already extracted plain text.
+            # Do not send them through webpage HTML storage/cleanup, which
+            # would reintroduce the source application's UI and thread chrome.
             doc.text = text or None
             doc.text_raw = text or None
             doc.document_length = len(text) if text else None
