@@ -14,6 +14,8 @@ const Email = () => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [footerMessage, setFooterMessage] = React.useState("");
   const [footerBusy, setFooterBusy] = React.useState(false);
+  const [savedFooter, setSavedFooter] = React.useState<string | null>(null);
+  const [footerLoaded, setFooterLoaded] = React.useState(false);
 
   React.useEffect(() => {
     if (id) {
@@ -61,6 +63,34 @@ const Email = () => {
     formik, selectedDocumentType, selectedDocumentState
   });
 
+  React.useEffect(() => {
+    if (!formik.values.id || !formik.values.email_sender) {
+      setSavedFooter(null);
+      setFooterLoaded(false);
+      return;
+    }
+
+    let active = true;
+    fetch(`${apiUrl}/document/${formik.values.id}/email_footer_rule`, {
+      headers: { "x-api-key": apiKey ?? "" },
+    })
+      .then(async (response) => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || "Nie udało się pobrać reguły stopki.");
+        if (active) setSavedFooter(data.footer_text || null);
+      })
+      .catch(() => {
+        if (active) setSavedFooter(null);
+      })
+      .finally(() => {
+        if (active) setFooterLoaded(true);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [apiKey, apiUrl, formik.values.email_sender, formik.values.id]);
+
   const markSelectedFooter = async () => {
     const textArea = document.getElementById("text") as HTMLTextAreaElement | null;
     const footerText = textArea?.value.slice(textArea.selectionStart, textArea.selectionEnd) || "";
@@ -79,6 +109,8 @@ const Email = () => {
       if (!response.ok) throw new Error(data.message || "Nie udało się zapisać reguły.");
       formik.setFieldValue("email_sender", data.email_sender);
       formik.setFieldValue("text", data.text);
+      setSavedFooter(footerText.trim());
+      setFooterLoaded(true);
       setFooterMessage("Stopka usunięta i zapisana dla kolejnych e-maili od tego nadawcy.");
     } catch (error: any) {
       setFooterMessage(error.message || "Nie udało się zapisać reguły.");
@@ -97,6 +129,8 @@ const Email = () => {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Nie udało się usunąć reguły.");
+      setSavedFooter(null);
+      setFooterLoaded(true);
       setFooterMessage("Reguła stopki dla tego nadawcy została usunięta.");
     } catch (error: any) {
       setFooterMessage(error.message || "Nie udało się usunąć reguły.");
@@ -136,6 +170,18 @@ const Email = () => {
             <p style={{ margin: "5px 0 10px", color: "#475569" }}>
               Zaznacz końcowy fragment w polu treści. Reguła będzie działała tylko dla tego adresu nadawcy.
             </p>
+            {footerLoaded && (
+              savedFooter ? (
+                <div style={{ margin: "0 0 10px" }}>
+                  <span style={{ color: "#475569" }}>Aktualnie zapisana stopka dla tego nadawcy:</span>
+                  <pre style={{ margin: "5px 0 0", padding: 8, whiteSpace: "pre-wrap", background: "#fff", border: "1px solid #cbd5e1", borderRadius: 4 }}>
+                    {savedFooter}
+                  </pre>
+                </div>
+              ) : (
+                <p style={{ margin: "0 0 10px", color: "#475569" }}>Brak zapisanej stopki dla tego nadawcy.</p>
+              )
+            )}
             <button type="button" className="button" onClick={markSelectedFooter} disabled={isLoading || footerBusy}>
               {footerBusy ? "Zapisuję…" : "Oznacz zaznaczenie jako stopkę"}
             </button>
