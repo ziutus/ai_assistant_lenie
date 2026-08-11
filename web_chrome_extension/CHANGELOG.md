@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [1.0.47] - 2026-08-11
+### Fixed
+- Import Gmaila zachowuje podziały akapitów i list widoczne w Gmailu, jednocześnie redukując newsletterowe wiersze-spacery.
+
 ## [1.0.46] - 2026-08-11
 ### Fixed
 - Import Gmaila usuwa również wiersze zawierające wyłącznie newsletterowe spacje i znaki niewidoczne.

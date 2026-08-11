@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedSocialPlatform = '';
   let detectedEmailAuthor = '';
   let detectedEmailId = '';
-  const debugState = { version: '1.0.46' };
+  const debugState = { version: '1.0.47' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -430,27 +430,38 @@ document.addEventListener('DOMContentLoaded', function () {
            };
            const emailTextWithLinks = body => {
              if (!body) return { text: '', links: 0 };
-             const copy = body.cloneNode(true);
+             // Start with the rendered Gmail text, not a detached DOM clone.
+             // innerText preserves paragraph and list boundaries exactly as the
+             // user sees them; a detached clone loses those boundaries.
+             let renderedText = body.innerText || body.textContent || '';
              let links = 0;
-             copy.querySelectorAll('a[href]').forEach(anchor => {
+             body.querySelectorAll('a[href]').forEach(anchor => {
                const href = normalizeEmailHref(anchor.getAttribute('href') || anchor.href);
                const label = clean(anchor.innerText || anchor.textContent || '');
                if (href && label) {
                  links += 1;
                  const replacement = label === href ? label : `${label} (${href})`;
-                 anchor.replaceWith(document.createTextNode(replacement));
-               } else {
-                 anchor.replaceWith(document.createTextNode(label));
+                 // Replace only the first matching visible label. Newsletter
+                 // CTAs are distinct; this avoids changing repeated prose.
+                 renderedText = renderedText.replace(label, replacement);
                }
              });
-             // Newsletter HTML uses spacer cells and zero-width characters,
-             // so a visually empty line is not always an empty string. Remove
-             // such lines while retaining every line containing real content.
-             const text = clean(copy.innerText || copy.textContent || '')
-               .split(/\r?\n/)
-               .map(line => line.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/[ \t]+/g, ' ').trim())
-               .filter(Boolean)
-               .join('\n');
+             // Remove spacer-only lines, but retain one blank line between
+             // visible paragraphs and list items.
+             const lines = renderedText.replace(/\r\n?/g, '\n').split('\n');
+             const normalizedLines = [];
+             let previousBlank = true;
+             for (const rawLine of lines) {
+               const line = rawLine.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/[ \t]+/g, ' ').trim();
+               if (!line) {
+                 if (!previousBlank) normalizedLines.push('');
+                 previousBlank = true;
+               } else {
+                 normalizedLines.push(line);
+                 previousBlank = false;
+               }
+             }
+             const text = normalizedLines.join('\n').trim();
              return { text, links };
            };
            let postText = '';
