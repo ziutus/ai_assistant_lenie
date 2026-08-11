@@ -55,8 +55,9 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedSocialAuthor = '';
   let detectedSocialPlatform = '';
   let detectedEmailAuthor = '';
+  let detectedEmailSender = '';
   let detectedEmailId = '';
-  const debugState = { version: '1.0.47' };
+  const debugState = { version: '1.0.49' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -365,8 +366,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
   function isGmailMessageUrl(url) {
     try {
-      return new URL(url).hostname.toLowerCase() === 'mail.google.com'
-        && /#(?:[^/]+\/)?(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/[^/?#]+/i.test(url);
+      if (new URL(url).hostname.toLowerCase() !== 'mail.google.com') return false;
+      return /#(?:[^/]+\/)?(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/[^/?#]+/i.test(url)
+        || /#search\/[^/?#]+\/[^/?#]+/i.test(url);
     } catch (_) {
       return false;
     }
@@ -469,6 +471,7 @@ document.addEventListener('DOMContentLoaded', function () {
            let platform = '';
            let emailText = '';
            let emailAuthor = '';
+           let emailSender = '';
            let emailId = '';
            let emailSubject = '';
           let pageDebug = {};
@@ -581,8 +584,10 @@ document.addEventListener('DOMContentLoaded', function () {
              const sender = messageRoot?.querySelector('.gD[email], .gD')
                || [...document.querySelectorAll('.gD[email], .gD')].filter(isVisible).pop();
              emailAuthor = clean(sender?.innerText || sender?.getAttribute('name') || sender?.getAttribute('email') || '');
+             emailSender = clean(sender?.getAttribute('email') || '');
              const hashMatch = location.hash.match(/\/(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/([^/?#]+)/i)
-               || location.hash.match(/#(?:[^/]+\/)?(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/([^/?#]+)/i);
+               || location.hash.match(/#(?:[^/]+\/)?(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/([^/?#]+)/i)
+               || location.hash.match(/#search\/[^/?#]+\/([^/?#]+)/i);
              emailId = hashMatch?.[1] || messageRoot?.getAttribute('data-message-id') || '';
              pageDebug = {
                body_candidates: messageBodies.length,
@@ -600,6 +605,7 @@ document.addEventListener('DOMContentLoaded', function () {
              platform,
               emailText,
               emailAuthor,
+              emailSender,
               emailId,
              emailSubject,
               pageDebug
@@ -641,7 +647,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
           } else if (typeSelect.value === 'email') {
             capturedContentTextInput.value = results[0].result.emailText || '';
-            detectedEmailAuthor = results[0].result.emailAuthor || '';
+             detectedEmailAuthor = results[0].result.emailAuthor || '';
+             detectedEmailSender = results[0].result.emailSender || '';
             detectedEmailId = results[0].result.emailId || '';
             if (results[0].result.emailAuthor) {
               pageDescriptionInput.value = `Nadawca: ${results[0].result.emailAuthor}`;
@@ -708,7 +715,8 @@ document.addEventListener('DOMContentLoaded', function () {
           const isEmail = type === 'email';
           const capturedText = capturedContentTextInput.value.trim();
           const emailIdentity = detectedEmailId || (() => {
-            const match = pageUrl.match(/(?:#|\/)(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/([^/?#]+)/i);
+            const match = pageUrl.match(/(?:#|\/)(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/([^/?#]+)/i)
+              || pageUrl.match(/#search\/[^/?#]+\/([^/?#]+)/i);
             return match?.[1] || '';
           })();
           const data = {
@@ -725,6 +733,7 @@ document.addEventListener('DOMContentLoaded', function () {
             source: sourceSelect.value,
             chapter_list: chapter_list.value,
             byline: isSocialPost ? detectedSocialAuthor : (isEmail ? detectedEmailAuthor : ''),
+            email_sender: isEmail ? detectedEmailSender : undefined,
             original_id: isEmail ? emailIdentity : undefined,
           };
           data.external_uuid = createExternalUuid();

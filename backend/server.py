@@ -5,7 +5,8 @@ from sqlalchemy import select
 
 from library.config_loader import load_config
 from library.db.engine import get_scoped_session
-from library.db.models import ContentGroup, TranscriptionLog, Document
+from library.db.models import ContentGroup, TranscriptionLog, Document, EmailFooterRule
+from library.email_footer_rules import apply_footer_rule, normalize_sender_email
 from library.document_service import DocumentService
 from library.document_ingest_service import DocumentIngestService, IngestRequest
 from library.search_service import SearchService
@@ -306,6 +307,7 @@ def url_add():
                 ai_summary=url_data.get("ai_summary", False),
                 chapter_list=url_data.get("chapter_list", False),
                 byline=url_data.get("byline", ""),
+                email_sender=url_data.get("email_sender"),
                 original_id=url_data.get("original_id"),
                 published_on=url_data.get("published_on"),
                 operation=url_data.get("operation", "create"),
@@ -2208,6 +2210,57 @@ def website_delete():
         return {"status": "error", "message": "Failed to delete document"}, 500
 
 
+@app.route('/document/<int:document_id>/email_footer_rule', methods=['GET', 'POST', 'DELETE'])
+def email_footer_rule(document_id: int):
+    """Read, create, or remove the one footer rule scoped to an email sender."""
+    session = get_scoped_session()
+    doc = session.get(Document, document_id)
+    if doc is None or doc.document_type != StalkerDocumentType.email.name:
+        return {"status": "error", "message": "Email document not found"}, 404
+
+    if request.method == 'GET':
+        sender = normalize_sender_email(doc.email_sender)
+        rule = session.scalar(select(EmailFooterRule).where(EmailFooterRule.sender_email == sender)) if sender else None
+        return {
+            "status": "success",
+            "email_sender": sender,
+            "footer_text": rule.footer_text if rule else None,
+        }, 200
+
+    if request.method == 'DELETE':
+        sender = normalize_sender_email(doc.email_sender)
+        if not sender:
+            return {"status": "error", "message": "Email has no sender address"}, 400
+        rule = session.scalar(select(EmailFooterRule).where(EmailFooterRule.sender_email == sender))
+        if rule is not None:
+            session.delete(rule)
+            session.commit()
+        return {"status": "success"}, 200
+
+    data = request.get_json(silent=True) or {}
+    sender = normalize_sender_email(data.get("email_sender") or doc.email_sender)
+    footer = (data.get("footer_text") or "").strip()
+    current_text = doc.text or ""
+    if not sender:
+        return {"status": "error", "message": "Podaj poprawny adres nadawcy e-maila."}, 400
+    if not footer:
+        return {"status": "error", "message": "Zaznacz niepustą stopkę."}, 400
+    if not current_text.rstrip().endswith(footer):
+        return {"status": "error", "message": "Stopka musi być końcowym fragmentem wiadomości."}, 400
+
+    rule = session.scalar(select(EmailFooterRule).where(EmailFooterRule.sender_email == sender))
+    if rule is None:
+        rule = EmailFooterRule(sender_email=sender, footer_text=footer)
+        session.add(rule)
+    else:
+        rule.footer_text = footer
+    doc.email_sender = sender
+    doc.text = apply_footer_rule(session, sender, current_text)
+    doc.document_length = len(doc.text or "")
+    session.commit()
+    return {"status": "success", "email_sender": sender, "text": doc.text}, 200
+
+
 @app.route('/website_save', methods=['POST'])
 def website_save():
     url = request.form.get('url')
@@ -2216,7 +2269,7 @@ def website_save():
 
     link_id = request.form.get('id')
     attrs = {}
-    for attr in ('text', 'text_md', 'title', 'language', 'tags', 'summary', 'source', 'byline', 'note'):
+    for attr in ('text', 'text_md', 'title', 'language', 'tags', 'summary', 'source', 'byline', 'email_sender', 'note'):
         value = request.form.get(attr)
         if value is not None:
             attrs[attr] = value

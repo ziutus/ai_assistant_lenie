@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## [1.0.49] - 2026-08-11
+### Fixed
+- Gmail messages opened from `#search/<query>/<message-id>` are recognized as e-mail, so their extracted content is shown in the editable preview and keeps a stable Gmail identity on send.
+
+## [1.0.48] - 2026-08-11
+### Fixed
+- Gmail capture again returns the extracted body; a sender-address variable was scoped inside the Gmail branch and caused the injected extractor to fail before returning its result.
+- The version shown in the popup now matches the manifest.
+
 ## [1.0.47] - 2026-08-11
 ### Fixed
 - Import Gmaila zachowuje podziały akapitów i list widoczne w Gmailu, jednocześnie redukując newsletterowe wiersze-spacery.

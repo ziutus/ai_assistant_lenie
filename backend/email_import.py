@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 import time
+from email.utils import parseaddr
 from urllib.parse import urlparse
 
 from library.url_normalization import canonicalize_url
@@ -32,6 +33,7 @@ cfg = load_config()  # noqa: F841 — side effect: populates os.environ for libr
 
 from library.db.engine import get_session  # noqa: E402
 from library.db.models import Document  # noqa: E402
+from library.email_footer_rules import apply_footer_rule  # noqa: E402
 from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: E402
 from library.models.stalker_document_type import StalkerDocumentType  # noqa: E402
 
@@ -286,6 +288,7 @@ def main():
     from_header = extract_header(msg, "From") or ""
     date_header = extract_header(msg, "Date") or ""
     author = extract_sender_name(from_header)
+    sender_email = parseaddr(from_header)[1].strip().lower() or None
 
     # Extract body — prefer text/html, fallback to text/plain
     html_body = find_body_part(msg["payload"], "text/html")
@@ -345,8 +348,10 @@ def main():
         doc.document_type = StalkerDocumentType.email.name
         doc.title = subject
         doc.byline = author
-        doc.text = text
+        doc.email_sender = sender_email
+        doc.text = apply_footer_rule(session, sender_email, text)
         doc.text_raw = text_raw
+        doc.document_length = len(doc.text) if doc.text else None
         doc.set_discovery_source(session, args.source)
         doc.original_id = msg_id
         doc.processing_status = StalkerDocumentStatus.DOCUMENT_INTO_DATABASE.name
