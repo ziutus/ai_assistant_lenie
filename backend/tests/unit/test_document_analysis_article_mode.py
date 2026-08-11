@@ -86,6 +86,7 @@ def article_env(monkeypatch, session):
 
     monkeypatch.setattr("library.article_tagging.tag_article_with_llm", fake_tag_article)
     monkeypatch.setattr("library.article_tagging.extract_countries_hybrid", lambda text, title: [])
+    monkeypatch.setattr("library.search_terms.generate_search_terms", lambda text, title: [])
     return calls
 
 
@@ -275,6 +276,17 @@ class TestArticleMode:
 
         assert captured["text"] == "synteza"
         assert doc.tags == "geopolityka,kraj-polska"
+
+    def test_generates_search_terms_once_after_full_analysis(self, session, article_env, monkeypatch):
+        doc = FakeDoc()
+        monkeypatch.setattr(das.Document, "get_by_id", staticmethod(lambda _s, _id: doc))
+        monkeypatch.setattr("library.search_terms.generate_search_terms", lambda text, title: ["NDA", "audyt umowy"])
+
+        DocumentAnalysisService(session).create_run(
+            doc_id=42, model="test-model", mode="article", chunk_size=300,
+        )
+
+        assert doc.search_terms == "NDA, audyt umowy"
 
     def test_tagging_skipped_for_split_only(self, session, article_env, monkeypatch):
         doc = FakeDoc()

@@ -95,6 +95,8 @@ interface SiteRulesFileStatus {
 }
 
 interface RecleanPreview {
+  cleanup_available: boolean;
+  cleanup_note: string | null;
   source_field: string;
   portal: string | null;
   site_rules_file: SiteRulesFileStatus;
@@ -423,6 +425,7 @@ const PlainTextLines: React.FC<{
   photoCaptionLines: Set<number>;
   splitLineIndices: Set<number>;
   saving: boolean;
+  allowAuthorDetection: boolean;
   detectingAuthorLine: number | null;
   onToggleLine: (idx: number) => void;
   onTogglePhotoBlock: (indices: number[]) => void;
@@ -431,7 +434,7 @@ const PlainTextLines: React.FC<{
   onReplaceText: (text: string) => Promise<boolean>;
   onSave: (removeFromDocument: boolean) => void;
   onCancel: () => void;
-}> = ({ text, markedLines, photoCaptionLines, splitLineIndices, saving, detectingAuthorLine, onToggleLine, onTogglePhotoBlock, onMarkSplit, onDetectAuthor, onReplaceText, onSave, onCancel }) => {
+}> = ({ text, markedLines, photoCaptionLines, splitLineIndices, saving, allowAuthorDetection, detectingAuthorLine, onToggleLine, onTogglePhotoBlock, onMarkSplit, onDetectAuthor, onReplaceText, onSave, onCancel }) => {
   const [removeFromDoc, setRemoveFromDoc] = React.useState(true);
   const [editingText, setEditingText] = React.useState(false);
   const [draftText, setDraftText] = React.useState(text);
@@ -453,7 +456,9 @@ const PlainTextLines: React.FC<{
       {editingText ? (
         <div style={{ marginBottom: 10 }}>
           <textarea value={draftText} onChange={e => setDraftText(e.target.value)} autoFocus
-            title="Enter tworzy nową linię; każda linia po zapisie dostanie osobne przyciski ×, ✂ i A"
+            title={allowAuthorDetection
+              ? "Enter tworzy nową linię; każda linia po zapisie dostanie osobne przyciski ×, ✂ i A"
+              : "Enter tworzy nową linię; każda linia po zapisie dostanie osobne przyciski × i ✂"}
             style={{ width: "100%", minHeight: 180, boxSizing: "border-box", padding: 8, fontFamily: "inherit", fontSize: "1em", lineHeight: 1.55 }} />
           <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 6 }}>
             <button type="button" disabled={saving || !draftText.trim()} onClick={async () => {
@@ -504,14 +509,16 @@ const PlainTextLines: React.FC<{
                   ✂
                 </button>
               )}
-              <button
-                onClick={() => onDetectAuthor(i)}
-                disabled={detectingAuthorLine !== null}
-                title="Wykryj autora z tej linii i sąsiednich zdań"
-                style={{ ...lineBtnStyle, color: "#7c3aed", fontWeight: "bold" }}
-              >
-                {detectingAuthorLine === i ? "…" : "A"}
-              </button>
+              {allowAuthorDetection && (
+                <button
+                  onClick={() => onDetectAuthor(i)}
+                  disabled={detectingAuthorLine !== null}
+                  title="Wykryj autora z tej linii i sąsiednich zdań"
+                  style={{ ...lineBtnStyle, color: "#7c3aed", fontWeight: "bold" }}
+                >
+                  {detectingAuthorLine === i ? "…" : "A"}
+                </button>
+              )}
               {photoBlockIndices.length > 0 && (
                 <button
                   onClick={() => onTogglePhotoBlock(photoBlockIndices)}
@@ -1970,7 +1977,7 @@ const Chunks = () => {
                   {extractingSpeakerFor === chunk.id ? "🎙 Wykrywam…" : "🎙 Wykryj"}
                 </button>
               )}
-              {runMode === "article" && (
+              {runMode === "article" && docType !== "email" && (
                 <button
                   onClick={() => extractAuthorFromChunk(chunk.id)}
                   disabled={extractingAuthorFor === chunk.id}
@@ -2054,6 +2061,7 @@ const Chunks = () => {
                   photoCaptionLines={new Set(chunk.photo_caption_line_indices ?? [])}
                   splitLineIndices={lineSplitStates[chunk.id]?.lineIndices ?? new Set()}
                   saving={savingLines[chunk.id] ?? false}
+                  allowAuthorDetection={docType !== "email"}
                   detectingAuthorLine={extractingAuthorLine?.chunkId === chunk.id ? extractingAuthorLine.lineIdx : null}
                   onToggleLine={idx => toggleLineMark(chunk.id, idx)}
                   onTogglePhotoBlock={indices => togglePhotoBlockMark(chunk.id, indices)}
@@ -2366,7 +2374,15 @@ const Chunks = () => {
                 background: useRecleaned ? "#dbeafe" : cleanupNeeded ? "#fef3c7" : "#dcfce7",
               }}>{useRecleaned ? "widok po czyszczeniu — użyty do podziału" : cleanupNeeded ? "wykryto elementy do czyszczenia" : "tekst nie wymaga ponownego czyszczenia"}</span>}
             </div>
-            {recleanPreview && !recleanPreview.portal && (
+            {recleanPreview && docType === "email" && (
+              <div style={{
+                marginTop: 8, fontSize: "0.8em", padding: "6px 9px", borderRadius: 6,
+                color: "#1e40af", background: "#eff6ff", border: "1px solid #bfdbfe",
+              }}>
+                ℹ {recleanPreview.cleanup_note}
+              </div>
+            )}
+            {recleanPreview && docType === "webpage" && !recleanPreview.portal && (
               <div style={{
                 marginTop: 8, fontSize: "0.8em", padding: "6px 9px", borderRadius: 6,
                 color: "#92400e", background: "#fef3c7", border: "1px solid #fde68a",
@@ -2375,7 +2391,7 @@ const Chunks = () => {
                 nawigacja, komentarze, notowania czy sekcje rekomendacji mogą zostać w tekście.
               </div>
             )}
-            {recleanPreview && recleanPreview.site_rules_file && !recleanPreview.site_rules_file.ok && (
+            {recleanPreview && docType === "webpage" && recleanPreview.site_rules_file && !recleanPreview.site_rules_file.ok && (
               <div style={{
                 marginTop: 8, fontSize: "0.8em", padding: "6px 9px", borderRadius: 6,
                 color: "#991b1b", background: "#fee2e2", border: "1px solid #fecaca",
@@ -2389,31 +2405,33 @@ const Chunks = () => {
             {recleanPreview && (
               <div style={{ marginTop: 8, fontSize: "0.8em", color: "#475569" }}>
                 <div>
-                  {useRecleaned ? "Tekst po czyszczeniu" : "Tekst źródłowy"}: <strong>{(useRecleaned ? recleanPreview.after_length : recleanPreview.before_length).toLocaleString("pl")}</strong> znaków,
+                  {docType === "email" ? "Treść e-maila" : (useRecleaned ? "Tekst po czyszczeniu" : "Tekst źródłowy")}: <strong>{(useRecleaned ? recleanPreview.after_length : recleanPreview.before_length).toLocaleString("pl")}</strong> znaków,
                   przewidywany podział: <strong>{splitPreview?.count ?? "…"}</strong> {splitPreview?.count === 1 ? "chunk" : "chunków"}.
                   {cleanupNeeded && <> Cleaner zmieni {recleanPreview.removed_line_count} linii
                     {cleanupSignals.length > 0 && <> ({cleanupSignals.join(", ")})</>}.</>}
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 8, marginTop: 8 }}>
-                  <div>
-                    <div style={{ fontWeight: 700, marginBottom: 3, color: "#64748b" }}>Początek {useRecleaned ? "po czyszczeniu" : "tekstu"}</div>
-                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", maxHeight: 180, overflow: "auto", background: "#f8fafc", padding: 8, borderRadius: 4 }}>
-                      {useRecleaned ? recleanPreview.start_preview : recleanPreview.before_start_preview}
-                    </pre>
+                {docType !== "email" && <>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 8, marginTop: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, marginBottom: 3, color: "#64748b" }}>Początek {useRecleaned ? "po czyszczeniu" : "tekstu"}</div>
+                      <pre style={{ margin: 0, whiteSpace: "pre-wrap", maxHeight: 180, overflow: "auto", background: "#f8fafc", padding: 8, borderRadius: 4 }}>
+                        {useRecleaned ? recleanPreview.start_preview : recleanPreview.before_start_preview}
+                      </pre>
+                    </div>
+                    <div>
+                      <div style={{ fontWeight: 700, marginBottom: 3, color: "#64748b" }}>Koniec {useRecleaned ? "po czyszczeniu" : "tekstu"}</div>
+                      <pre style={{ margin: 0, whiteSpace: "pre-wrap", maxHeight: 180, overflow: "auto", background: "#f8fafc", padding: 8, borderRadius: 4 }}>
+                        {useRecleaned ? recleanPreview.end_preview : recleanPreview.before_end_preview}
+                      </pre>
+                    </div>
                   </div>
-                  <div>
-                    <div style={{ fontWeight: 700, marginBottom: 3, color: "#64748b" }}>Koniec {useRecleaned ? "po czyszczeniu" : "tekstu"}</div>
-                    <pre style={{ margin: 0, whiteSpace: "pre-wrap", maxHeight: 180, overflow: "auto", background: "#f8fafc", padding: 8, borderRadius: 4 }}>
-                      {useRecleaned ? recleanPreview.end_preview : recleanPreview.before_end_preview}
+                  {cleanupNeeded && !useRecleaned && <details style={{ marginTop: 5 }}>
+                    <summary style={{ cursor: "pointer" }}>Podejrzyj koniec po czyszczeniu</summary>
+                    <pre style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", background: "#f8fafc", padding: 8, borderRadius: 4 }}>
+                      {recleanPreview.end_preview}
                     </pre>
-                  </div>
-                </div>
-                {cleanupNeeded && !useRecleaned && <details style={{ marginTop: 5 }}>
-                  <summary style={{ cursor: "pointer" }}>Podejrzyj koniec po czyszczeniu</summary>
-                  <pre style={{ whiteSpace: "pre-wrap", maxHeight: 220, overflow: "auto", background: "#f8fafc", padding: 8, borderRadius: 4 }}>
-                    {recleanPreview.end_preview}
-                  </pre>
-                </details>}
+                  </details>}
+                </>}
               </div>
             )}
           </div>

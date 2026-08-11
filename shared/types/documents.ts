@@ -6,6 +6,7 @@ export interface Document {
   url: string;
   canonical_url: string;
   tags: string;
+  search_terms: string;
   title: string;
   summary: string;
   text: string;
@@ -50,6 +51,7 @@ export const emptyDocument: Document = {
   url: "",
   canonical_url: "",
   tags: "",
+  search_terms: "",
   title: "",
   summary: "",
   text: "",

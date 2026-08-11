@@ -4,6 +4,11 @@ Status: propozycja do review
 Zakres: PostgreSQL, backend Flask/SQLAlchemy, Bielik 11B, frontend React  
 Poza zakresem: Slack bot i utrzymywanie zgodności jego testowego API
 
+> **Aktualizacja po zamknięciu planu (2026-08-11):** wdrożono `documents.search_terms` —
+> Bielikowe frazy odzyskiwania dodawane do leksykalnego legu, gdy cel pamiętany przez użytkownika
+> nie występuje dosłownie w treści. Mechanizm nie zmienia kontraktu parsera ani filtrów z planu;
+> szczegóły są w [search-hybrid.md](search-hybrid.md).
+
 ## 1. Cel
 
 Użytkownik powinien móc wpisać luźne polskie zdanie, np.:

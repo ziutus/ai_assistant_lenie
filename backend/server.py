@@ -2261,6 +2261,32 @@ def email_footer_rule(document_id: int):
     return {"status": "success", "email_sender": sender, "text": doc.text}, 200
 
 
+@app.route('/document/<int:document_id>/search_terms/generate', methods=['POST'])
+def generate_document_search_terms(document_id: int):
+    """Generate retrieval phrases without overwriting a reviewed value by default."""
+    session = get_scoped_session()
+    doc = session.get(Document, document_id)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+
+    data = request.get_json(silent=True) or {}
+    replace = bool(data.get("replace", False))
+    if (doc.search_terms or "").strip() and not replace:
+        return {"status": "success", "search_terms": doc.search_terms, "generated": False}, 200
+    text = (doc.text_md or doc.text or "").strip()
+    if not text:
+        return {"status": "error", "message": "Document has no usable text"}, 400
+
+    from library.search_terms import generate_search_terms
+
+    terms = generate_search_terms(text, doc.title or "")
+    if not terms:
+        return {"status": "error", "message": "Could not generate search terms"}, 502
+    doc.search_terms = ", ".join(terms)
+    session.commit()
+    return {"status": "success", "search_terms": doc.search_terms, "generated": True}, 200
+
+
 @app.route('/website_save', methods=['POST'])
 def website_save():
     url = request.form.get('url')
@@ -2269,7 +2295,7 @@ def website_save():
 
     link_id = request.form.get('id')
     attrs = {}
-    for attr in ('text', 'text_md', 'title', 'language', 'tags', 'summary', 'source', 'byline', 'email_sender', 'note'):
+    for attr in ('text', 'text_md', 'title', 'language', 'tags', 'search_terms', 'summary', 'source', 'byline', 'email_sender', 'note'):
         value = request.form.get(attr)
         if value is not None:
             attrs[attr] = value

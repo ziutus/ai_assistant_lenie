@@ -430,6 +430,7 @@ class DocumentRepository:
             " ",
             func.coalesce(Document.title, ""),
             func.coalesce(Document.tags, ""),
+            func.coalesce(Document.search_terms, ""),
             func.coalesce(Document.note, ""),
             func.coalesce(func.nullif(Document.text_md, ""), Document.text, ""),
         ))
@@ -460,6 +461,7 @@ class DocumentRepository:
                 # is often boilerplate/AI summary, not the matched sentence) must
                 # not be scored as absent. See docs/search-hybrid.md.
                 "text_for_scoring": doc.text_md or doc.text or "",
+                "search_terms": doc.search_terms,
                 "similarity": 0.0,
                 "id": None,
                 "url": doc.url,

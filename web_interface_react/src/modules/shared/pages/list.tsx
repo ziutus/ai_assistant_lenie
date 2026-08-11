@@ -355,7 +355,7 @@ const List = () => {
             // social_media_post text arrives at creation, not through the
             // download pipeline, so it stays at URL_ADDED indefinitely —
             // unlike the other types here, URL_ADDED does NOT mean "no text yet".
-            const hasReadableText = item.document_type === "social_media_post" ||
+            const hasReadableText = ["social_media_post", "email"].includes(item.document_type) ||
               (["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.processing_status));
             return (
             <li

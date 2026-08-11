@@ -182,7 +182,9 @@ class SearchService:
             # 1000-char display snippet (text) -- a match past the first 1000
             # chars must not be scored as absent. See docs/search-hybrid.md.
             full_text = item.get("text_for_scoring") or item.get("text")
-            scoring_text = " ".join(filter(None, [item.get("title"), item.get("tags"), item.get("note"), full_text]))
+            scoring_text = " ".join(filter(None, [
+                item.get("title"), item.get("tags"), item.get("search_terms"), item.get("note"), full_text,
+            ]))
             body = self._normalise(scoring_text)
             # Occurrence-weighted, not plain-presence, coverage -- see
             # _token_coverage() docstring.
@@ -218,6 +220,7 @@ class SearchService:
             ), 6)
             candidate["search_match"] = "hybrid" if semantic_score and text_score else ("semantic" if semantic_score else "text")
             candidate.pop("tags", None)
+            candidate.pop("search_terms", None)
             candidate.pop("note", None)
             candidate.pop("text_for_scoring", None)
 

@@ -16,6 +16,7 @@ const Email = () => {
   const [footerBusy, setFooterBusy] = React.useState(false);
   const [savedFooter, setSavedFooter] = React.useState<string | null>(null);
   const [footerLoaded, setFooterLoaded] = React.useState(false);
+  const [searchTermsBusy, setSearchTermsBusy] = React.useState(false);
 
   React.useEffect(() => {
     if (id) {
@@ -32,6 +33,7 @@ const Email = () => {
       language: "",
       url: "",
       tags: "",
+      search_terms: "",
       title: "",
       document_type: "email",
       summary: "",
@@ -139,6 +141,26 @@ const Email = () => {
     }
   };
 
+  const generateSearchTerms = async () => {
+    if (!formik.values.id) return;
+    setSearchTermsBusy(true);
+    try {
+      const response = await fetch(`${apiUrl}/document/${formik.values.id}/search_terms/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey ?? "" },
+        body: JSON.stringify({ replace: Boolean(formik.values.search_terms?.trim()) }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.message || "Nie udało się wygenerować fraz.");
+      formik.setFieldValue("search_terms", data.search_terms || "");
+      setFooterMessage("Frazy wyszukiwawcze zostały wygenerowane. Zapisz formularz, aby zachować ewentualne ręczne poprawki.");
+    } catch (error: any) {
+      setFooterMessage(error.message || "Nie udało się wygenerować fraz.");
+    } finally {
+      setSearchTermsBusy(false);
+    }
+  };
+
   return (
     <div>
       <h2 style={{ marginBottom: "10px" }}>Email</h2>
@@ -164,6 +186,11 @@ const Email = () => {
           isLoading={isLoading}
           handleRemoveNotNeededText={handleRemoveNotNeededText}
         />
+        {formik.values.id && (
+          <button type="button" className="button" onClick={generateSearchTerms} disabled={isLoading || searchTermsBusy}>
+            {searchTermsBusy ? "Generuję frazy…" : "Generuj frazy wyszukiwawcze"}
+          </button>
+        )}
         {formik.values.id && (
           <section style={{ margin: "12px 0", padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
             <strong>Stopka e-maila</strong>

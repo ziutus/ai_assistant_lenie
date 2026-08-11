@@ -629,6 +629,9 @@ class Document(Base):
     # Stable mailbox identity for email documents.  Deliberately separate from
     # byline: a display name is not a reliable key for sender-specific rules.
     email_sender: Mapped[str | None] = mapped_column(String(320), index=True)
+    # Short LLM-generated retrieval aliases, e.g. "audyt NDA, sprawdzenie umowy".
+    # Separate from the controlled thematic taxonomy in ``tags``.
+    search_terms: Mapped[str | None] = mapped_column(Text)
     document_length: Mapped[int | None] = mapped_column(Integer)
     chapter_list: Mapped[str | None] = mapped_column(Text)
     video_description: Mapped[str | None] = mapped_column(Text)
@@ -895,6 +898,7 @@ class Document(Base):
             "canonical_url": self.canonical_url,
             "language": self.language,
             "tags": self.tags,
+            "search_terms": self.search_terms,
             "text": self.text,
             "paywall": self.paywall,
             "requires_login": self.requires_login,

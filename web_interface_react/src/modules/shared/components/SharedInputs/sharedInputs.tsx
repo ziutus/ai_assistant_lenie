@@ -370,6 +370,15 @@ const SharedInputs = ({
         suggestions={tagSuggestions}
         onChange={(csv) => formik.setFieldValue("tags", csv)}
       />
+      <Input
+        disabled={isLoading}
+        value={formik.values.search_terms ?? ""}
+        label={"Frazy wyszukiwawcze"}
+        onChange={formik.handleChange}
+        id={"search_terms"}
+        name={"search_terms"}
+        type={"text"}
+      />
     </>
   );
 };

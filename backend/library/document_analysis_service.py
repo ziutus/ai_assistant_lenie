@@ -581,7 +581,10 @@ class DocumentAnalysisService:
                 doc.published_on_method = "relative"
                 log(f"published_on backfilled from relative-date artifact: {resolved.isoformat()}")
 
-        if reclean:
+        # Article cleanup is deliberately not applied to emails.  Their
+        # repetitive content is handled by exact, sender-specific footer
+        # rules at ingestion/edit time; portal heuristics would be unsafe.
+        if reclean and getattr(doc, "document_type", None) != "email":
             from library.article_cleaner import clean_article_text
 
             original_length = len(text)
@@ -818,6 +821,14 @@ class DocumentAnalysisService:
             if tagging_text:
                 log("tagging document...")
                 _apply_tags(doc, tagging_text)
+                # Search phrases are generated once.  A non-empty value may
+                # have been reviewed or written manually, so never overwrite it.
+                if not (getattr(doc, "search_terms", None) or "").strip():
+                    from library.search_terms import generate_search_terms
+
+                    terms = generate_search_terms(tagging_text, doc.title or "")
+                    if terms:
+                        doc.search_terms = ", ".join(terms)
 
             # 11b2. Article author fallback (LLM) — article_metadata.extract_article_author()
             #       (deterministic, WP.pl only) already ran at import time; this is a
