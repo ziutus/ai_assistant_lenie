@@ -73,7 +73,7 @@ const InputsForAllExceptLink = ({
             </div>
         )}
       <br/>
-      {!showCleanText && (
+      {formik.values.document_type === "youtube" && (
         <Input
           disabled={isLoading}
           value={formik.values.chapter_list}

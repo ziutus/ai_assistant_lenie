@@ -626,6 +626,9 @@ class Document(Base):
     # cleanup rules. ck_documents_published_on_method enforces this set.
     published_on_method: Mapped[str | None] = mapped_column(String(10))
     original_id: Mapped[str | None] = mapped_column(Text)
+    # Stable mailbox identity for email documents.  Deliberately separate from
+    # byline: a display name is not a reliable key for sender-specific rules.
+    email_sender: Mapped[str | None] = mapped_column(String(320), index=True)
     document_length: Mapped[int | None] = mapped_column(Integer)
     chapter_list: Mapped[str | None] = mapped_column(Text)
     video_description: Mapped[str | None] = mapped_column(Text)
@@ -906,6 +909,7 @@ class Document(Base):
             "published_on": self.published_on,
             "published_on_method": self.published_on_method,
             "original_id": self.original_id,
+            "email_sender": self.email_sender,
             "document_length": self.document_length,
             "chapter_list": self.chapter_list,
             "video_description": self.video_description,
@@ -1264,6 +1268,23 @@ class DocumentRemovedLine(Base):
 
     def __repr__(self) -> str:
         return f"DocumentRemovedLine(id={self.id!r}, document_id={self.document_id!r}, source={self.source!r})"
+
+
+class EmailFooterRule(Base):
+    """One opt-in, exact trailing-footer rule per normalized sender address."""
+
+    __tablename__ = "email_footer_rules"
+    __table_args__ = (UniqueConstraint("sender_email", name="uq_email_footer_rules_sender_email"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sender_email: Mapped[str] = mapped_column(String(320), nullable=False)
+    footer_text: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now(),
+    )
 
 
 class GeocodeCache(Base):

@@ -162,6 +162,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
           document_type: website.document_type,
           chapter_list: website.chapter_list,
           byline: website.byline,
+          email_sender: website.email_sender,
           note: website.note,
         },
         {
@@ -226,6 +227,7 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
             : "READY_FOR_EMBEDDING",
           chapter_list: website.chapter_list,
           byline: website.byline,
+          email_sender: website.email_sender,
           note: website.note,
         },
         {

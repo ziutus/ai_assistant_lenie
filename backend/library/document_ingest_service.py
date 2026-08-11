@@ -33,6 +33,7 @@ class IngestRequest:
     ai_summary: bool = False
     chapter_list: object = False
     byline: str = ""
+    email_sender: str | None = None
     original_id: str | None = None
     published_on: object | None = None
     operation: str = "create"
@@ -89,6 +90,7 @@ class DocumentIngestService:
                 ai_summary=request.ai_summary,
                 chapter_list=request.chapter_list,
                 byline=request.byline,
+                email_sender=request.email_sender,
                 original_id=request.original_id,
                 published_on=request.published_on,
                 external_uuid=request.external_uuid,

@@ -72,6 +72,7 @@ class DocumentService:
         ai_summary: bool = False,
         chapter_list: bool = False,
         byline: str = "",
+        email_sender: str | None = None,
         original_id: str | None = None,
         published_on=None,
         external_uuid: str | None = None,
@@ -125,9 +126,15 @@ class DocumentService:
             # Social posts and emails arrive as already extracted plain text.
             # Do not send them through webpage HTML storage/cleanup, which
             # would reintroduce the source application's UI and thread chrome.
-            doc.text = text or None
+            if url_type == "email":
+                from library.email_footer_rules import apply_footer_rule, normalize_sender_email
+
+                doc.email_sender = normalize_sender_email(email_sender)
+                doc.text = apply_footer_rule(self.session, doc.email_sender, text) or None
+            else:
+                doc.text = text or None
             doc.text_raw = text or None
-            doc.document_length = len(text) if text else None
+            doc.document_length = len(doc.text) if doc.text else None
         doc.byline = byline or None
         doc.original_id = original_id
         if published_on:
@@ -224,7 +231,7 @@ class DocumentService:
         """Look up or create a document, apply attribute updates, and commit.
 
         Accepted keyword attrs: text, text_md, title, language, tags, summary,
-        source, byline, note.
+        source, byline, email_sender, note.
 
         For webpages ``text_md`` is the canonical editable article body.
         ``text`` is maintained as a derived plain-text compatibility/search
@@ -262,6 +269,10 @@ class DocumentService:
             doc.set_document_type(document_type)
 
         effective_type = document_type or doc.document_type
+        if effective_type == "email" and attrs.get("email_sender") is not None:
+            from library.email_footer_rules import normalize_sender_email
+
+            doc.email_sender = normalize_sender_email(attrs["email_sender"])
         submitted_text = attrs.get("text")
         submitted_md = attrs.get("text_md")
         previous_canonical_text = (
@@ -282,7 +293,12 @@ class DocumentService:
         elif submitted_text is not None:
             # Transcripts and other non-webpage documents keep plain text as
             # their native canonical representation.
+            if effective_type == "email":
+                from library.email_footer_rules import apply_footer_rule
+
+                submitted_text = apply_footer_rule(self.session, doc.email_sender, submitted_text)
             doc.text = submitted_text
+            doc.document_length = len(submitted_text) if submitted_text else None
         if effective_type != "webpage" and submitted_md is not None:
             doc.text_md = submitted_md
 
