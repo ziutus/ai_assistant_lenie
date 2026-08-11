@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [1.0.45] - 2026-08-11
+### Fixed
+- Import Gmaila usuwa puste wiersze wynikające z układu HTML wiadomości.
+
 ## [1.0.44] - 2026-08-11
 ### Added
 - Linki widoczne w importowanej wiadomości Gmail są zapisywane jako `etykieta (URL)`.

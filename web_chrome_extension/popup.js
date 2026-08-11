@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedSocialPlatform = '';
   let detectedEmailAuthor = '';
   let detectedEmailId = '';
-  const debugState = { version: '1.0.44' };
+  const debugState = { version: '1.0.45' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -443,7 +443,11 @@ document.addEventListener('DOMContentLoaded', function () {
                  anchor.replaceWith(document.createTextNode(label));
                }
              });
-             return { text: clean(copy.innerText || copy.textContent || ''), links };
+             // Gmail's nested div layout often yields a blank line after every
+             // visible line. Keep line breaks but remove visual spacer lines.
+             const text = clean(copy.innerText || copy.textContent || '')
+               .replace(/\n[ \t]*\n+/g, '\n');
+             return { text, links };
            };
            let postText = '';
            let author = '';
