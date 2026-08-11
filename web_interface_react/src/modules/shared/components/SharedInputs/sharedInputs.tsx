@@ -5,6 +5,7 @@ import Select from "../Select/select";
 import TagsInput from "../TagsInput/tagsInput";
 import { NavLink } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
+import { toOpenableSourceUrl } from "../../utils/sourceUrl";
 
 interface SharedInputsProps {
   formik: any;
@@ -307,7 +308,7 @@ const SharedInputs = ({
             isLoading || formik.values.url === "" ? "button disabled" : "button"
           }
           style={{ marginTop: "13px", marginLeft: "10px" }}
-          href={formik.values.url}
+          href={toOpenableSourceUrl(formik.values.url)}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -335,7 +336,7 @@ const SharedInputs = ({
             <a
               className="button"
               style={{ marginLeft: "10px" }}
-              href={formik.values.canonical_url}
+              href={toOpenableSourceUrl(formik.values.canonical_url, formik.values.url)}
               target="_blank"
               rel="noopener noreferrer"
             >

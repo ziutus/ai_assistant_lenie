@@ -11,6 +11,7 @@ import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timel
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
 import { useIsDesktop } from "../hooks/useIsDesktop";
+import { toOpenableSourceUrl } from "../utils/sourceUrl";
 import styles from "./read.module.css";
 
 // Lazy-loaded: leaflet (~150 kB) should not land in the main bundle for users
@@ -1109,7 +1110,7 @@ const Read: React.FC = () => {
           {docPublishedOn && <span>📅 Opublikowano: {new Date(docPublishedOn).toLocaleDateString("pl-PL")}</span>}
           {docIngestedAt && <span>Dodano do Lenie: {new Date(docIngestedAt).toLocaleDateString("pl-PL")}</span>}
           {docUrl && (
-            <a href={docUrl} target="_blank" rel="noreferrer" style={{ color: "#0369a1", wordBreak: "break-all" }}>
+            <a href={toOpenableSourceUrl(docUrl)} target="_blank" rel="noreferrer" style={{ color: "#0369a1", wordBreak: "break-all" }}>
               🔗 Oryginał ↗
             </a>
           )}
