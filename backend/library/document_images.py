@@ -37,7 +37,7 @@ def replace_document_images(
         DocumentImage(
             document_id=document_id,
             chunk_id=chunk_id,
-            position=position,
+            position=image.get("position", position),
             url=image["url"],
             alt_text=image.get("alt") or None,
             caption_text=image.get("caption_text"),

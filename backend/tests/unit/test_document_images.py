@@ -160,6 +160,14 @@ class TestReplaceDocumentImages:
         )
         assert rows[0].chunk_id == 42
 
+    def test_preserves_explicit_marker_position(self):
+        session = MagicMock(spec=["execute", "add_all"])
+        rows = replace_document_images(
+            session, document_id=1,
+            images=[{"position": 7, "alt": "wykres", "url": "https://example.com/chart.png"}],
+        )
+        assert rows[0].position == 7
+
     def test_only_deletes_url_sourced_rows(self):
         """A web-article reclean must never touch a book's storage_key rows."""
         session = MagicMock(spec=["execute", "add_all"])

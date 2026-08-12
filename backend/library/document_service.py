@@ -12,6 +12,7 @@ Session is passed in by the caller, not created here.
 import logging
 import os
 import uuid
+from urllib.parse import urlparse
 
 from sqlalchemy.orm import Session
 
@@ -73,6 +74,7 @@ class DocumentService:
         chapter_list: bool = False,
         byline: str = "",
         email_sender: str | None = None,
+        images: list[dict] | None = None,
         original_id: str | None = None,
         published_on=None,
         external_uuid: str | None = None,
@@ -128,9 +130,11 @@ class DocumentService:
             # would reintroduce the source application's UI and thread chrome.
             if url_type == "email":
                 from library.email_footer_rules import apply_footer_rule, normalize_sender_email
+                from library.tracking_urls import resolve_tracking_urls_in_text
 
                 doc.email_sender = normalize_sender_email(email_sender)
-                doc.text = apply_footer_rule(self.session, doc.email_sender, text) or None
+                normalized_text = resolve_tracking_urls_in_text(text)
+                doc.text = apply_footer_rule(self.session, doc.email_sender, normalized_text) or None
             else:
                 doc.text = text or None
             doc.text_raw = text or None
@@ -155,8 +159,63 @@ class DocumentService:
         self.session.add(doc)
         self.session.commit()
 
+        if url_type == "email" and images:
+            self.replace_email_images(doc.id, images)
+
         logger.info("Successfully saved document to database with ID: %s", doc.id)
         return doc
+
+    def replace_email_images(self, document_id: int, images: list[dict]) -> None:
+        """Replace externally hosted images captured from an email body.
+
+        This supports a re-import of the same Gmail message: its stable
+        ``gmail://`` identity keeps the text record, while newly supported
+        image metadata can be populated without deleting the document.
+        """
+        normalized_images = []
+        for fallback_position, image in enumerate(images[:30]):
+            if not isinstance(image, dict):
+                continue
+            raw_url = image.get("url")
+            if not isinstance(raw_url, str):
+                continue
+            url_value = raw_url.strip()
+            if urlparse(url_value).scheme not in {"http", "https"}:
+                continue
+            try:
+                position = int(image.get("position", fallback_position))
+            except (TypeError, ValueError):
+                position = fallback_position
+            if position < 0:
+                continue
+            alt = image.get("alt_text") or image.get("alt") or ""
+            normalized_images.append({
+                "url": url_value,
+                "alt": str(alt).strip()[:500],
+                "position": position,
+            })
+        if not normalized_images:
+            return
+
+        from library.document_images import replace_document_images
+
+        replace_document_images(self.session, document_id, normalized_images)
+        self.session.commit()
+
+    def normalize_email_tracking_links(self, doc: Document) -> bool:
+        """Repair tracking links in an existing email without replacing edits."""
+        if doc.document_type != "email" or not doc.text:
+            return False
+        from library.tracking_urls import resolve_tracking_urls_in_text
+
+        normalized_text = resolve_tracking_urls_in_text(doc.text)
+        if normalized_text == doc.text:
+            return False
+        doc.text = normalized_text
+        doc.text_raw = resolve_tracking_urls_in_text(doc.text_raw or "") or None
+        doc.document_length = len(doc.text)
+        self.session.commit()
+        return True
 
     def _store_file(self, uid: str, extension: str, content: str, use_s3=None, s3_client=None,
                     bucket_name: str | None = None, storage=None) -> None:

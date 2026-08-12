@@ -308,6 +308,7 @@ def url_add():
                 chapter_list=url_data.get("chapter_list", False),
                 byline=url_data.get("byline", ""),
                 email_sender=url_data.get("email_sender"),
+                images=url_data.get("images"),
                 original_id=url_data.get("original_id"),
                 published_on=url_data.get("published_on"),
                 operation=url_data.get("operation", "create"),

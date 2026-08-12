@@ -58,7 +58,8 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedEmailSender = '';
   let detectedEmailId = '';
   let detectedEmailPublishedOn = '';
-  const debugState = { version: '1.0.51' };
+  let detectedEmailImages = [];
+  const debugState = { version: '1.0.54' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -399,6 +400,7 @@ document.addEventListener('DOMContentLoaded', function () {
       typeSelect.value = 'email';
       toggleCapturedContentVisibility();
     }
+    updateDebug({ type_after_detection: typeSelect.value });
 
     chrome.scripting.executeScript(
       {
@@ -426,17 +428,69 @@ document.addEventListener('DOMContentLoaded', function () {
                  && parsed.pathname === '/url') {
                  return parsed.searchParams.get('q') || parsed.searchParams.get('url') || parsed.href;
                }
+               // Kit/ConvertKit stores the destination in URL-safe base64 as
+               // its final path component. Decode it locally, rather than
+               // loading a tracking URL and marking the email as read.
+               if (/(?:^|\.)click\.kit-mail\d*\.com$/i.test(parsed.hostname)) {
+                 const token = parsed.pathname.split('/').filter(Boolean).pop() || '';
+                 try {
+                   const base64 = token.replace(/-/g, '+').replace(/_/g, '/')
+                     + '='.repeat((4 - token.length % 4) % 4);
+                   const bytes = Uint8Array.from(atob(base64), char => char.charCodeAt(0));
+                   const destination = new URL(new TextDecoder().decode(bytes));
+                   if (/^https?:$/.test(destination.protocol)) {
+                     // Match backend canonicalization for the most common
+                     // newsletter identifiers while retaining meaningful
+                     // query parameters.
+                     [...destination.searchParams.keys()].forEach(key => {
+                       if (/^(?:utm_|mc_|ss_|vero_)/i.test(key)
+                         || /^(?:_ga|_gl|dclid|fbclid|gclid|gbraid|igshid|msclkid|twclid|wbraid)$/i.test(key)) {
+                         destination.searchParams.delete(key);
+                       }
+                     });
+                     destination.hash = '';
+                     if (destination.pathname.length > 1) destination.pathname = destination.pathname.replace(/\/+$/, '');
+                     return destination.href;
+                   }
+                 } catch (_) {
+                   // Preserve the source link if its token is not a valid URL.
+                 }
+               }
                return parsed.href;
              } catch (_) {
                return value;
              }
            };
            const emailTextWithLinks = body => {
-             if (!body) return { text: '', links: 0 };
+             if (!body) return { text: '', links: 0, images: [] };
+             const images = [];
+             const markerNodes = [];
+             // Gmail's innerText gives us its real paragraph layout but omits
+             // <img>. Insert ephemeral markers before reading it, then remove
+             // them immediately so the source message is left untouched.
+             body.querySelectorAll('img[src]').forEach(img => {
+               if (images.length >= 30) return;
+               const src = (img.currentSrc || img.getAttribute('src') || '').trim();
+               if (!/^https?:\/\//i.test(src)) return;
+               const width = Number(img.getAttribute('width')) || img.getBoundingClientRect().width;
+               const height = Number(img.getAttribute('height')) || img.getBoundingClientRect().height;
+               // Do not retain common open-tracking pixels. Unknown dimensions
+               // are retained because Gmail can lazy-load newsletter artwork.
+               if ((width && width <= 1) || (height && height <= 1)) return;
+               const position = images.length;
+               images.push({ position, url: src, alt_text: clean(img.getAttribute('alt') || '') });
+               const marker = document.createElement('span');
+               marker.textContent = `\n\n[img${position}]\n\n`;
+               marker.setAttribute('aria-hidden', 'true');
+               marker.style.cssText = 'display:inline;font-size:0;line-height:0;opacity:0;pointer-events:none';
+               img.insertAdjacentElement('afterend', marker);
+               markerNodes.push(marker);
+             });
              // Start with the rendered Gmail text, not a detached DOM clone.
              // innerText preserves paragraph and list boundaries exactly as the
              // user sees them; a detached clone loses those boundaries.
              let renderedText = body.innerText || body.textContent || '';
+             markerNodes.forEach(marker => marker.remove());
              let links = 0;
              body.querySelectorAll('a[href]').forEach(anchor => {
                const href = normalizeEmailHref(anchor.getAttribute('href') || anchor.href);
@@ -456,6 +510,16 @@ document.addEventListener('DOMContentLoaded', function () {
              let previousBlank = true;
              for (const rawLine of lines) {
                const line = rawLine.replace(/[\u200B-\u200D\uFEFF]/g, '').replace(/[ \t]+/g, ' ').trim();
+               // Gmail can put the inserted image marker and a neighbouring
+               // CTA in one visual line ("[img4] Pobierz"). Split it back
+               // into reader blocks so the image retains its position.
+               const markerWithText = line.match(/^(\[img\d+\])\s+(.+)$/);
+               if (markerWithText) {
+                 if (!previousBlank) normalizedLines.push('');
+                 normalizedLines.push(markerWithText[1], '', markerWithText[2]);
+                 previousBlank = false;
+                 continue;
+               }
                if (!line) {
                  if (!previousBlank) normalizedLines.push('');
                  previousBlank = true;
@@ -465,7 +529,7 @@ document.addEventListener('DOMContentLoaded', function () {
                }
              }
              const text = normalizedLines.join('\n').trim();
-             return { text, links };
+             return { text, links, images };
            };
            const emailDateToIso = rawValue => {
              const value = clean(rawValue).toLowerCase();
@@ -533,6 +597,7 @@ document.addEventListener('DOMContentLoaded', function () {
            let emailId = '';
            let emailSubject = '';
            let emailPublishedOn = '';
+           let emailImages = [];
           let pageDebug = {};
           let fallbackExtraction = '';
           if (isFacebook) {
@@ -638,6 +703,7 @@ document.addEventListener('DOMContentLoaded', function () {
              const body = messageBodies[messageBodies.length - 1];
              const extractedBody = emailTextWithLinks(body);
              emailText = extractedBody.text;
+             emailImages = extractedBody.images;
              const messageRoot = body?.closest('[data-message-id], .adn, .h7');
              emailSubject = clean(document.querySelector('h2.hP, h2[data-thread-perm-id], [role="main"] h2')?.innerText || '');
              const sender = messageRoot?.querySelector('.gD[email], .gD')
@@ -653,6 +719,7 @@ document.addEventListener('DOMContentLoaded', function () {
                body_candidates: messageBodies.length,
                selected_body_length: emailText.length,
                extracted_link_count: extractedBody.links,
+               extracted_image_count: emailImages.length,
                email_id_found: Boolean(emailId),
                email_published_on_found: Boolean(emailPublishedOn),
              };
@@ -670,6 +737,7 @@ document.addEventListener('DOMContentLoaded', function () {
               emailId,
              emailSubject,
               emailPublishedOn,
+              emailImages,
               pageDebug
           };
         }
@@ -713,6 +781,7 @@ document.addEventListener('DOMContentLoaded', function () {
             detectedEmailSender = results[0].result.emailSender || '';
             detectedEmailId = results[0].result.emailId || '';
             detectedEmailPublishedOn = results[0].result.emailPublishedOn || '';
+            detectedEmailImages = results[0].result.emailImages || [];
             if (results[0].result.emailAuthor) {
               pageDescriptionInput.value = `Nadawca: ${results[0].result.emailAuthor}`;
             }
@@ -799,6 +868,7 @@ document.addEventListener('DOMContentLoaded', function () {
             email_sender: isEmail ? detectedEmailSender : undefined,
             original_id: isEmail ? emailIdentity : undefined,
             published_on: isEmail ? detectedEmailPublishedOn || undefined : undefined,
+            images: isEmail ? detectedEmailImages : undefined,
           };
           data.external_uuid = createExternalUuid();
           updateDebug({
@@ -806,6 +876,7 @@ document.addEventListener('DOMContentLoaded', function () {
             payload_type: data.type,
             payload_social_platform: data.social_platform,
             payload_text_length: data.text.length,
+            payload_image_count: data.images?.length || 0,
             payload_requires_login: data.requires_login,
             payload_published_on: data.published_on || null
           });

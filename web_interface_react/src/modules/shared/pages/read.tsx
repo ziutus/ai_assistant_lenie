@@ -144,7 +144,7 @@ const SOURCE_ROLE_LABELS: Record<string, string> = {
 // Raw markdown image syntax (web-article text) — still skipped entirely, distinct
 // from our own [imgN] markers (book PDF images) handled by IMG_MARKER below.
 const IMAGE_LINE = /^!\[[^\]]*\]\([^)]*\)$/;
-const IMG_MARKER = /^\[img(\d+)\]$/;
+const IMG_MARKER = /^\[img(\d+)\](?:\s+([\s\S]+))?$/;
 // In-text jump target inserted by e.g. library.book_pdf_import._link_table_captions()
 // before a book table's real occurrence — see ANCHOR_LINK in renderInline() for
 // the clickable link that navigates here (GET /document/:id/anchor/:anchor_id).
@@ -477,6 +477,24 @@ function renderMarkdown(
     if (markerMatch) {
       const img = images?.get(Number(markerMatch[1]));
       if (img) out.push(renderChapterImage(img, i));
+      // Gmail can place an image marker directly beside a CTA, e.g.
+      // "[img4] Pobierz". Preserve the CTA rather than leaving the marker as
+      // visible text or discarding the whole line.
+      const trailingText = markerMatch[2]?.trim();
+      if (trailingText) {
+        const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
+          trailingText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick,
+        );
+        out.push(
+          <p key={`${i}-trailing`} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={{
+            lineHeight: 1.65, margin: "14px 0", textAlign: "justify",
+            ...(paragraphTint ? { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 } : {}),
+            ...(timelineTint ? { background: "#fff7ed", borderLeft: "3px solid #f59e0b", paddingLeft: 8 } : {}),
+          }}>
+            {nodes}
+          </p>,
+        );
+      }
       return;
     }
     const anchorMatch = trimmed.match(ANCHOR_MARKER);

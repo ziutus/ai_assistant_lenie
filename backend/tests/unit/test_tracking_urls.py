@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from library.tracking_urls import is_tracking_url, resolve_tracking_url
+from library.tracking_urls import is_tracking_url, resolve_tracking_url, resolve_tracking_urls_in_text
 
 
 KIT_URL = (
@@ -31,6 +31,14 @@ def test_decodes_kit_tracking_link_without_request(mock_request, mock_validate):
     assert resolve_tracking_url(KIT_URL) == CANONICAL_DESTINATION
     mock_request.assert_not_called()
     mock_validate.assert_not_called()
+
+
+@patch("library.tracking_urls.requests.request")
+def test_replaces_embedded_kit_link_in_plain_email_text_without_request(mock_request):
+    text = f"Incident Impact: policzyłem ({KIT_URL})"
+
+    assert resolve_tracking_urls_in_text(text) == f"Incident Impact: policzyłem ({CANONICAL_DESTINATION})"
+    mock_request.assert_not_called()
 
 
 @patch("library.tracking_urls.validate_url_target")

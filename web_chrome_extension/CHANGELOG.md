@@ -1,5 +1,10 @@
 # CHANGELOG
 
+## [1.0.54] - 2026-08-12
+### Added
+- Import Gmaila zapisuje obrazy z treści wiadomości (adresy URL, znaczniki `[imgN]`, piksele śledzące są pomijane) — czytnik pokazuje je inline.
+- Linki `click.kit-mail*.com` (Kit/ConvertKit) są rozpakowywane lokalnie tak samo jak inne przekierowania newsletterowe.
+
 ## [1.0.51] - 2026-08-12
 ### Fixed
 - Wydanie naprawiające import Gmaila z datą wysłania wiadomości.
