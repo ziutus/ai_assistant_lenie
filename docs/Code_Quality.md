@@ -24,6 +24,7 @@ make security-deps   # Check dependencies for vulnerabilities (pip-audit)
 make security-bandit # Run bandit Python security linter
 make security-safety # Check dependencies with safety
 make security-all    # Run all security checks
+.\scripts\security-depx.ps1 # Windows: check lockfiles for malicious packages
 ```
 
 | Tool | Purpose |
@@ -32,6 +33,9 @@ make security-all    # Run all security checks
 | pip-audit | Dependency vulnerability scanning (PyPI advisory DB) |
 | Bandit | Python-specific security linter |
 | Safety | Dependency vulnerability check (requires free account) |
+| depx | Known malicious or hijacked package detection (supply-chain malware) |
+
+For the native Windows command, CI-gate behavior, and finding triage, see [Dependency Supply-Chain Scanning](security/dependency-supply-chain-scanning.md). `depx` complements CVE scanners such as pip-audit and Dependabot; it does not replace them.
 
 ## Code Duplication Detection
 
