@@ -57,7 +57,8 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedEmailAuthor = '';
   let detectedEmailSender = '';
   let detectedEmailId = '';
-  const debugState = { version: '1.0.49' };
+  let detectedEmailPublishedOn = '';
+  const debugState = { version: '1.0.50' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -466,6 +467,63 @@ document.addEventListener('DOMContentLoaded', function () {
              const text = normalizedLines.join('\n').trim();
              return { text, links };
            };
+           const emailDateToIso = rawValue => {
+             const value = clean(rawValue).toLowerCase();
+             if (!value) return '';
+             const monthNumbers = {
+               jan: 1, january: 1, sty: 1, styczen: 1, stycznia: 1,
+               feb: 2, february: 2, lut: 2, luty: 2, lutego: 2,
+               mar: 3, march: 3, marzec: 3, marca: 3,
+               apr: 4, april: 4, kwi: 4, kwiecien: 4, kwietnia: 4,
+               may: 5, maj: 5, maja: 5,
+               jun: 6, june: 6, cze: 6, czerwiec: 6, czerwca: 6,
+               jul: 7, july: 7, lip: 7, lipiec: 7, lipca: 7,
+               aug: 8, august: 8, sie: 8, sierpien: 8, sierpnia: 8,
+               sep: 9, sept: 9, september: 9, wrz: 9, wrzesien: 9, wrzesnia: 9,
+               oct: 10, october: 10, paz: 10, pazdziernik: 10, pazdziernika: 10,
+               nov: 11, november: 11, lis: 11, listopad: 11, listopada: 11,
+               dec: 12, december: 12, gru: 12, grudzien: 12, grudnia: 12
+             };
+             const normalizeMonth = month => month.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+             const iso = value.match(/\b(\d{4})-(\d{2})-(\d{2})\b/);
+             const polish = value.match(/\b(\d{1,2})\.?\s+([a-ząćęłńóśźż]+)\.?[,]?\s+(\d{4})\b/i);
+             const english = value.match(/\b([a-z]+)\.?\s+(\d{1,2})[,]?\s+(\d{4})\b/i);
+             const numeric = value.match(/\b(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})\b/);
+             let year; let month; let day;
+             if (iso) [, year, month, day] = iso;
+             else if (polish) {
+               [, day, month, year] = polish;
+               month = monthNumbers[normalizeMonth(month)];
+             } else if (english) {
+               [, month, day, year] = english;
+               month = monthNumbers[normalizeMonth(month)];
+             } else if (numeric) [, day, month, year] = numeric;
+             if (!year || !month || !day) return '';
+             const parsed = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)));
+             if (parsed.getUTCFullYear() !== Number(year) || parsed.getUTCMonth() !== Number(month) - 1 || parsed.getUTCDate() !== Number(day)) return '';
+             return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+           };
+           const extractEmailPublishedOn = (body, messageRoot) => {
+             // In Gmail the timestamp can be a sibling of the body within a
+             // larger message card, so match it to the card containing this
+             // exact body. Do not fall back to another message in the thread.
+             const timestampSelectors = '.g3[title], .g3[data-tooltip], time[datetime], [data-time]';
+             const candidates = [
+               ...document.querySelectorAll(timestampSelectors)
+                 .filter(element => element.closest('[data-message-id], .adn, .h7')?.contains(body)),
+               ...(messageRoot?.querySelectorAll(timestampSelectors) || [])
+             ];
+             for (const element of candidates) {
+               const unixTime = element.getAttribute('data-time');
+               if (/^\d{10,13}$/.test(unixTime || '')) {
+                 const date = new Date(Number(unixTime) * ((unixTime || '').length === 10 ? 1000 : 1));
+                 if (!Number.isNaN(date.getTime())) return date.toISOString().slice(0, 10);
+               }
+               const date = emailDateToIso(element.getAttribute('datetime') || element.getAttribute('title') || element.getAttribute('data-tooltip') || element.innerText);
+               if (date) return date;
+             }
+             return '';
+           };
            let postText = '';
            let author = '';
            let platform = '';
@@ -474,6 +532,7 @@ document.addEventListener('DOMContentLoaded', function () {
            let emailSender = '';
            let emailId = '';
            let emailSubject = '';
+           let emailPublishedOn = '';
           let pageDebug = {};
           let fallbackExtraction = '';
           if (isFacebook) {
@@ -585,6 +644,7 @@ document.addEventListener('DOMContentLoaded', function () {
                || [...document.querySelectorAll('.gD[email], .gD')].filter(isVisible).pop();
              emailAuthor = clean(sender?.innerText || sender?.getAttribute('name') || sender?.getAttribute('email') || '');
              emailSender = clean(sender?.getAttribute('email') || '');
+             emailPublishedOn = extractEmailPublishedOn(body, messageRoot);
              const hashMatch = location.hash.match(/\/(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/([^/?#]+)/i)
                || location.hash.match(/#(?:[^/]+\/)?(?:inbox|all|sent|drafts|spam|trash|important|starred|category\/[^/]+|label\/[^/]+)\/([^/?#]+)/i)
                || location.hash.match(/#search\/[^/?#]+\/([^/?#]+)/i);
@@ -594,6 +654,7 @@ document.addEventListener('DOMContentLoaded', function () {
                selected_body_length: emailText.length,
                extracted_link_count: extractedBody.links,
                email_id_found: Boolean(emailId),
+               email_published_on_found: Boolean(emailPublishedOn),
              };
            }
           return {
@@ -608,6 +669,7 @@ document.addEventListener('DOMContentLoaded', function () {
               emailSender,
               emailId,
              emailSubject,
+              emailPublishedOn,
               pageDebug
           };
         }
@@ -648,8 +710,9 @@ document.addEventListener('DOMContentLoaded', function () {
           } else if (typeSelect.value === 'email') {
             capturedContentTextInput.value = results[0].result.emailText || '';
              detectedEmailAuthor = results[0].result.emailAuthor || '';
-             detectedEmailSender = results[0].result.emailSender || '';
+            detectedEmailSender = results[0].result.emailSender || '';
             detectedEmailId = results[0].result.emailId || '';
+            detectedEmailPublishedOn = results[0].result.emailPublishedOn || '';
             if (results[0].result.emailAuthor) {
               pageDescriptionInput.value = `Nadawca: ${results[0].result.emailAuthor}`;
             }
@@ -735,6 +798,7 @@ document.addEventListener('DOMContentLoaded', function () {
             byline: isSocialPost ? detectedSocialAuthor : (isEmail ? detectedEmailAuthor : ''),
             email_sender: isEmail ? detectedEmailSender : undefined,
             original_id: isEmail ? emailIdentity : undefined,
+            published_on: isEmail ? detectedEmailPublishedOn || undefined : undefined,
           };
           data.external_uuid = createExternalUuid();
           updateDebug({
@@ -742,7 +806,8 @@ document.addEventListener('DOMContentLoaded', function () {
             payload_type: data.type,
             payload_social_platform: data.social_platform,
             payload_text_length: data.text.length,
-            payload_requires_login: data.requires_login
+            payload_requires_login: data.requires_login,
+            payload_published_on: data.published_on || null
           });
           if ((isSocialPost || isEmail) && !data.text) {
             throw new Error(isEmail

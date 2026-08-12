@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [1.0.50] - 2026-08-12
+### Added
+- Import Gmaila odczytuje datę wysłania aktualnie importowanej wiadomości i zapisuje ją jako datę publikacji dokumentu.
+
 ## [1.0.49] - 2026-08-11
 ### Fixed
 - Gmail messages opened from `#search/<query>/<message-id>` are recognized as e-mail, so their extracted content is shown in the editable preview and keeps a stable Gmail identity on send.
