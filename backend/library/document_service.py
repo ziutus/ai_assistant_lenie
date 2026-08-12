@@ -217,6 +217,26 @@ class DocumentService:
         self.session.commit()
         return True
 
+    def apply_email_footer_rule(self, doc: Document) -> bool:
+        """Apply the current sender footer rule to a re-imported email.
+
+        ``text_raw`` deliberately remains untouched: it preserves the
+        originally captured source, while ``text`` is the canonical content
+        shown and analysed by Lenie.
+        """
+        if doc.document_type != "email" or not doc.text:
+            return False
+
+        from library.email_footer_rules import apply_footer_rule
+
+        cleaned_text = apply_footer_rule(self.session, doc.email_sender, doc.text)
+        if cleaned_text == doc.text:
+            return False
+        doc.text = cleaned_text
+        doc.document_length = len(cleaned_text)
+        self.session.commit()
+        return True
+
     def _store_file(self, uid: str, extension: str, content: str, use_s3=None, s3_client=None,
                     bucket_name: str | None = None, storage=None) -> None:
         """Store a file through the configured backend. Legacy args remain for callers/tests."""

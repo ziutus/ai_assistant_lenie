@@ -113,6 +113,10 @@ class DocumentIngestService:
             doc = exc.document
             if request.document_type == "email":
                 service.normalize_email_tracking_links(doc)
+                # A duplicate Gmail identity is a re-import, not merely an
+                # image refresh.  Apply rules approved since the original
+                # import to the rendered text as well.
+                service.apply_email_footer_rule(doc)
             if request.document_type == "email" and request.images:
                 service.replace_email_images(doc.id, request.images)
             job = (

@@ -255,6 +255,23 @@ class TestCreateDocument:
         assert doc.document_length == len(doc.text)
         session.commit.assert_called_once()
 
+    @patch("library.email_footer_rules.apply_footer_rule", return_value="Newsletter body")
+    def test_reimported_email_applies_footer_rule_without_changing_raw_text(self, apply_rule):
+        session = _make_session()
+        service = DocumentService(session)
+        doc = MagicMock(spec=Document)
+        doc.document_type = "email"
+        doc.email_sender = "news@example.com"
+        doc.text = "Newsletter body\nFooter"
+        doc.text_raw = "Newsletter body\nFooter"
+
+        assert service.apply_email_footer_rule(doc) is True
+        apply_rule.assert_called_once_with(session, "news@example.com", "Newsletter body\nFooter")
+        assert doc.text == "Newsletter body"
+        assert doc.text_raw == "Newsletter body\nFooter"
+        assert doc.document_length == len("Newsletter body")
+        session.commit.assert_called_once()
+
     @patch("library.document_service.storage_from_config")
     @patch("library.document_service.load_config")
     def test_create_document_with_s3(self, mock_config, mock_storage_from_config):
