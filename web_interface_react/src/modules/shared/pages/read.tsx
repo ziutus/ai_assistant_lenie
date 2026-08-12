@@ -212,11 +212,31 @@ function renderInline(
   text: string,
   refs?: Map<string, ChapterReference>,
   onAnchorClick?: (anchorId: string) => void,
+  images?: Map<number, ChapterImage>,
 ): React.ReactNode[] {
-  // **bold**, *italic*, `code`, [label](anchor:id) jump links and ¹⁸ footnote
-  // markers — enough for OCR-ed book prose
-  const parts = text.split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\(anchor:[\w-]+\)|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)/g);
+  // **bold**, *italic*, `code`, [label](anchor:id) jump links, ¹⁸ footnote
+  // markers, and an [imgN] marker sitting mid-sentence (Gmail decorative
+  // glyphs, e.g. a 👋 emoji shipped as an <img> — IMG_MARKER in
+  // renderMarkdown only catches a marker that is its own block) — enough for
+  // OCR-ed book prose
+  const parts = text.split(
+    /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\(anchor:[\w-]+\)|\[img\d+\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)/g,
+  );
   return parts.map((part, i) => {
+    const inlineImgMarker = part.match(/^\[img(\d+)\]$/);
+    if (inlineImgMarker) {
+      const img = images?.get(Number(inlineImgMarker[1]));
+      if (!img?.url) return null;
+      return (
+        <a key={i} href={img.url} target="_blank" rel="noreferrer">
+          <img
+            src={img.url}
+            alt={img.alt_text ?? img.caption_text ?? ""}
+            style={{ height: "1.2em", verticalAlign: "middle", margin: "0 2px" }}
+          />
+        </a>
+      );
+    }
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
     if (part.startsWith("`") && part.endsWith("`") && part.length > 2) {
       return (
@@ -313,6 +333,7 @@ function renderParagraphWithNotes(
   highlightTerms?: string[],
   timelineAnchor?: string | null,
   onAnchorClick?: (anchorId: string) => void,
+  images?: Map<number, ChapterImage>,
 ): { nodes: React.ReactNode[]; paragraphTint: UserNote | null; timelineTint: boolean; timelineFound: boolean } {
   type Match = { idx: number; len: number; kind: "note" | "entity" | "timeline"; note?: UserNote };
   const noteMatches: Match[] = notes
@@ -335,14 +356,14 @@ function renderParagraphWithNotes(
   const timelineFound = timelineIndex >= 0 || timelineTint;
 
   if (matches.length === 0) {
-    return { nodes: renderInline(text, refs, onAnchorClick), paragraphTint, timelineTint, timelineFound };
+    return { nodes: renderInline(text, refs, onAnchorClick, images), paragraphTint, timelineTint, timelineFound };
   }
 
   const nodes: React.ReactNode[] = [];
   let cursor = 0;
   matches.forEach((m, i) => {
     if (m.idx < cursor) return; // overlapping match — skip
-    if (m.idx > cursor) nodes.push(...renderInline(text.slice(cursor, m.idx), refs, onAnchorClick));
+    if (m.idx > cursor) nodes.push(...renderInline(text.slice(cursor, m.idx), refs, onAnchorClick, images));
     const quoted = text.slice(m.idx, m.idx + m.len);
     if (m.kind === "note" && m.note) {
       nodes.push(
@@ -351,7 +372,7 @@ function renderParagraphWithNotes(
           title={`${STANCE_ICON[m.note.stance ?? ""] ?? "📝"} ${m.note.note_text}`}
           style={{ background: "#fef08a", padding: "0 1px", cursor: "help" }}
         >
-          {renderInline(quoted, refs, onAnchorClick)}
+          {renderInline(quoted, refs, onAnchorClick, images)}
         </mark>
       );
     } else if (m.kind === "timeline") {
@@ -361,7 +382,7 @@ function renderParagraphWithNotes(
           className="timeline-highlight"
           style={{ background: "#fed7aa", padding: "0 1px" }}
         >
-          {renderInline(quoted, refs, onAnchorClick)}
+          {renderInline(quoted, refs, onAnchorClick, images)}
         </mark>
       );
     } else {
@@ -371,13 +392,13 @@ function renderParagraphWithNotes(
           className="entity-highlight"
           style={{ background: "#bfdbfe", padding: "0 1px" }}
         >
-          {renderInline(quoted, refs, onAnchorClick)}
+          {renderInline(quoted, refs, onAnchorClick, images)}
         </mark>
       );
     }
     cursor = m.idx + m.len;
   });
-  if (cursor < text.length) nodes.push(...renderInline(text.slice(cursor), refs, onAnchorClick));
+  if (cursor < text.length) nodes.push(...renderInline(text.slice(cursor), refs, onAnchorClick, images));
   return { nodes, paragraphTint, timelineTint, timelineFound };
 }
 
@@ -483,7 +504,7 @@ function renderMarkdown(
       const trailingText = markerMatch[2]?.trim();
       if (trailingText) {
         const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
-          trailingText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick,
+          trailingText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images,
         );
         out.push(
           <p key={`${i}-trailing`} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={{
@@ -540,7 +561,7 @@ function renderMarkdown(
     const isNote = /^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,3} )\S*\s*(http|www|[A-ZŻŹĆĄŚĘŁÓŃ])/.test(trimmed) && trimmed.length < 400;
     const paraText = trimmed.replace(/\n/g, " ");
     const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
-      paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick,
+      paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images,
     );
     out.push(
       <p key={i} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={isNote
