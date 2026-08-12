@@ -1,6 +1,9 @@
 # CHANGELOG
 
 ## [1.0.50] - 2026-08-12
+### Fixed
+- Naprawiono błąd importu Gmaila wywołany przy odczycie daty wysłania wiadomości.
+
 ### Added
 - Import Gmaila odczytuje datę wysłania aktualnie importowanej wiadomości i zapisuje ją jako datę publikacji dokumentu.
 

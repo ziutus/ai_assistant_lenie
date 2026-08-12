@@ -509,7 +509,7 @@ document.addEventListener('DOMContentLoaded', function () {
              // exact body. Do not fall back to another message in the thread.
              const timestampSelectors = '.g3[title], .g3[data-tooltip], time[datetime], [data-time]';
              const candidates = [
-               ...document.querySelectorAll(timestampSelectors)
+               ...[...document.querySelectorAll(timestampSelectors)]
                  .filter(element => element.closest('[data-message-id], .adn, .h7')?.contains(body)),
                ...(messageRoot?.querySelectorAll(timestampSelectors) || [])
              ];
