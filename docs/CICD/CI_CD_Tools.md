@@ -41,6 +41,7 @@ make security-deps   # pip-audit - dependency vulnerabilities
 make security-bandit # Bandit - Python security linter
 make security-safety # Safety - dependency check
 make security-all    # Run all checks
+.\scripts\security-depx.ps1 # Native Windows malicious-package scan
 ```
 
 ### Semgrep - Static Code Analysis
@@ -89,6 +90,16 @@ OSV Scanner checks dependencies for known vulnerabilities.
 **Note:** This stage may require additional configuration.
 
 **Artifact:** `osv_scan_results.json`
+
+### depx - Malicious Package Detection
+
+`depx` checks local lockfiles and SBOMs for packages known to be malicious or hijacked. It is complementary to OSV Scanner and pip-audit, which focus on known vulnerabilities.
+
+```bash
+depx audit . --require-clean
+```
+
+Run this as a blocking CI gate. See [Dependency Supply-Chain Scanning](../security/dependency-supply-chain-scanning.md) for native Windows usage, exit codes, SARIF export, and triage guidance.
 
 ### Qodana - JetBrains Code Analysis
 
@@ -213,4 +224,3 @@ flake8 --format=html --exclude=ai_dev3 --htmldir=flake_reports/
 ```
 
 **Artifact:** `flake_reports/` (entire directory)
-
