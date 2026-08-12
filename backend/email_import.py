@@ -23,8 +23,6 @@ import subprocess
 import sys
 import time
 from email.utils import parseaddr
-from urllib.parse import urlparse
-
 from library.url_normalization import canonicalize_url
 
 from library.config_loader import load_config
@@ -36,6 +34,8 @@ from library.db.models import Document  # noqa: E402
 from library.email_footer_rules import apply_footer_rule  # noqa: E402
 from library.models.stalker_document_status import StalkerDocumentStatus  # noqa: E402
 from library.models.stalker_document_type import StalkerDocumentType  # noqa: E402
+from library.tracking_urls import is_tracking_url as _is_tracking_url  # noqa: E402
+from library.tracking_urls import resolve_tracking_url as _resolve_tracking_url  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -118,18 +118,7 @@ def find_body_part(payload: dict, mime_type: str) -> str | None:
 
 def is_tracking_url(url: str) -> bool:
     """Check if a URL looks like a newsletter tracking/redirect URL."""
-    tracking_patterns = [
-        r"emlnk\d*\.com/lt\.php",      # ActiveCampaign / CampusAI
-        r"click\.\w+\.\w+/",           # Mailchimp, Sendinblue, etc.
-        r"links\.\w+\.\w+/",           # Generic link trackers
-        r"track\.\w+\.\w+/",           # Generic trackers
-        r"email\.mg\.\w+/",            # Mailgun
-        r"u\d+\.ct\.sendgrid\.net/",   # SendGrid
-        r"r\.email\.",                  # Various ESPs
-        r"mandrillapp\.com/track/",    # Mandrill
-        r"/lt\.php\?",                 # Generic link tracker pattern
-    ]
-    return any(re.search(pattern, url) for pattern in tracking_patterns)
+    return _is_tracking_url(url)
 
 
 def strip_utm_params(url: str) -> str:
@@ -142,16 +131,7 @@ def resolve_tracking_url(url: str, timeout: int = 5) -> str:
 
     Returns the clean final URL (without UTM params), or the original URL on failure.
     """
-    if not is_tracking_url(url):
-        return url
-    try:
-        import requests
-        resp = requests.head(url, allow_redirects=True, timeout=timeout)
-        final_url = resp.url
-        return strip_utm_params(final_url)
-    except Exception as e:
-        logger.warning(f"Could not resolve tracking URL: {url} — {e}")
-        return url
+    return _resolve_tracking_url(url, timeout=timeout)
 
 
 def resolve_tracking_urls_in_html(html_content: str) -> str:
@@ -164,7 +144,7 @@ def resolve_tracking_urls_in_html(html_content: str) -> str:
             urls_to_resolve[url] = None  # placeholder
         return match.group(0)
 
-    re.sub(r'<a\s+[^>]*href="([^"]*)"', collect_url, html_content, flags=re.IGNORECASE)
+    re.sub(r"<a\s+[^>]*href\s*=\s*['\"]([^'\"]*)['\"]", collect_url, html_content, flags=re.IGNORECASE)
 
     if not urls_to_resolve:
         return html_content
