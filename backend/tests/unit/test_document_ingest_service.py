@@ -52,6 +52,25 @@ def test_duplicate_is_returned_without_rethrowing():
     assert result == result.__class__(7, "already_exists", None, True)
 
 
+def test_duplicate_email_updates_captured_images():
+    session = MagicMock()
+    existing = SimpleNamespace(id=7, text_raw=None, document_type="email")
+    with patch("library.document_ingest_service.DocumentService") as service_cls:
+        service_cls.return_value.create_document.side_effect = ExistingDocumentError(existing)
+        result = DocumentIngestService(session, storage=MagicMock()).ingest(
+            IngestRequest(
+                url="gmail://message-1", document_type="email",
+                images=[{"position": 0, "url": "https://cdn.example.test/chart.png"}],
+            )
+        )
+
+    assert result.status == "already_exists"
+    service_cls.return_value.normalize_email_tracking_links.assert_called_once_with(existing)
+    service_cls.return_value.replace_email_images.assert_called_once_with(
+        7, [{"position": 0, "url": "https://cdn.example.test/chart.png"}],
+    )
+
+
 def test_fill_missing_passes_external_uuid_and_returns_refreshed():
     session = MagicMock()
     doc = SimpleNamespace(id=8)

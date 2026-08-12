@@ -1270,31 +1270,42 @@ def document_chapter(doc_id: int, position: int):
         for r in reference_query.order_by(DocumentReference.id).all()
     ]
 
-    # Images extracted from an imported book PDF (library/book_pdf_import.py) —
-    # storage_key IS NOT NULL rows only. Article/webpage images (url-sourced)
-    # are a deliberate scope limit here (ad risk on portal-hosted images), not
-    # a technical one — see library/document_images.py.
+    # Images from two sources (library/document_images.py): storage_key rows
+    # (book PDF illustrations, library/book_pdf_import.py) and url rows
+    # (externally hosted images kept alongside their [imgN] marker — web
+    # articles via library/article_cleaner.py, Gmail via
+    # web_chrome_extension/popup.js).
     from library.config_loader import load_config
     from library.db.models import DocumentImage
     from library.storage import storage_from_config
 
     image_query = session.query(DocumentImage).filter(
         DocumentImage.document_id == doc_id,
-        DocumentImage.storage_key.is_not(None),
+        (DocumentImage.storage_key.is_not(None) | DocumentImage.url.is_not(None)),
     )
+    image_rows = image_query.order_by(DocumentImage.page_number, DocumentImage.position, DocumentImage.id).all()
     if chapter_total > 1:
-        image_query = image_query.filter(DocumentImage.chapter_position == position)
+        # PDF rows are explicitly assigned to a chapter on import. URL rows
+        # (web articles and Gmail) have no stored chapter position; their
+        # [imgN] marker is the authoritative placement signal instead.
+        image_rows = [
+            img for img in image_rows
+            if (
+                (img.storage_key and img.chapter_position == position)
+                or (img.url and img.position is not None and f"[img{img.position}]" in chapter_text)
+            )
+        ]
     storage = storage_from_config(load_config())
     images = [
         {
             "position": img.position,
-            "url": storage.presigned_get_url(img.storage_key),
+            "url": storage.presigned_get_url(img.storage_key) if img.storage_key else img.url,
             "caption_text": img.caption_text,
             "alt_text": img.alt_text,
             "page_number": img.page_number,
             "inline": img.position is not None and f"[img{img.position}]" in chapter_text,
         }
-        for img in image_query.order_by(DocumentImage.page_number, DocumentImage.id).all()
+        for img in image_rows
     ]
 
     # A run analysed with scope_chapter=position sets run.scope to the chapter
@@ -1347,7 +1358,7 @@ def document_images(doc_id: int):
     storage = storage_from_config(load_config())
     images = session.query(DocumentImage).filter(
         DocumentImage.document_id == doc_id,
-        DocumentImage.storage_key.is_not(None),
+        (DocumentImage.storage_key.is_not(None) | DocumentImage.url.is_not(None)),
     ).order_by(DocumentImage.page_number, DocumentImage.id).all()
 
     return jsonify({
@@ -1356,7 +1367,7 @@ def document_images(doc_id: int):
         "images": [
             {
                 "position": img.position,
-                "url": storage.presigned_get_url(img.storage_key),
+                "url": storage.presigned_get_url(img.storage_key) if img.storage_key else img.url,
                 "caption_text": img.caption_text,
                 "alt_text": img.alt_text,
                 "page_number": img.page_number,

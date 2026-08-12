@@ -211,6 +211,50 @@ class TestCreateDocument:
         assert doc.original_id == "thread-abc123"
         mock_store.assert_not_called()
 
+    def test_replace_email_images_keeps_only_http_urls(self):
+        session = _make_session()
+        service = DocumentService(session)
+
+        with patch("library.document_images.replace_document_images") as replace_images:
+            service.replace_email_images(42, [
+                {"position": 3, "url": "https://cdn.example.test/chart.png", "alt_text": "Wykres"},
+                {"position": 4, "url": "javascript:alert(1)", "alt_text": "nie"},
+            ])
+
+        replace_images.assert_called_once_with(session, 42, [{
+            "url": "https://cdn.example.test/chart.png", "alt": "Wykres", "position": 3,
+        }])
+        session.commit.assert_called_once()
+
+    @patch("library.tracking_urls.resolve_tracking_url")
+    def test_create_email_normalizes_tracking_links(self, resolve_url):
+        resolve_url.return_value = "https://incidentimpact.com/"
+        session = _make_session()
+        service = DocumentService(session)
+        tracking_url = "https://click.example.com/redirect"
+
+        service.create_document(
+            url="gmail://message-2", url_type="email",
+            text=f"Incident Impact ({tracking_url})",
+        )
+
+        doc = session.add.call_args.args[0]
+        assert doc.text == "Incident Impact (https://incidentimpact.com/)"
+
+    @patch("library.tracking_urls.resolve_tracking_url", return_value="https://incidentimpact.com/")
+    def test_normalize_existing_email_tracking_links_without_replacing_other_text(self, _resolve_url):
+        session = _make_session()
+        service = DocumentService(session)
+        doc = MagicMock(spec=Document)
+        doc.document_type = "email"
+        doc.text = "Incident Impact (https://click.example.com/redirect)"
+        doc.text_raw = doc.text
+
+        assert service.normalize_email_tracking_links(doc) is True
+        assert doc.text == "Incident Impact (https://incidentimpact.com/)"
+        assert doc.document_length == len(doc.text)
+        session.commit.assert_called_once()
+
     @patch("library.document_service.storage_from_config")
     @patch("library.document_service.load_config")
     def test_create_document_with_s3(self, mock_config, mock_storage_from_config):

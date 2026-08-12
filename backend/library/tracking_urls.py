@@ -24,6 +24,12 @@ _TRACKING_HOST_PATTERNS = (
     r"(?:^|\.)emlnk\d*\.com$",
 )
 
+# Plain-text email imports preserve links as ``etykieta (https://...)``.  Keep
+# the matcher deliberately conservative: closing punctuation belongs to prose,
+# not the URL, and is reattached after a replacement.
+_TEXT_URL_RE = re.compile(r"https?://[^\s<>\"']+")
+_TRAILING_URL_PUNCTUATION = ".,;:!?)]}"
+
 
 def is_tracking_url(url: str) -> bool:
     """Return whether *url* belongs to a known newsletter redirect service."""
@@ -101,3 +107,26 @@ def resolve_tracking_url(url: str, timeout: int = 5, max_redirects: int = 5) -> 
             return url
 
     return url
+
+
+def resolve_tracking_urls_in_text(text: str, timeout: int = 5) -> str:
+    """Replace known newsletter redirect URLs in plain text with destinations.
+
+    This is the client-independent counterpart to the HTML importer's link
+    normalization.  It also makes browser, Gmail API and future import paths
+    behave identically.  Regular URLs are never fetched or changed.
+    """
+    if not text:
+        return text
+
+    def replace(match: re.Match) -> str:
+        raw = match.group(0)
+        suffix = ""
+        while raw and raw[-1] in _TRAILING_URL_PUNCTUATION:
+            suffix = raw[-1] + suffix
+            raw = raw[:-1]
+        if not raw or not is_tracking_url(raw):
+            return raw + suffix
+        return resolve_tracking_url(raw, timeout=timeout) + suffix
+
+    return _TEXT_URL_RE.sub(replace, text)

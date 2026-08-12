@@ -34,6 +34,7 @@ class IngestRequest:
     chapter_list: object = False
     byline: str = ""
     email_sender: str | None = None
+    images: list[dict] | None = None
     original_id: str | None = None
     published_on: object | None = None
     operation: str = "create"
@@ -91,6 +92,7 @@ class DocumentIngestService:
                 chapter_list=request.chapter_list,
                 byline=request.byline,
                 email_sender=request.email_sender,
+                images=request.images,
                 original_id=request.original_id,
                 published_on=request.published_on,
                 external_uuid=request.external_uuid,
@@ -109,6 +111,10 @@ class DocumentIngestService:
             )
         except ExistingDocumentError as exc:
             doc = exc.document
+            if request.document_type == "email":
+                service.normalize_email_tracking_links(doc)
+            if request.document_type == "email" and request.images:
+                service.replace_email_images(doc.id, request.images)
             job = (
                 ensure_document_prepare_job(self.session, doc)
                 if (getattr(doc, "document_type", None) == "webpage" and bool(getattr(doc, "uuid", None)))
