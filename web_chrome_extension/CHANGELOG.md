@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [1.0.51] - 2026-08-12
+### Fixed
+- Wydanie naprawiające import Gmaila z datą wysłania wiadomości.
+
 ## [1.0.50] - 2026-08-12
 ### Fixed
 - Naprawiono błąd importu Gmaila wywołany przy odczycie daty wysłania wiadomości.

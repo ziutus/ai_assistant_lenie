@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedEmailSender = '';
   let detectedEmailId = '';
   let detectedEmailPublishedOn = '';
-  const debugState = { version: '1.0.50' };
+  const debugState = { version: '1.0.51' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
