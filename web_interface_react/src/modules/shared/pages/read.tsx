@@ -215,14 +215,26 @@ function renderInline(
   images?: Map<number, ChapterImage>,
 ): React.ReactNode[] {
   // **bold**, *italic*, `code`, [label](anchor:id) jump links, ¹⁸ footnote
-  // markers, and an [imgN] marker sitting mid-sentence (Gmail decorative
-  // glyphs, e.g. a 👋 emoji shipped as an <img> — IMG_MARKER in
-  // renderMarkdown only catches a marker that is its own block) — enough for
-  // OCR-ed book prose
+  // markers, a (https://...) URL — e.g. Gmail newsletter items flattened by
+  // email_import.py's html_to_text() from <a href> into "label (url)" — and
+  // an [imgN] marker sitting mid-sentence (Gmail decorative glyphs, e.g. a
+  // 👋 emoji shipped as an <img> — IMG_MARKER in renderMarkdown only catches
+  // a marker that is its own block) — enough for OCR-ed book prose
   const parts = text.split(
-    /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\(anchor:[\w-]+\)|\[img\d+\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)/g,
+    /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\(anchor:[\w-]+\)|\(https?:\/\/[^\s)]+\)|\[img\d+\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)/g,
   );
   return parts.map((part, i) => {
+    const urlInParens = part.match(/^\((https?:\/\/[^\s)]+)\)$/);
+    if (urlInParens) {
+      const url = urlInParens[1];
+      return (
+        <React.Fragment key={i}>
+          (<a href={url} target="_blank" rel="noreferrer" style={{ wordBreak: "break-all", color: "#0369a1" }}>
+            {url}
+          </a>)
+        </React.Fragment>
+      );
+    }
     const inlineImgMarker = part.match(/^\[img(\d+)\]$/);
     if (inlineImgMarker) {
       const img = images?.get(Number(inlineImgMarker[1]));
