@@ -2491,6 +2491,20 @@ class LlmUsageLog(Base):
         )
 
 
+class ExternalServiceEvent(Base):
+    """Outcome of one real request to a non-LLM external dependency."""
+    __tablename__ = "external_service_events"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    service: Mapped[str] = mapped_column(String(50), nullable=False)
+    operation: Mapped[str] = mapped_column(String(100), nullable=False)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    status_code: Mapped[int | None] = mapped_column(Integer)
+    error_code: Mapped[str | None] = mapped_column(String(100))
+    latency_ms: Mapped[int | None] = mapped_column(Integer)
+    occurred_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    __table_args__ = (Index("idx_external_service_events_service_occurred", "service", "occurred_at"),)
+
+
 # The pre-11d before_flush hook that auto-created `sources` rows for
 # Document.source strings is gone: discovery-source resolution is explicit
 # now — every writer goes through Document.set_discovery_source(), which

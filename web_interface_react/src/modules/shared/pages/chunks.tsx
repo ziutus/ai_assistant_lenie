@@ -606,6 +606,7 @@ const Chunks = () => {
   const [applyingCleanup, setApplyingCleanup] = React.useState(false);
   const [jobStatus, setJobStatus]   = React.useState<string | null>(null);
   const [jobId, setJobId]           = React.useState<string | null>(null);
+  const [cloudFerroIssue, setCloudFerroIssue] = React.useState<{ status: string; error: string | null } | null>(null);
   const jobPollRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
   const [newModel, setNewModel]     = React.useState(MODELS[0]);
   const [newMode, setNewMode]       = React.useState("transcript");
@@ -930,6 +931,14 @@ const Chunks = () => {
       jobPollRef.current = null;
     };
   }, [id, apiUrl, apiKey, pollJob]);
+
+  React.useEffect(() => {
+    if (!jobId) { setCloudFerroIssue(null); return; }
+    let cancelled = false;
+    const check = async () => { try { const response = await fetch(`${apiUrl}/service_status`, { headers: { "x-api-key": apiKey ?? "" } }); const data = await response.json(); const cloudferro = data.services?.find((service: any) => service.id === "cloudferro" || service.id === "cloudferro_llm"); if (!cancelled) setCloudFerroIssue(cloudferro && ["warning", "down"].includes(cloudferro.status) ? { status: cloudferro.status, error: cloudferro.last_error_code ?? null } : null); } catch { /* Global banner covers a missing status endpoint. */ } };
+    void check(); const timer = window.setInterval(() => void check(), 30_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [jobId, apiUrl, apiKey]);
 
   // ── Analysis ──
 
@@ -2207,6 +2216,7 @@ const Chunks = () => {
       <NavLink to={`/entities/${id}`} style={{ float: "right", fontSize: "0.85em", color: "#0369a1" }}>
         Encje (NER)
       </NavLink>
+      {jobId && cloudFerroIssue && <div style={{ clear: "both", marginBottom: 10, padding: "10px 12px", borderRadius: 6, background: cloudFerroIssue.status === "down" ? "#fef2f2" : "#fffbeb", border: `1px solid ${cloudFerroIssue.status === "down" ? "#fca5a5" : "#fcd34d"}`, color: cloudFerroIssue.status === "down" ? "#991b1b" : "#92400e" }}><strong>Job czeka na CloudFerro.</strong> Podział i automatyczne wzbogacanie są opóźnione przez zewnętrzną usługę, nie przez backend.{cloudFerroIssue.error ? ` Ostatni błąd: ${cloudFerroIssue.error}.` : ""} <NavLink to="/service-status" style={{ color: "inherit", fontWeight: 700 }}>Szczegóły statusu</NavLink></div>}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 6, flexWrap: "wrap" }}>
         <h2 style={{ margin: 0 }}>
           Przegląd chunków — {docTitle || `dokument #${id}`}

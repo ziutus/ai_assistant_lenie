@@ -2,6 +2,8 @@ import React from "react";
 import classes from "./layout.module.css";
 import { lenie_version } from "../../constants/variables";
 import { NavLink } from "react-router-dom";
+import axios from "axios";
+import { AuthorizationContext } from "../../context/authorizationContext";
 
 interface SideNavigationProps {
   isMenuOpen: boolean;
@@ -130,6 +132,9 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         >
           LLM Costs
         </NavLink>
+        <NavLink to="/service-status" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
+          Status usług
+        </NavLink>
         <NavLink
           to="/upload-file"
           className={({ isActive }) =>
@@ -167,6 +172,21 @@ interface LayoutProps {
   children: React.ReactNode;
 }
 
+type CloudFerroStatus = { status: "warning" | "down"; failures: number; last_error_code: string | null };
+const DependencyWarning = () => {
+  const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
+  const [alert, setAlert] = React.useState<CloudFerroStatus | null>(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    const check = async () => { try { const response = await axios.get(`${apiUrl}/service_status`, { headers: { "x-api-key": apiKey ?? "" } }); const cloudferro = response.data.services?.find((service: any) => service.id === "cloudferro" || service.id === "cloudferro_llm"); if (!cancelled) setAlert(cloudferro && ["warning", "down"].includes(cloudferro.status) ? cloudferro : null); } catch { /* Status is supplementary. */ } };
+    void check(); const timer = window.setInterval(() => void check(), 60_000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [apiKey, apiUrl]);
+  if (!alert) return null;
+  const unavailable = alert.status === "down";
+  return <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 6, border: `1px solid ${unavailable ? "#fca5a5" : "#fcd34d"}`, background: unavailable ? "#fef2f2" : "#fffbeb", color: unavailable ? "#991b1b" : "#92400e" }}><strong>{unavailable ? "CloudFerro nie odpowiada" : "CloudFerro zgłasza błędy"}.</strong>{" "}Automatyczne etapy LLM i embeddingów mogą czekać na timeout; backend pozostaje dostępny.{alert.last_error_code ? ` Ostatni błąd: ${alert.last_error_code}.` : ""} {alert.failures} błędów w ostatnim oknie. {" "}<NavLink to="/service-status" style={{ color: "inherit", fontWeight: 700 }}>Zobacz status usług</NavLink></div>;
+};
+
 const Layout = ({ children }: LayoutProps) => {
     const [isMenuOpen, setIsMenuOpen] = React.useState(false);
     const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
@@ -186,7 +206,7 @@ const Layout = ({ children }: LayoutProps) => {
                 className={`${classes.scrim} ${isMenuOpen ? classes.scrimOpen : ""}`}
                 onClick={() => setIsMenuOpen(false)}
             />
-            <div className={classes.content}>{children}</div>
+            <div className={classes.content}><DependencyWarning />{children}</div>
         </main>
     );
 };

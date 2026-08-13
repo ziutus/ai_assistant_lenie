@@ -277,7 +277,14 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
             }
             await new Promise(resolve => window.setTimeout(resolve, 1500));
           }
-          throw new Error("Przekroczono czas oczekiwania na automatyczne przetwarzanie");
+          // The job is persistent and keeps running on the backend.  Do not
+          // report a failed save merely because this page stopped waiting;
+          // /chunks resumes monitoring the same job after navigation.
+          setMessage("Dokument zapisany; automatyczne przetwarzanie nadal trwa.");
+          setIsLoading(false);
+          setIsError(false);
+          navigate(`/chunks/${website.id}`);
+          return;
         }
         setMessage(response.data.message);
         setIsLoading(false);

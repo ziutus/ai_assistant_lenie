@@ -93,12 +93,8 @@ def fetch_pipeline(name: str) -> dict | None:
     _last_request_at = time.monotonic()
 
     try:
-        resp = requests.post(
-            _overpass_url(),
-            data={"data": query},
-            headers={"User-Agent": USER_AGENT},
-            timeout=REQUEST_TIMEOUT_S,
-        )
+        from library.external_service_events import observed_request
+        resp = observed_request(service="overpass", operation="pipeline_lookup", request_fn=lambda: requests.post(_overpass_url(), data={"data": query}, headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT_S))
         resp.raise_for_status()
         elements = resp.json().get("elements", [])
     except requests.RequestException as e:
