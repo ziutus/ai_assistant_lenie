@@ -3,6 +3,12 @@ from library.config_loader import load_config
 from library.models.ai_response import AiResponse
 
 
+# The SDK default can wait roughly 15 minutes after a lost upstream connection.
+# Enrichment jobs are persistent and isolate a failed stage, so they should get
+# control back promptly rather than blocking the entire analysis queue.
+REQUEST_TIMEOUT_S = 90.0
+
+
 def sherlock_get_completion(prompt: str, model: str = "Bielik-11B-v3.0-Instruct",
                             max_tokens=1000, temperature: float = 0.1,
                             system_prompt: str | None = None,
@@ -22,7 +28,8 @@ def sherlock_get_completion(prompt: str, model: str = "Bielik-11B-v3.0-Instruct"
 
     client = OpenAI(
         api_key=cfg.require('CLOUDFERRO_SHERLOCK_KEY'),
-        base_url="https://api-sherlock.cloudferro.com/openai/v1"
+        base_url="https://api-sherlock.cloudferro.com/openai/v1",
+        timeout=REQUEST_TIMEOUT_S,
     )
 
     messages = []

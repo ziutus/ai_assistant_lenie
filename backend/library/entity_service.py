@@ -11,7 +11,7 @@ import datetime
 import logging
 import re
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 
 from library.db.models import (
     Document,
@@ -150,6 +150,14 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     (merge_document_entities()) are never deleted; a fresh NER group that
     collides with one is dropped instead of inserted.
     """
+    # Entity refresh replaces a document's derived rows. It can be triggered by
+    # the explicit Entities screen while the analysis worker is enriching the
+    # same document. Serialize those refreshes across all application processes
+    # before calling NER/LLM helpers; otherwise their deletes can deadlock.
+    # The transaction-scoped PostgreSQL lock is released by the caller's commit
+    # or rollback, matching this function's existing transaction contract.
+    session.execute(select(func.pg_advisory_xact_lock(22_004, document_id)))
+
     raw = extract_entities(text)
     if not raw:
         if is_available():

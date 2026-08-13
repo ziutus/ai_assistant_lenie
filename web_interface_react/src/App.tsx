@@ -20,6 +20,7 @@ import PersonsReview from "./modules/shared/pages/personsReview";
 import Sources from "./modules/shared/pages/sources";
 import InformationSources from "./modules/shared/pages/informationSources";
 import LlmCosts from "./modules/shared/pages/llmCosts";
+import ServiceStatus from "./modules/shared/pages/serviceStatus";
 import Stats from "./modules/shared/pages/stats";
 import Feeds from "./modules/shared/pages/feeds";
 import FeedReview from "./modules/shared/pages/feedReview";
@@ -74,6 +75,7 @@ function App() {
                   <Route path="/sources" element={<Sources />} />
                   <Route path="/information-sources" element={<InformationSources />} />
                   <Route path="/llm-costs" element={<LlmCosts />} />
+                  <Route path="/service-status" element={<ServiceStatus />} />
                   <Route path="/stats" element={<Stats />} />
                   <Route path="/feeds" element={<Feeds />} />
                   <Route path="/feed-review" element={<FeedReview />} />

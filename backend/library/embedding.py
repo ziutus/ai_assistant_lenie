@@ -1,3 +1,5 @@
+import time
+
 from library.models.embedding_result import EmbeddingResult
 
 
@@ -6,6 +8,26 @@ embedding_models = {"amazon.titan-embed-text-v1", "amazon.titan-embed-text-v2:0"
 
 
 _SHERLOCK_MODELS = {"BAAI/bge-multilingual-gemma2", "intfloat/e5-mistral-7b-instruct"}
+_SHERLOCK_EMBEDDINGS_ENDPOINT = "https://api-sherlock.cloudferro.com/openai/v1/embeddings"
+
+
+def _record_sherlock_embedding_usage(response, model: str, latency_ms: int) -> None:
+    """Persist one observed CloudFerro embedding batch for status reporting."""
+    success = response.status_code == 200 and bool(response.embedding)
+    error_code = None
+    if not success:
+        error_code = f"HTTP_{response.status_code}" if response.status_code > 0 else "EmbeddingRequestError"
+    try:
+        from library.llm_usage.recorder import record_llm_usage
+
+        record_llm_usage(
+            operation="embedding", provider="cloudferro", model=model,
+            prompt_tokens=response.prompt_tokens, total_tokens=response.total_tokens,
+            endpoint=_SHERLOCK_EMBEDDINGS_ENDPOINT, success=success,
+            error_code=error_code, latency_ms=latency_ms,
+        )
+    except (SystemExit, Exception):
+        pass
 
 
 def get_embeddings(model: str, texts: list[str]) -> list[EmbeddingResult]:
@@ -22,7 +44,23 @@ def get_embeddings(model: str, texts: list[str]) -> list[EmbeddingResult]:
     if model in _SHERLOCK_MODELS:
         from library.api.cloudferro.sherlock.sherlock_embedding import sherlock_create_embeddings
 
-        response = sherlock_create_embeddings(texts, model)
+        started = time.monotonic()
+        try:
+            response = sherlock_create_embeddings(texts, model)
+        except Exception:
+            try:
+                from library.llm_usage.recorder import record_llm_usage
+
+                record_llm_usage(
+                    operation="embedding", provider="cloudferro", model=model,
+                    endpoint=_SHERLOCK_EMBEDDINGS_ENDPOINT, success=False,
+                    error_code="EmbeddingRequestException",
+                    latency_ms=int((time.monotonic() - started) * 1000),
+                )
+            except (SystemExit, Exception):
+                pass
+            raise
+        _record_sherlock_embedding_usage(response, model, int((time.monotonic() - started) * 1000))
         if response.status_code != 200 or not response.embedding:
             error = getattr(response, "error", None) or response.error_message or f"HTTP {response.status_code}"
             return [
@@ -64,8 +102,7 @@ def get_embedding(model: str, text: str) -> EmbeddingResult:
         import library.api.openai.openai_embedding as openai_embedding
         return openai_embedding.get_embedding(text)
     elif model in ["BAAI/bge-multilingual-gemma2", "intfloat/e5-mistral-7b-instruct"]:
-        from library.api.cloudferro.sherlock.sherlock_embedding import sherlock_create_embedding
-        return sherlock_create_embedding(text, model)
+        return get_embeddings(model, [text])[0]
     elif model in ["BAAI/bge-m3"]:
         import library.api.arklabs.arklabs_embedding as arklabs_embedding
         return arklabs_embedding.get_embedding(text, model)

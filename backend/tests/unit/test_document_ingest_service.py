@@ -66,6 +66,7 @@ def test_duplicate_email_updates_captured_images():
 
     assert result.status == "already_exists"
     service_cls.return_value.normalize_email_tracking_links.assert_called_once_with(existing)
+    service_cls.return_value.apply_email_footer_rule.assert_called_once_with(existing)
     service_cls.return_value.replace_email_images.assert_called_once_with(
         7, [{"position": 0, "url": "https://cdn.example.test/chart.png"}],
     )

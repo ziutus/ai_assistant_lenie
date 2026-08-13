@@ -20,6 +20,7 @@ from library.api_key_routes import bp as api_key_bp
 from library.auth import resolve_api_key
 from library.chunk_review_routes import bp as chunk_review_bp, start_analysis_worker
 from library.llm_cost_routes import bp as llm_cost_bp
+from library.service_status_routes import bp as service_status_bp
 from library.reader_routes import bp as reader_bp
 from library.search_routes import bp as search_bp
 from library.stats_routes import bp as stats_bp
@@ -97,6 +98,7 @@ CORS(app)  # This will enable CORS for all routes
 
 app.register_blueprint(chunk_review_bp)
 app.register_blueprint(llm_cost_bp)
+app.register_blueprint(service_status_bp)
 app.register_blueprint(reader_bp)
 app.register_blueprint(api_key_bp)
 app.register_blueprint(search_bp)
@@ -636,6 +638,8 @@ def website_entities_refresh():
     stage 3) runs after the refresh and adds miejsce-* tags to the document;
     its failure does not fail the request.
     """
+    from sqlalchemy.exc import OperationalError
+
     from library.entity_service import get_document_entities, refresh_document_entities
     from library.ner_client import NERServiceUnavailable
 
@@ -667,6 +671,19 @@ def website_entities_refresh():
             "message": "Serwis NER jest niedostępny — spróbuj ponownie za chwilę.",
             "ner_unavailable": True,
         }, 503
+    except OperationalError as exc:
+        session.rollback()
+        if getattr(exc.orig, "pgcode", None) == "40P01":
+            return {
+                "status": "error",
+                "message": "Encje tego dokumentu są właśnie odświeżane. Spróbuj ponownie za chwilę.",
+            }, 409
+        logging.exception("database error while refreshing entities for doc %s", doc_id)
+        return {"status": "error", "message": "Nie udało się zapisać odświeżonych encji."}, 500
+    except Exception:
+        session.rollback()
+        logging.exception("entity refresh failed for doc %s", doc_id)
+        return {"status": "error", "message": "Nie udało się odświeżyć encji."}, 500
     session.commit()
 
     place_tags: list[str] = []

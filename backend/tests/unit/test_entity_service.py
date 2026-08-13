@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from sqlalchemy.dialects import postgresql
 
 pytest.importorskip("sqlalchemy")
 pytest.importorskip("requests")
@@ -72,8 +73,11 @@ class TestRefreshDocumentEntities:
         with patch("library.entity_service.extract_entities", return_value=RAW):
             rows = refresh_document_entities(session, 42, "jakiś tekst")
 
-        # SELECT exclusions + replace temporal candidates + replace entities + replace document_organizations
-        assert session.execute.call_count == 4
+        # advisory lock + SELECT exclusions + replace temporal candidates +
+        # replace entities + replace document_organizations
+        assert session.execute.call_count == 5
+        lock_query = session.execute.call_args_list[0].args[0]
+        assert "pg_advisory_xact_lock" in str(lock_query.compile(dialect=postgresql.dialect()))
         session.add_all.assert_called_once_with(rows)
         assert {(r.entity_type, r.entity_text, r.mention_count) for r in rows} == {
             ("persName", "Tusk", 2),
