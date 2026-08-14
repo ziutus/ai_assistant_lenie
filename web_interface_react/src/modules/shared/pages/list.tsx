@@ -148,6 +148,11 @@ const List = () => {
           void loadPage(1, selectedDocumentType, selectedDocumentState, searchInDocument, filter);
   };
 
+  const clearSearch = () => {
+    setSearchInDocument("");
+    void loadPage(1, selectedDocumentType, selectedDocumentState, "");
+  };
+
   const handleDocumentDeleteOnThisPage = async (document_id: string | number) => {
     console.log("handleDocumentDeleteOnThisPage, page id: " + document_id);
     await handleDeleteDocument(String(document_id));
@@ -300,6 +305,14 @@ const List = () => {
         onClick={() => { void loadPage(1); }}
       >
         Search
+      </button>
+      <button
+        disabled={isLoading || !searchInDocument}
+        className={"button"}
+        type={"button"}
+        onClick={clearSearch}
+      >
+        Wyczyść
       </button>
       <br />
       <label htmlFor="obsidian_filter"> 📝 Notatki Obsidian: </label>
