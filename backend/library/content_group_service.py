@@ -7,6 +7,8 @@ from sqlalchemy import func, select
 from library.db.models import (
     ContentGroup,
     Document,
+    DocumentChunk,
+    DocumentChunkGroupMembership,
     DocumentGroupMembership,
     FeedItem,
     FeedItemGroupMembership,
@@ -121,6 +123,38 @@ def replace_document_groups(session, document: Document, group_ids, *, source="m
     return _replace_memberships(session, document, DocumentGroupMembership, DocumentGroupMembership.document_id, group_ids, source=source, commit=commit)
 
 
+def replace_chunk_groups(session, chunk: DocumentChunk, group_ids, *, commit=True) -> DocumentChunk:
+    """Replace manual categories of a reader chunk.
+
+    A priority belongs to a whole material, so a chapter can only receive
+    topic groups.
+    """
+    group_ids = validate_group_ids(group_ids)
+    locked = session.execute(
+        select(DocumentChunk).where(DocumentChunk.id == chunk.id).with_for_update()
+    ).scalar_one()
+    groups = get_active_groups(session, group_ids)
+    if any(group.kind != "topic" for group in groups):
+        raise ValueError("chapter categories must be topic groups")
+    current = session.scalars(
+        select(DocumentChunkGroupMembership).where(
+            DocumentChunkGroupMembership.chunk_id == chunk.id,
+        )
+    ).all()
+    desired = set(group_ids)
+    for membership in current:
+        if membership.group_id not in desired:
+            session.delete(membership)
+    existing = {membership.group_id for membership in current}
+    for group in groups:
+        if group.id not in existing:
+            session.add(DocumentChunkGroupMembership(chunk_id=chunk.id, group_id=group.id))
+    session.flush()
+    if commit:
+        session.commit()
+    return locked
+
+
 def group_usage_counts(session, group: ContentGroup) -> dict[str, int]:
     saved = session.scalar(
         select(func.count()).select_from(FeedItemGroupMembership).join(FeedItem).where(
@@ -130,15 +164,20 @@ def group_usage_counts(session, group: ContentGroup) -> dict[str, int]:
     documents = session.scalar(
         select(func.count()).select_from(DocumentGroupMembership).where(DocumentGroupMembership.group_id == group.id)
     ) or 0
+    chunks = session.scalar(
+        select(func.count()).select_from(DocumentChunkGroupMembership).where(
+            DocumentChunkGroupMembership.group_id == group.id,
+        )
+    ) or 0
     provenance = session.scalar(
         select(func.count()).select_from(FeedItemGroupMembership).where(FeedItemGroupMembership.group_id == group.id)
     ) or 0
-    return {"saved_item_count": saved, "document_count": documents, "provenance_item_count": provenance}
+    return {"saved_item_count": saved, "document_count": documents, "chunk_count": chunks, "provenance_item_count": provenance}
 
 
 def archive_group(session, group: ContentGroup) -> ContentGroup:
     counts = group_usage_counts(session, group)
-    if counts["saved_item_count"] or counts["document_count"]:
+    if counts["saved_item_count"] or counts["document_count"] or counts["chunk_count"]:
         error = RuntimeError("group is in active use")
         error.counts = counts
         raise error

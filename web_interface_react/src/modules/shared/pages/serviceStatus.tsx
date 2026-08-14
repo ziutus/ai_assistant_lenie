@@ -6,6 +6,7 @@ type Dependency = {
   id: string;
   name: string;
   status: "ok" | "warning" | "down" | "unknown";
+  observed_only: boolean;
   successes: number;
   failures: number;
   last_success_at: string | null;
@@ -16,7 +17,7 @@ type Dependency = {
 
 type Report = { observed_at: string; window_minutes: number; services: Dependency[] };
 
-const STYLES: Record<Dependency["status"], { label: string; color: string; background: string }> = {
+const STATUS_STYLE: Record<Dependency["status"], { label: string; color: string; background: string }> = {
   ok: { label: "Działa", color: "#166534", background: "#dcfce7" },
   warning: { label: "Ostrzeżenie", color: "#92400e", background: "#fef3c7" },
   down: { label: "Niedostępna", color: "#b91c1c", background: "#fee2e2" },
@@ -61,7 +62,7 @@ const ServiceStatus = () => {
     <button className="button" onClick={() => void load()}>Odśwież</button>
     {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
     {report?.services.map(service => {
-      const style = STYLES[service.status];
+      const style = STATUS_STYLE[service.status];
       return <section key={service.id} style={{ marginTop: 14, padding: 16, border: "1px solid #cbd5e1", borderRadius: 8 }}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
           <strong>{service.name}</strong>

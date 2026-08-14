@@ -125,7 +125,16 @@ def geocode(query: str) -> dict | None:
         # ("Kyiv, Ukraine"), which made the name-similarity check reject the
         # Polish query "Kijów" (live E2E 2026-07-10)
         from library.external_service_events import observed_request
-        resp = observed_request(service="locationiq", operation="geocode", success_fn=lambda response: response.ok or response.status_code == 404, request_fn=lambda: requests.get(SEARCH_URL, params={"key": key, "q": query, "format": "json", "limit": 1, "accept-language": "pl,en"}, timeout=REQUEST_TIMEOUT_S))
+        resp = observed_request(
+            service="locationiq", operation="geocode",
+            request_fn=lambda: requests.get(
+                SEARCH_URL,
+                params={"key": key, "q": query, "format": "json", "limit": 1, "accept-language": "pl,en"},
+                timeout=REQUEST_TIMEOUT_S,
+            ),
+            # LocationIQ uses 404 for a valid, non-geocodable name.
+            success_fn=lambda response: response.ok or response.status_code == 404,
+        )
         if resp.status_code == 404:
             # LocationIQ returns 404 "Unable to geocode" for a clean miss
             return None

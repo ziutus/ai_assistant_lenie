@@ -18,14 +18,27 @@ WEBSHARE_IP_CHECK_URL = "https://ipv4.webshare.io/"
 WEBSHARE_API_BASE = "https://proxy.webshare.io/api/v2/"
 MIN_BANDWIDTH_BYTES = 10 * 1024 * 1024  # 10 MB
 
+
 def _request(operation: str, method: str, url: str, **kwargs):
+    """Make and observe a real Webshare request without changing its behavior."""
     started = time.monotonic()
-    try: response = requests.request(method, url, **kwargs)
+    try:
+        response = requests.request(method, url, **kwargs)
     except requests.RequestException as exc:
         from library.external_service_events import record_external_service_event
-        record_external_service_event(service="webshare", operation=operation, success=False, error_code=type(exc).__name__, latency_ms=int((time.monotonic()-started)*1000)); raise
+        record_external_service_event(
+            service="webshare", operation=operation, success=False,
+            error_code=type(exc).__name__, latency_ms=int((time.monotonic() - started) * 1000),
+        )
+        raise
     from library.external_service_events import record_external_service_event
-    record_external_service_event(service="webshare", operation=operation, success=response.ok, status_code=response.status_code, error_code=None if response.ok else f"HTTP_{response.status_code}", latency_ms=int((time.monotonic()-started)*1000)); return response
+    record_external_service_event(
+        service="webshare", operation=operation, success=response.ok,
+        status_code=response.status_code,
+        error_code=None if response.ok else f"HTTP_{response.status_code}",
+        latency_ms=int((time.monotonic() - started) * 1000),
+    )
+    return response
 
 
 def _headers(api_key: str) -> dict:
@@ -91,7 +104,8 @@ def ensure_ip_authorized(api_key: str, expected_ip: str = None) -> str:
         logger.info(f"IP {current_ip} is already authorized in Webshare")
         return current_ip
 
-    resp = _request("authorize_ip", "POST", f"{WEBSHARE_API_BASE}proxy/ipauthorization/",
+    resp = _request(
+        "authorize_ip", "POST", f"{WEBSHARE_API_BASE}proxy/ipauthorization/",
         json={"ip_address": current_ip},
         headers=headers,
         timeout=10,
@@ -102,7 +116,8 @@ def ensure_ip_authorized(api_key: str, expected_ip: str = None) -> str:
         if "not_enough_ip_authorizations" in error_codes and existing:
             logger.info(f"IP authorization limit reached — replacing old IPs with {current_ip}")
             for entry in existing:
-                del_resp = _request("remove_ip_authorization", "DELETE", f"{WEBSHARE_API_BASE}proxy/ipauthorization/{entry['id']}/",
+                del_resp = _request(
+                    "remove_ip_authorization", "DELETE", f"{WEBSHARE_API_BASE}proxy/ipauthorization/{entry['id']}/",
                     headers=headers,
                     timeout=10,
                 )
@@ -110,7 +125,8 @@ def ensure_ip_authorized(api_key: str, expected_ip: str = None) -> str:
                     logger.info(f"Removed old authorized IP: {entry['ip_address']}")
                 else:
                     logger.warning(f"Failed to remove IP {entry['ip_address']}: {del_resp.status_code} — {del_resp.text}")
-            resp = _request("authorize_ip", "POST", f"{WEBSHARE_API_BASE}proxy/ipauthorization/",
+            resp = _request(
+                "authorize_ip", "POST", f"{WEBSHARE_API_BASE}proxy/ipauthorization/",
                 json={"ip_address": current_ip},
                 headers=headers,
                 timeout=10,
@@ -160,7 +176,8 @@ def check_bandwidth(api_key: str) -> dict:
     now = datetime.now(timezone.utc)
     start_of_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    resp = _request("bandwidth_stats", "GET", f"{WEBSHARE_API_BASE}stats/aggregate/",
+    resp = _request(
+        "bandwidth_stats", "GET", f"{WEBSHARE_API_BASE}stats/aggregate/",
         params={"timestamp__gte": start_of_month.isoformat(), "timestamp__lte": now.isoformat()},
         headers=headers,
         timeout=10,
