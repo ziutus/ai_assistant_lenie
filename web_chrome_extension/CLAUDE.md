@@ -2,7 +2,7 @@
 
 Chrome/Kiwi browser extension for capturing webpages and sending them to the Lenie AI backend. No build step — load unpacked directly from this folder.
 
-**Version**: 1.0.54 | **Manifest**: v3
+**Version**: 1.0.55 | **Manifest**: v3
 
 ## Directory Structure
 
