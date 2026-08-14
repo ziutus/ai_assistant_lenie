@@ -12,6 +12,7 @@ import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
 import { useIsDesktop } from "../hooks/useIsDesktop";
 import { toOpenableSourceUrl } from "../utils/sourceUrl";
+import ChapterGroupsPanel from "../components/ChapterGroupsPanel/ChapterGroupsPanel";
 import styles from "./read.module.css";
 
 // Lazy-loaded: leaflet (~150 kB) should not land in the main bundle for users
@@ -1169,6 +1170,8 @@ const Read: React.FC = () => {
       )}
 
       {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
+
+      {id && <ChapterGroupsPanel documentId={id} position={position} />}
 
       <div
         className={`${styles.scrim} ${tocOpen ? styles.scrimOpen : ""}`}

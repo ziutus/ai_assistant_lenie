@@ -50,6 +50,39 @@ class TestGetEmbeddings:
         assert all(r.status == "error" and r.embedding is None for r in results)
         assert results[0].error_message == "boom"
 
+    def test_cloudferro_embedding_batch_is_recorded_for_service_status(self, monkeypatch):
+        usage = []
+        monkeypatch.setattr(
+            "library.api.cloudferro.sherlock.sherlock_embedding.sherlock_create_embeddings",
+            lambda texts, model: _batch_response(texts, model=model),
+        )
+        monkeypatch.setattr(
+            "library.llm_usage.recorder.record_llm_usage", lambda **kwargs: usage.append(kwargs),
+        )
+
+        embedding_module.get_embeddings("BAAI/bge-multilingual-gemma2", ["a", "b"])
+
+        assert len(usage) == 1
+        assert usage[0]["operation"] == "embedding"
+        assert usage[0]["provider"] == "cloudferro"
+        assert usage[0]["model"] == "BAAI/bge-multilingual-gemma2"
+        assert usage[0]["success"] is True
+
+    def test_failed_cloudferro_embedding_batch_is_recorded(self, monkeypatch):
+        usage = []
+        monkeypatch.setattr(
+            "library.api.cloudferro.sherlock.sherlock_embedding.sherlock_create_embeddings",
+            lambda texts, model: _batch_response(texts, status_code=503, model=model),
+        )
+        monkeypatch.setattr(
+            "library.llm_usage.recorder.record_llm_usage", lambda **kwargs: usage.append(kwargs),
+        )
+
+        embedding_module.get_embeddings("BAAI/bge-multilingual-gemma2", ["a"])
+
+        assert usage[0]["success"] is False
+        assert usage[0]["error_code"] == "HTTP_503"
+
     def test_out_of_order_batch_items_map_by_index(self, monkeypatch):
         def fake_batch(texts, model):
             response = _batch_response(texts, model=model)
@@ -80,6 +113,17 @@ class TestGetEmbeddings:
 
     def test_empty_input_returns_empty_list(self):
         assert embedding_module.get_embeddings("BAAI/bge-multilingual-gemma2", []) == []
+
+    def test_single_cloudferro_embedding_uses_observed_batch_path(self, monkeypatch):
+        monkeypatch.setattr(
+            embedding_module, "get_embeddings",
+            lambda model, texts: [SimpleNamespace(text=texts[0], status="success", embedding=[0.1])],
+        )
+
+        result = embedding_module.get_embedding("BAAI/bge-multilingual-gemma2", "tekst")
+
+        assert result.status == "success"
+        assert result.embedding == [0.1]
 
     def test_unknown_model_raises(self):
         with pytest.raises(Exception, match="no model info"):

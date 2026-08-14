@@ -26,7 +26,15 @@ MAX_CANDIDATES = 5
 def _get(params: dict) -> dict | None:
     try:
         from library.external_service_events import observed_request
-        resp = observed_request(service="wikidata", operation=str(params.get("action") or "request"), request_fn=lambda: requests.get(API_URL, params={**params, "format": "json"}, headers={"User-Agent": USER_AGENT}, timeout=REQUEST_TIMEOUT_S))
+        resp = observed_request(
+            service="wikidata", operation=str(params.get("action") or "request"),
+            request_fn=lambda: requests.get(
+                API_URL,
+                params={**params, "format": "json"},
+                headers={"User-Agent": USER_AGENT},
+                timeout=REQUEST_TIMEOUT_S,
+            ),
+        )
         resp.raise_for_status()
         return resp.json()
     except requests.RequestException as e:

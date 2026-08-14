@@ -132,7 +132,10 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         >
           LLM Costs
         </NavLink>
-        <NavLink to="/service-status" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>
+        <NavLink
+          to="/service-status"
+          className={({ isActive }) => isActive ? classes.activeLink : classes.link}
+        >
           Status usług
         </NavLink>
         <NavLink
@@ -152,6 +155,7 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
           Statystyki
         </NavLink>
         <NavLink to="/feeds" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Feedy</NavLink>
+        <NavLink to="/chapter-groups" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Kategorie fragmentów</NavLink>
         <NavLink to="/feed-review" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Kuracja feedów</NavLink>
         <NavLink to="/llm-analysis" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Analizy LLM</NavLink>
         <NavLink to="/jobs" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Joby</NavLink>
@@ -173,18 +177,31 @@ interface LayoutProps {
 }
 
 type CloudFerroStatus = { status: "warning" | "down"; failures: number; last_error_code: string | null };
+
 const DependencyWarning = () => {
   const { apiUrl, apiKey } = React.useContext(AuthorizationContext);
   const [alert, setAlert] = React.useState<CloudFerroStatus | null>(null);
   React.useEffect(() => {
     let cancelled = false;
-    const check = async () => { try { const response = await axios.get(`${apiUrl}/service_status`, { headers: { "x-api-key": apiKey ?? "" } }); const cloudferro = response.data.services?.find((service: any) => service.id === "cloudferro" || service.id === "cloudferro_llm"); if (!cancelled) setAlert(cloudferro && ["warning", "down"].includes(cloudferro.status) ? cloudferro : null); } catch { /* Status is supplementary. */ } };
-    void check(); const timer = window.setInterval(() => void check(), 60_000);
+    const check = async () => {
+      try {
+        const response = await axios.get(`${apiUrl}/service_status`, { headers: { "x-api-key": apiKey ?? "" } });
+        const cloudferro = response.data.services?.find((service: any) => service.id === "cloudferro" || service.id === "cloudferro_llm");
+        if (!cancelled) setAlert(cloudferro && ["warning", "down"].includes(cloudferro.status) ? cloudferro : null);
+      } catch { /* The page itself stays usable while status is unavailable. */ }
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 60_000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [apiKey, apiUrl]);
   if (!alert) return null;
   const unavailable = alert.status === "down";
-  return <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 6, border: `1px solid ${unavailable ? "#fca5a5" : "#fcd34d"}`, background: unavailable ? "#fef2f2" : "#fffbeb", color: unavailable ? "#991b1b" : "#92400e" }}><strong>{unavailable ? "CloudFerro nie odpowiada" : "CloudFerro zgłasza błędy"}.</strong>{" "}Automatyczne etapy LLM i embeddingów mogą czekać na timeout; backend pozostaje dostępny.{alert.last_error_code ? ` Ostatni błąd: ${alert.last_error_code}.` : ""} {alert.failures} błędów w ostatnim oknie. {" "}<NavLink to="/service-status" style={{ color: "inherit", fontWeight: 700 }}>Zobacz status usług</NavLink></div>;
+  return <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 6, border: `1px solid ${unavailable ? "#fca5a5" : "#fcd34d"}`, background: unavailable ? "#fef2f2" : "#fffbeb", color: unavailable ? "#991b1b" : "#92400e" }}>
+    <strong>{unavailable ? "CloudFerro nie odpowiada" : "CloudFerro zgłasza błędy"}.</strong>{" "}
+    Automatyczne etapy LLM i embeddingów mogą czekać na timeout; backend pozostaje dostępny.
+    {alert.last_error_code ? ` Ostatni błąd: ${alert.last_error_code}.` : ""} {alert.failures} błędów w ostatnim oknie. {" "}
+    <NavLink to="/service-status" style={{ color: "inherit", fontWeight: 700 }}>Zobacz status usług</NavLink>
+  </div>;
 };
 
 const Layout = ({ children }: LayoutProps) => {

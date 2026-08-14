@@ -12,7 +12,12 @@ _SHERLOCK_EMBEDDINGS_ENDPOINT = "https://api-sherlock.cloudferro.com/openai/v1/e
 
 
 def _record_sherlock_embedding_usage(response, model: str, latency_ms: int) -> None:
-    """Persist one observed CloudFerro embedding batch for status reporting."""
+    """Persist one observation per CloudFerro embedding batch.
+
+    The recorder inherits document/job/run context, so this makes embedding
+    failures visible both in a document's cost history and in service status.
+    Recording is deliberately best-effort and cannot change embedding results.
+    """
     success = response.status_code == 200 and bool(response.embedding)
     error_code = None
     if not success:
@@ -21,12 +26,18 @@ def _record_sherlock_embedding_usage(response, model: str, latency_ms: int) -> N
         from library.llm_usage.recorder import record_llm_usage
 
         record_llm_usage(
-            operation="embedding", provider="cloudferro", model=model,
-            prompt_tokens=response.prompt_tokens, total_tokens=response.total_tokens,
-            endpoint=_SHERLOCK_EMBEDDINGS_ENDPOINT, success=success,
-            error_code=error_code, latency_ms=latency_ms,
+            operation="embedding",
+            provider="cloudferro",
+            model=model,
+            prompt_tokens=response.prompt_tokens,
+            total_tokens=response.total_tokens,
+            endpoint=_SHERLOCK_EMBEDDINGS_ENDPOINT,
+            success=success,
+            error_code=error_code,
+            latency_ms=latency_ms,
         )
     except (SystemExit, Exception):
+        # Keep embedding generation available when observability storage is down.
         pass
 
 
@@ -48,6 +59,8 @@ def get_embeddings(model: str, texts: list[str]) -> list[EmbeddingResult]:
         try:
             response = sherlock_create_embeddings(texts, model)
         except Exception:
+            # The production client normally converts transport exceptions to
+            # an error result, but retain an audit record for unexpected ones.
             try:
                 from library.llm_usage.recorder import record_llm_usage
 
@@ -60,7 +73,9 @@ def get_embeddings(model: str, texts: list[str]) -> list[EmbeddingResult]:
             except (SystemExit, Exception):
                 pass
             raise
-        _record_sherlock_embedding_usage(response, model, int((time.monotonic() - started) * 1000))
+        _record_sherlock_embedding_usage(
+            response, model, int((time.monotonic() - started) * 1000),
+        )
         if response.status_code != 200 or not response.embedding:
             error = getattr(response, "error", None) or response.error_message or f"HTTP {response.status_code}"
             return [
@@ -102,6 +117,8 @@ def get_embedding(model: str, text: str) -> EmbeddingResult:
         import library.api.openai.openai_embedding as openai_embedding
         return openai_embedding.get_embedding(text)
     elif model in ["BAAI/bge-multilingual-gemma2", "intfloat/e5-mistral-7b-instruct"]:
+        # Reuse the batch path even for one input so every CloudFerro embedding
+        # request has the same usage/status observation.
         return get_embeddings(model, [text])[0]
     elif model in ["BAAI/bge-m3"]:
         import library.api.arklabs.arklabs_embedding as arklabs_embedding

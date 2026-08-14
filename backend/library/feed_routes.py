@@ -7,11 +7,15 @@ from sqlalchemy import select, case, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from library.db.engine import get_scoped_session
-from library.db.models import ContentGroup, Document, FeedItemGroupMembership, FeedSource, FeedItem, FeedReviewDecision, Job, ScheduledTask
+from library.db.models import (
+    ContentGroup, Document, DocumentAnalysisRun, DocumentChunk, DocumentChunkGroupMembership,
+    FeedItemGroupMembership, FeedSource, FeedItem, FeedReviewDecision, Job, ScheduledTask,
+)
 from library.content_group_service import (
     archive_group,
     create_group,
     group_to_dict,
+    replace_chunk_groups,
     replace_document_groups,
     replace_feed_item_groups,
     update_group,
@@ -263,6 +267,106 @@ def patch_document_groups(document_id):
         session.rollback()
         abort(400, str(exc))
     return get_document_groups()
+
+
+def _reader_chunk(session, document_id: int, position: int) -> DocumentChunk:
+    """Resolve a reader position to its TEMAT chunk, or explain why it cannot.
+
+    Markdown-header chapters are slices of document text and do not have a
+    stable chunk row. The feature is deliberately scoped to the chunk fallback
+    used by newsletters and transcripts, where a saved item is exact.
+    """
+    from library.chunk_review_routes import _chunk_based_chapters, _latest_run_for_document
+
+    run = _latest_run_for_document(session, document_id)
+    chapter = next(
+        (item for item in _chunk_based_chapters(run) if item["position"] == position),
+        None,
+    ) if run else None
+    if chapter is None:
+        abort(409, "this reader chapter is not backed by an analysis chunk")
+    chunk = session.get(DocumentChunk, chapter["chunk_id"])
+    if chunk is None:
+        abort(404, "reader chunk not found")
+    return chunk
+
+
+@bp.get("/document/<int:document_id>/chapter/<int:position>/groups")
+def get_reader_chapter_groups(document_id, position):
+    _user()
+    session = get_scoped_session()
+    if session.get(Document, document_id) is None:
+        abort(404)
+    chunk = _reader_chunk(session, document_id, position)
+    groups = sorted(
+        (membership.group for membership in chunk.group_memberships if membership.group.archived_at is None),
+        key=lambda group: group.name.casefold(),
+    )
+    return jsonify({
+        "document_id": document_id,
+        "position": position,
+        "chunk_id": chunk.id,
+        "groups": [group_to_dict(group) for group in groups],
+    })
+
+
+@bp.patch("/document/<int:document_id>/chapter/<int:position>/groups")
+def patch_reader_chapter_groups(document_id, position):
+    _user()
+    session = get_scoped_session()
+    if session.get(Document, document_id) is None:
+        abort(404)
+    chunk = _reader_chunk(session, document_id, position)
+    try:
+        replace_chunk_groups(session, chunk, (request.get_json(silent=True) or {}).get("group_ids"))
+    except ValueError as exc:
+        session.rollback()
+        abort(400, str(exc))
+    return get_reader_chapter_groups(document_id, position)
+
+
+@bp.get("/chapter_group_entries")
+def get_chapter_group_entries():
+    _user()
+    from library.chunk_review_routes import _chunk_based_chapters
+
+    group_id = request.args.get("group_id", type=int)
+    if group_id is None:
+        abort(400, "group_id is required")
+    session = get_scoped_session()
+    group = session.get(ContentGroup, group_id)
+    if group is None or group.archived_at is not None:
+        abort(404, "active group not found")
+    if group.kind != "topic":
+        abort(400, "only topic groups can contain reader chapters")
+    rows = session.execute(
+        select(DocumentChunk, Document)
+        .join(DocumentChunkGroupMembership, DocumentChunkGroupMembership.chunk_id == DocumentChunk.id)
+        .join(Document, Document.id == DocumentChunk.document_id)
+        .where(DocumentChunkGroupMembership.group_id == group_id)
+        .order_by(DocumentChunk.created_at.desc(), DocumentChunk.id.desc())
+    ).all()
+    positions_by_chunk_id: dict[int, int] = {}
+    for run_id in {chunk.run_id for chunk, _document in rows}:
+        run = session.get(DocumentAnalysisRun, run_id)
+        if run is not None:
+            positions_by_chunk_id.update({
+                item["chunk_id"]: item["position"]
+                for item in _chunk_based_chapters(run)
+            })
+    return jsonify({
+        "group": group_to_dict(group, session),
+        "entries": [
+            {
+                "document_id": document.id,
+                "chapter_position": positions_by_chunk_id.get(chunk.id),
+                "title": chunk.topic or document.title or f"Dokument #{document.id}",
+                "document_title": document.title,
+                "summary": chunk.summary,
+            }
+            for chunk, document in rows
+        ],
+    })
 
 
 @bp.get("/document/<int:document_id>/origin-feed-groups")

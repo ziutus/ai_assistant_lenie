@@ -259,6 +259,9 @@ class ContentGroup(Base):
     document_memberships: Mapped[list["DocumentGroupMembership"]] = relationship(
         back_populates="group", cascade="all, delete-orphan", overlaps="groups,group_memberships",
     )
+    chunk_memberships: Mapped[list["DocumentChunkGroupMembership"]] = relationship(
+        back_populates="group", cascade="all, delete-orphan", overlaps="groups,group_memberships",
+    )
     suggestions: Mapped[list["ContentGroupSuggestion"]] = relationship(back_populates="group")
     feed_items: Mapped[list["FeedItem"]] = relationship(
         secondary="feed_item_group_memberships", back_populates="groups",
@@ -267,6 +270,10 @@ class ContentGroup(Base):
     documents: Mapped[list["Document"]] = relationship(
         secondary="document_group_memberships", back_populates="groups",
         overlaps="document_memberships,group_memberships,group,document",
+    )
+    chunks: Mapped[list["DocumentChunk"]] = relationship(
+        secondary="document_chunk_group_memberships", back_populates="groups",
+        overlaps="chunk_memberships,group_memberships,group,chunk",
     )
 
 
@@ -1195,9 +1202,34 @@ class DocumentChunk(Base):
 
     run: Mapped["DocumentAnalysisRun"] = relationship(back_populates="chunks")
     document: Mapped["Document"] = relationship(foreign_keys=[document_id])
+    group_memberships: Mapped[list["DocumentChunkGroupMembership"]] = relationship(
+        back_populates="chunk", cascade="all, delete-orphan", overlaps="groups,chunk_memberships",
+    )
+    groups: Mapped[list[ContentGroup]] = relationship(
+        secondary="document_chunk_group_memberships", back_populates="chunks",
+        overlaps="group_memberships,chunk_memberships,group,chunk",
+    )
 
     def __repr__(self) -> str:
         return f"DocumentChunk(id={self.id!r}, run_id={self.run_id!r}, position={self.position!r}, type={self.type!r})"
+
+
+class DocumentChunkGroupMembership(Base):
+    """Manual category assignment for one reader chapter backed by a chunk."""
+
+    __tablename__ = "document_chunk_group_memberships"
+
+    chunk_id: Mapped[int] = mapped_column(
+        ForeignKey("document_chunks.id", ondelete="CASCADE"), primary_key=True,
+    )
+    group_id: Mapped[int] = mapped_column(
+        ForeignKey("content_groups.id", ondelete="RESTRICT"), primary_key=True,
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+    chunk: Mapped["DocumentChunk"] = relationship(back_populates="group_memberships")
+    group: Mapped["ContentGroup"] = relationship(back_populates="chunk_memberships")
 
 
 class DocumentTopicSection(Base):
@@ -2493,7 +2525,9 @@ class LlmUsageLog(Base):
 
 class ExternalServiceEvent(Base):
     """Outcome of one real request to a non-LLM external dependency."""
+
     __tablename__ = "external_service_events"
+
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     service: Mapped[str] = mapped_column(String(50), nullable=False)
     operation: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -2501,8 +2535,13 @@ class ExternalServiceEvent(Base):
     status_code: Mapped[int | None] = mapped_column(Integer)
     error_code: Mapped[str | None] = mapped_column(String(100))
     latency_ms: Mapped[int | None] = mapped_column(Integer)
-    occurred_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
-    __table_args__ = (Index("idx_external_service_events_service_occurred", "service", "occurred_at"),)
+    occurred_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    __table_args__ = (
+        Index("idx_external_service_events_service_occurred", "service", "occurred_at"),
+    )
 
 
 # The pre-11d before_flush hook that auto-created `sources` rows for
