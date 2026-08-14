@@ -167,7 +167,7 @@ def get_or_fetch_pipeline(session, name: str) -> InfraGeometry:
     return row
 
 
-def attach_document_pipelines(session, doc_id: int) -> dict:
+def attach_document_pipelines(session, doc_id: int, progress_callback=None) -> dict:
     """Look up pipeline geometries for the document's unverified place entities.
 
     Runs after place verification (which handles real point places): a place
@@ -195,7 +195,9 @@ def attach_document_pipelines(session, doc_id: int) -> dict:
 
     checked = 0
     resolved: list[str] = []
-    for ent in entities:
+    for index, ent in enumerate(entities, start=1):
+        if progress_callback is not None:
+            progress_callback(index, len(entities))
         if ent.geocode is None or ent.geocode.resolved:
             continue  # unchecked by the geocoder (or a confirmed point place)
         if len(ent.entity_text.strip()) < MIN_QUERY_LENGTH or '"' in ent.entity_text:

@@ -289,8 +289,8 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
         setMessage(response.data.message);
         setIsLoading(false);
         setIsError(false);
-        // NER is a deliberate review stage between source editing and chunk work.
-        navigate(`/entities/${website.id}`);
+        // NER is available in the editor; this action continues to chunk review.
+        navigate(`/chunks/${website.id}`);
         return;
       }
 
@@ -298,8 +298,8 @@ export const useManageLLM = ({ formik, selectedDocumentType, selectedDocumentSta
         setMessage(response.data.message);
         setIsLoading(false);
         setIsError(false);
-        // A transcript is saved first; entity review is the next explicit step.
-        navigate(`/entities/${website.id}`);
+        // Entity review is embedded in the transcript editor; continue to chunks.
+        navigate(`/chunks/${website.id}`);
         return;
       }
 

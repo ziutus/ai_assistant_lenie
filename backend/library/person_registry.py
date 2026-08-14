@@ -124,7 +124,7 @@ def _link(session, document_id: int, person: Person, raw_mention: str, confidenc
     return True
 
 
-def resolve_document_persons(session, doc, text: str) -> dict:
+def resolve_document_persons(session, doc, text: str, progress_callback=None) -> dict:
     """Resolve the document's persName entities into document_persons links.
 
     Queues changes on the session without committing (caller owns the
@@ -143,7 +143,9 @@ def resolve_document_persons(session, doc, text: str) -> dict:
 
     linked: list[tuple[str, str, str]] = []
     skipped: list[str] = []
-    for ent in entities:
+    for index, ent in enumerate(entities, start=1):
+        if progress_callback is not None:
+            progress_callback(index, len(entities))
         name = ent.entity_text.strip()
 
         # 1. Known full alias/canonical name — cheapest, no network. A bare

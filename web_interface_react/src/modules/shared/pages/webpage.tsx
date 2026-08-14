@@ -192,9 +192,6 @@ const Webpage = () => {
                 onClick={() => handleNextAfterAutoFlow(formik.values)} disabled={isLoading}>
                 {isLoading ? "Szukam…" : "Następny z listy"}
               </button>
-              <NavLink className="button" to={`/entities/${formik.values.id}`}>
-                Przejdź do analizy encji (NER)
-              </NavLink>
             </div>
           </section>
         ) : (

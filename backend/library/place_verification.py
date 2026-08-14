@@ -116,7 +116,7 @@ def remove_orphaned_tag(session, document, deleted_entity: DocumentEntity) -> st
     return tag
 
 
-def verify_document_places(session, doc, text: str) -> dict:
+def verify_document_places(session, doc, text: str, progress_callback=None) -> dict:
     """Geocode the document's place entities and tag confirmed places.
 
     Queues all changes on the session without committing (caller owns the
@@ -137,9 +137,10 @@ def verify_document_places(session, doc, text: str) -> dict:
     resolved_names: list[str] = []
     # canonical name -> {"mentions": summed count, "surface": most-mentioned NER form}
     groups: dict[str, dict] = {}
-    for ent in entities:
-        if _is_country(ent.entity_text):
-            continue
+    candidates = [ent for ent in entities if not _is_country(ent.entity_text)]
+    for index, ent in enumerate(candidates, start=1):
+        if progress_callback is not None:
+            progress_callback(index, len(candidates))
         if ent.geocode_id is None:
             ent.geocode = _get_or_create_geocode(session, ent.entity_text)
             checked += 1
