@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', function () {
   let detectedEmailId = '';
   let detectedEmailPublishedOn = '';
   let detectedEmailImages = [];
-  const debugState = { version: '1.0.54' };
+  const debugState = { version: '1.0.55' };
 
   const DEFAULT_LOCAL_SERVER_URL = 'http://192.168.200.7:5055/url_add';
   const DEFAULT_AWS_SERVER_URL = 'https://1bkc3kz7c9.execute-api.us-east-1.amazonaws.com/v1/url_add';
@@ -407,11 +407,55 @@ document.addEventListener('DOMContentLoaded', function () {
         target: { tabId: tabs[0].id },
         func: async () => {
           const clean = value => (value || '').replace(/\u00a0/g, ' ').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-           const hostname = location.hostname.toLowerCase();
-           const isFacebook = hostname === 'facebook.com' || hostname.endsWith('.facebook.com');
-           const isLinkedIn = hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com');
-           const isGmail = hostname === 'mail.google.com';
-           const isVisible = element => {
+          // Facebook/LinkedIn render the post body and the reaction bar +
+          // comment thread inside the same container the extraction selectors
+          // grab (class names for the "noise" parts drift often enough that
+          // removing them by selector -- see the copy.querySelectorAll(...).remove()
+          // fallbacks below -- regularly misses). Cutting the extracted text at
+          // the first clear "post ends, engagement UI begins" line is more
+          // robust than chasing selector renames, and is applied to every
+          // extraction path (not just the body-text fallback) as a final pass.
+          const ENGAGEMENT_STOP_LINES = new Set([
+            'Like', 'Comment', 'Repost', 'Send', 'Show more', 'See translation', 'Translate',
+            'Most relevant', 'All comments', 'Top comments', 'Follow', 'Connect',
+            'Lubię to!', 'Lubię to', 'Skomentuj', 'Komentarz', 'Udostępnij', 'Wyślij',
+            'Najtrafniejsze', 'Wszystkie komentarze', 'Zobacz tłumaczenie', 'Przetłumacz', 'Obserwuj'
+          ]);
+          const ENGAGEMENT_COUNT_RE = /^\d+\s+(?:reactions?|comments?|reposts?|shares?|repost(?:y|ów)?|komentarz(?:e|y)?|reakcj[ei]|udostępnie(?:ń|nia)?)$/i;
+          const trimAtEngagementBoundary = value => {
+            const lines = (value || '').split(/\r?\n/);
+            let stopIndex = -1;
+            let numericRun = 0;
+            let numericRunStart = -1;
+            for (let i = 0; i < lines.length; i++) {
+              const line = lines[i].trim();
+              if (!line) continue;
+              if (/^(?:…|\.\.\.)\s*more$/i.test(line) || ENGAGEMENT_STOP_LINES.has(line) || ENGAGEMENT_COUNT_RE.test(line)) {
+                stopIndex = i;
+                break;
+              }
+              // LinkedIn/Facebook often render the reaction/comment/share
+              // counters as bare numbers with no label once the post is
+              // scraped as plain innerText -- two in a row is not something
+              // real post prose produces.
+              if (/^\d{1,4}$/.test(line)) {
+                if (numericRun === 0) numericRunStart = i;
+                numericRun++;
+                if (numericRun >= 2) {
+                  stopIndex = numericRunStart;
+                  break;
+                }
+              } else {
+                numericRun = 0;
+              }
+            }
+            return (stopIndex >= 0 ? lines.slice(0, stopIndex) : lines).join('\n').trim();
+          };
+          const hostname = location.hostname.toLowerCase();
+          const isFacebook = hostname === 'facebook.com' || hostname.endsWith('.facebook.com');
+          const isLinkedIn = hostname === 'linkedin.com' || hostname.endsWith('.linkedin.com');
+          const isGmail = hostname === 'mail.google.com';
+          const isVisible = element => {
              if (!element) return false;
              const style = getComputedStyle(element);
              return style.display !== 'none' && style.visibility !== 'hidden' && element.innerText?.trim();
@@ -724,6 +768,9 @@ document.addEventListener('DOMContentLoaded', function () {
                email_published_on_found: Boolean(emailPublishedOn),
              };
            }
+          if (isFacebook || isLinkedIn) {
+            postText = trimAtEngagementBoundary(postText);
+          }
           return {
             title: document.title,
             description: document.querySelector('meta[name="description"]')?.content || '',
