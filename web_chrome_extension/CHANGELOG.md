@@ -1,5 +1,9 @@
 # CHANGELOG
 
+## [1.0.55] - 2026-08-14
+### Poprawione
+- Ekstrakcja postów Facebooka i LinkedIn odcina teraz treść posta na granicy paska reakcji/komentarzy (liczniki reakcji, „Most relevant"/„Najtrafniejsze", akcje Like/Comment/Share itp.) dla wszystkich ścieżek ekstrakcji, nie tylko dla dotychczasowego fallbacku — wcześniej pierwszy komentarz potrafił trafić do treści posta.
+
 ## [1.0.54] - 2026-08-12
 ### Added
 - Import Gmaila zapisuje obrazy z treści wiadomości (adresy URL, znaczniki `[imgN]`, piksele śledzące są pomijane) — czytnik pokazuje je inline.
@@ -50,10 +54,6 @@
 Wszystkie istotne zmiany w tym projekcie będą udokumentowane w tym pliku.
 
 Format zgodny z [Keep a Changelog](https://keepachangelog.com/) i semantycznym wersjonowaniem [Semantic Versioning](https://semver.org/).
-
-## [1.0.43] - 2026-07-31
-### Poprawione
-- Ekstrakcja postów Facebooka i LinkedIn odcina teraz treść posta na granicy paska reakcji/komentarzy (liczniki reakcji, „Most relevant"/„Najtrafniejsze", akcje Like/Comment/Share itp.) dla wszystkich ścieżek ekstrakcji, nie tylko dla dotychczasowego fallbacku — wcześniej pierwszy komentarz potrafił trafić do treści posta.
 
 ## [1.0.42] - 2026-07-29
 ### Poprawione
