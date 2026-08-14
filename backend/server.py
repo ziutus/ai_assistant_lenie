@@ -629,14 +629,35 @@ def website_entities_get():
     }, 200
 
 
+@app.route('/website_entities/enrichment_job', methods=['GET'])
+def website_entities_enrichment_job_get():
+    """Latest entity-enrichment job for a document, for editor polling."""
+    from library.db.models import Job
+    from library.entity_enrichment_service import ENTITY_ENRICHMENT, job_view
+
+    doc_id, error = _entities_doc_id(request.args.get('id'))
+    if error:
+        return error
+    session = get_scoped_session()
+    if Document.get_by_id(session, doc_id) is None:
+        return {"status": "error", "message": "Document not found"}, 404
+    job = session.scalars(
+        select(Job)
+        .where(Job.type == ENTITY_ENRICHMENT, Job.parameters["document_id"].as_integer() == doc_id)
+        .order_by(Job.created_at.desc())
+        .limit(1)
+    ).first()
+    return {"status": "success", "job": job_view(job) if job else None}, 200
+
+
 @app.route('/website_entities', methods=['POST'])
 def website_entities_refresh():
-    """Re-run NER on the document text, verify places and replace stored entities.
+    """Re-run NER and enqueue the slow entity verification stages.
 
     First call after an ner_service restart can take up to ~90s (model load) —
-    see ner_service/README.md. Place verification (geocoder + LLM relevance,
-    stage 3) runs after the refresh and adds miejsce-* tags to the document;
-    its failure does not fail the request.
+    see ner_service/README.md. Geocoding, person resolution and pipeline lookup
+    run in the worker after this response, so one editor click starts the whole
+    analysis without holding the browser request open.
     """
     from sqlalchemy.exc import OperationalError
 
@@ -686,53 +707,21 @@ def website_entities_refresh():
         return {"status": "error", "message": "Nie udało się odświeżyć encji."}, 500
     session.commit()
 
-    place_tags: list[str] = []
-    persons_linked = 0
-    pipelines: list[str] = []
+    enrichment_job = None
     if rows:
-        try:
-            from library.place_verification import verify_document_places
-            from library.llm_usage.context import llm_usage_context
+        from library.entity_enrichment_service import ensure_entity_enrichment_job, job_view
 
-            with llm_usage_context(document_id=doc_id):
-                summary = verify_document_places(session, doc, text)
-            session.commit()
-            place_tags = summary["tagged"]
-        except Exception:
-            session.rollback()
-            logging.exception("place verification failed for doc %s", doc_id)
-
-        try:
-            from library.person_registry import resolve_document_persons
-            from library.llm_usage.context import llm_usage_context
-
-            with llm_usage_context(document_id=doc_id):
-                p_summary = resolve_document_persons(session, doc, text)
-            session.commit()
-            persons_linked = len(p_summary["linked"])
-        except Exception:
-            session.rollback()
-            logging.exception("person resolution failed for doc %s", doc_id)
-
-        try:
-            from library.overpass_client import attach_document_pipelines
-
-            i_summary = attach_document_pipelines(session, doc_id)
-            session.commit()
-            pipelines = i_summary["resolved"]
-        except Exception:
-            session.rollback()
-            logging.exception("pipeline lookup failed for doc %s", doc_id)
+        enrichment_job = ensure_entity_enrichment_job(
+            session, doc, user_id=getattr(getattr(g, "auth", None), "user_id", None),
+        )
 
     return {
         "status": "success",
         "id": doc_id,
         "refreshed": len(rows),
-        "place_tags": place_tags,
-        "persons_linked": persons_linked,
-        "pipelines": pipelines,
+        "enrichment_job": job_view(enrichment_job) if enrichment_job else None,
         "entities": get_document_entities(session, doc_id),
-    }, 200
+    }, 202
 
 
 @app.route('/persons', methods=['GET'])

@@ -249,6 +249,12 @@ def _get_or_create_source(session, item: dict) -> InformationSource:
         # See docs/organization-ner-alias-plan.md, "Ustalenia z review".
         source = _find_source_by_organization(session, organization_id)
         if source is None:
+            # A source may have been created before the organization registry
+            # existed.  Reuse that canonical-name row and attach its missing FK
+            # instead of attempting an INSERT that violates canonical_name's
+            # global uniqueness (e.g. an existing legacy "MSZ" source).
+            source = _find_source(session, item["canonical_name"])
+        if source is None:
             source = InformationSource(
                 canonical_name=item["canonical_name"],
                 source_type=item.get("source_type"),
@@ -257,8 +263,11 @@ def _get_or_create_source(session, item: dict) -> InformationSource:
             )
             session.add(source)
             session.flush()
-        elif not source.domain and item.get("domain"):
-            source.domain = item["domain"]
+        else:
+            if source.organization_id is None:
+                source.organization_id = organization_id
+            if not source.domain and item.get("domain"):
+                source.domain = item["domain"]
         return source
 
     source = _find_source(session, item["canonical_name"])

@@ -12,6 +12,7 @@ JOB_TYPES = {
     "feed_daily",
     "content_group_suggest",
     "document_prepare",
+    "entity_enrichment",
     "legacy_aws_pull",
 }
 

@@ -47,6 +47,10 @@ def execute(session, job: Job, *, storage=None, work_dir: str = "/app/work") -> 
         from library.document_processing_service import execute_document_prepare
 
         return execute_document_prepare(session, job, storage, work_dir)
+    if job.type == "entity_enrichment":
+        from library.entity_enrichment_service import execute_entity_enrichment
+
+        return execute_entity_enrichment(session, job)
     if job.type == "legacy_aws_pull":
         from library.config_loader import load_config
         from library.legacy_aws_pull_service import LegacyAwsPullService
@@ -113,7 +117,7 @@ def main() -> int:
     parser.add_argument("--healthcheck", action="store_true")
     parser.add_argument(
         "--types",
-        default="feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest",
+        default="feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment",
         help="comma-separated job types handled by this worker",
     )
     parser.add_argument("--scheduler", action="store_true")

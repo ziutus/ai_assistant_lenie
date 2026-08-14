@@ -66,6 +66,13 @@ interface OrganizationSearchResult {
   document_count: number;
 }
 
+interface EntityEnrichmentJob {
+  id: string;
+  status: "queued" | "running" | "done" | "failed" | "cancel_requested" | "cancelled";
+  progress?: { stages?: Record<string, { label: string; current: number; total: number }> } | null;
+  error?: string | null;
+}
+
 const REVIEW_REASONS = [
   { code: "not_a_person", label: "To nie jest osoba ani miejsce" },
   { code: "misread_name", label: "Błędnie odczytana nazwa" },
@@ -225,6 +232,7 @@ const EntitiesPanel = ({
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [enrichmentJob, setEnrichmentJob] = React.useState<EntityEnrichmentJob | null>(null);
   const [message, setMessage] = React.useState("");
   // Set when the last NER refresh found ner_service unreachable (backend:
   // web_documents.ner_unavailable_at) — lets us warn instead of implying
@@ -277,6 +285,21 @@ const EntitiesPanel = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, apiUrl, apiKey]);
 
+  const fetchEnrichmentJob = React.useCallback(() => {
+    if (!docId) return;
+    axios
+      .get(`${apiUrl}/website_entities/enrichment_job`, { params: { id: docId }, headers })
+      .then((response) => {
+        const job = response.data.job ?? null;
+        setEnrichmentJob(job);
+        if (job?.status === "done") {
+          setMessage("Pełna weryfikacja encji zakończona.");
+        }
+      })
+      .catch((error) => console.error("Error fetching entity enrichment job", error));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docId, apiUrl, apiKey]);
+
   React.useEffect(() => {
     setEntities(null);
     setMessage("");
@@ -290,7 +313,21 @@ const EntitiesPanel = ({
     setReviewReason("");
     setReviewComment("");
     fetchEntities();
-  }, [docId, fetchEntities]);
+    fetchEnrichmentJob();
+  }, [docId, fetchEntities, fetchEnrichmentJob]);
+
+  const enrichmentActive = enrichmentJob?.status === "queued"
+    || enrichmentJob?.status === "running"
+    || enrichmentJob?.status === "cancel_requested";
+
+  React.useEffect(() => {
+    if (!enrichmentActive) return undefined;
+    const timer = window.setInterval(() => {
+      fetchEnrichmentJob();
+      fetchEntities();
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [enrichmentActive, fetchEnrichmentJob, fetchEntities]);
 
   const handleRefresh = async () => {
     if (!docId) {
@@ -308,10 +345,13 @@ const EntitiesPanel = ({
         { headers, timeout: 150000 },
       );
       setEntities(response.data.entities);
+      setEnrichmentJob(response.data.enrichment_job ?? null);
       setNerUnavailableAt(null);
       onEntitiesChanged?.();
       if (response.data.refreshed === 0) {
         setMessage("Nie wykryto żadnych osób ani miejsc w tym dokumencie.");
+      } else {
+        setMessage("Wykryto encje. Trwa ich pełna weryfikacja w tle.");
       }
     } catch (error: any) {
       console.error("Error refreshing entities", error);
@@ -663,7 +703,7 @@ const EntitiesPanel = ({
     <div style={{ marginTop: "10px", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <strong>Osoby i miejsca (NER)</strong>
-        <button className={"button"} type="button" disabled={isRefreshing || externalDisabled} onClick={handleRefresh}>
+        <button className={"button"} type="button" disabled={isRefreshing || enrichmentActive || externalDisabled} onClick={handleRefresh}>
           {isRefreshing ? "Wykrywam..." : "Wykryj osoby i miejsca"}
         </button>
         {!isEmpty && (
@@ -679,6 +719,23 @@ const EntitiesPanel = ({
         }}>
           ⚠️ Serwis NER był niedostępny ({new Date(nerUnavailableAt).toLocaleString("pl-PL")}) — lista poniżej
           może być pusta lub niepełna niezależnie od zawartości dokumentu. Spróbuj ponownie za chwilę.
+        </div>
+      )}
+      {enrichmentActive && (
+        <div style={{ marginTop: 8, color: "#667", fontSize: "0.9em" }}>
+          Pełna weryfikacja encji trwa
+          {Object.values(enrichmentJob?.progress?.stages ?? {}).length > 0
+            ? ` — ${Object.values(enrichmentJob?.progress?.stages ?? {})
+              .filter((stage) => stage.label !== "Gotowe")
+              .map((stage) => `${stage.label}: ${stage.current} z ${stage.total}`)
+              .join(" · ")}`
+            : ""}.
+          Wyniki odświeżą się automatycznie.
+        </div>
+      )}
+      {enrichmentJob?.status === "failed" && (
+        <div style={{ marginTop: 8, color: "#a33", fontSize: "0.9em" }}>
+          Pełna weryfikacja encji nie powiodła się: {enrichmentJob.error || "nieznany błąd"}. Kliknij ponownie, aby spróbować jeszcze raz.
         </div>
       )}
       <EntityChips label={"Osoby"} items={persons} actions={editMode ? editActions("persName") : undefined} />
@@ -835,7 +892,11 @@ const EntitiesPanel = ({
           Brak zapisanych encji — użyj przycisku, aby je wykryć.
         </div>
       )}
-      {message && <div style={{ marginTop: "6px", color: "#a33" }}>{message}</div>}
+      {message && (
+        <div style={{ marginTop: "6px", color: message.startsWith("Pełna weryfikacja") ? "#2e7d43" : "#a33" }}>
+          {message}
+        </div>
+      )}
     </div>
   );
 };
