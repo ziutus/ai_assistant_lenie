@@ -1,16 +1,20 @@
-"""Read-only import of existing Obsidian notes as Document rows (Epic 42, Story 42.1).
+"""Read-only import of existing Obsidian notes as Document rows (Epic 42).
 
-Walks the pilot vault subfolders for ``.md`` files and creates a new,
-read-only ``Document`` (``document_type="obsidian_note"``) for each file not
-already imported, through the existing ``DocumentService.import_document()``
-pipeline — no new text-extraction mechanism. Embeddings are generated via the
+Walks the pilot vault subfolders for ``.md`` files and, through the existing
+``DocumentService.import_document()`` pipeline, creates a new read-only
+``Document`` (``document_type="obsidian_note"``) for each file not already
+imported — no new text-extraction mechanism. Embeddings are generated via the
 same whole-document split+embed fallback ``documents_pipeline.py`` already
 uses for documents without an approved chunk-analysis run (no LLM chunk
 classification, no human review gate — required for an unattended bulk
 import of hundreds of notes).
 
-Detecting file changes and updating already-imported notes is Story 42.2's
-scope; this module only ever creates new documents (``skip_if_exists=True``).
+Story 42.2 adds change detection: each file's content is hashed (SHA-256,
+not mtime — Obsidian Sync does not guarantee mtime survives cross-device
+sync) and compared against ``Document.obsidian_source_hash`` from the
+previous run. An unchanged file is skipped entirely; a changed file updates
+the existing ``Document`` in place (never a duplicate) and re-embeds only
+that note, discarding its stale embeddings first.
 """
 
 from __future__ import annotations
@@ -21,10 +25,11 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
-from library.db.models import Job
+from library.db.models import Document, Job
 from library.document_repository import DocumentRepository
 from library.document_service import DocumentService
 from library.job_queue import heartbeat
+from library.text_functions import get_hash
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +38,14 @@ OBSIDIAN_REIMPORT = "obsidian_reimport"
 # Pilot scope per PRD (913 notes) -- Informatyka + Geopolityka only, not all
 # of 02-wiedza. Broadening this is a deliberate future decision, out of scope
 # for this story.
-PILOT_SUBFOLDERS = ("02-wiedza/Informatyka", "02-wiedza/Geopolityka")
+#
+# The Geopolityka folder's real vault name is "Geopolityka i polityka" (see
+# also imports/control_questions.py, imports/import_control_questions.py,
+# which already reference it correctly) -- Story 42.1 introduced this
+# constant with the wrong, shortened name, so the folder was silently
+# skipped (a "configured subfolder missing" warning) from day one. Fixed in
+# Story 42.2 after NAS verification surfaced it.
+PILOT_SUBFOLDERS = ("02-wiedza/Informatyka", "02-wiedza/Geopolityka i polityka")
 
 
 def _note_url(relative_path: str) -> str:
@@ -80,7 +92,8 @@ def _embed_note(repo: DocumentRepository, doc, model: str) -> int:
 def execute_obsidian_reimport(session: Session, job: Job) -> dict:
     """Job execution function for the ``obsidian_reimport`` job type.
 
-    Returns a summary dict: scanned/created/skipped/failed file counts.
+    Returns a summary dict: scanned/created/updated/skipped/failed file
+    counts.
     """
     cfg = load_config()
     vault_path = Path(cfg.get("OBSIDIAN_VAULT_PATH", "/app/obsidian-vault"))
@@ -89,7 +102,7 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
     service = DocumentService(session)
     repo = DocumentRepository(session)
 
-    scanned = created = skipped = failed = 0
+    scanned = created = updated = skipped = failed = 0
     for subfolder in PILOT_SUBFOLDERS:
         folder = vault_path / subfolder
         if not folder.is_dir():
@@ -99,6 +112,7 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
         for note_path in sorted(folder.rglob("*.md")):
             scanned += 1
             relative_path = note_path.relative_to(vault_path).as_posix()
+            url = _note_url(relative_path)
 
             try:
                 content = note_path.read_text(encoding="utf-8")
@@ -111,35 +125,54 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
                 skipped += 1
                 continue
 
-            try:
-                doc, outcome = service.import_document(
-                    url=_note_url(relative_path),
-                    document_type="obsidian_note",
-                    skip_if_exists=True,
-                    title=note_path.stem,
-                    text=content,
-                    text_md=content,
-                    source="own",
-                )
-            except Exception:
-                logger.exception("obsidian_reimport: import failed for %s", note_path)
-                session.rollback()
-                failed += 1
-                continue
+            content_hash = get_hash(content)
+            existing = Document.get_by_url(session, url)
 
-            if outcome == "skipped":
+            # existing.obsidian_source_hash is None for notes imported before
+            # this column existed (Story 42.1) -- never equals a real hash,
+            # so they fall through to the "changed" branch on the first run
+            # after deploy (a one-time backfill re-embed, not a bug).
+            if existing is not None and existing.obsidian_source_hash == content_hash:
                 skipped += 1
                 continue
 
             try:
+                if existing is None:
+                    doc, _outcome = service.import_document(
+                        url=url,
+                        document_type="obsidian_note",
+                        skip_if_exists=True,
+                        title=note_path.stem,
+                        text=content,
+                        text_md=content,
+                        source="own",
+                    )
+                else:
+                    doc = existing
+                    doc.text = content
+                    doc.text_md = content
+                    doc.title = note_path.stem
+                    # Discard stale fragments before re-embedding -- otherwise
+                    # search would return both the old and new versions.
+                    repo.embedding_delete(doc.id, model)
+
+                doc.obsidian_source_hash = content_hash
                 _embed_note(repo, doc, model)
                 session.commit()
-                created += 1
+                if existing is None:
+                    created += 1
+                else:
+                    updated += 1
             except Exception:
-                logger.exception("obsidian_reimport: embedding failed for document %s", doc.id)
+                logger.exception("obsidian_reimport: import/update failed for %s", note_path)
                 session.rollback()
                 failed += 1
+                continue
 
-            heartbeat(session, job.id, {"scanned": scanned, "created": created, "skipped": skipped, "failed": failed})
+            heartbeat(
+                session,
+                job.id,
+                {"scanned": scanned, "created": created, "updated": updated, "skipped": skipped, "failed": failed},
+            )
 
-    return {"scanned": scanned, "created": created, "skipped": skipped, "failed": failed}
+    return {"scanned": scanned, "created": created, "updated": updated, "skipped": skipped, "failed": failed}

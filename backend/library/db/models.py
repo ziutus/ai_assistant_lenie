@@ -637,6 +637,11 @@ class Document(Base):
     # Stable mailbox identity for email documents.  Deliberately separate from
     # byline: a display name is not a reliable key for sender-specific rules.
     email_sender: Mapped[str | None] = mapped_column(String(320), index=True)
+    # SHA-256 of the source file's content (obsidian_note documents only) —
+    # lets the reimport job (Story 42.2) tell an unchanged file apart from an
+    # edited one without trusting Obsidian Sync's file mtime, which is not
+    # guaranteed to survive cross-device sync.
+    obsidian_source_hash: Mapped[str | None] = mapped_column(String(64))
     # Short LLM-generated retrieval aliases, e.g. "audyt NDA, sprawdzenie umowy".
     # Separate from the controlled thematic taxonomy in ``tags``.
     search_terms: Mapped[str | None] = mapped_column(Text)
