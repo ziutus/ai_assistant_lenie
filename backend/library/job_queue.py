@@ -14,6 +14,7 @@ JOB_TYPES = {
     "document_prepare",
     "entity_enrichment",
     "legacy_aws_pull",
+    "obsidian_reimport",
 }
 
 
