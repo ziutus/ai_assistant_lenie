@@ -58,6 +58,7 @@ DOCUMENT_TYPE_LOOKUP = {
     "email": StalkerDocumentType.email.name,
     "social_media_post": StalkerDocumentType.social_media_post.name,
     "social": StalkerDocumentType.social_media_post.name,
+    "obsidian_note": StalkerDocumentType.obsidian_note.name,
 }
 
 PROCESSING_STATUS_LOOKUP = {
@@ -802,7 +803,8 @@ class Document(Base):
         mapped_type = DOCUMENT_TYPE_LOOKUP.get(document_type)
         if mapped_type is None:
             raise ValueError(
-                f"document_type must be one of 'movie', 'webpage', 'text_message', 'text', 'link', 'email', 'social_media_post' not >{document_type}<"
+                f"document_type must be one of 'movie', 'webpage', 'text_message', 'text', 'link', 'email', 'social_media_post', "
+                f"'obsidian_note' not >{document_type}<"
             )
         self.document_type = mapped_type
 
@@ -977,6 +979,10 @@ class SocialMediaPostDocument(Document):
 
 class EmailDocument(Document):
     __mapper_args__ = {"polymorphic_identity": "email"}
+
+
+class ObsidianNoteDocument(Document):
+    __mapper_args__ = {"polymorphic_identity": "obsidian_note"}
 
 
 # ---------------------------------------------------------------------------

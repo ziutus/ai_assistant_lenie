@@ -30,6 +30,7 @@ from library.db.models import (  # noqa: E402
     TextDocument,
     SocialMediaPostDocument,
     EmailDocument,
+    ObsidianNoteDocument,
 )
 
 
@@ -291,7 +292,7 @@ class TestSTIConfiguration:
 
 
 # ---------------------------------------------------------------------------
-# 5.4: All 8 STI subclasses have correct polymorphic_identity (now strings)
+# 5.4: All 9 STI subclasses have correct polymorphic_identity (now strings)
 # ---------------------------------------------------------------------------
 
 class TestSTISubclasses:
@@ -304,6 +305,7 @@ class TestSTISubclasses:
         (TextDocument, "text"),
         (SocialMediaPostDocument, "social_media_post"),
         (EmailDocument, "email"),
+        (ObsidianNoteDocument, "obsidian_note"),
     ])
     def test_polymorphic_identity(self, cls, identity):
         mapper = inspect(cls).mapper
@@ -312,13 +314,13 @@ class TestSTISubclasses:
     def test_subclasses_do_not_define_own_tablename(self):
         for cls in [LinkDocument, YouTubeDocument, MovieDocument,
                     WebpageDocument, TextMessageDocument, TextDocument,
-                    SocialMediaPostDocument, EmailDocument]:
+                    SocialMediaPostDocument, EmailDocument, ObsidianNoteDocument]:
             assert "__tablename__" not in cls.__dict__, f"{cls.__name__} should not define __tablename__"
 
-    def test_eight_subclasses_registered(self):
+    def test_nine_subclasses_registered(self):
         mapper = inspect(Document).mapper
-        # 8 subclasses in polymorphic_map (base has no identity)
-        assert len(mapper.polymorphic_map) == 8
+        # 9 subclasses in polymorphic_map (base has no identity)
+        assert len(mapper.polymorphic_map) == 9
 
 
 # ---------------------------------------------------------------------------

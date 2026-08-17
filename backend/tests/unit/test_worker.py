@@ -17,6 +17,19 @@ def test_legacy_aws_pull_job_is_dispatched_to_bridge_service(monkeypatch):
     bridge.run.assert_called_once_with(job.parameters)
 
 
+def test_obsidian_reimport_job_is_dispatched_to_service(monkeypatch):
+    result = {"scanned": 2, "created": 1, "skipped": 1, "failed": 0}
+    execute_obsidian_reimport = MagicMock(return_value=result)
+    monkeypatch.setattr(
+        "library.obsidian_reimport_service.execute_obsidian_reimport", execute_obsidian_reimport
+    )
+
+    session = MagicMock()
+    job = MagicMock(type="obsidian_reimport")
+    assert worker.execute(session, job) == result
+    execute_obsidian_reimport.assert_called_once_with(session, job)
+
+
 def test_retryable_failure_is_marked_failed_before_retry(monkeypatch):
     session = MagicMock()
     job = MagicMock(attempt=1, max_attempts=3)
