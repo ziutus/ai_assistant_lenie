@@ -36,15 +36,18 @@ services:
     # NOTE: this backend runs with SECRETS_BACKEND=vault, so entries here are
     # NOT read by the app's config_loader (only bootstrap vars + Vault KV are)
     # — kept only so `env`-backend/local runs of this compose file still work.
-    # The value that actually matters is in Vault: secret/lenie/dev SITE_RULES_PATH.
+    # The value that actually matters is in Vault: secret/lenie/dev SITE_RULES_PATH,
+    # OBSIDIAN_VAULT_PATH.
     # To change it: MSYS_NO_PATHCONV=1 python scripts/env_to_vault.py vault set
     # --env dev SITE_RULES_PATH=/app/config/site_rules.json, then restart the
     # container. See docs/security/secrets-management.md#adding-new-variables.
     environment:
       SITE_RULES_PATH: /app/config/site_rules.json
+      OBSIDIAN_VAULT_PATH: /app/obsidian-vault
     volumes:
       - lenie-ai-data:/app/data
       - /share/ContainerNew/lenie-config:/app/config:ro
+      - lenie-obsidian-vault-data:/app/obsidian-vault
     networks:
       - lenie-net
     depends_on:
@@ -60,6 +63,12 @@ services:
     command: ["/app/.venv/bin/python", "worker.py", "--scheduler", "--types", "feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment"]
     env_file:
       - /share/ContainerNew/lenie-env/.env
+    # See the NOTE on lenie-ai-server above — same SECRETS_BACKEND=vault caveat
+    # applies here; OBSIDIAN_VAULT_PATH must also be set in Vault (Story 41.2).
+    environment:
+      OBSIDIAN_VAULT_PATH: /app/obsidian-vault
+    volumes:
+      - lenie-obsidian-vault-data:/app/obsidian-vault:ro
     networks:
       - lenie-net
     depends_on:
