@@ -73,9 +73,11 @@ class TestSearchFilters:
             subject_period_end_year=-30,
             document_types=["webpage", "youtube"],
             languages=["pl", "EN"],
+            source_layer="obsidian_visibility",
         )
         assert filters.document_types == ("webpage", "youtube")
         assert filters.languages == ("pl", "en")
+        assert filters.source_layer == "obsidian_visibility"
         assert not filters.is_empty()
 
     def test_empty_by_default(self):
@@ -136,6 +138,15 @@ class TestSearchFilters:
         with pytest.raises(SearchQueryValidationError) as exc:
             SearchFilters(document_types=bad)
         assert exc.value.field == "document_types"
+
+    @pytest.mark.parametrize("value", ["lenie_managed", "obsidian_visibility", None])
+    def test_source_layer_accepts_valid_values(self, value):
+        assert SearchFilters(source_layer=value).source_layer == value
+
+    def test_source_layer_rejects_invalid(self):
+        with pytest.raises(SearchQueryValidationError) as exc:
+            SearchFilters(source_layer="bogus")
+        assert exc.value.field == "source_layer"
 
     @pytest.mark.parametrize("bad", [["polski"], ["p"], ["pl-PL"], "pl", [1]])
     def test_languages_reject_invalid(self, bad):
@@ -198,6 +209,9 @@ class TestParsedSearchQuery:
         assert exc.value.field == "subject_period_start_year"
         with pytest.raises(SearchQueryValidationError):
             parsed_query(document_types=["nosuchtype"])
+        with pytest.raises(SearchQueryValidationError) as exc:
+            parsed_query(source_layer="bogus")
+        assert exc.value.field == "source_layer"
 
     def test_query_length_limit(self):
         with pytest.raises(SearchQueryValidationError) as exc:
@@ -239,6 +253,7 @@ class TestParsedSearchQuery:
             published_on_from=date(2024, 1, 1),
             document_types=["webpage"],
             languages=["pl"],
+            source_layer="lenie_managed",
         )
         filters = parsed.to_filters()
         assert filters == SearchFilters(
@@ -246,7 +261,9 @@ class TestParsedSearchQuery:
             published_on_from=date(2024, 1, 1),
             document_types=("webpage",),
             languages=("pl",),
+            source_layer="lenie_managed",
         )
+        assert parsed.source_layer == "lenie_managed"
 
     def test_frozen(self):
         with pytest.raises(dataclasses.FrozenInstanceError):

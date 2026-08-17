@@ -30,6 +30,7 @@ from library.db.models import (
     Document,
     DocumentEmbedding,
 )
+from library.models.stalker_document_type import StalkerDocumentType
 from library.publisher_registry import normalize_publisher_domain
 from library.search.types import SearchFilters
 
@@ -90,6 +91,11 @@ def build_document_filters(filters: SearchFilters) -> list[ColumnElement[bool]]:
 
     if filters.document_types:
         conditions.append(Document.document_type.in_(filters.document_types))
+
+    if filters.source_layer == "obsidian_visibility":
+        conditions.append(Document.document_type == StalkerDocumentType.obsidian_note.name)
+    elif filters.source_layer == "lenie_managed":
+        conditions.append(Document.document_type != StalkerDocumentType.obsidian_note.name)
 
     if filters.languages:
         conditions.append(Document.language.in_(filters.languages))

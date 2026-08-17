@@ -78,6 +78,14 @@ class TestListByFiltersApplied:
         repo.list_by_filters(SearchFilters(author_name="Jan Kowalski"))
         assert "document_persons.role = 'author'" in _compiled_sql(session)
 
+    def test_source_layer_lenie_managed_filter_applied_before_limit(self):
+        repo, session = _repo_with_mock_session()
+        repo.list_by_filters(SearchFilters(source_layer="lenie_managed"), limit=7)
+        sql = _compiled_sql(session)
+        assert "documents.document_type !=" in sql or "documents.document_type <>" in sql
+        assert "'obsidian_note'" in sql
+        assert sql.index("document_type") < sql.index("LIMIT")
+
 
 class TestListByFiltersSort:
     def test_default_sort_is_newest_first_by_ingested_at(self):

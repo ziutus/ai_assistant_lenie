@@ -157,6 +157,34 @@ class TestPublisherFilters:
         assert "onet.pl" in sql
 
 
+class TestSourceLayer:
+    def test_obsidian_visibility_filters_to_obsidian_note(self):
+        conditions = build_document_filters(SearchFilters(source_layer="obsidian_visibility"))
+        assert len(conditions) == 1
+        sql = compiled(conditions[0])
+        assert "document_type = " in sql
+        assert "'obsidian_note'" in sql
+
+    def test_lenie_managed_excludes_obsidian_note(self):
+        conditions = build_document_filters(SearchFilters(source_layer="lenie_managed"))
+        assert len(conditions) == 1
+        sql = compiled(conditions[0])
+        assert "document_type !=" in sql or "document_type <>" in sql
+        assert "'obsidian_note'" in sql
+
+    def test_none_adds_no_predicate(self):
+        assert build_document_filters(SearchFilters()) == []
+
+    def test_combines_with_document_types_via_and(self):
+        conditions = build_document_filters(
+            SearchFilters(document_types=("youtube",), source_layer="lenie_managed"),
+        )
+        assert len(conditions) == 2
+        sqls = [compiled(c) for c in conditions]
+        assert any("document_type IN" in sql and "youtube" in sql for sql in sqls)
+        assert any(("!=" in sql or "<>" in sql) and "obsidian_note" in sql for sql in sqls)
+
+
 class TestCombinedFilters:
     def test_multiple_filters_combine_to_multiple_conditions(self):
         conditions = build_document_filters(SearchFilters(
