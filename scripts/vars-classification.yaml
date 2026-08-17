@@ -367,6 +367,13 @@ groups:
         default: "data/site_rules.json"
         example: "/app/config/site_rules.json"
         used_by: [docker, local]
+      OBSIDIAN_VAULT_PATH:
+        description: "Mount path of the synced Obsidian vault (lenie-obsidian-vault-data volume)"
+        type: config
+        required: false
+        default: "/app/obsidian-vault"
+        example: "/app/obsidian-vault"
+        used_by: [docker, local]
       STALKER_API_KEY:
         description: "Legacy name, now the slack-bot's own api_keys service key (x-api-key). The backend no longer accepts a shared/legacy key — every other client authenticates with its own key from the api_keys table (see library/auth.py)."
         type: secret
