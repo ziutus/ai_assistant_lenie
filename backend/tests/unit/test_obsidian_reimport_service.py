@@ -85,7 +85,7 @@ class TestExecuteObsidianReimport:
 
     def test_existing_note_unchanged_is_skipped_without_embedding_call(self, tmp_path):
         vault = _make_vault(tmp_path)
-        note = vault / "02-wiedza/Geopolityka/nato.md"
+        note = vault / "02-wiedza/Geopolityka i polityka/nato.md"
         content = "Treść o NATO."
         note.write_text(content, encoding="utf-8")
 
@@ -110,7 +110,7 @@ class TestExecuteObsidianReimport:
 
     def test_existing_note_changed_updates_document_and_reembeds(self, tmp_path):
         vault = _make_vault(tmp_path)
-        note = vault / "02-wiedza/Geopolityka/nato.md"
+        note = vault / "02-wiedza/Geopolityka i polityka/nato.md"
         new_content = "Treść o NATO -- zaktualizowana."
         note.write_text(new_content, encoding="utf-8")
 

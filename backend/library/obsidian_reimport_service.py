@@ -38,7 +38,14 @@ OBSIDIAN_REIMPORT = "obsidian_reimport"
 # Pilot scope per PRD (913 notes) -- Informatyka + Geopolityka only, not all
 # of 02-wiedza. Broadening this is a deliberate future decision, out of scope
 # for this story.
-PILOT_SUBFOLDERS = ("02-wiedza/Informatyka", "02-wiedza/Geopolityka")
+#
+# The Geopolityka folder's real vault name is "Geopolityka i polityka" (see
+# also imports/control_questions.py, imports/import_control_questions.py,
+# which already reference it correctly) -- Story 42.1 introduced this
+# constant with the wrong, shortened name, so the folder was silently
+# skipped (a "configured subfolder missing" warning) from day one. Fixed in
+# Story 42.2 after NAS verification surfaced it.
+PILOT_SUBFOLDERS = ("02-wiedza/Informatyka", "02-wiedza/Geopolityka i polityka")
 
 
 def _note_url(relative_path: str) -> str:
