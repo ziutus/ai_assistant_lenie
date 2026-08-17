@@ -63,6 +63,7 @@ declare -A SVC_COMPOSE_NAME=(
     [db]="lenie-ai-db"
     [minio]="lenie-minio"
     [ner-service]="lenie-ner-service"
+    [obsidian-headless-sync]="obsidian-headless-sync"
 )
 
 ALL_SERVICES="db backend worker document-worker frontend app2"
@@ -250,9 +251,9 @@ show_status() {
 usage() {
     echo "Usage: $0 [OPTIONS] [service ...]"
     echo ""
-echo "Services: frontend, app2, backend, worker, document-worker, db, minio, ner-service, all (default: core services)"
+echo "Services: frontend, app2, backend, worker, document-worker, db, minio, ner-service, obsidian-headless-sync, all (default: core services)"
     echo "  Note: 'all' deploys core services only (db, backend, frontend, app2)."
-    echo "  minio and ner-service must be deployed explicitly."
+    echo "  minio, ner-service and obsidian-headless-sync must be deployed explicitly."
     echo ""
     echo "Options:"
     echo "  --skip-build      Skip Docker build, push existing local image"
@@ -264,6 +265,7 @@ echo "Services: frontend, app2, backend, worker, document-worker, db, minio, ner
     echo "  $0                           # Build, push & deploy core services"
     echo "  $0 frontend                  # Build, push & deploy frontend only"
     echo "  $0 minio                     # Deploy MinIO (official image, no build)"
+    echo "  $0 obsidian-headless-sync    # Deploy obsidian-headless-sync (official image, no build)"
     echo "  $0 --skip-build backend      # Push existing image & deploy"
     echo "  $0 --compose-only            # Just compose up on NAS"
     echo "  $0 --sync-compose            # Sync compose file and deploy all"
@@ -284,7 +286,7 @@ while [[ $# -gt 0 ]]; do
         --sync-compose)  SYNC_COMPOSE="true"; shift ;;
         --help|-h)       usage ;;
         all)             SERVICES="$ALL_SERVICES"; shift ;;
-        frontend|app2|backend|worker|document-worker|db|minio|ner-service) SERVICES="$SERVICES $1"; shift ;;
+        frontend|app2|backend|worker|document-worker|db|minio|ner-service|obsidian-headless-sync) SERVICES="$SERVICES $1"; shift ;;
         *) error "Nieznany argument: $1. Użyj --help." ;;
     esac
 done
