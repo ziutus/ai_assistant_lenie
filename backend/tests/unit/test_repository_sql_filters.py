@@ -34,6 +34,8 @@ FILTERS = SearchFilters(
     subject_period_end_year=1945,
 )
 
+FILTERS_SOURCE_LAYER = SearchFilters(source_layer="obsidian_visibility")
+
 
 class TestGetSimilarFilters:
     def test_filters_none_by_default_no_extra_predicates(self):
@@ -124,5 +126,18 @@ class TestIdenticalConstraintsAcrossBothPaths:
         text_repo.search_text("wojna", filters=FILTERS)
         text_sql = _compiled_sql(text_session)
 
+        assert fragment in similar_sql
+        assert fragment in text_sql
+
+    def test_source_layer_fragment_identical_in_both_statements(self):
+        similar_repo, similar_session = _repo_with_mock_session()
+        similar_repo.get_similar([0.1], model="m", filters=FILTERS_SOURCE_LAYER)
+        similar_sql = _compiled_sql(similar_session)
+
+        text_repo, text_session = _repo_with_mock_session()
+        text_repo.search_text("wojna", filters=FILTERS_SOURCE_LAYER)
+        text_sql = _compiled_sql(text_session)
+
+        fragment = "documents.document_type = 'obsidian_note'"
         assert fragment in similar_sql
         assert fragment in text_sql

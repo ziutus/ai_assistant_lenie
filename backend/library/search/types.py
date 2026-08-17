@@ -18,6 +18,7 @@ import re
 from dataclasses import dataclass, field, fields
 from datetime import date, datetime
 from enum import Enum
+from typing import Literal
 
 from library.models.stalker_document_type import StalkerDocumentType
 
@@ -33,6 +34,7 @@ _LANGUAGE_RE = re.compile(r"^[a-z]{2,3}$")
 _DOMAIN_RE = re.compile(r"^(?=.{4,253}$)([a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$")
 
 VALID_DOCUMENT_TYPES = frozenset(member.name for member in StalkerDocumentType)
+VALID_SOURCE_LAYERS = frozenset({"lenie_managed", "obsidian_visibility"})
 
 
 class SearchQueryValidationError(ValueError):
@@ -178,6 +180,15 @@ def _opt_domain(name: str, value) -> str | None:
     return text
 
 
+def _opt_source_layer(name: str, value) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or value not in VALID_SOURCE_LAYERS:
+        allowed = ", ".join(sorted(VALID_SOURCE_LAYERS))
+        raise SearchQueryValidationError(name, f"unknown source layer {value!r}; allowed: {allowed}")
+    return value
+
+
 def _enum(name: str, value, enum_cls):
     if isinstance(value, enum_cls):
         return value
@@ -246,6 +257,7 @@ class SearchFilters:
     document_types: tuple[str, ...] = ()
     languages: tuple[str, ...] = ()
     without_embedding: bool = False
+    source_layer: Literal["lenie_managed", "obsidian_visibility"] | None = None
 
     def __post_init__(self):
         set_ = object.__setattr__
@@ -263,6 +275,7 @@ class SearchFilters:
         set_(self, "document_types", _document_types("document_types", self.document_types))
         set_(self, "languages", _languages("languages", self.languages))
         set_(self, "without_embedding", _bool("without_embedding", self.without_embedding))
+        set_(self, "source_layer", _opt_source_layer("source_layer", self.source_layer))
         _ordered("published_on_from", self.published_on_from, self.published_on_to)
         _ordered("ingested_at_from", self.ingested_at_from, self.ingested_at_to)
         _ordered("subject_period_start_year", self.subject_period_start_year, self.subject_period_end_year)
@@ -297,6 +310,7 @@ class ParsedSearchQuery:
     document_types: tuple[str, ...] = ()
     languages: tuple[str, ...] = ()
     without_embedding: bool = False
+    source_layer: Literal["lenie_managed", "obsidian_visibility"] | None = None
     sort: SearchSort = SearchSort.RELEVANCE
     interpretation_summary: str = ""
     warnings: tuple[str, ...] = ()
