@@ -253,6 +253,27 @@ services:
       retries: 3
       start_period: 15s
 
+  obsidian-headless-sync:
+    # Pinned to 0.0.14 (verified latest stable tag, July 2026) — GHCR tags for
+    # this image do NOT use a "v" prefix (unlike the project's git tags on
+    # GitHub) — verified directly against the registry API, confirmed by a
+    # failed pull attempt against "v0.0.14" during deploy. Re-verify at
+    # https://github.com/Belphemur/obsidian-headless-sync-docker/tags before
+    # bumping. Public image on GHCR — anonymous pull works, no docker login needed.
+    image: ghcr.io/belphemur/obsidian-headless-sync-docker:0.0.14
+    container_name: obsidian-headless-sync
+    restart: unless-stopped
+    env_file:
+      - /share/ContainerNew/lenie-env/obsidian_headless.env
+    volumes:
+      - lenie-obsidian-vault-data:/vault
+      - lenie-obsidian-config-data:/home/obsidian/.config
+    networks:
+      - lenie-net
+    # No documented Docker HEALTHCHECK in this image (s6-overlay supervises the
+    # sync process internally) — do not add depends_on: condition: service_healthy
+    # against this container elsewhere in this file.
+
 networks:
   lenie-net:
     name: lenie-net
@@ -268,4 +289,8 @@ volumes:
   lenie-registry-data:
     external: true
   lenie-document-work:
+    external: true
+  lenie-obsidian-vault-data:
+    external: true
+  lenie-obsidian-config-data:
     external: true
