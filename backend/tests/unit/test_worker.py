@@ -87,6 +87,32 @@ def test_legacy_pull_scheduler_uses_utc_bucket_and_skips_active_job(monkeypatch)
     enqueue.assert_called_once()
 
 
+def test_obsidian_reimport_scheduler_skips_active_job(monkeypatch):
+    session = MagicMock()
+    enqueue = MagicMock()
+    monkeypatch.setattr(worker, "enqueue", enqueue)
+
+    session.scalar.return_value = None
+    worker._schedule_obsidian_reimport(session)
+    enqueue.assert_called_once_with(session, "obsidian_reimport")
+
+    session.scalar.return_value = "already-active"
+    worker._schedule_obsidian_reimport(session)
+    enqueue.assert_called_once()
+
+
+def test_scheduler_dispatches_obsidian_reimport(monkeypatch):
+    session = MagicMock()
+    task = MagicMock(id="obsidian_reimport", enabled=True, timezone="UTC", times=["12:00"])
+    session.scalars.return_value.all.return_value = [task]
+    schedule_obsidian = MagicMock()
+    monkeypatch.setattr(worker, "_schedule_obsidian_reimport", schedule_obsidian)
+
+    worker.scheduler(session, dt.datetime(2026, 7, 29, 12, 0, tzinfo=dt.timezone.utc))
+
+    schedule_obsidian.assert_called_once_with(session)
+
+
 def test_scheduler_rejects_invalid_task_time():
     task = MagicMock(id="legacy_aws_pull", timezone="Europe/Warsaw", times=["invalid"])
 

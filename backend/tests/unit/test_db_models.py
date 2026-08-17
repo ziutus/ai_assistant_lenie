@@ -186,10 +186,11 @@ class TestWebDocumentColumns:
         "text_extracted", "transcript_needed", "reviewed_at",
         "obsidian_note_paths", "video_description", "ner_unavailable_at",
         "quality", "canonical_url", "enrichment_run_at", "entities_checked_at",
+        "email_sender", "search_terms", "obsidian_source_hash",
     }
 
     def test_column_count(self):
-        assert len(_column_names(Document)) == 40
+        assert len(_column_names(Document)) == 43
 
     def test_all_column_names(self):
         assert _column_names(Document) == self.EXPECTED_COLUMNS

@@ -86,6 +86,8 @@ def scheduler(session, now: dt.datetime) -> None:
             enqueue(session, "feed_daily", idempotency_key=f"feed_daily:{local.date().isoformat()}")
         elif task.id == "legacy_aws_pull":
             _schedule_legacy_aws_pull(session, now, task)
+        elif task.id == "obsidian_reimport":
+            _schedule_obsidian_reimport(session)
 
 
 def _is_due(task: ScheduledTask, now: dt.datetime) -> bool:
@@ -114,6 +116,25 @@ def _schedule_legacy_aws_pull(session, now: dt.datetime, task: ScheduledTask) ->
         "legacy_aws_pull",
         idempotency_key=f"legacy_aws_pull:{local.strftime('%Y-%m-%dT%H:%M%z')}",
     )
+
+
+def _schedule_obsidian_reimport(session) -> None:
+    """Enqueue at most one obsidian_reimport job at a time.
+
+    Unlike _schedule_legacy_aws_pull, dedup is purely "is one already
+    active" -- the vault scan can legitimately take longer than the 5-minute
+    schedule interval, and the goal is "one run at a time", not "exactly one
+    run per scheduled minute".
+    """
+    active = session.scalar(
+        select(Job.id).where(
+            Job.type == "obsidian_reimport",
+            Job.status.in_(("queued", "running", "cancel_requested")),
+        ).limit(1)
+    )
+    if active is not None:
+        return
+    enqueue(session, "obsidian_reimport")
 
 
 def main() -> int:
