@@ -78,7 +78,22 @@ export default function Tools() {
 
   return <section style={{ maxWidth: 1100, padding: "28px 24px" }}>
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-      <h1 style={{ color: "#0c2f4a" }}>Spis narzędzi</h1>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <h1 style={{ color: "#0c2f4a", margin: 0 }}>Spis narzędzi</h1>
+        <span
+          title={"Ta strona pokazuje wyłącznie już zapisane narzędzia (widok do odczytu).\n\n" +
+            "Nowe narzędzie dodaje się przez zakładkę „Kandydaci-narzędzia”: zaakceptuj kandydata, " +
+            "a draft wygeneruje i zapisze Claude Code/Codex (POST /tools) po Twojej jawnej zgodzie. " +
+            "Z tej strony nie da się dodać ani edytować narzędzia ręcznie."}
+          style={{
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+            width: 20, height: 20, borderRadius: "50%", background: "#e2e8f0", color: "#334155",
+            fontSize: "0.75rem", fontWeight: 700, cursor: "help",
+          }}
+        >
+          ?
+        </span>
+      </div>
       <button className="button" type="button" onClick={() => void load()} disabled={loading}>Odśwież</button>
     </div>
     <label style={{ display: "inline-flex", alignItems: "center", gap: 8, margin: "8px 0 20px" }}>
