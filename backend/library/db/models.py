@@ -2555,6 +2555,26 @@ class ExternalServiceEvent(Base):
     )
 
 
+class ToolCandidate(Base):
+    """Bielik-detected tool/technology mention pending human review (Epic 43)."""
+
+    __tablename__ = "tool_candidates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'pending'"))
+    source_document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    context_snippet: Mapped[str | None] = mapped_column(Text)
+    detected_by: Mapped[str] = mapped_column(String(50), nullable=False, server_default=sa_text("'bielik'"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    reviewed_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'accepted', 'rejected', 'deferred')", name="ck_tool_candidates_status"),
+        Index("idx_tool_candidates_source_status", "source_document_id", "status"),
+    )
+
+
 # The pre-11d before_flush hook that auto-created `sources` rows for
 # Document.source strings is gone: discovery-source resolution is explicit
 # now — every writer goes through Document.set_discovery_source(), which
