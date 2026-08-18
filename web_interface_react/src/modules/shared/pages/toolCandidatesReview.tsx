@@ -11,10 +11,11 @@ type ToolCandidateSourceDocument = {
   published_on: string | null;
   ingested_at: string | null;
 };
+type CandidateStatus = "pending" | "accepted" | "rejected" | "deferred";
 type ToolCandidate = {
   id: number;
   name: string;
-  status: "pending" | "accepted" | "rejected" | "deferred";
+  status: CandidateStatus;
   context_snippet: string | null;
   detected_by: string;
   created_at: string | null;
@@ -23,7 +24,6 @@ type ToolCandidate = {
   source_document: ToolCandidateSourceDocument;
 };
 type Source = { id: number; name: string; is_active: boolean };
-type CandidateStatus = "pending" | "accepted" | "rejected" | "deferred";
 
 const statusTabs: Array<[CandidateStatus, string]> = [
   ["pending", "Oczekujące"],
@@ -96,6 +96,12 @@ export default function ToolCandidatesReview() {
 
   React.useEffect(() => { void load(); }, [load]);
 
+  // act() may still be awaiting the POST when the reviewer changes status/source
+  // filters; loadRef always resolves to the load() bound to the current filters,
+  // so the eventual refresh never overwrites a since-switched view with stale data.
+  const loadRef = React.useRef(load);
+  React.useEffect(() => { loadRef.current = load; }, [load]);
+
   const act = async (id: number, action: "accept" | "reject" | "defer") => {
     setBusyCandidateId(id);
     setError("");
@@ -113,7 +119,7 @@ export default function ToolCandidatesReview() {
       if (action === "accept") {
         setWarningBanner(typeof data.warning === "string" ? data.warning : null);
       }
-      await load();
+      await loadRef.current();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Akcja nie powiodła się");
     } finally {
@@ -149,7 +155,7 @@ export default function ToolCandidatesReview() {
           role="tab"
           aria-selected={status === value}
           className={status === value ? "button" : ""}
-          onClick={() => updateParams({ status: value === "pending" ? null : value })}
+          onClick={() => { setWarningBanner(null); updateParams({ status: value === "pending" ? null : value }); }}
         >
           {label}
         </button>
