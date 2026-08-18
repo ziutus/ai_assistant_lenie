@@ -6,7 +6,12 @@ from sqlalchemy import select
 
 from library.db.engine import get_scoped_session
 from library.db.models import Tool
-from library.obsidian_vault import VaultPathInvalidError, ensure_within_vault, write_note_with_version
+from library.obsidian_vault import (
+    VaultPathInvalidError,
+    ensure_within_vault,
+    is_vault_mount_available,
+    write_note_with_version,
+)
 
 bp = Blueprint("tools", __name__)
 
@@ -90,10 +95,22 @@ def create_tool():
         write_note_with_version(session, note_path, content, tool_id=tool.id, user_prompt=body.get("user_prompt"))
     except Exception:
         # DB commit already happened inside write_note_with_version() before the
-        # file write was attempted -- do NOT roll back (FR20). Distinguishing
-        # sync_container_unavailable from a generic write failure is Story 47.3's
-        # job, applied to this same except branch.
-        response = jsonify({"written": False, "error": "obsidian_write_failed", "tool_id": tool.id})
+        # file write was attempted -- do NOT roll back (FR20). The mount check
+        # runs only here, after a write has already failed, to distinguish a
+        # disconnected/unreachable volume (sync_container_unavailable) from a
+        # reachable volume that failed to write for another reason (disk full,
+        # permissions -- obsidian_write_failed). It never polls
+        # obsidian-headless-sync's own health.
+        if not is_vault_mount_available():
+            error = "sync_container_unavailable"
+            hint = (
+                "Sprawdź, czy kontener obsidian-headless-sync działa i synchronizacja "
+                "wolumenu jest aktywna, następnie ponów zapis."
+            )
+        else:
+            error = "obsidian_write_failed"
+            hint = "Sprawdź zasoby na wolumenie NAS (miejsce na dysku, uprawnienia do zapisu) i ponów zapis."
+        response = jsonify({"written": False, "error": error, "tool_id": tool.id, "hint": hint})
         response.status_code = 502
         return response
 

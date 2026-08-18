@@ -32,6 +32,26 @@ def _vault_root() -> str:
     return os.path.realpath(cfg.get("OBSIDIAN_VAULT_PATH", DEFAULT_VAULT_PATH))
 
 
+def is_vault_mount_available() -> bool:
+    """Check whether the vault root is currently a reachable, mounted path.
+
+    Called ONLY from POST /tools' error handling, after write_note_with_version()
+    has already raised -- never proactively / on every request. Distinguishes
+    sync_container_unavailable from a generic obsidian_write_failed (Story 47.3).
+
+    This does NOT probe obsidian-headless-sync's health in any way (no HTTP
+    call, no docker inspect) -- it only checks whether the volume backing
+    OBSIDIAN_VAULT_PATH is still mounted as seen from inside this container,
+    per architecture.md Decision 8 ("detect it from the mount/write failure
+    itself", not by polling a health endpoint on the sync container).
+    """
+    root = _vault_root()
+    try:
+        return os.path.ismount(root)
+    except OSError:
+        return False
+
+
 def ensure_within_vault(note_path: str) -> Path:
     """Resolve note_path against the vault root, rejecting any escape.
 

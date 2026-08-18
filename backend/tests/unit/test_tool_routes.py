@@ -294,8 +294,8 @@ class TestCreateToolSuccess:
         assert response.status_code == 200
 
 
-class TestCreateToolWriteFailure:
-    def test_write_failure_returns_502_without_rollback(self, monkeypatch):
+class TestCreateToolWriteFailureMountUnavailable:
+    def test_mount_unavailable_returns_sync_container_unavailable(self, monkeypatch):
         from library.tool_routes import create_tool
 
         session = _mutation_session()
@@ -305,16 +305,91 @@ class TestCreateToolWriteFailure:
             "library.tool_routes.write_note_with_version",
             MagicMock(side_effect=OSError("disk full")),
         )
+        monkeypatch.setattr("library.tool_routes.is_vault_mount_available", MagicMock(return_value=False))
         app = Flask(__name__)
 
         with app.test_request_context("/tools", method="POST", json=VALID_BODY):
             g.auth = SimpleNamespace(kind="user", user_id=1)
             response = create_tool()
 
-        assert response.json == {"written": False, "error": "obsidian_write_failed", "tool_id": 42}
+        assert response.json["written"] is False
+        assert response.json["error"] == "sync_container_unavailable"
+        assert response.json["tool_id"] == 42
+        assert response.json["hint"]
         assert response.status_code == 502
         assert session.commit.call_count == 0
         assert session.rollback.call_count == 0
+
+
+class TestCreateToolWriteFailureMountAvailable:
+    def test_mount_available_returns_obsidian_write_failed(self, monkeypatch):
+        from library.tool_routes import create_tool
+
+        session = _mutation_session()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_routes.ensure_within_vault", MagicMock(return_value=None))
+        monkeypatch.setattr(
+            "library.tool_routes.write_note_with_version",
+            MagicMock(side_effect=OSError("disk full")),
+        )
+        monkeypatch.setattr("library.tool_routes.is_vault_mount_available", MagicMock(return_value=True))
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools", method="POST", json=VALID_BODY):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = create_tool()
+
+        assert response.json["written"] is False
+        assert response.json["error"] == "obsidian_write_failed"
+        assert response.json["tool_id"] == 42
+        assert response.json["hint"]
+        assert response.status_code == 502
+        assert session.commit.call_count == 0
+        assert session.rollback.call_count == 0
+
+    def test_hint_differs_between_error_codes(self, monkeypatch):
+        from library.tool_routes import create_tool
+
+        def _response_for(mount_available):
+            session = _mutation_session()
+            monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+            monkeypatch.setattr("library.tool_routes.ensure_within_vault", MagicMock(return_value=None))
+            monkeypatch.setattr(
+                "library.tool_routes.write_note_with_version",
+                MagicMock(side_effect=OSError("disk full")),
+            )
+            monkeypatch.setattr(
+                "library.tool_routes.is_vault_mount_available", MagicMock(return_value=mount_available)
+            )
+            app = Flask(__name__)
+            with app.test_request_context("/tools", method="POST", json=VALID_BODY):
+                g.auth = SimpleNamespace(kind="user", user_id=1)
+                return create_tool()
+
+        unavailable_hint = _response_for(False).json["hint"]
+        available_hint = _response_for(True).json["hint"]
+        assert unavailable_hint != available_hint
+
+
+class TestCreateToolMountCheckOnlyOnFailure:
+    def test_mount_check_not_called_on_success(self, monkeypatch):
+        from library.tool_routes import create_tool
+
+        session = _mutation_session()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_routes.ensure_within_vault", MagicMock(return_value=None))
+        monkeypatch.setattr(
+            "library.tool_routes.write_note_with_version", MagicMock(return_value=SimpleNamespace(id=1)),
+        )
+        mount_check_mock = MagicMock()
+        monkeypatch.setattr("library.tool_routes.is_vault_mount_available", mount_check_mock)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools", method="POST", json=VALID_BODY):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            create_tool()
+
+        assert mount_check_mock.call_count == 0
 
 
 class TestCreateToolAcceptedStatus:

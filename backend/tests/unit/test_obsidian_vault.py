@@ -22,7 +22,13 @@ import pytest
 
 pytest.importorskip("sqlalchemy")
 
-from library.obsidian_vault import VaultPathInvalidError, ensure_within_vault, read_note, write_note_with_version
+from library.obsidian_vault import (
+    VaultPathInvalidError,
+    ensure_within_vault,
+    is_vault_mount_available,
+    read_note,
+    write_note_with_version,
+)
 
 
 @pytest.fixture
@@ -137,6 +143,28 @@ def test_advisory_lock_released_even_if_write_fails(vault, monkeypatch):
     assert session.committed is True
     lock_sql = [sql for sql, _ in session.executed]
     assert any("pg_advisory_unlock(" in sql for sql in lock_sql)
+
+
+def test_mount_available_returns_true_when_ismount_true(vault, monkeypatch):
+    monkeypatch.setattr(os.path, "ismount", lambda path: True)
+    assert is_vault_mount_available() is True
+
+
+def test_mount_unavailable_returns_false_when_ismount_false(vault, monkeypatch):
+    monkeypatch.setattr(os.path, "ismount", lambda path: False)
+    assert is_vault_mount_available() is False
+
+
+def test_mount_check_oserror_returns_false(vault, monkeypatch):
+    monkeypatch.setattr(os.path, "ismount", MagicMock(side_effect=OSError("stale handle")))
+    assert is_vault_mount_available() is False
+
+
+def test_mount_check_uses_configured_vault_root(vault, monkeypatch):
+    ismount_mock = MagicMock(return_value=True)
+    monkeypatch.setattr(os.path, "ismount", ismount_mock)
+    is_vault_mount_available()
+    assert ismount_mock.call_args[0][0] == str(vault)
 
 
 def test_write_survives_last_moment_symlink_swap(vault, tmp_path, monkeypatch):
