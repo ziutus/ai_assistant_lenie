@@ -177,3 +177,161 @@ class TestOrdering:
 
         compiled_query = _compiled(session.execute.call_args[0][0])
         assert "ORDER BY tools.name" in compiled_query
+
+
+def _mutation_session():
+    """Session mock whose add() assigns id=42 to the flushed Tool, mimicking a real flush()."""
+    from library.db.models import Tool
+
+    session = MagicMock()
+
+    def _assign_id(obj):
+        if isinstance(obj, Tool):
+            obj.id = 42
+
+    session.add.side_effect = _assign_id
+    return session
+
+
+VALID_BODY = {
+    "name": "Terraform",
+    "note_path": "Narzedzia/Terraform.md",
+    "content": "# Terraform\n\nOpis.",
+}
+
+
+class TestCreateToolServiceKeyForbidden:
+    def test_service_key_403_before_any_mutation(self, monkeypatch):
+        from library.tool_routes import create_tool
+
+        get_scoped_session_mock = MagicMock()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", get_scoped_session_mock)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools", method="POST", json=VALID_BODY), pytest.raises(Exception) as exc_info:
+            g.auth = SimpleNamespace(kind="service", user_id=None)
+            create_tool()
+
+        assert exc_info.value.code == 403
+        assert get_scoped_session_mock.call_count == 0
+
+    def test_missing_auth_403_before_any_mutation(self, monkeypatch):
+        from library.tool_routes import create_tool
+
+        get_scoped_session_mock = MagicMock()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", get_scoped_session_mock)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools", method="POST", json=VALID_BODY), pytest.raises(Exception) as exc_info:
+            create_tool()
+
+        assert exc_info.value.code == 403
+        assert get_scoped_session_mock.call_count == 0
+
+
+class TestCreateToolMissingFields:
+    @pytest.mark.parametrize("missing_field", ["name", "note_path", "content"])
+    def test_missing_required_field_aborts_400(self, monkeypatch, missing_field):
+        from library.tool_routes import create_tool
+
+        session = _mutation_session()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        body = {k: v for k, v in VALID_BODY.items() if k != missing_field}
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools", method="POST", json=body), pytest.raises(Exception) as exc_info:
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            create_tool()
+
+        assert exc_info.value.code == 400
+        assert session.add.call_count == 0
+
+
+class TestCreateToolInvalidPath:
+    def test_path_escaping_vault_aborts_400_before_mutation(self, monkeypatch):
+        from library.tool_routes import VaultPathInvalidError, create_tool
+
+        session = _mutation_session()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr(
+            "library.tool_routes.ensure_within_vault",
+            MagicMock(side_effect=VaultPathInvalidError("escapes vault")),
+        )
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools", method="POST", json=VALID_BODY), pytest.raises(Exception) as exc_info:
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            create_tool()
+
+        assert exc_info.value.code == 400
+        assert session.add.call_count == 0
+
+
+class TestCreateToolSuccess:
+    def test_successful_write_sets_note_path_and_returns_200(self, monkeypatch):
+        from library.tool_routes import create_tool
+
+        session = _mutation_session()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_routes.ensure_within_vault", MagicMock(return_value=None))
+        write_mock = MagicMock(return_value=SimpleNamespace(id=1))
+        monkeypatch.setattr("library.tool_routes.write_note_with_version", write_mock)
+        app = Flask(__name__)
+
+        body = dict(VALID_BODY, user_prompt="dodaj notatke o Terraform")
+        with app.test_request_context("/tools", method="POST", json=body):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = create_tool()
+
+        write_mock.assert_called_once_with(
+            session, "Narzedzia/Terraform.md", "# Terraform\n\nOpis.",
+            tool_id=42, user_prompt="dodaj notatke o Terraform",
+        )
+        added_tool = session.add.call_args[0][0]
+        assert added_tool.obsidian_note_path == "Narzedzia/Terraform.md"
+        assert session.commit.call_count == 1
+        assert response.json == {"written": True, "tool_id": 42, "path": "Narzedzia/Terraform.md"}
+        assert response.status_code == 200
+
+
+class TestCreateToolWriteFailure:
+    def test_write_failure_returns_502_without_rollback(self, monkeypatch):
+        from library.tool_routes import create_tool
+
+        session = _mutation_session()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_routes.ensure_within_vault", MagicMock(return_value=None))
+        monkeypatch.setattr(
+            "library.tool_routes.write_note_with_version",
+            MagicMock(side_effect=OSError("disk full")),
+        )
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools", method="POST", json=VALID_BODY):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = create_tool()
+
+        assert response.json == {"written": False, "error": "obsidian_write_failed", "tool_id": 42}
+        assert response.status_code == 502
+        assert session.commit.call_count == 0
+        assert session.rollback.call_count == 0
+
+
+class TestCreateToolAcceptedStatus:
+    def test_tool_status_set_explicitly_to_accepted(self, monkeypatch):
+        from library.tool_routes import create_tool
+
+        session = _mutation_session()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr("library.tool_routes.ensure_within_vault", MagicMock(return_value=None))
+        monkeypatch.setattr(
+            "library.tool_routes.write_note_with_version", MagicMock(return_value=SimpleNamespace(id=1)),
+        )
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools", method="POST", json=VALID_BODY):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            create_tool()
+
+        added_tool = session.add.call_args[0][0]
+        assert added_tool.status == "accepted"
