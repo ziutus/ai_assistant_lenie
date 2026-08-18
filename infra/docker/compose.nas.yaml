@@ -68,7 +68,7 @@ services:
     image: 192.168.200.7:5005/lenie-ai-server:latest
     container_name: lenie-worker
     restart: unless-stopped
-    command: ["/app/.venv/bin/python", "worker.py", "--scheduler", "--types", "feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport"]
+    command: ["/app/.venv/bin/python", "worker.py", "--scheduler", "--types", "feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport,tool_candidate_detect"]
     env_file:
       - /share/ContainerNew/lenie-env/.env
     # See the NOTE on lenie-ai-server above — same SECRETS_BACKEND=vault caveat

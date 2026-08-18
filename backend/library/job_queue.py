@@ -15,6 +15,7 @@ JOB_TYPES = {
     "entity_enrichment",
     "legacy_aws_pull",
     "obsidian_reimport",
+    "tool_candidate_detect",
 }
 
 
