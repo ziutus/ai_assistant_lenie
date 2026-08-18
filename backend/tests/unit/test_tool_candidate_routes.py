@@ -19,6 +19,42 @@ def _session_with_rows(rows):
     return session
 
 
+def _session_for_mutation(candidate, document, similar_tool_name=None):
+    session = MagicMock()
+    lookup_result = MagicMock()
+    lookup_result.first.return_value = (candidate, document)
+    duplicate_result = MagicMock()
+    duplicate_result.scalars.return_value.first.return_value = (
+        SimpleNamespace(name=similar_tool_name) if similar_tool_name else None
+    )
+    session.execute.side_effect = [lookup_result, duplicate_result]
+    return session
+
+
+def _session_for_lookup_only(candidate, document):
+    session = MagicMock()
+    lookup_result = MagicMock()
+    lookup_result.first.return_value = (candidate, document)
+    session.execute.side_effect = [lookup_result]
+    return session
+
+
+def _make_candidate(status="pending"):
+    return SimpleNamespace(
+        id=1, name="Terraform", status=status, context_snippet="Uzywamy Terraform do IaC",
+        detected_by="bielik", created_at=dt.datetime(2026, 8, 10, 12, 0, tzinfo=dt.timezone.utc),
+        reviewed_at=None, source_document_id=9381,
+    )
+
+
+def _make_document():
+    return SimpleNamespace(
+        id=9381, title="Artykul o Terraform", url="https://example.com/terraform", byline="Jan Kowalski",
+        discovery_source=SimpleNamespace(name="unknow.news"),
+        published_on=dt.date(2026, 8, 1), ingested_at=dt.datetime(2026, 8, 2, 8, 0, tzinfo=dt.timezone.utc),
+    )
+
+
 class TestDefaultStatus:
     def test_missing_status_param_filters_pending(self, monkeypatch):
         from library.tool_candidate_routes import get_tool_candidates
@@ -196,3 +232,167 @@ class TestProvenanceMissingDiscoverySource:
             response = get_tool_candidates()
 
         assert response.json["tool_candidates"][0]["source_document"]["discovery_source"] is None
+
+
+class TestAcceptEndpoint:
+    def test_accept_without_duplicate(self, monkeypatch):
+        from library.tool_candidate_routes import accept_candidate
+
+        candidate = _make_candidate()
+        document = _make_document()
+        session = _session_for_mutation(candidate, document)
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1/accept", method="POST"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = accept_candidate(1)
+
+        assert candidate.status == "accepted"
+        assert candidate.reviewed_at is not None
+        assert response.json["warning"] is None
+        assert session.commit.call_count == 1
+
+    def test_accept_with_duplicate_warns_but_still_accepts(self, monkeypatch):
+        from library.tool_candidate_routes import accept_candidate
+
+        candidate = _make_candidate()
+        document = _make_document()
+        session = _session_for_mutation(candidate, document, similar_tool_name="Terraform")
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1/accept", method="POST"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = accept_candidate(1)
+
+        assert candidate.status == "accepted"
+        assert "Terraform" in response.json["warning"]
+
+    def test_service_key_forbidden(self, monkeypatch):
+        from library.tool_candidate_routes import accept_candidate
+
+        candidate = _make_candidate()
+        document = _make_document()
+        session = _session_for_mutation(candidate, document)
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1/accept", method="POST"), pytest.raises(Exception) as exc_info:
+            g.auth = SimpleNamespace(kind="service", user_id=None)
+            accept_candidate(1)
+
+        assert exc_info.value.code == 403
+
+    def test_unknown_id_aborts_404(self, monkeypatch):
+        from library.tool_candidate_routes import accept_candidate
+
+        session = MagicMock()
+        session.execute.return_value.first.return_value = None
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/999/accept", method="POST"), pytest.raises(Exception) as exc_info:
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            accept_candidate(999)
+
+        assert exc_info.value.code == 404
+
+
+class TestRejectEndpoint:
+    def test_reject_sets_status_zero_cost(self, monkeypatch):
+        from library.tool_candidate_routes import reject_candidate
+
+        candidate = _make_candidate()
+        document = _make_document()
+        session = _session_for_lookup_only(candidate, document)
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1/reject", method="POST"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            reject_candidate(1)
+
+        assert candidate.status == "rejected"
+        assert candidate.reviewed_at is not None
+        assert session.execute.call_count == 1
+
+    def test_service_key_forbidden(self, monkeypatch):
+        from library.tool_candidate_routes import reject_candidate
+
+        candidate = _make_candidate()
+        document = _make_document()
+        session = _session_for_lookup_only(candidate, document)
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1/reject", method="POST"), pytest.raises(Exception) as exc_info:
+            g.auth = SimpleNamespace(kind="service", user_id=None)
+            reject_candidate(1)
+
+        assert exc_info.value.code == 403
+
+
+class TestDeferEndpoint:
+    def test_defer_sets_status(self, monkeypatch):
+        from library.tool_candidate_routes import defer_candidate
+
+        candidate = _make_candidate()
+        document = _make_document()
+        session = _session_for_lookup_only(candidate, document)
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1/defer", method="POST"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            defer_candidate(1)
+
+        assert candidate.status == "deferred"
+
+    def test_service_key_forbidden(self, monkeypatch):
+        from library.tool_candidate_routes import defer_candidate
+
+        candidate = _make_candidate()
+        document = _make_document()
+        session = _session_for_lookup_only(candidate, document)
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1/defer", method="POST"), pytest.raises(Exception) as exc_info:
+            g.auth = SimpleNamespace(kind="service", user_id=None)
+            defer_candidate(1)
+
+        assert exc_info.value.code == 403
+
+
+class TestFindSimilarToolName:
+    def test_returns_name_when_similar_tool_exists(self):
+        from library.tool_candidate_routes import _find_similar_tool_name
+
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = SimpleNamespace(name="Terraform")
+
+        result = _find_similar_tool_name(session, "terraform")
+
+        assert result == "Terraform"
+
+    def test_returns_none_when_no_similar_tool(self):
+        from library.tool_candidate_routes import _find_similar_tool_name
+
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+
+        result = _find_similar_tool_name(session, "terraform")
+
+        assert result is None
+
+    def test_threshold_compiled_into_sql(self):
+        from library.tool_candidate_routes import _find_similar_tool_name
+
+        session = MagicMock()
+        session.execute.return_value.scalars.return_value.first.return_value = None
+
+        _find_similar_tool_name(session, "terraform")
+
+        compiled_query = _compiled(session.execute.call_args[0][0])
+        assert "0.5" in compiled_query
