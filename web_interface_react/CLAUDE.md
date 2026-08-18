@@ -83,6 +83,7 @@ All protected routes wrapped in `RequireAuth` → `Layout` → `Authorization`. 
 | `/persons/:id?` | `persons.tsx` | Person registry (NER stage 4): fuzzy search (`GET /persons?q=`; `?q=` in the URL pre-fills it — unresolved person chips in the reader link here), person details (QID link to wikidata.org, aliases) and the person's documents (`GET /person_documents`) sorted by `mention_count` (shown as ×N), each with editor + `/read/:id` links and a "rozdziały" drill-down (`GET /document/:id/entity_occurrences?text=` — per-chapter counts linking to `/read/:id?chapter=N`) |
 | `/persons-review` | `personsReview.tsx` | manual_review queue (`GET /persons_review`): approve / reject / merge decisions (`PATCH /persons_review/<link_id>`); merge target picked via the `GET /persons?q=` search |
 | `/feed-review` | `feedReview.tsx` | Feed curation with `Nowe` and `Do przeczytania / obejrzenia` tabs. The latter uses `saved_for_later`; source filters remain in the URL. |
+| `/tool-candidates-review` | `toolCandidatesReview.tsx` | Review queue for Bielik-detected tool candidates (`GET/POST /tool_candidates*`, Epic 44): grouped by discovery source, sorted by detection date, accept/reject/defer actions refresh via `fetch` (no page reload), inline dismissible banner for the accept-response duplicate warning. |
 | `/upload-file` | `file.tsx` | Upload image files (alpha) |
 
 ### Chunk analysis review (`chunks.tsx`)
