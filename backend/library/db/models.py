@@ -2606,6 +2606,29 @@ class Tool(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
 
+class ObsidianNoteVersion(Base):
+    """Content-before/after snapshot for every vault write (Epic 47).
+
+    Re-homed unchanged from archived Epic 38 Story 38.1 -- see Story 47.1
+    Dev Notes. `tool_id` replaces the archived design's `article_id`
+    since every write on this PRD's path is a Tool save, never a note
+    about an article.
+    """
+
+    __tablename__ = "obsidian_note_versions"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    note_path: Mapped[str] = mapped_column(Text, nullable=False)
+    content_before: Mapped[str | None] = mapped_column(Text)
+    content_after: Mapped[str] = mapped_column(Text, nullable=False)
+    user_prompt: Mapped[str | None] = mapped_column(Text)
+    tool_id: Mapped[int | None] = mapped_column(ForeignKey("tools.id", ondelete="SET NULL"))
+    changed_by: Mapped[str] = mapped_column(Text, nullable=False, server_default=sa_text("'backend'"))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 # The pre-11d before_flush hook that auto-created `sources` rows for
 # Document.source strings is gone: discovery-source resolution is explicit
 # now — every writer goes through Document.set_discovery_source(), which
