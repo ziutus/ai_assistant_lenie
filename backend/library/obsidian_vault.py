@@ -11,8 +11,10 @@ or read_note() yet -- POST /tools (Story 47.2) is the first real caller.
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
+from sqlalchemy import text as sa_text
 from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
@@ -55,6 +57,31 @@ def read_note(note_path: str) -> str | None:
     return resolved.read_text(encoding="utf-8")
 
 
+def _write_file_atomically(resolved: Path, content: str) -> None:
+    """Write content via a same-directory temp file + atomic rename.
+
+    os.replace() never follows a symlink at the destination -- on POSIX,
+    rename() replaces the directory entry itself (the symlink), it does not
+    write through to whatever the symlink points at. That defeats the
+    "something swaps the destination for a symlink pointing outside the
+    vault between ensure_within_vault()'s check and this write" race
+    (code-review finding on Story 47.1's PR): even if that swap happens in
+    the narrow window right before this call, the rename still lands on the
+    vault-local path, not the symlink's external target. This also makes
+    the write atomic (no truncated/corrupt file on a crash or full disk
+    mid-write).
+    """
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_path = tempfile.mkstemp(dir=resolved.parent, prefix=f".{resolved.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(content)
+        os.replace(tmp_path, resolved)
+    except BaseException:
+        os.unlink(tmp_path)
+        raise
+
+
 def write_note_with_version(
     session: Session,
     note_path: str,
@@ -74,20 +101,36 @@ def write_note_with_version(
     (FR20) -- mapping that exception to obsidian_write_failed /
     sync_container_unavailable is Story 47.3's responsibility, not this
     function's.
+
+    Concurrent writers targeting the SAME note_path are serialized by a
+    PostgreSQL session-level advisory lock keyed on note_path (acquired via
+    pg_advisory_lock, not the transaction-scoped pg_advisory_xact_lock --
+    the lock must outlive the commit() above and still be held during the
+    filesystem write below, so a second writer's content_before read can
+    never observe content that a first writer's file write hasn't landed
+    yet). The lock is always released in `finally`, including when the
+    filesystem write raises, so a failed write never leaves the note_path
+    permanently locked for the rest of this DB session/connection
+    (code-review finding on Story 47.1's PR).
     """
     resolved = ensure_within_vault(note_path)
-    content_before = read_note(note_path)
 
-    version = ObsidianNoteVersion(
-        note_path=note_path,
-        content_before=content_before,
-        content_after=content,
-        user_prompt=user_prompt,
-        tool_id=tool_id,
-    )
-    session.add(version)
-    session.commit()
+    session.execute(sa_text("SELECT pg_advisory_lock(hashtext(:note_path))"), {"note_path": note_path})
+    try:
+        content_before = read_note(note_path)
 
-    resolved.parent.mkdir(parents=True, exist_ok=True)
-    resolved.write_text(content, encoding="utf-8")
+        version = ObsidianNoteVersion(
+            note_path=note_path,
+            content_before=content_before,
+            content_after=content,
+            user_prompt=user_prompt,
+            tool_id=tool_id,
+        )
+        session.add(version)
+        session.commit()
+
+        _write_file_atomically(resolved, content)
+    finally:
+        session.execute(sa_text("SELECT pg_advisory_unlock(hashtext(:note_path))"), {"note_path": note_path})
+
     return version
