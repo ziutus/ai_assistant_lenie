@@ -99,6 +99,14 @@ def get_tool_candidates():
     })
 
 
+@bp.get("/tool_candidates/<int:candidate_id>")
+def get_tool_candidate(candidate_id):
+    _reader()
+    session = get_scoped_session()
+    candidate, document = _get_candidate_with_document(session, candidate_id)
+    return jsonify({"tool_candidate": _candidate_dict(candidate, document)})
+
+
 @bp.post("/tool_candidates/<int:candidate_id>/accept")
 def accept_candidate(candidate_id):
     _user()
