@@ -55,6 +55,10 @@ def execute(session, job: Job, *, storage=None, work_dir: str = "/app/work") -> 
         from library.obsidian_reimport_service import execute_obsidian_reimport
 
         return execute_obsidian_reimport(session, job)
+    if job.type == "tool_candidate_detect":
+        from library.tool_candidate_detection_service import execute_tool_candidate_detect
+
+        return execute_tool_candidate_detect(session, job)
     if job.type == "legacy_aws_pull":
         from library.config_loader import load_config
         from library.legacy_aws_pull_service import LegacyAwsPullService
@@ -142,7 +146,7 @@ def main() -> int:
     parser.add_argument("--healthcheck", action="store_true")
     parser.add_argument(
         "--types",
-        default="feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport",
+        default="feed_check,feed_check_all,feed_auto_import,feed_daily,content_group_suggest,entity_enrichment,obsidian_reimport,tool_candidate_detect",
         help="comma-separated job types handled by this worker",
     )
     parser.add_argument("--scheduler", action="store_true")

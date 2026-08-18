@@ -368,7 +368,7 @@ class Job(Base):
     initiated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     idempotency_key: Mapped[str | None] = mapped_column(String(255), unique=True)
     __table_args__ = (
-        CheckConstraint("type IN ('feed_check','feed_check_all','feed_auto_import','feed_daily','content_group_suggest','document_prepare','entity_enrichment','legacy_aws_pull')", name="ck_jobs_type"),
+        CheckConstraint("type IN ('feed_check','feed_check_all','feed_auto_import','feed_daily','content_group_suggest','document_prepare','entity_enrichment','legacy_aws_pull','obsidian_reimport','tool_candidate_detect')", name="ck_jobs_type"),
     )
 
 

@@ -30,6 +30,19 @@ def test_obsidian_reimport_job_is_dispatched_to_service(monkeypatch):
     execute_obsidian_reimport.assert_called_once_with(session, job)
 
 
+def test_tool_candidate_detect_job_is_dispatched_to_service(monkeypatch):
+    result = {"documents_scanned": 1, "candidates_created": 1, "mentions_evaluated": 1, "documents_skipped_empty": 0, "documents_failed": 0}
+    execute_tool_candidate_detect = MagicMock(return_value=result)
+    monkeypatch.setattr(
+        "library.tool_candidate_detection_service.execute_tool_candidate_detect", execute_tool_candidate_detect
+    )
+
+    session = MagicMock()
+    job = MagicMock(type="tool_candidate_detect")
+    assert worker.execute(session, job) == result
+    execute_tool_candidate_detect.assert_called_once_with(session, job)
+
+
 def test_retryable_failure_is_marked_failed_before_retry(monkeypatch):
     session = MagicMock()
     job = MagicMock(attempt=1, max_attempts=3)
