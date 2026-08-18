@@ -1,0 +1,4 @@
+interface:
+  display_name: "Tool Draft"
+  short_description: "Generuj draft opisu narzędzia z zaakceptowanego kandydata"
+  default_prompt: "Użyj $lenie-tool-draft, aby wygenerować draft opisu narzędzia dla zaakceptowanego kandydata-narzędzia Lenie."
