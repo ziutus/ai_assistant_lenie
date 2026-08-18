@@ -27,6 +27,7 @@ from library.stats_routes import bp as stats_bp
 from library.feed_routes import bp as feed_bp
 from library.feed_monitor_service import link_matching_feed_items_to_document
 from library.tool_candidate_routes import bp as tool_candidate_bp
+from library.tool_routes import bp as tool_bp
 from library.llm_analysis_routes import bp as llm_analysis_bp
 from library.youtube_processing import process_youtube_url
 from library.storage import storage_from_config
@@ -38,7 +39,7 @@ cfg = load_config()
 
 secrets_backend = cfg.require("SECRETS_BACKEND", "env")
 
-APP_VERSION = "0.3.15.7"
+APP_VERSION = "0.3.15.8"
 BUILD_TIME = "2026.07.04 08:00"
 
 logging.info(f"APP VERSION={APP_VERSION} (build time:{BUILD_TIME})")
@@ -106,6 +107,7 @@ app.register_blueprint(search_bp)
 app.register_blueprint(stats_bp)
 app.register_blueprint(feed_bp)
 app.register_blueprint(tool_candidate_bp)
+app.register_blueprint(tool_bp)
 app.register_blueprint(llm_analysis_bp)
 start_analysis_worker()
 
