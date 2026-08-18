@@ -125,7 +125,12 @@ def retry_obsidian_write(tool_id):
     _user()
     session = get_scoped_session()
 
-    tool = session.get(Tool, tool_id)
+    # SELECT ... FOR UPDATE: holds a row lock on this Tool for the rest of the
+    # transaction so two concurrent retries can't both observe
+    # obsidian_note_path IS NULL and both write -- the second blocks here
+    # until the first commits (or rolls back on abort/error), then re-reads
+    # the now-updated row and correctly hits the already_written branch.
+    tool = session.execute(select(Tool).where(Tool.id == tool_id).with_for_update()).scalar_one_or_none()
     if tool is None:
         abort(404, "tool not found")
 
@@ -147,7 +152,7 @@ def retry_obsidian_write(tool_id):
         .limit(1)
     ).scalars().first()
     if version is None:
-        abort(500, "no obsidian_note_versions row found for this tool")
+        abort(404, "no obsidian_note_versions row found for this tool")
 
     try:
         retry_write_note(session, version.note_path, version.content_after)

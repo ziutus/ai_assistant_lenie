@@ -191,9 +191,15 @@ def _make_version(**overrides):
 
 
 def _session_for_retry(tool, version):
-    """Session mock for session.get(Tool, id) + session.execute(...).scalars().first()."""
+    """Session mock for the FOR UPDATE tool lookup + the version .scalars().first() lookup.
+
+    Both session.execute(...).scalar_one_or_none() (tool) and
+    session.execute(...).scalars().first() (version) resolve against the same
+    shared MagicMock returned by session.execute(...), so both can be set
+    independently regardless of call order.
+    """
     session = MagicMock()
-    session.get.return_value = tool
+    session.execute.return_value.scalar_one_or_none.return_value = tool
     session.execute.return_value.scalars.return_value.first.return_value = version
     return session
 
@@ -464,8 +470,7 @@ class TestRetryObsidianWriteToolNotFound:
     def test_missing_tool_aborts_404(self, monkeypatch):
         from library.tool_routes import retry_obsidian_write
 
-        session = MagicMock()
-        session.get.return_value = None
+        session = _session_for_retry(tool=None, version=None)
         monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
         app = Flask(__name__)
 
@@ -529,9 +534,12 @@ class TestRetryObsidianWriteUsesLatestVersion:
         assert "ORDER BY obsidian_note_versions.created_at DESC" in compiled_query
         assert "LIMIT" in compiled_query
 
+        tool_query = _compiled(session.execute.call_args_list[0][0][0])
+        assert "FOR UPDATE" in tool_query
+
 
 class TestRetryObsidianWriteNoVersionFound:
-    def test_missing_version_row_aborts_500(self, monkeypatch):
+    def test_missing_version_row_aborts_404(self, monkeypatch):
         from library.tool_routes import retry_obsidian_write
 
         tool = _make_tool(id=42, obsidian_note_path=None)
@@ -543,7 +551,7 @@ class TestRetryObsidianWriteNoVersionFound:
             g.auth = SimpleNamespace(kind="user", user_id=1)
             retry_obsidian_write(42)
 
-        assert exc_info.value.code == 500
+        assert exc_info.value.code == 404
 
 
 class TestRetryObsidianWriteFailureMountUnavailable:
