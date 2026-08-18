@@ -18,6 +18,7 @@ import Read from "./modules/shared/pages/read";
 import Persons from "./modules/shared/pages/persons";
 import PersonsReview from "./modules/shared/pages/personsReview";
 import ToolCandidatesReview from "./modules/shared/pages/toolCandidatesReview";
+import Tools from "./modules/shared/pages/tools";
 import Sources from "./modules/shared/pages/sources";
 import InformationSources from "./modules/shared/pages/informationSources";
 import LlmCosts from "./modules/shared/pages/llmCosts";
@@ -82,6 +83,7 @@ function App() {
                   <Route path="/feeds" element={<Feeds />} />
                   <Route path="/feed-review" element={<FeedReview />} />
                   <Route path="/tool-candidates-review" element={<ToolCandidatesReview />} />
+                  <Route path="/tools" element={<Tools />} />
                   <Route path="/llm-analysis" element={<LlmAnalysis />} />
                   <Route path="/jobs" element={<Jobs />} />
                   <Route path="/scheduler" element={<Scheduler />} />
