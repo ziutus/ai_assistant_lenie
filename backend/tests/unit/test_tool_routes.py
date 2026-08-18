@@ -215,6 +215,19 @@ class TestCreateToolServiceKeyForbidden:
         assert exc_info.value.code == 403
         assert get_scoped_session_mock.call_count == 0
 
+    def test_missing_auth_403_before_any_mutation(self, monkeypatch):
+        from library.tool_routes import create_tool
+
+        get_scoped_session_mock = MagicMock()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", get_scoped_session_mock)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools", method="POST", json=VALID_BODY), pytest.raises(Exception) as exc_info:
+            create_tool()
+
+        assert exc_info.value.code == 403
+        assert get_scoped_session_mock.call_count == 0
+
 
 class TestCreateToolMissingFields:
     @pytest.mark.parametrize("missing_field", ["name", "note_path", "content"])
