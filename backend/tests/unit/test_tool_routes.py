@@ -179,6 +179,31 @@ class TestOrdering:
         assert "ORDER BY tools.name" in compiled_query
 
 
+def _make_version(**overrides):
+    defaults = dict(
+        id=1,
+        note_path="Narzedzia/Terraform.md",
+        content_after="# Terraform\n\nOpis (retry).",
+        created_at=dt.datetime(2026, 8, 18, 10, 0, tzinfo=dt.timezone.utc),
+    )
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def _session_for_retry(tool, version):
+    """Session mock for the FOR UPDATE tool lookup + the version .scalars().first() lookup.
+
+    Both session.execute(...).scalar_one_or_none() (tool) and
+    session.execute(...).scalars().first() (version) resolve against the same
+    shared MagicMock returned by session.execute(...), so both can be set
+    independently regardless of call order.
+    """
+    session = MagicMock()
+    session.execute.return_value.scalar_one_or_none.return_value = tool
+    session.execute.return_value.scalars.return_value.first.return_value = version
+    return session
+
+
 def _mutation_session():
     """Session mock whose add() assigns id=42 to the flushed Tool, mimicking a real flush()."""
     from library.db.models import Tool
@@ -410,3 +435,176 @@ class TestCreateToolAcceptedStatus:
 
         added_tool = session.add.call_args[0][0]
         assert added_tool.status == "accepted"
+
+
+class TestRetryObsidianWriteAuthForbidden:
+    def test_service_key_403_before_any_mutation(self, monkeypatch):
+        from library.tool_routes import retry_obsidian_write
+
+        get_scoped_session_mock = MagicMock()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", get_scoped_session_mock)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools/42/retry_obsidian_write", method="POST"), pytest.raises(Exception) as exc_info:
+            g.auth = SimpleNamespace(kind="service", user_id=None)
+            retry_obsidian_write(42)
+
+        assert exc_info.value.code == 403
+        assert get_scoped_session_mock.call_count == 0
+
+    def test_missing_auth_403_before_any_mutation(self, monkeypatch):
+        from library.tool_routes import retry_obsidian_write
+
+        get_scoped_session_mock = MagicMock()
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", get_scoped_session_mock)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools/42/retry_obsidian_write", method="POST"), pytest.raises(Exception) as exc_info:
+            retry_obsidian_write(42)
+
+        assert exc_info.value.code == 403
+        assert get_scoped_session_mock.call_count == 0
+
+
+class TestRetryObsidianWriteToolNotFound:
+    def test_missing_tool_aborts_404(self, monkeypatch):
+        from library.tool_routes import retry_obsidian_write
+
+        session = _session_for_retry(tool=None, version=None)
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools/999/retry_obsidian_write", method="POST"), pytest.raises(Exception) as exc_info:
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            retry_obsidian_write(999)
+
+        assert exc_info.value.code == 404
+
+
+class TestRetryObsidianWriteAlreadyWritten:
+    def test_already_written_tool_rejected_with_409(self, monkeypatch):
+        from library.tool_routes import retry_obsidian_write
+
+        tool = _make_tool(id=42, obsidian_note_path="Narzedzia/Terraform.md")
+        session = _session_for_retry(tool, version=None)
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        retry_write_note_mock = MagicMock()
+        monkeypatch.setattr("library.tool_routes.retry_write_note", retry_write_note_mock)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools/42/retry_obsidian_write", method="POST"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = retry_obsidian_write(42)
+
+        assert response.json == {
+            "written": False,
+            "error": "already_written",
+            "tool_id": 42,
+            "path": "Narzedzia/Terraform.md",
+            "hint": "To narzędzie ma już zapisaną notatkę w Obsidian — retry nie jest potrzebny.",
+        }
+        assert response.status_code == 409
+        assert session.commit.call_count == 0
+        assert retry_write_note_mock.call_count == 0
+
+
+class TestRetryObsidianWriteUsesLatestVersion:
+    def test_retry_uses_latest_version_content_and_note_path(self, monkeypatch):
+        from library.tool_routes import retry_obsidian_write
+
+        tool = _make_tool(id=42, obsidian_note_path=None)
+        version = _make_version(note_path="Narzedzia/Terraform.md", content_after="tresc ostatniej wersji")
+        session = _session_for_retry(tool, version)
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        retry_write_note_mock = MagicMock()
+        monkeypatch.setattr("library.tool_routes.retry_write_note", retry_write_note_mock)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools/42/retry_obsidian_write", method="POST"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = retry_obsidian_write(42)
+
+        retry_write_note_mock.assert_called_once_with(session, "Narzedzia/Terraform.md", "tresc ostatniej wersji")
+        assert tool.obsidian_note_path == "Narzedzia/Terraform.md"
+        assert session.commit.call_count == 1
+        assert response.json == {"written": True, "tool_id": 42, "path": "Narzedzia/Terraform.md"}
+        assert response.status_code == 200
+
+        compiled_query = _compiled(session.execute.call_args[0][0])
+        assert "ORDER BY obsidian_note_versions.created_at DESC" in compiled_query
+        assert "LIMIT" in compiled_query
+
+        tool_query = _compiled(session.execute.call_args_list[0][0][0])
+        assert "FOR UPDATE" in tool_query
+
+
+class TestRetryObsidianWriteNoVersionFound:
+    def test_missing_version_row_aborts_404(self, monkeypatch):
+        from library.tool_routes import retry_obsidian_write
+
+        tool = _make_tool(id=42, obsidian_note_path=None)
+        session = _session_for_retry(tool, version=None)
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools/42/retry_obsidian_write", method="POST"), pytest.raises(Exception) as exc_info:
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            retry_obsidian_write(42)
+
+        assert exc_info.value.code == 404
+
+
+class TestRetryObsidianWriteFailureMountUnavailable:
+    def test_mount_unavailable_returns_sync_container_unavailable(self, monkeypatch):
+        from library.tool_routes import retry_obsidian_write
+
+        tool = _make_tool(id=42, obsidian_note_path=None)
+        version = _make_version()
+        session = _session_for_retry(tool, version)
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr(
+            "library.tool_routes.retry_write_note",
+            MagicMock(side_effect=OSError("disk full")),
+        )
+        monkeypatch.setattr("library.tool_routes.is_vault_mount_available", MagicMock(return_value=False))
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools/42/retry_obsidian_write", method="POST"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = retry_obsidian_write(42)
+
+        assert response.json["written"] is False
+        assert response.json["error"] == "sync_container_unavailable"
+        assert response.json["tool_id"] == 42
+        assert response.json["hint"]
+        assert "path" not in response.json
+        assert response.status_code == 502
+        assert session.commit.call_count == 0
+
+
+class TestRetryObsidianWriteFailureMountAvailable:
+    def test_mount_available_returns_obsidian_write_failed(self, monkeypatch):
+        from library.tool_routes import retry_obsidian_write
+
+        tool = _make_tool(id=42, obsidian_note_path=None)
+        version = _make_version()
+        session = _session_for_retry(tool, version)
+        monkeypatch.setattr("library.tool_routes.get_scoped_session", lambda: session)
+        monkeypatch.setattr(
+            "library.tool_routes.retry_write_note",
+            MagicMock(side_effect=OSError("disk full")),
+        )
+        monkeypatch.setattr("library.tool_routes.is_vault_mount_available", MagicMock(return_value=True))
+        app = Flask(__name__)
+
+        with app.test_request_context("/tools/42/retry_obsidian_write", method="POST"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = retry_obsidian_write(42)
+
+        assert response.json["written"] is False
+        assert response.json["error"] == "obsidian_write_failed"
+        assert response.json["tool_id"] == 42
+        assert response.json["hint"]
+        assert "path" not in response.json
+        assert response.status_code == 502
+        assert session.commit.call_count == 0

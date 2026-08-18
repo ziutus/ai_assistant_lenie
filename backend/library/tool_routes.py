@@ -5,11 +5,12 @@ from flask import Blueprint, abort, g, jsonify, request
 from sqlalchemy import select
 
 from library.db.engine import get_scoped_session
-from library.db.models import Tool
+from library.db.models import ObsidianNoteVersion, Tool
 from library.obsidian_vault import (
     VaultPathInvalidError,
     ensure_within_vault,
     is_vault_mount_available,
+    retry_write_note,
     write_note_with_version,
 )
 
@@ -117,3 +118,61 @@ def create_tool():
     tool.obsidian_note_path = note_path
     session.commit()
     return jsonify({"written": True, "tool_id": tool.id, "path": note_path})
+
+
+@bp.post("/tools/<int:tool_id>/retry_obsidian_write")
+def retry_obsidian_write(tool_id):
+    _user()
+    session = get_scoped_session()
+
+    # SELECT ... FOR UPDATE: holds a row lock on this Tool for the rest of the
+    # transaction so two concurrent retries can't both observe
+    # obsidian_note_path IS NULL and both write -- the second blocks here
+    # until the first commits (or rolls back on abort/error), then re-reads
+    # the now-updated row and correctly hits the already_written branch.
+    tool = session.execute(select(Tool).where(Tool.id == tool_id).with_for_update()).scalar_one_or_none()
+    if tool is None:
+        abort(404, "tool not found")
+
+    if tool.obsidian_note_path is not None:
+        response = jsonify({
+            "written": False,
+            "error": "already_written",
+            "tool_id": tool.id,
+            "path": tool.obsidian_note_path,
+            "hint": "To narzędzie ma już zapisaną notatkę w Obsidian — retry nie jest potrzebny.",
+        })
+        response.status_code = 409
+        return response
+
+    version = session.execute(
+        select(ObsidianNoteVersion)
+        .where(ObsidianNoteVersion.tool_id == tool_id)
+        .order_by(ObsidianNoteVersion.created_at.desc())
+        .limit(1)
+    ).scalars().first()
+    if version is None:
+        abort(404, "no obsidian_note_versions row found for this tool")
+
+    try:
+        retry_write_note(session, version.note_path, version.content_after)
+    except Exception:
+        # Same mount-reachability check as create_tool()'s error branch (Story
+        # 47.3) -- distinguishes a disconnected/unreachable volume from a
+        # reachable volume that failed to write for another reason.
+        if not is_vault_mount_available():
+            error = "sync_container_unavailable"
+            hint = (
+                "Sprawdź, czy kontener obsidian-headless-sync działa i synchronizacja "
+                "wolumenu jest aktywna, następnie ponów zapis."
+            )
+        else:
+            error = "obsidian_write_failed"
+            hint = "Sprawdź zasoby na wolumenie NAS (miejsce na dysku, uprawnienia do zapisu) i ponów zapis."
+        response = jsonify({"written": False, "error": error, "tool_id": tool.id, "hint": hint})
+        response.status_code = 502
+        return response
+
+    tool.obsidian_note_path = version.note_path
+    session.commit()
+    return jsonify({"written": True, "tool_id": tool.id, "path": version.note_path})

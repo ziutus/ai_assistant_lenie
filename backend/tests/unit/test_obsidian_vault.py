@@ -27,6 +27,7 @@ from library.obsidian_vault import (
     ensure_within_vault,
     is_vault_mount_available,
     read_note,
+    retry_write_note,
     write_note_with_version,
 )
 
@@ -165,6 +166,55 @@ def test_mount_check_uses_configured_vault_root(vault, monkeypatch):
     monkeypatch.setattr(os.path, "ismount", ismount_mock)
     is_vault_mount_available()
     assert ismount_mock.call_args[0][0] == str(vault)
+
+
+def test_retry_write_note_writes_file_content(vault):
+    session = _FakeSession()
+    retry_write_note(session, "note.md", "retried content")
+    assert (vault / "note.md").read_text(encoding="utf-8") == "retried content"
+
+
+def test_retry_write_note_overwrites_existing_content(vault):
+    (vault / "note.md").write_text("old failed-attempt content", encoding="utf-8")
+    session = _FakeSession()
+    retry_write_note(session, "note.md", "new content")
+    assert (vault / "note.md").read_text(encoding="utf-8") == "new content"
+
+
+def test_retry_write_note_does_not_add_or_commit(vault):
+    session = _FakeSession()
+    retry_write_note(session, "note.md", "content")
+    assert session.added == []
+    assert session.committed is False
+
+
+def test_retry_write_note_acquires_and_releases_advisory_lock(vault):
+    session = _FakeSession()
+    retry_write_note(session, "note.md", "content")
+    lock_sql = [sql for sql, _ in session.executed]
+    assert len(lock_sql) == 2
+    assert "pg_advisory_lock(" in lock_sql[0] and "unlock" not in lock_sql[0]
+    assert "pg_advisory_unlock(" in lock_sql[1]
+    assert session.executed[0][1] == {"note_path": "note.md"}
+    assert session.executed[1][1] == {"note_path": "note.md"}
+
+
+def test_retry_write_note_rejects_path_escaping_vault(vault):
+    session = _FakeSession()
+    with pytest.raises(VaultPathInvalidError):
+        retry_write_note(session, "../outside.md", "content")
+
+
+def test_retry_write_note_advisory_lock_released_even_if_write_fails(vault, monkeypatch):
+    def _boom(*_args, **_kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "replace", _boom)
+    session = _FakeSession()
+    with pytest.raises(OSError):
+        retry_write_note(session, "note.md", "content")
+    lock_sql = [sql for sql, _ in session.executed]
+    assert any("pg_advisory_unlock(" in sql for sql in lock_sql)
 
 
 def test_write_survives_last_moment_symlink_swap(vault, tmp_path, monkeypatch):

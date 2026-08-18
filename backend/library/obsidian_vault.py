@@ -154,3 +154,25 @@ def write_note_with_version(
         session.execute(sa_text("SELECT pg_advisory_unlock(hashtext(:note_path))"), {"note_path": note_path})
 
     return version
+
+
+def retry_write_note(session: Session, note_path: str, content: str) -> None:
+    """Re-attempt ONLY the filesystem write for an already-versioned note (Story 47.4).
+
+    Caller contract: the ObsidianNoteVersion row and its content_after already
+    exist from the original (failed) write -- this function inserts nothing
+    and commits nothing (no session.add(), no session.commit() anywhere in
+    its body). It is step 7 of the dual-write sequence run in isolation from
+    steps 3-6, called only from POST /tools/<id>/retry_obsidian_write once a
+    prior write has genuinely failed (Tool.obsidian_note_path IS NULL). "No
+    new row is ever inserted" is the structural reason a retry can never
+    duplicate the entity (FR21) -- not a check that could be bypassed by a
+    programming error.
+    """
+    resolved = ensure_within_vault(note_path)
+
+    session.execute(sa_text("SELECT pg_advisory_lock(hashtext(:note_path))"), {"note_path": note_path})
+    try:
+        _write_file_atomically(resolved, content)
+    finally:
+        session.execute(sa_text("SELECT pg_advisory_unlock(hashtext(:note_path))"), {"note_path": note_path})
