@@ -365,6 +365,104 @@ class TestDeferEndpoint:
         assert exc_info.value.code == 403
 
 
+class TestGetSingleCandidate:
+    def test_returns_full_candidate_with_provenance(self, monkeypatch):
+        from library.tool_candidate_routes import get_tool_candidate
+
+        candidate = _make_candidate()
+        document = _make_document()
+        session = _session_for_lookup_only(candidate, document)
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = get_tool_candidate(1)
+
+        assert response.json["tool_candidate"] == {
+            "id": 1,
+            "name": "Terraform",
+            "status": "pending",
+            "context_snippet": "Uzywamy Terraform do IaC",
+            "detected_by": "bielik",
+            "created_at": "2026-08-10T12:00:00+00:00",
+            "reviewed_at": None,
+            "source_document_id": 9381,
+            "source_document": {
+                "id": 9381,
+                "title": "Artykul o Terraform",
+                "url": "https://example.com/terraform",
+                "byline": "Jan Kowalski",
+                "discovery_source": "unknow.news",
+                "published_on": "2026-08-01",
+                "ingested_at": "2026-08-02T08:00:00+00:00",
+            },
+        }
+
+    @pytest.mark.parametrize("status", ["accepted", "rejected", "deferred"])
+    def test_non_pending_status_still_returned(self, monkeypatch, status):
+        from library.tool_candidate_routes import get_tool_candidate
+
+        candidate = _make_candidate(status=status)
+        document = _make_document()
+        session = _session_for_lookup_only(candidate, document)
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1"):
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            response = get_tool_candidate(1)
+
+        assert response.json["tool_candidate"]["status"] == status
+
+    @pytest.mark.parametrize("auth", [
+        SimpleNamespace(kind="service", user_id=None),
+        SimpleNamespace(kind="user", user_id=1),
+    ])
+    def test_both_kinds_get_200(self, monkeypatch, auth):
+        from library.tool_candidate_routes import get_tool_candidate
+
+        candidate = _make_candidate()
+        document = _make_document()
+        session = _session_for_lookup_only(candidate, document)
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1"):
+            g.auth = auth
+            response = get_tool_candidate(1)
+
+        assert response.json["tool_candidate"]["id"] == 1
+
+    def test_missing_auth_aborts_403(self, monkeypatch):
+        from library.tool_candidate_routes import get_tool_candidate
+
+        candidate = _make_candidate()
+        document = _make_document()
+        session = _session_for_lookup_only(candidate, document)
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/1"), pytest.raises(Exception) as exc_info:
+            get_tool_candidate(1)
+
+        assert exc_info.value.code == 403
+
+    def test_unknown_id_aborts_404(self, monkeypatch):
+        from library.tool_candidate_routes import get_tool_candidate
+
+        session = MagicMock()
+        session.execute.return_value.first.return_value = None
+        monkeypatch.setattr("library.tool_candidate_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+
+        with app.test_request_context("/tool_candidates/999"), pytest.raises(Exception) as exc_info:
+            g.auth = SimpleNamespace(kind="user", user_id=1)
+            get_tool_candidate(999)
+
+        assert exc_info.value.code == 404
+
+
 class TestFindSimilarToolName:
     def test_returns_name_when_similar_tool_exists(self):
         from library.tool_candidate_routes import _find_similar_tool_name
