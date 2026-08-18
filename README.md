@@ -51,6 +51,7 @@ Lenie-specific skills are prefixed `lenie-` so they're easy to recognize alongsi
 | `/lenie-obsidian-note` | `.claude/commands/lenie-obsidian-note.md` (Claude Code), `.agents/skills/lenie-obsidian-note/` (Codex) | Turns a Lenie article/chunk into an Obsidian vault note via the backend REST API, then syncs `obsidian_note_paths` back to the database. |
 | `/lenie-feed-review` | `.claude/commands/lenie-feed-review.md` | Walks through new feed candidates from the REST API, fetches and summarizes each one, and lets you decide whether to import it. |
 | `/lenie-review-removed-lines` | `.claude/commands/lenie-review-removed-lines.md` | Reviews pending `document_removed_lines` candidates and proposes improvements to per-site article cleanup rules. |
+| `/lenie-tool-draft` | `.claude/commands/lenie-tool-draft.md` (Claude Code), `.agents/skills/lenie-tool-draft/` (Codex) | Generates a full tool description draft for an accepted tool candidate, following the existing Obsidian `appliaction description` template and filling in missing fields (homepage, license, pricing) via WebFetch/WebSearch. Presents the draft in-session only — never writes a file or saves anything, since `POST /tools` doesn't exist yet. |
 
 ## Roadmap
 
