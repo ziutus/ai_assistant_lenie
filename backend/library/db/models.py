@@ -2575,6 +2575,37 @@ class ToolCandidate(Base):
     )
 
 
+class Tool(Base):
+    """Human-approved tool/technology entity, written to Obsidian (Epic 46/47).
+
+    Schema pulled forward from Story 46.1 by Story 44.2 — AC #5's trigram
+    duplicate check needs a real `name` column to query against. See Story
+    44.2 Dev Notes for why this deviates from Story 43.1's "don't create
+    tables ahead of their assigned story" precedent. Only the schema is
+    pulled forward — POST /tools, obsidian_vault.py, and the write sequence
+    remain Epic 46/47 (backlog).
+    """
+
+    __tablename__ = "tools"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(
+        String(36), unique=True, nullable=False, server_default=sa_text("gen_random_uuid()::text")
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    category_tags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    homepage_url: Mapped[str | None] = mapped_column(Text)
+    license: Mapped[str | None] = mapped_column(String(100))
+    pricing: Mapped[str | None] = mapped_column(Text)
+    personal_notes: Mapped[str | None] = mapped_column(Text)
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    source_candidate_id: Mapped[int | None] = mapped_column(ForeignKey("tool_candidates.id", ondelete="SET NULL"))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'accepted'"))
+    obsidian_note_path: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
 # The pre-11d before_flush hook that auto-created `sources` rows for
 # Document.source strings is gone: discovery-source resolution is explicit
 # now — every writer goes through Document.set_discovery_source(), which
