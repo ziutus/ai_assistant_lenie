@@ -28,15 +28,22 @@ export default function Tools() {
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState("");
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
+  // Guards against out-of-order responses: switching the tag filter quickly
+  // aborts the previous in-flight request so a slower, stale response for an
+  // earlier tag can never overwrite the results of a newer selection.
+  const abortRef = React.useRef<AbortController | null>(null);
 
   const load = React.useCallback(async () => {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     setLoading(true);
     setError("");
     try {
       const params = new URLSearchParams();
       if (selectedTag) params.set("tag", selectedTag);
       const query = params.toString();
-      const response = await fetch(`${apiUrl}/tools${query ? `?${query}` : ""}`, { headers });
+      const response = await fetch(`${apiUrl}/tools${query ? `?${query}` : ""}`, { headers, signal: controller.signal });
       const readResponse = async (result: Response): Promise<Record<string, unknown>> => {
         const text = await result.text();
         if (!text) return {};
@@ -56,11 +63,12 @@ export default function Tools() {
         ...loadedTools.flatMap(tool => tool.category_tags),
       ])).sort((tagA, tagB) => tagA.localeCompare(tagB, "pl")));
     } catch (cause) {
+      if (cause instanceof DOMException && cause.name === "AbortError") return;
       setError(cause instanceof TypeError
         ? `Nie można połączyć się z API ${apiUrl}. Sprawdź adres API, CORS i połączenie z NAS-em.`
         : cause instanceof Error ? cause.message : "Nie udało się pobrać spisu narzędzi");
     } finally {
-      setLoading(false);
+      if (abortRef.current === controller) setLoading(false);
     }
   }, [apiUrl, headers, selectedTag]);
 
@@ -81,6 +89,7 @@ export default function Tools() {
       </select>
     </label>
     {error && <p className="errorText" role="alert">{error}</p>}
+    {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
     {!loading && !error && !tools.length && <p>{selectedTag ? "Brak zapisanych narzędzi dla wybranego tagu." : "Brak zapisanych narzędzi."}</p>}
     {tools.map(tool => <article key={tool.id} style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "14px 16px", marginBottom: 12 }}>
       <h3>{tool.name}</h3>
