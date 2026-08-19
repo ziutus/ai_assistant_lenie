@@ -608,6 +608,7 @@ const Read: React.FC = () => {
   const [chapters, setChapters] = React.useState<Chapter[]>([]);
   const [readerCompact, setReaderCompact] = React.useState(false);
   const [documentType, setDocumentType] = React.useState<string | null>(null);
+  const [docTitle, setDocTitle] = React.useState<string | null>(null);
   const [countries, setCountries] = React.useState<CountryTag[]>([]);
   const [places, setPlaces] = React.useState<PlaceMarker[]>([]);
   const [personItems, setPersonItems] = React.useState<EntityItem[]>([]);
@@ -703,6 +704,7 @@ const Read: React.FC = () => {
           setSearchParams(next, { replace: true });
         }
         setDocumentType(data.document_type ?? null);
+        setDocTitle(data.title ?? null);
         setCountries(data.countries ?? []);
         setThematicTags(data.thematic_tags ?? []);
         setSynthesis(data.synthesis ?? null);
@@ -1131,7 +1133,9 @@ const Read: React.FC = () => {
         Encje (NER)
       </NavLink>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 10, flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0 }}>Czytelnik — dokument #{id}</h2>
+        <h2 style={{ margin: 0 }} title={docTitle ?? undefined}>
+          {docTitle ? docTitle : `Czytelnik — dokument #${id}`}
+        </h2>
         {docQuality && (
           <span
             title={qualityTooltip(docQuality)}
