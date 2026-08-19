@@ -44,6 +44,7 @@ dependencies = [
     "defusedxml>=0.7",
     "regex>=2026.5.9",
     "pymupdf>=1.28.0",
+    "watchdog>=4.0",
 ]
 
 [project.optional-dependencies]
@@ -84,6 +85,7 @@ docker = [
     "sqlalchemy>=2.0,<3.0",
     "pgvector>=0.3.0",
     "alembic>=1.13",
+    "watchdog>=4.0",
 ]
 
 all = [
@@ -123,6 +125,7 @@ all = [
     "sqlalchemy>=2.0,<3.0",
     "pgvector>=0.3.0",
     "alembic>=1.13",
+    "watchdog>=4.0",
 ]
 
 [build-system]

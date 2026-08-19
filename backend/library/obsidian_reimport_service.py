@@ -15,6 +15,16 @@ sync) and compared against ``Document.obsidian_source_hash`` from the
 previous run. An unchanged file is skipped entirely; a changed file updates
 the existing ``Document`` in place (never a duplicate) and re-embeds only
 that note, discarding its stale embeddings first.
+
+Story 42.3 adds ``library/obsidian_vault_watcher.py``, an inotify-based
+watcher (via ``watchdog``) that enqueues a targeted single-note job
+(``job.parameters["relative_path"]`` set) the moment a file changes, instead
+of waiting for the next scheduled full scan. ``execute_obsidian_reimport()``
+below handles both shapes: with ``relative_path`` it reimports exactly that
+one note; without it, it falls back to the original full-vault walk, which
+the schedule now runs once a day as a safety net (catches changes made while
+the worker/watcher was down, and file-system events the watcher may have
+missed) rather than every 5 minutes.
 """
 
 from __future__ import annotations
@@ -89,11 +99,93 @@ def _embed_note(repo: DocumentRepository, doc, model: str) -> int:
     return created
 
 
+def _reimport_one_note(
+    session: Session, service: DocumentService, repo: DocumentRepository, model: str, vault_path: Path, note_path: Path
+) -> str:
+    """Read, hash-compare and, if needed, (re)import a single note.
+
+    Returns one of ``"created"``, ``"updated"``, ``"skipped"``, ``"failed"``.
+    Commits/rolls back its own transaction so callers (full-vault walk or a
+    single-note watcher job) can process notes independently.
+    """
+    relative_path = note_path.relative_to(vault_path).as_posix()
+    url = _note_url(relative_path)
+
+    try:
+        content = note_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        logger.warning("obsidian_reimport: cannot read %s: %s", note_path, exc)
+        return "failed"
+
+    if not content.strip():
+        return "skipped"
+
+    content_hash = get_hash(content)
+    existing = Document.get_by_url(session, url)
+
+    # existing.obsidian_source_hash is None for notes imported before
+    # this column existed (Story 42.1) -- never equals a real hash,
+    # so they fall through to the "changed" branch on the first run
+    # after deploy (a one-time backfill re-embed, not a bug).
+    if existing is not None and existing.obsidian_source_hash == content_hash:
+        return "skipped"
+
+    try:
+        if existing is None:
+            doc, _outcome = service.import_document(
+                url=url,
+                document_type="obsidian_note",
+                skip_if_exists=True,
+                title=note_path.stem,
+                text=content,
+                text_md=content,
+                source="own",
+            )
+        else:
+            doc = existing
+            doc.text = content
+            doc.text_md = content
+            doc.title = note_path.stem
+            # Discard stale fragments before re-embedding -- otherwise
+            # search would return both the old and new versions.
+            repo.embedding_delete(doc.id, model)
+
+        doc.obsidian_source_hash = content_hash
+        _embed_note(repo, doc, model)
+        session.commit()
+    except Exception:
+        logger.exception("obsidian_reimport: import/update failed for %s", note_path)
+        session.rollback()
+        return "failed"
+
+    return "created" if existing is None else "updated"
+
+
+def _resolve_note_path(vault_path: Path, relative_path: str) -> Path | None:
+    """Resolve a watcher-supplied relative path, refusing anything outside
+    the configured pilot subfolders (defence in depth against a path-
+    traversal payload reaching this far -- the watcher only ever emits
+    paths it observed under those subfolders itself)."""
+    candidate = (vault_path / relative_path).resolve()
+    vault_resolved = vault_path.resolve()
+    for subfolder in PILOT_SUBFOLDERS:
+        allowed_root = (vault_resolved / subfolder).resolve()
+        if candidate == allowed_root or allowed_root in candidate.parents:
+            return candidate
+    logger.warning("obsidian_reimport: relative_path outside pilot subfolders: %s", relative_path)
+    return None
+
+
 def execute_obsidian_reimport(session: Session, job: Job) -> dict:
     """Job execution function for the ``obsidian_reimport`` job type.
 
+    With ``job.parameters["relative_path"]`` set (dispatched by
+    ``obsidian_vault_watcher.py`` on a file-change event), reimports exactly
+    that one note. Otherwise walks every pilot subfolder -- the daily
+    safety-net run.
+
     Returns a summary dict: scanned/created/updated/skipped/failed file
-    counts.
+    counts (single-note calls report scanned=1).
     """
     cfg = load_config()
     vault_path = Path(cfg.get("OBSIDIAN_VAULT_PATH", "/app/obsidian-vault"))
@@ -102,7 +194,18 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
     service = DocumentService(session)
     repo = DocumentRepository(session)
 
-    scanned = created = updated = skipped = failed = 0
+    counts = {"scanned": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 0}
+
+    relative_path = job.parameters.get("relative_path") if job.parameters else None
+    if relative_path:
+        note_path = _resolve_note_path(vault_path, relative_path)
+        if note_path is None or not note_path.is_file():
+            counts["failed"] = 1
+            return counts
+        counts["scanned"] = 1
+        counts[_reimport_one_note(session, service, repo, model, vault_path, note_path)] += 1
+        return counts
+
     for subfolder in PILOT_SUBFOLDERS:
         folder = vault_path / subfolder
         if not folder.is_dir():
@@ -110,69 +213,8 @@ def execute_obsidian_reimport(session: Session, job: Job) -> dict:
             continue
 
         for note_path in sorted(folder.rglob("*.md")):
-            scanned += 1
-            relative_path = note_path.relative_to(vault_path).as_posix()
-            url = _note_url(relative_path)
+            counts["scanned"] += 1
+            counts[_reimport_one_note(session, service, repo, model, vault_path, note_path)] += 1
+            heartbeat(session, job.id, dict(counts))
 
-            try:
-                content = note_path.read_text(encoding="utf-8")
-            except OSError as exc:
-                logger.warning("obsidian_reimport: cannot read %s: %s", note_path, exc)
-                failed += 1
-                continue
-
-            if not content.strip():
-                skipped += 1
-                continue
-
-            content_hash = get_hash(content)
-            existing = Document.get_by_url(session, url)
-
-            # existing.obsidian_source_hash is None for notes imported before
-            # this column existed (Story 42.1) -- never equals a real hash,
-            # so they fall through to the "changed" branch on the first run
-            # after deploy (a one-time backfill re-embed, not a bug).
-            if existing is not None and existing.obsidian_source_hash == content_hash:
-                skipped += 1
-                continue
-
-            try:
-                if existing is None:
-                    doc, _outcome = service.import_document(
-                        url=url,
-                        document_type="obsidian_note",
-                        skip_if_exists=True,
-                        title=note_path.stem,
-                        text=content,
-                        text_md=content,
-                        source="own",
-                    )
-                else:
-                    doc = existing
-                    doc.text = content
-                    doc.text_md = content
-                    doc.title = note_path.stem
-                    # Discard stale fragments before re-embedding -- otherwise
-                    # search would return both the old and new versions.
-                    repo.embedding_delete(doc.id, model)
-
-                doc.obsidian_source_hash = content_hash
-                _embed_note(repo, doc, model)
-                session.commit()
-                if existing is None:
-                    created += 1
-                else:
-                    updated += 1
-            except Exception:
-                logger.exception("obsidian_reimport: import/update failed for %s", note_path)
-                session.rollback()
-                failed += 1
-                continue
-
-            heartbeat(
-                session,
-                job.id,
-                {"scanned": scanned, "created": created, "updated": updated, "skipped": skipped, "failed": failed},
-            )
-
-    return {"scanned": scanned, "created": created, "updated": updated, "skipped": skipped, "failed": failed}
+    return counts
