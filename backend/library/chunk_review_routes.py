@@ -1225,6 +1225,57 @@ def document_chapters(doc_id: int):
     })
 
 
+_WIKI_LINK_RE = re.compile(r"\[\[([^\]]+)\]\]")
+
+
+def _wiki_link_targets(text: str) -> set[str]:
+    """Distinct, lowercased note titles referenced by Obsidian [[Title]] links.
+
+    Handles [[Title]], [[Title|Display]], [[Title#Heading]] and
+    [[Title#Heading|Display]] -- the heading fragment (if any) is dropped,
+    since resolution below only ever links to a document, not a specific
+    heading within it.
+    """
+    targets = set()
+    for m in _WIKI_LINK_RE.finditer(text):
+        target = m.group(1).split("|", 1)[0].split("#", 1)[0].strip()
+        if target:
+            targets.add(target.lower())
+    return targets
+
+
+def _resolve_wiki_links(session, text: str) -> dict[str, int]:
+    """Resolve [[Title]] wikilinks in chapter text to obsidian_note document ids.
+
+    Resolved fresh on every call (GET /document/<id>/chapter/<pos>), not
+    written into text_md at import time -- a link to a note created (or
+    renamed) after the linking note was last imported still resolves
+    without needing to re-touch/re-import the linking note itself, which a
+    write-once-at-import approach could never guarantee (import order is
+    unconstrained).
+
+    Case-insensitive exact match against Document.title, scoped to
+    obsidian_note (the only document type imported with Obsidian's own
+    filename-as-title convention -- see obsidian_reimport_service.py).
+    A title shared by more than one note is deliberately left unresolved
+    rather than guessing which one was meant -- same 0/1/N discipline as
+    publisher_registry.py / search/name_resolution.py elsewhere in this
+    codebase. The returned dict only contains resolved (cardinality-1)
+    targets; a missing key means "render as plain text".
+    """
+    targets = _wiki_link_targets(text)
+    if not targets:
+        return {}
+    rows = session.query(Document.id, Document.title).filter(
+        Document.document_type == "obsidian_note",
+        func.lower(Document.title).in_(targets),
+    ).all()
+    matches: dict[str, list[int]] = {}
+    for doc_id, title in rows:
+        matches.setdefault(title.lower(), []).append(doc_id)
+    return {title: ids[0] for title, ids in matches.items() if len(ids) == 1}
+
+
 def _resolve_chapter_text(
     session, doc, position: int, *, compact_reader: bool = False,
 ) -> tuple[tuple[str, str, int] | None, str | None]:
@@ -1363,6 +1414,8 @@ def document_chapter(doc_id: int, position: int):
         .order_by(DocumentAnalysisRun.created_at.desc())
     ).first()
 
+    wiki_links = _resolve_wiki_links(session, chapter_text)
+
     return jsonify({
         "status": "success",
         "doc_id": doc_id,
@@ -1372,6 +1425,7 @@ def document_chapter(doc_id: int, position: int):
         "chapter_total": chapter_total,
         "references": references,
         "images": images,
+        "wiki_links": wiki_links,
         "synthesis_chapter": chapter_run.synthesis if chapter_run else None,
         "prev": position - 1 if position > 1 else None,
         "next": position + 1 if position < chapter_total else None,
