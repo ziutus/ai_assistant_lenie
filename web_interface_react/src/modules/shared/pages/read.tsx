@@ -61,6 +61,11 @@ interface ChapterContent {
   chapter_total: number;
   references?: ChapterReference[];
   images?: ChapterImage[];
+  // Obsidian [[Title]] wikilinks resolved to obsidian_note document ids —
+  // computed fresh on every request (chunk_review_routes.py's
+  // _resolve_wiki_links), keyed by lowercased target title. A target absent
+  // from this map means "no single matching note" — rendered as plain text.
+  wiki_links?: Record<string, number>;
   // Synthesis of a run analysed with this chapter as scope (GET /document/:id/chapter/:pos) —
   // takes priority over the whole-document synthesis from GET /document/:id/chapters.
   synthesis_chapter?: string | null;
@@ -214,15 +219,21 @@ function renderInline(
   refs?: Map<string, ChapterReference>,
   onAnchorClick?: (anchorId: string) => void,
   images?: Map<number, ChapterImage>,
+  wikiLinks?: Map<string, number>,
 ): React.ReactNode[] {
   // **bold**, *italic*, `code`, [label](anchor:id) jump links, ¹⁸ footnote
   // markers, a (https://...) URL — e.g. Gmail newsletter items flattened by
   // email_import.py's html_to_text() from <a href> into "label (url)" — and
   // an [imgN] marker sitting mid-sentence (Gmail decorative glyphs, e.g. a
   // 👋 emoji shipped as an <img> — IMG_MARKER in renderMarkdown only catches
-  // a marker that is its own block) — enough for OCR-ed book prose
+  // a marker that is its own block) — enough for OCR-ed book prose. An
+  // Obsidian [[Title]]/[[Title|Display]]/[[Title#Heading]] wikilink is
+  // resolved against wikiLinks (GET /document/:id/chapter/:pos's wiki_links,
+  // computed fresh server-side every request — see chunk_review_routes.py's
+  // _resolve_wiki_links) rather than at import time, so a link to a note
+  // created/renamed after this note was last imported still resolves.
   const parts = text.split(
-    /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[[^\]]+\]\(anchor:[\w-]+\)|\(https?:\/\/[^\s)]+\)|\[img\d+\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)/g,
+    /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`|\[\[[^\]]+\]\]|\[[^\]]+\]\(anchor:[\w-]+\)|\(https?:\/\/[^\s)]+\)|\[img\d+\]|[¹²³⁴⁵⁶⁷⁸⁹⁰]+)/g,
   );
   return parts.map((part, i) => {
     const urlInParens = part.match(/^\((https?:\/\/[^\s)]+)\)$/);
@@ -248,6 +259,27 @@ function renderInline(
             style={{ height: "1.2em", verticalAlign: "middle", margin: "0 2px" }}
           />
         </a>
+      );
+    }
+    const wikiLink = part.match(/^\[\[([^\]]+)\]\]$/);
+    if (wikiLink) {
+      const label = wikiLink[1].split("|", 2)[1] ?? wikiLink[1].split("#", 2)[0];
+      const targetTitle = wikiLink[1].split("|", 1)[0].split("#", 1)[0].trim();
+      const targetId = wikiLinks?.get(targetTitle.toLowerCase());
+      if (targetId != null) {
+        return (
+          <NavLink key={i} to={`/read/${targetId}`} style={{ color: "#0369a1", textDecoration: "underline" }}>
+            {label}
+          </NavLink>
+        );
+      }
+      // No matching obsidian_note (not imported, wrong title, or ambiguous)
+      // — show the label without Obsidian's [[ ]] syntax rather than either
+      // a dead link or raw brackets, with a tooltip explaining why.
+      return (
+        <span key={i} title="Notatka nie została jeszcze zaimportowana do Lenie" style={{ color: "#94a3b8" }}>
+          {label}
+        </span>
       );
     }
     if (part.startsWith("**") && part.endsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
@@ -347,6 +379,7 @@ function renderParagraphWithNotes(
   timelineAnchor?: string | null,
   onAnchorClick?: (anchorId: string) => void,
   images?: Map<number, ChapterImage>,
+  wikiLinks?: Map<string, number>,
 ): { nodes: React.ReactNode[]; paragraphTint: UserNote | null; timelineTint: boolean; timelineFound: boolean } {
   type Match = { idx: number; len: number; kind: "note" | "entity" | "timeline"; note?: UserNote };
   const noteMatches: Match[] = notes
@@ -369,14 +402,18 @@ function renderParagraphWithNotes(
   const timelineFound = timelineIndex >= 0 || timelineTint;
 
   if (matches.length === 0) {
-    return { nodes: renderInline(text, refs, onAnchorClick, images), paragraphTint, timelineTint, timelineFound };
+    return {
+      nodes: renderInline(text, refs, onAnchorClick, images, wikiLinks), paragraphTint, timelineTint, timelineFound,
+    };
   }
 
   const nodes: React.ReactNode[] = [];
   let cursor = 0;
   matches.forEach((m, i) => {
     if (m.idx < cursor) return; // overlapping match — skip
-    if (m.idx > cursor) nodes.push(...renderInline(text.slice(cursor, m.idx), refs, onAnchorClick, images));
+    if (m.idx > cursor) {
+      nodes.push(...renderInline(text.slice(cursor, m.idx), refs, onAnchorClick, images, wikiLinks));
+    }
     const quoted = text.slice(m.idx, m.idx + m.len);
     if (m.kind === "note" && m.note) {
       nodes.push(
@@ -385,7 +422,7 @@ function renderParagraphWithNotes(
           title={`${STANCE_ICON[m.note.stance ?? ""] ?? "📝"} ${m.note.note_text}`}
           style={{ background: "#fef08a", padding: "0 1px", cursor: "help" }}
         >
-          {renderInline(quoted, refs, onAnchorClick, images)}
+          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks)}
         </mark>
       );
     } else if (m.kind === "timeline") {
@@ -395,7 +432,7 @@ function renderParagraphWithNotes(
           className="timeline-highlight"
           style={{ background: "#fed7aa", padding: "0 1px" }}
         >
-          {renderInline(quoted, refs, onAnchorClick, images)}
+          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks)}
         </mark>
       );
     } else {
@@ -405,13 +442,13 @@ function renderParagraphWithNotes(
           className="entity-highlight"
           style={{ background: "#bfdbfe", padding: "0 1px" }}
         >
-          {renderInline(quoted, refs, onAnchorClick, images)}
+          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks)}
         </mark>
       );
     }
     cursor = m.idx + m.len;
   });
-  if (cursor < text.length) nodes.push(...renderInline(text.slice(cursor), refs, onAnchorClick, images));
+  if (cursor < text.length) nodes.push(...renderInline(text.slice(cursor), refs, onAnchorClick, images, wikiLinks));
   return { nodes, paragraphTint, timelineTint, timelineFound };
 }
 
@@ -550,6 +587,7 @@ function renderMarkdown(
   timelineAnchor?: string | null,
   images?: Map<number, ChapterImage>,
   onAnchorClick?: (anchorId: string) => void,
+  wikiLinks?: Map<string, number>,
 ): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   splitCodeFences(text).forEach((segment, segIndex) => {
@@ -572,7 +610,7 @@ function renderMarkdown(
         const trailingText = markerMatch[2]?.trim();
         if (trailingText) {
           const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
-            trailingText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images,
+            trailingText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks,
           );
           out.push(
             <p key={`${key}-trailing`} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={{
@@ -609,6 +647,7 @@ function renderMarkdown(
         // headings can carry note anchors too (e.g. a quote of the chapter title)
         const { nodes, timelineTint, timelineFound } = renderParagraphWithNotes(
           heading[2].replace(/\n/g, " "), notes, undefined, highlightTerms, timelineAnchor,
+          undefined, undefined, wikiLinks,
         );
         out.push(
           <Tag
@@ -629,7 +668,7 @@ function renderMarkdown(
       const isNote = /^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,3} )\S*\s*(http|www|[A-ZŻŹĆĄŚĘŁÓŃ])/.test(trimmed) && trimmed.length < 400;
       const paraText = trimmed.replace(/\n/g, " ");
       const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
-        paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images,
+        paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks,
       );
       out.push(
         <p key={key} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={isNote
@@ -1125,6 +1164,13 @@ const Read: React.FC = () => {
     ),
     [content?.images]);
 
+  // Obsidian [[Title]] wikilinks resolved by the backend for this chapter —
+  // rebuilt from content.wiki_links (a plain object over the wire) each time
+  // the chapter changes.
+  const wikiLinksByTitle = React.useMemo(
+    () => new Map(Object.entries(content?.wiki_links ?? {})),
+    [content?.wiki_links]);
+
   const anchoredNoteIds = React.useMemo(() => {
     if (!content) return new Set<number>();
     const normText = normalizeWs(content.text);
@@ -1348,7 +1394,7 @@ const Read: React.FC = () => {
             <article style={{ fontSize: "1.02em" }} onContextMenu={onTextContextMenu}>
               {renderMarkdown(
                 content.text, chapterNotes, referencesByMarker, highlightTerms, timelineHighlight?.quote,
-                imagesByPosition, handleAnchorClick,
+                imagesByPosition, handleAnchorClick, wikiLinksByTitle,
               )}
             </article>
           )}
