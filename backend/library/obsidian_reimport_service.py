@@ -25,13 +25,22 @@ one note; without it, it falls back to the original full-vault walk, which
 the schedule now runs once a day as a safety net (catches changes made while
 the worker/watcher was down, and file-system events the watcher may have
 missed) rather than every 5 minutes.
+
+YAML front matter (``---\ntags: [...]\n---``) is stripped from the stored
+``text``/``text_md`` and its ``tags`` field is merged into
+``Document.tags`` (see ``_parse_frontmatter()``/``_merge_tags()``) —
+previously the whole block was stored verbatim as document text, so it
+polluted embeddings and Obsidian tags never reached Lenie's own tag system.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
+from ruamel.yaml import YAML
+from ruamel.yaml.error import YAMLError
 from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
@@ -56,6 +65,84 @@ OBSIDIAN_REIMPORT = "obsidian_reimport"
 # skipped (a "configured subfolder missing" warning) from day one. Fixed in
 # Story 42.2 after NAS verification surfaced it.
 PILOT_SUBFOLDERS = ("02-wiedza/Informatyka", "02-wiedza/Geopolityka i polityka")
+
+
+# Obsidian requires front matter to open on the file's very first line --
+# a note starting mid-paragraph with a literal "---" line is a Markdown
+# thematic break, not front matter, so the pattern is anchored at ^.
+_FRONTMATTER_RE = re.compile(r"^---[ \t]*\r?\n(.*?\r?\n)---[ \t]*\r?\n?", re.DOTALL)
+
+
+def _normalize_obsidian_tag(raw: str) -> str:
+    """Flatten one Obsidian tag into Lenie's flat, hyphenated tag format.
+
+    Obsidian nested tags ("wiedza/informatyka") become "wiedza-informatyka" --
+    Lenie's `document.tags` is a flat comma-separated list (see
+    THEMATIC_TAGS/COUNTRY_TAG_TRIGGERS in article_tagging.py), it has no
+    hierarchy concept. Commas are stripped rather than escaped since they
+    are the tag list's own separator.
+    """
+    tag = raw.strip().lstrip("#").strip().lower().replace("/", "-").replace(",", "")
+    return re.sub(r"\s+", "-", tag)
+
+
+def _frontmatter_tags(data: dict) -> list[str]:
+    """Normalize the `tags` front matter field, whatever shape Obsidian used.
+
+    Accepts a YAML list (`tags:\\n  - a\\n  - b`), a single scalar
+    (`tags: a`), or a comma-separated scalar (`tags: a, b`) -- all valid
+    forms users type by hand. Anything else (missing key, wrong type) is
+    treated as "no tags" rather than raised.
+    """
+    raw_tags = data.get("tags")
+    if isinstance(raw_tags, list):
+        candidates = [str(t) for t in raw_tags]
+    elif isinstance(raw_tags, str):
+        candidates = raw_tags.split(",")
+    else:
+        candidates = []
+    normalized = [_normalize_obsidian_tag(t) for t in candidates]
+    return [t for t in normalized if t]
+
+
+def _parse_frontmatter(content: str) -> tuple[str, list[str]]:
+    """Split a note into (body without front matter, normalized tags list).
+
+    Malformed YAML or a non-mapping front matter block degrades to "no
+    front matter" (the raw content is kept as-is, no tags) rather than
+    failing the import -- an unattended bulk/watch import must never break
+    on one user's hand-edited YAML typo.
+    """
+    match = _FRONTMATTER_RE.match(content)
+    if not match:
+        return content, []
+
+    yaml = YAML(typ="safe")
+    try:
+        data = yaml.load(match.group(1))
+    except YAMLError:
+        logger.warning("obsidian_reimport: malformed front matter, keeping raw content")
+        return content, []
+
+    body = content[match.end():].lstrip("\n")
+    if not isinstance(data, dict):
+        return body, []
+    return body, _frontmatter_tags(data)
+
+
+def _merge_tags(existing_csv: str | None, new_tags: list[str]) -> str | None:
+    """Union existing document tags with front-matter tags, order-preserving.
+
+    Never removes a tag -- an obsidian_note bypasses the LLM tagging
+    pipeline entirely, so front matter is the only automatic source, but a
+    tag added manually in the reader/editor (or a tag since removed from
+    the note in Obsidian) must survive a reimport untouched.
+    """
+    if not new_tags:
+        return existing_csv
+    existing = [t.strip() for t in (existing_csv or "").split(",") if t.strip()]
+    merged = list(dict.fromkeys(existing + new_tags))
+    return ",".join(merged)
 
 
 def _note_url(relative_path: str) -> str:
@@ -120,6 +207,8 @@ def _reimport_one_note(
     if not content.strip():
         return "skipped"
 
+    # Hashed on the raw file (front matter included) so a tags-only edit in
+    # Obsidian still counts as "changed" and re-syncs document.tags below.
     content_hash = get_hash(content)
     existing = Document.get_by_url(session, url)
 
@@ -130,6 +219,8 @@ def _reimport_one_note(
     if existing is not None and existing.obsidian_source_hash == content_hash:
         return "skipped"
 
+    body, fm_tags = _parse_frontmatter(content)
+
     try:
         if existing is None:
             doc, _outcome = service.import_document(
@@ -137,15 +228,17 @@ def _reimport_one_note(
                 document_type="obsidian_note",
                 skip_if_exists=True,
                 title=note_path.stem,
-                text=content,
-                text_md=content,
+                text=body,
+                text_md=body,
                 source="own",
+                tags=_merge_tags(None, fm_tags),
             )
         else:
             doc = existing
-            doc.text = content
-            doc.text_md = content
+            doc.text = body
+            doc.text_md = body
             doc.title = note_path.stem
+            doc.tags = _merge_tags(doc.tags, fm_tags)
             # Discard stale fragments before re-embedding -- otherwise
             # search would return both the old and new versions.
             repo.embedding_delete(doc.id, model)

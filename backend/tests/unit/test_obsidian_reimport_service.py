@@ -13,7 +13,10 @@ pytest.importorskip("sqlalchemy")
 
 from library.obsidian_reimport_service import (
     PILOT_SUBFOLDERS,
+    _merge_tags,
+    _normalize_obsidian_tag,
     _note_url,
+    _parse_frontmatter,
     execute_obsidian_reimport,
 )
 from library.models.embedding_result import EmbeddingResult
@@ -33,19 +36,89 @@ def _make_config(vault_path):
     return cfg
 
 
-def _make_doc(doc_id=101, obsidian_source_hash=None):
+def _make_doc(doc_id=101, obsidian_source_hash=None, tags=None):
     doc = MagicMock()
     doc.id = doc_id
     doc.text = "Treść notatki"
     doc.text_md = "Treść notatki"
     doc.language = None
     doc.obsidian_source_hash = obsidian_source_hash
+    doc.tags = tags
     return doc
 
 
 class TestNoteUrl:
     def test_builds_synthetic_obsidian_scheme(self):
         assert _note_url("02-wiedza/Informatyka/k8s.md") == "obsidian://02-wiedza/Informatyka/k8s.md"
+
+
+class TestNormalizeObsidianTag:
+    def test_flattens_nested_tag(self):
+        assert _normalize_obsidian_tag("wiedza/informatyka") == "wiedza-informatyka"
+
+    def test_strips_leading_hash_and_lowercases(self):
+        assert _normalize_obsidian_tag("#Linux") == "linux"
+
+    def test_collapses_internal_whitespace(self):
+        assert _normalize_obsidian_tag("  sluzby specjalne  ") == "sluzby-specjalne"
+
+    def test_strips_commas_the_csv_separator_would_otherwise_break_on(self):
+        assert _normalize_obsidian_tag("a,b") == "ab"
+
+
+class TestParseFrontmatter:
+    def test_no_frontmatter_returns_content_unchanged(self):
+        body, tags = _parse_frontmatter("# Linux\n\nTreść notatki.")
+        assert body == "# Linux\n\nTreść notatki."
+        assert tags == []
+
+    def test_yaml_list_tags_are_extracted_and_stripped_from_body(self):
+        content = "---\ntags:\n  - wiedza/informatyka\n  - Linux\n---\n[[Linux]]\n"
+        body, tags = _parse_frontmatter(content)
+        assert body == "[[Linux]]\n"
+        assert tags == ["wiedza-informatyka", "linux"]
+
+    def test_inline_list_tags(self):
+        content = "---\ntags: [a, B]\n---\ntreść\n"
+        _, tags = _parse_frontmatter(content)
+        assert tags == ["a", "b"]
+
+    def test_comma_separated_scalar_tags(self):
+        content = "---\ntags: a, b\n---\ntreść\n"
+        _, tags = _parse_frontmatter(content)
+        assert tags == ["a", "b"]
+
+    def test_no_tags_key_returns_empty_list(self):
+        content = "---\ntitle: Coś\n---\ntreść\n"
+        body, tags = _parse_frontmatter(content)
+        assert body == "treść\n"
+        assert tags == []
+
+    def test_malformed_yaml_degrades_to_raw_content(self):
+        content = "---\ntags: [unclosed\n---\ntreść\n"
+        body, tags = _parse_frontmatter(content)
+        assert body == content
+        assert tags == []
+
+    def test_mid_document_triple_dash_is_not_treated_as_frontmatter(self):
+        content = "Akapit.\n\n---\n\nDrugi akapit."
+        body, tags = _parse_frontmatter(content)
+        assert body == content
+        assert tags == []
+
+
+class TestMergeTags:
+    def test_no_new_tags_keeps_existing_untouched(self):
+        assert _merge_tags("a,b", []) == "a,b"
+
+    def test_new_tags_added_to_empty_existing(self):
+        assert _merge_tags(None, ["a", "b"]) == "a,b"
+
+    def test_union_deduplicates_and_preserves_first_occurrence_order(self):
+        assert _merge_tags("a,b", ["b", "c"]) == "a,b,c"
+
+    def test_manually_added_tag_survives_when_frontmatter_has_no_tags(self):
+        assert _merge_tags("manual-tag", []) == "manual-tag"
 
 
 class TestExecuteObsidianReimport:
@@ -82,6 +155,35 @@ class TestExecuteObsidianReimport:
         mock_repo_cls.return_value.embedding_delete.assert_not_called()
         assert doc.obsidian_source_hash == get_hash("# Kubernetes\n\nPodstawy orkiestracji.")
         assert summary == {"scanned": 1, "created": 1, "updated": 0, "skipped": 0, "failed": 0}
+
+    def test_new_note_frontmatter_tags_stripped_from_text_and_passed_as_tags(self, tmp_path):
+        vault = _make_vault(tmp_path)
+        note = vault / "02-wiedza/Informatyka/linux.md"
+        note.write_text(
+            "---\ntags:\n  - wiedza/informatyka\n  - Linux\n---\n[[Linux]]\n", encoding="utf-8",
+        )
+
+        doc = _make_doc()
+        session = MagicMock()
+        job = MagicMock(id="job-1b", parameters={})
+
+        with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
+             patch("library.obsidian_reimport_service.Document") as mock_document_cls, \
+             patch("library.obsidian_reimport_service.DocumentService") as mock_service_cls, \
+             patch("library.obsidian_reimport_service.DocumentRepository"), \
+             patch("library.embedding.get_embedding") as mock_get_embedding:
+            mock_document_cls.get_by_url.return_value = None
+            mock_service_cls.return_value.import_document.return_value = (doc, "added")
+            mock_get_embedding.return_value = EmbeddingResult(
+                text="piece", embedding=[0.1, 0.2], status="success",
+            )
+
+            execute_obsidian_reimport(session, job)
+
+        call_kwargs = mock_service_cls.return_value.import_document.call_args.kwargs
+        assert call_kwargs["text"] == "[[Linux]]\n"
+        assert call_kwargs["text_md"] == "[[Linux]]\n"
+        assert call_kwargs["tags"] == "wiedza-informatyka,linux"
 
     def test_existing_note_unchanged_is_skipped_without_embedding_call(self, tmp_path):
         vault = _make_vault(tmp_path)
@@ -142,6 +244,32 @@ class TestExecuteObsidianReimport:
         assert existing_doc.title == "nato"
         assert existing_doc.obsidian_source_hash == get_hash(new_content)
         assert summary == {"scanned": 1, "created": 0, "updated": 1, "skipped": 0, "failed": 0}
+
+    def test_existing_note_frontmatter_tags_merge_with_manually_added_tags(self, tmp_path):
+        vault = _make_vault(tmp_path)
+        note = vault / "02-wiedza/Informatyka/linux.md"
+        new_content = "---\ntags:\n  - wiedza/informatyka\n  - Linux\n---\n[[Linux]]\n"
+        note.write_text(new_content, encoding="utf-8")
+
+        existing_doc = _make_doc(doc_id=303, obsidian_source_hash="stary-hash", tags="manual-tag")
+        session = MagicMock()
+        job = MagicMock(id="job-3b", parameters={})
+
+        with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
+             patch("library.obsidian_reimport_service.Document") as mock_document_cls, \
+             patch("library.obsidian_reimport_service.DocumentService"), \
+             patch("library.obsidian_reimport_service.DocumentRepository"), \
+             patch("library.embedding.get_embedding") as mock_get_embedding:
+            mock_document_cls.get_by_url.return_value = existing_doc
+            mock_get_embedding.return_value = EmbeddingResult(
+                text="piece", embedding=[0.1, 0.2], status="success",
+            )
+
+            execute_obsidian_reimport(session, job)
+
+        assert existing_doc.text == "[[Linux]]\n"
+        assert existing_doc.text_md == "[[Linux]]\n"
+        assert existing_doc.tags == "manual-tag,wiedza-informatyka,linux"
 
     def test_existing_note_with_null_hash_is_treated_as_changed(self, tmp_path):
         """Notes imported by Story 42.1 predate this column -- NULL must never match."""
