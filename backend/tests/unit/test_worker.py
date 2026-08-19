@@ -100,18 +100,41 @@ def test_legacy_pull_scheduler_uses_utc_bucket_and_skips_active_job(monkeypatch)
     enqueue.assert_called_once()
 
 
-def test_obsidian_reimport_scheduler_skips_active_job(monkeypatch):
+def test_obsidian_reimport_scheduler_uses_local_bucket_key(monkeypatch):
     session = MagicMock()
     enqueue = MagicMock()
     monkeypatch.setattr(worker, "enqueue", enqueue)
+    task = MagicMock(timezone="Europe/Warsaw")
 
-    session.scalar.return_value = None
-    worker._schedule_obsidian_reimport(session)
-    enqueue.assert_called_once_with(session, "obsidian_reimport")
+    worker._schedule_obsidian_reimport(
+        session, dt.datetime(2026, 7, 29, 17, 26, tzinfo=dt.timezone(dt.timedelta(hours=2))), task
+    )
 
-    session.scalar.return_value = "already-active"
-    worker._schedule_obsidian_reimport(session)
-    enqueue.assert_called_once()
+    enqueue.assert_called_once_with(
+        session, "obsidian_reimport", idempotency_key="obsidian_reimport:2026-07-29T17:26+0200"
+    )
+
+
+def test_obsidian_reimport_scheduler_reuses_key_within_same_minute(monkeypatch):
+    """Two calls within the same scheduled minute (e.g. a run that finishes
+    in seconds and the loop comes back around) must produce the same
+    idempotency_key, so enqueue()'s existing dedup returns the original job
+    instead of creating a new one. This is exactly the bug that spammed
+    thousands of reimport jobs and hung the NAS on 2026-08-18/19."""
+    session = MagicMock()
+    enqueue = MagicMock()
+    monkeypatch.setattr(worker, "enqueue", enqueue)
+    task = MagicMock(timezone="Europe/Warsaw")
+
+    now = dt.datetime(2026, 7, 29, 17, 26, 5, tzinfo=dt.timezone(dt.timedelta(hours=2)))
+    later_same_minute = dt.datetime(2026, 7, 29, 17, 26, 55, tzinfo=dt.timezone(dt.timedelta(hours=2)))
+
+    worker._schedule_obsidian_reimport(session, now, task)
+    worker._schedule_obsidian_reimport(session, later_same_minute, task)
+
+    first_key = enqueue.call_args_list[0].kwargs["idempotency_key"]
+    second_key = enqueue.call_args_list[1].kwargs["idempotency_key"]
+    assert first_key == second_key == "obsidian_reimport:2026-07-29T17:26+0200"
 
 
 def test_scheduler_dispatches_obsidian_reimport(monkeypatch):
@@ -121,9 +144,10 @@ def test_scheduler_dispatches_obsidian_reimport(monkeypatch):
     schedule_obsidian = MagicMock()
     monkeypatch.setattr(worker, "_schedule_obsidian_reimport", schedule_obsidian)
 
-    worker.scheduler(session, dt.datetime(2026, 7, 29, 12, 0, tzinfo=dt.timezone.utc))
+    now = dt.datetime(2026, 7, 29, 12, 0, tzinfo=dt.timezone.utc)
+    worker.scheduler(session, now)
 
-    schedule_obsidian.assert_called_once_with(session)
+    schedule_obsidian.assert_called_once_with(session, now, task)
 
 
 def test_scheduler_rejects_invalid_task_time():

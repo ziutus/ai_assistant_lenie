@@ -91,7 +91,7 @@ def scheduler(session, now: dt.datetime) -> None:
         elif task.id == "legacy_aws_pull":
             _schedule_legacy_aws_pull(session, now, task)
         elif task.id == "obsidian_reimport":
-            _schedule_obsidian_reimport(session)
+            _schedule_obsidian_reimport(session, now, task)
 
 
 def _is_due(task: ScheduledTask, now: dt.datetime) -> bool:
@@ -122,23 +122,41 @@ def _schedule_legacy_aws_pull(session, now: dt.datetime, task: ScheduledTask) ->
     )
 
 
-def _schedule_obsidian_reimport(session) -> None:
-    """Enqueue at most one obsidian_reimport job at a time.
+def _schedule_obsidian_reimport(session, now: dt.datetime, task: ScheduledTask) -> None:
+    """Enqueue at most one obsidian_reimport job per scheduled minute.
 
-    Unlike _schedule_legacy_aws_pull, dedup is purely "is one already
-    active" -- the vault scan can legitimately take longer than the 5-minute
-    schedule interval, and the goal is "one run at a time", not "exactly one
-    run per scheduled minute".
+    A run that finishes well within the 5-minute interval (the common case:
+    a hash-based skip of every unchanged note takes seconds, not minutes)
+    used to leave _is_due() true and no job "active" for the rest of that
+    same minute, so the main loop's zero-sleep-between-jobs claim() re-armed
+    it immediately -- firing continuously for ~60s instead of once per
+    schedule tick. Same idempotency_key guard as _schedule_legacy_aws_pull
+    fixes it: at most one job is ever created for a given local minute,
+    regardless of how fast it completes.
     """
-    active = session.scalar(
-        select(Job.id).where(
-            Job.type == "obsidian_reimport",
-            Job.status.in_(("queued", "running", "cancel_requested")),
-        ).limit(1)
+    local = now.astimezone(ZoneInfo(task.timezone)).replace(second=0, microsecond=0)
+    enqueue(
+        session,
+        "obsidian_reimport",
+        idempotency_key=f"obsidian_reimport:{local.strftime('%Y-%m-%dT%H:%M%z')}",
     )
-    if active is not None:
-        return
-    enqueue(session, "obsidian_reimport")
+
+
+def _start_obsidian_watcher() -> None:
+    """Best-effort: a missing/misconfigured vault must not prevent the
+    coordinator from starting the rest of the job loop -- the daily
+    scheduled full scan still covers reimport even with no live watcher."""
+    try:
+        from pathlib import Path
+
+        from library.config_loader import load_config
+        from library.obsidian_vault_watcher import start_watcher
+
+        cfg = load_config()
+        vault_path = Path(cfg.get("OBSIDIAN_VAULT_PATH", "/app/obsidian-vault"))
+        start_watcher(get_session, vault_path)
+    except Exception:
+        logger.exception("failed to start obsidian vault watcher")
 
 
 def main() -> int:
@@ -183,6 +201,8 @@ def main() -> int:
         cfg = load_config()
         storage = storage_from_config(cfg)
         work_dir = cfg.get("DOCUMENT_WORK_DIR") or work_dir
+    if coordinator and "obsidian_reimport" in allowed_types:
+        _start_obsidian_watcher()
     while True:
         with open(heartbeat_path, "a", encoding="utf-8"):
             os.utime(heartbeat_path, None)

@@ -56,7 +56,7 @@ class TestExecuteObsidianReimport:
 
         doc = _make_doc()
         session = MagicMock()
-        job = MagicMock(id="job-1")
+        job = MagicMock(id="job-1", parameters={})
 
         with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
              patch("library.obsidian_reimport_service.Document") as mock_document_cls, \
@@ -91,7 +91,7 @@ class TestExecuteObsidianReimport:
 
         existing_doc = _make_doc(obsidian_source_hash=get_hash(content))
         session = MagicMock()
-        job = MagicMock(id="job-2")
+        job = MagicMock(id="job-2", parameters={})
 
         with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
              patch("library.obsidian_reimport_service.Document") as mock_document_cls, \
@@ -116,7 +116,7 @@ class TestExecuteObsidianReimport:
 
         existing_doc = _make_doc(doc_id=202, obsidian_source_hash="stary-hash-nie-pasuje")
         session = MagicMock()
-        job = MagicMock(id="job-3")
+        job = MagicMock(id="job-3", parameters={})
         call_order = []
 
         with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
@@ -151,7 +151,7 @@ class TestExecuteObsidianReimport:
 
         existing_doc = _make_doc(doc_id=303, obsidian_source_hash=None)
         session = MagicMock()
-        job = MagicMock(id="job-4")
+        job = MagicMock(id="job-4", parameters={})
 
         with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
              patch("library.obsidian_reimport_service.Document") as mock_document_cls, \
@@ -174,7 +174,7 @@ class TestExecuteObsidianReimport:
         # Only create Informatyka, not Geopolityka -- both are configured.
         (tmp_path / "02-wiedza/Informatyka").mkdir(parents=True)
         session = MagicMock()
-        job = MagicMock(id="job-5")
+        job = MagicMock(id="job-5", parameters={})
 
         with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(tmp_path)), \
              patch("library.obsidian_reimport_service.Document"), \
@@ -190,7 +190,7 @@ class TestExecuteObsidianReimport:
         note.write_text("   \n", encoding="utf-8")
 
         session = MagicMock()
-        job = MagicMock(id="job-6")
+        job = MagicMock(id="job-6", parameters={})
 
         with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
              patch("library.obsidian_reimport_service.Document") as mock_document_cls, \
@@ -201,6 +201,86 @@ class TestExecuteObsidianReimport:
         mock_document_cls.get_by_url.assert_not_called()
         mock_service_cls.return_value.import_document.assert_not_called()
         assert summary == {"scanned": 1, "created": 0, "updated": 0, "skipped": 1, "failed": 0}
+
+
+class TestSingleNoteReimport:
+    """Story 42.3: obsidian_vault_watcher.py enqueues a targeted job with
+    parameters={"relative_path": ...} instead of waiting for the daily
+    full-vault scan."""
+
+    def test_relative_path_reimports_only_that_note(self, tmp_path):
+        vault = _make_vault(tmp_path)
+        target = vault / "02-wiedza/Informatyka/kubernetes-podstawy.md"
+        target.write_text("# Kubernetes\n\nPodstawy orkiestracji.", encoding="utf-8")
+        # A second, untouched note in the same subfolder must NOT be scanned.
+        (vault / "02-wiedza/Informatyka/inna-notatka.md").write_text("Coś innego.", encoding="utf-8")
+
+        doc = _make_doc()
+        session = MagicMock()
+        job = MagicMock(id="job-7", parameters={"relative_path": "02-wiedza/Informatyka/kubernetes-podstawy.md"})
+
+        with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
+             patch("library.obsidian_reimport_service.Document") as mock_document_cls, \
+             patch("library.obsidian_reimport_service.DocumentService") as mock_service_cls, \
+             patch("library.obsidian_reimport_service.DocumentRepository"), \
+             patch("library.embedding.get_embedding") as mock_get_embedding:
+            mock_document_cls.get_by_url.return_value = None
+            mock_service_cls.return_value.import_document.return_value = (doc, "added")
+            mock_get_embedding.return_value = EmbeddingResult(text="piece", embedding=[0.1, 0.2], status="success")
+
+            summary = execute_obsidian_reimport(session, job)
+
+        mock_service_cls.return_value.import_document.assert_called_once()
+        call_kwargs = mock_service_cls.return_value.import_document.call_args.kwargs
+        assert call_kwargs["url"] == "obsidian://02-wiedza/Informatyka/kubernetes-podstawy.md"
+        assert summary == {"scanned": 1, "created": 1, "updated": 0, "skipped": 0, "failed": 0}
+
+    def test_relative_path_missing_file_is_reported_failed(self, tmp_path):
+        vault = _make_vault(tmp_path)
+        session = MagicMock()
+        job = MagicMock(id="job-8", parameters={"relative_path": "02-wiedza/Informatyka/nie-istnieje.md"})
+
+        with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
+             patch("library.obsidian_reimport_service.Document") as mock_document_cls, \
+             patch("library.obsidian_reimport_service.DocumentService"), \
+             patch("library.obsidian_reimport_service.DocumentRepository"):
+            summary = execute_obsidian_reimport(session, job)
+
+        mock_document_cls.get_by_url.assert_not_called()
+        assert summary == {"scanned": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 1}
+
+    def test_relative_path_outside_pilot_subfolders_is_refused(self, tmp_path):
+        vault = _make_vault(tmp_path)
+        outside = vault / "03-personal" / "sekret.md"
+        outside.parent.mkdir(parents=True)
+        outside.write_text("nie powinno zostać zaimportowane", encoding="utf-8")
+
+        session = MagicMock()
+        job = MagicMock(id="job-9", parameters={"relative_path": "03-personal/sekret.md"})
+
+        with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
+             patch("library.obsidian_reimport_service.Document") as mock_document_cls, \
+             patch("library.obsidian_reimport_service.DocumentService") as mock_service_cls, \
+             patch("library.obsidian_reimport_service.DocumentRepository"):
+            summary = execute_obsidian_reimport(session, job)
+
+        mock_document_cls.get_by_url.assert_not_called()
+        mock_service_cls.return_value.import_document.assert_not_called()
+        assert summary == {"scanned": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 1}
+
+    def test_relative_path_traversal_is_refused(self, tmp_path):
+        vault = _make_vault(tmp_path)
+        session = MagicMock()
+        job = MagicMock(id="job-10", parameters={"relative_path": "../../etc/passwd"})
+
+        with patch("library.obsidian_reimport_service.load_config", return_value=_make_config(vault)), \
+             patch("library.obsidian_reimport_service.Document") as mock_document_cls, \
+             patch("library.obsidian_reimport_service.DocumentService"), \
+             patch("library.obsidian_reimport_service.DocumentRepository"):
+            summary = execute_obsidian_reimport(session, job)
+
+        mock_document_cls.get_by_url.assert_not_called()
+        assert summary == {"scanned": 0, "created": 0, "updated": 0, "skipped": 0, "failed": 1}
 
 
 class TestJobTypeRegistration:
