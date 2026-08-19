@@ -418,6 +418,55 @@ function renderParagraphWithNotes(
 const CALLOUT_RE = /^\[!(INFO|WARN)\]\n([\s\S]*?)\n\[!\/\1\]$/;
 const TABLE_SEPARATOR_RE = /^\|(\s*:?-{2,}:?\s*\|)+$/;
 
+// A fenced code block (```lang\n...\n```) must open/close on its own line —
+// anchored per-line via the "m" flag rather than requiring the whole text to
+// start/end with it, so a fence can sit anywhere in the chapter. Matched and
+// pulled out BEFORE the blank-line block split below, because real code
+// commonly contains blank lines that would otherwise fragment it into
+// several unrelated "paragraphs".
+const CODE_FENCE_RE = /^```[ \t]*([\w+-]*)[ \t]*\r?\n([\s\S]*?)\r?\n```[ \t]*$/gm;
+
+interface TextSegment { code: false; content: string }
+interface CodeSegment { code: true; lang: string; content: string }
+
+function splitCodeFences(text: string): (TextSegment | CodeSegment)[] {
+  const segments: (TextSegment | CodeSegment)[] = [];
+  let lastIndex = 0;
+  CODE_FENCE_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = CODE_FENCE_RE.exec(text))) {
+    if (match.index > lastIndex) segments.push({ code: false, content: text.slice(lastIndex, match.index) });
+    segments.push({ code: true, lang: match[1] ?? "", content: match[2] });
+    lastIndex = CODE_FENCE_RE.lastIndex;
+  }
+  if (lastIndex < text.length) segments.push({ code: false, content: text.slice(lastIndex) });
+  return segments;
+}
+
+/** Verbatim block — no inline markdown/entity/note processing, matching how
+ *  every other markdown renderer treats a fenced code block's contents. */
+function renderCodeBlock(seg: CodeSegment, key: React.Key): React.ReactNode {
+  return (
+    <div key={key} style={{ position: "relative", margin: "16px 0" }}>
+      {seg.lang && (
+        <span style={{
+          position: "absolute", top: 6, right: 10, fontSize: "0.72em",
+          color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em",
+        }}>
+          {seg.lang}
+        </span>
+      )}
+      <pre style={{
+        background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 8,
+        padding: "14px 16px", overflowX: "auto", margin: 0,
+        fontSize: "0.85em", lineHeight: 1.5,
+      }}>
+        <code style={{ fontFamily: "monospace", whiteSpace: "pre" }}>{seg.content}</code>
+      </pre>
+    </div>
+  );
+}
+
 function parseTableRow(line: string): string[] {
   const inner = line.trim().replace(/^\|/, "").replace(/\|$/, "");
   return inner.split(/(?<!\\)\|/).map(cell => cell.trim().replace(/\\\|/g, "|"));
@@ -425,7 +474,7 @@ function parseTableRow(line: string): string[] {
 
 function renderTableBlock(
   trimmed: string,
-  key: number,
+  key: React.Key,
   notes: UserNote[],
   refs?: Map<string, ChapterReference>,
 ): React.ReactNode | null {
@@ -467,7 +516,7 @@ function renderTableBlock(
 
 function renderCalloutBlock(
   trimmed: string,
-  key: number,
+  key: React.Key,
   notes: UserNote[],
   refs?: Map<string, ChapterReference>,
   highlightTerms?: string[],
@@ -502,92 +551,99 @@ function renderMarkdown(
   images?: Map<number, ChapterImage>,
   onAnchorClick?: (anchorId: string) => void,
 ): React.ReactNode[] {
-  const blocks = text.split(/\n\s*\n/);
   const out: React.ReactNode[] = [];
-  blocks.forEach((block, i) => {
-    const trimmed = block.trim();
-    if (!trimmed) return;
-    const markerMatch = trimmed.match(IMG_MARKER);
-    if (markerMatch) {
-      const img = images?.get(Number(markerMatch[1]));
-      if (img) out.push(renderChapterImage(img, i));
-      // Gmail can place an image marker directly beside a CTA, e.g.
-      // "[img4] Pobierz". Preserve the CTA rather than leaving the marker as
-      // visible text or discarding the whole line.
-      const trailingText = markerMatch[2]?.trim();
-      if (trailingText) {
-        const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
-          trailingText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images,
+  splitCodeFences(text).forEach((segment, segIndex) => {
+    if (segment.code) {
+      out.push(renderCodeBlock(segment, `code-${segIndex}`));
+      return;
+    }
+    const blocks = segment.content.split(/\n\s*\n/);
+    blocks.forEach((block, i) => {
+      const key = `${segIndex}-${i}`;
+      const trimmed = block.trim();
+      if (!trimmed) return;
+      const markerMatch = trimmed.match(IMG_MARKER);
+      if (markerMatch) {
+        const img = images?.get(Number(markerMatch[1]));
+        if (img) out.push(renderChapterImage(img, key));
+        // Gmail can place an image marker directly beside a CTA, e.g.
+        // "[img4] Pobierz". Preserve the CTA rather than leaving the marker as
+        // visible text or discarding the whole line.
+        const trailingText = markerMatch[2]?.trim();
+        if (trailingText) {
+          const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
+            trailingText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images,
+          );
+          out.push(
+            <p key={`${key}-trailing`} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={{
+              lineHeight: 1.65, margin: "14px 0", textAlign: "justify",
+              ...(paragraphTint ? { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 } : {}),
+              ...(timelineTint ? { background: "#fff7ed", borderLeft: "3px solid #f59e0b", paddingLeft: 8 } : {}),
+            }}>
+              {nodes}
+            </p>,
+          );
+        }
+        return;
+      }
+      const anchorMatch = trimmed.match(ANCHOR_MARKER);
+      if (anchorMatch) {
+        out.push(<span key={key} id={anchorMatch[1]} />);
+        return;
+      }
+      if (IMAGE_LINE.test(trimmed)) return;
+      const callout = renderCalloutBlock(trimmed, key, notes, refs, highlightTerms, timelineAnchor);
+      if (callout) {
+        out.push(callout);
+        return;
+      }
+      const table = renderTableBlock(trimmed, key, notes, refs);
+      if (table) {
+        out.push(table);
+        return;
+      }
+      const heading = trimmed.match(/^(#{1,6})\s+(.*)$/s);
+      if (heading) {
+        const level = Math.min(heading[1].length + 1, 6);
+        const Tag = `h${level}` as keyof JSX.IntrinsicElements;
+        // headings can carry note anchors too (e.g. a quote of the chapter title)
+        const { nodes, timelineTint, timelineFound } = renderParagraphWithNotes(
+          heading[2].replace(/\n/g, " "), notes, undefined, highlightTerms, timelineAnchor,
         );
         out.push(
-          <p key={`${i}-trailing`} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={{
-            lineHeight: 1.65, margin: "14px 0", textAlign: "justify",
-            ...(paragraphTint ? { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 } : {}),
-            ...(timelineTint ? { background: "#fff7ed", borderLeft: "3px solid #f59e0b", paddingLeft: 8 } : {}),
-          }}>
+          <Tag
+            key={key}
+            className={timelineFound ? "timeline-anchor-paragraph" : undefined}
+            style={{ marginTop: level === 2 ? 0 : 28, ...(timelineTint ? { background: "#fff7ed" } : {}) }}
+          >
             {nodes}
-          </p>,
+          </Tag>,
         );
+        return;
       }
-      return;
-    }
-    const anchorMatch = trimmed.match(ANCHOR_MARKER);
-    if (anchorMatch) {
-      out.push(<span key={i} id={anchorMatch[1]} />);
-      return;
-    }
-    if (IMAGE_LINE.test(trimmed)) return;
-    const callout = renderCalloutBlock(trimmed, i, notes, refs, highlightTerms, timelineAnchor);
-    if (callout) {
-      out.push(callout);
-      return;
-    }
-    const table = renderTableBlock(trimmed, i, notes, refs);
-    if (table) {
-      out.push(table);
-      return;
-    }
-    const heading = trimmed.match(/^(#{1,6})\s+(.*)$/s);
-    if (heading) {
-      const level = Math.min(heading[1].length + 1, 6);
-      const Tag = `h${level}` as keyof JSX.IntrinsicElements;
-      // headings can carry note anchors too (e.g. a quote of the chapter title)
-      const { nodes, timelineTint, timelineFound } = renderParagraphWithNotes(
-        heading[2].replace(/\n/g, " "), notes, undefined, highlightTerms, timelineAnchor,
+      if (trimmed === "---") {
+        out.push(<hr key={key} style={{ margin: "20px 0", border: "none", borderTop: "1px solid #e2e8f0" }} />);
+        return;
+      }
+      // footnote / caption lines (superscript digits or "Wykres N.") — smaller font
+      const isNote = /^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,3} )\S*\s*(http|www|[A-ZŻŹĆĄŚĘŁÓŃ])/.test(trimmed) && trimmed.length < 400;
+      const paraText = trimmed.replace(/\n/g, " ");
+      const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
+        paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images,
       );
       out.push(
-        <Tag
-          key={i}
-          className={timelineFound ? "timeline-anchor-paragraph" : undefined}
-          style={{ marginTop: level === 2 ? 0 : 28, ...(timelineTint ? { background: "#fff7ed" } : {}) }}
-        >
+        <p key={key} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={isNote
+          ? { fontSize: "0.8em", color: "#64748b", margin: "6px 0" }
+          : {
+              lineHeight: 1.65, margin: "14px 0", textAlign: "justify",
+              ...(paragraphTint ? { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 } : {}),
+              ...(timelineTint ? { background: "#fff7ed", borderLeft: "3px solid #f59e0b", paddingLeft: 8 } : {}),
+            }}
+          title={paragraphTint ? `📝 ${paragraphTint.note_text}` : undefined}>
           {nodes}
-        </Tag>,
+        </p>
       );
-      return;
-    }
-    if (trimmed === "---") {
-      out.push(<hr key={i} style={{ margin: "20px 0", border: "none", borderTop: "1px solid #e2e8f0" }} />);
-      return;
-    }
-    // footnote / caption lines (superscript digits or "Wykres N.") — smaller font
-    const isNote = /^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,3} )\S*\s*(http|www|[A-ZŻŹĆĄŚĘŁÓŃ])/.test(trimmed) && trimmed.length < 400;
-    const paraText = trimmed.replace(/\n/g, " ");
-    const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
-      paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images,
-    );
-    out.push(
-      <p key={i} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={isNote
-        ? { fontSize: "0.8em", color: "#64748b", margin: "6px 0" }
-        : {
-            lineHeight: 1.65, margin: "14px 0", textAlign: "justify",
-            ...(paragraphTint ? { background: "#fefce8", borderLeft: "3px solid #eab308", paddingLeft: 8 } : {}),
-            ...(timelineTint ? { background: "#fff7ed", borderLeft: "3px solid #f59e0b", paddingLeft: 8 } : {}),
-          }}
-        title={paragraphTint ? `📝 ${paragraphTint.note_text}` : undefined}>
-        {nodes}
-      </p>
-    );
+    });
   });
   return out;
 }
