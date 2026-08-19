@@ -1095,6 +1095,31 @@ def _chunk_based_chapters(run: DocumentAnalysisRun) -> list[dict]:
     ]
 
 
+# Document types that, by design, never get a chunk-analysis run (no
+# rewrite/topic-splitting pipeline exists for them -- see
+# obsidian_reimport_service.py's module docstring) and whose notes are
+# usually short enough to have no markdown headers either. For these, "no
+# headers and no run" means "this document was never meant to be chaptered",
+# not "processing hasn't finished yet" -- unlike youtube/movie transcripts,
+# where the same state means an analysis run just hasn't been created yet
+# and a raw, unrewritten transcript dump would be a worse reader experience
+# than the explicit error (see TestChaptersFallbackToChunks in
+# test_document_analysis_book_mode.py, which pins that behavior).
+_WHOLE_DOCUMENT_CHAPTER_TYPES = {"obsidian_note"}
+
+
+def _whole_document_chapter(text: str) -> list[dict]:
+    """Single reader chapter spanning the whole text.
+
+    Fallback for _WHOLE_DOCUMENT_CHAPTER_TYPES documents with real text but
+    neither markdown H1/H2 headers nor a chunk-analysis run. Without this,
+    the reader had nothing to show and GET .../chapter/1 hard-failed with
+    "Document has no detectable chapters", even though the document plainly
+    has text (e.g. a short Obsidian note with no headers — see /read/9766).
+    """
+    return [{"position": 1, "level": 1, "title": "(całość)", "char_start": 0, "char_end": len(text), "length": len(text)}]
+
+
 # Short articles read more naturally as one continuous page. Keep their
 # detected markdown chapters for analysis/scoping, but collapse them in the
 # reader API so headings remain visible without forcing extra navigation.
@@ -1153,6 +1178,10 @@ def document_chapters(doc_id: int):
         if chapters:
             source = "chunks"
 
+    if not chapters and text and doc.document_type in _WHOLE_DOCUMENT_CHAPTER_TYPES:
+        chapters = _whole_document_chapter(text)
+        source = "whole_document"
+
     if not text and source == "none":
         return jsonify({"status": "error", "message": "Document has no usable text"}), 400
 
@@ -1203,9 +1232,12 @@ def _resolve_chapter_text(
 
     Positions are 1-based and match GET /document/<id>/chapters — markdown
     H1/H2 chapters when the text has them, otherwise the TEMAT-chunk fallback
-    (see _chunk_based_chapters). On a bad position or a chapterless document
-    returns (None, user-facing error message) — a plain value, not an
-    exception, so no exception detail can leak into the HTTP response.
+    (see _chunk_based_chapters), otherwise the whole text as one chapter
+    (see _whole_document_chapter — the common case for short Obsidian notes,
+    which have neither headers nor a chunk-analysis run). On a bad position
+    or a genuinely textless document returns (None, user-facing error
+    message) — a plain value, not an exception, so no exception detail can
+    leak into the HTTP response.
     """
     from library.document_analysis_service import _extract_text
     from library.text_functions import detect_chapters
@@ -1224,8 +1256,17 @@ def _resolve_chapter_text(
 
     run = _latest_run_for_document(session, doc.id)
     chunk_chapters = _chunk_based_chapters(run) if run else []
+    if not chunk_chapters and text and doc.document_type in _WHOLE_DOCUMENT_CHAPTER_TYPES:
+        chunk_chapters = _whole_document_chapter(text)
     if not chunk_chapters:
         return None, "Document has no detectable chapters (no H1/H2 headers, no chunk analysis run)"
+
+    if chunk_chapters[0].get("chunk_id") is None:
+        # _whole_document_chapter's synthetic entry -- no DocumentChunk to look up.
+        match = chunk_chapters[0]
+        if match["position"] != position:
+            return None, f"position {position} out of range (1..1)"
+        return (text[match["char_start"]:match["char_end"]].strip(), match["title"], 1), None
 
     chapter_total = len(chunk_chapters)
     match = next((c for c in chunk_chapters if c["position"] == position), None)
