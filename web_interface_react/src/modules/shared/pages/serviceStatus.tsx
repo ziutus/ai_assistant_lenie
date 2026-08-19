@@ -25,9 +25,15 @@ const STATUS_STYLE: Record<Dependency["status"], { label: string; color: string;
 };
 
 const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+// dateStyle/timeStyle cannot be combined with timeZoneName (or any other
+// component option) -- Intl.DateTimeFormat throws a TypeError at
+// construction time, which crashed this whole page (uncaught render
+// exception, no error boundary -- looked like the app was hanging). The
+// local timezone is already shown once in the page intro, so it doesn't
+// need repeating on every timestamp.
 const stamp = (value: string | null) => value
   ? new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium", timeStyle: "medium", timeZoneName: "short",
+      dateStyle: "medium", timeStyle: "medium",
     }).format(new Date(value))
   : "—";
 
