@@ -368,7 +368,7 @@ const List = () => {
             // social_media_post text arrives at creation, not through the
             // download pipeline, so it stays at URL_ADDED indefinitely —
             // unlike the other types here, URL_ADDED does NOT mean "no text yet".
-            const hasReadableText = ["social_media_post", "email"].includes(item.document_type) ||
+            const hasReadableText = ["social_media_post", "email", "obsidian_note"].includes(item.document_type) ||
               (["youtube", "movie", "webpage", "text"].includes(item.document_type) && !NO_TEXT_STATES.includes(item.processing_status));
             return (
             <li
@@ -409,15 +409,18 @@ const List = () => {
               <span style={{ margin: "0 0 0 auto", fontWeight: "500" }}>
                 {item.document_type}
               </span>
-              <NavLink
-                className={"button"}
-                style={{ margin: "0 0 0 10px" }}
-                onClick={() => {
-                }}
-                to={`/${item.document_type}/${item.id}`}
-              >
-                Edit
-              </NavLink>
+              {/* obsidian_note is read-only (imported from the vault, edited in Obsidian itself) — no /obsidian_note/:id editor route exists. */}
+              {item.document_type !== "obsidian_note" && (
+                <NavLink
+                  className={"button"}
+                  style={{ margin: "0 0 0 10px" }}
+                  onClick={() => {
+                  }}
+                  to={`/${item.document_type}/${item.id}`}
+                >
+                  Edit
+                </NavLink>
+              )}
               {hasReadableText && (
                 <NavLink
                   className={"button"}
