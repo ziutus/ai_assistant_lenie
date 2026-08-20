@@ -81,6 +81,13 @@ interface ChapterContent {
   next: number | null;
 }
 
+interface ImportedObsidianNote {
+  path: string;
+  id: number;
+  title: string;
+  text: string;
+}
+
 // Chapter-scoped sidebar data (GET /document/:id/chapter/:pos/entities) —
 // document-level entities/countries filtered down to the chapter being read.
 interface ChapterScope {
@@ -796,6 +803,10 @@ const Read: React.FC = () => {
   const [docIngestedAt, setDocIngestedAt] = React.useState<string | null>(null);
   const [docObsidianNotePaths, setDocObsidianNotePaths] = React.useState<string[]>([]);
   const [content, setContent] = React.useState<ChapterContent | null>(null);
+  const [importedObsidianNotes, setImportedObsidianNotes] = React.useState<ImportedObsidianNote[]>([]);
+  const [selectedObsidianNotePath, setSelectedObsidianNotePath] = React.useState<string | null>(null);
+  const [obsidianNotesLoading, setObsidianNotesLoading] = React.useState(false);
+  const [obsidianPanelVisible, setObsidianPanelVisible] = React.useState(true);
   // sidebar scope: current chapter (default) vs whole document
   const [scopeChapter, setScopeChapter] = React.useState(true);
   const [chapterScope, setChapterScope] = React.useState<ChapterScope | null>(null);
@@ -855,6 +866,7 @@ const Read: React.FC = () => {
   const [tagQuery, setTagQuery] = React.useState("");
   const [tagResults, setTagResults] = React.useState<UserNote[]>([]);
   const hasReaderSidebar = chapters.length > 1 || Boolean(userId);
+  const hasObsidianPanel = obsidianNotesLoading || importedObsidianNotes.length > 0;
 
   const requestedPosition = Number(searchParams.get("chapter") ?? 1);
   const position = readerCompact ? 1 : requestedPosition;
@@ -878,6 +890,8 @@ const Read: React.FC = () => {
     setDocPublishedOn(null);
     setDocIngestedAt(null);
     setDocObsidianNotePaths([]);
+    setImportedObsidianNotes([]);
+    setSelectedObsidianNotePath(null);
     setError(null);
     (async () => {
       try {
@@ -1085,6 +1099,36 @@ const Read: React.FC = () => {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiUrl, id, position, progressLoaded, apiKey]);
+
+  // Notes generated from the article are reimported as regular Lenie documents.
+  // Load their imported content for the reader's right-side preview, rather than
+  // relying on an obsidian:// link that only works on a machine with Obsidian.
+  React.useEffect(() => {
+    if (!id || !content) return;
+    let cancelled = false;
+    setObsidianNotesLoading(true);
+    (async () => {
+      try {
+        const r = await fetch(`${apiUrl}/document/${id}/obsidian_notes?chapter=${position}`, { headers });
+        const data = await r.json();
+        if (cancelled || data.status !== "success") return;
+        const notes = data.notes ?? [];
+        setImportedObsidianNotes(notes);
+        setSelectedObsidianNotePath(current =>
+          notes.some((note: ImportedObsidianNote) => note.path === current) ? current : (notes[0]?.path ?? null),
+        );
+      } catch {
+        if (!cancelled) setImportedObsidianNotes([]);
+      } finally {
+        if (!cancelled) setObsidianNotesLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // headers is derived from reader identity; apiKey is its stable input.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiUrl, apiKey, id, position, content]);
+
+  const selectedObsidianNote = importedObsidianNotes.find(note => note.path === selectedObsidianNotePath) ?? null;
 
   // persist current chapter as reading position
   React.useEffect(() => {
@@ -1381,6 +1425,17 @@ const Read: React.FC = () => {
             {readerSidebarVisible ? "◀ Ukryj panel" : "▶ Pokaż panel"}
           </button>
         )}
+        {isDesktop && hasObsidianPanel && (
+          <button
+            className={styles.sidebarToggleButton}
+            type="button"
+            onClick={() => setObsidianPanelVisible(visible => !visible)}
+            aria-controls="obsidian-panel"
+            aria-expanded={obsidianPanelVisible}
+          >
+            {obsidianPanelVisible ? "◀ Ukryj notatkę" : "▶ Pokaż notatkę"}
+          </button>
+        )}
         {hasReaderSidebar && (
           <button className={styles.tocToggleButton} onClick={() => setTocOpen(o => !o)}>
             📑 Panel czytnika{chapters.length > 1 ? ` (${chapters.length})` : ""}
@@ -1568,7 +1623,8 @@ const Read: React.FC = () => {
 
         {/* Map + entities + tags + synthesis — desktop only */}
         {isDesktop && (
-          <div className={styles.rightPanel}>
+          <>
+          <div className={`${styles.rightPanel} ${(!hasObsidianPanel || !obsidianPanelVisible) ? styles.rightPanelExpanded : ""}`}>
             {!readerCompact && <div style={{ fontSize: "0.78em", color: "#64748b", display: "flex", gap: 8, alignItems: "center" }}>
               Zakres:
               {([["rozdział", true], ["cały dokument", false]] as const).map(([label, value]) => (
@@ -1814,6 +1870,38 @@ const Read: React.FC = () => {
               </details>
             )}
           </div>
+          {hasObsidianPanel && obsidianPanelVisible && (
+            <aside id="obsidian-panel" className={styles.obsidianPanel} aria-label="Zaimportowane notatki Obsidian">
+              <div className={styles.obsidianPreviewHeader}>
+                <strong>📝 Notatka Obsidian</strong>
+                {importedObsidianNotes.length > 1 && (
+                  <select
+                    value={selectedObsidianNotePath ?? ""}
+                    onChange={event => setSelectedObsidianNotePath(event.target.value)}
+                    aria-label="Wybierz notatkę Obsidian"
+                  >
+                    {importedObsidianNotes.map(note => (
+                      <option key={note.path} value={note.path}>{note.title}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+              {obsidianNotesLoading ? (
+                <p className={styles.obsidianPreviewStatus}>Ładowanie notatki…</p>
+              ) : selectedObsidianNote && (
+                <>
+                  <div className={styles.obsidianPreviewMeta}>
+                    <NavLink to={`/read/${selectedObsidianNote.id}`}>{selectedObsidianNote.title}</NavLink>
+                    <a href={buildObsidianNoteUrl(selectedObsidianNote.path)} title="Otwórz w Obsidianie">↗</a>
+                  </div>
+                  <article className={styles.obsidianPreviewContent}>
+                    {renderMarkdown(selectedObsidianNote.text, [])}
+                  </article>
+                </>
+              )}
+            </aside>
+          )}
+          </>
         )}
       </div>
 

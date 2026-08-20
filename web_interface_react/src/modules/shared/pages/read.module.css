@@ -39,12 +39,80 @@
 .rightPanel {
   /* Grows to fill leftover width on wide screens (toc and text are fixed-width) —
      capped so the map/tags/synthesis column doesn't get absurdly wide on ultrawide monitors. */
-  flex: 1 1 300px;
-  max-width: 700px;
+  flex: 0 1 420px;
+  min-width: 260px;
   position: sticky;
   top: 12px;
   max-height: 85vh;
   overflow-y: auto;
+}
+
+.rightPanelExpanded {
+  flex: 1 1 420px;
+  max-width: 700px;
+}
+
+.obsidianPanel {
+  flex: 1 1 420px;
+  min-width: 300px;
+  max-width: 700px;
+  position: sticky;
+  top: 12px;
+  max-height: 92vh;
+  overflow-y: auto;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.obsidianPreviewHeader,
+.obsidianPreviewMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.obsidianPreviewHeader {
+  justify-content: space-between;
+  font-size: 0.85em;
+}
+
+.obsidianPreviewHeader select {
+  max-width: 58%;
+  min-width: 0;
+}
+
+.obsidianPreviewMeta {
+  margin-top: 8px;
+  font-size: 0.82em;
+}
+
+.obsidianPreviewMeta a:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.obsidianPreviewContent {
+  max-height: calc(92vh - 72px);
+  overflow-y: auto;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 0.86em;
+  line-height: 1.55;
+}
+
+.obsidianPreviewContent > :first-child {
+  margin-top: 0;
+}
+
+.obsidianPreviewStatus {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 0.82em;
 }
 
 .synthesisPanel {
