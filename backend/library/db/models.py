@@ -32,6 +32,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship, validates
+from sqlalchemy.types import UserDefinedType
 
 from library.publisher_domain import normalize_publisher_domain, registrable_domain
 from library.url_normalization import canonicalize_url
@@ -44,6 +45,15 @@ from library.models.stalker_document_status_error import StalkerDocumentStatusEr
 from library.models.stalker_document_type import StalkerDocumentType
 
 logger = logging.getLogger(__name__)
+
+
+class GeographyPoint(UserDefinedType):
+    """PostGIS WGS84 point, kept small to avoid a GeoAlchemy dependency."""
+
+    cache_ok = True
+
+    def get_col_spec(self, **_kw):
+        return "GEOGRAPHY(POINT,4326)"
 
 
 DOCUMENT_TYPE_LOOKUP = {
@@ -1763,6 +1773,71 @@ class InfraGeometry(Base):
 
     def __repr__(self) -> str:
         return f"InfraGeometry(id={self.id!r}, query={self.query!r}, resolved={self.resolved!r})"
+
+
+class Facility(Base):
+    """Canonical physical facility, distinct from a settlement and its operator.
+
+    ``latitude``/``longitude`` are deliberately stored on the facility as the
+    stable geographic identity used by proximity queries.  ``geocode_id`` is
+    retained as provenance for the first place-resolution result; it must not
+    be mistaken for the facility itself (a power plant and its town can have
+    different coordinates).
+    """
+
+    __tablename__ = "facilities"
+    __table_args__ = (
+        UniqueConstraint("canonical_name", "facility_type", "place_name", name="uq_facilities_identity"),
+        CheckConstraint("latitude IS NULL OR latitude BETWEEN -90 AND 90", name="ck_facilities_latitude"),
+        CheckConstraint("longitude IS NULL OR longitude BETWEEN -180 AND 180", name="ck_facilities_longitude"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    canonical_name: Mapped[str] = mapped_column(Text, nullable=False)
+    # Controlled by facility_service.FACILITY_PATTERNS, e.g. nuclear_power_plant.
+    facility_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    place_name: Mapped[str | None] = mapped_column(Text)
+    latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    # Spatial source of truth for radius/nearest-neighbour queries.  lat/lon
+    # stay denormalised for compact JSON responses and simple form editing.
+    location: Mapped[object | None] = mapped_column(GeographyPoint())
+    geocode_id: Mapped[int | None] = mapped_column(ForeignKey("geocode_cache.id", ondelete="SET NULL"))
+    wikidata_qid: Mapped[str | None] = mapped_column(String(20), unique=True)
+    # Curated profile fields.  Unlike the generated document mention, these
+    # describe the real-world object and may be safely reused across documents.
+    description: Mapped[str | None] = mapped_column(Text)
+    operator_name: Mapped[str | None] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    # Alternative names and inflected surface forms used for reader matching.
+    aliases: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    geocode: Mapped["GeocodeCache | None"] = relationship(foreign_keys=[geocode_id])
+
+
+class DocumentFacility(Base):
+    """A rule-detected facility mention in one document.
+
+    The link is derived data and is replaced with each NER refresh.  A future
+    external resolver can upgrade ``confidence`` and attach exact coordinates
+    without changing the raw mention or document evidence.
+    """
+
+    __tablename__ = "document_facilities"
+    __table_args__ = (UniqueConstraint("document_id", "facility_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    facility_id: Mapped[int] = mapped_column(ForeignKey("facilities.id", ondelete="CASCADE"), nullable=False)
+    place_entity_id: Mapped[int | None] = mapped_column(ForeignKey("document_entities.id", ondelete="SET NULL"))
+    raw_mention: Mapped[str] = mapped_column(Text, nullable=False)
+    mention_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default=sa_text("1"))
+    confidence: Mapped[str] = mapped_column(String(30), nullable=False, server_default="rule_candidate")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    facility: Mapped["Facility"] = relationship(foreign_keys=[facility_id])
 
 
 class DocumentEntity(Base):

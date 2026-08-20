@@ -402,6 +402,13 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         from library.information_provenance import refresh_ner_cited_sources
 
         refresh_ner_cited_sources(session, doc, text, organization_groups)
+    # Named facilities are semantic entities assembled from a recognised object
+    # type and a NER place ("elektrownia jądrowa Gravelines"), not an extra
+    # spaCy label.  Flush first so their links can safely refer to new place rows.
+    session.flush()
+    from library.facility_service import refresh_document_facilities
+
+    refresh_document_facilities(session, document_id, text)
     return rows
 
 
@@ -422,7 +429,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     operator energetyczny"; None until someone fills it in via PATCH
     /organizations/<id> or the backfill script).
     """
-    from library.db.models import DocumentInformationSource, DocumentOrganization, InfraGeometry
+    from library.db.models import DocumentFacility, DocumentInformationSource, DocumentOrganization, InfraGeometry
     from library.person_registry import get_document_persons
 
     rows = (
@@ -446,6 +453,9 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             DocumentOrganization.document_id == document_id,
         )).all()
     }
+    facilities = session.scalars(select(DocumentFacility).where(
+        DocumentFacility.document_id == document_id,
+    )).all()
 
     place_types = {"geogName", "placeName"}
     place_names = [r.entity_text for r in rows if r.entity_type in place_types]
@@ -459,7 +469,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
         pipelines_by_query = {r.query: r for r in infra_rows}
 
     grouped: dict[str, list[dict]] = {
-        "persName": [], "orgName": [], "geogName": [], "placeName": [],
+        "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [],
     }
     for row in rows:
         item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,
@@ -502,6 +512,28 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 item["organization_review_status"] = organization_link.review_status
                 item["organization_description"] = organization_link.organization.description
         grouped.setdefault(row.entity_type, []).append(item)
+    for link in facilities:
+        facility = link.facility
+        grouped["facility"].append({
+            "id": link.id,
+            "text": facility.canonical_name,
+            "count": link.mention_count,
+            # Preserve the surface form from this document.  It lets chapter
+            # filtering and the reader tooltip match inflected mentions such
+            # as "elektrowni jądrowej Gravelines".
+            "variants": list(dict.fromkeys([
+                link.raw_mention, *(facility.aliases or []), facility.canonical_name,
+            ])),
+            "facility_type": facility.facility_type,
+            "place_name": facility.place_name,
+            "lat": float(facility.latitude) if facility.latitude is not None else None,
+            "lon": float(facility.longitude) if facility.longitude is not None else None,
+            "facility_description": facility.description,
+            "operator_name": facility.operator_name,
+            "source_url": facility.source_url,
+            "wikidata_qid": facility.wikidata_qid,
+            "confidence": link.confidence,
+        })
     return grouped
 
 
