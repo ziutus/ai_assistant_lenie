@@ -1105,6 +1105,10 @@ def _chunk_based_chapters(run: DocumentAnalysisRun) -> list[dict]:
 # and a raw, unrewritten transcript dump would be a worse reader experience
 # than the explicit error (see TestChaptersFallbackToChunks in
 # test_document_analysis_book_mode.py, which pins that behavior).
+# When SMS import lands (document_type="text_message", already a valid
+# StalkerDocumentType but with no import/editor path yet), add it here too --
+# SMS bodies are typically short, unheaded text with the same "never meant to
+# be chaptered" shape as an Obsidian stub note.
 _WHOLE_DOCUMENT_CHAPTER_TYPES = {"obsidian_note"}
 
 
@@ -1165,7 +1169,10 @@ def document_chapters(doc_id: int):
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
-    text, field = _extract_text(doc, prefer_md=True)
+    # min_length=0: the reader's own _whole_document_chapter fallback below
+    # is built for short-but-real text (e.g. a one-line Obsidian stub) —
+    # the default >100-char floor would otherwise report it as "no text".
+    text, field = _extract_text(doc, prefer_md=True, min_length=0)
     chapters = detect_chapters(text) if text else []
     source = "markdown" if chapters else "none"
     reader_compact = False
@@ -1293,7 +1300,8 @@ def _resolve_chapter_text(
     from library.document_analysis_service import _extract_text
     from library.text_functions import detect_chapters
 
-    text, _field = _extract_text(doc, prefer_md=True)
+    # min_length=0: see the matching comment in document_chapters() above.
+    text, _field = _extract_text(doc, prefer_md=True, min_length=0)
     md_chapters = detect_chapters(text) if text else []
 
     if md_chapters:

@@ -785,6 +785,22 @@ const Read: React.FC = () => {
   // ── Data loading ──
 
   React.useEffect(() => {
+    // Clear the previous document's header/metadata up front — id just
+    // changed, so none of this is valid for the new document yet. Without
+    // this, a fetch failure below (e.g. a document too short for chapter
+    // detection) left the prior document's title/url/ingested-date on
+    // screen under the new id, reading as if the wrong document had loaded.
+    setChapters([]);
+    setDocumentType(null);
+    setDocTitle(null);
+    setCountries([]);
+    setThematicTags([]);
+    setSynthesis(null);
+    setDocQuality(null);
+    setDocUrl(null);
+    setDocPublishedOn(null);
+    setDocIngestedAt(null);
+    setError(null);
     (async () => {
       try {
         const r = await fetch(`${apiUrl}/document/${id}/chapters?reader=1`, { headers });
@@ -964,7 +980,13 @@ const Read: React.FC = () => {
         contentRef.current?.scrollTo({ top: 0 });
         window.scrollTo({ top: 0 });
       } catch (e) {
-        if (requestId === contentRequestId.current) setError(String(e));
+        if (requestId === contentRequestId.current) {
+          // Otherwise the previous chapter's rendered text stays on screen
+          // under the new error message, reading as if it belonged to the
+          // document/chapter that just failed to load.
+          setContent(null);
+          setError(String(e));
+        }
       } finally {
         if (requestId === contentRequestId.current) setLoading(false);
       }

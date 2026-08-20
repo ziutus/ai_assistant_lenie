@@ -199,21 +199,26 @@ def _sentence_head(text: str, max_chars: int = 300) -> str:
     return seg
 
 
-def _extract_text(doc: Document, prefer_md: bool = False) -> tuple[str, str]:
+def _extract_text(doc: Document, prefer_md: bool = False, min_length: int = 100) -> tuple[str, str]:
     """Return (text, field_name) from best available field.
 
     Priority: text → text_md → text_raw (JSON transcript → plain text).
     With prefer_md=True (article mode) text_md wins over text, so the
     markdown-header splitter sees the document structure.
+    min_length gates what counts as "usable" — the default (100) keeps
+    trivially short scraps out of the LLM analysis/enrichment pipeline;
+    reader endpoints pass min_length=0 so a short-but-real note (e.g. a
+    one-line Obsidian stub) still reaches _whole_document_chapter's
+    single-chapter fallback instead of being treated as empty.
     Returns ("", "") when no usable text found.
     """
     fields = ("text_md", "text") if prefer_md else ("text", "text_md")
     for field in fields:
         val = getattr(doc, field, None)
-        if val and len(val) > 100:
+        if val and len(val) > min_length:
             return val, field
     raw = getattr(doc, "text_raw", None)
-    if raw and len(raw) > 100:
+    if raw and len(raw) > min_length:
         segs = _load_segments(raw)
         if segs:
             return "\n".join(s["text"] for s in segs), "text_raw (JSON→plain)"
