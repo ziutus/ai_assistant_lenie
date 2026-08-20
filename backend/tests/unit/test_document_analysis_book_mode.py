@@ -44,6 +44,7 @@ class FakeBookDoc:
     published_on = None
     ingested_at = None
     chapter_list = None
+    obsidian_note_paths: list = []
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +235,13 @@ def client(monkeypatch, run_with_sections):
     def route_scalars(stmt, *_a, **_kw):
         sql = str(stmt)
         if "document_analysis_runs" in sql:
-            return _ScalarsResult([run])
+            # Distinguish the whole-document run lookup (scope IS NULL, used
+            # by document_chapters()' synthesis field) from the chapter-scoped
+            # run lookup (scope = <title>, used by document_chapter()'s
+            # chapter_run) -- run.scope is None here, so it only matches the
+            # former; a naive substring match would incorrectly return it for
+            # every chapter's chapter_run too.
+            return _ScalarsResult([run]) if "scope IS NULL" in sql else _ScalarsResult([])
         if "document_topic_sections" in sql:
             return _ScalarsResult(sections)
         return _ScalarsResult([101])  # document_embeddings: embedded chunk ids
@@ -299,6 +306,31 @@ class TestChaptersEndpoint:
         assert data["thematic_tags"] == []
         assert data["synthesis"] is None
 
+    def test_obsidian_note_paths_default_empty(self, client):
+        resp = client.get("/document/77/chapters")
+        data = resp.get_json()
+
+        assert data["obsidian_note_paths"] == []
+
+    def test_obsidian_note_paths_passthrough(self, monkeypatch, run_with_sections):
+        run, sections = run_with_sections
+        doc = FakeBookDoc()
+        doc.original_id = ""
+        doc.document_type = "text"
+        doc.obsidian_note_paths = ["Geopolityka i polityka/Kraje/Testowa książka.md"]
+
+        fake_session = MagicMock()
+        fake_session.get.side_effect = lambda model, pk: doc if model is Document else None
+        fake_session.scalars.side_effect = lambda *_a, **_kw: _ScalarsResult([])
+        monkeypatch.setattr(crr, "get_scoped_session", lambda: fake_session)
+
+        app = flask.Flask(__name__)
+        app.register_blueprint(crr.bp)
+        resp = app.test_client().get("/document/77/chapters")
+        data = resp.get_json()
+
+        assert data["obsidian_note_paths"] == ["Geopolityka i polityka/Kraje/Testowa książka.md"]
+
 
 class TestCompactReaderChapters:
     def test_long_document_keeps_its_chapters(self):
@@ -322,6 +354,10 @@ class TestChapterContentEndpoint:
         assert data["chapter_total"] == 3
         assert data["prev"] == 1
         assert data["next"] == 3
+        # Markdown chapters have no chapter-scoped analysis run in this
+        # fixture (run.scope is None, not this chapter's title) -- no chunks
+        # to aggregate notes from.
+        assert data["chapter_obsidian_note_paths"] == []
 
     def test_short_document_is_returned_as_one_continuous_chapter(self, client):
         data = client.get("/document/77/chapter/1?reader=1").get_json()
@@ -570,6 +606,7 @@ class FakeTranscriptDoc:
     url = None
     published_on = None
     ingested_at = None
+    obsidian_note_paths: list = []
 
 
 @pytest.fixture
@@ -580,7 +617,8 @@ def transcript_run():
     run.synthesis = None
     run.chunks = [
         _make_chunk(id=201, document_id=88, position=1, type="TEMAT", topic="Temat pierwszy",
-                    corrected_text="Tekst poprawiony 1", original_text="Oryginał 1"),
+                    corrected_text="Tekst poprawiony 1", original_text="Oryginał 1",
+                    obsidian_note_paths=["Geopolityka i polityka/Kraje/Temat pierwszy.md"]),
         _make_chunk(id=202, document_id=88, position=2, type="REKLAMA", topic="Reklama"),
         _make_chunk(id=203, document_id=88, position=3, type="TEMAT", topic="Temat drugi",
                     corrected_text=None, original_text="Oryginał 2"),
@@ -625,6 +663,7 @@ class TestChaptersFallbackToChunks:
         assert data["chapter_total"] == 2
         assert data["prev"] is None
         assert data["next"] == 2
+        assert data["chapter_obsidian_note_paths"] == ["Geopolityka i polityka/Kraje/Temat pierwszy.md"]
 
     def test_chapter_content_falls_back_to_original_text(self, transcript_client):
         resp = transcript_client.get("/document/88/chapter/2")
@@ -634,6 +673,7 @@ class TestChaptersFallbackToChunks:
         assert data["text"] == "Oryginał 2"
         assert data["prev"] == 1
         assert data["next"] is None
+        assert data["chapter_obsidian_note_paths"] == []
 
     def test_out_of_range_chunk_chapter_rejected(self, transcript_client):
         resp = transcript_client.get("/document/88/chapter/99")

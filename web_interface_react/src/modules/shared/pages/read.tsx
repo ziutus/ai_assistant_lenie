@@ -14,6 +14,7 @@ import TonePanel from "../components/TonePanel/tonePanel";
 import { useIsDesktop } from "../hooks/useIsDesktop";
 import { toOpenableSourceUrl } from "../utils/sourceUrl";
 import ChapterGroupsPanel from "../components/ChapterGroupsPanel/ChapterGroupsPanel";
+import { buildObsidianNoteUrl } from "../utils/obsidian";
 import styles from "./read.module.css";
 
 // Lazy-loaded: leaflet (~150 kB) should not land in the main bundle for users
@@ -70,6 +71,11 @@ interface ChapterContent {
   // Synthesis of a run analysed with this chapter as scope (GET /document/:id/chapter/:pos) —
   // takes priority over the whole-document synthesis from GET /document/:id/chapters.
   synthesis_chapter?: string | null;
+  // Notes written from this chapter's DocumentChunk(s) via the /lenie-obsidian-note
+  // skill — either a chapter-scoped analysis run's chunks (book chapters) or the
+  // single TEMAT chunk this chapter maps to (transcript-chunk fallback chapters).
+  // Distinct name from the document-level docObsidianNotePaths state below.
+  chapter_obsidian_note_paths?: string[];
   prev: number | null;
   next: number | null;
 }
@@ -731,6 +737,7 @@ const Read: React.FC = () => {
   const [docUrl, setDocUrl] = React.useState<string | null>(null);
   const [docPublishedOn, setDocPublishedOn] = React.useState<string | null>(null);
   const [docIngestedAt, setDocIngestedAt] = React.useState<string | null>(null);
+  const [docObsidianNotePaths, setDocObsidianNotePaths] = React.useState<string[]>([]);
   const [content, setContent] = React.useState<ChapterContent | null>(null);
   // sidebar scope: current chapter (default) vs whole document
   const [scopeChapter, setScopeChapter] = React.useState(true);
@@ -801,6 +808,7 @@ const Read: React.FC = () => {
     setDocUrl(null);
     setDocPublishedOn(null);
     setDocIngestedAt(null);
+    setDocObsidianNotePaths([]);
     setError(null);
     (async () => {
       try {
@@ -824,6 +832,7 @@ const Read: React.FC = () => {
         setDocUrl(data.url ?? null);
         setDocPublishedOn(data.published_on ?? null);
         setDocIngestedAt(data.ingested_at ?? null);
+        setDocObsidianNotePaths(data.obsidian_note_paths ?? []);
       } catch (e) {
         setError(String(e));
       }
@@ -1626,6 +1635,47 @@ const Read: React.FC = () => {
                       {tag}
                     </span>
                   ))}
+                </div>
+              </details>
+            )}
+
+            {(docObsidianNotePaths.length > 0 || !!content?.chapter_obsidian_note_paths?.length) && (
+              <details open style={{
+                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
+                padding: 10, marginTop: 12,
+              }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
+                  📝 Notatki Obsidian ({new Set([
+                    ...docObsidianNotePaths, ...(content?.chapter_obsidian_note_paths ?? []),
+                  ]).size})
+                </summary>
+                <div style={{ fontSize: "0.8em", marginTop: 8 }}>
+                  {docObsidianNotePaths.length > 0 && (
+                    <div>
+                      Notatka dokumentu:{" "}
+                      {docObsidianNotePaths.map((notePath, i) => (
+                        <React.Fragment key={notePath}>
+                          {i > 0 && ", "}
+                          <a href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>
+                            {notePath.split("/").pop()?.replace(/\.md$/i, "")}
+                          </a>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  )}
+                  {!!content?.chapter_obsidian_note_paths?.length && (
+                    <div style={{ marginTop: docObsidianNotePaths.length > 0 ? 4 : 0 }}>
+                      Notatka tego rozdziału:{" "}
+                      {content.chapter_obsidian_note_paths.map((notePath, i) => (
+                        <React.Fragment key={notePath}>
+                          {i > 0 && ", "}
+                          <a href={buildObsidianNoteUrl(notePath)} title={`Otwórz w Obsidianie: ${notePath}`}>
+                            {notePath.split("/").pop()?.replace(/\.md$/i, "")}
+                          </a>
+                        </React.Fragment>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </details>
             )}
