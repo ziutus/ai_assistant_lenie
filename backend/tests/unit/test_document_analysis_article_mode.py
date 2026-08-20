@@ -14,7 +14,7 @@ import pytest
 import library.chunk_llm_analysis as llm
 import library.document_analysis_service as das
 from library.db.models import DocumentChunk
-from library.document_analysis_service import ANALYSIS_MODES, DocumentAnalysisService
+from library.document_analysis_service import ANALYSIS_MODES, DocumentAnalysisService, _apply_tags
 
 
 ARTICLE_TEXT = (
@@ -30,6 +30,18 @@ class FakeDoc:
     text_md = None
     text_raw = None
     tags = None
+
+
+def test_country_tags_are_added_when_thematic_tagging_is_empty(monkeypatch):
+    doc = FakeDoc()
+    monkeypatch.setattr("library.article_tagging.tag_article_with_llm", lambda text, title: [])
+    monkeypatch.setattr(
+        "library.article_tagging.extract_countries_hybrid", lambda text, title: ["kraj-sudan", "kraj-katar"],
+    )
+
+    _apply_tags(doc, "Sudan i Katar są omawiane w artykule.")
+
+    assert doc.tags == "kraj-sudan,kraj-katar"
 
 
 @pytest.fixture
