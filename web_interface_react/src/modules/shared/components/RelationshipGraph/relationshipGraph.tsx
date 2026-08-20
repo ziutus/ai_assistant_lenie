@@ -15,6 +15,10 @@ export interface RelationshipGraphNode {
   external_url?: string | null;
   linked_to_source?: boolean;
   context_only?: boolean;
+  // Organization.description (set via PATCH /organizations/<id> or the
+  // organization_descriptions_backfill.py LLM backfill) — shown as a native
+  // hover tooltip on the node and in the details panel below the graph.
+  description?: string | null;
 }
 
 export interface RelationshipGraphEdge {
@@ -108,6 +112,7 @@ export default function RelationshipGraph({ data }: { data: RelationshipGraphDat
       return {
         id: node.id,
         label: node.label,
+        title: node.description ?? undefined,
         color: { background: color, border: color, highlight: { background: color, border: "#0f172a" } },
       };
     }));
@@ -138,6 +143,7 @@ export default function RelationshipGraph({ data }: { data: RelationshipGraphDat
         <strong>{selected.label}</strong> <span style={{ color: "#64748b" }}>({TYPE_LABELS[selected.type]})</span>
         {selected.external_url ? <> {" "}<a href={selected.external_url} target="_blank" rel="noreferrer">otwórz ↗</a></>
           : selected.href ? <> {" "}<a href={selected.href}>zobacz</a></> : null}
+        {selected.description && <div style={{ color: "#475569", marginTop: 2 }}>{selected.description}</div>}
         {selectedEdges.length > 0 && <div style={{ color: "#64748b", marginTop: 2 }}>
           {selectedEdges.map(edge => EDGE_LABELS[edge.type] ?? edge.type).filter((value, index, values) => values.indexOf(value) === index).join(" · ")}
         </div>}
