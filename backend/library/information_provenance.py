@@ -365,6 +365,36 @@ def refresh_document_information_sources(session, doc, text: str, model: str) ->
     return {"sources": created}
 
 
+def refresh_rule_based_sources(session, doc, items: list[dict]) -> dict:
+    """Persist deterministic (non-LLM) source links detected during article
+    cleanup — e.g. Interia's recurring "bliżej świata" foreign-source
+    attribution paragraph (`library/article_cleaner.py`), which is stripped
+    from the article text at cleanup time, before `refresh_document_information_sources()`
+    (the LLM step) ever runs over it. Additive/idempotent: only replaces rows
+    from this same extraction method, leaving publisher/LLM/NER links intact.
+    """
+    session.execute(delete(DocumentInformationSource).where(
+        DocumentInformationSource.document_id == doc.id,
+        DocumentInformationSource.extraction_method == "rule",
+    ))
+    created = []
+    for item in items:
+        source = _get_or_create_source(session, item)
+        session.add(DocumentInformationSource(
+            document_id=doc.id,
+            source_id=source.id,
+            role=item["role"],
+            raw_mention=item["raw_mention"],
+            source_url=None,
+            evidence_excerpt=item.get("evidence_excerpt"),
+            confidence=item["confidence"],
+            extraction_method="rule",
+            review_status="auto_accepted",
+        ))
+        created.append((source.canonical_name, item["role"]))
+    return {"sources": created}
+
+
 def refresh_ner_cited_sources(session, doc, text: str, organizations: list[dict]) -> dict:
     """Refresh only cheap NER/context source links, preserving URL and LLM provenance."""
     session.execute(delete(DocumentInformationSource).where(

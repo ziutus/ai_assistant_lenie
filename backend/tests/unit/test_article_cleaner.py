@@ -16,6 +16,7 @@ from library.article_cleaner import (
     _is_portal_internal_link,
     _strip_leading_onet_ai_summary,
     _strip_interia_chrome_blocks,
+    _strip_interia_blizej_swiata,
     clean_article_text,
     resolve_relative_publication_date,
 )
@@ -408,6 +409,59 @@ class TestInteriaCleaning:
         )
         assert "ElevenLabs" not in result["text"]
         assert "Treść artykułu." in result["text"]
+
+    BLIZEJ_SWIATA_PARAGRAPH = (
+        'Interia współpracuje z czołowymi redakcjami na świecie. W naszym '
+        'cotygodniowym, piątkowym cyklu "Interia bliżej świata" publikujemy '
+        'najciekawsze teksty najważniejszych zagranicznych gazet. Brytyjski '
+        '"The Economist", z którego pochodzi poniższy artykuł, ukazuje się '
+        'nieprzerwanie od 1843 r. i należy do najpopularniejszych na świecie '
+        'magazynów poświęconych tematyce politycznej i biznesowej. Ma opinię '
+        'jednego z bardziej wpływowych tytułów prasowych na świecie. Tygodnik '
+        'od samego początku niezmiennie trzyma się liberalnego kursu.'
+    )
+
+    def test_blizej_swiata_paragraph_stripped_and_source_extracted(self):
+        text = f"{LONG_PARAGRAPH}\n\n{self.BLIZEJ_SWIATA_PARAGRAPH}\n\n{LONG_PARAGRAPH}"
+        cleaned, info = _strip_interia_blizej_swiata(text)
+        assert "Interia współpracuje z czołowymi redakcjami" not in cleaned
+        assert "The Economist" not in cleaned
+        assert cleaned.count(LONG_PARAGRAPH) == 2
+        assert info == {
+            "canonical_name": "The Economist",
+            "raw_mention": "The Economist",
+            "role": "republication",
+            "source_type": "newspaper",
+            "domain": None,
+            "evidence_excerpt": self.BLIZEJ_SWIATA_PARAGRAPH,
+            "confidence": 100,
+            "extraction_method": "rule",
+        }
+
+    def test_no_blizej_swiata_paragraph_returns_unchanged(self):
+        assert _strip_interia_blizej_swiata(LONG_PARAGRAPH) == (LONG_PARAGRAPH, None)
+
+    def test_blizej_swiata_paragraph_wrapped_in_italics_leaves_no_stray_asterisk(self):
+        # Realny przypadek (dok. 9394): cały akapit owinięty w kursywę markdown.
+        text = f"{LONG_PARAGRAPH}\n\n*{self.BLIZEJ_SWIATA_PARAGRAPH}*\n\n{LONG_PARAGRAPH}"
+        cleaned, info = _strip_interia_blizej_swiata(text)
+        assert info is not None
+        assert cleaned == f"{LONG_PARAGRAPH}\n\n\n\n{LONG_PARAGRAPH}"
+
+    def test_blizej_swiata_end_to_end_via_clean_article_text(self):
+        text = f"{LONG_PARAGRAPH}\n\n{self.BLIZEJ_SWIATA_PARAGRAPH}\n\n{LONG_PARAGRAPH}"
+        result = clean_article_text(text, url=self.URL)
+        assert "Interia współpracuje z czołowymi redakcjami" not in result["text"]
+        assert result["info_sources"] == [{
+            "canonical_name": "The Economist",
+            "raw_mention": "The Economist",
+            "role": "republication",
+            "source_type": "newspaper",
+            "domain": None,
+            "evidence_excerpt": self.BLIZEJ_SWIATA_PARAGRAPH,
+            "confidence": 100,
+            "extraction_method": "rule",
+        }]
 
 
 class TestResolveRelativePublicationDate:

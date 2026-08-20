@@ -134,6 +134,10 @@ class DocumentProcessingService:
         cleaned = clean_article_text(article, document.url)
         document.text_extracted = article
         document.text_md = cleaned["text"]
+        if cleaned.get("info_sources"):
+            from library.information_provenance import refresh_rule_based_sources
+
+            refresh_rule_based_sources(self.session, document, cleaned["info_sources"])
 
         self._progress(job, "upload_artifacts", document_id)
         artifacts_uploaded = self._upload_artifacts(scratch, document_id)
