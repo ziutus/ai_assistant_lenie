@@ -12,6 +12,7 @@ from library.information_provenance import (
     extract_ner_cited_sources,
     publisher_domain,
     refresh_document_information_sources,
+    refresh_rule_based_sources,
 )
 
 
@@ -190,3 +191,29 @@ def test_refresh_deduplicates_nyt_rule_and_llm_name_variant():
         (1, "publisher"),
         (2, "original_reporting"),
     ]
+
+
+def test_refresh_rule_based_sources_persists_republication_link():
+    session = MagicMock()
+    doc = SimpleNamespace(id=9394, url="https://wydarzenia.interia.pl/test.html", title="Tytuł")
+    economist = SimpleNamespace(id=3, canonical_name="The Economist")
+    item = {
+        "canonical_name": "The Economist",
+        "raw_mention": "The Economist",
+        "role": "republication",
+        "source_type": "newspaper",
+        "domain": None,
+        "evidence_excerpt": "Brytyjski \"The Economist\", z którego pochodzi poniższy artykuł...",
+        "confidence": 100,
+    }
+
+    with patch("library.information_provenance._get_or_create_source", return_value=economist):
+        result = refresh_rule_based_sources(session, doc, [item])
+
+    session.execute.assert_called_once()
+    links = [call.args[0] for call in session.add.call_args_list
+             if isinstance(call.args[0], DocumentInformationSource)]
+    assert [(link.source_id, link.role, link.extraction_method) for link in links] == [
+        (3, "republication", "rule"),
+    ]
+    assert result["sources"] == [("The Economist", "republication")]

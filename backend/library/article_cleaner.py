@@ -1,6 +1,6 @@
 """Czyszczenie wyekstrahowanego markdownu artykułu z artefaktów portali.
 
-Główne wejście: clean_article_text(text, url) — zwraca dict {text, links, images}.
+Główne wejście: clean_article_text(text, url) — zwraca dict {text, links, images, info_sources}.
 Obrazki i linki są zamieniane na markery [imgN] / [linkN], a ich metadane
 trafiają do osobnych list. Reguły czyszczenia: generyczne (wspólne dla
 wszystkich portali) + specyficzne per portal (onet, money, wp, gazeta, bankier).
@@ -400,6 +400,47 @@ def _strip_interia_chrome_blocks(text: str) -> str:
     return text
 
 
+# Cotygodniowy cykl "Interia bliżej świata" — stały redakcyjny akapit
+# zapowiadający przedruk z zagranicznej redakcji (np. The Economist, Financial
+# Times). Zmienia się tylko nazwa redakcji i jej opis, dwa stałe zwroty
+# ("Interia współpracuje z czołowymi redakcjami..." i ", z którego pochodzi
+# ... artykuł") wystarczają jako kotwice. Odległości ograniczone (`.{0,200}?`,
+# `.{0,400}?`), żeby przy braku pustej linii między akapitami nie połknąć
+# zaczątku treści artykułu.
+_INTERIA_BLIZEJ_SWIATA_RE = re.compile(
+    r'Interia współpracuje z czołowymi redakcjami na świecie\.'
+    r'.{0,200}?'
+    r'["„]\s*(?P<source_name>[^"„”\n]{2,80}?)\s*["”],\s*z którego pochodzi (?:poniższy|powyższy|niniejszy)\s+artykuł'
+    r'.{0,400}?(?=\n\s*\n|\Z)',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _strip_interia_blizej_swiata(text: str) -> tuple[str, dict | None]:
+    """Usuń akapit cyklu "Interia bliżej świata" i wyciągnij nazwę zagranicznej
+    redakcji jako regułowe (nie-LLM) powiązanie źródła. Ekstrakcja regexem
+    zamiast poleganiem wyłącznie na LLM (jak `information_provenance.py`),
+    bo ten akapit i tak znika z tekstu artykułu — powiązanie musi przetrwać
+    jego usunięcie, więc jest wyciągane w tym samym miejscu, w którym akapit
+    jest usuwany."""
+    match = _INTERIA_BLIZEJ_SWIATA_RE.search(text)
+    if match is None:
+        return text, None
+    source_name = match.group("source_name").strip()
+    info_source = {
+        "canonical_name": source_name,
+        "raw_mention": source_name,
+        "role": "republication",
+        "source_type": "newspaper",
+        "domain": None,
+        "evidence_excerpt": match.group(0).strip()[:1000],
+        "confidence": 100,
+        "extraction_method": "rule",
+    }
+    cleaned = text[:match.start()] + text[match.end():]
+    return cleaned, info_source
+
+
 # Względne znaczniki czasu publikacji (interia.pl i najpewniej inne portale
 # korzystające z podobnych szablonów). Wspólne dla usuwania linii-szumu
 # (_clean_lines_interia) i dla resolve_relative_publication_date poniżej —
@@ -667,12 +708,16 @@ def clean_article_text(text: str, url: str = "") -> dict:
     """Wyczyść wyekstrahowany markdown. Zwraca dict: {text, links, images}."""
     extracted_links = []
     extracted_images = []
+    info_sources = []
     portal = _detect_portal(url)
 
     if portal == "onet":
         text = _strip_leading_onet_ai_summary(text)
     elif portal == "interia":
         text = _strip_interia_chrome_blocks(text)
+        text, interia_source = _strip_interia_blizej_swiata(text)
+        if interia_source:
+            info_sources.append(interia_source)
 
     # 1. Napraw wieloliniowe linki i tagi markdown
     text = links_correct(text)
@@ -830,4 +875,5 @@ def clean_article_text(text: str, url: str = "") -> dict:
         "links": extracted_links,
         "images": extracted_images,
         "portal": portal,
+        "info_sources": info_sources,
     }
