@@ -417,6 +417,10 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     Person entities resolved by stage-4 (document_persons link with
     raw_mention == entity_text) carry "person_id"/"canonical_name"/
     "person_description"/"wikidata_qid"/"confidence".
+    Organization entities resolved to the global registry additionally carry
+    "organization_description" (Organization.description, e.g. "EDF — francuski
+    operator energetyczny"; None until someone fills it in via PATCH
+    /organizations/<id> or the backfill script).
     """
     from library.db.models import DocumentInformationSource, DocumentOrganization, InfraGeometry
     from library.person_registry import get_document_persons
@@ -496,6 +500,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
                 item["organization_id"] = organization_link.organization_id
                 item["organization_link_id"] = organization_link.id
                 item["organization_review_status"] = organization_link.review_status
+                item["organization_description"] = organization_link.organization.description
         grouped.setdefault(row.entity_type, []).append(item)
     return grouped
 

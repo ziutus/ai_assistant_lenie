@@ -333,6 +333,30 @@ function renderInline(
   });
 }
 
+// Surface forms of persons/organizations that have a stored description
+// (person_description / organization_description), for the always-on
+// "hover a mention in the text" tooltip — distinct from highlightTerms,
+// which only lights up on an explicit chip click.
+interface EntityDescriptions {
+  terms: string[];
+  descriptionByTerm: Map<string, string>; // key: term.toLowerCase()
+}
+
+function buildEntityDescriptions(persons: EntityItem[], organizations: EntityItem[]): EntityDescriptions {
+  const terms: string[] = [];
+  const descriptionByTerm = new Map<string, string>();
+  const add = (item: EntityItem, description: string | null | undefined) => {
+    if (!description) return;
+    entityHighlightTerms(item).forEach(term => {
+      terms.push(term);
+      descriptionByTerm.set(term.toLowerCase(), description);
+    });
+  };
+  persons.forEach(item => add(item, item.person_description));
+  organizations.forEach(item => add(item, item.organization_description));
+  return { terms, descriptionByTerm };
+}
+
 // All complete-token occurrences of the given terms. Terms are matched
 // case-insensitively at Unicode-aware boundaries, except that a capitalized
 // term only matches a capitalized surface form. Longer overlapping terms win.
@@ -389,18 +413,25 @@ function renderParagraphWithNotes(
   onAnchorClick?: (anchorId: string) => void,
   images?: Map<number, ChapterImage>,
   wikiLinks?: Map<string, number>,
+  described?: EntityDescriptions,
 ): { nodes: React.ReactNode[]; paragraphTint: UserNote | null; timelineTint: boolean; timelineFound: boolean } {
-  type Match = { idx: number; len: number; kind: "note" | "entity" | "timeline"; note?: UserNote };
+  type Match = { idx: number; len: number; kind: "note" | "entity" | "timeline" | "described"; note?: UserNote; description?: string };
   const noteMatches: Match[] = notes
     .map(n => ({ note: n, idx: text.indexOf(n.anchor_quote), len: n.anchor_quote.length, kind: "note" as const }))
     .filter(m => m.idx >= 0);
   const entityMatches: Match[] = findEntityMatches(text, highlightTerms ?? [])
     .map(m => ({ ...m, kind: "entity" as const }));
+  const describedMatches: Match[] = described
+    ? findEntityMatches(text, described.terms).map(m => ({
+        ...m, kind: "described" as const,
+        description: described.descriptionByTerm.get(text.slice(m.idx, m.idx + m.len).toLowerCase()),
+      })).filter(m => m.description)
+    : [];
   const timelineIndex = timelineAnchor ? text.indexOf(timelineAnchor) : -1;
   const timelineMatches: Match[] = timelineAnchor && timelineIndex >= 0
     ? [{ idx: timelineIndex, len: timelineAnchor.length, kind: "timeline" }]
     : [];
-  const matches = [...timelineMatches, ...noteMatches, ...entityMatches].sort((a, b) => a.idx - b.idx);
+  const matches = [...timelineMatches, ...noteMatches, ...entityMatches, ...describedMatches].sort((a, b) => a.idx - b.idx);
   const paragraphTint = notes.find(n =>
     text.indexOf(n.anchor_quote) < 0
     && normalizeAnchorText(text).includes(normalizeAnchorText(n.anchor_quote))) ?? null;
@@ -443,6 +474,16 @@ function renderParagraphWithNotes(
         >
           {renderInline(quoted, refs, onAnchorClick, images, wikiLinks)}
         </mark>
+      );
+    } else if (m.kind === "described") {
+      nodes.push(
+        <span
+          key={`desc-${i}`}
+          title={m.description}
+          style={{ borderBottom: "1px dotted #64748b", cursor: "help" }}
+        >
+          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks)}
+        </span>
       );
     } else {
       nodes.push(
@@ -597,6 +638,7 @@ function renderMarkdown(
   images?: Map<number, ChapterImage>,
   onAnchorClick?: (anchorId: string) => void,
   wikiLinks?: Map<string, number>,
+  described?: EntityDescriptions,
 ): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   splitCodeFences(text).forEach((segment, segIndex) => {
@@ -619,7 +661,7 @@ function renderMarkdown(
         const trailingText = markerMatch[2]?.trim();
         if (trailingText) {
           const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
-            trailingText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks,
+            trailingText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
           );
           out.push(
             <p key={`${key}-trailing`} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={{
@@ -677,7 +719,7 @@ function renderMarkdown(
       const isNote = /^([¹²³⁴⁵⁶⁷⁸⁹⁰]+|\d{1,3} )\S*\s*(http|www|[A-ZŻŹĆĄŚĘŁÓŃ])/.test(trimmed) && trimmed.length < 400;
       const paraText = trimmed.replace(/\n/g, " ");
       const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
-        paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks,
+        paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
       );
       out.push(
         <p key={key} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={isNote
@@ -1236,6 +1278,12 @@ const Read: React.FC = () => {
   const scoped = scopeChapter ? chapterScope : null;
   const shownPersons = scoped ? scoped.persons : personItems;
   const shownOrganizations = scoped ? scoped.organizations : organizationItems;
+  // Surface forms with a stored person_description/organization_description —
+  // rendered as a dotted-underline hover tooltip directly on the chapter text.
+  const entityDescriptions = React.useMemo(
+    () => buildEntityDescriptions(shownPersons, shownOrganizations),
+    [shownPersons, shownOrganizations],
+  );
   const shownPlaceItems = scoped ? scoped.placeItems : placeItems;
   const shownMarkers = scoped ? scoped.markers : places;
   const shownCountries = scoped ? scoped.countries : countries;
@@ -1447,7 +1495,7 @@ const Read: React.FC = () => {
             <article style={{ fontSize: "1.02em" }} onContextMenu={onTextContextMenu}>
               {renderMarkdown(
                 content.text, chapterNotes, referencesByMarker, highlightTerms, timelineHighlight?.quote,
-                imagesByPosition, handleAnchorClick, wikiLinksByTitle,
+                imagesByPosition, handleAnchorClick, wikiLinksByTitle, entityDescriptions,
               )}
             </article>
           )}

@@ -20,6 +20,7 @@ imports/
 ├── fix_duplicate_analysis_runs.py # One-off: supersede abandoned duplicate analysis runs (same document+scope, never reviewed)
 ├── fix_place_tags.py         # One-off: merge duplicate miejsce-* tags (inflected NER variants) via geocode_cache
 ├── freedom_house_import.py   # Query Freedom House country ratings via OWID API (no DB)
+├── organization_descriptions_backfill.py  # One-off: LLM-generated short descriptions for organizations missing one (reader tooltip)
 ├── migrate_data_to_cache.py  # One-time migration: data/ files → CACHE_DIR convention
 ├── youtube_add.py            # Ad-hoc: process a single YouTube video (optionally + LLM analysis)
 ├── youtube_backfill_author.py # One-off: fetch channel name for existing videos missing 'byline'
@@ -345,6 +346,26 @@ python imports/fix_place_tags.py            # dry-run (default)
 python imports/fix_place_tags.py --apply    # write changes
 python imports/fix_place_tags.py --id 9216  # single document
 ```
+
+### `organization_descriptions_backfill.py`
+
+One-off backfill for `Organization.description` (global organization registry, `library/db/models.py`) — shown as a tooltip and ℹ️ marker on organization chips in the reader (`EntitiesPanel.tsx`/`read.tsx`, `GET /website_entities`'s `organization_description` field). For each organization missing a description, asks the tagging LLM (`TAGGING_MODEL` config, default Bielik) for one short Polish sentence; skips (never guesses) an organization the model answers "NIEZNANA" for, so an ambiguous/obscure name doesn't get a wrong tooltip shown to every future reader. New organizations resolved after this backfill (or edited by a human) can also get their `description` set directly via `PATCH /organizations/<id>` from the reader's "Edytuj" mode.
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`, only when `--apply` is passed. LLM calls happen in both dry-run and `--apply` (there's no other way to preview the description).
+
+**Running:**
+```bash
+cd backend
+python imports/organization_descriptions_backfill.py            # dry-run (default)
+python imports/organization_descriptions_backfill.py --apply
+python imports/organization_descriptions_backfill.py --apply --limit 20
+python imports/organization_descriptions_backfill.py --apply --id 534
+```
+
+**Arguments:**
+- `--apply` — write to the database (default: dry-run only, prints what each organization would get)
+- `--id N` — process a single organization by id
+- `--limit N` — max number of organizations to process
 
 ### `backfill_obsidian_content_groups.py`
 

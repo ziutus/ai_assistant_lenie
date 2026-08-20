@@ -44,6 +44,9 @@ export interface EntityItem {
   organization_id?: number;
   organization_link_id?: number;
   organization_review_status?: string;
+  // Short explanation shown as a tooltip (e.g. "EDF — francuski operator
+  // energetyczny") — Organization.description, edited via PATCH /organizations/<id>.
+  organization_description?: string | null;
 }
 
 interface EntitiesByType {
@@ -153,10 +156,13 @@ export const EntityChips = ({
               ...(item.verified === false ? { opacity: 0.55 } : {}),
               ...(isResolvedPerson ? { background: "#e3edf9", border: "1px solid #7ba3d0" } : {}),
             }}
-            title={personTitle ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined)}
+            title={personTitle
+              ?? item.organization_description
+              ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined)}
           >
             {item.text}
             {item.pipeline && <span title={`Rurociąg (${item.pipeline.substance ?? "?"}) — dane © OpenStreetMap`}> 🛢️</span>}
+            {item.organization_description && <span title={item.organization_description} style={{ color: "#667" }}> ℹ️</span>}
             {item.verified === true && <span style={{ color: "#2e7d43" }}> ✓</span>}
             {isResolvedPerson && (
               <span style={{ color: item.confidence === "manual_review" ? "#b45309" : "#1d5ca8" }}>
@@ -257,6 +263,9 @@ const EntitiesPanel = ({
   // "Dodaj alias" flow
   const [aliasFor, setAliasFor] = React.useState<EntityItem | null>(null);
   const [aliasText, setAliasText] = React.useState("");
+  // "Opis" flow (orgName): chip whose Organization.description is being edited
+  const [orgDescriptionFor, setOrgDescriptionFor] = React.useState<EntityItem | null>(null);
+  const [orgDescriptionText, setOrgDescriptionText] = React.useState("");
   // "Wyklucz" flow: entity to suppress in future NER runs (ner_exclusions)
   const [excludeFor, setExcludeFor] = React.useState<{ item: EntityItem; entityType: string } | null>(null);
   const [deleteFor, setDeleteFor] = React.useState<EntityItem | null>(null);
@@ -310,6 +319,7 @@ const EntitiesPanel = ({
     setOrgMergeFor(null);
     setPlaceMergeFor(null);
     setAliasFor(null);
+    setOrgDescriptionFor(null);
     setExcludeFor(null);
     setDeleteFor(null);
     setReviewReason("");
@@ -538,6 +548,26 @@ const EntitiesPanel = ({
     }
   };
 
+  const handleOrgDescriptionSubmit = async () => {
+    if (!orgDescriptionFor?.organization_id) {
+      return;
+    }
+    setMessage("");
+    try {
+      await axios.patch(
+        `${apiUrl}/organizations/${orgDescriptionFor.organization_id}`,
+        { description: orgDescriptionText.trim() },
+        { headers: jsonHeaders },
+      );
+      setOrgDescriptionFor(null);
+      setOrgDescriptionText("");
+      fetchEntities();
+    } catch (error: any) {
+      console.error("Error updating organization description", error);
+      setMessage(`Nie udało się zapisać opisu: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
   const handleAliasSubmit = async () => {
     if (!aliasFor?.person_id || !aliasText.trim()) {
       return;
@@ -662,6 +692,25 @@ const EntitiesPanel = ({
           }}
         >
           ↷
+        </button>
+      )}
+      {entityType === "orgName" && item.organization_id != null && (
+        <button
+          type="button"
+          style={{ ...chipActionStyle, color: "#667" }}
+          title="Dodaj/edytuj krótki opis (widoczny jako podpowiedź w czytniku)"
+          onClick={() => {
+            setOrgDescriptionFor(item);
+            setOrgDescriptionText(item.organization_description ?? "");
+            setDeleteFor(null);
+            setExcludeFor(null);
+            setMergeFor(null);
+            setOrgMergeFor(null);
+            setPlaceMergeFor(null);
+            setAliasFor(null);
+          }}
+        >
+          ℹ️
         </button>
       )}
       {entityType === "orgName" && item.organization_link_id != null && (
@@ -882,6 +931,27 @@ const EntitiesPanel = ({
               {" "}<strong>{p.text}</strong>
             </div>
           ))}
+        </div>
+      )}
+
+      {editMode && orgDescriptionFor && (
+        <div style={{ marginTop: 8, padding: 8, background: "#f0fff4", borderRadius: 6 }}>
+          <div style={{ marginBottom: 4 }}>
+            Krótki opis dla: <strong>{orgDescriptionFor.text}</strong> (widoczny jako podpowiedź na chipie w czytniku)
+            <button type="button" style={{ ...chipActionStyle, marginLeft: 8 }} onClick={() => setOrgDescriptionFor(null)}>✕ anuluj</button>
+          </div>
+          <textarea
+            value={orgDescriptionText}
+            onChange={(e) => setOrgDescriptionText(e.target.value)}
+            placeholder="np. francuski operator energetyczny, właściciel elektrowni jądrowych"
+            rows={2}
+            style={{ padding: "4px 8px", width: "min(420px, 95%)" }}
+          />
+          <div>
+            <button className={"button"} type="button" style={{ marginTop: 6 }} onClick={handleOrgDescriptionSubmit}>
+              Zapisz
+            </button>
+          </div>
         </div>
       )}
 

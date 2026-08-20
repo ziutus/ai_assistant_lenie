@@ -1243,6 +1243,7 @@ def document_relationship_graph(doc_id: int):
                 "href": f"/information-sources?id={source.id}",
                 "external_url": link.source_url,
                 "linked_to_source": True,
+                "description": organization.description,
             })
         else:
             source_node_id = f"information_source:{source.id}"
@@ -1292,7 +1293,8 @@ def document_relationship_graph(doc_id: int):
     ).where(DocumentOrganization.document_id == doc_id)).all():
         add_node({"id": f"organization:{organization.id}", "type": "organization",
                   "label": organization.canonical_name,
-                  "href": f"/list?q={organization.canonical_name}", "context_only": True})
+                  "href": f"/list?q={organization.canonical_name}", "context_only": True,
+                  "description": organization.description})
     # Reviewer-approved claim provenance.  Resolve against graph labels first
     # to reuse organization/source nodes; retain a named node for a relation
     # whose entity has not otherwise been extracted yet.
@@ -1645,6 +1647,39 @@ def organization_get(organization_id: int):
         ],
         "document_count": document_count or 0,
     }, 200
+
+
+@app.route('/organizations/<int:organization_id>', methods=['PATCH', 'OPTIONS'])
+def organization_update(organization_id: int):
+    """Edit an organization's description/type — shown as a tooltip on its
+    chip in the reader (EntitiesPanel). Body: {"description": "..."} and/or
+    {"organization_type": "..."}. Empty string clears the field."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import Organization
+
+    session = get_scoped_session()
+    organization = session.get(Organization, organization_id)
+    if organization is None:
+        return {"status": "error", "message": "Organization not found"}, 404
+
+    data = request.get_json(silent=True) or {}
+    if 'description' in data:
+        organization.description = (data.get('description') or "").strip() or None
+    if 'organization_type' in data:
+        organization.organization_type = (data.get('organization_type') or "").strip() or None
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("organization update failed for %s", organization_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "id": organization.id,
+                    "description": organization.description,
+                    "organization_type": organization.organization_type}), 200
 
 
 @app.route('/organizations/<int:organization_id>/aliases', methods=['POST', 'OPTIONS'])
