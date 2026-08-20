@@ -266,7 +266,7 @@ def patch_document_groups(document_id):
     except ValueError as exc:
         session.rollback()
         abort(400, str(exc))
-    return get_document_groups()
+    return get_document_groups(document_id)
 
 
 def _reader_chunk(session, document_id: int, position: int) -> DocumentChunk:
