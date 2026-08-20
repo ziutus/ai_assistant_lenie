@@ -6,6 +6,7 @@ organization with mention_count 4.
 """
 
 from unittest.mock import MagicMock
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,6 +20,7 @@ from library.organization_registry import (  # noqa: E402
     merge_ner_groups,
     normalize_alias,
     resolve_alias,
+    select_ambiguous_alias_candidate_with_llm,
 )
 
 
@@ -94,6 +96,31 @@ class TestAmbiguousAliasCandidates:
 
         assert ambiguous_alias_candidates(session, "  ") == []
         session.execute.assert_not_called()
+
+
+class TestAmbiguousAliasLlmSelection:
+    def test_selects_only_an_id_from_the_candidate_list(self, monkeypatch):
+        sudan = SimpleNamespace(id=11, organization=SimpleNamespace(canonical_name="Siły Zbrojne Sudanu"),
+                                context_hint="Sudan")
+        credit = SimpleNamespace(id=12, organization=SimpleNamespace(canonical_name="SAF"),
+                                 context_hint="Kredyty")
+        response = SimpleNamespace(response_text="11")
+        monkeypatch.setattr("library.ai.ai_ask", lambda *args, **kwargs: response)
+        monkeypatch.setattr("library.article_tagging._tagging_model", lambda: "Bielik-11B-v3.0-Instruct")
+
+        chosen = select_ambiguous_alias_candidate_with_llm(
+            "Siłami Zbrojnymi Sudanu (SAF) walczą z RSF.", "Sudan", "SAF", [sudan, credit],
+        )
+
+        assert chosen is sudan.organization
+
+    def test_rejects_an_id_outside_the_closed_candidate_list(self, monkeypatch):
+        candidate = SimpleNamespace(id=11, organization=SimpleNamespace(canonical_name="SAF"), context_hint="Kredyty")
+        other = SimpleNamespace(id=12, organization=SimpleNamespace(canonical_name="Inny SAF"), context_hint="Inne")
+        monkeypatch.setattr("library.ai.ai_ask", lambda *args, **kwargs: SimpleNamespace(response_text="999"))
+        monkeypatch.setattr("library.article_tagging._tagging_model", lambda: "Bielik-11B-v3.0-Instruct")
+
+        assert select_ambiguous_alias_candidate_with_llm("SAF w tekście", "Tytuł", "SAF", [candidate, other]) is None
 
 
 class TestResolveAlias:

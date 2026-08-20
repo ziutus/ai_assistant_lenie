@@ -23,7 +23,13 @@ from library.db.models import (
 )
 from library.ner_client import NERServiceUnavailable, aggregate_entities_detailed, extract_entities, is_available
 from library.ner_normalization import normalize_ner_text
-from library.organization_registry import merge_ner_groups, resolve_or_create
+from library.organization_registry import (
+    CONFIDENCE_CONTEXT_LLM_MATCHED,
+    ambiguous_alias_candidates,
+    merge_ner_groups,
+    resolve_or_create,
+    select_ambiguous_alias_candidate_with_llm,
+)
 
 logger = logging.getLogger(__name__)
 TEMPORAL_CONTEXT_WINDOW = 220
@@ -271,7 +277,22 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         for key in org_keys:
             del groups[key]
         for name, group in merged_org_groups.items():
-            organization, confidence = resolve_or_create(session, name, group["variants"])
+            # A short all-caps orgName can have multiple known meanings.  It
+            # is never a global alias: the LLM gets only the approved local
+            # candidates and may decline to choose.  Full names and ordinary
+            # spelling variants retain the deterministic registry path.
+            candidates = (
+                ambiguous_alias_candidates(session, name)
+                if " " not in name and 2 <= len(name) <= 10 and name.isupper()
+                else []
+            )
+            organization = select_ambiguous_alias_candidate_with_llm(
+                text, getattr(doc, "title", "") or "", name, candidates,
+            )
+            if organization is not None:
+                confidence = CONFIDENCE_CONTEXT_LLM_MATCHED
+            else:
+                organization, confidence = resolve_or_create(session, name, group["variants"])
             canonical_name = organization.canonical_name
             merged_key = ("orgName", canonical_name)
             existing = groups.get(merged_key)
