@@ -49,6 +49,9 @@ library/
 │   ├── recorder.py   # record_llm_usage() — the SINGLE write path for llm_usage_logs (exactly one row per LLM call); snapshots the active llm_pricing row, reported cost (Decimal + currency) beats the local estimate, missing price → cost_status='unknown' (never an error, never 0); own session, DB failures (incl. SystemExit from config_loader.require()) swallowed (usage_log_id=None); wired into ai.py
 │   └── report.py     # usage_report()/combine_usage_reports() — shape response.usage (a UsageRecord) into JSON-friendly dicts for the diagnostic reports timeline_events.py/tones.py/time_periods.py return from their per-fragment/per-chapter extraction functions; cost is only ever read from usage.cost, never recomputed; replaces the pre-stage-3b `_response_usage()`/`_combine_costs()` duplication in timeline_events.py that other modules imported privately (and that always returned cost=None — AiResponse never had cost_usd/cost/credits_used)
 ├── document_repository.py  # Query layer (ORM, list, search, similarity)
+├── obsidian_reimport_service.py  # Epic 42: read-only import of existing vault notes as Document rows (document_type="obsidian_note")
+├── obsidian_vault_watcher.py     # inotify-based watcher (watchdog) enqueueing a targeted single-note obsidian_reimport job on file change
+├── content_group_suggestion_service.py  # Bielik-powered content-group (Tematy) classification; wired into obsidian_reimport_service's post-import hook
 ├── control_question_selection.py  # Cheap-LLM (Bielik) router narrowing the tag-matched control-question bank (control_questions table, imports/import_control_questions.py) down to the questions a document actually answers (document_control_answers table); wired into library/document_enrichment.py's automatic per-document enrichment stage, same pattern as tones.py/time_periods.py
 ├── year_normalization.py    # coerce_year(value, minimum, maximum) — shared "raw JSON value → plausible year, BCE negative, or None" coercion (search-rebuild stage 5), used by time_periods.py and available to library/search/temporal.py; never raises, bounds are caller-supplied so unrelated features aren't forced to agree on a shared range
 ├── text_functions.py        # Text processing & splitting utilities
@@ -91,13 +94,21 @@ and `POST /feed_items/<id>/restore`; deferred items can later use the existing
 
 **Database tables:** `public.documents` (31 columns), `public.document_embeddings` (vector similarity, optional `chunk_id` FK), `public.document_analysis_runs`, `public.document_chunks`, `public.document_topic_sections`, `public.document_removed_lines`, `public.control_questions`, `public.document_control_answers` — see [`database/CLAUDE.md`](../database/CLAUDE.md) for full column definitions.
 
+### Obsidian vault reimport (Epic 42)
+
+`obsidian_reimport_service.py` walks the vault (`OBSIDIAN_VAULT_PATH` config) and, through the normal `DocumentService.import_document()` pipeline, creates/updates read-only `Document` rows with `document_type="obsidian_note"` for every `.md` file under `PILOT_SUBFOLDERS` (currently `02-wiedza/Informatyka` and `02-wiedza/Geopolityka i polityka` only, not the whole vault) — **contrary to older docs elsewhere in this repo, the backend (NAS) DOES have runtime read access to the Obsidian vault for this path** (905 notes imported as of 2026-08). Synthetic identity/dedup key: `Document.url = f"obsidian://{relative_path}"` (mirrors the `gmail://...`/`file:///ksiazki/...` synthetic-URL conventions), resolvable with `Document.get_by_url()`. Change detection is content-hash based (`Document.obsidian_source_hash`, SHA-256 of the raw file — not mtime, since Obsidian Sync doesn't guarantee it survives cross-device sync): an unchanged file is skipped, a changed file updates the existing row in place (never duplicated) and re-embeds only that note. YAML front matter is stripped from the stored `text`/`text_md`; its `tags` field merges into `Document.tags`. Embeddings use the same whole-document split+embed fallback `documents_pipeline.py` uses for chunk-analysis-less documents — no LLM chunk classification, no human review gate, required for an unattended bulk import. After each create/update, a best-effort `content_group_suggestion_service.request_suggestions()` call enqueues async Bielik content-group (Tematy) classification (`backfill_obsidian_content_groups.py` is the one-off retroactive pass for notes imported before this hook existed).
+
+`obsidian_vault_watcher.py` (Story 42.3) is an inotify-based watcher (`watchdog`) that enqueues a targeted single-note `obsidian_reimport` job (`job.parameters["relative_path"]`) the moment a file changes, instead of waiting for the next scheduled scan; a full-vault walk still runs once a day as a safety net.
+
+This is the *reverse* direction from `Document.obsidian_note_paths`/`DocumentChunk.obsidian_note_paths` (see below) — those store a **link** from an already-imported article/chunk *to* a note written from it by the `/lenie-obsidian-note` skill; `obsidian_reimport_service.py` instead pulls existing vault notes *into* Lenie as their own searchable/embedded documents. A note's `obsidian_note_paths` entry and its reimported `Document.url` can be joined by normalizing the path (prepending the missing `02-wiedza/` prefix when absent) — `obsidian_note_paths` entries are not consistently vault-root-relative in older data.
+
 ### Models (`models/`)
 
 | File | Class/Enum | Purpose |
 |------|------------|---------|
 | `stalker_document_status.py` | `StalkerDocumentStatus` | 15 processing states (URL_ADDED → EMBEDDING_EXIST) |
 | `stalker_document_status_error.py` | `StalkerDocumentStatusError` | 14 error types |
-| `stalker_document_type.py` | `StalkerDocumentType` | 8 document types (movie, youtube, link, webpage, text_message, text, email, social_media_post) |
+| `stalker_document_type.py` | `StalkerDocumentType` | 9 document types (movie, youtube, link, webpage, text_message, text, email, social_media_post, obsidian_note) |
 | `ai_response.py` | `AiResponse` | LLM response container (text, tokens, model info) |
 | `embedding_result.py` | `EmbeddingResult` | Single embedding result (vector, status, token count) |
 | `embedding_results.py` | `EmbeddingResults` | Batch embedding results |
@@ -202,4 +213,5 @@ ASSEMBLYAI
 
 # App config
 EMBEDDING_MODEL, TAGGING_MODEL, ENV_DATA, DEBUG
+OBSIDIAN_VAULT_PATH  # Vault root the NAS backend reads for obsidian_reimport_service.py (default: /app/obsidian-vault)
 ```

@@ -109,6 +109,7 @@ def _make_note(doc_id=9922) -> Document:
     doc.quality = None
     doc.published_on = None
     doc.ingested_at = None
+    doc.obsidian_note_paths = []
     return doc
 
 

@@ -46,6 +46,7 @@ def _make_obsidian_note(doc_id=9766, text_md=NOTE_TEXT) -> Document:
     doc.quality = None
     doc.published_on = None
     doc.ingested_at = None
+    doc.obsidian_note_paths = []
     return doc
 
 

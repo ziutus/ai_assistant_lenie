@@ -62,7 +62,7 @@ Main document storage. Each row represents a collected web resource (article, vi
 |--------|------|-------------|
 | `id` | `serial PK` | Auto-incrementing primary key |
 | `url` | `text NOT NULL` | Source URL |
-| `document_type` | `varchar(50) NOT NULL` | One of: movie, youtube, link, webpage, text_message, text |
+| `document_type` | `varchar(50) NOT NULL` | One of: movie, youtube, link, webpage, text_message, text, email, social_media_post, obsidian_note (read-only rows created by `library/obsidian_reimport_service.py`, Epic 42) — full list in `document_types` lookup table |
 | `processing_status` | `varchar(50) NOT NULL` | Processing state (default: `URL_ADDED`) |
 | `processing_error_code` | `text` | Error details when `processing_status = ERROR` |
 | `title` | `text` | Original title |
@@ -91,6 +91,8 @@ Main document storage. Each row represents a collected web resource (article, vi
 | `ai_summary_needed` | `boolean` | Flag: needs AI summary (default: false) |
 | `uuid` | `varchar(100) NOT NULL DEFAULT gen_random_uuid()` | Global document identifier (ADR-015), UNIQUE |
 | `collection_id` | `integer` | FK → `collections.id` (`ON DELETE SET NULL`) — thematic collection (ADR-017: 1:N; replaced the never-used `project` string column in stage 11c) |
+| `obsidian_note_paths` | `jsonb NOT NULL DEFAULT '[]'` | Vault-relative paths of notes written *from* this document (populated by the `/lenie-obsidian-note` skill) — not to be confused with `obsidian_source_hash` below, which is about notes imported *into* this row |
+| `obsidian_source_hash` | `varchar(64)` | SHA-256 of the source `.md` file's raw content, set only on `document_type='obsidian_note'` rows — change-detection key for `library/obsidian_reimport_service.py` (Epic 42) re-syncing an existing vault note |
 
 **Indexes:** `document_type`, `processing_status`, `ingested_at`, `url`, `collection_id`, `discovery_source_id`, `published_on`, `paywall`, `ai_summary_needed`, `publisher_id`.
 
@@ -285,8 +287,7 @@ in Python (LLM output with stripped diacritics is canonicalized, e.g. "srednia" 
 Lookup/reference table of geopolitical "control questions" (analytical prompts like "Jaką ma armię w porównaniu
 do innych?"), imported from the Obsidian vault's `_pytania_kontrolne/` question bank by
 `imports/import_control_questions.py` — replace semantics per `source_file` (safe to re-run after editing
-questions in Obsidian). The backend (NAS) has no runtime access to that vault, so this table is the only copy
-available to `library/control_question_selection.py`'s router at runtime.
+questions in Obsidian). The backend (NAS) does have runtime read access to the vault for `library/obsidian_reimport_service.py` (Epic 42), but only under its two pilot subfolders (`02-wiedza/Informatyka`, `02-wiedza/Geopolityka i polityka`) — `_pytania_kontrolne/` is outside that scope, so this table remains the only copy of the question bank available to `library/control_question_selection.py`'s router at runtime.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -460,6 +461,9 @@ The `document_type` column (defined in `backend/library/models/stalker_document_
 - `webpage` — full webpage content
 - `text_message` — plain text input
 - `text` — generic text document
+- `email` — imported email (Gmail import)
+- `social_media_post` — social media post
+- `obsidian_note` — read-only import of an existing Obsidian vault note (`library/obsidian_reimport_service.py`, Epic 42), not written back to by the app
 
 ## Docker Setup
 

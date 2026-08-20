@@ -1233,6 +1233,7 @@ def document_chapters(doc_id: int):
         "quality": getattr(doc, "quality", None),
         "published_on": doc.published_on.isoformat() if doc.published_on else None,
         "ingested_at": doc.ingested_at.isoformat() if doc.ingested_at else None,
+        "obsidian_note_paths": doc.obsidian_note_paths or [],
     })
 
 
@@ -1289,6 +1290,7 @@ def _resolve_wiki_links(session, text: str) -> dict[str, int]:
 
 def _resolve_chapter_text(
     session, doc, position: int, *, compact_reader: bool = False,
+    chunk_obsidian_notes: list[str] | None = None,
 ) -> tuple[tuple[str, str, int] | None, str | None]:
     """Resolve one reader chapter to ((text, title, chapter_total), None).
 
@@ -1300,6 +1302,13 @@ def _resolve_chapter_text(
     or a genuinely textless document returns (None, user-facing error
     message) — a plain value, not an exception, so no exception detail can
     leak into the HTTP response.
+
+    ``chunk_obsidian_notes``, if passed, is extended in place with the
+    resolved chunk's ``obsidian_note_paths`` — only meaningful in the
+    chunk-based-fallback branch (transcript documents with no markdown
+    headers). Markdown-chapter documents with their own chapter-scoped
+    analysis run get their chapter-level notes aggregated separately by the
+    caller (document_chapter()), from that run's chunks.
     """
     from library.document_analysis_service import _extract_text
     from library.text_functions import detect_chapters
@@ -1337,6 +1346,8 @@ def _resolve_chapter_text(
         return None, f"scope_chapter {position} out of range (1..{chapter_total})"
 
     chunk = next(c for c in run.chunks if c.id == match["chunk_id"])
+    if chunk_obsidian_notes is not None:
+        chunk_obsidian_notes.extend(chunk.obsidian_note_paths or [])
     return (chunk.corrected_text or chunk.original_text or "", match["title"], chapter_total), None
 
 
@@ -1353,8 +1364,10 @@ def document_chapter(doc_id: int, position: int):
     if doc is None:
         abort(404, f"Document {doc_id} not found")
 
+    chunk_obsidian_notes: list[str] = []
     resolved, error = _resolve_chapter_text(
         session, doc, position, compact_reader=request.args.get("reader") == "1",
+        chunk_obsidian_notes=chunk_obsidian_notes,
     )
     if resolved is None:
         return jsonify({"status": "error", "message": error}), 400
@@ -1426,6 +1439,16 @@ def document_chapter(doc_id: int, position: int):
         .order_by(DocumentAnalysisRun.created_at.desc())
     ).first()
 
+    # Book chapters analysed as their own scope (chapter_run above) carry their
+    # own DocumentChunk rows, separate from the whole-document chunk fallback
+    # chunk_obsidian_notes already covers -- aggregate notes written from any
+    # of that run's chunks too (union, order-preserving, no duplicates).
+    if chapter_run is not None:
+        for run_chunk in chapter_run.chunks:
+            for note_path in (run_chunk.obsidian_note_paths or []):
+                if note_path not in chunk_obsidian_notes:
+                    chunk_obsidian_notes.append(note_path)
+
     wiki_links = _resolve_wiki_links(session, chapter_text)
 
     return jsonify({
@@ -1439,6 +1462,7 @@ def document_chapter(doc_id: int, position: int):
         "images": images,
         "wiki_links": wiki_links,
         "synthesis_chapter": chapter_run.synthesis if chapter_run else None,
+        "chapter_obsidian_note_paths": chunk_obsidian_notes,
         "prev": position - 1 if position > 1 else None,
         "next": position + 1 if position < chapter_total else None,
     })
