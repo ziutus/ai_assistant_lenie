@@ -270,6 +270,33 @@ services:
       retries: 3
       start_period: 15s
 
+  lenie-couchdb:
+    # Prototype service — see docs/adr/adr-024-couchdb-offline-capture-chrome-extension.md.
+    # Not yet wired into the extension or backend ingestion path; deployed
+    # for hands-on testing of the offline-outbox pattern only.
+    image: couchdb:3.5.0
+    container_name: lenie-couchdb
+    restart: unless-stopped
+    # No published port — internal-only, same posture as lenie-ner-service,
+    # until the design and auth story are validated. Reachable from other
+    # containers via http://lenie-couchdb:5984.
+    env_file:
+      - /share/ContainerNew/lenie-env/couchdb.env
+    volumes:
+      - lenie-couchdb-data:/opt/couchdb/data
+    networks:
+      - lenie-net
+    # curl is expected to be present (the image's own entrypoint uses it for
+    # single-node auto-setup) but this hasn't been verified against 3.5.0 on
+    # this NAS yet — watch the first deploy; drop this healthcheck rather
+    # than guess at an alternative if it doesn't work.
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5984/_up"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   obsidian-headless-sync:
     # Pinned to 0.0.14 (verified latest stable tag, July 2026) — GHCR tags for
     # this image do NOT use a "v" prefix (unlike the project's git tags on
@@ -310,4 +337,6 @@ volumes:
   lenie-obsidian-vault-data:
     external: true
   lenie-obsidian-config-data:
+    external: true
+  lenie-couchdb-data:
     external: true
