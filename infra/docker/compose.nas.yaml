@@ -126,7 +126,9 @@ services:
     image: 192.168.200.7:5005/lenie-ai-server:latest
     container_name: lenie-migrate
     restart: "no"
-    command: ["/app/.venv/bin/alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
+    # The repository intentionally has independent Alembic branches; upgrade
+    # every branch rather than failing when more than one head exists.
+    command: ["/app/.venv/bin/alembic", "-c", "/app/alembic.ini", "upgrade", "heads"]
     env_file:
       - /share/ContainerNew/lenie-env/.env
     networks:
