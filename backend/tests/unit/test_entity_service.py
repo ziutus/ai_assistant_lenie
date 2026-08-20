@@ -11,6 +11,7 @@ pytest.importorskip("requests")
 from library.db.models import DocumentEntity, NerExclusion  # noqa: E402
 from library.entity_service import (  # noqa: E402
     _temporal_candidate_rows,
+    filter_entities_to_text,
     get_document_entities,
     is_excluded,
     merge_document_entities,
@@ -82,11 +83,14 @@ class TestRefreshDocumentEntities:
             rows = refresh_document_entities(session, 42, "jakiś tekst")
 
         # advisory lock + SELECT exclusions + replace temporal candidates +
-        # replace entities + replace document_organizations
-        assert session.execute.call_count == 5
+        # replace entities + replace document_organizations + facility refresh
+        assert session.execute.call_count == 6
         lock_query = session.execute.call_args_list[0].args[0]
         assert "pg_advisory_xact_lock" in str(lock_query.compile(dialect=postgresql.dialect()))
-        session.add_all.assert_called_once_with(rows)
+        assert session.add_all.call_args_list[0].args[0] == rows
+        # No recognised facility in RAW; the refresh still replaces its
+        # derived links with an empty set.
+        assert session.add_all.call_args_list[1].args[0] == []
         assert {(r.entity_type, r.entity_text, r.mention_count) for r in rows} == {
             ("persName", "Tusk", 2),
             ("geogName", "cieśnina Ormuz", 1),
@@ -361,6 +365,26 @@ class TestIsExcluded:
 
 
 class TestGetDocumentEntities:
+    def test_filters_facility_by_alias_used_in_chapter(self):
+        grouped = filter_entities_to_text({
+            "facility": [{
+                "id": 5,
+                "text": "Elektrownia jądrowa Gravelines",
+                "count": 3,
+                "variants": ["elektrownia Gravelines", "elektrowni Gravelines"],
+                "facility_description": "Elektrownia jądrowa we Francji.",
+            }],
+        }, "Co powiedział EDF o bezpieczeństwie elektrowni Gravelines?")
+
+        assert grouped["facility"] == [{
+            "id": 5,
+            "text": "Elektrownia jądrowa Gravelines",
+            "count": 1,
+            "variants": ["elektrownia Gravelines", "elektrowni Gravelines"],
+            "facility_description": "Elektrownia jądrowa we Francji.",
+            "chapter_variants": ["elektrowni Gravelines"],
+        }]
+
     def test_groups_by_type(self):
         row1 = MagicMock(id=1, entity_type="persName", entity_text="Tusk", mention_count=2, geocode=None,
                          variants=["Tuska", "Tusk"])
@@ -376,6 +400,7 @@ class TestGetDocumentEntities:
             "orgName": [],
             "geogName": [{"id": 2, "text": "cieśnina Ormuz", "count": 1, "variants": ["Cieśninie Ormuz"]}],
             "placeName": [],
+            "facility": [],
         }
 
     def test_groups_organization_without_geocoding_fields(self):
@@ -424,5 +449,5 @@ class TestGetDocumentEntities:
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = []
         assert get_document_entities(session, 42) == {
-            "persName": [], "orgName": [], "geogName": [], "placeName": [],
+            "persName": [], "orgName": [], "geogName": [], "placeName": [], "facility": [],
         }

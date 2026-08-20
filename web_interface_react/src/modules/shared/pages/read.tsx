@@ -7,7 +7,7 @@ import {
 } from "../components/ReaderNotes/readerNotes";
 import type { CountryTag, PipelineLine, PlaceMarker } from "../components/CountryMap/countryMap";
 import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPanel";
-import EntitiesPanel, { EntityChips, EntityItem } from "../components/EntitiesPanel/entitiesPanel";
+import EntitiesPanel, { EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timelinePanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
@@ -87,6 +87,7 @@ interface ChapterScope {
   persons: EntityItem[];
   organizations: EntityItem[];
   placeItems: EntityItem[];
+  facilities: EntityItem[];
   markers: PlaceMarker[];
   countries: CountryTag[];
 }
@@ -333,8 +334,8 @@ function renderInline(
   });
 }
 
-// Surface forms of persons/organizations that have a stored description
-// (person_description / organization_description), for the always-on
+// Surface forms of people, organizations and facilities that have a stored
+// description, for the always-on
 // "hover a mention in the text" tooltip — distinct from highlightTerms,
 // which only lights up on an explicit chip click.
 interface EntityDescriptions {
@@ -342,7 +343,9 @@ interface EntityDescriptions {
   descriptionByTerm: Map<string, string>; // key: term.toLowerCase()
 }
 
-function buildEntityDescriptions(persons: EntityItem[], organizations: EntityItem[]): EntityDescriptions {
+function buildEntityDescriptions(
+  persons: EntityItem[], organizations: EntityItem[], facilities: EntityItem[],
+): EntityDescriptions {
   const terms: string[] = [];
   const descriptionByTerm = new Map<string, string>();
   const add = (item: EntityItem, description: string | null | undefined) => {
@@ -354,6 +357,14 @@ function buildEntityDescriptions(persons: EntityItem[], organizations: EntityIte
   };
   persons.forEach(item => add(item, item.person_description));
   organizations.forEach(item => add(item, item.organization_description));
+  facilities.forEach(item => add(
+    item,
+    item.facility_description
+      ? [item.facility_description, item.operator_name && `Operator: ${item.operator_name}`]
+          .filter(Boolean)
+          .join(" ")
+      : undefined,
+  ));
   return { terms, descriptionByTerm };
 }
 
@@ -760,6 +771,7 @@ const Read: React.FC = () => {
   const [personItems, setPersonItems] = React.useState<EntityItem[]>([]);
   const [organizationItems, setOrganizationItems] = React.useState<EntityItem[]>([]);
   const [placeItems, setPlaceItems] = React.useState<EntityItem[]>([]);
+  const [facilityItems, setFacilityItems] = React.useState<EntityItem[]>([]);
   // Set when the last NER refresh found ner_service unreachable (backend:
   // web_documents.ner_unavailable_at) — distinguishes "service was down" from
   // "genuinely no persons/places in this document" so the reader can warn
@@ -935,6 +947,7 @@ const Read: React.FC = () => {
       setPersonItems(data.entities?.persName ?? []);
       setOrganizationItems(data.entities?.orgName ?? []);
       setPlaceItems(items);
+      setFacilityItems(data.entities?.facility ?? []);
       setNerUnavailableAt(data.ner_unavailable_at ?? null);
       setEntitiesCheckedAt(data.entities_checked_at ?? null);
       setPlaces(
@@ -981,6 +994,7 @@ const Read: React.FC = () => {
           persons: data.entities?.persName ?? [],
           organizations: data.entities?.orgName ?? [],
           placeItems: items,
+          facilities: data.entities?.facility ?? [],
           markers: items
             .filter((it: any) => it.verified === true && it.lat != null && it.lon != null)
             .map((it: any) => ({ name: it.text, lat: it.lat, lon: it.lon })),
@@ -1278,11 +1292,12 @@ const Read: React.FC = () => {
   const scoped = scopeChapter ? chapterScope : null;
   const shownPersons = scoped ? scoped.persons : personItems;
   const shownOrganizations = scoped ? scoped.organizations : organizationItems;
-  // Surface forms with a stored person_description/organization_description —
-  // rendered as a dotted-underline hover tooltip directly on the chapter text.
+  const shownFacilities = scoped ? scoped.facilities : facilityItems;
+  // Surface forms with a stored profile are rendered as a dotted-underline
+  // hover tooltip directly on the chapter text.
   const entityDescriptions = React.useMemo(
-    () => buildEntityDescriptions(shownPersons, shownOrganizations),
-    [shownPersons, shownOrganizations],
+    () => buildEntityDescriptions(shownPersons, shownOrganizations, shownFacilities),
+    [shownPersons, shownOrganizations, shownFacilities],
   );
   const shownPlaceItems = scoped ? scoped.placeItems : placeItems;
   const shownMarkers = scoped ? scoped.markers : places;
@@ -1657,23 +1672,6 @@ const Read: React.FC = () => {
               </div>
             )}
 
-            {(shownPersons.length > 0 || shownOrganizations.length > 0 || shownPlaceItems.length > 0) && (
-              <details open style={{
-                background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
-                padding: 10, marginTop: 12, fontSize: "0.9em",
-              }}>
-                <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
-                  Encje ({shownPersons.length + shownOrganizations.length + shownPlaceItems.length})
-                </summary>
-                <EntityChips label={"👤 Osoby"} items={shownPersons} linkPersons searchUnresolvedPersons
-                  highlightMode={highlightMode} onHighlight={handleEntityHighlight} />
-                <EntityChips label={"🏢 Organizacje"} items={shownOrganizations}
-                  highlightMode={highlightMode} onHighlight={handleEntityHighlight} />
-                <EntityChips label={"📍 Miejsca"} items={shownPlaceItems}
-                  highlightMode={highlightMode} onHighlight={handleEntityHighlight} />
-              </details>
-            )}
-
             {scoped && !shownPersons.length && !shownOrganizations.length && !shownPlaceItems.length
               && !shownCountries.length && !shownMarkers.length && (
               <div style={{ fontSize: "0.8em", color: "#94a3b8", marginTop: 8 }}>
@@ -1682,6 +1680,18 @@ const Read: React.FC = () => {
             )}
 
             <TimePeriodsPanel docId={id} currentChapter={position} />
+
+            <details open style={{
+              background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
+              padding: 10, marginTop: 12, fontSize: "0.9em",
+            }}>
+              <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
+                Encje
+              </summary>
+              <div style={{ marginTop: 4 }}>
+                <EntitiesPanel docId={id} />
+              </div>
+            </details>
 
             <TonePanel docId={id} currentChapter={position} />
 
@@ -1768,14 +1778,17 @@ const Read: React.FC = () => {
                 mount-effect fetch → onEntitiesChanged → entitiesEditVersion bump →
                 chapter-scope refetch → chapterScopeLoading toggle would remount it
                 again, looping forever. */}
-            {(personItems.length > 0 || organizationItems.length > 0 || placeItems.length > 0) && (
-              <details style={{
+            {false && (
+              <details open style={{
                 background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
                 padding: 10, marginTop: 12, fontSize: "0.9em",
               }}>
                 <summary style={{ cursor: "pointer", fontSize: "0.85em", fontWeight: 600 }}>
                   ✏️ Edytuj encje
                 </summary>
+                <div style={{ marginTop: 8, fontSize: "0.85em", color: "#64748b" }}>
+                  Obiekty infrastruktury są widoczne w tej samej liście.
+                </div>
                 <div style={{ marginTop: 4 }}>
                   <EntitiesPanel docId={id} onEntitiesChanged={handleEntitiesEdited} />
                 </div>

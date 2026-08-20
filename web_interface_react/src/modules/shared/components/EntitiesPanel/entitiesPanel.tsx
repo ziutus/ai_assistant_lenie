@@ -47,6 +47,12 @@ export interface EntityItem {
   // Short explanation shown as a tooltip (e.g. "EDF — francuski operator
   // energetyczny") — Organization.description, edited via PATCH /organizations/<id>.
   organization_description?: string | null;
+  // Rule-detected physical facility, built from a type phrase and a place.
+  facility_type?: string;
+  place_name?: string | null;
+  facility_description?: string | null;
+  operator_name?: string | null;
+  source_url?: string | null;
 }
 
 interface EntitiesByType {
@@ -54,6 +60,7 @@ interface EntitiesByType {
   orgName: EntityItem[];
   geogName: EntityItem[];
   placeName: EntityItem[];
+  facility?: EntityItem[];
 }
 
 interface PersonSearchResult {
@@ -147,6 +154,11 @@ export const EntityChips = ({
               .filter(Boolean)
               .join(" | ")
           : undefined;
+        const facilityTitle = item.facility_description
+          ? [item.text, item.facility_description, item.operator_name && `Operator: ${item.operator_name}`]
+              .filter(Boolean)
+              .join(" | ")
+          : undefined;
         const chip = (
           <span
             key={item.text}
@@ -158,11 +170,13 @@ export const EntityChips = ({
             }}
             title={personTitle
               ?? item.organization_description
+              ?? facilityTitle
               ?? (item.verified === true ? item.display_name : item.verified === false ? "Geokoder nie potwierdził tego miejsca" : undefined)}
           >
             {item.text}
             {item.pipeline && <span title={`Rurociąg (${item.pipeline.substance ?? "?"}) — dane © OpenStreetMap`}> 🛢️</span>}
             {item.organization_description && <span title={item.organization_description} style={{ color: "#667" }}> ℹ️</span>}
+            {item.facility_description && <span title={facilityTitle} style={{ color: "#667" }}> ℹ️</span>}
             {item.verified === true && <span style={{ color: "#2e7d43" }}> ✓</span>}
             {isResolvedPerson && (
               <span style={{ color: item.confidence === "manual_review" ? "#b45309" : "#1d5ca8" }}>
@@ -203,6 +217,20 @@ export const EntityChips = ({
             >
               {chip}
             </Link>
+          );
+        }
+        if (item.source_url) {
+          return (
+            <a
+              key={item.text}
+              href={item.source_url}
+              target="_blank"
+              rel="noreferrer"
+              style={{ textDecoration: "none" }}
+              title="Otwórz źródło i więcej informacji o obiekcie"
+            >
+              {chip}
+            </a>
           );
         }
         if (searchUnresolvedPersons && !isResolvedPerson) {
@@ -597,7 +625,8 @@ const EntitiesPanel = ({
   const citedSources = organizations.filter((item) => item.information_source_id != null);
   const otherOrganizations = organizations.filter((item) => item.information_source_id == null);
   const places = [...(entities?.geogName ?? []), ...(entities?.placeName ?? [])];
-  const isEmpty = !persons.length && !organizations.length && !places.length;
+  const facilities = entities?.facility ?? [];
+  const isEmpty = !persons.length && !organizations.length && !places.length && !facilities.length;
   const reviewFormValid = Boolean(reviewReason)
     && (reviewReason !== "other" || Boolean(reviewComment.trim()));
 
@@ -768,9 +797,9 @@ const EntitiesPanel = ({
   return (
     <div style={{ marginTop: "10px", padding: "8px", border: "1px solid #ddd", borderRadius: "6px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <strong>Osoby i miejsca (NER)</strong>
+        <strong>Osoby, miejsca i obiekty (NER)</strong>
         <button className={"button"} type="button" disabled={isRefreshing || enrichmentActive || externalDisabled} onClick={handleRefresh}>
-          {isRefreshing ? "Wykrywam..." : "Wykryj osoby i miejsca"}
+          {isRefreshing ? "Wykrywam..." : "Wykryj osoby, miejsca i obiekty"}
         </button>
         {!isEmpty && (
           <button className={"button"} type="button" onClick={() => { setEditMode(!editMode); setMergeFor(null); setOrgMergeFor(null); setPlaceMergeFor(null); setAliasFor(null); setExcludeFor(null); setDeleteFor(null); }}>
@@ -817,6 +846,7 @@ const EntitiesPanel = ({
         actions={editMode ? editActions("orgName") : undefined}
       />
       <EntityChips label={"Miejsca"} items={places} actions={editMode ? editActions("*") : undefined} />
+      <EntityChips label={"Obiekty infrastruktury"} items={facilities} />
 
       {editMode && deleteFor && (
         <div style={{ marginTop: 8, padding: 8, background: "#fff4f0", borderRadius: 6 }}>

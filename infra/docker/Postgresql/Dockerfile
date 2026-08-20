@@ -6,5 +6,5 @@ COPY backend/database/init/* /docker-entrypoint-initdb.d
 
 RUN apt-get update \
   && apt-cache search postgresql-18- \
-  && apt-get install -y --no-install-recommends postgresql-18-pgvector \
+  && apt-get install -y --no-install-recommends postgresql-18-pgvector postgresql-18-postgis-3 \
   && rm -rf /var/lib/apt/lists/*
