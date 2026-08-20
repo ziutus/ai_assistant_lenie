@@ -1468,6 +1468,65 @@ def document_chapter(doc_id: int, position: int):
     })
 
 
+@bp.route("/document/<int:doc_id>/obsidian_notes", methods=["GET"])
+def document_obsidian_notes(doc_id: int):
+    """Return imported Obsidian notes attached to a document or its chapter.
+
+    ``obsidian_note_paths`` records the vault-relative path written by the
+    note workflow.  The reimporter uses the same path as a stable
+    ``obsidian://`` document URL, so this endpoint never reads the vault and
+    can only expose notes that are both attached to this document and already
+    imported into Lenie.
+    """
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        abort(404, f"Document {doc_id} not found")
+
+    paths = list(doc.obsidian_note_paths or [])
+    chapter = request.args.get("chapter", type=int)
+    if chapter is not None:
+        chapter_paths: list[str] = []
+        resolved, error = _resolve_chapter_text(session, doc, chapter, chunk_obsidian_notes=chapter_paths)
+        if resolved is None:
+            return jsonify({"status": "error", "message": error}), 400
+        _chapter_text, chapter_title, _chapter_total = resolved
+        chapter_run = session.scalars(
+            select(DocumentAnalysisRun)
+            .where(
+                DocumentAnalysisRun.document_id == doc_id,
+                DocumentAnalysisRun.scope == chapter_title,
+                DocumentAnalysisRun.status != "superseded",
+            )
+            .order_by(DocumentAnalysisRun.created_at.desc())
+        ).first()
+        if chapter_run is not None:
+            for run_chunk in chapter_run.chunks:
+                chapter_paths.extend(run_chunk.obsidian_note_paths or [])
+        paths.extend(chapter_paths)
+
+    paths = list(dict.fromkeys(path for path in paths if path))
+    if not paths:
+        return jsonify({"status": "success", "notes": []})
+
+    urls = [f"obsidian://{path}" for path in paths]
+    imported = session.query(Document).filter(
+        Document.document_type == "obsidian_note", Document.url.in_(urls),
+    ).all()
+    by_url = {note.url: note for note in imported}
+    notes = [
+        {
+            "path": path,
+            "id": note.id,
+            "title": note.title,
+            "text": note.text_md or note.text or "",
+        }
+        for path in paths
+        if (note := by_url.get(f"obsidian://{path}")) is not None
+    ]
+    return jsonify({"status": "success", "notes": notes})
+
+
 @bp.route("/document/<int:doc_id>/images", methods=["GET"])
 def document_images(doc_id: int):
     """Full list of a document's storage-backed images (book PDF illustrations).
