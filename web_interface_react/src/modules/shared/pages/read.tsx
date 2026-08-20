@@ -820,6 +820,10 @@ const Read: React.FC = () => {
   const [loading, setLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [tocOpen, setTocOpen] = React.useState(false);
+  // The navigation/notes column is useful, but takes substantial horizontal
+  // space beside the text. Keep it open initially, with an explicit desktop
+  // control to collapse the entire column when it is not needed.
+  const [readerSidebarVisible, setReaderSidebarVisible] = React.useState(true);
   // Set by an in-text anchor link (e.g. a "Spis tabel" entry) click — the
   // target anchor id to scroll to once the (possibly different) chapter it
   // resolved to has finished loading. See handleAnchorClick() and the effect
@@ -850,6 +854,7 @@ const Read: React.FC = () => {
   const [pendingNote, setPendingNote] = React.useState<PendingNote | null>(null);
   const [tagQuery, setTagQuery] = React.useState("");
   const [tagResults, setTagResults] = React.useState<UserNote[]>([]);
+  const hasReaderSidebar = chapters.length > 1 || Boolean(userId);
 
   const requestedPosition = Number(searchParams.get("chapter") ?? 1);
   const position = readerCompact ? 1 : requestedPosition;
@@ -1365,9 +1370,20 @@ const Read: React.FC = () => {
             ⚖ Staranność: {docQuality.score}/100
           </span>
         )}
-        {chapters.length > 1 && (
+        {hasReaderSidebar && (
+          <button
+            className={styles.sidebarToggleButton}
+            type="button"
+            onClick={() => setReaderSidebarVisible(visible => !visible)}
+            aria-controls="reader-sidebar"
+            aria-expanded={readerSidebarVisible}
+          >
+            {readerSidebarVisible ? "◀ Ukryj panel" : "▶ Pokaż panel"}
+          </button>
+        )}
+        {hasReaderSidebar && (
           <button className={styles.tocToggleButton} onClick={() => setTocOpen(o => !o)}>
-            📑 Spis treści ({chapters.length})
+            📑 Panel czytnika{chapters.length > 1 ? ` (${chapters.length})` : ""}
           </button>
         )}
         {documentType && EDITOR_TYPES.has(documentType) && (
@@ -1402,7 +1418,10 @@ const Read: React.FC = () => {
 
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
         {/* TOC sidebar + notes */}
-        <div className={`${styles.tocPanel} ${tocOpen ? styles.tocPanelOpen : ""}`}>
+        {hasReaderSidebar && <div
+          id="reader-sidebar"
+          className={`${styles.tocPanel} ${tocOpen ? styles.tocPanelOpen : ""} ${!readerSidebarVisible ? styles.tocPanelCollapsed : ""}`}
+        >
           {chapters.length > 1 && <nav style={{
             background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "10px 0",
           }}>
@@ -1473,7 +1492,7 @@ const Read: React.FC = () => {
               )}
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Chapter content — fixed reading width, does not grow to soak up wide-screen space.
             minWidth: 0 overrides the flex item default (min-width: auto), which would
