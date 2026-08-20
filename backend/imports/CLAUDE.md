@@ -8,6 +8,7 @@ Standalone CLI scripts that add or manage documents in the Lenie database, bypas
 imports/
 ├── book_import_pdf_twierdza_linux.py  # Import "Twierdza Linux" PDF into a Document — one script per book, see below
 ├── book_extract_images.py    # Backfill: extract images for a book PDF already imported (no text_md rewrite)
+├── backfill_obsidian_content_groups.py  # One-off: enqueue Bielik content-group (Tematy) classification for already-imported obsidian_note documents
 ├── check_pdf_text_layer.py   # Check if a PDF has a usable text layer or needs OCR (no DB)
 ├── control_questions.py      # Filter control questions from an Obsidian markdown file by tags (no DB)
 ├── import_control_questions.py # Sync the Obsidian control-question bank into the control_questions DB table
@@ -344,6 +345,27 @@ python imports/fix_place_tags.py            # dry-run (default)
 python imports/fix_place_tags.py --apply    # write changes
 python imports/fix_place_tags.py --id 9216  # single document
 ```
+
+### `backfill_obsidian_content_groups.py`
+
+One-off backfill for the content-group (Tematy) auto-classification hook added to `obsidian_reimport_service.py` — that hook only fires for notes created/updated after it shipped, so already-imported `obsidian_note` documents (e.g. #9922 "jq", tagged `linux` but with no "Linux" content group membership) need a retroactive pass. Enqueues a `content_group_suggest` job per document via `content_group_suggestion_service.request_suggestions()` — **does not call the LLM itself**; classification (and, above `CONTENT_GROUP_AUTO_APPLY_MIN_CONFIDENCE`, auto-assignment into `content_groups`) happens asynchronously via the worker already running on the NAS. By default only documents with zero existing group memberships are enqueued (`--force` to include already-classified ones too).
+
+**Data access: ORM (SQLAlchemy)** via `get_session()`.
+
+**Running:**
+```bash
+cd backend
+python imports/backfill_obsidian_content_groups.py                    # dry-run (default)
+python imports/backfill_obsidian_content_groups.py --apply
+python imports/backfill_obsidian_content_groups.py --apply --id 9922  # single document
+python imports/backfill_obsidian_content_groups.py --apply --limit 20
+```
+
+**Arguments:**
+- `--apply` — enqueue jobs (default: dry-run, lists candidates only)
+- `--id N` — process a single document by id
+- `--limit N` — max number of documents to process
+- `--force` — also re-enqueue documents that already have a content group membership
 
 ### `youtube_batch_analyze.py`
 

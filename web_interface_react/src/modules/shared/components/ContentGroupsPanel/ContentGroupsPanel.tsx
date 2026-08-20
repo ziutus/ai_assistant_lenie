@@ -66,6 +66,10 @@ export default function ContentGroupsPanel({ documentId, feedItemId, initialGrou
       <button type="button" className="button" onClick={() => void save()}>Zapisz</button>
     </div>}
     {suggestions.filter(item => item.status === "pending").map(item => <div key={item.id} style={{ marginTop: 8, border: "1px dashed #64748b", padding: 6 }}><span>Sugestia: {catalog.find(group => group.id === item.group_id)?.name || item.group_id} ({Math.round(item.confidence * 100)}%)</span>{" "}<button type="button" onClick={() => void decide(item.id, "accept")}>Akceptuj</button>{" "}<button type="button" onClick={() => void decide(item.id, "dismiss")}>Odrzuć</button></div>)}
+    {suggestions.filter(item => item.status === "accepted").map(item => <div key={item.id} style={{ marginTop: 8, fontSize: "0.85em", color: "#475569" }}>
+      <span>{item.decided_by_user_id ? "👤" : "🤖"} {catalog.find(group => group.id === item.group_id)?.name || item.group_id} — {Math.round(item.confidence * 100)}%{item.reason ? `: ${item.reason}` : ""}</span>{" "}
+      <button type="button" onClick={() => void decide(item.id, "revert")}>Cofnij</button>
+    </div>)}
     {error && <p role="alert" className="errorText">{error}</p>}
   </section>;
 }

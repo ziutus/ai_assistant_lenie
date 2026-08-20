@@ -6,6 +6,7 @@ import {
   normalizeWs, pendingNoteFromSelection, useReaderIdentity, useUserNotes,
 } from "../components/ReaderNotes/readerNotes";
 import type { CountryTag, PipelineLine, PlaceMarker } from "../components/CountryMap/countryMap";
+import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPanel";
 import EntitiesPanel, { EntityChips, EntityItem } from "../components/EntitiesPanel/entitiesPanel";
 import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timelinePanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
@@ -1603,6 +1604,8 @@ const Read: React.FC = () => {
             <TonePanel docId={id} currentChapter={position} />
 
             <TimelinePanel docId={id} currentChapter={position} onEventClick={handleTimelineEventClick} />
+
+            <ContentGroupsPanel documentId={id} />
 
             {thematicTags.length > 0 && (
               // A book can carry hundreds of miejsce-* tags — start collapsed

@@ -130,6 +130,33 @@ def request_suggestions(session, target_type: str, target_id: int, *, user_id: i
     return job, run
 
 
+def _auto_apply_suggestion(session, document_id: int, group_id: int, suggestion: "ContentGroupSuggestion") -> None:
+    """Auto-accept a high-confidence document suggestion (no human in the loop).
+
+    Only ever called for document targets (never feed items, which stay a
+    curated manual-review workflow). ``decided_by_user_id`` is deliberately
+    left ``None`` -- that is the marker distinguishing a Bielik auto-decision
+    from a human's ``decide_suggestion(action="accept")`` call, so the UI can
+    show "why did this get classified here" for either case.
+    """
+    group = session.scalar(
+        select(ContentGroup).where(ContentGroup.id == group_id, ContentGroup.kind == "topic", ContentGroup.archived_at.is_(None))
+    )
+    if group is None:
+        return
+    existing = session.scalar(
+        select(DocumentGroupMembership).where(
+            DocumentGroupMembership.document_id == document_id, DocumentGroupMembership.group_id == group_id
+        )
+    )
+    if existing is not None:
+        return
+    session.add(DocumentGroupMembership(document_id=document_id, group_id=group_id, source="llm_suggestion", source_suggestion_id=suggestion.id))
+    suggestion.status = "accepted"
+    suggestion.membership_created = True
+    suggestion.decided_at = datetime.now(timezone.utc)
+
+
 def execute_suggestion_job(session, job: Job) -> dict:
     parameters = job.parameters or {}
     target_type = "feed_item" if "feed_item_id" in parameters else "document"
@@ -147,6 +174,7 @@ def execute_suggestion_job(session, job: Job) -> dict:
         run.raw_result = _parse_result(raw)
         allowed = {item["id"] for item in run.catalog_snapshot}
         threshold = float(_config("CONTENT_GROUP_SUGGESTION_MIN_CONFIDENCE", "0.60"))
+        auto_apply_threshold = float(_config("CONTENT_GROUP_AUTO_APPLY_MIN_CONFIDENCE", "0.75"))
         seen = set()
         for item in ([] if isinstance(run.raw_result, dict) and run.raw_result.get("no_match") else (run.raw_result.get("suggestions", []) if isinstance(run.raw_result, dict) else [])):
             try:
@@ -156,7 +184,11 @@ def execute_suggestion_job(session, job: Job) -> dict:
             if group_id not in allowed or group_id in seen or confidence < threshold or not 0 <= confidence <= 1:
                 continue
             seen.add(group_id)
-            session.add(ContentGroupSuggestion(run_id=run.id, group_id=group_id, confidence=confidence, reason=str(item.get("reason", ""))[:300]))
+            suggestion = ContentGroupSuggestion(run_id=run.id, group_id=group_id, confidence=confidence, reason=str(item.get("reason", ""))[:300])
+            session.add(suggestion)
+            if target_type == "document" and confidence >= auto_apply_threshold:
+                session.flush()
+                _auto_apply_suggestion(session, target.id, group_id, suggestion)
             if len(seen) >= MAX_SUGGESTIONS:
                 break
         run.status = "completed"
