@@ -11,6 +11,7 @@ import EntitiesPanel, { EntityChips, EntityItem } from "../components/EntitiesPa
 import TimelinePanel, { type EventItem } from "../components/TimelinePanel/timelinePanel";
 import TimePeriodsPanel from "../components/TimePeriodsPanel/timePeriodsPanel";
 import TonePanel from "../components/TonePanel/tonePanel";
+import RelationshipGraph, { type RelationshipGraphData } from "../components/RelationshipGraph/relationshipGraph";
 import { useIsDesktop } from "../hooks/useIsDesktop";
 import { toOpenableSourceUrl } from "../utils/sourceUrl";
 import ChapterGroupsPanel from "../components/ChapterGroupsPanel/ChapterGroupsPanel";
@@ -98,6 +99,7 @@ interface InformationSourceLink {
   role: string;
   source_url: string | null;
   evidence_excerpt: string | null;
+  review_status: string;
 }
 
 interface CitedPublicationLink {
@@ -733,6 +735,7 @@ const Read: React.FC = () => {
   const [synthesis, setSynthesis] = React.useState<string | null>(null);
   const [informationSources, setInformationSources] = React.useState<InformationSourceLink[]>([]);
   const [citedPublications, setCitedPublications] = React.useState<CitedPublicationLink[]>([]);
+  const [relationshipGraph, setRelationshipGraph] = React.useState<RelationshipGraphData | null>(null);
   const [docQuality, setDocQuality] = React.useState<DocQuality | null>(null);
   const [docUrl, setDocUrl] = React.useState<string | null>(null);
   const [docPublishedOn, setDocPublishedOn] = React.useState<string | null>(null);
@@ -782,6 +785,13 @@ const Read: React.FC = () => {
     initialRedirectDone.current = false;
   });
   const { userId, headers, jsonHeaders } = identity;
+  const approveInformationSource = async (source: InformationSourceLink) => {
+    const response = await fetch(`${apiUrl}/document/${id}/information_sources/${source.id}/approve`, {
+      method: "POST", headers: jsonHeaders,
+    });
+    if (!response.ok) return;
+    setInformationSources(items => items.map(item => item.id === source.id ? { ...item, review_status: "approved" } : item));
+  };
   const { notes, createNote, saveNoteText, deleteNote } = useUserNotes(apiUrl, id, identity);
   const [pendingNote, setPendingNote] = React.useState<PendingNote | null>(null);
   const [tagQuery, setTagQuery] = React.useState("");
@@ -849,6 +859,17 @@ const Read: React.FC = () => {
       } catch {
         // Provenance enriches the reader but must not block document reading.
       }
+    })();
+  }, [apiUrl, id, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    setRelationshipGraph(null);
+    (async () => {
+      try {
+        const response = await fetch(`${apiUrl}/document/${id}/relationship_graph`, { headers });
+        const data = await response.json();
+        if (data.status === "success") setRelationshipGraph({ nodes: data.nodes ?? [], edges: data.edges ?? [] });
+      } catch { /* The graph is optional reader enrichment. */ }
     })();
   }, [apiUrl, id, apiKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1530,6 +1551,9 @@ const Read: React.FC = () => {
                     <NavLink to={`/information-sources?id=${source.source_id}`} style={{ color: "#0369a1", fontWeight: 600 }}>
                       {source.canonical_name}
                     </NavLink>
+                    {source.review_status === "approved"
+                      ? <span style={{ marginLeft: 6, fontSize: "0.72em", color: "#15803d" }}>✓ zatwierdzone</span>
+                      : <button type="button" onClick={() => void approveInformationSource(source)} style={{ marginLeft: 6, fontSize: "0.72em" }}>Zatwierdź</button>}
                     {source.source_url && <>{" "}<a href={source.source_url} target="_blank" rel="noreferrer" title="Otwórz publikację">↗</a></>}
                     {source.evidence_excerpt && (
                       <div style={{ fontSize: "0.76em", color: "#475569", marginTop: 2 }}>
@@ -1556,6 +1580,7 @@ const Read: React.FC = () => {
                 })}
               </div>
             )}
+            {relationshipGraph && <RelationshipGraph data={relationshipGraph} />}
             {(shownCountries.length > 0 || shownMarkers.length > 0 || shownPipelines.length > 0) && (
               <React.Suspense fallback={null}>
                 <CountryMap countries={shownCountries} places={shownMarkers} pipelines={shownPipelines} />

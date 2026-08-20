@@ -1017,6 +1017,12 @@ def document_information_sources(doc_id: int):
     links = session.scalars(select(DocumentInformationSource).where(
         DocumentInformationSource.document_id == doc_id
     ).order_by(DocumentInformationSource.role, DocumentInformationSource.id)).all()
+    from library.db.models import DocumentSourceRelationship
+    approved_relationships = session.scalars(select(DocumentSourceRelationship).where(
+        DocumentSourceRelationship.document_id == doc_id,
+        DocumentSourceRelationship.status == "approved",
+    )).all()
+    links = _display_information_source_links(links, approved_relationships)
     entries = [{
         "id": link.id,
         "source_id": link.source_id,
@@ -1032,6 +1038,71 @@ def document_information_sources(doc_id: int):
         "review_status": link.review_status,
     } for link in links]
     return {"status": "success", "count": len(entries), "entries": entries}, 200
+
+
+def _display_information_source_links(links, approved_relationships):
+    """Choose one direct-provenance row per source for reader and graph.
+
+    A source can be found by overlapping extractors.  Showing every row makes
+    AFP/France24 appear twice.  More importantly, a weak NER "cited" row for
+    the author of a statement must yield to a reviewer-approved chain such as
+    ``EDF --issued_statement--> AFP``.
+    """
+    relation_subjects = {
+        relation.subject_name.casefold()
+        for relation in approved_relationships
+        if relation.predicate == "issued_statement"
+    }
+    role_priority = {
+        "publisher": 0,
+        "original_reporting": 1,
+        "republication": 2,
+        "data_source": 3,
+        "cited": 4,
+    }
+    selected = {}
+    for link in links:
+        source = link.source
+        # This is the known false-positive shape fixed in
+        # extract_ner_cited_sources(). Keep the stored record/audit intact,
+        # but do not present it as a direct portal source.
+        if (link.role == "cited"
+                and getattr(link, "extraction_method", None) == "ner_context_rule"
+                and source.canonical_name.casefold() in relation_subjects):
+            continue
+        key = source.id
+        previous = selected.get(key)
+        if previous is None or role_priority.get(link.role, 99) < role_priority.get(previous.role, 99):
+            selected[key] = link
+    return sorted(selected.values(), key=lambda link: (role_priority.get(link.role, 99), link.id))
+
+
+@app.route('/document/<int:doc_id>/information_sources/<int:link_id>/approve', methods=['POST'])
+def approve_document_information_source(doc_id: int, link_id: int):
+    """Explicitly protect one provenance link from automatic refreshes."""
+    from library.db.models import DocumentInformationSource
+
+    session = get_scoped_session()
+    link = session.get(DocumentInformationSource, link_id)
+    if link is None or link.document_id != doc_id:
+        return {"status": "error", "message": "Information source link not found"}, 404
+    link.review_status = "approved"
+    session.commit()
+    return {"status": "success", "id": link.id, "review_status": link.review_status}, 200
+
+
+@app.route('/document/<int:doc_id>/organizations/<int:link_id>/approve', methods=['POST'])
+def approve_document_organization(doc_id: int, link_id: int):
+    """Explicitly protect one document-organization link from NER refreshes."""
+    from library.db.models import DocumentOrganization
+
+    session = get_scoped_session()
+    link = session.get(DocumentOrganization, link_id)
+    if link is None or link.document_id != doc_id:
+        return {"status": "error", "message": "Organization link not found"}, 404
+    link.review_status = "approved"
+    session.commit()
+    return {"status": "success", "id": link.id, "review_status": link.review_status}, 200
 
 
 @app.route('/document/<int:doc_id>/cited_publications', methods=['GET', 'POST'])
@@ -1097,6 +1168,154 @@ def document_cited_publications(doc_id: int):
         response["refreshed_count"] = len(result["publications"])
         response["scanned_chunk_ids"] = [chunk.id for chunk in selected_chunks]
     return response, 200
+
+
+@app.route('/document/<int:doc_id>/relationship_graph', methods=['GET'])
+def document_relationship_graph(doc_id: int):
+    """Return the stored provenance and organization relations of one document.
+
+    The graph is deliberately assembled on the server: its edges mirror foreign
+    keys and document links, rather than asking the reader to infer relations
+    from matching display names.
+    """
+    from sqlalchemy import select
+    from library.db.models import (
+        CitedPublication, DocumentCitedPublication, DocumentInformationSource,
+        DocumentOrganization, DocumentSourceRelationship, Organization,
+    )
+
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+
+    nodes = []
+    edges = []
+    node_ids = set()
+    provenance_parent_node_id = (
+        f"publisher:{doc.publisher.id}" if doc.publisher is not None else None
+    )
+
+    def add_node(node: dict):
+        if node["id"] not in node_ids:
+            nodes.append(node)
+            node_ids.add(node["id"])
+
+    if doc.publisher is not None:
+        add_node({"id": provenance_parent_node_id, "type": "publisher",
+                  "label": doc.publisher.canonical_name,
+                  "href": f"/list?q={doc.publisher.canonical_name}"})
+
+    approved_relationships = session.scalars(select(DocumentSourceRelationship).where(
+        DocumentSourceRelationship.document_id == doc_id,
+        DocumentSourceRelationship.status == "approved",
+    )).all()
+    information_links = session.scalars(select(DocumentInformationSource).where(
+        DocumentInformationSource.document_id == doc_id,
+    ).order_by(DocumentInformationSource.role, DocumentInformationSource.id)).all()
+    information_links = _display_information_source_links(information_links, approved_relationships)
+    has_rendered_publisher = False
+    for link in information_links:
+        source = link.source
+        # The document publisher registry owns canonical domain grouping.  A
+        # provenance row may carry the imported hostname (wiadomosci.wp.pl),
+        # while the publisher is the registrable-domain entity (wp.pl).
+        if link.role == "publisher" and doc.publisher is not None:
+            publisher = doc.publisher
+            publisher_node_id = f"publisher:{publisher.id}"
+            add_node({
+                "id": publisher_node_id, "type": "publisher",
+                "label": publisher.canonical_name,
+                "href": f"/list?q={publisher.canonical_name}",
+                "external_url": link.source_url,
+            })
+            has_rendered_publisher = True
+            continue
+        # A source that is normalized to an Organization is the same real-world
+        # entity. Render one organization node instead of visually duplicating
+        # names such as EDF or AFP; the provenance role stays on the edge.
+        organization = source.organization if source.organization_id is not None else None
+        if organization is not None:
+            source_node_id = f"organization:{organization.id}"
+            add_node({
+                "id": source_node_id, "type": "organization",
+                "label": organization.canonical_name,
+                "href": f"/information-sources?id={source.id}",
+                "external_url": link.source_url,
+                "linked_to_source": True,
+            })
+        else:
+            source_node_id = f"information_source:{source.id}"
+            source_type = "publisher" if link.role == "publisher" else "information_source"
+            add_node({
+                "id": source_node_id, "type": source_type,
+                "label": source.canonical_name,
+                "href": f"/information-sources?id={source.id}",
+                "external_url": link.source_url,
+            })
+        if provenance_parent_node_id is not None:
+            edges.append({"id": f"provenance:{link.id}", "source": provenance_parent_node_id,
+                          "target": source_node_id, "type": link.role})
+
+    # A publisher registry entry is the fallback when provenance analysis did
+    # not produce a publisher role; do not create a second publisher node.
+    if not has_rendered_publisher and doc.publisher is not None:
+        publisher = doc.publisher
+        publisher_node_id = f"publisher:{publisher.id}"
+        add_node({
+            "id": publisher_node_id, "type": "publisher",
+            "label": publisher.canonical_name,
+            "href": f"/list?q={publisher.canonical_name}",
+        })
+
+    publication_rows = session.execute(select(DocumentCitedPublication, CitedPublication).join(
+        CitedPublication, CitedPublication.id == DocumentCitedPublication.publication_id,
+    ).where(DocumentCitedPublication.document_id == doc_id).order_by(
+        DocumentCitedPublication.id,
+    )).all()
+    for link, publication in publication_rows:
+        publication_node_id = f"cited_publication:{publication.id}"
+        identifier = publication.doi or publication.pmid or publication.pmcid or "Publikacja"
+        add_node({
+            "id": publication_node_id, "type": "cited_publication",
+            "label": publication.title or identifier,
+            "external_url": publication.canonical_url,
+        })
+        if provenance_parent_node_id is not None:
+            edges.append({"id": f"citation:{link.id}", "source": provenance_parent_node_id,
+                          "target": publication_node_id, "type": "cited_publication"})
+
+    # Mentioned organizations remain visible as unconnected context nodes. A
+    # line to the portal would falsely imply a source/citation relationship.
+    for _link, organization in session.execute(select(DocumentOrganization, Organization).join(
+        Organization, Organization.id == DocumentOrganization.organization_id,
+    ).where(DocumentOrganization.document_id == doc_id)).all():
+        add_node({"id": f"organization:{organization.id}", "type": "organization",
+                  "label": organization.canonical_name,
+                  "href": f"/list?q={organization.canonical_name}", "context_only": True})
+    # Reviewer-approved claim provenance.  Resolve against graph labels first
+    # to reuse organization/source nodes; retain a named node for a relation
+    # whose entity has not otherwise been extracted yet.
+    label_to_node = {node["label"].casefold(): node["id"] for node in nodes}
+    for relation in approved_relationships:
+        def relation_node(name):
+            key = name.casefold()
+            node_id = label_to_node.get(key)
+            if node_id is None:
+                node_id = f"relationship_entity:{relation.id}:{key}"
+                add_node({"id": node_id, "type": "information_source", "label": name})
+                label_to_node[key] = node_id
+            return node_id
+        edges.append({
+            "id": f"source_relationship:{relation.id}",
+            "source": relation_node(relation.subject_name),
+            "target": relation_node(relation.object_name),
+            "type": relation.predicate,
+            "evidence_excerpt": relation.evidence_excerpt,
+            "confidence": relation.confidence,
+        })
+
+    return {"status": "success", "nodes": nodes, "edges": edges}, 200
 
 
 def _decide_person_link(link_id: int, require_review: bool):
@@ -1239,9 +1458,10 @@ def website_entities_delete(entity_id: int):
 
     from sqlalchemy import func as sa_func, select as sa_select
     from library import person_registry
-    from library.db.models import DocumentEntity, DocumentPerson
+    from library.db.models import DocumentEntity, DocumentOrganization, DocumentPerson
     from library.entity_review_audit import record_entity_decision
     from library.place_verification import PLACE_ENTITY_TYPES, remove_orphaned_tag
+    from library.relationship_audit import audit_removals
 
     data = request.get_json(silent=True) or {}
     decision = data.get("decision", "deleted")
@@ -1297,6 +1517,25 @@ def website_entities_delete(entity_id: int):
             },
         )
         removed_tag = None
+        organization_link_removed = False
+        if entity.entity_type == "orgName":
+            organization_link = session.scalar(sa_select(DocumentOrganization).where(
+                DocumentOrganization.document_id == entity.document_id,
+                DocumentOrganization.document_entity_id == entity.id,
+            ))
+            # An editor deletion must not leave a derived organization link in
+            # the graph. Explicitly approved links remain protected: they are
+            # a deliberate reader decision rather than NER-derived data.
+            if organization_link is not None and organization_link.review_status != "approved":
+                audit_removals(session, entity.document_id, "organization", "entity_editor_delete",
+                               [organization_link], lambda row: {
+                                   "organization_id": row.organization_id,
+                                   "document_entity_id": row.document_entity_id,
+                                   "confidence": row.confidence,
+                                   "review_status": row.review_status,
+                               })
+                session.delete(organization_link)
+                organization_link_removed = True
         if entity.entity_type in PLACE_ENTITY_TYPES:
             document = session.get(Document, entity.document_id)
             if document is not None:
@@ -1310,6 +1549,7 @@ def website_entities_delete(entity_id: int):
 
     return jsonify({"status": "success", "deleted_entity_id": entity_id,
                     "removed_tag": removed_tag,
+                    "organization_link_removed": organization_link_removed,
                     "person_link_removed": link_result is not None,
                     "person_deleted": bool(link_result and link_result.get("person_deleted"))}), 200
 

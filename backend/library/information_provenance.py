@@ -18,8 +18,21 @@ from library.db.models import (
 logger = logging.getLogger(__name__)
 
 ALLOWED_ROLES = {"original_reporting", "cited", "republication", "data_source"}
+ALLOWED_RELATION_PREDICATES = {"issued_statement", "reported_by", "cited_by", "data_provided_to"}
 
 KNOWN_REPORTING_SOURCES = (
+    {
+        "canonical_name": "AFP",
+        "source_type": "agency",
+        "domain": "afp.com",
+        "aliases": ("AFP", "agencja AFP", "Agence France-Presse"),
+    },
+    {
+        "canonical_name": "France24",
+        "source_type": "broadcaster",
+        "domain": "france24.com",
+        "aliases": ("France24", "France 24"),
+    },
     {
         "canonical_name": "The New York Times",
         "source_type": "newspaper",
@@ -110,7 +123,17 @@ def extract_ner_cited_sources(text: str, organizations: list[dict] | list[str]) 
             if match is None:
                 continue
             prefix_clause = re.split(r"[,;:]", sentence[:match.start()])[-1]
-            if not (SOURCE_PREFIX.search(prefix_clause) or SOURCE_SUFFIX.search(sentence[match.end():])):
+            suffix = sentence[match.end():]
+            # "EDF poinformował ... — podają AFP" must not turn EDF into a
+            # reporting outlet.  The later attribution belongs to the outlets
+            # after "podają", which SOURCE_PREFIX will match when their own
+            # mentions are visited below.  Keep the suffix form for ordinary
+            # "AFP poinformowała", where no later attribution redirects it.
+            later_reporting_attribution = re.search(
+                r"(?:[-–—]\s*)?podaj(?:e|ą)\s+", suffix, re.IGNORECASE,
+            )
+            if not (SOURCE_PREFIX.search(prefix_clause)
+                    or (SOURCE_SUFFIX.search(suffix) and not later_reporting_attribution)):
                 continue
             known = KNOWN_ORGANIZATION_SOURCES.get(canonical_name.casefold(), {})
             normalized_name = known.get("canonical_name", canonical_name)
@@ -151,9 +174,11 @@ def _normalize_known_source(item: dict) -> dict:
 
 
 def _json_array(raw: str) -> list[dict]:
-    match = re.search(r"\[.*\]", raw, re.DOTALL)
+    match = re.search(r"\[", raw)
     try:
-        value = json.loads(match.group()) if match else None
+        # raw_decode intentionally accepts harmless prose after the first JSON
+        # value. Some providers append a short explanation despite the prompt.
+        value, _ = json.JSONDecoder().raw_decode(raw[match.start():]) if match else (None, 0)
     except json.JSONDecodeError:
         value = None
     if value is None:
@@ -219,6 +244,102 @@ Tekst:
             "domain": (str(item.get("domain")).strip() if item.get("domain") else None),
             "evidence_excerpt": evidence,
             "confidence": confidence,
+        })
+    return result
+
+
+def analyze_source_relationships(quote: str, model: str, candidates: list[str]) -> list[dict]:
+    """Suggest grounded source-chain relations for one reviewer-selected quote.
+
+    Suggestions remain transient: an LLM result must never alter the graph
+    until a reviewer gets an explicit accept/reject action.
+    """
+    # Keep matching strict while tolerating presentation-only differences such
+    # as "France 24" vs "France24" or markdown emphasis.
+    def compact(value: str) -> str:
+        return re.sub(r"[^\w]+", "", value.casefold(), flags=re.UNICODE)
+
+    quote_compact = compact(quote)
+    candidates_by_compact = {compact(candidate): candidate for candidate in candidates if compact(candidate)}
+    # Try deterministic patterns before spending an LLM call.  Both endpoints
+    # must already be known document entities and occur verbatim in the quote.
+    reporting_match = re.search(r"(?:[-–—]\s*)?podaj(?:ą|e)\s+(.+)", quote, re.IGNORECASE | re.DOTALL)
+    if reporting_match:
+        before_reporting = quote[:reporting_match.start()]
+        after_reporting = reporting_match.group(1)
+        reporters = [
+            canonical for compact_name, canonical in candidates_by_compact.items()
+            if compact_name in compact(after_reporting)
+        ]
+        deterministic_result = []
+        for compact_name, canonical in candidates_by_compact.items():
+            if compact_name not in compact(before_reporting):
+                continue
+            escaped = re.escape(canonical)
+            if not re.search(
+                rf"(?:w\s+komunikacie\s+)?{escaped}\s+(?:poinformował|poinformowała|poinformowali|oświadczył|oświadczyła)",
+                before_reporting,
+                re.IGNORECASE,
+            ):
+                continue
+            deterministic_result.extend({
+                "subject": canonical,
+                "predicate": "issued_statement",
+                "object": reporter,
+                "evidence_excerpt": quote,
+                "confidence": 95,
+            } for reporter in reporters if reporter != canonical)
+        if deterministic_result:
+            return deterministic_result
+
+    from library.chunk_llm_analysis import call_model
+    candidate_list = "\n".join(f"- {candidate}" for candidate in candidates)
+    prompt = f"""Przeanalizuj wyłącznie zaznaczony cytat pod kątem relacji
+pochodzenia informacji. Zwróć relację tylko wtedy, gdy można ją obronić
+dosłownym fragmentem tego cytatu. Nie używaj wiedzy spoza cytatu.
+
+Subject i object mogą być wyłącznie pozycjami z listy znanych podmiotów.
+Nie wpisuj zdarzeń, przedmiotów, miejsc, ani opisów czynności jako subject lub object.
+
+Znane podmioty:
+{candidate_list}
+
+Kierunek relacji:
+- issued_statement: organizacja/osoba wydała komunikat, który medium podaje,
+- reported_by: źródło pierwotne jest relacjonowane przez medium/agencję,
+- cited_by: medium lub źródło jest przywołane przez publikację,
+- data_provided_to: instytucja dostarczyła dane medium.
+
+Zwróć wyłącznie JSON:
+[{{"subject":"...", "predicate":"issued_statement|reported_by|cited_by|data_provided_to",
+   "object":"...", "evidence_excerpt":"...", "confidence":0}}]
+
+subject, object i evidence_excerpt muszą występować dosłownie w cytacie.
+Pomiń relację, jeśli cytat nie wskazuje jej jednoznacznie albo confidence < 60.
+
+Cytat:
+{quote}"""
+    raw, _ = call_model(prompt, model, max_tokens=900, operation="source_relationship_analysis")
+    result = []
+    for item in _json_array(raw):
+        subject = str(item.get("subject") or "").strip()
+        predicate = str(item.get("predicate") or "").strip()
+        object_name = str(item.get("object") or "").strip()
+        evidence = str(item.get("evidence_excerpt") or "").strip()
+        try:
+            confidence = max(0, min(100, int(item.get("confidence", 0))))
+        except (TypeError, ValueError):
+            confidence = 0
+        if (predicate not in ALLOWED_RELATION_PREDICATES or confidence < 60
+                or not subject or not object_name or not evidence
+                or compact(subject) not in quote_compact or compact(object_name) not in quote_compact
+                or compact(subject) not in candidates_by_compact or compact(object_name) not in candidates_by_compact
+                or compact(evidence) not in quote_compact):
+            continue
+        result.append({
+            "subject": candidates_by_compact[compact(subject)], "predicate": predicate,
+            "object": candidates_by_compact[compact(object_name)],
+            "evidence_excerpt": evidence, "confidence": confidence,
         })
     return result
 
@@ -290,10 +411,19 @@ def _get_or_create_source(session, item: dict) -> InformationSource:
 
 
 def refresh_document_information_sources(session, doc, text: str, model: str) -> dict:
-    """Replace document provenance links, always including the URL publisher."""
-    session.execute(delete(DocumentInformationSource).where(
-        DocumentInformationSource.document_id == doc.id
-    ))
+    """Refresh automatic provenance links without deleting human approvals."""
+    from library.relationship_audit import audit_removals
+
+    removable = session.execute(select(DocumentInformationSource).where(
+        DocumentInformationSource.document_id == doc.id,
+        DocumentInformationSource.review_status != "approved",
+    )).scalars().all()
+    audit_removals(session, doc.id, "information_source", "llm_refresh", removable, lambda row: {
+        "source_id": row.source_id, "role": row.role, "raw_mention": row.raw_mention,
+        "review_status": row.review_status, "extraction_method": row.extraction_method,
+    })
+    for row in removable:
+        session.delete(row)
 
     created = []
     domain = publisher_domain(doc.url)
@@ -344,7 +474,12 @@ def refresh_document_information_sources(session, doc, text: str, model: str) ->
         llm_candidates = []
     candidates.extend(_normalize_known_source(item) for item in llm_candidates)
 
+    approved_links = session.execute(select(DocumentInformationSource).where(
+        DocumentInformationSource.document_id == doc.id,
+        DocumentInformationSource.review_status == "approved",
+    )).scalars().all()
     seen = {(name.lower(), role) for name, role in created}
+    seen.update((link.source.canonical_name.lower(), link.role) for link in approved_links)
     for item in candidates:
         source = _get_or_create_source(session, item)
         key = (source.canonical_name.lower(), item["role"])
@@ -374,10 +509,18 @@ def refresh_rule_based_sources(session, doc, items: list[dict]) -> dict:
     (the LLM step) ever runs over it. Additive/idempotent: only replaces rows
     from this same extraction method, leaving publisher/LLM/NER links intact.
     """
-    session.execute(delete(DocumentInformationSource).where(
+    from library.relationship_audit import audit_removals
+    removable = session.execute(select(DocumentInformationSource).where(
         DocumentInformationSource.document_id == doc.id,
         DocumentInformationSource.extraction_method == "rule",
-    ))
+        DocumentInformationSource.review_status != "approved",
+    )).scalars().all()
+    audit_removals(session, doc.id, "information_source", "rule_refresh", removable, lambda row: {
+        "source_id": row.source_id, "role": row.role, "raw_mention": row.raw_mention,
+        "review_status": row.review_status, "extraction_method": row.extraction_method,
+    })
+    for row in removable:
+        session.delete(row)
     created = []
     for item in items:
         source = _get_or_create_source(session, item)
@@ -398,10 +541,18 @@ def refresh_rule_based_sources(session, doc, items: list[dict]) -> dict:
 
 def refresh_ner_cited_sources(session, doc, text: str, organizations: list[dict]) -> dict:
     """Refresh only cheap NER/context source links, preserving URL and LLM provenance."""
-    session.execute(delete(DocumentInformationSource).where(
+    from library.relationship_audit import audit_removals
+    removable = session.execute(select(DocumentInformationSource).where(
         DocumentInformationSource.document_id == doc.id,
         DocumentInformationSource.extraction_method == "ner_context_rule",
-    ))
+        DocumentInformationSource.review_status != "approved",
+    )).scalars().all()
+    audit_removals(session, doc.id, "information_source", "ner_refresh", removable, lambda row: {
+        "source_id": row.source_id, "role": row.role, "raw_mention": row.raw_mention,
+        "review_status": row.review_status, "extraction_method": row.extraction_method,
+    })
+    for row in removable:
+        session.delete(row)
     created = []
     for item in extract_ner_cited_sources(text, organizations):
         source = _get_or_create_source(session, item)

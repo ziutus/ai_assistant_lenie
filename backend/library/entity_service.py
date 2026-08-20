@@ -177,6 +177,20 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
 
     groups = aggregate_entities_detailed(raw)
 
+    # spaCy can miss outlet names containing digits (for example "France24").
+    # Promote only known reporting sources that occur in an explicit grounded
+    # attribution phrase; this is a deterministic NER supplement, not a guess.
+    from library.information_provenance import extract_known_reporting_sources
+    for source in extract_known_reporting_sources(text):
+        key = ("orgName", source["canonical_name"])
+        existing = groups.get(key)
+        if existing is None:
+            groups[key] = {"count": 1, "variants": [source["raw_mention"]]}
+        else:
+            existing["count"] += 1
+            if source["raw_mention"] not in existing["variants"]:
+                existing["variants"].append(source["raw_mention"])
+
     # Date/time mentions are not ordinary sidebar entities. Keep them as
     # grounded hints for the later timeline LLM stage.
     session.execute(delete(NerTemporalCandidate).where(
@@ -306,11 +320,39 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
             len(colliding_keys), document_id, [key[1] for key in colliding_keys],
         )
 
-    session.execute(delete(DocumentEntity).where(
+    # Refreshes must not silently erase human decisions.  Explicitly approved
+    # organization links (and links backed by a manual entity merge) survive;
+    # every automatic row removed below gets an immutable audit record.
+    from library.relationship_audit import audit_removals
+
+    removable_entities = session.execute(select(DocumentEntity).where(
         DocumentEntity.document_id == document_id,
         DocumentEntity.source != "manual",
-    ))
-    session.execute(delete(DocumentOrganization).where(DocumentOrganization.document_id == document_id))
+    )).scalars().all()
+    audit_removals(session, document_id, "entity", "ner_refresh", removable_entities, lambda row: {
+        "entity_type": row.entity_type, "entity_text": row.entity_text,
+        "variants": row.variants or [], "source": row.source,
+    })
+    removable_org_links = []
+    manual_entity_ids = {row.id for row in manual_rows}
+    for link in session.execute(select(DocumentOrganization).where(
+        DocumentOrganization.document_id == document_id,
+    )).scalars().all():
+        if link.review_status == "approved" or link.document_entity_id in manual_entity_ids:
+            continue
+        removable_org_links.append(link)
+    audit_removals(session, document_id, "organization", "ner_refresh", removable_org_links, lambda row: {
+        "organization_id": row.organization_id, "document_entity_id": row.document_entity_id,
+        "confidence": row.confidence, "review_status": row.review_status,
+    })
+    for link in removable_org_links:
+        session.delete(link)
+    for row in removable_entities:
+        session.delete(row)
+    # Flush deletes before adding the replacement rows.  Without this explicit
+    # boundary SQLAlchemy may INSERT an unchanged key (for example EDF) before
+    # its old derived row is deleted, violating the per-document unique key.
+    session.flush()
     rows = [
         DocumentEntity(
             document_id=document_id,
@@ -327,12 +369,23 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
     if organization_confidence:
         session.flush()
         rows_by_key = {(row.entity_type, row.entity_text): row for row in rows}
+        preserved_organization_ids = set(session.scalars(select(DocumentOrganization.organization_id).where(
+            DocumentOrganization.document_id == document_id,
+        )).all())
         for entity_text, (organization_id, confidence) in organization_confidence.items():
+            if organization_id in preserved_organization_ids:
+                continue
             row = rows_by_key.get(("orgName", entity_text))
+            # A candidate may be removed later in the NER pipeline (for
+            # example by an exclusion rule).  Do not recreate an orphaned
+            # DocumentOrganization link for an entity that is no longer in
+            # the final result set.
+            if row is None:
+                continue
             session.add(DocumentOrganization(
                 document_id=document_id,
                 organization_id=organization_id,
-                document_entity_id=row.id if row is not None else None,
+                document_entity_id=row.id,
                 confidence=confidence,
             ))
 
@@ -383,8 +436,8 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     for link in source_links:
         for name in [link.source.canonical_name, link.raw_mention]:
             sources_by_name[normalize_ner_text(name).casefold()] = link
-    organization_ids_by_entity = {
-        link.document_entity_id: link.organization_id
+    organization_links_by_entity = {
+        link.document_entity_id: link
         for link in session.scalars(select(DocumentOrganization).where(
             DocumentOrganization.document_id == document_id,
         )).all()
@@ -438,9 +491,11 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
             if source_link is not None:
                 item["information_source_id"] = source_link.source_id
                 item["source_evidence"] = source_link.evidence_excerpt
-            organization_id = organization_ids_by_entity.get(row.id)
-            if organization_id is not None:
-                item["organization_id"] = organization_id
+            organization_link = organization_links_by_entity.get(row.id)
+            if organization_link is not None:
+                item["organization_id"] = organization_link.organization_id
+                item["organization_link_id"] = organization_link.id
+                item["organization_review_status"] = organization_link.review_status
         grouped.setdefault(row.entity_type, []).append(item)
     return grouped
 

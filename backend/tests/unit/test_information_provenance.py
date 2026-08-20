@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from library.db.models import DocumentInformationSource
+from library.db.models import DocumentInformationSource, DocumentRelationshipRemoval
 from library.information_provenance import (
     _json_array,
     extract_information_sources,
@@ -47,6 +47,7 @@ def test_ner_plural_verb_before_enumerated_sources_is_attribution():
     )
 
     result = extract_ner_cited_sources(text, [
+        {"text": "EDF", "variants": ["EDF"]},
         {"text": "France24", "variants": ["France24"]},
         {"text": "AFP", "variants": ["AFP"]},
     ])
@@ -234,3 +235,28 @@ def test_refresh_rule_based_sources_persists_republication_link():
         (3, "republication", "rule"),
     ]
     assert result["sources"] == [("The Economist", "republication")]
+
+
+def test_audit_removals_creates_immutable_snapshot():
+    from library.relationship_audit import audit_removals
+
+    session = MagicMock()
+    row = SimpleNamespace(id=41, role="cited")
+    audit_removals(session, 9391, "information_source", "llm_refresh", [row],
+                   lambda item: {"role": item.role})
+
+    audit = session.add.call_args.args[0]
+    assert isinstance(audit, DocumentRelationshipRemoval)
+    assert audit.document_id == 9391
+    assert audit.original_row_id == 41
+    assert audit.snapshot == {"role": "cited"}
+    assert audit.removal_reason == "llm_refresh"
+
+
+def test_known_reporting_rules_detect_afp_and_france24_from_podaja_attribution():
+    text = "EDF poinformował o awarii - podają France24 oraz agencja AFP."
+    found = extract_known_reporting_sources(text)
+
+    assert {(item["canonical_name"], item["role"]) for item in found} == {
+        ("AFP", "original_reporting"), ("France24", "original_reporting"),
+    }

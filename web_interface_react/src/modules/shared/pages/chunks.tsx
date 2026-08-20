@@ -140,6 +140,21 @@ interface DocQuality {
   llm_rubric?: { zrodla: number; glebia: number; jezyk: number; uzasadnienie?: string } | null;
 }
 
+interface SourceRelationshipSuggestion {
+  subject: string;
+  predicate: string;
+  object: string;
+  evidence_excerpt: string;
+  confidence: number;
+}
+
+const SOURCE_RELATION_LABELS: Record<string, string> = {
+  issued_statement: "wydał komunikat podany przez",
+  reported_by: "jest relacjonowane przez",
+  cited_by: "jest przywołane przez",
+  data_provided_to: "dostarczył dane do",
+};
+
 type EnrichmentStage = "events" | "time_periods" | "tones" | "information_sources" | "control_questions";
 
 const OPTIONAL_ENRICHMENTS: { stage: EnrichmentStage; label: string; description: string }[] = [
@@ -596,6 +611,12 @@ const Chunks = () => {
   const [docQuality, setDocQuality] = React.useState<DocQuality | null>(null);
   const [computingQuality, setComputingQuality] = React.useState(false);
   const [refreshingCitationsFor, setRefreshingCitationsFor] = React.useState<number | null>(null);
+  const [relationshipQuote, setRelationshipQuote] = React.useState<{ chunkId: number; text: string } | null>(null);
+  const relationshipQuoteRef = React.useRef<{ chunkId: number; text: string } | null>(null);
+  const [analyzingRelationshipsFor, setAnalyzingRelationshipsFor] = React.useState<number | null>(null);
+  const [relationshipSuggestions, setRelationshipSuggestions] = React.useState<Record<number, SourceRelationshipSuggestion[]>>({});
+  const [relationshipDecisions, setRelationshipDecisions] = React.useState<Record<string, "approved" | "rejected">>({});
+  const [relationshipWarnings, setRelationshipWarnings] = React.useState<Record<number, string[]>>({});
   const [reportingIssue, setReportingIssue] = React.useState(false);
   const [runMode, setRunMode]       = React.useState("transcript");
   const [speakers, setSpeakers]     = React.useState<Speaker[]>([]);
@@ -1778,10 +1799,63 @@ const Chunks = () => {
   }, [notes, chunks, userId]);
 
   const onChunkTextSelected = (chunkId: number, removable: boolean) => {
+    const selected = window.getSelection()?.toString().trim() ?? "";
+    if (selected) {
+      const quote = { chunkId, text: selected };
+      relationshipQuoteRef.current = quote;
+      setRelationshipQuote(quote);
+    }
     if (!userId) return;
     const pending = pendingNoteFromSelection("p,div");
     if (pending) setPendingNote({ ...pending, chunkId, removable });
   };
+
+  const analyzeSelectedRelationships = async (chunkId: number) => {
+    const quote = relationshipQuote?.chunkId === chunkId ? relationshipQuote : relationshipQuoteRef.current;
+    if (!quote || quote.chunkId !== chunkId) {
+      setError("Zaznacz najpierw cytat w treści tego chunka.");
+      return;
+    }
+    setAnalyzingRelationshipsFor(chunkId); setError("");
+    setRelationshipSuggestions(prev => {
+      const next = { ...prev };
+      delete next[chunkId];
+      return next;
+    });
+    setRelationshipWarnings(prev => {
+      const next = { ...prev };
+      delete next[chunkId];
+      return next;
+    });
+    try {
+      const response = await fetch(`${apiUrl}/chunk/${chunkId}/analyze_source_relationships`, {
+        method: "POST", headers, body: JSON.stringify({ quote: quote.text }),
+      });
+      const data = await response.json();
+      if (data.warnings?.length) setRelationshipWarnings(prev => ({ ...prev, [chunkId]: data.warnings.map((warning: { message: string }) => warning.message) }));
+      if (!response.ok || data.status !== "success") throw new Error(data.message ?? "Analiza nie powiodła się");
+      setRelationshipSuggestions(prev => ({ ...prev, [chunkId]: data.relations ?? [] }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Analiza relacji nie powiodła się");
+    } finally { setAnalyzingRelationshipsFor(null); }
+  };
+
+  const decideSourceRelationship = async (chunkId: number, relation: SourceRelationshipSuggestion, decision: "approved" | "rejected") => {
+    try {
+      const response = await fetch(`${apiUrl}/chunk/${chunkId}/source_relationships`, {
+        method: "POST", headers, body: JSON.stringify({ relation, decision }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.status !== "success") throw new Error(data.message ?? "Nie udało się zapisać decyzji");
+      setRelationshipDecisions(previous => ({ ...previous, [relationshipDecisionKey(chunkId, relation)]: decision }));
+      setInfo(decision === "approved" ? "Relacja zatwierdzona — pojawi się na grafie dokumentu." : "Relacja odrzucona.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Nie udało się zapisać decyzji");
+    }
+  };
+
+  const relationshipDecisionKey = (chunkId: number, relation: SourceRelationshipSuggestion) =>
+    `${chunkId}:${relation.subject}:${relation.predicate}:${relation.object}:${relation.evidence_excerpt}`;
 
   const removeChunkSpan = async (chunkId: number, text: string): Promise<boolean> => {
     try {
@@ -2025,6 +2099,14 @@ const Chunks = () => {
                   {refreshingCitationsFor === chunk.id ? "📚 Zapisuję…" : "📚 Cytowania"}
                 </button>
               )}
+              <button
+                onClick={() => analyzeSelectedRelationships(chunk.id)}
+                disabled={analyzingRelationshipsFor === chunk.id}
+                title="Zaznacz cytat w treści, aby otrzymać propozycje relacji źródeł. Wynik nie zapisuje się automatycznie."
+                style={{ padding: "2px 8px", border: "1px solid #0ea5e9", borderRadius: 4, background: "#f0f9ff", cursor: "pointer", fontSize: "0.82em", color: "#0369a1" }}
+              >
+                {analyzingRelationshipsFor === chunk.id ? "🕸️ Analizuję…" : "🕸️ Relacje"}
+              </button>
               {chunk.position < maxPosition && (
                 <button
                   onClick={() => mergeWithNext(chunk)}
@@ -2091,6 +2173,33 @@ const Chunks = () => {
                 />
               )}
             </div>
+
+            {!processComplete && relationshipQuote?.chunkId === chunk.id && (
+              <div style={{ margin: "0 14px 10px", fontSize: "0.78em", color: "#0369a1" }}>
+                Cytat do analizy: „{relationshipQuote.text.length > 180 ? `${relationshipQuote.text.slice(0, 180)}…` : relationshipQuote.text}”
+              </div>
+            )}
+            {!processComplete && relationshipSuggestions[chunk.id] && (
+              <div style={{ margin: "0 14px 12px", padding: "8px 10px", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 5, fontSize: "0.8em" }}>
+                <strong style={{ display: "block", color: "#0369a1", marginBottom: 5 }}>Propozycje relacji — wymagają późniejszego zatwierdzenia</strong>
+                {relationshipSuggestions[chunk.id].length === 0 ? <span style={{ color: "#64748b" }}>Brak relacji wystarczająco potwierdzonych tym cytatem.</span>
+                  : relationshipSuggestions[chunk.id].map((relation, index) => (
+                    <div key={`${relation.subject}-${relation.predicate}-${relation.object}-${index}`} style={{ marginTop: 5 }}>
+                      <strong>{relation.subject}</strong> {SOURCE_RELATION_LABELS[relation.predicate] ?? relation.predicate} <strong>{relation.object}</strong>
+                      <span style={{ color: "#64748b" }}> · {relation.confidence}%</span>
+                      <div style={{ color: "#475569", marginTop: 1 }}>„{relation.evidence_excerpt}”</div>
+                      {relationshipDecisions[relationshipDecisionKey(chunk.id, relation)] === "approved"
+                        ? <span style={{ color: "#15803d", fontSize: "0.9em" }}>✓ Zatwierdzono</span>
+                        : relationshipDecisions[relationshipDecisionKey(chunk.id, relation)] === "rejected"
+                          ? <span style={{ color: "#b91c1c", fontSize: "0.9em" }}>Odrzucono</span>
+                          : <><button type="button" onClick={() => void decideSourceRelationship(chunk.id, relation, "approved")} style={{ marginTop: 4, fontSize: "0.9em" }}>Zatwierdź</button><button type="button" onClick={() => void decideSourceRelationship(chunk.id, relation, "rejected")} style={{ margin: "4px 0 0 5px", fontSize: "0.9em" }}>Odrzuć</button></>}
+                    </div>
+                  ))}
+              </div>
+            )}
+            {!processComplete && relationshipWarnings[chunk.id]?.map(warning => (
+              <div key={warning} style={{ margin: "0 14px 10px", padding: "7px 10px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 5, color: "#92400e", fontSize: "0.8em" }}>⚠️ {warning}</div>
+            ))}
 
             {!!chunk.cited_publications?.length && (
               <div style={{ margin: "0 14px 12px", padding: "8px 10px", background: "#f5f3ff", border: "1px solid #ddd6fe", borderRadius: 5 }}>
@@ -2833,11 +2942,44 @@ const Chunks = () => {
                   <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 5 }}>
                     <strong style={{ color: "#334155" }}>#{chunk.position} {chunk.topic || "TEMAT"}</strong>
                     <span style={{ color: "#15803d", fontSize: "0.78em" }}>● w indeksie</span>
+                    <button type="button" onClick={() => analyzeSelectedRelationships(chunk.id)}
+                      disabled={analyzingRelationshipsFor === chunk.id}
+                      title="Zaznacz cytat w tekście poniżej, aby otrzymać propozycje relacji źródeł"
+                      style={{ marginLeft: "auto", padding: "2px 8px", border: "1px solid #0ea5e9", borderRadius: 4, background: "#f0f9ff", cursor: "pointer", fontSize: "0.8em", color: "#0369a1" }}>
+                      {analyzingRelationshipsFor === chunk.id ? "🕸️ Analizuję…" : "🕸️ Relacje"}
+                    </button>
                   </div>
-                  <div style={{ whiteSpace: "pre-wrap", color: "#475569", fontSize: "0.84em", lineHeight: 1.5 }}>
+                  <div onMouseUp={() => onChunkTextSelected(chunk.id, false)}
+                    style={{ whiteSpace: "pre-wrap", color: "#475569", fontSize: "0.84em", lineHeight: 1.5 }}>
                     {(chunk.corrected_text || chunk.original_text || chunk.text_preview || "").slice(0, 700)}
                     {(chunk.text_length ?? (chunk.corrected_text || chunk.original_text || "").length) > 700 ? "…" : ""}
                   </div>
+                  {relationshipQuote?.chunkId === chunk.id && (
+                    <div style={{ marginTop: 7, fontSize: "0.78em", color: "#0369a1" }}>
+                      Cytat do analizy: „{relationshipQuote.text.length > 180 ? `${relationshipQuote.text.slice(0, 180)}…` : relationshipQuote.text}”
+                    </div>
+                  )}
+                  {relationshipSuggestions[chunk.id] && (
+                    <div style={{ marginTop: 8, padding: "7px 9px", background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 5, fontSize: "0.8em" }}>
+                      <strong style={{ display: "block", color: "#0369a1", marginBottom: 4 }}>Propozycje relacji — wymagają późniejszego zatwierdzenia</strong>
+                      {relationshipSuggestions[chunk.id].length === 0 ? <span style={{ color: "#64748b" }}>Brak relacji wystarczająco potwierdzonych tym cytatem.</span>
+                        : relationshipSuggestions[chunk.id].map((relation, index) => (
+                          <div key={`${relation.subject}-${relation.predicate}-${relation.object}-${index}`} style={{ marginTop: 4 }}>
+                            <strong>{relation.subject}</strong> {SOURCE_RELATION_LABELS[relation.predicate] ?? relation.predicate} <strong>{relation.object}</strong>
+                            <span style={{ color: "#64748b" }}> · {relation.confidence}%</span>
+                            <div style={{ color: "#475569", marginTop: 1 }}>„{relation.evidence_excerpt}”</div>
+                            {relationshipDecisions[relationshipDecisionKey(chunk.id, relation)] === "approved"
+                              ? <span style={{ color: "#15803d", fontSize: "0.9em" }}>✓ Zatwierdzono</span>
+                              : relationshipDecisions[relationshipDecisionKey(chunk.id, relation)] === "rejected"
+                                ? <span style={{ color: "#b91c1c", fontSize: "0.9em" }}>Odrzucono</span>
+                                : <><button type="button" onClick={() => void decideSourceRelationship(chunk.id, relation, "approved")} style={{ marginTop: 4, fontSize: "0.9em" }}>Zatwierdź</button><button type="button" onClick={() => void decideSourceRelationship(chunk.id, relation, "rejected")} style={{ margin: "4px 0 0 5px", fontSize: "0.9em" }}>Odrzuć</button></>}
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                  {relationshipWarnings[chunk.id]?.map(warning => (
+                    <div key={warning} style={{ marginTop: 8, padding: "7px 9px", background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 5, color: "#92400e", fontSize: "0.8em" }}>⚠️ {warning}</div>
+                  ))}
                 </div>
               ))}
             </div>
