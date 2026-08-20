@@ -2173,6 +2173,8 @@ class DocumentOrganization(Base):
     )
     # confidence: alias_matched | canonical_matched | manual_confirmed | needs_review
     confidence: Mapped[str] = mapped_column(String(20), nullable=False)
+    # Only an explicit human approval protects a link from a later NER refresh.
+    review_status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="auto_accepted")
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now(),
     )
@@ -2185,6 +2187,43 @@ class DocumentOrganization(Base):
             f"DocumentOrganization(id={self.id!r}, document_id={self.document_id!r}, "
             f"organization_id={self.organization_id!r})"
         )
+
+
+class DocumentRelationshipRemoval(Base):
+    """Immutable audit record for derived links removed during a refresh."""
+
+    __tablename__ = "document_relationship_removals"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    relation_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    original_row_id: Mapped[int | None] = mapped_column(BigInteger)
+    snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    removal_reason: Mapped[str] = mapped_column(String(80), nullable=False)
+    removed_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
+
+
+class DocumentSourceRelationship(Base):
+    """A reviewer decision about a grounded information-provenance relation."""
+
+    __tablename__ = "document_source_relationships"
+    __table_args__ = (UniqueConstraint("document_id", "subject_name", "predicate", "object_name", "evidence_excerpt"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    chunk_id: Mapped[int | None] = mapped_column(ForeignKey("document_chunks.id", ondelete="SET NULL"))
+    subject_name: Mapped[str] = mapped_column(Text, nullable=False)
+    predicate: Mapped[str] = mapped_column(String(40), nullable=False)
+    object_name: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_excerpt: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="proposed")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    decided_at: Mapped[datetime.datetime | None] = mapped_column(DateTime)
+
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
 
 
 class User(Base):

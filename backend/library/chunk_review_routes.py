@@ -3468,6 +3468,125 @@ def remove_chunk_span(chunk_id: int):
 
 
 # ---------------------------------------------------------------------------
+# API: POST /chunk/<chunk_id>/analyze_source_relationships
+# ---------------------------------------------------------------------------
+
+@bp.route("/chunk/<int:chunk_id>/analyze_source_relationships", methods=["POST"])
+def analyze_chunk_source_relationships(chunk_id: int):
+    """Return LLM suggestions for a reviewer-selected, grounded source quote."""
+    data = request.get_json(silent=True) or {}
+    quote = data.get("quote")
+    if not isinstance(quote, str) or not quote.strip():
+        return jsonify({"status": "error", "message": "quote must be non-empty text"}), 400
+    quote = quote.strip()
+    if len(quote) > 3000:
+        return jsonify({"status": "error", "message": "quote must not exceed 3000 characters"}), 400
+
+    session = get_scoped_session()
+    chunk = session.get(DocumentChunk, chunk_id)
+    if chunk is None:
+        abort(404, f"Chunk {chunk_id} not found")
+    source_text = chunk.corrected_text or chunk.original_text or ""
+    if quote.casefold() not in source_text.casefold():
+        return jsonify({"status": "error", "message": "quote must be selected from this chunk"}), 400
+    run = session.get(DocumentAnalysisRun, chunk.run_id)
+    if run is None:
+        abort(404, f"Run {chunk.run_id} not found")
+
+    try:
+        from library.information_provenance import analyze_source_relationships
+        from library.llm_usage.context import llm_usage_context
+        from library.db.models import DocumentInformationSource, DocumentOrganization, Organization
+        source_names = session.scalars(select(DocumentInformationSource).where(
+            DocumentInformationSource.document_id == run.document_id,
+        )).all()
+        organization_names = session.scalars(select(Organization.canonical_name).join(
+            DocumentOrganization, DocumentOrganization.organization_id == Organization.id,
+        ).where(DocumentOrganization.document_id == run.document_id)).all()
+        cited_publication_names = session.scalars(select(CitedPublication.title).join(
+            DocumentCitedPublication,
+            DocumentCitedPublication.publication_id == CitedPublication.id,
+        ).where(DocumentCitedPublication.document_id == run.document_id)).all()
+        document = session.get(Document, run.document_id)
+        publisher_names = {document.publisher.canonical_name} if document and document.publisher else set()
+        candidates = sorted(
+            {link.source.canonical_name for link in source_names}
+            | set(organization_names)
+            | {name for name in cited_publication_names if name}
+            | publisher_names
+        )
+        warnings = []
+        organization_count = session.scalar(select(func.count()).select_from(DocumentOrganization).where(
+            DocumentOrganization.document_id == run.document_id,
+        )) or 0
+        if document is not None and document.entities_checked_at is None:
+            warnings.append({
+                "code": "ner_not_completed",
+                "message": "Dla tego dokumentu nie wykonano NER; organizacje nie zasilają analizy relacji.",
+            })
+        elif organization_count == 0:
+            warnings.append({
+                "code": "ner_no_organizations",
+                "message": "NER został wykonany, ale nie zapisał żadnej organizacji; relacje z EDF, AFP lub France24 mogą nie zostać wykryte.",
+            })
+        if len(candidates) < 2:
+            return jsonify({
+                "status": "error",
+                "message": "Document has too few known sources or organizations for relationship analysis",
+                "warnings": warnings,
+            }), 400
+        with llm_usage_context(document_id=run.document_id, analysis_run_id=run.id):
+            relations = analyze_source_relationships(quote, run.model, candidates)
+    except Exception:
+        logger.exception("source relationship analysis failed for chunk %d", chunk_id)
+        return jsonify({"status": "error", "message": "Source relationship analysis failed"}), 500
+    return jsonify({
+        "status": "success", "chunk_id": chunk_id, "quote": quote,
+        "relations": relations, "warnings": warnings,
+    })
+
+
+@bp.route("/chunk/<int:chunk_id>/source_relationships", methods=["POST"])
+def decide_chunk_source_relationship(chunk_id: int):
+    """Persist a reviewer approval or rejection of one displayed proposal."""
+    from library.db.models import DocumentSourceRelationship
+
+    data = request.get_json(silent=True) or {}
+    relation, decision = data.get("relation"), data.get("decision")
+    if decision not in {"approved", "rejected"} or not isinstance(relation, dict):
+        return jsonify({"status": "error", "message": "Invalid relationship decision"}), 400
+    required = ("subject", "predicate", "object", "evidence_excerpt", "confidence")
+    if any(not relation.get(key) for key in required):
+        return jsonify({"status": "error", "message": "Incomplete relationship"}), 400
+    chunk = get_scoped_session().get(DocumentChunk, chunk_id)
+    if chunk is None:
+        abort(404, f"Chunk {chunk_id} not found")
+    source_text = chunk.corrected_text or chunk.original_text or ""
+    evidence = str(relation["evidence_excerpt"]).strip()
+    if evidence.casefold() not in source_text.casefold():
+        return jsonify({"status": "error", "message": "Evidence must come from this chunk"}), 400
+    session = get_scoped_session()
+    run = session.get(DocumentAnalysisRun, chunk.run_id)
+    row = session.scalar(select(DocumentSourceRelationship).where(
+        DocumentSourceRelationship.document_id == run.document_id,
+        DocumentSourceRelationship.subject_name == str(relation["subject"]).strip(),
+        DocumentSourceRelationship.predicate == str(relation["predicate"]).strip(),
+        DocumentSourceRelationship.object_name == str(relation["object"]).strip(),
+        DocumentSourceRelationship.evidence_excerpt == evidence,
+    ))
+    if row is None:
+        row = DocumentSourceRelationship(document_id=run.document_id, chunk_id=chunk.id,
+            subject_name=str(relation["subject"]).strip(), predicate=str(relation["predicate"]).strip(),
+            object_name=str(relation["object"]).strip(), evidence_excerpt=evidence,
+            confidence=max(0, min(100, int(relation["confidence"]))), status=decision, decided_at=datetime.now())
+        session.add(row)
+    else:
+        row.status, row.decided_at = decision, datetime.now()
+    session.commit()
+    return jsonify({"status": "success", "id": row.id, "decision": row.status})
+
+
+# ---------------------------------------------------------------------------
 # API: POST /chunk/<chunk_id>/reanalyze
 # ---------------------------------------------------------------------------
 

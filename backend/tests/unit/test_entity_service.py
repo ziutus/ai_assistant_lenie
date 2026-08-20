@@ -27,7 +27,15 @@ RAW = [
 
 def _session_with_exclusions(exclusions):
     session = MagicMock()
-    session.execute.return_value.scalars.return_value.all.return_value = exclusions
+    # refresh_document_entities issues several SELECTs.  Only the
+    # ner_exclusions query should return the supplied exclusion rows; derived
+    # entity/organization queries are empty in these unit tests.
+    def execute(statement, *_args, **_kwargs):
+        result = MagicMock()
+        rows = exclusions if "ner_exclusions" in str(statement) else []
+        result.scalars.return_value.all.return_value = rows
+        return result
+    session.execute.side_effect = execute
     session.get.return_value = MagicMock(byline=None)
     return session
 

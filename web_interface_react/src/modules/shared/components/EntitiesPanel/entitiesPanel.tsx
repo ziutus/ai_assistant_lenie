@@ -42,6 +42,8 @@ export interface EntityItem {
   // Global organization registry (orgName only) — present once resolved
   // (library/organization_registry.py). Lets the editor offer "Połącz z…".
   organization_id?: number;
+  organization_link_id?: number;
+  organization_review_status?: string;
 }
 
 interface EntitiesByType {
@@ -470,6 +472,16 @@ const EntitiesPanel = ({
     }
   };
 
+  const approveOrganization = async (item: EntityItem) => {
+    if (item.organization_link_id == null) return;
+    try {
+      await axios.post(`${apiUrl}/document/${docId}/organizations/${item.organization_link_id}/approve`, {}, { headers: jsonHeaders });
+      fetchEntities();
+    } catch (error: any) {
+      setMessage(`Nie udało się zatwierdzić organizacji: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
   const handlePlaceMergePick = async (target: EntityItem) => {
     if (placeMergeFor?.id == null || target.id == null) {
       return;
@@ -651,6 +663,11 @@ const EntitiesPanel = ({
         >
           ↷
         </button>
+      )}
+      {entityType === "orgName" && item.organization_link_id != null && (
+        item.organization_review_status === "approved"
+          ? <span title="Zatwierdzone — NER nie usunie powiązania" style={{ color: "#15803d", marginLeft: 3 }}>✓</span>
+          : <button type="button" style={{ ...chipActionStyle, color: "#15803d" }} title="Zatwierdź — chroń przed odświeżeniem NER" onClick={() => void approveOrganization(item)}>✓</button>
       )}
       {entityType === "orgName" && item.id != null && places.length > 0 && (
         <button
