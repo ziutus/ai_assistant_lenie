@@ -144,10 +144,11 @@ export const EntityChips = ({
   if (!items.length) {
     return null;
   }
+  const alphabeticalItems = [...items].sort((a, b) => a.text.localeCompare(b.text, "pl"));
   return (
     <div style={{ marginTop: "6px" }}>
       <strong>{label}:</strong>{" "}
-      {items.map((item) => {
+      {alphabeticalItems.map((item) => {
         const isResolvedPerson = item.person_id != null;
         const personTitle = isResolvedPerson
           ? [item.canonical_name, item.person_description, item.wikidata_qid, item.confidence]
