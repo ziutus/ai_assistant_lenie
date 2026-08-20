@@ -10,6 +10,9 @@ export interface EntityItem {
   id?: number;
   text: string;
   count: number;
+  // Original NER category. Required when a combined "Miejsca" chip is
+  // excluded, so a placeName rule does not turn into a wildcard rule.
+  entity_type?: "persName" | "orgName" | "geogName" | "placeName";
   // Surface forms seen in the text ("Kijów", "Kijowa") — used server-side for
   // chapter-scoped filtering; not rendered
   variants?: string[];
@@ -625,7 +628,12 @@ const EntitiesPanel = ({
   const organizations = entities?.orgName ?? [];
   const citedSources = organizations.filter((item) => item.information_source_id != null);
   const otherOrganizations = organizations.filter((item) => item.information_source_id == null);
-  const places = [...(entities?.geogName ?? []), ...(entities?.placeName ?? [])];
+  // The UI combines both NER place categories into one section, while an
+  // exclusion must preserve the category that produced each chip.
+  const places = [
+    ...(entities?.geogName ?? []).map((item) => ({ ...item, entity_type: "geogName" as const })),
+    ...(entities?.placeName ?? []).map((item) => ({ ...item, entity_type: "placeName" as const })),
+  ];
   const facilities = entities?.facility ?? [];
   const isEmpty = !persons.length && !organizations.length && !places.length && !facilities.length;
   const reviewFormValid = Boolean(reviewReason)
@@ -683,7 +691,10 @@ const EntitiesPanel = ({
         style={{ ...chipActionStyle }}
         title="Usuń i nie wykrywaj więcej (słownik wykluczeń NER)"
         onClick={() => {
-          setExcludeFor({ item, entityType });
+          // The places section combines geogName and placeName visually.
+          // Use the item type there; '*' is only appropriate when explicitly
+          // requested, never as a side effect of that presentation grouping.
+          setExcludeFor({ item, entityType: item.entity_type ?? entityType });
           setDeleteFor(null);
           setMergeFor(null);
           setOrgMergeFor(null);
@@ -846,7 +857,7 @@ const EntitiesPanel = ({
         items={otherOrganizations}
         actions={editMode ? editActions("orgName") : undefined}
       />
-      <EntityChips label={"Miejsca"} items={places} actions={editMode ? editActions("*") : undefined} />
+      <EntityChips label={"Miejsca"} items={places} actions={editMode ? editActions("placeName") : undefined} />
       <EntityChips label={"Obiekty infrastruktury"} items={facilities} />
 
       {editMode && deleteFor && (
