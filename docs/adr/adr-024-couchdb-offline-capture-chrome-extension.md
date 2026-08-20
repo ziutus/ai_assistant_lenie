@@ -1,7 +1,7 @@
 # ADR-024: CouchDB as a durable offline outbox for Chrome extension capture
 
 **Date:** 2026-08-20
-**Status:** Proposed — CouchDB deployed on NAS for hands-on testing; not yet wired into the extension or backend ingestion path
+**Status:** Proposed — plan only; no implementation yet, deliberately deferred until there's time to test hands-on
 **Decision makers:** Ziutus
 
 ## Context
@@ -44,9 +44,11 @@ This is complementary to, not competing with, two things already decided:
 
 ## Decision
 
-1. **Deploy a single-node CouchDB container on the NAS compose stack**
-   (`infra/docker/compose.nas.yaml`) for hands-on testing now. Not yet
-   wired to any production capture path.
+1. **First implementation step, when there's time to test hands-on: deploy
+   a single-node CouchDB container on the NAS compose stack**
+   (`infra/docker/compose.nas.yaml`). Not wired to any production capture
+   path at that stage either — this is purely to get CouchDB running and
+   poke at it.
    - No clustering — this validates the pattern, it isn't a plan for
      CouchDB HA.
    - Internal-only on `lenie-net` initially, same posture as
@@ -60,8 +62,8 @@ This is complementary to, not competing with, two things already decided:
      chicken-and-egg reason MinIO's are handled that way. Any future
      application-side consumer (a sync worker, etc.) still reads its
      connection credentials from Vault like everything else.
-2. **Next phase (separate follow-up, not this ADR's initial scope):** a
-   small proof-of-concept — PouchDB inside the Chrome extension, one-way
+2. **Second implementation step (separate follow-up):** a small
+   proof-of-concept — PouchDB inside the Chrome extension, one-way
    replication to CouchDB on capture, and a worker that drains new CouchDB
    docs into the existing `/url_add` ingestion logic (reusing its
    validation, not duplicating it).
