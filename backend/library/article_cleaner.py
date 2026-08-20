@@ -406,9 +406,11 @@ def _strip_interia_chrome_blocks(text: str) -> str:
 # ("Interia współpracuje z czołowymi redakcjami..." i ", z którego pochodzi
 # ... artykuł") wystarczają jako kotwice. Odległości ograniczone (`.{0,200}?`,
 # `.{0,400}?`), żeby przy braku pustej linii między akapitami nie połknąć
-# zaczątku treści artykułu.
+# zaczątku treści artykułu. Cały akapit bywa owinięty w kursywę markdown
+# (`*...*`) — wiodąca gwiazdka jest konsumowana wprost (`\*?`), zamykająca
+# i tak wpada w `.{0,400}?` tuż przed pustą linią.
 _INTERIA_BLIZEJ_SWIATA_RE = re.compile(
-    r'Interia współpracuje z czołowymi redakcjami na świecie\.'
+    r'\*?Interia współpracuje z czołowymi redakcjami na świecie\.'
     r'.{0,200}?'
     r'["„]\s*(?P<source_name>[^"„”\n]{2,80}?)\s*["”],\s*z którego pochodzi (?:poniższy|powyższy|niniejszy)\s+artykuł'
     r'.{0,400}?(?=\n\s*\n|\Z)',

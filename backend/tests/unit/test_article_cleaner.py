@@ -441,6 +441,13 @@ class TestInteriaCleaning:
     def test_no_blizej_swiata_paragraph_returns_unchanged(self):
         assert _strip_interia_blizej_swiata(LONG_PARAGRAPH) == (LONG_PARAGRAPH, None)
 
+    def test_blizej_swiata_paragraph_wrapped_in_italics_leaves_no_stray_asterisk(self):
+        # Realny przypadek (dok. 9394): cały akapit owinięty w kursywę markdown.
+        text = f"{LONG_PARAGRAPH}\n\n*{self.BLIZEJ_SWIATA_PARAGRAPH}*\n\n{LONG_PARAGRAPH}"
+        cleaned, info = _strip_interia_blizej_swiata(text)
+        assert info is not None
+        assert cleaned == f"{LONG_PARAGRAPH}\n\n\n\n{LONG_PARAGRAPH}"
+
     def test_blizej_swiata_end_to_end_via_clean_article_text(self):
         text = f"{LONG_PARAGRAPH}\n\n{self.BLIZEJ_SWIATA_PARAGRAPH}\n\n{LONG_PARAGRAPH}"
         result = clean_article_text(text, url=self.URL)
