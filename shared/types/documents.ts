@@ -41,6 +41,8 @@ export interface ContentGroupSuggestion {
   reason: string | null;
   status: "pending" | "accepted" | "dismissed" | "reverted";
   membership_created: boolean;
+  decided_by_user_id: number | null;
+  decided_at: string | null;
 }
 
 export const emptyDocument: Document = {

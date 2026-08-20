@@ -44,6 +44,7 @@ from ruamel.yaml.error import YAMLError
 from sqlalchemy.orm import Session
 
 from library.config_loader import load_config
+from library.content_group_suggestion_service import request_suggestions
 from library.db.models import Document, Job
 from library.document_repository import DocumentRepository
 from library.document_service import DocumentService
@@ -250,6 +251,16 @@ def _reimport_one_note(
         logger.exception("obsidian_reimport: import/update failed for %s", note_path)
         session.rollback()
         return "failed"
+
+    # Best-effort: a classification failure must never fail the note import
+    # itself (same defensive pattern as record_llm_usage() in ai.py). Runs
+    # asynchronously via the content_group_suggest job -- see
+    # content_group_suggestion_service.execute_suggestion_job() for the
+    # auto-apply logic that classifies obsidian_note documents unattended.
+    try:
+        request_suggestions(session, "document", doc.id, user_id=None)
+    except Exception:
+        logger.exception("obsidian_reimport: failed to enqueue content group suggestion for document %s", doc.id)
 
     return "created" if existing is None else "updated"
 
