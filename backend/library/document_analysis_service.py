@@ -423,14 +423,13 @@ def _apply_tags(doc: Document, text: str) -> None:
     analysis runs (e.g. one run per book chapter) should accumulate tags
     across runs, not clobber ones set by a previous run.
     """
-    from library.article_tagging import COUNTRY_TAG_TRIGGERS, extract_countries_hybrid, tag_article_with_llm
+    from library.article_tagging import extract_countries_hybrid, tag_article_with_llm
 
     article_tags = tag_article_with_llm(text, doc.title or "")
-    country_tags = (
-        extract_countries_hybrid(text, doc.title or "")
-        if article_tags and COUNTRY_TAG_TRIGGERS.intersection(article_tags)
-        else []
-    )
+    # Country detection has its own cheap gazetteer prescreen.  It must not be
+    # gated by thematic tags: a failed/empty thematic classification used to
+    # hide plainly mentioned countries such as Sudan and Qatar from the reader.
+    country_tags = extract_countries_hybrid(text, doc.title or "")
     new_tags = article_tags + country_tags
     if not new_tags:
         return
