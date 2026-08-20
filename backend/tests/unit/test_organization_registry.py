@@ -14,6 +14,7 @@ pytest.importorskip("sqlalchemy")
 from library.organization_registry import (  # noqa: E402
     AliasConflictError,
     add_alias,
+    ambiguous_alias_candidates,
     merge,
     merge_ner_groups,
     normalize_alias,
@@ -76,6 +77,23 @@ class TestNormalizeAlias:
     def test_casefolds_without_stripping_diacritics(self):
         assert normalize_alias("Interią") == "interią"
         assert normalize_alias("  Interia  ") == "interia"
+
+
+class TestAmbiguousAliasCandidates:
+    def test_queries_only_approved_candidates_without_resolving_them(self):
+        sudan = MagicMock()
+        credit = MagicMock()
+        session = MagicMock()
+        session.execute.return_value = _execute_result(all_=[sudan, credit])
+
+        assert ambiguous_alias_candidates(session, " SAF ") == [sudan, credit]
+        assert session.execute.call_count == 1
+
+    def test_empty_alias_never_queries_database(self):
+        session = MagicMock()
+
+        assert ambiguous_alias_candidates(session, "  ") == []
+        session.execute.assert_not_called()
 
 
 class TestResolveAlias:

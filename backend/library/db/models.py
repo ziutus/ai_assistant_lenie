@@ -2188,6 +2188,9 @@ class Organization(Base):
     aliases: Mapped[list["OrganizationAlias"]] = relationship(
         back_populates="organization", cascade="all, delete-orphan",
     )
+    ambiguous_aliases: Mapped[list["OrganizationAmbiguousAlias"]] = relationship(
+        back_populates="organization", cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"Organization(id={self.id!r}, canonical_name={self.canonical_name!r})"
@@ -2223,6 +2226,43 @@ class OrganizationAlias(Base):
 
     def __repr__(self) -> str:
         return f"OrganizationAlias(id={self.id!r}, organization_id={self.organization_id!r}, alias={self.alias!r})"
+
+
+class OrganizationAmbiguousAlias(Base):
+    """One possible meaning of a context-dependent organization abbreviation.
+
+    Unlike ``OrganizationAlias``, an ambiguous alias is deliberately *not*
+    globally unique: the same abbreviation (for example ``SAF``) may refer to
+    several organizations. It is candidate data for a document-context rule or
+    an LLM decision, never an automatic global name-resolution rule.
+    """
+
+    __tablename__ = "organization_ambiguous_aliases"
+    __table_args__ = (UniqueConstraint("organization_id", "normalized_alias"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    organization_id: Mapped[int] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False,
+    )
+    alias: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_alias: Mapped[str] = mapped_column(Text, nullable=False)
+    # A compact cue supplied to a resolver, e.g. a country/domain distinction.
+    context_hint: Mapped[str | None] = mapped_column(Text)
+    language: Mapped[str | None] = mapped_column(String(10))
+    # approved | needs_review | retired
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="approved")
+    created_by: Mapped[str] = mapped_column(String(20), nullable=False, server_default="manual")
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    organization: Mapped["Organization"] = relationship(back_populates="ambiguous_aliases")
+
+    def __repr__(self) -> str:
+        return (
+            "OrganizationAmbiguousAlias("
+            f"id={self.id!r}, organization_id={self.organization_id!r}, alias={self.alias!r})"
+        )
 
 
 class DocumentOrganization(Base):
