@@ -40,6 +40,23 @@ def test_ner_bare_organization_mention_is_not_a_source():
     assert extract_ner_cited_sources("Bloomberg otworzył nowe biuro.", ["Bloomberg"]) == []
 
 
+def test_ner_plural_verb_before_enumerated_sources_is_attribution():
+    text = (
+        "W komunikacie EDF poinformował, że doszło do wyłączeń - podają "
+        "France24 oraz agencja AFP."
+    )
+
+    result = extract_ner_cited_sources(text, [
+        {"text": "France24", "variants": ["France24"]},
+        {"text": "AFP", "variants": ["AFP"]},
+    ])
+
+    assert [(item["canonical_name"], item["role"]) for item in result] == [
+        ("France24", "cited"),
+        ("AFP", "cited"),
+    ]
+
+
 def test_json_array_recovers_complete_objects_from_truncated_response():
     raw = ('[{"canonical_name": "The Guardian", "role": "cited", "confidence": 90},\n'
            '{"canonical_name": "MSZ", "role": "data_source", "confidence": 85},\n'

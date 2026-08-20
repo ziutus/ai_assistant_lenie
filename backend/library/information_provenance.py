@@ -38,6 +38,7 @@ REPORTING_VERBS = re.compile(
 
 SOURCE_PREFIX = re.compile(
     r"(?:\bwedług|\bzdaniem|\bza\b|\bjak\s+(?:podaje|informuje|donosi)|"
+    r"\bpodają|\binformują|\bdonoszą|"
     r"\bpowołując\s+się\s+na|\bna\s+podstawie|\bdane\s+(?:od|z))\b.{0,100}$",
     re.IGNORECASE | re.DOTALL,
 )
