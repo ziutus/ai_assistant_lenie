@@ -12,7 +12,12 @@ import logging
 
 from sqlalchemy import func, select
 
-from library.db.models import DocumentOrganization, Organization, OrganizationAlias
+from library.db.models import (
+    DocumentOrganization,
+    Organization,
+    OrganizationAlias,
+    OrganizationAmbiguousAlias,
+)
 from library.ner_normalization import normalize_ner_text
 
 logger = logging.getLogger(__name__)
@@ -35,6 +40,25 @@ class AliasConflictError(Exception):
 def normalize_alias(value: str) -> str:
     """NFC + strip + casefold — no diacritic stripping, no fuzzy folding."""
     return normalize_ner_text(value).casefold()
+
+
+def ambiguous_alias_candidates(session, alias: str) -> list[OrganizationAmbiguousAlias]:
+    """Return approved meanings of a context-dependent alias.
+
+    Callers must resolve a result using document context; this helper never
+    selects a candidate itself and must not be used by ``resolve_alias()``.
+    """
+    normalized = normalize_alias(alias)
+    if not normalized:
+        return []
+    return session.execute(
+        select(OrganizationAmbiguousAlias)
+        .where(
+            OrganizationAmbiguousAlias.normalized_alias == normalized,
+            OrganizationAmbiguousAlias.status == "approved",
+        )
+        .order_by(OrganizationAmbiguousAlias.id)
+    ).scalars().all()
 
 
 def resolve_alias(session, name: str) -> Organization | None:
