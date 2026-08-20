@@ -105,10 +105,10 @@ class TestFilterEntitiesToText:
         assert out["placeName"][0]["display_name"] == "Teheran, Iran"
         assert item["count"] == 42  # oryginał (widok całego dokumentu) nietknięty
 
-    def test_kept_items_sorted_by_local_count(self):
+    def test_kept_items_sorted_alphabetically(self):
         grouped = _grouped(persName=[
-            {"text": "Putin", "count": 50, "variants": ["Putin", "Putinie"]},
-            {"text": "Merkel", "count": 3, "variants": ["Merkel"]},
+            {"text": "Zeus", "count": 50, "variants": ["Zeus"]},
+            {"text": "Adam", "count": 3, "variants": ["Adam"]},
         ])
-        out = filter_entities_to_text(grouped, "Merkel i Merkel rozmawiały o Putinie.")
-        assert [(i["text"], i["count"]) for i in out["persName"]] == [("Merkel", 2), ("Putin", 1)]
+        out = filter_entities_to_text(grouped, "Zeus i Zeus rozmawiali z Adamem. Adam przysłuchiwał się rozmowie.")
+        assert [(i["text"], i["count"]) for i in out["persName"]] == [("Adam", 1), ("Zeus", 2)]

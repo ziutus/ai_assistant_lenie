@@ -434,7 +434,7 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
 
 
 def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
-    """Return the document's stored entities grouped by type, most-mentioned first.
+    """Return the document's stored entities grouped by type, alphabetically.
 
     Shape: {"persName": [{"text", "count"}, ...], "geogName": [...], "placeName": [...]}.
     Place entities checked by stage-3 verification additionally carry
@@ -456,7 +456,7 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     rows = (
         session.query(DocumentEntity)
         .filter(DocumentEntity.document_id == document_id)
-        .order_by(DocumentEntity.mention_count.desc(), DocumentEntity.entity_text)
+        .order_by(DocumentEntity.entity_text)
         .all()
     )
     persons_by_mention = {p["raw_mention"]: p for p in get_document_persons(session, document_id)}
@@ -570,9 +570,10 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
     Matching is case-insensitive, except that a capitalized needle only matches
     a surface form that is also capitalized.
 
-    Kept items get their "count" REPLACED with the local mention count and are
-    re-sorted by it — the reader chip "Putin ×50" in chapter scope used to show
-    the whole-book count, misleading for a chapter with a single mention.
+    Kept items get their "count" REPLACED with the local mention count — the
+    reader chip "Putin ×50" in chapter scope used to show the whole-book count,
+    misleading for a chapter with a single mention. They remain alphabetically
+    sorted so the reader sidebar is easy to verify against an expected list.
     Original dicts are not mutated (document-level callers keep global counts).
     """
     filtered: dict[str, list[dict]] = {}
@@ -610,7 +611,7 @@ def filter_entities_to_text(grouped: dict[str, list[dict]], text: str) -> dict[s
                     needle for i, needle in enumerate(needles) if i in matched_variant_indexes
                 ]
                 kept.append({**item, "count": local_count, "chapter_variants": chapter_variants})
-        kept.sort(key=lambda i: (-i["count"], i["text"]))
+        kept.sort(key=lambda i: i["text"])
         filtered[entity_type] = kept
     return filtered
 
