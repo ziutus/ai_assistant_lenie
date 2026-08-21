@@ -587,12 +587,20 @@ function renderTableBlock(
   key: React.Key,
   notes: UserNote[],
   refs?: Map<string, ChapterReference>,
+  highlightTerms?: string[],
+  timelineAnchor?: string | null,
+  onAnchorClick?: (anchorId: string) => void,
+  images?: Map<number, ChapterImage>,
+  wikiLinks?: Map<string, number>,
+  described?: EntityDescriptions,
 ): React.ReactNode | null {
   const lines = trimmed.split("\n");
   if (lines.length < 2 || !lines[0].trim().startsWith("|") || !TABLE_SEPARATOR_RE.test(lines[1].trim())) return null;
   const header = parseTableRow(lines[0]);
   const rows = lines.slice(2).map(parseTableRow);
-  const cell = (text: string) => renderParagraphWithNotes(text, notes, refs).nodes;
+  const cell = (text: string) => renderParagraphWithNotes(
+    text, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+  ).nodes;
   return (
     <div key={key} style={{ overflowX: "auto", margin: "16px 0" }}>
       <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.88em" }}>
@@ -666,12 +674,17 @@ function renderCalloutBlock(
   refs?: Map<string, ChapterReference>,
   highlightTerms?: string[],
   timelineAnchor?: string | null,
+  onAnchorClick?: (anchorId: string) => void,
+  images?: Map<number, ChapterImage>,
+  wikiLinks?: Map<string, number>,
+  described?: EntityDescriptions,
 ): React.ReactNode | null {
   const match = trimmed.match(CALLOUT_RE);
   if (!match) return null;
   const isWarn = match[1] === "WARN";
   const { nodes } = renderParagraphWithNotes(
     match[2].replace(/\n/g, " "), notes, refs, highlightTerms, timelineAnchor,
+    onAnchorClick, images, wikiLinks, described,
   );
   return (
     <div key={key} style={{
@@ -739,12 +752,16 @@ function renderMarkdown(
         return;
       }
       if (IMAGE_LINE.test(trimmed)) return;
-      const callout = renderCalloutBlock(trimmed, key, notes, refs, highlightTerms, timelineAnchor);
+      const callout = renderCalloutBlock(
+        trimmed, key, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+      );
       if (callout) {
         out.push(callout);
         return;
       }
-      const table = renderTableBlock(trimmed, key, notes, refs);
+      const table = renderTableBlock(
+        trimmed, key, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+      );
       if (table) {
         out.push(table);
         return;
