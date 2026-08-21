@@ -1651,12 +1651,18 @@ def organization_get(organization_id: int):
 
 @app.route('/organizations/<int:organization_id>', methods=['PATCH', 'OPTIONS'])
 def organization_update(organization_id: int):
-    """Edit an organization's description/type — shown as a tooltip on its
-    chip in the reader (EntitiesPanel). Body: {"description": "..."} and/or
-    {"organization_type": "..."}. Empty string clears the field."""
+    """Edit an organization's canonical_name/description/type — shown as a
+    tooltip on its chip in the reader (EntitiesPanel). Body:
+    {"canonical_name": "..."} and/or {"description": "..."} and/or
+    {"organization_type": "..."}. Empty string clears description/type;
+    canonical_name must not be blanked. Renaming keeps the old name
+    resolvable as an alias (organization_registry.rename()) — needed after
+    organization_registry.merge() leaves a raw pre-Faza-1/5 NER lemma dump
+    (e.g. "unia europejski") as the surviving canonical_name."""
     if request.method == 'OPTIONS':
         return {"status": "OK"}, 200
 
+    from library import organization_registry
     from library.db.models import Organization
 
     session = get_scoped_session()
@@ -1665,6 +1671,19 @@ def organization_update(organization_id: int):
         return {"status": "error", "message": "Organization not found"}, 404
 
     data = request.get_json(silent=True) or {}
+    if 'canonical_name' in data:
+        new_name = (data.get('canonical_name') or "").strip()
+        if not new_name:
+            return {"status": "error", "message": "canonical_name must not be empty"}, 400
+        try:
+            organization_registry.rename(session, organization, new_name)
+        except organization_registry.AliasConflictError as exc:
+            session.rollback()
+            return {"status": "error", "message": str(exc),
+                    "existing_organization_id": exc.existing_organization_id}, 409
+        except ValueError as exc:
+            session.rollback()
+            return {"status": "error", "message": str(exc)}, 400
     if 'description' in data:
         organization.description = (data.get('description') or "").strip() or None
     if 'organization_type' in data:
@@ -1678,6 +1697,7 @@ def organization_update(organization_id: int):
         return {"status": "error", "message": "DB error"}, 500
 
     return jsonify({"status": "success", "id": organization.id,
+                    "canonical_name": organization.canonical_name,
                     "description": organization.description,
                     "organization_type": organization.organization_type}), 200
 

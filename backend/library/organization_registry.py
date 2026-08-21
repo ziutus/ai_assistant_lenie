@@ -249,6 +249,41 @@ def add_alias(session, organization: Organization, alias: str, *,
     return row
 
 
+def rename(session, organization: Organization, new_canonical_name: str) -> Organization:
+    """Change canonical_name, keeping the old name resolvable as an alias.
+
+    Needed after merge() consolidates duplicate rows: the surviving
+    canonical_name is whatever the target already had (often a raw,
+    pre-Faza-1/5 NER lemma dump, e.g. "unia europejski") and merge() never
+    rewrites it. Raises AliasConflictError if the new name is already a
+    different organization's alias/canonical name — a rename must never
+    silently steal another organization's identity.
+    """
+    new_name = normalize_ner_text(new_canonical_name)
+    if not new_name:
+        raise ValueError("new_canonical_name must not be empty")
+    if new_name == organization.canonical_name:
+        return organization
+
+    normalized = normalize_alias(new_name)
+    conflict = session.execute(
+        select(OrganizationAlias).where(OrganizationAlias.normalized_alias == normalized)
+    ).scalars().first()
+    if conflict is not None and conflict.organization_id != organization.id:
+        raise AliasConflictError(new_name, conflict.organization_id)
+    for other in session.execute(select(Organization)).scalars().all():
+        if other.id != organization.id and normalize_alias(other.canonical_name) == normalized:
+            raise AliasConflictError(new_name, other.id)
+
+    old_name = organization.canonical_name
+    add_alias(session, organization, old_name, alias_kind="manual", created_by="manual")
+    if conflict is not None and conflict.organization_id == organization.id:
+        session.delete(conflict)
+    organization.canonical_name = new_name
+    session.flush()
+    return organization
+
+
 def _delete_organization_if_orphaned(session, organization_id: int) -> bool:
     """Delete the Organization row when no document_organizations links point at it."""
     remaining = session.execute(
@@ -293,7 +328,17 @@ def merge(session, source_organization_id: int, target_organization_id: int, *,
         if already_on_target is not None and already_on_target.organization_id == target.id:
             session.delete(alias)
         else:
-            alias.organization_id = target.id
+            # Reassign through the relationship (not the raw FK column):
+            # OrganizationAlias.organization is back_populates="aliases" with
+            # cascade="all, delete-orphan" on the Organization side. Setting
+            # only alias.organization_id left the object still tracked as a
+            # member of source.aliases in the unit of work, so SQLAlchemy
+            # silently deleted it as an "orphan" at flush instead of moving
+            # it — confirmed live: merging org 277 into 186 dropped 277's
+            # only correct alias ("Organizacja Narodów Zjednoczonych")
+            # without error. alias.organization = target updates both
+            # collections and avoids the false orphan.
+            alias.organization = target
 
     source_links = session.execute(
         select(DocumentOrganization).where(DocumentOrganization.organization_id == source.id)
