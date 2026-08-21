@@ -68,7 +68,8 @@ const FitToMatched: React.FC<{ data: GeoJSON.FeatureCollection; matchedIso: Set<
  *  Desktop-only by convention of the caller (see read.tsx) — loads tiles + a bundled
  *  world-countries GeoJSON only when actually rendered. Small island states / micro-states
  *  missing from the (lightweight, ~250KB) bundled GeoJSON won't appear on the map — they're
- *  still listed as text chips below it so nothing is silently dropped. */
+ *  still listed in the reader's "Encje" → "Państwa" block (EntitiesPanel), so nothing is
+ *  silently dropped; this component itself no longer renders a text fallback list. */
 const CountryMap: React.FC<Props> = ({ countries, places = [], pipelines = [] }) => {
   const [geoData, setGeoData] = React.useState<GeoJSON.FeatureCollection | null>(null);
   const [error, setError] = React.useState(false);
@@ -191,20 +192,6 @@ const CountryMap: React.FC<Props> = ({ countries, places = [], pipelines = [] })
           </MapContainer>
         </div>
       )}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
-        {countries.map(c => (
-          <span
-            key={c.slug}
-            style={{
-              fontSize: "0.78em", padding: "2px 8px", borderRadius: 999,
-              background: matchedIso.has(COUNTRY_SLUG_TO_ISO3[c.slug]) ? "#e0f2fe" : "#f1f5f9",
-              color: "#334155",
-            }}
-          >
-            {c.name_pl}
-          </span>
-        ))}
-      </div>
     </div>
   );
 };

@@ -2017,8 +2017,6 @@ const Read: React.FC = () => {
               </div>
             )}
 
-            <TimePeriodsPanel docId={id} currentChapter={position} />
-
             <details open style={{
               background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
               padding: 10, marginTop: 12, fontSize: "0.9em",
@@ -2027,9 +2025,11 @@ const Read: React.FC = () => {
                 Encje
               </summary>
               <div style={{ marginTop: 4 }}>
-                <EntitiesPanel docId={id} />
+                <EntitiesPanel docId={id} countries={shownCountries} />
               </div>
             </details>
+
+            <TimePeriodsPanel docId={id} currentChapter={position} />
 
             <TonePanel docId={id} currentChapter={position} />
 

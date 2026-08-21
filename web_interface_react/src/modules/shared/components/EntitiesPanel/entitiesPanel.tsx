@@ -2,6 +2,7 @@ import React from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
 import { AuthorizationContext } from "../../context/authorizationContext";
+import type { CountryTag } from "../CountryMap/countryMap";
 
 // NER entities detected in the document (backend: GET/POST /website_entities,
 // table document_entities — see docs/ner-integration-plan.md).
@@ -13,6 +14,11 @@ export interface EntityItem {
   // Original NER category. Required when a combined "Miejsca" chip is
   // excluded, so a placeName rule does not turn into a wildcard rule.
   entity_type?: "persName" | "orgName" | "geogName" | "placeName";
+  // True when country_gazetteer recognizes this entity's text as a country
+  // name (geogName/placeName/orgName only) — geogName/placeName/orgName
+  // country mentions are hidden from "Miejsca"/"Organizacje" here since the
+  // reader's own "Państwa" block (kraj-* tags, LLM-vetted) already covers them.
+  is_country?: boolean;
   // Surface forms seen in the text ("Kijów", "Kijowa") — used server-side for
   // chapter-scoped filtering; not rendered
   variants?: string[];
@@ -260,6 +266,7 @@ const EntitiesPanel = ({
   externalDisabled = false,
   onBusyChange,
   onEntitiesChanged,
+  countries = [],
 }: {
   docId?: string | number;
   externalDisabled?: boolean;
@@ -268,6 +275,12 @@ const EntitiesPanel = ({
   // that keeps its own copy of this document's entities (e.g. read.tsx's
   // chapter-scoped sidebar) know it should refetch too.
   onEntitiesChanged?: () => void;
+  // kraj-* tags (country_gazetteer + extract_countries_hybrid, LLM-vetted),
+  // scoped by the caller (read.tsx passes the chapter- or document-level
+  // list) — rendered as the first block, ahead of Osoby. Not fetched by this
+  // component itself since it lives outside document_entities (Document.tags),
+  // unlike everything else here.
+  countries?: CountryTag[];
 }) => {
   const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
   const [entities, setEntities] = React.useState<EntitiesByType | null>(null);
@@ -625,17 +638,23 @@ const EntitiesPanel = ({
   }
 
   const persons = entities?.persName ?? [];
-  const organizations = entities?.orgName ?? [];
+  // A country mention NER tags as orgName (e.g. "Arabią Saudyjską" in a
+  // "rząd Arabii Saudyjskiej" phrase) is dropped here — it belongs in the
+  // "Państwa" block below, not Organizacje.
+  const organizations = (entities?.orgName ?? []).filter((item) => !item.is_country);
   const citedSources = organizations.filter((item) => item.information_source_id != null);
   const otherOrganizations = organizations.filter((item) => item.information_source_id == null);
   // The UI combines both NER place categories into one section, while an
-  // exclusion must preserve the category that produced each chip.
+  // exclusion must preserve the category that produced each chip. Country
+  // mentions (is_country) are dropped the same way as for orgName above —
+  // the "Państwa" block covers them with LLM-vetted kraj-* tags instead of
+  // an ungeocoded, permanently-unverified NER chip.
   const places = [
     ...(entities?.geogName ?? []).map((item) => ({ ...item, entity_type: "geogName" as const })),
     ...(entities?.placeName ?? []).map((item) => ({ ...item, entity_type: "placeName" as const })),
-  ];
+  ].filter((item) => !item.is_country);
   const facilities = entities?.facility ?? [];
-  const isEmpty = !persons.length && !organizations.length && !places.length && !facilities.length;
+  const isEmpty = !persons.length && !organizations.length && !places.length && !facilities.length && !countries.length;
   const reviewFormValid = Boolean(reviewReason)
     && (reviewReason !== "other" || Boolean(reviewComment.trim()));
 
@@ -843,6 +862,14 @@ const EntitiesPanel = ({
       {enrichmentJob?.status === "failed" && (
         <div style={{ marginTop: 8, color: "#a33", fontSize: "0.9em" }}>
           Pełna weryfikacja encji nie powiodła się: {enrichmentJob.error || "nieznany błąd"}. Kliknij ponownie, aby spróbować jeszcze raz.
+        </div>
+      )}
+      {countries.length > 0 && (
+        <div style={{ marginTop: "6px" }}>
+          <strong>Państwa:</strong>{" "}
+          {[...countries].sort((a, b) => a.name_pl.localeCompare(b.name_pl, "pl")).map((country) => (
+            <span key={country.slug} style={chipStyle}>{country.name_pl}</span>
+          ))}
         </div>
       )}
       <EntityChips label={"Osoby"} items={persons} actions={editMode ? editActions("persName") : undefined} />
