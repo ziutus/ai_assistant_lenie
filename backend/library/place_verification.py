@@ -116,8 +116,62 @@ def remove_orphaned_tag(session, document, deleted_entity: DocumentEntity) -> st
     return tag
 
 
+def _canonicalize_and_merge_places(session, candidates: list[DocumentEntity]) -> list[DocumentEntity]:
+    """Rename entity_text to the geocoder's canonical spelling and physically
+    merge document_entities rows that converge on the same canonical place
+    (Faza 3 of docs/ner-multiword-place-display-names, see tmp/ plan).
+
+    This is the same canonical_place_name() grouping verify_document_places()
+    already computes for tags (module docstring) — extended to also fix what
+    the reader/entities panel actually shows, not just doc.tags. Handles the
+    cases text-only normalization (ner_client.py's nominative-surface
+    preference) cannot: no nominative form anywhere in the text at all (e.g.
+    "Zatoki Perskiej" with every mention genitive), a single unlemmatized
+    one-word mention ("Gazę"), and two entities whose lemma diverged enough
+    that ner_client.py's grouping never saw them as the same name at all
+    ("Port Sudan" vs "Port Sudanem" — inconsistent per-token lemmatization).
+
+    Returns the surviving entity list (deleted rows replaced by their merge
+    target) so the caller's subsequent tag-building pass sees live rows.
+    """
+    from library.entity_service import merge_document_entities
+
+    by_canonical: dict[str, list[DocumentEntity]] = {}
+    unresolved: list[DocumentEntity] = []
+    for ent in candidates:
+        if ent.geocode is None or not ent.geocode.resolved:
+            unresolved.append(ent)
+            continue
+        canonical = canonical_place_name(ent.entity_text, ent.geocode.display_name or "")
+        by_canonical.setdefault(canonical, []).append(ent)
+
+    survivors: list[DocumentEntity] = list(unresolved)
+    for canonical, rows in by_canonical.items():
+        # A row already spelled exactly like the canonical form is most
+        # likely the one ner_client.py's Faza 1 nominative-preference
+        # already got right from the text alone — anchor the merge on it
+        # instead of picking by mention count, so a correct text-only result
+        # is never silently overwritten by a differently-spelled duplicate.
+        target = next((row for row in rows if row.entity_text == canonical), None)
+        if target is None:
+            target = max(rows, key=lambda row: row.mention_count)
+        for row in rows:
+            if row is target:
+                continue
+            merge_document_entities(row, target, target_source="geocoded")
+            session.delete(row)
+        if target.entity_text != canonical:
+            target.entity_text = canonical
+            target.source = "geocoded"
+        survivors.append(target)
+    if by_canonical:
+        session.flush()
+    return survivors
+
+
 def verify_document_places(session, doc, text: str, progress_callback=None) -> dict:
-    """Geocode the document's place entities and tag confirmed places.
+    """Geocode the document's place entities, canonicalize/merge duplicates
+    and tag confirmed places.
 
     Queues all changes on the session without committing (caller owns the
     transaction). Returns a summary: {"checked": int, "resolved": [names],
@@ -135,8 +189,6 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
 
     checked = 0
     resolved_names: list[str] = []
-    # canonical name -> {"mentions": summed count, "surface": most-mentioned NER form}
-    groups: dict[str, dict] = {}
     candidates = [ent for ent in entities if not _is_country(ent.entity_text)]
     for index, ent in enumerate(candidates, start=1):
         if progress_callback is not None:
@@ -146,6 +198,13 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
             checked += 1
         if ent.geocode is not None and ent.geocode.resolved:
             resolved_names.append(ent.entity_text)
+
+    candidates = _canonicalize_and_merge_places(session, candidates)
+
+    # canonical name -> {"mentions": summed count, "surface": most-mentioned NER form}
+    groups: dict[str, dict] = {}
+    for ent in candidates:
+        if ent.geocode is not None and ent.geocode.resolved:
             canonical = canonical_place_name(ent.entity_text, ent.geocode.display_name or "")
             group = groups.setdefault(canonical, {"mentions": 0, "surface": ent.entity_text, "surface_mentions": 0})
             mentions = ent.mention_count or 1

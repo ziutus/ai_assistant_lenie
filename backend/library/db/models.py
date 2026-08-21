@@ -1995,6 +1995,74 @@ class NerExclusion(Base):
         )
 
 
+class NerCorrection(Base):
+    """Human-curated NER correction dictionary (Faza 6, tmp/plan-ner-multiword-place-display-names.md).
+
+    Mirrors NerExclusion's scope/entity_type/author shape but corrects an
+    entity instead of dropping it — applied at entity-refresh time
+    (library/ner_corrections.py), right after ner_exclusions, before
+    person/org registry resolution. match_lemma matches the (spaCy-
+    deterministic) lemma ner_client.py computed, not a specific surface
+    form or the already-resolved display text — one approved correction
+    then generalizes to every future document whose NER run produces the
+    same mangled lemma, without needing a fresh approval per inflected
+    form. reason/approved_by are the "why" half of the decision log; every
+    actual application is separately recorded in NerCorrectionApplication
+    (the "where/when" half).
+    """
+
+    __tablename__ = "ner_corrections"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_lemma: Mapped[str] = mapped_column(Text, nullable=False)
+    match_entity_type: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'*'"))
+    corrected_text: Mapped[str] = mapped_column(Text, nullable=False)
+    corrected_entity_type: Mapped[str | None] = mapped_column(String(20))
+    scope: Mapped[str] = mapped_column(String(10), nullable=False, server_default=sa_text("'global'"))
+    author: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    approved_by: Mapped[str] = mapped_column(Text, nullable=False)
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"NerCorrection(id={self.id!r}, match_lemma={self.match_lemma!r}, "
+            f"corrected_text={self.corrected_text!r}, scope={self.scope!r})"
+        )
+
+
+class NerCorrectionApplication(Base):
+    """Immutable audit record: one row per time a NerCorrection rule actually fired.
+
+    correction_id is ON DELETE SET NULL so history survives a later rule
+    deletion (the "immutable audit record" convention already used by
+    DocumentRelationshipRemoval).
+    """
+
+    __tablename__ = "ner_correction_applications"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    document_id: Mapped[int] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    correction_id: Mapped[int | None] = mapped_column(ForeignKey("ner_corrections.id", ondelete="SET NULL"))
+    entity_type_before: Mapped[str] = mapped_column(String(20), nullable=False)
+    entity_text_before: Mapped[str] = mapped_column(Text, nullable=False)
+    entity_type_after: Mapped[str] = mapped_column(String(20), nullable=False)
+    entity_text_after: Mapped[str] = mapped_column(Text, nullable=False)
+    applied_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    document: Mapped["Document"] = relationship(foreign_keys=[document_id])
+    correction: Mapped["NerCorrection | None"] = relationship(foreign_keys=[correction_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"NerCorrectionApplication(id={self.id!r}, document_id={self.document_id!r}, "
+            f"entity_text_before={self.entity_text_before!r}, entity_text_after={self.entity_text_after!r})"
+        )
+
+
 class Person(Base):
     """Canonical person entity — one row per real person (NER stage 4).
 

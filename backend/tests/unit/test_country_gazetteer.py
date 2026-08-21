@@ -79,3 +79,17 @@ class TestCanonicalCountryName:
 
     def test_rejects_longer_word_that_only_shares_country_stem(self):
         assert country_gazetteer.canonical_country_name("Włoszczowa") is None
+
+    @pytest.mark.parametrize(
+        "mention",
+        ["Emiraty Arabskie", "Emiratów Arabskich", "Emiratami Arabskimi", "Zjednoczone Emiraty Arabskie"],
+    )
+    def test_short_form_uae_name_matches_without_zjednoczone(self, mention):
+        """'Emiraty Arabskie' (common short form, no 'Zjednoczone') used to
+        fall through both variants: the 3-token pattern requires
+        'Zjednoczone', the bare 'emirat*' pattern is single-token and can't
+        fullmatch a two-word mention."""
+        assert country_gazetteer.canonical_country_name(mention) == "Zjednoczone Emiraty Arabskie"
+
+    def test_bare_emiraty_still_matches_via_single_token_variant(self):
+        assert country_gazetteer.canonical_country_name("Emiraty") == "Zjednoczone Emiraty Arabskie"

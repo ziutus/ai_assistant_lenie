@@ -83,8 +83,9 @@ class TestRefreshDocumentEntities:
             rows = refresh_document_entities(session, 42, "jakiś tekst")
 
         # advisory lock + SELECT exclusions + replace temporal candidates +
-        # replace entities + replace document_organizations + facility refresh
-        assert session.execute.call_count == 6
+        # SELECT ner_corrections + replace entities + replace
+        # document_organizations + facility refresh
+        assert session.execute.call_count == 7
         lock_query = session.execute.call_args_list[0].args[0]
         assert "pg_advisory_xact_lock" in str(lock_query.compile(dialect=postgresql.dialect()))
         assert session.add_all.call_args_list[0].args[0] == rows
