@@ -89,7 +89,7 @@
   font-size: 0.82em;
 }
 
-.obsidianPreviewMeta a:first-child {
+.obsidianPreviewMeta > :first-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
