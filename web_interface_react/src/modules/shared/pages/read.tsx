@@ -242,6 +242,7 @@ function renderInline(
   onAnchorClick?: (anchorId: string) => void,
   images?: Map<number, ChapterImage>,
   wikiLinks?: Map<string, number>,
+  onWikiLinkClick?: (targetId: number) => void,
 ): React.ReactNode[] {
   // **bold**, *italic*, `code`, [label](anchor:id) jump links, ¹⁸ footnote
   // markers, a (https://...) URL — e.g. Gmail newsletter items flattened by
@@ -289,6 +290,18 @@ function renderInline(
       const targetTitle = wikiLink[1].split("|", 1)[0].split("#", 1)[0].trim();
       const targetId = wikiLinks?.get(targetTitle.toLowerCase());
       if (targetId != null) {
+        if (onWikiLinkClick) {
+          return (
+            <a
+              key={i}
+              href={`/read/${targetId}`}
+              onClick={(e) => { e.preventDefault(); onWikiLinkClick(targetId); }}
+              style={{ color: "#0369a1", textDecoration: "underline", cursor: "pointer" }}
+            >
+              {label}
+            </a>
+          );
+        }
         return (
           <NavLink key={i} to={`/read/${targetId}`} style={{ color: "#0369a1", textDecoration: "underline" }}>
             {label}
@@ -437,6 +450,7 @@ function renderParagraphWithNotes(
   images?: Map<number, ChapterImage>,
   wikiLinks?: Map<string, number>,
   described?: EntityDescriptions,
+  onWikiLinkClick?: (targetId: number) => void,
 ): { nodes: React.ReactNode[]; paragraphTint: UserNote | null; timelineTint: boolean; timelineFound: boolean } {
   type Match = { idx: number; len: number; kind: "note" | "entity" | "timeline" | "described"; note?: UserNote; description?: string };
   const noteMatches: Match[] = notes
@@ -466,7 +480,8 @@ function renderParagraphWithNotes(
 
   if (matches.length === 0) {
     return {
-      nodes: renderInline(text, refs, onAnchorClick, images, wikiLinks), paragraphTint, timelineTint, timelineFound,
+      nodes: renderInline(text, refs, onAnchorClick, images, wikiLinks, onWikiLinkClick),
+      paragraphTint, timelineTint, timelineFound,
     };
   }
 
@@ -475,7 +490,7 @@ function renderParagraphWithNotes(
   matches.forEach((m, i) => {
     if (m.idx < cursor) return; // overlapping match — skip
     if (m.idx > cursor) {
-      nodes.push(...renderInline(text.slice(cursor, m.idx), refs, onAnchorClick, images, wikiLinks));
+      nodes.push(...renderInline(text.slice(cursor, m.idx), refs, onAnchorClick, images, wikiLinks, onWikiLinkClick));
     }
     const quoted = text.slice(m.idx, m.idx + m.len);
     if (m.kind === "note" && m.note) {
@@ -485,7 +500,7 @@ function renderParagraphWithNotes(
           title={`${STANCE_ICON[m.note.stance ?? ""] ?? "📝"} ${m.note.note_text}`}
           style={{ background: "#fef08a", padding: "0 1px", cursor: "help" }}
         >
-          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks)}
+          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks, onWikiLinkClick)}
         </mark>
       );
     } else if (m.kind === "timeline") {
@@ -495,7 +510,7 @@ function renderParagraphWithNotes(
           className="timeline-highlight"
           style={{ background: "#fed7aa", padding: "0 1px" }}
         >
-          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks)}
+          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks, onWikiLinkClick)}
         </mark>
       );
     } else if (m.kind === "described") {
@@ -505,7 +520,7 @@ function renderParagraphWithNotes(
           title={m.description}
           style={{ borderBottom: "1px dotted #64748b", cursor: "help" }}
         >
-          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks)}
+          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks, onWikiLinkClick)}
         </span>
       );
     } else {
@@ -515,13 +530,15 @@ function renderParagraphWithNotes(
           className="entity-highlight"
           style={{ background: "#bfdbfe", padding: "0 1px" }}
         >
-          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks)}
+          {renderInline(quoted, refs, onAnchorClick, images, wikiLinks, onWikiLinkClick)}
         </mark>
       );
     }
     cursor = m.idx + m.len;
   });
-  if (cursor < text.length) nodes.push(...renderInline(text.slice(cursor), refs, onAnchorClick, images, wikiLinks));
+  if (cursor < text.length) {
+    nodes.push(...renderInline(text.slice(cursor), refs, onAnchorClick, images, wikiLinks, onWikiLinkClick));
+  }
   return { nodes, paragraphTint, timelineTint, timelineFound };
 }
 
@@ -593,13 +610,14 @@ function renderTableBlock(
   images?: Map<number, ChapterImage>,
   wikiLinks?: Map<string, number>,
   described?: EntityDescriptions,
+  onWikiLinkClick?: (targetId: number) => void,
 ): React.ReactNode | null {
   const lines = trimmed.split("\n");
   if (lines.length < 2 || !lines[0].trim().startsWith("|") || !TABLE_SEPARATOR_RE.test(lines[1].trim())) return null;
   const header = parseTableRow(lines[0]);
   const rows = lines.slice(2).map(parseTableRow);
   const cell = (text: string) => renderParagraphWithNotes(
-    text, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+    text, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described, onWikiLinkClick,
   ).nodes;
   return (
     <div key={key} style={{ overflowX: "auto", margin: "16px 0" }}>
@@ -649,6 +667,7 @@ function renderListBlock(
   images?: Map<number, ChapterImage>,
   wikiLinks?: Map<string, number>,
   described?: EntityDescriptions,
+  onWikiLinkClick?: (targetId: number) => void,
 ): React.ReactNode | null {
   const lines = trimmed.split("\n").filter(l => l.trim());
   if (lines.length === 0 || !lines.every(line => LIST_LINE_RE.test(line))) return null;
@@ -660,6 +679,7 @@ function renderListBlock(
         const itemText = line.match(LIST_LINE_RE)![2];
         const { nodes } = renderParagraphWithNotes(
           itemText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+          onWikiLinkClick,
         );
         return <li key={li}>{nodes}</li>;
       })}
@@ -678,13 +698,14 @@ function renderCalloutBlock(
   images?: Map<number, ChapterImage>,
   wikiLinks?: Map<string, number>,
   described?: EntityDescriptions,
+  onWikiLinkClick?: (targetId: number) => void,
 ): React.ReactNode | null {
   const match = trimmed.match(CALLOUT_RE);
   if (!match) return null;
   const isWarn = match[1] === "WARN";
   const { nodes } = renderParagraphWithNotes(
     match[2].replace(/\n/g, " "), notes, refs, highlightTerms, timelineAnchor,
-    onAnchorClick, images, wikiLinks, described,
+    onAnchorClick, images, wikiLinks, described, onWikiLinkClick,
   );
   return (
     <div key={key} style={{
@@ -710,6 +731,7 @@ function renderMarkdown(
   onAnchorClick?: (anchorId: string) => void,
   wikiLinks?: Map<string, number>,
   described?: EntityDescriptions,
+  onWikiLinkClick?: (targetId: number) => void,
 ): React.ReactNode[] {
   const out: React.ReactNode[] = [];
   splitCodeFences(text).forEach((segment, segIndex) => {
@@ -733,6 +755,7 @@ function renderMarkdown(
         if (trailingText) {
           const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
             trailingText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+            onWikiLinkClick,
           );
           out.push(
             <p key={`${key}-trailing`} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={{
@@ -754,6 +777,7 @@ function renderMarkdown(
       if (IMAGE_LINE.test(trimmed)) return;
       const callout = renderCalloutBlock(
         trimmed, key, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+        onWikiLinkClick,
       );
       if (callout) {
         out.push(callout);
@@ -761,6 +785,7 @@ function renderMarkdown(
       }
       const table = renderTableBlock(
         trimmed, key, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+        onWikiLinkClick,
       );
       if (table) {
         out.push(table);
@@ -768,6 +793,7 @@ function renderMarkdown(
       }
       const list = renderListBlock(
         trimmed, key, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+        onWikiLinkClick,
       );
       if (list) {
         out.push(list);
@@ -780,7 +806,7 @@ function renderMarkdown(
         // headings can carry note anchors too (e.g. a quote of the chapter title)
         const { nodes, timelineTint, timelineFound } = renderParagraphWithNotes(
           heading[2].replace(/\n/g, " "), notes, undefined, highlightTerms, timelineAnchor,
-          undefined, undefined, wikiLinks,
+          undefined, undefined, wikiLinks, undefined, onWikiLinkClick,
         );
         out.push(
           <Tag
@@ -802,6 +828,7 @@ function renderMarkdown(
       const paraText = trimmed.replace(/\n/g, " ");
       const { nodes, paragraphTint, timelineTint, timelineFound } = renderParagraphWithNotes(
         paraText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+        onWikiLinkClick,
       );
       out.push(
         <p key={key} className={timelineFound ? "timeline-anchor-paragraph" : undefined} style={isNote
@@ -871,6 +898,14 @@ const Read: React.FC = () => {
   const [selectedObsidianNotePath, setSelectedObsidianNotePath] = React.useState<string | null>(null);
   const [obsidianNotesLoading, setObsidianNotesLoading] = React.useState(false);
   const [obsidianPanelVisible, setObsidianPanelVisible] = React.useState(true);
+  // In-panel browsing of the imported Obsidian vault, independent of the
+  // article shown on the left — following a [[wikilink]] (or switching to
+  // another note) inside the panel pushes the previously shown note onto
+  // this stack and fetches the target by id (GET /document/:id/obsidian_note)
+  // instead of navigating the reader's own /read/:id route.
+  const [obsidianBrowseNote, setObsidianBrowseNote] = React.useState<ImportedObsidianNote | null>(null);
+  const [obsidianBrowseHistory, setObsidianBrowseHistory] = React.useState<ImportedObsidianNote[]>([]);
+  const [obsidianBrowseLoading, setObsidianBrowseLoading] = React.useState(false);
   // sidebar scope: current chapter (default) vs whole document
   const [scopeChapter, setScopeChapter] = React.useState(true);
   const [chapterScope, setChapterScope] = React.useState<ChapterScope | null>(null);
@@ -1171,6 +1206,10 @@ const Read: React.FC = () => {
     if (!id || !content) return;
     let cancelled = false;
     setObsidianNotesLoading(true);
+    // Moving to a different chapter/document invalidates any note reached by
+    // browsing wikilinks from the previous chapter's panel.
+    setObsidianBrowseNote(null);
+    setObsidianBrowseHistory([]);
     (async () => {
       try {
         const r = await fetch(`${apiUrl}/document/${id}/obsidian_notes?chapter=${position}`, { headers });
@@ -1193,6 +1232,42 @@ const Read: React.FC = () => {
   }, [apiUrl, apiKey, id, position, content]);
 
   const selectedObsidianNote = importedObsidianNotes.find(note => note.path === selectedObsidianNotePath) ?? null;
+  // The note actually shown in the panel: whatever browsing landed on, or
+  // (with an empty browse stack) the chapter-linked note picked above.
+  const displayedObsidianNote = obsidianBrowseNote ?? selectedObsidianNote;
+
+  const openObsidianNoteInPanel = React.useCallback(async (targetId: number) => {
+    if (displayedObsidianNote) {
+      setObsidianBrowseHistory(history => [...history, displayedObsidianNote]);
+    }
+    setObsidianBrowseLoading(true);
+    try {
+      const r = await fetch(`${apiUrl}/document/${targetId}/obsidian_note`, { headers });
+      const data = await r.json();
+      if (data.status === "success" && data.note) setObsidianBrowseNote(data.note);
+    } catch {
+      // in-panel wikilink browsing is best-effort — a failed hop just stays put
+    } finally {
+      setObsidianBrowseLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiUrl, headers, displayedObsidianNote]);
+
+  const goBackObsidianBrowse = () => {
+    setObsidianBrowseHistory(history => {
+      if (history.length === 0) {
+        setObsidianBrowseNote(null);
+        return history;
+      }
+      setObsidianBrowseNote(history[history.length - 1]);
+      return history.slice(0, -1);
+    });
+  };
+
+  const resetObsidianBrowse = () => {
+    setObsidianBrowseNote(null);
+    setObsidianBrowseHistory([]);
+  };
 
   // persist current chapter as reading position
   React.useEffect(() => {
@@ -1941,7 +2016,10 @@ const Read: React.FC = () => {
                 {importedObsidianNotes.length > 1 && (
                   <select
                     value={selectedObsidianNotePath ?? ""}
-                    onChange={event => setSelectedObsidianNotePath(event.target.value)}
+                    onChange={event => {
+                      resetObsidianBrowse();
+                      setSelectedObsidianNotePath(event.target.value);
+                    }}
                     aria-label="Wybierz notatkę Obsidian"
                   >
                     {importedObsidianNotes.map(note => (
@@ -1950,20 +2028,37 @@ const Read: React.FC = () => {
                   </select>
                 )}
               </div>
-              {obsidianNotesLoading ? (
+              {obsidianBrowseNote && (
+                <div className={styles.obsidianPreviewMeta}>
+                  <button type="button" onClick={goBackObsidianBrowse} title="Wstecz" aria-label="Wstecz">
+                    ← Wstecz
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetObsidianBrowse}
+                    title="Powrót do notatek tego rozdziału"
+                    aria-label="Powrót do notatek tego rozdziału"
+                  >
+                    🏠 Rozdział
+                  </button>
+                </div>
+              )}
+              {obsidianNotesLoading || obsidianBrowseLoading ? (
                 <p className={styles.obsidianPreviewStatus}>Ładowanie notatki…</p>
-              ) : selectedObsidianNote && (
+              ) : displayedObsidianNote && (
                 <>
                   <div className={styles.obsidianPreviewMeta}>
-                    <NavLink to={`/read/${selectedObsidianNote.id}`}>{selectedObsidianNote.title}</NavLink>
-                    <a href={buildObsidianNoteUrl(selectedObsidianNote.path)} title="Otwórz w Obsidianie">↗</a>
+                    <span>{displayedObsidianNote.title}</span>
+                    <NavLink to={`/read/${displayedObsidianNote.id}`} title="Otwórz jako artykuł czytnika">⤢</NavLink>
+                    <a href={buildObsidianNoteUrl(displayedObsidianNote.path)} title="Otwórz w Obsidianie">↗</a>
                   </div>
                   <article className={styles.obsidianPreviewContent}>
                     {renderMarkdown(
-                      selectedObsidianNote.text, [], undefined, undefined, undefined, undefined, undefined,
-                      selectedObsidianNote.wiki_links
-                        ? new Map(Object.entries(selectedObsidianNote.wiki_links))
+                      displayedObsidianNote.text, [], undefined, undefined, undefined, undefined, undefined,
+                      displayedObsidianNote.wiki_links
+                        ? new Map(Object.entries(displayedObsidianNote.wiki_links))
                         : undefined,
+                      undefined, openObsidianNoteInPanel,
                     )}
                   </article>
                 </>

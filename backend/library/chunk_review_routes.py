@@ -1546,6 +1546,35 @@ def document_obsidian_notes(doc_id: int):
     return jsonify({"status": "success", "notes": notes})
 
 
+@bp.route("/document/<int:doc_id>/obsidian_note", methods=["GET"])
+def document_obsidian_note_by_id(doc_id: int):
+    """Return one imported Obsidian note's content by its own document id.
+
+    Distinct from document_obsidian_notes() above (which resolves notes
+    linked to a *host* document/chapter): this is the fetch used when the
+    reader's Obsidian panel follows a [[wikilink]] to another note and needs
+    to load it *in place* -- browsing the vault of imported notes without
+    navigating the reader away from the article currently open on the left.
+    """
+    session = get_scoped_session()
+    doc = session.get(Document, doc_id)
+    if doc is None or doc.document_type != "obsidian_note":
+        abort(404, f"Obsidian note {doc_id} not found")
+
+    note_text = doc.text_md or doc.text or ""
+    path = (doc.url or "").removeprefix("obsidian://")
+    return jsonify({
+        "status": "success",
+        "note": {
+            "path": path,
+            "id": doc.id,
+            "title": doc.title,
+            "text": note_text,
+            "wiki_links": _resolve_wiki_links(session, note_text),
+        },
+    })
+
+
 @bp.route("/document/<int:doc_id>/images", methods=["GET"])
 def document_images(doc_id: int):
     """Full list of a document's storage-backed images (book PDF illustrations).
