@@ -14,6 +14,7 @@ from collections import Counter
 
 import requests
 
+from library.city_gazetteer import canonical_city_name
 from library.geo_feature_gazetteer import canonical_geo_feature_name
 from library.ner_normalization import (
     canonical_country_for_surface,
@@ -248,6 +249,9 @@ def aggregate_entities_detailed(
     (or, failing that, the best real surface form) is preferred over the
     lemma outright (NOMINATIVE_PREFERENCE_TYPES) — a mangled lemma is never a
     good display name even when it isn't "truncated" in the cut-off sense.
+    Known single/hyphenated-word foreign cities (city_gazetteer.py) get the
+    same deterministic treatment as geo features — the nominative-preference
+    heuristic never applies to them since it requires a multiword surface.
 
     Shape: {(entity_type, base): {"count", "variants", "raw_lemmas"}}.
     raw_lemmas is internal metadata used to preserve ner_exclusions behavior
@@ -286,7 +290,15 @@ def aggregate_entities_detailed(
         # never a country, so this is checked independently and never joins the
         # is_country/family-merge path below.
         geo_feature = canonical_geo_feature_name(surface) if country is None and label in PLACE_TYPES else None
-        base = country or geo_feature or lemma
+        # Known single/hyphenated-word foreign city names (city_gazetteer.py)
+        # suffer a related bug: spaCy's lemma only reaches nominative for
+        # cities it knows, so a rare name mentioned only in an inflected case
+        # (e.g. "Omdurmanie") keeps the inflected form as both surface and
+        # lemma, and NOMINATIVE_PREFERENCE_TYPES never engages (single-word
+        # surfaces are excluded there). Checked after geo_feature since the
+        # two lists are disjoint (cities vs. seas/straits/gulfs).
+        city = canonical_city_name(surface) if country is None and geo_feature is None and label in PLACE_TYPES else None
+        base = country or geo_feature or city or lemma
         key = (label, base.casefold())
         group = preliminary.setdefault(
             key,
@@ -303,6 +315,7 @@ def aggregate_entities_detailed(
                 "is_nominative_candidate": False,
                 "has_case_evidence": False,
                 "is_country": False,
+                "is_gazetteer_match": False,
             },
         )
         group["count"] += 1
@@ -315,14 +328,20 @@ def aggregate_entities_detailed(
             if value not in group[order_name]:
                 group[order_name].append(value)
 
-        # A confirmed country or known geo feature always wins the display
-        # name deterministically (base_spellings already converges on the
-        # canonical name below) — never let the nominative-surface heuristic
-        # second-guess it with a differently-cased in-text surface.
+        # A confirmed country, known geo feature or known city always wins the
+        # display name deterministically (base_spellings already converges on
+        # the canonical name below) — never let the nominative-surface
+        # heuristic second-guess it with a differently-cased in-text surface.
         if country is not None:
             group["is_country"] = True
-        elif geo_feature is not None:
-            pass
+        elif geo_feature is not None or city is not None:
+            # Single-word gazetteer matches (cities) are, by construction, a
+            # prefix of every inflected surface variant ("Omdurman" is a
+            # prefix of "Omdurmanie") — exactly the shape _is_truncated_lemma
+            # looks for. is_gazetteer_match routes normalized_groups around
+            # that check entirely so a confirmed dictionary match is never
+            # second-guessed back into an inflected surface.
+            group["is_gazetteer_match"] = True
         elif label in NOMINATIVE_PREFERENCE_TYPES and len(surface.split()) >= 2:
             group["is_nominative_candidate"] = True
             morph = ent.get("morph") or ""
@@ -344,6 +363,13 @@ def aggregate_entities_detailed(
         if group["nominative_surface_spellings"]:
             # 1. An actual in-text nominative beats everything else.
             base = _preferred_spelling(group["nominative_surface_spellings"], group["nominative_surface_order"])
+        elif group["is_gazetteer_match"]:
+            # A confirmed geo-feature/city gazetteer match is deterministic —
+            # skip the truncated-lemma fallback (tier 3) entirely, since for a
+            # single-word city the canonical base is always a legitimate
+            # prefix of its inflected surface and would otherwise look
+            # exactly like a truncated lemma.
+            base = _preferred_spelling(group["base_spellings"], group["base_order"])
         elif group["is_nominative_candidate"] and group["has_case_evidence"]:
             # 2. No nominative in text, but morph positively confirms every
             #    mention is inflected — use the best real surface form
