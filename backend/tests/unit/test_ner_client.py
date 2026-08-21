@@ -524,6 +524,53 @@ class TestGeoFeatureGazetteerOverride:
         assert aggregate_entities(entities) == {("geogName", "Kotliny Kłodzkiej"): 1}
 
 
+class TestCityGazetteerOverride:
+    """A small curated gazetteer (city_gazetteer.py) of well-known foreign
+    cities fixes the single-word counterpart of TestGeoFeatureGazetteerOverride's
+    gap: NOMINATIVE_PREFERENCE_TYPES never applies to a single-word surface, so
+    a rare city name mentioned only in an inflected case (e.g. "Omdurmanie",
+    the doc #9394 investigation this module fixes) had no path back to its
+    nominative form and the geocoder was asked to resolve the inflected string."""
+
+    def test_single_word_inflected_only_mention_resolves_to_canonical_name(self):
+        entities = [{"text": "Omdurmanie", "label": "placeName", "lemma": "Omdurmanie",
+                     "pos": "NOUN", "morph": "Case=Loc"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Omdurman"): {
+                "count": 1,
+                "variants": ["Omdurmanie"],
+                "raw_lemmas": ["Omdurmanie"],
+            },
+        }
+
+    def test_hyphenated_city_resolves_across_spelling_variants(self):
+        entities = [
+            {"text": "Al-Fasziru", "label": "geogName", "lemma": "Al-Fasziru", "pos": "NOUN", "morph": "Case=Gen"},
+            {"text": "Al-Faszir", "label": "placeName", "lemma": "Al-Faszir", "pos": "NOUN", "morph": "Case=Nom"},
+        ]
+        assert aggregate_entities_detailed(entities) == {
+            ("geogName", "Al-Faszir"): {
+                "count": 2,
+                "variants": ["Al-Fasziru", "Al-Faszir"],
+                "raw_lemmas": ["Al-Fasziru", "Al-Faszir"],
+            },
+        }
+
+    def test_no_morph_evidence_still_resolves(self):
+        """Unlike the generic nominative-preference path (which needs morph
+        Case evidence and only fires for multiword surfaces anyway), a
+        gazetteer match is a deterministic dictionary lookup."""
+        entities = [{"text": "Port Sudanu", "label": "placeName", "lemma": "Port Sudanu"}]
+        assert aggregate_entities(entities) == {("placeName", "Port Sudan"): 1}
+
+    def test_unknown_single_word_place_is_unaffected(self):
+        """A place outside the small curated list still falls through to the
+        legacy lemma-based path — this gazetteer never invents a canonical
+        form for a city it doesn't know."""
+        entities = [{"text": "Kostiu", "label": "placeName", "lemma": "Kostiu"}]
+        assert aggregate_entities(entities) == {("placeName", "Kostiu"): 1}
+
+
 class TestCountryDetectedUnderOrgName:
     """Faza 4: spaCy occasionally tags a country as orgName (participle-heavy
     names like "Zjednoczone Emiraty Arabskie" get parsed as if headed by a
