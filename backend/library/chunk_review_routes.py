@@ -1509,21 +1509,31 @@ def document_obsidian_notes(doc_id: int):
     if not paths:
         return jsonify({"status": "success", "notes": []})
 
-    urls = [f"obsidian://{path}" for path in paths]
+    # obsidian_note_paths entries are not consistently vault-root-relative —
+    # older data omits the `02-wiedza/` prefix the reimporter's Document.url
+    # always carries (obsidian_reimport_service.PILOT_SUBFOLDERS). Try both
+    # forms so a note saved before this was standardized still resolves.
+    def _url_candidates(path: str) -> list[str]:
+        candidates = [f"obsidian://{path}"]
+        if not path.startswith("02-wiedza/"):
+            candidates.append(f"obsidian://02-wiedza/{path}")
+        return candidates
+
+    all_urls = [url for path in paths for url in _url_candidates(path)]
     imported = session.query(Document).filter(
-        Document.document_type == "obsidian_note", Document.url.in_(urls),
+        Document.document_type == "obsidian_note", Document.url.in_(all_urls),
     ).all()
     by_url = {note.url: note for note in imported}
-    notes = [
-        {
-            "path": path,
-            "id": note.id,
-            "title": note.title,
-            "text": note.text_md or note.text or "",
-        }
-        for path in paths
-        if (note := by_url.get(f"obsidian://{path}")) is not None
-    ]
+    notes = []
+    for path in paths:
+        note = next((by_url[url] for url in _url_candidates(path) if url in by_url), None)
+        if note is not None:
+            notes.append({
+                "path": path,
+                "id": note.id,
+                "title": note.title,
+                "text": note.text_md or note.text or "",
+            })
     return jsonify({"status": "success", "notes": notes})
 
 
