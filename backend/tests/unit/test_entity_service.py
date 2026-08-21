@@ -447,6 +447,35 @@ class TestGetDocumentEntities:
         assert grouped["geogName"] == [{"id": 4, "text": "Jagami", "count": 1, "variants": [],
                                         "is_country": False, "verified": False}]
 
+    def test_country_substring_in_a_place_name_is_not_flagged_as_country(self):
+        """doc #9394: "Port Sudan" contains "Sudan" but is a city, not the
+        country — is_country must require the whole entity_text to BE a
+        country (canonical_country_name), not merely contain one
+        (detect_countries() over-matched this and silently dropped "Port
+        Sudan" out of place_verification.py's geocoding candidates)."""
+        row = MagicMock(id=5, entity_type="placeName", entity_text="Port Sudan", mention_count=2, geocode=None,
+                        variants=["Port Sudanu"])
+        session = MagicMock()
+        session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
+
+        grouped = get_document_entities(session, 42)
+
+        assert grouped["placeName"] == [{
+            "id": 5, "text": "Port Sudan", "count": 2, "variants": ["Port Sudanu"], "is_country": False,
+        }]
+
+    def test_actual_country_name_is_flagged_as_country(self):
+        row = MagicMock(id=6, entity_type="placeName", entity_text="Sudan", mention_count=13, geocode=None,
+                        variants=["Sudanie", "Sudanu"])
+        session = MagicMock()
+        session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row]
+
+        grouped = get_document_entities(session, 42)
+
+        assert grouped["placeName"] == [{
+            "id": 6, "text": "Sudan", "count": 13, "variants": ["Sudanie", "Sudanu"], "is_country": True,
+        }]
+
     def test_empty_document_returns_all_type_keys(self):
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = []

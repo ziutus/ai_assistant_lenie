@@ -10,6 +10,7 @@ pytest.importorskip("requests")
 from library.db.models import DocumentEntity, GeocodeCache  # noqa: E402
 from library.place_verification import (  # noqa: E402
     _canonicalize_and_merge_places,
+    _is_country,
     _slugify,
     remove_orphaned_tag,
     verify_document_places,
@@ -48,6 +49,25 @@ class TestSlugify:
     def test_polish_diacritics_and_spaces(self):
         assert _slugify("Cieśnina Ormuz") == "ciesnina-ormuz"
         assert _slugify("Morze Czerwone") == "morze-czerwone"
+
+
+class TestIsCountry:
+    """_is_country() must require the WHOLE entity_text to be a country —
+    doc #9394 found "Port Sudan" (contains "Sudan" as a substring) and
+    "Al-Faszirze Emiraty" (contains "Emiraty") silently dropped out of the
+    geocoding candidate list (verify_document_places() filters is_country
+    places out entirely) because the previous implementation used
+    country_gazetteer.detect_countries() — a deliberately over-matching
+    candidate generator meant for LLM-filtered tag prescreening, not an
+    exact-identity check."""
+
+    @pytest.mark.parametrize("name", ["Sudan", "Sudanu", "Iran", "Stany Zjednoczone", "USA"])
+    def test_exact_country_name_is_true(self, name):
+        assert _is_country(name) is True
+
+    @pytest.mark.parametrize("name", ["Port Sudan", "Port Sudanu", "Al-Faszirze Emiraty", "Cieśnina Ormuz"])
+    def test_place_name_merely_containing_a_country_substring_is_false(self, name):
+        assert _is_country(name) is False
 
 
 class TestVerifyDocumentPlaces:
