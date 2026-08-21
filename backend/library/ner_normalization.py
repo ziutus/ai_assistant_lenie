@@ -19,15 +19,38 @@ RULES_PATH = Path(__file__).resolve().parents[1] / "data" / "ner_normalization.j
 # offsets used by _temporal_candidate_rows() stay stable.
 _MARKDOWN_EMPHASIS_RE = re.compile(r"\*\*|__")
 
+# [imgN]/[linkN] markers (article_cleaner.py's image/link substitution) glue
+# onto an adjacent entity the same way markdown emphasis does (e.g.
+# "Ministerstwo Obrony[link1]") — spaCy's tokenizer can then fold the marker
+# (or part of it, up to but not including the closing bracket) into the
+# entity span, producing surfaces like "Ministerstwo Obrony [link1". Blanked
+# out for the same reason as markdown emphasis: same-length whitespace keeps
+# character offsets stable.
+_CONTENT_MARKER_RE = re.compile(r"\[(?:img|link)\d+\]")
+
+# spaCy's Span.text reconstructs the *original* inter-token whitespace, so a
+# multiword entity whose source markdown happened to line-wrap between two
+# tokens (e.g. "Unia\nEuropejska") comes back with a literal newline/tab
+# inside it. Left alone, that raw span becomes the display name/canonical_name
+# stored in document_entities/organizations. Any run of whitespace inside a
+# name is collapsed to one plain space — no entity's meaningful content is a
+# newline or a tab, only the single space between words is.
+_INTERNAL_WHITESPACE_RE = re.compile(r"\s+")
+
 
 def strip_markdown_emphasis(text: str) -> str:
     """Blank out markdown bold/italic markers with same-length whitespace."""
     return _MARKDOWN_EMPHASIS_RE.sub(lambda m: " " * len(m.group(0)), text)
 
 
+def strip_content_markers(text: str) -> str:
+    """Blank out [imgN]/[linkN] markers with same-length whitespace."""
+    return _CONTENT_MARKER_RE.sub(lambda m: " " * len(m.group(0)), text)
+
+
 def normalize_ner_text(value: str) -> str:
-    """Normalize storage/comparison text without changing meaningful spacing."""
-    return unicodedata.normalize("NFC", value).strip()
+    """Normalize storage/comparison text: NFC, collapse internal whitespace, strip ends."""
+    return _INTERNAL_WHITESPACE_RE.sub(" ", unicodedata.normalize("NFC", value)).strip()
 
 
 @lru_cache(maxsize=1)

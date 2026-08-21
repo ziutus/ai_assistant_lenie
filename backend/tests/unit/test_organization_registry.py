@@ -19,6 +19,7 @@ from library.organization_registry import (  # noqa: E402
     merge,
     merge_ner_groups,
     normalize_alias,
+    rename,
     resolve_alias,
     select_ambiguous_alias_candidate_with_llm,
 )
@@ -230,6 +231,31 @@ class TestMerge:
         session.delete.assert_called_with(source)
         assert result["source_organization_deleted"] is True
 
+    def test_source_alias_reassigned_via_relationship_not_raw_fk(self):
+        # Regression: OrganizationAlias.organization is back_populates="aliases"
+        # with cascade="all, delete-orphan" on Organization.aliases. Setting
+        # alias.organization_id directly left the alias tracked as a member of
+        # source.aliases in the unit of work, so SQLAlchemy silently deleted it
+        # as an "orphan" at flush instead of moving it to target — reproduced
+        # live (org 277 -> 186 dropped 277's only correct alias). The fix
+        # reassigns through alias.organization = target instead.
+        alias = MagicMock(normalized_alias="siły zbrojne sudanu", organization_id=1)
+        source = MagicMock(id=1, canonical_name="Siła Zbrojny Sudan", aliases=[alias])
+        target = MagicMock(id=2, canonical_name="Siły Zbrojne Sudanu")
+        session = MagicMock()
+        session.get.side_effect = lambda model, id_: {1: source, 2: target}[id_]
+        session.execute.side_effect = [
+            _execute_result(first=None),   # add_alias(target, source.canonical_name): no conflict
+            _execute_result(first=None),   # alias loop: not already on target
+            _execute_result(all_=[]),      # source_links
+            _execute_result(scalar=0),     # orphan check
+        ]
+
+        merge(session, 1, 2, make_global_alias=True)
+
+        assert alias.organization is target
+        session.delete.assert_called_with(source)
+
     def test_duplicate_document_link_is_dropped_not_repointed(self):
         source = MagicMock(id=1, canonical_name="Interii", aliases=[])
         target = MagicMock(id=2, canonical_name="Interia")
@@ -249,3 +275,61 @@ class TestMerge:
 
         session.delete.assert_any_call(source_link)
         assert result["source_organization_deleted"] is False
+
+
+class TestRename:
+    def test_same_name_is_a_noop(self):
+        org = MagicMock(id=1, canonical_name="Unia Europejska")
+        session = MagicMock()
+
+        result = rename(session, org, "Unia Europejska")
+
+        assert result is org
+        session.execute.assert_not_called()
+
+    def test_empty_name_raises(self):
+        org = MagicMock(id=1, canonical_name="unia europejski")
+        session = MagicMock()
+
+        with pytest.raises(ValueError):
+            rename(session, org, "   ")
+
+    def test_renames_and_keeps_old_name_as_alias(self):
+        org = MagicMock(id=1, canonical_name="unia europejski")
+        session = MagicMock()
+        session.execute.side_effect = [
+            _execute_result(first=None),        # rename(): no alias conflict for the new name
+            _execute_result(all_=[org]),         # rename(): canonical_name scan (only itself)
+            _execute_result(first=None),        # add_alias(old_name): no existing alias
+        ]
+
+        result = rename(session, org, "Unia Europejska")
+
+        assert result is org
+        assert org.canonical_name == "Unia Europejska"
+        added = session.add.call_args.args[0]
+        assert added.alias == "unia europejski"
+
+    def test_conflict_with_another_organizations_alias_raises(self):
+        org = MagicMock(id=1, canonical_name="unia europejski")
+        conflict = MagicMock(organization_id=2)
+        session = MagicMock()
+        session.execute.return_value = _execute_result(first=conflict)
+
+        with pytest.raises(AliasConflictError) as exc_info:
+            rename(session, org, "Unia Europejska")
+        assert exc_info.value.existing_organization_id == 2
+        assert org.canonical_name == "unia europejski"
+
+    def test_conflict_with_another_organizations_canonical_name_raises(self):
+        org = MagicMock(id=1, canonical_name="unia europejski")
+        other = MagicMock(id=2, canonical_name="Unia Europejska")
+        session = MagicMock()
+        session.execute.side_effect = [
+            _execute_result(first=None),               # no alias conflict
+            _execute_result(all_=[org, other]),          # canonical_name scan finds other
+        ]
+
+        with pytest.raises(AliasConflictError) as exc_info:
+            rename(session, org, "Unia Europejska")
+        assert exc_info.value.existing_organization_id == 2
