@@ -64,7 +64,40 @@ class TestDocumentObsidianNotes:
             "id": 10058,
             "title": "Sudan",
             "text": "treść Sudan",
+            "wiki_links": {},
         }]
+
+    def test_wiki_link_inside_note_text_resolves_to_imported_note(self, app, monkeypatch):
+        """Regression: the previewed note's own [[Title]] wikilinks (e.g. the
+        "Bliski Wschod..." note linking to "Sudan") must resolve too. Before
+        this fix the reader's right panel showed such links as "not imported"
+        even when the target note existed, because wiki_links was never
+        computed for the previewed note's own text -- only for the document
+        actually being read."""
+        doc = _make_doc(9394, ["Geopolityka i polityka/Bliski Wschod.md"])
+        note = _make_note(
+            20001, "Bliski Wschod", "obsidian://02-wiedza/Geopolityka i polityka/Bliski Wschod.md",
+        )
+        note.text_md = "Szczegóły: [[Sudan#Wojna domowa]]"
+
+        session = MagicMock()
+        session.get.side_effect = lambda model, pk: doc if model is Document and pk == doc.id else None
+
+        def _query(*args, **_kwargs):
+            call = MagicMock()
+            if len(args) == 2:  # _resolve_wiki_links: session.query(Document.id, Document.title)
+                call.filter.return_value.all.return_value = [(10058, "Sudan")]
+            else:  # the obsidian_note_paths -> Document lookup: session.query(Document)
+                call.filter.return_value.all.return_value = [note]
+            return call
+
+        session.query.side_effect = _query
+        monkeypatch.setattr(cr, "get_scoped_session", lambda: session)
+
+        resp = app.test_client().get("/document/9394/obsidian_notes")
+        data = resp.get_json()
+
+        assert data["notes"][0]["wiki_links"] == {"sudan": 10058}
 
     def test_path_already_carrying_the_prefix_still_matches_directly(self, app, monkeypatch):
         doc = _make_doc(101, ["02-wiedza/Informatyka/linux.md"])

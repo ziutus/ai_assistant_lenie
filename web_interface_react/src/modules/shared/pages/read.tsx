@@ -86,6 +86,11 @@ interface ImportedObsidianNote {
   id: number;
   title: string;
   text: string;
+  // Title (lowercased) -> obsidian_note document id, resolved server-side
+  // against this note's own [[Title]] wikilinks (chunk_review_routes.py's
+  // document_obsidian_notes) -- distinct from the viewed document's own
+  // wikiLinksByTitle below.
+  wiki_links?: Record<string, number>;
 }
 
 // Chapter-scoped sidebar data (GET /document/:id/chapter/:pos/entities) —
@@ -619,6 +624,41 @@ function renderTableBlock(
   );
 }
 
+const LIST_LINE_RE = /^\s*([-*]|\d+\.)\s+(.*)$/;
+
+/** Unordered (`-`/`*`) or ordered (`1.`) markdown list — every line in the
+ *  block must match, otherwise this isn't a list block (e.g. a "---" rule or
+ *  a single dash inside prose). Flat rendering only — nesting by indentation
+ *  isn't tracked, list items just render as sibling <li>s. */
+function renderListBlock(
+  trimmed: string,
+  key: React.Key,
+  notes: UserNote[],
+  refs?: Map<string, ChapterReference>,
+  highlightTerms?: string[],
+  timelineAnchor?: string | null,
+  onAnchorClick?: (anchorId: string) => void,
+  images?: Map<number, ChapterImage>,
+  wikiLinks?: Map<string, number>,
+  described?: EntityDescriptions,
+): React.ReactNode | null {
+  const lines = trimmed.split("\n").filter(l => l.trim());
+  if (lines.length === 0 || !lines.every(line => LIST_LINE_RE.test(line))) return null;
+  const ordered = /^\s*\d+\./.test(lines[0]);
+  const Tag = ordered ? "ol" : "ul";
+  return (
+    <Tag key={key} style={{ margin: "10px 0", paddingLeft: 24, lineHeight: 1.65 }}>
+      {lines.map((line, li) => {
+        const itemText = line.match(LIST_LINE_RE)![2];
+        const { nodes } = renderParagraphWithNotes(
+          itemText, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+        );
+        return <li key={li}>{nodes}</li>;
+      })}
+    </Tag>
+  );
+}
+
 function renderCalloutBlock(
   trimmed: string,
   key: React.Key,
@@ -707,6 +747,13 @@ function renderMarkdown(
       const table = renderTableBlock(trimmed, key, notes, refs);
       if (table) {
         out.push(table);
+        return;
+      }
+      const list = renderListBlock(
+        trimmed, key, notes, refs, highlightTerms, timelineAnchor, onAnchorClick, images, wikiLinks, described,
+      );
+      if (list) {
+        out.push(list);
         return;
       }
       const heading = trimmed.match(/^(#{1,6})\s+(.*)$/s);
@@ -1895,7 +1942,12 @@ const Read: React.FC = () => {
                     <a href={buildObsidianNoteUrl(selectedObsidianNote.path)} title="Otwórz w Obsidianie">↗</a>
                   </div>
                   <article className={styles.obsidianPreviewContent}>
-                    {renderMarkdown(selectedObsidianNote.text, [])}
+                    {renderMarkdown(
+                      selectedObsidianNote.text, [], undefined, undefined, undefined, undefined, undefined,
+                      selectedObsidianNote.wiki_links
+                        ? new Map(Object.entries(selectedObsidianNote.wiki_links))
+                        : undefined,
+                    )}
                   </article>
                 </>
               )}
