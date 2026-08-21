@@ -457,7 +457,14 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     "organization_description" (Organization.description, e.g. "EDF — francuski
     operator energetyczny"; None until someone fills it in via PATCH
     /organizations/<id> or the backfill script).
+    geogName/placeName/orgName entities additionally carry "is_country" (bool)
+    — country_gazetteer.detect_countries() on entity_text, the same check
+    place_verification.py uses to skip geocoding a country. Callers use it to
+    keep country mentions out of "Miejsca"/"Organizacje": they belong to the
+    separate, LLM-vetted kraj-* tag pipeline (article_tagging.extract_countries_hybrid),
+    not this NER-derived list.
     """
+    from library.country_gazetteer import detect_countries
     from library.db.models import DocumentFacility, DocumentInformationSource, DocumentOrganization, InfraGeometry
     from library.person_registry import get_document_persons
 
@@ -503,6 +510,8 @@ def get_document_entities(session, document_id: int) -> dict[str, list[dict]]:
     for row in rows:
         item: dict = {"id": row.id, "text": row.entity_text, "count": row.mention_count,
                       "variants": row.variants or []}
+        if row.entity_type in {*place_types, "orgName"}:
+            item["is_country"] = bool(detect_countries(row.entity_text))
         if row.geocode is not None:
             item["verified"] = row.geocode.resolved
             if row.geocode.resolved:

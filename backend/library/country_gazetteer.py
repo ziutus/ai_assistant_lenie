@@ -189,7 +189,7 @@ _COUNTRY_DATA: list[tuple[str, tuple[str, ...]]] = [
     ("Lesotho", ("lesotho",)),
     ("Republika Południowej Afryki", ("poludniow* afryk*", "rpa", "poludniowoafrykansk*")),
     # --- Ameryki ---
-    ("Stany Zjednoczone", ("stan* zjednoczon*", "amerykansk*")),
+    ("Stany Zjednoczone", ("stan* zjednoczon*", "amerykansk*", "usa")),
     ("Kanada", ("kanad*",)),
     ("Meksyk", ("meksyk*",)),
     ("Gwatemala", ("gwatemal*",)),

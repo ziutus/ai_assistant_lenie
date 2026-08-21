@@ -399,7 +399,8 @@ class TestGetDocumentEntities:
         assert grouped == {
             "persName": [{"id": 1, "text": "Tusk", "count": 2, "variants": ["Tuska", "Tusk"]}],
             "orgName": [],
-            "geogName": [{"id": 2, "text": "cieśnina Ormuz", "count": 1, "variants": ["Cieśninie Ormuz"]}],
+            "geogName": [{"id": 2, "text": "cieśnina Ormuz", "count": 1, "variants": ["Cieśninie Ormuz"],
+                          "is_country": False}],
             "placeName": [],
             "facility": [],
         }
@@ -415,7 +416,7 @@ class TestGetDocumentEntities:
         grouped = get_document_entities(session, 42)
 
         assert grouped["orgName"] == [{
-            "id": 4, "text": "Bloomberg", "count": 1, "variants": ["Bloomberg"],
+            "id": 4, "text": "Bloomberg", "count": 1, "variants": ["Bloomberg"], "is_country": False,
         }]
         assert grouped["geogName"] == []
         assert grouped["placeName"] == []
@@ -430,7 +431,7 @@ class TestGetDocumentEntities:
         grouped = get_document_entities(session, 42)
 
         assert grouped["placeName"] == [{
-            "id": 3, "text": "Kijów", "count": 3, "variants": ["Kijowa"], "verified": True,
+            "id": 3, "text": "Kijów", "count": 3, "variants": ["Kijowa"], "is_country": False, "verified": True,
             "lat": 50.45, "lon": 30.52, "display_name": "Kyiv, Ukraine",
         }]
 
@@ -444,7 +445,7 @@ class TestGetDocumentEntities:
         grouped = get_document_entities(session, 42)
 
         assert grouped["geogName"] == [{"id": 4, "text": "Jagami", "count": 1, "variants": [],
-                                        "verified": False}]
+                                        "is_country": False, "verified": False}]
 
     def test_empty_document_returns_all_type_keys(self):
         session = MagicMock()
