@@ -1528,11 +1528,20 @@ def document_obsidian_notes(doc_id: int):
     for path in paths:
         note = next((by_url[url] for url in _url_candidates(path) if url in by_url), None)
         if note is not None:
+            note_text = note.text_md or note.text or ""
             notes.append({
                 "path": path,
                 "id": note.id,
                 "title": note.title,
-                "text": note.text_md or note.text or "",
+                "text": note_text,
+                # The note's own [[Title]] wikilinks (e.g. "Bliski Wschód..."
+                # linking to "Sudan") need resolving too -- the reader's
+                # right-panel preview renders this text with the same
+                # markdown renderer as chapter text, and without this it
+                # showed every link as "not imported" even when the target
+                # note existed, because only the viewed document's own
+                # chapter text carried resolved wiki_links.
+                "wiki_links": _resolve_wiki_links(session, note_text),
             })
     return jsonify({"status": "success", "notes": notes})
 

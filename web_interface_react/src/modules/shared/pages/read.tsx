@@ -86,6 +86,11 @@ interface ImportedObsidianNote {
   id: number;
   title: string;
   text: string;
+  // Title (lowercased) -> obsidian_note document id, resolved server-side
+  // against this note's own [[Title]] wikilinks (chunk_review_routes.py's
+  // document_obsidian_notes) -- distinct from the viewed document's own
+  // wikiLinksByTitle below.
+  wiki_links?: Record<string, number>;
 }
 
 // Chapter-scoped sidebar data (GET /document/:id/chapter/:pos/entities) —
@@ -1937,7 +1942,12 @@ const Read: React.FC = () => {
                     <a href={buildObsidianNoteUrl(selectedObsidianNote.path)} title="Otwórz w Obsidianie">↗</a>
                   </div>
                   <article className={styles.obsidianPreviewContent}>
-                    {renderMarkdown(selectedObsidianNote.text, [])}
+                    {renderMarkdown(
+                      selectedObsidianNote.text, [], undefined, undefined, undefined, undefined, undefined,
+                      selectedObsidianNote.wiki_links
+                        ? new Map(Object.entries(selectedObsidianNote.wiki_links))
+                        : undefined,
+                    )}
                   </article>
                 </>
               )}
