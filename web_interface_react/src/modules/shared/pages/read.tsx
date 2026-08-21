@@ -16,6 +16,10 @@ import { useIsDesktop } from "../hooks/useIsDesktop";
 import { toOpenableSourceUrl } from "../utils/sourceUrl";
 import ChapterGroupsPanel from "../components/ChapterGroupsPanel/ChapterGroupsPanel";
 import { buildObsidianNoteUrl } from "../utils/obsidian";
+import {
+  loadReaderSidebarVisible, saveReaderSidebarVisible,
+  loadReaderObsidianPanelVisible, saveReaderObsidianPanelVisible,
+} from "../services/storage";
 import styles from "./read.module.css";
 
 // Lazy-loaded: leaflet (~150 kB) should not land in the main bundle for users
@@ -902,7 +906,7 @@ const Read: React.FC = () => {
   const [importedObsidianNotes, setImportedObsidianNotes] = React.useState<ImportedObsidianNote[]>([]);
   const [selectedObsidianNotePath, setSelectedObsidianNotePath] = React.useState<string | null>(null);
   const [obsidianNotesLoading, setObsidianNotesLoading] = React.useState(false);
-  const [obsidianPanelVisible, setObsidianPanelVisible] = React.useState(true);
+  const [obsidianPanelVisible, setObsidianPanelVisible] = React.useState(loadReaderObsidianPanelVisible);
   // In-panel browsing of the imported Obsidian vault, independent of the
   // article shown on the left — following a [[wikilink]] (or switching to
   // another note) inside the panel pushes the previously shown note onto
@@ -944,7 +948,7 @@ const Read: React.FC = () => {
   // The navigation/notes column is useful, but takes substantial horizontal
   // space beside the text. Keep it open initially, with an explicit desktop
   // control to collapse the entire column when it is not needed.
-  const [readerSidebarVisible, setReaderSidebarVisible] = React.useState(true);
+  const [readerSidebarVisible, setReaderSidebarVisible] = React.useState(loadReaderSidebarVisible);
   // Set by an in-text anchor link (e.g. a "Spis tabel" entry) click — the
   // target anchor id to scroll to once the (possibly different) chapter it
   // resolved to has finished loading. See handleAnchorClick() and the effect
@@ -977,6 +981,9 @@ const Read: React.FC = () => {
   const [tagResults, setTagResults] = React.useState<UserNote[]>([]);
   const hasReaderSidebar = chapters.length > 1 || Boolean(userId);
   const hasObsidianPanel = obsidianNotesLoading || importedObsidianNotes.length > 0;
+
+  React.useEffect(() => { saveReaderSidebarVisible(readerSidebarVisible); }, [readerSidebarVisible]);
+  React.useEffect(() => { saveReaderObsidianPanelVisible(obsidianPanelVisible); }, [obsidianPanelVisible]);
 
   const requestedPosition = Number(searchParams.get("chapter") ?? 1);
   const position = readerCompact ? 1 : requestedPosition;

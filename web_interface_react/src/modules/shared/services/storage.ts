@@ -7,6 +7,8 @@ const KEYS = {
   apiKey: "lenie_apiKey",
   obsidianVaultName: "lenie_obsidianVaultName",
   listFilters: "lenie_listFilters",
+  readerSidebarVisible: "lenie_readerSidebarVisible",
+  readerObsidianPanelVisible: "lenie_readerObsidianPanelVisible",
 } as const;
 
 // Older frontend versions mistakenly persisted the frontend address as the
@@ -101,4 +103,22 @@ export function saveObsidianVaultName(vaultName: string): void {
   } else {
     localStorage.removeItem(KEYS.obsidianVaultName);
   }
+}
+
+// Reader (/read/:id) panel visibility — shared across all documents (device-local,
+// not per-document) so collapsing a panel once keeps it collapsed on the next book/article.
+export function loadReaderSidebarVisible(): boolean {
+  return localStorage.getItem(KEYS.readerSidebarVisible) !== "0";
+}
+
+export function saveReaderSidebarVisible(visible: boolean): void {
+  localStorage.setItem(KEYS.readerSidebarVisible, visible ? "1" : "0");
+}
+
+export function loadReaderObsidianPanelVisible(): boolean {
+  return localStorage.getItem(KEYS.readerObsidianPanelVisible) !== "0";
+}
+
+export function saveReaderObsidianPanelVisible(visible: boolean): void {
+  localStorage.setItem(KEYS.readerObsidianPanelVisible, visible ? "1" : "0");
 }
