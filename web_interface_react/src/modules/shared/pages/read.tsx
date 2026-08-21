@@ -853,6 +853,11 @@ const EDITOR_TYPES = new Set(["webpage", "link", "youtube", "movie", "email"]);
 // Tag counts above this render the sidebar "Tagi" section collapsed by default.
 const TAGS_OPEN_THRESHOLD = 20;
 
+// Above this many chapters, "all chapters" view is hidden — it fetches every
+// chapter's content up front, which stops being a reasonable trade-off for
+// long books.
+const ALL_CHAPTERS_VIEW_MAX = 30;
+
 // ── Page ─────────────────────────────────────────────────────────────────────
 
 const Read: React.FC = () => {
@@ -906,6 +911,12 @@ const Read: React.FC = () => {
   const [obsidianBrowseNote, setObsidianBrowseNote] = React.useState<ImportedObsidianNote | null>(null);
   const [obsidianBrowseHistory, setObsidianBrowseHistory] = React.useState<ImportedObsidianNote[]>([]);
   const [obsidianBrowseLoading, setObsidianBrowseLoading] = React.useState(false);
+  // "all chapters" view: render every chapter's content on one page instead of
+  // paging through them one at a time — fetched on demand (not on every load),
+  // since it means one request per chapter.
+  const [chapterViewAll, setChapterViewAll] = React.useState(false);
+  const [allChapters, setAllChapters] = React.useState<ChapterContent[] | null>(null);
+  const [allChaptersLoading, setAllChaptersLoading] = React.useState(false);
   // sidebar scope: current chapter (default) vs whole document
   const [scopeChapter, setScopeChapter] = React.useState(true);
   const [chapterScope, setChapterScope] = React.useState<ChapterScope | null>(null);
@@ -1093,7 +1104,7 @@ const Read: React.FC = () => {
   // chapter-scoped sidebar data — refetched when the reader moves to another
   // chapter; a failure falls back to the document-level entities (scope null)
   React.useEffect(() => {
-    if (!scopeChapter || !progressLoaded) {
+    if (!scopeChapter || !progressLoaded || chapterViewAll) {
       chapterScopeRequestId.current += 1;
       setChapterScopeLoading(false);
       return;
@@ -1125,7 +1136,7 @@ const Read: React.FC = () => {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [apiUrl, id, position, scopeChapter, progressLoaded, apiKey, entitiesEditVersion]);
+  }, [apiUrl, id, position, scopeChapter, progressLoaded, apiKey, entitiesEditVersion, chapterViewAll]);
 
   // Resolve a raw ?highlight= mention to the variants that actually occur in
   // the loaded chapter. This keeps arrivals from the persons page aligned with
@@ -1198,6 +1209,35 @@ const Read: React.FC = () => {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiUrl, id, position, progressLoaded, apiKey]);
+
+  // "All chapters" view — fetches every chapter's content up front (one
+  // request each) so they can all render on the same page. Only runs while
+  // the toggle is on; switching it off just stops rendering this list, it
+  // doesn't discard it, so re-enabling within the same document is instant.
+  React.useEffect(() => {
+    if (!chapterViewAll || chapters.length === 0) return;
+    let cancelled = false;
+    setAllChaptersLoading(true);
+    (async () => {
+      try {
+        const results = await Promise.all(
+          chapters.map(ch =>
+            fetch(`${apiUrl}/document/${id}/chapter/${ch.position}?reader=1`, { headers })
+              .then(r => r.json())
+              .catch(() => null),
+          ),
+        );
+        if (cancelled) return;
+        setAllChapters(
+          results.filter((d): d is ChapterContent & { status: string } => d?.status === "success"),
+        );
+      } finally {
+        if (!cancelled) setAllChaptersLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapterViewAll, chapters, apiUrl, id, apiKey]);
 
   // Notes generated from the article are reimported as regular Lenie documents.
   // Load their imported content for the reader's right-side preview, rather than
@@ -1334,6 +1374,18 @@ const Read: React.FC = () => {
       });
     }
     setTocOpen(false);
+  };
+
+  // TOC chapter click — in "all chapters" view every chapter is already on
+  // the page, so jump there by scrolling instead of re-fetching a single one.
+  const goToChapter = (pos: number | null) => {
+    if (pos == null) return;
+    if (chapterViewAll) {
+      document.getElementById(`chapter-${pos}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      setTocOpen(false);
+      return;
+    }
+    goTo(pos);
   };
 
   // In-text anchor link click (e.g. a "Spis tabel" entry) — resolve which
@@ -1502,7 +1554,7 @@ const Read: React.FC = () => {
 
   // ── Render ──
 
-  const navButtons = content && content.chapter_total > 1 && (
+  const navButtons = content && content.chapter_total > 1 && !chapterViewAll && (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, margin: "18px 0" }}>
       <button onClick={() => goTo(content.prev)} disabled={!content.prev}
         style={{ padding: "6px 14px", cursor: content.prev ? "pointer" : "default" }}>
@@ -1527,7 +1579,7 @@ const Read: React.FC = () => {
         {n.chapter_position === position && !anchoredNoteIds.has(n.id) &&
           <span style={{ color: "#b45309" }}> ⚠ nie odnaleziono w tekście</span>}
       </>}
-      onHeaderClick={n.chapter_position ? () => goTo(readerCompact ? 1 : n.chapter_position) : undefined}
+      onHeaderClick={n.chapter_position ? () => goToChapter(readerCompact ? 1 : n.chapter_position) : undefined}
       onSaveText={saveNoteText}
       onDelete={deleteNote}
     />
@@ -1578,6 +1630,18 @@ const Read: React.FC = () => {
         {hasReaderSidebar && (
           <button className={styles.tocToggleButton} onClick={() => setTocOpen(o => !o)}>
             📑 Panel czytnika{chapters.length > 1 ? ` (${chapters.length})` : ""}
+          </button>
+        )}
+        {!readerCompact && chapters.length > 1 && chapters.length <= ALL_CHAPTERS_VIEW_MAX && (
+          <button
+            className={styles.sidebarToggleButton}
+            type="button"
+            onClick={() => setChapterViewAll(v => !v)}
+            title={chapterViewAll
+              ? "Wróć do przeglądania jednego rozdziału naraz"
+              : "Pokaż wszystkie rozdziały na jednej stronie, bez przełączania"}
+          >
+            {chapterViewAll ? "📄 Widok: pojedynczo" : "📚 Widok: wszystkie"}
           </button>
         )}
         {documentType && EDITOR_TYPES.has(documentType) && (
@@ -1633,7 +1697,7 @@ const Read: React.FC = () => {
                     background: ch.position === position ? "#e0f2fe" : undefined,
                     fontWeight: ch.position === position ? 600 : undefined,
                   }}>
-                  <span onClick={() => goTo(ch.position)}
+                  <span onClick={() => goToChapter(ch.position)}
                     style={{ cursor: "pointer", flex: 1, color: isRead ? "#94a3b8" : undefined }}>
                     {ch.position === position ? "▶ " : ""}{ch.position}. {ch.title}
                   </span>
@@ -1718,8 +1782,8 @@ const Read: React.FC = () => {
               </button>
             </div>
           )}
-          {loading && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
-          {!loading && content && (
+          {loading && !chapterViewAll && <p style={{ color: "#64748b" }}>Ładowanie…</p>}
+          {!loading && content && !chapterViewAll && (
             <article style={{ fontSize: "1.02em" }} onContextMenu={onTextContextMenu}>
               {renderMarkdown(
                 content.text, chapterNotes, referencesByMarker, highlightTerms, timelineHighlight?.quote,
@@ -1727,7 +1791,7 @@ const Read: React.FC = () => {
               )}
             </article>
           )}
-          {!loading && content && (content.references?.length ?? 0) > 0 && (
+          {!loading && content && !chapterViewAll && (content.references?.length ?? 0) > 0 && (
             <details open style={{
               marginTop: 24, padding: "10px 14px", background: "#f8fafc",
               border: "1px solid #e2e8f0", borderRadius: 8,
@@ -1744,7 +1808,7 @@ const Read: React.FC = () => {
               </ol>
             </details>
           )}
-          {!loading && content && (content.images?.filter(img => !img.inline).length ?? 0) > 0 && (
+          {!loading && content && !chapterViewAll && (content.images?.filter(img => !img.inline).length ?? 0) > 0 && (
             <details open style={{
               marginTop: 24, padding: "10px 14px", background: "#f8fafc",
               border: "1px solid #e2e8f0", borderRadius: 8,
@@ -1757,6 +1821,66 @@ const Read: React.FC = () => {
               </div>
             </details>
           )}
+          {chapterViewAll && allChaptersLoading && (
+            <p style={{ color: "#64748b" }}>Ładowanie wszystkich rozdziałów…</p>
+          )}
+          {chapterViewAll && !allChaptersLoading && (allChapters ?? []).map((ch, idx) => {
+            const chNotes = content?.chapter_total === 1 ? notes : notes.filter(n => n.chapter_position === ch.position);
+            const chRefs = new Map((ch.references ?? []).map(r => [r.marker, r]));
+            const chImages = new Map(
+              (ch.images ?? [])
+                .filter((img): img is ChapterImage & { position: number } => img.position !== null)
+                .map(img => [img.position, img]),
+            );
+            const chWikiLinks = new Map(Object.entries(ch.wiki_links ?? {}));
+            const chNonInlineImages = ch.images?.filter(img => !img.inline) ?? [];
+            return (
+              <div key={ch.position} id={`chapter-${ch.position}`} style={{ marginBottom: 40 }}>
+                <h2 style={{ borderBottom: "1px solid #e2e8f0", paddingBottom: 8 }}>
+                  {ch.position}. {ch.title}
+                </h2>
+                <article style={{ fontSize: "1.02em" }} onContextMenu={onTextContextMenu}>
+                  {renderMarkdown(
+                    ch.text, chNotes, chRefs, highlightTerms, timelineHighlight?.quote,
+                    chImages, handleAnchorClick, chWikiLinks, entityDescriptions,
+                  )}
+                </article>
+                {chRefs.size > 0 && (
+                  <details open style={{
+                    marginTop: 24, padding: "10px 14px", background: "#f8fafc",
+                    border: "1px solid #e2e8f0", borderRadius: 8,
+                  }}>
+                    <summary style={{ cursor: "pointer", fontSize: "0.9em", fontWeight: 600 }}>
+                      📚 Przypisy ({chRefs.size})
+                    </summary>
+                    <ol style={{ fontSize: "0.82em", color: "#475569", lineHeight: 1.5, margin: "8px 0 0", paddingLeft: 28 }}>
+                      {(ch.references ?? []).map((r, i) => (
+                        <li key={i} id={`fn-${r.marker}`} value={Number(r.marker) || undefined} style={{ margin: "4px 0" }}>
+                          {renderRefText(r)}
+                        </li>
+                      ))}
+                    </ol>
+                  </details>
+                )}
+                {chNonInlineImages.length > 0 && (
+                  <details open style={{
+                    marginTop: 24, padding: "10px 14px", background: "#f8fafc",
+                    border: "1px solid #e2e8f0", borderRadius: 8,
+                  }}>
+                    <summary style={{ cursor: "pointer", fontSize: "0.9em", fontWeight: 600 }}>
+                      🖼 Ilustracje ({chNonInlineImages.length})
+                    </summary>
+                    <div style={{ marginTop: 8 }}>
+                      {chNonInlineImages.map((img, i) => renderChapterImage(img, i))}
+                    </div>
+                  </details>
+                )}
+                {idx < (allChapters?.length ?? 0) - 1 && (
+                  <hr style={{ margin: "28px 0", border: "none", borderTop: "2px dashed #cbd5e1" }} />
+                )}
+              </div>
+            );
+          })}
           {navButtons}
         </div>
 
@@ -1764,7 +1888,7 @@ const Read: React.FC = () => {
         {isDesktop && (
           <>
           <div className={`${styles.rightPanel} ${(!hasObsidianPanel || !obsidianPanelVisible) ? styles.rightPanelExpanded : ""}`}>
-            {!readerCompact && <div style={{ fontSize: "0.78em", color: "#64748b", display: "flex", gap: 8, alignItems: "center" }}>
+            {!readerCompact && !chapterViewAll && <div style={{ fontSize: "0.78em", color: "#64748b", display: "flex", gap: 8, alignItems: "center" }}>
               Zakres:
               {([["rozdział", true], ["cały dokument", false]] as const).map(([label, value]) => (
                 <button
