@@ -207,16 +207,44 @@ def _is_truncated_lemma(base: str, variants: list[str]) -> bool:
     )
 
 
+# geogName/placeName are one grouping "family" after label merging; orgName
+# joins it only when canonical_country_for_surface() confirms the surface is
+# a country (see COUNTRY_CHECK_TYPES) — a country mislabeled orgName by
+# spaCy (e.g. a mangled participle lemma) must not stay a fake Organization.
+PLACE_TYPES = {"geogName", "placeName"}
+
+# Labels where a mangled multiword lemma (spaCy's Span.lemma_ concatenates
+# per-token lemmas and loses Polish adjective agreement, e.g. "Morze
+# Czerwone" -> lemma "Morze czerwony") can be repaired by preferring an
+# in-text nominative surface form over the lemma. Extended to orgName
+# (multiword organization names suffer the identical lemmatizer bug, e.g.
+# "Siły Zbrojne Sudanu" -> lemma "siła Zbrojny Sudan").
+NOMINATIVE_PREFERENCE_TYPES = {"geogName", "placeName", "orgName"}
+
+# Labels checked against the country gazetteer. Includes orgName because
+# spaCy sometimes tags a country name as an organization (participle-heavy
+# names like "Zjednoczone Emiraty Arabskie" get parsed as if headed by a
+# verb); a confirmed country match always overrides the NER label.
+COUNTRY_CHECK_TYPES = {"geogName", "placeName", "orgName"}
+
+
 def aggregate_entities_detailed(
     entities: list[dict], types: tuple[str, ...] = ENTITY_TYPES,
 ) -> dict[tuple[str, str], dict]:
-    """Normalize and group raw mentions into stable person/place entities.
+    """Normalize and group raw mentions into stable person/place/org entities.
 
     New ner_service payloads are filtered by root-token POS; payloads without
     POS retain legacy behavior. Country names, selected demonyms and exact
-    uppercase abbreviations are canonicalized. Case-only duplicates share one
-    display spelling, and geogName/placeName duplicates share the more frequent
-    label. Suspicious cut-off lemmas fall back to their best full surface form.
+    uppercase abbreviations are canonicalized — including when spaCy mislabels
+    a country as orgName (COUNTRY_CHECK_TYPES). Case-only duplicates share one
+    display spelling, and geogName/placeName duplicates (plus orgName groups
+    confirmed to be a country) share the more frequent label, excluding
+    orgName from that vote whenever a real place/country label is available.
+    Suspicious cut-off lemmas fall back to their best full surface form; for
+    multiword geogName/placeName/orgName groups an in-text nominative surface
+    (or, failing that, the best real surface form) is preferred over the
+    lemma outright (NOMINATIVE_PREFERENCE_TYPES) — a mangled lemma is never a
+    good display name even when it isn't "truncated" in the cut-off sense.
 
     Shape: {(entity_type, base): {"count", "variants", "raw_lemmas"}}.
     raw_lemmas is internal metadata used to preserve ner_exclusions behavior
@@ -249,7 +277,7 @@ def aggregate_entities_detailed(
         if is_rejected_surface_lemma_pair(surface, lemma, pos):
             continue
 
-        country = canonical_country_for_surface(surface) if label in {"geogName", "placeName"} else None
+        country = canonical_country_for_surface(surface) if label in COUNTRY_CHECK_TYPES else None
         base = country or lemma
         key = (label, base.casefold())
         group = preliminary.setdefault(
@@ -262,6 +290,11 @@ def aggregate_entities_detailed(
                 "surface_order": [],
                 "raw_lemma_spellings": Counter(),
                 "raw_lemma_order": [],
+                "nominative_surface_spellings": Counter(),
+                "nominative_surface_order": [],
+                "is_nominative_candidate": False,
+                "has_case_evidence": False,
+                "is_country": False,
             },
         )
         group["count"] += 1
@@ -274,22 +307,63 @@ def aggregate_entities_detailed(
             if value not in group[order_name]:
                 group[order_name].append(value)
 
+        # A confirmed country always wins the display name deterministically
+        # (base_spellings already converges on the canonical name below) —
+        # never let the nominative-surface heuristic second-guess it.
+        if country is not None:
+            group["is_country"] = True
+        elif label in NOMINATIVE_PREFERENCE_TYPES and len(surface.split()) >= 2:
+            group["is_nominative_candidate"] = True
+            morph = ent.get("morph") or ""
+            # Legacy/incomplete payloads carry no morph at all — that is NOT
+            # evidence the lemma is safe to distrust. Only override the lemma
+            # with a real surface form when we positively know (from morph)
+            # that mentions are inflected; otherwise fall through to the
+            # lemma-based path (tier 3) unchanged from before this feature.
+            if "Case=" in morph:
+                group["has_case_evidence"] = True
+            if "Case=Nom" in morph:
+                group["nominative_surface_spellings"][surface] += 1
+                if surface not in group["nominative_surface_order"]:
+                    group["nominative_surface_order"].append(surface)
+
     normalized_groups: list[dict] = []
     for (label, _base_key), group in preliminary.items():
-        base = _preferred_spelling(group["base_spellings"], group["base_order"])
         variants = _deduplicated_spellings(group["surface_spellings"], group["surface_order"])
-        if _is_truncated_lemma(base, variants):
+        if group["nominative_surface_spellings"]:
+            # 1. An actual in-text nominative beats everything else.
+            base = _preferred_spelling(group["nominative_surface_spellings"], group["nominative_surface_order"])
+        elif group["is_nominative_candidate"] and group["has_case_evidence"]:
+            # 2. No nominative in text, but morph positively confirms every
+            #    mention is inflected — use the best real surface form
+            #    instead of trusting a lemma we know is non-nominative (and
+            #    possibly mangled by per-token concatenation).
             base = _preferred_spelling(group["surface_spellings"], group["surface_order"])
-        normalized_groups.append({"label": label, "base": base, "variants": variants, **group})
+        else:
+            # 3. Legacy path: lemma-derived base, with the truncated-lemma
+            #    fallback (single-word cut-off lemmas like "Brn" -> "Brnem").
+            base = _preferred_spelling(group["base_spellings"], group["base_order"])
+            if _is_truncated_lemma(base, variants):
+                base = _preferred_spelling(group["surface_spellings"], group["surface_order"])
+        normalized_groups.append({
+            "label": label, "base": base, "identity_key": _base_key, "variants": variants, **group,
+        })
 
     merged: dict[tuple[str, str], dict] = {}
     for source in normalized_groups:
         family = (
             "place"
-            if source["label"] in {"geogName", "placeName"}
+            if source["label"] in PLACE_TYPES or source.get("is_country")
             else source["label"]
         )
-        key = (family, source["base"].casefold())
+        # Merge on the stable phase-1 identity (country-or-lemma casefold),
+        # never on the already display-preferred "base" — Faza 1/5's
+        # nominative-vs-inflected choice is resolved independently per label
+        # group and can legitimately differ in spelling (e.g. geogName finds
+        # a nominative surface, placeName only has genitive mentions), which
+        # would otherwise put them under two different merge keys and defeat
+        # the whole point of cross-label merging.
+        key = (family, source["identity_key"])
         group = merged.setdefault(
             key,
             {
@@ -302,6 +376,10 @@ def aggregate_entities_detailed(
                 "surface_order": [],
                 "raw_lemma_spellings": Counter(),
                 "raw_lemma_order": [],
+                "nominative_surface_spellings": Counter(),
+                "nominative_surface_order": [],
+                "is_nominative_candidate": False,
+                "has_case_evidence": False,
             },
         )
         group["count"] += source["count"]
@@ -311,9 +389,15 @@ def aggregate_entities_detailed(
         group["base_spellings"][source["base"]] += source["count"]
         if source["base"] not in group["base_order"]:
             group["base_order"].append(source["base"])
+        group["is_nominative_candidate"] = group["is_nominative_candidate"] or source["is_nominative_candidate"]
+        group["has_case_evidence"] = group["has_case_evidence"] or source["has_case_evidence"]
         for value, counter_name, order_name in (
             *[(value, "surface_spellings", "surface_order") for value in source["surface_order"]],
             *[(value, "raw_lemma_spellings", "raw_lemma_order") for value in source["raw_lemma_order"]],
+            *[
+                (value, "nominative_surface_spellings", "nominative_surface_order")
+                for value in source["nominative_surface_order"]
+            ],
         ):
             source_counter = source[counter_name]
             group[counter_name][value] += source_counter[value]
@@ -322,11 +406,28 @@ def aggregate_entities_detailed(
 
     result: dict[tuple[str, str], dict] = {}
     for group in merged.values():
+        # orgName only ever reaches this merged group via a confirmed
+        # country match (family "place"); a real geogName/placeName label is
+        # always the truthful type for a country, so prefer it in the vote —
+        # but keep orgName as a fallback for the (rare) case a country was
+        # mentioned exclusively under the wrong label in this document.
+        label_candidates = [value for value in group["label_order"] if value != "orgName"] or group["label_order"]
         label = max(
-            group["label_order"],
+            label_candidates,
             key=lambda value: (group["label_counts"][value], -group["label_order"].index(value)),
         )
-        base = _preferred_spelling(group["base_spellings"], group["base_order"])
+        # Faza 1/5 priority repeated here (not just at the pre-merge stage):
+        # merging geogName+placeName (or a country reclassified from
+        # orgName) can combine a nominative-only source with a
+        # higher-mention inflected-only source — without redoing the
+        # priority here, plain frequency voting on base_spellings could
+        # pick the grammatically wrong, but more frequent, inflected form.
+        if group["nominative_surface_spellings"]:
+            base = _preferred_spelling(group["nominative_surface_spellings"], group["nominative_surface_order"])
+        elif group["is_nominative_candidate"] and group["has_case_evidence"]:
+            base = _preferred_spelling(group["surface_spellings"], group["surface_order"])
+        else:
+            base = _preferred_spelling(group["base_spellings"], group["base_order"])
         result[(label, base)] = {
             "count": group["count"],
             "variants": _deduplicated_spellings(group["surface_spellings"], group["surface_order"]),

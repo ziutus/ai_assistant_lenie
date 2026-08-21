@@ -8,7 +8,12 @@ pytest.importorskip("sqlalchemy")
 pytest.importorskip("requests")
 
 from library.db.models import DocumentEntity, GeocodeCache  # noqa: E402
-from library.place_verification import _slugify, remove_orphaned_tag, verify_document_places  # noqa: E402
+from library.place_verification import (  # noqa: E402
+    _canonicalize_and_merge_places,
+    _slugify,
+    remove_orphaned_tag,
+    verify_document_places,
+)
 
 
 def _entity(text, etype="geogName", geocode_id=None, geocode=None, mention_count=1):
@@ -247,6 +252,98 @@ class TestVerifyDocumentPlaces:
             summary = verify_document_places(session, doc, "tekst")
 
         assert summary["tagged"] == ["miejsce-ankara"]
+
+
+class TestCanonicalizeAndMergePlaces:
+    """Faza 3 (tmp/plan-ner-multiword-place-display-names.md): rename
+    entity_text to the geocoder's canonical spelling and physically merge
+    document_entities rows that converge on the same canonical place —
+    closing the gap left by ner_client.py's text-only nominative preference
+    (no nominative anywhere in the text; two entities lemmatized apart)."""
+
+    def _session(self):
+        session = MagicMock()
+        return session
+
+    def test_two_entities_with_same_canonical_name_are_merged(self):
+        """'Port Sudan' (placeName) and 'Port Sudanem' (geogName) never
+        shared a lemma-based group (ner_client.py Faza 1 doesn't touch the
+        grouping key) but resolve to the same real place via the geocoder."""
+        higher = _entity("Port Sudan", etype="placeName",
+                          geocode=_resolved_geocode("Port Sudan, Sudan"), mention_count=1)
+        higher.variants = ["Port Sudanu"]
+        lower = _entity("Port Sudanem", etype="geogName",
+                         geocode=_resolved_geocode("Port Sudan, Sudan"), mention_count=1)
+        lower.variants = ["Port Sudanem"]
+        session = self._session()
+
+        survivors = _canonicalize_and_merge_places(session, [higher, lower])
+
+        assert survivors == [higher]
+        assert higher.entity_text == "Port Sudan"
+        assert higher.mention_count == 2
+        assert higher.source == "geocoded"
+        assert set(higher.variants) == {"Port Sudanu", "Port Sudanem"}
+        session.delete.assert_called_once_with(lower)
+
+    def test_entity_already_spelled_canonically_anchors_the_merge(self):
+        """A row already spelled exactly like the canonical form is kept as
+        the merge target — e.g. ner_client.py's Faza 1 already got the
+        nominative right from the text, so the geocoder pass must not
+        silently prefer the OTHER (mis-lemmatized) duplicate instead."""
+        correct = _entity("Morze Czerwone", etype="placeName",
+                           geocode=_resolved_geocode("Morze Czerwone, Egipt"), mention_count=1)
+        correct.variants = ["Morze Czerwone"]
+        garbled = _entity("Morze czerwony", etype="geogName",
+                           geocode=_resolved_geocode("Morze Czerwone, Egipt"), mention_count=5)
+        garbled.variants = ["Morza Czerwonego"]
+        session = self._session()
+
+        survivors = _canonicalize_and_merge_places(session, [garbled, correct])
+
+        assert survivors == [correct]
+        assert correct.entity_text == "Morze Czerwone"
+        assert correct.mention_count == 6
+        session.delete.assert_called_once_with(garbled)
+
+    def test_no_nominative_anywhere_in_text_gets_renamed_to_canonical(self):
+        """'Zatoki Perskiej' — every mention genitive, no nominative form in
+        the text at all — ner_client.py's Faza 1 cannot fix this (it
+        deliberately never generates a nominative from grammar rules); the
+        geocoder's canonical spelling is the only way to recover 'Zatoka
+        Perska'."""
+        ent = _entity("Zatoki Perskiej", etype="geogName",
+                       geocode=_resolved_geocode("Zatoka Perska"), mention_count=4)
+        ent.variants = ["Zatoki Perskiej"]
+        session = self._session()
+
+        survivors = _canonicalize_and_merge_places(session, [ent])
+
+        assert survivors == [ent]
+        assert ent.entity_text == "Zatoka Perska"
+        assert ent.source == "geocoded"
+        session.delete.assert_not_called()
+
+    def test_unresolved_entities_are_left_untouched(self):
+        ent = _entity("Nibylandia", geocode=MagicMock(resolved=False))
+        session = self._session()
+
+        survivors = _canonicalize_and_merge_places(session, [ent])
+
+        assert survivors == [ent]
+        assert ent.entity_text == "Nibylandia"
+        session.delete.assert_not_called()
+        session.flush.assert_not_called()
+
+    def test_single_resolved_entity_matching_canonical_is_a_noop(self):
+        ent = _entity("Teheran", geocode=_resolved_geocode("Teheran, Iran"))
+        session = self._session()
+
+        survivors = _canonicalize_and_merge_places(session, [ent])
+
+        assert survivors == [ent]
+        assert ent.entity_text == "Teheran"
+        session.delete.assert_not_called()
 
 
 class TestRemoveOrphanedTag:

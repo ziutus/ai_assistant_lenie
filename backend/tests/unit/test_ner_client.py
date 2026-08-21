@@ -362,3 +362,176 @@ class TestAggregateNormalization:
             {"text": "Ło\u0301dź", "label": "placeName", "lemma": "Ło\u0301dź"},
         ]
         assert aggregate_entities(entities) == {("placeName", "Łódź"): 2}
+
+
+class TestNominativePreferenceForMultiwordPlaces:
+    """Faza 1: spaCy's Span.lemma_ concatenates per-token lemmas and loses
+    Polish adjective agreement for multiword place names ("Morze Czerwone"
+    -> lemma "Morze czerwony"). A genuine in-text nominative surface, or
+    failing that a real inflected surface, must win over that mangled lemma
+    — but never for legacy payloads with no morph data at all (case A/B: has
+    positive Case= evidence; case B2 below: none, must not regress)."""
+
+    def test_nominative_and_genitive_merge_with_nominative_display_name(self):
+        entities = [
+            {"text": "Morze Czerwone", "label": "placeName", "lemma": "Morze czerwony",
+             "pos": "NOUN", "morph": "Case=Nom"},
+            {"text": "Morza Czerwonego", "label": "placeName", "lemma": "Morze czerwony",
+             "pos": "NOUN", "morph": "Case=Gen"},
+        ]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Morze Czerwone"): {
+                "count": 2,
+                "variants": ["Morze Czerwone", "Morza Czerwonego"],
+                "raw_lemmas": ["Morze czerwony"],
+            },
+        }
+
+    def test_inflected_only_prefers_real_surface_over_mangled_lemma(self):
+        entities = [{"text": "Morza Czerwonego", "label": "placeName", "lemma": "Morze czerwony",
+                     "pos": "NOUN", "morph": "Case=Gen"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Morza Czerwonego"): {
+                "count": 1,
+                "variants": ["Morza Czerwonego"],
+                "raw_lemmas": ["Morze czerwony"],
+            },
+        }
+
+    def test_legacy_payload_without_morph_keeps_lemma(self):
+        """No morph at all (legacy service) must not be treated as proof of
+        inflection — regression guard for a lemma that was already fine."""
+        entities = [{"text": "Cieśninie Ormuz", "label": "geogName", "lemma": "cieśnina Ormuz"}]
+        assert aggregate_entities(entities) == {("geogName", "cieśnina Ormuz"): 1}
+
+    def test_single_word_place_is_unaffected(self):
+        entities = [{"text": "Kijowa", "label": "placeName", "lemma": "Kijów", "pos": "NOUN", "morph": "Case=Gen"}]
+        assert aggregate_entities(entities) == {("placeName", "Kijów"): 1}
+
+    def test_multiword_person_is_unaffected_by_place_nominative_logic(self):
+        entities = [{"text": "Angela Merkel", "label": "persName", "lemma": "Angela merkel",
+                     "pos": "NOUN", "morph": "Case=Nom"}]
+        assert aggregate_entities(entities) == {("persName", "Angela merkel"): 1}
+
+    def test_labels_merge_and_nominative_wins_despite_fewer_mentions(self):
+        """Nominative under geogName (1x), inflected-only under placeName
+        (5x) — cross-label merge must not let the more frequent inflected
+        form outvote the grammatically correct nominative."""
+        entities = [
+            {"text": "Morze Czerwone", "label": "geogName", "lemma": "Morze czerwony",
+             "pos": "NOUN", "morph": "Case=Nom"},
+            *[{"text": "Morza Czerwonego", "label": "placeName", "lemma": "Morze czerwony",
+               "pos": "NOUN", "morph": "Case=Gen"}] * 5,
+        ]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Morze Czerwone"): {
+                "count": 6,
+                "variants": ["Morze Czerwone", "Morza Czerwonego"],
+                "raw_lemmas": ["Morze czerwony"],
+            },
+        }
+
+    def test_country_priority_beats_nominative_surface_spelling(self):
+        """A multiword country already resolves deterministically via the
+        gazetteer — the nominative-preference path must not run at all, so
+        the canonical spelling (not a differently-cased in-text surface)
+        wins even when that surface happens to carry Case=Nom."""
+        entities = [{"text": "Zjednoczone emiraty Arabskie", "label": "placeName",
+                     "lemma": "zjednoczyć Emirat Arabski", "pos": "NOUN", "morph": "Case=Nom"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Zjednoczone Emiraty Arabskie"): {
+                "count": 1,
+                "variants": ["Zjednoczone emiraty Arabskie"],
+                "raw_lemmas": ["zjednoczyć Emirat Arabski"],
+            },
+        }
+
+
+class TestCountryDetectedUnderOrgName:
+    """Faza 4: spaCy occasionally tags a country as orgName (participle-heavy
+    names like "Zjednoczone Emiraty Arabskie" get parsed as if headed by a
+    verb, e.g. lemma "zjednoczyć..."). A confirmed gazetteer match must pull
+    that mention into the same place entity, and out of the org registry."""
+
+    def test_orgname_country_merges_with_place_label_mention(self):
+        entities = [
+            {"text": "Wielka Brytania", "label": "orgName", "lemma": "wielki Brytania", "pos": "NOUN"},
+            {"text": "Wielkiej Brytanii", "label": "placeName", "lemma": "Wielka Brytania", "pos": "NOUN"},
+        ]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Wielka Brytania"): {
+                "count": 2,
+                "variants": ["Wielka Brytania", "Wielkiej Brytanii"],
+                "raw_lemmas": ["wielki Brytania", "Wielka Brytania"],
+            },
+        }
+
+    def test_orgname_country_alone_keeps_orgname_label(self):
+        """Known edge case (documented limitation): a country mentioned
+        exclusively under orgName, with no geogName/placeName mention at all
+        in the same document, still gets merged/named correctly but keeps
+        the orgName label — there is no better candidate to vote for."""
+        entities = [{"text": "Wielka Brytania", "label": "orgName", "lemma": "wielki Brytania", "pos": "NOUN"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("orgName", "Wielka Brytania"): {
+                "count": 1,
+                "variants": ["Wielka Brytania"],
+                "raw_lemmas": ["wielki Brytania"],
+            },
+        }
+
+    def test_ordinary_organization_is_unaffected(self):
+        entities = [{"text": "Interia", "label": "orgName", "lemma": "Interia", "pos": "PROPN"}]
+        assert aggregate_entities(entities) == {("orgName", "Interia"): 1}
+
+    def test_organization_and_country_with_same_country_name_never_confused(self):
+        """A country and an ordinary orgName group must never collide just
+        because they end up in the same 'place' family bucket by accident —
+        only a genuine gazetteer match joins family 'place'."""
+        entities = [
+            {"text": "Bank Anglii", "label": "orgName", "lemma": "Bank Anglia", "pos": "NOUN"},
+            {"text": "Wielka Brytania", "label": "placeName", "lemma": "Wielka Brytania", "pos": "NOUN"},
+        ]
+        result = aggregate_entities_detailed(entities)
+        assert result == {
+            ("orgName", "Bank Anglia"): {"count": 1, "variants": ["Bank Anglii"], "raw_lemmas": ["Bank Anglia"]},
+            ("placeName", "Wielka Brytania"): {
+                "count": 1, "variants": ["Wielka Brytania"], "raw_lemmas": ["Wielka Brytania"],
+            },
+        }
+
+
+class TestNominativePreferenceForOrganizations:
+    """Faza 5: the same mangled-lemma bug (Faza 1) also hits multiword
+    organization names, e.g. "Siły Zbrojne Sudanu" -> lemma
+    "siła Zbrojny Sudan" (singular noun + wrong-agreement adjective)."""
+
+    def test_nominative_surface_preferred_over_mangled_org_lemma(self):
+        entities = [
+            {"text": "Siły Zbrojne Sudanu", "label": "orgName", "lemma": "siła Zbrojny Sudan",
+             "pos": "NOUN", "morph": "Case=Nom"},
+            {"text": "Siłom Zbrojnym Sudanu", "label": "orgName", "lemma": "siła Zbrojny Sudan",
+             "pos": "NOUN", "morph": "Case=Dat"},
+        ]
+        assert aggregate_entities_detailed(entities) == {
+            ("orgName", "Siły Zbrojne Sudanu"): {
+                "count": 2,
+                "variants": ["Siły Zbrojne Sudanu", "Siłom Zbrojnym Sudanu"],
+                "raw_lemmas": ["siła Zbrojny Sudan"],
+            },
+        }
+
+    def test_inflected_only_org_prefers_real_surface_over_mangled_lemma(self):
+        entities = [{"text": "Sił Zbrojnych Sudanu", "label": "orgName", "lemma": "siła Zbrojny Sudan",
+                     "pos": "NOUN", "morph": "Case=Gen"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("orgName", "Sił Zbrojnych Sudanu"): {
+                "count": 1,
+                "variants": ["Sił Zbrojnych Sudanu"],
+                "raw_lemmas": ["siła Zbrojny Sudan"],
+            },
+        }
+
+    def test_single_word_organization_is_unaffected(self):
+        entities = [{"text": "Bloomberga", "label": "orgName", "lemma": "Bloomberg", "pos": "PROPN"}]
+        assert aggregate_entities(entities) == {("orgName", "Bloomberg"): 1}

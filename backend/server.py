@@ -2276,6 +2276,166 @@ def ner_exclusions_delete(exclusion_id: int):
     return jsonify({"status": "success", "deleted_id": exclusion_id}), 200
 
 
+def _correction_dict(row):
+    return {
+        "id": row.id, "match_lemma": row.match_lemma, "match_entity_type": row.match_entity_type,
+        "corrected_text": row.corrected_text, "corrected_entity_type": row.corrected_entity_type,
+        "scope": row.scope, "author": row.author, "reason": row.reason, "approved_by": row.approved_by,
+        "source_document_id": row.source_document_id,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+@app.route('/ner_corrections', methods=['GET'])
+def ner_corrections_list():
+    """NER correction dictionary (Faza 6) — human-approved lemma-keyed display-name fixes."""
+    from sqlalchemy import select as sa_select
+    from library.db.models import NerCorrection
+
+    session = get_scoped_session()
+    rows = session.execute(
+        sa_select(NerCorrection).order_by(NerCorrection.created_at.desc())
+    ).scalars().all()
+    return {"status": "success", "count": len(rows),
+            "corrections": [_correction_dict(r) for r in rows]}, 200
+
+
+@app.route('/ner_corrections', methods=['POST', 'OPTIONS'])
+def ner_corrections_add():
+    """Approve a correction rule. Body (JSON): {"match_lemma": "...", "corrected_text": "...",
+    "match_entity_type": "persName"|...|"*" (default "*"), "corrected_entity_type": "..."|null,
+    "scope": "global"|"author", "author": "..."|null, "reason": "...", "approved_by": "...",
+    "source_document_id": <id>|null, "document_id": <id>}. reason and approved_by are required —
+    this is the decision log: why the correction was approved and by whom. For scope=author
+    without an explicit author, the author is taken from document_id."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import NerCorrection
+
+    data = request.get_json(silent=True) or {}
+    match_lemma = (data.get('match_lemma') or "").strip()
+    if not match_lemma:
+        return {"status": "error", "message": "match_lemma is required"}, 400
+    corrected_text = (data.get('corrected_text') or "").strip()
+    if not corrected_text:
+        return {"status": "error", "message": "corrected_text is required"}, 400
+    reason = (data.get('reason') or "").strip()
+    if not reason:
+        return {"status": "error", "message": "reason is required (decision log)"}, 400
+    approved_by = (data.get('approved_by') or "").strip()
+    if not approved_by:
+        return {"status": "error", "message": "approved_by is required (decision log)"}, 400
+
+    match_entity_type = (data.get('match_entity_type') or "*").strip()
+    if match_entity_type not in ("*", "persName", "orgName", "geogName", "placeName"):
+        return {
+            "status": "error",
+            "message": "match_entity_type must be persName, orgName, geogName, placeName or *",
+        }, 400
+    corrected_entity_type = (data.get('corrected_entity_type') or "").strip() or None
+    if corrected_entity_type is not None and corrected_entity_type not in ("persName", "orgName", "geogName", "placeName"):
+        return {
+            "status": "error",
+            "message": "corrected_entity_type must be persName, orgName, geogName or placeName",
+        }, 400
+    scope = (data.get('scope') or "global").strip()
+    if scope not in ("global", "author"):
+        return {"status": "error", "message": "scope must be global or author"}, 400
+
+    session = get_scoped_session()
+    author = (data.get('author') or "").strip() or None
+    source_document_id, error = _entities_doc_id(data.get('source_document_id')) \
+        if data.get('source_document_id') is not None else (None, None)
+    if error:
+        return error
+    if scope == "author" and author is None:
+        doc_id, error = _entities_doc_id(data.get('document_id'))
+        if error:
+            return {"status": "error",
+                    "message": "scope=author requires author or document_id"}, 400
+        doc = Document.get_by_id(session, doc_id)
+        if doc is None:
+            return {"status": "error", "message": "Document not found"}, 404
+        author = (doc.byline or "").strip() or None
+        if author is None:
+            return {"status": "error", "message": "Document has no author to scope the correction to"}, 400
+
+    row = NerCorrection(
+        match_lemma=match_lemma, match_entity_type=match_entity_type,
+        corrected_text=corrected_text, corrected_entity_type=corrected_entity_type,
+        scope=scope, author=author if scope == "author" else None,
+        reason=reason, approved_by=approved_by, source_document_id=source_document_id,
+    )
+    session.add(row)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("ner_correction add failed for %r", match_lemma)
+        return {"status": "error", "message": "DB error (duplicate rule?)"}, 409
+
+    return {"status": "success", "correction": _correction_dict(row)}, 200
+
+
+@app.route('/ner_corrections/<int:correction_id>', methods=['DELETE', 'OPTIONS'])
+def ner_corrections_delete(correction_id: int):
+    """Remove a correction rule — past applications stay in the audit log (ner_correction_applications)."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library.db.models import NerCorrection
+
+    session = get_scoped_session()
+    row = session.get(NerCorrection, correction_id)
+    if row is None:
+        return {"status": "error", "message": "Correction not found"}, 404
+    try:
+        session.delete(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        logging.exception("ner_correction delete failed for %s", correction_id)
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "deleted_id": correction_id}), 200
+
+
+@app.route('/ner_correction_applications', methods=['GET'])
+def ner_correction_applications_list():
+    """Audit log of every time a NerCorrection rule actually fired.
+    Optional query params: document_id=<id>, correction_id=<id>."""
+    from sqlalchemy import select as sa_select
+    from library.db.models import NerCorrectionApplication
+
+    session = get_scoped_session()
+    query = sa_select(NerCorrectionApplication)
+    document_id_raw = request.args.get('document_id')
+    if document_id_raw is not None:
+        document_id, error = _entities_doc_id(document_id_raw)
+        if error:
+            return error
+        query = query.where(NerCorrectionApplication.document_id == document_id)
+    correction_id_raw = request.args.get('correction_id')
+    if correction_id_raw is not None:
+        try:
+            correction_id = int(correction_id_raw)
+        except ValueError:
+            return {"status": "error", "message": "correction_id must be an integer"}, 400
+        query = query.where(NerCorrectionApplication.correction_id == correction_id)
+    query = query.order_by(NerCorrectionApplication.applied_at.desc())
+
+    rows = session.execute(query).scalars().all()
+    return {"status": "success", "count": len(rows), "applications": [
+        {
+            "id": r.id, "document_id": r.document_id, "correction_id": r.correction_id,
+            "entity_type_before": r.entity_type_before, "entity_text_before": r.entity_text_before,
+            "entity_type_after": r.entity_type_after, "entity_text_after": r.entity_text_after,
+            "applied_at": r.applied_at.isoformat() if r.applied_at else None,
+        }
+        for r in rows
+    ]}, 200
+
+
 @app.route('/website_get_next_to_correct', methods=['GET'])
 def website_get_next_to_correct():
     logging.debug("Getting website by id, new style")

@@ -226,6 +226,14 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
             logger.info("NER exclusions dropped %d entities for doc %s: %s",
                         len(excluded), document_id, [k[1] for k in excluded])
 
+    # Faza 6: human-approved lemma-keyed corrections (ner_corrections table) —
+    # runs after exclusions (junk is gone first) and before org-registry
+    # resolution below (a correction can retype orgName -> geogName/placeName,
+    # which must not have already created a bogus Organization row).
+    from library.ner_corrections import apply_ner_corrections
+
+    apply_ner_corrections(session, document_id, groups, getattr(doc, "byline", None))
+
     # spaCy occasionally labels a capitalized common noun as persName. Verify
     # only ambiguous one-word candidates with cheap, batched Bielik calls.
     # Fail open: malformed/unavailable LLM results leave entities untouched.
@@ -624,14 +632,19 @@ PLACE_TYPES = ("geogName", "placeName")
 MERGEABLE_PLACE_SOURCE_TYPES = (*PLACE_TYPES, "orgName")
 
 
-def merge_document_entities(source: DocumentEntity, target: DocumentEntity) -> None:
+def merge_document_entities(source: DocumentEntity, target: DocumentEntity, *, target_source: str = "manual") -> None:
     """Fold source into target: sum mention_count, union variants, adopt a
     missing geocode_id from source. Caller deletes source from the session and
     owns the transaction/validation (document/type checks) — see
     POST /document/<id>/places/merge in server.py. Unlike orgName merges,
     places have no cross-document registry, so this is per-document only.
-    Marks target as source='manual' so refresh_document_entities() never
-    overwrites this merge on the next NER run.
+    Marks target as source=target_source (default 'manual') so
+    refresh_document_entities() never overwrites this merge on the next NER
+    run for a human-made merge. Automatic callers (place_verification.py's
+    geocoder-driven canonicalization, Faza 3) pass target_source='geocoded'
+    instead — that merge is cheap to redo on every place-verification pass,
+    so it deliberately does NOT get the same refresh-survival protection as
+    a human decision.
     """
     combined_variants = dict.fromkeys(target.variants or [])
     for value in [source.entity_text, *(source.variants or [])]:
@@ -641,4 +654,4 @@ def merge_document_entities(source: DocumentEntity, target: DocumentEntity) -> N
     target.mention_count += source.mention_count
     if target.geocode_id is None and source.geocode_id is not None:
         target.geocode_id = source.geocode_id
-    target.source = "manual"
+    target.source = target_source
