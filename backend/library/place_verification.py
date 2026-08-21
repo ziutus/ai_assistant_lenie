@@ -47,8 +47,16 @@ def _slugify(name: str) -> str:
 
 
 def _is_country(name: str) -> bool:
-    from library.country_gazetteer import detect_countries
-    return bool(detect_countries(name))
+    """Whether `name` IS (whole-string) a country, not merely a place whose name
+    happens to contain one as a substring ("Port Sudan", "Al-Faszirze Emiraty").
+    detect_countries() is a deliberately over-matching candidate generator
+    (used e.g. by article_tagging.extract_countries_hybrid()'s LLM-filtered
+    prescreen) — wrong here, since it silently dropped "Port Sudan" and
+    similar compound place names out of the geocoding candidate list entirely.
+    canonical_country_name() requires the full normalized string to match.
+    """
+    from library.country_gazetteer import canonical_country_name
+    return canonical_country_name(name) is not None
 
 
 def _get_or_create_geocode(session, query: str) -> GeocodeCache:
