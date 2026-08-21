@@ -14,6 +14,7 @@ from collections import Counter
 
 import requests
 
+from library.geo_feature_gazetteer import canonical_geo_feature_name
 from library.ner_normalization import (
     canonical_country_for_surface,
     is_rejected_surface_lemma_pair,
@@ -280,7 +281,12 @@ def aggregate_entities_detailed(
             continue
 
         country = canonical_country_for_surface(surface) if label in COUNTRY_CHECK_TYPES else None
-        base = country or lemma
+        # Known seas/straits/gulfs/canals suffer the identical multiword-lemma
+        # mangling as countries (see NOMINATIVE_PREFERENCE_TYPES above) but are
+        # never a country, so this is checked independently and never joins the
+        # is_country/family-merge path below.
+        geo_feature = canonical_geo_feature_name(surface) if country is None and label in PLACE_TYPES else None
+        base = country or geo_feature or lemma
         key = (label, base.casefold())
         group = preliminary.setdefault(
             key,
@@ -309,11 +315,14 @@ def aggregate_entities_detailed(
             if value not in group[order_name]:
                 group[order_name].append(value)
 
-        # A confirmed country always wins the display name deterministically
-        # (base_spellings already converges on the canonical name below) —
-        # never let the nominative-surface heuristic second-guess it.
+        # A confirmed country or known geo feature always wins the display
+        # name deterministically (base_spellings already converges on the
+        # canonical name below) — never let the nominative-surface heuristic
+        # second-guess it with a differently-cased in-text surface.
         if country is not None:
             group["is_country"] = True
+        elif geo_feature is not None:
+            pass
         elif label in NOMINATIVE_PREFERENCE_TYPES and len(surface.split()) >= 2:
             group["is_nominative_candidate"] = True
             morph = ent.get("morph") or ""

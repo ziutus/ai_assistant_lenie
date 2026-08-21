@@ -225,9 +225,15 @@ class TestAggregateEntities:
         assert aggregate_entities(entities) == {("placeName", "Ukraina"): 1}
 
     def test_lowercase_lemma_of_capitalized_mention_is_kept(self):
-        """Lemat może zaczynać się małą literą ('cieśnina Ormuz') — filtr patrzy na tekst wzmianki."""
-        entities = [{"text": "Cieśninie Ormuz", "label": "geogName", "lemma": "cieśnina Ormuz"}]
-        assert aggregate_entities(entities) == {("geogName", "cieśnina Ormuz"): 1}
+        """Lemat może zaczynać się małą literą ('kotlina Kłodzki') — filtr patrzy na tekst wzmianki.
+
+        Uses a place outside geo_feature_gazetteer's small curated list — a
+        gazetteer-known name is deliberately overridden regardless of case
+        (see TestGeoFeatureGazetteerOverride below), so it would not exercise
+        this "lemma text-case is irrelevant to the lowercase-mention filter"
+        behavior."""
+        entities = [{"text": "Kotlinie Kłodzkiej", "label": "geogName", "lemma": "kotlina Kłodzki"}]
+        assert aggregate_entities(entities) == {("geogName", "kotlina Kłodzki"): 1}
 
 
 class TestAggregateEntitiesDetailed:
@@ -388,21 +394,27 @@ class TestNominativePreferenceForMultiwordPlaces:
         }
 
     def test_inflected_only_prefers_real_surface_over_mangled_lemma(self):
-        entities = [{"text": "Morza Czerwonego", "label": "placeName", "lemma": "Morze czerwony",
+        """Uses a place outside geo_feature_gazetteer's list — see
+        TestGeoFeatureGazetteerOverride below for the gazetteer-covered case
+        (e.g. real-world "Morza Czerwonego"), which this fallback no longer
+        has to handle on its own."""
+        entities = [{"text": "Kotliny Kłodzkiej", "label": "placeName", "lemma": "kotlina kłodzki",
                      "pos": "NOUN", "morph": "Case=Gen"}]
         assert aggregate_entities_detailed(entities) == {
-            ("placeName", "Morza Czerwonego"): {
+            ("placeName", "Kotliny Kłodzkiej"): {
                 "count": 1,
-                "variants": ["Morza Czerwonego"],
-                "raw_lemmas": ["Morze czerwony"],
+                "variants": ["Kotliny Kłodzkiej"],
+                "raw_lemmas": ["kotlina kłodzki"],
             },
         }
 
     def test_legacy_payload_without_morph_keeps_lemma(self):
         """No morph at all (legacy service) must not be treated as proof of
-        inflection — regression guard for a lemma that was already fine."""
-        entities = [{"text": "Cieśninie Ormuz", "label": "geogName", "lemma": "cieśnina Ormuz"}]
-        assert aggregate_entities(entities) == {("geogName", "cieśnina Ormuz"): 1}
+        inflection — regression guard for a lemma that was already fine.
+        Uses a place outside geo_feature_gazetteer's list (see module note on
+        test_inflected_only_prefers_real_surface_over_mangled_lemma above)."""
+        entities = [{"text": "Kotlinie Kłodzkiej", "label": "geogName", "lemma": "kotlina kłodzki"}]
+        assert aggregate_entities(entities) == {("geogName", "kotlina kłodzki"): 1}
 
     def test_single_word_place_is_unaffected(self):
         entities = [{"text": "Kijowa", "label": "placeName", "lemma": "Kijów", "pos": "NOUN", "morph": "Case=Gen"}]
@@ -445,6 +457,71 @@ class TestNominativePreferenceForMultiwordPlaces:
                 "raw_lemmas": ["zjednoczyć Emirat Arabski"],
             },
         }
+
+
+class TestGeoFeatureGazetteerOverride:
+    """A small curated gazetteer (geo_feature_gazetteer.py) of well-known
+    seas/straits/gulfs/canals fixes the case TestNominativePreferenceForMultiwordPlaces
+    documents as an open gap: a multiword geogName/placeName mentioned only in
+    inflected cases, with no in-text nominative to prefer and morph evidence
+    that would otherwise make tier 2 keep the (grammatically wrong) inflected
+    surface as the display name — e.g. real documents storing "Zatoki Perskiej"/
+    "Morza Czerwonego" as entity_text, which the geocoder then can't resolve."""
+
+    def test_inflected_only_mention_resolves_to_canonical_name(self):
+        entities = [{"text": "Morza Czerwonego", "label": "geogName", "lemma": "Morze czerwony",
+                     "pos": "NOUN", "morph": "Case=Gen"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("geogName", "Morze Czerwone"): {
+                "count": 1,
+                "variants": ["Morza Czerwonego"],
+                "raw_lemmas": ["Morze czerwony"],
+            },
+        }
+
+    def test_palatalized_locative_variant_resolves(self):
+        """"Zatoce Perskiej" (zatoka -> zatoce, k/c palatalization) is not
+        reachable by a plain "zatok*" stem — geo_feature_gazetteer.py carries
+        a second "zatoc*" variant for exactly this."""
+        entities = [{"text": "Zatoce Perskiej", "label": "geogName", "lemma": "zatoka perski",
+                     "pos": "NOUN", "morph": "Case=Loc"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("geogName", "Zatoka Perska"): {
+                "count": 1,
+                "variants": ["Zatoce Perskiej"],
+                "raw_lemmas": ["zatoka perski"],
+            },
+        }
+
+    def test_no_morph_evidence_still_resolves(self):
+        """Unlike the generic nominative-preference path, a gazetteer match
+        does not need morph case evidence — it's a deterministic dictionary
+        lookup, not a guess."""
+        entities = [{"text": "Cieśninie Ormuz", "label": "geogName", "lemma": "cieśnina Ormuz"}]
+        assert aggregate_entities(entities) == {("geogName", "Cieśnina Ormuz"): 1}
+
+    def test_differently_cased_mentions_merge_into_one_group(self):
+        entities = [
+            {"text": "Morza Czerwonego", "label": "geogName", "lemma": "Morze czerwony",
+             "pos": "NOUN", "morph": "Case=Gen"},
+            {"text": "Morzem Czerwonym", "label": "placeName", "lemma": "Morze czerwony",
+             "pos": "NOUN", "morph": "Case=Inst"},
+        ]
+        assert aggregate_entities_detailed(entities) == {
+            ("geogName", "Morze Czerwone"): {
+                "count": 2,
+                "variants": ["Morza Czerwonego", "Morzem Czerwonym"],
+                "raw_lemmas": ["Morze czerwony"],
+            },
+        }
+
+    def test_unknown_multiword_place_is_unaffected(self):
+        """A place outside the small curated list still falls through to the
+        generic nominative-preference logic (Tier 2: real surface, not the
+        mangled lemma)."""
+        entities = [{"text": "Kotliny Kłodzkiej", "label": "geogName", "lemma": "kotlina kłodzki",
+                     "pos": "NOUN", "morph": "Case=Gen"}]
+        assert aggregate_entities(entities) == {("geogName", "Kotliny Kłodzkiej"): 1}
 
 
 class TestCountryDetectedUnderOrgName:

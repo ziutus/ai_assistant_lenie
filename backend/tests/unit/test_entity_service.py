@@ -22,7 +22,7 @@ from library.entity_service import (  # noqa: E402
 RAW = [
     {"text": "Tuska", "label": "persName", "lemma": "Tusk"},
     {"text": "Tusk", "label": "persName", "lemma": "Tusk"},
-    {"text": "Cieśninie Ormuz", "label": "geogName", "lemma": "cieśnina Ormuz"},
+    {"text": "Kotlinie Kłodzkiej", "label": "geogName", "lemma": "kotlina kłodzki"},
 ]
 
 
@@ -94,13 +94,13 @@ class TestRefreshDocumentEntities:
         assert session.add_all.call_args_list[1].args[0] == []
         assert {(r.entity_type, r.entity_text, r.mention_count) for r in rows} == {
             ("persName", "Tusk", 2),
-            ("geogName", "cieśnina Ormuz", 1),
+            ("geogName", "kotlina kłodzki", 1),
         }
         assert all(isinstance(r, DocumentEntity) and r.document_id == 42 for r in rows)
         # formy powierzchniowe z tekstu zapisane per wiersz (filtr per rozdział)
         assert {r.entity_text: r.variants for r in rows} == {
             "Tusk": ["Tuska", "Tusk"],
-            "cieśnina Ormuz": ["Cieśninie Ormuz"],
+            "kotlina kłodzki": ["Kotlinie Kłodzkiej"],
         }
 
     def test_rows_sorted_most_mentioned_first(self):
@@ -140,7 +140,7 @@ class TestRefreshDocumentEntities:
         with patch("library.entity_service.extract_entities", return_value=RAW):
             rows = refresh_document_entities(session, 42, "jakiś tekst")
 
-        assert {r.entity_text for r in rows} == {"cieśnina Ormuz"}
+        assert {r.entity_text for r in rows} == {"kotlina kłodzki"}
 
     def test_exclusion_matches_raw_variant_after_country_canonicalization(self):
         session = _session_with_exclusions(
@@ -167,13 +167,13 @@ class TestRefreshDocumentEntities:
         session.get.return_value = MagicMock(byline="Good Times Bad Times")
         with patch("library.entity_service.extract_entities", return_value=RAW):
             rows = refresh_document_entities(session, 42, "jakiś tekst")
-        assert {r.entity_text for r in rows} == {"cieśnina Ormuz"}
+        assert {r.entity_text for r in rows} == {"kotlina kłodzki"}
 
         session2 = _session_with_exclusions(exclusions)
         session2.get.return_value = MagicMock(byline="Inny Kanał")
         with patch("library.entity_service.extract_entities", return_value=RAW):
             rows2 = refresh_document_entities(session2, 42, "jakiś tekst")
-        assert {r.entity_text for r in rows2} == {"Tusk", "cieśnina Ormuz"}
+        assert {r.entity_text for r in rows2} == {"Tusk", "kotlina kłodzki"}
 
     def test_manual_row_survives_and_colliding_ner_group_is_dropped(self):
         """A merged (source='manual') place must survive a refresh untouched;
@@ -389,8 +389,8 @@ class TestGetDocumentEntities:
     def test_groups_by_type(self):
         row1 = MagicMock(id=1, entity_type="persName", entity_text="Tusk", mention_count=2, geocode=None,
                          variants=["Tuska", "Tusk"])
-        row2 = MagicMock(id=2, entity_type="geogName", entity_text="cieśnina Ormuz", mention_count=1, geocode=None,
-                         variants=["Cieśninie Ormuz"])
+        row2 = MagicMock(id=2, entity_type="geogName", entity_text="kotlina kłodzki", mention_count=1, geocode=None,
+                         variants=["Kotlinie Kłodzkiej"])
         session = MagicMock()
         session.query.return_value.filter.return_value.order_by.return_value.all.return_value = [row1, row2]
 
@@ -399,7 +399,7 @@ class TestGetDocumentEntities:
         assert grouped == {
             "persName": [{"id": 1, "text": "Tusk", "count": 2, "variants": ["Tuska", "Tusk"]}],
             "orgName": [],
-            "geogName": [{"id": 2, "text": "cieśnina Ormuz", "count": 1, "variants": ["Cieśninie Ormuz"],
+            "geogName": [{"id": 2, "text": "kotlina kłodzki", "count": 1, "variants": ["Kotlinie Kłodzkiej"],
                           "is_country": False}],
             "placeName": [],
             "facility": [],
