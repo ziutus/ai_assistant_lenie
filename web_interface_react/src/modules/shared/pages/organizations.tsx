@@ -24,6 +24,23 @@ interface OrganizationAlias {
   created_by: string | null;
 }
 
+// A text this organization shares with another, unrelated organization
+// (organization_ambiguous_aliases — e.g. "Africa Corps" meaning either the
+// Russian 2023+ formation or a rendering of WWII's "Afrika Korps").
+// entity_service resolves these per-mention via an LLM context check
+// instead of always landing on this organization.
+interface AmbiguousWith {
+  alias: string;
+  context_hint: string | null;
+  other_organizations: {
+    id: number;
+    canonical_name: string;
+    organization_type: string | null;
+    description: string | null;
+    context_hint: string | null;
+  }[];
+}
+
 interface OrganizationDocument {
   link_id: number;
   id: number;
@@ -83,6 +100,7 @@ const Organizations = () => {
     { id: number; canonical_name: string; description: string | null; organization_type: string | null } | null
   >(null);
   const [aliases, setAliases] = React.useState<OrganizationAlias[]>([]);
+  const [ambiguousWith, setAmbiguousWith] = React.useState<AmbiguousWith[]>([]);
   const [documents, setDocuments] = React.useState<OrganizationDocument[]>([]);
   // per-document chapter drill-down ("wystąpienia w tej książce")
   const [occurrences, setOccurrences] = React.useState<Record<number, ChapterOccurrence[] | "loading">>({});
@@ -154,6 +172,7 @@ const Organizations = () => {
       ]);
       setOrganization(orgResponse.data);
       setAliases(orgResponse.data.aliases ?? []);
+      setAmbiguousWith(orgResponse.data.ambiguous_with ?? []);
       setEditDescription(orgResponse.data.description ?? "");
       setEditType(orgResponse.data.organization_type ?? "");
       setDocuments(docsResponse.data.documents ?? []);
@@ -168,6 +187,7 @@ const Organizations = () => {
   React.useEffect(() => {
     setOrganization(null);
     setAliases([]);
+    setAmbiguousWith([]);
     setDocuments([]);
     setOccurrences({});
     setIsEditing(false);
@@ -391,6 +411,39 @@ const Organizations = () => {
                 <button className={"button"} type="button" onClick={saveEdits}>Zapisz</button>
                 <button className={"button"} type="button" onClick={() => setIsEditing(false)}>Anuluj</button>
               </div>
+            </div>
+          )}
+
+          {ambiguousWith.length > 0 && (
+            <div style={{
+              marginTop: 12, padding: 8, background: "#fff7ed", border: "1px solid #fdba74",
+              borderRadius: 6, fontSize: "0.9em", color: "#9a3412",
+            }}>
+              {ambiguousWith.map((entry) => (
+                <div key={entry.alias} style={{ marginBottom: 8 }}>
+                  <div>
+                    ⚠️ Nazwa „{entry.alias}” jest niejednoznaczna — rozstrzygana automatycznie dla każdej
+                    wzmianki na podstawie kontekstu dokumentu (LLM); warto zweryfikować dopasowania w liście
+                    dokumentów poniżej.
+                  </div>
+                  {entry.context_hint && (
+                    <div style={{ marginTop: 4 }}>
+                      <strong>Tutaj gdy:</strong> {entry.context_hint}
+                    </div>
+                  )}
+                  {entry.other_organizations.map((other) => (
+                    <div key={other.id} style={{ marginTop: 4 }}>
+                      <strong>Ale nie mylić z: </strong>
+                      <NavLink to={`/organizations/${other.id}`} style={{ color: "#9a3412", textDecoration: "underline" }}>
+                        {other.canonical_name}
+                      </NavLink>
+                      {other.organization_type && <> [{other.organization_type}]</>}
+                      {other.description && <> — {other.description}</>}
+                      {other.context_hint && <div>Tam gdy: {other.context_hint}</div>}
+                    </div>
+                  ))}
+                </div>
+              ))}
             </div>
           )}
 

@@ -1623,9 +1623,14 @@ def organizations_collection():
 
 @app.route('/organizations/<int:organization_id>', methods=['GET'])
 def organization_get(organization_id: int):
-    """A single organization with its aliases and document count."""
+    """A single organization with its aliases, document count, and any
+    registered name collisions (organization_ambiguous_aliases) — surfaced
+    as ambiguous_with so the /organizations/:id panel can warn that a text
+    resolving here (e.g. "Africa Corps") is also a candidate for another,
+    unrelated organization (e.g. WWII's "Afrika Korps"), resolved per-mention
+    by entity_service's context-LLM step rather than always landing here."""
     from sqlalchemy import func, select
-    from library.db.models import DocumentOrganization, Organization
+    from library.db.models import DocumentOrganization, Organization, OrganizationAmbiguousAlias
 
     session = get_scoped_session()
     organization = session.get(Organization, organization_id)
@@ -1635,6 +1640,38 @@ def organization_get(organization_id: int):
         select(func.count(func.distinct(DocumentOrganization.document_id)))
         .where(DocumentOrganization.organization_id == organization_id)
     )
+    own_ambiguous_aliases = session.execute(
+        select(OrganizationAmbiguousAlias).where(
+            OrganizationAmbiguousAlias.organization_id == organization_id,
+            OrganizationAmbiguousAlias.status == "approved",
+        )
+    ).scalars().all()
+    ambiguous_with = []
+    for row in own_ambiguous_aliases:
+        other_rows = session.execute(
+            select(OrganizationAmbiguousAlias, Organization)
+            .join(Organization, Organization.id == OrganizationAmbiguousAlias.organization_id)
+            .where(
+                OrganizationAmbiguousAlias.normalized_alias == row.normalized_alias,
+                OrganizationAmbiguousAlias.organization_id != organization_id,
+                OrganizationAmbiguousAlias.status == "approved",
+            )
+        ).all()
+        if other_rows:
+            ambiguous_with.append({
+                "alias": row.alias,
+                "context_hint": row.context_hint,
+                "other_organizations": [
+                    {
+                        "id": other_org.id,
+                        "canonical_name": other_org.canonical_name,
+                        "organization_type": other_org.organization_type,
+                        "description": other_org.description,
+                        "context_hint": other_alias.context_hint,
+                    }
+                    for other_alias, other_org in other_rows
+                ],
+            })
     return {
         "status": "success",
         "id": organization.id,
@@ -1646,6 +1683,7 @@ def organization_get(organization_id: int):
             for a in organization.aliases
         ],
         "document_count": document_count or 0,
+        "ambiguous_with": ambiguous_with,
     }, 200
 
 
