@@ -659,3 +659,35 @@ class TestNominativePreferenceForOrganizations:
     def test_single_word_organization_is_unaffected(self):
         entities = [{"text": "Bloomberga", "label": "orgName", "lemma": "Bloomberg", "pos": "PROPN"}]
         assert aggregate_entities(entities) == {("orgName", "Bloomberg"): 1}
+
+
+class TestQuoteStrippedMentions:
+    """spaCy glues source-text quotation marks onto entity spans (doc 9394:
+    'jako "sudańskie Bractwo Muzułmańskie", zostali' -> span 'Bractwo
+    Muzułmańskie"', lemma 'bractwo Muzułmański"') — both used to reach
+    document_entities/organizations with the stray '"'."""
+
+    def test_dangling_quote_stripped_from_surface_and_lemma(self):
+        entities = [{
+            "text": 'Bractwo Muzułmańskie"', "label": "orgName",
+            "lemma": 'bractwo Muzułmański"', "pos": "NOUN",
+        }]
+        assert aggregate_entities(entities) == {("orgName", "bractwo Muzułmański"): 1}
+
+    def test_variants_carry_cleaned_surfaces(self):
+        entities = [
+            {"text": '"Financial Times"', "label": "orgName", "lemma": '"Financial Times"',
+             "pos": "PROPN"},
+            {"text": "Financial Times", "label": "orgName", "lemma": "Financial Times",
+             "pos": "PROPN"},
+        ]
+        detailed = aggregate_entities_detailed(entities)
+        assert list(detailed.keys()) == [("orgName", "Financial Times")]
+        group = detailed[("orgName", "Financial Times")]
+        assert group["count"] == 2
+        assert group["variants"] == ["Financial Times"]
+
+    def test_inner_quoted_person_nickname_is_preserved(self):
+        entities = [{"text": "Aleksander „Rocky”", "label": "persName",
+                     "lemma": "Aleksander „Rocky”", "pos": "PROPN"}]
+        assert aggregate_entities(entities) == {("persName", "Aleksander „Rocky”"): 1}
