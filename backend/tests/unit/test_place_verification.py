@@ -147,6 +147,44 @@ class TestGetOrCreateGeocodeAliasFallback:
         assert row.display_name == "Al-Faszir, Sudan Zachodni, Sudan"
 
 
+class TestGetOrCreateGeocodeGeopoliticalRegion:
+    """doc #9394: "Sahel" ("na Sahelu") — LocationIQ's only hit is a specific
+    Burkina Faso province, correctly rejected by is_plausible_match() (name
+    similarity 0.59 < 0.75), leaving the real, constantly-discussed
+    transnational region permanently unresolved. geopolitical_region_gazetteer.py
+    lists it (and other macro-regions confirmed broken/false-positive live)
+    with a synthetic centroid — never queried against LocationIQ at all."""
+
+    def _session(self):
+        session = MagicMock()
+        session.query.return_value.filter.return_value.one_or_none.return_value = None
+        return session
+
+    def test_known_region_resolves_without_calling_geocoder(self):
+        session = self._session()
+
+        with patch("library.place_verification.geocode") as mock_geocode:
+            with patch("library.place_verification.is_plausible_match") as mock_plausible:
+                row = _get_or_create_geocode(session, "Sahel")
+
+        mock_geocode.assert_not_called()
+        mock_plausible.assert_not_called()
+        assert row.resolved is True
+        assert row.display_name == "Sahel"
+        assert row.lat == 15.0
+        assert row.lon == 10.0
+        assert row.osm_class == "place"
+        assert row.osm_type == "region"
+
+    def test_unknown_query_still_goes_through_live_geocoder(self):
+        session = self._session()
+
+        with patch("library.place_verification.geocode", return_value=None) as mock_geocode:
+            _get_or_create_geocode(session, "Warszawa")
+
+        mock_geocode.assert_called_once_with("Warszawa")
+
+
 class TestRetryAfterStrippingCountry:
     """doc #9394: geogName "Al-Faszirze Emiraty" — NER merged a place with an
     adjacent country mention across a missing comma. The retry strips the
