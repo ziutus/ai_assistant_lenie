@@ -28,6 +28,7 @@ import re
 from unidecode import unidecode
 
 from library.db.models import DocumentEntity, GeocodeCache
+from library.geocode_aliases import geocode_alias
 from library.locationiq_client import canonical_place_name, geocode, is_plausible_match
 
 logger = logging.getLogger(__name__)
@@ -59,14 +60,46 @@ def _is_country(name: str) -> bool:
     return canonical_country_name(name) is not None
 
 
+def _relabel_alias_hit(canonical_query: str, hit: dict) -> dict:
+    """Swap the alias-language leading segment of display_name for the
+    original (Polish) query before it's cached/used for canonicalization.
+
+    display_name is hierarchical ("El Fasher, Sudan Zachodni, Sudan") — its
+    first part names the place itself. Left as-is, canonical_place_name()
+    would pick that English segment as the "canonical spelling" and rename
+    the entity/tag to it (undoing city_gazetteer.py's Polish canonicalization
+    and colliding with the Al-Faszir NerCorrection rule). Coordinates/class/
+    importance stay from the real hit — only the label changes.
+    """
+    display_name = hit.get("display_name") or ""
+    _, _, rest = display_name.partition(",")
+    relabeled = f"{canonical_query},{rest}" if rest else canonical_query
+    return {**hit, "display_name": relabeled}
+
+
 def _get_or_create_geocode(session, query: str) -> GeocodeCache:
-    """Cache-through geocoding: one live API call ever per distinct query string."""
+    """Cache-through geocoding: one live API call ever per distinct query string.
+
+    When the Polish query's hit fails the match-quality check, retry once
+    through geocode_aliases.geocode_alias() — the English/OSM transliteration
+    for a small, known set of places LocationIQ can't find under their Polish
+    spelling. The alias is only ever used to find the right coordinates; the
+    cached row stays keyed by `query` (the original, NER-canonicalized name)
+    with its display_name relabeled back to that name (_relabel_alias_hit),
+    so tags/display spelling and future lookups are unaffected by the alias.
+    """
     row = session.query(GeocodeCache).filter(GeocodeCache.query == query).one_or_none()
     if row is not None:
         return row
 
     hit = geocode(query)
     resolved = hit is not None and is_plausible_match(query, hit)
+    if not resolved:
+        alias = geocode_alias(query)
+        if alias is not None:
+            alias_hit = geocode(alias)
+            if alias_hit is not None and is_plausible_match(alias, alias_hit):
+                hit, resolved = _relabel_alias_hit(query, alias_hit), True
     row = GeocodeCache(
         query=query,
         resolved=resolved,
