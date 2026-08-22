@@ -571,6 +571,37 @@ class TestCityGazetteerOverride:
         assert aggregate_entities(entities) == {("placeName", "Kostiu"): 1}
 
 
+class TestRegionGazetteerOverride:
+    """A small curated gazetteer (region_gazetteer.py) of well-known foreign
+    administrative regions/states fixes a third variant of the same bug:
+    doc #9394's "stolicą Kordofanu Północnego" (genitive, only mention in the
+    text) kept the spaCy lemma unchanged instead of reducing to the nominative
+    "Kordofan Północny" — sending the mangled genitive string to LocationIQ,
+    which returned an unrelated Warsaw waterworks station."""
+
+    def test_single_mention_inflected_form_resolves_to_canonical_name(self):
+        entities = [{"text": "Kordofanu Północnego", "label": "placeName", "lemma": "Kordofanu Północnego",
+                     "pos": "NOUN", "morph": "Case=Gen"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Kordofan Północny"): {
+                "count": 1,
+                "variants": ["Kordofanu Północnego"],
+                "raw_lemmas": ["Kordofanu Północnego"],
+            },
+        }
+
+    def test_no_morph_evidence_still_resolves(self):
+        entities = [{"text": "Kordofanu Północnego", "label": "placeName", "lemma": "Kordofanu Północnego"}]
+        assert aggregate_entities(entities) == {("placeName", "Kordofan Północny"): 1}
+
+    def test_unknown_region_is_unaffected(self):
+        """A region outside the small curated list still falls through to the
+        legacy lemma-based path — this gazetteer never invents a canonical
+        form for a region it doesn't know."""
+        entities = [{"text": "Kordofanu Południowego", "label": "placeName", "lemma": "Kordofanu Południowego"}]
+        assert aggregate_entities(entities) == {("placeName", "Kordofanu Południowego"): 1}
+
+
 class TestCountryDetectedUnderOrgName:
     """Faza 4: spaCy occasionally tags a country as orgName (participle-heavy
     names like "Zjednoczone Emiraty Arabskie" get parsed as if headed by a

@@ -137,12 +137,18 @@ def _retry_after_stripping_country(session, entity_text: str) -> tuple[str, Geoc
     from library.city_gazetteer import canonical_city_name
     from library.country_gazetteer import strip_country_edge
     from library.geo_feature_gazetteer import canonical_geo_feature_name
+    from library.region_gazetteer import canonical_region_name
 
     stripped = strip_country_edge(entity_text)
     if stripped is None:
         return None
     remainder, _country = stripped
-    canonical_remainder = canonical_geo_feature_name(remainder) or canonical_city_name(remainder) or remainder
+    canonical_remainder = (
+        canonical_geo_feature_name(remainder)
+        or canonical_city_name(remainder)
+        or canonical_region_name(remainder)
+        or remainder
+    )
     row = _get_or_create_geocode(session, canonical_remainder)
     if not row.resolved:
         return None
