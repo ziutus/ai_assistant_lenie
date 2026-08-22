@@ -13,6 +13,7 @@ from library.place_verification import (  # noqa: E402
     _get_or_create_geocode,
     _is_country,
     _relabel_alias_hit,
+    _retry_after_stripping_country,
     _slugify,
     remove_orphaned_tag,
     verify_document_places,
@@ -146,6 +147,49 @@ class TestGetOrCreateGeocodeAliasFallback:
         assert row.display_name == "Al-Faszir, Sudan Zachodni, Sudan"
 
 
+class TestRetryAfterStrippingCountry:
+    """doc #9394: geogName "Al-Faszirze Emiraty" — NER merged a place with an
+    adjacent country mention across a missing comma. The retry strips the
+    country, canonicalizes the inflected remainder via city_gazetteer (the
+    merged span never went through the normal per-mention canonicalization
+    in ner_client.py), and geocodes that instead."""
+
+    def _session(self):
+        session = MagicMock()
+        session.query.return_value.filter.return_value.one_or_none.return_value = None
+        return session
+
+    def test_strips_country_canonicalizes_and_resolves_remainder(self):
+        session = self._session()
+        hit = {
+            "display_name": "Al-Faszir, Al Fasher, Darfur Północny, Sudan",
+            "lat": "13.6", "lon": "25.3", "class": "place", "type": "city", "importance": 0.4,
+        }
+
+        with patch("library.place_verification.geocode", return_value=hit) as mock_geocode:
+            with patch("library.place_verification.is_plausible_match", return_value=True):
+                result = _retry_after_stripping_country(session, "Al-Faszirze Emiraty")
+
+        assert result is not None
+        remainder, row = result
+        assert remainder == "Al-Faszir"  # canonicalized via city_gazetteer, not the raw "Al-Faszirze"
+        mock_geocode.assert_called_once_with("Al-Faszir")
+        assert row.resolved is True
+
+    def test_no_country_edge_returns_none(self):
+        session = self._session()
+        with patch("library.place_verification.geocode") as mock_geocode:
+            result = _retry_after_stripping_country(session, "Cieśnina Ormuz")
+        mock_geocode.assert_not_called()
+        assert result is None
+
+    def test_remainder_still_fails_to_geocode_returns_none(self):
+        session = self._session()
+        with patch("library.place_verification.geocode", return_value=None):
+            result = _retry_after_stripping_country(session, "Nibylandia Emiraty")
+        assert result is None
+
+
 class TestVerifyDocumentPlaces:
     def _doc(self, tags=""):
         doc = MagicMock()
@@ -188,6 +232,32 @@ class TestVerifyDocumentPlaces:
         assert summary["tagged"] == []
         cached = session.add.call_args.args[0]
         assert cached.resolved is False
+
+    def test_merged_span_with_country_is_split_and_resolved(self):
+        """doc #9394 regression: geogName "Al-Faszirze Emiraty" (NER merged a
+        place with an adjacent country mention across a missing comma) gets
+        split, canonicalized to "Al-Faszir" and geocoded, instead of showing
+        the garbled span to the reader unresolved."""
+        ent = _entity("Al-Faszirze Emiraty")
+        session = _session_with_entities([ent])
+        doc = self._doc()
+        hit = {
+            "display_name": "Al-Faszir, Al Fasher, Darfur Północny, Sudan",
+            "lat": "13.6", "lon": "25.3", "class": "place", "type": "city", "importance": 0.4,
+        }
+
+        def fake_geocode(query):
+            return None if query == "Al-Faszirze Emiraty" else hit
+
+        with patch("library.place_verification._is_country", return_value=False):
+            with patch("library.place_verification.geocode", side_effect=fake_geocode):
+                with patch("library.place_verification.is_plausible_match", return_value=True):
+                    with patch("library.article_tagging.confirm_places_with_llm", return_value=["Al-Faszir"]):
+                        summary = verify_document_places(session, doc, "tekst")
+
+        assert ent.entity_text == "Al-Faszir"
+        assert summary["resolved"] == ["Al-Faszir"]
+        assert summary["tagged"] == ["miejsce-al-faszir"]
 
     def test_countries_are_skipped_entirely(self):
         ent = _entity("Ukraina", etype="placeName")

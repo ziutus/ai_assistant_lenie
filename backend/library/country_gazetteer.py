@@ -328,6 +328,46 @@ def canonical_country_name(mention: str) -> str | None:
     return next(iter(matches)) if len(matches) == 1 else None
 
 
+def strip_country_edge(text: str) -> tuple[str, str] | None:
+    """Split off a leading or trailing country mention glued onto `text` by a
+    NER span-boundary error, returning (remainder, country_name_pl).
+
+    Real case (doc #9394): "...masakrę w Al-Faszirze Emiraty miały jednak
+    zwiększyć dostawy broni." is missing the comma/period between two clauses
+    ("...w Al-Faszirze." / "Emiraty miały...") — spaCy merges the adjacent
+    capitalized words into one geogName span "Al-Faszirze Emiraty". Neither
+    canonical_country_name() nor a city/geo-feature gazetteer matches the
+    whole string, so it never gets canonicalized, and the geocoder correctly
+    fails on the garbage — but nothing ever separates the two halves back
+    out. This checks whether the first/last 1-4 words of `text` are, on
+    their own, a complete country mention; if so, the rest is a plausible
+    standalone place name worth a canonicalization + geocoding retry.
+
+    Longest match wins (checked before shorter ones) so a full multi-word
+    country name is preferred over a shorter false-positive within it.
+    Returns None when no edge matches a country, or nothing is left over on
+    the other side (the whole text being a country is `_is_country()`'s job
+    in place_verification.py, not this).
+    """
+    words = text.split()
+    if len(words) < 2:
+        return None
+    max_take = min(4, len(words) - 1)
+    for take in range(max_take, 0, -1):
+        country = canonical_country_name(" ".join(words[-take:]))
+        if country is not None:
+            remainder = " ".join(words[:-take]).strip(" ,-")
+            if remainder:
+                return remainder, country
+    for take in range(max_take, 0, -1):
+        country = canonical_country_name(" ".join(words[:take]))
+        if country is not None:
+            remainder = " ".join(words[take:]).strip(" ,-")
+            if remainder:
+                return remainder, country
+    return None
+
+
 def detect_countries(text: str) -> list[CountryEntry]:
     """Zwróć kraje, których nazwa/przymiotnik/mieszkaniec pojawia się w tekście — bez LLM.
 

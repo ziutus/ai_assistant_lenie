@@ -20,6 +20,13 @@ relevance check.
 Countries are skipped entirely — they already have the kraj-* pipeline
 (country_gazetteer + extract_countries_hybrid) and the map highlights them
 from those tags; geocoding them here would only burn API quota.
+
+When a geocode fails, `_retry_after_stripping_country()` checks whether it
+failed because NER merged the place with an adjacent country mention across
+missing punctuation (country_gazetteer.strip_country_edge — doc #9394's
+"Al-Faszirze Emiraty"). If so, the country is split off and the remaining
+place name retried on its own, canonicalized first the same way a clean
+mention would be.
 """
 
 import logging
@@ -114,6 +121,32 @@ def _get_or_create_geocode(session, query: str) -> GeocodeCache:
     session.add(row)
     session.flush()  # assign id so entities can reference it
     return row
+
+
+def _retry_after_stripping_country(session, entity_text: str) -> tuple[str, GeocodeCache] | None:
+    """Recover a place entity whose NER span merged with an adjacent country
+    mention (country_gazetteer.strip_country_edge — doc #9394's "Al-Faszirze
+    Emiraty" from a missing comma between two clauses). Splits the country
+    off, canonicalizes the remainder the same way a clean single-place
+    mention would be (city/geo-feature gazetteers fix the inflected case a
+    merged span never goes through), and retries geocoding it.
+
+    Returns (canonical_remainder, resolved GeocodeCache row), or None if no
+    country edge is found or the remainder still doesn't geocode.
+    """
+    from library.city_gazetteer import canonical_city_name
+    from library.country_gazetteer import strip_country_edge
+    from library.geo_feature_gazetteer import canonical_geo_feature_name
+
+    stripped = strip_country_edge(entity_text)
+    if stripped is None:
+        return None
+    remainder, _country = stripped
+    canonical_remainder = canonical_geo_feature_name(remainder) or canonical_city_name(remainder) or remainder
+    row = _get_or_create_geocode(session, canonical_remainder)
+    if not row.resolved:
+        return None
+    return canonical_remainder, row
 
 
 def remove_orphaned_tag(session, document, deleted_entity: DocumentEntity) -> str | None:
@@ -236,6 +269,10 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
             progress_callback(index, len(candidates))
         if ent.geocode_id is None:
             ent.geocode = _get_or_create_geocode(session, ent.entity_text)
+            if not ent.geocode.resolved:
+                fixed = _retry_after_stripping_country(session, ent.entity_text)
+                if fixed is not None:
+                    ent.entity_text, ent.geocode = fixed
             checked += 1
         if ent.geocode is not None and ent.geocode.resolved:
             resolved_names.append(ent.entity_text)
