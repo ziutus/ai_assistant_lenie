@@ -95,6 +95,11 @@ const Organizations = () => {
   const [isEditing, setIsEditing] = React.useState(false);
   const [newAlias, setNewAlias] = React.useState("");
   const [busyLinkId, setBusyLinkId] = React.useState<number | null>(null);
+  const [sortBy, setSortBy] = React.useState<"count" | "name">("count");
+  const [showMergePicker, setShowMergePicker] = React.useState(false);
+  const [mergeQuery, setMergeQuery] = React.useState("");
+  const [mergeResults, setMergeResults] = React.useState<OrganizationItem[]>([]);
+  const [isMerging, setIsMerging] = React.useState(false);
 
   const headers = {
     "Content-Type": "application/x-www-form-urlencoded",
@@ -125,6 +130,18 @@ const Organizations = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const sortedOrganizations = React.useMemo(() => {
+    const list = [...organizations];
+    if (sortBy === "name") {
+      list.sort((a, b) => a.canonical_name.localeCompare(b.canonical_name, "pl"));
+    } else {
+      list.sort((a, b) =>
+        (b.document_count ?? 0) - (a.document_count ?? 0)
+        || a.canonical_name.localeCompare(b.canonical_name, "pl"));
+    }
+    return list;
+  }, [organizations, sortBy]);
+
   const loadDetail = async () => {
     if (!id) return;
     setIsLoading(true);
@@ -154,6 +171,9 @@ const Organizations = () => {
     setDocuments([]);
     setOccurrences({});
     setIsEditing(false);
+    setShowMergePicker(false);
+    setMergeQuery("");
+    setMergeResults([]);
     if (!id) return;
     loadDetail();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -238,6 +258,51 @@ const Organizations = () => {
     }
   };
 
+  const searchMergeTargets = async () => {
+    if (!organization) return;
+    setIsMerging(true);
+    setMessage("");
+    setIsError(false);
+    try {
+      const response = await axios.get(`${apiUrl}/organizations`, {
+        params: mergeQuery.trim() ? { q: mergeQuery.trim() } : {}, headers,
+      });
+      const found = (response.data.entries ?? []).filter((o: OrganizationItem) => o.id !== organization.id);
+      setMergeResults(found);
+      if (!found.length) {
+        setMessage("Brak innych organizacji pasujących do zapytania.");
+      }
+    } catch (error: any) {
+      console.error("Error searching organizations for merge", error);
+      setIsError(true);
+      setMessage(`Nie udało się wyszukać organizacji: ${error.response?.data?.message || error.message}`);
+    }
+    setIsMerging(false);
+  };
+
+  // Merges `organization` (the row currently open) INTO `targetId`, globally
+  // — duplicate cleanup for the exact-match-only registry (no fuzzy
+  // auto-merge, see docs/organization-ner-alias-plan.md). The source row is
+  // deleted once orphaned, so we navigate to the surviving target.
+  const mergeInto = async (targetId: number) => {
+    if (!organization) return;
+    setIsMerging(true);
+    setMessage("");
+    setIsError(false);
+    try {
+      await axios.post(`${apiUrl}/organizations/${organization.id}/merge`, {
+        target_organization_id: targetId,
+      }, { headers: jsonHeaders });
+      setShowMergePicker(false);
+      navigate(`/organizations/${targetId}`);
+    } catch (error: any) {
+      console.error("Error merging organizations", error);
+      setIsError(true);
+      setMessage(`Nie udało się scalić organizacji: ${error.response?.data?.message || error.message}`);
+    }
+    setIsMerging(false);
+  };
+
   const approveLink = async (doc: OrganizationDocument) => {
     setBusyLinkId(doc.link_id);
     setMessage("");
@@ -295,6 +360,14 @@ const Organizations = () => {
                 style={{ marginLeft: 10, fontSize: "0.85em", color: "#0369a1", border: "none", background: "none", cursor: "pointer" }}
               >
                 ✏️ Edytuj
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowMergePicker((prev) => !prev)}
+                style={{ marginLeft: 10, fontSize: "0.85em", color: "#0369a1", border: "none", background: "none", cursor: "pointer" }}
+                title="Ta organizacja jest duplikatem innej — scal obie w jedną"
+              >
+                🔀 Scal z inną organizacją...
               </button>
             </div>
           ) : (
@@ -355,6 +428,49 @@ const Organizations = () => {
               </ul>
             )}
           </div>
+
+          {showMergePicker && (
+            <div style={{ marginTop: 12, padding: 8, background: "#f5f7fa", border: "1px solid #d5dde8", borderRadius: 6 }}>
+              <div style={{ marginBottom: 6, color: "#667", fontSize: "0.9em" }}>
+                Scala tę organizację ({organization.canonical_name}) w wybraną — aliasy i dokumenty
+                przechodzą na nią, ta zostaje usunięta z rejestru (o ile nie zostanie po niej nic innego).
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input
+                  type="text"
+                  value={mergeQuery}
+                  placeholder="Szukaj docelowej organizacji..."
+                  onChange={(e) => setMergeQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      searchMergeTargets();
+                    }
+                  }}
+                  style={{ minWidth: 260, padding: "4px 8px" }}
+                  disabled={isMerging}
+                />
+                <button className={"button"} type="button" disabled={isMerging} onClick={searchMergeTargets}>
+                  Szukaj
+                </button>
+                <button className={"button"} type="button" onClick={() => setShowMergePicker(false)}>
+                  Anuluj
+                </button>
+              </div>
+              {mergeResults.length > 0 && (
+                <ul style={{ listStyle: "none", padding: 0, margin: "6px 0 0" }}>
+                  {mergeResults.map((o) => (
+                    <li key={o.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 0" }}>
+                      <button className={"button"} type="button" disabled={isMerging} onClick={() => mergeInto(o.id)}>
+                        Scal z tą organizacją
+                      </button>
+                      <OrganizationHeader organization={o} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
 
           <h3 style={{ margin: "18px 0 6px" }}>Dokumenty ({documents.length})</h3>
           {!documents.length && <div style={{ color: "#667" }}>Brak dokumentów wspominających tę organizację.</div>}
@@ -426,20 +542,49 @@ const Organizations = () => {
           </button>
         </div>
       ) : (
-        <ul style={{ listStyle: "none", padding: 0 }}>
-          {organizations.map((o) => (
-            <li
-              key={o.id}
-              style={{ padding: "8px 6px", borderBottom: "1px solid #eee", cursor: "pointer", display: "flex", justifyContent: "space-between" }}
-              onClick={() => navigate(`/organizations/${o.id}`)}
-            >
-              <OrganizationHeader organization={o} />
-              {typeof o.document_count === "number" && (
-                <span style={{ color: "#667", fontSize: "0.85em", whiteSpace: "nowrap" }}>{o.document_count} dok.</span>
-              )}
-            </li>
-          ))}
-        </ul>
+        <>
+          {organizations.length > 1 && (
+            <div style={{ marginBottom: 10, display: "flex", gap: 10, alignItems: "center", fontSize: "0.9em" }}>
+              <span style={{ color: "#667" }}>Sortuj:</span>
+              <button
+                type="button"
+                onClick={() => setSortBy("count")}
+                style={{
+                  border: "none", background: "none", cursor: "pointer", padding: 0,
+                  color: sortBy === "count" ? "#0369a1" : "#667",
+                  fontWeight: sortBy === "count" ? 700 : 400,
+                }}
+              >
+                liczba dokumentów
+              </button>
+              <button
+                type="button"
+                onClick={() => setSortBy("name")}
+                style={{
+                  border: "none", background: "none", cursor: "pointer", padding: 0,
+                  color: sortBy === "name" ? "#0369a1" : "#667",
+                  fontWeight: sortBy === "name" ? 700 : 400,
+                }}
+              >
+                nazwa (A-Z)
+              </button>
+            </div>
+          )}
+          <ul style={{ listStyle: "none", padding: 0 }}>
+            {sortedOrganizations.map((o) => (
+              <li
+                key={o.id}
+                style={{ padding: "8px 6px", borderBottom: "1px solid #eee", cursor: "pointer", display: "flex", justifyContent: "space-between" }}
+                onClick={() => navigate(`/organizations/${o.id}`)}
+              >
+                <OrganizationHeader organization={o} />
+                {typeof o.document_count === "number" && (
+                  <span style={{ color: "#667", fontSize: "0.85em", whiteSpace: "nowrap" }}>{o.document_count} dok.</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );

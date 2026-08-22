@@ -1810,6 +1810,57 @@ def organization_alias_delete(organization_id: int, alias_id: int):
     return {"status": "success", "deleted_alias_id": alias_id}, 200
 
 
+@app.route('/organizations/<int:organization_id>/merge', methods=['POST', 'OPTIONS'])
+def organization_merge(organization_id: int):
+    """Merge one registry organization into another, without a document context.
+
+    Body: {"target_organization_id": int, "make_global_alias": bool (default
+    true)}. Unlike POST /document/<id>/organizations/merge (which starts from
+    a document's resolved orgName entity), this is the plain duplicate-cleanup
+    path from the /organizations registry browser: two Organization rows for
+    the same real-world entity, created because organization_registry does
+    exact-match resolution only (no fuzzy auto-merge — see
+    docs/organization-ner-alias-plan.md). source is deleted once orphaned
+    (organization_registry.merge); the response's organization_id is always
+    the surviving (target) row, so the frontend can navigate there."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library import organization_registry
+    from library.db.models import Organization
+
+    data = request.get_json(silent=True) or {}
+    target_organization_id, error = _entities_doc_id(data.get('target_organization_id'))
+    if error:
+        return error
+    make_global_alias = bool(data.get('make_global_alias', True))
+
+    session = get_scoped_session()
+    if session.get(Organization, organization_id) is None:
+        return {"status": "error", "message": "Organization not found"}, 404
+    if session.get(Organization, target_organization_id) is None:
+        return {"status": "error", "message": "Target organization not found"}, 404
+
+    try:
+        result = organization_registry.merge(
+            session, organization_id, target_organization_id, make_global_alias=make_global_alias,
+        )
+        session.commit()
+    except organization_registry.AliasConflictError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc),
+                "existing_organization_id": exc.existing_organization_id}, 409
+    except ValueError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 400
+    except Exception:
+        session.rollback()
+        logging.exception("organization merge failed: %s -> %s", organization_id, target_organization_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", **result}), 200
+
+
 @app.route('/document/<int:doc_id>/organizations/merge', methods=['POST', 'OPTIONS'])
 def document_organizations_merge(doc_id: int):
     """Merge an orgName entity of a document into another organization, globally.
