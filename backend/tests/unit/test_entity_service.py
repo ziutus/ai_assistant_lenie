@@ -364,6 +364,20 @@ class TestIsExcluded:
         rules = [NerExclusion(entity_text="Turcy", entity_type="placeName", scope="global")]
         assert is_excluded(rules, "placeName", "Turcja", None, raw_terms=["Turk", "Turcy"]) is True
 
+    def test_generic_common_noun_capitalized_at_sentence_start(self):
+        """doc #9394, rozdział 2: "Lotnisko w Chartumie wciąż nie obsługuje
+        regularnie lotów międzynarodowych." spaCy złapało samo "Lotnisko"
+        (duże "L" z początku zdania, nie właściwa nazwa) jako geogName;
+        LocationIQ trafił w niepowiązane, ale realnie istniejące miejsce o
+        tej samej nazwie ("Lotnisko, Bemowo, Warszawa") i confirm_places_
+        with_llm nie mógł wyłapać niedopasowania, bo widzi tylko tekst
+        powierzchniowy, nie rozstrzygniętą tożsamość miejsca. Chartum ma już
+        własną, poprawnie zgeokodowaną encję w tym samym dokumencie — ten sam
+        wzorzec co "kraj"/"unia"/"Teza" (rzeczowniki pospolite z początku
+        zdania) w istniejących regułach ner_exclusions."""
+        rules = [NerExclusion(entity_text="Lotnisko", entity_type="*", scope="global")]
+        assert is_excluded(rules, "geogName", "Lotnisko", None) is True
+
 
 class TestGetDocumentEntities:
     def test_filters_facility_by_alias_used_in_chapter(self):
