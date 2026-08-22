@@ -409,25 +409,25 @@ const List = () => {
               <span style={{ margin: "0 0 0 auto", fontWeight: "500" }}>
                 {item.document_type}
               </span>
+              {hasReadableText && (
+                <NavLink
+                  className={"button"}
+                  style={{ margin: "0 0 0 10px" }}
+                  to={`/read/${item.id}`}
+                >
+                  Czytaj
+                </NavLink>
+              )}
               {/* obsidian_note is read-only (imported from the vault, edited in Obsidian itself) — no /obsidian_note/:id editor route exists. */}
               {item.document_type !== "obsidian_note" && (
                 <NavLink
                   className={"button"}
-                  style={{ margin: "0 0 0 10px" }}
+                  style={{ margin: "0 0 0 6px" }}
                   onClick={() => {
                   }}
                   to={`/${item.document_type}/${item.id}`}
                 >
                   Edit
-                </NavLink>
-              )}
-              {hasReadableText && (
-                <NavLink
-                  className={"button"}
-                  style={{ margin: "0 0 0 6px" }}
-                  to={`/read/${item.id}`}
-                >
-                  Czytaj
                 </NavLink>
               )}
               {hasReadableText && (
