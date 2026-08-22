@@ -93,3 +93,32 @@ class TestCanonicalCountryName:
 
     def test_bare_emiraty_still_matches_via_single_token_variant(self):
         assert country_gazetteer.canonical_country_name("Emiraty") == "Zjednoczone Emiraty Arabskie"
+
+
+class TestStripCountryEdge:
+    """doc #9394: NER merged "Al-Faszirze" (place) with "Emiraty" (country,
+    start of the next glued-on clause) into one span because the source
+    article was missing a comma/period between the two sentences."""
+
+    def test_strips_trailing_country_leaves_place_remainder(self):
+        assert country_gazetteer.strip_country_edge("Al-Faszirze Emiraty") == ("Al-Faszirze", "Zjednoczone Emiraty Arabskie")
+
+    def test_strips_leading_country_leaves_place_remainder(self):
+        assert country_gazetteer.strip_country_edge("Polska Kijów") == ("Kijów", "Polska")
+
+    def test_prefers_longer_multiword_country_match(self):
+        remainder, country = country_gazetteer.strip_country_edge("Chartum Zjednoczone Emiraty Arabskie")
+        assert remainder == "Chartum"
+        assert country == "Zjednoczone Emiraty Arabskie"
+
+    def test_no_country_edge_returns_none(self):
+        assert country_gazetteer.strip_country_edge("Cieśnina Ormuz") is None
+
+    def test_single_word_returns_none(self):
+        assert country_gazetteer.strip_country_edge("Emiraty") is None
+
+    def test_whole_text_being_a_two_word_country_returns_none(self):
+        """No valid split leaves a country on one side and something real on
+        the other — not this function's job (place_verification._is_country()
+        handles a bare country mention)."""
+        assert country_gazetteer.strip_country_edge("Korea Północna") is None
