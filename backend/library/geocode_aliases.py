@@ -25,7 +25,13 @@ against LocationIQ, not as a general transliteration table.
 """
 
 GEOCODE_ALIASES: dict[str, str] = {
-    "Al-Faszir": "El Fasher, Sudan",
+    # Live-verified against LocationIQ 2026-08-22: a country-qualified alias
+    # ("El Fasher, Sudan") drags is_plausible_match()'s ratio below its 0.75
+    # threshold (query is compared as one string against each display_name
+    # part — appending ", Sudan" pulls the best-matching "Al Fasher" part's
+    # score from 0.89 to 0.64). The bare city name alone scores 0.89 and
+    # still resolves the correct node (OSM place_id 43364335, Sudan).
+    "Al-Faszir": "El Fasher",
 }
 
 

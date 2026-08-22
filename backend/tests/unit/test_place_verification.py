@@ -107,7 +107,7 @@ class TestGetOrCreateGeocodeAliasFallback:
         }
 
         def fake_geocode(query):
-            return sudan_city if query == "El Fasher, Sudan" else cairo_alley
+            return sudan_city if query == "El Fasher" else cairo_alley
 
         with patch("library.place_verification.geocode", side_effect=fake_geocode):
             with patch(
