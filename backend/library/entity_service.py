@@ -285,15 +285,18 @@ def refresh_document_entities(session, document_id: int, text: str) -> list[Docu
         for key in org_keys:
             del groups[key]
         for name, group in merged_org_groups.items():
-            # A short all-caps orgName can have multiple known meanings.  It
-            # is never a global alias: the LLM gets only the approved local
-            # candidates and may decline to choose.  Full names and ordinary
-            # spelling variants retain the deterministic registry path.
-            candidates = (
-                ambiguous_alias_candidates(session, name)
-                if " " not in name and 2 <= len(name) <= 10 and name.isupper()
-                else []
-            )
+            # Any orgName text (a short all-caps abbreviation like "RSF", or a
+            # full multi-word name that happens to collide with an unrelated
+            # organization's name — e.g. "Africa Corps" meaning either the
+            # Russian 2023+ formation or a rendering of WWII's "Afrika
+            # Korps") can have more than one known meaning. This lookup is
+            # cheap (organization_ambiguous_aliases is small and indexed) and
+            # returns nothing for the vast majority of names, which never had
+            # a collision curated for them — it is never a global alias, so
+            # the LLM only sees the approved local candidates and may decline
+            # to choose. Ordinary, uncontested names fall straight through to
+            # the deterministic registry path below.
+            candidates = ambiguous_alias_candidates(session, name)
             organization = select_ambiguous_alias_candidate_with_llm(
                 text, getattr(doc, "title", "") or "", name, candidates,
             )

@@ -1649,6 +1649,47 @@ def organization_get(organization_id: int):
     }, 200
 
 
+@app.route('/organizations/<int:organization_id>/documents', methods=['GET'])
+def organization_documents(organization_id: int):
+    """All documents mentioning an organization — the organization registry's
+    equivalent of GET /person_documents. mention_count/raw_mention come from
+    the linked document_entities row (DocumentOrganization.document_entity_id
+    is a direct FK, unlike DocumentPerson which stores raw_mention text and
+    needs a separate lookup). link_id is the document_organizations row id,
+    needed by POST /document/<id>/organizations/<link_id>/approve."""
+    from sqlalchemy import select
+    from library.db.models import DocumentEntity, DocumentOrganization, Organization
+
+    session = get_scoped_session()
+    organization = session.get(Organization, organization_id)
+    if organization is None:
+        return {"status": "error", "message": "Organization not found"}, 404
+
+    rows = session.execute(
+        select(DocumentOrganization, DocumentEntity)
+        .outerjoin(DocumentEntity, DocumentEntity.id == DocumentOrganization.document_entity_id)
+        .where(DocumentOrganization.organization_id == organization_id)
+    ).all()
+    documents = [{
+        "link_id": link.id,
+        "id": link.document.id,
+        "title": link.document.title,
+        "document_type": link.document.document_type,
+        "raw_mention": entity.entity_text if entity is not None else None,
+        "mention_count": entity.mention_count if entity is not None else 0,
+        "confidence": link.confidence,
+        "review_status": link.review_status,
+    } for link, entity in rows]
+    documents.sort(key=lambda d: -d["mention_count"])
+    return {
+        "status": "success",
+        "organization": {"id": organization.id, "canonical_name": organization.canonical_name,
+                         "description": organization.description,
+                         "organization_type": organization.organization_type},
+        "documents": documents,
+    }, 200
+
+
 @app.route('/organizations/<int:organization_id>', methods=['PATCH', 'OPTIONS'])
 def organization_update(organization_id: int):
     """Edit an organization's canonical_name/description/type — shown as a
@@ -1767,6 +1808,57 @@ def organization_alias_delete(organization_id: int, alias_id: int):
         return {"status": "error", "message": "DB error"}, 500
 
     return {"status": "success", "deleted_alias_id": alias_id}, 200
+
+
+@app.route('/organizations/<int:organization_id>/merge', methods=['POST', 'OPTIONS'])
+def organization_merge(organization_id: int):
+    """Merge one registry organization into another, without a document context.
+
+    Body: {"target_organization_id": int, "make_global_alias": bool (default
+    true)}. Unlike POST /document/<id>/organizations/merge (which starts from
+    a document's resolved orgName entity), this is the plain duplicate-cleanup
+    path from the /organizations registry browser: two Organization rows for
+    the same real-world entity, created because organization_registry does
+    exact-match resolution only (no fuzzy auto-merge — see
+    docs/organization-ner-alias-plan.md). source is deleted once orphaned
+    (organization_registry.merge); the response's organization_id is always
+    the surviving (target) row, so the frontend can navigate there."""
+    if request.method == 'OPTIONS':
+        return {"status": "OK"}, 200
+
+    from library import organization_registry
+    from library.db.models import Organization
+
+    data = request.get_json(silent=True) or {}
+    target_organization_id, error = _entities_doc_id(data.get('target_organization_id'))
+    if error:
+        return error
+    make_global_alias = bool(data.get('make_global_alias', True))
+
+    session = get_scoped_session()
+    if session.get(Organization, organization_id) is None:
+        return {"status": "error", "message": "Organization not found"}, 404
+    if session.get(Organization, target_organization_id) is None:
+        return {"status": "error", "message": "Target organization not found"}, 404
+
+    try:
+        result = organization_registry.merge(
+            session, organization_id, target_organization_id, make_global_alias=make_global_alias,
+        )
+        session.commit()
+    except organization_registry.AliasConflictError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc),
+                "existing_organization_id": exc.existing_organization_id}, 409
+    except ValueError as exc:
+        session.rollback()
+        return {"status": "error", "message": str(exc)}, 400
+    except Exception:
+        session.rollback()
+        logging.exception("organization merge failed: %s -> %s", organization_id, target_organization_id)
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", **result}), 200
 
 
 @app.route('/document/<int:doc_id>/organizations/merge', methods=['POST', 'OPTIONS'])

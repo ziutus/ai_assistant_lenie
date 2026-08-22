@@ -130,6 +130,7 @@ export const EntityChips = ({
   items,
   linkPersons,
   linkInformationSources,
+  linkOrganizations,
   searchUnresolvedPersons,
   actions,
   highlightMode,
@@ -140,6 +141,10 @@ export const EntityChips = ({
   // Resolved persons (person_id) become links to /persons/:id — used by the reader view.
   linkPersons?: boolean;
   linkInformationSources?: boolean;
+  // Resolved organizations (organization_id) become links to /organizations/:id
+  // — used by the reader view. Skipped when the chip is already a cited
+  // information source link (linkInformationSources takes priority).
+  linkOrganizations?: boolean;
   // Unresolved persons link to the registry search (/persons?q=) — stage 4
   // may not have run for the document yet, but the name is still searchable.
   searchUnresolvedPersons?: boolean;
@@ -224,6 +229,18 @@ export const EntityChips = ({
               to={`/information-sources?id=${item.information_source_id}`}
               style={{ textDecoration: "none" }}
               title={item.source_evidence ?? "Źródło cytowane w dokumencie"}
+            >
+              {chip}
+            </Link>
+          );
+        }
+        if (linkOrganizations && item.organization_id != null && item.information_source_id == null) {
+          return (
+            <Link
+              key={item.text}
+              to={`/organizations/${item.organization_id}`}
+              style={{ textDecoration: "none" }}
+              title={item.organization_description ?? "Otwórz w rejestrze organizacji"}
             >
               {chip}
             </Link>
@@ -882,6 +899,7 @@ const EntitiesPanel = ({
       <EntityChips
         label={"Organizacje"}
         items={otherOrganizations}
+        linkOrganizations
         actions={editMode ? editActions("orgName") : undefined}
       />
       <EntityChips label={"Miejsca"} items={places} actions={editMode ? editActions("placeName") : undefined} />
