@@ -37,6 +37,109 @@ _CONTENT_MARKER_RE = re.compile(r"\[(?:img|link)\d+\]")
 # newline or a tab, only the single space between words is.
 _INTERNAL_WHITESPACE_RE = re.compile(r"\s+")
 
+# Quotation marks that wrap quoted phrases in the source text and get glued
+# onto an adjacent entity span (see strip_wrapping_quotes). ASCII '"' is in
+# BOTH sets: Polish typing habitually mixes a Polish opener with an ASCII
+# closer ("sudańskie Bractwo Muzułmańskie"), so '"' must pair with anything.
+# Single-quote/apostrophe characters are excluded on purpose — they are
+# legitimate name content (O'Brien, L'Oréal), not wrapping punctuation.
+_OPENING_QUOTES = frozenset({'"', "\u201e", "\u201c", "\u00ab"})  # " „ “ «
+_CLOSING_QUOTES = frozenset({'"', "\u201d", "\u00bb"})  # " ” »
+_ALL_QUOTES = _OPENING_QUOTES | _CLOSING_QUOTES
+
+
+def _has_pairing_quote(edge_quote: str, body: str) -> bool:
+    """True when body still contains a quote that pairs with the edge one."""
+    if edge_quote == '"':
+        return any(char in _ALL_QUOTES for char in body)
+    if edge_quote in _OPENING_QUOTES:
+        return any(char in _CLOSING_QUOTES for char in body)
+    return any(char in _OPENING_QUOTES for char in body)
+
+
+def _strip_edge_quotes(text: str) -> str:
+    """Repeatedly strip fully-wrapped or dangling quote chars at the edges."""
+    result = text.strip()
+    while len(result) >= 2:
+        first, last = result[0], result[-1]
+        if first in _ALL_QUOTES and last in _ALL_QUOTES:
+            inner = result[1:-1].strip()
+            if not inner:
+                break
+            result = inner
+            continue
+        if first in _ALL_QUOTES and not _has_pairing_quote(first, result[1:]):
+            result = result[1:].strip()
+            continue
+        if last in _ALL_QUOTES and not _has_pairing_quote(last, result[:-1]):
+            result = result[:-1].strip()
+            continue
+        break
+    return result
+
+
+def _unmatched_quote_positions(text: str) -> set[int]:
+    """Indexes of quote characters with no pairing partner in text.
+
+    Walks left to right: openers push, closers pop the pending opener. ASCII
+    '"' is a wildcard — it closes whatever is pending when one exists,
+    otherwise it opens. Whatever remains pending, plus closers seen with
+    nothing pending, is unmatched.
+    """
+    pending: list[int] = []
+    unmatched: set[int] = set()
+    for index, char in enumerate(text):
+        if char not in _ALL_QUOTES:
+            continue
+        if char == '"':  # wildcard: pair up if possible, else act as opener
+            if pending:
+                pending.pop()
+            else:
+                pending.append(index)
+        elif char in _CLOSING_QUOTES:
+            if pending:
+                pending.pop()
+            else:
+                unmatched.add(index)
+        else:
+            pending.append(index)
+    unmatched.update(pending)
+    return unmatched
+
+
+def strip_wrapping_quotes(text: str) -> str:
+    """Strip quotation marks wrongly glued onto (or left dangling inside) an
+    entity span.
+
+    spaCy keeps a quotation mark inside the entity span when the source text
+    wraps the phrase in quotes without intervening whitespace (live case:
+    'jako "sudańskie Bractwo Muzułmańskie", zostali' produced the orgName span
+    'Bractwo Muzułmańskie"' whose lemma then carried the stray '"' into
+    organizations.canonical_name / organization_aliases). Three safe cases,
+    applied repeatedly until nothing changes:
+      * fully wrapped spans, including mixed quote kinds ('"Financial Times"',
+        '\u201eprzyja\u017a\u0144\u201d'),
+      * a dangling quote at one edge with no partner anywhere inside
+        ('bractwo Muzu\u0142ma\u0144ski"', '"ZOO zaprasza\u0107'),
+      * stacked edge quotes ('""Grot"').
+    Additionally a quote left dangling *inside* the span (source text opened a
+    quotation the span cuts short: 'Hans Pool "Bellingcat',
+    'Donald Trump,"szejk') is removed, while a quote that legitimately closes
+    an inner quotation keeps its partner and stays untouched ('Aleksander
+    \u201eRocky\u201d', 'CBRE "European data Centres"'). Callers should run
+    normalize_ner_text() afterwards to collapse any whitespace the removal
+    leaves behind. Apostrophes/single quotes are out of scope entirely — they
+    are legitimate name content (O'Brien, L'Oréal).
+    """
+    result = _strip_edge_quotes(text)
+    unmatched = _unmatched_quote_positions(result)
+    if unmatched:
+        result = "".join(
+            char for index, char in enumerate(result) if index not in unmatched
+        ).strip()
+        result = _strip_edge_quotes(result)
+    return result
+
 
 def strip_markdown_emphasis(text: str) -> str:
     """Blank out markdown bold/italic markers with same-length whitespace."""

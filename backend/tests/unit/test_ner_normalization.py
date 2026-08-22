@@ -1,7 +1,11 @@
 import logging
 
 from library import ner_normalization
-from library.ner_normalization import normalize_ner_text, strip_content_markers
+from library.ner_normalization import (
+    normalize_ner_text,
+    strip_content_markers,
+    strip_wrapping_quotes,
+)
 
 
 def test_missing_rules_file_falls_back_to_empty_rules(monkeypatch, tmp_path, caplog):
@@ -72,3 +76,58 @@ class TestStripContentMarkers:
     def test_leaves_unrelated_brackets_untouched(self):
         text = "Ustawa [Dz.U. 2024] weszła w życie."
         assert strip_content_markers(text) == text
+
+
+class TestStripWrappingQuotes:
+    def test_live_bug_dangling_ascii_closing_quote_is_stripped(self):
+        # Live case (doc 9394): 'jako "sudańskie Bractwo Muzułmańskie", zostali'
+        # produced the orgName span 'Bractwo Muzułmańskie"' and the mangled
+        # lemma 'bractwo Muzułmański"' — both ended up in organizations.
+        assert strip_wrapping_quotes('Bractwo Muzułmańskie"') == "Bractwo Muzułmańskie"
+        assert strip_wrapping_quotes('bractwo Muzułmański"') == "bractwo Muzułmański"
+
+    def test_fully_wrapped_span_is_stripped(self):
+        assert strip_wrapping_quotes('"Financial Times"') == "Financial Times"
+
+    def test_polish_quotes_wrapping_span_are_stripped(self):
+        assert strip_wrapping_quotes("„przyjaźń”") == "przyjaźń"
+
+    def test_mixed_polish_opener_with_ascii_closer_is_stripped(self):
+        # Polish typing habitually pairs „ with ".
+        assert strip_wrapping_quotes('„Grot"') == "Grot"
+
+    def test_dangling_interior_quote_is_removed(self):
+        # Live pollution: persName 'Hans Pool "Bellingcat' (source text opened
+        # a quotation the span cuts short) and geogName '"ZOO zapraszać'.
+        assert strip_wrapping_quotes("Hans Pool \"Bellingcat") == "Hans Pool Bellingcat"
+        assert strip_wrapping_quotes('"ZOO zapraszać') == "ZOO zapraszać"
+
+    def test_dangling_interior_quote_after_comma_is_removed(self):
+        # Live pollution: persName 'Donald Trump,"szejk' — the unmatched '"'
+        # goes, the surrounding junk (comma) is out of scope for this helper.
+        assert strip_wrapping_quotes('Donald Trump,"szejk') == "Donald Trump,szejk"
+
+    def test_stacked_edge_quotes_are_stripped(self):
+        assert strip_wrapping_quotes('""Grot"') == "Grot"
+
+    def test_inner_quotation_closer_is_never_touched(self):
+        # The trailing ” legitimately closes the inner „Rocky” nickname —
+        # its partner sits inside the span, so the pair stays untouched.
+        assert strip_wrapping_quotes("Aleksander „Rocky”") == "Aleksander „Rocky”"
+        assert strip_wrapping_quotes('CBRE "European data Centres"') == 'CBRE "European data Centres"'
+
+    def test_mid_span_junk_comma_is_out_of_scope(self):
+        assert strip_wrapping_quotes("prezydent Donald Trump, kanclerz") == "prezydent Donald Trump, kanclerz"
+
+    def test_apostrophes_are_name_content_and_untouched(self):
+        assert strip_wrapping_quotes("O'Brien") == "O'Brien"
+
+    def test_plain_names_pass_through_unchanged(self):
+        assert strip_wrapping_quotes("Bractwo Muzułmańskie") == "Bractwo Muzułmańskie"
+
+    def test_whitespace_after_edge_strip_is_removed(self):
+        assert strip_wrapping_quotes('" Financial Times "') == "Financial Times"
+
+    def test_only_quotes_returns_unchanged(self):
+        # Never returns an empty string for a quote-only span.
+        assert strip_wrapping_quotes('""') == '""'

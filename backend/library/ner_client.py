@@ -22,6 +22,7 @@ from library.ner_normalization import (
     normalize_ner_text,
     strip_content_markers,
     strip_markdown_emphasis,
+    strip_wrapping_quotes,
 )
 
 logger = logging.getLogger(__name__)
@@ -237,6 +238,8 @@ def aggregate_entities_detailed(
 ) -> dict[tuple[str, str], dict]:
     """Normalize and group raw mentions into stable person/place/org entities.
 
+    Quotation marks glued onto a span's edges by spaCy (source text quoting
+    the phrase) are stripped before grouping (strip_wrapping_quotes).
     New ner_service payloads are filtered by root-token POS; payloads without
     POS retain legacy behavior. Country names, selected demonyms and exact
     uppercase abbreviations are canonicalized — including when spaCy mislabels
@@ -262,12 +265,12 @@ def aggregate_entities_detailed(
         label = ent.get("label")
         if label not in types:
             continue
-        surface = normalize_ner_text(ent.get("text") or "")
+        surface = normalize_ner_text(strip_wrapping_quotes(ent.get("text") or ""))
         if not surface or _is_initials_only(surface):
             continue
         if surface[0].islower():
             continue
-        lemma = normalize_ner_text(ent.get("lemma") or surface)
+        lemma = normalize_ner_text(strip_wrapping_quotes(ent.get("lemma") or surface))
         if not lemma:
             continue
 
