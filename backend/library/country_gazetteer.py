@@ -99,7 +99,7 @@ _COUNTRY_DATA: list[tuple[str, tuple[str, ...]]] = [
     ("Afganistan", ("afganistan*", "afgansk*")),
     ("Iran", ("iran*", "iransk*")),
     ("Irak", ("irak*", "irac*")),
-    ("Arabia Saudyjska", ("arabi* saudyjsk*",)),
+    ("Arabia Saudyjska", ("arabi* saudyjsk*", "saudyjsk*")),
     ("Jemen", ("jemen*",)),
     ("Oman", ("oman*",)),
     ("Zjednoczone Emiraty Arabskie", ("zjednoczon* emirat* arabski*", "emirat* arabski*", "emirat*")),

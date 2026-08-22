@@ -122,3 +122,14 @@ class TestStripCountryEdge:
         the other — not this function's job (place_verification._is_country()
         handles a bare country mention)."""
         assert country_gazetteer.strip_country_edge("Korea Północna") is None
+
+    def test_strips_trailing_demonym_adjective_single_token(self):
+        """doc #9394, chapter "Sprzeczne interesy": "...wizyty w Białym Domu
+        saudyjski książę koronny..." is missing the comma after "Domu" — NER
+        merged the place "Białym Domu" with the single-word demonym
+        "saudyjski" (adjective for "Arabia Saudyjska", modifying the following
+        "książę koronny", not itself a place mention). Arabia Saudyjska used
+        to have only its two-token noun-phrase variant ("arabi* saudyjsk*"),
+        so a lone "saudyjski" never fullmatched it and the edge was never
+        found."""
+        assert country_gazetteer.strip_country_edge("Białym Domu saudyjski") == ("Białym Domu", "Arabia Saudyjska")
