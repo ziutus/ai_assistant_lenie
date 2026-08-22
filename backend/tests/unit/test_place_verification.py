@@ -10,7 +10,9 @@ pytest.importorskip("requests")
 from library.db.models import DocumentEntity, GeocodeCache  # noqa: E402
 from library.place_verification import (  # noqa: E402
     _canonicalize_and_merge_places,
+    _get_or_create_geocode,
     _is_country,
+    _relabel_alias_hit,
     _slugify,
     remove_orphaned_tag,
     verify_document_places,
@@ -68,6 +70,80 @@ class TestIsCountry:
     @pytest.mark.parametrize("name", ["Port Sudan", "Port Sudanu", "Al-Faszirze Emiraty", "Cieśnina Ormuz"])
     def test_place_name_merely_containing_a_country_substring_is_false(self, name):
         assert _is_country(name) is False
+
+
+class TestRelabelAliasHit:
+    def test_replaces_leading_segment_with_original_query(self):
+        hit = {"display_name": "El Fasher, Sudan Zachodni, Sudan", "lat": "13.6", "lon": "25.3"}
+        relabeled = _relabel_alias_hit("Al-Faszir", hit)
+        assert relabeled["display_name"] == "Al-Faszir, Sudan Zachodni, Sudan"
+        assert relabeled["lat"] == "13.6"  # coordinates untouched
+
+    def test_single_segment_display_name(self):
+        hit = {"display_name": "El Fasher"}
+        assert _relabel_alias_hit("Al-Faszir", hit)["display_name"] == "Al-Faszir"
+
+    def test_missing_display_name(self):
+        assert _relabel_alias_hit("Al-Faszir", {})["display_name"] == "Al-Faszir"
+
+
+class TestGetOrCreateGeocodeAliasFallback:
+    """doc 9394: "Al-Faszir" (Polish "sz") returned an unrelated Cairo alley
+    from LocationIQ under its Polish spelling — the city is indexed as
+    "El Fasher"/"Al Fashir" in OSM. geocode_aliases.py retries once via the
+    English transliteration when the Polish query fails is_plausible_match()."""
+
+    def _session(self):
+        session = MagicMock()
+        session.query.return_value.filter.return_value.one_or_none.return_value = None
+        return session
+
+    def test_polish_query_fails_then_alias_succeeds(self):
+        session = self._session()
+        cairo_alley = {"display_name": "Al Huruqi Alley Alley, Kair, Egipt"}
+        sudan_city = {
+            "display_name": "El Fasher, Sudan Zachodni, Sudan",
+            "lat": "13.6", "lon": "25.3", "class": "place", "type": "city", "importance": 0.4,
+        }
+
+        def fake_geocode(query):
+            return sudan_city if query == "El Fasher, Sudan" else cairo_alley
+
+        with patch("library.place_verification.geocode", side_effect=fake_geocode):
+            with patch(
+                "library.place_verification.is_plausible_match",
+                side_effect=lambda q, hit: hit is sudan_city,
+            ):
+                row = _get_or_create_geocode(session, "Al-Faszir")
+
+        assert row.resolved is True
+        # display_name relabeled back to the Polish query, not "El Fasher"
+        assert row.display_name == "Al-Faszir, Sudan Zachodni, Sudan"
+        assert row.lat == "13.6"
+
+    def test_no_alias_registered_stays_unresolved(self):
+        """"Cieśnina Ormuz" has no geocode_aliases entry — behavior unchanged."""
+        session = self._session()
+
+        with patch("library.place_verification.geocode",
+                   return_value={"display_name": "Płytka Cieśnina, Iława"}) as mock_geocode:
+            with patch("library.place_verification.is_plausible_match", return_value=False):
+                row = _get_or_create_geocode(session, "Cieśnina Ormuz")
+
+        mock_geocode.assert_called_once_with("Cieśnina Ormuz")  # alias never attempted
+        assert row.resolved is False
+
+    def test_successful_polish_query_never_tries_alias(self):
+        session = self._session()
+        hit = {"display_name": "Al-Faszir, Sudan Zachodni, Sudan"}
+
+        with patch("library.place_verification.geocode", return_value=hit) as mock_geocode:
+            with patch("library.place_verification.is_plausible_match", return_value=True):
+                row = _get_or_create_geocode(session, "Al-Faszir")
+
+        mock_geocode.assert_called_once_with("Al-Faszir")
+        assert row.resolved is True
+        assert row.display_name == "Al-Faszir, Sudan Zachodni, Sudan"
 
 
 class TestVerifyDocumentPlaces:
