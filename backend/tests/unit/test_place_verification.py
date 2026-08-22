@@ -176,6 +176,23 @@ class TestRetryAfterStrippingCountry:
         mock_geocode.assert_called_once_with("Al-Faszir")
         assert row.resolved is True
 
+    def test_strips_country_canonicalizes_remainder_via_region_gazetteer(self):
+        session = self._session()
+        hit = {
+            "display_name": "Kordofan Północny, Sudan",
+            "lat": "15.0", "lon": "29.99", "class": "boundary", "type": "administrative", "importance": 0.47,
+        }
+
+        with patch("library.place_verification.geocode", return_value=hit) as mock_geocode:
+            with patch("library.place_verification.is_plausible_match", return_value=True):
+                result = _retry_after_stripping_country(session, "Kordofanu Północnego Emiraty")
+
+        assert result is not None
+        remainder, row = result
+        assert remainder == "Kordofan Północny"  # canonicalized via region_gazetteer
+        mock_geocode.assert_called_once_with("Kordofan Północny")
+        assert row.resolved is True
+
     def test_no_country_edge_returns_none(self):
         session = self._session()
         with patch("library.place_verification.geocode") as mock_geocode:

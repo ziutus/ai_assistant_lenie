@@ -16,6 +16,7 @@ import requests
 
 from library.city_gazetteer import canonical_city_name
 from library.geo_feature_gazetteer import canonical_geo_feature_name
+from library.region_gazetteer import canonical_region_name
 from library.ner_normalization import (
     canonical_country_for_surface,
     is_rejected_surface_lemma_pair,
@@ -301,7 +302,16 @@ def aggregate_entities_detailed(
         # surfaces are excluded there). Checked after geo_feature since the
         # two lists are disjoint (cities vs. seas/straits/gulfs).
         city = canonical_city_name(surface) if country is None and geo_feature is None and label in PLACE_TYPES else None
-        base = country or geo_feature or city or lemma
+        # Known foreign administrative regions/states (region_gazetteer.py)
+        # suffer the same mangling as geo features (adjective-noun gender
+        # agreement, e.g. "Kordofanu Północnego" never reduces to "Kordofan
+        # Północny") — checked last since it's disjoint from both other lists.
+        region = (
+            canonical_region_name(surface)
+            if country is None and geo_feature is None and city is None and label in PLACE_TYPES
+            else None
+        )
+        base = country or geo_feature or city or region or lemma
         key = (label, base.casefold())
         group = preliminary.setdefault(
             key,
@@ -337,7 +347,7 @@ def aggregate_entities_detailed(
         # heuristic second-guess it with a differently-cased in-text surface.
         if country is not None:
             group["is_country"] = True
-        elif geo_feature is not None or city is not None:
+        elif geo_feature is not None or city is not None or region is not None:
             # Single-word gazetteer matches (cities) are, by construction, a
             # prefix of every inflected surface variant ("Omdurman" is a
             # prefix of "Omdurmanie") — exactly the shape _is_truncated_lemma
