@@ -19,7 +19,7 @@ The project moved from an AWS-serverless architecture (Lambda/API Gateway/Dynamo
 
 The BMad `document-project` full-scan output generated 2026-02-13 (`docs/index.md`, `docs/development-guide.md`, `docs/project-overview.md`, `docs/architecture-*.md`, `docs/api-contracts-backend.md`, `docs/data-models-backend.md`, `docs/component-inventory-*.md`, `docs/integration-architecture.md`, `docs/project-scan-report.json`, `docs/project-parts.json`) predated this pivot and described the old AWS/Cognito-era plan as current — it was removed 2026-07-31 as a one-time, never-refreshed scan artifact rather than maintained documentation. `docs/backlog-reference.md` and `docs/aws-roadmap.md` are separate, still-present docs from the same era — treat those as historical unless cross-checked against `docs/deployment/` and the subdirectory `CLAUDE.md` files below.
 
-BMad workflow output (`_bmad-output/`) is no longer stored in this repo — it was moved to a private repo (session/planning artifacts contain personal/business-strategy content not meant to be public) and `_bmad-output/` is gitignored here. `_bmad/*/config.yaml` point new BMad output there.
+BMad workflow output (`_bmad-output/`) is no longer stored in this repo — it was moved to a private repo (session/planning artifacts contain personal/business-strategy content not meant to be public) and `_bmad-output/` is gitignored here. `_bmad/*/config.yaml` point new BMad output there. `_bmad/bmm/config.yaml` may show up as locally modified (personal tweak, e.g. `document_output_language: Polish`) — that diff is expected to stay uncommitted; don't stage it with unrelated changes.
 
 ## Repo structure — subprojects
 

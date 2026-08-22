@@ -487,6 +487,29 @@ python imports/select_control_questions.py --id 9204 --chapter 37   # re-run one
 
 One-time migration script: copies UUID-named `.html`/`.txt` files from `imports/data/` (legacy S3 download location) into the `{CACHE_DIR}/markdown/{doc_id}/{doc_id}.ext` convention used by `document_prepare.py`. Looks up `doc_id` by `uuid` in PostgreSQL. Files are **copied**, not moved — use `--delete-source` to remove originals after a successful copy. Supports `--dry-run`, `--source-dir`, `--target-dir`.
 
+## Running scripts against the NAS production DB (from a dev machine)
+
+The NAS PostgreSQL is exposed at **`192.168.200.7:5434`**, database name
+**`lenie-ai`** (created by `01-create-database.sql`, see
+`docs/CICD/NAS_Deployment.md`), user `postgres`. The password is the compose
+default `postgres` unless `NAS_DB_PASSWORD` overrides it on the NAS.
+
+The repo-root `.env` sets `SECRETS_BACKEND=vault`, which is NOT automatically
+what these scripts use from a dev shell. To target the NAS deterministically,
+override via the env backend:
+
+```powershell
+cd backend
+$env:PYTHONPATH='.'; $env:SECRETS_BACKEND='env'
+$env:POSTGRESQL_HOST='192.168.200.7'; $env:POSTGRESQL_PORT='5434'
+$env:POSTGRESQL_DATABASE='lenie-ai'; $env:POSTGRESQL_USER='postgres'
+$env:POSTGRESQL_PASSWORD='postgres'
+python -X utf8 imports/<script>.py          # dry-run first, then --apply
+```
+
+Every DB-writing script here defaults to dry-run — read its docstring before
+reaching for `--apply`.
+
 ## Architecture Notes
 
 - All scripts bypass the REST API intentionally — they are meant for local or scheduled operations, not the web interface.
