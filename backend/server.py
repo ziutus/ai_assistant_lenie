@@ -1660,9 +1660,16 @@ def organization_get(organization_id: int):
         if other_rows:
             ambiguous_with.append({
                 "alias": row.alias,
+                "context_hint": row.context_hint,
                 "other_organizations": [
-                    {"id": other_org.id, "canonical_name": other_org.canonical_name}
-                    for _, other_org in other_rows
+                    {
+                        "id": other_org.id,
+                        "canonical_name": other_org.canonical_name,
+                        "organization_type": other_org.organization_type,
+                        "description": other_org.description,
+                        "context_hint": other_alias.context_hint,
+                    }
+                    for other_alias, other_org in other_rows
                 ],
             })
     return {

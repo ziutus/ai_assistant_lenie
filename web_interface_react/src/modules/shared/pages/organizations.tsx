@@ -31,7 +31,14 @@ interface OrganizationAlias {
 // instead of always landing on this organization.
 interface AmbiguousWith {
   alias: string;
-  other_organizations: { id: number; canonical_name: string }[];
+  context_hint: string | null;
+  other_organizations: {
+    id: number;
+    canonical_name: string;
+    organization_type: string | null;
+    description: string | null;
+    context_hint: string | null;
+  }[];
 }
 
 interface OrganizationDocument {
@@ -413,18 +420,28 @@ const Organizations = () => {
               borderRadius: 6, fontSize: "0.9em", color: "#9a3412",
             }}>
               {ambiguousWith.map((entry) => (
-                <div key={entry.alias}>
-                  ⚠️ Nazwa „{entry.alias}” bywa też używana dla:{" "}
-                  {entry.other_organizations.map((other, i) => (
-                    <React.Fragment key={other.id}>
-                      {i > 0 && ", "}
+                <div key={entry.alias} style={{ marginBottom: 8 }}>
+                  <div>
+                    ⚠️ Nazwa „{entry.alias}” jest niejednoznaczna — rozstrzygana automatycznie dla każdej
+                    wzmianki na podstawie kontekstu dokumentu (LLM); warto zweryfikować dopasowania w liście
+                    dokumentów poniżej.
+                  </div>
+                  {entry.context_hint && (
+                    <div style={{ marginTop: 4 }}>
+                      <strong>Tutaj gdy:</strong> {entry.context_hint}
+                    </div>
+                  )}
+                  {entry.other_organizations.map((other) => (
+                    <div key={other.id} style={{ marginTop: 4 }}>
+                      <strong>Ale nie mylić z: </strong>
                       <NavLink to={`/organizations/${other.id}`} style={{ color: "#9a3412", textDecoration: "underline" }}>
                         {other.canonical_name}
                       </NavLink>
-                    </React.Fragment>
+                      {other.organization_type && <> [{other.organization_type}]</>}
+                      {other.description && <> — {other.description}</>}
+                      {other.context_hint && <div>Tam gdy: {other.context_hint}</div>}
+                    </div>
                   ))}
-                  . Lenie rozstrzyga to automatycznie na podstawie kontekstu dokumentu (LLM) —
-                  warto zweryfikować dopasowania w liście dokumentów poniżej.
                 </div>
               ))}
             </div>
