@@ -322,6 +322,14 @@ Data is persisted in Docker volume `lenie-ai-db-data` (external, survives compos
 psql -h 192.168.200.7 -p 5434 -U postgres -d lenie-ai
 ```
 
+Password: the compose default `postgres`, unless `NAS_DB_PASSWORD` was set in
+the NAS env file. Database name is **`lenie-ai`** (created by
+`01-create-database.sql` above — not the legacy local-dev name `lenie`).
+
+Python one-off/backfill scripts (`backend/imports/*.py`) connect through the
+ORM instead of `psql` — for the exact env-var pattern see
+`backend/imports/CLAUDE.md` ("Running scripts against the NAS production DB").
+
 ## Backend Configuration
 
 The backend reads environment variables from `/share/ContainerNew/lenie-env/.env` on the NAS. Create this file from `infra/docker/nas.env.example` template and fill in your secrets:
@@ -492,6 +500,21 @@ running `docker exec -u 0 lenie-document-worker chown -R 1000:1000 /app/work`.
 ```powershell
 .\infra\docker\nas-deploy.ps1 -Service backend
 ```
+
+Note which services **share one image**: `backend` (`lenie-ai-server`),
+`worker` and `lenie-migrate` all run `lenie-ai-server:latest`;
+`document-worker` has its own tag (adds the markdown extra). After a backend
+code change, redeploy every service that consumes the image — usually
+`-Service backend,worker` — or one container keeps running stale code.
+
+### SSH connection timeouts during deploy
+
+QNAP sshd occasionally takes longer than a few seconds to accept a connection
+even when the NAS is healthy (`ssh: connect to host 192.168.200.7 port 22:
+Connection timed out`). `nas-deploy.ps1` probes SSH with a 15 s timeout and
+retries 3× before giving up. If a later step still dies on a timeout, simply
+re-run the script — build/push/compose steps are idempotent — or finish
+manually per "Manual Deploy (Step by Step)" above.
 
 ### Disk space on NAS
 

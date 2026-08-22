@@ -20,6 +20,10 @@ $ScriptDir = $PSScriptRoot
 $ProjectRoot = (Resolve-Path (Join-Path $ScriptDir "..\..")).Path
 
 $Definitions = @{
+    # backend, worker and lenie-migrate SHARE one image (lenie-ai-server:latest);
+    # document-worker builds its own tag (adds the markdown extra). A backend
+    # code change must therefore redeploy every consuming service (usually
+    # -Service backend,worker) or one of them keeps running stale code.
     frontend      = @{ Image = "lenie-ai-frontend:latest"; RegistryImage = "$Registry/lenie-ai-frontend:latest"; Dockerfile = "web_interface_react/Dockerfile"; Compose = "lenie-ai-frontend" }
     app2          = @{ Image = "lenie-ai-app2:latest"; RegistryImage = "$Registry/lenie-ai-app2:latest"; Dockerfile = "web_interface_app2/Dockerfile"; Compose = "lenie-ai-app2" }
     backend       = @{ Image = "lenie-ai-server:latest"; RegistryImage = "$Registry/lenie-ai-server:latest"; Dockerfile = "backend/Dockerfile"; Compose = "lenie-ai-server" }
@@ -42,6 +46,20 @@ function Invoke-Checked {
     param([scriptblock]$Command, [string]$Description)
     & $Command
     if ($LASTEXITCODE -ne 0) { throw "$Description failed (exit code $LASTEXITCODE)." }
+}
+
+# QNAP sshd intermittently takes >5 s to accept a connection even when the NAS
+# is healthy — a single tight-timeout probe used to abort otherwise-fine deploys.
+$SshProbeTimeoutSeconds = 15
+
+function Test-NasSsh {
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        ssh -o ConnectTimeout=$SshProbeTimeoutSeconds "$NasUser@$NasHostName" "echo ok" | Out-Null
+        if ($LASTEXITCODE -eq 0) { return }
+        Write-Host "SSH probe attempt $attempt/3 failed - retrying in 10 s" -ForegroundColor Yellow
+        Start-Sleep -Seconds 10
+    }
+    throw "SSH connection to $NasUser@$NasHostName failed after 3 attempts."
 }
 
 function Publish-ImageToNasRegistry {
@@ -83,7 +101,7 @@ function Publish-ImageToNasRegistry {
 Write-Host "Lenie NAS Deploy (PowerShell)" -ForegroundColor Green
 Write-Host "NAS: $NasHostName | Services: $($Services -join ', ')"
 
-Invoke-Checked { ssh -o ConnectTimeout=5 "$NasUser@$NasHostName" "echo ok" } "SSH connection"
+Test-NasSsh
 
 $SiteRules = Join-Path $ProjectRoot "backend\data\site_rules.json"
 Invoke-Checked { ssh "$NasUser@$NasHostName" "mkdir -p $NasConfigDir" } "Create config directory"

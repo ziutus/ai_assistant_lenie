@@ -10,11 +10,25 @@ Unit tests are designed to run in two environments:
 # Lightweight (uvx) — no project dependencies installed.
 # Modules that need sqlalchemy/flask/boto3 skip themselves; pure-function tests run.
 cd backend && PYTHONPATH=. uvx pytest tests/unit/ -q
-# → ~169 passed, ~29 skipped
 
-# Full venv — everything runs (~690 tests).
-cd backend && .venv/Scripts/python -m pytest tests/unit/ -q
+# Full venv — everything runs (~1350 tests collected).
+cd backend && PYTHONPATH=. .venv/Scripts/python -m pytest tests/unit/ -q      # Windows
 ```
+
+Known collection-time pitfalls (both environmental, not test regressions):
+
+- **Full venv run needs resolvable app config.** Several unit-test modules
+  import `server.py` at module level, and `server.py` calls
+  `cfg.require("ENV_DATA")` → hard `SystemExit(1)` → pytest
+  `INTERNALERROR ... no tests ran`. This happens whenever config can't load
+  (no reachable Vault / no `ENV_DATA`) — e.g. from a plain dev shell, because
+  only the repo-root `.env` exists (`SECRETS_BACKEND=vault`) and it is not
+  auto-loaded from `backend/`. Targeted runs of non-server files work
+  anywhere; for the full suite you need a working config backend.
+- **The lightweight uvx env has no optional deps**, so a module whose import
+  chain reaches one at module level errors at collection instead of skipping
+  cleanly (e.g. `test_ner_normalization.py` → `library.country_gazetteer` →
+  `unidecode`). Run those files under the full venv instead.
 
 Integration tests additionally require PostgreSQL and a `.env` file:
 
