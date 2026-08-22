@@ -27,6 +27,12 @@ missing punctuation (country_gazetteer.strip_country_edge — doc #9394's
 "Al-Faszirze Emiraty"). If so, the country is split off and the remaining
 place name retried on its own, canonicalized first the same way a clean
 mention would be.
+
+Known geopolitical macro-regions ("Sahel", "Bliski Wschód" — see
+geopolitical_region_gazetteer.py) never reach the live geocoder at all:
+`_get_or_create_geocode()` synthesizes an approximate, always-resolved
+GeocodeCache row for them instead, since a live LocationIQ query for these
+names is unreliable by construction (doc #9394's "Sahel" investigation).
 """
 
 import logging
@@ -36,6 +42,7 @@ from unidecode import unidecode
 
 from library.db.models import DocumentEntity, GeocodeCache
 from library.geocode_aliases import geocode_alias
+from library.geopolitical_region_gazetteer import geopolitical_region_centroid
 from library.locationiq_client import canonical_place_name, geocode, is_plausible_match
 
 logger = logging.getLogger(__name__)
@@ -97,6 +104,20 @@ def _get_or_create_geocode(session, query: str) -> GeocodeCache:
     """
     row = session.query(GeocodeCache).filter(GeocodeCache.query == query).one_or_none()
     if row is not None:
+        return row
+
+    centroid = geopolitical_region_centroid(query)
+    if centroid is not None:
+        # Known geopolitical macro-region (Sahel, Bliski Wschód...) — never
+        # query LocationIQ at all, see geopolitical_region_gazetteer.py's
+        # module docstring for why a live query can't be trusted here.
+        lat, lon = centroid
+        row = GeocodeCache(
+            query=query, resolved=True, display_name=query,
+            lat=lat, lon=lon, osm_class="place", osm_type="region", importance=None, raw=None,
+        )
+        session.add(row)
+        session.flush()
         return row
 
     hit = geocode(query)

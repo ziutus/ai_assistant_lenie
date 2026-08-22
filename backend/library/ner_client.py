@@ -16,6 +16,7 @@ import requests
 
 from library.city_gazetteer import canonical_city_name
 from library.geo_feature_gazetteer import canonical_geo_feature_name
+from library.geopolitical_region_gazetteer import canonical_geopolitical_region_name
 from library.region_gazetteer import canonical_region_name
 from library.ner_normalization import (
     canonical_country_for_surface,
@@ -311,7 +312,18 @@ def aggregate_entities_detailed(
             if country is None and geo_feature is None and city is None and label in PLACE_TYPES
             else None
         )
-        base = country or geo_feature or city or region or lemma
+        # Known geopolitical/cultural macro-regions (geopolitical_region_gazetteer.py,
+        # e.g. "Sahel", "Bliski Wschód") suffer the same mangling as the other
+        # gazetteer lists and additionally have no reliable LocationIQ geocode
+        # at all (place_verification.py synthesizes coordinates for them
+        # instead of geocoding) — checked last since it's disjoint from the
+        # other four lists.
+        geo_region = (
+            canonical_geopolitical_region_name(surface)
+            if country is None and geo_feature is None and city is None and region is None and label in PLACE_TYPES
+            else None
+        )
+        base = country or geo_feature or city or region or geo_region or lemma
         key = (label, base.casefold())
         group = preliminary.setdefault(
             key,
@@ -347,7 +359,7 @@ def aggregate_entities_detailed(
         # heuristic second-guess it with a differently-cased in-text surface.
         if country is not None:
             group["is_country"] = True
-        elif geo_feature is not None or city is not None or region is not None:
+        elif geo_feature is not None or city is not None or region is not None or geo_region is not None:
             # Single-word gazetteer matches (cities) are, by construction, a
             # prefix of every inflected surface variant ("Omdurman" is a
             # prefix of "Omdurmanie") — exactly the shape _is_truncated_lemma

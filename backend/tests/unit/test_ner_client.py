@@ -602,6 +602,35 @@ class TestRegionGazetteerOverride:
         assert aggregate_entities(entities) == {("placeName", "Kordofanu Południowego"): 1}
 
 
+class TestGeopoliticalRegionGazetteerOverride:
+    """A small curated gazetteer (geopolitical_region_gazetteer.py) of
+    well-known geopolitical macro-regions with no reliable LocationIQ geocode
+    (doc #9394's "na Sahelu" — the only live hit is a specific Burkina Faso
+    province, correctly rejected by is_plausible_match()). Disjoint from
+    geo_feature/city/region gazetteers, checked last."""
+
+    def test_single_mention_inflected_form_resolves_to_canonical_name(self):
+        entities = [{"text": "Sahelu", "label": "geogName", "lemma": "Sahelu"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("geogName", "Sahel"): {
+                "count": 1,
+                "variants": ["Sahelu"],
+                "raw_lemmas": ["Sahelu"],
+            },
+        }
+
+    def test_no_morph_evidence_still_resolves(self):
+        entities = [{"text": "Bliskim Wschodzie", "label": "geogName", "lemma": "Bliskim Wschodzie"}]
+        assert aggregate_entities(entities) == {("geogName", "Bliski Wschód"): 1}
+
+    def test_unknown_region_is_unaffected(self):
+        """A region outside the small curated list still falls through to the
+        legacy lemma-based path — this gazetteer never invents a canonical
+        form for a region it doesn't know."""
+        entities = [{"text": "Dalekim Wschodzie", "label": "geogName", "lemma": "Dalekim Wschodzie"}]
+        assert aggregate_entities(entities) == {("geogName", "Dalekim Wschodzie"): 1}
+
+
 class TestCountryDetectedUnderOrgName:
     """Faza 4: spaCy occasionally tags a country as orgName (participle-heavy
     names like "Zjednoczone Emiraty Arabskie" get parsed as if headed by a
