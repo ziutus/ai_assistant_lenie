@@ -123,8 +123,8 @@ def process_youtube_url(
         logger.error(youtube_file.error)
         return web_document
 
-    # Fetch metadata if URL_ADDED and pytube available
-    if web_document.processing_status == StalkerDocumentStatus.URL_ADDED.name and youtube_file.can_pytube:
+    # Fetch metadata if URL_ADDED and yt-dlp could extract it
+    if web_document.processing_status == StalkerDocumentStatus.URL_ADDED.name and youtube_file.metadata_available:
         logger.info("Updating document metadata from YouTube")
         web_document.title = youtube_file.title
         # A feed may provide an explicit, user-reviewed channel → creator

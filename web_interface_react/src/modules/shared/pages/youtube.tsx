@@ -67,6 +67,8 @@ const Youtube = () => {
   const [captionMessage, setCaptionMessage] = React.useState("");
   const [paragraphizing, setParagraphizing] = React.useState(false);
   const [paragraphMessage, setParagraphMessage] = React.useState("");
+  const [refetchingDescription, setRefetchingDescription] = React.useState(false);
+  const [descriptionMessage, setDescriptionMessage] = React.useState("");
   // Covers the case where the fetch was triggered from /list (or another tab)
   // and this page was opened while it's still running — see
   // utils/youtubeCaptionsFetchStatus.ts for why a plain isLoading flag here
@@ -111,6 +113,29 @@ const Youtube = () => {
     }
   };
 
+  const refetchDescription = async () => {
+    if (!id) return;
+    setRefetchingDescription(true);
+    setDescriptionMessage("");
+    try {
+      const response = await axios.post(
+        `${apiUrl}/website_youtube_refetch_description`,
+        { id },
+        {
+          headers: { "Content-Type": "application/json", "x-api-key": `${apiKey}` },
+          timeout: 60000,
+        },
+      );
+      await handleGetLinkByID(id);
+      setDescriptionMessage(response.data.message);
+    } catch (error: any) {
+      const detail = error.response?.data?.message || error.message;
+      setDescriptionMessage(`Nie udało się pobrać opisu: ${detail}`);
+    } finally {
+      setRefetchingDescription(false);
+    }
+  };
+
   const paragraphizeTranscript = async () => {
     if (!hasMarkdownChapters) return;
     if (!id || !window.confirm("Podzielić transkrypcję na akapity tematyczne przy użyciu Bielika? Tekst nie będzie parafrazowany.")) return;
@@ -140,6 +165,18 @@ const Youtube = () => {
       <h2 style={{ marginBottom: "10px" }}>Youtube</h2>
       {id && <NavLink to={`/llm-costs?document_id=${id}`} style={{ display: "inline-block", marginBottom: 10, fontSize: "0.9em", color: "#0369a1" }}>💰 Koszty i etapy LLM</NavLink>}
       <form onSubmit={formik.handleSubmit} style={{ maxWidth: "800px" }}>
+        {id && (
+          <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
+            <strong>Opis filmu</strong>
+            <div style={{ marginTop: 6, color: "#475569" }}>
+              Pobiera aktualny opis z YouTube i wyciąga z niego spis rozdziałów (linie w formacie „0:00 Tytuł”). Nadpisuje pole „Chapter list” poniżej, jeśli znajdzie co najmniej dwa znaczniki czasu.
+            </div>
+            <button type="button" className="button" style={{ marginTop: 10 }} onClick={refetchDescription} disabled={refetchingDescription || isLoading}>
+              {refetchingDescription ? "Pobieram opis…" : "Pobierz opis (spis rozdziałów) z YouTube"}
+            </button>
+            {descriptionMessage && <div style={{ marginTop: 8 }}>{descriptionMessage}</div>}
+          </section>
+        )}
         {id && transcriptMissing && (
           <section style={{ marginBottom: 14, padding: 12, border: "1px solid #cbd5e1", borderRadius: 6, background: "#f8fafc" }}>
             <strong>Transkrypcja nie jest jeszcze dostępna.</strong>

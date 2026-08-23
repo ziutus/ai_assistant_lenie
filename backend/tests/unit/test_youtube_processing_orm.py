@@ -231,7 +231,7 @@ class TestSessionCommit:
 
         yt_file = MagicMock()
         yt_file.valid = True
-        yt_file.can_pytube = True
+        yt_file.metadata_available = True
         yt_file.title = "Test"
         yt_file.url = "https://www.youtube.com/watch?v=abc"
         yt_file.video_id = "abc"
@@ -307,7 +307,7 @@ class TestDocumentStateErrorClearedOnSuccess:
 
         yt_file = MagicMock()
         yt_file.valid = True
-        yt_file.can_pytube = False
+        yt_file.metadata_available = False
         yt_file.video_id = "abc123"
         MockYoutubeFile.return_value = yt_file
 
