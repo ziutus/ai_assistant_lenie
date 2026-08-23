@@ -1,6 +1,6 @@
 """add needs_intervention job status
 
-Revision ID: a1b2c3d4e5f6
+Revision ID: b7a9d8c6e5f4
 Revises: fa12f5be1ae2
 Create Date: 2026-08-23
 """
@@ -10,7 +10,7 @@ from typing import Sequence, Union
 from alembic import op
 
 
-revision: str = "a1b2c3d4e5f6"
+revision: str = "b7a9d8c6e5f4"
 down_revision: Union[str, Sequence[str], None] = "fa12f5be1ae2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
