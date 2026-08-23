@@ -119,6 +119,14 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
           Organizations
         </NavLink>
         <NavLink
+          to="/contacts"
+          className={({ isActive }) =>
+            isActive ? classes.activeLink : classes.link
+          }
+        >
+          Kontakty
+        </NavLink>
+        <NavLink
           to="/sources"
           className={({ isActive }) =>
             isActive ? classes.activeLink : classes.link

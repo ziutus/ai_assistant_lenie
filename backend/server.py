@@ -31,6 +31,7 @@ from library.tool_candidate_routes import bp as tool_candidate_bp
 from library.tool_recommendation_routes import bp as tool_recommendation_bp
 from library.tool_routes import bp as tool_bp
 from library.llm_analysis_routes import bp as llm_analysis_bp
+from library.contact_routes import bp as contact_bp
 from library.youtube_processing import process_youtube_url, parse_chapters_from_description
 from library.stalker_youtube_file import StalkerYoutubeFile
 from library.storage import storage_from_config
@@ -115,6 +116,7 @@ app.register_blueprint(tool_candidate_bp)
 app.register_blueprint(tool_recommendation_bp)
 app.register_blueprint(tool_bp)
 app.register_blueprint(llm_analysis_bp)
+app.register_blueprint(contact_bp)
 start_analysis_worker()
 
 

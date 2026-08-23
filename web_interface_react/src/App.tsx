@@ -21,6 +21,9 @@ import Organizations from "./modules/shared/pages/organizations";
 import ToolRecommendations from "./modules/shared/pages/toolRecommendations";
 import Tools from "./modules/shared/pages/tools";
 import Sources from "./modules/shared/pages/sources";
+import Contacts from "./modules/shared/pages/contacts";
+import Contact from "./modules/shared/pages/contact";
+import ContactCategories from "./modules/shared/pages/contactCategories";
 import InformationSources from "./modules/shared/pages/informationSources";
 import LlmCosts from "./modules/shared/pages/llmCosts";
 import ServiceStatus from "./modules/shared/pages/serviceStatus";
@@ -78,6 +81,9 @@ function App() {
                   <Route path="/persons-review" element={<PersonsReview />} />
                   <Route path="/organizations/:id?" element={<Organizations />} />
                   <Route path="/sources" element={<Sources />} />
+                  <Route path="/contacts" element={<Contacts />} />
+                  <Route path="/contacts/:id" element={<Contact />} />
+                  <Route path="/contact-categories" element={<ContactCategories />} />
                   <Route path="/information-sources" element={<InformationSources />} />
                   <Route path="/llm-costs" element={<LlmCosts />} />
                   <Route path="/service-status" element={<ServiceStatus />} />
