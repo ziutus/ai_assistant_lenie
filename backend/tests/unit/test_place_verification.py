@@ -37,11 +37,13 @@ def _resolved_geocode(display_name):
     return geo
 
 
-def _session_with_entities(entities, cached_geocode=None):
+def _session_with_entities(entities, cached_geocode=None, existing_org_row=None):
     session = MagicMock()
-    # first query() call -> entities; GeocodeCache lookups -> cached_geocode
+    # first query() call -> entities; GeocodeCache lookups -> cached_geocode;
+    # a (document_id, orgName, entity_text) collision check -> existing_org_row
     entity_query = MagicMock()
     entity_query.filter.return_value.all.return_value = entities
+    entity_query.filter.return_value.one_or_none.return_value = existing_org_row
     cache_query = MagicMock()
     cache_query.filter.return_value.one_or_none.return_value = cached_geocode
     session.query.side_effect = lambda model: cache_query if model is GeocodeCache else entity_query
@@ -336,7 +338,9 @@ class TestVerifyDocumentPlaces:
         with patch("library.place_verification._is_country", return_value=False):
             with patch("library.place_verification.geocode", return_value={"display_name": "Płytka Cieśnina, Iława"}):
                 with patch("library.place_verification.is_plausible_match", return_value=False):
-                    summary = verify_document_places(session, doc, "tekst")
+                    with patch("library.place_context_classifier.classify_place_context_candidates",
+                               return_value=[]):
+                        summary = verify_document_places(session, doc, "tekst")
 
         assert summary["resolved"] == []
         assert summary["tagged"] == []
@@ -482,6 +486,7 @@ class TestVerifyDocumentPlaces:
             "key": "Pilica", "entity_text": "Pilica", "context": "system Wisła-Narew-Pilica",
             "predicted_class": "not_place", "confidence": "high",
             "rationale": "Część nazwy systemu.", "model": "Bielik", "dropped": True,
+            "organization": False,
         }]
         with patch("library.place_verification._is_country", return_value=False):
             with patch("library.place_context_classifier.classify_place_context_candidates",
@@ -502,6 +507,7 @@ class TestVerifyDocumentPlaces:
             "key": "Kijów", "entity_text": "Kijów", "context": "stolica Ukrainy",
             "predicted_class": "place", "confidence": "high",
             "rationale": "Mowa o mieście.", "model": "Bielik", "dropped": False,
+            "organization": False,
         }]
         with patch("library.place_verification._is_country", return_value=False):
             with patch("library.place_context_classifier.classify_place_context_candidates",
@@ -528,6 +534,109 @@ class TestVerifyDocumentPlaces:
             summary = verify_document_places(session, doc, "tekst")
 
         assert summary["tagged"] == ["miejsce-ankara"]
+
+    def test_literal_visit_to_never_resolving_institution_stays_unresolved_place(self):
+        """doc #9394 regression: "Biały Dom" in "wizyta w Białym Domu" never
+        geocodes cleanly (LocationIQ's best match is an unrelated Moscow
+        building) and is used literally here — must stay an unresolved
+        geogName, not get retyped to orgName."""
+        ent = _entity("Biały Dom")
+        session = _session_with_entities([ent])
+        doc = self._doc()
+
+        place_result = [{
+            "key": "Biały Dom", "entity_text": "Biały Dom", "context": "wizyta w Białym Domu",
+            "predicted_class": "place", "confidence": "high",
+            "rationale": "Fizyczna wizyta w budynku.", "model": "Bielik",
+            "dropped": False, "organization": False,
+        }]
+        with patch("library.place_verification._is_country", return_value=False):
+            with patch("library.place_verification.geocode", return_value=None):
+                with patch("library.place_context_classifier.classify_place_context_candidates",
+                           return_value=place_result):
+                    summary = verify_document_places(session, doc, "wizyta w Białym Domu")
+
+        assert ent.entity_type == "geogName"
+        assert summary["resolved"] == []
+        assert summary["tagged"] == []
+
+    def test_metonymic_institution_mention_reclassified_as_organization(self):
+        """doc #9345 regression: "Na Kremlu rozumieją, że dopóki tak jest, to
+        oni kontrolują narrację" refers to Russia's leadership, not the
+        literal building. Must be retyped orgName and resolved through the
+        organization registry instead of staying stuck as an unresolved
+        place forever."""
+        ent = _entity("Kremlu")
+        ent.id = 10461
+        ent.variants = []
+        session = _session_with_entities([ent])
+        doc = self._doc()
+
+        org_result = [{
+            "key": "Kremlu", "entity_text": "Kremlu", "context": "Na Kremlu rozumieją, że...",
+            "predicted_class": "organization", "confidence": "high",
+            "rationale": "Podmiotem jest rosyjskie kierownictwo, nie budynek.", "model": "Bielik",
+            "dropped": True, "organization": True,
+        }]
+        fake_org = MagicMock()
+        fake_org.id = 51
+        fake_org.canonical_name = "Kreml"
+
+        with patch("library.place_verification._is_country", return_value=False):
+            with patch("library.place_verification.geocode", return_value=None):
+                with patch("library.place_context_classifier.classify_place_context_candidates",
+                           return_value=org_result):
+                    with patch("library.organization_registry.resolve_or_create",
+                               return_value=(fake_org, "canonical_matched")) as mock_resolve:
+                        summary = verify_document_places(session, doc, "Na Kremlu rozumieją, że...")
+
+        mock_resolve.assert_called_once_with(session, "Kremlu", [])
+        assert ent.entity_type == "orgName"
+        assert ent.geocode is None
+        assert ent.geocode_id is None
+        org_links = [
+            call.args[0] for call in session.add.call_args_list
+            if type(call.args[0]).__name__ == "DocumentOrganization"
+        ]
+        assert len(org_links) == 1
+        assert org_links[0].document_id == doc.id
+        assert org_links[0].organization_id == 51
+        assert org_links[0].document_entity_id == ent.id
+        assert summary["tagged"] == []  # never became a place tag
+
+    def test_organization_reclassification_merges_into_existing_orgname_row(self):
+        """Same document already has "Kreml" as a separate orgName row
+        (spaCy tagged one mention orgName, another geogName elsewhere in the
+        article) — merging into it instead of retyping in place must not
+        violate document_entities' (document_id, entity_type, entity_text)
+        unique constraint."""
+        ent = _entity("Kreml")
+        ent.id = 1
+        ent.variants = ["Kremla"]
+        ent.mention_count = 1
+        existing_org = _entity("Kreml", etype="orgName")
+        existing_org.id = 2
+        existing_org.mention_count = 3
+        existing_org.variants = []
+        existing_org.source = "ner"
+        session = _session_with_entities([ent], existing_org_row=existing_org)
+        doc = self._doc()
+
+        org_result = [{
+            "key": "Kreml", "entity_text": "Kreml", "context": "Kreml ogłosił sankcje.",
+            "predicted_class": "organization", "confidence": "high",
+            "rationale": "Metonimia.", "model": "Bielik",
+            "dropped": True, "organization": True,
+        }]
+        with patch("library.place_verification._is_country", return_value=False):
+            with patch("library.place_verification.geocode", return_value=None):
+                with patch("library.place_context_classifier.classify_place_context_candidates",
+                           return_value=org_result):
+                    verify_document_places(session, doc, "Kreml ogłosił sankcje.")
+
+        assert existing_org.mention_count == 4
+        assert "Kremla" in existing_org.variants
+        session.delete.assert_any_call(ent)
 
 
 class TestCanonicalizeAndMergePlaces:
