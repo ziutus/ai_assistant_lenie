@@ -9,6 +9,7 @@ const KEYS = {
   listFilters: "lenie_listFilters",
   readerSidebarVisible: "lenie_readerSidebarVisible",
   readerObsidianPanelVisible: "lenie_readerObsidianPanelVisible",
+  feedReviewFilters: "lenie_feedReviewFilters",
 } as const;
 
 // Older frontend versions mistakenly persisted the frontend address as the
@@ -121,4 +122,32 @@ export function loadReaderObsidianPanelVisible(): boolean {
 
 export function saveReaderObsidianPanelVisible(visible: boolean): void {
   localStorage.setItem(KEYS.readerObsidianPanelVisible, visible ? "1" : "0");
+}
+
+export interface FeedReviewFilters {
+  feedSourceId: string;
+  view: "new" | "later";
+}
+
+const DEFAULT_FEED_REVIEW_FILTERS: FeedReviewFilters = {
+  feedSourceId: "",
+  view: "new",
+};
+
+export function loadFeedReviewFilters(): FeedReviewFilters {
+  try {
+    const raw = localStorage.getItem(KEYS.feedReviewFilters);
+    if (!raw) return { ...DEFAULT_FEED_REVIEW_FILTERS };
+    const stored = JSON.parse(raw) as Partial<FeedReviewFilters>;
+    return {
+      feedSourceId: typeof stored.feedSourceId === "string" ? stored.feedSourceId : "",
+      view: stored.view === "later" ? "later" : "new",
+    };
+  } catch {
+    return { ...DEFAULT_FEED_REVIEW_FILTERS };
+  }
+}
+
+export function saveFeedReviewFilters(filters: FeedReviewFilters): void {
+  localStorage.setItem(KEYS.feedReviewFilters, JSON.stringify(filters));
 }
