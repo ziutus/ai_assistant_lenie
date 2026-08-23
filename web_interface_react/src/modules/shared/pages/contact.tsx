@@ -16,6 +16,54 @@ interface ContactRelationship {
   other_contact: { id: number; first_name: string | null; last_name: string };
 }
 
+type OrgType = "employment" | "jdg" | "board" | "ownership" | "other";
+type OrgStatus = "candidate" | "confirmed" | "rejected";
+
+interface ContactOrganization {
+  id: number;
+  org_type: OrgType;
+  organization_name: string;
+  role: string | null;
+  nip: string | null;
+  regon: string | null;
+  address: string | null;
+  is_primary: boolean;
+  is_current: boolean;
+  start_date: string | null;
+  end_date: string | null;
+  status: OrgStatus;
+  source_url: string | null;
+  notes: string | null;
+}
+
+const ORG_TYPE_LABELS: Record<OrgType, string> = {
+  employment: "Etat",
+  jdg: "JDG (własna działalność)",
+  board: "Funkcja w zarządzie",
+  ownership: "Udziały / współwłasność",
+  other: "Inne",
+};
+
+const ORG_STATUS_LABELS: Record<OrgStatus, string> = {
+  candidate: "niepotwierdzone",
+  confirmed: "potwierdzone",
+  rejected: "odrzucone",
+};
+
+const emptyOrgForm = {
+  org_type: "jdg" as OrgType,
+  organization_name: "",
+  role: "",
+  nip: "",
+  regon: "",
+  address: "",
+  is_primary: false,
+  is_current: true,
+  status: "candidate" as OrgStatus,
+  source_url: "",
+  notes: "",
+};
+
 interface ContactDetail {
   id: number;
   category_id: number;
@@ -31,6 +79,7 @@ interface ContactDetail {
   birthday: string | null;
   notes: string | null;
   relationships: ContactRelationship[];
+  organizations: ContactOrganization[];
 }
 
 const emptyForm = {
@@ -50,6 +99,13 @@ const emptyForm = {
 const otherName = (other: { first_name: string | null; last_name: string }) =>
   [other.first_name, other.last_name].filter(Boolean).join(" ");
 
+// CEIDG (Centralna Ewidencja i Informacja o Działalności Gospodarczej) — the
+// official Polish government JDG register, the authoritative source to
+// verify a sole-proprietorship candidate against (vs. the aggregator
+// mirrors — Panorama Firm, Aleo, GoWork — that OSINT search tends to find).
+const ceidgUrlForNip = (nip: string) =>
+  `https://aplikacja.ceidg.gov.pl/ceidg/ceidg.public.ui/searchdetails.aspx?Nip=${encodeURIComponent(nip.replace(/[^0-9]/g, ""))}`;
+
 const Contact = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -68,6 +124,10 @@ const Contact = () => {
   const [relTargetId, setRelTargetId] = React.useState<number | null>(null);
   const [relType, setRelType] = React.useState("");
   const [relNote, setRelNote] = React.useState("");
+
+  const [organizations, setOrganizations] = React.useState<ContactOrganization[]>([]);
+  const [orgForm, setOrgForm] = React.useState(emptyOrgForm);
+  const [showOrgForm, setShowOrgForm] = React.useState(false);
 
   const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
 
@@ -102,6 +162,7 @@ const Contact = () => {
         notes: contact.notes ?? "",
       });
       setRelationships(contact.relationships ?? []);
+      setOrganizations(contact.organizations ?? []);
     } catch (error: any) {
       console.error("Error fetching contact", error);
       setIsError(true);
@@ -114,6 +175,7 @@ const Contact = () => {
     fetchCategories();
     setForm(emptyForm);
     setRelationships([]);
+    setOrganizations([]);
     loadContact();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -215,6 +277,64 @@ const Contact = () => {
     }
   };
 
+  const addOrganization = async () => {
+    if (!orgForm.organization_name.trim()) {
+      setIsError(true);
+      setMessage("Podaj nazwę organizacji.");
+      return;
+    }
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.post(`${apiUrl}/contacts/${id}/organizations`, {
+        org_type: orgForm.org_type,
+        organization_name: orgForm.organization_name.trim(),
+        role: orgForm.role.trim() || undefined,
+        nip: orgForm.nip.trim() || undefined,
+        regon: orgForm.regon.trim() || undefined,
+        address: orgForm.address.trim() || undefined,
+        is_primary: orgForm.is_primary,
+        is_current: orgForm.is_current,
+        status: orgForm.status,
+        source_url: orgForm.source_url.trim() || undefined,
+        notes: orgForm.notes.trim() || undefined,
+      }, { headers });
+      setOrgForm(emptyOrgForm);
+      setShowOrgForm(false);
+      loadContact();
+    } catch (error: any) {
+      console.error("Error adding organization", error);
+      setIsError(true);
+      setMessage(`Nie udało się dodać organizacji: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const updateOrganizationStatus = async (organizationId: number, status: OrgStatus) => {
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.patch(`${apiUrl}/contact_organizations/${organizationId}`, { status }, { headers });
+      loadContact();
+    } catch (error: any) {
+      console.error("Error updating organization", error);
+      setIsError(true);
+      setMessage(`Nie udało się zaktualizować organizacji: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
+  const removeOrganization = async (organizationId: number) => {
+    setIsError(false);
+    setMessage("");
+    try {
+      await axios.delete(`${apiUrl}/contact_organizations/${organizationId}`, { headers });
+      loadContact();
+    } catch (error: any) {
+      console.error("Error deleting organization", error);
+      setIsError(true);
+      setMessage(`Nie udało się usunąć organizacji: ${error.response?.data?.message || error.message}`);
+    }
+  };
+
   const inputStyle: React.CSSProperties = { padding: "6px 10px", width: "100%", boxSizing: "border-box" };
   const outgoing = relationships.filter((r) => r.direction === "outgoing");
   const incoming = relationships.filter((r) => r.direction === "incoming");
@@ -295,6 +415,180 @@ const Contact = () => {
           </button>
         </div>
       </div>
+
+      {!isNew && (
+        <div style={{ marginTop: 24 }}>
+          <h3>Organizacje (etat, JDG, funkcje...)</h3>
+          <p style={{ color: "#667", fontSize: "0.85em", marginTop: -6 }}>
+            Jedna osoba może mieć kilka afiliacji naraz — np. etat gdzie indziej i osobną JDG do optymalizacji
+            podatkowej. Adres tutaj to adres rejestrowy tej organizacji, nie adres zamieszkania kontaktu.
+          </p>
+          {organizations.length === 0 && (
+            <p style={{ color: "#667" }}>Brak zapisanych organizacji.</p>
+          )}
+          {organizations.length > 0 && (
+            <ul style={{ listStyle: "none", padding: 0 }}>
+              {organizations.map((org) => (
+                <li
+                  key={org.id}
+                  style={{
+                    padding: "8px 10px", marginBottom: 6, borderRadius: 6,
+                    background: org.status === "candidate" ? "#fff8e6" : "#f5f7fa",
+                    border: `1px solid ${org.status === "candidate" ? "#e8d18a" : "#d5dde8"}`,
+                  }}
+                >
+                  <div>
+                    <strong>{org.organization_name}</strong>
+                    {" — "}
+                    {ORG_TYPE_LABELS[org.org_type]}
+                    {org.role && <span> ({org.role})</span>}
+                    {org.is_primary && <span title="Główna afiliacja"> ⭐</span>}
+                    {!org.is_current && <span style={{ color: "#a33" }}> [nieaktualne]</span>}
+                    <span style={{ marginLeft: 8, fontSize: "0.8em", color: "#667" }}>
+                      [{ORG_STATUS_LABELS[org.status]}]
+                    </span>
+                  </div>
+                  {(org.nip || org.regon) && (
+                    <div style={{ fontSize: "0.85em", color: "#667" }}>
+                      {org.nip && <span>NIP: {org.nip} </span>}
+                      {org.regon && <span>REGON: {org.regon}</span>}
+                    </div>
+                  )}
+                  {org.address && <div style={{ fontSize: "0.85em", color: "#667" }}>{org.address}</div>}
+                  {org.notes && <div style={{ fontSize: "0.85em", color: "#667" }}>{org.notes}</div>}
+                  <div style={{ marginTop: 4, display: "flex", gap: 8, alignItems: "center" }}>
+                    {org.nip && (
+                      <a
+                        href={ceidgUrlForNip(org.nip)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Sprawdź w oficjalnym rejestrze CEIDG"
+                        style={{ color: "#2b6cb0" }}
+                      >
+                        Sprawdź w CEIDG ↗
+                      </a>
+                    )}
+                    {org.status === "candidate" && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => updateOrganizationStatus(org.id, "confirmed")}
+                          style={{ border: "none", background: "none", color: "#2e7d43", cursor: "pointer", padding: 0 }}
+                        >
+                          ✓ Potwierdź
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateOrganizationStatus(org.id, "rejected")}
+                          style={{ border: "none", background: "none", color: "#a33", cursor: "pointer", padding: 0 }}
+                        >
+                          ✕ Odrzuć
+                        </button>
+                      </>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeOrganization(org.id)}
+                      style={{ border: "none", background: "none", color: "#a33", cursor: "pointer", padding: 0 }}
+                    >
+                      Usuń
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {!showOrgForm && (
+            <button className={"button"} type="button" onClick={() => setShowOrgForm(true)}>
+              + Dodaj organizację
+            </button>
+          )}
+          {showOrgForm && (
+            <div style={{ marginTop: 8, padding: 8, background: "#f5f7fa", border: "1px solid #d5dde8", borderRadius: 6 }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <select
+                  value={orgForm.org_type}
+                  onChange={(e) => setOrgForm({ ...orgForm, org_type: e.target.value as OrgType })}
+                  style={{ padding: "4px 8px" }}
+                >
+                  {(Object.keys(ORG_TYPE_LABELS) as OrgType[]).map((t) => (
+                    <option key={t} value={t}>{ORG_TYPE_LABELS[t]}</option>
+                  ))}
+                </select>
+                <input
+                  type="text" placeholder="Nazwa organizacji *" value={orgForm.organization_name}
+                  onChange={(e) => setOrgForm({ ...orgForm, organization_name: e.target.value })}
+                  style={{ padding: "4px 8px", minWidth: 220 }}
+                />
+                <input
+                  type="text" placeholder="Rola / stanowisko" value={orgForm.role}
+                  onChange={(e) => setOrgForm({ ...orgForm, role: e.target.value })}
+                  style={{ padding: "4px 8px", minWidth: 160 }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                <input
+                  type="text" placeholder="NIP" value={orgForm.nip}
+                  onChange={(e) => setOrgForm({ ...orgForm, nip: e.target.value })}
+                  style={{ padding: "4px 8px", width: 130 }}
+                />
+                <input
+                  type="text" placeholder="REGON" value={orgForm.regon}
+                  onChange={(e) => setOrgForm({ ...orgForm, regon: e.target.value })}
+                  style={{ padding: "4px 8px", width: 130 }}
+                />
+                <input
+                  type="text" placeholder="Adres rejestrowy organizacji" value={orgForm.address}
+                  onChange={(e) => setOrgForm({ ...orgForm, address: e.target.value })}
+                  style={{ padding: "4px 8px", minWidth: 220 }}
+                />
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+                <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  <input
+                    type="checkbox" checked={orgForm.is_primary}
+                    onChange={(e) => setOrgForm({ ...orgForm, is_primary: e.target.checked })}
+                  />
+                  Główna afiliacja
+                </label>
+                <label style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  <input
+                    type="checkbox" checked={orgForm.is_current}
+                    onChange={(e) => setOrgForm({ ...orgForm, is_current: e.target.checked })}
+                  />
+                  Aktualne
+                </label>
+                <select
+                  value={orgForm.status}
+                  onChange={(e) => setOrgForm({ ...orgForm, status: e.target.value as OrgStatus })}
+                  style={{ padding: "4px 8px" }}
+                >
+                  {(Object.keys(ORG_STATUS_LABELS) as OrgStatus[]).map((s) => (
+                    <option key={s} value={s}>{ORG_STATUS_LABELS[s]}</option>
+                  ))}
+                </select>
+              </div>
+              <input
+                type="text" placeholder="Źródło (URL)" value={orgForm.source_url}
+                onChange={(e) => setOrgForm({ ...orgForm, source_url: e.target.value })}
+                style={{ padding: "4px 8px", marginTop: 6, width: "100%", boxSizing: "border-box" }}
+              />
+              <textarea
+                placeholder="Notatki" value={orgForm.notes} rows={2}
+                onChange={(e) => setOrgForm({ ...orgForm, notes: e.target.value })}
+                style={{ padding: "4px 8px", marginTop: 6, width: "100%", boxSizing: "border-box" }}
+              />
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <button className={"button"} type="button" onClick={addOrganization}>Zapisz organizację</button>
+                <button className={"button"} type="button" onClick={() => { setShowOrgForm(false); setOrgForm(emptyOrgForm); }}>
+                  Anuluj
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {!isNew && (
         <div style={{ marginTop: 24 }}>

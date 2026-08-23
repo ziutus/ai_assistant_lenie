@@ -444,3 +444,188 @@ class TestContactLookupResultsDelete:
             response = contact_lookup_results_delete(999)
 
         assert response[1] == 404
+
+
+def _make_organization(id_=1, contact_id=1, org_type="jdg", organization_name="Vente", status="confirmed", **extra):
+    defaults = dict(
+        contact_id=contact_id, org_type=org_type, organization_name=organization_name,
+        role=None, nip=None, regon=None, address=None,
+        is_primary=False, is_current=True, start_date=None, end_date=None,
+        status=status, source_url=None, notes=None,
+        created_at=dt.datetime(2026, 8, 23, 12, 0),
+        updated_at=dt.datetime(2026, 8, 23, 12, 0),
+    )
+    defaults.update(extra)
+    return SimpleNamespace(id=id_, **defaults)
+
+
+class TestContactOrganizationsAdd:
+    def test_adds_jdg_candidate(self, monkeypatch):
+        from library.contact_routes import contact_organizations_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/organizations", method="POST",
+            json={
+                "org_type": "jdg", "organization_name": "Vente Włodzimierz Bartczak",
+                "status": "candidate", "nip": "7261038790", "regon": "100950320",
+                "address": "ul. Chłopickiego 26, Łódź",
+            },
+        ):
+            response = contact_organizations_add(1)
+
+        assert response[1] == 200
+        session.add.assert_called_once()
+        added = session.add.call_args[0][0]
+        assert added.contact_id == 1
+        assert added.org_type == "jdg"
+        assert added.organization_name == "Vente Włodzimierz Bartczak"
+        assert added.status == "candidate"
+        assert added.nip == "7261038790"
+        assert added.is_primary is False
+        assert added.is_current is True
+
+    def test_defaults_status_to_confirmed(self, monkeypatch):
+        from library.contact_routes import contact_organizations_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/organizations", method="POST",
+            json={"org_type": "employment", "organization_name": "Acme sp. z o.o.", "is_primary": True},
+        ):
+            response = contact_organizations_add(1)
+
+        assert response[1] == 200
+        added = session.add.call_args[0][0]
+        assert added.status == "confirmed"
+        assert added.is_primary is True
+
+    def test_missing_contact_is_404(self, monkeypatch):
+        from library.contact_routes import contact_organizations_add
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/999/organizations", method="POST",
+            json={"org_type": "jdg", "organization_name": "Vente"},
+        ):
+            response = contact_organizations_add(999)
+
+        assert response[1] == 404
+        session.add.assert_not_called()
+
+    def test_invalid_org_type_is_400(self, monkeypatch):
+        from library.contact_routes import contact_organizations_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/organizations", method="POST",
+            json={"org_type": "freelance", "organization_name": "Vente"},
+        ):
+            response = contact_organizations_add(1)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
+    def test_missing_organization_name_is_400(self, monkeypatch):
+        from library.contact_routes import contact_organizations_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/organizations", method="POST", json={"org_type": "jdg"},
+        ):
+            response = contact_organizations_add(1)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
+
+class TestContactOrganizationsUpdate:
+    def test_promotes_candidate_to_confirmed(self, monkeypatch):
+        from library.contact_routes import contact_organizations_update
+
+        row = _make_organization(id_=6, status="candidate")
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contact_organizations/6", method="PATCH",
+            json={"status": "confirmed", "nip": "7261038790"},
+        ):
+            response = contact_organizations_update(6)
+
+        assert response[1] == 200
+        assert row.status == "confirmed"
+        assert row.nip == "7261038790"
+        session.commit.assert_called_once()
+
+    def test_invalid_status_is_400(self, monkeypatch):
+        from library.contact_routes import contact_organizations_update
+
+        row = _make_organization(id_=6)
+        session = MagicMock()
+        session.get.return_value = row
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contact_organizations/6", method="PATCH", json={"status": "maybe"},
+        ):
+            response = contact_organizations_update(6)
+
+        assert response[1] == 400
+
+    def test_missing_organization_is_404(self, monkeypatch):
+        from library.contact_routes import contact_organizations_update
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contact_organizations/999", method="PATCH", json={"status": "confirmed"},
+        ):
+            response = contact_organizations_update(999)
+
+        assert response[1] == 404
+
+
+class TestContactOrganizationsDelete:
+    def test_deletes_organization(self, monkeypatch):
+        from library.contact_routes import contact_organizations_delete
+
+        session = MagicMock()
+        session.get.return_value = _make_organization(id_=6)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contact_organizations/6", method="DELETE"):
+            response = contact_organizations_delete(6)
+
+        assert response[1] == 200
+        session.delete.assert_called_once()
+
+    def test_missing_organization_is_404(self, monkeypatch):
+        from library.contact_routes import contact_organizations_delete
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contact_organizations/999", method="DELETE"):
+            response = contact_organizations_delete(999)
+
+        assert response[1] == 404
