@@ -2,7 +2,7 @@
 
 import re
 from sqlalchemy import select
-from library.db.models import FeedSource, Collection, DiscoverySource
+from library.db.models import FeedSource, Collection, ContentGroup, DiscoverySource
 
 ALLOWED_TYPES = {"rss", "wordpress", "youtube_channel", "json_api"}
 ALLOWED_STATES = {"URL_ADDED", "READY_FOR_EMBEDDING"}
@@ -17,18 +17,28 @@ def validate_feed_values(values: dict) -> dict:
             raise ValueError("youtube_channel requires channel_id and no url")
     elif not result.get("url") or result.get("channel_id"):
         raise ValueError("this feed type requires url and no channel_id")
+    author_name = result.get("author_name")
+    if author_name is not None:
+        if not isinstance(author_name, str) or not author_name.strip() or len(author_name.strip()) > 500:
+            raise ValueError("author_name must be a non-empty string up to 500 characters")
+        result["author_name"] = author_name.strip()
+    if result["type"] != "youtube_channel" and result.get("author_name"):
+        raise ValueError("author_name is supported only for youtube_channel feeds")
     if result.get("default_state", "URL_ADDED") not in ALLOWED_STATES:
         raise ValueError("default_state is not allowed")
-    for field in ("tags", "field_mapping", "skip_url_patterns", "skip_title_patterns"):
+    for field in ("tags", "default_topic_group_ids", "field_mapping", "skip_url_patterns", "skip_title_patterns"):
         value = result.get(field, [] if field != "field_mapping" else {})
         if field == "field_mapping":
             if not isinstance(value, dict) or any(
                 not isinstance(k, str) or not isinstance(v, str) for k, v in value.items()
             ):
                 raise ValueError("field_mapping must be an object of strings")
+        elif field == "default_topic_group_ids":
+            if not isinstance(value, list) or any(not isinstance(v, int) or isinstance(v, bool) or v < 1 for v in value):
+                raise ValueError("default_topic_group_ids must be a list of positive integers")
         elif not isinstance(value, list) or any(not isinstance(v, str) for v in value):
             raise ValueError(f"{field} must be a list of strings")
-        if field != "field_mapping":
+        if field not in {"field_mapping", "default_topic_group_ids"}:
             if len(value) > 100 or any(len(v) > 256 for v in value):
                 raise ValueError(f"{field} has too many or too-long patterns")
             for pattern in value:
@@ -48,9 +58,11 @@ def feed_to_dict(feed: FeedSource) -> dict:
         "type": feed.type,
         "url": feed.url,
         "channel_id": feed.channel_id,
+        "author_name": feed.author_name,
         "language": feed.language,
         "collection_id": feed.collection_id,
         "tags": feed.tags or [],
+        "default_topic_group_ids": feed.default_topic_group_ids or [],
         "auto_import": feed.auto_import,
         "disabled": feed.disabled,
         "auto_import_after": feed.auto_import_after.isoformat() if feed.auto_import_after else None,
@@ -74,6 +86,13 @@ def list_feeds(session):
 
 def resolve_references(session, values: dict) -> dict:
     values = validate_feed_values(values)
+    topic_ids = values.get("default_topic_group_ids", [])
+    if topic_ids:
+        groups = session.scalars(
+            select(ContentGroup).where(ContentGroup.id.in_(set(topic_ids)), ContentGroup.archived_at.is_(None))
+        ).all()
+        if len(groups) != len(set(topic_ids)) or any(group.kind != "topic" for group in groups):
+            raise ValueError("default_topic_group_ids must reference active topic groups")
     if "collection" in values:
         name = values.pop("collection")
         row = session.scalars(select(Collection).where(Collection.name == name)).one_or_none()
