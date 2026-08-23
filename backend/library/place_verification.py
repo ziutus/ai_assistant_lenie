@@ -33,6 +33,17 @@ geopolitical_region_gazetteer.py) never reach the live geocoder at all:
 `_get_or_create_geocode()` synthesizes an approximate, always-resolved
 GeocodeCache row for them instead, since a live LocationIQ query for these
 names is unreliable by construction (doc #9394's "Sahel" investigation).
+
+A name that never resolves at all (the geocoder has nothing plausible to
+offer) is also run past place_context_classifier.py, which now recognizes a
+third outcome besides place/not_place: a government-seat building name used
+metonymically for the institution housed there ("Biały Dom ogłosił...", "Na
+Kremlu rozumieją, że..." — docs #9394/#9345). These mentions permanently fail
+to geocode (LocationIQ's best match for a bare "Biały Dom" is an unrelated
+Moscow office building) yet aren't nonsense either — `_reclassify_as_
+organization()` retypes them to orgName and resolves them through
+library/organization_registry.py instead of leaving them stuck as an
+unverified place forever.
 """
 
 import logging
@@ -40,7 +51,7 @@ import re
 
 from unidecode import unidecode
 
-from library.db.models import DocumentEntity, GeocodeCache
+from library.db.models import DocumentEntity, DocumentOrganization, GeocodeCache
 from library.geocode_aliases import geocode_alias, geocode_country_hint
 from library.geopolitical_region_gazetteer import geopolitical_region_centroid
 from library.locationiq_client import canonical_place_name, geocode, is_plausible_match
@@ -231,6 +242,52 @@ def remove_orphaned_tag(session, document, deleted_entity: DocumentEntity) -> st
     return tag
 
 
+def _reclassify_as_organization(session, doc, ent: DocumentEntity) -> None:
+    """Retype a place entity used metonymically for the institution housed
+    there (doc #9345's "Na Kremlu rozumieją, że..." — Russia's leadership,
+    not the building; doc #9394's "Biały Dom" in a different sentence would
+    read the same way) into orgName and resolve it through the same global
+    registry ordinary orgName entities go through (library/organization_
+    registry.py), instead of leaving it stuck as a place that permanently
+    fails to geocode (LocationIQ's best match for a bare "Biały Dom" is an
+    unrelated Moscow office building, not the White House — see
+    place_context_classifier.py's module docstring).
+
+    entity_text may already exist as a separate orgName row for this
+    document (spaCy tagged one mention geogName and another orgName in the
+    same article) — merge into it instead of retyping in place, which would
+    violate document_entities' (document_id, entity_type, entity_text)
+    unique constraint.
+    """
+    from library.entity_service import merge_document_entities
+    from library.organization_registry import resolve_or_create
+
+    existing_org_row = (
+        session.query(DocumentEntity)
+        .filter(
+            DocumentEntity.document_id == doc.id,
+            DocumentEntity.entity_type == "orgName",
+            DocumentEntity.entity_text == ent.entity_text,
+        )
+        .one_or_none()
+    )
+    if existing_org_row is not None:
+        merge_document_entities(ent, existing_org_row, target_source=existing_org_row.source)
+        session.delete(ent)
+        return
+
+    ent.entity_type = "orgName"
+    ent.geocode = None
+    ent.geocode_id = None
+    organization, confidence = resolve_or_create(session, ent.entity_text, ent.variants or [])
+    session.add(DocumentOrganization(
+        document_id=doc.id,
+        organization_id=organization.id,
+        document_entity_id=ent.id,
+        confidence=confidence,
+    ))
+
+
 def _canonicalize_and_merge_places(session, candidates: list[DocumentEntity]) -> list[DocumentEntity]:
     """Rename entity_text to the geocoder's canonical spelling and physically
     merge document_entities rows that converge on the same canonical place
@@ -322,6 +379,12 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
 
     # canonical name -> {"mentions": summed count, "surface": most-mentioned NER form}
     groups: dict[str, dict] = {}
+    entity_by_canonical: dict[str, DocumentEntity] = {}
+    # entity_text -> entity, for candidates the geocoder never resolved at all
+    # (a real place the geocoder just doesn't have, OR a government-seat name
+    # used metonymically — geocode_aliases.py can't fix the latter, since
+    # there IS no single correct place to alias it to).
+    unresolved_by_text: dict[str, DocumentEntity] = {}
     for ent in candidates:
         if ent.geocode is not None and ent.geocode.resolved:
             canonical = canonical_place_name(ent.entity_text, ent.geocode.display_name or "")
@@ -331,6 +394,9 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
             if mentions > group["surface_mentions"]:
                 group["surface"] = ent.entity_text
                 group["surface_mentions"] = mentions
+            entity_by_canonical[canonical] = ent  # canonicalized above, entity_text == canonical
+        else:
+            unresolved_by_text.setdefault(ent.entity_text, ent)
 
     tagged: list[str] = []
     if groups:
@@ -362,6 +428,12 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                     "Context verification dropped %d non-place mentions for doc %s: %s",
                     len(dropped_names), doc.id, dropped_names,
                 )
+            for result in context_results:
+                if not result["organization"]:
+                    continue
+                ent = entity_by_canonical.get(result["key"])
+                if ent is not None:
+                    _reclassify_as_organization(session, doc, ent)
 
         confirmed = [name for name, g in groups.items() if g["mentions"] >= AUTO_CONFIRM_MENTIONS]
         # The LLM searches the text for mention snippets, so it gets the surface
@@ -384,6 +456,39 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
                 existing_set.add(tag)
         if tagged:
             doc.tags = ",".join(existing + tagged)
+
+    if unresolved_by_text:
+        from library.place_context_classifier import classify_place_context_candidates
+
+        unresolved_groups = {text_: {"surface": text_} for text_ in unresolved_by_text}
+        unresolved_results = classify_place_context_candidates(text, doc.title or "", unresolved_groups, doc.id)
+        if unresolved_results:
+            from library.db.models import NerContextClassification
+
+            session.add_all([
+                NerContextClassification(
+                    document_id=doc.id,
+                    entity_type="placeName",
+                    entity_text=result["entity_text"],
+                    predicted_class=result["predicted_class"],
+                    confidence=result["confidence"],
+                    rationale=result["rationale"],
+                    context_excerpt=result["context"][:2000],
+                    model=result["model"],
+                    dropped=result["dropped"],
+                )
+                for result in unresolved_results
+            ])
+            organization_texts = [result["key"] for result in unresolved_results if result["organization"]]
+            for text_ in organization_texts:
+                ent = unresolved_by_text.get(text_)
+                if ent is not None:
+                    _reclassify_as_organization(session, doc, ent)
+            if organization_texts:
+                logger.info(
+                    "Context verification reclassified %d unresolved place(s) as organizations for doc %s: %s",
+                    len(organization_texts), doc.id, organization_texts,
+                )
 
     logger.info(
         "place verification doc=%s: %d geocoded, %d resolved, tags: %s",
