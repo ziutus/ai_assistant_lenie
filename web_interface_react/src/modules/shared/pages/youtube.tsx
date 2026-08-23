@@ -7,6 +7,7 @@ import InputsForAllExceptLink from "../components/SharedInputs/InputsForAllExcep
 import { NavLink, useParams } from "react-router-dom";
 import FormButtons from "../components/FormButtons/formButtons";
 import { AuthorizationContext } from '../context/authorizationContext';
+import { markCaptionsFetching, isCaptionsFetching } from "../utils/youtubeCaptionsFetchStatus";
 
 
 const Youtube = () => {
@@ -66,11 +67,38 @@ const Youtube = () => {
   const [captionMessage, setCaptionMessage] = React.useState("");
   const [paragraphizing, setParagraphizing] = React.useState(false);
   const [paragraphMessage, setParagraphMessage] = React.useState("");
+  // Covers the case where the fetch was triggered from /list (or another tab)
+  // and this page was opened while it's still running — see
+  // utils/youtubeCaptionsFetchStatus.ts for why a plain isLoading flag here
+  // isn't enough.
+  const [fetchingElsewhere, setFetchingElsewhere] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!id || !isCaptionsFetching(id)) {
+      setFetchingElsewhere(false);
+      return;
+    }
+    setFetchingElsewhere(true);
+    const interval = setInterval(() => {
+      if (!isCaptionsFetching(id)) {
+        clearInterval(interval);
+        setFetchingElsewhere(false);
+        handleGetLinkByID(id).then(() => null);
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [id]);
 
   const fetchCaptions = async () => {
     if (!id) return;
     setCaptionMessage("");
-    const result = await handleYoutubeRetryCaptions(id, { localMessage: true });
+    markCaptionsFetching(id, true);
+    let result;
+    try {
+      result = await handleYoutubeRetryCaptions(id, { localMessage: true });
+    } finally {
+      markCaptionsFetching(id, false);
+    }
     if ("error" in result) {
       setCaptionMessage(`Nie udało się pobrać napisów: ${result.error}`);
       return;
@@ -119,7 +147,9 @@ const Youtube = () => {
               Stan: {formik.values.processing_status || "brak"}
               {formik.values.processing_error_code && ` · ${formik.values.processing_error_code}`}
             </div>
-            {canFetchCaptions && (
+            {fetchingElsewhere ? (
+              <div style={{ marginTop: 10, color: "#0369a1" }}>⏳ Pobieram napisy… (uruchomione z listy dokumentów)</div>
+            ) : canFetchCaptions && (
               <button type="button" className="button" style={{ marginTop: 10 }} onClick={fetchCaptions} disabled={isLoading}>
                 {isLoading
                   ? "Pobieram napisy…"
