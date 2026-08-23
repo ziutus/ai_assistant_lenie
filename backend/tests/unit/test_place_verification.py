@@ -178,6 +178,25 @@ class TestGetOrCreateGeocodeGeopoliticalRegion:
         assert row.osm_class == "place"
         assert row.osm_type == "region"
 
+    def test_known_region_upgrades_a_stale_negative_cache_entry(self):
+        """A pre-centroid LocationIQ miss for Sahel must not block E010's
+        deterministic fallback forever (doc #9394)."""
+        session = self._session()
+        stale = MagicMock(spec=GeocodeCache)
+        stale.resolved = False
+        stale.display_name = "Region Sahel, Burkina Faso"
+        session.query.return_value.filter.return_value.one_or_none.return_value = stale
+
+        with patch("library.place_verification.geocode") as mock_geocode:
+            row = _get_or_create_geocode(session, "Sahel")
+
+        assert row is stale
+        assert row.resolved is True
+        assert row.display_name == "Sahel"
+        assert row.lat == 15.0
+        assert row.lon == 10.0
+        mock_geocode.assert_not_called()
+
     def test_unknown_query_still_goes_through_live_geocoder(self):
         session = self._session()
 
@@ -372,6 +391,35 @@ class TestVerifyDocumentPlaces:
         assert ent.entity_text == "Al-Faszir"
         assert summary["resolved"] == ["Al-Faszir"]
         assert summary["tagged"] == ["miejsce-al-faszir"]
+
+    def test_merged_span_merges_into_existing_clean_place_before_rename(self):
+        """doc #9394: a recovered ``Al-Faszirze Emiraty`` coexists with an
+        ordinary ``Al-Faszir`` mention.  The recovery must defer its rename
+        until canonicalization can merge the two rows; otherwise the next ORM
+        query autoflushes a duplicate unique key and rolls back every place.
+        """
+        merged = _entity("Al-Faszirze Emiraty")
+        clean = _entity("Al-Faszir")
+        session = _session_with_entities([merged, clean])
+        doc = self._doc()
+        hit = {
+            "display_name": "Al-Faszir, Al Fasher, Darfur Północny, Sudan",
+            "lat": "13.6", "lon": "25.3", "class": "place", "type": "city", "importance": 0.4,
+        }
+
+        def fake_geocode(query):
+            return None if query == "Al-Faszirze Emiraty" else hit
+
+        with patch("library.place_verification._is_country", return_value=False):
+            with patch("library.place_verification.geocode", side_effect=fake_geocode):
+                with patch("library.place_verification.is_plausible_match", return_value=True):
+                    with patch("library.article_tagging.confirm_places_with_llm", return_value=["Al-Faszir"]):
+                        summary = verify_document_places(session, doc, "tekst")
+
+        assert clean.entity_text == "Al-Faszir"
+        assert clean.mention_count == 2
+        assert summary["resolved"] == ["Al-Faszir", "Al-Faszir"]
+        session.delete.assert_called_once_with(merged)
 
     def test_countries_are_skipped_entirely(self):
         ent = _entity("Ukraina", etype="placeName")

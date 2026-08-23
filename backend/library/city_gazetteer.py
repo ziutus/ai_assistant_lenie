@@ -37,6 +37,10 @@ from unidecode import unidecode
 # separated by whitespace match adjacent words (optionally hyphenated, so
 # "al faszir*" also matches the "Al-Faszir"/"Al-Fasziru" hyphenated surface).
 _CITY_DATA: list[tuple[str, tuple[str, ...]]] = [
+    # doc #9394: spaCy keeps the accusative "Gazę" as its lemma, so the
+    # single-word nominative-preference path never gets a chance to recover
+    # the canonical city name.
+    ("Gaza", ("gaza", "gaze", "gazy", "gazie", "gazo")),
     ("Omdurman", ("omdurman*",)),
     ("Al-Faszir", ("al faszir*",)),
     # Two accepted transliterations of the same city — kept as separate

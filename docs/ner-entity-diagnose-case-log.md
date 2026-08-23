@@ -153,6 +153,7 @@ zawsze idzie przez PR, nie przez REST/SQL na NAS:
 | T9 | Fałszywy pozytyw spaCy / artefakt segmentacji | Fragment tekstu (artefakt STT, oderwany prefiks) błędnie oznaczony jako encja | osierocone "Al-" | E014 |
 | T10 | Niejednoznaczna nazwa organizacji (kolizja) | Ta sama nazwa/skrót oznacza różne, niepowiązane organizacje | "Africa Corps" (Rosja 2023+) vs "Afrika Korps" (III Rzesza) | E003 |
 | T11 | Stare dane pod już naprawionym mechanizmem | Rekord powstał przed wdrożeniem poprawki; obecny kod poprawnie obsługuje ten kształt danych | Organization 485 (ECFR) | E013 |
+| T12 | Kolizja kanonikalizacji w transakcji | Poprawiony wariant encji zbiega się z już istniejącym wierszem, a ORM próbuje zmienić klucz unikalny przed etapem scalenia | "Al-Faszirze Emiraty" + "Al-Faszir" | E015 |
 
 Jeśli nowy przypadek nie pasuje do żadnej kategorii, dopisz nowy kod (T12,
 ...) zamiast naciągać istniejącą.
@@ -334,3 +335,15 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Poprawka:** tylko dane — nowa globalna reguła `ner_exclusions` (id=16, `POST /ner_exclusions`); zepsuta encja w dokumencie (`document_entities.id=13026`) usunięta przez `DELETE /website_entities/13026`.
 - **Test regresyjny:** regresja dodana jako test dokumentujący dokładnie ten przypadek (bez zmiany kodu produkcyjnego).
 - **Status:** tylko dane, bez zmiany kodu.
+
+### E015 — Recovery "Al-Faszirze Emiraty" blokuje całą weryfikację miejsc (dok. #9394, 2026-08-23)
+
+- **Typ encji:** geogName/placeName
+- **Kategoria:** T12 — kolizja kanonikalizacji w transakcji (wtórna wobec T1)
+- **Zdanie źródłowe:** "Według doniesień w miesiącach poprzedzających masakrę w Al-Faszirze Emiraty miały jednak zwiększyć dostawy broni."
+- **Objaw:** job `entity_enrichment` kończył się statusem `done`, ale z ostrzeżeniem `UniqueViolation` dla `(9394, geogName, "Al-Faszir")`; rollback weryfikacji miejsc zostawiał bez geokodowania także niezależne encje (`Omdurman`, `Kordofan Północny`, `Sahel`, `Biały Dom` itd.).
+- **Przyczyna źródłowa:** poprawka T1 z PR #535 zmieniała `entity_text` odzyskanego spanu na `Al-Faszir` w pętli geokodowania. Gdy dokument zawierał już czysty `Al-Faszir`, następne zapytanie ORM wywoływało autoflush przed `_canonicalize_and_merge_places()`, naruszając unikalność `(document_id, entity_type, entity_text)`.
+- **Poprawka:** kod — `place_verification.verify_document_places()` zachowuje źródłowy tekst do etapu `_canonicalize_and_merge_places()`, przekazuje jedynie odzyskany geokod i scala oba wiersze zanim zmieni nazwę. Równolegle `city_gazetteer.py` kanonikalizuje "Gazę" do "Gaza".
+- **Doprecyzowanie cache:** `_get_or_create_geocode()` aktualizuje negatywny wpis cache dla znanego makroregionu do syntetycznego centroidu, więc stary miss `Sahel` nie blokuje już fallbacku z E010.
+- **Test regresyjny:** `backend/tests/unit/test_place_verification.py` (odzyskany i czysty `Al-Faszir` w jednym dokumencie), `backend/tests/unit/test_city_gazetteer.py`, `backend/tests/unit/test_ner_client.py` ("Gazę" → "Gaza").
+- **Status:** żywy bug naprawiony w kodzie; wymaga ponownego wzbogacenia dokumentu #9394 po wdrożeniu.

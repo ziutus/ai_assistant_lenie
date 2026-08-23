@@ -121,22 +121,32 @@ def _get_or_create_geocode(session, query: str) -> GeocodeCache:
     so no relabeling is needed and is_plausible_match() keeps comparing the
     original short query.
     """
-    row = session.query(GeocodeCache).filter(GeocodeCache.query == query).one_or_none()
-    if row is not None:
-        return row
-
     centroid = geopolitical_region_centroid(query)
     if centroid is not None:
         # Known geopolitical macro-region (Sahel, Bliski Wschód...) — never
         # query LocationIQ at all, see geopolitical_region_gazetteer.py's
         # module docstring for why a live query can't be trusted here.
         lat, lon = centroid
-        row = GeocodeCache(
-            query=query, resolved=True, display_name=query,
-            lat=lat, lon=lon, osm_class="place", osm_type="region", importance=None, raw=None,
-        )
-        session.add(row)
+        row = session.query(GeocodeCache).filter(GeocodeCache.query == query).one_or_none()
+        if row is None:
+            row = GeocodeCache(query=query)
+            session.add(row)
+        # A negative cache entry may predate the curated macro-region
+        # fallback.  The centroid is authoritative, so upgrade that entry
+        # instead of preserving a historical LocationIQ miss forever.
+        row.resolved = True
+        row.display_name = query
+        row.lat = lat
+        row.lon = lon
+        row.osm_class = "place"
+        row.osm_type = "region"
+        row.importance = None
+        row.raw = None
         session.flush()
+        return row
+
+    row = session.query(GeocodeCache).filter(GeocodeCache.query == query).one_or_none()
+    if row is not None:
         return row
 
     hit = geocode(query)
@@ -365,15 +375,25 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
     for index, ent in enumerate(candidates, start=1):
         if progress_callback is not None:
             progress_callback(index, len(candidates))
+        resolved_name = ent.entity_text
         if ent.geocode_id is None:
             ent.geocode = _get_or_create_geocode(session, ent.entity_text)
             if not ent.geocode.resolved:
                 fixed = _retry_after_stripping_country(session, ent.entity_text)
                 if fixed is not None:
-                    ent.entity_text, ent.geocode = fixed
+                    # Do not rename the row here.  A clean mention of the
+                    # recovered place may already be present in this document
+                    # (doc #9394 has both "Al-Faszir" and the broken
+                    # "Al-Faszirze Emiraty").  Renaming before
+                    # _canonicalize_and_merge_places() gets a query-triggered
+                    # autoflush and violates the unique document/type/text
+                    # constraint before that later phase can merge the rows.
+                    # The resolved geocode carries the canonical display name;
+                    # canonicalization below will merge and rename safely.
+                    resolved_name, ent.geocode = fixed
             checked += 1
         if ent.geocode is not None and ent.geocode.resolved:
-            resolved_names.append(ent.entity_text)
+            resolved_names.append(resolved_name)
 
     candidates = _canonicalize_and_merge_places(session, candidates)
 

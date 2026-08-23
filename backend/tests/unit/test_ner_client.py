@@ -543,6 +543,18 @@ class TestCityGazetteerOverride:
             },
         }
 
+    def test_gaza_accusative_resolves_to_canonical_name(self):
+        """doc #9394: the only mention is accusative ``Gazę``."""
+        entities = [{"text": "Gazę", "label": "placeName", "lemma": "Gazę",
+                     "pos": "NOUN", "morph": "Case=Acc"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Gaza"): {
+                "count": 1,
+                "variants": ["Gazę"],
+                "raw_lemmas": ["Gazę"],
+            },
+        }
+
     def test_hyphenated_city_resolves_across_spelling_variants(self):
         entities = [
             {"text": "Al-Fasziru", "label": "geogName", "lemma": "Al-Fasziru", "pos": "NOUN", "morph": "Case=Gen"},
