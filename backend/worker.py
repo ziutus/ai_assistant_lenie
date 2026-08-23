@@ -69,7 +69,9 @@ def execute(session, job: Job, *, storage=None, work_dir: str = "/app/work") -> 
     raise ValueError("unsupported job")
 
 
-def handle_job_failure(session, job: Job, exc: Exception) -> None:
+def handle_job_failure(
+    session, job: Job, exc: Exception, *, terminal_status: str = "failed", result: dict | None = None,
+) -> None:
     """Record a failed attempt before scheduling its retry."""
     error = str(exc)[:2000]
     if job.attempt < job.max_attempts:
@@ -78,7 +80,10 @@ def handle_job_failure(session, job: Job, exc: Exception) -> None:
         finish(session, job, "failed", error=error)
         retry(session, job)
     else:
-        finish(session, job, "failed", error=error)
+        if result is None:
+            finish(session, job, terminal_status, error=error)
+        else:
+            finish(session, job, terminal_status, result=result, error=error)
 
 
 def scheduler(session, now: dt.datetime) -> None:
@@ -223,9 +228,20 @@ def main() -> int:
             finish(session, job, "done", result=result)
         except Exception as exc:
             from library.document_processing_service import DocumentJobCancelled
+            from library.entity_enrichment_service import EntityEnrichmentCriticalError
 
             if isinstance(exc, DocumentJobCancelled):
                 finish(session, job, "cancelled", error=str(exc))
+                continue
+            if isinstance(exc, EntityEnrichmentCriticalError):
+                details = exc.job_result(int(job.parameters.get("document_id", 0)))
+                if exc.requires_manual_intervention:
+                    finish(session, job, "needs_intervention", result=details, error=str(exc)[:2000])
+                else:
+                    handle_job_failure(
+                        session, job, exc,
+                        terminal_status="needs_intervention", result=details,
+                    )
                 continue
             logger.exception("job failed id=%s", job.id)
             handle_job_failure(session, job, exc)

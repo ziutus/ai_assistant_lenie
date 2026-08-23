@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from library.db.models import Document, Job
@@ -20,6 +21,34 @@ from library.job_queue import enqueue, heartbeat
 
 ENTITY_ENRICHMENT = "entity_enrichment"
 ACTIVE_STATUSES = {"queued", "running", "cancel_requested"}
+
+
+class EntityEnrichmentCriticalError(RuntimeError):
+    """A rollback in a required enrichment stage.
+
+    Place and person resolution are the purpose of an ``entity_enrichment``
+    job, so a failed transaction there must never be reported as a successful
+    job with a warning.  The worker uses ``requires_manual_intervention`` to
+    distinguish a deterministic database/integrity failure from a transient
+    dependency failure that may be retried safely.
+    """
+
+    def __init__(self, stage_errors: dict[str, Exception]):
+        self.stage_errors = stage_errors
+        self.requires_manual_intervention = any(
+            isinstance(error, IntegrityError) for error in stage_errors.values()
+        )
+        stages = ", ".join(stage_errors)
+        details = "; ".join(f"{stage}: {error}" for stage, error in stage_errors.items())
+        super().__init__(f"critical entity-enrichment stage failure ({stages}): {details}")
+
+    def job_result(self, document_id: int) -> dict:
+        return {
+            "document_id": document_id,
+            "failed_stages": list(self.stage_errors),
+            "failure_kind": "integrity" if self.requires_manual_intervention else "transient",
+            "action": "manual_intervention" if self.requires_manual_intervention else "retry",
+        }
 
 
 def _text_digest(document: Document) -> str:
@@ -87,7 +116,7 @@ def execute_entity_enrichment(session: Session, job: Job) -> dict:
             stages[phase] = {"label": label, "current": current, "total": total}
             heartbeat(progress_session, job.id, {"document_id": document_id, "stages": dict(stages)})
 
-    def verify_places() -> tuple[list[str], str | None]:
+    def verify_places() -> tuple[list[str], Exception | None]:
         from library.db.engine import get_session
         from library.llm_usage.context import llm_usage_context
         from library.place_verification import verify_document_places
@@ -107,11 +136,11 @@ def execute_entity_enrichment(session: Session, job: Job) -> dict:
             return summary["tagged"], None
         except Exception as exc:
             stage_session.rollback()
-            return [], str(exc)
+            return [], exc
         finally:
             stage_session.close()
 
-    def resolve_persons() -> tuple[int, str | None]:
+    def resolve_persons() -> tuple[int, Exception | None]:
         from library.db.engine import get_session
         from library.llm_usage.context import llm_usage_context
         from library.person_registry import resolve_document_persons
@@ -131,7 +160,7 @@ def execute_entity_enrichment(session: Session, job: Job) -> dict:
             return len(summary["linked"]), None
         except Exception as exc:
             stage_session.rollback()
-            return 0, str(exc)
+            return 0, exc
         finally:
             stage_session.close()
 
@@ -140,10 +169,16 @@ def execute_entity_enrichment(session: Session, job: Job) -> dict:
         person_future = executor.submit(resolve_persons)
         result["place_tags"], place_error = place_future.result()
         result["persons_linked"], person_error = person_future.result()
-    if place_error:
-        result["warnings"].append(f"place verification: {place_error}")
-    if person_error:
-        result["warnings"].append(f"person resolution: {person_error}")
+    critical_errors = {
+        stage: error
+        for stage, error in {
+            "verify_places": place_error,
+            "resolve_persons": person_error,
+        }.items()
+        if error is not None
+    }
+    if critical_errors:
+        raise EntityEnrichmentCriticalError(critical_errors)
 
     report(session, "find_pipelines", "Infrastruktura", 0, 0)
     try:
