@@ -38,3 +38,32 @@ GEOCODE_ALIASES: dict[str, str] = {
 def geocode_alias(canonical_name: str) -> str | None:
     """The English/OSM query to retry when `canonical_name` failed to geocode."""
     return GEOCODE_ALIASES.get(canonical_name)
+
+
+# ISO 3166-1 alpha-2 country-bias hints for names whose *spelling* is already
+# correct but whose bare query loses LocationIQ's ranking to an unrelated,
+# more "important" place elsewhere. Live case (doc #9394): "Kosti" (a real
+# Sudanese city, White Nile state capital) returns the "Kost" castle in
+# Czechia as its top hit (higher `importance`); the castle's OSM class
+# ("historic") is correctly rejected by is_plausible_match()'s class
+# allowlist, but the query never gets another try.
+#
+# A text alias (as in GEOCODE_ALIASES) doesn't fit here — the spelling is
+# already right, only the ranking needs disambiguating, and appending the
+# country to the query text hits the exact scoring bug documented above
+# (live-verified 2026-08-23: querying "Kosti, Sudan" DOES return the correct
+# "Kosti, Nil Biały, Sudan" administrative boundary, but is_plausible_match()
+# then compares the 12-char qualified query against the 5-char "Kosti" part
+# and scores 0.59, below threshold). Passing `countrycodes` as a separate
+# LocationIQ API parameter (locationiq_client.geocode()) biases the ranking
+# without touching the query text, so the plausibility check still compares
+# the original, short "Kosti" against the correct hit and scores 1.0.
+GEOCODE_COUNTRY_HINTS: dict[str, str] = {
+    "Kosti": "sd",
+}
+
+
+def geocode_country_hint(canonical_name: str) -> str | None:
+    """ISO 3166-1 alpha-2 country code to bias the retry when `canonical_name`
+    failed to geocode and has no (or a failed) GEOCODE_ALIASES entry."""
+    return GEOCODE_COUNTRY_HINTS.get(canonical_name)

@@ -112,3 +112,21 @@ class TestGeocode:
         with patch("library.locationiq_client.requests.get", return_value=_response(body=[])):
             with patch("library.locationiq_client._api_key", return_value="pk.test"):
                 assert geocode("Kijów") is None
+
+    def test_countrycodes_forwarded_when_given(self):
+        """Doc #9394: bare "Kosti" ranks a Czech castle above the Sudanese
+        city; countrycodes=sd biases LocationIQ's ranking without touching
+        the query text (query text changes break is_plausible_match's ratio
+        — see geocode_aliases.GEOCODE_COUNTRY_HINTS)."""
+        with patch("library.locationiq_client.requests.get", return_value=_response(body=[])) as mock_get:
+            with patch("library.locationiq_client._api_key", return_value="pk.test"):
+                geocode("Kosti", countrycodes="sd")
+        params = mock_get.call_args.kwargs["params"]
+        assert params["countrycodes"] == "sd"
+        assert params["q"] == "Kosti"
+
+    def test_countrycodes_omitted_when_not_given(self):
+        with patch("library.locationiq_client.requests.get", return_value=_response(body=[])) as mock_get:
+            with patch("library.locationiq_client._api_key", return_value="pk.test"):
+                geocode("Kijów")
+        assert "countrycodes" not in mock_get.call_args.kwargs["params"]

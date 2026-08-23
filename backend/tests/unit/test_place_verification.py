@@ -185,6 +185,61 @@ class TestGetOrCreateGeocodeGeopoliticalRegion:
         mock_geocode.assert_called_once_with("Warszawa")
 
 
+class TestGetOrCreateGeocodeCountryHintFallback:
+    """doc #9394: "Kosti" is a real Sudanese city (White Nile state capital,
+    "Wizyta w Kosti, stolicy tego stanu...") but LocationIQ's bare-query top
+    hit is the "Kost" castle in Czechia (higher `importance`), correctly
+    rejected by is_plausible_match()'s OSM-class allowlist ("historic" isn't
+    a plausible place class). Live-verified 2026-08-23: retrying with
+    countrycodes="sd" (not a query-text qualifier — that breaks the
+    similarity ratio the same way a country-qualified alias does) returns
+    the correct "Kosti, Nil Biały, Sudan" administrative boundary."""
+
+    def _session(self):
+        session = MagicMock()
+        session.query.return_value.filter.return_value.one_or_none.return_value = None
+        return session
+
+    def test_polish_query_fails_then_country_hint_succeeds(self):
+        session = self._session()
+        czech_castle = {
+            "display_name": "Kost, Podkost, Libošovice, Czechy",
+            "class": "historic", "type": "castle",
+        }
+        sudan_city = {
+            "display_name": "Kosti, Nil Biały, Sudan",
+            "lat": "12.65", "lon": "32.23", "class": "boundary", "type": "administrative",
+        }
+
+        def fake_geocode(query, countrycodes=None):
+            if countrycodes == "sd":
+                return sudan_city
+            return czech_castle
+
+        with patch("library.place_verification.geocode", side_effect=fake_geocode):
+            with patch(
+                "library.place_verification.is_plausible_match",
+                side_effect=lambda q, hit: hit is sudan_city,
+            ):
+                row = _get_or_create_geocode(session, "Kosti")
+
+        assert row.resolved is True
+        assert row.display_name == "Kosti, Nil Biały, Sudan"
+        assert row.lat == "12.65"
+
+    def test_no_country_hint_registered_stays_unresolved(self):
+        """"Cieśnina Ormuz" has no geocode_country_hint entry — behavior unchanged."""
+        session = self._session()
+
+        with patch("library.place_verification.geocode",
+                   return_value={"display_name": "Płytka Cieśnina, Iława"}) as mock_geocode:
+            with patch("library.place_verification.is_plausible_match", return_value=False):
+                row = _get_or_create_geocode(session, "Cieśnina Ormuz")
+
+        mock_geocode.assert_called_once_with("Cieśnina Ormuz")  # country hint never attempted
+        assert row.resolved is False
+
+
 class TestRetryAfterStrippingCountry:
     """doc #9394: geogName "Al-Faszirze Emiraty" — NER merged a place with an
     adjacent country mention across a missing comma. The retry strips the

@@ -41,7 +41,7 @@ import re
 from unidecode import unidecode
 
 from library.db.models import DocumentEntity, GeocodeCache
-from library.geocode_aliases import geocode_alias
+from library.geocode_aliases import geocode_alias, geocode_country_hint
 from library.geopolitical_region_gazetteer import geopolitical_region_centroid
 from library.locationiq_client import canonical_place_name, geocode, is_plausible_match
 
@@ -101,6 +101,14 @@ def _get_or_create_geocode(session, query: str) -> GeocodeCache:
     cached row stays keyed by `query` (the original, NER-canonicalized name)
     with its display_name relabeled back to that name (_relabel_alias_hit),
     so tags/display spelling and future lookups are unaffected by the alias.
+
+    If that still fails (or no alias is registered), retry once more with
+    geocode_aliases.geocode_country_hint() — a country-code bias for names
+    whose spelling is already right but whose bare query loses LocationIQ's
+    ranking to an unrelated place elsewhere (doc #9394: "Kosti" ranks a
+    Czech castle over the Sudanese city). The query text itself is unchanged,
+    so no relabeling is needed and is_plausible_match() keeps comparing the
+    original short query.
     """
     row = session.query(GeocodeCache).filter(GeocodeCache.query == query).one_or_none()
     if row is not None:
@@ -128,6 +136,12 @@ def _get_or_create_geocode(session, query: str) -> GeocodeCache:
             alias_hit = geocode(alias)
             if alias_hit is not None and is_plausible_match(alias, alias_hit):
                 hit, resolved = _relabel_alias_hit(query, alias_hit), True
+    if not resolved:
+        country_code = geocode_country_hint(query)
+        if country_code is not None:
+            hint_hit = geocode(query, countrycodes=country_code)
+            if hint_hit is not None and is_plausible_match(query, hint_hit):
+                hit, resolved = hint_hit, True
     row = GeocodeCache(
         query=query,
         resolved=resolved,
