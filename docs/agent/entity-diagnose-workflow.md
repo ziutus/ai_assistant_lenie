@@ -10,8 +10,16 @@ poprawki w kodzie, tak jak przy dokumencie #9394 ("Al-Faszirze Emiraty",
 PR #535): znajdź encję → znajdź zdanie źródłowe → ustal, który mechanizm
 pipeline'u zawiódł (albo: czy w ogóle zawiódł, czy to stare dane pod już
 naprawionym mechanizmem) → **wyjaśnij przyczynę i zaproponuj poprawkę,
-zaczekaj na zgodę użytkownika** → napraw we właściwym miejscu → zregresuj →
-wdróż → zweryfikuj na żywym dokumencie.
+zaczekaj na zgodę użytkownika** → **deleguj implementację do Codex, oceń
+wynik** → zregresuj → wdróż → zweryfikuj na żywym dokumencie →
+zaktualizuj dokumentację.
+
+Implementację (Etap 4) robi Codex, nie Claude Code bezpośrednio — Claude
+Code diagnozuje (Etapy 1-3), formułuje zadanie dla Codex, a potem ocenia
+wynik (poprawność, zakres, jakość testu regresyjnego) zamiast pisać kod
+samodzielnie. To ustalony pattern repo: "Codex koduje, Claude review"
+(`docs/agent/windows-codex-sandbox.md`, sekcja "Historia dla tego
+repozytorium", 2026-07-13).
 
 To diagnoza pojedynczych, zgłoszonych przypadków, nie audyt hurtowy. Nie
 przeszukuj całej bazy w poszukiwaniu podobnych błędów, chyba że użytkownik
@@ -185,27 +193,62 @@ bezpośredniej mutacji danych produkcyjnych (PATCH/POST/UPDATE przez REST
 albo SQL na `192.168.200.7`) bez wyraźnej zgody użytkownika na TĘ
 konkretną propozycję.** Sam odczyt/diagnoza (SELECT, GET) nie wymaga zgody.
 
-## Etap 4: zaimplementuj poprawkę (dopiero po zgodzie z Etapu 3)
+## Etap 4: deleguj implementację do Codex, oceń wynik (dopiero po zgodzie z Etapu 3)
 
-1. Feature branch (nigdy commit wprost na `main`).
-2. Zmień właściwy plik z tabeli powyżej. Gazetteery (`city_gazetteer.py`,
-   `geo_feature_gazetteer.py`, `country_gazetteer.py`) i
-   `geocode_aliases.py` to zamknięte, ręcznie kuratorowane listy — dopisuj
-   pojedynczy, potwierdzony przypadek, nie buduj ogólnych heurystyk "na
-   zapas".
-3. Dodaj test regresyjny oparty na rzeczywistym zdaniu źródłowym z Etapu 1
-   (patrz istniejące testy w `backend/tests/unit/test_place_verification.py`,
-   `test_country_gazetteer.py`, `test_city_gazetteer.py`,
-   `test_geocode_aliases.py` jako wzór — regresje tam cytują dokładny
-   dokument/zdanie, które je spowodowało).
-4. Uruchom testy celowane, potem `ruff check` na zmienionych plikach:
+Claude Code w tym etapie nie edytuje kodu produkcyjnego samodzielnie —
+formułuje zadanie i ocenia wynik. Kod pisze Codex.
 
-   ```powershell
-   cd backend
-   $env:PYTHONPATH='.'
-   .\.venv\Scripts\python.exe -m pytest tests\unit\test_<dotyczący_plik>.py -q
-   uv run ruff check library/<plik>.py tests/unit/test_<plik>.py
-   ```
+1. Feature branch (nigdy commit wprost na `main`) — załóż go przed
+   przekazaniem zadania Codeksowi, żeby jego zmiany od razu trafiały na
+   właściwy branch.
+2. Zbuduj jedno precyzyjne zadanie dla Codex, oparte wyłącznie na tym, co
+   zaakceptował użytkownik w Etapie 3:
+   - dokładny plik i mechanizm z tabeli w Etapie 2 (gazetteer / alias /
+     registry / klasyfikator kontekstu),
+   - konkretny, potwierdzony przypadek (encja, dokument, dokładne zdanie
+     źródłowe z Etapu 1) — Codex ma dopisać pojedynczy wpis do tego
+     przypadku, **nie** budować ogólnej heurystyki "na zapas". Gazetteery
+     (`city_gazetteer.py`, `geo_feature_gazetteer.py`,
+     `country_gazetteer.py`) i `geocode_aliases.py` to zamknięte, ręcznie
+     kuratorowane listy,
+   - wymóg testu regresyjnego cytującego dokładnie to zdanie źródłowe
+     (wzór: `test_place_verification.py`, `test_country_gazetteer.py`,
+     `test_city_gazetteer.py`, `test_geocode_aliases.py` — regresje tam
+     cytują dokument/zdanie, które je spowodowało),
+   - wymóg zielonych testów celowanych i czystego `ruff check` na
+     zmienionych plikach.
+3. Przekaż zadanie przez `Agent` (`subagent_type: "codex:codex-rescue"`),
+   tryb write-capable (domyślny dla tego subagenta — nie trzeba dodawać
+   `--write` ręcznie). Skill `gpt-5-4-prompting` pomaga wyostrzyć prompt
+   przed wywołaniem. Jedno wywołanie na zadanie; ewentualne poprawki
+   (pkt 5) — kolejne wywołanie z `--resume`, nie ręczna edycja przez
+   Claude.
+4. Oceń wynik Codeksa, zanim cokolwiek pójdzie dalej (PR/deploy):
+   - diff dotyka wyłącznie pliku(ów) ustalonych w pkt 2 — żadnych
+     "przy okazji" refaktorów czy dodatkowych, niezaakceptowanych zmian,
+   - dopisany wpis/zmiana odpowiada dokładnie zaakceptowanemu przypadkowi,
+     nie uogólnia go,
+   - test regresyjny faktycznie cytuje dokument/zdanie z Etapu 1 i realnie
+     odtwarza zepsute dane (nie jest tautologiczny — sprawdź, że failowałby
+     bez zmiany),
+   - testy celowane i `ruff check` przechodzą; uruchom sam, jeśli Codex nie
+     podał wyniku wprost albo wynik budzi wątpliwość:
+
+     ```powershell
+     cd backend
+     $env:PYTHONPATH='.'
+     .\.venv\Scripts\python.exe -m pytest tests\unit\test_<dotyczący_plik>.py -q
+     uv run ruff check library/<plik>.py tests/unit/test_<plik>.py
+     ```
+
+5. Jeśli wynik jest niepełny, błędny albo wykracza poza ustalony zakres —
+   nie poprawiaj tego cicho sam. Wróć do Codeksa z konkretną, punktową
+   korektą (`Agent` + `codex:codex-rescue`, `--resume`; patrz skill
+   `codex-result-handling` co do prezentowania wyniku). Zaimplementuj
+   poprawkę bezpośrednio sam wyłącznie jeśli delegacja do Codeksa nie jest
+   dostępna (np. sandbox bez prawa zapisu na tej maszynie,
+   `docs/agent/windows-codex-sandbox.md`) — i powiedz to wprost
+   użytkownikowi zamiast ukrywać, że ominąłeś Codeksa.
 
 ## Etap 5: PR, deploy, weryfikacja
 
@@ -234,6 +277,31 @@ konkretną propozycję.** Sam odczyt/diagnoza (SELECT, GET) nie wymaga zgody.
    `?chapter=<n>`), że encja już nie pojawia się błędnie, i podaj ten URL
    użytkownikowi do potwierdzenia.
 
+## Etap 6: zaktualizuj dokumentację
+
+Cel: żeby kolejna diagnoza od razu rozpoznała ten mechanizm jako już
+naprawiony w Etapie 2b, zamiast powtarzać tę samą analizę od zera — tak jak
+dziś działają wiersze o PR #535 i #517 w tabelach Etapu 2.
+
+1. Jeśli poprawka zmieniła albo doprecyzowała "Przyczynę"/"Gdzie naprawić"
+   dla objawu w tabeli właściwej dla typu encji (Etap 2: miejsca / osoby /
+   organizacje) — zaktualizuj ten wiersz w tym pliku: numer PR, plik,
+   krótki opis mechanizmu, tak samo jak istniejące wpisy.
+2. Jeśli mechanizm jest opisany też gdzie indziej — osobnym planie
+   (`docs/geo-place-ner-plan.md`, `docs/ner-integration-plan.md`,
+   `docs/organization-ner-alias-plan.md`) albo w docstringu modułu
+   (`library/place_verification.py`, `library/person_registry.py`,
+   `library/organization_registry.py` itd.) — zaktualizuj też tam, nie
+   tylko w tym workflow. Nie zostawiaj dwóch rozjeżdżających się opisów
+   tego samego mechanizmu.
+3. Zmiany w dokumentacji wchodzą do tego samego PR co kod (Etap 5 pkt 1),
+   nie osobnym PR-em — Codex może je dopisać razem z kodem w Etapie 4, albo
+   dopisz je sam po review, jeśli Codex ich nie uwzględnił.
+4. Jeśli to był wyłącznie przypadek z Etapu 2b (stare dane pod już
+   naprawionym mechanizmem, bez zmiany kodu) — nie ma nowego mechanizmu do
+   udokumentowania; pomiń ten etap. Test regresyjny dodany w Etapie 4 już
+   dokumentuje ten przypadek.
+
 ## Kryterium ukończenia
 
 - zdiagnozowana kategoria i lokalizacja przyczyny są jednoznaczne, poparte
@@ -242,6 +310,10 @@ konkretną propozycję.** Sam odczyt/diagnoza (SELECT, GET) nie wymaga zgody.
   naprawionym mechanizmem,
 - użytkownik dostał w Etapie 3 wyjaśnienie przyczyny i propozycję poprawki
   i wyraził na nią zgodę, zanim ruszyła implementacja/mutacja danych na NAS,
+- implementację (jeśli zakres obejmował zmianę kodu) wykonał Codex przez
+  `codex:codex-rescue`, a Claude Code jej wynik ocenił względem zakresu
+  zaakceptowanego w Etapie 3 (Etap 4 pkt 4) — nie napisał kodu sam, chyba że
+  delegacja była niedostępna i zostało to wprost powiedziane użytkownikowi,
 - poprawka ma test regresyjny cytujący dokument/zdanie, które ją
   spowodowało — również wtedy, gdy okazało się, że kod już działa poprawnie
   i zmiana ograniczyła się do naprawy danych (Etap 2b pkt 4),
@@ -250,4 +322,7 @@ konkretną propozycję.** Sam odczyt/diagnoza (SELECT, GET) nie wymaga zgody.
   naprawionym mechanizmem), sam test dokumentujący przypadek wystarcza —
   nie twórz kodu na siłę tam, gdzie nic nie jest złamane,
 - konkretny zgłoszony przypadek jest naprawiony w danych (nie tylko w
-  kodzie na przyszłość) i zweryfikowany w przeglądarce.
+  kodzie na przyszłość) i zweryfikowany w przeglądarce,
+- dokumentacja (Etap 6) jest zaktualizowana, jeśli poprawka wprowadziła
+  albo doprecyzowała mechanizm — kolejna diagnoza tego samego objawu
+  powinna trafić od razu na Etap 2b, a nie odkrywać to samo od nowa.
