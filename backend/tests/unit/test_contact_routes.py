@@ -249,3 +249,198 @@ class TestContactRelationships:
 
         assert response[1] == 200
         session.delete.assert_called_once()
+
+
+def _make_lookup_result(id_=1, contact_id=1, lookup_type="phone", status="no_results", **extra):
+    defaults = dict(
+        contact_id=contact_id, lookup_type=lookup_type, status=status,
+        url=None, query_used=None, notes=None,
+        searched_at=dt.datetime(2026, 8, 23, 12, 0),
+    )
+    defaults.update(extra)
+    return SimpleNamespace(id=id_, **defaults)
+
+
+class TestContactLookupResultsAdd:
+    def test_adds_no_results_phone_lookup(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/lookup_results", method="POST",
+            json={"lookup_type": "phone", "status": "no_results", "query_used": "+48 725 428 453"},
+        ):
+            response = contact_lookup_results_add(1)
+
+        assert response[1] == 200
+        session.add.assert_called_once()
+        added = session.add.call_args[0][0]
+        assert added.contact_id == 1
+        assert added.lookup_type == "phone"
+        assert added.status == "no_results"
+        assert added.query_used == "+48 725 428 453"
+
+    def test_adds_linkedin_candidate(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/lookup_results", method="POST",
+            json={
+                "lookup_type": "linkedin", "status": "candidate",
+                "url": "https://www.linkedin.com/in/adam-wojtysiak/",
+                "notes": "Superliga sp. z o.o. — miasto/zawód niepotwierdzone",
+            },
+        ):
+            response = contact_lookup_results_add(1)
+
+        assert response[1] == 200
+        added = session.add.call_args[0][0]
+        assert added.lookup_type == "linkedin"
+        assert added.status == "candidate"
+        assert added.url == "https://www.linkedin.com/in/adam-wojtysiak/"
+
+    def test_missing_contact_is_404(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_add
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/999/lookup_results", method="POST",
+            json={"lookup_type": "phone", "status": "no_results"},
+        ):
+            response = contact_lookup_results_add(999)
+
+        assert response[1] == 404
+        session.add.assert_not_called()
+
+    def test_invalid_lookup_type_is_400(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/lookup_results", method="POST",
+            json={"lookup_type": "facebook", "status": "no_results"},
+        ):
+            response = contact_lookup_results_add(1)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
+    def test_invalid_status_is_400(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_add
+
+        session = MagicMock()
+        session.get.return_value = _make_contact(id_=1)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contacts/1/lookup_results", method="POST",
+            json={"lookup_type": "phone", "status": "maybe"},
+        ):
+            response = contact_lookup_results_add(1)
+
+        assert response[1] == 400
+        session.add.assert_not_called()
+
+
+class TestContactLookupResultsUpdate:
+    def test_confirming_linkedin_candidate_updates_contact_url(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_update
+
+        contact = _make_contact(id_=1, linkedin_url=None)
+        lookup_result = _make_lookup_result(
+            id_=7, contact_id=1, lookup_type="linkedin", status="candidate",
+            url="https://www.linkedin.com/in/adam-wojtysiak/",
+        )
+        session = MagicMock()
+        session.get.side_effect = lambda model, id_: {
+            ("ContactLookupResult", 7): lookup_result,
+            ("Contact", 1): contact,
+        }.get((model.__name__ if hasattr(model, "__name__") else model, id_))
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contact_lookup_results/7", method="PATCH", json={"status": "confirmed"},
+        ):
+            response = contact_lookup_results_update(7)
+
+        assert response[1] == 200
+        assert lookup_result.status == "confirmed"
+        assert contact.linkedin_url == "https://www.linkedin.com/in/adam-wojtysiak/"
+
+    def test_rejecting_candidate_does_not_touch_contact(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_update
+
+        contact = _make_contact(id_=1, linkedin_url=None)
+        lookup_result = _make_lookup_result(
+            id_=8, contact_id=1, lookup_type="linkedin", status="candidate",
+            url="https://www.linkedin.com/in/someone-else/",
+        )
+        session = MagicMock()
+        session.get.side_effect = lambda model, id_: {
+            ("ContactLookupResult", 8): lookup_result,
+            ("Contact", 1): contact,
+        }.get((model.__name__ if hasattr(model, "__name__") else model, id_))
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contact_lookup_results/8", method="PATCH", json={"status": "rejected"},
+        ):
+            response = contact_lookup_results_update(8)
+
+        assert response[1] == 200
+        assert lookup_result.status == "rejected"
+        assert contact.linkedin_url is None
+
+    def test_missing_lookup_result_is_404(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_update
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context(
+            "/contact_lookup_results/999", method="PATCH", json={"status": "confirmed"},
+        ):
+            response = contact_lookup_results_update(999)
+
+        assert response[1] == 404
+
+
+class TestContactLookupResultsDelete:
+    def test_deletes_lookup_result(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_delete
+
+        session = MagicMock()
+        session.get.return_value = _make_lookup_result(id_=3)
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contact_lookup_results/3", method="DELETE"):
+            response = contact_lookup_results_delete(3)
+
+        assert response[1] == 200
+        session.delete.assert_called_once()
+
+    def test_missing_lookup_result_is_404(self, monkeypatch):
+        from library.contact_routes import contact_lookup_results_delete
+
+        session = MagicMock()
+        session.get.return_value = None
+        monkeypatch.setattr("library.contact_routes.get_scoped_session", lambda: session)
+        app = Flask(__name__)
+        with app.test_request_context("/contact_lookup_results/999", method="DELETE"):
+            response = contact_lookup_results_delete(999)
+
+        assert response[1] == 404
