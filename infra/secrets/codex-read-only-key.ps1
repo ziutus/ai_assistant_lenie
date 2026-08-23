@@ -7,6 +7,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Add-Type -AssemblyName System.Security
 $nasHost = "192.168.200.7"
 $nasDocker = "/share/CACHEDEV4_DATA/.qpkg/container-station/bin/docker"
 $keyName = "codex-read-only"
@@ -33,7 +34,7 @@ function Protect-Key([string]$key) {
 
 function Unprotect-Key() {
     if (-not (Test-Path -LiteralPath $secretPath)) {
-        throw "Brak lokalnego sekretu $secretPath. Utwórz go raz przez -Create."
+        throw "No local secret at $secretPath. Create it once with -Create."
     }
     $plain = [Security.Cryptography.ProtectedData]::Unprotect(
         [IO.File]::ReadAllBytes($secretPath), $null,
@@ -47,8 +48,9 @@ function Unprotect-Key() {
 }
 
 function New-ReadOnlyKey() {
-    $bytes = [byte[]]::new(32)
-    [Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $bytes = New-Object byte[] 32
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    $rng.GetBytes($bytes)
     try {
         return "lk_ro_" + (-join ($bytes | ForEach-Object { $_.ToString("x2") }))
     } finally {
@@ -59,7 +61,8 @@ function New-ReadOnlyKey() {
 function Get-KeyHash([string]$key) {
     $bytes = [Text.Encoding]::UTF8.GetBytes($key)
     try {
-        return -join ([Security.Cryptography.SHA256]::HashData($bytes) | ForEach-Object { $_.ToString("x2") })
+        $sha256 = [Security.Cryptography.SHA256]::Create()
+        return -join ($sha256.ComputeHash($bytes) | ForEach-Object { $_.ToString("x2") })
     } finally {
         [Array]::Clear($bytes, 0, $bytes.Length)
     }
@@ -67,10 +70,10 @@ function Get-KeyHash([string]$key) {
 
 if ($Create) {
     if (Test-Path -LiteralPath $secretPath) {
-        throw "Lokalny sekret już istnieje: $secretPath. Nie nadpisuję go."
+        throw "A local secret already exists at $secretPath. It will not be overwritten."
     }
     if ((Invoke-NasPsql "SELECT 1 FROM api_keys WHERE name = '$keyName';") -contains "1") {
-        throw "Klucz '$keyName' już istnieje w bazie. Nie można odzyskać jego plaintextu; usuń go świadomie albo wybierz nową nazwę."
+        throw "The key named $keyName already exists in the database. Its plaintext cannot be recovered; choose another name or revoke it deliberately."
     }
 
     # The local CSPRNG creates the plaintext. Only its SHA-256 is sent to and
@@ -85,7 +88,7 @@ if ($Create) {
         $key = $null
         $keyHash = $null
     }
-    Write-Output "Klucz read-only utworzony. Zaszyfrowany sekret zapisano w $secretPath"
+    Write-Output "Read-only key created. Encrypted secret saved to $secretPath"
     return
 }
 
