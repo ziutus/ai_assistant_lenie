@@ -775,7 +775,7 @@ def get_jobs():
     status = request.args.get("status") or None
     if job_type is not None and job_type not in JOB_TYPES:
         abort(400, "unsupported job type")
-    allowed_statuses = {"queued", "running", "done", "failed", "cancel_requested", "cancelled"}
+    allowed_statuses = {"queued", "running", "done", "failed", "needs_intervention", "cancel_requested", "cancelled"}
     if status is not None and status not in allowed_statuses:
         abort(400, "unsupported job status")
     query = select(Job)

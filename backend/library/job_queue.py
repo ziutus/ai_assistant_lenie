@@ -83,7 +83,7 @@ def heartbeat(session, job_id: str, progress: dict | None = None) -> None:
 
 
 def finish(session, job: Job, status: str, *, result=None, error=None) -> None:
-    if status not in {"done", "failed", "cancelled"}:
+    if status not in {"done", "failed", "cancelled", "needs_intervention"}:
         raise ValueError("invalid final job status")
     job.status, job.result, job.error, job.finished_at = status, result, error, dt.datetime.now(dt.timezone.utc)
     session.commit()

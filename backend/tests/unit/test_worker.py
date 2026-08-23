@@ -71,6 +71,26 @@ def test_final_failure_is_not_retried(monkeypatch):
     retry.assert_not_called()
 
 
+def test_final_critical_failure_needs_manual_intervention(monkeypatch):
+    session = MagicMock()
+    job = MagicMock(attempt=3, max_attempts=3)
+    finish = MagicMock()
+    retry = MagicMock()
+    monkeypatch.setattr(worker, "finish", finish)
+    monkeypatch.setattr(worker, "retry", retry)
+
+    details = {"failed_stages": ["verify_places"], "failure_kind": "transient"}
+    worker.handle_job_failure(
+        session, job, RuntimeError("place verification unavailable"),
+        terminal_status="needs_intervention", result=details,
+    )
+
+    finish.assert_called_once_with(
+        session, job, "needs_intervention", result=details, error="place verification unavailable",
+    )
+    retry.assert_not_called()
+
+
 def test_disabled_legacy_pull_task_is_not_scheduled(monkeypatch):
     session = MagicMock()
     enqueue = MagicMock()

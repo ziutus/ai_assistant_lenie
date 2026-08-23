@@ -347,3 +347,14 @@ Numeruj kolejno (`E015`, `E016`, ...).
 - **Doprecyzowanie cache:** `_get_or_create_geocode()` aktualizuje negatywny wpis cache dla znanego makroregionu do syntetycznego centroidu, więc stary miss `Sahel` nie blokuje już fallbacku z E010.
 - **Test regresyjny:** `backend/tests/unit/test_place_verification.py` (odzyskany i czysty `Al-Faszir` w jednym dokumencie), `backend/tests/unit/test_city_gazetteer.py`, `backend/tests/unit/test_ner_client.py` ("Gazę" → "Gaza").
 - **Status:** żywy bug naprawiony w kodzie; wymaga ponownego wzbogacenia dokumentu #9394 po wdrożeniu.
+
+### E016 — Krytyczny rollback weryfikacji miejsc oznaczony jako sukces joba (dok. #9394, 2026-08-23)
+
+- **Typ encji:** n/d — niezawodność workflow NER
+- **Kategoria:** T12 — kolizja kanonikalizacji w transakcji
+- **Zdanie źródłowe:** n/d — wtórny objaw E015.
+- **Objaw:** `entity_enrichment` dla #9394 zapisywał status `done` z `result.warnings`, mimo że rollback `verify_places` anulował geokodowanie i klasyfikację kontekstu całego dokumentu.
+- **Przyczyna źródłowa:** `execute_entity_enrichment()` łapał każdy wyjątek etapów `verify_places` i `resolve_persons`, zwracał jego tekst jako warning, a `worker.py` poprawnie interpretował zwrócony wynik jako sukces.
+- **Poprawka:** kod + migracja — krytyczne błędy etapów propagują `EntityEnrichmentCriticalError`; błędy integralności przechodzą bezpośrednio do `needs_intervention`, błędy przejściowe są retryowane (30 s / 120 s / 600 s), a po ostatniej próbie również kończą się `needs_intervention`. Lookup infrastruktury pozostał etapem opcjonalnym i może zwrócić warning.
+- **Test regresyjny:** `backend/tests/unit/test_entity_enrichment_service.py`, `backend/tests/unit/test_worker.py`.
+- **Status:** żywy bug naprawiony w kodzie; wymaga deployu migracji i obrazu backendu.
