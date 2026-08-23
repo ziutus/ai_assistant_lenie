@@ -3023,6 +3023,45 @@ class ContactRelationship(Base):
         )
 
 
+class ContactLookupResult(Base):
+    """One OSINT lookup attempt for a contact (e.g. from /lenie-person-lookup):
+    either "searched and found nothing" (status=no_results) or "found a
+    possible match, not confirmed" (status=candidate) — a contact can have
+    several candidate rows of the same lookup_type. Confirming a candidate
+    is a status update here; by convention its url is then also copied into
+    contacts.linkedin_url, which stays single-valued.
+    """
+
+    __tablename__ = "contact_lookup_results"
+    __table_args__ = (
+        CheckConstraint(
+            "lookup_type IN ('phone', 'linkedin', 'web')", name="ck_contact_lookup_results_lookup_type",
+        ),
+        CheckConstraint(
+            "status IN ('no_results', 'candidate', 'confirmed', 'rejected')",
+            name="ck_contact_lookup_results_status",
+        ),
+        Index("idx_contact_lookup_results_contact", "contact_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    lookup_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    url: Mapped[str | None] = mapped_column(Text)
+    query_used: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    searched_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"ContactLookupResult(id={self.id!r}, contact_id={self.contact_id!r}, "
+            f"lookup_type={self.lookup_type!r}, status={self.status!r})"
+        )
+
+
 # The pre-11d before_flush hook that auto-created `sources` rows for
 # Document.source strings is gone: discovery-source resolution is explicit
 # now — every writer goes through Document.set_discovery_source(), which

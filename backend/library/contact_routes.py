@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func, or_, select
 
 from library.db.engine import get_scoped_session
-from library.db.models import Contact, ContactCategory, ContactRelationship
+from library.db.models import Contact, ContactCategory, ContactLookupResult, ContactRelationship
 
 bp = Blueprint("contacts", __name__)
 
@@ -18,6 +18,9 @@ _CONTACT_FIELDS = (
     "first_name", "last_name", "phone_number", "email", "linkedin_url",
     "company", "position", "address", "notes",
 )
+
+_LOOKUP_TYPES = ("phone", "linkedin", "web")
+_LOOKUP_STATUSES = ("no_results", "candidate", "confirmed", "rejected")
 
 
 def _category_dict(row: ContactCategory, count: int | None = None) -> dict:
@@ -56,6 +59,19 @@ def _contact_dict(row: Contact) -> dict:
         "notes": row.notes,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+    }
+
+
+def _lookup_result_dict(row: ContactLookupResult) -> dict:
+    return {
+        "id": row.id,
+        "contact_id": row.contact_id,
+        "lookup_type": row.lookup_type,
+        "status": row.status,
+        "url": row.url,
+        "query_used": row.query_used,
+        "notes": row.notes,
+        "searched_at": row.searched_at.isoformat() if row.searched_at else None,
     }
 
 
@@ -225,8 +241,15 @@ def contacts_get(contact_id: int):
         _relationship_dict(rel, other, "incoming") for rel, other in incoming
     ]
 
+    lookup_results = session.execute(
+        select(ContactLookupResult)
+        .where(ContactLookupResult.contact_id == contact_id)
+        .order_by(ContactLookupResult.searched_at.desc())
+    ).scalars().all()
+
     data = _contact_dict(row)
     data["relationships"] = relationships
+    data["lookup_results"] = [_lookup_result_dict(lr) for lr in lookup_results]
     return jsonify({"status": "success", "contact": data}), 200
 
 
@@ -387,3 +410,96 @@ def contact_relationships_delete(relationship_id: int):
         session.rollback()
         return {"status": "error", "message": "DB error"}, 500
     return jsonify({"status": "success", "deleted_id": relationship_id}), 200
+
+
+# --- lookup results (OSINT search trail, e.g. /lenie-person-lookup) -------
+
+@bp.route("/contacts/<int:contact_id>/lookup_results", methods=["POST", "OPTIONS"])
+def contact_lookup_results_add(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+
+    lookup_type = (data.get("lookup_type") or "").strip()
+    if lookup_type not in _LOOKUP_TYPES:
+        return {"status": "error", "message": f"lookup_type must be one of {_LOOKUP_TYPES}"}, 400
+
+    status = (data.get("status") or "").strip()
+    if status not in _LOOKUP_STATUSES:
+        return {"status": "error", "message": f"status must be one of {_LOOKUP_STATUSES}"}, 400
+
+    row = ContactLookupResult(
+        contact_id=contact_id,
+        lookup_type=lookup_type,
+        status=status,
+        url=(data.get("url") or "").strip() or None,
+        query_used=(data.get("query_used") or "").strip() or None,
+        notes=(data.get("notes") or "").strip() or None,
+    )
+    session.add(row)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "lookup_result": _lookup_result_dict(row)}), 200
+
+
+@bp.route("/contact_lookup_results/<int:lookup_result_id>", methods=["PATCH", "OPTIONS"])
+def contact_lookup_results_update(lookup_result_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    row = session.get(ContactLookupResult, lookup_result_id)
+    if row is None:
+        return {"status": "error", "message": "Lookup result not found"}, 404
+
+    if "status" in data:
+        status = (data.get("status") or "").strip()
+        if status not in _LOOKUP_STATUSES:
+            return {"status": "error", "message": f"status must be one of {_LOOKUP_STATUSES}"}, 400
+        row.status = status
+    if "notes" in data:
+        row.notes = (data.get("notes") or "").strip() or None
+
+    # Confirming a LinkedIn candidate promotes its url onto the contact's
+    # single-valued linkedin_url field — this table only tracks the search
+    # trail, contacts.linkedin_url remains the one confirmed profile.
+    if row.status == "confirmed" and row.lookup_type == "linkedin" and row.url:
+        contact = session.get(Contact, row.contact_id)
+        if contact is not None:
+            contact.linkedin_url = row.url
+
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "lookup_result": _lookup_result_dict(row)}), 200
+
+
+@bp.route("/contact_lookup_results/<int:lookup_result_id>", methods=["DELETE", "OPTIONS"])
+def contact_lookup_results_delete(lookup_result_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    row = session.get(ContactLookupResult, lookup_result_id)
+    if row is None:
+        return {"status": "error", "message": "Lookup result not found"}, 404
+    try:
+        session.delete(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "deleted_id": lookup_result_id}), 200
