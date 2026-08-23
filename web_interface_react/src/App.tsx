@@ -19,6 +19,7 @@ import Persons from "./modules/shared/pages/persons";
 import PersonsReview from "./modules/shared/pages/personsReview";
 import Organizations from "./modules/shared/pages/organizations";
 import ToolCandidatesReview from "./modules/shared/pages/toolCandidatesReview";
+import ToolRecommendations from "./modules/shared/pages/toolRecommendations";
 import Tools from "./modules/shared/pages/tools";
 import Sources from "./modules/shared/pages/sources";
 import InformationSources from "./modules/shared/pages/informationSources";
@@ -85,6 +86,7 @@ function App() {
                   <Route path="/feeds" element={<Feeds />} />
                   <Route path="/feed-review" element={<FeedReview />} />
                   <Route path="/tool-candidates-review" element={<ToolCandidatesReview />} />
+                  <Route path="/tool-recommendations" element={<ToolRecommendations />} />
                   <Route path="/tools" element={<Tools />} />
                   <Route path="/llm-analysis" element={<LlmAnalysis />} />
                   <Route path="/jobs" element={<Jobs />} />

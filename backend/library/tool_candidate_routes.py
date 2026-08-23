@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import joinedload
 
 from library.db.engine import get_scoped_session
-from library.db.models import Document, DiscoverySource, Tool, ToolCandidate
+from library.db.models import Document, DiscoverySource, Tool, ToolCandidate, ToolRecommendation
 
 bp = Blueprint("tool_candidates", __name__)
 
@@ -142,3 +142,31 @@ def defer_candidate(candidate_id):
     candidate.reviewed_at = datetime.datetime.now(datetime.timezone.utc)
     session.commit()
     return jsonify({"tool_candidate": _candidate_dict(candidate, document)})
+
+
+@bp.post("/tool_candidates/<int:candidate_id>/add_to_radar")
+def add_candidate_to_radar(candidate_id):
+    """Keep a detected candidate as an external recommendation, not a Tool."""
+    _user()
+    session = get_scoped_session()
+    candidate, document = _get_candidate_with_document(session, candidate_id)
+    existing = session.execute(
+        select(ToolRecommendation).where(ToolRecommendation.source_candidate_id == candidate.id)
+    ).scalars().first()
+    if existing is not None:
+        return jsonify({"tool_recommendation": {"id": existing.id}, "created": False})
+
+    recommendation = ToolRecommendation(
+        name=candidate.name,
+        description=candidate.context_snippet,
+        source_url=document.url,
+        source_context=document.title,
+        source_document_id=document.id,
+        source_candidate_id=candidate.id,
+        status="watchlist",
+    )
+    session.add(recommendation)
+    candidate.status = "accepted"
+    candidate.reviewed_at = datetime.datetime.now(datetime.timezone.utc)
+    session.commit()
+    return jsonify({"tool_recommendation": {"id": recommendation.id}, "created": True}), 201

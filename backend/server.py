@@ -27,6 +27,7 @@ from library.stats_routes import bp as stats_bp
 from library.feed_routes import bp as feed_bp
 from library.feed_monitor_service import link_matching_feed_items_to_document
 from library.tool_candidate_routes import bp as tool_candidate_bp
+from library.tool_recommendation_routes import bp as tool_recommendation_bp
 from library.tool_routes import bp as tool_bp
 from library.llm_analysis_routes import bp as llm_analysis_bp
 from library.youtube_processing import process_youtube_url
@@ -109,6 +110,7 @@ app.register_blueprint(search_bp)
 app.register_blueprint(stats_bp)
 app.register_blueprint(feed_bp)
 app.register_blueprint(tool_candidate_bp)
+app.register_blueprint(tool_recommendation_bp)
 app.register_blueprint(tool_bp)
 app.register_blueprint(llm_analysis_bp)
 start_analysis_worker()

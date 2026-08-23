@@ -2802,6 +2802,43 @@ class ToolCandidate(Base):
     )
 
 
+class ToolRecommendation(Base):
+    """A recommendation worth remembering before it becomes a personally approved Tool.
+
+    This deliberately preserves the distinction between somebody else's
+    recommendation and a tool that has been evaluated and written to the
+    personal catalog/Obsidian.
+    """
+
+    __tablename__ = "tool_recommendations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    homepage_url: Mapped[str | None] = mapped_column(Text)
+    description: Mapped[str | None] = mapped_column(Text)
+    category: Mapped[str | None] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default=sa_text("'watchlist'"))
+    personal_note: Mapped[str | None] = mapped_column(Text)
+    source_url: Mapped[str | None] = mapped_column(Text)
+    source_context: Mapped[str | None] = mapped_column(Text)
+    source_document_id: Mapped[int | None] = mapped_column(ForeignKey("documents.id", ondelete="SET NULL"))
+    source_candidate_id: Mapped[int | None] = mapped_column(ForeignKey("tool_candidates.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('watchlist', 'compare', 'testing', 'adopted', 'rejected', 'archived')",
+            name="ck_tool_recommendations_status",
+        ),
+        Index("idx_tool_recommendations_status_created", "status", "created_at"),
+        Index("idx_tool_recommendations_source_candidate", "source_candidate_id"),
+    )
+
+    source_document: Mapped["Document | None"] = relationship(foreign_keys=[source_document_id])
+    source_candidate: Mapped["ToolCandidate | None"] = relationship(foreign_keys=[source_candidate_id])
+
+
 class Tool(Base):
     """Human-approved tool/technology entity, written to Obsidian (Epic 46/47).
 
