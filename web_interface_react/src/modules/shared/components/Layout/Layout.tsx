@@ -165,7 +165,6 @@ const SideNavigation = ({ isMenuOpen, closeMenuOnMobile }: SideNavigationProps) 
         <NavLink to="/feeds" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Feedy</NavLink>
         <NavLink to="/chapter-groups" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Kategorie fragmentów</NavLink>
         <NavLink to="/feed-review" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Kuracja feedów</NavLink>
-        <NavLink to="/tool-candidates-review" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Kandydaci-narzędzia</NavLink>
         <NavLink to="/tool-recommendations" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Radar narzędzi</NavLink>
         <NavLink to="/tools" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Spis narzędzi</NavLink>
         <NavLink to="/llm-analysis" className={({ isActive }) => isActive ? classes.activeLink : classes.link}>Analizy LLM</NavLink>

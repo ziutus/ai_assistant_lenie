@@ -2837,6 +2837,45 @@ class ToolRecommendation(Base):
 
     source_document: Mapped["Document | None"] = relationship(foreign_keys=[source_document_id])
     source_candidate: Mapped["ToolCandidate | None"] = relationship(foreign_keys=[source_candidate_id])
+    evidences: Mapped[list["ToolRecommendationEvidence"]] = relationship(
+        back_populates="tool_recommendation", cascade="all, delete-orphan",
+    )
+
+
+class ToolRecommendationEvidence(Base):
+    """One directed provenance path supporting a tool recommendation.
+
+    ``catalog_url`` is the intermediate external node (for example an Awesome
+    list); ``recommender_document`` is the optional upstream Lenie document
+    which recommended that catalog. More than one row may point at the same
+    tool, so independent recommendations are never lost during deduplication.
+    """
+
+    __tablename__ = "tool_recommendation_evidence"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tool_recommendation_id: Mapped[int] = mapped_column(
+        ForeignKey("tool_recommendations.id", ondelete="CASCADE"), nullable=False,
+    )
+    relation_type: Mapped[str] = mapped_column(String(30), nullable=False, server_default=sa_text("'listed_in'"))
+    catalog_url: Mapped[str | None] = mapped_column(Text)
+    catalog_label: Mapped[str | None] = mapped_column(String(255))
+    context: Mapped[str | None] = mapped_column(Text)
+    recommender_document_id: Mapped[int | None] = mapped_column(
+        ForeignKey("documents.id", ondelete="SET NULL"),
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(),
+    )
+
+    __table_args__ = (
+        CheckConstraint("relation_type IN ('listed_in', 'recommended_by', 'mentioned_in')", name="ck_tool_recommendation_evidence_relation_type"),
+        Index("idx_tool_recommendation_evidence_tool", "tool_recommendation_id"),
+        Index("idx_tool_recommendation_evidence_recommender", "recommender_document_id"),
+    )
+
+    tool_recommendation: Mapped["ToolRecommendation"] = relationship(back_populates="evidences")
+    recommender_document: Mapped["Document | None"] = relationship(foreign_keys=[recommender_document_id])
 
 
 class Tool(Base):

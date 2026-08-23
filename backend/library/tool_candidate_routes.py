@@ -7,7 +7,7 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import joinedload
 
 from library.db.engine import get_scoped_session
-from library.db.models import Document, DiscoverySource, Tool, ToolCandidate, ToolRecommendation
+from library.db.models import Document, DiscoverySource, Tool, ToolCandidate, ToolRecommendation, ToolRecommendationEvidence
 
 bp = Blueprint("tool_candidates", __name__)
 
@@ -150,6 +150,14 @@ def add_candidate_to_radar(candidate_id):
     _user()
     session = get_scoped_session()
     candidate, document = _get_candidate_with_document(session, candidate_id)
+    existing_tool = session.execute(
+        select(Tool).where(func.lower(Tool.name) == candidate.name.lower()).limit(1)
+    ).scalars().first()
+    if existing_tool is not None:
+        candidate.status = "accepted"
+        candidate.reviewed_at = datetime.datetime.now(datetime.timezone.utc)
+        session.commit()
+        return jsonify({"existing_tool": {"id": existing_tool.id, "name": existing_tool.name}, "created": False})
     existing = session.execute(
         select(ToolRecommendation).where(ToolRecommendation.source_candidate_id == candidate.id)
     ).scalars().first()
@@ -166,6 +174,15 @@ def add_candidate_to_radar(candidate_id):
         status="watchlist",
     )
     session.add(recommendation)
+    session.flush()
+    session.add(ToolRecommendationEvidence(
+        tool_recommendation_id=recommendation.id,
+        relation_type="mentioned_in",
+        catalog_url=document.url,
+        catalog_label=document.title,
+        context=candidate.context_snippet,
+        recommender_document_id=document.id,
+    ))
     candidate.status = "accepted"
     candidate.reviewed_at = datetime.datetime.now(datetime.timezone.utc)
     session.commit()
