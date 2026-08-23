@@ -3,9 +3,10 @@ INSERT INTO public.processing_status_types (name) VALUES ('NEED_LLM_ANALYSIS') O
 CREATE TABLE IF NOT EXISTS public.feed_sources (
     id SERIAL PRIMARY KEY, name VARCHAR(255) NOT NULL UNIQUE,
     type VARCHAR(30) NOT NULL CHECK (type IN ('rss','wordpress','youtube_channel','json_api')),
-    url TEXT, channel_id VARCHAR(128), language VARCHAR(10) NOT NULL DEFAULT 'pl',
+    url TEXT, channel_id VARCHAR(128), author_name TEXT, language VARCHAR(10) NOT NULL DEFAULT 'pl',
     collection_id INTEGER REFERENCES public.collections(id) ON DELETE SET NULL,
-    tags JSONB NOT NULL DEFAULT '[]'::jsonb, auto_import BOOLEAN NOT NULL DEFAULT false,
+    tags JSONB NOT NULL DEFAULT '[]'::jsonb, default_topic_group_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    auto_import BOOLEAN NOT NULL DEFAULT false,
     disabled BOOLEAN NOT NULL DEFAULT false, auto_import_after TIMESTAMPTZ,
     discovery_source_id INTEGER REFERENCES public.discovery_sources(id) ON DELETE SET NULL,
     default_state VARCHAR(50) NOT NULL DEFAULT 'URL_ADDED' REFERENCES public.processing_status_types(name),

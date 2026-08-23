@@ -194,6 +194,7 @@ def import_feed_item(
         existing = Document.get_by_url(session, item.canonical_url)
         if existing is None:
             feed = session.get(FeedSource, item.feed_source_id)
+            mapped_author = (feed.author_name or "").strip()
             doc, _ = DocumentService(session).import_document(
                 item.canonical_url,
                 document_type or ("youtube" if "youtube" in feed.type else "link"),
@@ -205,7 +206,16 @@ def import_feed_item(
                 tags=",".join(feed.tags or []),
                 source=feed.name,
                 collection_id=feed.collection_id,
+                byline=mapped_author or None,
             )
+            # A configured YouTube-channel author is a deliberate publisher/
+            # creator mapping, not a claim that a named individual made the
+            # video.  Still use the shared author service so the display
+            # byline and the structured author relation cannot diverge.
+            if feed.type == "youtube_channel" and mapped_author:
+                from library.author_service import set_document_authors
+
+                set_document_authors(session, doc, [mapped_author], method="manual")
         else:
             doc = existing
         copy_feed_groups_to_document(session, [item], doc, "feed_import")
@@ -303,6 +313,24 @@ def copy_feed_groups_to_document(session, feed_items, document: Document, source
         ).all()
     }
     topic_groups = {group.id: group for _, group in rows if group.kind == "topic"}
+    feed_ids = {item.feed_source_id for item in feed_items if isinstance(item, FeedItem)}
+    if feed_ids:
+        configured_topic_ids = {
+            group_id
+            for configured_ids, in session.execute(
+                select(FeedSource.default_topic_group_ids).where(FeedSource.id.in_(feed_ids))
+            ).all()
+            for group_id in (configured_ids or [])
+        }
+        if configured_topic_ids:
+            configured_groups = session.scalars(
+                select(ContentGroup).where(
+                    ContentGroup.id.in_(configured_topic_ids),
+                    ContentGroup.kind == "topic",
+                    ContentGroup.archived_at.is_(None),
+                )
+            ).all()
+            topic_groups.update({group.id: group for group in configured_groups})
     for group in topic_groups.values():
         if group.id not in current:
             session.add(DocumentGroupMembership(document_id=document.id, group_id=group.id, source=source))

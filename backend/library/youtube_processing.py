@@ -127,7 +127,10 @@ def process_youtube_url(
     if web_document.processing_status == StalkerDocumentStatus.URL_ADDED.name and youtube_file.can_pytube:
         logger.info("Updating document metadata from YouTube")
         web_document.title = youtube_file.title
-        web_document.byline = youtube_file.author
+        # A feed may provide an explicit, user-reviewed channel → creator
+        # mapping.  Keep it instead of replacing it with provider metadata.
+        if not (web_document.byline or "").strip():
+            web_document.byline = youtube_file.author
         web_document.url = youtube_file.url
         web_document.original_id = youtube_file.video_id
         web_document.text = youtube_file.text

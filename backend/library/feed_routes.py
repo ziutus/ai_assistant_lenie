@@ -502,7 +502,7 @@ def update_feed(feed_id):
     if row is None:
         abort(404)
     body = request.get_json(silent=True) or {}
-    allowed = {"type", "url", "channel_id", "language", "tags", "auto_import", "disabled", "auto_import_after", "default_state", "field_mapping", "skip_url_patterns", "skip_title_patterns"}
+    allowed = {"type", "url", "channel_id", "author_name", "language", "tags", "default_topic_group_ids", "auto_import", "disabled", "auto_import_after", "default_state", "field_mapping", "skip_url_patterns", "skip_title_patterns"}
     if not isinstance(body, dict) or any(key not in allowed for key in body):
         abort(400, "unsupported feed field")
     merged = {key: getattr(row, key) for key in allowed if hasattr(row, key)}

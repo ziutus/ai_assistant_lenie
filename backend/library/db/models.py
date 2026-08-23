@@ -225,9 +225,14 @@ class FeedSource(Base):
     type: Mapped[str] = mapped_column(String(30), nullable=False)
     url: Mapped[str | None] = mapped_column(Text)
     channel_id: Mapped[str | None] = mapped_column(String(128))
+    # Explicit creator mapping for a monitored YouTube channel.  This is not
+    # inferred from the feed name: a channel may have a different public
+    # creator name, and feeds can be renamed independently.
+    author_name: Mapped[str | None] = mapped_column(Text)
     language: Mapped[str] = mapped_column(String(10), nullable=False, server_default=sa_text("'pl'"))
     collection_id: Mapped[int | None] = mapped_column(ForeignKey("collections.id", ondelete="SET NULL"))
     tags: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
+    default_topic_group_ids: Mapped[list] = mapped_column(JSONB, nullable=False, server_default=sa_text("'[]'::jsonb"))
     auto_import: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     disabled: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
     auto_import_after: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True))
