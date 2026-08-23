@@ -1,6 +1,7 @@
 from flask import Flask, Response, g, request, abort, jsonify
 from flask_cors import CORS
 import logging
+import os
 from sqlalchemy import select
 
 from library.config_loader import load_config
@@ -29,7 +30,8 @@ from library.feed_monitor_service import link_matching_feed_items_to_document
 from library.tool_candidate_routes import bp as tool_candidate_bp
 from library.tool_routes import bp as tool_bp
 from library.llm_analysis_routes import bp as llm_analysis_bp
-from library.youtube_processing import process_youtube_url
+from library.youtube_processing import process_youtube_url, parse_chapters_from_description
+from library.stalker_youtube_file import StalkerYoutubeFile
 from library.storage import storage_from_config
 from library.upload_storage import list_uploaded_files, store_uploaded_file
 
@@ -2750,6 +2752,64 @@ def website_youtube_retry_captions():
         "id": updated.id,
         "processing_status": updated.processing_status,
         "processing_error_code": updated.processing_error_code,
+    }, 200
+
+
+@app.route('/website_youtube_refetch_description', methods=['POST'])
+def website_youtube_refetch_description():
+    """Re-fetch a YouTube document's description and auto-parsed chapter list from yt-dlp.
+
+    Unlike the metadata fetch during ingest (which only ever runs once, at
+    URL_ADDED — see youtube_processing.py), this can be triggered manually at
+    any point in a document's lifecycle. Needed for documents imported while
+    pytubefix was silently failing to fetch metadata (PR #561) — captions
+    still came through fine since that's a separate library, only
+    description/chapter_list/byline/length were left empty.
+    """
+    doc_id = request.form.get('id')
+    if not doc_id:
+        json_data = request.get_json(silent=True) or {}
+        doc_id = json_data.get('id')
+
+    if not doc_id:
+        return {"status": "error", "message": "Brakujące dane. Upewnij się, że dostarczasz 'id'"}, 400
+
+    try:
+        doc_id_int = int(doc_id)
+    except (ValueError, TypeError):
+        return {"status": "error", "message": "Invalid ID parameter — must be a positive integer"}, 400
+
+    session = get_scoped_session()
+    service = DocumentService(session)
+    doc = service.get_document(doc_id_int)
+    if doc is None:
+        return {"status": "error", "message": "Document not found"}, 404
+
+    if doc.document_type != StalkerDocumentType.youtube.name:
+        return {"status": "error", "message": "Description refetch is only available for YouTube documents"}, 400
+
+    cache_dir = os.path.join(cfg.get("CACHE_DIR") or "tmp", "youtube_to_text")
+    youtube_file = StalkerYoutubeFile(youtube_url=doc.url, media_type="video", cache_directory=cache_dir)
+
+    if not youtube_file.metadata_available:
+        return {
+            "status": "error",
+            "message": "Nie udało się pobrać metadanych z YouTube (yt-dlp)",
+        }, 502
+
+    doc.video_description = youtube_file.description
+    parsed_chapters = parse_chapters_from_description(youtube_file.description) if youtube_file.description else None
+    if parsed_chapters:
+        doc.chapter_list = parsed_chapters
+    session.commit()
+
+    return {
+        "status": "success",
+        "message": f"Znaleziono {len(parsed_chapters.splitlines())} rozdziałów w opisie" if parsed_chapters
+                   else "Opis zapisany, nie znaleziono listy rozdziałów",
+        "id": doc.id,
+        "video_description": doc.video_description,
+        "chapter_list": doc.chapter_list,
     }, 200
 
 

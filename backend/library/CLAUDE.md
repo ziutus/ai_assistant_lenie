@@ -187,7 +187,7 @@ Supported models:
 
 - **`transcript.py`** — Transcription via AssemblyAI (sole provider, ADR-011) + `transcript_price()` cost calculator + `get_assemblyai_price_per_minute()` per-model pricing.
 - **`google_auth.py`** — Google OAuth 2.0 credential management with token caching.
-- **`stalker_youtube_file.py`** — `StalkerYoutubeFile`: YouTube URL validation, metadata via `pytubefix`/`yt-dlp`, video download, transcript loading/splitting by chapters.
+- **`stalker_youtube_file.py`** — `StalkerYoutubeFile`: YouTube URL validation, metadata + audio-only download via `yt-dlp` (pytubefix removed 2026-08-23 — its `LOGIN_REQUIRED`/`BotDetection` failures now require a PO Token it has no way to generate on its own), transcript loading/splitting by chapters.
 
 ## Patterns & Conventions
 

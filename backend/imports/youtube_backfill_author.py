@@ -3,7 +3,7 @@
 
 `author` is populated automatically for new videos since youtube_processing.py started
 setting it (library/youtube_processing.py:130), but videos added before that change have
-NULL author. This script re-fetches metadata for those videos via pytubefix.
+NULL author. This script re-fetches metadata for those videos via yt-dlp.
 
 Usage:
     python imports/youtube_backfill_author.py --dry-run
@@ -22,13 +22,13 @@ cfg = load_config()  # noqa: F841 — side effect: populates os.environ for libr
 
 from library.db.engine import get_session  # noqa: E402
 from library.db.models import Document  # noqa: E402
-from pytubefix import YouTube  # noqa: E402
+from yt_dlp import YoutubeDL  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
 
-def build_proxies(webshare_api_key: str) -> dict[str, str] | None:
-    """Build a requests-style proxies dict from Webshare credentials, or None if unavailable."""
+def build_proxy(webshare_api_key: str) -> str | None:
+    """Build a proxy URL string from Webshare credentials, or None if unavailable."""
     from youtube_transcript_api.proxies import WebshareProxyConfig
 
     from library.webshare_ip_auth import ensure_ip_authorized, get_proxy_credentials
@@ -44,16 +44,17 @@ def build_proxies(webshare_api_key: str) -> dict[str, str] | None:
         logger.warning("Webshare credentials unavailable — proceeding without proxy")
         return None
 
-    proxy_url = WebshareProxyConfig(proxy_username=creds[0], proxy_password=creds[1]).url
-    return {"http": proxy_url, "https": proxy_url}
+    return WebshareProxyConfig(proxy_username=creds[0], proxy_password=creds[1]).url
 
 
-def fetch_author(url: str, proxies: dict[str, str] | None) -> str | None:
+def fetch_author(url: str, proxy: str | None) -> str | None:
     """Fetch the channel name for a single YouTube video. Returns None on failure."""
-    yt = YouTube(url, proxies=proxies)
-    if yt.vid_info.get("playabilityStatus", {}).get("status") == "LOGIN_REQUIRED":
-        raise ValueError("private/age-restricted video (LOGIN_REQUIRED)")
-    return f"{yt.author}"
+    ydl_opts = {"quiet": True, "no_warnings": True, "skip_download": True, "noplaylist": True}
+    if proxy:
+        ydl_opts["proxy"] = proxy
+    with YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+    return info.get("uploader")
 
 
 def main():
@@ -73,12 +74,12 @@ def main():
     )
 
     webshare_api_key = cfg.get("WEBSHARE_API_KEY")
-    proxies = None
+    proxy = None
     if args.no_proxy:
         logging.info("--no-proxy flag set — Webshare proxy disabled")
     elif webshare_api_key:
-        proxies = build_proxies(webshare_api_key)
-        if proxies:
+        proxy = build_proxy(webshare_api_key)
+        if proxy:
             logging.info("Using Webshare rotating residential proxy")
     else:
         logging.info("No WEBSHARE_API_KEY configured — proceeding without proxy")
@@ -99,7 +100,7 @@ def main():
         for i, doc in enumerate(docs, start=1):
             logging.info(f"[{i}/{len(docs)}] doc #{doc.id}: {doc.url}")
             try:
-                author = fetch_author(doc.url, proxies)
+                author = fetch_author(doc.url, proxy)
             except Exception as e:
                 logging.warning(f"  FAILED: {e}")
                 failed += 1

@@ -253,7 +253,7 @@ python imports/youtube_add.py <URL> --analyze --speaker1 "..." --speaker2 "..."
 
 ### `youtube_backfill_author.py`
 
-One-off backfill for the `byline` field (YouTube channel name) on videos added before `youtube_processing.py` started setting it automatically (`process_youtube_url()` sets the document byline from `youtube_file.author` on every new video). Queries `documents` for `document_type='youtube' AND byline IS NULL`, re-fetches metadata per video via `pytubefix`, and commits per document.
+One-off backfill for the `byline` field (YouTube channel name) on videos added before `youtube_processing.py` started setting it automatically (`process_youtube_url()` sets the document byline from `youtube_file.author` on every new video). Queries `documents` for `document_type='youtube' AND byline IS NULL`, re-fetches metadata per video via `yt-dlp`, and commits per document.
 
 **Data access: ORM (SQLAlchemy)** via `get_session()`.
 
