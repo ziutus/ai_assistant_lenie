@@ -2932,6 +2932,97 @@ class ObsidianNoteVersion(Base):
     )
 
 
+class ContactCategory(Base):
+    """Lookup table for contact categories (e.g. "Osoba prywatna").
+
+    Managed from the UI (like DiscoverySource) rather than a fixed enum, so
+    new categories don't require a migration.
+    """
+
+    __tablename__ = "contact_categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"ContactCategory(id={self.id!r}, name={self.name!r})"
+
+
+class Contact(Base):
+    """Private contact book entry — independent of the NER persons registry
+    (library/person_registry.py): a contact here may never appear in any
+    document. google_contact_resource_name is a placeholder for a future
+    Google Contacts sync (no sync logic exists yet).
+    """
+
+    __tablename__ = "contacts"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    uuid: Mapped[str] = mapped_column(
+        String(100), nullable=False, unique=True, server_default=func.gen_random_uuid(),
+    )
+    category_id: Mapped[int] = mapped_column(ForeignKey("contact_categories.id"), nullable=False)
+    first_name: Mapped[str | None] = mapped_column(String(100))
+    last_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    phone_number: Mapped[str | None] = mapped_column(String(30))
+    email: Mapped[str | None] = mapped_column(String(255))
+    linkedin_url: Mapped[str | None] = mapped_column(Text)
+    company: Mapped[str | None] = mapped_column(String(200))
+    position: Mapped[str | None] = mapped_column(String(200))
+    address: Mapped[str | None] = mapped_column(Text)
+    birthday: Mapped[datetime.date | None] = mapped_column(Date)
+    notes: Mapped[str | None] = mapped_column(Text)
+    google_contact_resource_name: Mapped[str | None] = mapped_column(String(255), unique=True)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    category: Mapped["ContactCategory"] = relationship(foreign_keys=[category_id])
+
+    __table_args__ = (
+        Index("idx_contacts_last_name", "last_name"),
+        Index("idx_contacts_category", "category_id"),
+    )
+
+    def __repr__(self) -> str:
+        return f"Contact(id={self.id!r}, last_name={self.last_name!r})"
+
+
+class ContactRelationship(Base):
+    """Directional link between two contacts (e.g. spouse, child).
+
+    relationship_type describes what related_contact_id is to contact_id —
+    (contact_id=Adam, related_contact_id=Zofia, relationship_type="żona")
+    reads "Zofia is Adam's wife". Single row, no automatic reciprocal
+    row/label — the UI shows outgoing and incoming rows separately instead
+    of guessing Polish kinship-term inflection.
+    """
+
+    __tablename__ = "contact_relationships"
+    __table_args__ = (
+        CheckConstraint("contact_id != related_contact_id", name="ck_contact_relationships_not_self"),
+        UniqueConstraint("contact_id", "related_contact_id", "relationship_type"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    related_contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    relationship_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    note: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
+    related_contact: Mapped["Contact"] = relationship(foreign_keys=[related_contact_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"ContactRelationship(id={self.id!r}, contact_id={self.contact_id!r}, "
+            f"related_contact_id={self.related_contact_id!r}, relationship_type={self.relationship_type!r})"
+        )
+
+
 # The pre-11d before_flush hook that auto-created `sources` rows for
 # Document.source strings is gone: discovery-source resolution is explicit
 # now — every writer goes through Document.set_discovery_source(), which

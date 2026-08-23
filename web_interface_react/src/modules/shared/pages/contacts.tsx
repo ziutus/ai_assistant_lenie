@@ -1,0 +1,142 @@
+import React from "react";
+import axios from "axios";
+import { NavLink, useNavigate } from "react-router-dom";
+import { AuthorizationContext } from "../context/authorizationContext";
+import type { ContactCategory } from "./contactCategories";
+
+// Private contact book list (table `contacts`, GET /contacts) — independent
+// of the NER persons registry (persons.tsx/organizations.tsx), see
+// backend/library/contact_routes.py.
+
+export interface ContactListItem {
+  id: number;
+  category_id: number;
+  category_name: string | null;
+  first_name: string | null;
+  last_name: string;
+  phone_number: string | null;
+  email: string | null;
+}
+
+const Contacts = () => {
+  const navigate = useNavigate();
+  const { apiKey, apiUrl } = React.useContext(AuthorizationContext);
+  const [contacts, setContacts] = React.useState<ContactListItem[]>([]);
+  const [categories, setCategories] = React.useState<ContactCategory[]>([]);
+  const [query, setQuery] = React.useState("");
+  const [categoryId, setCategoryId] = React.useState<string>("");
+  const [isLoading, setIsLoading] = React.useState(false);
+  const [message, setMessage] = React.useState("");
+  const [isError, setIsError] = React.useState(false);
+
+  const headers = { "Content-Type": "application/json", "x-api-key": `${apiKey}` };
+
+  const fetchCategories = async () => {
+    try {
+      const response = await axios.get(`${apiUrl}/contact_categories`, { headers });
+      setCategories(response.data.contact_categories ?? []);
+    } catch (error: any) {
+      console.error("Error fetching contact categories", error);
+    }
+  };
+
+  const fetchContacts = async () => {
+    setIsLoading(true);
+    setIsError(false);
+    setMessage("");
+    try {
+      const params: Record<string, string> = {};
+      if (query.trim()) params.q = query.trim();
+      if (categoryId) params.category_id = categoryId;
+      const response = await axios.get(`${apiUrl}/contacts`, { params, headers });
+      const rows = response.data.contacts ?? [];
+      setContacts(rows);
+      if (!rows.length) {
+        setMessage("Brak kontaktów pasujących do filtrów.");
+      }
+    } catch (error: any) {
+      console.error("Error fetching contacts", error);
+      setIsError(true);
+      setMessage(`Nie udało się pobrać kontaktów: ${error.response?.data?.message || error.message}`);
+    }
+    setIsLoading(false);
+  };
+
+  React.useEffect(() => {
+    fetchCategories();
+    fetchContacts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <div>
+      <h2 style={{ marginBottom: "10px" }}>Kontakty</h2>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          fetchContacts();
+        }}
+        style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}
+      >
+        <input
+          type="text"
+          value={query}
+          placeholder="Szukaj po imieniu, nazwisku lub telefonie..."
+          onChange={(e) => setQuery(e.target.value)}
+          style={{ minWidth: 280, padding: "6px 10px" }}
+          disabled={isLoading}
+        />
+        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} style={{ padding: "6px 10px" }}>
+          <option value="">Wszystkie kategorie</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+        </select>
+        <button type="submit" className={"button"} disabled={isLoading}>
+          Szukaj
+        </button>
+        <button
+          type="button"
+          className={"button"}
+          style={{ marginLeft: "auto" }}
+          onClick={() => navigate("/contacts/new")}
+        >
+          + Nowy kontakt
+        </button>
+      </form>
+
+      {isLoading && <div className={"loader"}></div>}
+      {message && (
+        <p className={isError ? "errorText" : undefined} style={isError ? undefined : { color: "#667" }}>
+          {message}
+        </p>
+      )}
+
+      <ul style={{ listStyle: "none", padding: 0 }}>
+        {contacts.map((contact) => (
+          <li
+            key={contact.id}
+            style={{ padding: "8px 6px", borderBottom: "1px solid #eee", cursor: "pointer", display: "flex", gap: 12, alignItems: "center" }}
+            onClick={() => navigate(`/contacts/${contact.id}`)}
+          >
+            <strong>{[contact.first_name, contact.last_name].filter(Boolean).join(" ")}</strong>
+            {contact.phone_number && <span style={{ color: "#667" }}>{contact.phone_number}</span>}
+            {contact.email && <span style={{ color: "#667" }}>{contact.email}</span>}
+            {contact.category_name && (
+              <span style={{ marginLeft: "auto", fontSize: "0.85em", color: "#0369a1" }}>{contact.category_name}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      <div style={{ marginTop: 14 }}>
+        <NavLink to="/contact-categories" style={{ fontSize: "0.9em", color: "#0369a1" }}>
+          Zarządzaj kategoriami kontaktów
+        </NavLink>
+      </div>
+    </div>
+  );
+};
+
+export default Contacts;
