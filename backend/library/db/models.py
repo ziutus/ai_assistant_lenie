@@ -3062,6 +3062,62 @@ class ContactLookupResult(Base):
         )
 
 
+class ContactOrganization(Base):
+    """One organizational affiliation of a contact. A contact can have
+    several at once — the common Polish pattern this exists for is one JDG
+    (jednoosobowa dzialalnosc gospodarcza, often opened purely for tax
+    optimization) alongside a separate full-time job, plus maybe an unpaid
+    board seat. contacts.company/position stay a single-value "headline"
+    field; this table is the structured, multi-row picture.
+
+    org_type: 'employment' (etat), 'jdg' (sole proprietorship), 'board'
+    (unpaid officer/board role), 'ownership' (equity in a company, not a
+    JDG), 'other'. status mirrors ContactLookupResult so an OSINT hit can be
+    recorded here directly as 'candidate' and promoted later. address is
+    this organization's own registered/business address — separate from
+    contacts.address (the contact's personal address); the two coinciding
+    for a JDG is a hypothesis to verify, never assumed.
+    """
+
+    __tablename__ = "contact_organizations"
+    __table_args__ = (
+        CheckConstraint(
+            "org_type IN ('employment', 'jdg', 'board', 'ownership', 'other')",
+            name="ck_contact_organizations_org_type",
+        ),
+        CheckConstraint(
+            "status IN ('candidate', 'confirmed', 'rejected')", name="ck_contact_organizations_status",
+        ),
+        Index("idx_contact_organizations_contact", "contact_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    contact_id: Mapped[int] = mapped_column(ForeignKey("contacts.id", ondelete="CASCADE"), nullable=False)
+    org_type: Mapped[str] = mapped_column(String(20), nullable=False)
+    organization_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str | None] = mapped_column(String(200))
+    nip: Mapped[str | None] = mapped_column(String(15))
+    regon: Mapped[str | None] = mapped_column(String(20))
+    address: Mapped[str | None] = mapped_column(Text)
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("false"))
+    is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=sa_text("true"))
+    start_date: Mapped[datetime.date | None] = mapped_column(Date)
+    end_date: Mapped[datetime.date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="confirmed")
+    source_url: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
+
+    contact: Mapped["Contact"] = relationship(foreign_keys=[contact_id])
+
+    def __repr__(self) -> str:
+        return (
+            f"ContactOrganization(id={self.id!r}, contact_id={self.contact_id!r}, "
+            f"org_type={self.org_type!r}, organization_name={self.organization_name!r})"
+        )
+
+
 # The pre-11d before_flush hook that auto-created `sources` rows for
 # Document.source strings is gone: discovery-source resolution is explicit
 # now — every writer goes through Document.set_discovery_source(), which

@@ -10,7 +10,9 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func, or_, select
 
 from library.db.engine import get_scoped_session
-from library.db.models import Contact, ContactCategory, ContactLookupResult, ContactRelationship
+from library.db.models import (
+    Contact, ContactCategory, ContactLookupResult, ContactOrganization, ContactRelationship,
+)
 
 bp = Blueprint("contacts", __name__)
 
@@ -21,6 +23,10 @@ _CONTACT_FIELDS = (
 
 _LOOKUP_TYPES = ("phone", "linkedin", "web")
 _LOOKUP_STATUSES = ("no_results", "candidate", "confirmed", "rejected")
+
+_ORG_TYPES = ("employment", "jdg", "board", "ownership", "other")
+_ORG_STATUSES = ("candidate", "confirmed", "rejected")
+_ORG_FIELDS = ("organization_name", "role", "nip", "regon", "address", "source_url", "notes")
 
 
 def _category_dict(row: ContactCategory, count: int | None = None) -> dict:
@@ -72,6 +78,28 @@ def _lookup_result_dict(row: ContactLookupResult) -> dict:
         "query_used": row.query_used,
         "notes": row.notes,
         "searched_at": row.searched_at.isoformat() if row.searched_at else None,
+    }
+
+
+def _organization_dict(row: ContactOrganization) -> dict:
+    return {
+        "id": row.id,
+        "contact_id": row.contact_id,
+        "org_type": row.org_type,
+        "organization_name": row.organization_name,
+        "role": row.role,
+        "nip": row.nip,
+        "regon": row.regon,
+        "address": row.address,
+        "is_primary": row.is_primary,
+        "is_current": row.is_current,
+        "start_date": row.start_date.isoformat() if row.start_date else None,
+        "end_date": row.end_date.isoformat() if row.end_date else None,
+        "status": row.status,
+        "source_url": row.source_url,
+        "notes": row.notes,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     }
 
 
@@ -247,9 +275,16 @@ def contacts_get(contact_id: int):
         .order_by(ContactLookupResult.searched_at.desc())
     ).scalars().all()
 
+    organizations = session.execute(
+        select(ContactOrganization)
+        .where(ContactOrganization.contact_id == contact_id)
+        .order_by(ContactOrganization.is_current.desc(), ContactOrganization.is_primary.desc())
+    ).scalars().all()
+
     data = _contact_dict(row)
     data["relationships"] = relationships
     data["lookup_results"] = [_lookup_result_dict(lr) for lr in lookup_results]
+    data["organizations"] = [_organization_dict(org) for org in organizations]
     return jsonify({"status": "success", "contact": data}), 200
 
 
@@ -503,3 +538,124 @@ def contact_lookup_results_delete(lookup_result_id: int):
         session.rollback()
         return {"status": "error", "message": "DB error"}, 500
     return jsonify({"status": "success", "deleted_id": lookup_result_id}), 200
+
+
+# --- organizations (multiple affiliations per contact — JDG, etat, board seat, ...) ---
+
+@bp.route("/contacts/<int:contact_id>/organizations", methods=["POST", "OPTIONS"])
+def contact_organizations_add(contact_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    contact = session.get(Contact, contact_id)
+    if contact is None:
+        return {"status": "error", "message": "Contact not found"}, 404
+
+    org_type = (data.get("org_type") or "").strip()
+    if org_type not in _ORG_TYPES:
+        return {"status": "error", "message": f"org_type must be one of {_ORG_TYPES}"}, 400
+
+    organization_name = (data.get("organization_name") or "").strip()
+    if not organization_name:
+        return {"status": "error", "message": "organization_name is required"}, 400
+
+    status = (data.get("status") or "confirmed").strip()
+    if status not in _ORG_STATUSES:
+        return {"status": "error", "message": f"status must be one of {_ORG_STATUSES}"}, 400
+
+    row = ContactOrganization(
+        contact_id=contact_id,
+        org_type=org_type,
+        organization_name=organization_name,
+        status=status,
+        is_primary=bool(data.get("is_primary", False)),
+        is_current=bool(data.get("is_current", True)),
+    )
+    for field in _ORG_FIELDS:
+        if field == "organization_name":
+            continue
+        if field in data:
+            setattr(row, field, (data.get(field) or "").strip() or None)
+    if "start_date" in data:
+        row.start_date = data.get("start_date") or None
+    if "end_date" in data:
+        row.end_date = data.get("end_date") or None
+
+    session.add(row)
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "organization": _organization_dict(row)}), 200
+
+
+@bp.route("/contact_organizations/<int:organization_id>", methods=["PATCH", "OPTIONS"])
+def contact_organizations_update(organization_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    data = request.get_json(silent=True) or {}
+    session = get_scoped_session()
+    row = session.get(ContactOrganization, organization_id)
+    if row is None:
+        return {"status": "error", "message": "Organization not found"}, 404
+
+    if "org_type" in data:
+        org_type = (data.get("org_type") or "").strip()
+        if org_type not in _ORG_TYPES:
+            return {"status": "error", "message": f"org_type must be one of {_ORG_TYPES}"}, 400
+        row.org_type = org_type
+    if "organization_name" in data:
+        organization_name = (data.get("organization_name") or "").strip()
+        if not organization_name:
+            return {"status": "error", "message": "organization_name cannot be empty"}, 400
+        row.organization_name = organization_name
+    if "status" in data:
+        status = (data.get("status") or "").strip()
+        if status not in _ORG_STATUSES:
+            return {"status": "error", "message": f"status must be one of {_ORG_STATUSES}"}, 400
+        row.status = status
+    for field in _ORG_FIELDS:
+        if field == "organization_name":
+            continue
+        if field in data:
+            setattr(row, field, (data.get(field) or "").strip() or None)
+    if "is_primary" in data:
+        row.is_primary = bool(data.get("is_primary"))
+    if "is_current" in data:
+        row.is_current = bool(data.get("is_current"))
+    if "start_date" in data:
+        row.start_date = data.get("start_date") or None
+    if "end_date" in data:
+        row.end_date = data.get("end_date") or None
+
+    row.updated_at = datetime.datetime.now()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+
+    return jsonify({"status": "success", "organization": _organization_dict(row)}), 200
+
+
+@bp.route("/contact_organizations/<int:organization_id>", methods=["DELETE", "OPTIONS"])
+def contact_organizations_delete(organization_id: int):
+    if request.method == "OPTIONS":
+        return {"status": "OK"}, 200
+
+    session = get_scoped_session()
+    row = session.get(ContactOrganization, organization_id)
+    if row is None:
+        return {"status": "error", "message": "Organization not found"}, 404
+    try:
+        session.delete(row)
+        session.commit()
+    except Exception:
+        session.rollback()
+        return {"status": "error", "message": "DB error"}, 500
+    return jsonify({"status": "success", "deleted_id": organization_id}), 200
