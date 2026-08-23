@@ -178,6 +178,25 @@ class TestGetOrCreateGeocodeGeopoliticalRegion:
         assert row.osm_class == "place"
         assert row.osm_type == "region"
 
+    def test_known_region_upgrades_a_stale_negative_cache_entry(self):
+        """A pre-centroid LocationIQ miss for Sahel must not block E010's
+        deterministic fallback forever (doc #9394)."""
+        session = self._session()
+        stale = MagicMock(spec=GeocodeCache)
+        stale.resolved = False
+        stale.display_name = "Region Sahel, Burkina Faso"
+        session.query.return_value.filter.return_value.one_or_none.return_value = stale
+
+        with patch("library.place_verification.geocode") as mock_geocode:
+            row = _get_or_create_geocode(session, "Sahel")
+
+        assert row is stale
+        assert row.resolved is True
+        assert row.display_name == "Sahel"
+        assert row.lat == 15.0
+        assert row.lon == 10.0
+        mock_geocode.assert_not_called()
+
     def test_unknown_query_still_goes_through_live_geocoder(self):
         session = self._session()
 

@@ -121,22 +121,32 @@ def _get_or_create_geocode(session, query: str) -> GeocodeCache:
     so no relabeling is needed and is_plausible_match() keeps comparing the
     original short query.
     """
-    row = session.query(GeocodeCache).filter(GeocodeCache.query == query).one_or_none()
-    if row is not None:
-        return row
-
     centroid = geopolitical_region_centroid(query)
     if centroid is not None:
         # Known geopolitical macro-region (Sahel, Bliski Wschód...) — never
         # query LocationIQ at all, see geopolitical_region_gazetteer.py's
         # module docstring for why a live query can't be trusted here.
         lat, lon = centroid
-        row = GeocodeCache(
-            query=query, resolved=True, display_name=query,
-            lat=lat, lon=lon, osm_class="place", osm_type="region", importance=None, raw=None,
-        )
-        session.add(row)
+        row = session.query(GeocodeCache).filter(GeocodeCache.query == query).one_or_none()
+        if row is None:
+            row = GeocodeCache(query=query)
+            session.add(row)
+        # A negative cache entry may predate the curated macro-region
+        # fallback.  The centroid is authoritative, so upgrade that entry
+        # instead of preserving a historical LocationIQ miss forever.
+        row.resolved = True
+        row.display_name = query
+        row.lat = lat
+        row.lon = lon
+        row.osm_class = "place"
+        row.osm_type = "region"
+        row.importance = None
+        row.raw = None
         session.flush()
+        return row
+
+    row = session.query(GeocodeCache).filter(GeocodeCache.query == query).one_or_none()
+    if row is not None:
         return row
 
     hit = geocode(query)
