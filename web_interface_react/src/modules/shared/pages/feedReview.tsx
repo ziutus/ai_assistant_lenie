@@ -2,6 +2,7 @@ import React from "react";
 import { useSearchParams } from "react-router-dom";
 import { AuthorizationContext } from "../context/authorizationContext";
 import ContentGroupsPanel from "../components/ContentGroupsPanel/ContentGroupsPanel";
+import { loadFeedReviewFilters, saveFeedReviewFilters } from "../services/storage";
 import type { ContentGroup } from "../../../types";
 
 type FeedSource = { id: number; name: string; type: string; disabled: boolean };
@@ -52,8 +53,13 @@ export default function FeedReview() {
   const [historyLoading, setHistoryLoading] = React.useState(false);
   const [importedTypes, setImportedTypes] = React.useState<Record<number, string>>({});
 
-  const selectedSource = searchParams.get("feed_source_id") || "";
-  const view = searchParams.get("view") === "later" ? "later" : "new";
+  const storedFilters = React.useMemo(() => loadFeedReviewFilters(), []);
+  const selectedSource = searchParams.has("feed_source_id")
+    ? searchParams.get("feed_source_id") || ""
+    : storedFilters.feedSourceId;
+  const view = searchParams.has("view")
+    ? searchParams.get("view") === "later" ? "later" : "new"
+    : storedFilters.view;
   const status = view === "later" ? "saved_for_later" : "new";
   const headers = React.useMemo(() => ({ "x-api-key": apiKey || "" }), [apiKey]);
 
@@ -121,6 +127,13 @@ export default function FeedReview() {
   const updateParams = (changes: Record<string, string | null>) => {
     const next = new URLSearchParams(searchParams);
     Object.entries(changes).forEach(([key, value]) => value ? next.set(key, value) : next.delete(key));
+    const nextSource = Object.prototype.hasOwnProperty.call(changes, "feed_source_id")
+      ? changes.feed_source_id || ""
+      : selectedSource;
+    const nextView = Object.prototype.hasOwnProperty.call(changes, "view")
+      ? changes.view === "later" ? "later" : "new"
+      : view;
+    saveFeedReviewFilters({ feedSourceId: nextSource, view: nextView });
     setSearchParams(next);
   };
 
