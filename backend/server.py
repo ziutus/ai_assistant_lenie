@@ -17,7 +17,7 @@ from library.models.stalker_document_status import StalkerDocumentStatus
 from library.models.stalker_document_type import StalkerDocumentType
 from library.models.stalker_document_status_error import StalkerDocumentStatusError
 from library.api_key_routes import bp as api_key_bp
-from library.auth import resolve_api_key
+from library.auth import is_read_only_request_allowed, resolve_api_key
 from library.chunk_review_routes import bp as chunk_review_bp, start_analysis_worker
 from library.llm_cost_routes import bp as llm_cost_bp
 from library.service_status_routes import bp as service_status_bp
@@ -89,6 +89,8 @@ def check_auth_header():
     auth = resolve_api_key(get_scoped_session, api_key)
     if auth is None:
         abort(401, 'x-api-key header is wrong')
+    if not is_read_only_request_allowed(auth, request.method):
+        abort(403, 'read-only API key may only use GET, HEAD or OPTIONS')
     g.auth = auth
 
 

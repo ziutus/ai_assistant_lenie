@@ -1,6 +1,7 @@
 -- Migration: api_keys — service accounts + per-user API keys (Etap 8)
 -- Replaces the single shared STALKER_API_KEY: kind=service keys grant full
--- access without a reader identity; kind=user keys carry the reader identity
+-- access without a reader identity; kind=user keys carry the reader identity;
+-- kind=read_only keys are globally limited to GET/HEAD/OPTIONS.
 -- (no x-user-id header needed). Only the SHA-256 hash of the key is stored;
 -- the plaintext is shown once at creation time. key_prefix keeps the first
 -- characters of the plaintext so keys can be recognized without revealing them.
@@ -9,7 +10,7 @@
 
 CREATE TABLE IF NOT EXISTS public.api_keys (
     id           SERIAL PRIMARY KEY,
-    kind         VARCHAR(10) NOT NULL CHECK (kind IN ('user', 'service')),
+    kind         VARCHAR(10) NOT NULL CHECK (kind IN ('user', 'service', 'read_only')),
     user_id      INTEGER REFERENCES public.users(id) ON DELETE CASCADE,
     name         VARCHAR(100) NOT NULL UNIQUE,
     key_hash     CHAR(64) NOT NULL UNIQUE,

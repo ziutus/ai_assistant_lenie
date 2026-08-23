@@ -24,6 +24,7 @@ from library.auth import (  # noqa: E402
     deactivate_api_key,
     generate_api_key,
     hash_api_key,
+    is_read_only_request_allowed,
     resolve_api_key,
 )
 from library.db.models import ApiKey, User  # noqa: E402
@@ -69,6 +70,10 @@ class TestGenerateApiKey:
     def test_service_key_format(self):
         plaintext, _, _ = generate_api_key("service")
         assert plaintext.startswith("lk_svc_")
+
+    def test_read_only_key_format(self):
+        plaintext, _, _ = generate_api_key("read_only")
+        assert plaintext.startswith("lk_ro_")
 
     def test_keys_are_unique(self):
         assert generate_api_key("user")[0] != generate_api_key("user")[0]
@@ -129,6 +134,12 @@ class TestResolveApiKey:
         assert ctx.kind == "service"
         assert ctx.user_id is None
         assert not ctx.is_legacy
+
+    def test_read_only_key_resolved(self):
+        row = _make_key_row(kind="read_only", user_id=None, name="codex-browser", id=12)
+        ctx = resolve_api_key(lambda: self._session_returning(row), "raw-key")
+        assert ctx.kind == "read_only"
+        assert ctx.user_id is None
 
     def test_unknown_key_returns_none(self):
         assert resolve_api_key(lambda: self._session_returning(None), "bad") is None
@@ -191,6 +202,11 @@ class TestCreateApiKey:
         assert plaintext.startswith("lk_svc_")
         assert row.user_id is None
 
+    def test_create_read_only_key(self):
+        row, plaintext = create_api_key(self._session(), kind="read_only", name="codex-browser")
+        assert plaintext.startswith("lk_ro_")
+        assert row.user_id is None
+
     @pytest.mark.parametrize("kwargs", [
         {"kind": "admin", "name": "x"},
         {"kind": "user", "name": "x", "user_id": None},          # user key needs user_id
@@ -227,6 +243,26 @@ class TestDeactivateApiKey:
         session.get.return_value = None
         with pytest.raises(ValueError, match="not found"):
             deactivate_api_key(session, 999)
+
+
+class TestReadOnlyScope:
+    def test_allows_safe_methods(self):
+        auth_context = AuthContext(kind="read_only", key_id=12, key_name="codex-browser", user_id=None)
+        assert is_read_only_request_allowed(auth_context, "GET")
+        assert is_read_only_request_allowed(auth_context, "head")
+        assert is_read_only_request_allowed(auth_context, "OPTIONS")
+
+    def test_rejects_mutating_methods(self):
+        auth_context = AuthContext(kind="read_only", key_id=12, key_name="codex-browser", user_id=None)
+        assert not is_read_only_request_allowed(auth_context, "POST")
+        assert not is_read_only_request_allowed(auth_context, "PATCH")
+        assert not is_read_only_request_allowed(auth_context, "DELETE")
+
+    def test_does_not_restrict_existing_key_kinds(self):
+        service = AuthContext(kind="service", key_id=11, key_name="service", user_id=None)
+        user = AuthContext(kind="user", key_id=10, key_name="user", user_id=1)
+        assert is_read_only_request_allowed(service, "POST")
+        assert is_read_only_request_allowed(user, "DELETE")
 
 
 # ---------------------------------------------------------------------------
