@@ -19,6 +19,15 @@ diagnozie — patrz szablon niżej. Dokument został założony 2026-08-23
 i zasiany 14 rzeczywistymi przypadkami z historii PR #517–#545 (dokument
 #9394 — bieżące relacjonowanie wojny w Sudanie — jako główny poligon).
 
+**Wersja prezentacyjna:** ta sama treść (diagramy, taksonomia, wybór
+przypadków) jest też dostępna jako Claude Artifact "Pole minowe NER":
+<https://claude.ai/code/artifact/27271269-5724-47d2-b39c-dba0fe94dac6>.
+**Artefakt jest prywatny** (widoczny tylko dla autora tego repo, nie
+publiczny) i służy wyłącznie do własnych prezentacji — nie jest
+aktualizowany automatycznie razem z tym dokumentem; przed użyciem sprawdź,
+czy nie przybyły nowe wpisy w dzienniku poniżej od czasu ostatniej
+aktualizacji artefaktu.
+
 ## Architektura: od tekstu do encji w bazie
 
 **Uwaga: brak automatycznego narzędzia do generowania tego diagramu.**
