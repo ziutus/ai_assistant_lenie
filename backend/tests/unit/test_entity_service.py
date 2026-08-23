@@ -378,6 +378,19 @@ class TestIsExcluded:
         rules = [NerExclusion(entity_text="Lotnisko", entity_type="*", scope="global")]
         assert is_excluded(rules, "geogName", "Lotnisko", None) is True
 
+    def test_orphaned_arabic_prefix_from_split_person_name(self):
+        """doc #9394, rozdział 4: "...cieszyli się przychylnością Omara
+        al-Baszira, dyktatora Sudanu..." spaCy rozbiło "al-Baszira" na
+        persName "Baszir" (poprawnie dopasowany do Omara al-Baszira w
+        rejestrze osób) i osierocony fragment arabskiego przedimka "Al-"
+        otagowany jako placeName — prawdopodobnie zasugerowany modelowi
+        przez sąsiednie "Al-Faszir"/"Al-Ubajid" w tym samym dokumencie.
+        geocode_cache poprawnie odrzucił dopasowanie (LocationIQ trafił w
+        niepowiązaną Albanię, ale próg dopasowania to odfiltrował) — problem
+        jest wcześniej, w samej ekstrakcji NER, nie w geokodowaniu."""
+        rules = [NerExclusion(entity_text="Al-", entity_type="placeName", scope="global")]
+        assert is_excluded(rules, "placeName", "Al-", None) is True
+
 
 class TestGetDocumentEntities:
     def test_filters_facility_by_alias_used_in_chapter(self):
