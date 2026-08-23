@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 
 from library.ai import ai_ask
 from library.config_loader import load_config
-from library.db.models import Document, Job, ToolCandidate
+from library.db.models import Document, Job, Tool, ToolCandidate, ToolRecommendation, ToolRecommendationEvidence
 from library.job_queue import heartbeat
 
 logger = logging.getLogger(__name__)
@@ -234,10 +234,33 @@ def execute_tool_candidate_detect(session: Session, job: Job) -> dict:
             )
             if duplicate is not None:
                 continue
-            session.add(ToolCandidate(
+            existing_tool = session.execute(
+                select(Tool).where(func.lower(Tool.name) == name.lower()).limit(1)
+            ).scalars().first()
+            candidate = ToolCandidate(
                 name=name,
                 source_document_id=doc.id,
                 context_snippet=str(mention.get("context_snippet") or "")[:2000] or None,
+                status="accepted" if existing_tool is not None else "pending",
+            )
+            session.add(candidate)
+            session.flush()
+            if existing_tool is not None:
+                # Preserve detection provenance for audit, but do not put an
+                # already adopted tool back into the decision queue.
+                created += 1
+                continue
+            recommendation = ToolRecommendation(
+                name=name, description=candidate.context_snippet, source_url=doc.url,
+                source_context=doc.title, source_document_id=doc.id,
+                source_candidate_id=candidate.id, status="watchlist",
+            )
+            session.add(recommendation)
+            session.flush()
+            session.add(ToolRecommendationEvidence(
+                tool_recommendation_id=recommendation.id, relation_type="mentioned_in",
+                catalog_url=doc.url, catalog_label=doc.title,
+                context=candidate.context_snippet, recommender_document_id=doc.id,
             ))
             created += 1
         session.commit()

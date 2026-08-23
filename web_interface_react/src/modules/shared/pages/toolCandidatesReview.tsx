@@ -102,7 +102,7 @@ export default function ToolCandidatesReview() {
   const loadRef = React.useRef(load);
   React.useEffect(() => { loadRef.current = load; }, [load]);
 
-  const act = async (id: number, action: "accept" | "reject" | "defer") => {
+  const act = async (id: number, action: "accept" | "reject" | "defer" | "add_to_radar") => {
     setBusyCandidateId(id);
     setError("");
     try {
@@ -118,6 +118,8 @@ export default function ToolCandidatesReview() {
       }
       if (action === "accept") {
         setWarningBanner(typeof data.warning === "string" ? data.warning : null);
+      } else if (action === "add_to_radar") {
+        setWarningBanner(data.created ? "Dodano do radaru narzędzi." : "To narzędzie jest już w radarze.");
       }
       await loadRef.current();
     } catch (cause) {
@@ -204,6 +206,7 @@ export default function ToolCandidatesReview() {
             </span>
           </div>
           <div>
+            <button className="button" disabled={busy} onClick={() => void act(candidate.id, "add_to_radar")}>Do radaru</button>{" "}
             <button className="button" disabled={busy} onClick={() => void act(candidate.id, "accept")}>Akceptuj</button>{" "}
             <button disabled={busy} onClick={() => void act(candidate.id, "reject")}>Odrzuć</button>{" "}
             <button disabled={busy} onClick={() => void act(candidate.id, "defer")}>Odłóż</button>
