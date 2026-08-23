@@ -13,6 +13,10 @@ from library import city_gazetteer  # noqa: E402
 
 
 class TestCanonicalCityName:
+    @pytest.mark.parametrize("mention", ["Gaza", "Gazę", "Gazy", "Gazie", "Gazą"])
+    def test_matches_inflected_gaza(self, mention):
+        assert city_gazetteer.canonical_city_name(mention) == "Gaza"
+
     @pytest.mark.parametrize(
         "mention",
         ["Omdurman", "Omdurmanie", "Omdurmanu", "Omdurmanem", "Omdurmanowi"],

@@ -365,15 +365,25 @@ def verify_document_places(session, doc, text: str, progress_callback=None) -> d
     for index, ent in enumerate(candidates, start=1):
         if progress_callback is not None:
             progress_callback(index, len(candidates))
+        resolved_name = ent.entity_text
         if ent.geocode_id is None:
             ent.geocode = _get_or_create_geocode(session, ent.entity_text)
             if not ent.geocode.resolved:
                 fixed = _retry_after_stripping_country(session, ent.entity_text)
                 if fixed is not None:
-                    ent.entity_text, ent.geocode = fixed
+                    # Do not rename the row here.  A clean mention of the
+                    # recovered place may already be present in this document
+                    # (doc #9394 has both "Al-Faszir" and the broken
+                    # "Al-Faszirze Emiraty").  Renaming before
+                    # _canonicalize_and_merge_places() gets a query-triggered
+                    # autoflush and violates the unique document/type/text
+                    # constraint before that later phase can merge the rows.
+                    # The resolved geocode carries the canonical display name;
+                    # canonicalization below will merge and rename safely.
+                    resolved_name, ent.geocode = fixed
             checked += 1
         if ent.geocode is not None and ent.geocode.resolved:
-            resolved_names.append(ent.entity_text)
+            resolved_names.append(resolved_name)
 
     candidates = _canonicalize_and_merge_places(session, candidates)
 
