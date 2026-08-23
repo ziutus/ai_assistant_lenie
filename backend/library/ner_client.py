@@ -216,8 +216,8 @@ def _is_truncated_lemma(base: str, variants: list[str]) -> bool:
 
 # geogName/placeName are one grouping "family" after label merging; orgName
 # joins it only when canonical_country_for_surface() confirms the surface is
-# a country (see COUNTRY_CHECK_TYPES) — a country mislabeled orgName by
-# spaCy (e.g. a mangled participle lemma) must not stay a fake Organization.
+# a country (see COUNTRY_CHECK_TYPES). A confirmed country mislabeled orgName
+# by spaCy must be stored as a place, never as a fake Organization.
 PLACE_TYPES = {"geogName", "placeName"}
 
 # Labels where a mangled multiword lemma (spaCy's Span.lemma_ concatenates
@@ -247,8 +247,9 @@ def aggregate_entities_detailed(
     uppercase abbreviations are canonicalized — including when spaCy mislabels
     a country as orgName (COUNTRY_CHECK_TYPES). Case-only duplicates share one
     display spelling, and geogName/placeName duplicates (plus orgName groups
-    confirmed to be a country) share the more frequent label, excluding
-    orgName from that vote whenever a real place/country label is available.
+    confirmed to be a country) share the more frequent label. Confirmed
+    countries always resolve to geogName/placeName, defaulting to placeName
+    when every mention was mislabeled orgName.
     Suspicious cut-off lemmas fall back to their best full surface form; for
     multiword geogName/placeName/orgName groups an in-text nominative surface
     (or, failing that, the best real surface form) is preferred over the
@@ -442,6 +443,7 @@ def aggregate_entities_detailed(
                 "nominative_surface_order": [],
                 "is_nominative_candidate": False,
                 "has_case_evidence": False,
+                "is_country": False,
             },
         )
         group["count"] += source["count"]
@@ -453,6 +455,7 @@ def aggregate_entities_detailed(
             group["base_order"].append(source["base"])
         group["is_nominative_candidate"] = group["is_nominative_candidate"] or source["is_nominative_candidate"]
         group["has_case_evidence"] = group["has_case_evidence"] or source["has_case_evidence"]
+        group["is_country"] = group["is_country"] or source["is_country"]
         for value, counter_name, order_name in (
             *[(value, "surface_spellings", "surface_order") for value in source["surface_order"]],
             *[(value, "raw_lemma_spellings", "raw_lemma_order") for value in source["raw_lemma_order"]],
@@ -468,16 +471,24 @@ def aggregate_entities_detailed(
 
     result: dict[tuple[str, str], dict] = {}
     for group in merged.values():
-        # orgName only ever reaches this merged group via a confirmed
-        # country match (family "place"); a real geogName/placeName label is
-        # always the truthful type for a country, so prefer it in the vote —
-        # but keep orgName as a fallback for the (rare) case a country was
-        # mentioned exclusively under the wrong label in this document.
-        label_candidates = [value for value in group["label_order"] if value != "orgName"] or group["label_order"]
-        label = max(
-            label_candidates,
-            key=lambda value: (group["label_counts"][value], -group["label_order"].index(value)),
-        )
+        if group["is_country"]:
+            # A confirmed country must be a place even when spaCy tagged every
+            # mention as orgName; preserve a real place label when one exists.
+            label_candidates = [value for value in group["label_order"] if value in PLACE_TYPES]
+            label = (
+                max(
+                    label_candidates,
+                    key=lambda value: (group["label_counts"][value], -group["label_order"].index(value)),
+                )
+                if label_candidates
+                else "placeName"
+            )
+        else:
+            label_candidates = [value for value in group["label_order"] if value != "orgName"] or group["label_order"]
+            label = max(
+                label_candidates,
+                key=lambda value: (group["label_counts"][value], -group["label_order"].index(value)),
+            )
         # Faza 1/5 priority repeated here (not just at the pre-merge stage):
         # merging geogName+placeName (or a country reclassified from
         # orgName) can combine a nominative-only source with a

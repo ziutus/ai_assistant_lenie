@@ -635,7 +635,8 @@ class TestCountryDetectedUnderOrgName:
     """Faza 4: spaCy occasionally tags a country as orgName (participle-heavy
     names like "Zjednoczone Emiraty Arabskie" get parsed as if headed by a
     verb, e.g. lemma "zjednoczyć..."). A confirmed gazetteer match must pull
-    that mention into the same place entity, and out of the org registry."""
+    that mention into the same place entity, always resolve it as a place, and
+    keep it out of the org registry."""
 
     def test_orgname_country_merges_with_place_label_mention(self):
         entities = [
@@ -650,17 +651,30 @@ class TestCountryDetectedUnderOrgName:
             },
         }
 
-    def test_orgname_country_alone_keeps_orgname_label(self):
-        """Known edge case (documented limitation): a country mentioned
-        exclusively under orgName, with no geogName/placeName mention at all
-        in the same document, still gets merged/named correctly but keeps
-        the orgName label — there is no better candidate to vote for."""
+    def test_orgname_country_alone_is_reclassified_to_placename(self):
+        """A country mentioned exclusively under orgName remains a place."""
         entities = [{"text": "Wielka Brytania", "label": "orgName", "lemma": "wielki Brytania", "pos": "NOUN"}]
         assert aggregate_entities_detailed(entities) == {
-            ("orgName", "Wielka Brytania"): {
+            ("placeName", "Wielka Brytania"): {
                 "count": 1,
                 "variants": ["Wielka Brytania"],
                 "raw_lemmas": ["wielki Brytania"],
+            },
+        }
+
+    def test_arabia_saudyjska_orgname_only_is_reclassified_to_placename(self):
+        """Doc #9394 labels only-country mentions as orgName, including
+        "Stany Zjednoczone, Egipt, Arabia Saudyjska i Zjednoczone Emiraty
+        Arabskie"."""
+        entities = [
+            {"text": "Arabia Saudyjska", "label": "orgName", "lemma": "Arabia Saudyjska", "pos": "NOUN"},
+            {"text": "Arabia Saudyjska", "label": "orgName", "lemma": "Arabia Saudyjska", "pos": "NOUN"},
+        ]
+        assert aggregate_entities_detailed(entities) == {
+            ("placeName", "Arabia Saudyjska"): {
+                "count": 2,
+                "variants": ["Arabia Saudyjska"],
+                "raw_lemmas": ["Arabia Saudyjska"],
             },
         }
 
