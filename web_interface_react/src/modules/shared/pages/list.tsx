@@ -447,7 +447,7 @@ const List = () => {
                   disabled={isRetrying}
                   onClick={() => handleRetryCaptionsOnThisPage(item.id)}
                 >
-                  Pobierz napisy ponownie
+                  {item.processing_status === "URL_ADDED" ? "Pobierz napisy" : "Pobierz napisy ponownie"}
                 </button>
               )}
               <button
