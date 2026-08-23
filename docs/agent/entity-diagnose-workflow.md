@@ -302,6 +302,31 @@ dziś działają wiersze o PR #535 i #517 w tabelach Etapu 2.
    udokumentowania; pomiń ten etap. Test regresyjny dodany w Etapie 4 już
    dokumentuje ten przypadek.
 
+## Etap 7: dopisz wpis do dziennika przypadków
+
+Cel: [`docs/ner-entity-diagnose-case-log.md`](../ner-entity-diagnose-case-log.md)
+to osobny, chronologiczny zapis zdiagnozowanych przypadków — uzupełnienie,
+nie duplikat tabel Etapu 2 (które opisują *obecny* stan mechanizmu i są
+nadpisywane). Dziennik nigdy nie jest nadpisywany, tylko rozszerzany;
+służy jako materiał do prezentacji "jakie błędy popełnia automatyczne
+rozpoznawanie miejsc/osób/organizacji" oraz jako pełny ślad audytowy.
+
+1. Po zakończeniu Etapu 5 (i Etapu 6, jeśli dotyczy) dopisz jeden wpis wg
+   szablonu z sekcji "Szablon wpisu" tego dziennika — kolejny numer
+   (`E0NN`), dokładny cytat zdania źródłowego z Etapu 1, kategoria
+   z sekcji "Taksonomia przyczyn błędów" (jeśli żadna nie pasuje, dopisz
+   nową kategorię zamiast na siłę dopasowywać istniejącą).
+2. Dopisuj wpis niezależnie od tego, czy przypadek zakończył się zmianą
+   kodu, czy okazał się przypadkiem z Etapu 2b (stare dane pod już
+   naprawionym mechanizmem) — oznacz `Status` zgodnie z tym, co faktycznie
+   się wydarzyło.
+3. Jeśli zmieniałeś kod pipeline'u w sposób, który zmienia przepływ z
+   diagramów mermaid w tym dokumencie (nowy krok/fallback, nowa tabela) —
+   popraw też odpowiedni diagram w tym samym PR, nie tylko tabelę Etapu 2.
+4. Commituj wpis w tym samym PR co kod/dokumentacja (jak Etap 6); dla
+   przypadków czysto danowych bez własnego PR — jako osobny mały PR
+   dokumentacyjny.
+
 ## Kryterium ukończenia
 
 - zdiagnozowana kategoria i lokalizacja przyczyny są jednoznaczne, poparte
@@ -325,4 +350,7 @@ dziś działają wiersze o PR #535 i #517 w tabelach Etapu 2.
   kodzie na przyszłość) i zweryfikowany w przeglądarce,
 - dokumentacja (Etap 6) jest zaktualizowana, jeśli poprawka wprowadziła
   albo doprecyzowała mechanizm — kolejna diagnoza tego samego objawu
-  powinna trafić od razu na Etap 2b, a nie odkrywać to samo od nowa.
+  powinna trafić od razu na Etap 2b, a nie odkrywać to samo od nowa,
+- wpis w dzienniku przypadków (Etap 7,
+  `docs/ner-entity-diagnose-case-log.md`) jest dopisany wg szablonu,
+  niezależnie od tego, czy przypadek zakończył się zmianą kodu.
