@@ -8,6 +8,7 @@ import { useFormik } from 'formik';
 import { buildObsidianNoteUrl } from "../utils/obsidian";
 import { toOpenableSourceUrl } from "../utils/sourceUrl";
 import { loadListFilters, saveListFilters } from "../services/storage";
+import { markCaptionsFetching } from "../utils/youtubeCaptionsFetchStatus";
 import type { ContentGroup } from "../../../types";
 
 // States where a document has no usable text yet — showing "Czytaj"/"Chunki" there
@@ -160,7 +161,12 @@ const List = () => {
   };
 
   const handleRetryCaptionsOnThisPage = async (document_id: string | number) => {
-    await handleYoutubeRetryCaptions(document_id);
+    markCaptionsFetching(document_id, true);
+    try {
+      await handleYoutubeRetryCaptions(document_id);
+    } finally {
+      markCaptionsFetching(document_id, false);
+    }
     void loadPage(page);
   };
 
