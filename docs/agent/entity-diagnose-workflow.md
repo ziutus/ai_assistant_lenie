@@ -8,8 +8,10 @@ rozpoznaną, niepowiązaną, zduplikowaną albo brakującą encję —
 (organizacja). Workflow prowadzi diagnozę od konkretnego przypadku do
 poprawki w kodzie, tak jak przy dokumencie #9394 ("Al-Faszirze Emiraty",
 PR #535): znajdź encję → znajdź zdanie źródłowe → ustal, który mechanizm
-pipeline'u zawiódł → napraw we właściwym miejscu → zregresuj → wdróż →
-zweryfikuj na żywym dokumencie.
+pipeline'u zawiódł (albo: czy w ogóle zawiódł, czy to stare dane pod już
+naprawionym mechanizmem) → **wyjaśnij przyczynę i zaproponuj poprawkę,
+zaczekaj na zgodę użytkownika** → napraw we właściwym miejscu → zregresuj →
+wdróż → zweryfikuj na żywym dokumencie.
 
 To diagnoza pojedynczych, zgłoszonych przypadków, nie audyt hurtowy. Nie
 przeszukuj całej bazy w poszukiwaniu podobnych błędów, chyba że użytkownik
@@ -130,8 +132,60 @@ SELECT * FROM organization_ambiguous_aliases WHERE alias ILIKE '%fragment%';
 | Ten sam skrót oznacza różne organizacje w różnych dokumentach (np. "SAF") | Skrót niejednoznaczny kontekstowo | `organization_ambiguous_aliases` + `select_ambiguous_alias_candidate_with_llm()` — sprawdź czy skrót ma tam wpis, jeśli nie, to feature do dodania, nie fix |
 | Kraj rozpoznany jako `orgName` zamiast `geogName`/`placeName` (spaCy gubi się na imiesłowach, np. "Zjednoczone Emiraty Arabskie") | `COUNTRY_CHECK_TYPES` w `ner_client.py` powinno to złapać przez `country_gazetteer` | Jeśli nie złapało — sprawdź czy nazwa kraju ma pełne pokrycie wariantów w `country_gazetteer.py` |
 | Dwie różne pisownie tej samej organizacji jako osobne wpisy | Brak aliasu | `POST /organizations/<id>/aliases`, albo `POST /organizations/<id>/merge` |
+| `canonical_name` to bezsensowna, małymi literami, niezgramatyczna fraza (np. "europejski rada sprawa zagraniczny" dla "Europejskiej Rady Spraw Zagranicznych") | Surowy, mangled lemat spaCy (`Span.lemma_` konkatenuje lematy per-token i gubi odmianę przymiotnika) trafił wprost do `canonical_name` przy tworzeniu organizacji | Sprawdź NAJPIERW Etap 2b — `NOMINATIVE_PREFERENCE_TYPES` w `ner_client.py` (Faza 1/5, PR #517) już to naprawia dla nowych/odświeżanych wpisów; jeśli organizacja jest starsza niż wdrożenie tej poprawki, to stara dana, nie żywy bug — napraw przez `PATCH /organizations/<id>` (ustawia nową `canonical_name`, stara zostaje aliasem) + `POST /website_entities` (żeby przepisać `document_entities.entity_text`, bo to on jest wyświetlany w `/read`, nie `organizations.canonical_name`) |
 
-## Etap 3: zaimplementuj poprawkę
+## Etap 2b: to żywy bug, czy stare dane pod już naprawionym mechanizmem?
+
+Zanim zaproponujesz jakąkolwiek poprawkę, sprawdź, czy nie trafiłeś na
+przypadek, który mechanizm w obecnym kodzie **już poprawnie obsługuje** — a
+zepsuty rekord po prostu powstał, zanim ta poprawka została wdrożona.
+
+1. Znajdź commit, który jako ostatni naprawiał tę klasę błędu (najczęściej
+   widoczny w komentarzach/docstringach w tabeli z Etapu 2 — np.
+   "Faza 1/5", numer PR). `git log --oneline -- <plik>` żeby potwierdzić datę
+   i treść.
+2. Sprawdź, czy backend na NAS faktycznie ma tę wersję pliku (`ssh
+   admin@192.168.200.7 "$DOCKER exec lenie-ai-server grep -n
+   '<charakterystyczny_fragment>' /app/library/<plik>.py"` — `reference_nas_deploy.md`
+   w pamięci). Brak → to nadal żywy bug, poprawka nie dotarła na produkcję.
+3. Jeśli kod na NAS ma już poprawkę, porównaj datę utworzenia zepsutego
+   rekordu (`organizations.created_at`, `persons.created_at`, `geocode_cache.created_at`
+   itp.) z datą wdrożenia poprawki. Rekord starszy niż wdrożenie → to stare,
+   zepsute dane pod już naprawionym mechanizmem, NIE żywy bug kodu. Napraw
+   sam rekord (PATCH/REST/SQL + w razie potrzeby refresh), nie pisz nowego kodu.
+4. Napisz krótki test odtwarzający dokładnie ten kształt danych z Etapu 1
+   (typ encji, liczba wzmianek, przypadek gramatyczny) i sprawdź, czy
+   przechodzi na obecnym kodzie BEZ zmian. Jeśli przechodzi — masz dowód, że
+   to przypadek 3, nie nowy bug; dopisz ten test do zestawu regresyjnego jako
+   dokumentację tego konkretnego przypadku (patrz Etap 4 pkt 3), zamiast
+   zmieniać logikę.
+
+## Etap 3: wyjaśnij i zaproponuj — czekaj na zgodę
+
+Diagnoza (Etapy 1-2b) nie jest zielonym światłem do działania. Zanim
+dotkniesz kodu, danych produkcyjnych na NAS albo cokolwiek wdrożysz,
+przedstaw użytkownikowi w rozmowie:
+
+1. **Dlaczego błąd się pojawił** — konkretny mechanizm z Etapu 2/2b: który
+   plik/funkcja zawiodła (albo: nie zawiodła, tylko rekord jest starszy niż
+   poprawka), z cytatem zdania źródłowego z Etapu 1.
+2. **Jak chcesz go poprawić** — jawnie rozróżnij:
+   - poprawka kodu (nowy plik/funkcja do zmiany, zakres, test regresyjny) —
+     wymaga PR + deployu na NAS,
+   - poprawka samych danych (PATCH/POST/SQL na już istniejącym rekordzie) —
+     bez zmian w kodzie, ale nadal działanie na produkcyjnej bazie NAS,
+   - albo obie naraz (poprawka kodu na przyszłość + osobna naprawa
+     konkretnego zepsutego rekordu, jak w Etapie 4 pkt 3-4).
+3. Zaczekaj na wyraźną zgodę użytkownika, zanim przejdziesz do Etapu 4.
+   Użytkownik może mieć inną sugestię co do podejścia — nie zakładaj, że
+   zaproponowany kierunek jest jedynym słusznym.
+
+**Nie wykonuj żadnej zmiany w kodzie, żadnego deployu na NAS ani żadnej
+bezpośredniej mutacji danych produkcyjnych (PATCH/POST/UPDATE przez REST
+albo SQL na `192.168.200.7`) bez wyraźnej zgody użytkownika na TĘ
+konkretną propozycję.** Sam odczyt/diagnoza (SELECT, GET) nie wymaga zgody.
+
+## Etap 4: zaimplementuj poprawkę (dopiero po zgodzie z Etapu 3)
 
 1. Feature branch (nigdy commit wprost na `main`).
 2. Zmień właściwy plik z tabeli powyżej. Gazetteery (`city_gazetteer.py`,
@@ -153,7 +207,7 @@ SELECT * FROM organization_ambiguous_aliases WHERE alias ILIKE '%fragment%';
    uv run ruff check library/<plik>.py tests/unit/test_<plik>.py
    ```
 
-## Etap 4: PR, deploy, weryfikacja
+## Etap 5: PR, deploy, weryfikacja
 
 1. `gh pr create` + `gh pr merge` po zielonych checkach (repo convention —
    zawsze PR, nawet dla małej poprawki).
@@ -184,8 +238,16 @@ SELECT * FROM organization_ambiguous_aliases WHERE alias ILIKE '%fragment%';
 
 - zdiagnozowana kategoria i lokalizacja przyczyny są jednoznaczne, poparte
   konkretnym zdaniem źródłowym, nie domysłem,
+- ustalone w Etapie 2b, czy to żywy bug kodu, czy stare dane pod już
+  naprawionym mechanizmem,
+- użytkownik dostał w Etapie 3 wyjaśnienie przyczyny i propozycję poprawki
+  i wyraził na nią zgodę, zanim ruszyła implementacja/mutacja danych na NAS,
 - poprawka ma test regresyjny cytujący dokument/zdanie, które ją
-  spowodowało,
-- PR zmergowany, backend wdrożony na NAS,
+  spowodowało — również wtedy, gdy okazało się, że kod już działa poprawnie
+  i zmiana ograniczyła się do naprawy danych (Etap 2b pkt 4),
+- jeśli zakres obejmował zmianę kodu: PR zmergowany, backend wdrożony na
+  NAS; jeśli to był wyłącznie przypadek z Etapu 2b (stare dane pod już
+  naprawionym mechanizmem), sam test dokumentujący przypadek wystarcza —
+  nie twórz kodu na siłę tam, gdzie nic nie jest złamane,
 - konkretny zgłoszony przypadek jest naprawiony w danych (nie tylko w
   kodzie na przyszłość) i zweryfikowany w przeglądarce.
