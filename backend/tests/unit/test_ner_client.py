@@ -720,6 +720,23 @@ class TestNominativePreferenceForOrganizations:
         entities = [{"text": "Bloomberga", "label": "orgName", "lemma": "Bloomberg", "pos": "PROPN"}]
         assert aggregate_entities(entities) == {("orgName", "Bloomberg"): 1}
 
+    def test_genitive_only_four_word_org_prefers_surface_over_mangled_lemma(self):
+        """Doc #9394: "mówi Jonas Horner z Europejskiej Rady Spraw Zagranicznych" —
+        the organization is mentioned exactly once, in genitive case, so the
+        legacy lemma path would have produced "europejski rada sprawa
+        zagraniczny" (this exact mangled string was the organization's stored
+        canonical_name before the Faza 1/5 fix landed, org id 485, created
+        2026-08-14 — a week before this preference was extended to orgName)."""
+        entities = [{"text": "Europejskiej Rady Spraw Zagranicznych", "label": "orgName",
+                     "lemma": "europejski rada sprawa zagraniczny", "pos": "NOUN", "morph": "Case=Gen"}]
+        assert aggregate_entities_detailed(entities) == {
+            ("orgName", "Europejskiej Rady Spraw Zagranicznych"): {
+                "count": 1,
+                "variants": ["Europejskiej Rady Spraw Zagranicznych"],
+                "raw_lemmas": ["europejski rada sprawa zagraniczny"],
+            },
+        }
+
 
 class TestQuoteStrippedMentions:
     """spaCy glues source-text quotation marks onto entity spans (doc 9394:
